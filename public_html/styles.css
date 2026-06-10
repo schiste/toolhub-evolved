@@ -52,9 +52,8 @@ a:hover { text-decoration: underline; }
 	display: flex; align-items: center; gap: 16px 34px; flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--base10); }
-.brand__mark { font-size: 26px; color: var(--base10); }
+.brand__logo { display: block; width: 34px; height: 34px; flex: 0 0 auto; }
 .brand__name { font-weight: 700; font-size: 21px; line-height: 1; }
-.brand__name small { display: block; font-size: 8px; letter-spacing: 2px; color: var(--base30); font-weight: 600; }
 .nav__links { display: flex; gap: 21px; }
 .nav__links a { color: var(--base20); font-weight: 500; }
 .nav__actions { margin-left: auto; display: flex; align-items: center; gap: 13px; }
