@@ -428,6 +428,10 @@
 					<div class="panel">
 						<h2 class="panel__title">Get started</h2>
 						<div class="toolpage__actions">${actions || '<span class="meta__v">No links provided</span>'}</div>
+						<div class="toolpage__sub">
+							<a href="#/tools/${encodeURIComponent(t.name)}/history">View history</a>
+							<a href="#/tools/${encodeURIComponent(t.name)}/edit">Suggest an edit</a>
+						</div>
 						<!-- EXPERIMENTAL — save/bookmark. MISSING: needs an authenticated session;
 						     the Toolhub favorites API write requires login. -->
 						<button class="btn btn--outline experimental toolpage__save" type="button">🔖 Save to a list</button>
@@ -628,6 +632,125 @@
 		</div>`;
 		return { title: "Help maintain Toolhub", html };
 	}
+	/* ---- Parity pages: data-driven (read-only) ----------------------------- */
+	// Recent changes — real, from modified dates.
+	function viewRecent() {
+		const items = [...CATALOG].sort((a, b) => new Date(b.modified) - new Date(a.modified)).slice(0, 30);
+		const rows = items.map((t) => `
+			<li><a href="#/tools/${encodeURIComponent(t.name)}">
+				<span class="feed__ic" aria-hidden="true">✎</span>
+				<span class="feed__main"><strong>${esc(t.title)}</strong> updated by ${esc(t.maintainer)}</span>
+				<span class="feed__when">${esc(relTime(t.modified))}</span></a></li>`).join("");
+		return { title: "Recent changes — Toolhub", html: `
+			<div class="container page">
+				<h1 class="page__title">Recent changes</h1>
+				<p class="page__intro">The latest edits to tools in the catalog.</p>
+				<ul class="feed">${rows}</ul>
+			</div>` };
+	}
+	// Members — real, derived from tool authors/maintainers.
+	function viewMembers() {
+		const counts = {};
+		CATALOG.forEach((t) => (t.authors && t.authors.length ? t.authors : [t.maintainer]).forEach((a) => { if (a) counts[a] = (counts[a] || 0) + 1; }));
+		const members = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 60);
+		const cards = members.map((n) => `
+			<div class="mcard">${avatar(n)}<div class="mcard__b">
+				<div class="mcard__n">${esc(n)}</div>
+				<div class="mcard__c">${counts[n]} tool${counts[n] > 1 ? "s" : ""}</div></div></div>`).join("");
+		return { title: "Members — Toolhub", html: `
+			<div class="container page">
+				<h1 class="page__title">Members</h1>
+				<p class="page__intro">Maintainers and authors who have tools in the catalog.</p>
+				<div class="mgrid">${cards}</div>
+			</div>` };
+	}
+	// Crawler history — uses the real last-crawl timestamp.
+	function viewCrawler() {
+		const last = DATA.lastCrawlTime ? new Date(DATA.lastCrawlTime).toUTCString() : "unknown";
+		return { title: "Crawler history — Toolhub", html: `
+			<div class="container page">
+				<h1 class="page__title">Crawler history</h1>
+				<p class="page__intro">Toolhub re-reads every registered <code>toolinfo.json</code> URL roughly hourly and updates the catalog with any changes.</p>
+				<div class="detail__meta">
+					${metaItem("Last crawl", esc(last))}
+					${metaItem("Tools in catalog", fmt(DATA.totalTools))}
+					${metaItem("Changes in last run", String(DATA.lastCrawlChanged != null ? DATA.lastCrawlChanged : 0))}
+				</div>
+				<p class="signin-note">Full per-run crawl logs are available on the live site.</p>
+			</div>` };
+	}
+	// Audit log — illustrative feed built from catalog activity.
+	function viewAudit() {
+		const items = [...CATALOG].sort((a, b) => new Date(b.modified) - new Date(a.modified)).slice(0, 20);
+		const verbs = ["updated", "published", "annotated", "created"];
+		const rows = items.map((t) => `
+			<li><a href="#/tools/${encodeURIComponent(t.name)}">
+				<span class="feed__ic" aria-hidden="true">📝</span>
+				<span class="feed__main">${esc(t.maintainer)} ${verbs[hash(t.name) % verbs.length]} <strong>${esc(t.title)}</strong></span>
+				<span class="feed__when">${esc(relTime(t.modified))}</span></a></li>`).join("");
+		return { title: "Audit logs — Toolhub", html: `
+			<div class="container page">
+				<h1 class="page__title">Audit logs</h1>
+				<p class="page__intro">A record of changes across the catalog, for patrollers and administrators.</p>
+				<ul class="feed">${rows}</ul>
+				<p class="signin-note">Illustrative feed for the prototype; the live audit log is backed by the API.</p>
+			</div>` };
+	}
+	// API docs — embed the live interactive documentation.
+	function viewApiDocs() {
+		return { title: "API documentation — Toolhub", html: `
+			<div class="container page">
+				<h1 class="page__title">API documentation</h1>
+				<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The interactive documentation is embedded below; if it doesn't load, open <a href="https://toolhub.wikimedia.org/api-docs" target="_blank" rel="noopener">toolhub.wikimedia.org/api-docs ↗</a>.</p>
+				<iframe class="apidoc-frame" src="https://toolhub.wikimedia.org/api-docs" title="Toolhub API documentation" loading="lazy"></iframe>
+			</div>` };
+	}
+	// Tool revision history — illustrative, from the tool's modified date.
+	function viewToolHistory(name) {
+		const t = INDEX[name];
+		if (!t) return viewNotFound();
+		const base = t.modified ? new Date(t.modified).getTime() : Date.now();
+		const revs = [0, 1, 2, 3].map((i) => {
+			const d = new Date(base - i * (3 + (hash(t.name + i) % 25)) * 86400000);
+			return { id: 1000 + (hash(t.name) % 9000) - i, when: d.toISOString(), who: t.maintainer };
+		});
+		const rows = revs.map((r, i) => `
+			<li><span class="feed__ic" aria-hidden="true">🕓</span>
+				<span class="feed__main">Revision by <strong>${esc(r.who)}</strong> · ${esc(relTime(r.when))}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+				<a class="feed__when" href="#/tools/${encodeURIComponent(t.name)}/history/revision/${r.id}/diff/${r.id - 1}">view changes</a></li>`).join("");
+		return { title: `History: ${t.title} — Toolhub`, html: `
+			<div class="container page">
+				<a class="back" href="#/tools/${encodeURIComponent(t.name)}">← Back to ${esc(t.title)}</a>
+				<h1 class="page__title">Revision history</h1>
+				<ul class="feed">${rows}</ul>
+				<p class="signin-note">Illustrative history for the prototype; full revisions and diffs are on the live site.</p>
+			</div>` };
+	}
+	function viewDiffStub(name) {
+		const t = INDEX[name];
+		return prosePage("Revision diff", `
+			<p>Compare two revisions of <strong>${esc(t ? t.title : name)}</strong> side by side.</p>
+			<p>Revision diffs are served from Toolhub's versioning API. In this prototype the
+			diff viewer is not wired up — see it on the
+			<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">live site</a>.</p>
+			<p><a href="#/tools/${encodeURIComponent(name)}/history">← Back to history</a></p>`);
+	}
+
+	/* ---- Sign-in-required stubs (auth/write features) ---------------------- */
+	function signInPage(title, lead) {
+		return { title: `${title} — Toolhub`, html: `
+			<div class="container page"><article class="prose prose--page">
+				<h1>${esc(title)}</h1>
+				<p>${lead}</p>
+				<p>Toolhub uses your existing Wikimedia account via OAuth — no new account or
+				password is needed.</p>
+				<p><a class="btn btn--primary" href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">Continue on toolhub.wikimedia.org ↗</a></p>
+				<p class="signin-note">In this prototype these actions are read-only: they need an
+				authenticated session and the live back-end. See
+				<a href="#/contribute">Help maintain Toolhub</a> to contribute.</p>
+			</article></div>` };
+	}
+
 	function viewNotFound() {
 		return { title: "Not found — Toolhub", html: `
 			<div class="container page errorpage">
@@ -651,9 +774,33 @@
 		const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
 		if (path === "/") return viewHome();
 		if (seg[0] === "search") return viewSearch(query);
-		if (seg[0] === "tools" && seg[1]) return viewTool(decodeURIComponent(seg.slice(1).join("/")));
-		if (seg[0] === "lists" && seg[1]) return viewList(seg[1]);
-		if (seg[0] === "lists") return viewLists();
+		// Tool + its sub-routes
+		if (seg[0] === "tools" && seg[1]) {
+			const nm = decodeURIComponent(seg[1]);
+			if (seg[2] === "edit") return signInPage("Edit tool", "Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data.");
+			if (seg[2] === "edit-annotations") return signInPage("Edit annotations", "Add or refine community annotations for this tool — audiences, tasks and more.");
+			if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
+			return viewTool(nm);
+		}
+		// Lists + sub-routes
+		if (seg[0] === "lists" && seg[1] === "create") return signInPage("Create a list", "Create a new list to group and share useful tools.");
+		if (seg[0] === "lists" && seg[1]) {
+			if (seg[2] === "edit") return signInPage("Edit list", "Edit this list's title, description and tools.");
+			if (seg[2] === "history") return prosePage("List history", "<p>Revision history for this list is available on the <a href=\"https://toolhub.wikimedia.org/\" target=\"_blank\" rel=\"noopener\">live site</a>.</p>");
+			return viewList(seg[1]);
+		}
+		if (seg[0] === "lists" || seg[0] === "published-lists") return viewLists();
+		if (seg[0] === "my-lists") return signInPage("Your lists", "See and manage the lists you've created.");
+		if (seg[0] === "favorites") return signInPage("Favorites", "Your saved tools, all in one place.");
+		if (seg[0] === "add-or-remove-tools") return signInPage("Add or remove tools", "Register a toolinfo.json URL to be crawled, or create a tool record directly.");
+		if (seg[0] === "developer-settings") return signInPage("Developer settings", "Manage your API tokens and registered OAuth applications.");
+		if (seg[0] === "login") return signInPage("Sign in", "Sign in to save favourites, build lists, and edit tool information.");
+		// Maintenance / discovery pages
+		if (seg[0] === "recent") return viewRecent();
+		if (seg[0] === "members") return viewMembers();
+		if (seg[0] === "crawler-history") return viewCrawler();
+		if (seg[0] === "audit-logs") return viewAudit();
+		if (seg[0] === "api-docs") return viewApiDocs();
 		if (seg[0] === "contribute") return viewContribute();
 		if (STATIC[seg[0]]) return viewStatic(seg[0]);
 		return viewNotFound();

@@ -43,16 +43,51 @@
 	<main id="view" tabindex="-1"></main>
 
 	<footer class="footer">
-		<div class="footer__top">
-			<a class="footer__maintain" href="#/contribute">🛠️ Help maintain Toolhub</a>
+		<div class="footer__cols">
+			<nav class="footer__col" aria-label="Discover">
+				<h2>Discover</h2>
+				<a href="#/search">Browse tools</a>
+				<a href="#/lists">Lists</a>
+				<a href="#/members">Members</a>
+				<a href="#/recent">Recent changes</a>
+			</nav>
+			<nav class="footer__col" aria-label="Maintain">
+				<h2>Maintain</h2>
+				<a href="#/add-or-remove-tools">Add or remove tools</a>
+				<a href="#/my-lists">Your lists</a>
+				<a href="#/favorites">Favorites</a>
+				<a href="#/developer-settings">Developer settings</a>
+				<a href="#/contribute">Help maintain Toolhub</a>
+			</nav>
+			<nav class="footer__col" aria-label="Project">
+				<h2>Project</h2>
+				<a href="#/api-docs">API docs</a>
+				<a href="#/crawler-history">Crawler history</a>
+				<a href="#/audit-logs">Audit logs</a>
+				<a href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main" target="_blank" rel="noopener">Source code ↗</a>
+				<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener">Report an issue ↗</a>
+			</nav>
+			<nav class="footer__col" aria-label="About">
+				<h2>About</h2>
+				<a href="#/about">About Toolhub</a>
+				<a href="#/help">Help</a>
+				<a href="#/community">Community</a>
+				<a href="#/privacy">Privacy policy</a>
+				<a href="#/terms">Terms of Use</a>
+				<a href="#/code-of-conduct">Code of Conduct</a>
+				<a href="#/rss">Feeds (RSS)</a>
+			</nav>
 		</div>
-		<nav class="footer__links">
-			<a href="#/about">About Toolhub</a><a href="#/help">Help</a>
-			<a href="#/community">Community</a><a href="#/privacy">Privacy policy</a>
-			<a href="#/terms">Terms of Use</a><a href="#/code-of-conduct">Code of Conduct</a>
-			<a href="#/api">API</a><a href="#/rss">RSS</a>
-		</nav>
-		<span class="footer__note">Prototype · fixed snapshot of the Toolhub API</span>
+		<div class="footer__bottom">
+			<a class="footer__maintain" href="#/contribute">🛠️ Help maintain Toolhub</a>
+			<span class="footer__legal">
+				Catalog content under
+				<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a>
+				·
+				<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener">Toolhub Evolved v0.1.0</a>
+			</span>
+			<span class="footer__note">Prototype · fixed snapshot of the Toolhub API</span>
+		</div>
 	</footer>
 
 	<script src="data.js"></script>

@@ -197,14 +197,16 @@ a:hover { text-decoration: underline; }
 .panel--cta p { font-size: 13px; color: var(--base20); margin: 0 0 12px; }
 .cta__icon { font-size: 22px; }
 
-/* Footer */
-.footer { border-top: 1px solid var(--base80); padding: 26px clamp(20px, 4vw, 72px); display: flex; gap: 18px; align-items: center; max-width: 1760px; margin: 0 auto; flex-wrap: wrap; }
-.footer__brand { font-size: 11px; letter-spacing: 2px; color: var(--base30); font-weight: 700; }
-.footer__links { display: flex; gap: 16px; flex-wrap: wrap; margin-left: auto; }
-.footer__links a { color: var(--base20); font-size: 13px; }
-
-/* Footer note */
-.footer__note { width: 100%; color: var(--base30); font-size: 11px; }
+/* Footer — full sitemap */
+.footer { border-top: 1px solid var(--base80); padding: 32px clamp(20px, 4vw, 72px); max-width: 1760px; margin: 0 auto; }
+.footer__cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 24px 32px; }
+.footer__col { display: flex; flex-direction: column; gap: 8px; }
+.footer__col h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); margin: 0 0 4px; }
+.footer__col a { color: var(--color-text-secondary); font-size: 14px; }
+.footer__col a:hover { color: var(--color-progressive); }
+.footer__bottom { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--base90); }
+.footer__legal { font-size: 12px; color: var(--color-text-muted); }
+.footer__note { font-size: 12px; color: var(--color-text-muted); margin-left: auto; }
 
 /* Modal / tool detail */
 .modal { position: fixed; inset: 0; background: rgba(16,20,30,.55); display: flex;
@@ -332,6 +334,34 @@ a:focus-visible, button:focus-visible, input:focus-visible,
 /* Route-change focus lands on the view/heading for screen readers; it's not an
    interactive control, so suppress the visible outline there (real controls keep theirs). */
 #view:focus, [tabindex="-1"]:focus { outline: none; }
+
+/* Feeds (recent changes, audit logs, history) */
+.feed { list-style: none; margin: 0; padding: 0; max-width: 820px; }
+.feed li { border-bottom: 1px solid var(--base90); }
+.feed li:last-child { border-bottom: none; }
+.feed li a, .feed li > span:first-child { display: flex; align-items: center; gap: 12px; padding: 11px 0; color: var(--color-text); text-decoration: none; }
+.feed li a { width: 100%; }
+.feed li a:hover .feed__main strong { color: var(--color-progressive); }
+.feed__ic { flex: 0 0 auto; }
+.feed__main { min-width: 0; }
+.feed__when { margin-left: auto; white-space: nowrap; color: var(--color-text-muted); font-size: 13px; }
+
+/* Members grid */
+.mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 12px; }
+.mcard { display: flex; align-items: center; gap: 12px; border: 1px solid var(--color-border); border-radius: 12px; padding: 12px 14px; background: #fff; box-shadow: var(--shadow); min-width: 0; }
+.mcard .avatar { width: 40px; height: 40px; font-size: 17px; border-radius: 10px; }
+.mcard__b { min-width: 0; }
+.mcard__n { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcard__c { font-size: 12px; color: var(--color-text-muted); }
+
+/* API docs embed */
+.apidoc-frame { width: 100%; height: 72vh; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+
+/* Sign-in / illustrative notes */
+.signin-note { font-size: 13px; color: var(--color-text-muted); border-left: 3px solid var(--color-border); padding-left: 12px; margin-top: 18px; }
+
+/* Tool page secondary links */
+.toolpage__sub { display: flex; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--base90); font-size: 14px; }
 
 /* ============================ Experimental mode ========================== */
 /* When the toggle is OFF, every prospective feature is hidden. */
