@@ -10,17 +10,17 @@ way to host it is a lighttpd/PHP webservice serving `~/public_html`.
 - A [Wikimedia developer account](https://www.mediawiki.org/wiki/Developer_access).
 - Membership in a Toolforge **tool** account. Create one at
   [toolsadmin.wikimedia.org](https://toolsadmin.wikimedia.org/) — e.g. a tool named
-  `toolforge-evolved`, served at `https://toolforge-evolved.toolforge.org/`.
+  `toolhub-evolved`, served at `https://toolhub-evolved.toolforge.org/`.
 
 ## First-time deploy
 
 ```sh
 # 1. SSH in and become the tool
 ssh <your-shell-name>@login.toolforge.org
-become toolforge-evolved        # use your tool's name
+become toolhub-evolved        # use your tool's name
 
 # 2. Clone the repository into the tool's home
-git clone https://github.com/schiste/toolforge-evolved.git ~/repo
+git clone https://github.com/schiste/toolhub-evolved.git ~/repo
 
 # 3. Point the served web root at the repo's public_html
 #    (the webservice serves ~/public_html by default)
@@ -36,7 +36,7 @@ webservice --backend=kubernetes php8.2 start
 ## Updating after a change
 
 ```sh
-become toolforge-evolved
+become toolhub-evolved
 cd ~/repo && git pull
 webservice restart
 ```

@@ -1,4 +1,4 @@
-# Toolforge Evolved
+# Toolhub Evolved
 
 A design **demonstrator** for a refreshed [Toolhub](https://toolhub.wikimedia.org/)
 — the community catalog of Wikimedia tools. It is a dependency-free static
