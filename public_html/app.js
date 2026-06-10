@@ -107,15 +107,14 @@
 			? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>`
 			: `<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>`;
 		const right = opts.popular ? viewsHtml : statusHtml;
-		// Quick-look opens a preview modal without leaving the listing.
-		const peek = `<button class="tcard__peek" type="button" data-peek="${esc(t.name)}" title="Quick look" aria-label="Quick look at ${esc(t.title)}">👁</button>`;
+		// The whole card opens the quick-view (peek); the full page is reachable
+		// from there. Card is a keyboard-operable button.
 		return `
-		<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}">
-			${peek}
+		<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
 			<div class="tcard__head">
 				${rank}${toolIcon(t)}
 				<div class="tcard__heading">
-					<a class="tcard__title" href="#/tools/${encodeURIComponent(t.name)}">${esc(t.title)}</a>
+					<div class="tcard__title">${esc(t.title)}</div>
 					<div class="tcard__maint">by ${esc(t.maintainer)}</div>
 				</div>
 			</div>
@@ -930,13 +929,17 @@
 	/* Keyword chips INSIDE a card anchor: intercept so they filter search
 	   instead of following the card's link to the tool page. */
 	$("#view").addEventListener("click", (e) => {
-		const peek = e.target.closest("[data-peek]");
-		if (peek) { e.preventDefault(); openQuickView(peek.getAttribute("data-peek")); return; }
 		const q = e.target.closest("[data-q]");
 		if (q && !q.matches("a[href]")) { e.preventDefault(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); return; }
 		if (e.target.closest("a[href]")) return; // real links route natively
 		const card = e.target.closest("[data-tool]");
-		if (card) { location.hash = "#/tools/" + encodeURIComponent(card.getAttribute("data-tool")); }
+		if (card) { openQuickView(card.getAttribute("data-tool")); } // default: peek
+	});
+	// Keyboard: Enter/Space on a focused tool card opens the quick-view.
+	$("#view").addEventListener("keydown", (e) => {
+		if (e.key !== "Enter" && e.key !== " ") return;
+		const card = e.target.closest("[data-tool]");
+		if (card && e.target === card) { e.preventDefault(); openQuickView(card.getAttribute("data-tool")); }
 	});
 
 	/* Quick-view modal: backdrop/close + keyword chips, Esc + Tab-trap */
