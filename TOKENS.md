@@ -63,11 +63,21 @@ Sources: [Brand/colors](https://meta.wikimedia.org/wiki/Brand/colors) · [Brand/
 | `--color-warning-text` | `#8a4b08` *(derived)* | "Experimental" text | 5.3:1 on subtle |
 | `--color-warning-subtle` | `--wmf-orange-light` | "Experimental" pill bg | — |
 
-**Typography** — `--font-sans` = Montserrat (headings + UI), `--font-serif` = Source Serif 4 (prose, via the `.prose` class). Weights: `--font-weight-regular 400`, `--font-weight-medium 600`, `--font-weight-bold 700`. (i18n: Noto for non-Latin scripts.)
+## Golden-ratio system (φ ≈ 1.618) — the HARD RULE
 
-**Spacing** (4px base) — `--space-1 4px` · `-2 8` · `-3 12` · `-4 16` · `-5 24` · `-6 32` · `-7 48` · `-8 64`.
+Every **padding, margin, gap, border-radius and font-size** must come from a
+scale below. **No ad-hoc pixel values in components.** Widths, breakpoints and
+shadow offsets are exempt (they are structural, not rhythm).
 
-**Radius** — `--radius-sm 8` · `--radius-md 12` · `--radius-lg 16` · `--radius-pill 999px`.
+**Spacing** — the Fibonacci sequence (each step ≈ ×φ of the previous):
+`--space-3xs 3` · `-2xs 5` · `-xs 8` · `-sm 13` · `-md 21` · `-lg 34` · `-xl 55` · `-2xl 89`
+(numeric aliases `--space-1…8` map to the same values).
+
+**Radius** (φ-stepped Fibonacci subset) — `--radius-sm 8` · `--radius-md 13` · `--radius-lg 21` · `--radius-pill 999px`.
+
+**Type** (φ modular scale from a 16px base) — `--fs-caption 13` · `--fs-body 16` · `--fs-lead 21` · `--fs-title 26` (16×φ) · `--fs-display 42` (16×φ²).
+
+**Typography families** — `--font-sans` = Montserrat (headings + UI), `--font-serif` = Source Serif 4 (prose, via the `.prose` class). Weights: `400 / 600 / 700`. (i18n: Noto for non-Latin scripts.)
 
 **Elevation** — `--shadow` (resting), `--shadow-hover` (lifted).
 

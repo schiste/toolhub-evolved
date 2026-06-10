@@ -70,12 +70,28 @@
 	--font-weight-medium: 600;
 	--font-weight-bold: 700;
 
-	/* ---- Spacing scale (4px base) ----------------------------------------- */
-	--space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
-	--space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+	/* ===== GOLDEN-RATIO SYSTEM (φ ≈ 1.618) — the HARD RULE for the whole UI =====
+	   Every padding, margin, gap, border-radius and font-size MUST come from a
+	   token below. No ad-hoc pixel values in components.
+	   Spacing = the Fibonacci sequence (each step ≈ ×φ of the previous).
+	   Radius  = a Fibonacci subset. Type = a φ modular scale from a 16px base. */
+	--ratio: 1.618;
+	/* Spacing (Fibonacci ≈ φ) */
+	--space-3xs: 3px;  --space-2xs: 5px;  --space-xs: 8px;  --space-sm: 13px;
+	--space-md: 21px;  --space-lg: 34px;  --space-xl: 55px; --space-2xl: 89px;
+	/* Numeric aliases kept in sync with the Fibonacci scale */
+	--space-1: 3px; --space-2: 5px; --space-3: 8px; --space-4: 13px;
+	--space-5: 21px; --space-6: 34px; --space-7: 55px; --space-8: 89px;
 
-	/* ---- Radius & elevation ----------------------------------------------- */
-	--radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-pill: 999px;
+	/* ---- Type scale (φ modular, rounded) ---------------------------------- */
+	--fs-caption: 13px;  /* meta / captions */
+	--fs-body: 16px;     /* base */
+	--fs-lead: 21px;     /* sub-headings, lead-in (Fib step) */
+	--fs-title: 26px;    /* 16 × φ  — page / section titles */
+	--fs-display: 42px;  /* 16 × φ² — hero */
+
+	/* ---- Radius & elevation (φ-stepped) ----------------------------------- */
+	--radius-sm: 8px; --radius-md: 13px; --radius-lg: 21px; --radius-pill: 999px;
 	--shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
 	--shadow-hover: 0 6px 18px rgba(0,0,0,.10);
 
