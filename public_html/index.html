@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Toolhub</title>
+	<link rel="icon" href="data:," />
+	<!-- Wikimedia brand typefaces: Montserrat (headings/UI), Source Serif 4 (prose) -->
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
+	<link rel="stylesheet" href="tokens.css" />
+	<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+	<a class="skip" href="#view">Skip to content</a>
+
+	<header class="nav">
+		<div class="nav__inner">
+			<a class="brand" href="#/">
+				<span class="brand__mark">◉</span>
+				<span class="brand__name">Toolhub<small>WIKIMEDIA</small></span>
+			</a>
+			<nav class="nav__links" id="nav-links">
+				<a href="#/search">Browse</a>
+				<a href="#/lists">Lists</a>
+				<a href="#/search">Categories</a>
+			</nav>
+			<div class="nav__actions">
+				<a class="icon-btn" href="#/search">🔍 Search</a>
+				<button class="exp-toggle" id="exp-toggle" type="button" role="switch" aria-checked="true"
+					title="Show prospective features that need data/back-end we don't have yet">
+					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
+					<span class="exp-toggle__label">Experimental</span>
+				</button>
+				<a class="btn btn--primary" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">＋ Submit a tool</a>
+			</div>
+		</div>
+	</header>
+
+	<!-- The router renders the active view here -->
+	<main id="view" tabindex="-1"></main>
+
+	<footer class="footer">
+		<div class="footer__top">
+			<a class="footer__maintain" href="#/contribute">🛠️ Help maintain Toolhub</a>
+		</div>
+		<nav class="footer__links">
+			<a href="#/about">About Toolhub</a><a href="#/help">Help</a>
+			<a href="#/community">Community</a><a href="#/privacy">Privacy policy</a>
+			<a href="#/terms">Terms of Use</a><a href="#/code-of-conduct">Code of Conduct</a>
+			<a href="#/api">API</a><a href="#/rss">RSS</a>
+		</nav>
+		<span class="footer__note">Prototype · fixed snapshot of the Toolhub API</span>
+	</footer>
+
+	<script src="data.js"></script>
+	<script src="app.js"></script>
+</body>
+</html>

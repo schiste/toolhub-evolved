@@ -1,0 +1,97 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* =============================================================================
+   Wikimedia design tokens — SINGLE SOURCE OF TRUTH for the Toolhub demo.
+
+   Layers (always consume the highest layer you can):
+     1. Raw brand palette   --wmf-*      verbatim from the brand guidelines
+     2. Semantic tokens     --color-* / --font-* / --space-* / --radius-* / --shadow-*
+     3. Compat aliases       (legacy names kept so older CSS keeps working)
+
+   FUTURE WORK: build new components against the SEMANTIC tokens (layer 2).
+   Never hard-code a hex in a component — add/extend a token here instead.
+
+   Sources:
+     Colours    https://meta.wikimedia.org/wiki/Brand/colors  (2022 palette)
+     Typography https://meta.wikimedia.org/wiki/Brand/Typography
+   ============================================================================= */
+:root {
+	/* ---- 1. RAW BRAND PALETTE (verbatim) ----------------------------------- */
+	/* Core neutrals — the logo is black or white */
+	--wmf-white: #ffffff;
+	--wmf-black: #000000;
+	--wmf-black-75: #404040;
+	--wmf-black-50: #7f7f7f;
+	--wmf-black-25: #bfbfbf;
+
+	/* Movement colours (Legacy). *-aaa variants are tuned to pass on white. */
+	--wmf-green: #339966;       --wmf-green-aaa: #246342;
+	--wmf-blue: #0063bf;        --wmf-blue-aaa: #0c57a8;
+	--wmf-red: #990000;         --wmf-red-aaa: #970302;
+
+	/* Creative palette — strong (accents; pair red/blue/green/purple with white) */
+	--wmf-red-strong: #970302;     --wmf-pink: #e679a6;       --wmf-orange: #ee8019;
+	--wmf-yellow: #f0bc00;         --wmf-purple: #5748b5;     --wmf-darkgreen: #305d70;
+	--wmf-blue-strong: #0e65c0;    --wmf-brightblue: #049dff; --wmf-green-strong: #308557;
+	--wmf-brightgreen: #71d1b3;
+
+	/* Creative palette — light (subtle backgrounds; pair with black text) */
+	--wmf-red-light: #e5c0c0;      --wmf-pink-light: #f9dde9;     --wmf-orange-light: #fbdfc5;
+	--wmf-yellow-light: #fbeebf;   --wmf-purple-light: #d5d1ec;   --wmf-darkgreen-light: #cbd6db;
+	--wmf-blue-light: #c3d8ef;     --wmf-brightblue-light: #c0e6ff;
+	--wmf-green-light: #cbe0d5;    --wmf-brightgreen-light: #dbf3ec;
+
+	/* ---- 2. SEMANTIC TOKENS (reference the brand) -------------------------- */
+	/* Surfaces */
+	--color-surface: var(--wmf-white);
+	--color-surface-muted: #f4f5f7;        /* derived: faint neutral fill */
+	--color-border: #d4d7db;               /* derived: hairline (black-25 is too heavy) */
+
+	/* Text — derived neutrals tuned for AA on white */
+	--color-text: #1b1b1b;                 /* derived near-black (softer than #000) */
+	--color-text-secondary: #54595d;       /* derived: ~7:1 */
+	--color-text-muted: #5c6066;           /* derived: ~5:1, safe at small sizes */
+	--color-text-inverse: var(--wmf-white);
+
+	/* Progressive / interactive (links, primary actions) */
+	--color-progressive: var(--wmf-blue-aaa);
+	--color-progressive-hover: #09437f;    /* derived darker blue */
+	--color-progressive-subtle: #e7f0fa;   /* derived light blue (AA with progressive text) */
+
+	/* Status — Creative light bg + AAA/derived text */
+	--color-success: var(--wmf-green-aaa);     --color-success-subtle: var(--wmf-green-light);
+	--color-destructive: var(--wmf-red-aaa);   --color-destructive-subtle: var(--wmf-red-light);
+	--color-warning: var(--wmf-orange);        --color-warning-subtle: var(--wmf-orange-light);
+	--color-warning-text: #8a4b08;             /* derived: dark orange, AA on warning-subtle */
+
+	/* ---- Typography (Montserrat headings/UI, Source Serif 4 for prose) ----- */
+	--font-sans: "Montserrat", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+	--font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+	--font-weight-regular: 400;
+	--font-weight-medium: 600;
+	--font-weight-bold: 700;
+
+	/* ---- Spacing scale (4px base) ----------------------------------------- */
+	--space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+	--space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+	/* ---- Radius & elevation ----------------------------------------------- */
+	--radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-pill: 999px;
+	--shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+	--shadow-hover: 0 6px 18px rgba(0,0,0,.10);
+
+	/* ---- 3. COMPAT ALIASES (legacy names → semantic). Prefer layer 2 above. */
+	--white: var(--color-surface);
+	--base10: var(--color-text);
+	--base20: var(--color-text-secondary);
+	--base30: var(--color-text-muted);
+	--base80: var(--color-border);
+	--base90: var(--color-surface-muted);
+	--accent: var(--color-progressive);
+	--accent-hover: var(--color-progressive-hover);
+	--accent90: var(--color-progressive-subtle);
+	--green: var(--color-success);
+	--red: var(--color-destructive);
+	--yellow: var(--wmf-yellow);
+	--yellow30: var(--color-warning-text);
+	--radius: var(--radius-md);
+}
