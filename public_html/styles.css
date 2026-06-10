@@ -363,6 +363,57 @@ a:focus-visible, button:focus-visible, input:focus-visible,
 /* Tool page secondary links */
 .toolpage__sub { display: flex; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--base90); font-size: 14px; }
 
+/* ===== Tool card: title link + quick-look ===== */
+.tcard__title { color: var(--color-text); text-decoration: none; }
+.tcard__title:hover { color: var(--color-progressive); }
+.tcard__peek { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 8px;
+	border: 1px solid var(--color-border); background: #fff; color: var(--color-text-muted); cursor: pointer;
+	display: flex; align-items: center; justify-content: center; font-size: 14px;
+	opacity: 0; transition: opacity .15s ease, border-color .15s ease, color .15s ease; }
+.tcard:hover .tcard__peek, .tcard__peek:focus-visible { opacity: 1; }
+.tcard__peek:hover { border-color: var(--color-progressive); color: var(--color-progressive); }
+@media (hover: none) { .tcard__peek { opacity: 1; } }
+
+/* Real-icon avatars */
+.avatar--img { object-fit: cover; background: #fff; }
+.avatar--lg { width: 72px; height: 72px; font-size: 30px; border-radius: 16px; }
+
+/* At-a-glance chips */
+.toolpage__glance { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.glance { background: var(--color-surface-muted); color: var(--color-text-secondary); border: 1px solid var(--color-border);
+	border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+
+/* Tool page header with primary CTA + maintainers */
+.toolpage__id { flex: 1; min-width: 0; }
+.toolpage__cta { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; }
+.btn--lg { padding: 12px 22px; font-size: 15px; }
+.maint-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.maint-list li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.maint-list .avatar { width: 32px; height: 32px; font-size: 14px; border-radius: 8px; }
+@media (max-width: 720px) {
+	.toolpage__head { flex-wrap: wrap; }
+	.toolpage__cta { flex-direction: row; width: 100%; }
+	.toolpage__cta .btn { flex: 1; }
+}
+
+/* ===== Quick-view (peek) modal ===== */
+.qv { position: fixed; inset: 0; z-index: 60; background: rgba(16,20,30,.55); display: flex;
+	align-items: flex-start; justify-content: center; padding: 6vh 16px; overflow-y: auto; }
+.qv.hidden { display: none; }
+.qv__box { position: relative; background: #fff; border-radius: 16px; max-width: 560px; width: 100%;
+	box-shadow: 0 24px 64px rgba(0,0,0,.3); padding: 26px 28px; }
+.qv__x { position: absolute; top: 12px; right: 14px; border: none; background: none; font-size: 26px; line-height: 1; color: var(--color-text-muted); cursor: pointer; }
+.qv__x:hover { color: var(--color-text); }
+.qv__head { display: flex; gap: 14px; align-items: center; padding-right: 24px; }
+.qv__id { min-width: 0; }
+.qv__title { font-size: 22px; margin: 0; line-height: 1.2; }
+.qv__by { color: var(--color-text-secondary); font-size: 14px; margin-top: 2px; }
+.qv__status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+.qv__desc { font-family: var(--font-serif); line-height: 1.6; margin: 12px 0; }
+.qv__tags { margin: 12px 0; }
+.qv__actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.qv__actions .btn { flex: 1; text-align: center; min-width: 140px; }
+
 /* ============================ Experimental mode ========================== */
 /* When the toggle is OFF, every prospective feature is hidden. */
 body.exp-off .experimental { display: none !important; }

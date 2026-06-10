@@ -82,6 +82,7 @@ def compact(tool):
         "title": tool.get("title") or tool["name"],
         "description": tool.get("description") or "",
         "url": tool.get("url") or "",
+        "icon": tool.get("icon"),  # Commons File: URL (often null)
         "keywords": tool.get("keywords") or [],
         "maintainer": maintainer(tool),
         "authors": [a.get("name") for a in (tool.get("author") or []) if isinstance(a, dict) and a.get("name")],

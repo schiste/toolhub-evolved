@@ -24,6 +24,22 @@
 		const color = AVATAR_COLORS[hash(title || "?") % AVATAR_COLORS.length];
 		return `<span class="avatar ${cls || ""}" style="background:${color}" aria-hidden="true">${esc(ch)}</span>`;
 	}
+	// Commons "File:Foo.svg" page URL → a rendered thumbnail URL.
+	function commonsThumb(fileUrl, w) {
+		const m = /File:(.+)$/.exec(fileUrl || "");
+		if (!m) return null;
+		return "https://commons.wikimedia.org/wiki/Special:FilePath/" + encodeURIComponent(decodeURIComponent(m[1])) + "?width=" + w;
+	}
+	// Tool icon: real Commons image if the tool has one, else a letter avatar.
+	function toolIcon(t, variant) {
+		const px = variant === "lg" ? 72 : 48;
+		const cls = "avatar" + (variant === "lg" ? " avatar--lg" : "");
+		const thumb = commonsThumb(t.icon, px * 2);
+		if (thumb) {
+			return `<img class="${cls} avatar--img" src="${esc(thumb)}" alt="" width="${px}" height="${px}" loading="lazy" />`;
+		}
+		return avatar(t.title, variant === "lg" ? "avatar--lg" : "");
+	}
 	function relTime(iso) {
 		if (!iso) return "";
 		const days = Math.floor((Date.now() - new Date(iso)) / 86400000);
@@ -91,21 +107,22 @@
 			? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>`
 			: `<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>`;
 		const right = opts.popular ? viewsHtml : statusHtml;
-		const bookmark = opts.popular ? "" : `<span class="tcard__bookmark" aria-hidden="true">🔖</span>`;
+		// Quick-look opens a preview modal without leaving the listing.
+		const peek = `<button class="tcard__peek" type="button" data-peek="${esc(t.name)}" title="Quick look" aria-label="Quick look at ${esc(t.title)}">👁</button>`;
 		return `
-		<a class="tcard${opts.popular ? " tcard--popular" : ""}" href="#/tools/${encodeURIComponent(t.name)}" data-tool="${esc(t.name)}" aria-label="${esc(t.title)}">
-			${bookmark}
+		<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}">
+			${peek}
 			<div class="tcard__head">
-				${rank}${avatar(t.title)}
+				${rank}${toolIcon(t)}
 				<div class="tcard__heading">
-					<div class="tcard__title">${esc(t.title)}</div>
+					<a class="tcard__title" href="#/tools/${encodeURIComponent(t.name)}">${esc(t.title)}</a>
 					<div class="tcard__maint">by ${esc(t.maintainer)}</div>
 				</div>
 			</div>
 			<p class="tcard__desc">${esc(t.description)}</p>
 			<div class="tcard__tags">${tags}</div>
 			<div class="tcard__foot">${right}<span class="tcard__when">${esc(relTime(t.modified))}</span></div>
-		</a>`;
+		</article>`;
 	}
 	function listCard(l) {
 		return `
@@ -367,30 +384,46 @@
 			? `<h2 class="toolpage__h2">Related tools</h2>${grid("grid-tools", related, (x) => toolCard(x))}`
 			: "";
 
+		// At-a-glance chips (real metadata).
+		const glance = [
+			t.toolType && `<span class="glance">${esc(t.toolType)}</span>`,
+			t.license && `<span class="glance">${esc(t.license)}</span>`,
+			`<span class="glance">${esc(wikiLabel(t.forWikis))}</span>`,
+			(t.uiLanguages && t.uiLanguages.length) && `<span class="glance">${t.uiLanguages.length} language${t.uiLanguages.length > 1 ? "s" : ""}</span>`,
+		].filter(Boolean).join("");
+
+		const maintList = (t.authors && t.authors.length ? t.authors : [t.maintainer])
+			.map((a) => `<li>${avatar(a)}<span>${esc(a)}</span></li>`).join("");
+
 		const html = `
 		<div class="container page">
 			<a class="back" href="#/search">← Back to tools</a>
 			<header class="toolpage__head">
-				${avatar(t.title)}
+				${toolIcon(t, "lg")}
 				<div class="toolpage__id">
 					<h1 class="toolpage__title">${esc(t.title)}</h1>
 					<div class="toolpage__by">by ${authors}</div>
+					<div class="toolpage__glance">${glance}</div>
 					<div class="toolpage__row">
 						${realBadge}
-						<!-- EXPERIMENTAL — operational health. MISSING: no uptime/health-check
-						     backend; the API only stores deprecated/experimental booleans. -->
+						<!-- EXPERIMENTAL — operational health. MISSING: no uptime/health-check backend. -->
 						<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
 						<!-- EXPERIMENTAL — popularity. MISSING: no usage/view tracking in the API. -->
 						<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>
 						<span class="toolpage__when">${esc(relTime(t.modified))}</span>
 					</div>
 				</div>
+				<div class="toolpage__cta">
+					${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ↗</a>` : ""}
+					<!-- EXPERIMENTAL — save/bookmark. MISSING: needs an authenticated session. -->
+					<button class="btn btn--outline experimental" type="button">🔖 Save to a list</button>
+				</div>
 			</header>
 
 			<div class="toolpage__grid">
 				<div class="toolpage__main">
-					<!-- EXPERIMENTAL — screenshots/preview. MISSING: the toolinfo schema has no
-					     screenshot field and there is no image storage for tool previews. -->
+					<!-- EXPERIMENTAL — screenshots/preview. MISSING: no screenshot field in the
+					     toolinfo schema and no image storage for tool previews. -->
 					<div class="experimental shotstrip">
 						<div class="shot"></div><div class="shot"></div><div class="shot"></div>
 						<span class="exp-badge shotstrip__badge">Experimental · screenshots</span>
@@ -409,8 +442,7 @@
 						${metaItem("Audiences", (t.audiences || []).map(esc).join(", "))}
 					</div>
 
-					<!-- EXPERIMENTAL — ratings & reviews. MISSING: no reviews data model and no
-					     authenticated identity to attribute reviews to. Values shown are placeholder. -->
+					<!-- EXPERIMENTAL — ratings & reviews. MISSING: no reviews data model / auth. Placeholder values. -->
 					<div class="experimental reviews">
 						<h2 class="toolpage__h2">Reviews <span class="exp-badge">Experimental</span></h2>
 						<div class="reviews__agg">
@@ -432,9 +464,10 @@
 							<a href="#/tools/${encodeURIComponent(t.name)}/history">View history</a>
 							<a href="#/tools/${encodeURIComponent(t.name)}/edit">Suggest an edit</a>
 						</div>
-						<!-- EXPERIMENTAL — save/bookmark. MISSING: needs an authenticated session;
-						     the Toolhub favorites API write requires login. -->
-						<button class="btn btn--outline experimental toolpage__save" type="button">🔖 Save to a list</button>
+					</div>
+					<div class="panel">
+						<h2 class="panel__title">Maintainers</h2>
+						<ul class="maint-list">${maintList}</ul>
 					</div>
 					<!-- EXPERIMENTAL — usage stat. MISSING: no usage analytics in the API. -->
 					<div class="panel experimental">
@@ -769,6 +802,65 @@
 		new URLSearchParams(qs || "").forEach((v, k) => (query[k] = v));
 		return { path, query };
 	}
+	/* ---- Quick-view modal (peek from any listing) -------------------------- */
+	let qvLastFocus = null;
+	function quickViewBody(t) {
+		const st = t.status || { level: "green", label: "Healthy" };
+		const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
+		const tags = (t.keywords || []).slice(0, 6).map((k) => `<a class="tag" href="#/search?kw=${encodeURIComponent(k)}">${esc(k)}</a>`).join("");
+		const realBadge = (t.deprecated || t.experimental) ? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>` : "";
+		const glance = [
+			t.toolType && `<span class="glance">${esc(t.toolType)}</span>`,
+			t.license && `<span class="glance">${esc(t.license)}</span>`,
+			`<span class="glance">${esc(wikiLabel(t.forWikis))}</span>`,
+			(t.uiLanguages && t.uiLanguages.length) && `<span class="glance">${t.uiLanguages.length} language${t.uiLanguages.length > 1 ? "s" : ""}</span>`,
+		].filter(Boolean).join("");
+		return `
+			<div class="qv__head">${toolIcon(t, "lg")}
+				<div class="qv__id"><h2 class="qv__title" id="qv-title">${esc(t.title)}</h2>
+				<div class="qv__by">by ${authors}</div></div>
+			</div>
+			<div class="qv__status">
+				${realBadge}
+				<!-- EXPERIMENTAL — health/popularity (no API data) -->
+				<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
+				<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>
+				<span class="toolpage__when">${esc(relTime(t.modified))}</span>
+			</div>
+			<p class="qv__desc">${esc(t.description) || "<em>No description provided.</em>"}</p>
+			<div class="toolpage__glance">${glance}</div>
+			<div class="tcard__tags qv__tags">${tags}</div>
+			<div class="qv__actions">
+				${t.url ? `<a class="btn btn--primary" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ↗</a>` : ""}
+				<a class="btn btn--outline" href="#/tools/${encodeURIComponent(t.name)}">View full page →</a>
+			</div>`;
+	}
+	function openQuickView(name) {
+		const t = INDEX[name];
+		if (!t) { location.hash = "#/tools/" + encodeURIComponent(name); return; }
+		$("#qv-body").innerHTML = quickViewBody(t);
+		$("#qv").classList.remove("hidden");
+		document.body.style.overflow = "hidden";
+		qvLastFocus = document.activeElement;
+		$(".qv__x").focus();
+	}
+	function closeQuickView() {
+		const qv = $("#qv");
+		if (!qv || qv.classList.contains("hidden")) return;
+		qv.classList.add("hidden");
+		document.body.style.overflow = "";
+		if (qvLastFocus && qvLastFocus.focus) qvLastFocus.focus();
+	}
+	function qvTrap(e) {
+		const qv = $("#qv");
+		if (e.key !== "Tab" || qv.classList.contains("hidden")) return;
+		const f = qv.querySelectorAll('a[href],button,[tabindex]:not([tabindex="-1"])');
+		if (!f.length) return;
+		const first = f[0], last = f[f.length - 1];
+		if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+		else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+	}
+
 	function dispatch() {
 		const { path, query } = parseHash();
 		const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
@@ -814,6 +906,7 @@
 	}
 	let lastPath = null;
 	function render() {
+		closeQuickView(); // any navigation dismisses the peek modal
 		const view = dispatch();
 		const { path } = parseHash();
 		$("#view").innerHTML = view.html;
@@ -837,12 +930,22 @@
 	/* Keyword chips INSIDE a card anchor: intercept so they filter search
 	   instead of following the card's link to the tool page. */
 	$("#view").addEventListener("click", (e) => {
+		const peek = e.target.closest("[data-peek]");
+		if (peek) { e.preventDefault(); openQuickView(peek.getAttribute("data-peek")); return; }
 		const q = e.target.closest("[data-q]");
-		if (q && !q.matches("a[href]")) {
-			e.preventDefault();
-			location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q"));
-		}
+		if (q && !q.matches("a[href]")) { e.preventDefault(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); return; }
+		if (e.target.closest("a[href]")) return; // real links route natively
+		const card = e.target.closest("[data-tool]");
+		if (card) { location.hash = "#/tools/" + encodeURIComponent(card.getAttribute("data-tool")); }
 	});
+
+	/* Quick-view modal: backdrop/close + keyword chips, Esc + Tab-trap */
+	$("#qv").addEventListener("click", (e) => {
+		if (e.target.id === "qv" || e.target.closest("[data-qv-close]")) { e.preventDefault(); closeQuickView(); return; }
+		const q = e.target.closest("[data-q]");
+		if (q && !q.matches("a[href]")) { e.preventDefault(); closeQuickView(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); }
+	});
+	document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickView(); } else { qvTrap(e); } });
 
 	/* Experimental toggle: persist, flip body state, re-render so JS-conditional
 	   experimental logic (e.g. the sort options) updates too. */
