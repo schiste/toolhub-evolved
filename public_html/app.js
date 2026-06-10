@@ -93,24 +93,26 @@
 	/* ------------------------------------------------------------ card markup */
 	function toolCard(t, opts) {
 		opts = opts || {};
-		const st = t.status || { level: "green", label: "Healthy" };
-		const tags = (t.keywords || []).slice(0, 3).map((k) => `<span class="tag" data-q="${esc(k)}">${esc(k)}</span>`).join("");
+		// (3) Tags: 2 + "+N" overflow chip so every card is the same height.
+		const allk = t.keywords || [];
+		const tags = allk.slice(0, 2).map((k) => `<span class="tag" data-q="${esc(k)}">${esc(k)}</span>`).join("")
+			+ (allk.length > 2 ? `<span class="tag tag--more">+${allk.length - 2}</span>` : "");
 		const rank = opts.rank ? `<span class="rankbadge" aria-hidden="true">${opts.rank}</span>` : "";
-		// EXPERIMENTAL — popularity. MISSING: the Toolhub API exposes no usage/view
-		// data; weeklyViews is synthesized. Needs view instrumentation + aggregation.
-		const viewsHtml = `<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>`;
-		// `deprecated` / `experimental` are REAL flags and always shown. A plain
-		// "Healthy" is an assumption → EXPERIMENTAL. MISSING: no uptime/health check;
-		// Toolhub stores only the two booleans, not live operational status.
-		const realFlag = t.deprecated || t.experimental;
-		const statusHtml = realFlag
-			? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>`
-			: `<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>`;
-		const right = opts.popular ? viewsHtml : statusHtml;
-		// The whole card opens the quick-view (peek); the full page is reachable
-		// from there. Card is a keyboard-operable button.
+		// (1) Top-right shows ONLY the real deprecated/experimental flags (genuine
+		// warnings). The old assumed "Healthy" pill is gone (it had no real data).
+		let flag = "";
+		if (t.deprecated) flag = `<span class="tcard__flag status status--red"><span class="dot dot--red"></span>Deprecated</span>`;
+		else if (t.experimental) flag = `<span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>`;
+		// (1,2,4) Calm footer-left: real tool type + "works on" facet (no colour noise).
+		const meta = [t.toolType && esc(t.toolType), esc(wikiShort(t.forWikis))].filter(Boolean).join(" · ");
+		// EXPERIMENTAL — popularity (only the home "Popular" grid; shown when toggle on).
+		const footLeft = opts.popular
+			? `<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>`
+			: `<span class="tcard__meta">${meta}</span>`;
+		// The whole card opens the quick-view; (5) a hover cue signals the peek.
 		return `
 		<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
+			${flag}
 			<div class="tcard__head">
 				${rank}${toolIcon(t)}
 				<div class="tcard__heading">
@@ -120,7 +122,8 @@
 			</div>
 			<p class="tcard__desc">${esc(t.description)}</p>
 			<div class="tcard__tags">${tags}</div>
-			<div class="tcard__foot">${right}<span class="tcard__when">${esc(relTime(t.modified))}</span></div>
+			<div class="tcard__foot">${footLeft}<span class="tcard__when">${esc(relTime(t.modified))}</span></div>
+			<span class="tcard__hint" aria-hidden="true">🔍</span>
 		</article>`;
 	}
 	function listCard(l) {
@@ -358,6 +361,8 @@
 	}
 	const wikiLabel = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : a.map(esc).join(", "));
 	const langLabel = (a) => (!a || !a.length ? "English (default)" : a.map(esc).join(", "));
+	// Compact "works on" label for cards (full list shown on the detail page).
+	const wikiShort = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : (a.length === 1 ? a[0] : a.length + " wikis"));
 
 	function viewTool(name) {
 		const t = INDEX[name];
