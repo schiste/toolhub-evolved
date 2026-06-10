@@ -102,6 +102,8 @@ a:hover { text-decoration: underline; }
 	.layout__side { border-inline-start: 1px solid var(--base80); padding-inline-start: 44px; }
 }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 34px 0 21px; padding-bottom: 8px; border-bottom: 1px solid var(--base80); }
+/* First section sits close to the persona filters (no stacked top margin) */
+.layout__main > .section-head:first-child { margin-top: 0; }
 .section-head h2 { font-size: 21px; margin: 0; }
 .link { font-size: 13px; }
 
