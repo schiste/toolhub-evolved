@@ -865,6 +865,48 @@
 		else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 	}
 
+	/* ---- Account: logged-in user fixture + profile dropdown ---------------- */
+	const USER = { name: "Schiste" }; // demo fixture (a signed-in Wikimedia user)
+	const AUTH_KEY = "toolhub-auth";
+	function authIn() { return (localStorage.getItem(AUTH_KEY) || "in") !== "out"; } // default: signed in
+	function setAuth(on) { localStorage.setItem(AUTH_KEY, on ? "in" : "out"); renderAccount(); }
+	function renderAccount() {
+		const el = document.getElementById("account");
+		if (!el) return;
+		if (!authIn()) {
+			el.innerHTML = `<a class="btn btn--outline" href="#/login" data-login>Log in</a>`;
+			return;
+		}
+		el.innerHTML = `
+			<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu">
+				${avatar(USER.name, "avatar--sm")}
+				<span class="acct__name">${esc(USER.name)}</span>
+				<span class="acct__caret" aria-hidden="true">▾</span>
+			</button>
+			<div class="acct__menu" id="acct-menu" role="menu" aria-label="Account" hidden>
+				<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong></div>
+				<a role="menuitem" href="#/my-lists"><span aria-hidden="true">📋</span> Your lists</a>
+				<a role="menuitem" href="#/favorites"><span aria-hidden="true">⭐</span> Favorites</a>
+				<a role="menuitem" href="#/add-or-remove-tools"><span aria-hidden="true">🧰</span> Add or remove tools</a>
+				<a role="menuitem" href="#/developer-settings"><span aria-hidden="true">🔧</span> Developer settings</a>
+				<hr />
+				<button class="acct__logout" role="menuitem" type="button" data-logout><span aria-hidden="true">↪</span> Log out</button>
+			</div>`;
+	}
+	function closeAcctMenu() {
+		const m = document.getElementById("acct-menu"), b = document.getElementById("acct-btn");
+		if (m) m.hidden = true;
+		if (b) b.setAttribute("aria-expanded", "false");
+	}
+	function toggleAcctMenu() {
+		const m = document.getElementById("acct-menu"), b = document.getElementById("acct-btn");
+		if (!m) return;
+		const willOpen = m.hidden;
+		m.hidden = !willOpen;
+		b.setAttribute("aria-expanded", String(willOpen));
+		if (willOpen) { const first = m.querySelector("[role=menuitem]"); if (first) first.focus(); }
+	}
+
 	function dispatch() {
 		const { path, query } = parseHash();
 		const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
@@ -911,6 +953,7 @@
 	let lastPath = null;
 	function render() {
 		closeQuickView(); // any navigation dismisses the peek modal
+		closeAcctMenu();  // …and the account dropdown
 		const view = dispatch();
 		const { path } = parseHash();
 		$("#view").innerHTML = view.html;
@@ -953,7 +996,18 @@
 		const q = e.target.closest("[data-q]");
 		if (q && !q.matches("a[href]")) { e.preventDefault(); closeQuickView(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); }
 	});
-	document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickView(); } else { qvTrap(e); } });
+	document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeQuickView(); closeAcctMenu(); } else { qvTrap(e); } });
+
+	/* Account dropdown: toggle, log out / log in, close on outside click */
+	const accountEl = document.getElementById("account");
+	if (accountEl) accountEl.addEventListener("click", (e) => {
+		if (e.target.closest("#acct-btn")) { e.preventDefault(); toggleAcctMenu(); return; }
+		if (e.target.closest("[data-logout]")) { e.preventDefault(); closeAcctMenu(); setAuth(false); return; }
+		if (e.target.closest("[data-login]")) { e.preventDefault(); setAuth(true); return; }
+		if (e.target.closest("[role=menuitem]")) { closeAcctMenu(); } // links route natively
+	});
+	document.addEventListener("click", (e) => { if (!e.target.closest("#account")) closeAcctMenu(); });
+	renderAccount();
 
 	/* Experimental toggle: persist, flip body state, re-render so JS-conditional
 	   experimental logic (e.g. the sort options) updates too. */
