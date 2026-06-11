@@ -445,17 +445,17 @@ a:focus-visible, button:focus-visible, input:focus-visible,
 /* When the toggle is OFF, every prospective feature is hidden. */
 body.exp-off .experimental { display: none !important; }
 
-/* Prospective-features strip (below the header) */
-.expbar { border-bottom: 1px solid var(--base80); background: var(--color-surface-muted); }
-.expbar__inner { display: flex; align-items: center; padding-top: 8px; padding-bottom: 8px; }
+/* Prospective-features strip — very discreet (no background) */
+.expbar { background: none; }
+.expbar__inner { display: flex; align-items: center; padding-top: 5px; padding-bottom: 5px; }
 
-/* Compact toggle (role=switch) */
-.exp-toggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; font: inherit; color: var(--color-text-secondary); padding: 0; }
-.exp-toggle__track { width: 30px; height: 16px; border-radius: 999px; background: var(--color-border); position: relative; transition: background .15s; flex: 0 0 auto; }
-.exp-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+/* Tiny toggle (role=switch) */
+.exp-toggle { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; font: inherit; color: var(--color-text-muted); padding: 0; }
+.exp-toggle__track { width: 24px; height: 13px; border-radius: 999px; background: var(--color-border); position: relative; transition: background .15s; flex: 0 0 auto; }
+.exp-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 9px; height: 9px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
 .exp-toggle[aria-checked="true"] .exp-toggle__track { background: var(--wmf-purple); }
-.exp-toggle[aria-checked="true"] .exp-toggle__thumb { left: 16px; }
-.exp-toggle__label { font-size: 13px; font-weight: 600; }
+.exp-toggle[aria-checked="true"] .exp-toggle__thumb { left: 13px; }
+.exp-toggle__label { font-size: 12px; font-weight: 500; }
 .exp-toggle:hover .exp-toggle__label { color: var(--color-text); }
 
 /* "Experimental" pill shown inside prospective features (visible only when on) */
