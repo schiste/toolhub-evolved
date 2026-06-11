@@ -445,8 +445,10 @@ a:focus-visible, button:focus-visible, input:focus-visible,
 /* When the toggle is OFF, every prospective feature is hidden. */
 body.exp-off .experimental { display: none !important; }
 
-/* Prospective-features strip — very discreet (no background) */
-.expbar { background: none; }
+/* Prospective-features strip — very discreet, sits on the PAGE background
+   (transparent = white on inner pages; the hero tint on home) */
+.expbar { background: transparent; }
+.on-home .expbar { background: var(--accent90); }
 .expbar__inner { display: flex; align-items: center; padding-top: 5px; padding-bottom: 5px; }
 
 /* Tiny toggle (role=switch) */

@@ -957,6 +957,7 @@
 		const view = dispatch();
 		const { path } = parseHash();
 		$("#view").innerHTML = view.html;
+		document.body.classList.toggle("on-home", path === "/"); // expbar blends with the hero on home
 		document.title = view.title || "Toolhub";
 		if (typeof view.mount === "function") view.mount();
 		setActiveNav();
