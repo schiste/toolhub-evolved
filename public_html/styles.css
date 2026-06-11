@@ -71,6 +71,8 @@ a:hover { text-decoration: underline; }
 .acct__btn { display: flex; align-items: center; gap: 8px; height: 34px; background: none; border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 0 13px 0 3px; cursor: pointer; font: inherit; color: var(--color-text); }
 .acct__btn:hover { border-color: var(--color-progressive); }
 .avatar--sm { width: 26px; height: 26px; font-size: 13px; border-radius: 50%; }
+/* Profile avatar: a round 26px circle at the left of the username cartouche */
+.acct__btn .avatar { width: 26px; height: 26px; font-size: 13px; border-radius: 50%; flex: 0 0 auto; }
 .acct__name { font-size: 13px; font-weight: 600; }
 .acct__caret { color: var(--color-text-muted); font-size: 13px; }
 .acct__menu { position: absolute; right: 0; top: calc(100% + 8px); background: #fff; border: 1px solid var(--color-border);
