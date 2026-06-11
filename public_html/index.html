@@ -29,17 +29,23 @@
 			</nav>
 			<div class="nav__actions">
 				<a class="icon-btn" href="#/search">🔍 Search</a>
-				<button class="exp-toggle" id="exp-toggle" type="button" role="switch" aria-checked="true"
-					title="Show prospective features that need data/back-end we don't have yet">
-					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-					<span class="exp-toggle__label">Experimental</span>
-				</button>
 				<a class="btn btn--primary" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">＋ Submit a tool</a>
 				<!-- Account control (logged-in fixture / dropdown) rendered by app.js -->
 				<div class="acct" id="account"></div>
 			</div>
 		</div>
 	</header>
+
+	<!-- Prospective-features toggle (its own strip, below the header) -->
+	<div class="expbar">
+		<div class="container expbar__inner">
+			<button class="exp-toggle" id="exp-toggle" type="button" role="switch" aria-checked="true"
+				title="Reveal features that would need data or a back-end Toolhub doesn't expose yet (popularity, health, reviews…)">
+				<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
+				<span class="exp-toggle__label">Show me prospective features</span>
+			</button>
+		</div>
+	</div>
 
 	<!-- The router renders the active view here -->
 	<main id="view" tabindex="-1"></main>

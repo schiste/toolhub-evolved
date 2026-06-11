@@ -445,13 +445,18 @@ a:focus-visible, button:focus-visible, input:focus-visible,
 /* When the toggle is OFF, every prospective feature is hidden. */
 body.exp-off .experimental { display: none !important; }
 
-/* Header toggle (role=switch) */
-.exp-toggle { display: inline-flex; align-items: center; gap: 8px; height: 34px; background: none; border: none; cursor: pointer; font: inherit; color: var(--color-text-secondary); padding: 0 5px; }
-.exp-toggle__track { width: 34px; height: 21px; border-radius: 999px; background: var(--color-border); position: relative; transition: background .15s; flex: 0 0 auto; }
-.exp-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+/* Prospective-features strip (below the header) */
+.expbar { border-bottom: 1px solid var(--base80); background: var(--color-surface-muted); }
+.expbar__inner { display: flex; align-items: center; padding-top: 8px; padding-bottom: 8px; }
+
+/* Compact toggle (role=switch) */
+.exp-toggle { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; font: inherit; color: var(--color-text-secondary); padding: 0; }
+.exp-toggle__track { width: 30px; height: 16px; border-radius: 999px; background: var(--color-border); position: relative; transition: background .15s; flex: 0 0 auto; }
+.exp-toggle__thumb { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
 .exp-toggle[aria-checked="true"] .exp-toggle__track { background: var(--wmf-purple); }
-.exp-toggle[aria-checked="true"] .exp-toggle__thumb { left: 21px; }
+.exp-toggle[aria-checked="true"] .exp-toggle__thumb { left: 16px; }
 .exp-toggle__label { font-size: 13px; font-weight: 600; }
+.exp-toggle:hover .exp-toggle__label { color: var(--color-text); }
 
 /* "Experimental" pill shown inside prospective features (visible only when on) */
 .exp-badge { display: inline-block; vertical-align: middle; background: var(--wmf-purple); color: #fff; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; font-family: var(--font-sans); }
