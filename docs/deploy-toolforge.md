@@ -61,8 +61,8 @@ webservice restart            # or: sh ~/repo/tools/deploy.sh
   `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.
 - **Pagination:** upstream `next`/`previous` are absolute `toolhub.wikimedia.org`
   URLs; the SPA paginates with `?page=` through the proxy instead of following them.
-- **Rollback to the static-only site:** `webservice stop && webservice php8.2 start`
-  with `~/public_html` symlinked to `~/repo/public_html` (the data still falls back
-  to the bundled snapshot in `public_html/data.js`).
+- **No bundled catalog.** The SPA reads everything live through the proxy; there is
+  no snapshot to fall back to. If the API is unreachable, views show a clear
+  "Couldn't load live data" message rather than stale data.
 - **Fonts & privacy.** `index.html` loads Montserrat / Source Serif 4 from Google
   Fonts; self-host under `public_html/fonts/` for a privacy-respecting deploy.
