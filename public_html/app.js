@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/* Toolhub demonstrator — a small hash-routed multi-view app over a fixed
-   Toolhub API snapshot. Real catalog data; weeklyViews is synthesized
-   deterministically in build_data.py (the API has no popularity signal). */
+/* Toolhub demonstrator — a small hash-routed multi-view app that reads the
+   live, read-only Toolhub API through a same-origin proxy. Experimental
+   signals (weeklyViews, reviews, usage) are synthesized client-side and clearly
+   badged; the API has no popularity signal. */
 (function () {
-	const DATA = window.TOOLHUB_DATA || {};
 	const $ = (s, r) => (r || document).querySelector(s);
 	const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 
@@ -71,24 +71,59 @@
 	}
 	applyExp((localStorage.getItem(EXP_KEY) || "on") !== "off");
 
-	/* Index every tool we know about, for O(1) detail lookups. */
+	/* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
+	   as live data arrives (search results, lists, tool pages). No snapshot. */
 	const INDEX = {};
-	function indexTools(a) { (a || []).forEach((t) => { if (t && t.name && !INDEX[t.name]) INDEX[t.name] = t; }); }
-	indexTools(DATA.catalog); indexTools(DATA.featured); indexTools(DATA.recent); indexTools(DATA.popular);
-	(DATA.curatedLists || []).forEach((l) => indexTools(l.tools));
 
-	/* Facet options computed once from the full catalog. */
-	const CATALOG = DATA.catalog || [];
-	const TOOL_TYPES = (() => {
-		const m = {};
-		CATALOG.forEach((t) => { if (t.toolType) m[t.toolType] = (m[t.toolType] || 0) + 1; });
-		return Object.keys(m).sort((a, b) => m[b] - m[a]).map((k) => ({ key: k, count: m[k] }));
-	})();
-	const TOP_KEYWORDS = (() => {
-		const m = {};
-		CATALOG.forEach((t) => (t.keywords || []).forEach((k) => { m[k] = (m[k] || 0) + 1; }));
-		return Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 14);
-	})();
+	/* ===================================================================== LIVE API
+	   Every read goes through the same-origin proxy (/api → toolhub.wikimedia.org/api).
+	   Tool/list objects are normalized to the compact shape the views/cards expect.
+	   There is no bundled snapshot — the catalog is always the live one. */
+	const API_BASE = "/api";
+	async function apiGet(path, params) {
+		const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+		const res = await fetch(API_BASE + path + qs, { headers: { Accept: "application/json" } });
+		if (!res.ok) throw new Error("API " + res.status + " " + path);
+		return res.json();
+	}
+	function firstUrl(v) {
+		if (!v) return null;
+		if (typeof v === "string") return v;
+		if (Array.isArray(v) && v.length) { const x = v[0]; return x && typeof x === "object" ? x.url : x; }
+		return null;
+	}
+	// EXPERIMENTAL — popularity. MISSING: no usage/view data in the API; synthesized
+	// deterministically from the tool name so the "popular" ordering is stable.
+	function synthViews(name) { const h = hash(name), b = h % 100; return b >= 92 ? 1000 + (h % 1500) : b >= 70 ? 250 + (h % 750) : 20 + (h % 230); }
+	function statusOf(t) { return t.deprecated ? { level: "red", label: "Deprecated" } : t.experimental ? { level: "yellow", label: "Experimental" } : { level: "green", label: "Healthy" }; }
+	function normalizeTool(t) {
+		const ann = t.annotations || {};
+		const ra = t.author;
+		const authors = Array.isArray(ra)
+			? ra.map((a) => (a && a.name) || (typeof a === "string" ? a : null)).filter(Boolean)
+			: typeof ra === "string" && ra ? [ra] : [];
+		const o = {
+			name: t.name, title: t.title || t.name, description: t.description || "", url: t.url || "", icon: t.icon || null,
+			keywords: t.keywords || [], maintainer: authors[0] || (t.created_by && t.created_by.username) || "Unknown", authors,
+			toolType: t.tool_type || null, license: t.license || null, repository: t.repository || null, apiUrl: t.api_url || null,
+			technologyUsed: t.technology_used || [], audiences: ann.audiences || [], tasks: ann.tasks || [],
+			forWikis: t.for_wikis || [], uiLanguages: t.available_ui_languages || [],
+			userDocs: firstUrl(t.user_docs_url), devDocs: firstUrl(t.developer_docs_url), feedback: firstUrl(t.feedback_url),
+			bugtracker: t.bugtracker_url || null, translate: t.translate_url || null,
+			deprecated: !!t.deprecated, experimental: !!t.experimental, modified: t.modified_date || t.modified || null,
+		};
+		o.weeklyViews = synthViews(o.name);
+		o.status = statusOf(o);
+		INDEX[o.name] = o; // cache for quick-view
+		return o;
+	}
+	function normalizeList(l) {
+		const tools = (l.tools || []).map(normalizeTool);
+		return {
+			id: l.id, title: l.title || "Untitled list", description: l.description || "",
+			toolCount: tools.length, tools, featured: !!l.featured,
+		};
+	}
 
 	/* ------------------------------------------------------------ card markup */
 	function toolCard(t, opts) {
@@ -163,11 +198,24 @@
 	/* ==================================================================== views
 	   Each view returns { title, html, mount? }. mount() runs after injection. */
 
-	function viewHome() {
+	async function viewHome() {
+		// Live: total count, featured curated lists (with embedded tools), recent tools.
+		const [home, flists, recent] = await Promise.all([
+			apiGet("/ui/home/").catch(() => ({})),
+			apiGet("/lists/", { featured: "true", page_size: "6" }).catch(() => ({ results: [] })),
+			apiGet("/search/tools/", { ordering: "-modified_date", page_size: "5" }).catch(() => ({ results: [] })),
+		]);
+		const total = home.total_tools || 0;
+		const lists = (flists.results || []).map(normalizeList);
+		// "Featured tools" = the curated tools drawn from the featured lists (deduped).
+		const seen = new Set(), featured = [];
+		for (const l of lists) for (const t of l.tools) if (!seen.has(t.name)) { seen.add(t.name); featured.push(t); }
+		const recentTools = (recent.results || []).map(normalizeTool);
+
 		const personas = PERSONAS.map(([ic, l, q]) => `<a class="persona" href="#/search?q=${encodeURIComponent(q)}"><span aria-hidden="true">${ic}</span> ${l}</a>`).join("");
 		const needs = NEEDS.map(([ic, l, q]) => `<li><a href="#/search?q=${encodeURIComponent(q)}"><span aria-hidden="true">${ic}</span> ${l}<span class="need__chev" aria-hidden="true">›</span></a></li>`).join("");
 		const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${ic}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
-		const recent = (DATA.recent || []).slice(0, 5).map((t) => `
+		const recentHtml = recentTools.map((t) => `
 			<li><a href="#/tools/${encodeURIComponent(t.name)}">${avatar(t.title)}
 				<div><div class="recent__title">${esc(t.title)}</div>
 				<div class="recent__meta">Maintainer: ${esc(t.maintainer)}</div></div>
@@ -178,29 +226,29 @@
 			<h1 class="hero__title">Find the right Wikimedia tool faster</h1>
 			<form class="search" role="search" data-home-search>
 				<label for="home-q" class="skip-label">Search tools</label>
-				<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${fmt(DATA.totalTools)} tools…" autocomplete="off" />
+				<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${fmt(total)} tools…" autocomplete="off" />
 				<button class="btn btn--primary search__btn" type="submit">Search</button>
 			</form>
 		</section>
 		<section class="personas container"><span class="personas__label">I'm looking for tools for:</span><div class="personas__row">${personas}</div></section>
 		<div class="container layout">
 			<div class="layout__main">
-				<div class="section-head"><h2>Featured tools</h2><a class="link" href="#/lists/${(DATA.curatedLists[0] || {}).id || ""}">View all</a></div>
-				${grid("grid-tools", (DATA.featured || []).slice(0, 8), (t) => toolCard(t))}
+				<div class="section-head"><h2>Featured tools</h2><a class="link" href="#/lists/${(lists[0] || {}).id || ""}">View all</a></div>
+				${grid("grid-tools", featured.slice(0, 8), (t) => toolCard(t))}
 				<!-- EXPERIMENTAL — "Popular this week" ranks by weeklyViews.
-				     MISSING: no popularity/usage signal in the Toolhub API. -->
+				     MISSING: no popularity/usage signal in the Toolhub API; ranks shown here are synthetic. -->
 				<div class="experimental">
 					<div class="section-head"><h2>Popular this week <span class="exp-badge">Experimental</span></h2><a class="link" href="#/search?sort=views">View all</a></div>
-					${grid("grid-tools", (DATA.popular || []).slice(0, 8), (t, i) => toolCard(t, { rank: i + 1, popular: true }))}
+					${grid("grid-tools", featured.slice(0, 8), (t, i) => toolCard(t, { rank: i + 1, popular: true }))}
 				</div>
 				<div class="section-head"><h2>Curated lists</h2><a class="link" href="#/lists">View all lists</a></div>
-				${grid("grid-lists", (DATA.curatedLists || []).slice(0, 6), listCard)}
+				${grid("grid-lists", lists.slice(0, 6), listCard)}
 				<div class="section-head"><h2>Getting started</h2></div>
 				<div class="card-grid grid-steps">${steps}</div>
 			</div>
 			<aside class="layout__side">
 				<div class="panel"><h3 class="panel__title">Browse by need</h3><ul class="needs">${needs}</ul><a class="link panel__foot" href="#/search">View all categories</a></div>
-				<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recent}</ul></div>
+				<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
 				<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">💡</div><h3>Have a tool to share?</h3><p>Help the community by submitting your tool to Toolhub.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
 			</aside>
 		</div>`;
@@ -219,17 +267,62 @@
 
 	/* ---- Search / Browse (T2): facets + sort + pagination ------------------ */
 	const PAGE_SIZE = 12;
-	function viewSearch(params) {
-		const typeFacets = TOOL_TYPES.map(({ key, count }) =>
-			`<label class="facet"><input type="checkbox" name="type" value="${esc(key)}"> <span>${esc(key)}</span> <span class="facet__n">${count}</span></label>`).join("");
-		const kwFacets = TOP_KEYWORDS.map((k) =>
-			`<label class="facet"><input type="checkbox" name="kw" value="${esc(k)}"> <span>${esc(k)}</span></label>`).join("");
-
-		// "Most popular" sort relies on weeklyViews → EXPERIMENTAL.
-		// MISSING: no popularity signal in the API. Hidden when experimental is off.
+	// Facet groups we surface (a subset of the API's 11), in display order.
+	const FACET_GROUPS = [
+		{ field: "tool_type", label: "Tool type" }, { field: "keywords", label: "Keywords" },
+		{ field: "audiences", label: "Audience" }, { field: "ui_language", label: "Interface language" },
+		{ field: "license", label: "License" }, { field: "wiki", label: "Works on wiki" },
+	];
+	function renderFacetGroup(g, facets, selected) {
+		const wrap = facets && facets["_filter_" + g.field];
+		const inner = wrap && wrap[g.field];
+		if (!inner) return "";
+		const param = inner.meta && inner.meta.param;
+		const buckets = (inner.buckets || []).filter((b) => b.key !== "--" && b.doc_count > 0).slice(0, 10);
+		if (!buckets.length || !param) return "";
+		const rows = buckets.map((b) => {
+			const checked = selected.has(param + "=" + b.key) ? " checked" : "";
+			return `<label class="facet"><input type="checkbox" data-facet="${esc(param)}" value="${esc(b.key)}"${checked}> <span>${esc(b.key)}</span> <span class="facet__n">${b.doc_count}</span></label>`;
+		}).join("");
+		return `<div class="facet-group"><h2 class="facet-group__title">${esc(g.label)}</h2>${rows}</div>`;
+	}
+	async function viewSearch() {
+		const usp = new URLSearchParams(location.hash.split("?")[1] || "");
+		const q = usp.get("q") || "";
+		const page = Math.max(1, parseInt(usp.get("page")) || 1);
 		const exp = expOn();
-		const sortOpts = (exp ? `<option value="relevance">Most popular</option>` : "") +
-			`<option value="recent">Recently updated</option><option value="name">Name (A–Z)</option>`;
+		const defaultSort = exp ? "relevance" : "recent";
+		const sort = usp.get("sort") || defaultSort;
+		const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
+
+		// Live API params: q, paging, ordering + every *__term facet filter from the URL.
+		const api = new URLSearchParams();
+		if (q) api.set("q", q);
+		api.set("page", String(page));
+		api.set("page_size", String(PAGE_SIZE));
+		if (ordering) api.set("ordering", ordering);
+		const selected = new Set();
+		for (const [k, v] of usp.entries()) {
+			if (k.endsWith("__term")) { api.append(k, v); selected.add(k + "=" + v); }
+		}
+
+		const data = await apiGet("/search/tools/", api);
+		const results = (data.results || []).map(normalizeTool);
+		const total = data.count || 0;
+		const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+		const facetHTML = FACET_GROUPS.map((g) => renderFacetGroup(g, data.facets, selected)).join("");
+
+		const sortOpts = (exp ? '<option value="relevance">Most relevant</option>' : "") +
+			'<option value="recent">Recently updated</option><option value="name">Name (A–Z)</option>';
+		const pagerHTML = (() => {
+			if (pages <= 1) return "";
+			const btn = (p, label, dis, cur) => `<button class="pager__btn${cur ? " is-current" : ""}" ${dis ? "disabled" : ""} data-page="${p}"${cur ? ' aria-current="page"' : ""}>${label}</button>`;
+			let out = btn(page - 1, "‹ Prev", page <= 1), last = 0;
+			const win = [];
+			for (let p = 1; p <= pages; p++) if (p === 1 || p === pages || Math.abs(p - page) <= 2) win.push(p);
+			win.forEach((p) => { if (p - last > 1) out += '<span class="pager__gap">…</span>'; out += btn(p, p, false, p === page); last = p; });
+			return out + btn(page + 1, "Next ›", page >= pages);
+		})();
 
 		const html = `
 		<div class="container page">
@@ -238,111 +331,40 @@
 				<aside class="facets" aria-label="Filters">
 					<form data-facet-q role="search">
 						<label for="facet-q" class="skip-label">Search within tools</label>
-						<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" />
+						<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="${esc(q)}" />
 					</form>
-					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2>${typeFacets || '<p class="facet__empty">—</p>'}</div>
-					<div class="facet-group"><h2 class="facet-group__title">Keywords</h2>${kwFacets}</div>
-					<button type="button" class="btn btn--outline facets__reset" data-facet-reset>Clear filters</button>
+					${facetHTML || '<p class="facet__empty">No filters available.</p>'}
+					<a class="btn btn--outline facets__reset" href="#/search">Clear filters</a>
 				</aside>
 				<div class="browse__main">
 					<div class="browse__bar">
-						<span id="result-count" class="browse__count" aria-live="polite"></span>
-						<label class="sort"><span class="skip-label">Sort by</span>
-							<select id="sort">${sortOpts}</select>
-						</label>
+						<span class="browse__count" aria-live="polite">${fmt(total)} tool${total === 1 ? "" : "s"}${q ? ` for &ldquo;${esc(q)}&rdquo;` : ""}</span>
+						<label class="sort"><span class="skip-label">Sort by</span><select id="sort">${sortOpts}</select></label>
 					</div>
-					<div id="search-results" class="card-grid grid-tools"></div>
-					<nav id="search-pager" class="pager" aria-label="Pagination"></nav>
+					<div class="card-grid grid-tools">${results.length ? results.map((t) => toolCard(t)).join("") : '<p class="empty">No tools match these filters.</p>'}</div>
+					<nav class="pager" aria-label="Pagination">${pagerHTML}</nav>
 				</div>
-			</div>
-		</div>`;
+			</div>`;
 
 		function mount() {
-			// hydrate controls from URL
-			$("#facet-q").value = params.q || "";
-			const allowedSorts = exp ? ["relevance", "recent", "name"] : ["recent", "name"];
-			$("#sort").value = allowedSorts.includes(params.sort) ? params.sort : (exp ? "relevance" : "recent");
-			const pre = (name, csv) => (csv ? csv.split(",") : []).forEach((v) => {
-				const el = $(`input[name="${name}"][value="${CSS.escape(v)}"]`); if (el) el.checked = true;
-			});
-			pre("type", params.type); pre("kw", params.kw);
-			let page = Math.max(1, parseInt(params.page) || 1);
-
-			function readState() {
-				return {
-					q: $("#facet-q").value.trim(),
-					type: $$('input[name="type"]:checked').map((e) => e.value),
-					kw: $$('input[name="kw"]:checked').map((e) => e.value),
-					sort: $("#sort").value,
-				};
-			}
-			function filterSort(s) {
-				let out = CATALOG.filter((t) => {
-					if (s.type.length && !s.type.includes(t.toolType)) return false;
-					if (s.kw.length && !s.kw.some((k) => (t.keywords || []).includes(k))) return false;
-					if (s.q) {
-						const hay = [t.title, t.description, t.maintainer, (t.keywords || []).join(" "), (t.audiences || []).join(" ")].join(" ").toLowerCase();
-						if (!hay.includes(s.q.toLowerCase())) return false;
-					}
-					return true;
-				});
-				if (s.sort === "name") out.sort((a, b) => a.title.localeCompare(b.title));
-				else if (s.sort === "recent") out.sort((a, b) => new Date(b.modified) - new Date(a.modified));
-				else out.sort((a, b) => b.weeklyViews - a.weeklyViews);
-				return out;
-			}
-			function pager(total, cur) {
-				const pages = Math.ceil(total / PAGE_SIZE);
-				if (pages <= 1) return "";
-				const btn = (p, label, dis, cur2) =>
-					`<button class="pager__btn${cur2 ? " is-current" : ""}" ${dis ? "disabled" : ""} data-page="${p}"${cur2 ? ' aria-current="page"' : ""}>${label}</button>`;
-				let out = btn(cur - 1, "‹ Prev", cur <= 1);
-				const win = [];
-				for (let p = 1; p <= pages; p++) if (p === 1 || p === pages || Math.abs(p - cur) <= 2) win.push(p);
-				let last = 0;
-				win.forEach((p) => { if (p - last > 1) out += `<span class="pager__gap">…</span>`; out += btn(p, p, false, p === cur); last = p; });
-				out += btn(cur + 1, "Next ›", cur >= pages);
-				return out;
-			}
-			function apply(updateHash) {
-				const s = readState();
-				const results = filterSort(s);
-				const pages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
-				if (page > pages) page = pages;
-				const slice = results.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-				$("#result-count").textContent = `${fmt(results.length)} tool${results.length === 1 ? "" : "s"}`;
-				$("#search-results").innerHTML = slice.length
-					? slice.map((t) => toolCard(t)).join("")
-					: `<p class="empty">No tools match these filters. <button class="linkbtn" data-facet-reset>Clear filters</button></p>`;
-				$("#search-pager").innerHTML = pager(results.length, page);
-				if (updateHash) {
-					const qs = new URLSearchParams();
-					if (s.q) qs.set("q", s.q);
-					if (s.type.length) qs.set("type", s.type.join(","));
-					if (s.kw.length) qs.set("kw", s.kw.join(","));
-					if (s.sort !== "relevance") qs.set("sort", s.sort);
-					if (page > 1) qs.set("page", page);
-					const str = qs.toString();
-					history.replaceState(null, "", "#/search" + (str ? "?" + str : ""));
-				}
-			}
-			// events
-			$(".facets").addEventListener("change", () => { page = 1; apply(true); });
-			$("[data-facet-q]").addEventListener("submit", (e) => { e.preventDefault(); page = 1; apply(true); });
-			$("#facet-q").addEventListener("input", debounce(() => { page = 1; apply(true); }, 250));
-			$("#search-pager").addEventListener("click", (e) => {
+			$("#sort").value = sort;
+			const navigate = (extra) => {
+				const u = new URLSearchParams();
+				const qv = $("#facet-q").value.trim(); if (qv) u.set("q", qv);
+				$$(".facets input[type=checkbox]:checked").forEach((c) => u.append(c.getAttribute("data-facet"), c.value));
+				const sv = $("#sort").value; if (sv && sv !== defaultSort) u.set("sort", sv);
+				if (extra && extra.page > 1) u.set("page", String(extra.page));
+				location.hash = "#/search" + (u.toString() ? "?" + u.toString() : "");
+			};
+			$(".facets").addEventListener("change", () => navigate({}));
+			$("#sort").addEventListener("change", () => navigate({}));
+			$("[data-facet-q]").addEventListener("submit", (e) => { e.preventDefault(); navigate({}); });
+			$(".pager").addEventListener("click", (e) => {
 				const b = e.target.closest("[data-page]"); if (!b) return;
-				page = parseInt(b.getAttribute("data-page")); apply(true);
-				$(".browse__bar").scrollIntoView({ behavior: scrollBehavior, block: "start" });
+				navigate({ page: parseInt(b.getAttribute("data-page")) });
 			});
-			$(".browse__main").addEventListener("click", (e) => {
-				if (e.target.closest("[data-facet-reset]")) { reset(); }
-			});
-			$(".facets__reset").addEventListener("click", reset);
-			function reset() { $("#facet-q").value = ""; $$('.facets input[type=checkbox]').forEach((c) => (c.checked = false)); page = 1; apply(true); }
-			apply(false);
 		}
-		return { title: "Browse tools — Toolhub", html, mount };
+		return { title: q ? `“${q}” — Toolhub` : "Browse tools — Toolhub", html, mount };
 	}
 	function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
@@ -350,25 +372,25 @@
 	function metaItem(k, v) { return `<div><div class="meta__k">${k}</div><div class="meta__v">${v || "—"}</div></div>`; }
 	function linkOut(label, url) { const u = safeUrl(url); return u ? `<a class="btn btn--outline" href="${u}" target="_blank" rel="noopener">${label} ↗</a>` : ""; }
 	// REAL — related tools derived from shared keywords (no missing data).
-	function relatedTools(t) {
-		const kws = new Set(t.keywords || []);
-		if (!kws.size) return [];
-		return CATALOG
-			.filter((o) => o.name !== t.name && (o.keywords || []).some((k) => kws.has(k)))
-			.map((o) => ({ o, score: (o.keywords || []).filter((k) => kws.has(k)).length }))
-			.sort((a, b) => b.score - a.score || new Date(b.o.modified) - new Date(a.o.modified))
-			.slice(0, 4).map((x) => x.o);
+	async function relatedTools(t) {
+		const kw = (t.keywords || [])[0];
+		if (!kw) return [];
+		try {
+			const data = await apiGet("/search/tools/", { keywords__term: kw, page_size: "5" });
+			return (data.results || []).map(normalizeTool).filter((o) => o.name !== t.name).slice(0, 4);
+		} catch (e) { return []; }
 	}
 	const wikiLabel = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : a.map(esc).join(", "));
 	const langLabel = (a) => (!a || !a.length ? "English (default)" : a.map(esc).join(", "));
 	// Compact "works on" label for cards (full list shown on the detail page).
 	const wikiShort = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : (a.length === 1 ? a[0] : a.length + " wikis"));
 
-	function viewTool(name) {
-		const t = INDEX[name];
-		if (!t) return viewNotFound();
+	async function viewTool(name) {
+		let t;
+		try { t = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); }
+		catch (e) { return viewNotFound(); }
 		const st = t.status || { level: "green", label: "Healthy" };
-		const tags = (t.keywords || []).map((k) => `<a class="tag" href="#/search?kw=${encodeURIComponent(k)}">${esc(k)}</a>`).join("") || "—";
+		const tags = (t.keywords || []).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}">${esc(k)}</a>`).join("") || "—";
 		const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
 
 		// REAL links — render only the ones present on the record.
@@ -383,7 +405,7 @@
 		const realBadge = (t.deprecated || t.experimental)
 			? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>` : "";
 
-		const related = relatedTools(t);
+		const related = await relatedTools(t);
 		const relatedHtml = related.length
 			? `<h2 class="toolpage__h2">Related tools</h2>${grid("grid-tools", related, (x) => toolCard(x))}`
 			: "";
@@ -485,24 +507,27 @@
 	}
 
 	/* ---- Lists overview + list detail -------------------------------------- */
-	function viewLists() {
+	async function viewLists() {
+		const data = await apiGet("/lists/", { page_size: "30" }).catch(() => ({ results: [] }));
+		const lists = (data.results || []).map(normalizeList);
 		const html = `
 		<div class="container page">
 			<h1 class="page__title">Curated lists</h1>
-			<p class="page__intro">Hand-picked collections of tools for specific tasks and communities.</p>
-			${grid("grid-lists", DATA.curatedLists || [], listCard)}
+			<p class="page__intro">Community-published collections of tools for specific tasks and communities.</p>
+			${lists.length ? grid("grid-lists", lists, listCard) : '<p class="empty">No lists found.</p>'}
 		</div>`;
 		return { title: "Curated lists — Toolhub", html };
 	}
-	function viewList(id) {
-		const l = (DATA.curatedLists || []).find((x) => String(x.id) === String(id));
-		if (!l) return viewNotFound();
+	async function viewList(id) {
+		let l;
+		try { l = normalizeList(await apiGet("/lists/" + encodeURIComponent(id) + "/")); }
+		catch (e) { return viewNotFound(); }
 		const html = `
 		<div class="container page">
 			<a class="back" href="#/lists">← All lists</a>
 			<h1 class="page__title">${esc(l.title)} <span class="lcard__count">${l.toolCount} tools</span></h1>
 			<div class="prose page__intro">${esc(l.description)}</div>
-			${grid("grid-tools", l.tools || [], (t) => toolCard(t))}
+			${l.tools.length ? grid("grid-tools", l.tools, (t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
 		</div>`;
 		return { title: `${l.title} — Toolhub`, html };
 	}
@@ -537,8 +562,8 @@
 			encouraged but not required. Sign in with your existing Wikimedia account — no
 			new account or password is needed.</p>
 			<p>Want to help build Toolhub itself? See ${"<a href=\"#/contribute\">Help maintain Toolhub</a>"}.</p>
-			<blockquote>This is a design prototype built on a fixed snapshot of the public
-			Toolhub API — not the production site.</blockquote>` },
+			<blockquote>This is a design prototype that reads live, read-only data from the
+			public Toolhub API — not the production site.</blockquote>` },
 		help: { title: "Help", body: `
 			<p>New to Toolhub? Here is the quickest path to finding and sharing tools. Sign
 			in with your Wikimedia account (via OAuth) to save favourites and edit listings —
@@ -670,67 +695,80 @@
 		return { title: "Help maintain Toolhub", html };
 	}
 	/* ---- Parity pages: data-driven (read-only) ----------------------------- */
-	// Recent changes — real, from modified dates.
-	function viewRecent() {
-		const items = [...CATALOG].sort((a, b) => new Date(b.modified) - new Date(a.modified)).slice(0, 30);
-		const rows = items.map((t) => `
-			<li><a href="#/tools/${encodeURIComponent(t.name)}">
-				<span class="feed__ic" aria-hidden="true">✎</span>
-				<span class="feed__main"><strong>${esc(t.title)}</strong> updated by ${esc(t.maintainer)}</span>
-				<span class="feed__when">${esc(relTime(t.modified))}</span></a></li>`).join("");
+	// Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
+	async function viewRecent() {
+		const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
+		const rows = (data.results || []).map((r) => {
+			const title = esc(r.content_title || r.content_id || "—");
+			const who = esc((r.user && r.user.username) || "system");
+			const inner = `<span class="feed__ic" aria-hidden="true">✎</span>
+				<span class="feed__main"><strong>${title}</strong> <span class="feed__sub">${r.content_type || "item"} · ${who}</span></span>
+				<span class="feed__when">${esc(relTime(r.timestamp))}</span>`;
+			const link = r.content_type === "tool" && r.content_id ? "#/tools/" + encodeURIComponent(r.content_id) : null;
+			return link ? `<li><a href="${link}">${inner}</a></li>` : `<li><div class="feed__static">${inner}</div></li>`;
+		}).join("");
 		return { title: "Recent changes — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Recent changes</h1>
-				<p class="page__intro">The latest edits to tools in the catalog.</p>
-				<ul class="feed">${rows}</ul>
+				<p class="page__intro">The latest edits across the catalog.</p>
+				<ul class="feed">${rows || '<li><div class="feed__static">No recent changes.</div></li>'}</ul>
 			</div>` };
 	}
-	// Members — real, derived from tool authors/maintainers.
-	function viewMembers() {
-		const counts = {};
-		CATALOG.forEach((t) => (t.authors && t.authors.length ? t.authors : [t.maintainer]).forEach((a) => { if (a) counts[a] = (counts[a] || 0) + 1; }));
-		const members = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 60);
-		const cards = members.map((n) => `
-			<div class="mcard">${avatar(n)}<div class="mcard__b">
-				<div class="mcard__n">${esc(n)}</div>
-				<div class="mcard__c">${counts[n]} tool${counts[n] > 1 ? "s" : ""}</div></div></div>`).join("");
+	// Members — live from /api/users/.
+	async function viewMembers() {
+		const data = await apiGet("/users/", { page_size: "60" }).catch(() => ({ results: [], count: 0 }));
+		const cards = (data.results || []).map((u) => {
+			const meta = u.groups && u.groups.length ? esc(u.groups.join(", ")) : "Member";
+			return `<div class="mcard">${avatar(u.username)}<div class="mcard__b">
+				<div class="mcard__n">${esc(u.username)}</div>
+				<div class="mcard__c">${meta} · joined ${esc(relTime(u.date_joined))}</div></div></div>`;
+		}).join("");
 		return { title: "Members — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Members</h1>
-				<p class="page__intro">Maintainers and authors who have tools in the catalog.</p>
+				<p class="page__intro">${fmt(data.count || 0)} registered Wikimedians contribute to the catalog.</p>
 				<div class="mgrid">${cards}</div>
 			</div>` };
 	}
-	// Crawler history — uses the real last-crawl timestamp.
-	function viewCrawler() {
-		const last = DATA.lastCrawlTime ? new Date(DATA.lastCrawlTime).toUTCString() : "unknown";
+	// Crawler history — live from /api/crawler/runs/.
+	async function viewCrawler() {
+		const data = await apiGet("/crawler/runs/", { page_size: "12" }).catch(() => ({ results: [] }));
+		const runs = data.results || [];
+		const last = runs[0] || {};
+		const rows = runs.map((r) => `
+			<tr><td>${esc(relTime(r.start_date))}</td><td>${fmt(r.crawled_urls || 0)}</td>
+			<td>${fmt(r.new_tools || 0)}</td><td>${fmt(r.updated_tools || 0)}</td><td>${fmt(r.total_tools || 0)}</td></tr>`).join("");
 		return { title: "Crawler history — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Crawler history</h1>
 				<p class="page__intro">Toolhub re-reads every registered <code>toolinfo.json</code> URL roughly hourly and updates the catalog with any changes.</p>
 				<div class="detail__meta">
-					${metaItem("Last crawl", esc(last))}
-					${metaItem("Tools in catalog", fmt(DATA.totalTools))}
-					${metaItem("Changes in last run", String(DATA.lastCrawlChanged != null ? DATA.lastCrawlChanged : 0))}
+					${metaItem("Last crawl", esc(relTime(last.start_date)))}
+					${metaItem("URLs crawled", fmt(last.crawled_urls || 0))}
+					${metaItem("Updated in last run", fmt(last.updated_tools || 0))}
 				</div>
-				<p class="signin-note">Full per-run crawl logs are available on the live site.</p>
+				<table class="runs">
+					<thead><tr><th>Run</th><th>URLs</th><th>New</th><th>Updated</th><th>Total</th></tr></thead>
+					<tbody>${rows}</tbody>
+				</table>
 			</div>` };
 	}
-	// Audit log — illustrative feed built from catalog activity.
-	function viewAudit() {
-		const items = [...CATALOG].sort((a, b) => new Date(b.modified) - new Date(a.modified)).slice(0, 20);
-		const verbs = ["updated", "published", "annotated", "created"];
-		const rows = items.map((t) => `
-			<li><a href="#/tools/${encodeURIComponent(t.name)}">
+	// Audit logs — live from /api/auditlogs/.
+	async function viewAudit() {
+		const data = await apiGet("/auditlogs/", { page_size: "25" }).catch(() => ({ results: [] }));
+		const rows = (data.results || []).map((a) => {
+			const who = esc((a.user && a.user.username) || "System");
+			const tgt = a.target ? `${esc(a.target.type)} “${esc(a.target.label)}”` : "";
+			return `<li><div class="feed__static">
 				<span class="feed__ic" aria-hidden="true">📝</span>
-				<span class="feed__main">${esc(t.maintainer)} ${verbs[hash(t.name) % verbs.length]} <strong>${esc(t.title)}</strong></span>
-				<span class="feed__when">${esc(relTime(t.modified))}</span></a></li>`).join("");
+				<span class="feed__main">${who} <em>${esc(a.action || "changed")}</em> ${tgt}</span>
+				<span class="feed__when">${esc(relTime(a.timestamp))}</span></div></li>`;
+		}).join("");
 		return { title: "Audit logs — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Audit logs</h1>
 				<p class="page__intro">A record of changes across the catalog, for patrollers and administrators.</p>
-				<ul class="feed">${rows}</ul>
-				<p class="signin-note">Illustrative feed for the prototype; the live audit log is backed by the API.</p>
+				<ul class="feed">${rows || '<li><div class="feed__static">No audit entries.</div></li>'}</ul>
 			</div>` };
 	}
 	// API docs — embed the live interactive documentation.
@@ -743,24 +781,23 @@
 			</div>` };
 	}
 	// Tool revision history — illustrative, from the tool's modified date.
-	function viewToolHistory(name) {
-		const t = INDEX[name];
-		if (!t) return viewNotFound();
-		const base = t.modified ? new Date(t.modified).getTime() : Date.now();
-		const revs = [0, 1, 2, 3].map((i) => {
-			const d = new Date(base - i * (3 + (hash(t.name + i) % 25)) * 86400000);
-			return { id: 1000 + (hash(t.name) % 9000) - i, when: d.toISOString(), who: t.maintainer };
-		});
+	async function viewToolHistory(name) {
+		const [t, data] = await Promise.all([
+			apiGet("/tools/" + encodeURIComponent(name) + "/").then(normalizeTool).catch(() => null),
+			apiGet("/tools/" + encodeURIComponent(name) + "/revisions/", { page_size: "20" }).catch(() => ({ results: [] })),
+		]);
+		const revs = data.results || [];
+		if (!t && !revs.length) return viewNotFound();
+		const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
 		const rows = revs.map((r, i) => `
 			<li><span class="feed__ic" aria-hidden="true">🕓</span>
-				<span class="feed__main">Revision by <strong>${esc(r.who)}</strong> · ${esc(relTime(r.when))}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
-				<a class="feed__when" href="#/tools/${encodeURIComponent(t.name)}/history/revision/${r.id}/diff/${r.id - 1}">view changes</a></li>`).join("");
-		return { title: `History: ${t.title} — Toolhub`, html: `
+				<span class="feed__main">Revision by <strong>${esc((r.user && r.user.username) || "system")}</strong> · ${esc(relTime(r.timestamp))}${r.comment ? " — " + esc(r.comment) : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+				<span class="feed__when">#${esc(String(r.id))}</span></li>`).join("");
+		return { title: `History: ${title} — Toolhub`, html: `
 			<div class="container page">
-				<a class="back" href="#/tools/${encodeURIComponent(t.name)}">← Back to ${esc(t.title)}</a>
+				<a class="back" href="#/tools/${encodeURIComponent(name)}">← Back to ${esc(title)}</a>
 				<h1 class="page__title">Revision history</h1>
-				<ul class="feed">${rows}</ul>
-				<p class="signin-note">Illustrative history for the prototype; full revisions and diffs are on the live site.</p>
+				<ul class="feed">${rows || '<li><div class="feed__static">No revisions recorded.</div></li>'}</ul>
 			</div>` };
 	}
 	function viewDiffStub(name) {
@@ -811,7 +848,7 @@
 	function quickViewBody(t) {
 		const st = t.status || { level: "green", label: "Healthy" };
 		const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
-		const tags = (t.keywords || []).slice(0, 6).map((k) => `<a class="tag" href="#/search?kw=${encodeURIComponent(k)}">${esc(k)}</a>`).join("");
+		const tags = (t.keywords || []).slice(0, 6).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}">${esc(k)}</a>`).join("");
 		const realBadge = (t.deprecated || t.experimental) ? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>` : "";
 		const glance = [
 			t.toolType && `<span class="glance">${esc(t.toolType)}</span>`,
@@ -839,9 +876,12 @@
 				<a class="btn btn--outline" href="#/tools/${encodeURIComponent(t.name)}">View full page →</a>
 			</div>`;
 	}
-	function openQuickView(name) {
-		const t = INDEX[name];
-		if (!t) { location.hash = "#/tools/" + encodeURIComponent(name); return; }
+	async function openQuickView(name) {
+		let t = INDEX[name];
+		if (!t) {
+			try { t = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); }
+			catch (e) { location.hash = "#/tools/" + encodeURIComponent(name); return; }
+		}
 		$("#qv-body").innerHTML = quickViewBody(t);
 		$("#qv").classList.remove("hidden");
 		document.body.style.overflow = "hidden";
@@ -951,17 +991,26 @@
 		});
 	}
 	let lastPath = null;
-	function render() {
+	let navSeq = 0;
+	const loadingHTML = () => '<div class="container page loading"><span class="spinner" role="status" aria-label="Loading"></span></div>';
+	const errorHTML = (e) => '<div class="container page errorpage"><h1>Couldn\'t load live data</h1>'
+		+ '<p class="prose">The Toolhub API didn\'t respond (' + esc(String((e && e.message) || e)) + ').</p>'
+		+ '<a class="btn btn--primary" href="#/">Back to home</a></div>';
+	async function render() {
 		closeQuickView(); // any navigation dismisses the peek modal
 		closeAcctMenu();  // …and the account dropdown
-		const view = dispatch();
+		const seq = ++navSeq;
 		const { path } = parseHash();
+		if (path !== lastPath) $("#view").innerHTML = loadingHTML(); // spinner only on real page change
+		let view;
+		try { view = await dispatch(); }
+		catch (e) { view = { title: "Error — Toolhub", html: errorHTML(e) }; }
+		if (seq !== navSeq) return; // a newer navigation superseded this one
 		$("#view").innerHTML = view.html;
 		document.body.classList.toggle("on-home", path === "/"); // expbar blends with the hero on home
 		document.title = view.title || "Toolhub";
 		if (typeof view.mount === "function") view.mount();
 		setActiveNav();
-		// Only reset scroll/focus on a real page change (not in-page filter sync).
 		if (path !== lastPath) {
 			window.scrollTo({ top: 0, behavior: "auto" });
 			const h1 = $("#view h1") || $("#view");
