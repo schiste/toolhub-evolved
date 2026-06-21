@@ -1,36 +1,46 @@
 # Deploying to Wikimedia Toolforge
 
-Toolforge Evolved is a **static** site (HTML/CSS/JS only — the data is baked into
-`public_html/data.js`). It uses **hash routing** (`#/...`) and **relative** asset
-paths, so it works under any base URL with no server-side rewrites. The simplest
-way to host it is a lighttpd/PHP webservice serving `~/public_html`.
+Toolhub Evolved runs as a small **Python (Flask) webservice** that does two things
+(`proxy/app.py`):
+
+1. Serves the static single-page app from `public_html/`.
+2. Reverse-proxies read-only `GET /api/*` to the live Toolhub API
+   (`toolhub.wikimedia.org`) **same-origin**, so the browser can read live
+   catalog data without hitting CORS (the upstream API sends no CORS headers).
+
+The app uses hash routing (`#/…`) and relative asset paths, so it works under any
+base URL with no rewrite rules.
 
 ## Prerequisites
 
 - A [Wikimedia developer account](https://www.mediawiki.org/wiki/Developer_access).
-- Membership in a Toolforge **tool** account. Create one at
-  [toolsadmin.wikimedia.org](https://toolsadmin.wikimedia.org/) — e.g. a tool named
-  `toolhub-evolved`, served at `https://toolhub-evolved.toolforge.org/`.
+- A Toolforge **tool** account (e.g. `toolhub-evolved`), created at
+  [toolsadmin.wikimedia.org](https://toolsadmin.wikimedia.org/), served at
+  `https://toolhub-evolved.toolforge.org/`.
 
 ## First-time deploy
 
 ```sh
-# 1. SSH in and become the tool
-ssh <your-shell-name>@login.toolforge.org
-become toolhub-evolved        # use your tool's name
+ssh login.toolforge.org
+become toolhub-evolved
 
-# 2. Clone the repository into the tool's home
+# 1. Clone the repo
 git clone https://github.com/schiste/toolhub-evolved.git ~/repo
 
-# 3. Point the served web root at the repo's public_html
-#    (the webservice serves ~/public_html by default)
-rm -rf ~/public_html
-ln -s ~/repo/public_html ~/public_html
+# 2. Point the python webservice entrypoint at proxy/
+mkdir -p ~/www/python
+ln -sfn ~/repo/proxy ~/www/python/src
 
-# 4. Start the webservice (static files are served directly by lighttpd)
-webservice --backend=kubernetes php8.2 start
+# 3. Build the virtualenv INSIDE the runtime image (bastions can't create venvs).
+#    Either run these in `webservice python3.13 shell`, or non-interactively:
+webservice python3.13 shell -- bash -lc '\
+  python3 -m venv ~/www/python/venv && \
+  ~/www/python/venv/bin/pip install -r ~/repo/proxy/requirements.txt'
 
-# 5. Visit https://<toolname>.toolforge.org/
+# 4. Start the webservice
+webservice python3.13 start
+
+# → https://<toolname>.toolforge.org/
 ```
 
 ## Updating after a change
@@ -38,22 +48,21 @@ webservice --backend=kubernetes php8.2 start
 ```sh
 become toolhub-evolved
 cd ~/repo && git pull
-webservice restart
+webservice restart            # or: sh ~/repo/tools/deploy.sh
 ```
+(Only re-run step 3 when `proxy/requirements.txt` changes.)
 
-A convenience script is provided: `bash ~/repo/tools/deploy.sh`.
+## Notes
 
-## Notes & options
-
-- **Why the PHP webservice for a static site?** Toolforge's `php8.2` webservice runs
-  lighttpd, which serves static files from `~/public_html` directly. No PHP is
-  executed; it's just the easiest static host on the platform.
-- **Build service alternative.** Toolforge's buildpack-based build service can also
-  serve this; for a static SPA the lighttpd path above is simpler and has no build
-  step, so it's recommended here.
-- **Fonts & privacy.** `index.html` loads Montserrat and Source Serif 4 from Google
-  Fonts. For a privacy-respecting production deploy, self-host those WOFF2 files
-  under `public_html/fonts/` and update the `@font-face`/`<link>` references.
-- **Data freshness.** The catalog is a snapshot. To refresh, run
-  `tools/build_data.py` (after re-fetching the API snapshots) and commit the new
-  `public_html/data.js`.
+- **Read-only proxy.** `proxy/app.py` only ever forwards `GET` to
+  `toolhub.wikimedia.org/api/...`. It is not an open proxy and performs no writes.
+- **Live endpoints used:** `/api/tools/`, `/api/tools/{name}/`,
+  `/api/search/tools/` (faceted), `/api/lists/`, `/api/users/`, `/api/recent/`,
+  `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.
+- **Pagination:** upstream `next`/`previous` are absolute `toolhub.wikimedia.org`
+  URLs; the SPA paginates with `?page=` through the proxy instead of following them.
+- **Rollback to the static-only site:** `webservice stop && webservice php8.2 start`
+  with `~/public_html` symlinked to `~/repo/public_html` (the data still falls back
+  to the bundled snapshot in `public_html/data.js`).
+- **Fonts & privacy.** `index.html` loads Montserrat / Source Serif 4 from Google
+  Fonts; self-host under `public_html/fonts/` for a privacy-respecting deploy.
