@@ -163,7 +163,7 @@
 	}
 	function listCard(l) {
 		return `
-		<a class="lcard" href="#/lists/${l.id}" aria-label="${esc(l.title)} list, ${l.toolCount} tools">
+		<a class="lcard" href="#/lists/${encodeURIComponent(l.id)}" aria-label="${esc(l.title)} list, ${l.toolCount} tools">
 			${avatar(l.title)}
 			<div class="lcard__body">
 				<div class="lcard__title">${esc(l.title)} <span class="lcard__count">${l.toolCount} tools</span></div>
@@ -233,7 +233,7 @@
 		<section class="personas container"><span class="personas__label">I'm looking for tools for:</span><div class="personas__row">${personas}</div></section>
 		<div class="container layout">
 			<div class="layout__main">
-				<div class="section-head"><h2>Featured tools</h2><a class="link" href="#/lists/${(lists[0] || {}).id || ""}">View all</a></div>
+				<div class="section-head"><h2>Featured tools</h2><a class="link" href="#/lists/${encodeURIComponent((lists[0] || {}).id || "")}">View all</a></div>
 				${grid("grid-tools", featured.slice(0, 8), (t) => toolCard(t))}
 				<!-- EXPERIMENTAL — "Popular this week" ranks by weeklyViews.
 				     MISSING: no popularity/usage signal in the Toolhub API; ranks shown here are synthetic. -->
@@ -702,7 +702,7 @@
 			const title = esc(r.content_title || r.content_id || "—");
 			const who = esc((r.user && r.user.username) || "system");
 			const inner = `<span class="feed__ic" aria-hidden="true">✎</span>
-				<span class="feed__main"><strong>${title}</strong> <span class="feed__sub">${r.content_type || "item"} · ${who}</span></span>
+				<span class="feed__main"><strong>${title}</strong> <span class="feed__sub">${esc(r.content_type || "item")} · ${who}</span></span>
 				<span class="feed__when">${esc(relTime(r.timestamp))}</span>`;
 			const link = r.content_type === "tool" && r.content_id ? "#/tools/" + encodeURIComponent(r.content_id) : null;
 			return link ? `<li><a href="${link}">${inner}</a></li>` : `<li><div class="feed__static">${inner}</div></li>`;
