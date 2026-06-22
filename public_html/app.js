@@ -222,6 +222,40 @@
 		demoStore.set("auditlogs", aud.slice(0, 100));
 	}
 	function demoRevisionsFor(name) { return demoStore.get("revisions", []).filter((r) => r.content_id === name); }
+	// EXPERIMENTAL — crawler simulation. Needs: server-side crawler (the browser
+	// can't fetch arbitrary toolinfo.json — CORS). URLs are just recorded; actual
+	// ingestion is simulated from pasted/sample JSON.
+	function crawlerUrls() { return demoStore.get("crawlerUrls", []); }
+	function crawlerUrlAdd(url) {
+		const a = crawlerUrls();
+		if (!a.some((x) => x.url === url)) { a.unshift({ url, added: new Date().toISOString() }); demoStore.set("crawlerUrls", a); }
+	}
+	function crawlerUrlDelete(url) { demoStore.set("crawlerUrls", crawlerUrls().filter((x) => x.url !== url)); }
+	const SAMPLE_TOOLINFO = JSON.stringify([
+		{ name: "demo-citation-helper", title: "Citation Helper", description: "Suggests reliable sources while you edit.", url: "https://example.org/citation-helper", tool_type: "web app", keywords: ["citations", "references"], for_wikis: ["*"], license: "MIT" },
+		{ name: "demo-stub-finder", title: "Stub Finder", description: "Finds short articles in a topic that need expansion.", url: "https://example.org/stub-finder", tool_type: "bot", keywords: ["stubs", "cleanup"], repository: "https://github.com/example/stub-finder" },
+	], null, 2);
+	// Ingest one toolinfo object or an array, upserting demo records (origin=crawler).
+	function ingestToolinfo(text) {
+		let data;
+		try { data = JSON.parse(text); } catch (e) { return { error: "Invalid JSON: " + e.message }; }
+		const items = Array.isArray(data) ? data : [data];
+		const m = toolNewMap(); let added = 0, updated = 0; const errors = [];
+		items.forEach((it, i) => {
+			if (!it || !it.name || !it.title || !it.description || !it.url) { errors.push("Item " + (i + 1) + ": missing required name/title/description/url"); return; }
+			const existed = !!m[it.name];
+			m[it.name] = {
+				title: it.title, description: it.description, url: it.url,
+				repository: it.repository || null, license: it.license || null, toolType: it.tool_type || null,
+				keywords: it.keywords || [], forWikis: it.for_wikis || [],
+				deprecated: !!it.deprecated, experimental: !!it.experimental, origin: "crawler",
+			};
+			if (existed) updated++; else added++;
+			logActivity(existed ? "crawl-updated" : "crawl-created", it.name, it.title);
+		});
+		demoStore.set("toolNew", m);
+		return { added, updated, errors };
+	}
 	// CSV helpers for array form fields.
 	function toCsv(a) { return (a || []).join(", "); }
 	function fromCsv(s) { return String(s || "").split(",").map((x) => x.trim()).filter(Boolean); }
@@ -908,18 +942,71 @@
 		return { title: `${editing ? "Edit tool" : "Submit a tool"} — Toolhub`, html, mount };
 	}
 
-	// EXPERIMENTAL — your demo tool submissions (also the entry to the create form).
+	// EXPERIMENTAL — add/remove tools: submissions + crawler-URL register + JSON ingest.
 	function viewAddTools() {
-		const subs = Object.keys(toolNewMap());
-		const cards = subs.map((n) => newToolBase(n));
-		return { title: "Add or remove tools — Toolhub", html: `
-			<div class="container page">
-				<div class="section-head"><h1 class="page__title">Your submissions <span class="exp-badge">Experimental</span></h1>
-					<a class="btn btn--primary" href="#/tools/create"><span aria-hidden="true">＋</span> Submit a tool</a></div>
-				<p class="page__intro">Tools you've submitted in this demo. They live only in this browser and don't appear
-				in live search — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
-				${cards.length ? grid("grid-tools", cards, (t) => toolCard(t)) : '<p class="empty">No submissions yet. <a href="#/tools/create">Submit your first tool</a>.</p>'}
-			</div>` };
+		function urlRows() {
+			const u = crawlerUrls();
+			return u.length ? u.map((x) => `<li><code class="at__url">${esc(x.url)}</code> <button class="at__rm" type="button" data-url-rm="${esc(x.url)}" aria-label="Remove URL">✕</button></li>`).join("")
+				: '<li class="le__empty">No URLs registered.</li>';
+		}
+		function subGrid() {
+			const cards = Object.keys(toolNewMap()).map((n) => newToolBase(n));
+			return cards.length ? grid("grid-tools", cards, (t) => toolCard(t)) : '<p class="empty">No tools yet. Submit one above, or ingest sample toolinfo.</p>';
+		}
+		const html = `
+		<div class="container page at">
+			<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
+				<a class="btn btn--primary" href="#/tools/create"><span aria-hidden="true">＋</span> Submit a tool</a></div>
+			<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
+			Everything stays in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+
+			<h2 class="le__h2">Register a toolinfo.json URL</h2>
+			<p class="le__hint">In production a server crawler re-reads these hourly. The browser can't fetch
+			arbitrary URLs (CORS), so here we record the URL and you simulate ingestion below.</p>
+			<form class="le__add" data-url-form>
+				<input class="le__input" id="at-url" type="url" placeholder="https://example.org/toolinfo.json" />
+				<button class="btn btn--outline" type="submit">Register</button>
+			</form>
+			<ul class="at__urls" data-url-list>${urlRows()}</ul>
+
+			<h2 class="le__h2">Ingest toolinfo</h2>
+			<p class="le__hint">Paste a single tool object or an array (the crawler accepts both).</p>
+			<textarea class="le__input at__json" id="at-json" rows="10" placeholder='{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }'></textarea>
+			<div class="le__actions">
+				<button class="btn btn--primary" type="button" data-ingest>Ingest</button>
+				<button class="btn btn--outline" type="button" data-sample>Load sample</button>
+			</div>
+			<p class="at__result" data-ingest-result aria-live="polite"></p>
+
+			<h2 class="le__h2">Your tools <span class="le__count" data-sub-count></span></h2>
+			<div data-sub-grid>${subGrid()}</div>
+		</div>`;
+		function mount() {
+			$("[data-url-form]").addEventListener("submit", (e) => {
+				e.preventDefault();
+				const u = $("#at-url").value.trim(); if (!u) return;
+				crawlerUrlAdd(u); $("#at-url").value = "";
+				$("[data-url-list]").innerHTML = urlRows();
+			});
+			$("[data-url-list]").addEventListener("click", (e) => {
+				const b = e.target.closest("[data-url-rm]"); if (!b) return;
+				crawlerUrlDelete(b.getAttribute("data-url-rm")); $("[data-url-list]").innerHTML = urlRows();
+			});
+			$("[data-sample]").addEventListener("click", () => { $("#at-json").value = SAMPLE_TOOLINFO; });
+			$("[data-ingest]").addEventListener("click", () => {
+				const res = ingestToolinfo($("#at-json").value.trim());
+				const out = $("[data-ingest-result]");
+				if (res.error) { out.className = "at__result at__result--err"; out.textContent = res.error; return; }
+				const parts = [];
+				if (res.added) parts.push(res.added + " added");
+				if (res.updated) parts.push(res.updated + " updated");
+				out.className = "at__result" + (res.errors.length && !parts.length ? " at__result--err" : " at__result--ok");
+				out.textContent = (parts.join(", ") || "Nothing ingested") + (res.errors.length ? " · " + res.errors.join("; ") : "");
+				$("[data-sub-grid]").innerHTML = subGrid();
+				const c = $("[data-sub-count]"); if (c) c.textContent = countLabel(Object.keys(toolNewMap()).length, "tool", "tools");
+			});
+		}
+		return { title: "Add or remove tools — Toolhub", html, mount };
 	}
 
 	// EXPERIMENTAL — edit a tool's COMMUNITY ANNOTATIONS (overlay on live record).
