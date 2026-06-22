@@ -8,3 +8,6 @@
 
 # Local servers / logs
 *.log
+__pycache__/
+proxy/venv/
+*.pyc
