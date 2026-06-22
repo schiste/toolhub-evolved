@@ -40,17 +40,18 @@
 		}
 		return avatar(t.title, variant === "lg" ? "avatar--lg" : "");
 	}
-	function relTime(iso) {
+	function timeAgo(iso) {
 		if (!iso) return "";
 		const days = Math.floor((Date.now() - new Date(iso)) / 86400000);
-		if (days <= 0) return "Updated today";
-		if (days === 1) return "Updated yesterday";
-		if (days < 30) return `Updated ${days} days ago`;
+		if (days <= 0) return "today";
+		if (days === 1) return "yesterday";
+		if (days < 30) return `${days} days ago`;
 		const mo = Math.floor(days / 30);
-		if (mo < 12) return `Updated ${mo} month${mo > 1 ? "s" : ""} ago`;
+		if (mo < 12) return `${mo} month${mo > 1 ? "s" : ""} ago`;
 		const yr = Math.floor(mo / 12);
-		return `Updated ${yr} year${yr > 1 ? "s" : ""} ago`;
+		return `${yr} year${yr > 1 ? "s" : ""} ago`;
 	}
+	function relTime(iso) { const age = timeAgo(iso); return age ? `Updated ${age}` : ""; }
 	function fmt(n) { return (n || 0).toLocaleString("en-US"); }
 	function views(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k views" : n + " views"; }
 	const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -92,6 +93,12 @@
 		if (Array.isArray(v) && v.length) { const x = v[0]; return x && typeof x === "object" ? x.url : x; }
 		return null;
 	}
+	function hasValue(v) { return Array.isArray(v) ? v.length > 0 : v != null && v !== ""; }
+	function pick(core, annotation, fallback) {
+		if (hasValue(core)) return core;
+		if (hasValue(annotation)) return annotation;
+		return fallback;
+	}
 	// EXPERIMENTAL — popularity. MISSING: no usage/view data in the API; synthesized
 	// deterministically from the tool name so the "popular" ordering is stable.
 	function synthViews(name) { const h = hash(name), b = h % 100; return b >= 92 ? 1000 + (h % 1500) : b >= 70 ? 250 + (h % 750) : 20 + (h % 230); }
@@ -103,14 +110,18 @@
 			? ra.map((a) => (a && a.name) || (typeof a === "string" ? a : null)).filter(Boolean)
 			: typeof ra === "string" && ra ? [ra] : [];
 		const o = {
-			name: t.name, title: t.title || t.name, description: t.description || "", url: t.url || "", icon: t.icon || null,
+			name: t.name, title: t.title || t.name, description: t.description || "", url: pick(t.url, ann.url, ""), icon: pick(t.icon, ann.icon, null),
 			keywords: t.keywords || [], maintainer: authors[0] || (t.created_by && t.created_by.username) || "Unknown", authors,
-			toolType: t.tool_type || null, license: t.license || null, repository: t.repository || null, apiUrl: t.api_url || null,
-			technologyUsed: t.technology_used || [], audiences: ann.audiences || [], tasks: ann.tasks || [],
-			forWikis: t.for_wikis || [], uiLanguages: t.available_ui_languages || [],
-			userDocs: firstUrl(t.user_docs_url), devDocs: firstUrl(t.developer_docs_url), feedback: firstUrl(t.feedback_url),
-			bugtracker: t.bugtracker_url || null, translate: t.translate_url || null,
-			deprecated: !!t.deprecated, experimental: !!t.experimental, modified: t.modified_date || t.modified || null,
+			toolType: pick(t.tool_type, ann.tool_type, null), license: pick(t.license, ann.license, null),
+			repository: pick(t.repository, ann.repository, null), apiUrl: pick(t.api_url, ann.api_url, null),
+			technologyUsed: pick(t.technology_used, ann.technology_used, []),
+			audiences: pick(t.audiences, ann.audiences, []), tasks: pick(t.tasks, ann.tasks, []),
+			forWikis: pick(t.for_wikis, ann.for_wikis, []), uiLanguages: pick(t.available_ui_languages, ann.available_ui_languages, []),
+			userDocs: firstUrl(pick(t.user_docs_url, ann.user_docs_url, [])),
+			devDocs: firstUrl(pick(t.developer_docs_url, ann.developer_docs_url, [])),
+			feedback: firstUrl(pick(t.feedback_url, ann.feedback_url, [])),
+			bugtracker: pick(t.bugtracker_url, ann.bugtracker_url, null), translate: pick(t.translate_url, ann.translate_url, null),
+			deprecated: !!(t.deprecated || ann.deprecated), experimental: !!(t.experimental || ann.experimental), modified: t.modified_date || t.modified || null,
 		};
 		o.weeklyViews = synthViews(o.name);
 		o.status = statusOf(o);
@@ -210,6 +221,7 @@
 		// "Featured tools" = the curated tools drawn from the featured lists (deduped).
 		const seen = new Set(), featured = [];
 		for (const l of lists) for (const t of l.tools) if (!seen.has(t.name)) { seen.add(t.name); featured.push(t); }
+		const popular = featured.slice().sort((a, b) => (b.weeklyViews - a.weeklyViews) || a.title.localeCompare(b.title));
 		const recentTools = (recent.results || []).map(normalizeTool);
 
 		const personas = PERSONAS.map(([ic, l, q]) => `<a class="persona" href="#/search?q=${encodeURIComponent(q)}"><span aria-hidden="true">${ic}</span> ${l}</a>`).join("");
@@ -239,7 +251,7 @@
 				     MISSING: no popularity/usage signal in the Toolhub API; ranks shown here are synthetic. -->
 				<div class="experimental">
 					<div class="section-head"><h2>Popular this week <span class="exp-badge">Experimental</span></h2><a class="link" href="#/search?sort=views">View all</a></div>
-					${grid("grid-tools", featured.slice(0, 8), (t, i) => toolCard(t, { rank: i + 1, popular: true }))}
+					${grid("grid-tools", popular.slice(0, 8), (t, i) => toolCard(t, { rank: i + 1, popular: true }))}
 				</div>
 				<div class="section-head"><h2>Curated lists</h2><a class="link" href="#/lists">View all lists</a></div>
 				${grid("grid-lists", lists.slice(0, 6), listCard)}
@@ -292,7 +304,9 @@
 		const page = Math.max(1, parseInt(usp.get("page")) || 1);
 		const exp = expOn();
 		const defaultSort = exp ? "relevance" : "recent";
-		const sort = usp.get("sort") || defaultSort;
+		const requestedSort = usp.get("sort") || defaultSort;
+		const allowedSorts = exp ? ["relevance", "recent", "name", "views"] : ["recent", "name"];
+		const sort = allowedSorts.includes(requestedSort) ? requestedSort : defaultSort;
 		const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
 
 		// Live API params: q, paging, ordering + every *__term facet filter from the URL.
@@ -308,12 +322,14 @@
 
 		const data = await apiGet("/search/tools/", api);
 		const results = (data.results || []).map(normalizeTool);
+		if (sort === "views") results.sort((a, b) => (b.weeklyViews - a.weeklyViews) || a.title.localeCompare(b.title));
 		const total = data.count || 0;
 		const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 		const facetHTML = FACET_GROUPS.map((g) => renderFacetGroup(g, data.facets, selected)).join("");
 
 		const sortOpts = (exp ? '<option value="relevance">Most relevant</option>' : "") +
-			'<option value="recent">Recently updated</option><option value="name">Name (A–Z)</option>';
+			'<option value="recent">Recently updated</option><option value="name">Name (A–Z)</option>' +
+			(exp ? '<option value="views">Popular this week</option>' : "");
 		const pagerHTML = (() => {
 			if (pages <= 1) return "";
 			const btn = (p, label, dis, cur) => `<button class="pager__btn${cur ? " is-current" : ""}" ${dis ? "disabled" : ""} data-page="${p}"${cur ? ' aria-current="page"' : ""}>${label}</button>`;
@@ -341,7 +357,7 @@
 						<span class="browse__count" aria-live="polite">${fmt(total)} tool${total === 1 ? "" : "s"}${q ? ` for &ldquo;${esc(q)}&rdquo;` : ""}</span>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort">${sortOpts}</select></label>
 					</div>
-					<div class="card-grid grid-tools">${results.length ? results.map((t) => toolCard(t)).join("") : '<p class="empty">No tools match these filters.</p>'}</div>
+					<div class="card-grid grid-tools">${results.length ? results.map((t, i) => toolCard(t, sort === "views" ? { rank: ((page - 1) * PAGE_SIZE) + i + 1, popular: true } : {})).join("") : '<p class="empty">No tools match these filters.</p>'}</div>
 					<nav class="pager" aria-label="Pagination">${pagerHTML}</nav>
 				</div>
 			</div>`;
@@ -703,8 +719,10 @@
 			const who = esc((r.user && r.user.username) || "system");
 			const inner = `<span class="feed__ic" aria-hidden="true">✎</span>
 				<span class="feed__main"><strong>${title}</strong> <span class="feed__sub">${esc(r.content_type || "item")} · ${who}</span></span>
-				<span class="feed__when">${esc(relTime(r.timestamp))}</span>`;
-			const link = r.content_type === "tool" && r.content_id ? "#/tools/" + encodeURIComponent(r.content_id) : null;
+				<span class="feed__when">${esc(timeAgo(r.timestamp))}</span>`;
+			const link = r.content_type === "tool" && r.content_id
+				? "#/tools/" + encodeURIComponent(r.content_id)
+				: r.content_type === "list" && r.content_id ? "#/lists/" + encodeURIComponent(r.content_id) : null;
 			return link ? `<li><a href="${link}">${inner}</a></li>` : `<li><div class="feed__static">${inner}</div></li>`;
 		}).join("");
 		return { title: "Recent changes — Toolhub", html: `
@@ -721,7 +739,7 @@
 			const meta = u.groups && u.groups.length ? esc(u.groups.join(", ")) : "Member";
 			return `<div class="mcard">${avatar(u.username)}<div class="mcard__b">
 				<div class="mcard__n">${esc(u.username)}</div>
-				<div class="mcard__c">${meta} · joined ${esc(relTime(u.date_joined))}</div></div></div>`;
+				<div class="mcard__c">${meta} · joined ${esc(timeAgo(u.date_joined))}</div></div></div>`;
 		}).join("");
 		return { title: "Members — Toolhub", html: `
 			<div class="container page">
@@ -736,14 +754,14 @@
 		const runs = data.results || [];
 		const last = runs[0] || {};
 		const rows = runs.map((r) => `
-			<tr><td>${esc(relTime(r.start_date))}</td><td>${fmt(r.crawled_urls || 0)}</td>
+			<tr><td>${esc(timeAgo(r.start_date))}</td><td>${fmt(r.crawled_urls || 0)}</td>
 			<td>${fmt(r.new_tools || 0)}</td><td>${fmt(r.updated_tools || 0)}</td><td>${fmt(r.total_tools || 0)}</td></tr>`).join("");
 		return { title: "Crawler history — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Crawler history</h1>
 				<p class="page__intro">Toolhub re-reads every registered <code>toolinfo.json</code> URL roughly hourly and updates the catalog with any changes.</p>
 				<div class="detail__meta">
-					${metaItem("Last crawl", esc(relTime(last.start_date)))}
+					${metaItem("Last crawl", esc(timeAgo(last.start_date)))}
 					${metaItem("URLs crawled", fmt(last.crawled_urls || 0))}
 					${metaItem("Updated in last run", fmt(last.updated_tools || 0))}
 				</div>
@@ -754,15 +772,22 @@
 			</div>` };
 	}
 	// Audit logs — live from /api/auditlogs/.
+	function targetHref(target) {
+		if (!target || !target.id) return null;
+		if (target.type === "tool") return "#/tools/" + encodeURIComponent(target.id);
+		if (target.type === "list") return "#/lists/" + encodeURIComponent(target.id);
+		return null;
+	}
 	async function viewAudit() {
 		const data = await apiGet("/auditlogs/", { page_size: "25" }).catch(() => ({ results: [] }));
 		const rows = (data.results || []).map((a) => {
 			const who = esc((a.user && a.user.username) || "System");
 			const tgt = a.target ? `${esc(a.target.type)} “${esc(a.target.label)}”` : "";
-			return `<li><div class="feed__static">
-				<span class="feed__ic" aria-hidden="true">📝</span>
+			const inner = `<span class="feed__ic" aria-hidden="true">📝</span>
 				<span class="feed__main">${who} <em>${esc(a.action || "changed")}</em> ${tgt}</span>
-				<span class="feed__when">${esc(relTime(a.timestamp))}</span></div></li>`;
+				<span class="feed__when">${esc(timeAgo(a.timestamp))}</span>`;
+			const href = targetHref(a.target);
+			return href ? `<li><a href="${href}">${inner}</a></li>` : `<li><div class="feed__static">${inner}</div></li>`;
 		}).join("");
 		return { title: "Audit logs — Toolhub", html: `
 			<div class="container page">
@@ -771,13 +796,27 @@
 				<ul class="feed">${rows || '<li><div class="feed__static">No audit entries.</div></li>'}</ul>
 			</div>` };
 	}
-	// API docs — embed the live interactive documentation.
-	function viewApiDocs() {
+	// API docs — the live docs cannot be framed, so link out and list same-origin endpoints.
+	async function viewApiDocs() {
+		const root = await apiGet("/").catch(() => ({}));
+		const endpoints = Object.keys(root).sort();
+		const endpointCards = endpoints.map((ep) => {
+			const href = "/api/" + ep + "/";
+			return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="noopener">
+				<span class="linkcard__icon" aria-hidden="true">{ }</span>
+				<span class="linkcard__body"><span class="linkcard__title"><code>GET ${esc(href)}</code> ↗</span>
+				<span class="linkcard__desc">Open the live JSON response through this app's read-only proxy.</span></span></a>`;
+		}).join("");
 		return { title: "API documentation — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">API documentation</h1>
-				<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The interactive documentation is embedded below; if it doesn't load, open <a href="https://toolhub.wikimedia.org/api-docs" target="_blank" rel="noopener">toolhub.wikimedia.org/api-docs ↗</a>.</p>
-				<iframe class="apidoc-frame" src="https://toolhub.wikimedia.org/api-docs" title="Toolhub API documentation" loading="lazy"></iframe>
+				<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The live interactive documentation blocks embedding, so open it directly or inspect the same-origin read-only endpoints below.</p>
+				<div class="linkgrid">
+					${linkCard("📦", "Interactive API docs", "Open the canonical Toolhub API documentation.", "https://toolhub.wikimedia.org/api-docs")}
+					${linkCard("🧭", "API root", "Browse the upstream API endpoint index.", "https://toolhub.wikimedia.org/api/")}
+				</div>
+				<h2 class="contribute__h2">Live proxy endpoints</h2>
+				<div class="linkgrid">${endpointCards || '<p class="empty">The live endpoint index is unavailable.</p>'}</div>
 			</div>` };
 	}
 	// Tool revision history — illustrative, from the tool's modified date.
@@ -791,7 +830,7 @@
 		const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
 		const rows = revs.map((r, i) => `
 			<li><span class="feed__ic" aria-hidden="true">🕓</span>
-				<span class="feed__main">Revision by <strong>${esc((r.user && r.user.username) || "system")}</strong> · ${esc(relTime(r.timestamp))}${r.comment ? " — " + esc(r.comment) : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+				<span class="feed__main">Revision by <strong>${esc((r.user && r.user.username) || "system")}</strong> · ${esc(timeAgo(r.timestamp))}${r.comment ? " — " + esc(r.comment) : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
 				<span class="feed__when">#${esc(String(r.id))}</span></li>`).join("");
 		return { title: `History: ${title} — Toolhub`, html: `
 			<div class="container page">
