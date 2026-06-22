@@ -305,9 +305,32 @@
 		if (hasValue(annotation)) return annotation;
 		return fallback;
 	}
-	// EXPERIMENTAL — popularity. MISSING: no usage/view data in the API; synthesized
-	// deterministically from the tool name so the "popular" ordering is stable.
+	/* ===== Synthetic signals (Lane B) =========================================
+	   EXPERIMENTAL decorations the read-only Toolhub API can't provide. Each is a
+	   pure, deterministic function of the tool name, so values are stable per tool
+	   and the same everywhere the tool appears (the "overload real data" pattern).
+	   Each notes the backend capability it would need in production. */
+	function synthSeed(name, salt) { return hash(name + "·" + salt); }
+	// Popularity — Needs: usage/view tracking the API doesn't expose.
 	function synthViews(name) { const h = hash(name), b = h % 100; return b >= 92 ? 1000 + (h % 1500) : b >= 70 ? 250 + (h % 750) : 20 + (h % 230); }
+	// Operational health — Needs: an uptime/health-check service.
+	function synthHealth(name) {
+		const b = synthSeed(name, "health") % 100;
+		if (b >= 96) return { level: "red", label: "Down" };
+		if (b >= 85) return { level: "yellow", label: "Degraded" };
+		return { level: "green", label: "Healthy" };
+	}
+	// Ratings & reviews — Needs: a reviews data model + authenticated submissions.
+	function synthReviews(name) {
+		const h = synthSeed(name, "rating");
+		return { rating: (35 + (h % 16)) / 10, count: 3 + (synthSeed(name, "rcount") % 140) }; // 3.5–5.0
+	}
+	function starString(rating) {
+		const full = Math.floor(rating), half = rating - full >= 0.5;
+		return "★".repeat(full) + (half ? "½" : "") + "☆".repeat(5 - full - (half ? 1 : 0));
+	}
+	// 30-day usage — Needs: usage analytics the API doesn't expose.
+	function synthUsage(name) { return 50 + (synthSeed(name, "usage") % 9000); }
 	function statusOf(t) { return t.deprecated ? { level: "red", label: "Deprecated" } : t.experimental ? { level: "yellow", label: "Experimental" } : { level: "green", label: "Healthy" }; }
 	function normalizeTool(t) {
 		const ann = t.annotations || {};
@@ -664,9 +687,9 @@
 					<div class="toolpage__glance">${glance}</div>
 					<div class="toolpage__row">
 						${realBadge}
-						<!-- EXPERIMENTAL — operational health. MISSING: no uptime/health-check backend. -->
-						<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
-						<!-- EXPERIMENTAL — popularity. MISSING: no usage/view tracking in the API. -->
+						<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
+						${(() => { const h = synthHealth(t.name); return `<span class="status status--${h.level} experimental"><span class="dot dot--${h.level}"></span>${esc(h.label)}</span>`; })()}
+						<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking the API doesn't expose. -->
 						<span class="views experimental"><span aria-hidden="true">🔥</span> ${views(t.weeklyViews)}</span>
 						${updatedTimeTag(t.modified, "toolpage__when")}
 					</div>
@@ -681,8 +704,8 @@
 
 			<div class="toolpage__grid">
 				<div class="toolpage__main">
-					<!-- EXPERIMENTAL — screenshots/preview. MISSING: no screenshot field in the
-					     toolinfo schema and no image storage for tool previews. -->
+					<!-- EXPERIMENTAL — screenshots/preview. Needs: a screenshot field in the
+					     toolinfo schema + image storage (no per-tool data possible here). -->
 					<div class="experimental shotstrip">
 						<div class="shot"></div><div class="shot"></div><div class="shot"></div>
 						<span class="exp-badge shotstrip__badge">Experimental · screenshots</span>
@@ -701,14 +724,14 @@
 						${metaItem("Audiences", (t.audiences || []).map(esc).join(", "))}
 					</div>
 
-					<!-- EXPERIMENTAL — ratings & reviews. MISSING: no reviews data model / auth. Placeholder values. -->
+					<!-- EXPERIMENTAL — ratings & reviews. Needs: a reviews data model + authenticated submissions. -->
 					<div class="experimental reviews">
 						<h2 class="toolpage__h2">Reviews <span class="exp-badge">Experimental</span></h2>
-						<div class="reviews__agg">
-							<span class="reviews__stars" aria-hidden="true">★★★★☆</span>
-							<span class="reviews__score">4.2</span>
-							<span class="reviews__count">· ${esc(countLabel(18, "review", "reviews"))}</span>
-						</div>
+						${(() => { const r = synthReviews(t.name); return `<div class="reviews__agg">
+							<span class="reviews__stars" aria-hidden="true">${starString(r.rating)}</span>
+							<span class="reviews__score">${r.rating.toFixed(1)}</span>
+							<span class="reviews__count">· ${esc(countLabel(r.count, "review", "reviews"))}</span>
+						</div>`; })()}
 						<button class="btn btn--outline" type="button" disabled>Write a review</button>
 					</div>
 
@@ -730,10 +753,10 @@
 						<h2 class="panel__title">Maintainers</h2>
 						<ul class="maint-list">${maintList}</ul>
 					</div>
-					<!-- EXPERIMENTAL — usage stat. MISSING: no usage analytics in the API. -->
+					<!-- EXPERIMENTAL — usage stat. Needs: usage analytics the API doesn't expose. -->
 					<div class="panel experimental">
 						<h2 class="panel__title">Usage <span class="exp-badge">Experimental</span></h2>
-						<p class="usage"><strong>${fmt(2000 + (hash(t.name) % 9000))}</strong> ${plural(2000 + (hash(t.name) % 9000), { one: "editor used", other: "editors used" })} this in the last 30 days</p>
+						${(() => { const u = synthUsage(t.name); return `<p class="usage"><strong>${fmt(u)}</strong> ${plural(u, { one: "editor used", other: "editors used" })} this in the last 30 days</p>`; })()}
 					</div>
 				</aside>
 			</div>
@@ -1468,8 +1491,9 @@
 			</div>
 			<div class="qv__status">
 				${realBadge}
-				<!-- EXPERIMENTAL — health/popularity (no API data) -->
-				<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
+				<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
+				${(() => { const h = synthHealth(t.name); return `<span class="status status--${h.level} experimental"><span class="dot dot--${h.level}"></span>${esc(h.label)}</span>`; })()}
+				<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking. -->
 				<span class="views experimental"><span aria-hidden="true">🔥</span> ${views(t.weeklyViews)}</span>
 				${updatedTimeTag(t.modified, "toolpage__when")}
 			</div>
