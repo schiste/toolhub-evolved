@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 	<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 	<meta charset="UTF-8" />
@@ -22,14 +22,14 @@
 				<img class="brand__logo" src="img/toolhub-logo.svg?v=2" alt="" width="34" height="34" />
 				<span class="brand__name">Toolhub</span>
 			</a>
-			<nav class="nav__links" id="nav-links">
+			<nav class="nav__links" id="nav-links" aria-label="Primary">
 				<a href="#/search">Browse</a>
 				<a href="#/lists">Lists</a>
 				<a href="#/search">Categories</a>
 			</nav>
 			<div class="nav__actions">
-				<a class="icon-btn" href="#/search">🔍 Search</a>
-				<a class="btn btn--primary" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">＋ Submit a tool</a>
+				<a class="icon-btn" href="#/search"><span aria-hidden="true">🔍</span> Search</a>
+				<a class="btn btn--primary" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener"><span aria-hidden="true">＋</span> Submit a tool</a>
 				<!-- Account control (logged-in fixture / dropdown) rendered by app.js -->
 				<div class="acct" id="account"></div>
 			</div>
@@ -48,7 +48,7 @@
 	</div>
 
 	<!-- The router renders the active view here -->
-	<main id="view" tabindex="-1"></main>
+	<main id="view" tabindex="-1" aria-live="polite" aria-busy="false"></main>
 
 	<footer class="footer">
 		<div class="footer__cols">
@@ -72,8 +72,8 @@
 				<a href="#/api-docs">API docs</a>
 				<a href="#/crawler-history">Crawler history</a>
 				<a href="#/audit-logs">Audit logs</a>
-				<a href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main" target="_blank" rel="noopener">Source code ↗</a>
-				<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener">Report an issue ↗</a>
+				<a href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main" target="_blank" rel="noopener">Source code <span aria-hidden="true">↗</span></a>
+				<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener">Report an issue <span aria-hidden="true">↗</span></a>
 			</nav>
 			<nav class="footer__col" aria-label="About">
 				<h2>About</h2>
@@ -87,7 +87,7 @@
 			</nav>
 		</div>
 		<div class="footer__bottom">
-			<a class="footer__maintain" href="#/contribute">🛠️ Help maintain Toolhub</a>
+			<a class="footer__maintain" href="#/contribute"><span aria-hidden="true">🛠️</span> Help maintain Toolhub</a>
 			<span class="footer__legal">
 				Catalog content under
 				<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a>
@@ -99,7 +99,7 @@
 	</footer>
 
 	<!-- Quick-view (peek) modal -->
-	<div class="qv hidden" id="qv">
+	<div class="qv hidden" id="qv" aria-hidden="true">
 		<div class="qv__box" role="dialog" aria-modal="true" aria-labelledby="qv-title">
 			<button class="qv__x" type="button" data-qv-close aria-label="Close quick view">×</button>
 			<div id="qv-body"></div>
