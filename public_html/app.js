@@ -1259,7 +1259,7 @@
 					${g.items.map((it) => `
 						<li class="exfeat">
 							<div class="exfeat__head">
-								<h3 class="exfeat__name">${esc(it.name)} <span class="exp-badge">Experimental</span></h3>
+								<h3 class="exfeat__name">${esc(it.name)}</h3>
 								${it.tryHref ? `<a class="exfeat__try" href="${esc(it.tryHref)}">${esc(it.tryLabel || "Try it")} <span aria-hidden="true">→</span></a>` : ""}
 							</div>
 							<p class="exfeat__what">${esc(it.what)}</p>
