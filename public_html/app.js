@@ -150,6 +150,39 @@
 			const t = b.querySelector(".favbtn__t"); if (t) t.textContent = on ? "Saved" : "Save";
 		});
 	}
+	// EXPERIMENTAL — demo lists overlay. Needs: POST/PUT/DELETE /api/lists/.
+	// A demo list stores real tool NAMES; the tool data itself stays live.
+	function demoLists() { return demoStore.get("lists", []); }
+	function demoListGet(id) { return demoLists().find((l) => String(l.id) === String(id)) || null; }
+	function isDemoListId(id) { return String(id).indexOf("demo-") === 0; }
+	function demoListNew() { return { id: "demo-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e4).toString(36), title: "", description: "", tools: [] }; }
+	function demoListSave(list) {
+		const all = demoLists(), i = all.findIndex((l) => l.id === list.id);
+		list.modified = new Date().toISOString();
+		if (i === -1) { list.created = list.modified; all.unshift(list); } else all[i] = list;
+		demoStore.set("lists", all);
+		return list;
+	}
+	function demoListDelete(id) { demoStore.set("lists", demoLists().filter((l) => String(l.id) !== String(id))); }
+	// Toggle a tool's membership in a demo list; returns true if now present.
+	function listToolToggle(id, name) {
+		const l = demoListGet(id); if (!l) return false;
+		const i = l.tools.indexOf(name);
+		if (i === -1) l.tools.push(name); else l.tools.splice(i, 1);
+		demoListSave(l); return i === -1;
+	}
+	function listCardData(l) { return { id: l.id, title: l.title || "Untitled list", description: l.description || "", toolCount: (l.tools || []).length, demo: true }; }
+	// "Save to a list" control: a native <details> menu of the user's demo lists.
+	function saveToListControl(name) {
+		const items = demoLists().map((l) => {
+			const inIt = (l.tools || []).indexOf(name) !== -1;
+			return `<button class="savemenu__item${inIt ? " is-on" : ""}" type="button" data-listadd="${esc(l.id)}" data-tn="${esc(name)}" aria-pressed="${inIt}"><span class="savemenu__mark" aria-hidden="true">${inIt ? "✓" : "＋"}</span> <span${dirAttrs(l.title)}>${esc(l.title || "Untitled list")}</span></button>`;
+		}).join("") || '<p class="savemenu__empty">No lists yet.</p>';
+		return `<details class="savemenu">
+			<summary class="btn btn--outline"><span aria-hidden="true">🔖</span> Save to a list</summary>
+			<div class="savemenu__pop">${items}<a class="savemenu__new" href="#/lists/create"><span aria-hidden="true">＋</span> New list…</a></div>
+		</details>`;
+	}
 
 	/* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
 	   as live data arrives (search results, lists, tool pages). No snapshot. */
@@ -257,7 +290,7 @@
 		<a class="lcard" href="#/lists/${encodeURIComponent(l.id)}" aria-label="${esc(l.title)} list, ${esc(count)}">
 			${avatar(l.title)}
 			<div class="lcard__body">
-				<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span></div>
+				<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span>${l.demo ? ' <span class="exp-badge">Demo</span>' : ""}</div>
 				<div class="lcard__desc"${dirAttrs(l.description)}>${esc(l.description)}</div>
 			</div>
 		</a>`;
@@ -538,8 +571,8 @@
 				<div class="toolpage__cta">
 					${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool <span aria-hidden="true">↗</span></a>` : ""}
 					${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
-					<!-- EXPERIMENTAL — Save to a list. Needs: list write API (Lane B, P3). -->
-					${signedIn() ? `<button class="btn btn--outline experimental" type="button" disabled title="Coming in the lists experiment"><span aria-hidden="true">🔖</span> Save to a list</button>` : ""}
+					<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
+					${signedIn() ? saveToListControl(t.name) : ""}
 				</div>
 			</header>
 
@@ -606,27 +639,135 @@
 	/* ---- Lists overview + list detail -------------------------------------- */
 	async function viewLists() {
 		const data = await apiGet("/lists/", { page_size: "30" }).catch(() => ({ results: [] }));
-		const lists = (data.results || []).map(normalizeList);
+		const live = (data.results || []).map(normalizeList);
+		// When experimenting, the user's demo lists appear first (clearly tagged).
+		const mine = signedIn() ? demoLists().map(listCardData) : [];
+		const all = mine.concat(live);
 		const html = `
 		<div class="container page">
-			<h1 class="page__title">Curated lists</h1>
+			<div class="section-head"><h1 class="page__title">Curated lists</h1>
+				${signedIn() ? '<a class="btn btn--primary" href="#/lists/create"><span aria-hidden="true">＋</span> Create a list</a>' : ""}</div>
 			<p class="page__intro">Community-published collections of tools for specific tasks and communities.</p>
-			${lists.length ? grid("grid-lists", lists, listCard) : '<p class="empty">No lists found.</p>'}
+			${all.length ? grid("grid-lists", all, listCard) : '<p class="empty">No lists found.</p>'}
 		</div>`;
 		return { title: "Curated lists — Toolhub", html };
 	}
 	async function viewList(id) {
-		let l;
-		try { l = normalizeList(await apiGet("/lists/" + encodeURIComponent(id) + "/")); }
-		catch (e) { return viewNotFound(); }
+		const isDemo = isDemoListId(id);
+		let l, tools, demoTag = "", editBtn = "";
+		if (isDemo) {
+			const d = demoListGet(id);
+			if (!d) return viewNotFound();
+			tools = (await Promise.all((d.tools || []).map((n) => apiGet("/tools/" + encodeURIComponent(n) + "/").then(normalizeTool).catch(() => null)))).filter(Boolean);
+			l = { title: d.title || "Untitled list", description: d.description || "", toolCount: tools.length };
+			demoTag = ' <span class="exp-badge">Demo list</span>';
+			if (signedIn()) editBtn = `<a class="btn btn--outline" href="#/lists/${encodeURIComponent(id)}/edit"><span aria-hidden="true">✏️</span> Edit list</a>`;
+		} else {
+			try { l = normalizeList(await apiGet("/lists/" + encodeURIComponent(id) + "/")); tools = l.tools; }
+			catch (e) { return viewNotFound(); }
+		}
 		const html = `
 		<div class="container page">
 			<a class="back" href="#/lists">← All lists</a>
-			<h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(countLabel(l.toolCount, "tool", "tools"))}</span></h1>
+			<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(countLabel(l.toolCount, "tool", "tools"))}</span></h1>${editBtn}</div>
 			<div class="prose page__intro"${dirAttrs(l.description)}>${esc(l.description)}</div>
-			${l.tools.length ? grid("grid-tools", l.tools, (t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
+			${tools.length ? grid("grid-tools", tools, (t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
 		</div>`;
 		return { title: `${l.title} — Toolhub`, html };
+	}
+	// EXPERIMENTAL — your demo lists. Needs: GET /api/lists/ scoped to the user.
+	function viewMyLists() {
+		const cards = demoLists().map(listCardData);
+		const html = `
+		<div class="container page">
+			<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
+				<a class="btn btn--primary" href="#/lists/create"><span aria-hidden="true">＋</span> Create a list</a></div>
+			<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
+			<a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+			${cards.length ? grid("grid-lists", cards, listCard) : '<p class="empty">No lists yet. <a href="#/lists/create">Create your first list</a>.</p>'}
+		</div>`;
+		return { title: "Your lists — Toolhub", html };
+	}
+	// EXPERIMENTAL — create/edit a demo list. Needs: POST/PUT /api/lists/.
+	function viewListEdit(id) {
+		const editing = id != null;
+		const src = editing ? demoListGet(id) : demoListNew();
+		if (editing && !src) return viewNotFound();
+		const work = { id: src.id, title: src.title || "", description: src.description || "", tools: (src.tools || []).slice() };
+		const html = `
+		<div class="container page le">
+			<a class="back" href="${editing ? "#/lists/" + encodeURIComponent(work.id) : "#/my-lists"}">← Back</a>
+			<h1 class="page__title">${editing ? "Edit list" : "Create a list"} <span class="exp-badge">Experimental</span></h1>
+			<form data-le-form>
+				<label class="le__label">Title<input class="le__input" id="le-title" type="text" maxlength="120" required value="${esc(work.title)}" /></label>
+				<label class="le__label">Description<textarea class="le__input" id="le-desc" rows="3" maxlength="600">${esc(work.description)}</textarea></label>
+				<h2 class="le__h2">Tools <span class="le__count" data-le-count></span></h2>
+				<ol class="le__tools" data-le-tools></ol>
+				<div class="le__add">
+					<input class="le__input" id="le-q" type="search" placeholder="Search tools to add…" autocomplete="off" />
+					<button class="btn btn--outline" type="button" data-le-search>Search</button>
+				</div>
+				<div class="le__results" data-le-results></div>
+				<div class="le__actions">
+					<button class="btn btn--primary" type="submit">${editing ? "Save changes" : "Create list"}</button>
+					${editing ? '<button class="btn btn--outline le__delete" type="button" data-le-delete>Delete list</button>' : ""}
+				</div>
+			</form>
+		</div>`;
+		function mount() {
+			const toolsEl = $("[data-le-tools]"), countEl = $("[data-le-count]"), resultsEl = $("[data-le-results]");
+			function renderTools() {
+				countEl.textContent = countLabel(work.tools.length, "tool", "tools");
+				toolsEl.innerHTML = work.tools.length ? work.tools.map((n, i) => `
+					<li data-tn="${esc(n)}"><span class="le__tn"${dirAttrs(n)}>${esc(n)}</span>
+						<span class="le__rowact">
+							<button type="button" data-move="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">▲</button>
+							<button type="button" data-move="down" ${i === work.tools.length - 1 ? "disabled" : ""} aria-label="Move down">▼</button>
+							<button type="button" data-rm aria-label="Remove from list">✕</button>
+						</span></li>`).join("") : '<li class="le__empty">No tools yet — search below to add some.</li>';
+			}
+			renderTools();
+			toolsEl.addEventListener("click", (e) => {
+				const li = e.target.closest("[data-tn]"); if (!li) return;
+				const n = li.getAttribute("data-tn"), i = work.tools.indexOf(n);
+				if (e.target.closest("[data-rm]")) { work.tools.splice(i, 1); }
+				else if (e.target.closest('[data-move="up"]') && i > 0) { work.tools.splice(i - 1, 0, work.tools.splice(i, 1)[0]); }
+				else if (e.target.closest('[data-move="down"]') && i < work.tools.length - 1) { work.tools.splice(i + 1, 0, work.tools.splice(i, 1)[0]); }
+				else return;
+				renderTools();
+			});
+			async function runSearch() {
+				const q = $("#le-q").value.trim(); if (!q) return;
+				resultsEl.innerHTML = '<p class="le__searching">Searching…</p>';
+				try {
+					const data = await apiGet("/search/tools/", { q, page_size: "8" });
+					const rows = (data.results || []).map(normalizeTool);
+					resultsEl.innerHTML = rows.length ? rows.map((t) => {
+						const inList = work.tools.indexOf(t.name) !== -1;
+						return `<button class="le__result${inList ? " is-in" : ""}" type="button" data-add="${esc(t.name)}" ${inList ? "disabled" : ""}>
+							<span aria-hidden="true">${inList ? "✓" : "＋"}</span> <span${dirAttrs(t.title)}>${esc(t.title)}</span></button>`;
+					}).join("") : '<p class="le__empty">No matches.</p>';
+				} catch (e) { resultsEl.innerHTML = '<p class="le__empty">Search failed.</p>'; }
+			}
+			$("[data-le-search]").addEventListener("click", runSearch);
+			$("#le-q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runSearch(); } });
+			resultsEl.addEventListener("click", (e) => {
+				const b = e.target.closest("[data-add]"); if (!b) return;
+				const n = b.getAttribute("data-add");
+				if (work.tools.indexOf(n) === -1) { work.tools.push(n); renderTools(); b.disabled = true; b.classList.add("is-in"); b.querySelector("span[aria-hidden]").textContent = "✓"; }
+			});
+			$("[data-le-form]").addEventListener("submit", (e) => {
+				e.preventDefault();
+				const title = $("#le-title").value.trim();
+				if (!title) { $("#le-title").focus(); return; }
+				work.title = title; work.description = $("#le-desc").value.trim();
+				demoListSave(work);
+				location.hash = "#/lists/" + encodeURIComponent(work.id);
+			});
+			const del = $("[data-le-delete]");
+			if (del) del.addEventListener("click", () => { demoListDelete(work.id); location.hash = "#/my-lists"; });
+		}
+		return { title: `${editing ? "Edit list" : "Create a list"} — Toolhub`, html, mount };
 	}
 
 	/* ---- Static prose pages (T9) ------------------------------------------- */
@@ -1158,14 +1299,14 @@
 			return viewTool(nm);
 		}
 		// Lists + sub-routes
-		if (seg[0] === "lists" && seg[1] === "create") return signInPage("Create a list", "Create a new list to group and share useful tools.");
+		if (seg[0] === "lists" && seg[1] === "create") return signedIn() ? viewListEdit(null) : signInPage("Create a list", "Create a new list to group and share useful tools.");
 		if (seg[0] === "lists" && seg[1]) {
-			if (seg[2] === "edit") return signInPage("Edit list", "Edit this list's title, description and tools.");
+			if (seg[2] === "edit") return (signedIn() && isDemoListId(seg[1])) ? viewListEdit(decodeURIComponent(seg[1])) : signInPage("Edit list", "Edit this list's title, description and tools.");
 			if (seg[2] === "history") return prosePage("List history", "<p>Revision history for this list is available on the <a href=\"https://toolhub.wikimedia.org/\" target=\"_blank\" rel=\"noopener\">live site</a>.</p>");
-			return viewList(seg[1]);
+			return viewList(decodeURIComponent(seg[1]));
 		}
 		if (seg[0] === "lists" || seg[0] === "published-lists") return viewLists();
-		if (seg[0] === "my-lists") return signInPage("Your lists", "See and manage the lists you've created.");
+		if (seg[0] === "my-lists") return signedIn() ? viewMyLists() : signInPage("Your lists", "See and manage the lists you've created.");
 		if (seg[0] === "favorites") return signedIn() ? viewFavorites() : signInPage("Favorites", "Your saved tools, all in one place.");
 		if (seg[0] === "add-or-remove-tools") return signInPage("Add or remove tools", "Register a toolinfo.json URL to be crawled, or create a tool record directly.");
 		if (seg[0] === "developer-settings") return signInPage("Developer settings", "Manage your API tokens and registered OAuth applications.");
@@ -1237,6 +1378,15 @@
 	$("#view").addEventListener("click", (e) => {
 		const fav = e.target.closest("[data-fav]");
 		if (fav) { e.preventDefault(); e.stopPropagation(); syncFavButtons(fav.getAttribute("data-fav"), toggleFav(fav.getAttribute("data-fav"))); return; }
+		const add = e.target.closest("[data-listadd]");
+		if (add) {
+			e.preventDefault();
+			const on = listToolToggle(add.getAttribute("data-listadd"), add.getAttribute("data-tn"));
+			add.classList.toggle("is-on", on);
+			add.setAttribute("aria-pressed", String(on));
+			const m = add.querySelector(".savemenu__mark"); if (m) m.textContent = on ? "✓" : "＋";
+			return;
+		}
 		const q = e.target.closest("[data-q]");
 		if (q && !q.matches("a[href]")) { e.preventDefault(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); return; }
 		if (e.target.closest("a[href]")) return; // real links route natively
