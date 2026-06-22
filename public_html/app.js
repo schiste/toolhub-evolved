@@ -420,17 +420,18 @@
 	}
 
 	/* ------------------------------------------------------------- static cfg */
+	// Personas = WHO you are → real `audiences` facet values (audiences__term).
 	const PERSONAS = [
-		["✏️", "Editors", "edit"], ["🛡️", "Patrollers", "patrol"],
-		["👥", "Organizers", "organiz"], ["📖", "Researchers", "research"],
-		["☁️", "Upload media", "commons"], ["📊", "Analyze data", "statistic"],
-		["❝", "Find references", "citation"], ["🗛", "Translate", "translat"],
+		["✏️", "Editors", "editor"], ["💻", "Developers", "developer"],
+		["📖", "Readers", "reader"], ["🔬", "Researchers", "researcher"],
+		["🛡️", "Admins", "admin"], ["👥", "Organizers", "organizer"],
 	];
+	// Needs = WHAT you want to do → real `tasks` facet values (tasks__term).
 	const NEEDS = [
-		["✏️", "Write and edit content", "edit"], ["🗂️", "Find and manage content", "category"],
-		["🖼️", "Upload and use media", "image"], ["🛡️", "Monitor and patrol", "patrol"],
-		["📊", "Analyze and visualize data", "statistic"], ["🗛", "Translate and localize", "translat"],
-		["👥", "Manage projects and events", "wikiproject"],
+		["✏️", "Edit content", "editing"], ["✨", "Create content", "creating"],
+		["🗂️", "Categorize content", "categorizing"], ["🖼️", "Upload media", "uploading"],
+		["📊", "Analyze data", "analysis"], ["🔄", "Convert & transform", "converting"],
+		["📖", "Read & browse", "reading"],
 	];
 	const STEPS = [
 		["🔍", "1. Find a tool", "Search or browse by task, audience or category."],
@@ -457,8 +458,8 @@
 		const popular = featured.slice().sort((a, b) => (b.weeklyViews - a.weeklyViews) || a.title.localeCompare(b.title));
 		const recentTools = (recent.results || []).map(normalizeTool);
 
-		const personas = PERSONAS.map(([ic, l, q]) => `<a class="persona" href="#/search?q=${encodeURIComponent(q)}"><span aria-hidden="true">${ic}</span> ${l}</a>`).join("");
-		const needs = NEEDS.map(([ic, l, q]) => `<li><a href="#/search?q=${encodeURIComponent(q)}"><span aria-hidden="true">${ic}</span> ${l}<span class="need__chev" aria-hidden="true">›</span></a></li>`).join("");
+		const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="#/search?audiences__term=${encodeURIComponent(term)}"><span aria-hidden="true">${ic}</span> ${l}</a>`).join("");
+		const needs = NEEDS.map(([ic, l, term]) => `<li><a href="#/search?tasks__term=${encodeURIComponent(term)}"><span aria-hidden="true">${ic}</span> ${l}<span class="need__chev" aria-hidden="true">›</span></a></li>`).join("");
 		const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${ic}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
 		const recentHtml = recentTools.map((t) => `
 			<li><a href="#/tools/${encodeURIComponent(t.name)}">${avatar(t.title)}
@@ -515,7 +516,8 @@
 	// Facet groups we surface (a subset of the API's 11), in display order.
 	const FACET_GROUPS = [
 		{ field: "tool_type", label: "Tool type" }, { field: "keywords", label: "Keywords" },
-		{ field: "audiences", label: "Audience" }, { field: "ui_language", label: "Interface language" },
+		{ field: "audiences", label: "Audience" }, { field: "tasks", label: "Task" },
+		{ field: "ui_language", label: "Interface language" },
 		{ field: "license", label: "License" }, { field: "wiki", label: "Works on wiki" },
 	];
 	function renderFacetGroup(g, facets, selected) {
