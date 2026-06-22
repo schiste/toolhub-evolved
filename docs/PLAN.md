@@ -144,18 +144,18 @@ There are two overlay kinds:
 - **Synthetic-signal overlays — deterministic, no persistence.** A pure function
   of the real record decorates it with a signal the API can't give us:
   `synthViews(name)` (exists), and the same shape for reviews, health, usage, and
-  screenshots. Optionally backed by a tiny bundled seed JSON keyed by tool name
-  for more believable sample content; computed/seeded offline, never a runtime
-  data source. These need no store — they are recomputed from the live record
-  each render.
-- **User-action overlays — persisted, merged onto the live record.** A small
-  **`demoOverlay`** module over `localStorage`/`IndexedDB` (namespaced
-  `thdemo:*`) holds only the *delta* the user creates: a set of favorited tool
-  **names**, demo lists referencing real tool names, field-level **edits layered
-  onto a real tool**, annotation overrides, and net-new submissions (a local
-  record shaped like a real tool). At render time the overlay is merged over the
-  live read; with the toggle off, the overlay is ignored entirely. Ships with a
-  **"Reset demo data"** action.
+  screenshots. Backed by a tiny bundled seed JSON (a **few** sample reviews / demo
+  lists / examples — decision §8.7) keyed by tool name for believable content;
+  computed/seeded offline, never a runtime data source. These need no store —
+  they are recomputed from the live record each render.
+- **User-action overlays — persisted in `localStorage`, merged onto the live
+  record.** A small **`demoOverlay`** module over **`localStorage`** (decision
+  §8.2; namespaced `thdemo:*`) holds only the *delta* the user creates: a set of
+  favorited tool **names**, demo lists referencing real tool names, field-level
+  **edits layered onto a real tool**, annotation overrides, and net-new
+  submissions (a local record shaped like a real tool). At render time the
+  overlay is merged over the live read; with the toggle off, the overlay is
+  ignored entirely. Ships with a **"Reset demo data"** action.
 
 Supporting pieces:
 
@@ -184,22 +184,64 @@ Appendix A as the contract each simulation imitates.
 | **Mock identity** | Explicit "Sign in" identity picker (default *Schiste*) + "Log out" | session delta in `demoOverlay`; real `/api/users/` data still backs Members | Real Wikimedia OAuth + server session |
 | **Favorites** | Save/unsave on cards, quick-view, detail; `#/favorites` list | favorited **names** in `demoOverlay`; tool data fetched live and merged | `POST/DELETE /api/user/favorites/` |
 | **Lists CRUD** | `#/my-lists`, `#/lists/create`, `#/lists/:id/edit`, delete; reorder tools | demo lists reference real tool names; shown alongside live `/api/lists/` | `POST/PUT/DELETE /api/lists/` |
-| **Tool submit / edit** | `#/tools/create`, `#/tools/:name/edit` (name/title/desc/url + common fields) | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
+| **Tool submit / edit** | `#/tools/create`, `#/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
 | **Annotations edit** | `#/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …) | annotation overrides merged over the live record's `annotations`; detail labels "community" | `PUT /api/tools/{name}/annotations/` |
 | **Add / remove tools** | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest | local crawler-url + revision/audit deltas merged into the live feeds | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
-| **Developer settings** | Local-only demo API tokens (or hidden) | token deltas in `demoOverlay` | Token/OAuth-app backend |
+| **Developer settings** | **Hidden** (decision §8.5) — route stays a brief "not part of this demo" note | none | Token/OAuth-app backend |
 | **History & feeds** | Demo actions append revision/audit rows so `#/recent`, `#/audit-logs`, history reflect *your* edits | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds | Server write-side-effects |
 | **Already-synthetic** (popularity/`weeklyViews`, reviews, health, usage, screenshots) | unchanged; the original overload pattern | deterministic per-tool signal computed from the live record (optional seed JSON) | Real usage/health/review data source |
 
 ### 3.3 Route & chrome behavior under the flag
 
+- **The toggle defaults OFF** (decision §8.1). On first visit the app is the pure
+  live read-only interface; the user opts into experiments via the existing
+  *"Show me prospective features"* switch. The choice persists in `localStorage`.
 - The `signInPage()` stubs (`#/login`, `#/favorites`, `#/my-lists`,
   `#/lists/create`, `#/lists/:id/edit`, `#/tools/:name/edit`,
-  `#/tools/:name/edit-annotations`, `#/add-or-remove-tools`,
-  `#/developer-settings`) become **real flagged views when the toggle is on**,
-  and **keep their current "prospective feature" placeholder when off**.
-- The header **"Submit a tool"** button: flag on → in-app `#/tools/create`; flag
-  off → keep the current link to the production create URL.
+  `#/tools/:name/edit-annotations`, `#/add-or-remove-tools`) become **real
+  flagged views when the toggle is on**, and **keep their current "prospective
+  feature" placeholder when off**.
+- `#/developer-settings` stays **hidden/placeholder in both states** (decision §8.5).
+- The header **"Submit a tool"** button: flag on → **in-app `#/tools/create`**
+  (decision §8.3); flag off → keep the current link to the production create URL.
+
+### 3.4 The mockup banner + "Rules of Engagement" page
+
+These make the live-vs-fixtures distinction impossible to miss whenever
+experiments are active.
+
+**Red mockup banner.** While experimental mode is **on**, a persistent red banner
+is pinned to the very top of every page (above the header and the `expbar`
+toggle strip), shown site-wide — so it is always present on the in-app
+submit/edit/favorites pages, which only exist while the toggle is on.
+
+- Copy: *"⚠ Mockup — this is a prototype, not a working integration with the real
+  Toolhub. Experimental features are simulated and saved only in your browser."*
+  plus a link to **Rules of Engagement**.
+- Implementation: a `.mockup-banner` element rendered/visible only when
+  `body:not(.exp-off)`; uses the brand destructive (red) token for high contrast;
+  `role="region"` with an accessible label; sticky; no animation (reduced-motion
+  safe). **Not dismissible** independently of the toggle — the way to remove it is
+  to turn experiments off. It is distinct from the `expbar` switch, which stays
+  visible in both states so users can flip experiments on/off.
+
+**"Rules of Engagement" page** (`#/rules-of-engagement`) — a Lane A prose page
+(frontend-only, always reachable), linked from the banner and the footer. It
+explains the model in plain language:
+
+- **What this is** — a design prototype on a separate domain, not production Toolhub.
+- **What's real** — the catalog, search/facets, tool detail, lists, members,
+  recent changes, crawler history, audit logs: all **live, read-only** from
+  `toolhub.wikimedia.org` through a read-only proxy.
+- **What's simulated** (experiments) — sign-in, favorites, list create/edit, tool
+  submit/edit, annotations, and synthetic signals (popularity, reviews, health,
+  usage, screenshots). These **overload the real records with fixtures/local
+  overlays**.
+- **Where your actions go** — stored only in this browser (`localStorage`),
+  per-browser, **never sent to Toolhub**; "Reset demo data" clears them; turning
+  the toggle off strips every overlay.
+- **Honest edges** — a demo-created or demo-edited tool will not appear in live
+  search, because search is real and read-only.
 
 ---
 
@@ -207,9 +249,12 @@ Appendix A as the contract each simulation imitates.
 
 - Keep `apiGet(path, params)` for live reads — unchanged; it stays the only data
   source for the base records.
-- Add `demoOverlay` (browser storage for user-action deltas) and
+- Add `demoOverlay` (a thin `localStorage` wrapper for user-action deltas) and
   `apiWrite`/`demoApi` (`post/put/delete`) used **only** inside `expOn()`
   branches; writes land in `demoOverlay`, never on the network.
+- Default the toggle **off** (flip the current `EXP_KEY` default) and render the
+  `.mockup-banner` whenever `expOn()`; both the banner and the
+  `#/rules-of-engagement` page are wired in the same change.
 - Add a thin **merge step**: after `normalizeTool()`/`normalizeList()` produce the
   live object, when `expOn()` apply the matching overlay (favorite flag, field
   edits, annotation overrides, synthetic signals) so the existing cards/views
@@ -227,12 +272,12 @@ Appendix A as the contract each simulation imitates.
 
 | Phase | Lane | Work | Effort |
 | --- | --- | --- | --- |
-| P0 | — | Lock this plan + the fixture/store contract; pick decisions in §8 | 0.5 d |
+| P0 | — | Lock this plan + the overlay contract (decisions §8 resolved below) | 0.5 d |
 | P1 | A | i18n catalog + `t()` (audit phases 1–2) and the deferred a11y items | 4–6 d |
-| P2 | B | `demoOverlay` + the live-record merge step + mock identity + favorites | 2–3 d |
+| P2 | B | **Toggle default-off + red mockup banner + `#/rules-of-engagement` page**, then `demoOverlay` (`localStorage`) + the live-record merge step + mock identity + favorites | 3–4 d |
 | P3 | B | Lists CRUD (`my-lists`, create/edit/delete, reorder) | 2–3 d |
-| P4 | B | Tool submit/edit + annotations edit + local revision/audit side-effects | 3–4 d |
-| P5 | B | Add/remove-tools simulation (paste/sample JSON) + dev-settings decision | 1.5–2 d |
+| P4 | B | Tool submit/edit (editable on any tool, core/annotation labeled) + annotations edit + local revision/audit side-effects | 3–4 d |
+| P5 | B | Add/remove-tools simulation (paste/sample JSON); keep dev-settings hidden | 1.5–2 d |
 | P6 | B | Unify existing synthetic features under the same overload pattern; add the per-feature "Needs:" comments | 1–2 d |
 | P7 | A | i18n phases 3–5 (prose, localized fields, language switcher) + polish | 3–5 d |
 
@@ -268,16 +313,27 @@ that, if this day ever comes, callers don't change — only the adapter's target
 
 ---
 
-## 8. Decisions for you
+## 8. Decisions — RESOLVED (2026-06-22)
 
-1. **Default toggle state** — keep prospective features **on** by default (current),
-   or default **off** for a clean, fully-honest first impression?
-2. **Storage** — `localStorage` (simplest) or `IndexedDB` (more room, async) for demo writes?
-3. **"Submit a tool" with flag on** — in-app flagged form, or keep the external production link even when experimenting?
-4. **Snapshot `origin="crawler"` tools** — in the edit experiment, faithful (annotation-only) or demo-friendly ("copy into an editable demo record")?
-5. **Developer settings** — implement local demo tokens, or hide the route until/unless useful?
-6. **Synthetic features** (reviews/health/popularity/screenshots) — keep as fixture-backed demo data, or trim any you don't want to show?
-7. **Seed scope** — how much sample content to bundle (e.g. N sample reviews, a few demo lists)?
+1. **Default toggle state → OFF.** First visit is the pure live read-only
+   interface; users opt into experiments. Choice persists in `localStorage`.
+2. **Storage → `localStorage`** for all demo-write overlays (`demoOverlay`).
+3. **"Submit a tool" with flag on → in-app form** (`#/tools/create`), with the
+   red mockup banner present (§3.4). Flag off → keep the external production link.
+4. **Crawler-origin tools in the edit experiment → demo-friendly.** Editable on
+   any tool via overlay, with core vs. community-annotation fields visually
+   distinguished and an inline note that production limits core edits to
+   `origin="api"`. (Recommendation; flip to faithful/annotation-only on request.)
+5. **Developer settings → hidden.** The route keeps a brief "not part of this
+   demo" note in both states.
+6. **Synthetic features (reviews/health/popularity/screenshots) → keep as
+   fixtures**, unified under the overload pattern.
+7. **Seed scope → small.** A few sample reviews and a few demo lists/examples —
+   just enough to make the experiments believable.
+
+Always-on labeling (from these decisions): the **red mockup banner** shows on
+every page whenever experiments are on, and links to the **Rules of Engagement**
+page (§3.4) explaining live data vs. fixtures.
 
 ---
 
