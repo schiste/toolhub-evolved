@@ -184,6 +184,66 @@
 		</details>`;
 	}
 
+	/* ===== Tool overlays (Lane B) — edits / annotations / new submissions ======
+	   EXPERIMENTAL. Needs: POST /api/tools/, PUT /api/tools/{name}/,
+	   PUT /api/tools/{name}/annotations/. Edits & annotations are COMPACT-shaped
+	   overrides merged onto the live record by applyToolOverlay(); new submissions
+	   are full compact records that live only in the browser. */
+	function toolEditsMap() { return demoStore.get("toolEdits", {}); }
+	function toolAnnosMap() { return demoStore.get("toolAnnos", {}); }
+	function toolNewMap() { return demoStore.get("toolNew", {}); }
+	function isNewTool(name) { return !!toolNewMap()[name]; }
+	function applyToolOverlay(o) {
+		const e = toolEditsMap()[o.name]; if (e) { Object.assign(o, e); o.edited = true; }
+		const a = toolAnnosMap()[o.name]; if (a) { Object.assign(o, a); o.annotated = true; }
+		if (e || a) o.status = statusOf(o); // flags may have changed
+		return o;
+	}
+	// Build a compact tool object for a net-new demo submission, then overlay edits.
+	function newToolBase(name) {
+		const rec = toolNewMap()[name]; if (!rec) return null;
+		const o = Object.assign({
+			name, keywords: [], authors: [], audiences: [], tasks: [], forWikis: [], uiLanguages: [],
+			technologyUsed: [], maintainer: USER.name, deprecated: false, experimental: false, origin: "api",
+		}, rec);
+		o.weeklyViews = synthViews(name);
+		o.status = statusOf(o);
+		INDEX[name] = o;
+		return applyToolOverlay(o);
+	}
+	// Append local revision + audit-log rows so feeds/history reflect demo edits.
+	function logActivity(action, name, title) {
+		const ts = new Date().toISOString(), id = "d" + Date.now() + Math.floor(Math.random() * 1e3);
+		const rev = demoStore.get("revisions", []);
+		rev.unshift({ id, timestamp: ts, user: { username: USER.name }, comment: "Demo: " + action, content_type: "tool", content_id: name, content_title: title, _demo: true });
+		demoStore.set("revisions", rev.slice(0, 100));
+		const aud = demoStore.get("auditlogs", []);
+		aud.unshift({ id, timestamp: ts, user: { username: USER.name }, action, target: { type: "tool", id: name, label: title }, _demo: true });
+		demoStore.set("auditlogs", aud.slice(0, 100));
+	}
+	function demoRevisionsFor(name) { return demoStore.get("revisions", []).filter((r) => r.content_id === name); }
+	// CSV helpers for array form fields.
+	function toCsv(a) { return (a || []).join(", "); }
+	function fromCsv(s) { return String(s || "").split(",").map((x) => x.trim()).filter(Boolean); }
+	// Shared form-field renderers (reused by all Lane B forms).
+	function fInput(label, id, value, opts) {
+		opts = opts || {};
+		return `<label class="le__label">${esc(label)}${opts.req ? ' <span class="le__req">*</span>' : ""}
+			<input class="le__input" id="${id}" type="${opts.type || "text"}"${opts.req ? " required" : ""} maxlength="${opts.max || 300}" value="${esc(value == null ? "" : value)}" ${opts.ph ? `placeholder="${esc(opts.ph)}"` : ""} /></label>`;
+	}
+	function fArea(label, id, value, hint) {
+		return `<label class="le__label">${esc(label)}${hint ? ` <span class="le__hint">${esc(hint)}</span>` : ""}
+			<textarea class="le__input" id="${id}" rows="3" maxlength="2000">${esc(value == null ? "" : value)}</textarea></label>`;
+	}
+	function fCheck(label, id, checked) {
+		return `<label class="le__check"><input type="checkbox" id="${id}"${checked ? " checked" : ""} /> ${esc(label)}</label>`;
+	}
+	const TOOL_TYPES = ["", "web app", "desktop app", "bot", "gadget", "user script", "command line tool", "coding framework", "lua module", "template", "other"];
+	function fSelect(label, id, value, options) {
+		return `<label class="le__label">${esc(label)}
+			<select class="le__input" id="${id}">${options.map((o) => `<option value="${esc(o)}"${o === (value || "") ? " selected" : ""}>${esc(o || "—")}</option>`).join("")}</select></label>`;
+	}
+
 	/* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
 	   as live data arrives (search results, lists, tool pages). No snapshot. */
 	const INDEX = {};
@@ -237,6 +297,7 @@
 		};
 		o.weeklyViews = synthViews(o.name);
 		o.status = statusOf(o);
+		if (expOn()) applyToolOverlay(o); // Lane B: edits/annotations overload the live record
 		INDEX[o.name] = o; // cache for quick-view
 		return o;
 	}
@@ -515,9 +576,16 @@
 	const wikiShort = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : (a.length === 1 ? a[0] : countLabel(a.length, "wiki", "wikis")));
 
 	async function viewTool(name) {
-		let t;
-		try { t = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); }
-		catch (e) { return viewNotFound(); }
+		let t = (signedIn() && isNewTool(name)) ? newToolBase(name) : null;
+		if (!t) {
+			try { t = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); }
+			catch (e) { return viewNotFound(); }
+		}
+		const provTags = !signedIn() ? "" : [
+			isNewTool(name) ? '<span class="exp-badge">Demo submission</span>' : "",
+			t.edited ? '<span class="exp-badge">Edited · demo</span>' : "",
+			t.annotated ? '<span class="exp-badge">Community annotations · demo</span>' : "",
+		].filter(Boolean).join(" ");
 		const st = t.status || { level: "green", label: "Healthy" };
 		const tags = (t.keywords || []).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`).join("") || "—";
 		const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
@@ -558,6 +626,7 @@
 				<div class="toolpage__id">
 					<h1 class="toolpage__title"${dirAttrs(t.title)}>${esc(t.title)}</h1>
 					<div class="toolpage__by">by <span dir="auto">${authors}</span></div>
+					${provTags ? `<div class="toolpage__prov">${provTags}</div>` : ""}
 					<div class="toolpage__glance">${glance}</div>
 					<div class="toolpage__row">
 						${realBadge}
@@ -618,7 +687,9 @@
 						<div class="toolpage__actions">${actions || '<span class="meta__v">No links provided</span>'}</div>
 						<div class="toolpage__sub">
 							<a href="#/tools/${encodeURIComponent(t.name)}/history">View history</a>
-							<a href="#/tools/${encodeURIComponent(t.name)}/edit">Suggest an edit</a>
+							${signedIn()
+								? `<a href="#/tools/${encodeURIComponent(t.name)}/edit">Edit tool</a> <a href="#/tools/${encodeURIComponent(t.name)}/edit-annotations">Edit annotations</a>`
+								: `<a href="#/tools/${encodeURIComponent(t.name)}/edit">Suggest an edit</a>`}
 						</div>
 					</div>
 					<div class="panel">
@@ -768,6 +839,125 @@
 			if (del) del.addEventListener("click", () => { demoListDelete(work.id); location.hash = "#/my-lists"; });
 		}
 		return { title: `${editing ? "Edit list" : "Create a list"} — Toolhub`, html, mount };
+	}
+
+	// EXPERIMENTAL — create/edit a tool's CORE fields. name=null → create.
+	// Edits overload the live record; new tools live only in the browser.
+	async function viewToolForm(name) {
+		const editing = name != null;
+		let cur = { name: "", title: "", description: "", url: "", repository: null, license: null, toolType: null, keywords: [], forWikis: [], deprecated: false, experimental: false };
+		if (editing) {
+			if (isNewTool(name)) cur = newToolBase(name);
+			else { try { cur = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); } catch (e) { return viewNotFound(); } }
+		}
+		const isCrawler = editing && !isNewTool(name) && cur.origin !== "api";
+		const html = `
+		<div class="container page le">
+			<a class="back" href="${editing ? "#/tools/" + encodeURIComponent(name) : "#/add-or-remove-tools"}">← Back</a>
+			<h1 class="page__title">${editing ? "Edit tool" : "Submit a tool"} <span class="exp-badge">Experimental</span></h1>
+			<p class="page__intro">Changes are saved only in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.
+			${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
+			<form data-tool-form>
+				<h2 class="le__h2">Core information</h2>
+				${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120 })}
+				${fInput("Title", "tf-title", cur.title, { req: true })}
+				${fArea("Description", "tf-desc", cur.description)}
+				${fInput("URL", "tf-url", cur.url, { req: true, type: "url", ph: "https://…" })}
+				${fInput("Source code repository", "tf-repo", cur.repository, { type: "url" })}
+				${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later" })}
+				${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES)}
+				${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords))}
+				${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis))}
+				<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
+				<div class="le__actions">
+					<button class="btn btn--primary" type="submit">${editing ? "Save changes" : "Submit tool"}</button>
+					${editing && !isNewTool(name) ? '<button class="btn btn--outline le__delete" type="button" data-tf-revert>Revert demo edits</button>' : ""}
+					${editing && isNewTool(name) ? '<button class="btn btn--outline le__delete" type="button" data-tf-delete>Delete submission</button>' : ""}
+				</div>
+			</form>
+		</div>`;
+		function mount() {
+			const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+			const chk = (id) => { const el = document.getElementById(id); return !!(el && el.checked); };
+			$("[data-tool-form]").addEventListener("submit", (e) => {
+				e.preventDefault();
+				const title = val("tf-title"), url = val("tf-url"), desc = val("tf-desc");
+				const tname = editing ? name : val("tf-name");
+				if (!tname || !title || !url) { document.getElementById(editing ? "tf-title" : "tf-name").focus(); return; }
+				if (!editing && (isNewTool(tname))) { alert("A demo tool with that name already exists."); return; }
+				const fields = {
+					title, description: desc, url,
+					repository: val("tf-repo") || null, license: val("tf-license") || null,
+					toolType: val("tf-type") || null, keywords: fromCsv(val("tf-keywords")),
+					forWikis: fromCsv(val("tf-wikis")), deprecated: chk("tf-deprecated"), experimental: chk("tf-experimental"),
+				};
+				if (editing && !isNewTool(tname)) {
+					const m = toolEditsMap(); m[tname] = fields; demoStore.set("toolEdits", m);
+					logActivity("edited", tname, title);
+				} else {
+					const m = toolNewMap(); m[tname] = fields; demoStore.set("toolNew", m);
+					logActivity(editing ? "edited" : "created", tname, title);
+				}
+				location.hash = "#/tools/" + encodeURIComponent(tname);
+			});
+			const rev = $("[data-tf-revert]");
+			if (rev) rev.addEventListener("click", () => { const m = toolEditsMap(); delete m[name]; demoStore.set("toolEdits", m); location.hash = "#/tools/" + encodeURIComponent(name); });
+			const del = $("[data-tf-delete]");
+			if (del) del.addEventListener("click", () => { const m = toolNewMap(); delete m[name]; demoStore.set("toolNew", m); location.hash = "#/add-or-remove-tools"; });
+		}
+		return { title: `${editing ? "Edit tool" : "Submit a tool"} — Toolhub`, html, mount };
+	}
+
+	// EXPERIMENTAL — your demo tool submissions (also the entry to the create form).
+	function viewAddTools() {
+		const subs = Object.keys(toolNewMap());
+		const cards = subs.map((n) => newToolBase(n));
+		return { title: "Add or remove tools — Toolhub", html: `
+			<div class="container page">
+				<div class="section-head"><h1 class="page__title">Your submissions <span class="exp-badge">Experimental</span></h1>
+					<a class="btn btn--primary" href="#/tools/create"><span aria-hidden="true">＋</span> Submit a tool</a></div>
+				<p class="page__intro">Tools you've submitted in this demo. They live only in this browser and don't appear
+				in live search — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+				${cards.length ? grid("grid-tools", cards, (t) => toolCard(t)) : '<p class="empty">No submissions yet. <a href="#/tools/create">Submit your first tool</a>.</p>'}
+			</div>` };
+	}
+
+	// EXPERIMENTAL — edit a tool's COMMUNITY ANNOTATIONS (overlay on live record).
+	async function viewAnnotationsEdit(name) {
+		let cur;
+		if (isNewTool(name)) cur = newToolBase(name);
+		else { try { cur = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); } catch (e) { return viewNotFound(); } }
+		const html = `
+		<div class="container page le">
+			<a class="back" href="#/tools/${encodeURIComponent(name)}">← Back to ${esc(cur.title)}</a>
+			<h1 class="page__title">Edit annotations <span class="exp-badge">Experimental</span></h1>
+			<p class="page__intro">Community annotations enrich a tool without touching its core data. Saved only in
+			this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+			<form data-anno-form>
+				<h2 class="le__h2">Community annotations for <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
+				${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences))}
+				${fInput("Tasks (comma-separated)", "an-tasks", toCsv(cur.tasks))}
+				${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES)}
+				${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url" })}
+				<div class="le__actions">
+					<button class="btn btn--primary" type="submit">Save annotations</button>
+					${toolAnnosMap()[name] ? '<button class="btn btn--outline le__delete" type="button" data-an-revert>Revert annotations</button>' : ""}
+				</div>
+			</form>
+		</div>`;
+		function mount() {
+			const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+			$("[data-anno-form]").addEventListener("submit", (e) => {
+				e.preventDefault();
+				const anno = { audiences: fromCsv(val("an-aud")), tasks: fromCsv(val("an-tasks")), toolType: val("an-type") || null, icon: val("an-icon") || null };
+				const m = toolAnnosMap(); m[name] = anno; demoStore.set("toolAnnos", m);
+				logActivity("annotated", name, cur.title);
+				location.hash = "#/tools/" + encodeURIComponent(name);
+			});
+			const rev = $("[data-an-revert]");
+			if (rev) rev.addEventListener("click", () => { const m = toolAnnosMap(); delete m[name]; demoStore.set("toolAnnos", m); location.hash = "#/tools/" + encodeURIComponent(name); });
+		}
+		return { title: `Edit annotations — Toolhub`, html, mount };
 	}
 
 	/* ---- Static prose pages (T9) ------------------------------------------- */
@@ -971,7 +1161,9 @@
 	// Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
 	async function viewRecent() {
 		const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
-		const rows = (data.results || []).map((r) => {
+		// Lane B: your demo edits appear at the top of the live feed.
+		const merged = (signedIn() ? demoStore.get("revisions", []) : []).concat(data.results || []);
+		const rows = merged.map((r) => {
 			const title = esc(r.content_title || r.content_id || "—");
 			const who = esc((r.user && r.user.username) || "system");
 			const inner = `<span class="feed__ic" aria-hidden="true">✎</span>
@@ -1037,7 +1229,8 @@
 	}
 	async function viewAudit() {
 		const data = await apiGet("/auditlogs/", { page_size: "25" }).catch(() => ({ results: [] }));
-		const rows = (data.results || []).map((a) => {
+		const merged = (signedIn() ? demoStore.get("auditlogs", []) : []).concat(data.results || []);
+		const rows = merged.map((a) => {
 			const who = esc((a.user && a.user.username) || "System");
 			const tgt = a.target ? `${esc(a.target.type)} “${esc(a.target.label)}”` : "";
 			const inner = `<span class="feed__ic" aria-hidden="true">📝</span>
@@ -1078,11 +1271,13 @@
 	}
 	// Tool revision history — illustrative, from the tool's modified date.
 	async function viewToolHistory(name) {
-		const [t, data] = await Promise.all([
+		const [liveT, data] = await Promise.all([
 			apiGet("/tools/" + encodeURIComponent(name) + "/").then(normalizeTool).catch(() => null),
 			apiGet("/tools/" + encodeURIComponent(name) + "/revisions/", { page_size: "20" }).catch(() => ({ results: [] })),
 		]);
-		const revs = data.results || [];
+		// Lane B: your demo edits show as the most recent revisions.
+		const revs = (signedIn() ? demoRevisionsFor(name) : []).concat(data.results || []);
+		const t = liveT || (signedIn() && isNewTool(name) ? newToolBase(name) : null);
 		if (!t && !revs.length) return viewNotFound();
 		const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
 		const rows = revs.map((r, i) => `
@@ -1291,10 +1486,11 @@
 		if (path === "/") return viewHome();
 		if (seg[0] === "search") return viewSearch(query);
 		// Tool + its sub-routes
+		if (seg[0] === "tools" && seg[1] === "create") return signedIn() ? viewToolForm(null) : signInPage("Submit a tool", "Create a new tool record — title, description, URL and more.");
 		if (seg[0] === "tools" && seg[1]) {
 			const nm = decodeURIComponent(seg[1]);
-			if (seg[2] === "edit") return signInPage("Edit tool", "Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data.");
-			if (seg[2] === "edit-annotations") return signInPage("Edit annotations", "Add or refine community annotations for this tool — audiences, tasks and more.");
+			if (seg[2] === "edit") return signedIn() ? viewToolForm(nm) : signInPage("Edit tool", "Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data.");
+			if (seg[2] === "edit-annotations") return signedIn() ? viewAnnotationsEdit(nm) : signInPage("Edit annotations", "Add or refine community annotations for this tool — audiences, tasks and more.");
 			if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
 			return viewTool(nm);
 		}
@@ -1308,7 +1504,7 @@
 		if (seg[0] === "lists" || seg[0] === "published-lists") return viewLists();
 		if (seg[0] === "my-lists") return signedIn() ? viewMyLists() : signInPage("Your lists", "See and manage the lists you've created.");
 		if (seg[0] === "favorites") return signedIn() ? viewFavorites() : signInPage("Favorites", "Your saved tools, all in one place.");
-		if (seg[0] === "add-or-remove-tools") return signInPage("Add or remove tools", "Register a toolinfo.json URL to be crawled, or create a tool record directly.");
+		if (seg[0] === "add-or-remove-tools") return signedIn() ? viewAddTools() : signInPage("Add or remove tools", "Register a toolinfo.json URL to be crawled, or create a tool record directly.");
 		if (seg[0] === "developer-settings") return signInPage("Developer settings", "Manage your API tokens and registered OAuth applications.");
 		if (seg[0] === "login") return signInPage("Sign in", "Sign in to save favourites, build lists, and edit tool information.");
 		// Maintenance / discovery pages
@@ -1420,7 +1616,15 @@
 		if (e.target.closest("#acct-menu a, #acct-menu button")) { closeAcctMenu(); } // links route natively
 	});
 	document.addEventListener("click", (e) => { if (!e.target.closest("#account")) closeAcctMenu(); });
+	// Header "Submit a tool": in-app create form when experimenting (decision §8.3),
+	// else the real production link.
+	function syncSubmitButton() {
+		const b = document.getElementById("submit-tool"); if (!b) return;
+		if (expOn()) { b.setAttribute("href", "#/tools/create"); b.removeAttribute("target"); b.removeAttribute("rel"); }
+		else { b.setAttribute("href", "https://toolhub.wikimedia.org/tools/create"); b.setAttribute("target", "_blank"); b.setAttribute("rel", "noopener"); }
+	}
 	renderAccount();
+	syncSubmitButton();
 
 	/* Experimental toggle: persist, flip body state, re-render so JS-conditional
 	   experimental logic (e.g. the sort options) updates too. */
@@ -1430,6 +1634,7 @@
 		localStorage.setItem(EXP_KEY, on ? "on" : "off");
 		applyExp(on);
 		renderAccount(); // identity is experimental — reflect the new state
+		syncSubmitButton();
 		render();
 	});
 

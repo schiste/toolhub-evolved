@@ -114,6 +114,12 @@ body.exp-off .mockup-banner { display: none; }
 .le__actions { display: flex; gap: 13px; margin-top: 21px; }
 .le__delete { color: var(--color-destructive); border-color: var(--color-destructive); }
 .le__searching, .le__empty { color: var(--color-text-muted); font-size: 14px; }
+.le__checks { display: flex; gap: 21px; flex-wrap: wrap; margin-top: 13px; }
+.le__check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.le__ro { color: var(--color-text-secondary); font-size: 14px; margin: 13px 0 0; }
+.le__req { color: var(--color-destructive); }
+.le__hint { color: var(--color-text-muted); font-weight: 400; font-size: 13px; }
+.toolpage__prov { display: flex; flex-wrap: wrap; gap: 8px; margin: 5px 0; }
 
 /* Nav */
 .nav { border-bottom: 1px solid var(--base80); background: var(--white); }
