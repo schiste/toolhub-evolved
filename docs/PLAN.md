@@ -19,19 +19,24 @@ Every piece of work therefore falls into exactly one of two lanes:
   read-only API as it exists today: correctness, internationalization,
   accessibility, performance, polish. No backend changes, ever.
 
-- **Lane B — Experiments (behind the existing toggle, fixtures only).** Every
-  feature that would require a backend capability the read-only API does not
-  give us — any **write**, any **auth/session**, or any **signal Toolhub doesn't
-  expose** — lives behind the existing *"Show me prospective features"* toggle
-  (`expOn()` / `body.exp-off` / `.experimental`). It is faked with **fixtures**:
-  bundled seed JSON for believable content, plus `localStorage`/`IndexedDB` for
-  user-generated demo state. Each carries an `exp-badge` and a one-line code
-  comment naming the backend capability it would need in production.
+- **Lane B — Experiments (behind the existing toggle, real data overloaded with
+  fixtures).** Every feature that would require a backend capability the
+  read-only API does not give us — any **write**, any **auth/session**, or any
+  **signal Toolhub doesn't expose** — lives behind the existing *"Show me
+  prospective features"* toggle (`expOn()` / `body.exp-off` / `.experimental`).
+  Crucially, **Lane B does not introduce a parallel data source.** It keeps
+  reading the same live API as Lane A and **overloads those real records with a
+  feature-specific fixture layer** — exactly how `synthViews(name)` already
+  decorates a real tool with a synthetic view count. Each feature carries an
+  `exp-badge` and a one-line code comment naming the backend capability it would
+  need in production.
 
 **The rule that routes all future work:** *if a feature needs a write, a login,
-or a number the read-only API doesn't return, it goes in Lane B with fixtures —
-it never blocks or complicates the shipping interface.* Turning the toggle off
-returns the app to a 100% honest, live, read-only Toolhub experience.
+or a number the read-only API doesn't return, it stays in Lane B and is built as
+a fixture overlay on top of the real live data — it never replaces the real data
+and never blocks or complicates the shipping interface.* Turning the toggle off
+strips every overlay and returns the app to a 100% honest, live, read-only
+Toolhub experience.
 
 Explicitly **out of scope** (the demo never grows a server): a real write/auth
 backend (FastAPI/SQLite/Django), real Wikimedia OAuth, a server-side crawler,
@@ -42,13 +47,17 @@ ever productionized," not as work for this plan.
 
 ## 1. Baseline — what is already true today
 
-- Vanilla-JS hash-routed SPA reading **live read-only** data via the read proxy;
-  no bundled catalog. (Architecture: `app.js`, `index.html`, `styles.css`,
-  `tokens.css`, `proxy/app.py`.)
-- The **experimental toggle already exists** and already gates synthetic
-  features (popularity/`weeklyViews`, reviews, health, usage, screenshots) with
-  `exp-badge`s and `// EXPERIMENTAL — MISSING …` code comments. **Lane B's
-  mechanism is already in the codebase** — this plan generalizes it.
+- **Live API data is already wired and stays the substrate everywhere.** The
+  vanilla-JS hash-routed SPA reads **live read-only** data via the read proxy;
+  there is no bundled catalog and reads never move to fixtures. (Architecture:
+  `app.js`, `index.html`, `styles.css`, `tokens.css`, `proxy/app.py`.)
+- The **experimental toggle already exists** and its synthetic features already
+  use the exact pattern this plan generalizes: a **real record overloaded with a
+  feature-specific fixture**. `synthViews(name)` decorates a real tool with a
+  deterministic view count; reviews, health, usage, and screenshots likewise
+  hang off real tools, each behind an `exp-badge` and a
+  `// EXPERIMENTAL — MISSING …` comment. **Lane B's mechanism is already in the
+  codebase** — every new experiment follows the same overload shape.
 - **Lane A correctness is done** (feature-fix sweep, §2.1).
 - **Lane A i18n/a11y primitives have landed** (Intl formatters, `lang`/`dir`,
   `<time>`, `dir="auto"`, modal `inert`/focus-trap, `aria-busy`, `aria-current`,
@@ -118,49 +127,69 @@ lazy-loading audit. Light, opportunistic.
 
 ---
 
-## 3. Lane B — Experiments (behind the toggle, fixtures only)
+## 3. Lane B — Experiments (behind the toggle, live data overloaded with fixtures)
 
 Everything here is gated by `expOn()`. With the toggle **off**, none of it
 renders and the app is a pure live read-only catalog. With it **on**, these
-features work end-to-end against **fixtures + browser storage** — no server.
+features still read the **live API** and overload those real records with a
+feature-specific fixture layer (synthetic signals computed per record, and
+user-action deltas persisted in browser storage) — no server.
 
-### 3.1 The mechanism (build once, reuse for every feature)
+### 3.1 The mechanism — overload live data with feature fixtures (build once, reuse)
 
-- **`demoStore`** — a small module over `localStorage`/`IndexedDB`, namespaced
-  `thdemo:*`, holding all user-generated demo state (session, favorites, lists,
-  submitted/edited tools, annotations). Ships with a **"Reset demo data"**
-  action.
-- **Seed fixtures** — small bundled JSON for believable synthetic content
-  (sample reviews, usage seeds, a sample `toolinfo.json`, a couple of demo
-  lists). Tiny; generated offline (optional `tools/seed-*.mjs`), never fetched at
-  runtime.
-- **Reads stay live.** Favorites/lists store **tool names**; the tool data is
-  fetched live. A submitted/edited tool lives only as a local overlay, shown in
-  "my …" views — it is honestly **not** in live search.
-- **Write adapter** — add `apiWrite`/`demoApi` (`post`/`put`/`delete`) used
-  *only* by flagged features; `apiGet` (live reads) is untouched. A mode flag
-  keeps the door open for a future real backend without reshaping callers.
-- **Labeling contract** — every Lane B feature renders an `exp-badge` and
-  carries `// EXPERIMENTAL — Needs: <backend capability> (Toolhub read-only API
-  does not expose this)`. The UI must never imply a write touches production
-  Toolhub.
+Live reads are never replaced. Every experiment fetches the real record through
+`apiGet` and then **merges a feature-specific overlay on top at render time.**
+There are two overlay kinds:
+
+- **Synthetic-signal overlays — deterministic, no persistence.** A pure function
+  of the real record decorates it with a signal the API can't give us:
+  `synthViews(name)` (exists), and the same shape for reviews, health, usage, and
+  screenshots. Optionally backed by a tiny bundled seed JSON keyed by tool name
+  for more believable sample content; computed/seeded offline, never a runtime
+  data source. These need no store — they are recomputed from the live record
+  each render.
+- **User-action overlays — persisted, merged onto the live record.** A small
+  **`demoOverlay`** module over `localStorage`/`IndexedDB` (namespaced
+  `thdemo:*`) holds only the *delta* the user creates: a set of favorited tool
+  **names**, demo lists referencing real tool names, field-level **edits layered
+  onto a real tool**, annotation overrides, and net-new submissions (a local
+  record shaped like a real tool). At render time the overlay is merged over the
+  live read; with the toggle off, the overlay is ignored entirely. Ships with a
+  **"Reset demo data"** action.
+
+Supporting pieces:
+
+- **Merge helpers** — extend `normalizeTool()`/`normalizeList()` so a live record
+  + its overlay produce one object the existing cards/views render unchanged.
+  Favorited/edited state is read by merging the overlay against the live fetch,
+  not by querying a separate catalog.
+- **Write adapter** — `apiWrite`/`demoApi` (`post`/`put`/`delete`) used *only* by
+  flagged features writes into `demoOverlay`; `apiGet` (live reads) is untouched.
+  A mode flag keeps the door open for a future real backend without reshaping
+  callers.
+- **Honest edges** — a submitted/edited tool's overlay shows on its detail page
+  and in "my …" views, but it is **not** in live `/api/search/tools/` results
+  (that's real and read-only); the UI says so rather than faking search.
+- **Labeling contract** — every Lane B feature renders an `exp-badge` and carries
+  `// EXPERIMENTAL — Needs: <backend capability> (Toolhub read-only API does not
+  expose this)`. The UI must never imply a write touches production Toolhub.
 
 ### 3.2 Features (each = a fixture-backed simulation behind the flag)
 
 Reframed from the standalone-demo write catalog; the real endpoints are kept in
 Appendix A as the contract each simulation imitates.
 
-| Feature | What the user does (flag on) | Fixture/store model | Needs in production (why it's Lane B) |
+| Feature | What the user does (flag on) | Overlay on live data | Needs in production (why it's Lane B) |
 | --- | --- | --- | --- |
-| **Mock identity** | Explicit "Sign in" identity picker (default *Schiste*) + "Log out" | session record in `demoStore` | Real Wikimedia OAuth + server session |
-| **Favorites** | Save/unsave on cards, quick-view, detail; `#/favorites` list | set of tool names in `demoStore` | `POST/DELETE /api/user/favorites/` |
-| **Lists CRUD** | `#/my-lists`, `#/lists/create`, `#/lists/:id/edit`, delete; reorder tools | list rows + ordered names in `demoStore` | `POST/PUT/DELETE /api/lists/` |
-| **Tool submit / edit** | `#/tools/create`, `#/tools/:name/edit` (name/title/desc/url + common fields) | local overlay tool, `origin="api"` | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
-| **Annotations edit** | `#/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …) | annotation row in `demoStore`; detail merges + labels "community" | `PUT /api/tools/{name}/annotations/` |
-| **Add / remove tools** | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest | local crawler-url + revision/audit rows | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
-| **Developer settings** | Local-only demo API tokens (or hidden) | token rows in `demoStore` | Token/OAuth-app backend |
-| **History & feeds become live** | Local writes create revision/audit rows so `#/recent`, `#/audit-logs`, history stop being decorative *for demo actions* | append to `demoStore` feeds, merged with live reads | Server write-side-effects |
-| **Already-synthetic** (popularity/`weeklyViews`, reviews, health, usage, screenshots) | unchanged; now unified under the same fixtures mechanism | seed fixtures, deterministic per tool | Real usage/health/review data source |
+| **Mock identity** | Explicit "Sign in" identity picker (default *Schiste*) + "Log out" | session delta in `demoOverlay`; real `/api/users/` data still backs Members | Real Wikimedia OAuth + server session |
+| **Favorites** | Save/unsave on cards, quick-view, detail; `#/favorites` list | favorited **names** in `demoOverlay`; tool data fetched live and merged | `POST/DELETE /api/user/favorites/` |
+| **Lists CRUD** | `#/my-lists`, `#/lists/create`, `#/lists/:id/edit`, delete; reorder tools | demo lists reference real tool names; shown alongside live `/api/lists/` | `POST/PUT/DELETE /api/lists/` |
+| **Tool submit / edit** | `#/tools/create`, `#/tools/:name/edit` (name/title/desc/url + common fields) | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
+| **Annotations edit** | `#/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …) | annotation overrides merged over the live record's `annotations`; detail labels "community" | `PUT /api/tools/{name}/annotations/` |
+| **Add / remove tools** | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest | local crawler-url + revision/audit deltas merged into the live feeds | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
+| **Developer settings** | Local-only demo API tokens (or hidden) | token deltas in `demoOverlay` | Token/OAuth-app backend |
+| **History & feeds** | Demo actions append revision/audit rows so `#/recent`, `#/audit-logs`, history reflect *your* edits | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds | Server write-side-effects |
+| **Already-synthetic** (popularity/`weeklyViews`, reviews, health, usage, screenshots) | unchanged; the original overload pattern | deterministic per-tool signal computed from the live record (optional seed JSON) | Real usage/health/review data source |
 
 ### 3.3 Route & chrome behavior under the flag
 
@@ -176,14 +205,21 @@ Appendix A as the contract each simulation imitates.
 
 ## 4. Frontend code shape (no backend)
 
-- Keep `apiGet(path, params)` for live reads — unchanged.
-- Add `demoStore` (browser storage) and `demoApi`/`apiWrite` (`post/put/delete`)
-  used **only** inside `expOn()` branches.
+- Keep `apiGet(path, params)` for live reads — unchanged; it stays the only data
+  source for the base records.
+- Add `demoOverlay` (browser storage for user-action deltas) and
+  `apiWrite`/`demoApi` (`post/put/delete`) used **only** inside `expOn()`
+  branches; writes land in `demoOverlay`, never on the network.
+- Add a thin **merge step**: after `normalizeTool()`/`normalizeList()` produce the
+  live object, when `expOn()` apply the matching overlay (favorite flag, field
+  edits, annotation overrides, synthetic signals) so the existing cards/views
+  render the decorated object unchanged. When the toggle is off, the merge is a
+  no-op and only live data shows.
 - Gate every Lane B view/control behind `expOn()`; rely on the existing
   `body.exp-off` / `.experimental` hiding so toggling is instant and complete.
-- Keep `normalizeTool()`/`normalizeList()`; Lane B overlays reuse them so a
-  demo-created tool renders through the same cards.
-- One golden rule in review: **no Lane B code path runs when the toggle is off.**
+- One golden rule in review: **no Lane B code path runs and no overlay is merged
+  when the toggle is off** — the app is then byte-for-byte the live read-only
+  interface.
 
 ---
 
@@ -193,11 +229,11 @@ Appendix A as the contract each simulation imitates.
 | --- | --- | --- | --- |
 | P0 | — | Lock this plan + the fixture/store contract; pick decisions in §8 | 0.5 d |
 | P1 | A | i18n catalog + `t()` (audit phases 1–2) and the deferred a11y items | 4–6 d |
-| P2 | B | `demoStore` + seed fixtures + mock identity + favorites | 2–3 d |
+| P2 | B | `demoOverlay` + the live-record merge step + mock identity + favorites | 2–3 d |
 | P3 | B | Lists CRUD (`my-lists`, create/edit/delete, reorder) | 2–3 d |
 | P4 | B | Tool submit/edit + annotations edit + local revision/audit side-effects | 3–4 d |
 | P5 | B | Add/remove-tools simulation (paste/sample JSON) + dev-settings decision | 1.5–2 d |
-| P6 | B | Unify existing synthetic features under the fixtures mechanism; add the per-feature "Needs:" comments | 1–2 d |
+| P6 | B | Unify existing synthetic features under the same overload pattern; add the per-feature "Needs:" comments | 1–2 d |
 | P7 | A | i18n phases 3–5 (prose, localized fields, language switcher) + polish | 3–5 d |
 
 Total: **~3 weeks**, entirely frontend. Lanes A and B are independent — i18n/a11y
