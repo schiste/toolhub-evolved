@@ -19,6 +19,60 @@
 			.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 	}
 	function safeUrl(u) { const s = String(u == null ? "" : u).trim(); return /^https?:\/\//i.test(s) ? esc(s) : ""; }
+	const DEFAULT_LOCALE = "en";
+	const RTL_LANGS = new Set(["ar", "arc", "ckb", "dv", "fa", "ha", "he", "khw", "ks", "ku", "ps", "sd", "ug", "ur", "yi"]);
+	function appLocale() {
+		const stored = localStorage.getItem("toolhub-locale");
+		return (stored || DEFAULT_LOCALE).replace(/_/g, "-");
+	}
+	const LOCALE = appLocale();
+	const numberFmt = new Intl.NumberFormat(LOCALE);
+	const compactNumberFmt = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });
+	const relativeTimeFmt = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
+	const dateTimeFmt = new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium", timeStyle: "short" });
+	const pluralRules = new Intl.PluralRules(LOCALE);
+	function localeDir(locale) { return RTL_LANGS.has(String(locale).split("-")[0].toLowerCase()) ? "rtl" : "ltr"; }
+	function applyLocaleAttrs() {
+		document.documentElement.lang = LOCALE;
+		document.documentElement.dir = localeDir(LOCALE);
+	}
+	function dirAttrs(value) { return value ? ' dir="auto"' : ""; }
+	function fmt(n) { return numberFmt.format(Number(n) || 0); }
+	function compactFmt(n) { return compactNumberFmt.format(Number(n) || 0); }
+	function plural(n, forms) {
+		const cat = pluralRules.select(Math.abs(Number(n) || 0));
+		return forms[cat] || forms.other || forms.one || "";
+	}
+	function countLabel(n, one, other) {
+		const value = Number(n) || 0;
+		return `${fmt(value)} ${plural(value, { one, other })}`;
+	}
+	function relativeTime(iso) {
+		if (!iso) return "";
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return "";
+		const delta = date.getTime() - Date.now();
+		const abs = Math.abs(delta);
+		if (abs < 86400000) return relativeTimeFmt.format(0, "day");
+		if (abs < 30 * 86400000) return relativeTimeFmt.format(Math.round(delta / 86400000), "day");
+		if (abs < 365 * 86400000) return relativeTimeFmt.format(Math.round(delta / (30 * 86400000)), "month");
+		return relativeTimeFmt.format(Math.round(delta / (365 * 86400000)), "year");
+	}
+	function relTime(iso) {
+		const rel = relativeTime(iso);
+		return rel ? `Updated ${rel}` : "";
+	}
+	function timeTag(iso, cls, text) {
+		if (!iso) return "";
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return "";
+		const label = text || relativeTime(iso);
+		const classAttr = cls ? ` class="${esc(cls)}"` : "";
+		return `<time${classAttr} datetime="${esc(date.toISOString())}" title="${esc(dateTimeFmt.format(date))}">${esc(label)}</time>`;
+	}
+	function updatedTimeTag(iso, cls) { return timeTag(iso, cls, relTime(iso)); }
+	function views(n) { return `${compactFmt(n)} ${plural(n, { one: "view", other: "views" })}`; }
+	applyLocaleAttrs();
 	function avatar(title, cls) {
 		const ch = (title || "?").trim().charAt(0).toUpperCase();
 		const color = AVATAR_COLORS[hash(title || "?") % AVATAR_COLORS.length];
@@ -40,19 +94,6 @@
 		}
 		return avatar(t.title, variant === "lg" ? "avatar--lg" : "");
 	}
-	function relTime(iso) {
-		if (!iso) return "";
-		const days = Math.floor((Date.now() - new Date(iso)) / 86400000);
-		if (days <= 0) return "Updated today";
-		if (days === 1) return "Updated yesterday";
-		if (days < 30) return `Updated ${days} days ago`;
-		const mo = Math.floor(days / 30);
-		if (mo < 12) return `Updated ${mo} month${mo > 1 ? "s" : ""} ago`;
-		const yr = Math.floor(mo / 12);
-		return `Updated ${yr} year${yr > 1 ? "s" : ""} ago`;
-	}
-	function fmt(n) { return (n || 0).toLocaleString("en-US"); }
-	function views(n) { return n >= 1000 ? (n / 1000).toFixed(1) + "k views" : n + " views"; }
 	const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 	const scrollBehavior = REDUCED ? "auto" : "smooth";
 
@@ -130,7 +171,7 @@
 		opts = opts || {};
 		// (3) Tags: 2 + "+N" overflow chip so every card is the same height.
 		const allk = t.keywords || [];
-		const tags = allk.slice(0, 2).map((k) => `<span class="tag" data-q="${esc(k)}">${esc(k)}</span>`).join("")
+		const tags = allk.slice(0, 2).map((k) => `<span class="tag" data-q="${esc(k)}"${dirAttrs(k)}>${esc(k)}</span>`).join("")
 			+ (allk.length > 2 ? `<span class="tag tag--more">+${allk.length - 2}</span>` : "");
 		const rank = opts.rank ? `<span class="rankbadge" aria-hidden="true">${opts.rank}</span>` : "";
 		// (1) Top-right shows ONLY the real deprecated/experimental flags (genuine
@@ -142,8 +183,8 @@
 		const meta = [t.toolType && esc(t.toolType), esc(wikiShort(t.forWikis))].filter(Boolean).join(" · ");
 		// EXPERIMENTAL — popularity (only the home "Popular" grid; shown when toggle on).
 		const footLeft = opts.popular
-			? `<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>`
-			: `<span class="tcard__meta">${meta}</span>`;
+			? `<span class="views experimental"><span aria-hidden="true">🔥</span> ${views(t.weeklyViews)}</span>`
+			: `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
 		// The whole card opens the quick-view; (5) a hover cue signals the peek.
 		return `
 		<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
@@ -151,23 +192,24 @@
 			<div class="tcard__head">
 				${rank}${toolIcon(t)}
 				<div class="tcard__heading">
-					<div class="tcard__title">${esc(t.title)}</div>
-					<div class="tcard__maint">by ${esc(t.maintainer)}</div>
+					<div class="tcard__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+					<div class="tcard__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
 				</div>
 			</div>
-			<p class="tcard__desc">${esc(t.description)}</p>
+			<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>
 			<div class="tcard__tags">${tags}</div>
-			<div class="tcard__foot">${footLeft}<span class="tcard__when">${esc(relTime(t.modified))}</span></div>
+			<div class="tcard__foot">${footLeft}${updatedTimeTag(t.modified, "tcard__when")}</div>
 			<span class="tcard__hint" aria-hidden="true">🔍</span>
 		</article>`;
 	}
 	function listCard(l) {
+		const count = countLabel(l.toolCount, "tool", "tools");
 		return `
-		<a class="lcard" href="#/lists/${encodeURIComponent(l.id)}" aria-label="${esc(l.title)} list, ${l.toolCount} tools">
+		<a class="lcard" href="#/lists/${encodeURIComponent(l.id)}" aria-label="${esc(l.title)} list, ${esc(count)}">
 			${avatar(l.title)}
 			<div class="lcard__body">
-				<div class="lcard__title">${esc(l.title)} <span class="lcard__count">${l.toolCount} tools</span></div>
-				<div class="lcard__desc">${esc(l.description)}</div>
+				<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span></div>
+				<div class="lcard__desc"${dirAttrs(l.description)}>${esc(l.description)}</div>
 			</div>
 		</a>`;
 	}
@@ -217,16 +259,16 @@
 		const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${ic}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
 		const recentHtml = recentTools.map((t) => `
 			<li><a href="#/tools/${encodeURIComponent(t.name)}">${avatar(t.title)}
-				<div><div class="recent__title">${esc(t.title)}</div>
-				<div class="recent__meta">Maintainer: ${esc(t.maintainer)}</div></div>
-				<span class="recent__when">${esc(relTime(t.modified))}</span></a></li>`).join("");
+				<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+				<div class="recent__meta">Maintainer: <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div></div>
+				${updatedTimeTag(t.modified, "recent__when")}</a></li>`).join("");
 
 		const html = `
 		<section class="hero">
 			<h1 class="hero__title">Find the right Wikimedia tool faster</h1>
 			<form class="search" role="search" data-home-search>
 				<label for="home-q" class="skip-label">Search tools</label>
-				<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${fmt(total)} tools…" autocomplete="off" />
+				<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${esc(countLabel(total, "tool", "tools"))}…" autocomplete="off" />
 				<button class="btn btn--primary search__btn" type="submit">Search</button>
 			</form>
 		</section>
@@ -282,7 +324,7 @@
 		if (!buckets.length || !param) return "";
 		const rows = buckets.map((b) => {
 			const checked = selected.has(param + "=" + b.key) ? " checked" : "";
-			return `<label class="facet"><input type="checkbox" data-facet="${esc(param)}" value="${esc(b.key)}"${checked}> <span>${esc(b.key)}</span> <span class="facet__n">${b.doc_count}</span></label>`;
+			return `<label class="facet"><input type="checkbox" data-facet="${esc(param)}" value="${esc(b.key)}"${checked}> <span${dirAttrs(b.key)}>${esc(b.key)}</span> <span class="facet__n">${fmt(b.doc_count)}</span></label>`;
 		}).join("");
 		return `<div class="facet-group"><h2 class="facet-group__title">${esc(g.label)}</h2>${rows}</div>`;
 	}
@@ -316,7 +358,7 @@
 			'<option value="recent">Recently updated</option><option value="name">Name (A–Z)</option>';
 		const pagerHTML = (() => {
 			if (pages <= 1) return "";
-			const btn = (p, label, dis, cur) => `<button class="pager__btn${cur ? " is-current" : ""}" ${dis ? "disabled" : ""} data-page="${p}"${cur ? ' aria-current="page"' : ""}>${label}</button>`;
+			const btn = (p, label, dis, cur) => `<button class="pager__btn${cur ? " is-current" : ""}" type="button" ${dis ? "disabled" : ""} data-page="${p}"${cur ? ' aria-current="page"' : ""}>${label}</button>`;
 			let out = btn(page - 1, "‹ Prev", page <= 1), last = 0;
 			const win = [];
 			for (let p = 1; p <= pages; p++) if (p === 1 || p === pages || Math.abs(p - page) <= 2) win.push(p);
@@ -338,7 +380,7 @@
 				</aside>
 				<div class="browse__main">
 					<div class="browse__bar">
-						<span class="browse__count" aria-live="polite">${fmt(total)} tool${total === 1 ? "" : "s"}${q ? ` for &ldquo;${esc(q)}&rdquo;` : ""}</span>
+						<span class="browse__count" aria-live="polite">${esc(countLabel(total, "tool", "tools"))}${q ? ` for &ldquo;<span${dirAttrs(q)}>${esc(q)}</span>&rdquo;` : ""}</span>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort">${sortOpts}</select></label>
 					</div>
 					<div class="card-grid grid-tools">${results.length ? results.map((t) => toolCard(t)).join("") : '<p class="empty">No tools match these filters.</p>'}</div>
@@ -369,8 +411,8 @@
 	function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 	/* ---- Tool detail page (T3) --------------------------------------------- */
-	function metaItem(k, v) { return `<div><div class="meta__k">${k}</div><div class="meta__v">${v || "—"}</div></div>`; }
-	function linkOut(label, url) { const u = safeUrl(url); return u ? `<a class="btn btn--outline" href="${u}" target="_blank" rel="noopener">${label} ↗</a>` : ""; }
+	function metaItem(k, v) { return `<div><div class="meta__k">${k}</div><div class="meta__v" dir="auto">${v || "—"}</div></div>`; }
+	function linkOut(label, url) { const u = safeUrl(url); return u ? `<a class="btn btn--outline" href="${u}" target="_blank" rel="noopener">${label} <span aria-hidden="true">↗</span></a>` : ""; }
 	// REAL — related tools derived from shared keywords (no missing data).
 	async function relatedTools(t) {
 		const kw = (t.keywords || [])[0];
@@ -383,14 +425,14 @@
 	const wikiLabel = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : a.map(esc).join(", "));
 	const langLabel = (a) => (!a || !a.length ? "English (default)" : a.map(esc).join(", "));
 	// Compact "works on" label for cards (full list shown on the detail page).
-	const wikiShort = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : (a.length === 1 ? a[0] : a.length + " wikis"));
+	const wikiShort = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : (a.length === 1 ? a[0] : countLabel(a.length, "wiki", "wikis")));
 
 	async function viewTool(name) {
 		let t;
 		try { t = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); }
 		catch (e) { return viewNotFound(); }
 		const st = t.status || { level: "green", label: "Healthy" };
-		const tags = (t.keywords || []).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}">${esc(k)}</a>`).join("") || "—";
+		const tags = (t.keywords || []).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`).join("") || "—";
 		const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
 
 		// REAL links — render only the ones present on the record.
@@ -412,14 +454,14 @@
 
 		// At-a-glance chips (real metadata).
 		const glance = [
-			t.toolType && `<span class="glance">${esc(t.toolType)}</span>`,
-			t.license && `<span class="glance">${esc(t.license)}</span>`,
-			`<span class="glance">${esc(wikiLabel(t.forWikis))}</span>`,
-			(t.uiLanguages && t.uiLanguages.length) && `<span class="glance">${t.uiLanguages.length} language${t.uiLanguages.length > 1 ? "s" : ""}</span>`,
+			t.toolType && `<span class="glance"${dirAttrs(t.toolType)}>${esc(t.toolType)}</span>`,
+			t.license && `<span class="glance"${dirAttrs(t.license)}>${esc(t.license)}</span>`,
+			`<span class="glance"${dirAttrs(wikiLabel(t.forWikis))}>${esc(wikiLabel(t.forWikis))}</span>`,
+			(t.uiLanguages && t.uiLanguages.length) && `<span class="glance">${esc(countLabel(t.uiLanguages.length, "language", "languages"))}</span>`,
 		].filter(Boolean).join("");
 
 		const maintList = (t.authors && t.authors.length ? t.authors : [t.maintainer])
-			.map((a) => `<li>${avatar(a)}<span>${esc(a)}</span></li>`).join("");
+			.map((a) => `<li>${avatar(a)}<span${dirAttrs(a)}>${esc(a)}</span></li>`).join("");
 
 		const html = `
 		<div class="container page">
@@ -427,22 +469,22 @@
 			<header class="toolpage__head">
 				${toolIcon(t, "lg")}
 				<div class="toolpage__id">
-					<h1 class="toolpage__title">${esc(t.title)}</h1>
-					<div class="toolpage__by">by ${authors}</div>
+					<h1 class="toolpage__title"${dirAttrs(t.title)}>${esc(t.title)}</h1>
+					<div class="toolpage__by">by <span dir="auto">${authors}</span></div>
 					<div class="toolpage__glance">${glance}</div>
 					<div class="toolpage__row">
 						${realBadge}
 						<!-- EXPERIMENTAL — operational health. MISSING: no uptime/health-check backend. -->
 						<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
 						<!-- EXPERIMENTAL — popularity. MISSING: no usage/view tracking in the API. -->
-						<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>
-						<span class="toolpage__when">${esc(relTime(t.modified))}</span>
+						<span class="views experimental"><span aria-hidden="true">🔥</span> ${views(t.weeklyViews)}</span>
+						${updatedTimeTag(t.modified, "toolpage__when")}
 					</div>
 				</div>
 				<div class="toolpage__cta">
-					${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ↗</a>` : ""}
+					${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool <span aria-hidden="true">↗</span></a>` : ""}
 					<!-- EXPERIMENTAL — save/bookmark. MISSING: needs an authenticated session. -->
-					<button class="btn btn--outline experimental" type="button">🔖 Save to a list</button>
+					<button class="btn btn--outline experimental" type="button"><span aria-hidden="true">🔖</span> Save to a list</button>
 				</div>
 			</header>
 
@@ -455,7 +497,7 @@
 						<span class="exp-badge shotstrip__badge">Experimental · screenshots</span>
 					</div>
 
-					<div class="prose">${esc(t.description) || "<em>No description provided.</em>"}</div>
+					<div class="prose"${dirAttrs(t.description)}>${esc(t.description) || "<em>No description provided.</em>"}</div>
 					<div class="tcard__tags toolpage__tags">${tags}</div>
 
 					<h2 class="toolpage__h2">Details</h2>
@@ -474,7 +516,7 @@
 						<div class="reviews__agg">
 							<span class="reviews__stars" aria-hidden="true">★★★★☆</span>
 							<span class="reviews__score">4.2</span>
-							<span class="reviews__count">· 18 reviews</span>
+							<span class="reviews__count">· ${esc(countLabel(18, "review", "reviews"))}</span>
 						</div>
 						<button class="btn btn--outline" type="button" disabled>Write a review</button>
 					</div>
@@ -498,7 +540,7 @@
 					<!-- EXPERIMENTAL — usage stat. MISSING: no usage analytics in the API. -->
 					<div class="panel experimental">
 						<h2 class="panel__title">Usage <span class="exp-badge">Experimental</span></h2>
-						<p class="usage"><strong>${fmt(2000 + (hash(t.name) % 9000))}</strong> editors used this in the last 30 days</p>
+						<p class="usage"><strong>${fmt(2000 + (hash(t.name) % 9000))}</strong> ${plural(2000 + (hash(t.name) % 9000), { one: "editor used", other: "editors used" })} this in the last 30 days</p>
 					</div>
 				</aside>
 			</div>
@@ -525,8 +567,8 @@
 		const html = `
 		<div class="container page">
 			<a class="back" href="#/lists">← All lists</a>
-			<h1 class="page__title">${esc(l.title)} <span class="lcard__count">${l.toolCount} tools</span></h1>
-			<div class="prose page__intro">${esc(l.description)}</div>
+			<h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(countLabel(l.toolCount, "tool", "tools"))}</span></h1>
+			<div class="prose page__intro"${dirAttrs(l.description)}>${esc(l.description)}</div>
 			${l.tools.length ? grid("grid-tools", l.tools, (t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
 		</div>`;
 		return { title: `${l.title} — Toolhub`, html };
@@ -536,7 +578,7 @@
 	function prosePage(title, bodyHtml) {
 		return { title: `${title} — Toolhub`, html: `<div class="container page"><article class="prose prose--page"><h1>${esc(title)}</h1>${bodyHtml}</article></div>` };
 	}
-	const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`;
+	const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener">${esc(label)} <span aria-hidden="true">↗</span></a>`;
 	// Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
 	// Canonical policies link out to their authoritative source (as the real site does).
 	const STATIC = {
@@ -656,7 +698,7 @@
 	function linkCard(icon, title, desc, url, internal) {
 		const href = internal ? url : safeUrl(url);
 		const attrs = internal ? "" : ` target="_blank" rel="noopener"`;
-		const arrow = internal ? "" : " ↗";
+		const arrow = internal ? "" : ' <span aria-hidden="true">↗</span>';
 		return `<a class="linkcard" href="${href || "#"}"${attrs}>
 			<span class="linkcard__icon" aria-hidden="true">${icon}</span>
 			<span class="linkcard__body"><span class="linkcard__title">${esc(title)}${arrow}</span>
@@ -702,8 +744,8 @@
 			const title = esc(r.content_title || r.content_id || "—");
 			const who = esc((r.user && r.user.username) || "system");
 			const inner = `<span class="feed__ic" aria-hidden="true">✎</span>
-				<span class="feed__main"><strong>${title}</strong> <span class="feed__sub">${esc(r.content_type || "item")} · ${who}</span></span>
-				<span class="feed__when">${esc(relTime(r.timestamp))}</span>`;
+				<span class="feed__main"><strong dir="auto">${title}</strong> <span class="feed__sub">${esc(r.content_type || "item")} · <span dir="auto">${who}</span></span></span>
+				${timeTag(r.timestamp, "feed__when")}`;
 			const link = r.content_type === "tool" && r.content_id ? "#/tools/" + encodeURIComponent(r.content_id) : null;
 			return link ? `<li><a href="${link}">${inner}</a></li>` : `<li><div class="feed__static">${inner}</div></li>`;
 		}).join("");
@@ -720,13 +762,13 @@
 		const cards = (data.results || []).map((u) => {
 			const meta = u.groups && u.groups.length ? esc(u.groups.join(", ")) : "Member";
 			return `<div class="mcard">${avatar(u.username)}<div class="mcard__b">
-				<div class="mcard__n">${esc(u.username)}</div>
-				<div class="mcard__c">${meta} · joined ${esc(relTime(u.date_joined))}</div></div></div>`;
+				<div class="mcard__n"${dirAttrs(u.username)}>${esc(u.username)}</div>
+				<div class="mcard__c">${meta} · joined ${timeTag(u.date_joined)}</div></div></div>`;
 		}).join("");
 		return { title: "Members — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Members</h1>
-				<p class="page__intro">${fmt(data.count || 0)} registered Wikimedians contribute to the catalog.</p>
+				<p class="page__intro">${esc(countLabel(data.count || 0, "registered Wikimedian", "registered Wikimedians"))} contribute to the catalog.</p>
 				<div class="mgrid">${cards}</div>
 			</div>` };
 	}
@@ -736,14 +778,14 @@
 		const runs = data.results || [];
 		const last = runs[0] || {};
 		const rows = runs.map((r) => `
-			<tr><td>${esc(relTime(r.start_date))}</td><td>${fmt(r.crawled_urls || 0)}</td>
+			<tr><td>${timeTag(r.start_date)}</td><td>${fmt(r.crawled_urls || 0)}</td>
 			<td>${fmt(r.new_tools || 0)}</td><td>${fmt(r.updated_tools || 0)}</td><td>${fmt(r.total_tools || 0)}</td></tr>`).join("");
 		return { title: "Crawler history — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">Crawler history</h1>
 				<p class="page__intro">Toolhub re-reads every registered <code>toolinfo.json</code> URL roughly hourly and updates the catalog with any changes.</p>
 				<div class="detail__meta">
-					${metaItem("Last crawl", esc(relTime(last.start_date)))}
+					${metaItem("Last crawl", timeTag(last.start_date))}
 					${metaItem("URLs crawled", fmt(last.crawled_urls || 0))}
 					${metaItem("Updated in last run", fmt(last.updated_tools || 0))}
 				</div>
@@ -761,8 +803,8 @@
 			const tgt = a.target ? `${esc(a.target.type)} “${esc(a.target.label)}”` : "";
 			return `<li><div class="feed__static">
 				<span class="feed__ic" aria-hidden="true">📝</span>
-				<span class="feed__main">${who} <em>${esc(a.action || "changed")}</em> ${tgt}</span>
-				<span class="feed__when">${esc(relTime(a.timestamp))}</span></div></li>`;
+				<span class="feed__main"><span dir="auto">${who}</span> <em>${esc(a.action || "changed")}</em> <span dir="auto">${tgt}</span></span>
+				${timeTag(a.timestamp, "feed__when")}</div></li>`;
 		}).join("");
 		return { title: "Audit logs — Toolhub", html: `
 			<div class="container page">
@@ -776,7 +818,7 @@
 		return { title: "API documentation — Toolhub", html: `
 			<div class="container page">
 				<h1 class="page__title">API documentation</h1>
-				<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The interactive documentation is embedded below; if it doesn't load, open <a href="https://toolhub.wikimedia.org/api-docs" target="_blank" rel="noopener">toolhub.wikimedia.org/api-docs ↗</a>.</p>
+				<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The interactive documentation is embedded below; if it doesn't load, open <a href="https://toolhub.wikimedia.org/api-docs" target="_blank" rel="noopener">toolhub.wikimedia.org/api-docs <span aria-hidden="true">↗</span></a>.</p>
 				<iframe class="apidoc-frame" src="https://toolhub.wikimedia.org/api-docs" title="Toolhub API documentation" loading="lazy"></iframe>
 			</div>` };
 	}
@@ -791,7 +833,7 @@
 		const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
 		const rows = revs.map((r, i) => `
 			<li><span class="feed__ic" aria-hidden="true">🕓</span>
-				<span class="feed__main">Revision by <strong>${esc((r.user && r.user.username) || "system")}</strong> · ${esc(relTime(r.timestamp))}${r.comment ? " — " + esc(r.comment) : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+				<span class="feed__main">Revision by <strong${dirAttrs((r.user && r.user.username) || "system")}>${esc((r.user && r.user.username) || "system")}</strong> · ${timeTag(r.timestamp)}${r.comment ? " — <span dir=\"auto\">" + esc(r.comment) + "</span>" : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
 				<span class="feed__when">#${esc(String(r.id))}</span></li>`).join("");
 		return { title: `History: ${title} — Toolhub`, html: `
 			<div class="container page">
@@ -818,7 +860,7 @@
 				<p>${lead}</p>
 				<p>Toolhub uses your existing Wikimedia account via OAuth — no new account or
 				password is needed.</p>
-				<p><a class="btn btn--primary" href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">Continue on toolhub.wikimedia.org ↗</a></p>
+				<p><a class="btn btn--primary" href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">Continue on toolhub.wikimedia.org <span aria-hidden="true">↗</span></a></p>
 				<p class="signin-note">In this prototype these actions are read-only: they need an
 				authenticated session and the live back-end. See
 				<a href="#/contribute">Help maintain Toolhub</a> to contribute.</p>
@@ -845,35 +887,43 @@
 	}
 	/* ---- Quick-view modal (peek from any listing) -------------------------- */
 	let qvLastFocus = null;
+	function setPageInert(on) {
+		$$("body > *").forEach((el) => {
+			if (el.id === "qv" || el.tagName === "SCRIPT") return;
+			if ("inert" in el) el.inert = on;
+			if (on) el.setAttribute("aria-hidden", "true");
+			else el.removeAttribute("aria-hidden");
+		});
+	}
 	function quickViewBody(t) {
 		const st = t.status || { level: "green", label: "Healthy" };
 		const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
-		const tags = (t.keywords || []).slice(0, 6).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}">${esc(k)}</a>`).join("");
+		const tags = (t.keywords || []).slice(0, 6).map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`).join("");
 		const realBadge = (t.deprecated || t.experimental) ? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>` : "";
 		const glance = [
-			t.toolType && `<span class="glance">${esc(t.toolType)}</span>`,
-			t.license && `<span class="glance">${esc(t.license)}</span>`,
-			`<span class="glance">${esc(wikiLabel(t.forWikis))}</span>`,
-			(t.uiLanguages && t.uiLanguages.length) && `<span class="glance">${t.uiLanguages.length} language${t.uiLanguages.length > 1 ? "s" : ""}</span>`,
+			t.toolType && `<span class="glance"${dirAttrs(t.toolType)}>${esc(t.toolType)}</span>`,
+			t.license && `<span class="glance"${dirAttrs(t.license)}>${esc(t.license)}</span>`,
+			`<span class="glance"${dirAttrs(wikiLabel(t.forWikis))}>${esc(wikiLabel(t.forWikis))}</span>`,
+			(t.uiLanguages && t.uiLanguages.length) && `<span class="glance">${esc(countLabel(t.uiLanguages.length, "language", "languages"))}</span>`,
 		].filter(Boolean).join("");
 		return `
 			<div class="qv__head">${toolIcon(t, "lg")}
-				<div class="qv__id"><h2 class="qv__title" id="qv-title">${esc(t.title)}</h2>
-				<div class="qv__by">by ${authors}</div></div>
+				<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(t.title)}>${esc(t.title)}</h2>
+				<div class="qv__by">by <span dir="auto">${authors}</span></div></div>
 			</div>
 			<div class="qv__status">
 				${realBadge}
 				<!-- EXPERIMENTAL — health/popularity (no API data) -->
 				<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
-				<span class="views experimental">🔥 ${views(t.weeklyViews)}</span>
-				<span class="toolpage__when">${esc(relTime(t.modified))}</span>
+				<span class="views experimental"><span aria-hidden="true">🔥</span> ${views(t.weeklyViews)}</span>
+				${updatedTimeTag(t.modified, "toolpage__when")}
 			</div>
-			<p class="qv__desc">${esc(t.description) || "<em>No description provided.</em>"}</p>
+			<p class="qv__desc"${dirAttrs(t.description)}>${esc(t.description) || "<em>No description provided.</em>"}</p>
 			<div class="toolpage__glance">${glance}</div>
 			<div class="tcard__tags qv__tags">${tags}</div>
 			<div class="qv__actions">
-				${t.url ? `<a class="btn btn--primary" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ↗</a>` : ""}
-				<a class="btn btn--outline" href="#/tools/${encodeURIComponent(t.name)}">View full page →</a>
+				${t.url ? `<a class="btn btn--primary" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool <span aria-hidden="true">↗</span></a>` : ""}
+				<a class="btn btn--outline" href="#/tools/${encodeURIComponent(t.name)}">View full page <span aria-hidden="true">→</span></a>
 			</div>`;
 	}
 	async function openQuickView(name) {
@@ -882,23 +932,28 @@
 			try { t = normalizeTool(await apiGet("/tools/" + encodeURIComponent(name) + "/")); }
 			catch (e) { location.hash = "#/tools/" + encodeURIComponent(name); return; }
 		}
+		qvLastFocus = document.activeElement;
 		$("#qv-body").innerHTML = quickViewBody(t);
 		$("#qv").classList.remove("hidden");
+		$("#qv").setAttribute("aria-hidden", "false");
+		setPageInert(true);
 		document.body.style.overflow = "hidden";
-		qvLastFocus = document.activeElement;
 		$(".qv__x").focus();
 	}
 	function closeQuickView() {
 		const qv = $("#qv");
 		if (!qv || qv.classList.contains("hidden")) return;
 		qv.classList.add("hidden");
+		qv.setAttribute("aria-hidden", "true");
+		setPageInert(false);
 		document.body.style.overflow = "";
 		if (qvLastFocus && qvLastFocus.focus) qvLastFocus.focus();
 	}
 	function qvTrap(e) {
 		const qv = $("#qv");
 		if (e.key !== "Tab" || qv.classList.contains("hidden")) return;
-		const f = qv.querySelectorAll('a[href],button,[tabindex]:not([tabindex="-1"])');
+		const f = Array.from(qv.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+			.filter((el) => !el.hidden && el.offsetParent !== null);
 		if (!f.length) return;
 		const first = f[0], last = f[f.length - 1];
 		if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -918,19 +973,19 @@
 			return;
 		}
 		el.innerHTML = `
-			<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu">
+			<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">
 				${avatar(USER.name, "avatar--sm")}
 				<span class="acct__name">${esc(USER.name)}</span>
 				<span class="acct__caret" aria-hidden="true">▾</span>
 			</button>
-			<div class="acct__menu" id="acct-menu" role="menu" aria-label="Account" hidden>
+			<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 				<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong></div>
-				<a role="menuitem" href="#/my-lists"><span aria-hidden="true">📋</span> Your lists</a>
-				<a role="menuitem" href="#/favorites"><span aria-hidden="true">⭐</span> Favorites</a>
-				<a role="menuitem" href="#/add-or-remove-tools"><span aria-hidden="true">🧰</span> Add or remove tools</a>
-				<a role="menuitem" href="#/developer-settings"><span aria-hidden="true">🔧</span> Developer settings</a>
+				<a href="#/my-lists"><span aria-hidden="true">📋</span> Your lists</a>
+				<a href="#/favorites"><span aria-hidden="true">⭐</span> Favorites</a>
+				<a href="#/add-or-remove-tools"><span aria-hidden="true">🧰</span> Add or remove tools</a>
+				<a href="#/developer-settings"><span aria-hidden="true">🔧</span> Developer settings</a>
 				<hr />
-				<button class="acct__logout" role="menuitem" type="button" data-logout><span aria-hidden="true">↪</span> Log out</button>
+				<button class="acct__logout" type="button" data-logout><span aria-hidden="true">↪</span> Log out</button>
 			</div>`;
 	}
 	function closeAcctMenu() {
@@ -944,7 +999,7 @@
 		const willOpen = m.hidden;
 		m.hidden = !willOpen;
 		b.setAttribute("aria-expanded", String(willOpen));
-		if (willOpen) { const first = m.querySelector("[role=menuitem]"); if (first) first.focus(); }
+		if (willOpen) { const first = m.querySelector("a, button"); if (first) first.focus(); }
 	}
 
 	function dispatch() {
@@ -985,14 +1040,20 @@
 	}
 	function setActiveNav() {
 		const h = "#" + (parseHash().path);
+		let currentSet = false;
 		$$("#nav-links a").forEach((a) => {
 			const href = a.getAttribute("href");
-			a.classList.toggle("is-active", href === h || (h.startsWith("#/search") && href === "#/search") || (h.startsWith("#/lists") && href === "#/lists"));
+			const matches = href === h || (h.startsWith("#/search") && href === "#/search") || (h.startsWith("#/lists") && href === "#/lists");
+			const active = matches && !currentSet;
+			if (active) currentSet = true;
+			a.classList.toggle("is-active", active);
+			if (active) a.setAttribute("aria-current", "page");
+			else a.removeAttribute("aria-current");
 		});
 	}
 	let lastPath = null;
 	let navSeq = 0;
-	const loadingHTML = () => '<div class="container page loading"><span class="spinner" role="status" aria-label="Loading"></span></div>';
+	const loadingHTML = () => '<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>';
 	const errorHTML = (e) => '<div class="container page errorpage"><h1>Couldn\'t load live data</h1>'
 		+ '<p class="prose">The Toolhub API didn\'t respond (' + esc(String((e && e.message) || e)) + ').</p>'
 		+ '<a class="btn btn--primary" href="#/">Back to home</a></div>';
@@ -1001,19 +1062,24 @@
 		closeAcctMenu();  // …and the account dropdown
 		const seq = ++navSeq;
 		const { path } = parseHash();
-		if (path !== lastPath) $("#view").innerHTML = loadingHTML(); // spinner only on real page change
+		const viewEl = $("#view");
+		if (path !== lastPath) {
+			viewEl.setAttribute("aria-busy", "true");
+			viewEl.innerHTML = loadingHTML(); // spinner only on real page change
+		}
 		let view;
 		try { view = await dispatch(); }
 		catch (e) { view = { title: "Error — Toolhub", html: errorHTML(e) }; }
 		if (seq !== navSeq) return; // a newer navigation superseded this one
-		$("#view").innerHTML = view.html;
+		viewEl.innerHTML = view.html;
+		viewEl.setAttribute("aria-busy", "false");
 		document.body.classList.toggle("on-home", path === "/"); // expbar blends with the hero on home
 		document.title = view.title || "Toolhub";
 		if (typeof view.mount === "function") view.mount();
 		setActiveNav();
 		if (path !== lastPath) {
 			window.scrollTo({ top: 0, behavior: "auto" });
-			const h1 = $("#view h1") || $("#view");
+			const h1 = $("#view h1") || viewEl;
 			h1.setAttribute("tabindex", "-1");
 			h1.focus({ preventScroll: true });
 			lastPath = path;
@@ -1054,7 +1120,7 @@
 		if (e.target.closest("#acct-btn")) { e.preventDefault(); toggleAcctMenu(); return; }
 		if (e.target.closest("[data-logout]")) { e.preventDefault(); closeAcctMenu(); setAuth(false); return; }
 		if (e.target.closest("[data-login]")) { e.preventDefault(); setAuth(true); return; }
-		if (e.target.closest("[role=menuitem]")) { closeAcctMenu(); } // links route natively
+		if (e.target.closest("#acct-menu a, #acct-menu button")) { closeAcctMenu(); } // links route natively
 	});
 	document.addEventListener("click", (e) => { if (!e.target.closest("#account")) closeAcctMenu(); });
 	renderAccount();
