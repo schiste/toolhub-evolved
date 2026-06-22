@@ -51,10 +51,21 @@ tools/
   deploy.sh         ·  Toolforge update helper
 TOKENS.md           ·  design-token reference + contribution rules
 docs/
+  PLAN.md              ·  the comprehensive roadmap (ship lane + experiments lane)
+  AUDIT-i18n-a11y.md   ·  detailed i18n / accessibility findings
   deploy-toolforge.md  ·  step-by-step Toolforge deployment
   screenshots/         ·  reference images
 LICENSE             ·  GNU GPL v3.0-or-later
 ```
+
+## Roadmap
+
+See **[docs/PLAN.md](docs/PLAN.md)**. In short: the interface stays **frontend-only
+on live read-only data** (Lane A — correctness, i18n, a11y, polish), and every
+feature that would need a backend (writes, auth, signals the read-only API
+doesn't expose) lives behind the existing *"Show me prospective features"* toggle
+as a **fixture-backed simulation** (Lane B). Turning the toggle off returns the app
+to a fully honest, live, read-only Toolhub experience.
 
 ## Run locally
 
