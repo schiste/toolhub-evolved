@@ -131,6 +131,21 @@ body.exp-off .mockup-banner { display: none; }
 .at__result--ok { color: var(--color-success); }
 .at__result--err { color: var(--color-destructive); }
 
+/* Experimental features index */
+.exlist__group { margin-top: 34px; }
+.exlist__gtitle { font-size: 17px; margin: 0 0 13px; padding-bottom: 8px; border-bottom: 1px solid var(--base80); }
+.exlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 13px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.exfeat { border: 1px solid var(--base80); border-radius: 13px; padding: 16px 21px; background: #fff; }
+.exfeat__head { display: flex; align-items: baseline; justify-content: space-between; gap: 13px; flex-wrap: wrap; }
+.exfeat__name { font-size: 16px; margin: 0; }
+.exfeat__try { font-size: 13px; white-space: nowrap; }
+.exfeat__what { margin: 8px 0 13px; color: var(--color-text); }
+.exfeat__meta { margin: 0; display: grid; gap: 5px; }
+.exfeat__meta > div { display: grid; grid-template-columns: 9.5em 1fr; gap: 8px; font-size: 13px; }
+.exfeat__meta dt { color: var(--color-text-muted); margin: 0; }
+.exfeat__meta dd { margin: 0; }
+@media (max-width: 480px) { .exfeat__meta > div { grid-template-columns: 1fr; gap: 1px; } .exfeat__meta dt { font-weight: 600; } }
+
 /* Nav */
 .nav { border-bottom: 1px solid var(--base80); background: var(--white); }
 .nav__inner {
