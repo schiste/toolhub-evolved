@@ -114,6 +114,43 @@
 	// interface; the user opts into experiments via the toggle.
 	applyExp(localStorage.getItem(EXP_KEY) === "on");
 
+	/* ===== Demo overlay store (Lane B) — localStorage only, namespaced. Holds the
+	   user-created delta (favorites, …) that overloads live data while experiments
+	   are on; never sent to Toolhub. Wiped by "Reset demo data". */
+	const DEMO_NS = "thdemo:";
+	const demoStore = {
+		get(k, def) { try { const v = localStorage.getItem(DEMO_NS + k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } },
+		set(k, v) { try { localStorage.setItem(DEMO_NS + k, JSON.stringify(v)); } catch (e) {} },
+		clearAll() { Object.keys(localStorage).filter((k) => k.indexOf(DEMO_NS) === 0).forEach((k) => localStorage.removeItem(k)); },
+	};
+	// EXPERIMENTAL — favorites overlay. Needs: POST/DELETE /api/user/favorites/
+	// (Toolhub read-only API does not expose this). A set of tool names layered
+	// over the live catalog; the tool data itself is always the live record.
+	function favNames() { return demoStore.get("favorites", []); }
+	function isFav(name) { return favNames().indexOf(name) !== -1; }
+	function toggleFav(name) {
+		const f = favNames(), i = f.indexOf(name);
+		if (i === -1) f.push(name); else f.splice(i, 1);
+		demoStore.set("favorites", f);
+		return i === -1; // true => now favorited
+	}
+	function favBtn(name, opts) {
+		opts = opts || {};
+		const on = isFav(name);
+		const txt = opts.label ? `<span class="favbtn__t">${on ? "Saved" : "Save"}</span>` : "";
+		return `<button class="favbtn${on ? " is-on" : ""}${opts.cls ? " " + opts.cls : ""}" type="button" data-fav="${esc(name)}" aria-pressed="${on}" aria-label="${on ? "Remove from favorites" : "Save to favorites"}"><span class="favbtn__ic" aria-hidden="true">${on ? "★" : "☆"}</span>${txt}</button>`;
+	}
+	// Reflect a toggled favorite on its button(s) in place (no full re-render).
+	function syncFavButtons(name, on) {
+		$$(`[data-fav="${(window.CSS && CSS.escape) ? CSS.escape(name) : name}"]`).forEach((b) => {
+			b.classList.toggle("is-on", on);
+			b.setAttribute("aria-pressed", String(on));
+			b.setAttribute("aria-label", on ? "Remove from favorites" : "Save to favorites");
+			const ic = b.querySelector(".favbtn__ic"); if (ic) ic.textContent = on ? "★" : "☆";
+			const t = b.querySelector(".favbtn__t"); if (t) t.textContent = on ? "Saved" : "Save";
+		});
+	}
+
 	/* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
 	   as live data arrives (search results, lists, tool pages). No snapshot. */
 	const INDEX = {};
@@ -210,7 +247,7 @@
 			</div>
 			<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>
 			<div class="tcard__tags">${tags}</div>
-			<div class="tcard__foot">${footLeft}${updatedTimeTag(t.modified, "tcard__when")}</div>
+			<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(t.modified, "tcard__when")}${signedIn() ? favBtn(t.name, { cls: "favbtn--sm" }) : ""}</span></div>
 			<span class="tcard__hint" aria-hidden="true">🔍</span>
 		</article>`;
 	}
@@ -500,8 +537,9 @@
 				</div>
 				<div class="toolpage__cta">
 					${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool <span aria-hidden="true">↗</span></a>` : ""}
-					<!-- EXPERIMENTAL — save/bookmark. MISSING: needs an authenticated session. -->
-					<button class="btn btn--outline experimental" type="button"><span aria-hidden="true">🔖</span> Save to a list</button>
+					${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
+					<!-- EXPERIMENTAL — Save to a list. Needs: list write API (Lane B, P3). -->
+					${signedIn() ? `<button class="btn btn--outline experimental" type="button" disabled title="Coming in the lists experiment"><span aria-hidden="true">🔖</span> Save to a list</button>` : ""}
 				</div>
 			</header>
 
@@ -942,6 +980,25 @@
 			</article></div>` };
 	}
 
+	// EXPERIMENTAL — favorites view. Tools are read LIVE by name; the overlay only
+	// stores which names are favorited. Needs: GET /api/user/favorites/ in production.
+	async function viewFavorites() {
+		const names = favNames();
+		const tools = (await Promise.all(
+			names.map((n) => apiGet("/tools/" + encodeURIComponent(n) + "/").then(normalizeTool).catch(() => null)),
+		)).filter(Boolean);
+		const body = tools.length
+			? grid("grid-tools", tools, (t) => toolCard(t))
+			: '<p class="empty">No favorites yet. Tap the ☆ on any tool card or page to save it here.</p>';
+		return { title: "Favorites — Toolhub", html: `
+			<div class="container page">
+				<h1 class="page__title">Favorites <span class="exp-badge">Experimental</span></h1>
+				<p class="page__intro">Tools you've saved. Stored only in this browser — see
+				<a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+				${body}
+			</div>` };
+	}
+
 	function viewNotFound() {
 		return { title: "Not found — Toolhub", html: `
 			<div class="container page errorpage">
@@ -999,6 +1056,7 @@
 			<div class="qv__actions">
 				${t.url ? `<a class="btn btn--primary" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool <span aria-hidden="true">↗</span></a>` : ""}
 				<a class="btn btn--outline" href="#/tools/${encodeURIComponent(t.name)}">View full page <span aria-hidden="true">→</span></a>
+				${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}
 			</div>`;
 	}
 	async function openQuickView(name) {
@@ -1036,15 +1094,24 @@
 	}
 
 	/* ---- Account: logged-in user fixture + profile dropdown ---------------- */
-	const USER = { name: "Schiste" }; // demo fixture (a signed-in Wikimedia user)
+	const USER = { name: "Schiste" }; // mock demo identity (sign-in is a Lane B experiment)
 	const AUTH_KEY = "toolhub-auth";
-	function authIn() { return (localStorage.getItem(AUTH_KEY) || "in") !== "out"; } // default: signed in
-	function setAuth(on) { localStorage.setItem(AUTH_KEY, on ? "in" : "out"); renderAccount(); }
+	// EXPERIMENTAL — mock identity. Needs: real Wikimedia OAuth + server session.
+	// Signed-in state only exists while experiments are on; default is signed-in.
+	function signedIn() { return expOn() && localStorage.getItem(AUTH_KEY) !== "out"; }
+	function setAuth(on) {
+		if (on) localStorage.removeItem(AUTH_KEY); else localStorage.setItem(AUTH_KEY, "out");
+		renderAccount(); render(); // refresh fav buttons / gated views
+	}
 	function renderAccount() {
 		const el = document.getElementById("account");
 		if (!el) return;
-		if (!authIn()) {
-			el.innerHTML = `<a class="btn btn--outline" href="#/login" data-login>Log in</a>`;
+		if (!expOn()) { // honest read-only: real sign-in needs OAuth we don't have
+			el.innerHTML = `<a class="btn btn--outline" href="#/login">Log in</a>`;
+			return;
+		}
+		if (!signedIn()) { // experiments on but logged out → offer the demo sign-in
+			el.innerHTML = `<button class="btn btn--outline" type="button" data-login>Sign in <span class="mock-tag">demo</span></button>`;
 			return;
 		}
 		el.innerHTML = `
@@ -1054,12 +1121,12 @@
 				<span class="acct__caret" aria-hidden="true">▾</span>
 			</button>
 			<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
-				<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong></div>
+				<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong> <span class="mock-tag">demo</span></div>
 				<a href="#/my-lists"><span aria-hidden="true">📋</span> Your lists</a>
 				<a href="#/favorites"><span aria-hidden="true">⭐</span> Favorites</a>
 				<a href="#/add-or-remove-tools"><span aria-hidden="true">🧰</span> Add or remove tools</a>
-				<a href="#/developer-settings"><span aria-hidden="true">🔧</span> Developer settings</a>
 				<hr />
+				<button class="acct__reset" type="button" data-reset><span aria-hidden="true">🧹</span> Reset demo data</button>
 				<button class="acct__logout" type="button" data-logout><span aria-hidden="true">↪</span> Log out</button>
 			</div>`;
 	}
@@ -1099,7 +1166,7 @@
 		}
 		if (seg[0] === "lists" || seg[0] === "published-lists") return viewLists();
 		if (seg[0] === "my-lists") return signInPage("Your lists", "See and manage the lists you've created.");
-		if (seg[0] === "favorites") return signInPage("Favorites", "Your saved tools, all in one place.");
+		if (seg[0] === "favorites") return signedIn() ? viewFavorites() : signInPage("Favorites", "Your saved tools, all in one place.");
 		if (seg[0] === "add-or-remove-tools") return signInPage("Add or remove tools", "Register a toolinfo.json URL to be crawled, or create a tool record directly.");
 		if (seg[0] === "developer-settings") return signInPage("Developer settings", "Manage your API tokens and registered OAuth applications.");
 		if (seg[0] === "login") return signInPage("Sign in", "Sign in to save favourites, build lists, and edit tool information.");
@@ -1168,6 +1235,8 @@
 	/* Keyword chips INSIDE a card anchor: intercept so they filter search
 	   instead of following the card's link to the tool page. */
 	$("#view").addEventListener("click", (e) => {
+		const fav = e.target.closest("[data-fav]");
+		if (fav) { e.preventDefault(); e.stopPropagation(); syncFavButtons(fav.getAttribute("data-fav"), toggleFav(fav.getAttribute("data-fav"))); return; }
 		const q = e.target.closest("[data-q]");
 		if (q && !q.matches("a[href]")) { e.preventDefault(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); return; }
 		if (e.target.closest("a[href]")) return; // real links route natively
@@ -1183,6 +1252,8 @@
 
 	/* Quick-view modal: backdrop/close + keyword chips, Esc + Tab-trap */
 	$("#qv").addEventListener("click", (e) => {
+		const fav = e.target.closest("[data-fav]");
+		if (fav) { e.preventDefault(); syncFavButtons(fav.getAttribute("data-fav"), toggleFav(fav.getAttribute("data-fav"))); return; }
 		if (e.target.id === "qv" || e.target.closest("[data-qv-close]")) { e.preventDefault(); closeQuickView(); return; }
 		const q = e.target.closest("[data-q]");
 		if (q && !q.matches("a[href]")) { e.preventDefault(); closeQuickView(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); }
@@ -1195,6 +1266,7 @@
 		if (e.target.closest("#acct-btn")) { e.preventDefault(); toggleAcctMenu(); return; }
 		if (e.target.closest("[data-logout]")) { e.preventDefault(); closeAcctMenu(); setAuth(false); return; }
 		if (e.target.closest("[data-login]")) { e.preventDefault(); setAuth(true); return; }
+		if (e.target.closest("[data-reset]")) { e.preventDefault(); closeAcctMenu(); demoStore.clearAll(); render(); return; }
 		if (e.target.closest("#acct-menu a, #acct-menu button")) { closeAcctMenu(); } // links route natively
 	});
 	document.addEventListener("click", (e) => { if (!e.target.closest("#account")) closeAcctMenu(); });
@@ -1207,6 +1279,7 @@
 		const on = !expOn();
 		localStorage.setItem(EXP_KEY, on ? "on" : "off");
 		applyExp(on);
+		renderAccount(); // identity is experimental — reflect the new state
 		render();
 	});
 
