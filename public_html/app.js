@@ -414,7 +414,9 @@
 		</a>`;
 	}
 	function grid(cls, items, render) {
-		return `<div class="card-grid ${cls}">${items.map(render).join("")}</div>`;
+		// a11y: a grid of cards is a list (1.3.1). role="list" keeps the semantics
+		// even though list-style:none is applied (Safari drops it otherwise).
+		return `<ul class="card-grid ${cls}" role="list">${items.map((it, i) => `<li>${render(it, i)}</li>`).join("")}</ul>`;
 	}
 
 	/* ------------------------------------------------------------- static cfg */
@@ -588,7 +590,7 @@
 						<span class="browse__count" aria-live="polite">${esc(countLabel(total, "tool", "tools"))}${q ? ` for &ldquo;<span${dirAttrs(q)}>${esc(q)}</span>&rdquo;` : ""}</span>
 						<label class="sort"><span class="skip-label">Sort by</span><select id="sort">${sortOpts}</select></label>
 					</div>
-					<div class="card-grid grid-tools">${results.length ? results.map((t, i) => toolCard(t, sort === "views" ? { rank: ((page - 1) * PAGE_SIZE) + i + 1, popular: true } : {})).join("") : '<p class="empty">No tools match these filters.</p>'}</div>
+					${results.length ? `<ul class="card-grid grid-tools" role="list">${results.map((t, i) => `<li>${toolCard(t, sort === "views" ? { rank: ((page - 1) * PAGE_SIZE) + i + 1, popular: true } : {})}</li>`).join("")}</ul>` : '<p class="empty">No tools match these filters.</p>'}
 					<nav class="pager" aria-label="Pagination">${pagerHTML}</nav>
 				</div>
 			</div>`;
@@ -1325,7 +1327,8 @@
 					${metaItem("Updated in last run", fmt(last.updated_tools || 0))}
 				</div>
 				<table class="runs">
-					<thead><tr><th>Run</th><th>URLs</th><th>New</th><th>Updated</th><th>Total</th></tr></thead>
+					<caption class="skip-label">Recent crawler runs, newest first</caption>
+					<thead><tr><th scope="col">Run</th><th scope="col">URLs</th><th scope="col">New</th><th scope="col">Updated</th><th scope="col">Total</th></tr></thead>
 					<tbody>${rows}</tbody>
 				</table>
 			</div>` };

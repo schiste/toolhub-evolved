@@ -216,7 +216,10 @@ body.exp-off .mockup-banner { display: none; }
 .link { font-size: 13px; }
 
 /* Card grids */
-.card-grid { display: grid; gap: 21px; }
+.card-grid { display: grid; gap: 21px; list-style: none; margin: 0; padding: 0; }
+/* Each card is wrapped in <li> for list semantics; the li is the grid cell and
+   stretches so cards keep equal height. */
+.card-grid > li { display: grid; min-width: 0; }
 /* Intrinsic responsive grids: columns auto-fit the available width.
    min(100%, Npx) keeps a single column from overflowing very narrow screens. */
 .grid-tools { grid-template-columns: repeat(auto-fill, minmax(min(100%, 272px), 1fr)); }
