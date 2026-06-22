@@ -45,6 +45,18 @@ a:hover { text-decoration: underline; }
 	padding: 1px 8px; font-size: 11px; font-weight: 600; vertical-align: middle;
 }
 
+/* Mockup banner — shown only while prospective features are on (see body.exp-off
+   rule below). Red, high-contrast, sits above everything. */
+.mockup-banner {
+	display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+	gap: 5px 13px; background: var(--color-destructive); color: #fff;
+	font-size: 13px; line-height: 1.4; padding: 8px clamp(13px, 4vw, 34px); text-align: center;
+}
+.mockup-banner__txt { font-weight: 500; }
+.mockup-banner__link { color: #fff; font-weight: 700; text-decoration: underline; white-space: nowrap; }
+.mockup-banner__link:hover { text-decoration: none; }
+body.exp-off .mockup-banner { display: none; }
+
 /* Nav */
 .nav { border-bottom: 1px solid var(--base80); background: var(--white); }
 .nav__inner {

@@ -110,7 +110,9 @@
 		const btn = document.getElementById("exp-toggle");
 		if (btn) btn.setAttribute("aria-checked", String(on));
 	}
-	applyExp((localStorage.getItem(EXP_KEY) || "on") !== "off");
+	// Default OFF (decision §8.1): first visit is the honest live read-only
+	// interface; the user opts into experiments via the toggle.
+	applyExp(localStorage.getItem(EXP_KEY) === "on");
 
 	/* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
 	   as live data arrives (search results, lists, tool pages). No snapshot. */
@@ -696,6 +698,41 @@
 				<li>Read access is anonymous; creating or editing records uses your Wikimedia
 				OAuth identity. For example, <code>POST /api/tools/</code> adds a tool.</li>
 			</ul>` },
+		"rules-of-engagement": { title: "Rules of Engagement", body: `
+			<p><strong>This is a design prototype on a separate domain — not the production
+			Toolhub.</strong> It exists to explore how tool discovery could look and feel. Here's
+			exactly what is real and what is simulated, so nothing is misleading.</p>
+			<h2>What's real (live, read-only)</h2>
+			<p>The catalog itself is genuine: it is read live from
+			${ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org")} through a
+			read-only proxy. That means the tools, search and facets, tool detail pages, lists,
+			members, recent changes, crawler history, and audit logs you see are <strong>the
+			actual Toolhub data</strong>, refreshed every time you load a page. Nothing here is
+			ever written back to Toolhub.</p>
+			<h2>What's simulated (prospective features)</h2>
+			<p>When you switch on <em>"Show me prospective features"</em>, the app turns on a
+			set of experiments that the read-only API can't actually back: signing in,
+			favoriting tools, creating and editing lists, submitting and editing tools,
+			community annotations, and signals like popularity, reviews, health, and usage.</p>
+			<p>These don't replace the real data — each one <strong>overloads a real record with
+			a feature-specific fixture</strong> (for example, a real tool decorated with a
+			synthetic "popular this week" count, or your favorite flag layered on top of the
+			live tool).</p>
+			<h2>Where your actions go</h2>
+			<ul>
+				<li>Everything you "save" — favorites, lists, edits — is stored
+				<strong>only in this browser</strong> (in <code>localStorage</code>), on this
+				device. It is never sent to Toolhub or shared with anyone else.</li>
+				<li><strong>"Reset demo data"</strong> (in the account menu) clears all of it.</li>
+				<li>Turning the toggle <strong>off</strong> strips every overlay and returns the
+				app to the honest, live, read-only experience.</li>
+			</ul>
+			<h2>The honest edges</h2>
+			<p>Because search is real and read-only, a tool you "create" or "edit" in the demo
+			won't appear in live search — it lives only as your local overlay, shown on its own
+			page and in your "my…" views. We label these rather than fake them.</p>
+			<blockquote>In short: the data is real and read-only; your contributions are a local,
+			in-browser simulation. Nothing you do here touches the real Toolhub.</blockquote>` },
 		rss: { title: "Feeds", body: `
 			<p>Follow changes to the catalog without checking back. Toolhub publishes Atom/RSS
 			feeds for activity such as recently added and recently updated tools, and for the

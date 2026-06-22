@@ -16,6 +16,17 @@
 <body>
 	<a class="skip" href="#view">Skip to content</a>
 
+	<!-- Mockup banner: shown only while prospective features are on (CSS hides it
+	     when body.exp-off). Cannot be dismissed independently of the toggle. -->
+	<div class="mockup-banner" role="region" aria-label="Prototype notice">
+		<span class="mockup-banner__txt">
+			<span aria-hidden="true">⚠</span> Mockup — a prototype, not a working
+			integration with the real Toolhub. Experimental features are simulated and saved
+			only in your browser.
+		</span>
+		<a class="mockup-banner__link" href="#/rules-of-engagement">Rules of Engagement</a>
+	</div>
+
 	<header class="nav">
 		<div class="nav__inner">
 			<a class="brand" href="#/">
@@ -39,7 +50,7 @@
 	<!-- Prospective-features toggle (its own strip, below the header) -->
 	<div class="expbar">
 		<div class="container expbar__inner">
-			<button class="exp-toggle" id="exp-toggle" type="button" role="switch" aria-checked="true"
+			<button class="exp-toggle" id="exp-toggle" type="button" role="switch" aria-checked="false"
 				title="Reveal features that would need data or a back-end Toolhub doesn't expose yet (popularity, health, reviews…)">
 				<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
 				<span class="exp-toggle__label">Show me prospective features</span>
@@ -84,6 +95,7 @@
 				<a href="#/terms">Terms of Use</a>
 				<a href="#/code-of-conduct">Code of Conduct</a>
 				<a href="#/rss">Feeds (RSS)</a>
+				<a href="#/rules-of-engagement">Rules of Engagement</a>
 			</nav>
 		</div>
 		<div class="footer__bottom">
