@@ -75,19 +75,30 @@ export const loadingHTML = () => '<div class="container page loading" role="stat
 export const errorHTML = (e) => '<div class="container page errorpage"><h1>Couldn\'t load live data</h1>'
 	+ '<p class="prose">The Toolhub API didn\'t respond (' + esc(String((e && e.message) || e)) + ').</p>'
 	+ '<a class="btn btn--primary" href="#/">Back to home</a></div>';
+// How long a view may load before we replace the page with a spinner. Below this,
+// the current page stays on screen — fast/cached loads never flash a spinner.
+const SPINNER_DELAY = 250;
 export async function render() {
 	closeQuickView(); // any navigation dismisses the peek modal
 	closeAcctMenu();  // …and the account dropdown
 	const seq = ++navSeq;
 	const { path } = parseHash();
 	const viewEl = $("#view");
+	let spinnerTimer = null;
 	if (path !== lastPath) {
-		viewEl.setAttribute("aria-busy", "true");
-		viewEl.innerHTML = loadingHTML(); // spinner only on real page change
+		viewEl.setAttribute("aria-busy", "true"); // announce busy immediately (a11y)
+		if (lastPath === null) {
+			viewEl.innerHTML = loadingHTML(); // first load: nothing to keep on screen
+		} else {
+			// Keep the current page visible; only swap in the spinner if the next
+			// view is genuinely slow. Cached navigations resolve first and skip it.
+			spinnerTimer = setTimeout(() => { if (seq === navSeq) viewEl.innerHTML = loadingHTML(); }, SPINNER_DELAY);
+		}
 	}
 	let view;
 	try { view = await dispatch(); }
 	catch (e) { view = { title: "Error — Toolhub", html: errorHTML(e) }; }
+	if (spinnerTimer) clearTimeout(spinnerTimer); // resolved (or superseded) before the delay
 	if (seq !== navSeq) return; // a newer navigation superseded this one
 	viewEl.innerHTML = view.html;
 	viewEl.setAttribute("aria-busy", "false");

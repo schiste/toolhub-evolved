@@ -32,11 +32,32 @@ export const INDEX = {};
    Tool/list objects are normalized to the compact shape the views/cards expect.
    There is no bundled snapshot — the catalog is always the live one. */
 export const API_BASE = "/api";
+/* In-memory stale-while-revalidate cache for GET reads. Keyed by full URL, it
+   lives only for the session (a full page reload starts fresh, so the catalog is
+   still "live on load"). A cache hit returns instantly — no spinner on revisits —
+   and, once the entry is older than API_TTL_MS, a background refresh updates it
+   for next time. Concurrent requests for the same URL share one in-flight fetch. */
+const API_TTL_MS = 30000;
+const apiCache = new Map();    // url -> { data, ts }
+const apiInflight = new Map(); // url -> Promise<data>
+function apiFetch(url) {
+	if (apiInflight.has(url)) return apiInflight.get(url);
+	const p = fetch(url, { headers: { Accept: "application/json" } })
+		.then((res) => { if (!res.ok) throw new Error("API " + res.status + " " + url); return res.json(); })
+		.then((data) => { apiCache.set(url, { data, ts: Date.now() }); return data; })
+		.finally(() => { apiInflight.delete(url); });
+	apiInflight.set(url, p);
+	return p;
+}
 export async function apiGet(path, params) {
 	const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-	const res = await fetch(API_BASE + path + qs, { headers: { Accept: "application/json" } });
-	if (!res.ok) throw new Error("API " + res.status + " " + path);
-	return res.json();
+	const url = API_BASE + path + qs;
+	const hit = apiCache.get(url);
+	if (hit) {
+		if (Date.now() - hit.ts >= API_TTL_MS) apiFetch(url).catch(() => {}); // revalidate in background
+		return hit.data;
+	}
+	return apiFetch(url);
 }
 export function firstUrl(v) {
 	if (!v) return null;
