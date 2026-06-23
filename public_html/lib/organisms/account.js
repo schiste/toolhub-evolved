@@ -2,6 +2,7 @@
 import { esc } from "../core/dom.js";
 import { USER, expOn, signedIn } from "../core/session.js";
 import { avatar } from "../atoms/avatar.js";
+import { icon } from "../atoms/icon.js";
 
 export function renderAccount() {
 	const el = document.getElementById("account");
@@ -22,12 +23,12 @@ export function renderAccount() {
 		</button>
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong> <span class="mock-tag">demo</span></div>
-			<a href="#/my-lists"><span aria-hidden="true">📋</span> Your lists</a>
-			<a href="#/favorites"><span aria-hidden="true">⭐</span> Favorites</a>
-			<a href="#/add-or-remove-tools"><span aria-hidden="true">🧰</span> Add or remove tools</a>
+			<a href="#/my-lists">${icon("list")} Your lists</a>
+			<a href="#/favorites">${icon("star")} Favorites</a>
+			<a href="#/add-or-remove-tools">${icon("tools")} Add or remove tools</a>
 			<hr />
-			<button class="acct__reset" type="button" data-reset><span aria-hidden="true">🧹</span> Reset demo data</button>
-			<button class="acct__logout" type="button" data-logout><span aria-hidden="true">↪</span> Log out</button>
+			<button class="acct__reset" type="button" data-reset>${icon("reset")} Reset demo data</button>
+			<button class="acct__logout" type="button" data-logout>${icon("logout")} Log out</button>
 		</div>`;
 }
 export function closeAcctMenu() {

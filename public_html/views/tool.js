@@ -7,6 +7,7 @@ import { demoRevisionsFor } from "../lib/core/store.js";
 import { toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
 import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
@@ -79,7 +80,7 @@ export async function viewTool(name) {
 				</div>
 			</div>
 			<div class="toolpage__cta">
-				${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool <span aria-hidden="true">↗</span></a>` : ""}
+				${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ${icon("external")}</a>` : ""}
 				${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
 				<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
 				${signedIn() ? saveToListControl(t.name) : ""}
@@ -156,7 +157,7 @@ export async function viewToolHistory(name) {
 	if (!t && !revs.length) return viewNotFound();
 	const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
 	const rows = revs.map((r, i) => `
-		<li><span class="feed__ic" aria-hidden="true">🕓</span>
+		<li>${icon("history", "feed__ic")}
 			<span class="feed__main">Revision by <strong${dirAttrs((r.user && r.user.username) || "system")}>${esc((r.user && r.user.username) || "system")}</strong> · ${timeTag(r.timestamp)}${r.comment ? " — <span dir=\"auto\">" + esc(r.comment) + "</span>" : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
 			<span class="feed__when">#${esc(String(r.id))}</span></li>`).join("");
 	return { title: `History: ${title} — Toolhub`, html: `

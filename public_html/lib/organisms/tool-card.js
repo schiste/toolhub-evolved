@@ -4,6 +4,7 @@ import { updatedTimeTag } from "../core/i18n.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
 import { popularityBadge } from "../atoms/badges.js";
+import { icon } from "../atoms/icon.js";
 import { wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
 
@@ -40,6 +41,6 @@ export function toolCard(t, opts) {
 		<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>
 		<div class="tcard__tags">${tags}</div>
 		<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(t.modified, "tcard__when")}${signedIn() ? favBtn(t.name, { cls: "favbtn--sm" }) : ""}</span></div>
-		<span class="tcard__hint" aria-hidden="true">🔍</span>
+		${icon("search", "tcard__hint")}
 	</article>`;
 }

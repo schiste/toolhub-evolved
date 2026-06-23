@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Atoms: single-purpose badges, buttons, avatars, and form fields. */
 
+/* Icon: inline Codex SVG, sized to the current font, inheriting text colour. */
+.icon { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; fill: currentColor; flex: 0 0 auto; }
+.icon--lg { width: 1.4em; height: 1.4em; }
+
 .tag {
 	background: var(--color-progressive-subtle);
 	color: var(--color-progressive);

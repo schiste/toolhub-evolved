@@ -5,6 +5,7 @@ import { apiGet } from "../lib/core/api.js";
 import { listHref, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, demoFeed } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
+import { icon } from "../lib/atoms/icon.js";
 import { metaItem } from "../lib/atoms/labels.js";
 
 /* ---- Parity pages: data-driven (read-only) ----------------------------- */
@@ -16,7 +17,7 @@ export async function viewRecent() {
 	const rows = merged.map((r) => {
 		const title = esc(r.content_title || r.content_id || "—");
 		const who = esc((r.user && r.user.username) || "system");
-		const inner = `<span class="feed__ic" aria-hidden="true">✎</span>
+		const inner = `${icon("edit", "feed__ic")}
 			<span class="feed__main"><strong dir="auto">${title}</strong> <span class="feed__sub">${esc(r.content_type || "item")} · <span dir="auto">${who}</span></span></span>
 			${timeTag(r.timestamp, "feed__when")}`;
 		const link = r.content_type === "tool" && r.content_id
@@ -84,7 +85,7 @@ export async function viewAudit() {
 	const rows = merged.map((a) => {
 		const who = esc((a.user && a.user.username) || "System");
 		const tgt = a.target ? `${esc(a.target.type)} “${esc(a.target.label)}”` : "";
-		const inner = `<span class="feed__ic" aria-hidden="true">📝</span>
+		const inner = `${icon("edit", "feed__ic")}
 			<span class="feed__main"><span dir="auto">${who}</span> <em>${esc(a.action || "changed")}</em> <span dir="auto">${tgt}</span></span>
 			${timeTag(a.timestamp, "feed__when")}`;
 		const href = targetHref(a.target);

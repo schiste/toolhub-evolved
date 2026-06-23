@@ -6,6 +6,7 @@ import { signedIn } from "../lib/core/session.js";
 import { listHref } from "../lib/core/routing.js";
 import { demoListDelete, demoListGet, demoListNew, demoListSave, demoLists, favNames, isDemoListId } from "../lib/core/store.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
+import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -21,7 +22,7 @@ export async function viewLists() {
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Curated lists</h1>
-			${signedIn() ? '<a class="btn btn--primary" href="#/lists/create"><span aria-hidden="true">＋</span> Create a list</a>' : ""}</div>
+			${signedIn() ? `<a class="btn btn--primary" href="#/lists/create">${icon("add")} Create a list</a>` : ""}</div>
 		<p class="page__intro">Community-published collections of tools for specific tasks and communities.</p>
 		${all.length ? grid("grid-lists", all, listCard) : '<p class="empty">No lists found.</p>'}
 	</div>`;
@@ -36,7 +37,7 @@ export async function viewList(id) {
 		tools = await getToolsByName(d.tools);
 		l = { title: d.title || "Untitled list", description: d.description || "", toolCount: tools.length };
 		demoTag = ' <span class="exp-badge">Demo list</span>';
-		if (signedIn()) editBtn = `<a class="btn btn--outline" href="${listHref(id)}/edit"><span aria-hidden="true">✏️</span> Edit list</a>`;
+		if (signedIn()) editBtn = `<a class="btn btn--outline" href="${listHref(id)}/edit">${icon("edit")} Edit list</a>`;
 	} else {
 		try { l = normalizeList(await apiGet("/lists/" + encodeURIComponent(id) + "/")); tools = l.tools; }
 		catch (e) { return viewNotFound(); }
@@ -56,7 +57,7 @@ export function viewMyLists() {
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary" href="#/lists/create"><span aria-hidden="true">＋</span> Create a list</a></div>
+			<a class="btn btn--primary" href="#/lists/create">${icon("add")} Create a list</a></div>
 		<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
 		<a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
 		${cards.length ? grid("grid-lists", cards, listCard) : '<p class="empty">No lists yet. <a href="#/lists/create">Create your first list</a>.</p>'}
@@ -69,7 +70,7 @@ export async function viewFavorites() {
 	const tools = await getToolsByName(favNames());
 	const body = tools.length
 		? grid("grid-tools", tools, (t) => toolCard(t))
-		: '<p class="empty">No favorites yet. Tap the ☆ on any tool card or page to save it here.</p>';
+		: `<p class="empty">No favorites yet. Tap the ${icon("starOutline")}<span class="skip-label">star</span> on any tool card or page to save it here.</p>`;
 	return { title: "Favorites — Toolhub", html: `
 		<div class="container page">
 			<h1 class="page__title">Favorites <span class="exp-badge">Experimental</span></h1>
@@ -136,7 +137,7 @@ export function viewListEdit(id) {
 				resultsEl.innerHTML = rows.length ? rows.map((t) => {
 					const inList = work.tools.indexOf(t.name) !== -1;
 					return `<button class="le__result${inList ? " is-in" : ""}" type="button" data-add="${esc(t.name)}" ${inList ? "disabled" : ""}>
-						<span aria-hidden="true">${inList ? "✓" : "＋"}</span> <span${dirAttrs(t.title)}>${esc(t.title)}</span></button>`;
+						${inList ? icon("check") : icon("add")} <span${dirAttrs(t.title)}>${esc(t.title)}</span></button>`;
 				}).join("") : '<p class="le__empty">No matches.</p>';
 			} catch (e) { resultsEl.innerHTML = '<p class="le__empty">Search failed.</p>'; }
 		}
@@ -145,7 +146,7 @@ export function viewListEdit(id) {
 		resultsEl.addEventListener("click", (e) => {
 			const b = e.target.closest("[data-add]"); if (!b) return;
 			const n = b.getAttribute("data-add");
-			if (work.tools.indexOf(n) === -1) { work.tools.push(n); renderTools(); b.disabled = true; b.classList.add("is-in"); b.querySelector("span[aria-hidden]").textContent = "✓"; }
+			if (work.tools.indexOf(n) === -1) { work.tools.push(n); renderTools(); b.disabled = true; b.classList.add("is-in"); const ic = b.querySelector(".icon"); if (ic) ic.outerHTML = icon("check"); }
 		});
 		$("[data-le-form]").addEventListener("submit", (e) => {
 			e.preventDefault();

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc, safeUrl } from "../lib/core/dom.js";
 import { apiGet } from "../lib/core/api.js";
+import { icon } from "../lib/atoms/icon.js";
 
 /* ---- Static prose pages (T9) ------------------------------------------- */
 export function prosePage(title, bodyHtml) {
 	return { title: `${title} — Toolhub`, html: `<div class="container page"><article class="prose prose--page"><h1>${esc(title)}</h1>${bodyHtml}</article></div>` };
 }
-export const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener">${esc(label)} <span aria-hidden="true">↗</span></a>`;
+export const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener">${esc(label)} ${icon("external")}</a>`;
 // Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
 // Canonical policies link out to their authoritative source (as the real site does).
 export const STATIC = {
@@ -158,12 +159,12 @@ export function viewStatic(slug) {
 }
 
 /* ---- Help maintain Toolhub: the contribution hub ----------------------- */
-export function linkCard(icon, title, desc, url, internal) {
+export function linkCard(iconHtml, title, desc, url, internal) {
 	const href = internal ? url : safeUrl(url);
 	const attrs = internal ? "" : ` target="_blank" rel="noopener"`;
-	const arrow = internal ? "" : ' <span aria-hidden="true">↗</span>';
+	const arrow = internal ? "" : ` ${icon("external")}`;
 	return `<a class="linkcard" href="${href || "#"}"${attrs}>
-		<span class="linkcard__icon" aria-hidden="true">${icon}</span>
+		<span class="linkcard__icon" aria-hidden="true">${iconHtml}</span>
 		<span class="linkcard__body"><span class="linkcard__title">${esc(title)}${arrow}</span>
 		<span class="linkcard__desc">${esc(desc)}</span></span></a>`;
 }
@@ -177,24 +178,24 @@ export function viewContribute() {
 
 		<h2 class="contribute__h2">Report &amp; track work</h2>
 		<div class="linkgrid">
-			${linkCard("🐞", "Report a bug or request a feature", "Open a task on the #toolhub Phabricator board.", "https://phabricator.wikimedia.org/tag/toolhub/")}
-			${linkCard("✅", "Find a good first task", "Browse open work and pick something to start with.", "https://phabricator.wikimedia.org/tag/toolhub/")}
-			${linkCard("💬", "Discuss the project", "Share ideas and feedback on the Toolhub talk page.", "https://meta.wikimedia.org/wiki/Talk:Toolhub")}
+			${linkCard(icon("report"), "Report a bug or request a feature", "Open a task on the #toolhub Phabricator board.", "https://phabricator.wikimedia.org/tag/toolhub/")}
+			${linkCard(icon("check"), "Find a good first task", "Browse open work and pick something to start with.", "https://phabricator.wikimedia.org/tag/toolhub/")}
+			${linkCard(icon("discuss"), "Discuss the project", "Share ideas and feedback on the Toolhub talk page.", "https://meta.wikimedia.org/wiki/Talk:Toolhub")}
 		</div>
 
 		<h2 class="contribute__h2">Write code</h2>
 		<div class="linkgrid">
-			${linkCard("🧩", "Source code (Gerrit)", "The canonical repository where changes are reviewed.", "https://gerrit.wikimedia.org/r/admin/repos/wikimedia/toolhub")}
-			${linkCard("🐙", "GitHub mirror", "Read-only mirror for browsing the code and history.", "https://github.com/wikimedia/toolhub")}
-			${linkCard("🛠️", "Set up a dev environment", "The CONTRIBUTING guide: run the whole stack with Docker.", "https://github.com/wikimedia/toolhub/blob/main/docs/CONTRIBUTING.rst")}
-			${linkCard("🔑", "Get developer access", "Create a Wikimedia developer account and configure Gerrit.", "https://www.mediawiki.org/wiki/Developer_access")}
+			${linkCard(icon("code"), "Source code (Gerrit)", "The canonical repository where changes are reviewed.", "https://gerrit.wikimedia.org/r/admin/repos/wikimedia/toolhub")}
+			${linkCard(icon("code"), "GitHub mirror", "Read-only mirror for browsing the code and history.", "https://github.com/wikimedia/toolhub")}
+			${linkCard(icon("tools"), "Set up a dev environment", "The CONTRIBUTING guide: run the whole stack with Docker.", "https://github.com/wikimedia/toolhub/blob/main/docs/CONTRIBUTING.rst")}
+			${linkCard(icon("key"), "Get developer access", "Create a Wikimedia developer account and configure Gerrit.", "https://www.mediawiki.org/wiki/Developer_access")}
 		</div>
 
 		<h2 class="contribute__h2">Translate &amp; document</h2>
 		<div class="linkgrid">
-			${linkCard("🌐", "Translate Toolhub", "Localise the interface into your language on translatewiki.net.", "https://translatewiki.net/wiki/Translating:Toolhub")}
-			${linkCard("📦", "The toolinfo standard", "Learn the schema that describes a tool, and the API.", "https://toolhub.wikimedia.org/api-docs")}
-			${linkCard("📝", "Add or improve a tool listing", "List your own tool, or enrich an existing record.", "#/help", true)}
+			${linkCard(icon("language"), "Translate Toolhub", "Localise the interface into your language on translatewiki.net.", "https://translatewiki.net/wiki/Translating:Toolhub")}
+			${linkCard(icon("code"), "The toolinfo standard", "Learn the schema that describes a tool, and the API.", "https://toolhub.wikimedia.org/api-docs")}
+			${linkCard(icon("edit"), "Add or improve a tool listing", "List your own tool, or enrich an existing record.", "#/help", true)}
 		</div>
 	</div>`;
 	return { title: "Help maintain Toolhub", html };
@@ -206,8 +207,8 @@ export async function viewApiDocs() {
 	const endpointCards = endpoints.map((ep) => {
 		const href = "/api/" + ep + "/";
 		return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="noopener">
-			<span class="linkcard__icon" aria-hidden="true">{ }</span>
-			<span class="linkcard__body"><span class="linkcard__title"><code>GET ${esc(href)}</code> ↗</span>
+			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
+			<span class="linkcard__body"><span class="linkcard__title"><code>GET ${esc(href)}</code> ${icon("external")}</span>
 			<span class="linkcard__desc">Open the live JSON response through this app's read-only proxy.</span></span></a>`;
 	}).join("");
 	return { title: "API documentation — Toolhub", html: `
@@ -215,8 +216,8 @@ export async function viewApiDocs() {
 			<h1 class="page__title">API documentation</h1>
 			<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The live interactive documentation blocks embedding, so open it directly or inspect the same-origin read-only endpoints below.</p>
 			<div class="linkgrid">
-				${linkCard("📦", "Interactive API docs", "Open the canonical Toolhub API documentation.", "https://toolhub.wikimedia.org/api-docs")}
-				${linkCard("🧭", "API root", "Browse the upstream API endpoint index.", "https://toolhub.wikimedia.org/api/")}
+				${linkCard(icon("code"), "Interactive API docs", "Open the canonical Toolhub API documentation.", "https://toolhub.wikimedia.org/api-docs")}
+				${linkCard(icon("globe"), "API root", "Browse the upstream API endpoint index.", "https://toolhub.wikimedia.org/api/")}
 			</div>
 			<h2 class="contribute__h2">Live proxy endpoints</h2>
 			<div class="linkgrid">${endpointCards || '<p class="empty">The live endpoint index is unavailable.</p>'}</div>
@@ -230,7 +231,7 @@ export function signInPage(title, lead) {
 			<p>${lead}</p>
 			<p>Toolhub uses your existing Wikimedia account via OAuth — no new account or
 			password is needed.</p>
-			<p><a class="btn btn--primary" href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">Continue on toolhub.wikimedia.org <span aria-hidden="true">↗</span></a></p>
+			<p><a class="btn btn--primary" href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">Continue on toolhub.wikimedia.org ${icon("external")}</a></p>
 			<p class="signin-note">In this prototype these actions are read-only: they need an
 			authenticated session and the live back-end. See
 			<a href="#/contribute">Help maintain Toolhub</a> to contribute.</p>

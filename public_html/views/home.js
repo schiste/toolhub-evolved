@@ -4,6 +4,7 @@ import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { listHref, NEEDS, PERSONAS, STEPS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
+import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -23,9 +24,9 @@ export async function viewHome() {
 	const popular = featured.slice().sort((a, b) => (b.weeklyViews - a.weeklyViews) || a.title.localeCompare(b.title));
 	const recentTools = (recent.results || []).map(normalizeTool);
 
-	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="#/search?audiences__term=${encodeURIComponent(term)}"><span aria-hidden="true">${ic}</span> ${l}</a>`).join("");
-	const needs = NEEDS.map(([ic, l, term]) => `<li><a href="#/search?tasks__term=${encodeURIComponent(term)}"><span aria-hidden="true">${ic}</span> ${l}<span class="need__chev" aria-hidden="true">›</span></a></li>`).join("");
-	const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${ic}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
+	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="#/search?audiences__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
+	const needs = NEEDS.map(([ic, l, term]) => `<li><a href="#/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}<span class="need__chev" aria-hidden="true">›</span></a></li>`).join("");
+	const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${icon(ic, "icon--lg")}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
 	const recentHtml = recentTools.map((t) => `
 		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
 			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
@@ -61,7 +62,7 @@ export async function viewHome() {
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Browse by need</h3><ul class="needs">${needs}</ul><a class="link panel__foot" href="#/search">View all categories</a></div>
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">💡</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
 		</aside>
 	</div>`;
 	return {

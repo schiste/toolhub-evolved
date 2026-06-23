@@ -3,6 +3,7 @@ import { $, $$ } from "./lib/core/dom.js";
 import { applyLocaleAttrs } from "./lib/core/i18n.js";
 import { EXP_KEY, applyExp, expOn, setAuth, setAuthRender } from "./lib/core/session.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
+import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
 import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview.js";
@@ -26,7 +27,7 @@ if (add) {
 	const on = listToolToggle(add.getAttribute("data-listadd"), add.getAttribute("data-tn"));
 	add.classList.toggle("is-on", on);
 	add.setAttribute("aria-pressed", String(on));
-	const m = add.querySelector(".savemenu__mark"); if (m) m.textContent = on ? "✓" : "＋";
+	const m = add.querySelector(".savemenu__mark"); if (m) m.innerHTML = on ? icon("check") : icon("add");
 	return;
 }
 const q = e.target.closest("[data-q]");

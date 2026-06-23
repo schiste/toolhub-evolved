@@ -5,6 +5,7 @@ import { DEMO_KEYS, DEMO_NS } from "../lib/core/store.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
 import { TOOL_TYPES, fArea, fCheck, fInput, fSelect } from "../lib/atoms/form-fields.js";
+import { ICON_NAMES, icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
 import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
 import { renderFacetGroup } from "../lib/molecules/facet-group.js";
@@ -126,6 +127,16 @@ function tokenSection() {
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">Spacing</h3>
 			<div class="sg-token-stack" id="sg-space-tokens" aria-live="polite"></div>
+		</div>`);
+}
+
+function iconsSection() {
+	return section("Icons", `
+		<div class="sg-token-grid">
+			${ICON_NAMES.map((name) => `<div class="sg-token">
+				${icon(name, "icon--lg")}
+				<span class="sg-token__meta"><code>${esc(name)}</code></span>
+			</div>`).join("")}
 		</div>`);
 }
 
@@ -314,6 +325,7 @@ export function viewStyleguide() {
 			<h1 class="page__title">Design system</h1>
 			<p class="page__intro">A living reference for Toolhub tokens and component functions, rendered from the same modules used by the application.</p>
 			${tokenSection()}
+			${iconsSection()}
 			${atomsSection()}
 			${moleculesSection()}
 			${organismsSection()}

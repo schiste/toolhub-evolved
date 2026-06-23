@@ -5,6 +5,7 @@ import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/core/store.js";
 import { TOOL_TYPES, checkedValue, fArea, fCheck, fInput, fSelect, fieldValue } from "../lib/atoms/form-fields.js";
+import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
@@ -88,7 +89,7 @@ export function viewAddTools() {
 	const html = `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary" href="#/tools/create"><span aria-hidden="true">＋</span> Submit a tool</a></div>
+			<a class="btn btn--primary" href="#/tools/create">${icon("add")} Submit a tool</a></div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
 		Everything stays in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
 
