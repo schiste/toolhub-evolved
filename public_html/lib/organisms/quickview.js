@@ -5,7 +5,7 @@ import { INDEX, getTool } from "../core/api.js";
 import { signedIn } from "../core/session.js";
 import { toolHref } from "../core/routing.js";
 import { toolIcon } from "../atoms/avatar.js";
-import { healthBadge, popularityBadge, statusBadge } from "../atoms/badges.js";
+import { endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../atoms/badges.js";
 import { icon } from "../atoms/icon.js";
 import { glanceChips, keywordTags } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
@@ -33,6 +33,8 @@ export function quickViewBody(t) {
 		</div>
 		<div class="qv__status">
 			${realBadge}
+			${endorsementChip(t.endorsement && t.endorsement.count)}
+			${fitChip(t)}
 			<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
 			${healthBadge(t)}
 			<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking. -->

@@ -3,11 +3,20 @@ import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
 import { expOn } from "../lib/core/session.js";
 import { apiGet, normalizeTool } from "../lib/core/api.js";
+import { endorsementOf, fitsContext, hasContext, listMemberships } from "../lib/core/signals.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 
 export const PAGE_SIZE = 12;
+
+function rankFitsFirst(tools) {
+	if (!hasContext()) return tools;
+	return tools.map((t, i) => [t, i])
+		.sort((a, b) => ((fitsContext(b[0]).fits ? 1 : 0) - (fitsContext(a[0]).fits ? 1 : 0)) || (a[1] - b[1]))
+		.map((x) => x[0]);
+}
+
 export async function viewSearch() {
 	const usp = new URLSearchParams(location.hash.split("?")[1] || "");
 	const q = usp.get("q") || "";
@@ -31,8 +40,11 @@ export async function viewSearch() {
 	}
 
 	const data = await apiGet("/search/tools/", api);
-	const results = (data.results || []).map(normalizeTool);
+	let results = (data.results || []).map(normalizeTool);
+	const lm = await listMemberships();
+	results.forEach((t) => { t.endorsement = endorsementOf(t.name, lm); });
 	if (sort === "views") results.sort((a, b) => (b.weeklyViews - a.weeklyViews) || a.title.localeCompare(b.title));
+	results = rankFitsFirst(results);
 	const total = data.count || 0;
 	const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 	const facetHTML = FACET_GROUPS.map((g) => renderFacetGroup(g, data.facets, selected)).join("");

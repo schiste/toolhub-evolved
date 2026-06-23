@@ -2,11 +2,12 @@
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { timeTag, updatedTimeTag } from "../lib/core/i18n.js";
 import { INDEX, apiGet, getTool, isNewTool, normalizeTool } from "../lib/core/api.js";
+import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
 import { demoRevisionsFor } from "../lib/core/store.js";
 import { toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
-import { healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import { completenessMeter, endorsementChip, fitChip, freshnessNote, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
 import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
@@ -48,8 +49,11 @@ export async function viewTool(name) {
 
 	// REAL status — only the deprecated/experimental flags (shown even when exp off).
 	const realBadge = statusBadge(t);
+	const membershipMap = await listMemberships();
+	t.endorsement = endorsementOf(t.name, membershipMap);
 
 	const related = await relatedTools(t);
+	related.forEach((x) => { x.endorsement = endorsementOf(x.name, membershipMap); });
 	const relatedHtml = related.length
 		? `<h2 class="toolpage__h2">Related tools</h2>${grid("grid-tools", related, (x) => toolCard(x))}`
 		: "";
@@ -59,6 +63,9 @@ export async function viewTool(name) {
 
 	const maintList = (t.authors && t.authors.length ? t.authors : [t.maintainer])
 		.map((a) => `<li>${avatar(a)}<span${dirAttrs(a)}>${esc(a)}</span></li>`).join("");
+	const complete = completeness(t);
+	const completeRows = complete.items.map((item) => `
+		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`).join("");
 
 	const html = `
 	<div class="container page">
@@ -72,11 +79,14 @@ export async function viewTool(name) {
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
+					${endorsementChip(t.endorsement.count)}
+					${fitChip(t)}
+					${updatedTimeTag(t.modified, "toolpage__when")}
+					${freshnessNote(t)}
 					<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
 					${healthBadge(t)}
 					<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking the API doesn't expose. -->
 					${popularityBadge(t)}
-					${updatedTimeTag(t.modified, "toolpage__when")}
 				</div>
 			</div>
 			<div class="toolpage__cta">
@@ -133,6 +143,11 @@ export async function viewTool(name) {
 				<div class="panel">
 					<h2 class="panel__title">Maintainers</h2>
 					<ul class="maint-list">${maintList}</ul>
+				</div>
+				<div class="panel">
+					<h2 class="panel__title">Listing completeness</h2>
+					${completenessMeter(complete)}
+					<ul class="complete-list">${completeRows}</ul>
 				</div>
 				<!-- EXPERIMENTAL — usage stat. Needs: usage analytics the API doesn't expose. -->
 				<div class="panel experimental">

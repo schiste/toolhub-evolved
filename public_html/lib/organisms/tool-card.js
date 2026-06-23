@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc } from "../core/dom.js";
 import { updatedTimeTag } from "../core/i18n.js";
+import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
-import { popularityBadge } from "../atoms/badges.js";
+import { completenessMeter, endorsementChip, fitChip, popularityBadge } from "../atoms/badges.js";
 import { icon } from "../atoms/icon.js";
 import { wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
@@ -27,6 +28,7 @@ export function toolCard(t, opts) {
 	const footLeft = opts.popular
 		? popularityBadge(t)
 		: `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
+	const signalLine = endorsementChip(t.endorsement && t.endorsement.count) + completenessMeter(completeness(t)) + fitChip(t);
 	// The whole card opens the quick-view; (5) a hover cue signals the peek.
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
@@ -40,6 +42,7 @@ export function toolCard(t, opts) {
 		</div>
 		<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>
 		<div class="tcard__tags">${tags}</div>
+		<div class="tcard__signals">${signalLine}</div>
 		<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(t.modified, "tcard__when")}${signedIn() ? favBtn(t.name, { cls: "favbtn--sm" }) : ""}</span></div>
 		${icon("search", "tcard__hint")}
 	</article>`;

@@ -2,8 +2,9 @@
 import { esc } from "../lib/core/dom.js";
 import { INDEX } from "../lib/core/api.js";
 import { DEMO_KEYS, DEMO_NS } from "../lib/core/store.js";
+import { completeness, getUserContext, setUserContext } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
-import { healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import { completenessMeter, endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
 import { TOOL_TYPES, fArea, fCheck, fInput, fSelect } from "../lib/atoms/form-fields.js";
 import { ICON_NAMES, icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
@@ -84,6 +85,47 @@ function withStyleguideDemoState(render) {
 	}
 }
 
+function fitChipExample() {
+	const prev = getUserContext();
+	const fittingTool = { ...FIXTURE_TOOL, audiences: ["editor"], forWikis: ["wikidata.org"] };
+	setUserContext({ wiki: "wikidata.org", role: "editor" });
+	try {
+		return fitChip(fittingTool) || `<span class="signal signal--fit">${icon("check")} Fits you</span>`;
+	} finally {
+		setUserContext(prev);
+	}
+}
+
+function listingCompletenessExample() {
+	const complete = completeness(FIXTURE_TOOL);
+	const rows = complete.items.map((item) => `
+		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`).join("");
+	return `<div class="panel">
+		<h3 class="panel__title">Listing completeness</h3>
+		${completenessMeter(complete)}
+		<ul class="complete-list">${rows}</ul>
+	</div>`;
+}
+
+function fitControlExample() {
+	return `<div class="hero__context">
+		<label class="hero__context-field">I work on
+			<select class="hero__context-select" data-ctx-wiki>
+				<option value="">Any wiki</option>
+				<option value="wikidata.org" selected>Wikidata</option>
+				<option value="commons.wikimedia.org">Commons</option>
+			</select>
+		</label>
+		<label class="hero__context-field">as
+			<select class="hero__context-select" data-ctx-role>
+				<option value="">Anyone</option>
+				<option value="editor" selected>Editor</option>
+				<option value="developer">Developer</option>
+			</select>
+		</label>
+	</div>`;
+}
+
 function section(title, body) {
 	return `<section class="sg-section" aria-labelledby="sg-${esc(title.toLowerCase().replace(/\s+/g, "-"))}">
 		<h2 class="sg-section__title" id="sg-${esc(title.toLowerCase().replace(/\s+/g, "-"))}">${esc(title)}</h2>
@@ -150,6 +192,9 @@ function atomsSection() {
 			${example("statusBadge(experimental)", "atoms", statusBadge(FIXTURE_TOOL_EXPERIMENTAL))}
 			${example("healthBadge(tool)", "atoms", healthBadge(FIXTURE_TOOL))}
 			${example("popularityBadge(tool)", "atoms", popularityBadge(FIXTURE_TOOL))}
+			${example("endorsementChip(5)", "atoms", endorsementChip(5))}
+			${example("completenessMeter({ filled: 7, total: 9 })", "atoms", completenessMeter({ filled: 7, total: 9 }))}
+			${example("fitChip(tool)", "atoms", fitChipExample())}
 			${example("reviewsBlock(tool)", "atoms", reviewsBlock(FIXTURE_TOOL))}
 			${example("usageBlock(tool)", "atoms", usageBlock(FIXTURE_TOOL))}
 			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(FIXTURE_TOOL)}</div>`, { wide: true })}
@@ -181,6 +226,7 @@ function moleculesSection() {
 			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="Pagination">${renderPager(2, 7)}</nav>`, { wide: true })}
 			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="#">${icon("edit")} Editors</a><a class="persona" href="#">${icon("code")} Developers</a><a class="persona" href="#">${icon("book")} Readers</a></div>`, { wide: true })}
 			${example("hero browse-axis toggle (.hero__modes)", "molecules", `<span class="hero__modes"><button class="hero__mode is-active" type="button">made for</button><button class="hero__mode" type="button">to</button></span>`)}
+			${example(".hero__context fit control", "molecules", fitControlExample(), { wide: true })}
 		</div>`);
 }
 
@@ -193,6 +239,7 @@ function organismsSection() {
 			${example("toolCard(deprecatedTool)", "organisms", toolCard(FIXTURE_TOOL_DEPRECATED))}
 			${example("listCard(list)", "organisms", listCard(FIXTURE_LIST))}
 			${example("panel (sidebar)", "organisms", `<div class="panel"><h3 class="panel__title">Browse by need</h3><p style="margin:0;color:var(--color-text-secondary);font-size:var(--fs-caption)">Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.</p></div>`)}
+			${example("Listing completeness", "organisms", listingCompletenessExample())}
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
 		</div>`);

@@ -134,6 +134,35 @@
 .status--yellow { background: var(--color-warning-subtle); color: var(--color-warning-text); }
 .status--red { background: var(--color-destructive-subtle); color: var(--color-destructive); }
 
+.signal {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.signal--fit { color: var(--color-success); }
+.signal .icon { width: 1em; height: 1em; }
+
+.meter {
+	display: inline-block;
+	width: 30px;
+	height: 4px;
+	background: var(--color-border);
+	flex: 0 0 30px;
+	overflow: hidden;
+}
+
+.meter__fill {
+	display: block;
+	height: 100%;
+	background: currentColor;
+}
+
 .glance {
 	background: var(--color-surface-muted);
 	color: var(--color-text-secondary);
