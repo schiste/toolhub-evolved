@@ -6,10 +6,11 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>Toolhub</title>
 	<link rel="icon" type="image/svg+xml" href="img/toolhub-logo.svg?v=2" />
-	<!-- Wikimedia brand typefaces: Montserrat (headings/UI), Source Serif 4 (prose) -->
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-	<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
+	<!-- Wikimedia brand typefaces: Montserrat (headings/UI), Source Serif 4 (prose).
+	     Served via the Wikimedia FontCDN (tools-static.wmflabs.org/fontcdn) — a
+	     Google-Fonts proxy — so the app makes no third-party requests to Google. -->
+	<link rel="preconnect" href="https://tools-static.wmflabs.org" crossorigin />
+	<link href="https://tools-static.wmflabs.org/fontcdn/css?family=Montserrat:400,600,700|Source+Serif+4:400,600&display=swap" rel="stylesheet" />
 	<link rel="stylesheet" href="tokens.css" />
 	<link rel="stylesheet" href="styles.css" />
 </head>
@@ -42,7 +43,7 @@
 			<div class="nav__actions">
 				<a class="icon-btn" href="#/search"><span aria-hidden="true">🔍</span> Search</a>
 				<a class="btn btn--primary" id="submit-tool" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener"><span aria-hidden="true">＋</span> Submit a tool</a>
-				<!-- Account control (logged-in fixture / dropdown) rendered by app.js -->
+				<!-- Account control (logged-in fixture / dropdown) rendered by main.js -->
 				<div class="acct" id="account"></div>
 			</div>
 		</div>
@@ -119,6 +120,6 @@
 		</div>
 	</div>
 
-	<script src="app.js"></script>
+	<script type="module" src="main.js"></script>
 </body>
 </html>

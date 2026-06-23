@@ -4,7 +4,7 @@
 
    Layers (always consume the highest layer you can):
      1. Raw brand palette   --wmf-*      verbatim from the brand guidelines
-     2. Semantic tokens     --color-* / --font-* / --space-* / --radius-* / --shadow-*
+     2. Semantic tokens     --color-* / --font-* / --radius-* / --shadow-*
      3. Compat aliases       (legacy names kept so older CSS keeps working)
 
    FUTURE WORK: build new components against the SEMANTIC tokens (layer 2).
@@ -16,29 +16,21 @@
    ============================================================================= */
 :root {
 	/* ---- 1. RAW BRAND PALETTE (verbatim) ----------------------------------- */
-	/* Core neutrals — the logo is black or white */
+	/* Core neutrals */
 	--wmf-white: #ffffff;
-	--wmf-black: #000000;
-	--wmf-black-75: #404040;
-	--wmf-black-50: #7f7f7f;
-	--wmf-black-25: #bfbfbf;
 
 	/* Movement colours (Legacy). *-aaa variants are tuned to pass on white. */
-	--wmf-green: #339966;       --wmf-green-aaa: #246342;
-	--wmf-blue: #0063bf;        --wmf-blue-aaa: #0c57a8;
-	--wmf-red: #990000;         --wmf-red-aaa: #970302;
+	--wmf-green-aaa: #246342;
+	--wmf-blue-aaa: #0c57a8;
+	--wmf-red-aaa: #970302;
 
 	/* Creative palette — strong (accents; pair red/blue/green/purple with white) */
-	--wmf-red-strong: #970302;     --wmf-pink: #e679a6;       --wmf-orange: #ee8019;
-	--wmf-yellow: #f0bc00;         --wmf-purple: #5748b5;     --wmf-darkgreen: #305d70;
-	--wmf-blue-strong: #0e65c0;    --wmf-brightblue: #049dff; --wmf-green-strong: #308557;
-	--wmf-brightgreen: #71d1b3;
+	--wmf-orange: #ee8019;
+	--wmf-yellow: #f0bc00;         --wmf-purple: #5748b5;
 
 	/* Creative palette — light (subtle backgrounds; pair with black text) */
-	--wmf-red-light: #e5c0c0;      --wmf-pink-light: #f9dde9;     --wmf-orange-light: #fbdfc5;
-	--wmf-yellow-light: #fbeebf;   --wmf-purple-light: #d5d1ec;   --wmf-darkgreen-light: #cbd6db;
-	--wmf-blue-light: #c3d8ef;     --wmf-brightblue-light: #c0e6ff;
-	--wmf-green-light: #cbe0d5;    --wmf-brightgreen-light: #dbf3ec;
+	--wmf-red-light: #e5c0c0;      --wmf-orange-light: #fbdfc5;
+	--wmf-green-light: #cbe0d5;
 
 	/* ---- 2. SEMANTIC TOKENS (reference the brand) -------------------------- */
 	/* Surfaces */
@@ -50,7 +42,6 @@
 	--color-text: #1b1b1b;                 /* derived near-black (softer than #000) */
 	--color-text-secondary: #54595d;       /* derived: ~7:1 */
 	--color-text-muted: #5c6066;           /* derived: ~5:1, safe at small sizes */
-	--color-text-inverse: var(--wmf-white);
 
 	/* Progressive / interactive (links, primary actions) */
 	--color-progressive: var(--wmf-blue-aaa);
@@ -66,27 +57,11 @@
 	/* ---- Typography (Montserrat headings/UI, Source Serif 4 for prose) ----- */
 	--font-sans: "Montserrat", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
 	--font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
-	--font-weight-regular: 400;
-	--font-weight-medium: 600;
 	--font-weight-bold: 700;
 
-	/* ===== GOLDEN-RATIO SYSTEM (φ ≈ 1.618) — the HARD RULE for the whole UI =====
-	   Every padding, margin, gap, border-radius and font-size MUST come from a
-	   token below. No ad-hoc pixel values in components.
-	   Spacing = the Fibonacci sequence (each step ≈ ×φ of the previous).
-	   Radius  = a Fibonacci subset. Type = a φ modular scale from a 16px base. */
-	--ratio: 1.618;
-	/* Spacing (Fibonacci ≈ φ) */
-	--space-3xs: 3px;  --space-2xs: 5px;  --space-xs: 8px;  --space-sm: 13px;
-	--space-md: 21px;  --space-lg: 34px;  --space-xl: 55px; --space-2xl: 89px;
-	/* Numeric aliases kept in sync with the Fibonacci scale */
-	--space-1: 3px; --space-2: 5px; --space-3: 8px; --space-4: 13px;
-	--space-5: 21px; --space-6: 34px; --space-7: 55px; --space-8: 89px;
-
-	/* ---- Type scale (φ modular, rounded) ---------------------------------- */
+	/* ---- Type scale -------------------------------------------------------- */
 	--fs-caption: 13px;  /* meta / captions */
 	--fs-body: 16px;     /* base */
-	--fs-lead: 21px;     /* sub-headings, lead-in (Fib step) */
 	--fs-title: 26px;    /* 16 × φ  — page / section titles */
 	--fs-display: 42px;  /* 16 × φ² — hero */
 
@@ -105,9 +80,6 @@
 	--accent: var(--color-progressive);
 	--accent-hover: var(--color-progressive-hover);
 	--accent90: var(--color-progressive-subtle);
-	--green: var(--color-success);
-	--red: var(--color-destructive);
-	--yellow: var(--wmf-yellow);
 	--yellow30: var(--color-warning-text);
 	--radius: var(--radius-md);
 }
