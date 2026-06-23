@@ -179,6 +179,7 @@ function organismsSection() {
 			${example("toolCard(tool, { popular: true, rank: 1 })", "organisms", toolCard(FIXTURE_TOOL, { popular: true, rank: 1 }))}
 			${example("toolCard(deprecatedTool)", "organisms", toolCard(FIXTURE_TOOL_DEPRECATED))}
 			${example("listCard(list)", "organisms", listCard(FIXTURE_LIST))}
+			${example("panel (sidebar)", "organisms", `<div class="panel"><h3 class="panel__title">Browse by need</h3><p style="margin:0;color:var(--color-text-secondary);font-size:var(--fs-caption)">Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.</p></div>`)}
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
 		</div>`);

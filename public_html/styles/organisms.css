@@ -162,10 +162,12 @@
 .step__desc { font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.5; }
 
 /* Sidebar panels. */
-.panel { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-4); }
-.panel__title { font-size: var(--fs-body); margin: var(--space-0) var(--space-0) var(--space-3); }
+/* Sidebar panels: no box border — a rule under the title, content flush below,
+   matching the main-content .section-head treatment. */
+.panel { margin-bottom: var(--space-5); }
+.panel__title { font-size: var(--fs-body); margin: var(--space-0) var(--space-0) var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
 .panel__foot { display: inline-block; margin-top: var(--space-2); font-weight: 600; }
-.panel--cta { background: var(--color-progressive-subtle); border-color: var(--color-border-accent); text-align: start; }
+.panel--cta { background: var(--color-progressive-subtle); padding: var(--space-4); text-align: start; }
 .panel--cta h3 { margin: var(--space-2) var(--space-0); font-size: var(--fs-body); }
 .panel--cta p { font-size: var(--fs-caption); color: var(--color-text-secondary); margin: var(--space-0) var(--space-0) var(--space-3); }
 .cta__icon { font-size: var(--fs-subtitle); }

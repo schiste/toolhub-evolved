@@ -93,7 +93,7 @@
 /* Responsive overrides. */
 @media (min-width: 1001px) {
 	.layout__main { padding-inline-end: 44px; }
-	.layout__side { border-inline-start: 1px solid var(--color-border); padding-inline-start: 44px; }
+	.layout__side { padding-inline-start: 44px; }
 }
 
 @media (max-width: 860px) {
