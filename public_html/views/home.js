@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { listHref, NEEDS, PERSONAS, STEPS, toolHref } from "../lib/core/routing.js";
@@ -25,7 +25,7 @@ export async function viewHome() {
 	const recentTools = (recent.results || []).map(normalizeTool);
 
 	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="#/search?audiences__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
-	const needs = NEEDS.map(([ic, l, term]) => `<li><a href="#/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}<span class="need__chev" aria-hidden="true">›</span></a></li>`).join("");
+	const needs = NEEDS.map(([ic, l, term]) => `<a class="persona" href="#/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
 	const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${icon(ic, "icon--lg")}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
 	const recentHtml = recentTools.map((t) => `
 		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
@@ -42,8 +42,18 @@ export async function viewHome() {
 			<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${esc(countLabel(total, "tool", "tools"))}…" autocomplete="off" />
 			<button class="btn btn--primary search__btn" type="submit">Search</button>
 		</form>
+		<div class="hero__explore">
+			<p class="hero__explore-prompt">I want to see tools
+				<span class="hero__modes" role="tablist" aria-label="Choose how to browse tools">
+					<button class="hero__mode is-active" type="button" role="tab" aria-selected="true" aria-controls="browse-audiences" data-mode="audiences">made for</button>
+					<button class="hero__mode" type="button" role="tab" aria-selected="false" aria-controls="browse-tasks" data-mode="tasks">to</button>
+				</span>
+			</p>
+			<div class="hero__chips" id="browse-audiences" role="tabpanel" data-mode-panel="audiences">${personas}</div>
+			<div class="hero__chips" id="browse-tasks" role="tabpanel" data-mode-panel="tasks" hidden>${needs}</div>
+			<a class="link hero__explore-foot" href="#/search">Browse all categories</a>
+		</div>
 	</section>
-	<section class="personas container"><span class="personas__label">I'm looking for tools for:</span><div class="personas__row">${personas}</div></section>
 	<div class="container layout">
 		<div class="layout__main">
 			<div class="section-head"><h2>Featured tools</h2><a class="link" href="${listHref((lists[0] || {}).id || "")}">View all</a></div>
@@ -60,7 +70,6 @@ export async function viewHome() {
 			<div class="card-grid grid-steps">${steps}</div>
 		</div>
 		<aside class="layout__side">
-			<div class="panel"><h3 class="panel__title">Browse by need</h3><ul class="needs">${needs}</ul><a class="link panel__foot" href="#/search">View all categories</a></div>
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
 			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
 		</aside>
@@ -74,6 +83,14 @@ export async function viewHome() {
 				const q = $("#home-q").value.trim();
 				location.hash = "#/search" + (q ? "?q=" + encodeURIComponent(q) : "");
 			});
+			// Browse-axis toggle: switch the hero chips between audiences ("made for")
+			// and tasks ("to") without leaving the page.
+			const modeBtns = $$(".hero__mode"), panels = $$("[data-mode-panel]");
+			modeBtns.forEach((btn) => btn.addEventListener("click", () => {
+				const mode = btn.getAttribute("data-mode");
+				modeBtns.forEach((b) => { const on = b === btn; b.classList.toggle("is-active", on); b.setAttribute("aria-selected", String(on)); });
+				panels.forEach((p) => { p.hidden = p.getAttribute("data-mode-panel") !== mode; });
+			}));
 		},
 	};
 }

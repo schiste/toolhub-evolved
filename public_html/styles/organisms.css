@@ -45,6 +45,17 @@
 .hero__title { font-size: var(--fs-display); font-weight: var(--font-weight-bold); margin: var(--space-0) var(--space-0) var(--space-3); letter-spacing: 0; }
 .hero__lead { max-width: 56ch; margin: var(--space-0) auto var(--space-4); color: var(--color-text-secondary); font-size: var(--fs-subtitle); line-height: 1.4; }
 
+/* Hero "explore" control: choose a browse axis (made for / to) and pick a chip. */
+.hero__explore { max-width: 760px; margin: var(--space-5) auto var(--space-0); }
+.hero__explore-prompt { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin: var(--space-0) var(--space-0) var(--space-3); color: var(--color-text-secondary); font-size: var(--fs-body); }
+.hero__modes { display: inline-flex; border: 1px solid var(--color-border); background: var(--color-surface); }
+.hero__mode { appearance: none; border: 0; background: none; font: inherit; font-size: var(--fs-caption); font-weight: 600; cursor: pointer; padding: var(--space-1) var(--space-3); color: var(--color-text-secondary); }
+.hero__mode + .hero__mode { border-inline-start: 1px solid var(--color-border); }
+.hero__mode.is-active { background: var(--color-progressive); color: var(--color-surface); }
+.hero__chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }
+.hero__chips[hidden] { display: none; }
+.hero__explore-foot { display: inline-block; margin-top: var(--space-3); }
+
 /* Tool card. */
 .tcard {
 	position: relative;

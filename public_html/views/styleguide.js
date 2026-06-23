@@ -179,6 +179,8 @@ function moleculesSection() {
 			${example("saveToListControl(name)", "molecules", saveToListControl(FIXTURE_TOOL.name), { wide: true })}
 			${example("renderFacetGroup(group, facets, selected)", "molecules", renderFacetGroup(FIXTURE_FACET_GROUP, FIXTURE_FACETS, FIXTURE_SELECTED_FACETS), { wide: true })}
 			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="Pagination">${renderPager(2, 7)}</nav>`, { wide: true })}
+			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="#">${icon("edit")} Editors</a><a class="persona" href="#">${icon("code")} Developers</a><a class="persona" href="#">${icon("book")} Readers</a></div>`, { wide: true })}
+			${example("hero browse-axis toggle (.hero__modes)", "molecules", `<span class="hero__modes"><button class="hero__mode is-active" type="button">made for</button><button class="hero__mode" type="button">to</button></span>`)}
 		</div>`);
 }
 
