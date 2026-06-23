@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$ } from "./lib/dom.js";
-import { applyLocaleAttrs } from "./lib/i18n.js";
-import { EXP_KEY, applyExp, closeAcctMenu, expOn, renderAccount, setAuth, setAuthRender, syncSubmitButton, toggleAcctMenu } from "./lib/account.js";
-import { demoStore, listToolToggle, toggleFav } from "./lib/store.js";
-import { syncFavButtons } from "./lib/cards.js";
-import { closeQuickView, openQuickView, qvTrap } from "./lib/quickview.js";
+import { $, $$ } from "./lib/core/dom.js";
+import { applyLocaleAttrs } from "./lib/core/i18n.js";
+import { EXP_KEY, applyExp, expOn, setAuth, setAuthRender } from "./lib/core/session.js";
+import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
+import { syncFavButtons } from "./lib/molecules/favbtn.js";
+import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
+import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview.js";
 import { render } from "./views/router.js";
 
 setAuthRender(render);

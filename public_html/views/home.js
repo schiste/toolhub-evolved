@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, avatar, dirAttrs, esc } from "../lib/dom.js";
-import { countLabel, updatedTimeTag } from "../lib/i18n.js";
-import { apiGet, normalizeList, normalizeTool } from "../lib/api.js";
-import { grid, listCard, toolCard } from "../lib/cards.js";
-import { listHref, NEEDS, PERSONAS, STEPS, toolHref } from "../lib/nav.js";
+import { $, dirAttrs, esc } from "../lib/core/dom.js";
+import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
+import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
+import { listHref, NEEDS, PERSONAS, STEPS, toolHref } from "../lib/core/routing.js";
+import { avatar } from "../lib/atoms/avatar.js";
+import { grid } from "../lib/organisms/grid.js";
+import { listCard } from "../lib/organisms/list-card.js";
+import { toolCard } from "../lib/organisms/tool-card.js";
 
 export async function viewHome() {
 	// Live: total count, featured curated lists (with embedded tools), recent tools.

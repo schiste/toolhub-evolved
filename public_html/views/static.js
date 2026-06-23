@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc, safeUrl } from "../lib/dom.js";
-import { apiGet } from "../lib/api.js";
+import { esc, safeUrl } from "../lib/core/dom.js";
+import { apiGet } from "../lib/core/api.js";
 
 /* ---- Static prose pages (T9) ------------------------------------------- */
 export function prosePage(title, bodyHtml) {

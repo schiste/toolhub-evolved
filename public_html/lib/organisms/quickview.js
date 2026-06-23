@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, dirAttrs, esc, safeUrl, toolIcon } from "./dom.js";
-import { updatedTimeTag } from "./i18n.js";
-import { INDEX, getTool } from "./api.js";
-import { signedIn } from "./account.js";
-import { favBtn } from "./cards.js";
-import { glanceChips, healthBadge, keywordTags, popularityBadge, statusBadge } from "./badges.js";
-import { toolHref } from "./nav.js";
+import { $, $$, dirAttrs, esc, safeUrl } from "../core/dom.js";
+import { updatedTimeTag } from "../core/i18n.js";
+import { INDEX, getTool } from "../core/api.js";
+import { signedIn } from "../core/session.js";
+import { toolHref } from "../core/routing.js";
+import { toolIcon } from "../atoms/avatar.js";
+import { healthBadge, popularityBadge, statusBadge } from "../atoms/badges.js";
+import { glanceChips, keywordTags } from "../atoms/labels.js";
+import { favBtn } from "../molecules/favbtn.js";
 
 export const QV_TAG_LIMIT = 6;
 /* ---- Quick-view modal (peek from any listing) -------------------------- */

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { avatar, dirAttrs, esc } from "../lib/dom.js";
-import { countLabel, fmt, timeTag } from "../lib/i18n.js";
-import { apiGet } from "../lib/api.js";
-import { DEMO_KEYS, demoFeed } from "../lib/store.js";
-import { metaItem } from "../lib/badges.js";
-import { listHref, toolHref } from "../lib/nav.js";
+import { dirAttrs, esc } from "../lib/core/dom.js";
+import { countLabel, fmt, timeTag } from "../lib/core/i18n.js";
+import { apiGet } from "../lib/core/api.js";
+import { listHref, toolHref } from "../lib/core/routing.js";
+import { DEMO_KEYS, demoFeed } from "../lib/core/store.js";
+import { avatar } from "../lib/atoms/avatar.js";
+import { metaItem } from "../lib/atoms/labels.js";
 
 /* ---- Parity pages: data-driven (read-only) ----------------------------- */
 // Recent changes — live from /api/recent/ (deep-links tools via content_id slug).

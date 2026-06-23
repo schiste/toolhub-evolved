@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { avatar, dirAttrs, esc, safeUrl, toolIcon } from "../lib/dom.js";
-import { countLabel, timeTag, updatedTimeTag } from "../lib/i18n.js";
-import { INDEX, apiGet, getTool, isNewTool, normalizeTool } from "../lib/api.js";
-import { signedIn } from "../lib/account.js";
-import { demoRevisionsFor } from "../lib/store.js";
-import { favBtn, grid, saveToListControl, toolCard } from "../lib/cards.js";
-import { glanceChips, healthBadge, keywordTags, langLabel, linkOut, metaItem, popularityBadge, reviewsBlock, statusBadge, usageBlock, wikiLabel } from "../lib/badges.js";
-import { toolHref } from "../lib/nav.js";
+import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
+import { timeTag, updatedTimeTag } from "../lib/core/i18n.js";
+import { INDEX, apiGet, getTool, isNewTool, normalizeTool } from "../lib/core/api.js";
+import { signedIn } from "../lib/core/session.js";
+import { demoRevisionsFor } from "../lib/core/store.js";
+import { toolHref } from "../lib/core/routing.js";
+import { avatar, toolIcon } from "../lib/atoms/avatar.js";
+import { healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
+import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
+import { favBtn } from "../lib/molecules/favbtn.js";
+import { saveToListControl } from "../lib/molecules/savemenu.js";
+import { grid } from "../lib/organisms/grid.js";
+import { toolCard } from "../lib/organisms/tool-card.js";
 import { prosePage, viewNotFound } from "./static.js";
 
 export const RELATED_LIMIT = 4;

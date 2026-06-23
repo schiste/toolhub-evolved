@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { expOn, signedIn, USER } from "./account.js";
+import { expOn, signedIn, USER } from "./session.js";
 import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
 import { synthViews } from "./synth.js";
 

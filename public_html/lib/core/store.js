@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { signedIn, USER } from "./account.js";
+import { signedIn, USER } from "./session.js";
 
 export const DEMO_KEYS = { favorites: "favorites", lists: "lists", toolEdits: "toolEdits", toolAnnos: "toolAnnos", toolNew: "toolNew", revisions: "revisions", auditlogs: "auditlogs", crawlerUrls: "crawlerUrls" };
 export const FEED_LOG_CAP = 100;

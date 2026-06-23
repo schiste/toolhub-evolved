@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, dirAttrs, esc } from "../lib/dom.js";
-import { countLabel } from "../lib/i18n.js";
-import { apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/api.js";
-import { signedIn } from "../lib/account.js";
-import { fArea, fInput, fieldValue } from "../lib/forms.js";
-import { grid, listCard, listCardData, toolCard } from "../lib/cards.js";
-import { listHref } from "../lib/nav.js";
-import { demoListDelete, demoListGet, demoListNew, demoListSave, demoLists, favNames, isDemoListId } from "../lib/store.js";
+import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
+import { countLabel } from "../lib/core/i18n.js";
+import { apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
+import { signedIn } from "../lib/core/session.js";
+import { listHref } from "../lib/core/routing.js";
+import { demoListDelete, demoListGet, demoListNew, demoListSave, demoLists, favNames, isDemoListId } from "../lib/core/store.js";
+import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
+import { grid } from "../lib/organisms/grid.js";
+import { listCard, listCardData } from "../lib/organisms/list-card.js";
+import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
 
 /* ---- Lists overview + list detail -------------------------------------- */

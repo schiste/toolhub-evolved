@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, esc } from "../lib/dom.js";
-import { closeAcctMenu } from "../lib/account.js";
-import { isDemoListId } from "../lib/store.js";
-import { closeQuickView } from "../lib/quickview.js";
-import { parseHash, requireSignIn, setSignInFallback } from "../lib/nav.js";
+import { $, $$, esc } from "../lib/core/dom.js";
+import { parseHash } from "../lib/core/routing.js";
+import { signedIn } from "../lib/core/session.js";
+import { isDemoListId } from "../lib/core/store.js";
+import { closeAcctMenu } from "../lib/organisms/account.js";
+import { closeQuickView } from "../lib/organisms/quickview.js";
 import { viewHome } from "./home.js";
 import { viewSearch } from "./search.js";
 import { viewTool, viewToolHistory, viewDiffStub } from "./tool.js";
@@ -11,8 +12,12 @@ import { viewLists, viewList, viewMyLists, viewFavorites, viewListEdit } from ".
 import { viewToolForm, viewAddTools, viewAnnotationsEdit } from "./toolforms.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
 import { viewExperiments } from "./experiments.js";
+import { viewStyleguide } from "./styleguide.js";
 import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
 
+let signInFallback = null;
+export function setSignInFallback(fn) { signInFallback = fn; }
+export function requireSignIn(viewFn, title, lead) { return signedIn() ? viewFn() : signInFallback(title, lead); }
 setSignInFallback(signInPage);
 
 export const ROUTES = {
@@ -30,6 +35,7 @@ export const ROUTES = {
 	"api-docs": viewApiDocs,
 	contribute: viewContribute,
 	experiments: viewExperiments,
+	styleguide: viewStyleguide,
 };
 export function dispatch() {
 	const { path } = parseHash();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "../lib/dom.js";
+import { esc } from "../lib/core/dom.js";
 
 /* ---- Experimental features index -------------------------------------- */
 // Single source of truth for every prospective feature behind the toggle.

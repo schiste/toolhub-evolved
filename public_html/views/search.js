@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, dirAttrs, esc } from "../lib/dom.js";
-import { countLabel } from "../lib/i18n.js";
-import { expOn } from "../lib/account.js";
-import { apiGet, normalizeTool } from "../lib/api.js";
-import { toolCard } from "../lib/cards.js";
-import { FACET_GROUPS, renderFacetGroup, renderPager } from "../lib/nav.js";
+import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
+import { countLabel } from "../lib/core/i18n.js";
+import { expOn } from "../lib/core/session.js";
+import { apiGet, normalizeTool } from "../lib/core/api.js";
+import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
+import { renderPager } from "../lib/molecules/pager.js";
+import { toolCard } from "../lib/organisms/tool-card.js";
 
 export const PAGE_SIZE = 12;
 export async function viewSearch() {

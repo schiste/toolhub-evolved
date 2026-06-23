@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, dirAttrs, esc } from "../lib/dom.js";
-import { countLabel } from "../lib/i18n.js";
-import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/store.js";
-import { getTool, isNewTool, newToolBase } from "../lib/api.js";
-import { checkedValue, fCheck, fInput, fSelect, fArea, fieldValue, TOOL_TYPES } from "../lib/forms.js";
-import { grid, toolCard } from "../lib/cards.js";
-import { toolHref } from "../lib/nav.js";
+import { $, dirAttrs, esc } from "../lib/core/dom.js";
+import { countLabel } from "../lib/core/i18n.js";
+import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
+import { toolHref } from "../lib/core/routing.js";
+import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/core/store.js";
+import { TOOL_TYPES, checkedValue, fArea, fCheck, fInput, fSelect, fieldValue } from "../lib/atoms/form-fields.js";
+import { grid } from "../lib/organisms/grid.js";
+import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
 
 // EXPERIMENTAL — create/edit a tool's CORE fields. name=null → create.

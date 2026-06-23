@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "./dom.js";
+import { esc } from "../core/dom.js";
 
 // Shared form-field renderers (reused by all Lane B forms).
 export function fInput(label, id, value, opts) {
