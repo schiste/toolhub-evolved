@@ -1,6 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Templates: page scaffolding, grid templates, and final responsive overrides. */
 
+/* Squared design — square the avatars/small controls that used literal radii so
+   they match the now-squared token-based elements. Genuine round indicators with
+   no corner (status dots, loading spinner, toggle knob) keep their shape. */
+.avatar--sm, .acct__btn .avatar, .recent .avatar, .favbtn--sm { border-radius: 0; }
+
 /* Layout */
 .layout {
 	display: grid;
