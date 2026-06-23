@@ -14,7 +14,7 @@ body {
 
 /* Typography: system sans for headings/UI (var(--font-sans)), system serif for prose. */
 h1, h2, h3, .hero__title, .tcard__title, .lcard__title, .panel__title,
-.brand__name, .step__title {
+.brand__name {
 	font-family: var(--font-sans);
 	font-weight: var(--font-weight-bold);
 }

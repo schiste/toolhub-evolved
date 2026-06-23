@@ -15,12 +15,6 @@ export const NEEDS = [
 	["analyze", "Analyze data", "analysis"], ["convert", "Convert & transform", "converting"],
 	["book", "Read & browse", "reading"],
 ];
-export const STEPS = [
-	["search", "1. Find a tool", "Search, or browse by the task, audience, or wiki you work on."],
-	["bookmark", "2. Open it", "Most tools run in the browser with your Wikimedia login — nothing to install."],
-	["discuss", "3. Ask and learn", "Read the docs, join the discussion, and get help from maintainers."],
-	["heart", "4. Contribute back", "Report an issue, suggest an edit, or publish your own tool."],
-];
 
 export function parseHash() {
 	let h = location.hash.replace(/^#/, "");

@@ -2,7 +2,7 @@
 import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
-import { listHref, NEEDS, PERSONAS, STEPS, toolHref } from "../lib/core/routing.js";
+import { listHref, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
@@ -26,7 +26,6 @@ export async function viewHome() {
 
 	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="#/search?audiences__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
 	const needs = NEEDS.map(([ic, l, term]) => `<a class="persona" href="#/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
-	const steps = STEPS.map(([ic, t, d]) => `<div class="step"><div class="step__icon" aria-hidden="true">${icon(ic, "icon--lg")}</div><div class="step__title">${t}</div><div class="step__desc">${d}</div></div>`).join("");
 	const recentHtml = recentTools.map((t) => `
 		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
 			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
@@ -66,8 +65,6 @@ export async function viewHome() {
 			</div>
 			<div class="section-head"><h2>Curated lists</h2><a class="link" href="#/lists">View all lists</a></div>
 			${grid("grid-lists", lists.slice(0, 6), listCard)}
-			<div class="section-head"><h2>Getting started</h2></div>
-			<div class="card-grid grid-steps">${steps}</div>
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>

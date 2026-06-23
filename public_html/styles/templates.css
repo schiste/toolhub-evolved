@@ -49,7 +49,6 @@
 
 .grid-tools { grid-template-columns: repeat(auto-fill, minmax(min(100%, 272px), 1fr)); }
 .grid-lists { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
-.grid-steps { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 
 /* Inner page scaffolding. */
 .page {
