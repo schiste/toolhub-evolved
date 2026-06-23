@@ -4,7 +4,8 @@
 
    Layers (always consume the highest layer you can):
      1. Raw brand palette   --wmf-*      verbatim from the brand guidelines
-     2. Semantic tokens     --color-* / --font-* / --radius-* / --shadow-*
+     2. Semantic tokens     --color-* / --font-* / --space-* / --radius-* /
+                             --shadow-* / --focus-*
      3. Compat aliases       (legacy names kept so older CSS keeps working)
 
    FUTURE WORK: build new components against the SEMANTIC tokens (layer 2).
@@ -36,10 +37,18 @@
 	/* Surfaces */
 	--color-surface: var(--wmf-white);
 	--color-surface-muted: #f4f5f7;        /* derived: faint neutral fill */
+	--color-surface-pattern: #eef0f3;      /* derived: screenshot placeholder stripe */
+	--color-row-hover: rgba(0,0,0,.02);    /* derived: table row hover */
+	--color-overlay-modal: rgba(16,20,30,.55);
+	--color-badge-neutral: rgba(0,0,0,.12);
+
+	/* Borders */
 	--color-border: #d4d7db;               /* derived: hairline (black-25 is too heavy) */
+	--color-border-hover: #b9c6e6;         /* derived: card hover border */
+	--color-border-accent: #cfe0ff;        /* derived: CTA border on subtle blue */
 
 	/* Text — derived neutrals tuned for AA on white */
-	--color-text: #1b1b1b;                 /* derived near-black (softer than #000) */
+	--color-text: #1b1b1b;                 /* derived near-black (softer than black) */
 	--color-text-secondary: #54595d;       /* derived: ~7:1 */
 	--color-text-muted: #5c6066;           /* derived: ~5:1, safe at small sizes */
 
@@ -47,6 +56,9 @@
 	--color-progressive: var(--wmf-blue-aaa);
 	--color-progressive-hover: #09437f;    /* derived darker blue */
 	--color-progressive-subtle: #e7f0fa;   /* derived light blue (AA with progressive text) */
+	--color-interactive-subtle: #dbe7ff;   /* derived hover/focus wash */
+	--color-hero-tint: #f5f9ff;            /* derived hero gradient midpoint */
+	--color-favorite: #b8860b;             /* derived saved/favorite state */
 
 	/* Status — Creative light bg + AAA/derived text */
 	--color-success: var(--wmf-green-aaa);     --color-success-subtle: var(--wmf-green-light);
@@ -62,13 +74,32 @@
 	/* ---- Type scale -------------------------------------------------------- */
 	--fs-caption: 13px;  /* meta / captions */
 	--fs-body: 16px;     /* base */
-	--fs-title: 26px;    /* 16 × φ  — page / section titles */
-	--fs-display: 42px;  /* 16 × φ² — hero */
+	--fs-subtitle: 21px; /* compact section headings / large icon labels */
+	--fs-title: 26px;    /* 16 × phi  — page / section titles */
+	--fs-headline: 34px; /* responsive hero / error title */
+	--fs-display: 42px;  /* 16 × phi² — hero */
 
-	/* ---- Radius & elevation (φ-stepped) ----------------------------------- */
+	/* ---- Spacing scale ----------------------------------------------------- */
+	--space-0: 0;
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 13px;
+	--space-4: 21px;
+	--space-5: 34px;
+	--space-6: 56px;
+	--space-7: 72px;
+	--space-8: 89px;
+
+	/* ---- Radius & elevation (phi-stepped) --------------------------------- */
 	--radius-sm: 8px; --radius-md: 13px; --radius-lg: 21px; --radius-pill: 999px;
 	--shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
 	--shadow-hover: 0 6px 18px rgba(0,0,0,.10);
+	--shadow-popover: 0 1px 3px rgba(0,0,0,.3);
+	--shadow-modal: 0 21px 64px rgba(0,0,0,.3);
+	--shadow-sm: 0 1px 2px rgba(0,0,0,.3);
+
+	/* ---- Focus ------------------------------------------------------------- */
+	--focus-ring: 0 0 0 3px var(--color-interactive-subtle);
 
 	/* ---- 3. COMPAT ALIASES (legacy names → semantic). Prefer layer 2 above. */
 	--white: var(--color-surface);
@@ -77,6 +108,7 @@
 	--base30: var(--color-text-muted);
 	--base80: var(--color-border);
 	--base90: var(--color-surface-muted);
+	--base95: var(--color-row-hover);
 	--accent: var(--color-progressive);
 	--accent-hover: var(--color-progressive-hover);
 	--accent90: var(--color-progressive-subtle);
