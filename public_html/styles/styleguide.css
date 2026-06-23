@@ -37,6 +37,14 @@
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 	gap: var(--space-4);
+	align-items: start;
+}
+
+/* Blocks side-by-side in the split must top-align; the stacking margin-top
+   (which only the first column escapes via :first-child) would otherwise push
+   the second column — Shadows — down out of line with Radii. */
+.sg-token-split > .sg-token-block {
+	margin-top: var(--space-0);
 }
 
 .sg-token-grid,
