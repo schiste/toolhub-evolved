@@ -12,7 +12,7 @@ body {
 	line-height: 1.5;
 }
 
-/* Brand typography: Montserrat for headings/UI, Source Serif 4 for lede prose. */
+/* Typography: system sans for headings/UI (var(--font-sans)), system serif for prose. */
 h1, h2, h3, .hero__title, .tcard__title, .lcard__title, .panel__title,
 .brand__name, .step__title {
 	font-family: var(--font-sans);

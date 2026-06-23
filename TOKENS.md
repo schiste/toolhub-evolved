@@ -77,8 +77,8 @@ Sources: [Brand/colors](https://meta.wikimedia.org/wiki/Brand/colors) · [Brand/
 
 **Type** — `--fs-caption 13px`, `--fs-body 16px`, `--fs-subtitle 21px`,
 `--fs-title 26px`, `--fs-headline 34px`, `--fs-display 42px`. Families:
-`--font-sans` = Montserrat for headings/UI,
-`--font-serif` = Source Serif 4 for prose. Weight token:
+`--font-sans` = native system sans (Wikimedia/Codex stack) for headings/UI,
+`--font-serif` = system serif (Linux Libertine / Georgia) for prose. Weight token:
 `--font-weight-bold 700`.
 
 **Elevation** — `--shadow` (resting), `--shadow-hover` (lifted cards),

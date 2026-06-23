@@ -16,10 +16,10 @@ export const NEEDS = [
 	["📖", "Read & browse", "reading"],
 ];
 export const STEPS = [
-	["🔍", "1. Find a tool", "Search or browse by task, audience or category."],
-	["🔖", "2. Try it out", "Most tools are free and open for everyone."],
-	["💬", "3. Learn & connect", "Read docs, join discussions and ask for help."],
-	["❤️", "4. Contribute back", "Share feedback or submit a tool for others."],
+	["🔍", "1. Find a tool", "Search, or browse by the task, audience, or wiki you work on."],
+	["🔖", "2. Open it", "Most tools run in the browser with your Wikimedia login — nothing to install."],
+	["💬", "3. Ask and learn", "Read the docs, join the discussion, and get help from maintainers."],
+	["❤️", "4. Contribute back", "Report an issue, suggest an edit, or publish your own tool."],
 ];
 
 export function parseHash() {

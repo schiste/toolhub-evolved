@@ -34,7 +34,8 @@ export async function viewHome() {
 
 	const html = `
 	<section class="hero">
-		<h1 class="hero__title">Find the right Wikimedia tool faster</h1>
+		<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
+		<p class="hero__lead">${esc(countLabel(total, "tool", "tools"))} built by volunteers to edit, curate, and analyze the Wikimedia projects — documented and searchable in one place.</p>
 		<form class="search" role="search" data-home-search>
 			<label for="home-q" class="skip-label">Search tools</label>
 			<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${esc(countLabel(total, "tool", "tools"))}…" autocomplete="off" />
@@ -60,7 +61,7 @@ export async function viewHome() {
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Browse by need</h3><ul class="needs">${needs}</ul><a class="link panel__foot" href="#/search">View all categories</a></div>
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">💡</div><h3>Have a tool to share?</h3><p>Help the community by submitting your tool to Toolhub.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">💡</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
 		</aside>
 	</div>`;
 	return {

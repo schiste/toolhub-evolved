@@ -64,6 +64,6 @@ webservice restart            # or: sh ~/repo/tools/deploy.sh
 - **No bundled catalog.** The SPA reads everything live through the proxy; there is
   no snapshot to fall back to. If the API is unreachable, views show a clear
   "Couldn't load live data" message rather than stale data.
-- **Fonts & privacy.** `index.html` loads Montserrat / Source Serif 4 from the
-  Wikimedia FontCDN (`tools-static.wmflabs.org/fontcdn`, a Google-Fonts proxy), so
-  no third-party requests are made to Google.
+- **Fonts & privacy.** Typography uses the native Wikimedia/Codex system font stack
+  (`styles/tokens.css`); no web font is downloaded, so the app makes no third-party
+  font requests at all.
