@@ -161,6 +161,28 @@
 	}
 	.hero { padding: var(--space-5) var(--space-4) var(--space-5); }
 	.hero__title { font-size: var(--fs-headline); }
+	.intent { justify-items: stretch; }
+	.intent__sentence {
+		display: block;
+		text-align: start;
+		font-size: var(--fs-body);
+		line-height: 1.8;
+	}
+	.intent__choice {
+		position: static;
+	}
+	.intent__menu {
+		inset-block-start: calc(100% + var(--space-2));
+		inset-inline-start: 0;
+		inset-inline-end: 0;
+		max-width: none;
+		min-width: 0;
+		transform: none;
+	}
+	.intent__go {
+		margin-block-start: var(--space-2);
+		margin-inline-start: var(--space-0);
+	}
 }
 
 @media (max-width: 480px) {

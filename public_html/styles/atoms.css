@@ -196,7 +196,6 @@
 .search__input,
 .facets__search,
 .le__input,
-.hero__context-select,
 .sort select {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-sm);
@@ -210,7 +209,6 @@
 .facets__search,
 input.le__input,
 select.le__input,
-.hero__context-select,
 .sort select {
 	height: var(--ctl-h-md);
 	padding-block: 0;
@@ -220,7 +218,6 @@ select.le__input,
 }
 
 select.le__input,
-.hero__context-select,
 .sort select {
 	padding-inline-end: var(--space-4);
 }
@@ -248,7 +245,7 @@ textarea.le__input {
 	margin-bottom: var(--space-4);
 }
 
-:is(.search__input, .facets__search, .le__input, .hero__context-select, .sort select):focus-visible {
+:is(.search__input, .facets__search, .le__input, .sort select):focus-visible {
 	border-color: var(--color-progressive);
 	outline: 2px solid var(--color-progressive);
 	outline-offset: 1px;
