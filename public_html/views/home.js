@@ -110,7 +110,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/tools/create", attrs: 'target="_blank" rel="noopener"' })}</div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", attrs: 'target="_blank" rel="noopener"' })}</div>
 		</aside>
 	</div>`;
 	return {

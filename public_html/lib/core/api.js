@@ -71,15 +71,32 @@ export function pick(core, annotation, fallback) {
 	if (hasValue(annotation)) return annotation;
 	return fallback;
 }
+function normalizeAuthorObj(a) {
+	if (!a) return null;
+	if (typeof a === "string") return a ? { name: a, url: null, wikiUsername: null, developerUsername: null } : null;
+	const name = a.name || "";
+	if (!name) return null;
+	return {
+		name,
+		url: a.url || null,
+		wikiUsername: a.wiki_username || null,
+		developerUsername: a.developer_username || null,
+	};
+}
 export function normalizeTool(t) {
 	const ann = t.annotations || {};
 	const ra = t.author;
 	const authors = Array.isArray(ra)
 		? ra.map((a) => (a && a.name) || (typeof a === "string" ? a : null)).filter(Boolean)
 		: typeof ra === "string" && ra ? [ra] : [];
+	const authorObjs = Array.isArray(ra)
+		? ra.map(normalizeAuthorObj).filter(Boolean)
+		: [normalizeAuthorObj(ra)].filter(Boolean);
 	const o = {
 		name: t.name, title: t.title || t.name, description: t.description || "", url: pick(t.url, ann.url, ""), icon: pick(t.icon, ann.icon, null),
-		keywords: t.keywords || [], maintainer: authors[0] || (t.created_by && t.created_by.username) || "Unknown", authors,
+		keywords: t.keywords || [], maintainer: authors[0] || (t.created_by && t.created_by.username) || "Unknown", authors, authorObjs,
+		wikidata: pick(t.wikidata_qid, ann.wikidata_qid, null), subtitle: pick(t.subtitle, ann.subtitle, null),
+		sponsor: pick(t.sponsor, ann.sponsor, []), replacedBy: pick(t.replaced_by, ann.replaced_by, null),
 		toolType: pick(t.tool_type, ann.tool_type, null), license: pick(t.license, ann.license, null),
 		repository: pick(t.repository, ann.repository, null), apiUrl: pick(t.api_url, ann.api_url, null),
 		technologyUsed: pick(t.technology_used, ann.technology_used, []),

@@ -6,7 +6,8 @@ import { completeness, endorsementOf, listMemberships } from "../lib/core/signal
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
 import { demoRevisionsFor } from "../lib/core/store.js";
-import { toolHref } from "../lib/core/routing.js";
+import { authorProfileUrl } from "../lib/core/author-index.js";
+import { authorHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip, freshnessNote, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
 import { button } from "../lib/atoms/button.js";
@@ -31,16 +32,78 @@ function relatedToolRow(item) {
 		</article>`;
 }
 
+function authorEntries(t) {
+	const names = (t.authors && t.authors.length ? t.authors : [t.maintainer]).filter(Boolean);
+	const records = t.authorObjs || [];
+	return names.map((name, i) => {
+		const byIndex = records[i];
+		const record = (byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name)) || { name };
+		return { name, profile: { url: record.url, wikiUsername: record.wikiUsername } };
+	});
+}
+
+function authorExternalLink(entry) {
+	const url = safeUrl(authorProfileUrl(entry.profile, entry.name));
+	if (!url) return "";
+	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener" aria-label="External profile for ${esc(entry.name)}">${icon("external")}</a>`;
+}
+
+function authorLink(entry) {
+	return `<span class="author-ref"><a href="${esc(authorHref(entry.name))}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>${authorExternalLink(entry)}</span>`;
+}
+
+function authorInlineList(t) {
+	return authorEntries(t).map(authorLink).join('<span class="toolpage__sep">, </span>');
+}
+
+function wikidataChip(qid) {
+	const id = String(qid || "").trim();
+	if (!id) return "";
+	const url = safeUrl("https://www.wikidata.org/wiki/" + encodeURIComponent(id));
+	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener">Wikidata: <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
+}
+
+function sponsorEntry(entry) {
+	let name = "", url = "";
+	if (typeof entry === "string") name = entry;
+	else if (entry && typeof entry === "object") { name = entry.name || entry.url || ""; url = entry.url || ""; }
+	if (!name) return "";
+	const body = esc(name);
+	const href = safeUrl(url);
+	return href ? `<a href="${href}" target="_blank" rel="noopener"${dirAttrs(name)}>${body}</a>` : `<span${dirAttrs(name)}>${body}</span>`;
+}
+
+function sponsorLine(sponsor) {
+	const entries = Array.isArray(sponsor) ? sponsor : (sponsor ? [sponsor] : []);
+	const html = entries.map(sponsorEntry).filter(Boolean).join(", ");
+	return html ? `<div class="toolpage__sponsor"><span class="toolpage__label">Sponsor:</span> ${html}</div>` : "";
+}
+
+function replacementNote(t) {
+	if (!t.deprecated || !t.replacedBy) return "";
+	const value = t.replacedBy;
+	const name = typeof value === "string" ? value : (value && (value.name || value.title)) || "";
+	if (!name) return "";
+	const label = esc(name);
+	const linked = /^https?:\/\//i.test(name)
+		? `<a href="${safeUrl(name)}" target="_blank" rel="noopener">${label}</a>`
+		: `<a href="${esc(toolHref(name))}"${dirAttrs(name)}>${label}</a>`;
+	return `<div class="toolpage__notice">Replaced by ${linked}</div>`;
+}
+
 export async function viewTool(name) {
 	const t = await getTool(name);
 	if (!t) return viewNotFound();
-	const provTags = !signedIn() ? "" : [
-		isNewTool(name) ? '<span class="exp-badge">Demo submission</span>' : "",
-		t.edited ? '<span class="exp-badge">Edited · demo</span>' : "",
-		t.annotated ? '<span class="exp-badge">Community annotations · demo</span>' : "",
+	const provTags = [
+		wikidataChip(t.wikidata),
+		...(!signedIn() ? [] : [
+			isNewTool(name) ? '<span class="exp-badge">Demo submission</span>' : "",
+			t.edited ? '<span class="exp-badge">Edited · demo</span>' : "",
+			t.annotated ? '<span class="exp-badge">Community annotations · demo</span>' : "",
+		]),
 	].filter(Boolean).join(" ");
 	const tags = keywordTags(t, { empty: "—" });
-	const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
+	const authors = authorInlineList(t);
 
 	// REAL links — render only the ones present on the record.
 	const actions = [
@@ -73,8 +136,8 @@ export async function viewTool(name) {
 	// At-a-glance chips (real metadata).
 	const glance = glanceChips(t);
 
-	const maintList = (t.authors && t.authors.length ? t.authors : [t.maintainer])
-		.map((a) => `<li>${avatar(a)}<span${dirAttrs(a)}>${esc(a)}</span></li>`).join("");
+	const maintList = authorEntries(t)
+		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`).join("");
 	const complete = completeness(t);
 	const completeRows = complete.items.map((item) => `
 		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`).join("");
@@ -86,7 +149,10 @@ export async function viewTool(name) {
 			${toolIcon(t, "lg")}
 			<div class="toolpage__id">
 				<h1 class="toolpage__title"${dirAttrs(t.title)}>${esc(t.title)}</h1>
-				<div class="toolpage__by">by <span dir="auto">${authors}</span></div>
+				${t.subtitle ? `<p class="toolpage__subtitle"${dirAttrs(t.subtitle)}>${esc(t.subtitle)}</p>` : ""}
+				<div class="toolpage__by">by ${authors}</div>
+				${sponsorLine(t.sponsor)}
+				${replacementNote(t)}
 				${provTags ? `<div class="toolpage__prov">${provTags}</div>` : ""}
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
@@ -114,8 +180,15 @@ export async function viewTool(name) {
 				<!-- EXPERIMENTAL — screenshots/preview. Needs: a screenshot field in the
 				     toolinfo schema + image storage (no per-tool data possible here). -->
 				<div class="experimental shotstrip">
-					<div class="shot"></div><div class="shot"></div><div class="shot"></div>
-					<span class="exp-badge shotstrip__badge">Experimental · screenshots</span>
+					<div class="shotstrip__copy">
+						<span class="exp-badge shotstrip__badge">Screenshots · prospective feature</span>
+						<span class="shotstrip__note">Toolhub has no screenshot field yet; these frames are placeholders.</span>
+					</div>
+					<div class="shotstrip__frames" aria-hidden="true">
+						<div class="shot shot--hero">${toolIcon(t, "lg")}</div>
+						<div class="shot shot--split"><span></span><span></span></div>
+						<div class="shot shot--stack"><span></span><span></span><span></span></div>
+					</div>
 				</div>
 
 				<div class="prose"${dirAttrs(t.description)}>${esc(t.description) || "<em>No description provided.</em>"}</div>

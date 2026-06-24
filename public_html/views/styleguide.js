@@ -232,7 +232,7 @@ function chromeNavExample() {
 				</nav>
 				<div class="nav__actions">
 					<a class="icon-btn" href="#/search">${icon("search")} Search</a>
-					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/tools/create", icon: "add", attrs: 'target="_blank" rel="noopener"' })}
+					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: 'target="_blank" rel="noopener"' })}
 					${accountButtonExample()}
 				</div>
 			</div>
@@ -433,7 +433,7 @@ function panelVariantsExample() {
 			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
 			<h3>Built a tool for Wikimedia?</h3>
 			<p>Add a <code>toolinfo.json</code> to your repository so other Wikimedians can find it.</p>
-			${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/tools/create" })}
+			${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" })}
 		</div>
 	</div>`;
 }

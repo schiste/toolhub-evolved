@@ -9,6 +9,7 @@ import { closeQuickView } from "../lib/organisms/quickview.js";
 import { viewHome } from "./home.js";
 import { viewSearch } from "./search.js";
 import { viewTool, viewToolHistory, viewDiffStub } from "./tool.js";
+import { viewAuthor } from "./authors.js";
 import { viewLists, viewList, viewMyLists, viewFavorites, viewListEdit } from "./lists.js";
 import { viewToolForm, viewAddTools, viewAnnotationsEdit } from "./toolforms.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
@@ -43,6 +44,7 @@ export function dispatch() {
 	const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
 	if (path === "/") return viewHome();
 	if (seg[0] === "search") return viewSearch();
+	if (seg[0] === "by" && seg[1]) return viewAuthor(decodeURIComponent(seg[1]));
 	// Tool + its sub-routes
 	if (seg[0] === "tools" && seg[1] === "create") return requireSignIn(() => viewToolForm(null), "Submit a tool", "Create a new tool record — title, description, URL and more.");
 	if (seg[0] === "tools" && seg[1]) {

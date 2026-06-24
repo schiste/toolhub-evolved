@@ -51,7 +51,7 @@ export function toggleAcctMenu() {
 export function syncSubmitButton() {
 	const b = document.getElementById("submit-tool"); if (!b) return;
 	if (expOn()) { b.setAttribute("href", "#/tools/create"); b.removeAttribute("target"); b.removeAttribute("rel"); }
-	else { b.setAttribute("href", "https://toolhub.wikimedia.org/tools/create"); b.setAttribute("target", "_blank"); b.setAttribute("rel", "noopener"); }
+	else { b.setAttribute("href", "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create"); b.setAttribute("target", "_blank"); b.setAttribute("rel", "noopener"); }
 }
 
 globalThis.renderAccount = renderAccount;
