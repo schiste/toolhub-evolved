@@ -3,6 +3,7 @@ import { $, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
 import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
+import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/core/store.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, checkedValue, clearFieldError, fArea, fCheck, fInput, fSelect, fieldValue, setFieldError } from "../lib/atoms/form-fields.js";
@@ -39,6 +40,106 @@ function clearHttpErrorWhenValid(id) {
 	});
 }
 
+function duplicateRegion() {
+	return `<section class="dupes" data-dupes aria-labelledby="dupes-title" aria-live="polite" hidden>
+		<h3 class="dupes__title" id="dupes-title">Possible duplicates</h3>
+		<p class="dupes__note">These existing tools look similar — check before creating a duplicate.</p>
+		<ul class="dupes__list" data-dupes-list></ul>
+	</section>`;
+}
+
+function normalizeDuplicateText(value) {
+	return String(value == null ? "" : value).trim().toLowerCase();
+}
+
+function renderDuplicateItem(t) {
+	const title = t.title || t.name;
+	const maintainer = t.maintainer || (t.authors && t.authors[0]) || "Unknown maintainer";
+	return `<li class="dupes__item">
+		<a href="${esc(toolHref(t.name))}">
+			<span class="dupes__name"${dirAttrs(title)}>${esc(title)}</span>
+			<span class="dupes__meta">by <span${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>
+		</a>
+	</li>`;
+}
+
+function renderDuplicates(tools) {
+	const box = $("[data-dupes]");
+	const list = $("[data-dupes-list]");
+	if (!box || !list) return;
+	if (!tools.length) {
+		list.innerHTML = "";
+		box.hidden = true;
+		return;
+	}
+	list.innerHTML = tools.map(renderDuplicateItem).join("");
+	box.hidden = false;
+}
+
+function debounce(fn, wait) {
+	let timer = 0;
+	return () => {
+		window.clearTimeout(timer);
+		timer = window.setTimeout(fn, wait);
+	};
+}
+
+function setupDuplicateSuggestions() {
+	const titleEl = document.getElementById("tf-title");
+	const keywordsEl = document.getElementById("tf-keywords");
+	if (!titleEl || !keywordsEl) return;
+	let indexPromise = null;
+	const loadIndex = () => {
+		if (!indexPromise) indexPromise = getSimilarityIndex();
+		return indexPromise;
+	};
+	const update = debounce(async () => {
+		const typedTitle = fieldValue("tf-title");
+		const typedName = normalizeDuplicateText(fieldValue("tf-name"));
+		const keywords = fromCsv(fieldValue("tf-keywords"));
+		const toolType = fieldValue("tf-type");
+		if (!typedTitle && !keywords.length && !toolType) {
+			renderDuplicates([]);
+			return;
+		}
+		let index;
+		try {
+			index = await loadIndex();
+		} catch (e) {
+			renderDuplicates([]);
+			return;
+		}
+		if (!index || !Array.isArray(index.tools)) {
+			renderDuplicates([]);
+			return;
+		}
+		const seen = new Set();
+		const candidates = [];
+		const add = (tool) => {
+			if (!tool || !tool.name) return;
+			if (typedName && normalizeDuplicateText(tool.name) === typedName) return;
+			if (seen.has(tool.name)) return;
+			seen.add(tool.name);
+			candidates.push(tool);
+		};
+		const titleNeedle = normalizeDuplicateText(typedTitle);
+		if (titleNeedle) {
+			for (const tool of index.tools) {
+				const titleText = normalizeDuplicateText(tool.title);
+				const nameText = normalizeDuplicateText(tool.name);
+				if (titleText.includes(titleNeedle) || nameText.includes(titleNeedle)) add(tool);
+			}
+		}
+		const partial = { keywords, forWikis: [], audiences: [], tasks: [], toolType };
+		for (const item of nearestNeighbors(partial, index, 5)) add(item.tool);
+		renderDuplicates(candidates.slice(0, 5));
+	}, 300);
+	titleEl.addEventListener("input", update);
+	keywordsEl.addEventListener("input", update);
+	const typeEl = document.getElementById("tf-type");
+	if (typeEl) typeEl.addEventListener("change", update);
+}
+
 // EXPERIMENTAL — create/edit a tool's CORE fields. name=null → create.
 // Edits overload the live record; new tools live only in the browser.
 export async function viewToolForm(name) {
@@ -65,6 +166,7 @@ export async function viewToolForm(name) {
 			${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: "Use an SPDX identifier when known." })}
 			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES, { hint: "Choose the closest match." })}
 			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords), { hint: "Terms people might search for." })}
+			${editing ? "" : duplicateRegion()}
 			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis), { hint: "Use wiki database names, or * for all wikis." })}
 			${fInput("Available UI languages (comma-separated codes)", "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: "BCP-47 / wiki language codes." })}
 			<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
@@ -107,6 +209,7 @@ export async function viewToolForm(name) {
 		if (del) del.addEventListener("click", () => { const m = toolNewMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolNew, m); navigateTo("/add-or-remove-tools"); });
 		clearHttpErrorWhenValid("tf-url");
 		clearHttpErrorWhenValid("tf-repo");
+		if (!editing) setupDuplicateSuggestions();
 	}
 	return { title: `${editing ? "Edit tool" : "Submit a tool"} — Toolhub`, html, mount };
 }

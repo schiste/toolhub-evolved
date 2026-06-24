@@ -20,26 +20,67 @@ h1, h2, h3, .hero__title, .tcard__title, .lcard__title, .panel__title,
 }
 
 /* Long-form copy: tool descriptions, About/Help/Terms pages. */
-.prose {
+.prose,
+.qv__desc {
 	font-family: var(--font-serif);
 	line-height: 1.7;
 	color: var(--color-text);
+}
+
+.prose {
 	max-width: 72ch;
 }
 
-.prose > :first-child { margin-top: var(--space-0); }
-.prose > :last-child { margin-bottom: var(--space-0); }
-.prose p { margin: var(--space-0) var(--space-0) 1em; }
-.prose h2, .prose h3 { font-family: var(--font-sans); margin: 1.4em var(--space-0) .4em; }
-.prose a { color: var(--color-progressive); text-decoration: underline; }
-.prose ul, .prose ol { margin: var(--space-0) var(--space-0) 1em; padding-inline-start: 1.4em; }
-.prose li { margin: .25em var(--space-0); }
-.prose blockquote {
+:where(.prose, .qv__desc) > :first-child { margin-top: var(--space-0); }
+:where(.prose, .qv__desc) > :last-child { margin-bottom: var(--space-0); }
+:where(.prose, .qv__desc) p { margin: var(--space-0) var(--space-0) 1em; }
+:where(.prose, .qv__desc) h1,
+:where(.prose, .qv__desc) h2,
+:where(.prose, .qv__desc) h3,
+:where(.prose, .qv__desc) h4,
+:where(.prose, .qv__desc) h5,
+:where(.prose, .qv__desc) h6 {
+	font-family: var(--font-sans);
+	line-height: 1.25;
+	margin: 1.35em var(--space-0) .45em;
+}
+:where(.prose, .qv__desc) h1 { font-size: var(--fs-subtitle); }
+:where(.prose, .qv__desc) h2 { font-size: var(--fs-body); }
+:where(.prose, .qv__desc) h3 { font-size: var(--fs-small); }
+:where(.prose, .qv__desc) h4,
+:where(.prose, .qv__desc) h5,
+:where(.prose, .qv__desc) h6 { font-size: var(--fs-body); }
+:where(.prose, .qv__desc) a { color: var(--color-progressive); text-decoration: underline; }
+:where(.prose, .qv__desc) ul,
+:where(.prose, .qv__desc) ol { margin: var(--space-0) var(--space-0) 1em; padding-inline-start: 1.4em; }
+:where(.prose, .qv__desc) li { margin: .25em var(--space-0); }
+:where(.prose, .qv__desc) blockquote {
 	margin: 1em var(--space-0);
 	padding-inline-start: 1em;
 	border-inline-start: 3px solid var(--color-border);
 	color: var(--color-text-secondary);
 	font-style: italic;
+}
+:where(.prose, .qv__desc) code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: .92em;
+	background: var(--color-surface-muted);
+	border-radius: var(--radius-sm);
+	padding: 1px var(--space-1);
+}
+:where(.prose, .qv__desc) pre {
+	overflow: auto;
+	margin: var(--space-0) var(--space-0) 1em;
+	padding: var(--space-3);
+	background: var(--color-surface-muted);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+}
+:where(.prose, .qv__desc) pre code {
+	display: block;
+	padding: var(--space-0);
+	background: transparent;
+	border-radius: 0;
 }
 .prose--page h1 { font-size: var(--fs-title); margin: var(--space-0) var(--space-0) .5em; }
 

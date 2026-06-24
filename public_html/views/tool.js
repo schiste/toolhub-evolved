@@ -3,6 +3,7 @@ import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { timeTag, updatedTimeTag } from "../lib/core/i18n.js";
 import { INDEX, apiGet, getTool, isNewTool } from "../lib/core/api.js";
 import { egoGraph } from "../lib/core/graph.js";
+import { renderMarkdown } from "../lib/core/markdown.js";
 import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
@@ -227,7 +228,7 @@ export async function viewTool(name) {
 					</div>
 				</div>
 
-				<div class="prose"${dirAttrs(t.description)}>${esc(t.description) || "<em>No description provided.</em>"}</div>
+				<div class="prose"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>
 				<div class="tcard__tags toolpage__tags">${tags}</div>
 
 				<h2 class="toolpage__h2">Details</h2>

@@ -125,6 +125,37 @@
 .le__input.is-invalid:focus-visible,
 .le__input[aria-invalid="true"]:focus-visible { border-color: var(--color-destructive); outline-color: var(--color-destructive); }
 
+/* Possible duplicate suggestions. */
+.dupes {
+	max-width: 820px;
+	margin: var(--space-3) var(--space-0);
+	padding: var(--space-3);
+	background: var(--color-surface-muted);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+}
+.dupes[hidden] { display: none; }
+.dupes__title { margin: var(--space-0) var(--space-0) var(--space-1); font-size: var(--fs-caption); }
+.dupes__note { margin: var(--space-0) var(--space-0) var(--space-2); color: var(--color-text-secondary); font-size: var(--fs-caption); }
+.dupes__list { list-style: none; margin: var(--space-0); padding: var(--space-0); display: grid; gap: var(--space-1); }
+.dupes__item a {
+	display: grid;
+	gap: 2px;
+	padding: var(--space-2);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	color: var(--color-text);
+	text-decoration: none;
+}
+.dupes__item a:hover,
+.dupes__item a:focus-visible {
+	border-color: var(--color-progressive);
+	text-decoration: none;
+}
+.dupes__name { font-size: var(--fs-caption); font-weight: 600; overflow-wrap: anywhere; }
+.dupes__meta { color: var(--color-text-muted); font-size: var(--fs-micro); overflow-wrap: anywhere; }
+
 /* Add/remove tools. */
 .at__urls { list-style: none; margin: var(--space-2) var(--space-0) var(--space-0); padding: var(--space-0); display: flex; flex-direction: column; gap: var(--space-1); max-width: 820px; }
 .at__urls li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-surface-muted); border-radius: var(--radius-sm); }
@@ -223,6 +254,7 @@
 .facet__n { margin-inline-start: auto; color: var(--color-text-muted); font-size: var(--fs-caption); }
 .facet__empty { color: var(--color-text-muted); }
 .facets__reset { width: 100%; }
+.browse__count-note { color: var(--color-text-muted); font-size: var(--fs-caption); font-weight: 400; }
 
 /* Pagination. */
 .pager { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; margin-top: var(--space-5); }

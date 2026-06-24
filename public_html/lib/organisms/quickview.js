@@ -2,6 +2,7 @@
 import { $, $$, dirAttrs, esc, safeUrl } from "../core/dom.js";
 import { updatedTimeTag } from "../core/i18n.js";
 import { INDEX, getTool } from "../core/api.js";
+import { renderMarkdown } from "../core/markdown.js";
 import { signedIn } from "../core/session.js";
 import { navigateTo, toolHref } from "../core/routing.js";
 import { toolIcon } from "../atoms/avatar.js";
@@ -44,7 +45,7 @@ export function quickViewBody(t) {
 			${popularityBadge(t)}
 			${updatedTimeTag(t.modified, "toolpage__when")}
 		</div>
-		<p class="qv__desc"${dirAttrs(t.description)}>${esc(t.description) || "<em>No description provided.</em>"}</p>
+		<div class="qv__desc"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>
 		<div class="toolpage__glance">${glance}</div>
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">
