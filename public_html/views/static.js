@@ -8,7 +8,8 @@ import { icon } from "../lib/atoms/icon.js";
 export function prosePage(title, bodyHtml) {
 	return { title: `${title} — Toolhub`, html: `<div class="container page"><article class="prose prose--page"><h1>${esc(title)}</h1>${bodyHtml}</article></div>` };
 }
-export const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener">${esc(label)} ${icon("external")}</a>`;
+const EXTERNAL_REL = "noopener nofollow";
+export const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
 // Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
 // Canonical policies link out to their authoritative source (as the real site does).
 export const STATIC = {
@@ -162,11 +163,17 @@ export function viewStatic(slug) {
 /* ---- Help maintain Toolhub: the contribution hub ----------------------- */
 export function linkCard(iconHtml, title, desc, url, internal) {
 	const href = internal ? url : safeUrl(url);
-	const attrs = internal ? "" : ` target="_blank" rel="noopener"`;
+	const attrs = internal ? "" : ` target="_blank" rel="${EXTERNAL_REL}"`;
 	const arrow = internal ? "" : ` ${icon("external")}`;
 	return `<a class="linkcard" href="${href || "#"}"${attrs}>
 		<span class="linkcard__icon" aria-hidden="true">${iconHtml}</span>
 		<span class="linkcard__body"><span class="linkcard__title">${esc(title)}${arrow}</span>
+		<span class="linkcard__desc">${esc(desc)}</span></span></a>`;
+}
+function proxyCard(iconHtml, title, desc, href) {
+	return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="noopener">
+		<span class="linkcard__icon" aria-hidden="true">${iconHtml}</span>
+		<span class="linkcard__body"><span class="linkcard__title">${esc(title)} ${icon("external")}</span>
 		<span class="linkcard__desc">${esc(desc)}</span></span></a>`;
 }
 export function viewContribute() {
@@ -215,11 +222,22 @@ export async function viewApiDocs() {
 	return { title: "API documentation — Toolhub", html: `
 		<div class="container page">
 			<h1 class="page__title">API documentation</h1>
-			<p class="page__intro">Toolhub is API-first — everything in this interface is available over HTTP. The live interactive documentation blocks embedding, so open it directly or inspect the same-origin read-only endpoints below.</p>
+			<p class="page__intro">Toolhub is API-first. This prototype reads the live catalog through a same-origin proxy, but it is intentionally read-only: inspect schemas and <code>GET</code> endpoints here, and use the production site for authenticated writes.</p>
 			<div class="linkgrid">
 				${linkCard(icon("code"), "Interactive API docs", "Open the canonical Toolhub API documentation.", "https://toolhub.wikimedia.org/api-docs")}
-				${linkCard(icon("globe"), "API root", "Browse the upstream API endpoint index.", "https://toolhub.wikimedia.org/api/")}
+				${proxyCard(icon("code"), "OpenAPI schema", "Machine-readable schema served at GET /api/schema/.", "/api/schema/")}
+				${proxyCard(icon("tools"), "Code generation input", "Use /api/schema/ with OpenAPI Generator, Swagger Codegen, or your language's SDK tooling.", "/api/schema/")}
+				${proxyCard(icon("globe"), "API root", "Browse the proxied endpoint index used by this prototype.", "/api/")}
 			</div>
+			<h2 class="contribute__h2">Read-only boundary</h2>
+			<p class="page__intro">The proxy exposes live Toolhub responses for browsing and examples. It does not sign you in, forward OAuth credentials, or write changes back to Toolhub.</p>
+			<h2 class="contribute__h2">Small endpoint examples</h2>
+			<ul class="page__intro">
+				<li><strong>Search tools</strong><br><code>GET /api/search/tools/?q=wikidata&amp;page_size=5</code></li>
+				<li><strong>Read one tool</strong><br><code>GET /api/tools/{name}/</code></li>
+				<li><strong>Featured lists</strong><br><code>GET /api/lists/?featured=true&amp;page_size=6</code></li>
+				<li><strong>Recent changes</strong><br><code>GET /api/recent/?page_size=10</code></li>
+			</ul>
 			<h2 class="contribute__h2">Live proxy endpoints</h2>
 			<div class="linkgrid">${endpointCards || '<p class="empty">The live endpoint index is unavailable.</p>'}</div>
 		</div>` };
@@ -232,7 +250,7 @@ export function signInPage(title, lead) {
 			<p>${lead}</p>
 			<p>Toolhub uses your existing Wikimedia account via OAuth — no new account or
 			password is needed.</p>
-			<p>${button("Continue on toolhub.wikimedia.org", { variant: "primary", href: "https://toolhub.wikimedia.org/", icon: "external", attrs: 'target="_blank" rel="noopener"' })}</p>
+			<p>${button("Continue on toolhub.wikimedia.org", { variant: "primary", href: "https://toolhub.wikimedia.org/", icon: "external", attrs: `target="_blank" rel="${EXTERNAL_REL}"` })}</p>
 			<p class="signin-note">In this prototype these actions are read-only: they need an
 			authenticated session and the live back-end. See
 			<a href="#/contribute">Help maintain Toolhub</a> to contribute.</p>
