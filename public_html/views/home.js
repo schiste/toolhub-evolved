@@ -2,7 +2,7 @@
 import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
-import { endorsementOf, fitsContext, getUserContext, hasContext, listMemberships, setUserContext } from "../lib/core/signals.js";
+import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext } from "../lib/core/signals.js";
 import { listHref, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
@@ -35,13 +35,6 @@ function contextOptions(options, selected) {
 	return options.map(([value, label]) => `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`).join("");
 }
 
-function rankFitsFirst(tools) {
-	if (!hasContext()) return tools;
-	return tools.map((t, i) => [t, i])
-		.sort((a, b) => ((fitsContext(b[0]).fits ? 1 : 0) - (fitsContext(a[0]).fits ? 1 : 0)) || (a[1] - b[1]))
-		.map((x) => x[0]);
-}
-
 export async function viewHome() {
 	// Live: total count, featured curated lists (with embedded tools), recent tools.
 	const [home, flists, recent] = await Promise.all([
@@ -49,13 +42,12 @@ export async function viewHome() {
 		apiGet("/lists/", { featured: "true", page_size: "6" }).catch(() => ({ results: [] })),
 		apiGet("/search/tools/", { ordering: "-modified_date", page_size: "5" }).catch(() => ({ results: [] })),
 	]);
-	const lm = await listMemberships();
 	const total = home.total_tools || 0;
 	const lists = (flists.results || []).map(normalizeList);
 	// "Featured tools" = the curated tools drawn from the featured lists (deduped).
 	const seen = new Set(), featured = [];
 	for (const l of lists) for (const t of l.tools) if (!seen.has(t.name)) { seen.add(t.name); featured.push(t); }
-	featured.forEach((t) => { t.endorsement = endorsementOf(t.name, lm); });
+	await attachEndorsements(featured);
 	const mostListed = featured.slice().sort((a, b) => ((b.endorsement && b.endorsement.count) || 0) - ((a.endorsement && a.endorsement.count) || 0) || a.title.localeCompare(b.title));
 	const featuredRanked = rankFitsFirst(featured);
 	const mostListedRanked = rankFitsFirst(mostListed);
@@ -110,7 +102,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", attrs: 'target="_blank" rel="noopener"' })}</div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", attrs: 'target="_blank" rel="noopener nofollow"' })}</div>
 		</aside>
 	</div>`;
 	return {

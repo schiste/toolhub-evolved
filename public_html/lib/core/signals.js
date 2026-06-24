@@ -2,7 +2,8 @@
 // Real, honest trust signals derived from live Toolhub data — no simulation.
 // Listing completeness, curated-list endorsement, freshness, and fit-to-your-context.
 // Serves tool users (evaluate/trust) and maintainers (improve-your-listing).
-import { apiGet, hasValue } from "./api.js";
+import { hasValue, paginate } from "./api.js";
+import { memoizeAsync } from "./util.js";
 
 /* ---- Listing completeness --------------------------------------------------
    What fraction of the toolinfo a maintainer could fill is actually filled.
@@ -37,32 +38,22 @@ export function freshness(t) {
    The honest "popularity" proxy — how many published lists include the tool.
    Built once per session from the (small) set of lists; the list index embeds
    each list's tools, so this is a couple of (SWR-cached) calls, memoized here. */
-let membershipPromise = null;
 async function buildMemberships() {
 	const map = new Map();
-	for (let page = 1; page <= 10; page++) {
-		let data;
-		try { data = await apiGet("/lists/", { page_size: "50", page: String(page) }); }
-		catch (e) { break; }
-		const results = data.results || [];
-		for (const l of results) {
-			if (l.published === false) continue; // count only public/curated lists
-			for (const tool of (l.tools || [])) {
-				const name = tool && tool.name;
-				if (!name) continue;
-				if (!map.has(name)) map.set(name, []);
-				map.get(name).push({ id: l.id, title: l.title || "Untitled list" });
-			}
+	const lists = await paginate("/lists/", {}, { pageSize: 50, maxPages: 10 });
+	for (const l of lists) {
+		if (l.published === false) continue; // count only public/curated lists
+		for (const tool of (l.tools || [])) {
+			const name = tool && tool.name;
+			if (!name) continue;
+			if (!map.has(name)) map.set(name, []);
+			map.get(name).push({ id: l.id, title: l.title || "Untitled list" });
 		}
-		if (!data.next || results.length === 0) break;
 	}
 	return map;
 }
 // Returns Map<toolName, [{id,title}]>; memoized for the session.
-export function listMemberships() {
-	if (!membershipPromise) membershipPromise = buildMemberships().catch(() => new Map());
-	return membershipPromise;
-}
+export const listMemberships = memoizeAsync(() => buildMemberships().catch(() => new Map()));
 export function endorsementOf(name, map) {
 	const lists = (map && map.get(name)) || [];
 	return { count: lists.length, lists };
@@ -96,4 +87,22 @@ export function fitsContext(t, ctx) {
 	const wiki = ctx.wiki ? wikiMatches(t.forWikis, ctx.wiki) : false;
 	const role = ctx.role ? (t.audiences || []).includes(ctx.role) : false;
 	return { wiki, role, fits: wiki || role };
+}
+
+/* ---- View helpers (shared by the card-grid views) ------------------------- */
+// Stable-sort tools so context-fitting ones lead, but only when a context is
+// set (otherwise the original order is preserved). Fit is computed once per tool.
+export function rankFitsFirst(tools) {
+	if (!hasContext()) return tools;
+	const fit = new Map(tools.map((t) => [t, fitsContext(t).fits ? 1 : 0]));
+	return tools
+		.map((t, i) => [t, i])
+		.sort((a, b) => (fit.get(b[0]) - fit.get(a[0])) || (a[1] - b[1]))
+		.map((x) => x[0]);
+}
+// Attach `.endorsement` to each tool from the (memoized) membership map.
+export async function attachEndorsements(tools) {
+	const lm = await listMemberships();
+	for (const t of tools) t.endorsement = endorsementOf(t.name, lm);
+	return tools;
 }

@@ -2,10 +2,10 @@
 import { cosine, getSimilarityIndex, nearestNeighbors, vectorFor } from "./similarity.js";
 import { getTool } from "./api.js";
 import { endorsementOf, fitsContext, listMemberships } from "./signals.js";
+import { memoizeAsync, normStr } from "./util.js";
 
 const GLOBAL_NODE_LIMIT = 250;
 const COMMUNITY_LIMIT = 8;
-let globalGraphPromise = null;
 
 function sortedPair(a, b) {
 	return a < b ? [a, b] : [b, a];
@@ -85,14 +85,10 @@ export function detectCommunities(nodes, edges) {
 	return new Map(ids.map((id) => [id, renumbered.get(labels.get(id))]));
 }
 
-function normalizedFacetValue(value) {
-	return String(value == null ? "" : value).trim().toLowerCase();
-}
-
 function rankedFrequentTerms(values) {
 	const counts = new Map();
 	for (const raw of values || []) {
-		const value = normalizedFacetValue(raw);
+		const value = normStr(raw);
 		if (!value) continue;
 		counts.set(value, (counts.get(value) || 0) + 1);
 	}
@@ -213,10 +209,7 @@ async function buildGlobalGraph() {
 	return { nodes, edges, communities: communityMeta.length, communityMeta, truncated };
 }
 
-export function globalGraph() {
-	if (!globalGraphPromise) globalGraphPromise = buildGlobalGraph();
-	return globalGraphPromise;
-}
+export const globalGraph = memoizeAsync(buildGlobalGraph);
 
 function indexWithTool(index, tool) {
 	if (index.byName.has(tool.name) && index.vectors.has(tool.name)) return index;

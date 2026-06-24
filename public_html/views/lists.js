@@ -2,7 +2,7 @@
 import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
 import { apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
-import { endorsementOf, fitsContext, hasContext, listMemberships } from "../lib/core/signals.js";
+import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
 import { listHref } from "../lib/core/routing.js";
 import { demoListDelete, demoListGet, demoListNew, demoListSave, demoLists, favNames, isDemoListId } from "../lib/core/store.js";
@@ -13,13 +13,6 @@ import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
-
-function rankFitsFirst(tools) {
-	if (!hasContext()) return tools;
-	return tools.map((t, i) => [t, i])
-		.sort((a, b) => ((fitsContext(b[0]).fits ? 1 : 0) - (fitsContext(a[0]).fits ? 1 : 0)) || (a[1] - b[1]))
-		.map((x) => x[0]);
-}
 
 /* ---- Lists overview + list detail -------------------------------------- */
 export async function viewLists() {
@@ -51,8 +44,7 @@ export async function viewList(id) {
 		try { l = normalizeList(await apiGet("/lists/" + encodeURIComponent(id) + "/")); tools = l.tools; }
 		catch (e) { return viewNotFound(); }
 	}
-	const lm = await listMemberships();
-	tools.forEach((t) => { t.endorsement = endorsementOf(t.name, lm); });
+	await attachEndorsements(tools);
 	tools = rankFitsFirst(tools);
 	const html = `
 	<div class="container page">
@@ -80,8 +72,7 @@ export function viewMyLists() {
 // overlay only stores which names are favorited. Needs: GET /api/user/favorites/ in production.
 export async function viewFavorites() {
 	const tools = await getToolsByName(favNames());
-	const lm = await listMemberships();
-	tools.forEach((t) => { t.endorsement = endorsementOf(t.name, lm); });
+	await attachEndorsements(tools);
 	const body = tools.length
 		? grid("grid-tools", tools, (t) => toolCard(t))
 		: `<p class="empty">No favorites yet. Tap the ${icon("starOutline")}<span class="skip-label">star</span> on any tool card or page to save it here.</p>`;

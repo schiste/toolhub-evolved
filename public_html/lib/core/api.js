@@ -59,6 +59,20 @@ export async function apiGet(path, params) {
 	}
 	return apiFetch(url);
 }
+// Page through a list endpoint, collecting results. Stops on error, missing
+// `next`, or an empty page. `map` (optional) transforms each raw item.
+export async function paginate(path, params = {}, { pageSize = 100, maxPages = 10, map } = {}) {
+	const out = [];
+	for (let page = 1; page <= maxPages; page++) {
+		let data;
+		try { data = await apiGet(path, { ...params, page_size: String(pageSize), page: String(page) }); }
+		catch (e) { break; }
+		const results = data.results || [];
+		for (const r of results) out.push(map ? map(r) : r);
+		if (!data.next || results.length === 0) break;
+	}
+	return out;
+}
 export function firstUrl(v) {
 	if (!v) return null;
 	if (typeof v === "string") return v;

@@ -1,29 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { apiGet, normalizeTool } from "./api.js";
+import { normalizeTool, paginate } from "./api.js";
+import { memoizeAsync, normStr } from "./util.js";
 
-let allToolsPromise = null;
-let similarityIndexPromise = null;
-
-async function fetchAllTools() {
-	const out = [];
-	for (let page = 1; page <= 10; page++) {
-		let data;
-		try {
-			data = await apiGet("/search/tools/", { page_size: "100", page: String(page) });
-		} catch (e) {
-			break;
-		}
-		const results = data.results || [];
-		for (const r of results) out.push(normalizeTool(r));
-		if (!data.next || results.length === 0) break;
-	}
-	return out;
-}
-
-export function loadAllTools() {
-	if (!allToolsPromise) allToolsPromise = fetchAllTools().catch(() => []);
-	return allToolsPromise;
-}
+export const loadAllTools = memoizeAsync(() =>
+	paginate("/search/tools/", {}, { pageSize: 100, maxPages: 10, map: normalizeTool }).catch(() => []));
 
 /* How much each facet contributes to "closeness". tasks/keywords describe what a
    tool DOES (weighted highest); forWikis is scope; audience/type are coarser.
@@ -43,13 +23,9 @@ function facetOf(term) {
 	return TERM_FACETS[prefix];
 }
 
-function normalizedTermValue(value) {
-	return String(value == null ? "" : value).trim().toLowerCase();
-}
-
 function pushTerms(out, seen, prefix, values, opts) {
 	for (const raw of values || []) {
-		const value = normalizedTermValue(raw);
+		const value = normStr(raw);
 		if (!value || (opts && opts.skipAllWikis && value === "*")) continue;
 		const term = prefix + ":" + value;
 		if (seen.has(term)) continue;
@@ -65,7 +41,7 @@ function termsOf(tool) {
 	pushTerms(out, seen, "kw", tool.keywords);
 	pushTerms(out, seen, "wiki", tool.forWikis, { skipAllWikis: true });
 	pushTerms(out, seen, "aud", tool.audiences);
-	const type = normalizedTermValue(tool.toolType);
+	const type = normStr(tool.toolType);
 	if (type) pushTerms(out, seen, "type", [type]);
 	return out;
 }
@@ -113,10 +89,7 @@ async function buildSimilarityIndex() {
 	return index;
 }
 
-export function getSimilarityIndex() {
-	if (!similarityIndexPromise) similarityIndexPromise = buildSimilarityIndex();
-	return similarityIndexPromise;
-}
+export const getSimilarityIndex = memoizeAsync(buildSimilarityIndex);
 
 export function cosine(vecA, vecB) {
 	const small = vecA.size <= vecB.size ? vecA : vecB;
