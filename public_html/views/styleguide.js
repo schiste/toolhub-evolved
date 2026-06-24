@@ -270,7 +270,7 @@ function chromeNavExample() {
 				</nav>
 				<div class="nav__actions">
 					<a class="icon-btn" href="#/search">${icon("search")} Search</a>
-					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: 'target="_blank" rel="noopener"' })}
+					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: 'target="_blank" rel="noopener nofollow"' })}
 					${accountButtonExample()}
 				</div>
 			</div>
@@ -300,7 +300,7 @@ function footerExample() {
 					<h2>Project</h2>
 					<a href="#/api-docs">API docs</a>
 					<a href="#/styleguide">Design system</a>
-					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener">Report an issue ${icon("external")}</a>
+					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">Report an issue ${icon("external")}</a>
 				</nav>
 				<nav class="footer__col" aria-label="About">
 					<h2>About</h2>
@@ -312,7 +312,7 @@ function footerExample() {
 			</div>
 			<div class="footer__bottom">
 				<a class="footer__maintain" href="#/contribute">${icon("tools")} Help maintain Toolhub</a>
-				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener">Toolhub Evolved v0.1.0</a></span>
+				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.1.0</a></span>
 				<span class="footer__note">Prototype · live read-only data from the Toolhub API</span>
 			</div>
 		</footer>

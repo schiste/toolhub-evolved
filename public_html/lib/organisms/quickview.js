@@ -45,7 +45,7 @@ export function quickViewBody(t) {
 		<div class="toolpage__glance">${glance}</div>
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">
-			${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener"' }) : ""}
+			${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
 			${button("View full page", { variant: "outline", href: toolHref(t.name) })}
 			${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}
 		</div>`;

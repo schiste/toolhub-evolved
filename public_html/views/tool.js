@@ -48,7 +48,7 @@ function authorEntries(t) {
 function authorExternalLink(entry) {
 	const url = safeUrl(authorProfileUrl(entry.profile, entry.name));
 	if (!url) return "";
-	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener" aria-label="External profile for ${esc(entry.name)}">${icon("external")}</a>`;
+	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="External profile for ${esc(entry.name)}">${icon("external")}</a>`;
 }
 
 function authorLink(entry) {
@@ -63,7 +63,7 @@ function wikidataChip(qid) {
 	const id = String(qid || "").trim();
 	if (!id) return "";
 	const url = safeUrl("https://www.wikidata.org/wiki/" + encodeURIComponent(id));
-	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener">Wikidata: <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
+	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener nofollow">Wikidata: <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
 }
 
 function sponsorEntry(entry) {
@@ -73,7 +73,7 @@ function sponsorEntry(entry) {
 	if (!name) return "";
 	const body = esc(name);
 	const href = safeUrl(url);
-	return href ? `<a href="${href}" target="_blank" rel="noopener"${dirAttrs(name)}>${body}</a>` : `<span${dirAttrs(name)}>${body}</span>`;
+	return href ? `<a href="${href}" target="_blank" rel="noopener nofollow"${dirAttrs(name)}>${body}</a>` : `<span${dirAttrs(name)}>${body}</span>`;
 }
 
 function sponsorLine(sponsor) {
@@ -89,7 +89,7 @@ function replacementNote(t) {
 	if (!name) return "";
 	const label = esc(name);
 	const linked = /^https?:\/\//i.test(name)
-		? `<a href="${safeUrl(name)}" target="_blank" rel="noopener">${label}</a>`
+		? `<a href="${safeUrl(name)}" target="_blank" rel="noopener nofollow">${label}</a>`
 		: `<a href="${esc(toolHref(name))}"${dirAttrs(name)}>${label}</a>`;
 	return `<div class="toolpage__notice">Replaced by ${linked}</div>`;
 }
@@ -185,7 +185,7 @@ export async function viewTool(name) {
 				</div>
 			</div>
 			<div class="toolpage__cta">
-				${t.url ? button("Open tool", { variant: "primary", size: "lg", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener"' }) : ""}
+				${t.url ? button("Open tool", { variant: "primary", size: "lg", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
 				${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
 				<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
 				${signedIn() ? saveToListControl(t.name) : ""}
@@ -296,6 +296,6 @@ export function viewDiffStub(name) {
 		<p>Compare two revisions of <strong>${esc(t ? t.title : name)}</strong> side by side.</p>
 		<p>Revision diffs are served from Toolhub's versioning API. In this prototype the
 		diff viewer is not wired up — see it on the
-		<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">live site</a>.</p>
+		<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>
 		<p><a href="${toolHref(name)}/history">← Back to history</a></p>`);
 }

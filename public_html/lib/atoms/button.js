@@ -11,8 +11,27 @@ function disabledAttrs(tag, disabled) {
 	return tag === "a" ? ' aria-disabled="true" tabindex="-1"' : " disabled";
 }
 
+function outboundHref(href) {
+	return /^https?:\/\//i.test(String(href || ""));
+}
+
+function withRelToken(attrs, token) {
+	const input = attrs || "";
+	const rel = /(^|\s)rel=(["'])(.*?)\2/i;
+	if (rel.test(input)) {
+		return input.replace(rel, (match, prefix, quote, value) => {
+			const tokens = value.split(/\s+/).filter(Boolean);
+			const seen = new Set(tokens.map((t) => t.toLowerCase()));
+			if (!seen.has(token)) tokens.push(token);
+			return `${prefix}rel=${quote}${tokens.join(" ")}${quote}`;
+		});
+	}
+	return input ? `${input} rel="${token}"` : `rel="${token}"`;
+}
+
 function commonAttrs(tag, opts) {
-	return `${tag === "a" ? ` href="${opts.href}"` : ` type="${esc(opts.type || "button")}"`}${disabledAttrs(tag, opts.disabled)}${opts.attrs ? " " + opts.attrs : ""}`;
+	const extraAttrs = tag === "a" && outboundHref(opts.href) ? withRelToken(opts.attrs, "nofollow") : (opts.attrs || "");
+	return `${tag === "a" ? ` href="${opts.href}"` : ` type="${esc(opts.type || "button")}"`}${disabledAttrs(tag, opts.disabled)}${extraAttrs ? " " + extraAttrs : ""}`;
 }
 
 export function button(label, opts = {}) {

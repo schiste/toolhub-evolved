@@ -10,9 +10,9 @@ export async function viewAuthor(name) {
 	const entry = await toolsByAuthor(name);
 	const authorName = entry.name || name;
 	const tools = entry.tools || [];
-	const profileUrl = safeUrl(authorProfileUrl(entry.profile, authorName));
+	const profileUrl = safeUrl(authorProfileUrl(entry.profile));
 	const profileLink = profileUrl
-		? `<a class="author-page__profile" href="${profileUrl}" target="_blank" rel="noopener">Author profile ${icon("external")}</a>`
+		? `<a class="author-page__profile" href="${profileUrl}" target="_blank" rel="noopener nofollow">Author profile ${icon("external")}</a>`
 		: "";
 	const body = tools.length
 		? grid("grid-tools", tools, (t) => toolCard(t))
