@@ -16,7 +16,7 @@ export function applyExp(on) {
 // interface; the user opts into experiments via the toggle.
 
 /* ---- Account: logged-in user fixture + profile dropdown ---------------- */
-export const USER = { name: "Schiste" }; // mock demo identity (sign-in is a Lane B experiment)
+export const USER = { name: "Ada Lovelace" }; // mock demo identity (sign-in is a Lane B experiment)
 export const AUTH_KEY = "toolhub-auth";
 // EXPERIMENTAL — mock identity. Needs: real Wikimedia OAuth + server session.
 // Signed-in state only exists while experiments are on; default is signed-in.

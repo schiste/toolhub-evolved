@@ -5,7 +5,7 @@ import { esc } from "../lib/core/dom.js";
 // Single source of truth for every prospective feature behind the toggle.
 export const EXPERIMENTS = [
 	{ group: "Identity & account", items: [
-		{ name: "Demo sign-in", what: "Sign in as a demo identity (Schiste) and sign out.", sim: "A session flag stored in your browser.", needs: "Real Wikimedia OAuth and a server session." },
+		{ name: "Demo sign-in", what: "Sign in as a demo identity (Ada Lovelace) and sign out.", sim: "A session flag stored in your browser.", needs: "Real Wikimedia OAuth and a server session." },
 		{ name: "Reset demo data", what: "Clear everything you've saved in this demo.", sim: "Wipes the demo keys in this browser's localStorage.", needs: "—" },
 	] },
 	{ group: "Your contributions — saved only in this browser", items: [
