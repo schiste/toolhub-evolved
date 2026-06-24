@@ -64,7 +64,7 @@ summary:focus-visible,
 /* Near-full-width with comfortable, fluid side gutters. */
 .container {
 	width: 100%;
-	max-width: 1760px;
+	max-width: var(--container-wide);
 	margin: var(--space-0) auto;
 	padding: var(--space-0) clamp(var(--space-4), 4vw, var(--space-7));
 }
@@ -110,7 +110,7 @@ summary:focus-visible,
 	background: var(--color-badge-neutral);
 	border-radius: var(--radius-pill);
 	padding: 1px var(--space-2);
-	font-size: 11px;
+	font-size: var(--fs-micro);
 	font-weight: 600;
 	vertical-align: middle;
 }

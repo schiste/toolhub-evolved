@@ -45,7 +45,8 @@ const FALLBACK_TOKENS = {
 		"--wmf-white", "--wmf-green-aaa", "--wmf-blue-aaa", "--wmf-red-aaa", "--wmf-orange",
 		"--wmf-yellow", "--wmf-purple", "--wmf-red-light", "--wmf-orange-light", "--wmf-green-light",
 	],
-	fs: ["--fs-caption", "--fs-body", "--fs-subtitle", "--fs-title", "--fs-headline", "--fs-display"],
+	fs: ["--fs-micro", "--fs-small", "--fs-caption", "--fs-body", "--fs-subtitle", "--fs-title", "--fs-headline", "--fs-display"],
+	layout: ["--container-wide"],
 	radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-pill"],
 	shadow: ["--shadow", "--shadow-hover", "--shadow-popover", "--shadow-modal", "--shadow-sm"],
 	space: ["--space-0", "--space-1", "--space-2", "--space-3", "--space-4", "--space-5", "--space-6", "--space-7", "--space-8"],
@@ -159,10 +160,17 @@ function quickViewCloseExample() {
 
 function listEditorControlsExample() {
 	return `<div class="sg-control-stack">
+		<h2 class="le__h2">Tools <span class="le__count">2 tools</span></h2>
+		<p class="le__ro">Name: <code>commons-upload-helper</code></p>
+		<div class="le__add">
+			<input class="le__input" type="search" placeholder="Search tools to add..." autocomplete="off" />
+			${button("Add", { variant: "outline" })}
+		</div>
 		<div class="le__results">
 			<button class="le__result" type="button">${icon("add")} <span>Wiki Loves Monuments map</span></button>
 			<button class="le__result is-in" type="button" disabled>${icon("check")} <span>Commons Pattypan</span></button>
 		</div>
+		<p class="le__searching">Searching...</p>
 		<ol class="le__tools">
 			<li data-tn="citation-helper"><span class="le__tn"${dirAttrs("citation-helper")}>citation-helper</span>
 				<span class="le__rowact">
@@ -171,7 +179,12 @@ function listEditorControlsExample() {
 					${iconButton("close", "Remove from list", { size: "sm", variant: "danger", attrs: "data-rm" })}
 				</span>
 			</li>
+			<li class="le__empty">No more tools in this list.</li>
 		</ol>
+		<div class="le__actions">
+			${button("Save list", { variant: "primary" })}
+			${button("Delete list", { variant: "danger", cls: "le__delete" })}
+		</div>
 	</div>`;
 }
 
@@ -202,6 +215,312 @@ function relatedToolsExample() {
 			</div>
 		</section>
 	</div>`;
+}
+
+function chromeNavExample() {
+	return `<div class="sg-chrome-frame">
+		<header class="nav">
+			<div class="nav__inner">
+				<a class="brand" href="#/">
+					<img class="brand__logo" src="img/toolhub-logo.svg?v=2" alt="" width="34" height="34" />
+					<span class="brand__name">Toolhub</span>
+				</a>
+				<nav class="nav__links" aria-label="Primary">
+					<a href="#/search">Browse</a>
+					<a href="#/lists">Lists</a>
+					<a href="#/search">Categories</a>
+				</nav>
+				<div class="nav__actions">
+					<a class="icon-btn" href="#/search">${icon("search")} Search</a>
+					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/tools/create", icon: "add", attrs: 'target="_blank" rel="noopener"' })}
+					${accountButtonExample()}
+				</div>
+			</div>
+		</header>
+	</div>`;
+}
+
+function footerExample() {
+	return `<div class="sg-chrome-frame">
+		<footer class="footer">
+			<div class="footer__cols">
+				<nav class="footer__col" aria-label="Discover">
+					<h2>Discover</h2>
+					<a href="#/search">Browse tools</a>
+					<a href="#/lists">Lists</a>
+					<a href="#/members">Members</a>
+					<a href="#/recent">Recent changes</a>
+				</nav>
+				<nav class="footer__col" aria-label="Maintain">
+					<h2>Maintain</h2>
+					<a href="#/add-or-remove-tools">Add or remove tools</a>
+					<a href="#/my-lists">Your lists</a>
+					<a href="#/favorites">Favorites</a>
+					<a href="#/contribute">Help maintain Toolhub</a>
+				</nav>
+				<nav class="footer__col" aria-label="Project">
+					<h2>Project</h2>
+					<a href="#/api-docs">API docs</a>
+					<a href="#/styleguide">Design system</a>
+					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener">Report an issue ${icon("external")}</a>
+				</nav>
+				<nav class="footer__col" aria-label="About">
+					<h2>About</h2>
+					<a href="#/about">About Toolhub</a>
+					<a href="#/help">Help</a>
+					<a href="#/privacy">Privacy policy</a>
+					<a href="#/rules-of-engagement">Rules of Engagement</a>
+				</nav>
+			</div>
+			<div class="footer__bottom">
+				<a class="footer__maintain" href="#/contribute">${icon("tools")} Help maintain Toolhub</a>
+				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener">Toolhub Evolved v0.1.0</a></span>
+				<span class="footer__note">Prototype · live read-only data from the Toolhub API</span>
+			</div>
+		</footer>
+	</div>`;
+}
+
+function mockupBannerExample() {
+	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
+		<div class="mockup-banner" role="region" aria-label="Prototype notice">
+			<span class="mockup-banner__txt"><span aria-hidden="true">!</span> Mockup - a prototype, not a working integration with the real Toolhub. <span class="mock-tag">Demo</span></span>
+			<a class="mockup-banner__link" href="#/experiments">Experimental features</a>
+			<a class="mockup-banner__link" href="#/rules-of-engagement">Rules of Engagement</a>
+		</div>
+	</div>`;
+}
+
+function experimentsBarExample() {
+	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
+		<div class="expbar">
+			<div class="container expbar__inner">
+				<button class="exp-toggle" type="button" role="switch" aria-checked="false">
+					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
+					<span class="exp-toggle__label">Show me prospective features</span>
+				</button>
+			</div>
+		</div>
+	</div>`;
+}
+
+function fullHeroExample() {
+	const personas = [
+		["edit", "Editors", "editor"],
+		["code", "Developers", "developer"],
+		["book", "Readers", "reader"],
+		["research", "Researchers", "researcher"],
+	].map(([ic, label, term]) => `<a class="persona" href="#/search?audiences__term=${term}">${icon(ic)} ${label}</a>`).join("");
+	return `<div class="sg-hero-frame">
+		<section class="hero">
+			<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
+			<p class="hero__lead">2,474 tools built by volunteers to edit, curate, and analyze the Wikimedia projects - documented and searchable in one place.</p>
+			<form class="search" role="search">
+				<label for="sg-home-q" class="skip-label">Search tools</label>
+				<input id="sg-home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search 2,474 tools..." autocomplete="off" />
+				${button("Search", { variant: "primary", type: "submit", cls: "search__btn" })}
+			</form>
+			<div class="hero__explore">
+				<p class="hero__explore-prompt">I want to see tools
+					<span class="hero__modes" role="tablist" aria-label="Choose how to browse tools">
+						<button class="hero__mode is-active" type="button" role="tab" aria-selected="true" aria-controls="sg-browse-audiences">made for</button>
+						<button class="hero__mode" type="button" role="tab" aria-selected="false" aria-controls="sg-browse-tasks">to</button>
+					</span>
+				</p>
+				<div class="hero__chips" id="sg-browse-audiences" role="tabpanel">${personas}</div>
+				<a class="link hero__explore-foot" href="#/search">Browse all categories</a>
+				${fitControlExample()}
+			</div>
+		</section>
+	</div>`;
+}
+
+function pageHeaderExample() {
+	return `<div class="page sg-page-demo">
+		<h1 class="page__title">Browse tools</h1>
+		<p class="page__intro">Search, filter, and compare tools maintained by the Wikimedia community.</p>
+		<div class="section-head"><h2>Featured tools</h2><a class="link" href="#/search">View all</a></div>
+	</div>`;
+}
+
+function layoutExample() {
+	return `<div class="layout sg-layout-demo">
+		<div class="layout__main">
+			<div class="section-head"><h2>Main content</h2><a class="link" href="#/search">View all</a></div>
+			<div class="sg-schematic">Cards, search results, or detail content</div>
+		</div>
+		<aside class="layout__side">
+			<div class="panel"><h3 class="panel__title">Sidebar</h3><p class="sg-note">Panels and supporting navigation.</p></div>
+		</aside>
+	</div>`;
+}
+
+function backAndLinkExample() {
+	return `<div class="sg-control-stack">
+		<a class="back" href="#/search">← Back to tools</a>
+		<a class="link" href="#/lists">View all lists</a>
+	</div>`;
+}
+
+function emptyStateExample() {
+	return `<p class="empty">No tools match these filters.</p>`;
+}
+
+function loadingExample() {
+	return `<div class="loading sg-loading-demo" role="status" aria-live="polite">
+		<span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span>
+	</div>`;
+}
+
+function errorPageExample() {
+	return `<div class="errorpage sg-error-demo">
+		<h1>Couldn't load live data</h1>
+		<p class="prose">The Toolhub API didn't respond. Try again from the browse page.</p>
+		${button("Go to the home page", { variant: "primary", href: "#/" })}
+	</div>`;
+}
+
+function proseExample() {
+	return `<article class="prose prose--page">
+		<h1>About Toolhub</h1>
+		<p>Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.</p>
+		<p><a href="#/contribute">Help maintain Toolhub</a> by improving listings or reporting gaps.</p>
+	</article>`;
+}
+
+function signInNoteExample() {
+	return `<p class="signin-note">In this prototype these actions are read-only: they need an authenticated session and the live back-end.</p>`;
+}
+
+function metaExample() {
+	return `<div class="detail__meta">
+		${metaItem("License", FIXTURE_TOOL.license)}
+		${metaItem("Wikis", wikiLabel(FIXTURE_TOOL.forWikis))}
+		${metaItem("Maintainer", FIXTURE_TOOL.maintainer)}
+		${metaItem("Tool type", FIXTURE_TOOL.toolType)}
+	</div>`;
+}
+
+function sortControlExample() {
+	return `<label class="sort"><span class="skip-label">Sort by</span><select>
+		<option>Most relevant</option>
+		<option>Recently updated</option>
+		<option>Name</option>
+	</select></label>`;
+}
+
+function recentListExample() {
+	return `<ul class="recent">
+		<li><a href="#/tools/citation-helper">${avatar("Citation Helper")}
+			<div><div class="recent__title">Citation Helper</div>
+			<div class="recent__meta">Maintainer: <span>Editing team</span></div></div>
+			<time class="recent__when" datetime="2026-06-23">${icon("history")} yesterday</time></a></li>
+		<li><a href="#/tools/commons-upload">${avatar("Commons Upload")}
+			<div><div class="recent__title">Commons Upload</div>
+			<div class="recent__meta">Maintainer: <span>Commons volunteers</span></div></div>
+			<time class="recent__when" datetime="2026-06-21">${icon("history")} 3 days ago</time></a></li>
+	</ul>`;
+}
+
+function panelVariantsExample() {
+	return `<div class="sg-panel-pair">
+		<div class="panel">
+			<h3 class="panel__title">Recently updated</h3>
+			<p class="sg-note">Borderless sidebar block with a ruled title.</p>
+			<a class="panel__foot" href="#/recent">View recent changes</a>
+		</div>
+		<div class="panel panel--cta">
+			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
+			<h3>Built a tool for Wikimedia?</h3>
+			<p>Add a <code>toolinfo.json</code> to your repository so other Wikimedians can find it.</p>
+			${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/tools/create" })}
+		</div>
+	</div>`;
+}
+
+function linkCardsExample() {
+	return `<div class="linkgrid">
+		<a class="linkcard" href="#/contribute">
+			<span class="linkcard__icon" aria-hidden="true">${icon("report")}</span>
+			<span class="linkcard__body"><span class="linkcard__title">Report a bug</span>
+			<span class="linkcard__desc">Open a task on the Toolhub board.</span></span>
+		</a>
+		<a class="linkcard" href="#/api-docs">
+			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
+			<span class="linkcard__body"><span class="linkcard__title">API documentation</span>
+			<span class="linkcard__desc">Inspect live read-only endpoints.</span></span>
+		</a>
+	</div>`;
+}
+
+function browseBarExample() {
+	return `<div class="browse sg-browse-demo">
+		<aside class="facets">
+			<input class="facets__search" type="search" placeholder="Search filters" />
+		</aside>
+		<div class="browse__main">
+			<div class="browse__bar">
+				<span class="browse__count" aria-live="polite">142 tools for "Commons"</span>
+				${sortControlExample()}
+			</div>
+			<p class="empty">Results render below this control row.</p>
+		</div>
+	</div>`;
+}
+
+function maintainerListExample() {
+	return `<ul class="maint-list">
+		<li>${avatar("Amina Hassan")} <span>Amina Hassan</span></li>
+		<li>${avatar("Maps team")} <span>Maps team</span></li>
+	</ul>`;
+}
+
+function annotationEditorExample() {
+	return `<div class="sg-control-stack">
+		<form class="le__add">
+			<input class="le__input" type="url" placeholder="https://example.org/toolinfo.json" />
+			${button("Register", { variant: "outline", type: "submit" })}
+		</form>
+		<ul class="at__urls">
+			<li><code class="at__url">https://example.org/toolinfo.json</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm" })}</li>
+		</ul>
+		<textarea class="le__input at__json" rows="4" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
+		<p class="at__result at__result--ok">1 added, 2 updated</p>
+		<p class="at__result at__result--err">Invalid JSON: expected a tool object.</p>
+	</div>`;
+}
+
+function memberGridExample() {
+	return `<div class="mgrid">
+		<div class="mcard">${avatar("Amina Hassan")}<div class="mcard__b">
+			<div class="mcard__n">Amina Hassan</div>
+			<div class="mcard__c">Maintainer · joined 2024</div></div></div>
+		<div class="mcard">${avatar("Jonas Klein")}<div class="mcard__b">
+			<div class="mcard__n">Jonas Klein</div>
+			<div class="mcard__c">Member · joined 2023</div></div></div>
+	</div>`;
+}
+
+function activityFeedExample() {
+	return `<ul class="feed">
+		<li><a href="#/tools/citation-helper">${icon("edit", "feed__ic")}
+			<span class="feed__main"><strong>Citation Helper</strong> <span class="feed__sub">tool · Amina Hassan</span></span>
+			<time class="feed__when" datetime="2026-06-24">5 minutes ago</time></a></li>
+		<li><div class="feed__static">${icon("edit", "feed__ic")}
+			<span class="feed__main"><span>System</span> <em>changed</em> <span>list "Commons workflows"</span></span>
+			<time class="feed__when" datetime="2026-06-23">yesterday</time></div></li>
+	</ul>`;
+}
+
+function runsExample() {
+	return `<table class="runs">
+		<caption class="skip-label">Recent crawler runs, newest first</caption>
+		<thead><tr><th scope="col">Run</th><th scope="col">URLs</th><th scope="col">New</th><th scope="col">Updated</th><th scope="col">Total</th></tr></thead>
+		<tbody>
+			<tr><td><time datetime="2026-06-24">Jun 24, 2026</time></td><td>1,284</td><td>12</td><td>48</td><td>2,474</td></tr>
+			<tr><td><time datetime="2026-06-23">Jun 23, 2026</time></td><td>1,280</td><td>7</td><td>35</td><td>2,462</td></tr>
+		</tbody>
+	</table>`;
 }
 
 function section(title, body) {
@@ -247,6 +566,10 @@ function tokenSection() {
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">Spacing</h3>
 			<div class="sg-token-stack" id="sg-space-tokens" aria-live="polite"></div>
+		</div>
+		<div class="sg-token-block">
+			<h3 class="sg-token-block__title">Layout</h3>
+			<div class="sg-token-stack" id="sg-layout-tokens" aria-live="polite"></div>
 		</div>`);
 }
 
@@ -279,6 +602,31 @@ function iconsSection() {
 				${icon(name, "icon--lg")}
 				<span class="sg-token__meta"><code>${esc(name)}</code></span>
 			</div>`).join("")}
+		</div>`);
+}
+
+function chromeSection() {
+	return section("Chrome", `
+		<div class="sg-examples sg-examples--organisms">
+			${example("Nav + brand", "app chrome", chromeNavExample(), { wide: true })}
+			${example("Footer", "app chrome", footerExample(), { wide: true })}
+			${example("Mockup banner + mock tag", "app chrome", mockupBannerExample(), { wide: true, compact: true })}
+			${example("Experiments bar", "app chrome", experimentsBarExample(), { wide: true, compact: true })}
+			${example("Full hero block", "app chrome / organism", fullHeroExample(), { wide: true })}
+		</div>`);
+}
+
+function layoutStatesSection() {
+	return section("Layout & states", `
+		<div class="sg-examples sg-examples--organisms">
+			${example("Page header + section head", "templates", pageHeaderExample(), { wide: true })}
+			${example("Two-column layout", "templates", layoutExample(), { wide: true })}
+			${example("Back link + text link", "templates", backAndLinkExample())}
+			${example("Empty state", "templates", emptyStateExample())}
+			${example("Loading spinner", "templates", loadingExample())}
+			${example("Error page", "templates", errorPageExample(), { wide: true })}
+			${example("Prose page", "templates", proseExample(), { wide: true })}
+			${example("Sign-in note", "molecules", signInNoteExample(), { wide: true })}
 		</div>`);
 }
 
@@ -339,11 +687,26 @@ function moleculesSection() {
 			${example(".acct__btn", "molecules", accountButtonExample())}
 			${example(".exp-toggle", "organisms", experimentsToggleExample(), { wide: true })}
 			${example(".qv__x", "organisms", quickViewCloseExample())}
-			${example(".le__result / .le__rowact", "molecules", listEditorControlsExample(), { wide: true })}
+			${example("Annotation editor controls", "molecules", annotationEditorExample(), { wide: true })}
+			${example("List editor full row", "molecules", listEditorControlsExample(), { wide: true })}
 			${example(".icon-btn", "organisms", navIconButtonExample())}
 			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="#">${icon("edit")} Editors</a><a class="persona" href="#">${icon("code")} Developers</a><a class="persona" href="#">${icon("book")} Readers</a></div>`, { wide: true })}
 			${example("hero browse-axis toggle (.hero__modes)", "molecules", `<span class="hero__modes"><button class="hero__mode is-active" type="button">made for</button><button class="hero__mode" type="button">to</button></span>`)}
 			${example(".hero__context fit control", "molecules", fitControlExample(), { wide: true })}
+		</div>`);
+}
+
+function contentComponentsSection() {
+	return section("Content components", `
+		<div class="sg-examples sg-examples--organisms">
+			${example(".detail__meta / .meta__k / .meta__v", "atoms / molecules", metaExample(), { wide: true })}
+			${example("sort control", "molecules", sortControlExample())}
+			${example("exp-badge", "atoms", `<span class="exp-badge">Experimental</span>`)}
+			${example("recent list", "organisms", recentListExample(), { wide: true })}
+			${example("panel + panel--cta", "organisms", panelVariantsExample(), { wide: true })}
+			${example("linkgrid + linkcard", "molecules", linkCardsExample(), { wide: true })}
+			${example("browse bar", "organisms", browseBarExample(), { wide: true })}
+			${example("maintainer list", "organisms", maintainerListExample())}
 		</div>`);
 }
 
@@ -355,11 +718,20 @@ function organismsSection() {
 			${example("toolCard(tool, { popular: true, rank: 1 })", "organisms", toolCard(FIXTURE_TOOL, { popular: true, rank: 1 }))}
 			${example("toolCard(deprecatedTool)", "organisms", toolCard(FIXTURE_TOOL_DEPRECATED))}
 			${example("listCard(list)", "organisms", listCard(FIXTURE_LIST))}
-			${example("panel (sidebar)", "organisms", `<div class="panel"><h3 class="panel__title">Browse by need</h3><p style="margin:0;color:var(--color-text-secondary);font-size:var(--fs-caption)">Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.</p></div>`)}
+			${example("panel (sidebar)", "organisms", `<div class="panel"><h3 class="panel__title">Browse by need</h3><p class="sg-note">Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.</p></div>`)}
 			${example("Listing completeness", "organisms", listingCompletenessExample())}
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
 			${example("Related tools (similarity)", "organisms", relatedToolsExample(), { wide: true })}
+		</div>`);
+}
+
+function activityParitySection() {
+	return section("Activity & parity", `
+		<div class="sg-examples sg-examples--organisms">
+			${example("member card grid", "parity views", memberGridExample(), { wide: true })}
+			${example("activity feed", "parity views", activityFeedExample(), { wide: true })}
+			${example("crawler runs table", "parity views", runsExample(), { wide: true })}
 		</div>`);
 }
 
@@ -382,7 +754,12 @@ function collectCustomPropertyNames(prefix, fallback) {
 	Array.from(document.styleSheets || []).forEach((sheet) => {
 		try { visitRules(sheet.cssRules); } catch (e) {}
 	});
-	return names.length ? names : fallback;
+	(fallback || []).forEach((name) => {
+		if (seen.has(name)) return;
+		seen.add(name);
+		names.push(name);
+	});
+	return names;
 }
 
 function resolveToken(name, cssProp) {
@@ -458,6 +835,18 @@ function renderSpaceTokens(names) {
 	}).join("");
 }
 
+function renderLayoutTokens(names) {
+	const target = document.getElementById("sg-layout-tokens");
+	if (!target) return;
+	target.innerHTML = names.map((name) => {
+		const value = resolveToken(name, "maxWidth");
+		return `<div class="sg-space-row sg-layout-row">
+			<div class="sg-space-row__bar sg-space-row__bar--layout"><span style="width: min(100%, var(${esc(name)}))"></span></div>
+			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
+		</div>`;
+	}).join("");
+}
+
 function mountStyleguide() {
 	seedFixtureIndex();
 	const colorTokens = collectCustomPropertyNames("--color-", FALLBACK_TOKENS.colors);
@@ -468,6 +857,7 @@ function mountStyleguide() {
 	renderRadiusTokens(collectCustomPropertyNames("--radius-", FALLBACK_TOKENS.radius));
 	renderShadowTokens(collectCustomPropertyNames("--shadow", FALLBACK_TOKENS.shadow));
 	renderSpaceTokens(collectCustomPropertyNames("--space-", FALLBACK_TOKENS.space));
+	renderLayoutTokens(collectCustomPropertyNames("--container-", FALLBACK_TOKENS.layout));
 
 	const page = document.querySelector(".sg-page");
 	if (!page) return;
@@ -483,6 +873,11 @@ function mountStyleguide() {
 			e.stopPropagation();
 		}
 	}, true);
+	page.addEventListener("submit", (e) => {
+		if (!e.target.closest(".sg-example")) return;
+		e.preventDefault();
+		e.stopPropagation();
+	}, true);
 }
 
 export function viewStyleguide() {
@@ -492,11 +887,15 @@ export function viewStyleguide() {
 			<h1 class="page__title">Design system</h1>
 			<p class="page__intro">A living reference for Toolhub tokens and component functions, rendered from the same modules used by the application.</p>
 			${tokenSection()}
+			${chromeSection()}
+			${layoutStatesSection()}
 			${buttonsSection()}
 			${iconsSection()}
 			${atomsSection()}
 			${moleculesSection()}
+			${contentComponentsSection()}
 			${organismsSection()}
+			${activityParitySection()}
 		</div>`);
 	return { title: "Design system — Toolhub", html, mount: mountStyleguide };
 }

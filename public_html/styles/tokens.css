@@ -72,7 +72,9 @@
 	--font-weight-bold: 700;
 
 	/* ---- Type scale -------------------------------------------------------- */
+	--fs-micro: 11px;    /* micro labels / badges */
 	--fs-caption: 13px;  /* meta / captions */
+	--fs-small: 14px;    /* slightly smaller than body */
 	--fs-body: 16px;     /* base */
 	--fs-subtitle: 21px; /* compact section headings / large icon labels */
 	--fs-title: 26px;    /* 16 × phi  — page / section titles */
@@ -89,6 +91,9 @@
 	--space-6: 56px;
 	--space-7: 72px;
 	--space-8: 89px;
+
+	/* ---- Layout ------------------------------------------------------------ */
+	--container-wide: 1760px;
 
 	/* ---- Radius & elevation ----------------------------------------------- */
 	/* Squared design: no rounded corners. Kept as named tokens so call sites stay

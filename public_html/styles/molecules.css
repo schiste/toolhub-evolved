@@ -98,7 +98,7 @@
 
 /* List editor. */
 .le__h2 { font-size: 17px; margin: var(--space-4) var(--space-0) var(--space-2); }
-.le__count { color: var(--color-text-muted); font-weight: 400; font-size: 14px; }
+.le__count { color: var(--color-text-muted); font-weight: 400; font-size: var(--fs-small); }
 .le__tools { list-style: none; margin: var(--space-0) var(--space-0) var(--space-3); padding: var(--space-0); display: flex; flex-direction: column; gap: var(--space-1); }
 .le__tools li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-surface-muted); border-radius: var(--radius-sm); }
 .le__empty { color: var(--color-text-muted); border-style: dashed !important; justify-content: center; }
@@ -117,9 +117,9 @@
 .le__delete { color: var(--color-destructive); border-color: var(--color-destructive); background: var(--color-surface); }
 .le__delete:hover:not(:disabled) { background: var(--color-destructive-subtle); }
 .le__searching,
-.le__empty { color: var(--color-text-muted); font-size: 14px; }
+.le__empty { color: var(--color-text-muted); font-size: var(--fs-small); }
 .le__checks { display: flex; gap: var(--space-4); flex-wrap: wrap; margin-top: var(--space-3); }
-.le__ro { color: var(--color-text-secondary); font-size: 14px; margin: var(--space-3) var(--space-0) var(--space-0); }
+.le__ro { color: var(--color-text-secondary); font-size: var(--fs-small); margin: var(--space-3) var(--space-0) var(--space-0); }
 
 /* Add/remove tools. */
 .at__urls { list-style: none; margin: var(--space-2) var(--space-0) var(--space-0); padding: var(--space-0); display: flex; flex-direction: column; gap: var(--space-1); max-width: 820px; }
@@ -129,7 +129,7 @@
 .at__rm:hover { background: var(--color-surface-muted); color: var(--color-text); }
 .at__rm:focus-visible { outline: 2px solid var(--color-progressive); outline-offset: 1px; box-shadow: none; }
 .at__json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-caption); white-space: pre; }
-.at__result { margin: var(--space-2) var(--space-0) var(--space-0); font-size: 14px; }
+.at__result { margin: var(--space-2) var(--space-0) var(--space-0); font-size: var(--fs-small); }
 .at__result--ok { color: var(--color-success); }
 .at__result--err { color: var(--color-destructive); }
 
@@ -144,11 +144,6 @@
 	border-radius: var(--radius-sm);
 	padding: var(--space-2);
 	box-shadow: var(--shadow);
-}
-
-.search__input {
-	flex: 1;
-	font-size: var(--fs-body);
 }
 
 .search__btn { padding: var(--space-0) var(--space-4); }
@@ -166,7 +161,7 @@
 	font-weight: 500;
 	color: var(--color-text);
 	cursor: pointer;
-	min-height: 34px;
+	min-height: var(--btn-h-md);
 	text-decoration: none;
 	transition: border-color .15s ease, color .15s ease, transform .15s ease;
 }
@@ -201,7 +196,7 @@
 
 /* Detail metadata. */
 .detail__meta { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3) var(--space-4); margin: var(--space-4) var(--space-0); padding: var(--space-3) var(--space-0); border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
-.meta__k { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); font-weight: 700; }
+.meta__k { font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); font-weight: 700; }
 .meta__v { font-size: var(--fs-caption); color: var(--color-text); margin-top: 2px; word-break: break-word; }
 
 /* Browse facets. */
@@ -212,9 +207,7 @@
 .facet:focus-within { color: var(--color-progressive); box-shadow: var(--focus-ring); }
 .facet__n { margin-inline-start: auto; color: var(--color-text-muted); font-size: var(--fs-caption); }
 .facet__empty { color: var(--color-text-muted); }
-.facets__search { width: 100%; margin-bottom: var(--space-4); }
 .facets__reset { width: 100%; }
-.sort select { padding: var(--space-2); background: var(--color-surface); }
 
 /* Pagination. */
 .pager { display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: center; margin-top: var(--space-5); }

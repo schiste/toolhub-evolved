@@ -229,6 +229,12 @@
 	gap: var(--space-2);
 }
 
+.sg-note {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+
 .sg-group {
 	grid-column: 1 / -1;
 	min-width: 0;
@@ -254,6 +260,100 @@
 .sg-qv-close-frame {
 	position: relative;
 	min-height: 48px;
+}
+
+.sg-chrome-frame,
+.sg-hero-frame {
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface);
+	overflow: hidden;
+}
+
+.sg-chrome-frame .nav__inner,
+.sg-chrome-frame .footer {
+	max-width: none;
+}
+
+.sg-chrome-frame .footer {
+	padding: var(--space-4);
+}
+
+.sg-chrome-frame--tight .container {
+	max-width: none;
+}
+
+.sg-hero-frame .hero {
+	margin: var(--space-0);
+}
+
+.sg-page-demo {
+	padding: var(--space-0);
+}
+
+.sg-page-demo .section-head {
+	margin-bottom: var(--space-0);
+}
+
+.sg-layout-demo.layout {
+	gap: var(--space-3);
+	padding: var(--space-3);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+}
+
+.sg-layout-demo .layout__main,
+.sg-layout-demo .layout__side {
+	padding-inline: var(--space-0);
+}
+
+.sg-schematic {
+	display: grid;
+	place-items: center;
+	min-height: 110px;
+	padding: var(--space-4);
+	border: 1px dashed var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface-muted);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	text-align: center;
+}
+
+.sg-loading-demo {
+	padding: var(--space-4) var(--space-0);
+}
+
+.sg-error-demo.errorpage {
+	padding: var(--space-5) var(--space-3);
+}
+
+.sg-error-demo .prose {
+	margin: var(--space-0) auto var(--space-3);
+}
+
+.sg-panel-pair {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+	gap: var(--space-4);
+	align-items: start;
+}
+
+.sg-panel-pair .panel {
+	margin-bottom: var(--space-0);
+}
+
+.sg-browse-demo.browse {
+	grid-template-columns: minmax(140px, 220px) minmax(0, 1fr);
+	gap: var(--space-3);
+}
+
+.sg-browse-demo .facets {
+	position: static;
+}
+
+.sg-space-row__bar--layout span {
+	max-width: 100%;
 }
 
 .sg-related-frame {
@@ -287,6 +387,10 @@
 }
 
 @media (max-width: 640px) {
+	.sg-browse-demo.browse {
+		grid-template-columns: 1fr;
+	}
+
 	.sg-type-row,
 	.sg-space-row {
 		grid-template-columns: 1fr;
