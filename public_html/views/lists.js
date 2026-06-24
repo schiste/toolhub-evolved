@@ -4,7 +4,7 @@ import { countLabel } from "../lib/core/i18n.js";
 import { apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
-import { listHref } from "../lib/core/routing.js";
+import { listHref, navigateTo } from "../lib/core/routing.js";
 import { demoListDelete, demoListGet, demoListNew, demoListSave, demoLists, favNames, isDemoListId } from "../lib/core/store.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
@@ -24,7 +24,7 @@ export async function viewLists() {
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Curated lists</h1>
-			${signedIn() ? button("Create a list", { variant: "primary", href: "#/lists/create", icon: "add" }) : ""}</div>
+			${signedIn() ? button("Create a list", { variant: "primary", href: "/lists/create", icon: "add" }) : ""}</div>
 		<p class="page__intro">Community-published collections of tools for specific tasks and communities.</p>
 		${all.length ? grid("grid-lists", all, listCard) : '<p class="empty">No lists found.</p>'}
 	</div>`;
@@ -48,7 +48,7 @@ export async function viewList(id) {
 	tools = rankFitsFirst(tools);
 	const html = `
 	<div class="container page">
-		<a class="back" href="#/lists">← All lists</a>
+		<a class="back" href="/lists">← All lists</a>
 		<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(countLabel(l.toolCount, "tool", "tools"))}</span></h1>${editBtn}</div>
 		<div class="prose page__intro"${dirAttrs(l.description)}>${esc(l.description)}</div>
 		${tools.length ? grid("grid-tools", tools, (t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
@@ -61,10 +61,10 @@ export function viewMyLists() {
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
-			${button("Create a list", { variant: "primary", href: "#/lists/create", icon: "add" })}</div>
+			${button("Create a list", { variant: "primary", href: "/lists/create", icon: "add" })}</div>
 		<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
-		<a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
-		${cards.length ? grid("grid-lists", cards, listCard) : '<p class="empty">No lists yet. <a href="#/lists/create">Create your first list</a>.</p>'}
+		<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		${cards.length ? grid("grid-lists", cards, listCard) : '<p class="empty">No lists yet. <a href="/lists/create">Create your first list</a>.</p>'}
 	</div>`;
 	return { title: "Your lists — Toolhub", html };
 }
@@ -80,7 +80,7 @@ export async function viewFavorites() {
 		<div class="container page">
 			<h1 class="page__title">Favorites <span class="exp-badge">Experimental</span></h1>
 			<p class="page__intro">Tools you've saved. Stored only in this browser — see
-			<a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+			<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 			${body}
 		</div>` };
 }
@@ -92,7 +92,7 @@ export function viewListEdit(id) {
 	const work = { id: src.id, title: src.title || "", description: src.description || "", tools: (src.tools || []).slice() };
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${editing ? listHref(work.id) : "#/my-lists"}">← Back</a>
+		<a class="back" href="${editing ? listHref(work.id) : "/my-lists"}">← Back</a>
 		<h1 class="page__title">${editing ? "Edit list" : "Create a list"} <span class="exp-badge">Experimental</span></h1>
 		<form data-le-form>
 			${fInput("Title", "le-title", work.title, { req: true, max: 120, reqMark: false })}
@@ -159,10 +159,10 @@ export function viewListEdit(id) {
 			if (!title) { $("#le-title").focus(); return; }
 			work.title = title; work.description = fieldValue("le-desc");
 			demoListSave(work);
-			location.hash = listHref(work.id);
+			navigateTo(listHref(work.id));
 		});
 		const del = $("[data-le-delete]");
-		if (del) del.addEventListener("click", () => { demoListDelete(work.id); location.hash = "#/my-lists"; });
+		if (del) del.addEventListener("click", () => { demoListDelete(work.id); navigateTo("/my-lists"); });
 	}
 	return { title: `${editing ? "Edit list" : "Create a list"} — Toolhub`, html, mount };
 }

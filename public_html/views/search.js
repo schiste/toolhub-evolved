@@ -3,6 +3,7 @@ import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt } from "../lib/core/i18n.js";
 import { expOn } from "../lib/core/session.js";
 import { apiGet, normalizeTool } from "../lib/core/api.js";
+import { navigateTo } from "../lib/core/routing.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { button } from "../lib/atoms/button.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
@@ -18,7 +19,7 @@ function activePageSize(value) {
 }
 
 export async function viewSearch() {
-	const usp = new URLSearchParams(location.hash.split("?")[1] || "");
+	const usp = new URLSearchParams(location.search || "");
 	const q = usp.get("q") || "";
 	const page = Math.max(1, parseInt(usp.get("page"), 10) || 1);
 	const pageSize = activePageSize(usp.get("page_size"));
@@ -71,7 +72,7 @@ export async function viewSearch() {
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="${esc(q)}" />
 				</form>
 				${facetHTML || '<p class="facet__empty">No filters available.</p>'}
-				${button("Clear filters", { variant: "outline", href: "#/search", cls: "facets__reset" })}
+				${button("Clear filters", { variant: "outline", href: "/search", cls: "facets__reset" })}
 			</aside>
 			<div class="browse__main">
 				<div class="browse__bar">
@@ -96,7 +97,7 @@ export async function viewSearch() {
 			const sv = $("#sort").value; if (sv && sv !== defaultSort) u.set("sort", sv);
 			const psv = activePageSize($("#page-size").value); if (psv !== DEFAULT_PAGE_SIZE) u.set("page_size", String(psv));
 			if (extra && extra.page > 1) u.set("page", String(extra.page));
-			location.hash = "#/search" + (u.toString() ? "?" + u.toString() : "");
+			navigateTo("/search" + (u.toString() ? "?" + u.toString() : ""));
 		};
 		$(".facets").addEventListener("change", () => navigate({}));
 		$("#sort").addEventListener("change", () => navigate({}));

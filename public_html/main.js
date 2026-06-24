@@ -4,6 +4,7 @@ import { applyLocaleAttrs } from "./lib/core/i18n.js";
 import { EXP_KEY, applyExp, expOn, setAuth, setAuthRender } from "./lib/core/session.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
+import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
@@ -53,7 +54,7 @@ if (add) {
 	return;
 }
 const q = e.target.closest("[data-q]");
-if (q && !q.matches("a[href]")) { e.preventDefault(); location.hash = "#/search?q=" + encodeURIComponent(q.getAttribute("data-q")); return; }
+if (q && !q.matches("a[href]")) { e.preventDefault(); navigateTo("/search?q=" + encodeURIComponent(q.getAttribute("data-q"))); return; }
 if (e.target.closest("a[href]")) return; // real links route natively
 const card = e.target.closest("[data-tool]");
 if (card) { openQuickView(card.getAttribute("data-tool")); } // default: peek
@@ -98,6 +99,19 @@ syncSubmitButton();
 render();
 });
 
-/* Most links are real <a href="#/..."> and route natively via hashchange. */
-window.addEventListener("hashchange", render);
+/* Clean SPA links use the History API; direct loads are handled by the Flask fallback. */
+document.addEventListener("click", (e) => {
+	if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+	const a = e.target.closest("a[href]");
+	if (!a) return;
+	const href = a.getAttribute("href");
+	if (!href || href.startsWith("#") || a.target || a.hasAttribute("download")) return;
+	const url = new URL(href, location.href);
+	if (url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
+	e.preventDefault();
+	navigateTo(url.pathname + url.search);
+});
+window.addEventListener("popstate", render);
+window.addEventListener("toolhub:navigate", render);
+normalizeLegacyHashRoute();
 render();

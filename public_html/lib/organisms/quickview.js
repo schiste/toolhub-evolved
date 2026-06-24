@@ -3,7 +3,7 @@ import { $, $$, dirAttrs, esc, safeUrl } from "../core/dom.js";
 import { updatedTimeTag } from "../core/i18n.js";
 import { INDEX, getTool } from "../core/api.js";
 import { signedIn } from "../core/session.js";
-import { toolHref } from "../core/routing.js";
+import { navigateTo, toolHref } from "../core/routing.js";
 import { toolIcon } from "../atoms/avatar.js";
 import { endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../atoms/badges.js";
 import { button } from "../atoms/button.js";
@@ -54,7 +54,7 @@ export async function openQuickView(name) {
 	let t = INDEX[name];
 	if (!t) {
 		t = await getTool(name);
-		if (!t) { location.hash = toolHref(name); return; }
+		if (!t) { navigateTo(toolHref(name)); return; }
 	}
 	qvLastFocus = document.activeElement;
 	$("#qv-body").innerHTML = quickViewBody(t);

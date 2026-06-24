@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, esc } from "../lib/core/dom.js";
-import { parseHash } from "../lib/core/routing.js";
+import { parseRoute } from "../lib/core/routing.js";
 import { signedIn } from "../lib/core/session.js";
 import { isDemoListId } from "../lib/core/store.js";
 import { button } from "../lib/atoms/button.js";
@@ -42,7 +42,7 @@ export const ROUTES = {
 	styleguide: viewStyleguide,
 };
 export function dispatch() {
-	const { path } = parseHash();
+	const { path } = parseRoute();
 	const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
 	if (path === "/") return viewHome();
 	if (seg[0] === "search") return viewSearch();
@@ -68,13 +68,13 @@ export function dispatch() {
 	return viewNotFound();
 }
 function navHrefMatches(pathHash, href) {
-	if (href === "#/search") return pathHash === "#/search" || pathHash.startsWith("#/search/");
-	if (href === "#/lists") return pathHash === "#/lists" || pathHash.startsWith("#/lists/");
-	if (href === "#/graph") return pathHash === "#/graph" || pathHash.startsWith("#/graph/");
+	if (href === "/search") return pathHash === "/search" || pathHash.startsWith("/search/");
+	if (href === "/lists") return pathHash === "/lists" || pathHash.startsWith("/lists/");
+	if (href === "/graph") return pathHash === "/graph" || pathHash.startsWith("/graph/");
 	return href === pathHash;
 }
 export function setActiveNav() {
-	const h = "#" + (parseHash().path);
+	const h = parseRoute().path;
 	$$("#nav-links, #nav-mobile").forEach((nav) => {
 		let currentSet = false;
 		$$("a", nav).forEach((a) => {
@@ -93,7 +93,7 @@ export let navSeq = 0;
 export const loadingHTML = () => '<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>';
 export const errorHTML = (e) => `<div class="container page errorpage"><h1>Couldn't load live data</h1>
 	<p class="prose">The Toolhub API didn't respond (${esc(String((e && e.message) || e))}).</p>
-	${button("Back to home", { variant: "primary", href: "#/" })}</div>`;
+	${button("Back to home", { variant: "primary", href: "/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
 // the current page stays on screen — fast/cached loads never flash a spinner.
 const SPINNER_DELAY = 250;
@@ -101,7 +101,7 @@ export async function render() {
 	closeQuickView(); // any navigation dismisses the peek modal
 	closeAcctMenu();  // …and the account dropdown
 	const seq = ++navSeq;
-	const { path } = parseHash();
+	const { path } = parseRoute();
 	const viewEl = $("#view");
 	let spinnerTimer = null;
 	if (path !== lastPath) {

@@ -2,7 +2,7 @@
 import { $, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
 import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
-import { toolHref } from "../lib/core/routing.js";
+import { navigateTo, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/core/store.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, checkedValue, fArea, fCheck, fInput, fSelect, fieldValue } from "../lib/atoms/form-fields.js";
@@ -22,9 +22,9 @@ export async function viewToolForm(name) {
 	const isCrawler = editing && cur.origin && cur.origin !== "api";
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${editing ? toolHref(name) : "#/add-or-remove-tools"}">← Back</a>
+		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">← Back</a>
 		<h1 class="page__title">${editing ? "Edit tool" : "Submit a tool"} <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Changes are saved only in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.
+		<p class="page__intro">Changes are saved only in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.
 		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
 		<form data-tool-form>
 			<h2 class="le__h2">Core information</h2>
@@ -65,12 +65,12 @@ export async function viewToolForm(name) {
 				const m = toolNewMap(); m[tname] = fields; demoStore.set(DEMO_KEYS.toolNew, m);
 				logActivity(editing ? "edited" : "created", tname, title);
 			}
-			location.hash = toolHref(tname);
+			navigateTo(toolHref(tname));
 		});
 		const rev = $("[data-tf-revert]");
-		if (rev) rev.addEventListener("click", () => { const m = toolEditsMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolEdits, m); location.hash = toolHref(name); });
+		if (rev) rev.addEventListener("click", () => { const m = toolEditsMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolEdits, m); navigateTo(toolHref(name)); });
 		const del = $("[data-tf-delete]");
-		if (del) del.addEventListener("click", () => { const m = toolNewMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolNew, m); location.hash = "#/add-or-remove-tools"; });
+		if (del) del.addEventListener("click", () => { const m = toolNewMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolNew, m); navigateTo("/add-or-remove-tools"); });
 	}
 	return { title: `${editing ? "Edit tool" : "Submit a tool"} — Toolhub`, html, mount };
 }
@@ -89,9 +89,9 @@ export function viewAddTools() {
 	const html = `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
-			${button("Submit a tool", { variant: "primary", href: "#/tools/create", icon: "add" })}</div>
+			${button("Submit a tool", { variant: "primary", href: "/tools/create", icon: "add" })}</div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
-		Everything stays in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+		Everything stays in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
 		<form class="le__add" data-url-form>
@@ -148,7 +148,7 @@ export async function viewAnnotationsEdit(name) {
 		<a class="back" href="${toolHref(name)}">← Back to ${esc(cur.title)}</a>
 		<h1 class="page__title">Edit annotations <span class="exp-badge">Experimental</span></h1>
 		<p class="page__intro">Community annotations enrich a tool without touching its core data. Saved only in
-		this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
+		this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
 			${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences), { hint: "User groups this tool serves." })}
@@ -167,10 +167,10 @@ export async function viewAnnotationsEdit(name) {
 			const anno = { audiences: fromCsv(fieldValue("an-aud")), tasks: fromCsv(fieldValue("an-tasks")), toolType: fieldValue("an-type") || null, icon: fieldValue("an-icon") || null };
 			const m = toolAnnosMap(); m[name] = anno; demoStore.set(DEMO_KEYS.toolAnnos, m);
 			logActivity("annotated", name, cur.title);
-			location.hash = toolHref(name);
+			navigateTo(toolHref(name));
 		});
 		const rev = $("[data-an-revert]");
-		if (rev) rev.addEventListener("click", () => { const m = toolAnnosMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolAnnos, m); location.hash = toolHref(name); });
+		if (rev) rev.addEventListener("click", () => { const m = toolAnnosMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolAnnos, m); navigateTo(toolHref(name)); });
 	}
 	return { title: `Edit annotations — Toolhub`, html, mount };
 }

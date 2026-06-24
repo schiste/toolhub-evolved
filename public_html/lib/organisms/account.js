@@ -9,7 +9,7 @@ export function renderAccount() {
 	const el = document.getElementById("account");
 	if (!el) return;
 	if (!expOn()) { // honest read-only: real sign-in needs OAuth we don't have
-		el.innerHTML = button("Log in", { variant: "outline", href: "#/login" });
+		el.innerHTML = button("Log in", { variant: "outline", href: "/login" });
 		return;
 	}
 	if (!signedIn()) { // experiments on but logged out → offer the demo sign-in
@@ -24,9 +24,9 @@ export function renderAccount() {
 		</button>
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong> <span class="mock-tag">demo</span></div>
-			<a href="#/my-lists">${icon("list")} Your lists</a>
-			<a href="#/favorites">${icon("star")} Favorites</a>
-			<a href="#/add-or-remove-tools">${icon("tools")} Add or remove tools</a>
+			<a href="/my-lists">${icon("list")} Your lists</a>
+			<a href="/favorites">${icon("star")} Favorites</a>
+			<a href="/add-or-remove-tools">${icon("tools")} Add or remove tools</a>
 			<hr />
 			<button class="acct__reset" type="button" data-reset>${icon("reset")} Reset demo data</button>
 			<button class="acct__logout" type="button" data-logout>${icon("logout")} Log out</button>
@@ -50,8 +50,8 @@ export function toggleAcctMenu() {
 // else the real production link.
 export function syncSubmitButton() {
 	const b = document.getElementById("submit-tool"); if (!b) return;
-	if (expOn()) { b.setAttribute("href", "#/tools/create"); b.removeAttribute("target"); b.removeAttribute("rel"); }
-	else { b.setAttribute("href", "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create"); b.setAttribute("target", "_blank"); b.setAttribute("rel", "noopener"); }
+	if (expOn()) { b.setAttribute("href", "/tools/create"); b.removeAttribute("target"); b.removeAttribute("rel"); }
+	else { b.setAttribute("href", "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create"); b.setAttribute("target", "_blank"); b.setAttribute("rel", "noopener nofollow"); }
 }
 
 globalThis.renderAccount = renderAccount;

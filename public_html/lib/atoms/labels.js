@@ -12,7 +12,7 @@ export const wikiShort = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") 
 export function keywordTags(t, opts) {
 	opts = opts || {};
 	const keys = opts.limit == null ? (t.keywords || []) : (t.keywords || []).slice(0, opts.limit);
-	return keys.map((k) => `<a class="tag" href="#/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`).join("") || (opts.empty || "");
+	return keys.map((k) => `<a class="tag" href="/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`).join("") || (opts.empty || "");
 }
 export function glanceChips(t) {
 	return [

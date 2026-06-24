@@ -161,7 +161,7 @@ export async function viewTool(name) {
 
 	const html = `
 	<div class="container page">
-		<a class="back" href="#/search">← Back to tools</a>
+		<a class="back" href="/search">← Back to tools</a>
 		<header class="toolpage__head">
 			${toolIcon(t, "lg")}
 			<div class="toolpage__id">

@@ -8,8 +8,10 @@ Toolhub Evolved runs as a small **Python (Flask) webservice** that does two thin
    (`toolhub.wikimedia.org`) **same-origin**, so the browser can read live
    catalog data without hitting CORS (the upstream API sends no CORS headers).
 
-The app uses hash routing (`#/…`) and relative asset paths, so it works under any
-base URL with no rewrite rules.
+The app uses clean History API routes (`/search`, `/tools/:name`, etc.). The
+Flask webservice serves real files when present and falls back to `index.html`
+for non-API paths, and the app shell uses root-relative assets so direct loads
+and refreshes work on every app route.
 
 ## Prerequisites
 

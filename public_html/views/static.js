@@ -34,7 +34,7 @@ export const STATIC = {
 		<p>Structured data is released under CC0; attribution via links back is
 		encouraged but not required. Sign in with your existing Wikimedia account — no
 		new account or password is needed.</p>
-		<p>Want to help build Toolhub itself? See ${"<a href=\"#/contribute\">Help maintain Toolhub</a>"}.</p>
+		<p>Want to help build Toolhub itself? See ${"<a href=\"/contribute\">Help maintain Toolhub</a>"}.</p>
 		<blockquote>This is a design prototype that reads live, read-only data from the
 		public Toolhub API — not the production site.</blockquote>` },
 	help: { title: "Help", body: `
@@ -54,7 +54,7 @@ export const STATIC = {
 		<h2>Build a list</h2>
 		<p>Group useful tools into a list and share it — great for onboarding new editors
 		or running an event.</p>
-		<p>${"<a href=\"#/about\">Learn more about Toolhub →</a>"}</p>` },
+		<p>${"<a href=\"/about\">Learn more about Toolhub →</a>"}</p>` },
 	community: { title: "Community", body: `
 		<p>Toolhub is developed in the open under Wikimedia Cloud Services. Everyone is
 		welcome to take part — reporting bugs, suggesting tools, translating, or writing
@@ -66,7 +66,7 @@ export const STATIC = {
 			<li>Help translate the interface on ${ext("https://translatewiki.net/wiki/Translating:Toolhub", "translatewiki.net")}.</li>
 		</ul>
 		<p>Looking to contribute code or report an issue? Start at
-		${"<a href=\"#/contribute\">Help maintain Toolhub</a>"}.</p>` },
+		${"<a href=\"/contribute\">Help maintain Toolhub</a>"}.</p>` },
 	privacy: { title: "Privacy policy", body: `
 		<p>Toolhub is operated by the Wikimedia Foundation and is governed by the
 		${ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", "Wikimedia Foundation Privacy Policy")}.</p>
@@ -152,7 +152,7 @@ export const STATIC = {
 		feeds for activity such as recently added and recently updated tools, and for the
 		history of individual tools and lists.</p>
 		<p>Browse the latest additions on the ${ext("https://toolhub.wikimedia.org/", "live site")},
-		or sort the ${"<a href=\"#/search?sort=recent\">Browse page</a>"} by "Recently
+		or sort the ${"<a href=\"/search?sort=recent\">Browse page</a>"} by "Recently
 		updated".</p>` },
 };
 export function viewStatic(slug) {
@@ -203,7 +203,7 @@ export function viewContribute() {
 		<div class="linkgrid">
 			${linkCard(icon("language"), "Translate Toolhub", "Localise the interface into your language on translatewiki.net.", "https://translatewiki.net/wiki/Translating:Toolhub")}
 			${linkCard(icon("code"), "The toolinfo standard", "Learn the schema that describes a tool, and the API.", "https://toolhub.wikimedia.org/api-docs")}
-			${linkCard(icon("edit"), "Add or improve a tool listing", "List your own tool, or enrich an existing record.", "#/help", true)}
+			${linkCard(icon("edit"), "Add or improve a tool listing", "List your own tool, or enrich an existing record.", "/help", true)}
 		</div>
 	</div>`;
 	return { title: "Help maintain Toolhub", html };
@@ -253,7 +253,7 @@ export function signInPage(title, lead) {
 			<p>${button("Continue on toolhub.wikimedia.org", { variant: "primary", href: "https://toolhub.wikimedia.org/", icon: "external", attrs: `target="_blank" rel="${EXTERNAL_REL}"` })}</p>
 			<p class="signin-note">In this prototype these actions are read-only: they need an
 			authenticated session and the live back-end. See
-			<a href="#/contribute">Help maintain Toolhub</a> to contribute.</p>
+			<a href="/contribute">Help maintain Toolhub</a> to contribute.</p>
 		</article></div>` };
 }
 export function viewNotFound() {
@@ -261,6 +261,6 @@ export function viewNotFound() {
 		<div class="container page errorpage">
 			<h1>Page not found</h1>
 			<p class="prose">We couldn't find that page. It may have moved, or the link may be incomplete.</p>
-			${button("Go to the home page", { variant: "primary", href: "#/" })}
+			${button("Go to the home page", { variant: "primary", href: "/" })}
 		</div>` };
 }

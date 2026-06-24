@@ -3,7 +3,7 @@ import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext } from "../lib/core/signals.js";
-import { listHref, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
+import { listHref, navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -54,8 +54,8 @@ export async function viewHome() {
 	const recentTools = (recent.results || []).map(normalizeTool);
 	const ctx = getUserContext();
 
-	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="#/search?audiences__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
-	const needs = NEEDS.map(([ic, l, term]) => `<a class="persona" href="#/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
+	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="/search?audiences__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
+	const needs = NEEDS.map(([ic, l, term]) => `<a class="persona" href="/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
 	const recentHtml = recentTools.map((t) => `
 		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
 			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
@@ -80,7 +80,7 @@ export async function viewHome() {
 			</p>
 			<div class="hero__chips" id="browse-audiences" role="tabpanel" data-mode-panel="audiences">${personas}</div>
 			<div class="hero__chips" id="browse-tasks" role="tabpanel" data-mode-panel="tasks" hidden>${needs}</div>
-			<a class="link hero__explore-foot" href="#/search">Browse all categories</a>
+			<a class="link hero__explore-foot" href="/search">Browse all categories</a>
 			<div class="hero__context">
 				<label class="hero__context-field">I work on
 					<select class="hero__context-select" data-ctx-wiki>${contextOptions(WIKI_OPTIONS, ctx.wiki)}</select>
@@ -95,9 +95,9 @@ export async function viewHome() {
 		<div class="layout__main">
 			<div class="section-head"><h2>Featured tools</h2><a class="link" href="${listHref((lists[0] || {}).id || "")}">View all</a></div>
 			${grid("grid-tools", featuredRanked.slice(0, 8), (t) => toolCard(t))}
-			<div class="section-head"><h2>Most listed</h2><a class="link" href="#/lists">View lists</a></div>
+			<div class="section-head"><h2>Most listed</h2><a class="link" href="/lists">View lists</a></div>
 			${grid("grid-tools", mostListedRanked.slice(0, 8), (t, i) => toolCard(t, { rank: i + 1 }))}
-			<div class="section-head"><h2>Curated lists</h2><a class="link" href="#/lists">View all lists</a></div>
+			<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>
 			${grid("grid-lists", lists.slice(0, 6), listCard)}
 		</div>
 		<aside class="layout__side">
@@ -112,7 +112,7 @@ export async function viewHome() {
 			$("[data-home-search]").addEventListener("submit", (e) => {
 				e.preventDefault();
 				const q = $("#home-q").value.trim();
-				location.hash = "#/search" + (q ? "?q=" + encodeURIComponent(q) : "");
+				navigateTo("/search" + (q ? "?q=" + encodeURIComponent(q) : ""));
 			});
 			// Browse-axis toggle: switch the hero chips between audiences ("made for")
 			// and tasks ("to") without leaving the page.
@@ -126,7 +126,7 @@ export async function viewHome() {
 			const roleSelect = $("[data-ctx-role]");
 			const updateContext = () => {
 				setUserContext({ wiki: wikiSelect.value, role: roleSelect.value });
-				window.dispatchEvent(new Event("hashchange"));
+				window.dispatchEvent(new Event("toolhub:navigate"));
 			};
 			[wikiSelect, roleSelect].forEach((select) => select.addEventListener("change", updateContext));
 		},

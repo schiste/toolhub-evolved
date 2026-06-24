@@ -19,7 +19,7 @@ export async function viewAuthor(name) {
 		: '<p class="empty">No tools found for this author.</p>';
 	const html = `
 	<div class="container page author-page">
-		<a class="back" href="#/search">← Back to tools</a>
+		<a class="back" href="/search">← Back to tools</a>
 		<div class="section-head author-page__head">
 			<div>
 				<h1 class="page__title"${dirAttrs(authorName)}>${esc(authorName)}</h1>

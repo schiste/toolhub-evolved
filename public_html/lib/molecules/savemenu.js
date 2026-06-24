@@ -11,6 +11,6 @@ export function saveToListControl(name) {
 	}).join("") || '<p class="savemenu__empty">No lists yet.</p>';
 	return `<details class="savemenu">
 		<summary class="btn btn--outline">${icon("bookmark")} Save to a list</summary>
-		<div class="savemenu__pop">${items}<a class="savemenu__new" href="#/lists/create">${icon("add")} New list…</a></div>
+		<div class="savemenu__pop">${items}<a class="savemenu__new" href="/lists/create">${icon("add")} New list…</a></div>
 	</details>`;
 }

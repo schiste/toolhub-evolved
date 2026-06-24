@@ -48,9 +48,10 @@ ever productionized," not as work for this plan.
 ## 1. Baseline — what is already true today
 
 - **Live API data is already wired and stays the substrate everywhere.** The
-  vanilla-JS hash-routed SPA reads **live read-only** data via the read proxy;
-  there is no bundled catalog and reads never move to fixtures. (Architecture:
-  `app.js`, `index.html`, `styles.css`, `tokens.css`, `proxy/app.py`.)
+  vanilla-JS SPA reads **live read-only** data via the read proxy and uses clean
+  History API routes; there is no bundled catalog and reads never move to
+  fixtures. (Architecture: `main.js`, `views/`, `lib/`, `index.html`, `styles/`,
+  `proxy/app.py`.)
 - The **experimental toggle already exists** and its synthetic features already
   use the exact pattern this plan generalizes: a **real record overloaded with a
   feature-specific fixture**. `synthViews(name)` decorates a real tool with a
@@ -74,9 +75,9 @@ define the "no regressions" bar for the shipping interface:
 
 | Sev | Issue | Fix |
 | --- | --- | --- |
-| High | `#/api-docs` iframed a page sending `X-Frame-Options: DENY` (blank frame + console error) | Replaced iframe with doc links + live same-origin endpoint cards |
+| High | `/api-docs` iframed a page sending `X-Frame-Options: DENY` (blank frame + console error) | Replaced iframe with doc links + live same-origin endpoint cards |
 | Med | "Popular this week" ranked in list order, not by `weeklyViews` | Sort by `weeklyViews` before ranking |
-| Med | `#/search?sort=views` linked but unsupported (blank select) | Added experimental `views` sort + in-page ranking + exp-off fallback |
+| Med | `/search?sort=views` linked but unsupported (blank select) | Added experimental `views` sort + in-page ranking + exp-off fallback |
 | Med | `normalizeTool` ignored annotation-fallback fields (hid real `tool_type`, `for_wikis`, icons, docs, links) | Core-then-annotation fallback |
 | Low | "joined **Updated yesterday**" awkward label | Split generic relative-time from update-specific `relTime` (now via `Intl`) |
 | Low | Recent-change rows only deep-linked tools | Added list-target routing |
@@ -182,13 +183,13 @@ Appendix A as the contract each simulation imitates.
 | Feature | What the user does (flag on) | Overlay on live data | Needs in production (why it's Lane B) |
 | --- | --- | --- | --- |
 | **Mock identity** | Explicit "Sign in" identity picker (default *Ada Lovelace*) + "Log out" | session delta in `demoOverlay`; real `/api/users/` data still backs Members | Real Wikimedia OAuth + server session |
-| **Favorites** | Save/unsave on cards, quick-view, detail; `#/favorites` list | favorited **names** in `demoOverlay`; tool data fetched live and merged | `POST/DELETE /api/user/favorites/` |
-| **Lists CRUD** | `#/my-lists`, `#/lists/create`, `#/lists/:id/edit`, delete; reorder tools | demo lists reference real tool names; shown alongside live `/api/lists/` | `POST/PUT/DELETE /api/lists/` |
-| **Tool submit / edit** | `#/tools/create`, `#/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
-| **Annotations edit** | `#/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …) | annotation overrides merged over the live record's `annotations`; detail labels "community" | `PUT /api/tools/{name}/annotations/` |
+| **Favorites** | Save/unsave on cards, quick-view, detail; `/favorites` list | favorited **names** in `demoOverlay`; tool data fetched live and merged | `POST/DELETE /api/user/favorites/` |
+| **Lists CRUD** | `/my-lists`, `/lists/create`, `/lists/:id/edit`, delete; reorder tools | demo lists reference real tool names; shown alongside live `/api/lists/` | `POST/PUT/DELETE /api/lists/` |
+| **Tool submit / edit** | `/tools/create`, `/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
+| **Annotations edit** | `/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …) | annotation overrides merged over the live record's `annotations`; detail labels "community" | `PUT /api/tools/{name}/annotations/` |
 | **Add / remove tools** | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest | local crawler-url + revision/audit deltas merged into the live feeds | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
 | **Developer settings** | **Hidden** (decision §8.5) — route stays a brief "not part of this demo" note | none | Token/OAuth-app backend |
-| **History & feeds** | Demo actions append revision/audit rows so `#/recent`, `#/audit-logs`, history reflect *your* edits | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds | Server write-side-effects |
+| **History & feeds** | Demo actions append revision/audit rows so `/recent`, `/audit-logs`, history reflect *your* edits | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds | Server write-side-effects |
 | **Already-synthetic** (popularity/`weeklyViews`, reviews, health, usage, screenshots) | unchanged; the original overload pattern | deterministic per-tool signal computed from the live record (optional seed JSON) | Real usage/health/review data source |
 
 ### 3.3 Route & chrome behavior under the flag
@@ -196,13 +197,13 @@ Appendix A as the contract each simulation imitates.
 - **The toggle defaults OFF** (decision §8.1). On first visit the app is the pure
   live read-only interface; the user opts into experiments via the existing
   *"Show me prospective features"* switch. The choice persists in `localStorage`.
-- The `signInPage()` stubs (`#/login`, `#/favorites`, `#/my-lists`,
-  `#/lists/create`, `#/lists/:id/edit`, `#/tools/:name/edit`,
-  `#/tools/:name/edit-annotations`, `#/add-or-remove-tools`) become **real
+- The `signInPage()` stubs (`/login`, `/favorites`, `/my-lists`,
+  `/lists/create`, `/lists/:id/edit`, `/tools/:name/edit`,
+  `/tools/:name/edit-annotations`, `/add-or-remove-tools`) become **real
   flagged views when the toggle is on**, and **keep their current "prospective
   feature" placeholder when off**.
-- `#/developer-settings` stays **hidden/placeholder in both states** (decision §8.5).
-- The header **"Submit a tool"** button: flag on → **in-app `#/tools/create`**
+- `/developer-settings` stays **hidden/placeholder in both states** (decision §8.5).
+- The header **"Submit a tool"** button: flag on → **in-app `/tools/create`**
   (decision §8.3); flag off → keep the current link to the production create URL.
 
 ### 3.4 The mockup banner + "Rules of Engagement" page
@@ -225,7 +226,7 @@ submit/edit/favorites pages, which only exist while the toggle is on.
   to turn experiments off. It is distinct from the `expbar` switch, which stays
   visible in both states so users can flip experiments on/off.
 
-**"Rules of Engagement" page** (`#/rules-of-engagement`) — a Lane A prose page
+**"Rules of Engagement" page** (`/rules-of-engagement`) — a Lane A prose page
 (frontend-only, always reachable), linked from the banner and the footer. It
 explains the model in plain language:
 
@@ -254,7 +255,7 @@ explains the model in plain language:
   branches; writes land in `demoOverlay`, never on the network.
 - Default the toggle **off** (flip the current `EXP_KEY` default) and render the
   `.mockup-banner` whenever `expOn()`; both the banner and the
-  `#/rules-of-engagement` page are wired in the same change.
+  `/rules-of-engagement` page are wired in the same change.
 - Add a thin **merge step**: after `normalizeTool()`/`normalizeList()` produce the
   live object, when `expOn()` apply the matching overlay (favorite flag, field
   edits, annotation overrides, synthetic signals) so the existing cards/views
@@ -274,7 +275,7 @@ explains the model in plain language:
 | --- | --- | --- | --- |
 | P0 | — | Lock this plan + the overlay contract (decisions §8 resolved below) | 0.5 d |
 | P1 | A | i18n catalog + `t()` (audit phases 1–2) and the deferred a11y items | 4–6 d |
-| P2 | B | **Toggle default-off + red mockup banner + `#/rules-of-engagement` page**, then `demoOverlay` (`localStorage`) + the live-record merge step + mock identity + favorites | 3–4 d |
+| P2 | B | **Toggle default-off + red mockup banner + `/rules-of-engagement` page**, then `demoOverlay` (`localStorage`) + the live-record merge step + mock identity + favorites | 3–4 d |
 | P3 | B | Lists CRUD (`my-lists`, create/edit/delete, reorder) | 2–3 d |
 | P4 | B | Tool submit/edit (editable on any tool, core/annotation labeled) + annotations edit + local revision/audit side-effects | 3–4 d |
 | P5 | B | Add/remove-tools simulation (paste/sample JSON); keep dev-settings hidden | 1.5–2 d |
@@ -318,7 +319,7 @@ that, if this day ever comes, callers don't change — only the adapter's target
 1. **Default toggle state → OFF.** First visit is the pure live read-only
    interface; users opt into experiments. Choice persists in `localStorage`.
 2. **Storage → `localStorage`** for all demo-write overlays (`demoOverlay`).
-3. **"Submit a tool" with flag on → in-app form** (`#/tools/create`), with the
+3. **"Submit a tool" with flag on → in-app form** (`/tools/create`), with the
    red mockup banner present (§3.4). Flag off → keep the external production link.
 4. **Crawler-origin tools in the edit experiment → demo-friendly.** Editable on
    any tool via overlay, with core vs. community-annotation fields visually

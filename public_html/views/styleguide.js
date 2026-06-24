@@ -212,7 +212,7 @@ function listEditorControlsExample() {
 }
 
 function navIconButtonExample() {
-	return `<a class="icon-btn" href="#/search">${icon("search")} Search</a>`;
+	return `<a class="icon-btn" href="/search">${icon("search")} Search</a>`;
 }
 
 function relatedToolsExample() {
@@ -259,17 +259,17 @@ function chromeNavExample() {
 	return `<div class="sg-chrome-frame">
 		<header class="nav">
 			<div class="nav__inner">
-				<a class="brand" href="#/">
+				<a class="brand" href="/">
 					<img class="brand__logo" src="img/toolhub-logo.svg?v=2" alt="" width="34" height="34" />
 					<span class="brand__name">Toolhub</span>
 				</a>
 				<nav class="nav__links" aria-label="Primary">
-					<a href="#/search">Browse</a>
-					<a href="#/lists">Lists</a>
-					<a href="#/search">Categories</a>
+					<a href="/search">Browse</a>
+					<a href="/lists">Lists</a>
+					<a href="/search">Categories</a>
 				</nav>
 				<div class="nav__actions">
-					<a class="icon-btn" href="#/search">${icon("search")} Search</a>
+					<a class="icon-btn" href="/search">${icon("search")} Search</a>
 					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: 'target="_blank" rel="noopener nofollow"' })}
 					${accountButtonExample()}
 				</div>
@@ -284,34 +284,34 @@ function footerExample() {
 			<div class="footer__cols">
 				<nav class="footer__col" aria-label="Discover">
 					<h2>Discover</h2>
-					<a href="#/search">Browse tools</a>
-					<a href="#/lists">Lists</a>
-					<a href="#/members">Members</a>
-					<a href="#/recent">Recent changes</a>
+					<a href="/search">Browse tools</a>
+					<a href="/lists">Lists</a>
+					<a href="/members">Members</a>
+					<a href="/recent">Recent changes</a>
 				</nav>
 				<nav class="footer__col" aria-label="Maintain">
 					<h2>Maintain</h2>
-					<a href="#/add-or-remove-tools">Add or remove tools</a>
-					<a href="#/my-lists">Your lists</a>
-					<a href="#/favorites">Favorites</a>
-					<a href="#/contribute">Help maintain Toolhub</a>
+					<a href="/add-or-remove-tools">Add or remove tools</a>
+					<a href="/my-lists">Your lists</a>
+					<a href="/favorites">Favorites</a>
+					<a href="/contribute">Help maintain Toolhub</a>
 				</nav>
 				<nav class="footer__col" aria-label="Project">
 					<h2>Project</h2>
-					<a href="#/api-docs">API docs</a>
-					<a href="#/styleguide">Design system</a>
+					<a href="/api-docs">API docs</a>
+					<a href="/styleguide">Design system</a>
 					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">Report an issue ${icon("external")}</a>
 				</nav>
 				<nav class="footer__col" aria-label="About">
 					<h2>About</h2>
-					<a href="#/about">About Toolhub</a>
-					<a href="#/help">Help</a>
-					<a href="#/privacy">Privacy policy</a>
-					<a href="#/rules-of-engagement">Rules of Engagement</a>
+					<a href="/about">About Toolhub</a>
+					<a href="/help">Help</a>
+					<a href="/privacy">Privacy policy</a>
+					<a href="/rules-of-engagement">Rules of Engagement</a>
 				</nav>
 			</div>
 			<div class="footer__bottom">
-				<a class="footer__maintain" href="#/contribute">${icon("tools")} Help maintain Toolhub</a>
+				<a class="footer__maintain" href="/contribute">${icon("tools")} Help maintain Toolhub</a>
 				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.1.0</a></span>
 				<span class="footer__note">Prototype · live read-only data from the Toolhub API</span>
 			</div>
@@ -323,8 +323,8 @@ function mockupBannerExample() {
 	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
 		<div class="mockup-banner" role="region" aria-label="Prototype notice">
 			<span class="mockup-banner__txt"><span aria-hidden="true">!</span> Mockup - a prototype, not a working integration with the real Toolhub. <span class="mock-tag">Demo</span></span>
-			<a class="mockup-banner__link" href="#/experiments">Experimental features</a>
-			<a class="mockup-banner__link" href="#/rules-of-engagement">Rules of Engagement</a>
+			<a class="mockup-banner__link" href="/experiments">Experimental features</a>
+			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
 		</div>
 	</div>`;
 }
@@ -348,7 +348,7 @@ function fullHeroExample() {
 		["code", "Developers", "developer"],
 		["book", "Readers", "reader"],
 		["research", "Researchers", "researcher"],
-	].map(([ic, label, term]) => `<a class="persona" href="#/search?audiences__term=${term}">${icon(ic)} ${label}</a>`).join("");
+	].map(([ic, label, term]) => `<a class="persona" href="/search?audiences__term=${term}">${icon(ic)} ${label}</a>`).join("");
 	return `<div class="sg-hero-frame">
 		<section class="hero">
 			<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
@@ -366,7 +366,7 @@ function fullHeroExample() {
 					</span>
 				</p>
 				<div class="hero__chips" id="sg-browse-audiences" role="tabpanel">${personas}</div>
-				<a class="link hero__explore-foot" href="#/search">Browse all categories</a>
+				<a class="link hero__explore-foot" href="/search">Browse all categories</a>
 				${fitControlExample()}
 			</div>
 		</section>
@@ -377,14 +377,14 @@ function pageHeaderExample() {
 	return `<div class="page sg-page-demo">
 		<h1 class="page__title">Browse tools</h1>
 		<p class="page__intro">Search, filter, and compare tools maintained by the Wikimedia community.</p>
-		<div class="section-head"><h2>Featured tools</h2><a class="link" href="#/search">View all</a></div>
+		<div class="section-head"><h2>Featured tools</h2><a class="link" href="/search">View all</a></div>
 	</div>`;
 }
 
 function layoutExample() {
 	return `<div class="layout sg-layout-demo">
 		<div class="layout__main">
-			<div class="section-head"><h2>Main content</h2><a class="link" href="#/search">View all</a></div>
+			<div class="section-head"><h2>Main content</h2><a class="link" href="/search">View all</a></div>
 			<div class="sg-schematic">Cards, search results, or detail content</div>
 		</div>
 		<aside class="layout__side">
@@ -395,8 +395,8 @@ function layoutExample() {
 
 function backAndLinkExample() {
 	return `<div class="sg-control-stack">
-		<a class="back" href="#/search">← Back to tools</a>
-		<a class="link" href="#/lists">View all lists</a>
+		<a class="back" href="/search">← Back to tools</a>
+		<a class="link" href="/lists">View all lists</a>
 	</div>`;
 }
 
@@ -414,7 +414,7 @@ function errorPageExample() {
 	return `<div class="errorpage sg-error-demo">
 		<h1>Couldn't load live data</h1>
 		<p class="prose">The Toolhub API didn't respond. Try again from the browse page.</p>
-		${button("Go to the home page", { variant: "primary", href: "#/" })}
+		${button("Go to the home page", { variant: "primary", href: "/" })}
 	</div>`;
 }
 
@@ -422,7 +422,7 @@ function proseExample() {
 	return `<article class="prose prose--page">
 		<h1>About Toolhub</h1>
 		<p>Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.</p>
-		<p><a href="#/contribute">Help maintain Toolhub</a> by improving listings or reporting gaps.</p>
+		<p><a href="/contribute">Help maintain Toolhub</a> by improving listings or reporting gaps.</p>
 	</article>`;
 }
 
@@ -449,11 +449,11 @@ function sortControlExample() {
 
 function recentListExample() {
 	return `<ul class="recent">
-		<li><a href="#/tools/citation-helper">${avatar("Citation Helper")}
+		<li><a href="/tools/citation-helper">${avatar("Citation Helper")}
 			<div><div class="recent__title">Citation Helper</div>
 			<div class="recent__meta">Maintainer: <span>Editing team</span></div></div>
 			<time class="recent__when" datetime="2026-06-23">${icon("history")} yesterday</time></a></li>
-		<li><a href="#/tools/commons-upload">${avatar("Commons Upload")}
+		<li><a href="/tools/commons-upload">${avatar("Commons Upload")}
 			<div><div class="recent__title">Commons Upload</div>
 			<div class="recent__meta">Maintainer: <span>Commons volunteers</span></div></div>
 			<time class="recent__when" datetime="2026-06-21">${icon("history")} 3 days ago</time></a></li>
@@ -465,7 +465,7 @@ function panelVariantsExample() {
 		<div class="panel">
 			<h3 class="panel__title">Recently updated</h3>
 			<p class="sg-note">Borderless sidebar block with a ruled title.</p>
-			<a class="panel__foot" href="#/recent">View recent changes</a>
+			<a class="panel__foot" href="/recent">View recent changes</a>
 		</div>
 		<div class="panel panel--cta">
 			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
@@ -478,12 +478,12 @@ function panelVariantsExample() {
 
 function linkCardsExample() {
 	return `<div class="linkgrid">
-		<a class="linkcard" href="#/contribute">
+		<a class="linkcard" href="/contribute">
 			<span class="linkcard__icon" aria-hidden="true">${icon("report")}</span>
 			<span class="linkcard__body"><span class="linkcard__title">Report a bug</span>
 			<span class="linkcard__desc">Open a task on the Toolhub board.</span></span>
 		</a>
-		<a class="linkcard" href="#/api-docs">
+		<a class="linkcard" href="/api-docs">
 			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
 			<span class="linkcard__body"><span class="linkcard__title">API documentation</span>
 			<span class="linkcard__desc">Inspect live read-only endpoints.</span></span>
@@ -541,7 +541,7 @@ function memberGridExample() {
 
 function activityFeedExample() {
 	return `<ul class="feed">
-		<li><a href="#/tools/citation-helper">${icon("edit", "feed__ic")}
+		<li><a href="/tools/citation-helper">${icon("edit", "feed__ic")}
 			<span class="feed__main"><strong>Citation Helper</strong> <span class="feed__sub">tool · Amina Hassan</span></span>
 			<time class="feed__when" datetime="2026-06-24">5 minutes ago</time></a></li>
 		<li><div class="feed__static">${icon("edit", "feed__ic")}
@@ -623,7 +623,7 @@ function buttonsSection() {
 			${example("button('Large', { variant: 'primary', size: 'lg' })", "atoms", button("Large", { variant: "primary", size: "lg" }))}
 			${example("button('Add tool', { variant: 'primary', icon: 'add' })", "atoms", button("Add tool", { variant: "primary", icon: "add" }))}
 			${example("button('Edit', { variant: 'outline', icon: 'edit' })", "atoms", button("Edit", { variant: "outline", icon: "edit" }))}
-			${example("button('Browse', { variant: 'outline', href: '#/search' })", "atoms", button("Browse", { variant: "outline", href: "#/search" }))}
+			${example("button('Browse', { variant: 'outline', href: '/search' })", "atoms", button("Browse", { variant: "outline", href: "/search" }))}
 			${example("button('Disabled', { variant: 'primary', disabled: true })", "atoms", button("Disabled", { variant: "primary", disabled: true }))}
 			${example("iconButton('chevronUp', 'Move up', { size: 'sm' })", "atoms", iconButton("chevronUp", "Move up", { size: "sm" }))}
 			${example("iconButton('chevronDown', 'Move down', { size: 'sm' })", "atoms", iconButton("chevronDown", "Move down", { size: "sm" }))}

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-export function toolHref(name) { return `#/tools/${encodeURIComponent(name)}`; }
-export function listHref(id) { return `#/lists/${encodeURIComponent(id)}`; }
-export function authorHref(name) { return `#/by/${encodeURIComponent(name)}`; }
-export function graphHref() { return "#/graph"; }
+export function toolHref(name) { return `/tools/${encodeURIComponent(name)}`; }
+export function listHref(id) { return `/lists/${encodeURIComponent(id)}`; }
+export function authorHref(name) { return `/by/${encodeURIComponent(name)}`; }
+export function graphHref() { return "/graph"; }
 /* ------------------------------------------------------------- static cfg */
 // Personas = WHO you are → real `audiences` facet values (audiences__term).
 export const PERSONAS = [
@@ -18,9 +18,27 @@ export const NEEDS = [
 	["book", "Read & browse", "reading"],
 ];
 
-export function parseHash() {
-	let h = location.hash.replace(/^#/, "");
-	if (!h || h === "/") return { path: "/" };
-	const [path] = h.split("?");
-	return { path };
+export function parseRoute() {
+	const path = location.pathname || "/";
+	return { path: path === "" ? "/" : path };
+}
+
+export function normalizeLegacyHashRoute() {
+	if (!location.hash.startsWith("#/")) return false;
+	history.replaceState({}, "", location.hash.slice(1));
+	return true;
+}
+
+export function navigateTo(href, opts = {}) {
+	const url = new URL(href, location.href);
+	if (url.origin !== location.origin) {
+		location.href = href;
+		return;
+	}
+	const next = url.pathname + url.search;
+	const current = location.pathname + location.search;
+	if (next !== current) {
+		history[opts.replace ? "replaceState" : "pushState"]({}, "", next);
+	}
+	window.dispatchEvent(new Event("toolhub:navigate"));
 }
