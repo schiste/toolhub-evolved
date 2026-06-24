@@ -134,22 +134,31 @@ function listingCompletenessExample() {
 }
 
 function fitControlExample() {
-	return `<div class="hero__context">
-		<label class="hero__context-field">I work on
-			<select class="hero__context-select" data-ctx-wiki>
-				<option value="">Any wiki</option>
-				<option value="wikidata.org" selected>Wikidata</option>
-				<option value="commons.wikimedia.org">Commons</option>
-			</select>
-		</label>
-		<label class="hero__context-field">as
-			<select class="hero__context-select" data-ctx-role>
-				<option value="">Anyone</option>
-				<option value="editor" selected>Editor</option>
-				<option value="developer">Developer</option>
-			</select>
-		</label>
-	</div>`;
+	return `<form class="intent">
+		<div class="intent__sentence" aria-label="Build a tool search">
+			<span class="intent__copy">I want to see tools</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>made for</span></button></span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>editors</span></button></span>
+			<span class="intent__copy">on</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>Wikidata</span></button></span>
+			<button class="intent__go" type="submit">See tools</button>
+			<button class="intent__clear" type="button">clear</button>
+		</div>
+	</form>`;
+}
+
+function fullHeroIntentExample() {
+	return `<form class="intent">
+		<div class="intent__sentence" aria-label="Build a tool search">
+			<span class="intent__copy">I want to see tools</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>made for</span></button></span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>anyone</span></button></span>
+			<span class="intent__copy">on</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>any project</span></button></span>
+			<button class="intent__go" type="submit">See tools</button>
+			<button class="intent__clear" type="button" disabled>clear</button>
+		</div>
+	</form>`;
 }
 
 function accountButtonExample() {
@@ -343,32 +352,18 @@ function experimentsBarExample() {
 }
 
 function fullHeroExample() {
-	const personas = [
-		["edit", "Editors", "editor"],
-		["code", "Developers", "developer"],
-		["book", "Readers", "reader"],
-		["research", "Researchers", "researcher"],
-	].map(([ic, label, term]) => `<a class="persona" href="/search?audiences__term=${term}">${icon(ic)} ${label}</a>`).join("");
 	return `<div class="sg-hero-frame">
 		<section class="hero">
 			<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
-			<p class="hero__lead">2,474 tools built by volunteers to edit, curate, and analyze the Wikimedia projects - documented and searchable in one place.</p>
+			<div class="hero__explore">
+				${fullHeroIntentExample()}
+			</div>
+			<div class="hero__or" aria-hidden="true">or</div>
 			<form class="search" role="search">
 				<label for="sg-home-q" class="skip-label">Search tools</label>
 				<input id="sg-home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search 2,474 tools..." autocomplete="off" />
 				${button("Search", { variant: "primary", type: "submit", cls: "search__btn" })}
 			</form>
-			<div class="hero__explore">
-				<p class="hero__explore-prompt">I want to see tools
-					<span class="hero__modes" role="tablist" aria-label="Choose how to browse tools">
-						<button class="hero__mode is-active" type="button" role="tab" aria-selected="true" aria-controls="sg-browse-audiences">made for</button>
-						<button class="hero__mode" type="button" role="tab" aria-selected="false" aria-controls="sg-browse-tasks">to</button>
-					</span>
-				</p>
-				<div class="hero__chips" id="sg-browse-audiences" role="tabpanel">${personas}</div>
-				<a class="link hero__explore-foot" href="/search">Browse all categories</a>
-				${fitControlExample()}
-			</div>
 		</section>
 	</div>`;
 }
@@ -671,16 +666,12 @@ function layoutStatesSection() {
 function formControlsGroup() {
 	return `<div class="sg-group">
 		<h3 class="sg-group__title">Form controls</h3>
-		<p class="sg-group__note">Standalone search, facet, list-editor, and fit-context controls now share one control foundation.</p>
+		<p class="sg-group__note">Standalone search, facet, list-editor, and intent-builder controls now share one control foundation.</p>
 		<div class="sg-examples sg-examples--controls">
 			${example("input.search__input", "atoms / shared control foundation", '<input class="search__input" id="sg-search-input" type="search" placeholder="Search tools..." autocomplete="off" />')}
 			${example("input.facets__search", "atoms / shared control foundation", '<input class="facets__search" id="sg-facet-search" type="search" placeholder="Search tools..." autocomplete="off" />')}
 			${example("input.le__input", "atoms / shared control foundation", '<input class="le__input" id="sg-list-editor-input" type="text" placeholder="List title" />')}
-			${example("select.hero__context-select", "atoms / shared control foundation", `<select class="hero__context-select" id="sg-context-select">
-				<option>Any wiki</option>
-				<option selected>Wikidata</option>
-				<option>Commons</option>
-			</select>`)}
+			${example("button.intent__word", "atoms / editable phrase", '<button class="intent__word" type="button">Wikidata</button>')}
 		</div>
 	</div>`;
 }
@@ -729,8 +720,7 @@ function moleculesSection() {
 			${example("List editor full row", "molecules", listEditorControlsExample(), { wide: true })}
 			${example(".icon-btn", "organisms", navIconButtonExample())}
 			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="#">${icon("edit")} Editors</a><a class="persona" href="#">${icon("code")} Developers</a><a class="persona" href="#">${icon("book")} Readers</a></div>`, { wide: true })}
-			${example("hero browse-axis toggle (.hero__modes)", "molecules", `<span class="hero__modes"><button class="hero__mode is-active" type="button">made for</button><button class="hero__mode" type="button">to</button></span>`)}
-			${example(".hero__context fit control", "molecules", fitControlExample(), { wide: true })}
+			${example(".intent sentence builder", "molecules", fitControlExample(), { wide: true })}
 		</div>`);
 }
 
