@@ -20,88 +20,186 @@ const WIKI_OPTIONS = [
 	["*.wikisource.org", "Any Wikisource"],
 	["meta.wikimedia.org", "Meta-Wiki"],
 ];
-const ROLE_OPTIONS = [
-	["", "Anyone"],
-	["editor", "Editor"],
-	["developer", "Developer"],
-	["reader", "Reader"],
-	["researcher", "Researcher"],
-	["admin", "Admin"],
-	["organizer", "Organizer"],
-];
+const INTENT_AXES = {
+	audiences: {
+		label: "made for",
+		any: "anyone",
+		param: "audiences__term",
+		options: PERSONAS.map(([, label, term]) => [term, label.toLowerCase()]),
+	},
+	tasks: {
+		label: "to",
+		any: "do anything",
+		param: "tasks__term",
+		options: NEEDS.map(([, label, term]) => [term, label.toLowerCase()]),
+	},
+};
 
-function contextOptions(options, selected) {
+function intentAxisItems() {
+	return Object.entries(INTENT_AXES).map(([value, cfg]) => [value, cfg.label]);
+}
+function intentTermItems(axis) {
+	const cfg = INTENT_AXES[axis] || INTENT_AXES.audiences;
+	return [["", cfg.any]].concat(cfg.options);
+}
+function projectItems() {
+	return WIKI_OPTIONS.map(([value, label]) => [value, value ? label : "any project"]);
+}
+function itemLabel(items, value) {
+	const hit = items.find(([v]) => v === (value || ""));
+	return hit ? hit[1] : (items[0] && items[0][1]) || "";
+}
+function intentOptionButtons(kind, items, selected) {
 	selected = selected || "";
-	return options.map(([value, label]) => `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`).join("");
+	return items.map(([value, label]) => `<button class="intent__option${value === selected ? " is-active" : ""}" type="button" role="menuitemradio" aria-checked="${value === selected}" data-intent-option="${esc(kind)}" data-value="${esc(value)}">${esc(label)}</button>`).join("");
+}
+function intentChoice(kind, label, items, selected) {
+	return `<span class="intent__choice" data-intent-choice="${esc(kind)}">
+		<button class="intent__word" type="button" data-intent-trigger="${esc(kind)}" aria-haspopup="menu" aria-expanded="false"><span data-intent-label="${esc(kind)}">${esc(label)}</span></button>
+		<span class="intent__menu" data-intent-menu="${esc(kind)}" role="menu" hidden>${intentOptionButtons(kind, items, selected)}</span>
+	</span>`;
+}
+function intentStateFromContext(ctx) {
+	return { axis: "audiences", term: (ctx && ctx.role) || "", wiki: (ctx && ctx.wiki) || "" };
+}
+function homeFilterParams(state) {
+	const params = new URLSearchParams();
+	const cfg = INTENT_AXES[state.axis] || INTENT_AXES.audiences;
+	if (state.term) params.set(cfg.param, state.term);
+	if (state.wiki) params.set("wiki__term", state.wiki);
+	return params;
+}
+function hasHomeFilters(state) {
+	return !!(state.term || state.wiki);
+}
+function searchHrefForState(state) {
+	const params = homeFilterParams(state);
+	return "/search" + (params.toString() ? "?" + params.toString() : "");
+}
+function wikiMatches(forWikis, wiki) {
+	return (forWikis || []).some((w) => w === wiki || (w.startsWith("*.") && wiki.endsWith(w.slice(1))));
+}
+function toolMatchesIntent(t, state) {
+	if (state.term) {
+		const values = state.axis === "tasks" ? t.tasks : t.audiences;
+		if (!(values || []).includes(state.term)) return false;
+	}
+	if (state.wiki && !wikiMatches(t.forWikis, state.wiki)) return false;
+	return true;
+}
+function dedupeTools(tools) {
+	const seen = new Set(), out = [];
+	for (const t of tools) {
+		if (!t || !t.name || seen.has(t.name)) continue;
+		seen.add(t.name);
+		out.push(t);
+	}
+	return out;
+}
+function sortedByEndorsements(tools) {
+	return tools.slice().sort((a, b) => ((b.endorsement && b.endorsement.count) || 0) - ((a.endorsement && a.endorsement.count) || 0) || a.title.localeCompare(b.title));
+}
+function recentToolsHTML(recentTools) {
+	return recentTools.map((t) => `
+		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
+			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+			<div class="recent__meta">Maintainer: <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div></div>
+			${updatedTimeTag(t.modified, "recent__when")}</a></li>`).join("") || '<li class="recent__empty">No recently updated tools match this sentence.</li>';
+}
+function toolsGridHTML(tools, empty, render) {
+	return tools.length ? grid("grid-tools", tools, render || ((t) => toolCard(t))) : `<p class="empty">${esc(empty)}</p>`;
+}
+function listsGridHTML(lists, empty) {
+	return lists.length ? grid("grid-lists", lists, listCard) : `<p class="empty">${esc(empty)}</p>`;
+}
+function renderHomeMain(model, state) {
+	const filtered = hasHomeFilters(state);
+	const featuredHref = filtered ? searchHrefForState(state) : ((model.lists[0] && model.lists[0].id) ? listHref(model.lists[0].id) : "/lists");
+	return `
+		<div class="section-head"><h2>Featured tools</h2><a class="link" href="${featuredHref}">View all</a></div>
+		${toolsGridHTML(model.featuredRanked.slice(0, 8), "No tools match this sentence.")}
+		<div class="section-head"><h2>Most listed</h2><a class="link" href="${filtered ? searchHrefForState(state) : "/lists"}">${filtered ? "View all" : "View lists"}</a></div>
+		${toolsGridHTML(model.mostListedRanked.slice(0, 8), "No listed tools match this sentence.", (t, i) => toolCard(t, { rank: i + 1 }))}
+		<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>
+		${listsGridHTML(model.lists.slice(0, 6), "No curated lists match this sentence.")}`;
+}
+async function homeSectionsModel(state) {
+	const filters = homeFilterParams(state);
+	const filtered = filters.toString() !== "";
+	const listParams = { featured: "true", page_size: filtered ? "30" : "6" };
+	const recentParams = new URLSearchParams(filters);
+	recentParams.set("ordering", "-modified_date");
+	recentParams.set("page_size", "5");
+	const toolParams = new URLSearchParams(filters);
+	toolParams.set("page_size", "24");
+	const [flists, recent, filteredToolsData] = await Promise.all([
+		apiGet("/lists/", listParams).catch(() => ({ results: [] })),
+		apiGet("/search/tools/", recentParams).catch(() => ({ results: [] })),
+		filtered ? apiGet("/search/tools/", toolParams).catch(() => ({ results: [] })) : Promise.resolve(null),
+	]);
+	let lists = (flists.results || []).map(normalizeList);
+	let featured;
+	if (filtered) {
+		featured = (filteredToolsData.results || []).map(normalizeTool);
+		await attachEndorsements(featured);
+		const matchingNames = new Set(featured.map((t) => t.name));
+		lists = lists.filter((l) => (l.tools || []).some((t) => matchingNames.has(t.name) || toolMatchesIntent(t, state)));
+	} else {
+		featured = dedupeTools(lists.flatMap((l) => l.tools || []));
+		await attachEndorsements(featured);
+	}
+	const recentTools = (recent.results || []).map(normalizeTool);
+	const mostListed = sortedByEndorsements(featured);
+	return {
+		lists,
+		featuredRanked: rankFitsFirst(featured),
+		mostListedRanked: rankFitsFirst(mostListed),
+		recentTools,
+	};
 }
 
 export async function viewHome() {
 	// Live: total count, featured curated lists (with embedded tools), recent tools.
-	const [home, flists, recent] = await Promise.all([
+	const [home] = await Promise.all([
 		apiGet("/ui/home/").catch(() => ({})),
-		apiGet("/lists/", { featured: "true", page_size: "6" }).catch(() => ({ results: [] })),
-		apiGet("/search/tools/", { ordering: "-modified_date", page_size: "5" }).catch(() => ({ results: [] })),
 	]);
 	const total = home.total_tools || 0;
-	const lists = (flists.results || []).map(normalizeList);
-	// "Featured tools" = the curated tools drawn from the featured lists (deduped).
-	const seen = new Set(), featured = [];
-	for (const l of lists) for (const t of l.tools) if (!seen.has(t.name)) { seen.add(t.name); featured.push(t); }
-	await attachEndorsements(featured);
-	const mostListed = featured.slice().sort((a, b) => ((b.endorsement && b.endorsement.count) || 0) - ((a.endorsement && a.endorsement.count) || 0) || a.title.localeCompare(b.title));
-	const featuredRanked = rankFitsFirst(featured);
-	const mostListedRanked = rankFitsFirst(mostListed);
-	const recentTools = (recent.results || []).map(normalizeTool);
 	const ctx = getUserContext();
-
-	const personas = PERSONAS.map(([ic, l, term]) => `<a class="persona" href="/search?audiences__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
-	const needs = NEEDS.map(([ic, l, term]) => `<a class="persona" href="/search?tasks__term=${encodeURIComponent(term)}">${icon(ic)} ${l}</a>`).join("");
-	const recentHtml = recentTools.map((t) => `
-		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
-			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
-			<div class="recent__meta">Maintainer: <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div></div>
-			${updatedTimeTag(t.modified, "recent__when")}</a></li>`).join("");
+	const initialState = intentStateFromContext(ctx);
+	const initialModel = await homeSectionsModel(initialState);
+	const intentAxis = initialState.axis;
+	const intentTerm = initialState.term;
+	const intentWiki = initialState.wiki;
 
 	const html = `
 	<section class="hero">
 		<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
-		<p class="hero__lead">${esc(countLabel(total, "tool", "tools"))} built by volunteers to edit, curate, and analyze the Wikimedia projects — documented and searchable in one place.</p>
+		<div class="hero__explore">
+			<form class="intent" data-intent-form data-axis="${esc(intentAxis)}" data-term="${esc(intentTerm)}" data-wiki="${esc(intentWiki)}">
+				<div class="intent__sentence" aria-label="Build a tool search">
+					<span class="intent__copy">I want to see tools</span>
+					${intentChoice("axis", itemLabel(intentAxisItems(), intentAxis), intentAxisItems(), intentAxis)}
+					${intentChoice("term", itemLabel(intentTermItems(intentAxis), intentTerm), intentTermItems(intentAxis), intentTerm)}
+					<span class="intent__copy">on</span>
+					${intentChoice("wiki", itemLabel(projectItems(), intentWiki), projectItems(), intentWiki)}
+					<button class="intent__go" type="submit">See tools</button>
+					<button class="intent__clear" type="button" data-intent-clear${hasHomeFilters(initialState) ? "" : " disabled"}>clear</button>
+				</div>
+			</form>
+		</div>
+		<div class="hero__or" aria-hidden="true">or</div>
 		<form class="search" role="search" data-home-search>
 			<label for="home-q" class="skip-label">Search tools</label>
 			<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${esc(countLabel(total, "tool", "tools"))}…" autocomplete="off" />
 			${button("Search", { variant: "primary", type: "submit", cls: "search__btn" })}
 		</form>
-		<div class="hero__explore">
-			<p class="hero__explore-prompt">I want to see tools
-				<span class="hero__modes" role="tablist" aria-label="Choose how to browse tools">
-					<button class="hero__mode is-active" type="button" role="tab" aria-selected="true" aria-controls="browse-audiences" data-mode="audiences">made for</button>
-					<button class="hero__mode" type="button" role="tab" aria-selected="false" aria-controls="browse-tasks" data-mode="tasks">to</button>
-				</span>
-			</p>
-			<div class="hero__chips" id="browse-audiences" role="tabpanel" data-mode-panel="audiences">${personas}</div>
-			<div class="hero__chips" id="browse-tasks" role="tabpanel" data-mode-panel="tasks" hidden>${needs}</div>
-			<a class="link hero__explore-foot" href="/search">Browse all categories</a>
-			<div class="hero__context">
-				<label class="hero__context-field">I work on
-					<select class="hero__context-select" data-ctx-wiki>${contextOptions(WIKI_OPTIONS, ctx.wiki)}</select>
-				</label>
-				<label class="hero__context-field">as
-					<select class="hero__context-select" data-ctx-role>${contextOptions(ROLE_OPTIONS, ctx.role)}</select>
-				</label>
-			</div>
-		</div>
 	</section>
 	<div class="container layout">
-		<div class="layout__main">
-			<div class="section-head"><h2>Featured tools</h2><a class="link" href="${listHref((lists[0] || {}).id || "")}">View all</a></div>
-			${grid("grid-tools", featuredRanked.slice(0, 8), (t) => toolCard(t))}
-			<div class="section-head"><h2>Most listed</h2><a class="link" href="/lists">View lists</a></div>
-			${grid("grid-tools", mostListedRanked.slice(0, 8), (t, i) => toolCard(t, { rank: i + 1 }))}
-			<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>
-			${grid("grid-lists", lists.slice(0, 6), listCard)}
+		<div class="layout__main home-results" data-home-main aria-live="polite">
+			${renderHomeMain(initialModel, initialState)}
 		</div>
 		<aside class="layout__side">
-			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
+			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
 			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", attrs: 'target="_blank" rel="noopener nofollow"' })}</div>
 		</aside>
 	</div>`;
@@ -114,21 +212,107 @@ export async function viewHome() {
 				const q = $("#home-q").value.trim();
 				navigateTo("/search" + (q ? "?q=" + encodeURIComponent(q) : ""));
 			});
-			// Browse-axis toggle: switch the hero chips between audiences ("made for")
-			// and tasks ("to") without leaving the page.
-			const modeBtns = $$(".hero__mode"), panels = $$("[data-mode-panel]");
-			modeBtns.forEach((btn) => btn.addEventListener("click", () => {
-				const mode = btn.getAttribute("data-mode");
-				modeBtns.forEach((b) => { const on = b === btn; b.classList.toggle("is-active", on); b.setAttribute("aria-selected", String(on)); });
-				panels.forEach((p) => { p.hidden = p.getAttribute("data-mode-panel") !== mode; });
-			}));
-			const wikiSelect = $("[data-ctx-wiki]");
-			const roleSelect = $("[data-ctx-role]");
-			const updateContext = () => {
-				setUserContext({ wiki: wikiSelect.value, role: roleSelect.value });
-				window.dispatchEvent(new Event("toolhub:navigate"));
+			const intentForm = $("[data-intent-form]");
+			const homeMain = $("[data-home-main]");
+			const homeRecent = $("[data-home-recent]");
+			const state = {
+				axis: intentForm.dataset.axis || "audiences",
+				term: intentForm.dataset.term || "",
+				wiki: intentForm.dataset.wiki || "",
 			};
-			[wikiSelect, roleSelect].forEach((select) => select.addEventListener("change", updateContext));
+			let refreshSeq = 0;
+			const closeMenus = () => {
+				$$("[data-intent-menu]", intentForm).forEach((menu) => { menu.hidden = true; });
+				$$("[data-intent-trigger]", intentForm).forEach((trigger) => trigger.setAttribute("aria-expanded", "false"));
+			};
+			const setMenu = (kind, on) => {
+				closeMenus();
+				if (!on) return;
+				const menu = $(`[data-intent-menu="${kind}"]`, intentForm);
+				const trigger = $(`[data-intent-trigger="${kind}"]`, intentForm);
+				if (!menu || !trigger) return;
+				menu.hidden = false;
+				trigger.setAttribute("aria-expanded", "true");
+			};
+			const syncIntent = () => {
+				const axisItems = intentAxisItems();
+				const termItems = intentTermItems(state.axis);
+				const wikiItems = projectItems();
+				$('[data-intent-label="axis"]', intentForm).textContent = itemLabel(axisItems, state.axis);
+				$('[data-intent-label="term"]', intentForm).textContent = itemLabel(termItems, state.term);
+				$('[data-intent-label="wiki"]', intentForm).textContent = itemLabel(wikiItems, state.wiki);
+				$('[data-intent-menu="axis"]', intentForm).innerHTML = intentOptionButtons("axis", axisItems, state.axis);
+				$('[data-intent-menu="term"]', intentForm).innerHTML = intentOptionButtons("term", termItems, state.term);
+				$('[data-intent-menu="wiki"]', intentForm).innerHTML = intentOptionButtons("wiki", wikiItems, state.wiki);
+				const clear = $("[data-intent-clear]", intentForm);
+				if (clear) clear.disabled = !hasHomeFilters(state);
+			};
+			const persistIntent = () => {
+				setUserContext({ wiki: state.wiki, role: state.axis === "audiences" ? state.term : "" });
+			};
+			const refreshHome = async () => {
+				const seq = ++refreshSeq;
+				homeMain.setAttribute("aria-busy", "true");
+				homeRecent.setAttribute("aria-busy", "true");
+				try {
+					const model = await homeSectionsModel(state);
+					if (seq !== refreshSeq) return;
+					homeMain.innerHTML = renderHomeMain(model, state);
+					homeRecent.innerHTML = recentToolsHTML(model.recentTools);
+				} catch (e) {
+					if (seq !== refreshSeq) return;
+					homeMain.innerHTML = '<p class="empty">Unable to refresh tools right now.</p>';
+					homeRecent.innerHTML = '<li class="recent__empty">Unable to refresh recently updated tools.</li>';
+				} finally {
+					if (seq === refreshSeq) {
+						homeMain.removeAttribute("aria-busy");
+						homeRecent.removeAttribute("aria-busy");
+					}
+				}
+			};
+			intentForm.addEventListener("click", (e) => {
+				const trigger = e.target.closest("[data-intent-trigger]");
+				if (trigger) {
+					e.preventDefault();
+					const kind = trigger.getAttribute("data-intent-trigger");
+					const menu = $(`[data-intent-menu="${kind}"]`, intentForm);
+					setMenu(kind, menu && menu.hidden);
+					return;
+				}
+				const option = e.target.closest("[data-intent-option]");
+				if (!option) return;
+				e.preventDefault();
+				const kind = option.getAttribute("data-intent-option");
+				const value = option.getAttribute("data-value") || "";
+				if (kind === "axis") {
+					state.axis = value || "audiences";
+					state.term = "";
+				} else if (kind === "term") {
+					state.term = value;
+				} else if (kind === "wiki") {
+					state.wiki = value;
+				}
+				syncIntent();
+				persistIntent();
+				refreshHome();
+				closeMenus();
+			});
+			$("[data-intent-clear]", intentForm).addEventListener("click", () => {
+				state.axis = "audiences";
+				state.term = "";
+				state.wiki = "";
+				syncIntent();
+				persistIntent();
+				refreshHome();
+				closeMenus();
+			});
+			document.addEventListener("click", (e) => { if (!intentForm.contains(e.target)) closeMenus(); });
+			document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
+			intentForm.addEventListener("submit", (e) => {
+				e.preventDefault();
+				persistIntent();
+				navigateTo(searchHrefForState(state));
+			});
 		},
 	};
 }
