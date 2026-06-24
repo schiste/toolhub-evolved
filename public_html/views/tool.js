@@ -2,6 +2,7 @@
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { timeTag, updatedTimeTag } from "../lib/core/i18n.js";
 import { INDEX, apiGet, getTool, isNewTool } from "../lib/core/api.js";
+import { egoGraph } from "../lib/core/graph.js";
 import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
@@ -16,6 +17,8 @@ import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } fro
 import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
+import { forceGraph } from "../lib/organisms/force-graph.js";
+import { openQuickView } from "../lib/organisms/quickview.js";
 import { prosePage, viewNotFound } from "./static.js";
 
 function relatedToolRow(item) {
@@ -132,6 +135,20 @@ export async function viewTool(name) {
 				<div class="related__list">${related.map(relatedToolRow).join("")}</div>
 			</section>`
 		: "";
+	let ego = null;
+	try {
+		const graph = await egoGraph(name, 10);
+		if ((graph.nodes || []).length >= 3) ego = graph;
+	} catch (e) {
+		ego = null;
+	}
+	const neighborhoodHtml = ego
+		? `<section class="neighborhood" aria-labelledby="neighborhood-title">
+				<div class="section-head"><h2 id="neighborhood-title">Neighborhood</h2></div>
+				<div class="graph graph--ego"><div id="ego-canvas"></div></div>
+				<p class="graph__caption">This tool and its nearest neighbors by metadata. Click a node to peek.</p>
+			</section>`
+		: "";
 
 	// At-a-glance chips (real metadata).
 	const glance = glanceChips(t);
@@ -212,6 +229,7 @@ export async function viewTool(name) {
 				</div>
 
 				${relatedHtml}
+				${neighborhoodHtml}
 			</div>
 
 			<aside class="toolpage__side">
@@ -242,7 +260,12 @@ export async function viewTool(name) {
 			</aside>
 		</div>
 	</div>`;
-	return { title: `${t.title} — Toolhub`, html };
+	function mount() {
+		const target = document.getElementById("ego-canvas");
+		if (!target || !ego) return;
+		target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
+	}
+	return { title: `${t.title} — Toolhub`, html, mount };
 }
 
 // Tool revision history — live from /api/tools/{name}/revisions/.

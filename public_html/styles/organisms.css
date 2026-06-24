@@ -37,6 +37,70 @@
 .icon-btn:hover { background: var(--color-surface-muted); color: var(--color-progressive); text-decoration: none; }
 .icon-btn:focus-visible { outline: 2px solid var(--color-progressive); outline-offset: 1px; box-shadow: none; }
 
+/* Tool map graph. */
+.graph { position: relative; margin-top: var(--space-4); }
+#graph-canvas,
+.graph__canvas {
+	position: relative;
+	width: 100%;
+	min-height: 260px;
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	overflow: hidden;
+}
+.graph--ego { margin-top: var(--space-3); }
+.graph--ego > div {
+	position: relative;
+	width: 100%;
+	min-height: 260px;
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	overflow: hidden;
+}
+.force-graph {
+	display: block;
+	width: 100%;
+	background: var(--color-surface);
+}
+.graph__legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2) var(--space-3);
+	margin-top: var(--space-3);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	line-height: 1.3;
+}
+.graph__legend-item { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-height: var(--ctl-h-sm); }
+.graph__legend-text { overflow-wrap: anywhere; }
+.graph__legend-count { color: var(--color-text-muted); }
+.graph__swatch { width: 12px; height: 12px; border: 1px solid var(--color-border); flex: 0 0 auto; }
+.graph__swatch--halo { background: var(--color-surface); border: 2px solid var(--color-progressive); }
+.graph__caption {
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.graph__note { margin: var(--space-2) var(--space-0) var(--space-0); color: var(--color-text-muted); font-size: var(--fs-caption); }
+.graph__tip {
+	position: absolute;
+	z-index: 3;
+	max-width: min(280px, calc(100% - var(--space-4)));
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid var(--color-border);
+	background: var(--color-surface);
+	box-shadow: var(--shadow-popover);
+	color: var(--color-text);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	line-height: 1.3;
+	overflow: hidden;
+	pointer-events: none;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* Hero. */
 .hero {
 	text-align: center;
@@ -241,6 +305,8 @@
 
 .related { margin-top: var(--space-5); }
 .related .section-head { margin: var(--space-5) var(--space-0) var(--space-2); }
+.neighborhood { margin-top: var(--space-5); }
+.neighborhood .section-head { margin: var(--space-5) var(--space-0) var(--space-2); }
 .related__subtitle { margin: var(--space-0) var(--space-0) var(--space-3); color: var(--color-text-muted); font-size: var(--fs-caption); }
 .related__list { display: flex; flex-direction: column; }
 .related__item {

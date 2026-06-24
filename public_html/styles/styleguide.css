@@ -365,6 +365,14 @@
 	margin-top: var(--space-0);
 }
 
+.sg-force-graph-frame .graph {
+	margin-top: var(--space-0);
+}
+
+.sg-force-graph-frame .graph__canvas {
+	min-height: 220px;
+}
+
 .sg-form {
 	max-width: 680px;
 }

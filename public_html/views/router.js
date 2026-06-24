@@ -14,6 +14,7 @@ import { viewLists, viewList, viewMyLists, viewFavorites, viewListEdit } from ".
 import { viewToolForm, viewAddTools, viewAnnotationsEdit } from "./toolforms.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
 import { viewExperiments } from "./experiments.js";
+import { viewGraph } from "./graph.js";
 import { viewStyleguide } from "./styleguide.js";
 import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
 
@@ -24,6 +25,7 @@ setSignInFallback(signInPage);
 
 export const ROUTES = {
 	lists: viewLists,
+	graph: viewGraph,
 	"published-lists": viewLists,
 	"my-lists": () => requireSignIn(viewMyLists, "Your lists", "See and manage the lists you've created."),
 	favorites: () => requireSignIn(viewFavorites, "Favorites", "Your saved tools, all in one place."),

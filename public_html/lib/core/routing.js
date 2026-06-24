@@ -2,6 +2,7 @@
 export function toolHref(name) { return `#/tools/${encodeURIComponent(name)}`; }
 export function listHref(id) { return `#/lists/${encodeURIComponent(id)}`; }
 export function authorHref(name) { return `#/by/${encodeURIComponent(name)}`; }
+export function graphHref() { return "#/graph"; }
 /* ------------------------------------------------------------- static cfg */
 // Personas = WHO you are → real `audiences` facet values (audiences__term).
 export const PERSONAS = [

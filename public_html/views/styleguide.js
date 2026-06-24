@@ -14,6 +14,7 @@ import { renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
+import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard } from "../lib/organisms/list-card.js";
 import { quickViewBody } from "../lib/organisms/quickview.js";
@@ -30,6 +31,28 @@ import {
 
 const STYLEGUIDE_TOOLS = [FIXTURE_TOOL, FIXTURE_TOOL_DEPRECATED, FIXTURE_TOOL_EXPERIMENTAL];
 const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
+const STYLEGUIDE_GRAPH = {
+	communityMeta: [
+		{ id: 0, label: "commons", size: 3 },
+		{ id: 1, label: "wikidata", size: 3 },
+	],
+	nodes: [
+		{ id: "upload", title: "Commons Upload", community: 0, weight: 8, fits: true },
+		{ id: "pattypan", title: "Pattypan", community: 0, weight: 6 },
+		{ id: "map", title: "WLM Map", community: 0, weight: 5 },
+		{ id: "query", title: "Query Helper", community: 1, weight: 7 },
+		{ id: "reconcile", title: "Reconcile Tool", community: 1, weight: 5 },
+		{ id: "citations", title: "Citation Helper", community: 1, weight: 4 },
+	],
+	edges: [
+		{ source: "upload", target: "pattypan", weight: 0.82 },
+		{ source: "upload", target: "map", weight: 0.68 },
+		{ source: "pattypan", target: "map", weight: 0.55 },
+		{ source: "query", target: "reconcile", weight: 0.78 },
+		{ source: "query", target: "citations", weight: 0.52 },
+		{ source: "map", target: "query", weight: 0.22 },
+	],
+};
 
 const FALLBACK_TOKENS = {
 	colors: [
@@ -214,6 +237,21 @@ function relatedToolsExample() {
 				</article>
 			</div>
 		</section>
+	</div>`;
+}
+
+function forceGraphExample() {
+	const colors = communityColors(STYLEGUIDE_GRAPH.communityMeta);
+	const legend = STYLEGUIDE_GRAPH.communityMeta.map((community) => `
+		<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get(community.id))}"></span><span class="graph__legend-text">${esc(community.label)} <span class="graph__legend-count">(${esc(String(community.size))})</span></span></span>`).join("");
+	return `<div class="sg-force-graph-frame">
+		<div class="graph graph--sg">
+			<div id="sg-force-graph" class="graph__canvas"></div>
+			<div class="graph__legend" aria-label="Example graph legend">
+				${legend}
+				<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">Fits you</span></span>
+			</div>
+		</div>
 	</div>`;
 }
 
@@ -723,6 +761,7 @@ function organismsSection() {
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
 			${example("Related tools (similarity)", "organisms", relatedToolsExample(), { wide: true })}
+			${example("Similarity graph (canvas)", "organisms", forceGraphExample(), { wide: true })}
 		</div>`);
 }
 
@@ -858,6 +897,8 @@ function mountStyleguide() {
 	renderShadowTokens(collectCustomPropertyNames("--shadow", FALLBACK_TOKENS.shadow));
 	renderSpaceTokens(collectCustomPropertyNames("--space-", FALLBACK_TOKENS.space));
 	renderLayoutTokens(collectCustomPropertyNames("--container-", FALLBACK_TOKENS.layout));
+	const graphTarget = document.getElementById("sg-force-graph");
+	if (graphTarget) graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
 
 	const page = document.querySelector(".sg-page");
 	if (!page) return;
