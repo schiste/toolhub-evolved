@@ -5,7 +5,7 @@ import { INDEX, getTool } from "../core/api.js";
 import { signedIn } from "../core/session.js";
 import { navigateTo, toolHref } from "../core/routing.js";
 import { toolIcon } from "../atoms/avatar.js";
-import { endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../atoms/badges.js";
+import { endorsementChip, fitChip, healthBadge, popularityBadge } from "../atoms/badges.js";
 import { button } from "../atoms/button.js";
 import { glanceChips, keywordTags } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
@@ -24,7 +24,10 @@ export function setPageInert(on) {
 export function quickViewBody(t) {
 	const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
 	const tags = keywordTags(t, { limit: QV_TAG_LIMIT });
-	const realBadge = statusBadge(t);
+	const realBadge = [
+		t.deprecated && '<span class="status status--red"><span class="dot dot--red"></span>Deprecated</span>',
+		t.experimental && '<span class="status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>',
+	].filter(Boolean).join("");
 	const glance = glanceChips(t);
 	return `
 		<div class="qv__head">${toolIcon(t, "lg")}

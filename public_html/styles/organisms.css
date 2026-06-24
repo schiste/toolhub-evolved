@@ -117,9 +117,93 @@
 .hero__title { font-size: var(--fs-display); font-weight: var(--font-weight-bold); margin: var(--space-0) var(--space-0) var(--space-3); letter-spacing: 0; }
 .hero__lead { max-width: 56ch; margin: var(--space-0) auto var(--space-4); color: var(--color-text-secondary); font-size: var(--fs-subtitle); line-height: 1.4; }
 
-/* Hero "explore" control: choose a browse axis (made for / to) and pick a chip. */
-.hero__explore { max-width: 760px; margin: var(--space-5) auto var(--space-0); }
-.hero__explore-prompt { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin: var(--space-0) var(--space-0) var(--space-3); color: var(--color-text-secondary); font-size: var(--fs-body); }
+/* Hero intent builder: a sentence that compiles to normal browse filters. */
+.hero__explore { max-width: 880px; margin: var(--space-5) auto var(--space-0); }
+.intent {
+	display: grid;
+	gap: var(--space-3);
+	justify-items: center;
+}
+.intent__sentence {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-subtitle);
+	line-height: 1.4;
+}
+.intent__copy { flex: 0 0 auto; }
+.intent__field,
+.intent__keyword {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	min-width: 0;
+}
+.intent__keyword[hidden] { display: none; }
+.intent__select,
+.intent__input {
+	height: var(--ctl-h-md);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface);
+	color: var(--color-progressive);
+	font: inherit;
+	font-size: var(--fs-body);
+	font-weight: 650;
+	line-height: 1;
+	box-sizing: border-box;
+}
+.intent__select {
+	max-width: 100%;
+	padding: var(--space-0) var(--space-3);
+	cursor: pointer;
+}
+.intent__select--axis { min-width: 116px; }
+.intent__select--term { min-width: 156px; }
+.intent__select--wiki { min-width: 150px; }
+.intent__input {
+	width: 190px;
+	padding: var(--space-0) var(--space-3);
+}
+.intent__input::placeholder { color: var(--color-text-muted); font-weight: 400; }
+.intent__select:focus-visible,
+.intent__input:focus-visible,
+.intent__detail:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 1px;
+	box-shadow: none;
+}
+.intent__actions {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: var(--space-2) var(--space-3);
+}
+.intent__detail {
+	appearance: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface);
+	color: var(--color-text-secondary);
+	font: inherit;
+	font-size: var(--fs-caption);
+	font-weight: 600;
+	height: var(--btn-h-md);
+	padding: var(--space-0) var(--space-3);
+	cursor: pointer;
+	transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.intent__detail:hover {
+	border-color: var(--color-progressive);
+	color: var(--color-progressive);
+	background: var(--color-progressive-subtle);
+}
+.intent__browse { align-self: center; }
 .hero__modes { display: inline-flex; border: 1px solid var(--color-border); background: var(--color-surface); }
 .hero__mode { appearance: none; border: 0; background: none; font: inherit; font-size: var(--fs-caption); font-weight: 600; cursor: pointer; padding: var(--space-1) var(--space-3); color: var(--color-text-secondary); transition: background .15s ease, color .15s ease; }
 .hero__mode + .hero__mode { border-inline-start: 1px solid var(--color-border); }
@@ -308,6 +392,8 @@
 .toolpage__tags { margin: var(--space-3) var(--space-0); }
 .toolpage__actions { display: flex; flex-direction: column; gap: var(--space-2); }
 .toolpage__actions .btn { width: 100%; text-align: center; }
+.linkout-bad { display: inline-flex; align-items: baseline; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--fs-caption); line-height: 1.4; overflow-wrap: anywhere; }
+.linkout-bad span { min-width: 0; overflow-wrap: anywhere; }
 .toolpage__cta { display: flex; flex-direction: column; gap: var(--space-2); flex: 0 0 auto; }
 .toolpage__sub { display: flex; gap: var(--space-3); margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-surface-muted); font-size: var(--fs-caption); }
 
@@ -334,7 +420,9 @@
 .related__item:focus-visible { box-shadow: var(--focus-ring); outline: none; }
 .related__item .avatar { width: var(--avatar-sm); height: var(--avatar-sm); font-size: var(--fs-caption); border-radius: 0; flex: 0 0 auto; }
 .related__body { display: grid; gap: var(--space-1); min-width: 0; }
+.related__titleline { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
 .related__title { font-size: var(--fs-caption); font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.related__status { flex: 0 0 auto; }
 .related__maint { font-size: var(--fs-micro); color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .related__chips { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
 .related__chips .tag { font-size: var(--fs-micro); }

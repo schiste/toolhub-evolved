@@ -90,7 +90,7 @@ export function ingestToolinfo(text) {
 		m[it.name] = {
 			title: it.title, description: it.description, url: it.url,
 			repository: it.repository || null, license: it.license || null, toolType: it.tool_type || null,
-			keywords: it.keywords || [], forWikis: it.for_wikis || [],
+			keywords: it.keywords || [], forWikis: it.for_wikis || [], uiLanguages: it.available_ui_languages || [],
 			deprecated: !!it.deprecated, experimental: !!it.experimental, origin: "crawler",
 		};
 		if (existed) updated++; else added++;

@@ -8,5 +8,31 @@ export function esc(s) {
 		.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
+export function normalizeVcsUrl(u) {
+	const raw = String(u == null ? "" : u).trim();
+	if (!raw) return raw;
+	try {
+		let s = raw;
+		let changed = false;
+		if (/^git\+/i.test(s)) {
+			s = s.replace(/^git\+/i, "");
+			changed = true;
+		}
+		const scp = /^git@([^:\s]+):(.+)$/.exec(s);
+		if (scp) {
+			s = "https://" + scp[1] + "/" + scp[2].replace(/^\/+/, "");
+			changed = true;
+		} else {
+			const ssh = /^ssh:\/\/git@([^/\s]+)\/(.+)$/i.exec(s);
+			if (ssh) {
+				s = "https://" + ssh[1] + "/" + ssh[2].replace(/^\/+/, "");
+				changed = true;
+			}
+		}
+		return changed ? s.replace(/\.git(?=([?#]|$))/i, "") : raw;
+	} catch (e) {
+		return raw;
+	}
+}
 export function safeUrl(u) { const s = String(u == null ? "" : u).trim(); return /^https?:\/\//i.test(s) ? esc(s) : ""; }
 export function dirAttrs(value) { return value ? ' dir="auto"' : ""; }

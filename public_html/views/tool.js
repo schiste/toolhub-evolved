@@ -24,15 +24,34 @@ import { prosePage, viewNotFound } from "./static.js";
 function relatedToolRow(item) {
 	const t = item.tool;
 	const chips = (item.shared || []).map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+	const deprecated = t.deprecated ? '<span class="related__status status status--red"><span class="dot dot--red"></span>Deprecated</span>' : "";
 	return `
 		<article class="related__item" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
 			${avatar(t.title)}
 			<div class="related__body">
-				<div class="related__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+				<div class="related__titleline">
+					<div class="related__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+					${deprecated}
+				</div>
 				<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
 				${chips ? `<div class="related__chips">${chips}</div>` : ""}
 			</div>
 		</article>`;
+}
+
+function viewToolNotFound(name) {
+	const rawName = String(name == null ? "" : name);
+	const searchHref = "/search?q=" + encodeURIComponent(rawName);
+	return {
+		title: "Tool not found — Toolhub",
+		html: `
+		<div class="container page">
+			<a class="back" href="/search">← Back to tools</a>
+			<h1 class="page__title">Tool not found</h1>
+			<p class="page__intro">The record for <code${dirAttrs(rawName)}>${esc(rawName)}</code> may have been <strong>deleted, renamed, or never registered</strong>.</p>
+			<p><a href="${searchHref}">Search for "${esc(rawName)}"</a> · <a href="/search">Browse all tools</a></p>
+		</div>`,
+	};
 }
 
 function authorEntries(t) {
@@ -96,7 +115,7 @@ function replacementNote(t) {
 
 export async function viewTool(name) {
 	const t = await getTool(name);
-	if (!t) return viewNotFound();
+	if (!t) return viewToolNotFound(name);
 	const provTags = [
 		wikidataChip(t.wikidata),
 		...(!signedIn() ? [] : [

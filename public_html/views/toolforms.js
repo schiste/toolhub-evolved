@@ -5,16 +5,45 @@ import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/core/store.js";
 import { button, iconButton } from "../lib/atoms/button.js";
-import { TOOL_TYPES, checkedValue, fArea, fCheck, fInput, fSelect, fieldValue } from "../lib/atoms/form-fields.js";
+import { TOOL_TYPES, checkedValue, clearFieldError, fArea, fCheck, fInput, fSelect, fieldValue, setFieldError } from "../lib/atoms/form-fields.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
+
+function isHttpUrl(value) {
+	try {
+		const u = new URL(String(value || "").trim());
+		return u.protocol === "http:" || u.protocol === "https:";
+	} catch (e) {
+		return false;
+	}
+}
+
+function validateHttpField(id, msg, opts) {
+	opts = opts || {};
+	const value = fieldValue(id);
+	clearFieldError(id);
+	if ((opts.required || value) && !isHttpUrl(value)) {
+		setFieldError(id, msg);
+		return document.getElementById(id);
+	}
+	return null;
+}
+
+function clearHttpErrorWhenValid(id) {
+	const el = document.getElementById(id);
+	if (!el) return;
+	el.addEventListener("input", () => {
+		const value = el.value.trim();
+		if (!value || isHttpUrl(value)) clearFieldError(id);
+	});
+}
 
 // EXPERIMENTAL — create/edit a tool's CORE fields. name=null → create.
 // Edits overload the live record; new tools live only in the browser.
 export async function viewToolForm(name) {
 	const editing = name != null;
-	let cur = { name: "", title: "", description: "", url: "", repository: null, license: null, toolType: null, keywords: [], forWikis: [], deprecated: false, experimental: false };
+	let cur = { name: "", title: "", description: "", url: "", repository: null, license: null, toolType: null, keywords: [], forWikis: [], uiLanguages: [], deprecated: false, experimental: false };
 	if (editing) {
 		cur = await getTool(name);
 		if (!cur) return viewNotFound();
@@ -26,7 +55,7 @@ export async function viewToolForm(name) {
 		<h1 class="page__title">${editing ? "Edit tool" : "Submit a tool"} <span class="exp-badge">Experimental</span></h1>
 		<p class="page__intro">Changes are saved only in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.
 		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
-		<form data-tool-form>
+		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
 			${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: "Stable id used in Toolhub URLs." })}
 			${fInput("Title", "tf-title", cur.title, { req: true, hint: "Short display name shown in search results." })}
@@ -37,6 +66,7 @@ export async function viewToolForm(name) {
 			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES, { hint: "Choose the closest match." })}
 			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords), { hint: "Terms people might search for." })}
 			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis), { hint: "Use wiki database names, or * for all wikis." })}
+			${fInput("Available UI languages (comma-separated codes)", "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: "BCP-47 / wiki language codes." })}
 			<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? "Save changes" : "Submit tool", { variant: "primary", type: "submit" })}
@@ -50,13 +80,17 @@ export async function viewToolForm(name) {
 			e.preventDefault();
 			const title = fieldValue("tf-title"), url = fieldValue("tf-url"), desc = fieldValue("tf-desc");
 			const tname = editing ? name : fieldValue("tf-name");
-			if (!tname || !title || !url) { document.getElementById(editing ? "tf-title" : "tf-name").focus(); return; }
+			const invalidUrl = validateHttpField("tf-url", "Enter a valid http(s) URL.", { required: true });
+			const invalidRepo = validateHttpField("tf-repo", "Enter a valid http(s) repository URL.");
+			if (!tname || !title) { document.getElementById(editing ? "tf-title" : "tf-name").focus(); return; }
+			if (invalidUrl || invalidRepo) { (invalidUrl || invalidRepo).focus(); return; }
 			if (!editing && (isNewTool(tname))) { alert("A demo tool with that name already exists."); return; }
 			const fields = {
 				title, description: desc, url,
 				repository: fieldValue("tf-repo") || null, license: fieldValue("tf-license") || null,
 				toolType: fieldValue("tf-type") || null, keywords: fromCsv(fieldValue("tf-keywords")),
-				forWikis: fromCsv(fieldValue("tf-wikis")), deprecated: checkedValue("tf-deprecated"), experimental: checkedValue("tf-experimental"),
+				forWikis: fromCsv(fieldValue("tf-wikis")), uiLanguages: fromCsv(fieldValue("tf-langs")),
+				deprecated: checkedValue("tf-deprecated"), experimental: checkedValue("tf-experimental"),
 			};
 			if (editing && !isNewTool(tname)) {
 				const m = toolEditsMap(); m[tname] = fields; demoStore.set(DEMO_KEYS.toolEdits, m);
@@ -71,6 +105,8 @@ export async function viewToolForm(name) {
 		if (rev) rev.addEventListener("click", () => { const m = toolEditsMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolEdits, m); navigateTo(toolHref(name)); });
 		const del = $("[data-tf-delete]");
 		if (del) del.addEventListener("click", () => { const m = toolNewMap(); delete m[name]; demoStore.set(DEMO_KEYS.toolNew, m); navigateTo("/add-or-remove-tools"); });
+		clearHttpErrorWhenValid("tf-url");
+		clearHttpErrorWhenValid("tf-repo");
 	}
 	return { title: `${editing ? "Edit tool" : "Submit a tool"} — Toolhub`, html, mount };
 }
@@ -94,7 +130,7 @@ export function viewAddTools() {
 		Everything stays in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
-		<form class="le__add" data-url-form>
+		<form class="le__add" data-url-form novalidate>
 			${fInput("toolinfo.json URL", "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: "Public URL the crawler should re-read." })}
 			${button("Register", { variant: "outline", type: "submit" })}
 		</form>
@@ -114,8 +150,12 @@ export function viewAddTools() {
 	function mount() {
 		$("[data-url-form]").addEventListener("submit", (e) => {
 			e.preventDefault();
-			const u = $("#at-url").value.trim(); if (!u) return;
+			const u = $("#at-url").value.trim();
+			const invalidUrl = validateHttpField("at-url", "Enter a valid http(s) toolinfo URL.");
+			if (invalidUrl) { invalidUrl.focus(); return; }
+			if (!u) return;
 			crawlerUrlAdd(u); $("#at-url").value = "";
+			clearFieldError("at-url");
 			$("[data-url-list]").innerHTML = urlRows();
 		});
 		$("[data-url-list]").addEventListener("click", (e) => {
@@ -135,6 +175,7 @@ export function viewAddTools() {
 			$("[data-sub-grid]").innerHTML = subGrid();
 			const c = $("[data-sub-count]"); if (c) c.textContent = countLabel(Object.keys(toolNewMap()).length, "tool", "tools");
 		});
+		clearHttpErrorWhenValid("at-url");
 	}
 	return { title: "Add or remove tools — Toolhub", html, mount };
 }
