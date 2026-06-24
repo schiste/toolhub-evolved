@@ -167,6 +167,16 @@
 	grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
 }
 
+.sg-examples--buttons {
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+}
+
+.sg-examples--buttons .sg-example__demo,
+.sg-examples--controls .sg-example__demo {
+	display: flex;
+	align-items: center;
+}
+
 .sg-example {
 	display: flex;
 	flex-direction: column;
@@ -217,6 +227,42 @@
 	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--space-2);
+}
+
+.sg-group {
+	grid-column: 1 / -1;
+	min-width: 0;
+	margin-top: var(--space-2);
+}
+
+.sg-group__title {
+	font-size: var(--fs-body);
+	margin: var(--space-0) var(--space-0) var(--space-1);
+}
+
+.sg-group__note {
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	margin: var(--space-0) var(--space-0) var(--space-3);
+}
+
+.sg-control-stack {
+	display: grid;
+	gap: var(--space-3);
+}
+
+.sg-qv-close-frame {
+	position: relative;
+	min-height: 48px;
+}
+
+.sg-related-frame {
+	max-width: 460px;
+}
+
+.sg-related-frame .related,
+.sg-related-frame .related .section-head {
+	margin-top: var(--space-0);
 }
 
 .sg-form {

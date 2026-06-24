@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeUrl } from "../core/dom.js";
 import { countLabel } from "../core/i18n.js";
-import { icon } from "./icon.js";
+import { button } from "./button.js";
 
 export function metaItem(k, v) { return `<div><div class="meta__k">${k}</div><div class="meta__v" dir="auto">${v || "—"}</div></div>`; }
-export function linkOut(label, url) { const u = safeUrl(url); return u ? `<a class="btn btn--outline" href="${u}" target="_blank" rel="noopener">${label} ${icon("external")}</a>` : ""; }
+export function linkOut(label, url) { const u = safeUrl(url); return u ? button(label, { variant: "outline", href: u, icon: "external", attrs: 'target="_blank" rel="noopener"' }) : ""; }
 export const wikiLabel = (a) => (!a || !a.length ? "Any wiki" : a.includes("*") ? "All wikis" : a.map(esc).join(", "));
 export const langLabel = (a) => (!a || !a.length ? "English (default)" : a.map(esc).join(", "));
 // Compact "works on" label for cards (full list shown on the detail page).

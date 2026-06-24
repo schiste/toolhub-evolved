@@ -4,6 +4,7 @@ import { countLabel } from "../lib/core/i18n.js";
 import { expOn } from "../lib/core/session.js";
 import { apiGet, normalizeTool } from "../lib/core/api.js";
 import { endorsementOf, fitsContext, hasContext, listMemberships } from "../lib/core/signals.js";
+import { button } from "../lib/atoms/button.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -65,7 +66,7 @@ export async function viewSearch() {
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="${esc(q)}" />
 				</form>
 				${facetHTML || '<p class="facet__empty">No filters available.</p>'}
-				<a class="btn btn--outline facets__reset" href="#/search">Clear filters</a>
+				${button("Clear filters", { variant: "outline", href: "#/search", cls: "facets__reset" })}
 			</aside>
 			<div class="browse__main">
 				<div class="browse__bar">

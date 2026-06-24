@@ -3,6 +3,7 @@ import { $, $$, esc } from "../lib/core/dom.js";
 import { parseHash } from "../lib/core/routing.js";
 import { signedIn } from "../lib/core/session.js";
 import { isDemoListId } from "../lib/core/store.js";
+import { button } from "../lib/atoms/button.js";
 import { closeAcctMenu } from "../lib/organisms/account.js";
 import { closeQuickView } from "../lib/organisms/quickview.js";
 import { viewHome } from "./home.js";
@@ -78,9 +79,9 @@ export function setActiveNav() {
 export let lastPath = null;
 export let navSeq = 0;
 export const loadingHTML = () => '<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>';
-export const errorHTML = (e) => '<div class="container page errorpage"><h1>Couldn\'t load live data</h1>'
-	+ '<p class="prose">The Toolhub API didn\'t respond (' + esc(String((e && e.message) || e)) + ').</p>'
-	+ '<a class="btn btn--primary" href="#/">Back to home</a></div>';
+export const errorHTML = (e) => `<div class="container page errorpage"><h1>Couldn't load live data</h1>
+	<p class="prose">The Toolhub API didn't respond (${esc(String((e && e.message) || e))}).</p>
+	${button("Back to home", { variant: "primary", href: "#/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
 // the current page stays on screen — fast/cached loads never flash a spinner.
 const SPINNER_DELAY = 250;

@@ -4,8 +4,8 @@ import { countLabel } from "../lib/core/i18n.js";
 import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, SAMPLE_TOOLINFO, crawlerUrlAdd, crawlerUrlDelete, crawlerUrls, demoStore, fromCsv, ingestToolinfo, logActivity, toCsv, toolAnnosMap, toolEditsMap, toolNewMap } from "../lib/core/store.js";
+import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, checkedValue, fArea, fCheck, fInput, fSelect, fieldValue } from "../lib/atoms/form-fields.js";
-import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
@@ -39,9 +39,9 @@ export async function viewToolForm(name) {
 			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis))}
 			<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
-				<button class="btn btn--primary" type="submit">${editing ? "Save changes" : "Submit tool"}</button>
-				${editing && !isNewTool(name) ? '<button class="btn btn--outline le__delete" type="button" data-tf-revert>Revert demo edits</button>' : ""}
-				${editing && isNewTool(name) ? '<button class="btn btn--outline le__delete" type="button" data-tf-delete>Delete submission</button>' : ""}
+				${button(editing ? "Save changes" : "Submit tool", { variant: "primary", type: "submit" })}
+				${editing && !isNewTool(name) ? button("Revert demo edits", { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) : ""}
+				${editing && isNewTool(name) ? button("Delete submission", { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
 			</div>
 		</form>
 	</div>`;
@@ -79,7 +79,7 @@ export async function viewToolForm(name) {
 export function viewAddTools() {
 	function urlRows() {
 		const u = crawlerUrls();
-		return u.length ? u.map((x) => `<li><code class="at__url">${esc(x.url)}</code> <button class="at__rm" type="button" data-url-rm="${esc(x.url)}" aria-label="Remove URL">✕</button></li>`).join("")
+		return u.length ? u.map((x) => `<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"` })}</li>`).join("")
 			: '<li class="le__empty">No URLs registered.</li>';
 	}
 	function subGrid() {
@@ -89,7 +89,7 @@ export function viewAddTools() {
 	const html = `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary" href="#/tools/create">${icon("add")} Submit a tool</a></div>
+			${button("Submit a tool", { variant: "primary", href: "#/tools/create", icon: "add" })}</div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
 		Everything stays in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
 
@@ -98,7 +98,7 @@ export function viewAddTools() {
 		arbitrary URLs (CORS), so here we record the URL and you simulate ingestion below.</p>
 		<form class="le__add" data-url-form>
 			<input class="le__input" id="at-url" type="url" placeholder="https://example.org/toolinfo.json" />
-			<button class="btn btn--outline" type="submit">Register</button>
+			${button("Register", { variant: "outline", type: "submit" })}
 		</form>
 		<ul class="at__urls" data-url-list>${urlRows()}</ul>
 
@@ -106,8 +106,8 @@ export function viewAddTools() {
 		<p class="le__hint">Paste a single tool object or an array (the crawler accepts both).</p>
 		<textarea class="le__input at__json" id="at-json" rows="10" placeholder='{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }'></textarea>
 		<div class="le__actions">
-			<button class="btn btn--primary" type="button" data-ingest>Ingest</button>
-			<button class="btn btn--outline" type="button" data-sample>Load sample</button>
+			${button("Ingest", { variant: "primary", attrs: "data-ingest" })}
+			${button("Load sample", { variant: "outline", attrs: "data-sample" })}
 		</div>
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
@@ -159,8 +159,8 @@ export async function viewAnnotationsEdit(name) {
 			${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES)}
 			${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url" })}
 			<div class="le__actions">
-				<button class="btn btn--primary" type="submit">Save annotations</button>
-				${toolAnnosMap()[name] ? '<button class="btn btn--outline le__delete" type="button" data-an-revert>Revert annotations</button>' : ""}
+				${button("Save annotations", { variant: "primary", type: "submit" })}
+				${toolAnnosMap()[name] ? button("Revert annotations", { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
 			</div>
 		</form>
 	</div>`;

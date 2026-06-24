@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "../lib/core/dom.js";
+import { dirAttrs, esc } from "../lib/core/dom.js";
 import { INDEX } from "../lib/core/api.js";
 import { DEMO_KEYS, DEMO_NS } from "../lib/core/store.js";
 import { completeness, getUserContext, setUserContext } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, fArea, fCheck, fInput, fSelect } from "../lib/atoms/form-fields.js";
 import { ICON_NAMES, icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
@@ -28,6 +29,7 @@ import {
 } from "./_fixtures.js";
 
 const STYLEGUIDE_TOOLS = [FIXTURE_TOOL, FIXTURE_TOOL_DEPRECATED, FIXTURE_TOOL_EXPERIMENTAL];
+const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
 
 const FALLBACK_TOKENS = {
 	colors: [
@@ -126,6 +128,82 @@ function fitControlExample() {
 	</div>`;
 }
 
+function accountButtonExample() {
+	return `<div class="acct">
+		<button class="acct__btn" id="sg-acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="sg-acct-menu">
+			${avatar(STYLEGUIDE_ACCOUNT_NAME, "avatar--sm")}
+			<span class="acct__name">${esc(STYLEGUIDE_ACCOUNT_NAME)}</span>
+			${icon("chevronDown", "acct__caret")}
+		</button>
+	</div>`;
+}
+
+function experimentsToggleExample() {
+	return `<div class="sg-inline-list">
+		<button class="exp-toggle" type="button" role="switch" aria-checked="true">
+			<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
+			<span class="exp-toggle__label">Prospective features on</span>
+		</button>
+		<button class="exp-toggle" type="button" role="switch" aria-checked="false">
+			<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
+			<span class="exp-toggle__label">Prospective features off</span>
+		</button>
+	</div>`;
+}
+
+function quickViewCloseExample() {
+	return `<div class="sg-qv-close-frame">
+		<button class="qv__x" type="button" aria-label="Close quick view">${icon("close")}</button>
+	</div>`;
+}
+
+function listEditorControlsExample() {
+	return `<div class="sg-control-stack">
+		<div class="le__results">
+			<button class="le__result" type="button">${icon("add")} <span>Wiki Loves Monuments map</span></button>
+			<button class="le__result is-in" type="button" disabled>${icon("check")} <span>Commons Pattypan</span></button>
+		</div>
+		<ol class="le__tools">
+			<li data-tn="citation-helper"><span class="le__tn"${dirAttrs("citation-helper")}>citation-helper</span>
+				<span class="le__rowact">
+					${iconButton("chevronUp", "Move up", { size: "sm", attrs: 'data-move="up"' })}
+					${iconButton("chevronDown", "Move down", { size: "sm", attrs: 'data-move="down"' })}
+					${iconButton("close", "Remove from list", { size: "sm", variant: "danger", attrs: "data-rm" })}
+				</span>
+			</li>
+		</ol>
+	</div>`;
+}
+
+function navIconButtonExample() {
+	return `<a class="icon-btn" href="#/search">${icon("search")} Search</a>`;
+}
+
+function relatedToolsExample() {
+	const t = {
+		name: "osm-commons-map",
+		title: "OpenStreetMap Commons Map",
+		maintainer: "Maps team",
+	};
+	const chips = ["maps", "OpenStreetMap", "Commons"].map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+	return `<div class="sg-related-frame">
+		<section class="related" aria-labelledby="sg-related-title">
+			<div class="section-head"><h2 id="sg-related-title">Related tools</h2></div>
+			<p class="related__subtitle">Overlapping function and scope, by shared metadata.</p>
+			<div class="related__list">
+				<article class="related__item" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
+					${avatar(t.title)}
+					<div class="related__body">
+						<div class="related__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+						<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
+						<div class="related__chips">${chips}</div>
+					</div>
+				</article>
+			</div>
+		</section>
+	</div>`;
+}
+
 function section(title, body) {
 	return `<section class="sg-section" aria-labelledby="sg-${esc(title.toLowerCase().replace(/\s+/g, "-"))}">
 		<h2 class="sg-section__title" id="sg-${esc(title.toLowerCase().replace(/\s+/g, "-"))}">${esc(title)}</h2>
@@ -172,6 +250,28 @@ function tokenSection() {
 		</div>`);
 }
 
+function buttonsSection() {
+	return section("Buttons", `
+		<div class="sg-examples sg-examples--buttons">
+			${example("button('Primary', { variant: 'primary' })", "atoms", button("Primary", { variant: "primary" }))}
+			${example("button('Outline', { variant: 'outline' })", "atoms", button("Outline", { variant: "outline" }))}
+			${example("button('Subtle', { variant: 'subtle' })", "atoms", button("Subtle", { variant: "subtle" }))}
+			${example("button('Danger', { variant: 'danger' })", "atoms", button("Danger", { variant: "danger" }))}
+			${example("button('Small', { variant: 'primary', size: 'sm' })", "atoms", button("Small", { variant: "primary", size: "sm" }))}
+			${example("button('Medium', { variant: 'primary', size: 'md' })", "atoms", button("Medium", { variant: "primary", size: "md" }))}
+			${example("button('Large', { variant: 'primary', size: 'lg' })", "atoms", button("Large", { variant: "primary", size: "lg" }))}
+			${example("button('Add tool', { variant: 'primary', icon: 'add' })", "atoms", button("Add tool", { variant: "primary", icon: "add" }))}
+			${example("button('Edit', { variant: 'outline', icon: 'edit' })", "atoms", button("Edit", { variant: "outline", icon: "edit" }))}
+			${example("button('Browse', { variant: 'outline', href: '#/search' })", "atoms", button("Browse", { variant: "outline", href: "#/search" }))}
+			${example("button('Disabled', { variant: 'primary', disabled: true })", "atoms", button("Disabled", { variant: "primary", disabled: true }))}
+			${example("iconButton('chevronUp', 'Move up', { size: 'sm' })", "atoms", iconButton("chevronUp", "Move up", { size: "sm" }))}
+			${example("iconButton('chevronDown', 'Move down', { size: 'sm' })", "atoms", iconButton("chevronDown", "Move down", { size: "sm" }))}
+			${example("iconButton('close', 'Close', { size: 'sm' })", "atoms", iconButton("close", "Close", { size: "sm" }))}
+			${example("iconButton('close', 'Remove', { size: 'sm', variant: 'danger' })", "atoms", iconButton("close", "Remove", { size: "sm", variant: "danger" }))}
+			${example("iconButton('search', 'Search')", "atoms", iconButton("search", "Search"))}
+		</div>`);
+}
+
 function iconsSection() {
 	return section("Icons", `
 		<div class="sg-token-grid">
@@ -180,6 +280,23 @@ function iconsSection() {
 				<span class="sg-token__meta"><code>${esc(name)}</code></span>
 			</div>`).join("")}
 		</div>`);
+}
+
+function formControlsGroup() {
+	return `<div class="sg-group">
+		<h3 class="sg-group__title">Form controls</h3>
+		<p class="sg-group__note">Standalone search, facet, list-editor, and fit-context controls now share one control foundation.</p>
+		<div class="sg-examples sg-examples--controls">
+			${example("input.search__input", "atoms / shared control foundation", '<input class="search__input" id="sg-search-input" type="search" placeholder="Search tools..." autocomplete="off" />')}
+			${example("input.facets__search", "atoms / shared control foundation", '<input class="facets__search" id="sg-facet-search" type="search" placeholder="Search tools..." autocomplete="off" />')}
+			${example("input.le__input", "atoms / shared control foundation", '<input class="le__input" id="sg-list-editor-input" type="text" placeholder="List title" />')}
+			${example("select.hero__context-select", "atoms / shared control foundation", `<select class="hero__context-select" id="sg-context-select">
+				<option>Any wiki</option>
+				<option selected>Wikidata</option>
+				<option>Commons</option>
+			</select>`)}
+		</div>
+	</div>`;
 }
 
 function atomsSection() {
@@ -199,18 +316,13 @@ function atomsSection() {
 			${example("usageBlock(tool)", "atoms", usageBlock(FIXTURE_TOOL))}
 			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(FIXTURE_TOOL)}</div>`, { wide: true })}
 			${example("glanceChips(tool)", "atoms", `<div class="sg-inline-list">${glanceChips(FIXTURE_TOOL)}</div>`, { wide: true })}
-			${example(".btn variants", "atoms", `<div class="sg-inline-list">
-				<button class="btn btn--primary" type="button">Primary</button>
-				<button class="btn btn--outline" type="button">Outline</button>
-				<button class="btn btn--primary btn--lg" type="button">Large</button>
-				<button class="btn btn--outline" type="button" disabled>Disabled</button>
-			</div>`, { wide: true })}
 			${example("fInput / fArea / fCheck / fSelect", "atoms", `<div class="sg-form">
 				${fInput("Tool title", "sg-tool-title", FIXTURE_TOOL.title, { req: true })}
 				${fArea("Description", "sg-tool-description", FIXTURE_TOOL.description, "Shown in search results and detail pages.")}
 				<div class="le__checks">${fCheck("Experimental", "sg-tool-experimental", true)}${fCheck("Deprecated", "sg-tool-deprecated", false)}</div>
 				${fSelect("Tool type", "sg-tool-type", FIXTURE_TOOL.toolType, TOOL_TYPES)}
 			</div>`, { wide: true })}
+			${formControlsGroup()}
 			${example("metaItem(key, value)", "atoms", `<div class="detail__meta">${metaItem("License", FIXTURE_TOOL.license)}${metaItem("Wikis", wikiLabel(FIXTURE_TOOL.forWikis))}</div>`, { wide: true })}
 			${example("linkOut(label, url)", "atoms", linkOut("Repository", FIXTURE_TOOL.repository))}
 		</div>`);
@@ -224,6 +336,11 @@ function moleculesSection() {
 			${example("saveToListControl(name)", "molecules", saveToListControl(FIXTURE_TOOL.name), { wide: true })}
 			${example("renderFacetGroup(group, facets, selected)", "molecules", renderFacetGroup(FIXTURE_FACET_GROUP, FIXTURE_FACETS, FIXTURE_SELECTED_FACETS), { wide: true })}
 			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="Pagination">${renderPager(2, 7)}</nav>`, { wide: true })}
+			${example(".acct__btn", "molecules", accountButtonExample())}
+			${example(".exp-toggle", "organisms", experimentsToggleExample(), { wide: true })}
+			${example(".qv__x", "organisms", quickViewCloseExample())}
+			${example(".le__result / .le__rowact", "molecules", listEditorControlsExample(), { wide: true })}
+			${example(".icon-btn", "organisms", navIconButtonExample())}
 			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="#">${icon("edit")} Editors</a><a class="persona" href="#">${icon("code")} Developers</a><a class="persona" href="#">${icon("book")} Readers</a></div>`, { wide: true })}
 			${example("hero browse-axis toggle (.hero__modes)", "molecules", `<span class="hero__modes"><button class="hero__mode is-active" type="button">made for</button><button class="hero__mode" type="button">to</button></span>`)}
 			${example(".hero__context fit control", "molecules", fitControlExample(), { wide: true })}
@@ -242,6 +359,7 @@ function organismsSection() {
 			${example("Listing completeness", "organisms", listingCompletenessExample())}
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
+			${example("Related tools (similarity)", "organisms", relatedToolsExample(), { wide: true })}
 		</div>`);
 }
 
@@ -374,6 +492,7 @@ export function viewStyleguide() {
 			<h1 class="page__title">Design system</h1>
 			<p class="page__intro">A living reference for Toolhub tokens and component functions, rendered from the same modules used by the application.</p>
 			${tokenSection()}
+			${buttonsSection()}
 			${iconsSection()}
 			${atomsSection()}
 			${moleculesSection()}

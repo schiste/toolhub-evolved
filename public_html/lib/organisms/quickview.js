@@ -6,7 +6,7 @@ import { signedIn } from "../core/session.js";
 import { toolHref } from "../core/routing.js";
 import { toolIcon } from "../atoms/avatar.js";
 import { endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../atoms/badges.js";
-import { icon } from "../atoms/icon.js";
+import { button } from "../atoms/button.js";
 import { glanceChips, keywordTags } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
 
@@ -45,8 +45,8 @@ export function quickViewBody(t) {
 		<div class="toolpage__glance">${glance}</div>
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">
-			${t.url ? `<a class="btn btn--primary" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ${icon("external")}</a>` : ""}
-			<a class="btn btn--outline" href="${toolHref(t.name)}">View full page <span aria-hidden="true">→</span></a>
+			${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener"' }) : ""}
+			${button("View full page", { variant: "outline", href: toolHref(t.name) })}
 			${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}
 		</div>`;
 }

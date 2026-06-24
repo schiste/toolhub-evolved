@@ -2,24 +2,25 @@
 import { esc } from "../core/dom.js";
 import { USER, expOn, signedIn } from "../core/session.js";
 import { avatar } from "../atoms/avatar.js";
+import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
 
 export function renderAccount() {
 	const el = document.getElementById("account");
 	if (!el) return;
 	if (!expOn()) { // honest read-only: real sign-in needs OAuth we don't have
-		el.innerHTML = `<a class="btn btn--outline" href="#/login">Log in</a>`;
+		el.innerHTML = button("Log in", { variant: "outline", href: "#/login" });
 		return;
 	}
 	if (!signedIn()) { // experiments on but logged out → offer the demo sign-in
-		el.innerHTML = `<button class="btn btn--outline" type="button" data-login>Sign in <span class="mock-tag">demo</span></button>`;
+		el.innerHTML = button("Sign in demo", { variant: "outline", attrs: "data-login" });
 		return;
 	}
 	el.innerHTML = `
 		<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">
 			${avatar(USER.name, "avatar--sm")}
 			<span class="acct__name">${esc(USER.name)}</span>
-			<span class="acct__caret" aria-hidden="true">▾</span>
+			${icon("chevronDown", "acct__caret")}
 		</button>
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong> <span class="mock-tag">demo</span></div>

@@ -5,6 +5,7 @@ import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { endorsementOf, fitsContext, getUserContext, hasContext, listMemberships, setUserContext } from "../lib/core/signals.js";
 import { listHref, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
+import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard } from "../lib/organisms/list-card.js";
@@ -76,7 +77,7 @@ export async function viewHome() {
 		<form class="search" role="search" data-home-search>
 			<label for="home-q" class="skip-label">Search tools</label>
 			<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${esc(countLabel(total, "tool", "tools"))}…" autocomplete="off" />
-			<button class="btn btn--primary search__btn" type="submit">Search</button>
+			${button("Search", { variant: "primary", type: "submit", cls: "search__btn" })}
 		</form>
 		<div class="hero__explore">
 			<p class="hero__explore-prompt">I want to see tools
@@ -109,7 +110,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent">${recentHtml}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p><a class="btn btn--outline" href="https://toolhub.wikimedia.org/tools/create" target="_blank" rel="noopener">Submit a tool</a></div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/tools/create", attrs: 'target="_blank" rel="noopener"' })}</div>
 		</aside>
 	</div>`;
 	return {

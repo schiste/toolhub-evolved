@@ -1,31 +1,34 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { timeTag, updatedTimeTag } from "../lib/core/i18n.js";
-import { INDEX, apiGet, getTool, isNewTool, normalizeTool } from "../lib/core/api.js";
+import { INDEX, apiGet, getTool, isNewTool } from "../lib/core/api.js";
 import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
+import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
 import { demoRevisionsFor } from "../lib/core/store.js";
 import { toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip, freshnessNote, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
 import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
-import { grid } from "../lib/organisms/grid.js";
-import { toolCard } from "../lib/organisms/tool-card.js";
 import { prosePage, viewNotFound } from "./static.js";
 
-export const RELATED_LIMIT = 4;
-// REAL — related tools derived from shared keywords (no missing data).
-export async function relatedTools(t) {
-	const kw = (t.keywords || [])[0];
-	if (!kw) return [];
-	try {
-		const data = await apiGet("/search/tools/", { keywords__term: kw, page_size: "5" });
-		return (data.results || []).map(normalizeTool).filter((o) => o.name !== t.name).slice(0, RELATED_LIMIT);
-	} catch (e) { return []; }
+function relatedToolRow(item) {
+	const t = item.tool;
+	const chips = (item.shared || []).map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+	return `
+		<article class="related__item" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
+			${avatar(t.title)}
+			<div class="related__body">
+				<div class="related__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+				<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
+				${chips ? `<div class="related__chips">${chips}</div>` : ""}
+			</div>
+		</article>`;
 }
 
 export async function viewTool(name) {
@@ -52,10 +55,19 @@ export async function viewTool(name) {
 	const membershipMap = await listMemberships();
 	t.endorsement = endorsementOf(t.name, membershipMap);
 
-	const related = await relatedTools(t);
-	related.forEach((x) => { x.endorsement = endorsementOf(x.name, membershipMap); });
+	let related = [];
+	try {
+		const simIndex = await getSimilarityIndex();
+		related = nearestNeighbors(t, simIndex, 6);
+	} catch (e) {
+		related = [];
+	}
 	const relatedHtml = related.length
-		? `<h2 class="toolpage__h2">Related tools</h2>${grid("grid-tools", related, (x) => toolCard(x))}`
+		? `<section class="related" aria-labelledby="related-title">
+				<div class="section-head"><h2 id="related-title">Related tools</h2></div>
+				<p class="related__subtitle">Overlapping function and scope, by shared metadata.</p>
+				<div class="related__list">${related.map(relatedToolRow).join("")}</div>
+			</section>`
 		: "";
 
 	// At-a-glance chips (real metadata).
@@ -90,7 +102,7 @@ export async function viewTool(name) {
 				</div>
 			</div>
 			<div class="toolpage__cta">
-				${t.url ? `<a class="btn btn--primary btn--lg" href="${safeUrl(t.url)}" target="_blank" rel="noopener">Open tool ${icon("external")}</a>` : ""}
+				${t.url ? button("Open tool", { variant: "primary", size: "lg", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener"' }) : ""}
 				${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
 				<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
 				${signedIn() ? saveToListControl(t.name) : ""}
@@ -123,7 +135,7 @@ export async function viewTool(name) {
 				<div class="experimental reviews">
 					<h2 class="toolpage__h2">Reviews <span class="exp-badge">Experimental</span></h2>
 					${reviewsBlock(t)}
-					<button class="btn btn--outline" type="button" disabled>Write a review</button>
+					${button("Write a review", { variant: "outline", disabled: true })}
 				</div>
 
 				${relatedHtml}

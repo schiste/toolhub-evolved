@@ -103,6 +103,11 @@
 	/* ---- Focus ------------------------------------------------------------- */
 	--focus-ring: 0 0 0 3px var(--color-interactive-subtle);
 
+	/* ---- Controls ---------------------------------------------------------- */
+	--btn-h-sm: 28px;
+	--btn-h-md: 34px;
+	--btn-h-lg: 42px;
+
 	/* ---- 3. COMPAT ALIASES (legacy names → semantic). Prefer layer 2 above. */
 	--white: var(--color-surface);
 	--base10: var(--color-text);

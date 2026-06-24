@@ -6,6 +6,7 @@ import { endorsementOf, fitsContext, hasContext, listMemberships } from "../lib/
 import { signedIn } from "../lib/core/session.js";
 import { listHref } from "../lib/core/routing.js";
 import { demoListDelete, demoListGet, demoListNew, demoListSave, demoLists, favNames, isDemoListId } from "../lib/core/store.js";
+import { button, iconButton } from "../lib/atoms/button.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
@@ -30,7 +31,7 @@ export async function viewLists() {
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Curated lists</h1>
-			${signedIn() ? `<a class="btn btn--primary" href="#/lists/create">${icon("add")} Create a list</a>` : ""}</div>
+			${signedIn() ? button("Create a list", { variant: "primary", href: "#/lists/create", icon: "add" }) : ""}</div>
 		<p class="page__intro">Community-published collections of tools for specific tasks and communities.</p>
 		${all.length ? grid("grid-lists", all, listCard) : '<p class="empty">No lists found.</p>'}
 	</div>`;
@@ -45,7 +46,7 @@ export async function viewList(id) {
 		tools = await getToolsByName(d.tools);
 		l = { title: d.title || "Untitled list", description: d.description || "", toolCount: tools.length };
 		demoTag = ' <span class="exp-badge">Demo list</span>';
-		if (signedIn()) editBtn = `<a class="btn btn--outline" href="${listHref(id)}/edit">${icon("edit")} Edit list</a>`;
+		if (signedIn()) editBtn = button("Edit list", { variant: "outline", href: `${listHref(id)}/edit`, icon: "edit" });
 	} else {
 		try { l = normalizeList(await apiGet("/lists/" + encodeURIComponent(id) + "/")); tools = l.tools; }
 		catch (e) { return viewNotFound(); }
@@ -68,7 +69,7 @@ export function viewMyLists() {
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary" href="#/lists/create">${icon("add")} Create a list</a></div>
+			${button("Create a list", { variant: "primary", href: "#/lists/create", icon: "add" })}</div>
 		<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
 		<a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
 		${cards.length ? grid("grid-lists", cards, listCard) : '<p class="empty">No lists yet. <a href="#/lists/create">Create your first list</a>.</p>'}
@@ -109,12 +110,12 @@ export function viewListEdit(id) {
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
 				<input class="le__input" id="le-q" type="search" placeholder="Search tools to add…" autocomplete="off" />
-				<button class="btn btn--outline" type="button" data-le-search>Search</button>
+				${button("Search", { variant: "outline", attrs: "data-le-search" })}
 			</div>
 			<div class="le__results" data-le-results></div>
 			<div class="le__actions">
-				<button class="btn btn--primary" type="submit">${editing ? "Save changes" : "Create list"}</button>
-				${editing ? '<button class="btn btn--outline le__delete" type="button" data-le-delete>Delete list</button>' : ""}
+				${button(editing ? "Save changes" : "Create list", { variant: "primary", type: "submit" })}
+				${editing ? button("Delete list", { variant: "danger", cls: "le__delete", attrs: "data-le-delete" }) : ""}
 			</div>
 		</form>
 	</div>`;
@@ -125,9 +126,9 @@ export function viewListEdit(id) {
 			toolsEl.innerHTML = work.tools.length ? work.tools.map((n, i) => `
 				<li data-tn="${esc(n)}"><span class="le__tn"${dirAttrs(n)}>${esc(n)}</span>
 					<span class="le__rowact">
-						<button type="button" data-move="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">▲</button>
-						<button type="button" data-move="down" ${i === work.tools.length - 1 ? "disabled" : ""} aria-label="Move down">▼</button>
-						<button type="button" data-rm aria-label="Remove from list">✕</button>
+						${iconButton("chevronUp", "Move up", { size: "sm", attrs: 'data-move="up"', disabled: i === 0 })}
+						${iconButton("chevronDown", "Move down", { size: "sm", attrs: 'data-move="down"', disabled: i === work.tools.length - 1 })}
+						${iconButton("close", "Remove from list", { size: "sm", variant: "danger", attrs: "data-rm" })}
 					</span></li>`).join("") : '<li class="le__empty">No tools yet — search below to add some.</li>';
 		}
 		renderTools();

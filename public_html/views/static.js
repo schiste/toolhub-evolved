@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc, safeUrl } from "../lib/core/dom.js";
 import { apiGet } from "../lib/core/api.js";
+import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 
 /* ---- Static prose pages (T9) ------------------------------------------- */
@@ -231,7 +232,7 @@ export function signInPage(title, lead) {
 			<p>${lead}</p>
 			<p>Toolhub uses your existing Wikimedia account via OAuth — no new account or
 			password is needed.</p>
-			<p><a class="btn btn--primary" href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener">Continue on toolhub.wikimedia.org ${icon("external")}</a></p>
+			<p>${button("Continue on toolhub.wikimedia.org", { variant: "primary", href: "https://toolhub.wikimedia.org/", icon: "external", attrs: 'target="_blank" rel="noopener"' })}</p>
 			<p class="signin-note">In this prototype these actions are read-only: they need an
 			authenticated session and the live back-end. See
 			<a href="#/contribute">Help maintain Toolhub</a> to contribute.</p>
@@ -242,6 +243,6 @@ export function viewNotFound() {
 		<div class="container page errorpage">
 			<h1>Page not found</h1>
 			<p class="prose">We couldn't find that page. It may have moved, or the link may be incomplete.</p>
-			<a class="btn btn--primary" href="#/">Go to the home page</a>
+			${button("Go to the home page", { variant: "primary", href: "#/" })}
 		</div>` };
 }
