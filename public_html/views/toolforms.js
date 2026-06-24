@@ -28,15 +28,15 @@ export async function viewToolForm(name) {
 		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
 		<form data-tool-form>
 			<h2 class="le__h2">Core information</h2>
-			${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120 })}
-			${fInput("Title", "tf-title", cur.title, { req: true })}
-			${fArea("Description", "tf-desc", cur.description)}
-			${fInput("URL", "tf-url", cur.url, { req: true, type: "url", ph: "https://…" })}
-			${fInput("Source code repository", "tf-repo", cur.repository, { type: "url" })}
-			${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later" })}
-			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES)}
-			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords))}
-			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis))}
+			${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: "Stable id used in Toolhub URLs." })}
+			${fInput("Title", "tf-title", cur.title, { req: true, hint: "Short display name shown in search results." })}
+			${fArea("Description", "tf-desc", cur.description, "One or two sentences about what the tool does.")}
+			${fInput("URL", "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: "Primary homepage, documentation, or launch URL." })}
+			${fInput("Source code repository", "tf-repo", cur.repository, { type: "url", hint: "Optional public repository URL." })}
+			${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: "Use an SPDX identifier when known." })}
+			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES, { hint: "Choose the closest match." })}
+			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords), { hint: "Terms people might search for." })}
+			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis), { hint: "Use wiki database names, or * for all wikis." })}
 			<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? "Save changes" : "Submit tool", { variant: "primary", type: "submit" })}
@@ -94,17 +94,14 @@ export function viewAddTools() {
 		Everything stays in this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
-		<p class="le__hint">In production a server crawler re-reads these hourly. The browser can't fetch
-		arbitrary URLs (CORS), so here we record the URL and you simulate ingestion below.</p>
 		<form class="le__add" data-url-form>
-			<input class="le__input" id="at-url" type="url" placeholder="https://example.org/toolinfo.json" />
+			${fInput("toolinfo.json URL", "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: "Public URL the crawler should re-read." })}
 			${button("Register", { variant: "outline", type: "submit" })}
 		</form>
 		<ul class="at__urls" data-url-list>${urlRows()}</ul>
 
 		<h2 class="le__h2">Ingest toolinfo</h2>
-		<p class="le__hint">Paste a single tool object or an array (the crawler accepts both).</p>
-		<textarea class="le__input at__json" id="at-json" rows="10" placeholder='{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }'></textarea>
+		${fArea("Toolinfo JSON", "at-json", "", "Paste one tool object or an array.", { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
 		<div class="le__actions">
 			${button("Ingest", { variant: "primary", attrs: "data-ingest" })}
 			${button("Load sample", { variant: "outline", attrs: "data-sample" })}
@@ -154,10 +151,10 @@ export async function viewAnnotationsEdit(name) {
 		this browser — see <a href="#/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
-			${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences))}
-			${fInput("Tasks (comma-separated)", "an-tasks", toCsv(cur.tasks))}
-			${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES)}
-			${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url" })}
+			${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences), { hint: "User groups this tool serves." })}
+			${fInput("Tasks (comma-separated)", "an-tasks", toCsv(cur.tasks), { hint: "Workflows this tool supports." })}
+			${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES, { hint: "Community classification for discovery." })}
+			${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url", hint: "Optional icon hosted on Commons." })}
 			<div class="le__actions">
 				${button("Save annotations", { variant: "primary", type: "submit" })}
 				${toolAnnosMap()[name] ? button("Revert annotations", { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
