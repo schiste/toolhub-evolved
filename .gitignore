@@ -11,3 +11,4 @@
 __pycache__/
 proxy/venv/
 *.pyc
+.chau7/
