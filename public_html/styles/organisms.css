@@ -33,6 +33,13 @@
 .nav__links a { color: var(--color-text-secondary); font-weight: 500; }
 .nav__links a.is-active { color: var(--color-progressive); font-weight: 700; }
 .nav__actions { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-3); }
+.theme-toggle { display: inline-flex; height: var(--ctl-h-md); border: 1px solid var(--color-border); border-radius: var(--radius-sm); overflow: hidden; }
+.theme-toggle__opt { display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h-md); height: 100%; padding: var(--space-0); border: 0; background: var(--color-surface); color: var(--color-text-muted); cursor: pointer; transition: background .15s ease, color .15s ease; }
+.theme-toggle__opt + .theme-toggle__opt { border-inline-start: 1px solid var(--color-border); }
+.theme-toggle__opt:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.theme-toggle__opt.is-active { background: var(--color-progressive); color: var(--color-surface); }
+.theme-toggle__opt:focus-visible { outline: 2px solid var(--color-progressive); outline-offset: -2px; }
+.theme-toggle__opt .icon { width: 1.05em; height: 1.05em; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: var(--btn-h-md); padding: var(--space-0) var(--space-2); background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--color-text-secondary); font-size: var(--fs-caption); font-weight: 600; line-height: 1; cursor: pointer; text-decoration: none; transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease; }
 .icon-btn:hover { background: var(--color-surface-muted); color: var(--color-progressive); text-decoration: none; }
 .icon-btn:focus-visible { outline: 2px solid var(--color-progressive); outline-offset: 1px; box-shadow: none; }
@@ -275,8 +282,9 @@
 /* Browse / search layout. */
 .browse { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: var(--space-5); }
 .facets { align-self: start; position: sticky; top: var(--space-3); }
-.browse__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
+.browse__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
 .browse__count { color: var(--color-text-secondary); font-weight: 600; }
+.browse__controls { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
 /* Tool detail page. */
 .toolpage__head { display: flex; gap: var(--space-4); align-items: flex-start; margin: var(--space-2) var(--space-0) var(--space-4); }

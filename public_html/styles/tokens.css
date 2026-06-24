@@ -135,3 +135,50 @@
 	--yellow30: var(--color-warning-text);
 	--radius: var(--radius-md);
 }
+
+/* Dark theme — applied when the resolved theme is dark. theme.js sets
+   <html data-theme="light|dark"> from the user's choice ("system" follows the OS
+   preference live); an inline script in index.html sets it before first paint. */
+:root[data-theme="dark"] {
+	/* Surfaces */
+	--color-surface: #111418;
+	--color-surface-muted: #1d2422;
+	--color-surface-pattern: #2c332f;
+	--color-row-hover: rgba(255,255,255,.06);
+	--color-overlay-modal: rgba(0,0,0,.72);
+	--color-badge-neutral: rgba(255,255,255,.16);
+
+	/* Borders */
+	--color-border: #3b443f;
+	--color-border-hover: #60789e;
+	--color-border-accent: #345f90;
+
+	/* Text */
+	--color-text: #f4f4f4;
+	--color-text-secondary: #c8ccd3;
+	--color-text-muted: #a8afb8;
+
+	/* Progressive / interactive */
+	--color-progressive: #7ab7f2;
+	--color-progressive-hover: #a7d0ff;
+	--color-progressive-subtle: #172d46;
+	--color-interactive-subtle: #2b527e;
+	--color-hero-tint: #142821;
+	--color-favorite: #f0c66a;
+
+	/* Status */
+	--color-success: #83d6a5;
+	--color-success-subtle: #153524;
+	--color-destructive: #ff9b95;
+	--color-destructive-subtle: #3f1d1f;
+	--color-warning: #f0bc00;
+	--color-warning-subtle: #3b2a14;
+	--color-warning-text: #ffd27a;
+
+	/* Elevation */
+	--shadow: 0 1px 3px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.35);
+	--shadow-hover: 0 8px 24px rgba(0,0,0,.45);
+	--shadow-popover: 0 8px 28px rgba(0,0,0,.55);
+	--shadow-modal: 0 24px 72px rgba(0,0,0,.65);
+	--shadow-sm: 0 1px 2px rgba(0,0,0,.55);
+}

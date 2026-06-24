@@ -98,8 +98,10 @@
 	box-shadow: none;
 }
 
-.btn:active:not(:disabled):not([aria-disabled="true"]) {
-	transform: translateY(1px);
+@media (hover: hover) and (pointer: fine) {
+	.btn:active:not(:disabled):not([aria-disabled="true"]) {
+		transform: translateY(1px);
+	}
 }
 
 .btn:disabled,

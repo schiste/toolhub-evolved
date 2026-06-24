@@ -2,6 +2,7 @@
 import { $, $$ } from "./lib/core/dom.js";
 import { applyLocaleAttrs } from "./lib/core/i18n.js";
 import { EXP_KEY, applyExp, expOn, setAuth, setAuthRender } from "./lib/core/session.js";
+import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
@@ -12,6 +13,27 @@ import { render } from "./views/router.js";
 setAuthRender(render);
 applyLocaleAttrs();
 applyExp(localStorage.getItem(EXP_KEY) === "on");
+
+/* Color theme: Light/Dark toggle. The active option reflects the RESOLVED theme
+   (<html data-theme>), so it shows the right state even before an explicit choice
+   is made (System is the implicit default only while nothing is stored). */
+initTheme();
+const THEME_OPTS = [["light", "Light theme", "sun"], ["dark", "Dark theme", "moon"]];
+function renderThemeToggle() {
+	const el = $("#theme-toggle"); if (!el) return;
+	const active = document.documentElement.getAttribute("data-theme");
+	el.innerHTML = THEME_OPTS.map(([val, label, ic]) =>
+		`<button type="button" class="theme-toggle__opt${val === active ? " is-active" : ""}" role="radio" aria-checked="${val === active}" data-theme-choice="${val}" title="${label}" aria-label="${label}">${icon(ic)}</button>`).join("");
+}
+renderThemeToggle();
+const themeToggle = $("#theme-toggle");
+if (themeToggle) themeToggle.addEventListener("click", (e) => {
+	const btn = e.target.closest("[data-theme-choice]"); if (!btn) return;
+	setThemeChoice(btn.getAttribute("data-theme-choice"));
+	renderThemeToggle();
+});
+// While no explicit choice is stored, keep the active highlight in sync with the OS.
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderThemeToggle);
 
 /* Skip link focuses the view without hijacking the route. */
 const skip = $(".skip");

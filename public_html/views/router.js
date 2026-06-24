@@ -60,24 +60,32 @@ export function dispatch() {
 	if (seg[0] === "lists" && seg[1] === "create") return requireSignIn(() => viewListEdit(null), "Create a list", "Create a new list to group and share useful tools.");
 	if (seg[0] === "lists" && seg[1]) {
 		if (seg[2] === "edit") return requireSignIn(() => isDemoListId(seg[1]) ? viewListEdit(decodeURIComponent(seg[1])) : signInPage("Edit list", "Edit this list's title, description and tools."), "Edit list", "Edit this list's title, description and tools.");
-		if (seg[2] === "history") return prosePage("List history", "<p>Revision history for this list is available on the <a href=\"https://toolhub.wikimedia.org/\" target=\"_blank\" rel=\"noopener\">live site</a>.</p>");
+		if (seg[2] === "history") return prosePage("List history", "<p>Revision history for this list is available on the <a href=\"https://toolhub.wikimedia.org/\" target=\"_blank\" rel=\"noopener nofollow\">live site</a>.</p>");
 		return viewList(decodeURIComponent(seg[1]));
 	}
 	if (ROUTES[seg[0]]) return ROUTES[seg[0]]();
 	if (STATIC[seg[0]]) return viewStatic(seg[0]);
 	return viewNotFound();
 }
+function navHrefMatches(pathHash, href) {
+	if (href === "#/search") return pathHash === "#/search" || pathHash.startsWith("#/search/");
+	if (href === "#/lists") return pathHash === "#/lists" || pathHash.startsWith("#/lists/");
+	if (href === "#/graph") return pathHash === "#/graph" || pathHash.startsWith("#/graph/");
+	return href === pathHash;
+}
 export function setActiveNav() {
 	const h = "#" + (parseHash().path);
-	let currentSet = false;
-	$$("#nav-links a").forEach((a) => {
-		const href = a.getAttribute("href");
-		const matches = href === h || (h.startsWith("#/search") && href === "#/search") || (h.startsWith("#/lists") && href === "#/lists");
-		const active = matches && !currentSet;
-		if (active) currentSet = true;
-		a.classList.toggle("is-active", active);
-		if (active) a.setAttribute("aria-current", "page");
-		else a.removeAttribute("aria-current");
+	$$("#nav-links, #nav-mobile").forEach((nav) => {
+		let currentSet = false;
+		$$("a", nav).forEach((a) => {
+			const href = a.getAttribute("href");
+			const matches = navHrefMatches(h, href);
+			const active = matches && !currentSet;
+			if (active) currentSet = true;
+			a.classList.toggle("is-active", active);
+			if (active) a.setAttribute("aria-current", "page");
+			else a.removeAttribute("aria-current");
+		});
 	});
 }
 export let lastPath = null;
