@@ -109,9 +109,17 @@
 	--focus-ring: 0 0 0 3px var(--color-interactive-subtle);
 
 	/* ---- Controls ---------------------------------------------------------- */
-	--btn-h-sm: 28px;
-	--btn-h-md: 34px;
-	--btn-h-lg: 42px;
+	--ctl-h-sm: 28px;
+	--ctl-h-md: 34px;
+	--ctl-h-lg: 42px;
+	--btn-h-sm: var(--ctl-h-sm);
+	--btn-h-md: var(--ctl-h-md);
+	--btn-h-lg: var(--ctl-h-lg);
+
+	/* ---- Avatars ----------------------------------------------------------- */
+	--avatar-sm: 28px;
+	--avatar-md: 40px;
+	--avatar-lg: 64px;
 
 	/* ---- 3. COMPAT ALIASES (legacy names → semantic). Prefer layer 2 above. */
 	--white: var(--color-surface);

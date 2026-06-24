@@ -38,8 +38,8 @@
 .dot--red { background: var(--color-destructive); }
 
 .avatar {
-	width: 48px;
-	height: 48px;
+	width: var(--avatar-md);
+	height: var(--avatar-md);
 	border-radius: var(--radius-md);
 	flex: 0 0 auto;
 	display: flex;
@@ -47,12 +47,12 @@
 	justify-content: center;
 	color: var(--color-surface);
 	font-weight: 700;
-	font-size: var(--fs-subtitle);
+	font-size: var(--fs-body);
 }
 
 .avatar--sm {
-	width: 26px;
-	height: 26px;
+	width: var(--avatar-sm);
+	height: var(--avatar-sm);
 	font-size: var(--fs-caption);
 	border-radius: 50%;
 }
@@ -63,9 +63,9 @@
 }
 
 .avatar--lg {
-	width: 72px;
-	height: 72px;
-	font-size: 30px;
+	width: var(--avatar-lg);
+	height: var(--avatar-lg);
+	font-size: var(--fs-headline);
 	border-radius: var(--radius-lg);
 }
 
@@ -191,49 +191,59 @@
 	height: 1.1em;
 }
 
-.search__input {
-	flex: 1;
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-sm);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font: inherit;
-	font-size: var(--fs-body);
-	padding: var(--space-2) var(--space-3);
-	transition: border-color .15s ease, background .15s ease, color .15s ease;
-}
-
-.facets__search {
-	width: 100%;
-	margin-bottom: var(--space-4);
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-sm);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font: inherit;
-	padding: var(--space-2) var(--space-3);
-	transition: border-color .15s ease, background .15s ease, color .15s ease;
-}
-
+.search__input,
+.facets__search,
+.le__input,
+.hero__context-select,
 .sort select {
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-sm);
 	background: var(--color-surface);
 	color: var(--color-text);
 	font: inherit;
-	padding: var(--space-2);
 	transition: border-color .15s ease, background .15s ease, color .15s ease;
 }
 
-.le__input,
-.hero__context-select {
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-sm);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font: inherit;
+.search__input,
+.facets__search,
+input.le__input,
+select.le__input,
+.hero__context-select,
+.sort select {
+	height: var(--ctl-h-md);
+	padding-block: 0;
+	padding-inline: var(--space-3);
+	line-height: 1;
+	box-sizing: border-box;
+}
+
+select.le__input,
+.hero__context-select,
+.sort select {
+	padding-inline-end: var(--space-4);
+}
+
+textarea.le__input {
+	min-height: var(--ctl-h-lg);
 	padding: var(--space-2) var(--space-3);
-	transition: border-color .15s ease, background .15s ease, color .15s ease;
+	line-height: normal;
+	box-sizing: border-box;
+}
+
+.sort {
+	display: inline-flex;
+	align-items: center;
+	height: var(--ctl-h-md);
+}
+
+.search__input {
+	flex: 1;
+	font-size: var(--fs-body);
+}
+
+.facets__search {
+	width: 100%;
+	margin-bottom: var(--space-4);
 }
 
 :is(.search__input, .facets__search, .le__input, .hero__context-select, .sort select):focus-visible {
