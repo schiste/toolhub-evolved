@@ -181,7 +181,7 @@ Appendix A as the contract each simulation imitates.
 
 | Feature | What the user does (flag on) | Overlay on live data | Needs in production (why it's Lane B) |
 | --- | --- | --- | --- |
-| **Mock identity** | Explicit "Sign in" identity picker (default *Schiste*) + "Log out" | session delta in `demoOverlay`; real `/api/users/` data still backs Members | Real Wikimedia OAuth + server session |
+| **Mock identity** | Explicit "Sign in" identity picker (default *Ada Lovelace*) + "Log out" | session delta in `demoOverlay`; real `/api/users/` data still backs Members | Real Wikimedia OAuth + server session |
 | **Favorites** | Save/unsave on cards, quick-view, detail; `#/favorites` list | favorited **names** in `demoOverlay`; tool data fetched live and merged | `POST/DELETE /api/user/favorites/` |
 | **Lists CRUD** | `#/my-lists`, `#/lists/create`, `#/lists/:id/edit`, delete; reorder tools | demo lists reference real tool names; shown alongside live `/api/lists/` | `POST/PUT/DELETE /api/lists/` |
 | **Tool submit / edit** | `#/tools/create`, `#/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
