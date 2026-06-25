@@ -108,6 +108,7 @@ export const STATIC = {
 		own tools on top of the catalog.</p>
 		<ul>
 			<li>Browse the interactive documentation at ${ext("https://toolhub.wikimedia.org/api-docs", "toolhub.wikimedia.org/api-docs")}.</li>
+			<li>Use this prototype's ${"<a href=\"/api-docs\">API documentation page</a>"} for read-only examples and schema pointers.</li>
 			<li>The OpenAPI schema and endpoints live under ${ext("https://toolhub.wikimedia.org/api/", "/api/")}.</li>
 			<li>Read access is anonymous; creating or editing records uses your Wikimedia
 			OAuth identity. For example, <code>POST /api/tools/</code> adds a tool.</li>
@@ -202,6 +203,7 @@ export function viewContribute() {
 		<h2 class="contribute__h2">Translate &amp; document</h2>
 		<div class="linkgrid">
 			${linkCard(icon("language"), "Translate Toolhub", "Localise the interface into your language on translatewiki.net.", "https://translatewiki.net/wiki/Translating:Toolhub")}
+			${linkCard(icon("code"), "Developer API guide", "Inspect live endpoints, schema links, and integration examples.", "/api-docs", true)}
 			${linkCard(icon("code"), "The toolinfo standard", "Learn the schema that describes a tool, and the API.", "https://toolhub.wikimedia.org/api-docs")}
 			${linkCard(icon("edit"), "Add or improve a tool listing", "List your own tool, or enrich an existing record.", "/help", true)}
 		</div>
@@ -229,14 +231,24 @@ export async function viewApiDocs() {
 				${proxyCard(icon("tools"), "Code generation input", "Use /api/schema/ with OpenAPI Generator, Swagger Codegen, or your language's SDK tooling.", "/api/schema/")}
 				${proxyCard(icon("globe"), "API root", "Browse the proxied endpoint index used by this prototype.", "/api/")}
 			</div>
+			<h2 class="contribute__h2">Schema for code generation</h2>
+			<div class="prose">
+				<p><code>GET /api/schema/</code> returns Toolhub's OpenAPI document. Use the live
+				<code>https://toolhub.wikimedia.org/api/schema/</code> URL when generating a
+				production client, or this prototype's proxied <code>/api/schema/</code> when
+				you want to inspect the same document without leaving the demo.</p>
+				<pre><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
+			</div>
 			<h2 class="contribute__h2">Read-only boundary</h2>
-			<p class="page__intro">The proxy exposes live Toolhub responses for browsing and examples. It does not sign you in, forward OAuth credentials, or write changes back to Toolhub.</p>
+			<p class="page__intro">The proxy exposes live Toolhub responses for browsing and examples. Anonymous <code>GET</code> requests work here. Authenticated writes, OAuth, permission checks, crawler side effects, and validation errors belong to production Toolhub.</p>
 			<h2 class="contribute__h2">Small endpoint examples</h2>
 			<ul class="page__intro">
 				<li><strong>Search tools</strong><br><code>GET /api/search/tools/?q=wikidata&amp;page_size=5</code></li>
 				<li><strong>Read one tool</strong><br><code>GET /api/tools/{name}/</code></li>
 				<li><strong>Featured lists</strong><br><code>GET /api/lists/?featured=true&amp;page_size=6</code></li>
 				<li><strong>Recent changes</strong><br><code>GET /api/recent/?page_size=10</code></li>
+				<li><strong>Crawler runs</strong><br><code>GET /api/crawler/runs/?page_size=5</code></li>
+				<li><strong>Audit log</strong><br><code>GET /api/auditlogs/?page_size=5</code></li>
 			</ul>
 			<h2 class="contribute__h2">Live proxy endpoints</h2>
 			<div class="linkgrid">${endpointCards || '<p class="empty">The live endpoint index is unavailable.</p>'}</div>
