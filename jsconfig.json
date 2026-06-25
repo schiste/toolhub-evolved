@@ -1,0 +1,16 @@
+{
+	"compilerOptions": {
+		"checkJs": true,
+		"noEmit": true,
+		"module": "esnext",
+		"target": "es2022",
+		"moduleResolution": "bundler",
+		"strict": false,
+		"allowJs": true,
+		"types": [],
+		"lib": ["es2022", "dom", "dom.iterable"],
+		"skipLibCheck": true
+	},
+	"include": ["public_html/lib/core/**/*.js"],
+	"exclude": ["node_modules", ".quality", "playwright-report", "test-results"]
+}

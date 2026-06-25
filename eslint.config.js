@@ -4,6 +4,68 @@ import globals from "globals";
 import importPlugin from "eslint-plugin-import";
 import sonarjs from "eslint-plugin-sonarjs";
 import unicorn from "eslint-plugin-unicorn";
+import headers from "eslint-plugin-headers";
+
+// ---- Architecture boundaries (replaces the bespoke quality.mjs gate) --------
+// Network + persistent storage are browser globals, so they're enforced with
+// no-restricted-globals (banned by default, re-allowed per module via ordered
+// override blocks). DOM injection is matched structurally with no-restricted-syntax.
+const NETWORK_GLOBALS = [
+	{ name: "fetch", message: "Network access is only allowed in lib/core/api.js; call apiGet() instead." },
+	{ name: "XMLHttpRequest", message: "Network access is only allowed in lib/core/api.js; call apiGet() instead." }
+];
+const STORAGE_GLOBALS = [
+	{ name: "localStorage", message: "Persistent storage belongs in core (store/session/theme/i18n/signals)." },
+	{ name: "sessionStorage", message: "Persistent storage belongs in core (store/session/theme/i18n/signals)." }
+];
+const DOM_INJECTION_SYNTAX = [
+	{
+		selector: "AssignmentExpression[left.property.name='innerHTML']",
+		message: "core/atoms must be DOM-free; return HTML strings for a molecule/organism/view to render."
+	},
+	{
+		selector: "AssignmentExpression[left.property.name='outerHTML']",
+		message: "core/atoms must be DOM-free; return HTML strings to render."
+	},
+	{ selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: "core/atoms must be DOM-free." },
+	{ selector: "CallExpression[callee.property.name='appendChild']", message: "core/atoms must be DOM-free." },
+	{ selector: "CallExpression[callee.property.name='replaceChildren']", message: "core/atoms must be DOM-free." },
+	{
+		selector: "CallExpression[callee.object.name='document'][callee.property.name='createElement']",
+		message: "core/atoms must be DOM-free."
+	},
+	{
+		selector: "MemberExpression[object.name='document'][property.name='body']",
+		message: "core/atoms must not touch document.body."
+	}
+];
+// Modules that may legitimately use persistent storage.
+const STORAGE_CORE = [
+	"public_html/lib/core/store.js",
+	"public_html/lib/core/session.js",
+	"public_html/lib/core/theme.js",
+	"public_html/lib/core/i18n.js",
+	"public_html/lib/core/signals.js"
+];
+// Atomic-Design layering: a layer may import equal/lower, never higher.
+const LAYER_ZONES = [
+	{
+		target: "./public_html/lib/core",
+		from: [
+			"./public_html/lib/atoms",
+			"./public_html/lib/molecules",
+			"./public_html/lib/organisms",
+			"./public_html/views"
+		]
+	},
+	{
+		target: "./public_html/lib/atoms",
+		from: ["./public_html/lib/molecules", "./public_html/lib/organisms", "./public_html/views"]
+	},
+	{ target: "./public_html/lib/molecules", from: ["./public_html/lib/organisms", "./public_html/views"] },
+	{ target: "./public_html/lib/organisms", from: ["./public_html/views"] }
+];
+const LICENSE_HEADER = { source: "string", style: "line", content: "SPDX-License-Identifier: GPL-3.0-or-later" };
 
 const sharedRules = {
 	...js.configs.recommended.rules,
@@ -118,7 +180,12 @@ const sharedRules = {
 	"unicorn/prefer-string-trim-start-end": "error",
 	"unicorn/require-array-join-separator": "error",
 	"unicorn/require-number-to-fixed-digits-argument": "error",
-	"unicorn/template-indent": "error"
+	"unicorn/template-indent": "error",
+	"no-warning-comments": ["error", { terms: ["todo", "fixme", "xxx", "hack"], location: "anywhere" }],
+	"no-restricted-properties": [
+		"error",
+		{ object: "document", property: "write", message: "document.write() is forbidden." }
+	]
 };
 
 const importRules = {
@@ -140,6 +207,13 @@ export default [
 			"htmlcov/**"
 		]
 	},
+	// License header on first-party source.
+	{
+		files: ["public_html/**/*.js", "tools/**/*.mjs", "tests/**/*.mjs"],
+		plugins: { headers },
+		rules: { "headers/header-format": ["error", LICENSE_HEADER] }
+	},
+	// Browser app: layering, no network/storage by default, node built-ins banned.
 	{
 		files: ["public_html/**/*.js"],
 		languageOptions: {
@@ -155,9 +229,45 @@ export default [
 		rules: {
 			...sharedRules,
 			...importRules,
-			"import/no-cycle": ["error", { maxDepth: 8 }]
+			"import/no-cycle": ["error", { maxDepth: 8 }],
+			"import/no-restricted-paths": ["error", { zones: LAYER_ZONES }],
+			"no-restricted-imports": [
+				"error",
+				{
+					patterns: [
+						"node:*",
+						"fs",
+						"path",
+						"http",
+						"https",
+						"crypto",
+						"child_process",
+						"os",
+						"url",
+						"util",
+						"stream"
+					]
+				}
+			],
+			"no-restricted-globals": ["error", ...NETWORK_GLOBALS, ...STORAGE_GLOBALS]
 		}
 	},
+	// core + atoms must be DOM-free.
+	{
+		files: ["public_html/lib/core/**/*.js", "public_html/lib/atoms/**/*.js"],
+		rules: { "no-restricted-syntax": ["error", ...DOM_INJECTION_SYNTAX] }
+	},
+	// api.js is the sole network module (storage still banned).
+	{
+		files: ["public_html/lib/core/api.js"],
+		rules: { "no-restricted-globals": ["error", ...STORAGE_GLOBALS] }
+	},
+	// Core storage modules may use persistent storage (network still banned).
+	{
+		files: STORAGE_CORE,
+		rules: { "no-restricted-globals": ["error", ...NETWORK_GLOBALS] }
+	},
+	// Tooling, tests, and config run in Node.
 	{
 		files: ["*.js", "tools/**/*.mjs", "tests/**/*.mjs", "playwright.config.mjs"],
 		languageOptions: {

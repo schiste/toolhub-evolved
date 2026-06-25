@@ -4,34 +4,53 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"quality": "node tools/quality.mjs",
-		"quality:pre-push": "node tools/quality.mjs --pre-push",
-		"hooks:install": "tools/install-hooks.sh",
+		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"lint": "eslint . --max-warnings 0",
 		"lint:css": "stylelint \"public_html/styles/**/*.css\"",
+		"types": "tsc -p jsconfig.json",
 		"dead:check": "knip --production",
 		"dup:check": "jscpd --config .jscpd.json",
-		"test:e2e": "playwright test",
+		"checks": "node tools/checks.mjs",
 		"test:unit": "node --test tests/unit/*.test.mjs",
+		"test:e2e": "playwright test",
+		"mutation": "stryker run",
+		"commitlint": "commitlint --from origin/main --to HEAD",
 		"audit:js": "npm audit --audit-level=moderate",
-		"contracts:update": "node tools/quality.mjs --update-contracts"
+		"hooks:install": "tools/install-hooks.sh"
+	},
+	"lint-staged": {
+		"*.{js,mjs}": [
+			"eslint --fix --max-warnings 0",
+			"prettier --write"
+		],
+		"*.css": [
+			"stylelint --fix",
+			"prettier --write"
+		],
+		"*.{json,md,yml,yaml,html,svg}": "prettier --write"
 	},
 	"devDependencies": {
 		"@axe-core/playwright": "4.12.1",
+		"@commitlint/cli": "^21.1.0",
+		"@commitlint/config-conventional": "^21.1.0",
 		"@eslint/js": "9.39.4",
 		"@playwright/test": "1.61.1",
+		"@stryker-mutator/core": "^9.6.1",
 		"eslint": "9.39.4",
+		"eslint-plugin-headers": "^1.3.4",
 		"eslint-plugin-import": "2.32.0",
 		"eslint-plugin-sonarjs": "4.1.0",
 		"eslint-plugin-unicorn": "60.0.0",
 		"globals": "16.5.0",
 		"jscpd": "4.2.5",
 		"knip": "5.88.1",
+		"lint-staged": "^17.0.8",
 		"prettier": "3.8.4",
 		"stylelint": "16.26.1",
 		"stylelint-config-standard": "39.0.1",
 		"stylelint-declaration-strict-value": "1.11.1",
-		"ts-api-utils": "2.5.0"
+		"ts-api-utils": "2.5.0",
+		"typescript": "^5.9.3"
 	}
 }

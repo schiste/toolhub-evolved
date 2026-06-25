@@ -1,12 +1,12 @@
 {
 	"entry": [
 		"public_html/main.js",
-		"tools/quality.mjs",
 		"tools/smoke-server.mjs",
-		"tests/e2e/smoke.spec.mjs",
+		"tests/e2e/*.spec.mjs",
 		"playwright.config.mjs",
 		"eslint.config.js",
-		"stylelint.config.mjs"
+		"stylelint.config.mjs",
+		"commitlint.config.js"
 	],
 	"project": ["public_html/**/*.js", "tools/**/*.mjs", "tests/**/*.mjs", "*.js", "*.mjs"],
 	"ignoreDependencies": [
@@ -16,6 +16,12 @@
 		"prettier",
 		"stylelint",
 		"jscpd",
-		"knip"
+		"knip",
+		"@commitlint/config-conventional",
+		"eslint-plugin-headers",
+		"lint-staged",
+		"@stryker-mutator/core",
+		"typescript",
+		"ts-api-utils"
 	]
 }

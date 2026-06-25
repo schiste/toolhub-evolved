@@ -97,8 +97,15 @@ export async function apiGet(path, params) {
 	}
 	return apiFetch(url);
 }
-// Page through a list endpoint, collecting results. Stops on error, missing
-// `next`, or an empty page. `map` (optional) transforms each raw item.
+/**
+ * Page through a list endpoint, collecting results. Stops on error, missing
+ * `next`, or an empty page.
+ * @param {string} path
+ * @param {Record<string, string>} [params]
+ * @param {{ pageSize?: number, maxPages?: number, map?: (item: any) => any }} [options]
+ *   `map` (optional) transforms each raw item.
+ * @returns {Promise<any[]>}
+ */
 export async function paginate(path, params = {}, { pageSize = 100, maxPages = 10, map } = {}) {
 	const out = [];
 	for (let page = 1; page <= maxPages; page++) {

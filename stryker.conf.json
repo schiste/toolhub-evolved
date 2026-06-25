@@ -1,0 +1,17 @@
+{
+	"$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+	"_comment": "Mutation testing for the pure core logic, via the node:test runner. Replaces the bespoke mutation runner in the old quality.mjs.",
+	"testRunner": "command",
+	"commandRunner": {
+		"command": "node --test tests/unit/*.test.mjs"
+	},
+	"mutate": ["public_html/lib/core/**/*.js"],
+	"coverageAnalysis": "off",
+	"reporters": ["clear-text", "progress"],
+	"_thresholds_note": "Full scope (no hand-picked subset). Current ~22% is honest: several core modules (graph/markdown/store/author-index/theme/session) lack unit tests. break is a ratchet floor to prevent regression; raise it as tests are added.",
+	"thresholds": {
+		"high": 80,
+		"low": 40,
+		"break": 20
+	}
+}

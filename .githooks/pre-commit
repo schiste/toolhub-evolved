@@ -1,0 +1,6 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Fast pre-commit: lint + format only the staged files. The full suite
+# (tests, e2e, mutation, types) runs in CI.
+set -eu
+exec npx lint-staged

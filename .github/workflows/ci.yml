@@ -34,12 +34,18 @@ jobs:
               run: npx eslint . --max-warnings 0
             - name: Stylelint
               run: npx stylelint "public_html/styles/**/*.css"
+            - name: Types (tsc --checkJs)
+              run: npx tsc -p jsconfig.json
             - name: Dead code (knip)
               run: npx knip --production
             - name: Duplication (jscpd)
               run: npx jscpd --config .jscpd.json
+            - name: Link/route checks
+              run: node tools/checks.mjs
             - name: Unit tests
               run: node --test tests/unit/*.test.mjs
+            - name: Mutation (Stryker)
+              run: npx stryker run
             - name: Install Playwright browser
               run: npx playwright install --with-deps chromium
             - name: E2E (smoke + a11y)
@@ -60,3 +66,22 @@ jobs:
               run: ruff format --check proxy
             - name: pip-audit
               run: pip-audit -r proxy/requirements.txt --strict
+
+    commitlint:
+        name: Commit hygiene
+        if: github.event_name == 'pull_request'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - name: commitlint
+              env:
+                  BASE: ${{ github.event.pull_request.base.sha }}
+                  HEAD: ${{ github.event.pull_request.head.sha }}
+              run: npx commitlint --from "$BASE" --to "$HEAD"
