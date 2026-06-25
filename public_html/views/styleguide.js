@@ -273,9 +273,10 @@ function chromeNavExample() {
 					<span class="brand__name">Toolhub</span>
 				</a>
 				<nav class="nav__links" aria-label="Primary">
-					<a href="/search">Browse</a>
+					<a href="/search">Tools</a>
 					<a href="/lists">Lists</a>
-					<a href="/search">Categories</a>
+					<a href="/graph">Map</a>
+					<a href="/recent">Recent</a>
 				</nav>
 				<div class="nav__actions">
 					<a class="icon-btn" href="/search">${icon("search")} Search</a>

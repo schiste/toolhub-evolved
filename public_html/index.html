@@ -41,21 +41,23 @@
 				<span class="brand__name">Toolhub</span>
 			</a>
 			<nav class="nav__links" id="nav-links" aria-label="Primary">
-				<a href="/search">Browse</a>
+				<a href="/search">Tools</a>
 				<a href="/lists">Lists</a>
 				<a href="/graph">Map</a>
+				<a href="/recent">Recent</a>
 			</nav>
 			<div class="nav__actions">
-				<a class="icon-btn" href="/search"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg> Search</a>
+				<a class="icon-btn" href="/search" aria-label="Search tools"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg> Search</a>
 				<a class="btn btn--primary" id="submit-tool" href="https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" target="_blank" rel="noopener nofollow"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a>
 				<!-- Account control (logged-in fixture / dropdown) rendered by main.js -->
 				<div class="acct" id="account"></div>
 				<div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="Color theme"></div>
 			</div>
 			<nav class="nav__mobile" id="nav-mobile" aria-label="Primary mobile">
-				<a href="/search">Browse</a>
+				<a href="/search">Tools</a>
 				<a href="/lists">Lists</a>
 				<a href="/graph">Map</a>
+				<a href="/recent">Recent</a>
 			</nav>
 		</div>
 	</header>
@@ -64,7 +66,7 @@
 	<div class="expbar">
 		<div class="container expbar__inner">
 			<button class="exp-toggle" id="exp-toggle" type="button" role="switch" aria-checked="false"
-				title="Reveal features that would need data or a back-end Toolhub doesn't expose yet (popularity, health, reviews…)">
+				title="Reveal features that would need data or a back-end Toolhub doesn't expose yet (popularity, health, thanks…)">
 				<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
 				<span class="exp-toggle__label">Show me prospective features</span>
 			</button>

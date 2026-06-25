@@ -195,6 +195,27 @@
 	.exfeat__meta dt { font-weight: 600; }
 }
 
+/* Coarse-pointer devices should not get tap/scroll transform effects. */
+@media (hover: none), (pointer: coarse) {
+	.btn,
+	.favbtn,
+	.le__result,
+	.persona,
+	.pager__btn,
+	.icon-btn,
+	.acct__btn,
+	.at__rm,
+	.intent__go,
+	.qv__x {
+		transition-property: background, border-color, color, opacity;
+	}
+
+	.tcard__hint {
+		transform: none;
+		transition-property: opacity;
+	}
+}
+
 /* Respect users who ask for less motion. Keep this last so it wins. */
 @media (prefers-reduced-motion: reduce) {
 	*, *::before, *::after {
