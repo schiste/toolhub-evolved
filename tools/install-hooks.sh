@@ -3,7 +3,7 @@
 set -eu
 
 git config core.hooksPath .githooks
-chmod +x .githooks/pre-push tools/quality.mjs tools/install-hooks.sh
+chmod +x .githooks/pre-push tools/quality.mjs tools/install-hooks.sh tools/replay-gate.sh
 
 npm ci
 npx playwright install chromium

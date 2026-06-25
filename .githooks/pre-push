@@ -5,4 +5,12 @@ set -eu
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-exec node tools/quality.mjs --pre-push
+# Skip when invoked from within the per-commit replay (see tools/replay-gate.sh).
+if [ "${TOOLHUB_GATE_REPLAY:-}" = "1" ]; then
+	exit 0
+fi
+
+# 1. Full gate at HEAD (mutation, Playwright, contracts, …).
+node tools/quality.mjs --pre-push
+# 2. Static gates replayed on every commit in the push range.
+sh tools/replay-gate.sh
