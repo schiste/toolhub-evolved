@@ -43,9 +43,6 @@ const DUP_UI_MIN_DEPTH = 3;
 const DUP_UI_MIN_REPEAT = 3;
 const DUP_CSS_MIN_DECLS = 4;
 const DUP_CSS_MIN_GROUPS = 2;
-// The styleguide is a component gallery that deliberately renders many
-// structurally-similar examples; excluding it keeps 5a/5b signal-rich.
-const STRUCTURAL_DUP_EXCLUDE = new Set(["public_html/views/styleguide.js"]);
 const MAX_DIRECT_DEPENDENCY_RELEASE_AGE_DAYS = 548;
 const DUPLICATE_WINDOW = 12;
 const DESIGN_TOKEN_FILE = "public_html/styles/tokens.css";
@@ -132,10 +129,10 @@ const STORAGE_RE =
 	/\b(?:local|session)Storage\s*(?:\.\s*(?:get|set|remove|clear|key)|\[)|Object\.keys\(\s*localStorage|\bdocument\.cookie\b|\bindexedDB\b/;
 const NETWORK_RE =
 	/\bfetch\s*\(|\bXMLHttpRequest\b|\bnavigator\.sendBeacon\b|\bnew\s+WebSocket\b|\bnew\s+EventSource\b/;
-// Targets HTML injection specifically (not state-class toggles like
-// body.classList, which core legitimately uses for global theme/exp state).
+// HTML injection + direct body manipulation. Core/atoms must be DOM-free; global
+// state hooks like body.exp-off live in the app layer (main.js).
 const DOM_MUTATE_RE =
-	/\binnerHTML\s*=|\bouterHTML\s*=|\.insertAdjacentHTML\s*\(|document\.createElement|\.appendChild\s*\(|\.replaceChildren\s*\(/;
+	/\binnerHTML\s*=|\bouterHTML\s*=|\.insertAdjacentHTML\s*\(|document\.createElement|\.appendChild\s*\(|\.replaceChildren\s*\(|document\.body\./;
 
 // ---- Gate 9: copy quality (UI strings only) ------------------------------
 // Tunable word/phrase lists — keep tight to avoid flagging legitimate copy.
@@ -174,11 +171,8 @@ const COPY_AI_PHRASES = [
 	"testament to"
 ];
 const COPY_LABEL_MAXLEN = 60;
-const COPY_SCAN_EXCLUDE = new Set([
-	"public_html/views/_fixtures.js",
-	"tools/smoke-server.mjs",
-	"public_html/views/styleguide.js" // component gallery: deliberately mirrors real UI copy
-]);
+// Mock data sources, not product copy.
+const COPY_SCAN_EXCLUDE = new Set(["public_html/views/_fixtures.js", "tools/smoke-server.mjs"]);
 
 // ---- Gate 10: git hygiene over the push range ----------------------------
 const COMMIT_SUBJECT_MAX = 72;
@@ -378,30 +372,19 @@ runCheck("syntax", (check) => {
 	}
 });
 
-runCheck("prettier", (check) => {
-	requireFile(check, bin("prettier"), "run npm ci before pushing");
-	if (existsSync(bin("prettier"))) command(check, bin("prettier"), ["--check", "."]);
-});
+// Node-tool gates share one shape: require the binary, then run it.
+function binCheck(checkName, binName, args) {
+	runCheck(checkName, (check) => {
+		requireFile(check, bin(binName), "run npm ci before pushing");
+		if (existsSync(bin(binName))) command(check, bin(binName), args);
+	});
+}
 
-runCheck("eslint", (check) => {
-	requireFile(check, bin("eslint"), "run npm ci before pushing");
-	if (existsSync(bin("eslint"))) command(check, bin("eslint"), [".", "--max-warnings", "0"]);
-});
-
-runCheck("stylelint", (check) => {
-	requireFile(check, bin("stylelint"), "run npm ci before pushing");
-	if (existsSync(bin("stylelint"))) command(check, bin("stylelint"), ["public_html/styles/**/*.css"]);
-});
-
-runCheck("knip", (check) => {
-	requireFile(check, bin("knip"), "run npm ci before pushing");
-	if (existsSync(bin("knip"))) command(check, bin("knip"), ["--production"]);
-});
-
-runCheck("jscpd", (check) => {
-	requireFile(check, bin("jscpd"), "run npm ci before pushing");
-	if (existsSync(bin("jscpd"))) command(check, bin("jscpd"), ["--config", ".jscpd.json"]);
-});
+binCheck("prettier", "prettier", ["--check", "."]);
+binCheck("eslint", "eslint", [".", "--max-warnings", "0"]);
+binCheck("stylelint", "stylelint", ["public_html/styles/**/*.css"]);
+binCheck("knip", "knip", ["--production"]);
+binCheck("jscpd", "jscpd", ["--config", ".jscpd.json"]);
 
 runCheck("npm audit", (check) => {
 	if (REPLAY) return; // dependency audit is a HEAD-time check, not per-commit
@@ -1135,16 +1118,10 @@ runCheck("design system drift", (check) => {
 		while ((match = colorRegex.exec(text))) {
 			const literal = match[0].toLowerCase();
 			if (name === DESIGN_TOKEN_FILE) continue;
-			if (ext(file) === ".css") {
-				fail(check, file, lineNumber(text, match.index), `raw colour ${literal} must be a design token`);
-			} else if (!colorValues.has(literal)) {
-				fail(
-					check,
-					file,
-					lineNumber(text, match.index),
-					`raw colour ${literal} is not registered in design tokens`
-				);
-			}
+			let message = null;
+			if (ext(file) === ".css") message = `raw colour ${literal} must be a design token`;
+			else if (!colorValues.has(literal)) message = `raw colour ${literal} is not registered in design tokens`;
+			if (message) fail(check, file, lineNumber(text, match.index), message);
 		}
 	}
 });
@@ -1548,11 +1525,11 @@ function walkAst(node, visit) {
 // Structural fingerprint of a subtree. Literals are anonymized but identifiers are
 // kept verbatim (so Math.max- and Math.min-shaped code do NOT collide) — trading
 // rename-clone recall for precision, which is the right call under strict mode.
+const NAMED_NODE_LABEL = { Identifier: "Id", PrivateIdentifier: "Pvt" };
 function structuralKey(node) {
 	let label = node.type;
 	if (node.type === "Literal" || node.type === "TemplateElement") label = "Lit";
-	else if (node.type === "Identifier") label = `Id:${node.name}`;
-	else if (node.type === "PrivateIdentifier") label = `Pvt:${node.name}`;
+	else if (NAMED_NODE_LABEL[node.type]) label = `${NAMED_NODE_LABEL[node.type]}:${node.name}`;
 	const kids = astChildren(node).map((child) => structuralKey(child));
 	let count = 1;
 	for (const kid of kids) count += kid.count;
@@ -1560,14 +1537,10 @@ function structuralKey(node) {
 }
 
 runCheck("structural duplicates", (check) => {
-	// 5a/5b — AST duplicate functions and near-duplicate sibling branches, scoped to
-	// application code (tooling/test boilerplate is intentionally repetitive and is
-	// covered by jscpd's token-clone gate instead).
+	// 5a/5b — AST duplicate functions and near-duplicate sibling branches across all
+	// JS (app, tooling, and tests).
 	const fnSeen = new Map();
-	for (const file of files.filter(
-		(item) =>
-			rel(item).startsWith("public_html/") && JS_EXTS.has(ext(item)) && !STRUCTURAL_DUP_EXCLUDE.has(rel(item))
-	)) {
+	for (const file of files.filter((item) => JS_EXTS.has(ext(item)))) {
 		const tree = parseJs(file);
 		if (!tree) continue;
 		const handledChain = new Set();

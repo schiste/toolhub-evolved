@@ -5,6 +5,7 @@ import { DEMO_KEYS, withDemoFixture } from "../lib/core/store.js";
 import { completeness, getUserContext, setUserContext } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import {
+	completenessList,
 	completenessMeter,
 	endorsementChip,
 	fitChip,
@@ -172,16 +173,10 @@ function fitChipExample() {
 
 function listingCompletenessExample() {
 	const complete = completeness(FIXTURE_TOOL);
-	const rows = complete.items
-		.map(
-			(item) => `
-		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`
-		)
-		.join("");
 	return `<div class="panel">
 		<h3 class="panel__title">Listing completeness</h3>
 		${completenessMeter(complete)}
-		<ul class="complete-list">${rows}</ul>
+		${completenessList(complete)}
 	</div>`;
 }
 
@@ -906,101 +901,91 @@ function resolveToken(name, cssProp) {
 	return value || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function renderColorTokens(targetId, names) {
+// Shared token-gallery renderer: resolve each token's live value and lay out the
+// rows. Per-family markup differs only in classes/units, so it is parameterised
+// rather than duplicated across one function per token type.
+function renderTokenTarget(targetId, names, prop, rowHtml) {
 	const target = document.querySelector(`#${targetId}`);
 	if (!target) return;
-	target.innerHTML = names
-		.map((name) => {
-			const value = resolveToken(name, "backgroundColor");
-			return `<div class="sg-token sg-token--color">
-			<span class="sg-token__swatch" style="background: var(${esc(name)})"></span>
+	target.innerHTML = names.map((name) => rowHtml(name, resolveToken(name, prop))).join("");
+}
+
+// Swatch family: a styled preview box + meta (colours, radii, shadows).
+function renderSwatchTokens(targetId, names, prop, wrapperClass, boxClass, cssDecl) {
+	renderTokenTarget(
+		targetId,
+		names,
+		prop,
+		(name, value) => `<div class="${esc(wrapperClass)}">
+			<span class="${esc(boxClass)}" style="${esc(cssDecl)}: var(${esc(name)})"></span>
 			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
-		</div>`;
-		})
-		.join("");
+		</div>`
+	);
 }
 
 function renderTypeTokens(names) {
-	const target = document.querySelector("#sg-type-tokens");
-	if (!target) return;
-	target.innerHTML = names
-		.map((name) => {
-			const value = resolveToken(name, "fontSize");
-			return `<div class="sg-type-row">
+	renderTokenTarget(
+		"sg-type-tokens",
+		names,
+		"fontSize",
+		(name, value) => `<div class="sg-type-row">
 			<div class="sg-type-row__specimen" style="font-size: var(${esc(name)})">Toolhub Aa 123</div>
 			<div class="sg-type-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
-		</div>`;
-		})
-		.join("");
+		</div>`
+	);
 }
 
-function renderRadiusTokens(names) {
-	const target = document.querySelector("#sg-radius-tokens");
-	if (!target) return;
-	target.innerHTML = names
-		.map((name) => {
-			const value = resolveToken(name, "borderRadius");
-			return `<div class="sg-token">
-			<span class="sg-radius-box" style="border-radius: var(${esc(name)})"></span>
-			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
-		</div>`;
-		})
-		.join("");
-}
-
-function renderShadowTokens(names) {
-	const target = document.querySelector("#sg-shadow-tokens");
-	if (!target) return;
-	target.innerHTML = names
-		.map((name) => {
-			const value = resolveToken(name, "boxShadow");
-			return `<div class="sg-token">
-			<span class="sg-shadow-box" style="box-shadow: var(${esc(name)})"></span>
-			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
-		</div>`;
-		})
-		.join("");
-}
-
-function renderSpaceTokens(names) {
-	const target = document.querySelector("#sg-space-tokens");
-	if (!target) return;
-	target.innerHTML = names
-		.map((name) => {
-			const value = resolveToken(name, "width");
-			return `<div class="sg-space-row">
-			<div class="sg-space-row__bar"><span style="width: var(${esc(name)})"></span></div>
+// Bar family: a proportional bar + meta (spacing, layout widths).
+function renderBarTokens(targetId, names, prop, rowClass, barClass, clampLayout) {
+	renderTokenTarget(targetId, names, prop, (name, value) => {
+		const width = clampLayout ? `min(100%, var(${esc(name)}))` : `var(${esc(name)})`;
+		return `<div class="${esc(rowClass)}">
+			<div class="${esc(barClass)}"><span style="width: ${width}"></span></div>
 			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
 		</div>`;
-		})
-		.join("");
-}
-
-function renderLayoutTokens(names) {
-	const target = document.querySelector("#sg-layout-tokens");
-	if (!target) return;
-	target.innerHTML = names
-		.map((name) => {
-			const value = resolveToken(name, "maxWidth");
-			return `<div class="sg-space-row sg-layout-row">
-			<div class="sg-space-row__bar sg-space-row__bar--layout"><span style="width: min(100%, var(${esc(name)}))"></span></div>
-			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
-		</div>`;
-		})
-		.join("");
+	});
 }
 
 function mountStyleguide() {
 	seedFixtureIndex();
 	const colorTokens = collectCustomPropertyNames("--color-", FALLBACK_TOKENS.colors);
 	const wmfTokens = collectCustomPropertyNames("--wmf-", FALLBACK_TOKENS.wmf);
-	renderColorTokens("sg-color-tokens", colorTokens);
-	renderColorTokens("sg-wmf-tokens", wmfTokens);
+	const swatch = "sg-token sg-token--color";
+	renderSwatchTokens("sg-color-tokens", colorTokens, "backgroundColor", swatch, "sg-token__swatch", "background");
+	renderSwatchTokens("sg-wmf-tokens", wmfTokens, "backgroundColor", swatch, "sg-token__swatch", "background");
 	renderTypeTokens(collectCustomPropertyNames("--fs-", FALLBACK_TOKENS.fs));
-	renderRadiusTokens(collectCustomPropertyNames("--radius-", FALLBACK_TOKENS.radius));
-	renderShadowTokens(collectCustomPropertyNames("--shadow", FALLBACK_TOKENS.shadow));
-	renderSpaceTokens(collectCustomPropertyNames("--space-", FALLBACK_TOKENS.space));
-	renderLayoutTokens(collectCustomPropertyNames("--container-", FALLBACK_TOKENS.layout));
+	renderSwatchTokens(
+		"sg-radius-tokens",
+		collectCustomPropertyNames("--radius-", FALLBACK_TOKENS.radius),
+		"borderRadius",
+		"sg-token",
+		"sg-radius-box",
+		"border-radius"
+	);
+	renderSwatchTokens(
+		"sg-shadow-tokens",
+		collectCustomPropertyNames("--shadow", FALLBACK_TOKENS.shadow),
+		"boxShadow",
+		"sg-token",
+		"sg-shadow-box",
+		"box-shadow"
+	);
+	renderBarTokens(
+		"sg-space-tokens",
+		collectCustomPropertyNames("--space-", FALLBACK_TOKENS.space),
+		"width",
+		"sg-space-row",
+		"sg-space-row__bar",
+		false
+	);
+	renderBarTokens(
+		"sg-layout-tokens",
+		collectCustomPropertyNames("--container-", FALLBACK_TOKENS.layout),
+		"maxWidth",
+		"sg-space-row sg-layout-row",
+		"sg-space-row__bar sg-space-row__bar--layout",
+		true
+	);
 	const graphTarget = document.querySelector("#sg-force-graph");
 	if (graphTarget) graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
 

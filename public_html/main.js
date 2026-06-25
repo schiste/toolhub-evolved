@@ -17,7 +17,15 @@ setAuthRender(() => {
 	render();
 });
 applyLocaleAttrs();
+// Reflect experimental mode into the DOM (core holds the flag; the app owns the
+// CSS hook). CSS hides .experimental elements while body has .exp-off.
+function syncExpDom(on) {
+	document.body.classList.toggle("exp-off", !on);
+	const btn = $("#exp-toggle");
+	if (btn) btn.setAttribute("aria-checked", String(on));
+}
 applyExp(expStored());
+syncExpDom(expOn());
 
 /* Color theme: Light/Dark toggle. The active option reflects the RESOLVED theme
    (<html data-theme>), so it shows the right state even before an explicit choice
@@ -195,6 +203,7 @@ if (expBtn) {
 		const on = !expOn();
 		setExpStored(on);
 		applyExp(on);
+		syncExpDom(on);
 		renderAccount(); // identity is experimental — reflect the new state
 		syncSubmitButton();
 		render();

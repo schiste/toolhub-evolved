@@ -2,6 +2,7 @@
 	"exports": {
 		"public_html/lib/atoms/avatar.js": ["AVATAR_COLORS", "avatar", "commonsThumb", "toolIcon"],
 		"public_html/lib/atoms/badges.js": [
+			"completenessList",
 			"completenessMeter",
 			"endorsementChip",
 			"endorsementOf",

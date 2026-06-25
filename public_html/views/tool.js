@@ -12,6 +12,7 @@ import { authorProfileUrl } from "../lib/core/author-index.js";
 import { authorHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import {
+	completenessList,
 	completenessMeter,
 	endorsementChip,
 	fitChip,
@@ -215,12 +216,6 @@ export async function viewTool(name) {
 		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`)
 		.join("");
 	const complete = completeness(t);
-	const completeRows = complete.items
-		.map(
-			(item) => `
-		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`
-		)
-		.join("");
 
 	const html = `
 	<div class="container page">
@@ -315,7 +310,7 @@ export async function viewTool(name) {
 				<div class="panel">
 					<h2 class="panel__title">Listing completeness</h2>
 					${completenessMeter(complete)}
-					<ul class="complete-list">${completeRows}</ul>
+					${completenessList(complete)}
 				</div>
 				<!-- EXPERIMENTAL — usage stat. Needs: usage analytics the API doesn't expose. -->
 				<div class="panel experimental">

@@ -48,6 +48,16 @@ export function completenessMeter(c) {
 	}
 	return `<span class="signal" title="${esc(`Listing ${filled} of ${total} fields complete`)}"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:${pct}%"></span></span>${filled}/${total}</span>`;
 }
+// The per-field checklist that pairs with completenessMeter (tool page + styleguide).
+export function completenessList(complete) {
+	const rows = (complete.items || [])
+		.map(
+			(item) =>
+				`<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`
+		)
+		.join("");
+	return `<ul class="complete-list">${rows}</ul>`;
+}
 export function fitChip(tool) {
 	if (!fitsContext(tool, getUserContext()).fits) return "";
 	return `<span class="signal signal--fit">${icon("check")} Fits you</span>`;

@@ -13,13 +13,14 @@ export function expStored() {
 export function setExpStored(on) {
 	localStorage.setItem(EXP_KEY, on ? "on" : "off");
 }
+// Experimental mode is held in memory here so core stays DOM-free; the app layer
+// (main.js) reflects it into the DOM (body.exp-off + the toggle's aria-checked).
+let expActive = false;
 export function expOn() {
-	return !document.body.classList.contains("exp-off");
+	return expActive;
 }
 export function applyExp(on) {
-	document.body.classList.toggle("exp-off", !on);
-	const btn = document.querySelector("#exp-toggle");
-	if (btn) btn.setAttribute("aria-checked", String(on));
+	expActive = Boolean(on);
 }
 // Default OFF (decision §8.1): first visit is the honest live read-only
 // interface; the user opts into experiments via the toggle.

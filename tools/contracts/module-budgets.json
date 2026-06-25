@@ -60,9 +60,9 @@
 			"importDepth": 2
 		},
 		"public_html/lib/atoms/badges.js": {
-			"lines": 60,
-			"cyclomatic": 21,
-			"cognitive": 40,
+			"lines": 70,
+			"cyclomatic": 24,
+			"cognitive": 48,
 			"fanIn": 4,
 			"fanOut": 5,
 			"importDepth": 5
@@ -164,9 +164,9 @@
 			"importDepth": 1
 		},
 		"public_html/lib/core/session.js": {
-			"lines": 44,
-			"cyclomatic": 7,
-			"cognitive": 11,
+			"lines": 45,
+			"cyclomatic": 6,
+			"cognitive": 9,
 			"fanIn": 10,
 			"fanOut": 0,
 			"importDepth": 1
@@ -308,9 +308,9 @@
 			"importDepth": 6
 		},
 		"public_html/main.js": {
-			"lines": 220,
-			"cyclomatic": 51,
-			"cognitive": 119,
+			"lines": 229,
+			"cyclomatic": 53,
+			"cognitive": 123,
 			"fanIn": 0,
 			"fanOut": 12,
 			"importDepth": 9
@@ -452,17 +452,17 @@
 			"importDepth": 4
 		},
 		"public_html/views/styleguide.js": {
-			"lines": 1061,
-			"cyclomatic": 45,
-			"cognitive": 123,
+			"lines": 1046,
+			"cyclomatic": 39,
+			"cognitive": 108,
 			"fanIn": 1,
 			"fanOut": 21,
 			"importDepth": 7
 		},
 		"public_html/views/tool.js": {
-			"lines": 377,
-			"cyclomatic": 80,
-			"cognitive": 161,
+			"lines": 372,
+			"cyclomatic": 78,
+			"cognitive": 157,
 			"fanIn": 1,
 			"fanOut": 22,
 			"importDepth": 7
@@ -532,9 +532,9 @@
 			"importDepth": 0
 		},
 		"tools/quality.mjs": {
-			"lines": 2048,
-			"cyclomatic": 594,
-			"cognitive": 1490,
+			"lines": 2021,
+			"cyclomatic": 587,
+			"cognitive": 1476,
 			"fanIn": 0,
 			"fanOut": 0,
 			"importDepth": 1
