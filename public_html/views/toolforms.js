@@ -158,17 +158,17 @@ export async function viewToolForm(name) {
 		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
-			${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: "Stable id used in Toolhub URLs." })}
-			${fInput("Title", "tf-title", cur.title, { req: true, hint: "Short display name shown in search results." })}
-			${fArea("Description", "tf-desc", cur.description, "One or two sentences about what the tool does.")}
-			${fInput("URL", "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: "Primary homepage, documentation, or launch URL." })}
-			${fInput("Source code repository", "tf-repo", cur.repository, { type: "url", hint: "Optional public repository URL." })}
-			${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: "Use an SPDX identifier when known." })}
-			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES, { hint: "Choose the closest match." })}
-			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords), { hint: "Terms people might search for." })}
+			${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: "Stable lowercase id used in Toolhub URLs; it cannot be changed later." })}
+			${fInput("Title", "tf-title", cur.title, { req: true, hint: "Short public name shown in search results and tool pages." })}
+			${fArea("Description", "tf-desc", cur.description, "One or two useful sentences: what it does, who it helps, and when to use it.")}
+			${fInput("URL", "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: "Primary place people launch the tool or read its documentation." })}
+			${fInput("Source code repository", "tf-repo", cur.repository, { type: "url", hint: "Optional public repository where contributors can inspect or patch the code." })}
+			${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: "Use an SPDX identifier when known; leave blank if the license is unknown." })}
+			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES, { hint: "Choose the closest match; community annotations can refine discovery later." })}
+			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords), { hint: "Search terms people may try; avoid repeating only the title." })}
 			${editing ? "" : duplicateRegion()}
-			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis), { hint: "Use wiki database names, or * for all wikis." })}
-			${fInput("Available UI languages (comma-separated codes)", "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: "BCP-47 / wiki language codes." })}
+			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis), { hint: "Use wiki database names such as enwiki or commonswiki, or * for all wikis." })}
+			${fInput("Available UI languages (comma-separated codes)", "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: "BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo." })}
 			<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? "Save changes" : "Submit tool", { variant: "primary", type: "submit" })}
@@ -234,13 +234,13 @@ export function viewAddTools() {
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
 		<form class="le__add" data-url-form novalidate>
-			${fInput("toolinfo.json URL", "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: "Public URL the crawler should re-read." })}
+			${fInput("toolinfo.json URL", "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: "Full public URL the crawler should re-read, usually ending in toolinfo.json." })}
 			${button("Register", { variant: "outline", type: "submit" })}
 		</form>
 		<ul class="at__urls" data-url-list>${urlRows()}</ul>
 
 		<h2 class="le__h2">Ingest toolinfo</h2>
-		${fArea("Toolinfo JSON", "at-json", "", "Paste one tool object or an array.", { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
+		${fArea("Toolinfo JSON", "at-json", "", "Paste one tool object or an array; successful entries appear below in Your tools.", { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
 		<div class="le__actions">
 			${button("Ingest", { variant: "primary", attrs: "data-ingest" })}
 			${button("Load sample", { variant: "outline", attrs: "data-sample" })}
@@ -295,10 +295,10 @@ export async function viewAnnotationsEdit(name) {
 		this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
-			${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences), { hint: "User groups this tool serves." })}
-			${fInput("Tasks (comma-separated)", "an-tasks", toCsv(cur.tasks), { hint: "Workflows this tool supports." })}
-			${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES, { hint: "Community classification for discovery." })}
-			${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url", hint: "Optional icon hosted on Commons." })}
+			${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences), { hint: "User groups this tool serves, such as editors, admins, researchers, or developers." })}
+			${fInput("Tasks (comma-separated)", "an-tasks", toCsv(cur.tasks), { hint: "Workflows this tool supports, such as editing, patrolling, importing, or analysis." })}
+			${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES, { hint: "Community classification used for discovery when core metadata is sparse." })}
+			${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url", hint: "Optional Commons-hosted image URL for visual identification." })}
 			<div class="le__actions">
 				${button("Save annotations", { variant: "primary", type: "submit" })}
 				${toolAnnosMap()[name] ? button("Revert annotations", { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
