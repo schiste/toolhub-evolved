@@ -171,7 +171,7 @@ export function linkCard(iconHtml, title, desc, url, internal) {
 		<span class="linkcard__desc">${esc(desc)}</span></span></a>`;
 }
 function proxyCard(iconHtml, title, desc, href) {
-	return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="noopener">
+	return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="${EXTERNAL_REL}">
 		<span class="linkcard__icon" aria-hidden="true">${iconHtml}</span>
 		<span class="linkcard__body"><span class="linkcard__title">${esc(title)} ${icon("external")}</span>
 		<span class="linkcard__desc">${esc(desc)}</span></span></a>`;
@@ -214,7 +214,7 @@ export async function viewApiDocs() {
 	const endpoints = Object.keys(root).sort();
 	const endpointCards = endpoints.map((ep) => {
 		const href = "/api/" + ep + "/";
-		return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="noopener">
+		return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="${EXTERNAL_REL}">
 			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
 			<span class="linkcard__body"><span class="linkcard__title"><code>GET ${esc(href)}</code> ${icon("external")}</span>
 			<span class="linkcard__desc">Open the live JSON response through this app's read-only proxy.</span></span></a>`;
