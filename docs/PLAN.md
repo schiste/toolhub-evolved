@@ -22,8 +22,8 @@ Every piece of work therefore falls into exactly one of two lanes:
 - **Lane B — Experiments (behind the existing toggle, real data overloaded with
   fixtures).** Every feature that would require a backend capability the
   read-only API does not give us — any **write**, any **auth/session**, or any
-  **signal Toolhub doesn't expose** — lives behind the existing *"Show me
-  prospective features"* toggle (`expOn()` / `body.exp-off` / `.experimental`).
+  **signal Toolhub doesn't expose** — lives behind the existing _"Show me
+  prospective features"_ toggle (`expOn()` / `body.exp-off` / `.experimental`).
   Crucially, **Lane B does not introduce a parallel data source.** It keeps
   reading the same live API as Lane A and **overloads those real records with a
   feature-specific fixture layer** — exactly how `synthViews(name)` already
@@ -31,10 +31,10 @@ Every piece of work therefore falls into exactly one of two lanes:
   `exp-badge` and a one-line code comment naming the backend capability it would
   need in production.
 
-**The rule that routes all future work:** *if a feature needs a write, a login,
+**The rule that routes all future work:** _if a feature needs a write, a login,
 or a number the read-only API doesn't return, it stays in Lane B and is built as
 a fixture overlay on top of the real live data — it never replaces the real data
-and never blocks or complicates the shipping interface.* Turning the toggle off
+and never blocks or complicates the shipping interface._ Turning the toggle off
 strips every overlay and returns the app to a 100% honest, live, read-only
 Toolhub experience.
 
@@ -73,15 +73,15 @@ ever productionized," not as work for this plan.
 The feature-fix sweep found and fixed 7 real defects against the live API. These
 define the "no regressions" bar for the shipping interface:
 
-| Sev | Issue | Fix |
-| --- | --- | --- |
-| High | `/api-docs` iframed a page sending `X-Frame-Options: DENY` (blank frame + console error) | Replaced iframe with doc links + live same-origin endpoint cards |
-| Med | "Popular this week" ranked in list order, not by `weeklyViews` | Sort by `weeklyViews` before ranking |
-| Med | `/search?sort=views` linked but unsupported (blank select) | Added experimental `views` sort + in-page ranking + exp-off fallback |
-| Med | `normalizeTool` ignored annotation-fallback fields (hid real `tool_type`, `for_wikis`, icons, docs, links) | Core-then-annotation fallback |
-| Low | "joined **Updated yesterday**" awkward label | Split generic relative-time from update-specific `relTime` (now via `Intl`) |
-| Low | Recent-change rows only deep-linked tools | Added list-target routing |
-| Low | Audit-log rows showed linkable targets as static text | Added tool/list target routing |
+| Sev  | Issue                                                                                                      | Fix                                                                         |
+| ---- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| High | `/api-docs` iframed a page sending `X-Frame-Options: DENY` (blank frame + console error)                   | Replaced iframe with doc links + live same-origin endpoint cards            |
+| Med  | "Popular this week" ranked in list order, not by `weeklyViews`                                             | Sort by `weeklyViews` before ranking                                        |
+| Med  | `/search?sort=views` linked but unsupported (blank select)                                                 | Added experimental `views` sort + in-page ranking + exp-off fallback        |
+| Med  | `normalizeTool` ignored annotation-fallback fields (hid real `tool_type`, `for_wikis`, icons, docs, links) | Core-then-annotation fallback                                               |
+| Low  | "joined **Updated yesterday**" awkward label                                                               | Split generic relative-time from update-specific `relTime` (now via `Intl`) |
+| Low  | Recent-change rows only deep-linked tools                                                                  | Added list-target routing                                                   |
+| Low  | Audit-log rows showed linkable targets as static text                                                      | Added tool/list target routing                                              |
 
 ### 2.2 Internationalization (frontend-only)
 
@@ -151,7 +151,7 @@ There are two overlay kinds:
   they are recomputed from the live record each render.
 - **User-action overlays — persisted in `localStorage`, merged onto the live
   record.** A small **`demoOverlay`** module over **`localStorage`** (decision
-  §8.2; namespaced `thdemo:*`) holds only the *delta* the user creates: a set of
+  §8.2; namespaced `thdemo:*`) holds only the _delta_ the user creates: a set of
   favorited tool **names**, demo lists referencing real tool names, field-level
   **edits layered onto a real tool**, annotation overrides, and net-new
   submissions (a local record shaped like a real tool). At render time the
@@ -161,10 +161,10 @@ There are two overlay kinds:
 Supporting pieces:
 
 - **Merge helpers** — extend `normalizeTool()`/`normalizeList()` so a live record
-  + its overlay produce one object the existing cards/views render unchanged.
-  Favorited/edited state is read by merging the overlay against the live fetch,
-  not by querying a separate catalog.
-- **Write adapter** — `apiWrite`/`demoApi` (`post`/`put`/`delete`) used *only* by
+    - its overlay produce one object the existing cards/views render unchanged.
+      Favorited/edited state is read by merging the overlay against the live fetch,
+      not by querying a separate catalog.
+- **Write adapter** — `apiWrite`/`demoApi` (`post`/`put`/`delete`) used _only_ by
   flagged features writes into `demoOverlay`; `apiGet` (live reads) is untouched.
   A mode flag keeps the door open for a future real backend without reshaping
   callers.
@@ -173,30 +173,30 @@ Supporting pieces:
   (that's real and read-only); the UI says so rather than faking search.
 - **Labeling contract** — every Lane B feature renders an `exp-badge` and carries
   `// EXPERIMENTAL — Needs: <backend capability> (Toolhub read-only API does not
-  expose this)`. The UI must never imply a write touches production Toolhub.
+expose this)`. The UI must never imply a write touches production Toolhub.
 
 ### 3.2 Features (each = a fixture-backed simulation behind the flag)
 
 Reframed from the standalone-demo write catalog; the real endpoints are kept in
 Appendix A as the contract each simulation imitates.
 
-| Feature | What the user does (flag on) | Overlay on live data | Needs in production (why it's Lane B) |
-| --- | --- | --- | --- |
-| **Mock identity** | Explicit "Sign in" identity picker (default *Ada Lovelace*) + "Log out" | session delta in `demoOverlay`; real `/api/users/` data still backs Members | Real Wikimedia OAuth + server session |
-| **Favorites** | Save/unsave on cards, quick-view, detail; `/favorites` list | favorited **names** in `demoOverlay`; tool data fetched live and merged | `POST/DELETE /api/user/favorites/` |
-| **Lists CRUD** | `/my-lists`, `/lists/create`, `/lists/:id/edit`, delete; reorder tools | demo lists reference real tool names; shown alongside live `/api/lists/` | `POST/PUT/DELETE /api/lists/` |
-| **Tool submit / edit** | `/tools/create`, `/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions |
-| **Annotations edit** | `/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …) | annotation overrides merged over the live record's `annotations`; detail labels "community" | `PUT /api/tools/{name}/annotations/` |
-| **Add / remove tools** | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest | local crawler-url + revision/audit deltas merged into the live feeds | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
-| **Developer settings** | **Hidden** (decision §8.5) — route stays a brief "not part of this demo" note | none | Token/OAuth-app backend |
-| **History & feeds** | Demo actions append revision/audit rows so `/recent`, `/audit-logs`, history reflect *your* edits | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds | Server write-side-effects |
-| **Already-synthetic** (popularity/`weeklyViews`, thanks, health, usage, screenshots) | unchanged; the original overload pattern | deterministic per-tool signal computed from the live record (optional seed JSON) | Real usage/health/thanks data source |
+| Feature                                                                              | What the user does (flag on)                                                                                                                                                                                                                                                  | Overlay on live data                                                                                        | Needs in production (why it's Lane B)                                     |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Mock identity**                                                                    | Explicit "Sign in" identity picker (default _Ada Lovelace_) + "Log out"                                                                                                                                                                                                       | session delta in `demoOverlay`; real `/api/users/` data still backs Members                                 | Real Wikimedia OAuth + server session                                     |
+| **Favorites**                                                                        | Save/unsave on cards, quick-view, detail; `/favorites` list                                                                                                                                                                                                                   | favorited **names** in `demoOverlay`; tool data fetched live and merged                                     | `POST/DELETE /api/user/favorites/`                                        |
+| **Lists CRUD**                                                                       | `/my-lists`, `/lists/create`, `/lists/:id/edit`, delete; reorder tools                                                                                                                                                                                                        | demo lists reference real tool names; shown alongside live `/api/lists/`                                    | `POST/PUT/DELETE /api/lists/`                                             |
+| **Tool submit / edit**                                                               | `/tools/create`, `/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions                |
+| **Annotations edit**                                                                 | `/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …)                                                                                                                                                                                                              | annotation overrides merged over the live record's `annotations`; detail labels "community"                 | `PUT /api/tools/{name}/annotations/`                                      |
+| **Add / remove tools**                                                               | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest                                                                                                                                                                                                      | local crawler-url + revision/audit deltas merged into the live feeds                                        | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
+| **Developer settings**                                                               | **Hidden** (decision §8.5) — route stays a brief "not part of this demo" note                                                                                                                                                                                                 | none                                                                                                        | Token/OAuth-app backend                                                   |
+| **History & feeds**                                                                  | Demo actions append revision/audit rows so `/recent`, `/audit-logs`, history reflect _your_ edits                                                                                                                                                                             | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds                           | Server write-side-effects                                                 |
+| **Already-synthetic** (popularity/`weeklyViews`, thanks, health, usage, screenshots) | unchanged; the original overload pattern                                                                                                                                                                                                                                      | deterministic per-tool signal computed from the live record (optional seed JSON)                            | Real usage/health/thanks data source                                      |
 
 ### 3.3 Route & chrome behavior under the flag
 
 - **The toggle defaults OFF** (decision §8.1). On first visit the app is the pure
   live read-only interface; the user opts into experiments via the existing
-  *"Show me prospective features"* switch. The choice persists in `localStorage`.
+  _"Show me prospective features"_ switch. The choice persists in `localStorage`.
 - The `signInPage()` stubs (`/login`, `/favorites`, `/my-lists`,
   `/lists/create`, `/lists/:id/edit`, `/tools/:name/edit`,
   `/tools/:name/edit-annotations`, `/add-or-remove-tools`) become **real
@@ -216,8 +216,8 @@ is pinned to the very top of every page (above the header and the `expbar`
 toggle strip), shown site-wide — so it is always present on the in-app
 submit/edit/favorites pages, which only exist while the toggle is on.
 
-- Copy: *"⚠ Mockup — this is a prototype, not a working integration with the real
-  Toolhub. Experimental features are simulated and saved only in your browser."*
+- Copy: _"⚠ Mockup — this is a prototype, not a working integration with the real
+  Toolhub. Experimental features are simulated and saved only in your browser."_
   plus a link to **Rules of Engagement**.
 - Implementation: a `.mockup-banner` element rendered/visible only when
   `body:not(.exp-off)`; uses the brand destructive (red) token for high contrast;
@@ -271,16 +271,16 @@ explains the model in plain language:
 
 ## 5. Phases & effort (all frontend)
 
-| Phase | Lane | Work | Effort |
-| --- | --- | --- | --- |
-| P0 | — | Lock this plan + the overlay contract (decisions §8 resolved below) | 0.5 d |
-| P1 | A | i18n catalog + `t()` (audit phases 1–2) and the deferred a11y items | 4–6 d |
-| P2 | B | **Toggle default-off + red mockup banner + `/rules-of-engagement` page**, then `demoOverlay` (`localStorage`) + the live-record merge step + mock identity + favorites | 3–4 d |
-| P3 | B | Lists CRUD (`my-lists`, create/edit/delete, reorder) | 2–3 d |
-| P4 | B | Tool submit/edit (editable on any tool, core/annotation labeled) + annotations edit + local revision/audit side-effects | 3–4 d |
-| P5 | B | Add/remove-tools simulation (paste/sample JSON); keep dev-settings hidden | 1.5–2 d |
-| P6 | B | Unify existing synthetic features under the same overload pattern; add the per-feature "Needs:" comments | 1–2 d |
-| P7 | A | i18n phases 3–5 (prose, localized fields, language switcher) + polish | 3–5 d |
+| Phase | Lane | Work                                                                                                                                                                   | Effort  |
+| ----- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| P0    | —    | Lock this plan + the overlay contract (decisions §8 resolved below)                                                                                                    | 0.5 d   |
+| P1    | A    | i18n catalog + `t()` (audit phases 1–2) and the deferred a11y items                                                                                                    | 4–6 d   |
+| P2    | B    | **Toggle default-off + red mockup banner + `/rules-of-engagement` page**, then `demoOverlay` (`localStorage`) + the live-record merge step + mock identity + favorites | 3–4 d   |
+| P3    | B    | Lists CRUD (`my-lists`, create/edit/delete, reorder)                                                                                                                   | 2–3 d   |
+| P4    | B    | Tool submit/edit (editable on any tool, core/annotation labeled) + annotations edit + local revision/audit side-effects                                                | 3–4 d   |
+| P5    | B    | Add/remove-tools simulation (paste/sample JSON); keep dev-settings hidden                                                                                              | 1.5–2 d |
+| P6    | B    | Unify existing synthetic features under the same overload pattern; add the per-feature "Needs:" comments                                                               | 1–2 d   |
+| P7    | A    | i18n phases 3–5 (prose, localized fields, language switcher) + polish                                                                                                  | 3–5 d   |
 
 Total: **~3 weeks**, entirely frontend. Lanes A and B are independent — i18n/a11y
 can ship while Lane B is still in progress, and vice versa.

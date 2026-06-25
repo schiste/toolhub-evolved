@@ -52,6 +52,7 @@ become toolhub-evolved
 cd ~/repo && git pull
 webservice restart            # or: sh ~/repo/tools/deploy.sh
 ```
+
 (Only re-run step 3 when `proxy/requirements.txt` changes.)
 
 ## Notes

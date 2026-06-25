@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Toolforge update helper for the Python webservice (Flask app in proxy/).
 # Run as the tool account:  become <toolname> && sh ~/repo/tools/deploy.sh
 # (First-time setup of the venv is in docs/deploy-toolforge.md.)
