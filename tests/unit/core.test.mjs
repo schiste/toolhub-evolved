@@ -368,3 +368,34 @@ test("synthetic signals are deterministic and constrained", () => {
 	assert.ok(synth.synthUsage("toolforge-admin") >= 50);
 	assert.match(synth.synthHealth("toolforge-admin").level, /^(green|yellow|red)$/);
 });
+
+test("apiGet retries a transient 503, then resolves", async () => {
+	const original = globalThis.fetch;
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		if (calls < 3) return { ok: false, status: 503 };
+		return { ok: true, json: async () => ({ results: ["ok"] }) };
+	};
+	// Restore inside .finally (no await precedes that assignment).
+	const data = await api.apiGet("/retry-probe/", { n: String(Math.random()) }).finally(() => {
+		globalThis.fetch = original;
+	});
+	assert.equal(calls, 3);
+	assert.deepEqual(data.results, ["ok"]);
+});
+
+test("apiGet does not retry a 404 (client error)", async () => {
+	const original = globalThis.fetch;
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return { ok: false, status: 404 };
+	};
+	const attempt = () =>
+		api.apiGet("/missing-probe/", { n: String(Math.random()) }).finally(() => {
+			globalThis.fetch = original;
+		});
+	await assert.rejects(attempt, /API 404/);
+	assert.equal(calls, 1);
+});

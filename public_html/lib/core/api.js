@@ -70,13 +70,43 @@ export const API_BASE = "/api";
 const API_TTL_MS = 30000;
 const apiCache = new Map(); // url -> { data, ts }
 const apiInflight = new Map(); // url -> Promise<data>
+// Transient failures — a network blip (e.g. ERR_NETWORK_CHANGED on a WiFi/VPN
+// switch) or a momentary 5xx (e.g. the webservice restarting on deploy) — would
+// otherwise leave the SPA with no data. Retry those a few times with backoff so
+// a hiccup self-heals; fail fast on real client errors (4xx).
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const API_RETRIES = 3;
+function sleep(ms) {
+	return new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
+}
+/**
+ * @param {string} url
+ * @param {number} [attempts]
+ * @returns {Promise<any>}
+ */
+async function fetchJson(url, attempts = API_RETRIES) {
+	let lastError;
+	for (let attempt = 1; attempt <= attempts; attempt += 1) {
+		let res;
+		try {
+			res = await fetch(url, { headers: { Accept: "application/json" } });
+		} catch (error) {
+			lastError = error; // network-layer failure → retry
+			if (attempt >= attempts) throw error;
+			await sleep(200 * 2 ** (attempt - 1));
+			continue;
+		}
+		if (res.ok) return res.json();
+		if (!RETRYABLE_STATUS.has(res.status) || attempt >= attempts) throw new Error(`API ${res.status} ${url}`);
+		await sleep(200 * 2 ** (attempt - 1));
+	}
+	throw lastError;
+}
 function apiFetch(url) {
 	if (apiInflight.has(url)) return apiInflight.get(url);
-	const p = fetch(url, { headers: { Accept: "application/json" } })
-		.then((res) => {
-			if (!res.ok) throw new Error(`API ${res.status} ${url}`);
-			return res.json();
-		})
+	const p = fetchJson(url)
 		.then((data) => {
 			apiCache.set(url, { data, ts: Date.now() });
 			return data;
