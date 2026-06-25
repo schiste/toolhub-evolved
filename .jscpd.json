@@ -1,0 +1,16 @@
+{
+	"threshold": 0,
+	"minLines": 8,
+	"minTokens": 60,
+	"reporters": ["console", "json"],
+	"output": ".quality/jscpd",
+	"ignore": [
+		"node_modules/**",
+		".quality/**",
+		"playwright-report/**",
+		"test-results/**",
+		"coverage/**",
+		"htmlcov/**",
+		"package-lock.json"
+	]
+}

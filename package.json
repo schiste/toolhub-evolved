@@ -1,0 +1,35 @@
+{
+	"name": "toolhub-evolved",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"quality": "node tools/quality.mjs",
+		"quality:pre-push": "node tools/quality.mjs --pre-push",
+		"hooks:install": "tools/install-hooks.sh",
+		"format:check": "prettier --check .",
+		"lint": "eslint . --max-warnings 0",
+		"lint:css": "stylelint \"public_html/styles/**/*.css\"",
+		"dead:check": "knip --production",
+		"dup:check": "jscpd --config .jscpd.json",
+		"test:e2e": "playwright test",
+		"audit:js": "npm audit --audit-level=moderate"
+	},
+	"devDependencies": {
+		"@axe-core/playwright": "^4.10.2",
+		"@eslint/js": "^9.39.1",
+		"@playwright/test": "^1.57.0",
+		"eslint": "^9.39.1",
+		"eslint-plugin-import": "^2.32.0",
+		"eslint-plugin-sonarjs": "4.1.0",
+		"eslint-plugin-unicorn": "^60.0.0",
+		"globals": "^16.5.0",
+		"jscpd": "^4.0.5",
+		"knip": "^5.70.1",
+		"prettier": "^3.7.4",
+		"stylelint": "^16.26.1",
+		"stylelint-config-standard": "^39.0.1",
+		"stylelint-declaration-strict-value": "^1.10.11",
+		"ts-api-utils": "^2.5.0"
+	}
+}

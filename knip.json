@@ -1,0 +1,21 @@
+{
+	"entry": [
+		"public_html/main.js",
+		"tools/quality.mjs",
+		"tools/smoke-server.mjs",
+		"tests/e2e/smoke.spec.mjs",
+		"playwright.config.mjs",
+		"eslint.config.js",
+		"stylelint.config.mjs"
+	],
+	"project": ["public_html/**/*.js", "tools/**/*.mjs", "tests/**/*.mjs", "*.js", "*.mjs"],
+	"ignoreDependencies": [
+		"@axe-core/playwright",
+		"@playwright/test",
+		"eslint",
+		"prettier",
+		"stylelint",
+		"jscpd",
+		"knip"
+	]
+}

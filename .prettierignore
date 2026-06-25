@@ -1,0 +1,10 @@
+node_modules/
+.quality/
+playwright-report/
+test-results/
+coverage/
+htmlcov/
+.git/
+.chau7/
+pyproject.toml
+proxy/requirements.txt

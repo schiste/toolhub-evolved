@@ -1,0 +1,17 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["proxy"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "ANN101",
+  "COM812",
+  "D100",
+  "D103",
+  "ISC001"
+]
+
+[tool.ruff.format]
+line-ending = "lf"

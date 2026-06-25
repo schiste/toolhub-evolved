@@ -12,3 +12,15 @@ __pycache__/
 proxy/venv/
 *.pyc
 .chau7/
+
+# Quality gate local artifacts
+node_modules/
+.quality/
+playwright-report/
+test-results/
+coverage/
+htmlcov/
+.ruff_cache/
+.pytest_cache/
+.eslintcache
+.jscpd/
