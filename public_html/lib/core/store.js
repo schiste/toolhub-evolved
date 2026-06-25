@@ -30,12 +30,35 @@ export const demoStore = {
 			localStorage.setItem(DEMO_NS + k, JSON.stringify(v));
 		} catch {}
 	},
+	remove(k) {
+		try {
+			localStorage.removeItem(DEMO_NS + k);
+		} catch {}
+	},
 	clearAll() {
 		Object.keys(localStorage)
 			.filter((k) => k.startsWith(DEMO_NS))
 			.forEach((k) => localStorage.removeItem(k));
 	}
 };
+const ABSENT = Symbol("absent");
+// Run render() with the demo store temporarily overlaid with `fixture` (a map of
+// DEMO_KEYS → value), restoring each key's prior value afterward. Lets previews
+// (e.g. the styleguide) show stateful components without touching localStorage
+// directly — keeping persistent storage confined to this core module.
+export function withDemoFixture(fixture, render) {
+	const entries = Object.entries(fixture);
+	const prior = entries.map(([k]) => [k, demoStore.get(k, ABSENT)]);
+	try {
+		for (const [k, v] of entries) demoStore.set(k, v);
+		return render();
+	} finally {
+		for (const [k, v] of prior) {
+			if (v === ABSENT) demoStore.remove(k);
+			else demoStore.set(k, v);
+		}
+	}
+}
 // EXPERIMENTAL — favorites overlay. Needs: POST/DELETE /api/user/favorites/
 // (Toolhub read-only API does not expose this). A set of tool names layered
 // over the live catalog; the tool data itself is always the live record.

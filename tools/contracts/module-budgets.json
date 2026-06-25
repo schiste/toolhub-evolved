@@ -132,9 +132,9 @@
 			"importDepth": 1
 		},
 		"public_html/lib/core/graph.js": {
-			"lines": 263,
-			"cyclomatic": 104,
-			"cognitive": 260,
+			"lines": 262,
+			"cyclomatic": 103,
+			"cognitive": 257,
 			"fanIn": 2,
 			"fanOut": 4,
 			"importDepth": 5
@@ -164,9 +164,9 @@
 			"importDepth": 1
 		},
 		"public_html/lib/core/session.js": {
-			"lines": 37,
-			"cyclomatic": 6,
-			"cognitive": 9,
+			"lines": 44,
+			"cyclomatic": 7,
+			"cognitive": 11,
 			"fanIn": 10,
 			"fanOut": 0,
 			"importDepth": 1
@@ -188,9 +188,9 @@
 			"importDepth": 4
 		},
 		"public_html/lib/core/store.js": {
-			"lines": 242,
-			"cyclomatic": 33,
-			"cognitive": 74,
+			"lines": 265,
+			"cyclomatic": 37,
+			"cognitive": 84,
 			"fanIn": 10,
 			"fanOut": 1,
 			"importDepth": 2
@@ -215,7 +215,7 @@
 			"lines": 18,
 			"cyclomatic": 5,
 			"cognitive": 7,
-			"fanIn": 4,
+			"fanIn": 5,
 			"fanOut": 0,
 			"importDepth": 1
 		},
@@ -309,8 +309,8 @@
 		},
 		"public_html/main.js": {
 			"lines": 220,
-			"cyclomatic": 52,
-			"cognitive": 123,
+			"cyclomatic": 51,
+			"cognitive": 119,
 			"fanIn": 0,
 			"fanOut": 12,
 			"importDepth": 9
@@ -340,7 +340,7 @@
 			"importDepth": 0
 		},
 		"public_html/styles/organisms.css": {
-			"lines": 1624,
+			"lines": 1617,
 			"cyclomatic": 1,
 			"cognitive": 0,
 			"fanIn": 0,
@@ -404,17 +404,17 @@
 			"importDepth": 7
 		},
 		"public_html/views/home.js": {
-			"lines": 366,
-			"cyclomatic": 89,
-			"cognitive": 211,
+			"lines": 363,
+			"cyclomatic": 86,
+			"cognitive": 205,
 			"fanIn": 1,
 			"fanOut": 11,
 			"importDepth": 7
 		},
 		"public_html/views/lists.js": {
 			"lines": 241,
-			"cyclomatic": 49,
-			"cognitive": 117,
+			"cyclomatic": 50,
+			"cognitive": 122,
 			"fanIn": 1,
 			"fanOut": 14,
 			"importDepth": 7
@@ -452,9 +452,9 @@
 			"importDepth": 4
 		},
 		"public_html/views/styleguide.js": {
-			"lines": 1069,
-			"cyclomatic": 48,
-			"cognitive": 127,
+			"lines": 1061,
+			"cyclomatic": 45,
+			"cognitive": 123,
 			"fanIn": 1,
 			"fanOut": 21,
 			"importDepth": 7
@@ -468,11 +468,11 @@
 			"importDepth": 7
 		},
 		"public_html/views/toolforms.js": {
-			"lines": 431,
-			"cyclomatic": 97,
-			"cognitive": 202,
+			"lines": 426,
+			"cyclomatic": 95,
+			"cognitive": 198,
 			"fanIn": 1,
-			"fanOut": 11,
+			"fanOut": 12,
 			"importDepth": 7
 		},
 		"stylelint.config.mjs": {
@@ -483,13 +483,29 @@
 			"fanOut": 0,
 			"importDepth": 1
 		},
-		"tests/e2e/smoke.spec.mjs": {
-			"lines": 60,
-			"cyclomatic": 6,
-			"cognitive": 17,
+		"tests/e2e/a11y-interaction.spec.mjs": {
+			"lines": 100,
+			"cyclomatic": 7,
+			"cognitive": 26,
 			"fanIn": 0,
 			"fanOut": 1,
+			"importDepth": 3
+		},
+		"tests/e2e/harness.mjs": {
+			"lines": 23,
+			"cyclomatic": 3,
+			"cognitive": 8,
+			"fanIn": 2,
+			"fanOut": 1,
 			"importDepth": 2
+		},
+		"tests/e2e/smoke.spec.mjs": {
+			"lines": 47,
+			"cyclomatic": 4,
+			"cognitive": 9,
+			"fanIn": 0,
+			"fanOut": 1,
+			"importDepth": 3
 		},
 		"tests/unit/core.test.mjs": {
 			"lines": 371,
@@ -516,12 +532,20 @@
 			"importDepth": 0
 		},
 		"tools/quality.mjs": {
-			"lines": 1437,
-			"cyclomatic": 429,
-			"cognitive": 1067,
+			"lines": 2048,
+			"cyclomatic": 594,
+			"cognitive": 1490,
 			"fanIn": 0,
 			"fanOut": 0,
 			"importDepth": 1
+		},
+		"tools/replay-gate.sh": {
+			"lines": 51,
+			"cyclomatic": 8,
+			"cognitive": 9,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
 		},
 		"tools/smoke-server.mjs": {
 			"lines": 225,

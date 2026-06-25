@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc } from "../lib/core/dom.js";
 import { INDEX } from "../lib/core/api.js";
-import { DEMO_KEYS, DEMO_NS } from "../lib/core/store.js";
+import { DEMO_KEYS, withDemoFixture } from "../lib/core/store.js";
 import { completeness, getUserContext, setUserContext } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import {
@@ -136,11 +136,6 @@ function seedFixtureIndex() {
 }
 
 function withStyleguideDemoState(render) {
-	if (typeof localStorage === "undefined") return render();
-	const favKey = DEMO_NS + DEMO_KEYS.favorites;
-	const listsKey = DEMO_NS + DEMO_KEYS.lists;
-	const prevFavs = localStorage.getItem(favKey);
-	const prevLists = localStorage.getItem(listsKey);
 	const lists = [
 		{
 			id: "demo-styleguide-campaign",
@@ -155,16 +150,13 @@ function withStyleguideDemoState(render) {
 			tools: [FIXTURE_TOOL_DEPRECATED.name]
 		}
 	];
-	try {
-		localStorage.setItem(favKey, JSON.stringify([FIXTURE_TOOL_DEPRECATED.name]));
-		localStorage.setItem(listsKey, JSON.stringify(lists));
-		return render();
-	} finally {
-		if (prevFavs === null) localStorage.removeItem(favKey);
-		else localStorage.setItem(favKey, prevFavs);
-		if (prevLists === null) localStorage.removeItem(listsKey);
-		else localStorage.setItem(listsKey, prevLists);
-	}
+	return withDemoFixture(
+		{
+			[DEMO_KEYS.favorites]: [FIXTURE_TOOL_DEPRECATED.name],
+			[DEMO_KEYS.lists]: lists
+		},
+		render
+	);
 }
 
 function fitChipExample() {

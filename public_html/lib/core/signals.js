@@ -92,7 +92,7 @@ export function hasContext() {
 // Wiki match is explicit: an exact id, or a "*.suffix" family entry (e.g.
 // "*.wikipedia.org" fits "en.wikipedia.org"). "*" (all wikis) is NOT a specific
 // fit, so the cue stays meaningful instead of matching everything.
-function wikiMatches(forWikis, wiki) {
+export function wikiMatches(forWikis, wiki) {
 	return (forWikis || []).some((w) => w === wiki || (w.startsWith("*.") && wiki.endsWith(w.slice(1))));
 }
 export function fitsContext(t, ctx) {

@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import * as espree from "espree";
 
 const QUALITY_DIR = ".quality";
 const REPORT_PATH = path.join(QUALITY_DIR, "report.json");
@@ -34,11 +35,26 @@ const MODULE_DEFAULT_LIMITS = {
 	importDepth: 6
 };
 const MUTATION_THRESHOLD = 95;
+// ---- Gate 5: structural / semantic duplicates ----------------------------
+const UI_SKELETON_PATH = path.join(CONTRACT_DIR, "ui-skeletons.json");
+const DUP_FN_MIN_NODES = 18; // structural floor; skips getters / one-liners
+const DUP_BRANCH_MIN_NODES = 8;
+const DUP_UI_MIN_DEPTH = 3;
+const DUP_UI_MIN_REPEAT = 3;
+const DUP_CSS_MIN_DECLS = 4;
+const DUP_CSS_MIN_GROUPS = 2;
+// The styleguide is a component gallery that deliberately renders many
+// structurally-similar examples; excluding it keeps 5a/5b signal-rich.
+const STRUCTURAL_DUP_EXCLUDE = new Set(["public_html/views/styleguide.js"]);
 const MAX_DIRECT_DEPENDENCY_RELEASE_AGE_DAYS = 548;
 const DUPLICATE_WINDOW = 12;
 const DESIGN_TOKEN_FILE = "public_html/styles/tokens.css";
 const APP_ENTRY = "public_html/main.js";
 const UPDATE_CONTRACTS = process.argv.includes("--update-contracts");
+// Per-commit replay (pre-push, over the push range) runs only the pure-rule
+// static gates: it skips mutation, the Playwright smoke run, and the snapshot
+// contracts (which describe HEAD's final state, not every historical commit).
+const REPLAY = process.argv.includes("--replay");
 const GENERATED_PATTERNS = [
 	/(^|\/)node_modules\//,
 	/(^|\/)\.quality\//,
@@ -75,6 +91,105 @@ const FORBIDDEN_CODE = [
 	},
 	{ pattern: /\balert\s*\(/, message: "blocking alert() calls are not allowed; use inline UI state" }
 ];
+
+// ---- Gate 8: architecture boundaries -------------------------------------
+// The only modules allowed to reach the network / persistent storage. Keeping
+// these confined is what lets the rest of the SPA stay a pure render layer.
+const APPROVED_NETWORK = new Set(["public_html/lib/core/api.js"]);
+const APPROVED_STORAGE = new Set([
+	"public_html/lib/core/store.js",
+	"public_html/lib/core/session.js",
+	"public_html/lib/core/theme.js",
+	"public_html/lib/core/i18n.js",
+	"public_html/lib/core/signals.js"
+]);
+// Modules that must stay DOM-free (return HTML strings instead). dom.js owns the
+// sanctioned query helpers; everything below core/atoms may render.
+const RENDER_FORBIDDEN_PREFIXES = ["public_html/lib/core/", "public_html/lib/atoms/"];
+const DOM_WRITE_ALLOW = new Set(["public_html/lib/core/dom.js", "public_html/lib/core/theme.js"]);
+const FORBIDDEN_BROWSER_IMPORT = new Set([
+	"fs",
+	"path",
+	"http",
+	"https",
+	"crypto",
+	"child_process",
+	"os",
+	"url",
+	"util",
+	"stream"
+]);
+const FORBIDDEN_GLOBALS = [
+	{ re: /\bprocess\.\w/, msg: "Node 'process' is not available in the browser" },
+	{ re: /\brequire\s*\(/, msg: "CommonJS require() is not allowed; use ESM imports" },
+	{ re: /\b__dirname\b|\b__filename\b/, msg: "Node module globals are not available in the browser" },
+	{ re: /\beval\s*\(/, msg: "eval() is forbidden" },
+	{ re: /\bdocument\.write\s*\(/, msg: "document.write() is forbidden" }
+];
+// Usage-shaped (not bare-word) so prose mentions of "localStorage"/"fetch" in
+// comments or visible copy never trip the gate.
+const STORAGE_RE =
+	/\b(?:local|session)Storage\s*(?:\.\s*(?:get|set|remove|clear|key)|\[)|Object\.keys\(\s*localStorage|\bdocument\.cookie\b|\bindexedDB\b/;
+const NETWORK_RE =
+	/\bfetch\s*\(|\bXMLHttpRequest\b|\bnavigator\.sendBeacon\b|\bnew\s+WebSocket\b|\bnew\s+EventSource\b/;
+// Targets HTML injection specifically (not state-class toggles like
+// body.classList, which core legitimately uses for global theme/exp state).
+const DOM_MUTATE_RE =
+	/\binnerHTML\s*=|\bouterHTML\s*=|\.insertAdjacentHTML\s*\(|document\.createElement|\.appendChild\s*\(|\.replaceChildren\s*\(/;
+
+// ---- Gate 9: copy quality (UI strings only) ------------------------------
+// Tunable word/phrase lists — keep tight to avoid flagging legitimate copy.
+const COPY_FILLER = [
+	"very",
+	"really",
+	"simply",
+	"just simply",
+	"basically",
+	"at the end of the day",
+	"needless to say"
+];
+const COPY_VAGUE_LABELS = new Set([
+	"click here",
+	"read more",
+	"learn more",
+	"click",
+	"here",
+	"info",
+	"more",
+	"this link",
+	"submit"
+]);
+const COPY_PLACEHOLDER = ["lorem", "ipsum", "tbd", "tba", "foo", "bar", "baz", "coming soon", "placeholder text"];
+const COPY_AI_PHRASES = [
+	"delve",
+	"seamless",
+	"seamlessly",
+	"robust",
+	"elevate",
+	"unlock the power",
+	"in today's fast-paced",
+	"it's worth noting",
+	"game-changer",
+	"tapestry",
+	"testament to"
+];
+const COPY_LABEL_MAXLEN = 60;
+const COPY_SCAN_EXCLUDE = new Set([
+	"public_html/views/_fixtures.js",
+	"tools/smoke-server.mjs",
+	"public_html/views/styleguide.js" // component gallery: deliberately mirrors real UI copy
+]);
+
+// ---- Gate 10: git hygiene over the push range ----------------------------
+const COMMIT_SUBJECT_MAX = 72;
+const COMMIT_MAX_FILES = 40;
+const COMMIT_MAX_DIFF_LINES = 800; // added + removed; tools/contracts/ snapshots exempt
+const GIT_FALLBACK_COMMITS = 20;
+const CONVENTIONAL_RE = /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([\w./-]+\))?!?: .+/;
+const IMPERATIVE_SUBJECT_RE = /^[A-Z]\S.*$/;
+const IMPERATIVE_BAN_RE = /\b(wip|fixup|squash!|amend!|tmp|asdf|stuff|misc)\b/i;
+const MERGE_NOISE_RE = /^Merge (branch|remote-tracking|pull request)\b/;
+const CHURN_AREA_LIMIT = 3;
 
 const root = repoRoot();
 process.chdir(root);
@@ -289,6 +404,7 @@ runCheck("jscpd", (check) => {
 });
 
 runCheck("npm audit", (check) => {
+	if (REPLAY) return; // dependency audit is a HEAD-time check, not per-commit
 	requireFile(check, "package-lock.json", "package-lock.json is required for npm audit");
 	if (existsSync("package-lock.json")) command(check, "npm", ["audit", "--audit-level=moderate"]);
 });
@@ -392,6 +508,7 @@ runCheck("ruff", (check) => {
 });
 
 runCheck("pip audit", (check) => {
+	if (REPLAY) return; // dependency audit is a HEAD-time check, not per-commit
 	requireFile(check, pyBin("pip-audit"), "run tools/install-hooks.sh before pushing");
 	if (existsSync(pyBin("pip-audit"))) {
 		command(check, pyBin("pip-audit"), ["-r", "proxy/requirements.txt", "--strict"]);
@@ -414,6 +531,7 @@ runCheck("unit tests", (check) => {
 });
 
 runCheck("playwright axe smoke", (check) => {
+	if (REPLAY) return; // HEAD-only: too slow to replay per commit
 	requireFile(check, bin("playwright"), "run npm ci and npx playwright install chromium before pushing");
 	if (existsSync(bin("playwright"))) command(check, bin("playwright"), ["test"]);
 });
@@ -441,6 +559,123 @@ runCheck("text hygiene", (check) => {
 			const limit = TEXT_LINE_LIMITS.get(ext(file));
 			if (limit && entry.line.length > limit) {
 				fail(check, file, entry.number, `line is ${entry.line.length} chars; limit is ${limit}`);
+			}
+		}
+	}
+});
+
+// Collapse a raw HTML/template fragment to its visible label text: drop nested
+// tags and ${...} interpolations, unescape nothing, trim and collapse whitespace.
+function labelText(fragment) {
+	return fragment
+		.replaceAll(/\${[^}]*}/g, "")
+		.replaceAll(/<[^>]*>/g, "")
+		.replaceAll(/\s+/g, " ")
+		.trim();
+}
+
+// Visible text runs (between > and <) with line numbers, for an HTML file or for
+// the template-literal spans of a JS file. Static <script>/<style> bodies and
+// ${...} interpolations are excluded so only user-facing copy is scanned.
+function copyRuns(file) {
+	const text = read(file);
+	const runs = [];
+	const isHtml = ext(file) === ".html";
+	const haystacks = [];
+	if (isHtml) {
+		const stripped = text.replaceAll(/<script\b[\S\s]*?<\/script>|<style\b[\S\s]*?<\/style>/gi, (m) =>
+			" ".repeat(m.length)
+		);
+		haystacks.push({ body: stripped, base: 0 });
+	} else {
+		for (const m of text.matchAll(/`([^\\`]*(?:\\.[^\\`]*)*)`/g)) {
+			if (!m[1].includes("<")) continue;
+			haystacks.push({ body: m[1], base: m.index + 1 });
+		}
+	}
+	for (const { body, base } of haystacks) {
+		for (const m of body.matchAll(/>([^<]+)</g)) {
+			const raw = m[1];
+			const visible = raw
+				.replaceAll(/\${[^}]*}/g, "")
+				.replaceAll(/\s+/g, " ")
+				.trim();
+			if (visible) runs.push({ text: visible, line: lineNumber(text, base + m.index + 1) });
+		}
+	}
+	return runs;
+}
+
+function copyLabels(file) {
+	const text = read(file);
+	const labels = [];
+	for (const m of text.matchAll(/<(a|button|h1|h2|h3)\b[^>]*>([\S\s]*?)<\/\1>/gi)) {
+		const label = labelText(m[2]);
+		if (!label) continue;
+		// "Simple" = a real label, not a card/container: no text-bearing nested
+		// element once icons are removed (link cards with title+desc are skipped).
+		const simple = !/<[A-Za-z]/.test(m[2].replaceAll(/<svg\b[\S\s]*?<\/svg>/gi, ""));
+		labels.push({ tag: m[1].toLowerCase(), text: label, line: lineNumber(text, m.index), simple });
+	}
+	return labels;
+}
+
+runCheck("copy quality", (check) => {
+	const copyFiles = files.filter(
+		(item) =>
+			!COPY_SCAN_EXCLUDE.has(rel(item)) &&
+			(rel(item) === "public_html/index.html" || (rel(item).startsWith("public_html/") && JS_EXTS.has(ext(item))))
+	);
+	for (const file of copyFiles) {
+		const headingSeen = new Map(); // duplicate headings are scoped per page/file
+		for (const run of copyRuns(file)) {
+			const lower = run.text.toLowerCase();
+			for (const word of COPY_FILLER) {
+				if (new RegExp(`\\b${word.replaceAll(/[$()*+.?[\\\]^{|}]/g, "\\$&")}\\b`).test(lower)) {
+					fail(check, file, run.line, `filler word "${word}" — tighten the copy`);
+				}
+			}
+			for (const word of COPY_PLACEHOLDER) {
+				if (new RegExp(`\\b${word}\\b`).test(lower)) {
+					fail(check, file, run.line, `placeholder copy "${word}" must be replaced`);
+				}
+			}
+			for (const phrase of COPY_AI_PHRASES) {
+				if (lower.includes(phrase)) {
+					fail(check, file, run.line, `AI-cliché phrasing "${phrase}" — rewrite in plain product voice`);
+				}
+			}
+		}
+		for (const label of copyLabels(file)) {
+			if (label.simple && COPY_VAGUE_LABELS.has(label.text.toLowerCase())) {
+				fail(
+					check,
+					file,
+					label.line,
+					`vague ${label.tag} label "${label.text}" — describe the destination/action`
+				);
+			}
+			if (label.simple && label.text.length > COPY_LABEL_MAXLEN) {
+				fail(
+					check,
+					file,
+					label.line,
+					`${label.tag} label is ${label.text.length} chars; keep UI labels under ${COPY_LABEL_MAXLEN}`
+				);
+			}
+			if (["h1", "h2", "h3"].includes(label.tag)) {
+				const key = label.text.toLowerCase();
+				const prev = headingSeen.get(key);
+				if (prev) {
+					fail(
+						check,
+						file,
+						label.line,
+						`duplicate heading "${label.text}" (first at ${prev.file}:${prev.line})`
+					);
+				} else {
+					headingSeen.set(key, { file: rel(file), line: label.line });
+				}
 			}
 		}
 	}
@@ -538,6 +773,55 @@ runCheck("imports and architecture", (check) => {
 		visited.add(node);
 	}
 	for (const node of graph.keys()) dfs(node);
+});
+
+runCheck("architecture boundaries", (check) => {
+	const browserFiles = files.filter((item) => JS_EXTS.has(ext(item)) && rel(item).startsWith("public_html/"));
+	for (const file of browserFiles) {
+		const name = rel(file);
+		const text = read(file);
+		// Forbidden imports: browser modules must never pull in Node built-ins.
+		for (const item of importsFor(file)) {
+			const spec = item.spec.replace(/^node:/, "");
+			if (item.spec.startsWith("node:") || FORBIDDEN_BROWSER_IMPORT.has(spec)) {
+				fail(check, file, item.line, `browser module must not import Node built-in "${item.spec}"`);
+			}
+		}
+		const entries = fileLineEntries(file, text);
+		for (const entry of entries) {
+			for (const rule of FORBIDDEN_GLOBALS) {
+				if (rule.re.test(entry.line)) fail(check, file, entry.number, rule.msg);
+			}
+			if (!APPROVED_NETWORK.has(name) && NETWORK_RE.test(entry.line)) {
+				fail(
+					check,
+					file,
+					entry.number,
+					"network access is only allowed in lib/core/api.js; route this through apiGet()"
+				);
+			}
+			if (!APPROVED_STORAGE.has(name) && STORAGE_RE.test(entry.line)) {
+				fail(
+					check,
+					file,
+					entry.number,
+					"persistent storage is only allowed in core (store/session/theme/i18n/signals); move it to lib/core/store.js"
+				);
+			}
+			if (
+				RENDER_FORBIDDEN_PREFIXES.some((prefix) => name.startsWith(prefix)) &&
+				!DOM_WRITE_ALLOW.has(name) &&
+				DOM_MUTATE_RE.test(entry.line)
+			) {
+				fail(
+					check,
+					file,
+					entry.number,
+					"core/atoms modules must be DOM-free; return HTML strings and let a molecule/organism/view render"
+				);
+			}
+		}
+	}
 });
 
 function exportedNames(file) {
@@ -742,6 +1026,7 @@ function publicApiContract() {
 }
 
 runCheck("public API contract", (check) => {
+	if (REPLAY) return; // snapshot describes HEAD, not historical commits
 	updateOrCompareSnapshot(check, API_CONTRACT_PATH, publicApiContract(), "public API contract");
 });
 
@@ -1020,6 +1305,7 @@ function defaultModuleBudget(file) {
 }
 
 runCheck("module complexity budgets", (check) => {
+	if (REPLAY) return; // snapshot describes HEAD, not historical commits
 	const actual = moduleMetrics();
 	if (UPDATE_CONTRACTS) {
 		updateOrCompareSnapshot(check, MODULE_BUDGET_PATH, actual, "module budgets");
@@ -1228,6 +1514,229 @@ runCheck("duplicate functions", (check) => {
 	}
 });
 
+const ESPREE_OPTS = { ecmaVersion: 2023, sourceType: "module", loc: true };
+const astCache = new Map();
+function parseJs(file) {
+	if (astCache.has(file)) return astCache.get(file);
+	let tree = null;
+	try {
+		tree = espree.parse(read(file), ESPREE_OPTS);
+	} catch {
+		tree = null; // the `syntax` gate (node --check) owns parse errors
+	}
+	astCache.set(file, tree);
+	return tree;
+}
+function astChildren(node) {
+	const kids = [];
+	for (const key of Object.keys(node)) {
+		if (key === "loc" || key === "range" || key === "start" || key === "end") continue;
+		const value = node[key];
+		if (Array.isArray(value)) {
+			for (const child of value) if (child && typeof child.type === "string") kids.push(child);
+		} else if (value && typeof value.type === "string") {
+			kids.push(value);
+		}
+	}
+	return kids;
+}
+function walkAst(node, visit) {
+	if (!node || typeof node.type !== "string") return;
+	visit(node);
+	for (const child of astChildren(node)) walkAst(child, visit);
+}
+// Structural fingerprint of a subtree. Literals are anonymized but identifiers are
+// kept verbatim (so Math.max- and Math.min-shaped code do NOT collide) — trading
+// rename-clone recall for precision, which is the right call under strict mode.
+function structuralKey(node) {
+	let label = node.type;
+	if (node.type === "Literal" || node.type === "TemplateElement") label = "Lit";
+	else if (node.type === "Identifier") label = `Id:${node.name}`;
+	else if (node.type === "PrivateIdentifier") label = `Pvt:${node.name}`;
+	const kids = astChildren(node).map((child) => structuralKey(child));
+	let count = 1;
+	for (const kid of kids) count += kid.count;
+	return { key: `${label}(${kids.map((kid) => kid.key).join(",")})`, count };
+}
+
+runCheck("structural duplicates", (check) => {
+	// 5a/5b — AST duplicate functions and near-duplicate sibling branches, scoped to
+	// application code (tooling/test boilerplate is intentionally repetitive and is
+	// covered by jscpd's token-clone gate instead).
+	const fnSeen = new Map();
+	for (const file of files.filter(
+		(item) =>
+			rel(item).startsWith("public_html/") && JS_EXTS.has(ext(item)) && !STRUCTURAL_DUP_EXCLUDE.has(rel(item))
+	)) {
+		const tree = parseJs(file);
+		if (!tree) continue;
+		const handledChain = new Set();
+		walkAst(tree, (node) => {
+			if (
+				node.type === "FunctionDeclaration" ||
+				node.type === "FunctionExpression" ||
+				node.type === "ArrowFunctionExpression"
+			) {
+				const sk = structuralKey(node.body);
+				if (sk.count < DUP_FN_MIN_NODES) return;
+				const here = { file: rel(file), line: node.loc.start.line };
+				const prev = fnSeen.get(sk.key);
+				if (prev) {
+					fail(
+						check,
+						file,
+						here.line,
+						`function body structurally duplicates ${prev.file}:${prev.line} (${sk.count} nodes)`
+					);
+				} else {
+					fnSeen.set(sk.key, here);
+				}
+			}
+			if (node.type === "IfStatement" && !handledChain.has(node)) {
+				const blocks = [];
+				let cur = node;
+				while (cur && cur.type === "IfStatement") {
+					handledChain.add(cur);
+					blocks.push(cur.consequent);
+					cur = cur.alternate;
+				}
+				if (cur) blocks.push(cur);
+				flagSiblingDuplicates(check, file, blocks);
+			}
+			if (node.type === "SwitchStatement") {
+				flagSiblingDuplicates(
+					check,
+					file,
+					node.cases.map((c) => ({ loc: c.loc, type: "BlockStatement", body: c.consequent }))
+				);
+			}
+		});
+	}
+
+	// 5c — repeated UI structures in index.html (review-gated snapshot, because the
+	// footer's four nav columns are an intentional repeat). JS template HTML is out
+	// of scope here (covered by the regex clone gates).
+	const indexFile = files.find((item) => rel(item) === "public_html/index.html");
+	if (indexFile && !REPLAY) {
+		const counts = new Map();
+		for (const sig of htmlSkeletons(read(indexFile))) counts.set(sig, (counts.get(sig) || 0) + 1);
+		const catalog = [...counts.entries()]
+			.filter(([, n]) => n >= DUP_UI_MIN_REPEAT)
+			.map(([signature, occurrences]) => ({ signature, occurrences }))
+			.sort((a, b) => a.signature.localeCompare(b.signature));
+		updateOrCompareSnapshot(check, UI_SKELETON_PATH, catalog, "repeated UI structures");
+	}
+
+	// 5d — repeated CSS declaration sets shared across distinct selectors.
+	for (const file of files.filter((item) => ext(item) === ".css")) {
+		const text = cssWithoutComments(file);
+		const declSeen = new Map();
+		const regex = /([^{}]+){([^{}]*)}/g;
+		let match;
+		while ((match = regex.exec(text))) {
+			const raw = match[1].trim();
+			if (!raw || raw.startsWith("@") || raw === "from" || raw === "to" || raw.endsWith("%")) continue;
+			const decls = match[2]
+				.split(";")
+				.map((d) => d.trim().replaceAll(/\s+/g, " "))
+				.filter(Boolean)
+				.sort();
+			if (decls.length < DUP_CSS_MIN_DECLS) continue;
+			const key = decls.join("; ");
+			const line = lineNumber(text, match.index);
+			const selectors = splitSelectors(raw).filter(Boolean).join(", ");
+			const prev = declSeen.get(key);
+			if (prev && prev.selectors !== selectors) {
+				prev.group.add(selectors);
+				if (prev.group.size >= DUP_CSS_MIN_GROUPS) {
+					fail(
+						check,
+						file,
+						line,
+						`${decls.length} identical declarations shared with "${prev.selectors}" (line ${prev.line}); extract a shared class or :where() group`
+					);
+				}
+			} else if (!prev) {
+				declSeen.set(key, { selectors, line, group: new Set([selectors]) });
+			}
+		}
+	}
+});
+
+function flagSiblingDuplicates(check, file, blocks) {
+	const seen = new Map();
+	for (const block of blocks) {
+		if (!block || typeof block.type !== "string") continue;
+		const sk = structuralKey(block);
+		if (sk.count < DUP_BRANCH_MIN_NODES) continue;
+		const line = block.loc.start.line;
+		const prev = seen.get(sk.key);
+		if (prev) {
+			fail(
+				check,
+				file,
+				line,
+				`branch body duplicates the sibling branch at line ${prev}; collapse or table-drive it`
+			);
+		} else {
+			seen.set(sk.key, line);
+		}
+	}
+}
+
+function htmlSkeletons(text) {
+	const TAG = /<(\/?)([A-Za-z][\w-]*)((?:[^"'>]|"[^"]*"|'[^']*')*?)(\/?)>/g;
+	const VOID = new Set([
+		"area",
+		"base",
+		"br",
+		"col",
+		"embed",
+		"hr",
+		"img",
+		"input",
+		"link",
+		"meta",
+		"param",
+		"source",
+		"track",
+		"wbr"
+	]);
+	const roots = [];
+	const stack = [];
+	let match;
+	while ((match = TAG.exec(text))) {
+		const closing = match[1] === "/";
+		const tag = match[2].toLowerCase();
+		if (closing) {
+			for (let i = stack.length - 1; i >= 0; i -= 1) {
+				if (stack[i].tag === tag) {
+					stack.length = i;
+					break;
+				}
+			}
+			continue;
+		}
+		const classMatch = /class\s*=\s*"([^"]*)"/.exec(match[3]);
+		const classes = classMatch ? classMatch[1].trim().split(/\s+/).filter(Boolean).sort() : [];
+		const node = { tag, classes, children: [] };
+		if (stack.length > 0) stack[stack.length - 1].children.push(node);
+		else roots.push(node);
+		if (!(match[4] === "/" || VOID.has(tag))) stack.push(node);
+	}
+	const signatures = [];
+	function signatureOf(node) {
+		const self = node.classes.length > 0 ? `${node.tag}.${node.classes.join(".")}` : node.tag;
+		const kids = node.children.map((child) => signatureOf(child));
+		const depth = kids.length > 0 ? 1 + Math.max(...kids.map((kid) => kid.depth)) : 1;
+		const sig = kids.length > 0 ? `${self}[${kids.map((kid) => kid.sig).join(",")}]` : self;
+		if (depth >= DUP_UI_MIN_DEPTH && node.classes.length > 0) signatures.push(sig);
+		return { sig, depth };
+	}
+	for (const node of roots) signatureOf(node);
+	return signatures;
+}
+
 const MUTATION_TARGETS = new Map([
 	["public_html/lib/core/api.js", ["firstUrl", "hasValue", "normalizeList", "normalizeTool", "pick", "statusOf"]],
 	["public_html/lib/core/dom.js", ["dirAttrs", "esc", "hash", "normalizeVcsUrl", "safeUrl"]],
@@ -1354,6 +1863,7 @@ function runMutant(mutant) {
 }
 
 runCheck("mutation testing", (check) => {
+	if (REPLAY) return; // HEAD-only: too slow to replay per commit
 	const tests = unitTestFiles();
 	if (tests.length === 0) {
 		fail(check, "tests/unit", null, "unit tests are required before mutation testing");
@@ -1410,6 +1920,107 @@ runCheck("mutation testing", (check) => {
 				survivor.file,
 				survivor.line,
 				`survived mutant in ${survivor.functionName}: ${survivor.mutator} (${survivor.from} -> ${survivor.to})`
+			);
+		}
+	}
+});
+
+function gitOut(args) {
+	const out = spawnSync("git", args, { encoding: "utf8", cwd: root });
+	return out.status === 0 ? out.stdout : "";
+}
+
+function pushRangeCommits() {
+	const base = gitOut(["merge-base", "origin/main", "HEAD"]).trim();
+	if (base) {
+		// Known upstream: check exactly what is ahead of it (empty when in sync).
+		const list = gitOut(["rev-list", `${base}..HEAD`]).trim();
+		return list ? list.split("\n").filter(Boolean) : [];
+	}
+	// No upstream to diff against (e.g. fresh clone) — degrade to recent commits.
+	return gitOut(["rev-list", "--max-count", String(GIT_FALLBACK_COMMITS), "HEAD"])
+		.trim()
+		.split("\n")
+		.filter(Boolean);
+}
+
+function areaOf(file) {
+	const top = file.split("/")[0];
+	return top === "public_html" || top === "proxy" || top === "tools" || top === "tests" ? top : "root";
+}
+
+runCheck("git hygiene", (check) => {
+	if (REPLAY) return; // range check is a HEAD-time gate, not a per-commit one
+	for (const sha of pushRangeCommits()) {
+		const short = sha.slice(0, 9);
+		const subject = (gitOut(["show", "-s", "--format=%s", sha]).split("\n")[0] || "").trim();
+		if (!subject) continue;
+		if (MERGE_NOISE_RE.test(subject)) {
+			fail(check, null, null, `commit ${short}: merge commits should not be in the push range; rebase instead`);
+			continue;
+		}
+		if (!CONVENTIONAL_RE.test(subject) && !IMPERATIVE_SUBJECT_RE.test(subject)) {
+			fail(
+				check,
+				null,
+				null,
+				`commit ${short}: subject must be Conventional Commits or a capitalized imperative ("${subject}")`
+			);
+		}
+		if (IMPERATIVE_BAN_RE.test(subject)) {
+			fail(check, null, null, `commit ${short}: WIP/fixup/tmp commits must be squashed before pushing`);
+		}
+		if (subject.length > COMMIT_SUBJECT_MAX) {
+			fail(
+				check,
+				null,
+				null,
+				`commit ${short}: subject is ${subject.length} chars; keep it under ${COMMIT_SUBJECT_MAX}`
+			);
+		}
+		if (subject.endsWith(".")) {
+			fail(check, null, null, `commit ${short}: subject must not end with a period`);
+		}
+		const numstat = gitOut(["diff-tree", "--no-commit-id", "--numstat", "-r", sha]).trim();
+		const rows = numstat ? numstat.split("\n").filter(Boolean) : [];
+		const paths = [];
+		let changed = 0;
+		let snapshotOnly = true;
+		for (const row of rows) {
+			const [added, removed, file] = row.split("\t");
+			if (!file) continue;
+			paths.push(file);
+			if (!file.startsWith("tools/contracts/")) {
+				changed += (Number(added) || 0) + (Number(removed) || 0);
+				snapshotOnly = false;
+			}
+			if (GENERATED_PATTERNS.some((re) => re.test(file))) {
+				fail(check, file, null, `commit ${short} adds a generated artifact (${file})`);
+			}
+		}
+		if (paths.length > COMMIT_MAX_FILES) {
+			fail(
+				check,
+				null,
+				null,
+				`commit ${short} touches ${paths.length} files; split it (limit ${COMMIT_MAX_FILES})`
+			);
+		}
+		if (!snapshotOnly && changed > COMMIT_MAX_DIFF_LINES) {
+			fail(
+				check,
+				null,
+				null,
+				`commit ${short} changes ${changed} lines; split it (limit ${COMMIT_MAX_DIFF_LINES})`
+			);
+		}
+		const areas = new Set(paths.map((file) => areaOf(file)));
+		if (areas.size >= CHURN_AREA_LIMIT) {
+			fail(
+				check,
+				null,
+				null,
+				`commit ${short} spans unrelated areas (${[...areas].sort().join(", ")}); keep commits focused`
 			);
 		}
 	}

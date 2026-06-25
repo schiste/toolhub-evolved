@@ -4,6 +4,7 @@ import { countLabel } from "../lib/core/i18n.js";
 import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
+import { normStr } from "../lib/core/util.js";
 import {
 	DEMO_KEYS,
 	SAMPLE_TOOLINFO,
@@ -71,12 +72,6 @@ function duplicateRegion() {
 	</section>`;
 }
 
-function normalizeDuplicateText(value) {
-	return String(value === null || value === undefined ? "" : value)
-		.trim()
-		.toLowerCase();
-}
-
 function renderDuplicateItem(t) {
 	const title = t.title || t.name;
 	const maintainer = t.maintainer || (t.authors && t.authors[0]) || "Unknown maintainer";
@@ -120,7 +115,7 @@ function setupDuplicateSuggestions() {
 	};
 	const update = debounce(async () => {
 		const typedTitle = fieldValue("tf-title");
-		const typedName = normalizeDuplicateText(fieldValue("tf-name"));
+		const typedName = normStr(fieldValue("tf-name"));
 		const keywords = fromCsv(fieldValue("tf-keywords"));
 		const toolType = fieldValue("tf-type");
 		if (!typedTitle && keywords.length === 0 && !toolType) {
@@ -142,16 +137,16 @@ function setupDuplicateSuggestions() {
 		const candidates = [];
 		const add = (tool) => {
 			if (!tool || !tool.name) return;
-			if (typedName && normalizeDuplicateText(tool.name) === typedName) return;
+			if (typedName && normStr(tool.name) === typedName) return;
 			if (seen.has(tool.name)) return;
 			seen.add(tool.name);
 			candidates.push(tool);
 		};
-		const titleNeedle = normalizeDuplicateText(typedTitle);
+		const titleNeedle = normStr(typedTitle);
 		if (titleNeedle) {
 			for (const tool of index.tools) {
-				const titleText = normalizeDuplicateText(tool.title);
-				const nameText = normalizeDuplicateText(tool.name);
+				const titleText = normStr(tool.title);
+				const nameText = normStr(tool.name);
 				if (titleText.includes(titleNeedle) || nameText.includes(titleNeedle)) add(tool);
 			}
 		}

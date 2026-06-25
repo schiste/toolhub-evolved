@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $ } from "./lib/core/dom.js";
 import { applyLocaleAttrs } from "./lib/core/i18n.js";
-import { EXP_KEY, applyExp, expOn, setAuth, setAuthRender } from "./lib/core/session.js";
+import { applyExp, expOn, expStored, setAuth, setAuthRender, setExpStored } from "./lib/core/session.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
@@ -17,7 +17,7 @@ setAuthRender(() => {
 	render();
 });
 applyLocaleAttrs();
-applyExp(localStorage.getItem(EXP_KEY) === "on");
+applyExp(expStored());
 
 /* Color theme: Light/Dark toggle. The active option reflects the RESOLVED theme
    (<html data-theme>), so it shows the right state even before an explicit choice
@@ -193,7 +193,7 @@ const expBtn = $("#exp-toggle");
 if (expBtn) {
 	expBtn.addEventListener("click", () => {
 		const on = !expOn();
-		localStorage.setItem(EXP_KEY, on ? "on" : "off");
+		setExpStored(on);
 		applyExp(on);
 		renderAccount(); // identity is experimental — reflect the new state
 		syncSubmitButton();

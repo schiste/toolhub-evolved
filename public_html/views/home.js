@@ -2,7 +2,7 @@
 import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
-import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext } from "../lib/core/signals.js";
+import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext, wikiMatches } from "../lib/core/signals.js";
 import { listHref, navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
@@ -79,9 +79,6 @@ function hasHomeFilters(state) {
 function searchHrefForState(state) {
 	const params = homeFilterParams(state);
 	return `/search${params.toString() ? `?${params.toString()}` : ""}`;
-}
-function wikiMatches(forWikis, wiki) {
-	return (forWikis || []).some((w) => w === wiki || (w.startsWith("*.") && wiki.endsWith(w.slice(1))));
 }
 function toolMatchesIntent(t, state) {
 	if (state.term) {

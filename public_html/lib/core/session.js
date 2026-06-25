@@ -6,6 +6,13 @@
    `.exp-off` and CSS hides every `.experimental` element, leaving only the
    genuinely shippable UI. Default: OFF. */
 export const EXP_KEY = "toolhub-exp";
+// Persisted opt-in flag (storage stays in core; the app layer calls these).
+export function expStored() {
+	return localStorage.getItem(EXP_KEY) === "on";
+}
+export function setExpStored(on) {
+	localStorage.setItem(EXP_KEY, on ? "on" : "off");
+}
 export function expOn() {
 	return !document.body.classList.contains("exp-off");
 }

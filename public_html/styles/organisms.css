@@ -193,7 +193,8 @@
 	margin-top: var(--space-4);
 }
 #graph-canvas,
-.graph__canvas {
+.graph__canvas,
+.graph--ego > div {
 	position: relative;
 	width: 100%;
 	min-height: 260px;
@@ -203,14 +204,6 @@
 }
 .graph--ego {
 	margin-top: var(--space-3);
-}
-.graph--ego > div {
-	position: relative;
-	width: 100%;
-	min-height: 260px;
-	border: var(--border-base);
-	background: var(--color-surface);
-	overflow: hidden;
 }
 .force-graph {
 	display: block;

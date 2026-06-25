@@ -164,12 +164,12 @@ export function viewListEdit(id) {
 			const n = li.getAttribute("data-tn"),
 				i = work.tools.indexOf(n);
 			if (i === -1) return;
+			const up = e.target.closest('[data-move="up"]');
+			const down = e.target.closest('[data-move="down"]');
 			if (e.target.closest("[data-rm]")) {
 				work.tools.splice(i, 1);
-			} else if (e.target.closest('[data-move="up"]') && i > 0) {
-				work.tools.splice(i - 1, 0, work.tools.splice(i, 1)[0]);
-			} else if (e.target.closest('[data-move="down"]') && i < work.tools.length - 1) {
-				work.tools.splice(i + 1, 0, work.tools.splice(i, 1)[0]);
+			} else if ((up && i > 0) || (down && i < work.tools.length - 1)) {
+				work.tools.splice(i + (up ? -1 : 1), 0, work.tools.splice(i, 1)[0]);
 			} else {
 				return;
 			}

@@ -7,6 +7,9 @@ import { memoizeAsync, normStr } from "./util.js";
 const GLOBAL_NODE_LIMIT = 250;
 const COMMUNITY_LIMIT = 8;
 
+// Order [label, members] entries by community size (desc), label as tiebreak.
+const byCommunitySize = (a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]));
+
 function sortedPair(a, b) {
 	return a < b ? [a, b] : [b, a];
 }
@@ -80,9 +83,7 @@ export function detectCommunities(nodes, edges) {
 		if (!groups.has(label)) groups.set(label, []);
 		groups.get(label).push(id);
 	}
-	const ordered = [...groups.entries()].sort(
-		(a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))
-	);
+	const ordered = [...groups.entries()].sort(byCommunitySize);
 	const renumbered = new Map();
 	ordered.forEach(([label], index) => {
 		renumbered.set(label, index);
@@ -158,9 +159,7 @@ function capCommunities(selected, detected) {
 		if (!groups.has(id)) groups.set(id, []);
 		groups.get(id).push(item);
 	}
-	const ordered = [...groups.entries()].sort(
-		(a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))
-	);
+	const ordered = [...groups.entries()].sort(byCommunitySize);
 	const kept = ordered.slice(0, COMMUNITY_LIMIT);
 	const remap = new Map();
 	kept.forEach(([id], index) => {
