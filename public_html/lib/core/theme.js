@@ -4,12 +4,16 @@
 // reflected as <html data-theme="light|dark"> (see styles/tokens.css). An inline
 // script in index.html applies it before first paint to avoid a flash.
 const THEME_KEY = "toolhub-theme";
-const darkMQ = typeof window !== "undefined" && window.matchMedia
-	? window.matchMedia("(prefers-color-scheme: dark)") : null;
+const darkMQ =
+	typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
 export function getThemeChoice() {
 	let v = null;
-	try { v = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
+	try {
+		v = localStorage.getItem(THEME_KEY);
+	} catch {
+		/* ignore */
+	}
 	return v === "light" || v === "dark" ? v : "system";
 }
 
@@ -26,7 +30,9 @@ export function setThemeChoice(choice) {
 	try {
 		if (choice === "light" || choice === "dark") localStorage.setItem(THEME_KEY, choice);
 		else localStorage.removeItem(THEME_KEY); // "system" is the default — store nothing
-	} catch (e) { /* ignore */ }
+	} catch {
+		/* ignore */
+	}
 	applyTheme(choice);
 }
 
@@ -34,7 +40,9 @@ export function setThemeChoice(choice) {
 export function initTheme() {
 	applyTheme();
 	if (!darkMQ) return;
-	const onChange = () => { if (getThemeChoice() === "system") applyTheme("system"); };
+	const onChange = () => {
+		if (getThemeChoice() === "system") applyTheme("system");
+	};
 	if (darkMQ.addEventListener) darkMQ.addEventListener("change", onChange);
 	else if (darkMQ.addListener) darkMQ.addListener(onChange);
 }

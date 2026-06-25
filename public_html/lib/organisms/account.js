@@ -6,13 +6,15 @@ import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
 
 export function renderAccount() {
-	const el = document.getElementById("account");
+	const el = document.querySelector("#account");
 	if (!el) return;
-	if (!expOn()) { // honest read-only: real sign-in needs OAuth we don't have
+	if (!expOn()) {
+		// honest read-only: real sign-in needs OAuth we don't have
 		el.innerHTML = button("Log in", { variant: "outline", href: "/login" });
 		return;
 	}
-	if (!signedIn()) { // experiments on but logged out → offer the demo sign-in
+	if (!signedIn()) {
+		// experiments on but logged out → offer the demo sign-in
 		el.innerHTML = button("Sign in demo", { variant: "outline", attrs: "data-login" });
 		return;
 	}
@@ -33,25 +35,38 @@ export function renderAccount() {
 		</div>`;
 }
 export function closeAcctMenu() {
-	const m = document.getElementById("acct-menu"), b = document.getElementById("acct-btn");
+	const m = document.querySelector("#acct-menu"),
+		b = document.querySelector("#acct-btn");
 	if (m) m.hidden = true;
 	if (b) b.setAttribute("aria-expanded", "false");
 }
 export function toggleAcctMenu() {
-	const m = document.getElementById("acct-menu"), b = document.getElementById("acct-btn");
+	const m = document.querySelector("#acct-menu"),
+		b = document.querySelector("#acct-btn");
 	if (!m) return;
 	const willOpen = m.hidden;
 	m.hidden = !willOpen;
 	b.setAttribute("aria-expanded", String(willOpen));
-	if (willOpen) { const first = m.querySelector("a, button"); if (first) first.focus(); }
+	if (willOpen) {
+		const first = m.querySelector("a, button");
+		if (first) first.focus();
+	}
 }
 
 // Header "Submit a tool": in-app create form when experimenting (decision §8.3),
 // else the real production link.
 export function syncSubmitButton() {
-	const b = document.getElementById("submit-tool"); if (!b) return;
-	if (expOn()) { b.setAttribute("href", "/tools/create"); b.removeAttribute("target"); b.removeAttribute("rel"); }
-	else { b.setAttribute("href", "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create"); b.setAttribute("target", "_blank"); b.setAttribute("rel", "noopener nofollow"); }
+	const b = document.querySelector("#submit-tool");
+	if (!b) return;
+	if (expOn()) {
+		b.setAttribute("href", "/tools/create");
+		b.removeAttribute("target");
+		b.removeAttribute("rel");
+	} else {
+		b.setAttribute("href", "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create");
+		b.setAttribute("target", "_blank");
+		b.setAttribute("rel", "noopener nofollow");
+	}
 }
 
 globalThis.renderAccount = renderAccount;

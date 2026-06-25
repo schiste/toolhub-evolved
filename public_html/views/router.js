@@ -19,8 +19,12 @@ import { viewStyleguide } from "./styleguide.js";
 import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
 
 let signInFallback = null;
-export function setSignInFallback(fn) { signInFallback = fn; }
-export function requireSignIn(viewFn, title, lead) { return signedIn() ? viewFn() : signInFallback(title, lead); }
+export function setSignInFallback(fn) {
+	signInFallback = fn;
+}
+export function requireSignIn(viewFn, title, lead) {
+	return signedIn() ? viewFn() : signInFallback(title, lead);
+}
 setSignInFallback(signInPage);
 
 export const ROUTES = {
@@ -29,8 +33,14 @@ export const ROUTES = {
 	"published-lists": viewLists,
 	"my-lists": () => requireSignIn(viewMyLists, "Your lists", "See and manage the lists you've created."),
 	favorites: () => requireSignIn(viewFavorites, "Favorites", "Your saved tools, all in one place."),
-	"add-or-remove-tools": () => requireSignIn(viewAddTools, "Add or remove tools", "Register a toolinfo.json URL to be crawled, or create a tool record directly."),
-	"developer-settings": () => signInPage("Developer settings", "Manage your API tokens and registered OAuth applications."),
+	"add-or-remove-tools": () =>
+		requireSignIn(
+			viewAddTools,
+			"Add or remove tools",
+			"Register a toolinfo.json URL to be crawled, or create a tool record directly."
+		),
+	"developer-settings": () =>
+		signInPage("Developer settings", "Manage your API tokens and registered OAuth applications."),
 	login: () => signInPage("Sign in", "Sign in to save favourites, build lists, and edit tool information."),
 	recent: viewRecent,
 	members: viewMembers,
@@ -39,7 +49,7 @@ export const ROUTES = {
 	"api-docs": viewApiDocs,
 	contribute: viewContribute,
 	experiments: viewExperiments,
-	styleguide: viewStyleguide,
+	styleguide: viewStyleguide
 };
 export function dispatch() {
 	const { path } = parseRoute();
@@ -48,19 +58,57 @@ export function dispatch() {
 	if (seg[0] === "search") return viewSearch();
 	if (seg[0] === "by" && seg[1]) return viewAuthor(decodeURIComponent(seg[1]));
 	// Tool + its sub-routes
-	if (seg[0] === "tools" && seg[1] === "create") return requireSignIn(() => viewToolForm(null), "Submit a tool", "Create a new tool record — title, description, URL and more.");
+	if (seg[0] === "tools" && seg[1] === "create") {
+		return requireSignIn(
+			() => viewToolForm(null),
+			"Submit a tool",
+			"Create a new tool record — title, description, URL and more."
+		);
+	}
 	if (seg[0] === "tools" && seg[1]) {
 		const nm = decodeURIComponent(seg[1]);
-		if (seg[2] === "edit") return requireSignIn(() => viewToolForm(nm), "Edit tool", "Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data.");
-		if (seg[2] === "edit-annotations") return requireSignIn(() => viewAnnotationsEdit(nm), "Edit annotations", "Add or refine community annotations for this tool — audiences, tasks and more.");
+		if (seg[2] === "edit") {
+			return requireSignIn(
+				() => viewToolForm(nm),
+				"Edit tool",
+				"Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data."
+			);
+		}
+		if (seg[2] === "edit-annotations") {
+			return requireSignIn(
+				() => viewAnnotationsEdit(nm),
+				"Edit annotations",
+				"Add or refine community annotations for this tool — audiences, tasks and more."
+			);
+		}
 		if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
 		return viewTool(nm);
 	}
 	// Lists + sub-routes
-	if (seg[0] === "lists" && seg[1] === "create") return requireSignIn(() => viewListEdit(null), "Create a list", "Create a new list to group and share useful tools.");
+	if (seg[0] === "lists" && seg[1] === "create") {
+		return requireSignIn(
+			() => viewListEdit(null),
+			"Create a list",
+			"Create a new list to group and share useful tools."
+		);
+	}
 	if (seg[0] === "lists" && seg[1]) {
-		if (seg[2] === "edit") return requireSignIn(() => isDemoListId(seg[1]) ? viewListEdit(decodeURIComponent(seg[1])) : signInPage("Edit list", "Edit this list's title, description and tools."), "Edit list", "Edit this list's title, description and tools.");
-		if (seg[2] === "history") return prosePage("List history", "<p>Revision history for this list is available on the <a href=\"https://toolhub.wikimedia.org/\" target=\"_blank\" rel=\"noopener nofollow\">live site</a>.</p>");
+		if (seg[2] === "edit") {
+			return requireSignIn(
+				() =>
+					isDemoListId(seg[1])
+						? viewListEdit(decodeURIComponent(seg[1]))
+						: signInPage("Edit list", "Edit this list's title, description and tools."),
+				"Edit list",
+				"Edit this list's title, description and tools."
+			);
+		}
+		if (seg[2] === "history") {
+			return prosePage(
+				"List history",
+				'<p>Revision history for this list is available on the <a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>'
+			);
+		}
 		return viewList(decodeURIComponent(seg[1]));
 	}
 	if (ROUTES[seg[0]]) return ROUTES[seg[0]]();
@@ -90,35 +138,15 @@ export function setActiveNav() {
 }
 export let lastPath = null;
 export let navSeq = 0;
-export const loadingHTML = () => '<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>';
+export const loadingHTML = () =>
+	'<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>';
 export const errorHTML = (e) => `<div class="container page errorpage"><h1>Couldn't load live data</h1>
 	<p class="prose">The Toolhub API didn't respond (${esc(String((e && e.message) || e))}).</p>
 	${button("Back to home", { variant: "primary", href: "/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
 // the current page stays on screen — fast/cached loads never flash a spinner.
 const SPINNER_DELAY = 250;
-export async function render() {
-	closeQuickView(); // any navigation dismisses the peek modal
-	closeAcctMenu();  // …and the account dropdown
-	const seq = ++navSeq;
-	const { path } = parseRoute();
-	const viewEl = $("#view");
-	let spinnerTimer = null;
-	if (path !== lastPath) {
-		viewEl.setAttribute("aria-busy", "true"); // announce busy immediately (a11y)
-		if (lastPath === null) {
-			viewEl.innerHTML = loadingHTML(); // first load: nothing to keep on screen
-		} else {
-			// Keep the current page visible; only swap in the spinner if the next
-			// view is genuinely slow. Cached navigations resolve first and skip it.
-			spinnerTimer = setTimeout(() => { if (seq === navSeq) viewEl.innerHTML = loadingHTML(); }, SPINNER_DELAY);
-		}
-	}
-	let view;
-	try { view = await dispatch(); }
-	catch (e) { view = { title: "Error — Toolhub", html: errorHTML(e) }; }
-	if (spinnerTimer) clearTimeout(spinnerTimer); // resolved (or superseded) before the delay
-	if (seq !== navSeq) return; // a newer navigation superseded this one
+function commitView(viewEl, view, path) {
 	viewEl.innerHTML = view.html;
 	viewEl.setAttribute("aria-busy", "false");
 	document.body.classList.toggle("on-home", path === "/"); // expbar blends with the hero on home
@@ -132,4 +160,33 @@ export async function render() {
 		h1.focus({ preventScroll: true });
 		lastPath = path;
 	}
+}
+export async function render() {
+	closeQuickView(); // any navigation dismisses the peek modal
+	closeAcctMenu(); // …and the account dropdown
+	const seq = ++navSeq;
+	const { path } = parseRoute();
+	const viewEl = $("#view");
+	let spinnerTimer = null;
+	if (path !== lastPath) {
+		viewEl.setAttribute("aria-busy", "true"); // announce busy immediately (a11y)
+		if (lastPath === null) {
+			viewEl.innerHTML = loadingHTML(); // first load: nothing to keep on screen
+		} else {
+			// Keep the current page visible; only swap in the spinner if the next
+			// view is genuinely slow. Cached navigations resolve first and skip it.
+			spinnerTimer = setTimeout(() => {
+				if (seq === navSeq) viewEl.innerHTML = loadingHTML();
+			}, SPINNER_DELAY);
+		}
+	}
+	let view;
+	try {
+		view = await dispatch();
+	} catch (e) {
+		view = { title: "Error — Toolhub", html: errorHTML(e) };
+	}
+	if (spinnerTimer) clearTimeout(spinnerTimer); // resolved (or superseded) before the delay
+	if (seq !== navSeq) return; // a newer navigation superseded this one
+	commitView(viewEl, view, path);
 }

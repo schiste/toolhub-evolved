@@ -3,7 +3,8 @@ import { normalizeTool, paginate } from "./api.js";
 import { memoizeAsync, normStr } from "./util.js";
 
 export const loadAllTools = memoizeAsync(() =>
-	paginate("/search/tools/", {}, { pageSize: 100, maxPages: 10, map: normalizeTool }).catch(() => []));
+	paginate("/search/tools/", {}, { pageSize: 100, maxPages: 10, map: normalizeTool }).catch(() => [])
+);
 
 /* How much each facet contributes to "closeness". tasks/keywords describe what a
    tool DOES (weighted highest); forWikis is scope; audience/type are coarser.
@@ -15,7 +16,7 @@ const TERM_FACETS = {
 	kw: "keyword",
 	wiki: "wiki",
 	aud: "audience",
-	type: "type",
+	type: "type"
 };
 
 function facetOf(term) {
@@ -27,7 +28,7 @@ function pushTerms(out, seen, prefix, values, opts) {
 	for (const raw of values || []) {
 		const value = normStr(raw);
 		if (!value || (opts && opts.skipAllWikis && value === "*")) continue;
-		const term = prefix + ":" + value;
+		const term = `${prefix}:${value}`;
 		if (seen.has(term)) continue;
 		seen.add(term);
 		out.push(term);
@@ -122,20 +123,16 @@ function sharedTermsForVector(sourceVec, otherName, index) {
 	return shared.slice(0, 5).map((item) => item.label);
 }
 
-export function sharedTerms(tool, otherName, index) {
-	return sharedTermsForVector(vectorFor(tool, index), otherName, index);
-}
-
 export function nearestNeighbors(tool, index, k = 6) {
 	const sourceVec = vectorFor(tool, index);
-	if (!sourceVec.size) return [];
+	if (sourceVec.size === 0) return [];
 	const out = [];
 	const seen = new Set();
 	for (const other of index.tools) {
 		if (!other || other.name === tool.name || seen.has(other.name)) continue;
 		seen.add(other.name);
 		const otherVec = index.vectors.get(other.name);
-		if (!otherVec || !otherVec.size) continue;
+		if (!otherVec || otherVec.size === 0) continue;
 		const score = cosine(sourceVec, otherVec);
 		if (score <= 0) continue;
 		out.push({ tool: other, score, shared: sharedTermsForVector(sourceVec, other.name, index) });

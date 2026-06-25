@@ -14,13 +14,17 @@ const COMPLETENESS_FIELDS = [
 	{ key: "repository", label: "Source repository", ok: (t) => hasValue(t.repository) },
 	{ key: "license", label: "License", ok: (t) => hasValue(t.license) },
 	{ key: "keywords", label: "Keywords", ok: (t) => (t.keywords || []).length > 0 },
-	{ key: "audienceOrTask", label: "Audience or task tagged", ok: (t) => (t.audiences || []).length > 0 || (t.tasks || []).length > 0 },
+	{
+		key: "audienceOrTask",
+		label: "Audience or task tagged",
+		ok: (t) => (t.audiences || []).length > 0 || (t.tasks || []).length > 0
+	},
 	{ key: "docs", label: "Documentation", ok: (t) => hasValue(t.userDocs) || hasValue(t.devDocs) },
 	{ key: "icon", label: "Icon", ok: (t) => hasValue(t.icon) },
-	{ key: "contact", label: "Issue tracker or feedback", ok: (t) => hasValue(t.bugtracker) || hasValue(t.feedback) },
+	{ key: "contact", label: "Issue tracker or feedback", ok: (t) => hasValue(t.bugtracker) || hasValue(t.feedback) }
 ];
 export function completeness(t) {
-	const items = COMPLETENESS_FIELDS.map((f) => ({ key: f.key, label: f.label, ok: !!f.ok(t) }));
+	const items = COMPLETENESS_FIELDS.map((f) => ({ key: f.key, label: f.label, ok: Boolean(f.ok(t)) }));
 	const filled = items.filter((i) => i.ok).length;
 	return { filled, total: items.length, items };
 }
@@ -31,7 +35,7 @@ const FRESH_MS = 18 * 30 * 24 * 60 * 60 * 1000; // ~18 months
 export function freshness(t) {
 	const d = t.modified ? new Date(t.modified) : null;
 	if (!d || Number.isNaN(d.getTime())) return { known: false, fresh: false };
-	return { known: true, fresh: (Date.now() - d.getTime()) < FRESH_MS };
+	return { known: true, fresh: Date.now() - d.getTime() < FRESH_MS };
 }
 
 /* ---- Endorsement: curated-list membership ---------------------------------
@@ -43,7 +47,7 @@ async function buildMemberships() {
 	const lists = await paginate("/lists/", {}, { pageSize: 50, maxPages: 10 });
 	for (const l of lists) {
 		if (l.published === false) continue; // count only public/curated lists
-		for (const tool of (l.tools || [])) {
+		for (const tool of l.tools || []) {
 			const name = tool && tool.name;
 			if (!name) continue;
 			if (!map.has(name)) map.set(name, []);
@@ -66,16 +70,25 @@ export function endorsementOf(name, map) {
    your wiki or your audience), so the cue stays meaningful rather than universal. */
 const CONTEXT_KEY = "toolhub-context";
 export function getUserContext() {
-	try { return JSON.parse(localStorage.getItem(CONTEXT_KEY)) || {}; }
-	catch (e) { return {}; }
+	try {
+		return JSON.parse(localStorage.getItem(CONTEXT_KEY)) || {};
+	} catch {
+		return {};
+	}
 }
 export function setUserContext(ctx) {
 	try {
-		if (ctx && (ctx.wiki || ctx.role)) localStorage.setItem(CONTEXT_KEY, JSON.stringify({ wiki: ctx.wiki || "", role: ctx.role || "" }));
-		else localStorage.removeItem(CONTEXT_KEY);
-	} catch (e) {}
+		if (ctx && (ctx.wiki || ctx.role)) {
+			localStorage.setItem(CONTEXT_KEY, JSON.stringify({ wiki: ctx.wiki || "", role: ctx.role || "" }));
+		} else {
+			localStorage.removeItem(CONTEXT_KEY);
+		}
+	} catch {}
 }
-export function hasContext() { const c = getUserContext(); return !!(c.wiki || c.role); }
+export function hasContext() {
+	const c = getUserContext();
+	return Boolean(c.wiki || c.role);
+}
 // Wiki match is explicit: an exact id, or a "*.suffix" family entry (e.g.
 // "*.wikipedia.org" fits "en.wikipedia.org"). "*" (all wikis) is NOT a specific
 // fit, so the cue stays meaningful instead of matching everything.
@@ -83,9 +96,9 @@ function wikiMatches(forWikis, wiki) {
 	return (forWikis || []).some((w) => w === wiki || (w.startsWith("*.") && wiki.endsWith(w.slice(1))));
 }
 export function fitsContext(t, ctx) {
-	ctx = ctx || getUserContext();
-	const wiki = ctx.wiki ? wikiMatches(t.forWikis, ctx.wiki) : false;
-	const role = ctx.role ? (t.audiences || []).includes(ctx.role) : false;
+	const activeCtx = ctx || getUserContext();
+	const wiki = activeCtx.wiki ? wikiMatches(t.forWikis, activeCtx.wiki) : false;
+	const role = activeCtx.role ? (t.audiences || []).includes(activeCtx.role) : false;
 	return { wiki, role, fits: wiki || role };
 }
 
@@ -97,7 +110,7 @@ export function rankFitsFirst(tools) {
 	const fit = new Map(tools.map((t) => [t, fitsContext(t).fits ? 1 : 0]));
 	return tools
 		.map((t, i) => [t, i])
-		.sort((a, b) => (fit.get(b[0]) - fit.get(a[0])) || (a[1] - b[1]))
+		.sort((a, b) => fit.get(b[0]) - fit.get(a[0]) || a[1] - b[1])
 		.map((x) => x[0]);
 }
 // Attach `.endorsement` to each tool from the (memoized) membership map.

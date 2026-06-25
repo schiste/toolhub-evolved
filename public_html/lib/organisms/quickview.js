@@ -23,12 +23,14 @@ export function setPageInert(on) {
 	});
 }
 export function quickViewBody(t) {
-	const authors = (t.authors || []).map(esc).join(", ") || esc(t.maintainer);
+	const authors = (t.authors || []).map((author) => esc(author)).join(", ") || esc(t.maintainer);
 	const tags = keywordTags(t, { limit: QV_TAG_LIMIT });
 	const realBadge = [
 		t.deprecated && '<span class="status status--red"><span class="dot dot--red"></span>Deprecated</span>',
-		t.experimental && '<span class="status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>',
-	].filter(Boolean).join("");
+		t.experimental && '<span class="status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>'
+	]
+		.filter(Boolean)
+		.join("");
 	const glance = glanceChips(t);
 	return `
 		<div class="qv__head">${toolIcon(t, "lg")}
@@ -58,7 +60,10 @@ export async function openQuickView(name) {
 	let t = INDEX[name];
 	if (!t) {
 		t = await getTool(name);
-		if (!t) { navigateTo(toolHref(name)); return; }
+		if (!t) {
+			navigateTo(toolHref(name));
+			return;
+		}
 	}
 	qvLastFocus = document.activeElement;
 	$("#qv-body").innerHTML = quickViewBody(t);
@@ -80,10 +85,19 @@ export function closeQuickView() {
 export function qvTrap(e) {
 	const qv = $("#qv");
 	if (e.key !== "Tab" || qv.classList.contains("hidden")) return;
-	const f = Array.from(qv.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
-		.filter((el) => !el.hidden && el.offsetParent !== null);
-	if (!f.length) return;
-	const first = f[0], last = f[f.length - 1];
-	if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-	else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+	const f = [
+		...qv.querySelectorAll(
+			'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+		)
+	].filter((el) => !el.hidden && el.offsetParent !== null);
+	if (f.length === 0) return;
+	const first = f[0],
+		last = f[f.length - 1];
+	if (e.shiftKey && document.activeElement === first) {
+		e.preventDefault();
+		last.focus();
+	} else if (!e.shiftKey && document.activeElement === last) {
+		e.preventDefault();
+		first.focus();
+	}
 }

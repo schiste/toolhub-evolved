@@ -4,7 +4,15 @@ import { countLabel } from "../core/i18n.js";
 import { listHref } from "../core/routing.js";
 import { avatar } from "../atoms/avatar.js";
 
-export function listCardData(l) { return { id: l.id, title: l.title || "Untitled list", description: l.description || "", toolCount: (l.tools || []).length, demo: true }; }
+export function listCardData(l) {
+	return {
+		id: l.id,
+		title: l.title || "Untitled list",
+		description: l.description || "",
+		toolCount: (l.tools || []).length,
+		demo: true
+	};
+}
 export function listCard(l) {
 	const count = countLabel(l.toolCount, "tool", "tools");
 	return `

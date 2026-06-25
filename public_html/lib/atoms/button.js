@@ -2,8 +2,28 @@
 import { esc } from "../core/dom.js";
 import { icon } from "./icon.js";
 
+const BUTTON_SIZE_CLASSES = new Map([
+	["sm", "btn--sm"],
+	["md", "btn--md"],
+	["lg", "btn--lg"]
+]);
+const BUTTON_VARIANT_CLASSES = new Map([
+	["danger", "btn--danger"],
+	["outline", "btn--outline"],
+	["primary", "btn--primary"],
+	["subtle", "btn--subtle"]
+]);
+
 function classList(parts) {
 	return parts.filter(Boolean).join(" ");
+}
+
+function sizeClass(size) {
+	return BUTTON_SIZE_CLASSES.get(size) || BUTTON_SIZE_CLASSES.get("md");
+}
+
+function variantClass(variant) {
+	return BUTTON_VARIANT_CLASSES.get(variant) || BUTTON_VARIANT_CLASSES.get("outline");
 }
 
 function disabledAttrs(tag, disabled) {
@@ -22,7 +42,9 @@ function withRelToken(attrs, token) {
 		return input.replace(rel, (match, prefix, quote, value) => {
 			const tokens = value.split(/\s+/).filter(Boolean);
 			const seen = new Set(tokens.map((t) => t.toLowerCase()));
-			if (!seen.has(token)) tokens.push(token);
+			if (!seen.has(token)) {
+				tokens.push(token);
+			}
 			return `${prefix}rel=${quote}${tokens.join(" ")}${quote}`;
 		});
 	}
@@ -30,24 +52,26 @@ function withRelToken(attrs, token) {
 }
 
 function commonAttrs(tag, opts) {
-	const extraAttrs = tag === "a" && outboundHref(opts.href) ? withRelToken(opts.attrs, "nofollow") : (opts.attrs || "");
-	return `${tag === "a" ? ` href="${opts.href}"` : ` type="${esc(opts.type || "button")}"`}${disabledAttrs(tag, opts.disabled)}${extraAttrs ? " " + extraAttrs : ""}`;
+	const extraAttrs = tag === "a" && outboundHref(opts.href) ? withRelToken(opts.attrs, "nofollow") : opts.attrs || "";
+	return `${tag === "a" ? ` href="${opts.href}"` : ` type="${esc(opts.type || "button")}"`}${disabledAttrs(tag, opts.disabled)}${extraAttrs ? ` ${extraAttrs}` : ""}`;
 }
 
 export function button(label, opts = {}) {
 	const tag = opts.href ? "a" : "button";
 	const variant = opts.variant || "outline";
-	const size = opts.size || "md";
-	const cls = classList(["btn", `btn--${variant}`, `btn--${size}`, opts.cls]);
-	const body = `${opts.icon ? icon(opts.icon) + " " : ""}${esc(label)}`;
+	const { size: requestedSize } = opts;
+	const size = requestedSize || "md";
+	const cls = classList(["btn", variantClass(variant), sizeClass(size), opts.cls]);
+	const body = `${opts.icon ? `${icon(opts.icon)} ` : ""}${esc(label)}`;
 	return `<${tag} class="${cls}"${commonAttrs(tag, opts)}>${body}</${tag}>`;
 }
 
 export function iconButton(iconName, ariaLabel, opts = {}) {
 	if (!ariaLabel) throw new Error("iconButton requires an ariaLabel");
 	const tag = opts.href ? "a" : "button";
-	const size = opts.size || "md";
-	const variant = opts.variant && opts.variant !== "ghost" ? `btn--${opts.variant}` : "";
-	const cls = classList(["btn", "btn--icon", variant, `btn--${size}`, opts.cls]);
+	const { size: requestedSize } = opts;
+	const size = requestedSize || "md";
+	const variant = opts.variant && opts.variant !== "ghost" ? variantClass(opts.variant) : "";
+	const cls = classList(["btn", "btn--icon", variant, sizeClass(size), opts.cls]);
 	return `<${tag} class="${cls}" aria-label="${esc(ariaLabel)}"${commonAttrs(tag, opts)}>${icon(iconName)}</${tag}>`;
 }

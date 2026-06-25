@@ -11,9 +11,13 @@ function communityLegend(communityMeta) {
 		const color = colors.get(community.id) || colors.get(String(community.id));
 		return `<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(color)}"></span><span class="graph__legend-text">${esc(community.label)} <span class="graph__legend-count">(${esc(String(community.size))})</span></span></span>`;
 	});
-	items.push(`<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get("other"))}"></span><span class="graph__legend-text">Other</span></span>`);
+	items.push(
+		`<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get("other"))}"></span><span class="graph__legend-text">Other</span></span>`
+	);
 	if (hasContext()) {
-		items.push('<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">Fits you</span></span>');
+		items.push(
+			'<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">Fits you</span></span>'
+		);
 	}
 	return items.join("");
 }
@@ -23,7 +27,10 @@ export async function viewGraph() {
 	const truncatedNote = g.truncated
 		? `<p class="graph__note">Showing the ${esc(g.nodes.length)} best-documented tools.</p>`
 		: "";
-	const empty = g.nodes.length ? "" : '<p class="empty">No richly documented tools are available for the map right now.</p>';
+	const empty =
+		g.nodes.length > 0
+			? ""
+			: '<p class="empty">No richly documented tools are available for the map right now.</p>';
 	const html = `
 	<div class="container page">
 		<h1 class="page__title">Tool map</h1>
@@ -36,8 +43,8 @@ export async function viewGraph() {
 		</div>
 	</div>`;
 	function mount() {
-		const target = document.getElementById("graph-canvas");
-		if (!target || !g.nodes.length) return;
+		const target = document.querySelector("#graph-canvas");
+		if (!target || g.nodes.length === 0) return;
 		target.forceGraphHandle = forceGraph(target, g, { onSelect: openQuickView, height: 560 });
 	}
 	return { title: "Tool map — Toolhub", html, mount };

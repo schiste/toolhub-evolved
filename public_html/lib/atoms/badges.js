@@ -5,20 +5,38 @@ import { completeness, endorsementOf, fitsContext, freshness, getUserContext } f
 import { synthHealth } from "../core/synth.js";
 import { icon } from "./icon.js";
 
+const STATUS_CLASSES = new Map([
+	["green", { dot: "dot--green", status: "status--green" }],
+	["red", { dot: "dot--red", status: "status--red" }],
+	["yellow", { dot: "dot--yellow", status: "status--yellow" }]
+]);
+
+function statusClasses(level) {
+	return STATUS_CLASSES.get(level) || STATUS_CLASSES.get("green");
+}
+
+function statusMarkup(state, extraClass = "") {
+	const classes = statusClasses(state.level);
+	const extra = extraClass ? ` ${extraClass}` : "";
+	return `<span class="status ${classes.status}${extra}"><span class="dot ${classes.dot}"></span>${esc(state.label)}</span>`;
+}
+
 export function statusBadge(t) {
 	const st = t.status || { level: "green", label: "Healthy" };
-	return (t.deprecated || t.experimental) ? `<span class="status status--${st.level}"><span class="dot dot--${st.level}"></span>${esc(st.label)}</span>` : "";
+	return t.deprecated || t.experimental ? statusMarkup(st) : "";
 }
 export function healthBadge(t) {
 	const h = synthHealth(t.name);
-	return `<span class="status status--${h.level} experimental"><span class="dot dot--${h.level}"></span>${esc(h.label)}</span>`;
+	return statusMarkup(h, "experimental");
 }
-export function popularityBadge(t) { return `<span class="views experimental">${icon("popular")} ${views(t.weeklyViews)}</span>`; }
+export function popularityBadge(t) {
+	return `<span class="views experimental">${icon("popular")} ${views(t.weeklyViews)}</span>`;
+}
 export function endorsementChip(count) {
 	const n = Number(count) || 0;
 	if (!n) return "";
 	const label = n === 1 ? "list" : "lists";
-	return `<span class="signal" title="${esc("Appears in " + countLabel(n, "curated list", "curated lists"))}">${icon("list")} In ${n} ${label}</span>`;
+	return `<span class="signal" title="${esc(`Appears in ${countLabel(n, "curated list", "curated lists")}`)}">${icon("list")} In ${n} ${label}</span>`;
 }
 export function completenessMeter(c) {
 	const score = c && Object.prototype.hasOwnProperty.call(c, "total") ? c : completeness(c || {});

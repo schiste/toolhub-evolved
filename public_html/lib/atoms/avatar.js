@@ -2,8 +2,16 @@
 import { esc, hash, safeUrl } from "../core/dom.js";
 
 export const AVATAR_COLORS = [
-	"#0c57a8", "#246342", "#8a4b08", "#970302", "#5748b5",
-	"#305d70", "#0e65c0", "#308557", "#b03b78", "#1f6f8b",
+	"var(--wmf-blue-aaa)",
+	"var(--wmf-green-aaa)",
+	"var(--color-warning-text)",
+	"var(--wmf-red-aaa)",
+	"var(--wmf-purple)",
+	"var(--color-text-muted)",
+	"var(--color-progressive)",
+	"var(--color-success)",
+	"var(--color-favorite)",
+	"var(--color-progressive-hover)"
 ];
 export function avatar(title, cls) {
 	const ch = (title || "?").trim().charAt(0).toUpperCase();
@@ -12,35 +20,35 @@ export function avatar(title, cls) {
 }
 // Commons "File:Foo.svg" page URL → a rendered thumbnail URL.
 export function commonsThumb(fileUrl, w) {
-	const m = /File(?::|%3A)(.+)$/i.exec(fileUrl || "");
+	const m = /file(?::|%3a)(.+)$/i.exec(fileUrl || "");
 	if (!m) return null;
 	let fileName = m[1];
 	try {
 		fileName = decodeURIComponent(fileName);
-	} catch (e) {
+	} catch {
 		fileName = m[1];
 	}
-	return "https://commons.wikimedia.org/wiki/Special:FilePath/" + encodeURIComponent(fileName) + "?width=" + w;
+	return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(fileName)}?width=${w}`;
 }
 function isCommonsFilePageUrl(url) {
-	return /\/wiki\/File(?::|%3A)/i.test(String(url || "").split(/[?#]/, 1)[0]);
+	return /\/wiki\/file(?::|%3a)/i.test(String(url || "").split(/[#?]/, 1)[0]);
 }
 function isDirectImageUrl(url) {
 	const s = String(url || "").trim();
 	if (!/^https?:\/\//i.test(s)) return false;
-	if (/Special:FilePath/i.test(s) || /upload\.wikimedia\.org/i.test(s)) return true;
-	const withoutQuery = s.split(/[?#]/, 1)[0];
+	if (/special:filepath/i.test(s) || /upload\.wikimedia\.org/i.test(s)) return true;
+	const withoutQuery = s.split(/[#?]/, 1)[0];
 	if (isCommonsFilePageUrl(s)) return false;
 	try {
 		return /\.(png|jpe?g|gif|svg|webp)$/i.test(new URL(s).pathname);
-	} catch (e) {
+	} catch {
 		return /\.(png|jpe?g|gif|svg|webp)$/i.test(withoutQuery);
 	}
 }
 // Tool icon: real Commons image if the tool has one, else a letter avatar.
 export function toolIcon(t, variant) {
 	const px = variant === "lg" ? 72 : 48;
-	const cls = "avatar" + (variant === "lg" ? " avatar--lg" : "");
+	const cls = `avatar${variant === "lg" ? " avatar--lg" : ""}`;
 	const direct = isDirectImageUrl(t.icon) ? t.icon : null;
 	const src = safeUrl(direct || commonsThumb(t.icon, px * 2));
 	if (src) {

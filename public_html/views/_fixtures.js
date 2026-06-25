@@ -3,7 +3,8 @@
 export const FIXTURE_TOOL = {
 	name: "styleguide-citation-helper",
 	title: "Citation Helper",
-	description: "Suggests reliable source templates, checks missing citations, and helps editors add references without leaving the page.",
+	description:
+		"Suggests reliable source templates, checks missing citations, and helps editors add references without leaving the page.",
 	url: "https://example.org/tools/citation-helper",
 	icon: "https://commons.wikimedia.org/wiki/File:OOjs_UI_icon_code.svg",
 	keywords: ["citations", "references", "editing", "quality", "wikidata", "sources"],
@@ -28,7 +29,7 @@ export const FIXTURE_TOOL = {
 	modified: "2026-05-12T14:30:00Z",
 	origin: "crawler",
 	weeklyViews: 1842,
-	status: { level: "green", label: "Healthy" },
+	status: { level: "green", label: "Healthy" }
 };
 
 export const FIXTURE_TOOL_DEPRECATED = {
@@ -40,7 +41,7 @@ export const FIXTURE_TOOL_DEPRECATED = {
 	experimental: false,
 	modified: "2025-11-04T09:15:00Z",
 	weeklyViews: 128,
-	status: { level: "red", label: "Deprecated" },
+	status: { level: "red", label: "Deprecated" }
 };
 
 export const FIXTURE_TOOL_EXPERIMENTAL = {
@@ -52,17 +53,18 @@ export const FIXTURE_TOOL_EXPERIMENTAL = {
 	experimental: true,
 	modified: "2026-06-01T16:45:00Z",
 	weeklyViews: 612,
-	status: { level: "yellow", label: "Experimental" },
+	status: { level: "yellow", label: "Experimental" }
 };
 
 export const FIXTURE_LIST = {
 	id: "styleguide-campaign-toolkit",
 	title: "Campaign organizer toolkit",
-	description: "A compact set of tools for preparing edit-a-thons, checking article quality, and following up after an event.",
+	description:
+		"A compact set of tools for preparing edit-a-thons, checking article quality, and following up after an event.",
 	toolCount: 3,
 	tools: [FIXTURE_TOOL, FIXTURE_TOOL_EXPERIMENTAL, FIXTURE_TOOL_DEPRECATED],
 	featured: true,
-	demo: true,
+	demo: true
 };
 
 export const FIXTURE_FACET_GROUP = { field: "tool_type", label: "Tool type" };
@@ -75,10 +77,10 @@ export const FIXTURE_FACETS = {
 				{ key: "web app", doc_count: 128 },
 				{ key: "bot", doc_count: 74 },
 				{ key: "user script", doc_count: 52 },
-				{ key: "gadget", doc_count: 31 },
-			],
-		},
-	},
+				{ key: "gadget", doc_count: 31 }
+			]
+		}
+	}
 };
 
 export const FIXTURE_SELECTED_FACETS = new Set(["tool_type=web app"]);

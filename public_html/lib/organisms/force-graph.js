@@ -2,15 +2,24 @@
 const TWO_PI = Math.PI * 2;
 const MAX_TICKS = 400;
 const COMMUNITY_PALETTE = [
-	["--wmf-blue-aaa", "#0c57a8"],
-	["--wmf-green-aaa", "#246342"],
-	["--wmf-red-aaa", "#970302"],
-	["--wmf-orange", "#ee8019"],
-	["--wmf-purple", "#5748b5"],
-	["--wmf-yellow", "#f0bc00"],
-	["--wmf-green-light", "#cbe0d5"],
-	["--wmf-orange-light", "#fbdfc5"],
+	"--wmf-blue-aaa",
+	"--wmf-green-aaa",
+	"--wmf-red-aaa",
+	"--wmf-orange",
+	"--wmf-purple",
+	"--wmf-yellow",
+	"--wmf-green-light",
+	"--wmf-orange-light"
 ];
+const FALLBACK_COLORS = {
+	border: "ButtonBorder",
+	center: "LinkText",
+	labelBg: "Canvas",
+	labelText: "CanvasText",
+	neutral: "GrayText",
+	score: "Highlight",
+	surface: "Canvas"
+};
 
 function clamp(value, min, max) {
 	return Math.max(min, Math.min(max, value));
@@ -28,9 +37,7 @@ function rootStyles() {
 }
 
 function paletteFromTokens(styles) {
-	return COMMUNITY_PALETTE
-		.map(([token, fallback]) => cssVar(styles, token, fallback))
-		.filter(Boolean);
+	return COMMUNITY_PALETTE.map((token) => cssVar(styles, token, "")).filter(Boolean);
 }
 
 function nodeSize(node) {
@@ -41,7 +48,7 @@ function nodeSize(node) {
 
 function colorForNode(node, colors) {
 	if (node.center) return colors.center;
-	if (node.community != null) {
+	if (node.community !== null && node.community !== undefined) {
 		if (typeof colors.communityColor === "function") {
 			const custom = colors.communityColor(node.community);
 			if (custom) return custom;
@@ -51,18 +58,21 @@ function colorForNode(node, colors) {
 		const index = Number(node.community);
 		if (Number.isFinite(index)) return colors.palette[index % colors.palette.length];
 	}
-	if (node.score != null) return colors.score;
+	if (node.score !== null && node.score !== undefined) return colors.score;
 	return colors.palette[0];
 }
 
 export function communityColors(communityMeta, opts = {}) {
 	const styles = rootStyles();
-	const palette = (opts.palette && opts.palette.length ? opts.palette : paletteFromTokens(styles)).filter(Boolean);
-	const neutral = opts.neutral || cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", "#72777d"));
+	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
+		Boolean
+	);
+	const neutral =
+		opts.neutral || cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", FALLBACK_COLORS.neutral));
 	const colors = new Map();
 	for (const [index, community] of (communityMeta || []).entries()) {
 		if (!community) continue;
-		const color = palette[index % Math.max(palette.length, 1)] || "#0c57a8";
+		const color = palette.length > 0 ? palette[index % palette.length] : FALLBACK_COLORS.center;
 		colors.set(community.id, color);
 		colors.set(String(community.id), color);
 	}
@@ -72,25 +82,27 @@ export function communityColors(communityMeta, opts = {}) {
 
 function buildColors(data, opts) {
 	const styles = rootStyles();
-	const palette = (opts.palette && opts.palette.length ? opts.palette : paletteFromTokens(styles)).filter(Boolean);
-	const neutral = cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", "#72777d"));
+	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
+		Boolean
+	);
+	const neutral = cssVar(styles, "--color-text-muted", cssVar(styles, "--color-border", FALLBACK_COLORS.neutral));
 	return {
-		border: cssVar(styles, "--color-border", "#d4d7db"),
-		center: cssVar(styles, "--color-progressive-hover", "#09437f"),
-		fit: cssVar(styles, "--color-progressive", "#0c57a8"),
-		labelBg: cssVar(styles, "--color-surface", "#fff"),
-		labelText: cssVar(styles, "--color-text", "#1b1b1b"),
+		border: cssVar(styles, "--color-border", FALLBACK_COLORS.border),
+		center: cssVar(styles, "--color-progressive-hover", FALLBACK_COLORS.center),
+		fit: cssVar(styles, "--color-progressive", FALLBACK_COLORS.center),
+		labelBg: cssVar(styles, "--color-surface", FALLBACK_COLORS.labelBg),
+		labelText: cssVar(styles, "--color-text", FALLBACK_COLORS.labelText),
 		communityMap: communityColors(data?.communityMeta || [], { palette, neutral }),
 		communityColor: typeof opts.communityColor === "function" ? opts.communityColor : null,
 		other: neutral,
-		score: cssVar(styles, "--wmf-green-aaa", "#246342"),
-		surface: cssVar(styles, "--color-surface", "#fff"),
-		palette: palette.length ? palette : ["#0c57a8"],
+		score: cssVar(styles, "--wmf-green-aaa", FALLBACK_COLORS.score),
+		surface: cssVar(styles, "--color-surface", FALLBACK_COLORS.surface),
+		palette: palette.length > 0 ? palette : [FALLBACK_COLORS.center]
 	};
 }
 
 function edgeKey(a, b) {
-	return a < b ? a + "\u0000" + b : b + "\u0000" + a;
+	return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
 }
 
 function seedNodes(nodes, width, height) {
@@ -107,11 +119,40 @@ function seedNodes(nodes, width, height) {
 	});
 }
 
-export function forceGraph(container, data, opts = {}) {
+function createGraphSurface(container) {
 	const canvas = document.createElement("canvas");
 	const tooltip = document.createElement("div");
 	const ctx = canvas.getContext("2d");
-	const fitHalo = opts.fitHalo !== false;
+	canvas.className = "force-graph";
+	canvas.setAttribute("aria-label", "Tool similarity graph");
+	canvas.setAttribute("role", "img");
+	tooltip.className = "graph__tip";
+	tooltip.hidden = true;
+	container.innerHTML = "";
+	container.append(canvas, tooltip);
+	return { canvas, tooltip, ctx };
+}
+
+function graphStructure(data) {
+	const nodes = (data.nodes || []).map((node, index) => Object.assign({ index, x: 0, y: 0, vx: 0, vy: 0 }, node));
+	const byId = new Map(nodes.map((node) => [node.id, node]));
+	const edges = (data.edges || [])
+		.map((edge) =>
+			Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) })
+		)
+		.filter((edge) => edge.sourceNode && edge.targetNode);
+	const neighborMap = new Map(nodes.map((node) => [node.id, new Set()]));
+	const edgeSet = new Set();
+	edges.forEach((edge) => {
+		neighborMap.get(edge.source).add(edge.target);
+		neighborMap.get(edge.target).add(edge.source);
+		edgeSet.add(edgeKey(edge.source, edge.target));
+	});
+	return { nodes, edges, neighborMap, edgeSet };
+}
+
+export function forceGraph(container, data, opts = {}) {
+	const { canvas, tooltip, ctx } = createGraphSurface(container);
 	const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 	let width = 0;
 	let height = Number(opts.height) || 480;
@@ -124,26 +165,7 @@ export function forceGraph(container, data, opts = {}) {
 	let detachObserver = null;
 	let colors = buildColors(data, opts);
 
-	canvas.className = "force-graph";
-	canvas.setAttribute("aria-label", "Tool similarity graph");
-	canvas.setAttribute("role", "img");
-	tooltip.className = "graph__tip";
-	tooltip.hidden = true;
-	container.innerHTML = "";
-	container.append(canvas, tooltip);
-
-	const nodes = (data.nodes || []).map((node, index) => Object.assign({ index, x: 0, y: 0, vx: 0, vy: 0 }, node));
-	const byId = new Map(nodes.map((node) => [node.id, node]));
-	const edges = (data.edges || [])
-		.map((edge) => Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) }))
-		.filter((edge) => edge.sourceNode && edge.targetNode);
-	const neighborMap = new Map(nodes.map((node) => [node.id, new Set()]));
-	const edgeSet = new Set();
-	edges.forEach((edge) => {
-		neighborMap.get(edge.source).add(edge.target);
-		neighborMap.get(edge.target).add(edge.source);
-		edgeSet.add(edgeKey(edge.source, edge.target));
-	});
+	const { nodes, edges, neighborMap, edgeSet } = graphStructure(data);
 
 	function activeIds() {
 		if (!hovered) return null;
@@ -159,11 +181,11 @@ export function forceGraph(container, data, opts = {}) {
 		height = Math.max(180, Number(opts.height) || 480);
 		dpr = Math.max(1, window.devicePixelRatio || 1);
 		canvas.style.width = "100%";
-		canvas.style.height = height + "px";
+		canvas.style.height = `${height}px`;
 		canvas.width = Math.round(width * dpr);
 		canvas.height = Math.round(height * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		if (!nodes.length) return;
+		if (nodes.length === 0) return;
 		if (ticks === 0 && nodes.every((node) => node.x === 0 && node.y === 0)) {
 			seedNodes(nodes, width, height);
 		} else {
@@ -207,7 +229,7 @@ export function forceGraph(container, data, opts = {}) {
 			const b = edge.targetNode;
 			const weight = clamp(Number(edge.weight) || 0, 0, 1);
 			const rest = 96 - weight * 42;
-			const strength = 0.010 + weight * 0.030;
+			const strength = 0.01 + weight * 0.03;
 			const dx = b.x - a.x;
 			const dy = b.y - a.y;
 			const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
@@ -230,7 +252,9 @@ export function forceGraph(container, data, opts = {}) {
 	}
 
 	function drawEdge(edge, active) {
-		const isActive = !active || edgeSet.has(edgeKey(edge.source, edge.target)) && active.has(edge.source) && active.has(edge.target);
+		const isActive =
+			!active ||
+			(edgeSet.has(edgeKey(edge.source, edge.target)) && active.has(edge.source) && active.has(edge.target));
 		ctx.globalAlpha = active ? (isActive ? 0.48 : 0.06) : 0.22;
 		ctx.strokeStyle = colors.border;
 		ctx.lineWidth = isActive ? 1.25 : 1;
@@ -246,7 +270,7 @@ export function forceGraph(container, data, opts = {}) {
 		const x = node.x - size / 2;
 		const y = node.y - size / 2;
 		const isOther = node.community === "other";
-		ctx.globalAlpha = active ? (isActive ? (isOther ? 0.72 : 1) : 0.16) : (isOther ? 0.62 : 1);
+		ctx.globalAlpha = active ? (isActive ? (isOther ? 0.72 : 1) : 0.16) : isOther ? 0.62 : 1;
 		ctx.fillStyle = colorForNode(node, colors);
 		ctx.fillRect(x, y, size, size);
 		if (node.center) {
@@ -254,7 +278,7 @@ export function forceGraph(container, data, opts = {}) {
 			ctx.lineWidth = 2;
 			ctx.strokeRect(x - 2, y - 2, size + 4, size + 4);
 		}
-		if (fitHalo && node.fits) {
+		if (opts.fitHalo !== false && node.fits) {
 			ctx.globalAlpha = isActive ? 1 : 0.16;
 			ctx.strokeStyle = colors.fit;
 			ctx.lineWidth = 2;
@@ -294,8 +318,8 @@ export function forceGraph(container, data, opts = {}) {
 		const pad = 12;
 		const x = clamp(pointer.x + pad, pad, width - pad);
 		const y = clamp(pointer.y + pad, pad, height - pad);
-		tooltip.style.left = x + "px";
-		tooltip.style.top = y + "px";
+		tooltip.style.left = `${x}px`;
+		tooltip.style.top = `${y}px`;
 	}
 
 	function onMove(event) {
@@ -383,6 +407,6 @@ export function forceGraph(container, data, opts = {}) {
 		stop,
 		redraw() {
 			draw();
-		},
+		}
 	};
 }

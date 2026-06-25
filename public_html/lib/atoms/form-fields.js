@@ -10,43 +10,58 @@ function fDescAttrs(id, hint, hasError) {
 	const ids = [];
 	if (hint) ids.push(`${id}-hint`);
 	if (hasError) ids.push(`${id}-err`);
-	return ids.length ? ` aria-describedby="${ids.map(esc).join(" ")}"` : "";
+	return ids.length > 0 ? ` aria-describedby="${ids.map((item) => esc(item)).join(" ")}"` : "";
 }
 
 function fInputClass(opts) {
-	return `le__input${opts.cls ? " " + esc(opts.cls) : ""}`;
+	return `le__input${opts.cls ? ` ${esc(opts.cls)}` : ""}`;
 }
 
-export function fInput(label, id, value, opts) {
-	opts = opts || {};
+export function fInput(label, id, value, opts = {}) {
 	const hint = opts.hint;
 	const hasError = opts.errorSlot !== false;
 	return `<label class="le__label">${esc(label)}${opts.req && opts.reqMark !== false ? ' <span class="le__req">*</span>' : ""}
 		${fHint(id, hint)}
-		<input class="${fInputClass(opts)}" id="${id}" type="${opts.type || "text"}"${opts.req ? " required" : ""}${fDescAttrs(id, hint, hasError)} maxlength="${opts.max || 300}" value="${esc(value == null ? "" : value)}" ${opts.ph ? `placeholder="${esc(opts.ph)}"` : ""} />${hasError ? `<span class="le__error" id="${esc(id)}-err" hidden></span>` : ""}</label>`;
+		<input class="${fInputClass(opts)}" id="${id}" type="${opts.type || "text"}"${opts.req ? " required" : ""}${fDescAttrs(id, hint, hasError)} maxlength="${opts.max || 300}" value="${esc(value === null || value === undefined ? "" : value)}" ${opts.ph ? `placeholder="${esc(opts.ph)}"` : ""} />${hasError ? `<span class="le__error" id="${esc(id)}-err" hidden></span>` : ""}</label>`;
 }
-export function fArea(label, id, value, hint, opts) {
-	opts = opts || {};
-	hint = hint == null ? opts.hint : hint;
+export function fArea(label, id, value, hint, opts = {}) {
+	const fieldHint = hint === null || hint === undefined ? opts.hint : hint;
 	const maxAttr = opts.max === false ? "" : ` maxlength="${opts.max || 2000}"`;
-	return `<label class="le__label">${esc(label)}${fHint(id, hint)}
-		<textarea class="${fInputClass(opts)}" id="${id}" rows="${opts.rows || 3}"${fDescAttrs(id, hint, false)}${maxAttr}${opts.ph ? ` placeholder="${esc(opts.ph)}"` : ""}>${esc(value == null ? "" : value)}</textarea></label>`;
+	return `<label class="le__label">${esc(label)}${fHint(id, fieldHint)}
+		<textarea class="${fInputClass(opts)}" id="${id}" rows="${opts.rows || 3}"${fDescAttrs(id, fieldHint, false)}${maxAttr}${opts.ph ? ` placeholder="${esc(opts.ph)}"` : ""}>${esc(value === null || value === undefined ? "" : value)}</textarea></label>`;
 }
 export function fCheck(label, id, checked) {
 	return `<label class="le__check"><input type="checkbox" id="${id}"${checked ? " checked" : ""} /> ${esc(label)}</label>`;
 }
-export const TOOL_TYPES = ["", "web app", "desktop app", "bot", "gadget", "user script", "command line tool", "coding framework", "lua module", "template", "other"];
-export function fSelect(label, id, value, options, opts) {
-	opts = opts || {};
+export const TOOL_TYPES = [
+	"",
+	"web app",
+	"desktop app",
+	"bot",
+	"gadget",
+	"user script",
+	"command line tool",
+	"coding framework",
+	"lua module",
+	"template",
+	"other"
+];
+export function fSelect(label, id, value, options, opts = {}) {
 	const hint = opts.hint;
 	return `<label class="le__label">${esc(label)}${fHint(id, hint)}
 		<select class="${fInputClass(opts)}" id="${id}"${fDescAttrs(id, hint, false)}>${options.map((o) => `<option value="${esc(o)}"${o === (value || "") ? " selected" : ""}>${esc(o || "—")}</option>`).join("")}</select></label>`;
 }
-export function fieldValue(id) { const el = document.getElementById(id); return el ? el.value.trim() : ""; }
-export function checkedValue(id) { const el = document.getElementById(id); return !!(el && el.checked); }
+export function fieldValue(id) {
+	const el = document.querySelector(`#${id}`);
+	return el ? el.value.trim() : "";
+}
+export function checkedValue(id) {
+	const el = document.querySelector(`#${id}`);
+	return Boolean(el && el.checked);
+}
 export function setFieldError(id, msg) {
-	const el = document.getElementById(id);
-	const err = document.getElementById(`${id}-err`);
+	const el = document.querySelector(`#${id}`);
+	const err = document.querySelector(`#${id}-err`);
 	if (!el || !err) return;
 	el.setAttribute("aria-invalid", "true");
 	el.classList.add("is-invalid");
@@ -54,8 +69,8 @@ export function setFieldError(id, msg) {
 	err.hidden = false;
 }
 export function clearFieldError(id) {
-	const el = document.getElementById(id);
-	const err = document.getElementById(`${id}-err`);
+	const el = document.querySelector(`#${id}`);
+	const err = document.querySelector(`#${id}-err`);
 	if (!el || !err) return;
 	el.removeAttribute("aria-invalid");
 	el.classList.remove("is-invalid");

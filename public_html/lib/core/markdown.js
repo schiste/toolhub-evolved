@@ -4,22 +4,22 @@ import { esc, safeUrl } from "./dom.js";
 const LINK_ATTRS = 'target="_blank" rel="noopener nofollow"';
 
 function decodeEscapedUrl(value) {
-	return String(value == null ? "" : value)
-		.replace(/&amp;/g, "&")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, ">")
-		.replace(/&quot;/g, '"')
-		.replace(/&#39;/g, "'");
+	return String(value === null || value === undefined ? "" : value)
+		.replaceAll("&amp;", "&")
+		.replaceAll("&lt;", "<")
+		.replaceAll("&gt;", ">")
+		.replaceAll("&quot;", '"')
+		.replaceAll("&#39;", "'");
 }
 
 function tokenFor(tokens, html) {
-	const key = `\x00MD${tokens.length}\x00`;
+	const key = `\uE000MD${tokens.length}\uE000`;
 	tokens.push(html);
 	return key;
 }
 
 function restoreTokens(value, tokens) {
-	return value.replace(/\x00MD(\d+)\x00/g, (_, i) => tokens[Number(i)] || "");
+	return value.replaceAll(/\uE000MD(\d+)\uE000/g, (_, i) => tokens[Number(i)] || "");
 }
 
 function linkHtml(hrefText, labelHtml) {
@@ -31,31 +31,30 @@ function linkHtml(hrefText, labelHtml) {
 function trimLinkedPunctuation(value) {
 	let url = value;
 	let trail = "";
-	while (/[.,;:!?)]$/.test(url)) {
+	while (/[!),.:;?]$/.test(url)) {
 		trail = url.slice(-1) + trail;
 		url = url.slice(0, -1);
 	}
 	return { url, trail };
 }
 
-function renderInline(value, opts) {
-	opts = opts || {};
+function renderInline(value, opts = {}) {
 	const allowLinks = opts.allowLinks !== false;
 	const tokens = [];
-	let out = String(value == null ? "" : value);
+	let out = String(value === null || value === undefined ? "" : value);
 
-	out = out.replace(/`([^`\n]+)`/g, (_, code) => tokenFor(tokens, `<code>${code}</code>`));
+	out = out.replaceAll(/`([^\n`]+)`/g, (_, code) => tokenFor(tokens, `<code>${code}</code>`));
 
 	if (allowLinks) {
-		out = out.replace(/\[([^\]\n]+)\]\(([^)\n]+)\)/g, (match, label, href) => {
+		out = out.replaceAll(/\[([^\n\]]+)]\(([^\n)]+)\)/g, (match, label, href) => {
 			const linked = linkHtml(href.trim(), renderInline(label, { allowLinks: false }));
 			return tokenFor(tokens, linked || match);
 		});
-		out = out.replace(/&lt;(https?:\/\/[^\s]+?)&gt;/gi, (_, href) => {
+		out = out.replaceAll(/&lt;(https?:\/\/\S+?)&gt;/gi, (_, href) => {
 			const linked = linkHtml(href, href);
 			return tokenFor(tokens, linked || `&lt;${href}&gt;`);
 		});
-		out = out.replace(/\bhttps?:\/\/[^\s<]+/gi, (match) => {
+		out = out.replaceAll(/\bhttps?:\/\/[^\s<]+/gi, (match) => {
 			const parts = trimLinkedPunctuation(match);
 			if (!parts.url) return match;
 			const linked = linkHtml(parts.url, parts.url);
@@ -64,10 +63,10 @@ function renderInline(value, opts) {
 	}
 
 	out = out
-		.replace(/\*\*([^*]+(?:\*[^*]+)*)\*\*/g, "<strong>$1</strong>")
-		.replace(/__([^_]+(?:_[^_]+)*)__/g, "<strong>$1</strong>")
-		.replace(/(^|[^*])\*([^*\s](?:[^*]*[^*\s])?)\*(?!\*)/g, "$1<em>$2</em>")
-		.replace(/(^|[^\w_])_([^_\s](?:[^_]*[^_\s])?)_(?![\w_])/g, "$1<em>$2</em>");
+		.replaceAll(/\*\*([^*]+(?:\*[^*]+)*)\*\*/g, "<strong>$1</strong>")
+		.replaceAll(/__([^_]+(?:_[^_]+)*)__/g, "<strong>$1</strong>")
+		.replaceAll(/(^|[^*])\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/g, "$1<em>$2</em>")
+		.replaceAll(/(^|\W)_([^\s_](?:[^_]*[^\s_])?)_(?!\w)/g, "$1<em>$2</em>");
 
 	return restoreTokens(out, tokens);
 }
@@ -89,7 +88,7 @@ function blockquoteMatch(line) {
 }
 
 function unorderedMatch(line) {
-	return /^ {0,3}[-*]\s+(.*)$/.exec(line);
+	return /^ {0,3}[*-]\s+(.*)$/.exec(line);
 }
 
 function orderedMatch(line) {
@@ -189,7 +188,7 @@ function renderBlocks(escaped) {
 }
 
 export function renderMarkdown(src) {
-	if (src == null || !String(src).trim()) return "";
-	const escaped = esc(src).replace(/\r\n?/g, "\n");
+	if (src === null || src === undefined || !String(src).trim()) return "";
+	const escaped = esc(src).replaceAll(/\r\n?/g, "\n");
 	return renderBlocks(escaped);
 }

@@ -6,10 +6,12 @@
 // `let p = null; if (!p) p = build(); return p;` pattern it replaces.
 export function memoizeAsync(builder) {
 	let promise = null;
-	return () => (promise || (promise = Promise.resolve().then(builder)));
+	return () => promise || (promise = Promise.resolve().then(builder));
 }
 
 // Normalize a tag/term value to a comparable token: string, trimmed, lowercased.
 export function normStr(value) {
-	return String(value == null ? "" : value).trim().toLowerCase();
+	return String(value === null || value === undefined ? "" : value)
+		.trim()
+		.toLowerCase();
 }

@@ -14,9 +14,10 @@ export async function viewAuthor(name) {
 	const profileLink = profileUrl
 		? `<a class="author-page__profile" href="${profileUrl}" target="_blank" rel="noopener nofollow">Author profile ${icon("external")}</a>`
 		: "";
-	const body = tools.length
-		? grid("grid-tools", tools, (t) => toolCard(t))
-		: '<p class="empty">No tools found for this author.</p>';
+	const body =
+		tools.length > 0
+			? grid("grid-tools", tools, (t) => toolCard(t))
+			: '<p class="empty">No tools found for this author.</p>';
 	const html = `
 	<div class="container page author-page">
 		<a class="back" href="/search">← Back to tools</a>

@@ -12,16 +12,16 @@ function sortedPair(a, b) {
 }
 
 export function knnEdges(names, index, k = 4) {
-	const nodeNames = Array.from(new Set(names || [])).filter((name) => index.vectors.has(name));
+	const nodeNames = [...new Set(names || [])].filter((name) => index.vectors.has(name));
 	const edgeMap = new Map();
 	for (const source of nodeNames) {
 		const sourceVec = index.vectors.get(source);
-		if (!sourceVec || !sourceVec.size) continue;
+		if (!sourceVec || sourceVec.size === 0) continue;
 		const scored = [];
 		for (const target of nodeNames) {
 			if (target === source) continue;
 			const targetVec = index.vectors.get(target);
-			if (!targetVec || !targetVec.size) continue;
+			if (!targetVec || targetVec.size === 0) continue;
 			const weight = cosine(sourceVec, targetVec);
 			if (weight <= 0) continue;
 			scored.push({ target, weight });
@@ -29,16 +29,18 @@ export function knnEdges(names, index, k = 4) {
 		scored.sort((a, b) => b.weight - a.weight || a.target.localeCompare(b.target));
 		for (const edge of scored.slice(0, k)) {
 			const [a, b] = sortedPair(source, edge.target);
-			const key = a + "\u0000" + b;
+			const key = `${a}\u0000${b}`;
 			const prev = edgeMap.get(key);
 			if (!prev || edge.weight > prev.weight) edgeMap.set(key, { source: a, target: b, weight: edge.weight });
 		}
 	}
-	return Array.from(edgeMap.values()).sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+	return [...edgeMap.values()].sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
 }
 
 export function detectCommunities(nodes, edges) {
-	const ids = Array.from(new Set((nodes || []).map((node) => typeof node === "string" ? node : node.id).filter(Boolean))).sort();
+	const ids = [
+		...new Set((nodes || []).map((node) => (typeof node === "string" ? node : node.id)).filter(Boolean))
+	].sort();
 	const labels = new Map(ids.map((id) => [id, id]));
 	const adjacency = new Map(ids.map((id) => [id, []]));
 	for (const edge of edges || []) {
@@ -78,10 +80,13 @@ export function detectCommunities(nodes, edges) {
 		if (!groups.has(label)) groups.set(label, []);
 		groups.get(label).push(id);
 	}
-	const ordered = Array.from(groups.entries())
-		.sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
+	const ordered = [...groups.entries()].sort(
+		(a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))
+	);
 	const renumbered = new Map();
-	ordered.forEach(([label], index) => { renumbered.set(label, index); });
+	ordered.forEach(([label], index) => {
+		renumbered.set(label, index);
+	});
 	return new Map(ids.map((id) => [id, renumbered.get(labels.get(id))]));
 }
 
@@ -92,9 +97,7 @@ function rankedFrequentTerms(values) {
 		if (!value) continue;
 		counts.set(value, (counts.get(value) || 0) + 1);
 	}
-	return Array.from(counts.entries())
-		.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-		.map(([value]) => value);
+	return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([value]) => value);
 }
 
 function communityTerms(tools) {
@@ -111,7 +114,7 @@ function communityTerms(tools) {
 }
 
 function escapeRegExp(value) {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return value.replaceAll(/[$()*+.?[\\\]^{|}]/g, "\\$&");
 }
 
 function containsWholeTerm(value, term) {
@@ -155,11 +158,14 @@ function capCommunities(selected, detected) {
 		if (!groups.has(id)) groups.set(id, []);
 		groups.get(id).push(item);
 	}
-	const ordered = Array.from(groups.entries())
-		.sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
+	const ordered = [...groups.entries()].sort(
+		(a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]))
+	);
 	const kept = ordered.slice(0, COMMUNITY_LIMIT);
 	const remap = new Map();
-	kept.forEach(([id], index) => { remap.set(id, index); });
+	kept.forEach(([id], index) => {
+		remap.set(id, index);
+	});
 	const nodeCommunities = new Map();
 	for (const item of selected || []) {
 		const id = detected.has(item.name) ? detected.get(item.name) : 0;
@@ -170,7 +176,7 @@ function capCommunities(selected, detected) {
 	const communityMeta = kept.map(([, items], index) => ({
 		id: index,
 		label: communityLabel(communityTerms(items.map((item) => item.tool)), index, usedTerms, usedLabels),
-		size: items.length,
+		size: items.length
 	}));
 	return { nodeCommunities, communityMeta };
 }
@@ -178,12 +184,13 @@ function capCommunities(selected, detected) {
 async function buildGlobalGraph() {
 	const [index, lm] = await Promise.all([getSimilarityIndex(), listMemberships()]);
 	const ranked = index.tools
-		.filter((tool) => tool && tool.name && ((tool.keywords?.length || 0) + (tool.tasks?.length || 0)) > 0)
+		.filter((tool) => tool && tool.name && (tool.keywords?.length || 0) + (tool.tasks?.length || 0) > 0)
 		.map((tool) => {
-			const richness = (tool.keywords?.length || 0)
-				+ (tool.tasks?.length || 0)
-				+ (tool.audiences?.length || 0)
-				+ (tool.forWikis?.length || 0);
+			const richness =
+				(tool.keywords?.length || 0) +
+				(tool.tasks?.length || 0) +
+				(tool.audiences?.length || 0) +
+				(tool.forWikis?.length || 0);
 			return { name: tool.name, tool, richness, endorsement: endorsementOf(tool.name, lm).count };
 		})
 		.sort((a, b) => b.richness - a.richness || (a.tool.title || a.name).localeCompare(b.tool.title || b.name));
@@ -204,7 +211,7 @@ async function buildGlobalGraph() {
 		community: nodeCommunities.get(name) || 0,
 		weight: degree.get(name) || 0,
 		endorsement,
-		fits: fitsContext(tool).fits,
+		fits: fitsContext(tool).fits
 	}));
 	return { nodes, edges, communities: communityMeta.length, communityMeta, truncated };
 }
@@ -218,15 +225,15 @@ function indexWithTool(index, tool) {
 	byName.set(tool.name, tool);
 	vectors.set(tool.name, vectorFor(tool, index));
 	return Object.assign({}, index, {
-		tools: index.tools.concat(tool),
+		tools: [...index.tools, tool],
 		byName,
-		vectors,
+		vectors
 	});
 }
 
 export async function egoGraph(toolName, k = 10) {
 	const index = await getSimilarityIndex();
-	const tool = index.byName.get(toolName) || await getTool(toolName);
+	const tool = index.byName.get(toolName) || (await getTool(toolName));
 	if (!tool) return { nodes: [], edges: [], center: toolName };
 	const workingIndex = indexWithTool(index, tool);
 	const neighbors = nearestNeighbors(tool, workingIndex, k);
@@ -247,9 +254,9 @@ export async function egoGraph(toolName, k = 10) {
 			fits: fitsContext(item).fits,
 			center: item.name === tool.name,
 			score: scores.get(item.name) || 0,
-			weight: item.name === tool.name ? k : (scores.get(item.name) || 0) * k,
+			weight: item.name === tool.name ? k : (scores.get(item.name) || 0) * k
 		})),
 		edges: knnEdges(nodeNames, workingIndex, 3),
-		center: tool.name,
+		center: tool.name
 	};
 }
