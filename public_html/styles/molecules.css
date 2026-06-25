@@ -658,9 +658,6 @@ li.le__empty {
 	max-height: 320px;
 	overflow-y: auto;
 }
-.lang__opt {
-	text-decoration: none;
-}
 .lang__opt.is-active {
 	font-weight: 700;
 }
