@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Project CI: runs the quality suite on every push to main and every PR, so the
+# gates protect the repository (not just whoever installed the local hook).
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    js:
+        name: JS quality
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - name: Prettier
+              run: npx prettier --check .
+            - name: ESLint
+              run: npx eslint . --max-warnings 0
+            - name: Stylelint
+              run: npx stylelint "public_html/styles/**/*.css"
+            - name: Dead code (knip)
+              run: npx knip --production
+            - name: Duplication (jscpd)
+              run: npx jscpd --config .jscpd.json
+            - name: Unit tests
+              run: node --test tests/unit/*.test.mjs
+            - name: Install Playwright browser
+              run: npx playwright install --with-deps chromium
+            - name: E2E (smoke + a11y)
+              run: npx playwright test
+
+    python:
+        name: Python quality
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+            - run: pip install -r tools/python-quality-requirements.txt
+            - name: Ruff lint
+              run: ruff check proxy
+            - name: Ruff format
+              run: ruff format --check proxy
+            - name: pip-audit
+              run: pip-audit -r proxy/requirements.txt --strict
