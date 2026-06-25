@@ -42,14 +42,26 @@ def api_proxy(path: str) -> Response:
     return resp
 
 
+# SPA source served by stable paths. These must not be cached stale across
+# deploys: ES module imports resolve by path, so an edge-cached old module can
+# break a page that imports a newly-added export. Other assets (images, fonts)
+# stay cacheable.
+NO_STORE_EXTS = {".html", ".js", ".mjs", ".css", ".json", ".map"}
+
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def static_files(path: str) -> Response:
-    """Serve a static file if it exists, else index.html (hash-routed SPA)."""
+    """Serve a static file if it exists, else index.html (clean-routed SPA)."""
     candidate = (STATIC_DIR / path).resolve()
     if path and STATIC_DIR in candidate.parents and candidate.is_file():
-        return send_from_directory(STATIC_DIR, path)
-    return send_from_directory(STATIC_DIR, "index.html")
+        resp = send_from_directory(STATIC_DIR, path)
+        served_ext = candidate.suffix.lower()
+    else:
+        resp = send_from_directory(STATIC_DIR, "index.html")
+        served_ext = ".html"
+    resp.headers["Cache-Control"] = "no-store" if served_ext in NO_STORE_EXTS else "public, max-age=3600"
+    return resp
 
 
 if __name__ == "__main__":

@@ -36,9 +36,9 @@
 			"importDepth": 1
 		},
 		"proxy/app.py": {
-			"lines": 57,
-			"cyclomatic": 9,
-			"cognitive": 8,
+			"lines": 69,
+			"cyclomatic": 10,
+			"cognitive": 9,
 			"fanIn": 0,
 			"fanOut": 0,
 			"importDepth": 0
