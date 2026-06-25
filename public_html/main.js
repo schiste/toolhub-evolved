@@ -2,7 +2,7 @@
 import { $, $$ } from "./lib/core/dom.js";
 import { applyLocaleAttrs } from "./lib/core/i18n.js";
 import { EXP_KEY, applyExp, expOn, setAuth, setAuthRender } from "./lib/core/session.js";
-import { initTheme, setThemeChoice } from "./lib/core/theme.js";
+import { getThemeChoice, initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
@@ -19,10 +19,10 @@ applyExp(localStorage.getItem(EXP_KEY) === "on");
    (<html data-theme>), so it shows the right state even before an explicit choice
    is made (System is the implicit default only while nothing is stored). */
 initTheme();
-const THEME_OPTS = [["light", "Light theme", "sun"], ["dark", "Dark theme", "moon"]];
+const THEME_OPTS = [["system", "System theme", "system"], ["light", "Light theme", "sun"], ["dark", "Dark theme", "moon"]];
 function renderThemeToggle() {
 	const el = $("#theme-toggle"); if (!el) return;
-	const active = document.documentElement.getAttribute("data-theme");
+	const active = getThemeChoice();
 	el.innerHTML = THEME_OPTS.map(([val, label, ic]) =>
 		`<button type="button" class="theme-toggle__opt${val === active ? " is-active" : ""}" role="radio" aria-checked="${val === active}" data-theme-choice="${val}" title="${label}" aria-label="${label}">${icon(ic)}</button>`).join("");
 }
