@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+
 /* Living design-system page. Component styles still come from their source layers. */
 
 .sg-page {
@@ -17,7 +18,7 @@
 	font-size: var(--fs-subtitle);
 	margin: var(--space-0) var(--space-0) var(--space-4);
 	padding-bottom: var(--space-2);
-	border-bottom: 1px solid var(--color-border);
+	border-bottom: var(--border-base);
 }
 
 .sg-token-block {
@@ -67,7 +68,7 @@
 .sg-type-row,
 .sg-space-row,
 .sg-example {
-	border: 1px solid var(--color-border);
+	border: var(--border-base);
 	border-radius: var(--radius-sm);
 	background: var(--color-surface);
 }
@@ -91,15 +92,14 @@
 	display: block;
 	width: var(--space-6);
 	height: var(--space-6);
-	border: 1px solid var(--color-border);
-	background:
-		repeating-linear-gradient(
-			45deg,
-			var(--color-surface-muted),
-			var(--color-surface-muted) var(--space-2),
-			var(--color-surface) var(--space-2),
-			var(--color-surface) var(--space-4)
-		);
+	border: var(--border-base);
+	background: repeating-linear-gradient(
+		45deg,
+		var(--color-surface-muted),
+		var(--color-surface-muted) var(--space-2),
+		var(--color-surface) var(--space-2),
+		var(--color-surface) var(--space-4)
+	);
 }
 
 .sg-token__swatch {
@@ -171,12 +171,6 @@
 	grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
 }
 
-.sg-examples--buttons .sg-example__demo,
-.sg-examples--controls .sg-example__demo {
-	display: flex;
-	align-items: center;
-}
-
 .sg-example {
 	display: flex;
 	flex-direction: column;
@@ -194,6 +188,12 @@
 	padding: var(--space-4);
 }
 
+.sg-examples--buttons .sg-example__demo,
+.sg-examples--controls .sg-example__demo {
+	display: flex;
+	align-items: center;
+}
+
 .sg-example--compact .sg-example__demo {
 	padding: var(--space-3);
 }
@@ -204,7 +204,7 @@
 	justify-content: space-between;
 	gap: var(--space-2);
 	padding: var(--space-2) var(--space-3);
-	border-top: 1px solid var(--color-surface-muted);
+	border-top: var(--border-muted);
 	color: var(--color-text-muted);
 	font-size: var(--fs-caption);
 }
@@ -264,7 +264,7 @@
 
 .sg-chrome-frame,
 .sg-hero-frame {
-	border: 1px solid var(--color-border);
+	border: var(--border-base);
 	border-radius: var(--radius-sm);
 	background: var(--color-surface);
 	overflow: hidden;
@@ -298,7 +298,7 @@
 .sg-layout-demo.layout {
 	gap: var(--space-3);
 	padding: var(--space-3);
-	border: 1px solid var(--color-border);
+	border: var(--border-base);
 	border-radius: var(--radius-sm);
 }
 
@@ -312,7 +312,7 @@
 	place-items: center;
 	min-height: 110px;
 	padding: var(--space-4);
-	border: 1px dashed var(--color-border);
+	border: var(--border-dashed);
 	border-radius: var(--radius-sm);
 	background: var(--color-surface-muted);
 	color: var(--color-text-secondary);
@@ -383,7 +383,7 @@
 
 .sg-quickview {
 	max-width: 640px;
-	border: 1px solid var(--color-border);
+	border: var(--border-base);
 	border-radius: var(--radius-md);
 	padding: var(--space-4);
 	background: var(--color-surface);
@@ -394,7 +394,7 @@
 	flex-wrap: wrap;
 }
 
-@media (max-width: 640px) {
+@media (width <= 640px) {
 	.sg-browse-demo.browse {
 		grid-template-columns: 1fr;
 	}

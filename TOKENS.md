@@ -19,17 +19,17 @@ Sources: [Brand/colors](https://meta.wikimedia.org/wiki/Brand/colors) · [Brand/
 
 **Core neutrals**
 
-| Token | Hex |
-|---|---|
+| Token         | Hex       |
+| ------------- | --------- |
 | `--wmf-white` | `#ffffff` |
 
 **Movement colours** (`*-aaa` are tuned to pass on white)
 
-| Token | Hex |
-|---|---|
+| Token             | Hex       |
+| ----------------- | --------- |
 | `--wmf-green-aaa` | `#246342` |
-| `--wmf-blue-aaa` | `#0c57a8` |
-| `--wmf-red-aaa` | `#970302` |
+| `--wmf-blue-aaa`  | `#0c57a8` |
+| `--wmf-red-aaa`   | `#970302` |
 
 **Creative — strong** (accents): `--wmf-orange #ee8019`, `--wmf-yellow #f0bc00`, `--wmf-purple #5748b5`.
 
@@ -39,33 +39,33 @@ Sources: [Brand/colors](https://meta.wikimedia.org/wiki/Brand/colors) · [Brand/
 
 ## 2. Semantic tokens (use these)
 
-| Token | Resolves to | Used for |
-|---|---|---|
-| `--color-surface` | `--wmf-white` | page, card, popover backgrounds and white-on-color text |
-| `--color-surface-muted` | `#f4f5f7` *(derived)* | faint fills and dividers |
-| `--color-surface-pattern` | `#eef0f3` *(derived)* | screenshot placeholder stripe |
-| `--color-row-hover` | `rgba(0,0,0,.02)` *(derived)* | table row hover |
-| `--color-overlay-modal` | `rgba(16,20,30,.55)` *(derived)* | quick-view backdrop |
-| `--color-badge-neutral` | `rgba(0,0,0,.12)` *(derived)* | neutral demo/mock badges |
-| `--color-border` | `#d4d7db` *(derived)* | hairlines, field borders, resting card borders |
-| `--color-border-hover` | `#b9c6e6` *(derived)* | lifted card/link-card border hover |
-| `--color-border-accent` | `#cfe0ff` *(derived)* | CTA panel border on subtle blue |
-| `--color-text` | `#1b1b1b` *(derived)* | body text |
-| `--color-text-secondary` | `#54595d` *(derived)* | descriptions |
-| `--color-text-muted` | `#5c6066` *(derived)* | meta, captions |
-| `--color-progressive` | `--wmf-blue-aaa` | links, primary buttons, tags |
-| `--color-progressive-hover` | `#09437f` *(derived)* | primary action hover |
-| `--color-progressive-subtle` | `#e7f0fa` *(derived)* | resting progressive chips and hero tint |
-| `--color-interactive-subtle` | `#dbe7ff` *(derived)* | tag hover and focus ring wash |
-| `--color-hero-tint` | `#f5f9ff` *(derived)* | hero gradient midpoint |
-| `--color-favorite` | `#b8860b` *(derived)* | saved/favorite state |
-| `--color-success` | `--wmf-green-aaa` | healthy/success text and dots |
-| `--color-success-subtle` | `--wmf-green-light` | success pill background |
-| `--color-destructive` | `--wmf-red-aaa` | deprecated/destructive text and dots |
-| `--color-destructive-subtle` | `--wmf-red-light` | destructive pill background |
-| `--color-warning` | `--wmf-orange` | warning dot |
-| `--color-warning-text` | `#8a4b08` *(derived)* | warning text on subtle warning backgrounds |
-| `--color-warning-subtle` | `--wmf-orange-light` | warning pill background |
+| Token                        | Resolves to                      | Used for                                                |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------- |
+| `--color-surface`            | `--wmf-white`                    | page, card, popover backgrounds and white-on-color text |
+| `--color-surface-muted`      | `#f4f5f7` _(derived)_            | faint fills and dividers                                |
+| `--color-surface-pattern`    | `#eef0f3` _(derived)_            | screenshot placeholder stripe                           |
+| `--color-row-hover`          | `rgba(0,0,0,.02)` _(derived)_    | table row hover                                         |
+| `--color-overlay-modal`      | `rgba(16,20,30,.55)` _(derived)_ | quick-view backdrop                                     |
+| `--color-badge-neutral`      | `rgba(0,0,0,.12)` _(derived)_    | neutral demo/mock badges                                |
+| `--color-border`             | `#d4d7db` _(derived)_            | hairlines, field borders, resting card borders          |
+| `--color-border-hover`       | `#b9c6e6` _(derived)_            | lifted card/link-card border hover                      |
+| `--color-border-accent`      | `#cfe0ff` _(derived)_            | CTA panel border on subtle blue                         |
+| `--color-text`               | `#1b1b1b` _(derived)_            | body text                                               |
+| `--color-text-secondary`     | `#54595d` _(derived)_            | descriptions                                            |
+| `--color-text-muted`         | `#5c6066` _(derived)_            | meta, captions                                          |
+| `--color-progressive`        | `--wmf-blue-aaa`                 | links, primary buttons, tags                            |
+| `--color-progressive-hover`  | `#09437f` _(derived)_            | primary action hover                                    |
+| `--color-progressive-subtle` | `#e7f0fa` _(derived)_            | resting progressive chips and hero tint                 |
+| `--color-interactive-subtle` | `#dbe7ff` _(derived)_            | tag hover and focus ring wash                           |
+| `--color-hero-tint`          | `#f5f9ff` _(derived)_            | hero gradient midpoint                                  |
+| `--color-favorite`           | `#b8860b` _(derived)_            | saved/favorite state                                    |
+| `--color-success`            | `--wmf-green-aaa`                | healthy/success text and dots                           |
+| `--color-success-subtle`     | `--wmf-green-light`              | success pill background                                 |
+| `--color-destructive`        | `--wmf-red-aaa`                  | deprecated/destructive text and dots                    |
+| `--color-destructive-subtle` | `--wmf-red-light`                | destructive pill background                             |
+| `--color-warning`            | `--wmf-orange`                   | warning dot                                             |
+| `--color-warning-text`       | `#8a4b08` _(derived)_            | warning text on subtle warning backgrounds              |
+| `--color-warning-subtle`     | `--wmf-orange-light`             | warning pill background                                 |
 
 **Spacing** — Fibonacci-like steps aligned to the existing Toolhub rhythm:
 `--space-0 0`, `--space-1 4px`, `--space-2 8px`, `--space-3 13px`,
@@ -103,5 +103,5 @@ buttons, inputs, role-button cards and composed controls.
 3. Reference only the semantic token from component CSS.
 4. Verify text/background pairs hit WCAG AA where text is involved.
 
-*Derived* values are neutral/tint adjustments not given literally by the brand;
+_Derived_ values are neutral/tint adjustments not given literally by the brand;
 keep them minimal and documented here.

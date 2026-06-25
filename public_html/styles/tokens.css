@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+
 /* =============================================================================
    Wikimedia design tokens — SINGLE SOURCE OF TRUTH for the Toolhub demo.
 
@@ -17,6 +18,7 @@
    ============================================================================= */
 :root {
 	/* ---- 1. RAW BRAND PALETTE (verbatim) ----------------------------------- */
+
 	/* Core neutrals */
 	--wmf-white: #ffffff;
 
@@ -27,63 +29,96 @@
 
 	/* Creative palette — strong (accents; pair red/blue/green/purple with white) */
 	--wmf-orange: #ee8019;
-	--wmf-yellow: #f0bc00;         --wmf-purple: #5748b5;
+	--wmf-yellow: #f0bc00;
+	--wmf-purple: #5748b5;
 
 	/* Creative palette — light (subtle backgrounds; pair with black text) */
-	--wmf-red-light: #e5c0c0;      --wmf-orange-light: #fbdfc5;
+	--wmf-red-light: #e5c0c0;
+	--wmf-orange-light: #fbdfc5;
 	--wmf-green-light: #cbe0d5;
 
 	/* ---- 2. SEMANTIC TOKENS (reference the brand) -------------------------- */
+
 	/* Surfaces */
 	--color-surface: var(--wmf-white);
-	--color-surface-muted: #f4f5f7;        /* derived: faint neutral fill */
-	--color-surface-pattern: #eef0f3;      /* derived: screenshot placeholder stripe */
-	--color-row-hover: rgba(0,0,0,.02);    /* derived: table row hover */
-	--color-overlay-modal: rgba(16,20,30,.55);
-	--color-badge-neutral: rgba(0,0,0,.12);
+	--color-surface-muted: #f4f5f7; /* derived: faint neutral fill */
+	--color-surface-pattern: #eef0f3; /* derived: screenshot placeholder stripe */
+	--color-row-hover: rgb(0 0 0 / 0.02); /* derived: table row hover */
+	--color-overlay-modal: rgb(16 20 30 / 0.55);
+	--color-badge-neutral: rgb(0 0 0 / 0.12);
+	--background-shot-placeholder:
+		linear-gradient(135deg, transparent 0 42%, var(--color-surface) 42% 48%, transparent 48% 100%),
+		repeating-linear-gradient(
+			45deg,
+			var(--color-surface-muted),
+			var(--color-surface-muted) var(--space-2),
+			var(--color-surface-pattern) var(--space-2),
+			var(--color-surface-pattern) var(--space-4)
+		);
 
 	/* Borders */
-	--color-border: #d4d7db;               /* derived: hairline (black-25 is too heavy) */
-	--color-border-hover: #b9c6e6;         /* derived: card hover border */
-	--color-border-accent: #cfe0ff;        /* derived: CTA border on subtle blue */
+	--color-border: #d4d7db; /* derived: hairline (black-25 is too heavy) */
+	--color-border-hover: #b9c6e6; /* derived: card hover border */
+	--color-border-accent: #cfe0ff; /* derived: CTA border on subtle blue */
+	--border-width-base: 1px;
+	--border-width-strong: 2px;
+	--border-width-heavy: 3px;
+	--border-base: var(--border-width-base) solid var(--color-border);
+	--border-muted: var(--border-width-base) solid var(--color-surface-muted);
+	--border-transparent: var(--border-width-base) solid transparent;
+	--border-heavy: var(--border-width-heavy) solid var(--color-border);
+	--border-progressive-strong: var(--border-width-strong) solid var(--color-progressive);
+	--border-pattern: var(--border-width-base) solid var(--color-surface-pattern);
+	--border-dashed: var(--border-width-base) dashed var(--color-border);
 
 	/* Text — derived neutrals tuned for AA on white */
-	--color-text: #1b1b1b;                 /* derived near-black (softer than black) */
-	--color-text-secondary: #54595d;       /* derived: ~7:1 */
-	--color-text-muted: #5c6066;           /* derived: ~5:1, safe at small sizes */
+	--color-text: #1b1b1b; /* derived near-black (softer than black) */
+	--color-text-secondary: #54595d; /* derived: ~7:1 */
+	--color-text-muted: #5c6066; /* derived: ~5:1, safe at small sizes */
 
 	/* Progressive / interactive (links, primary actions) */
 	--color-progressive: var(--wmf-blue-aaa);
-	--color-progressive-hover: #09437f;    /* derived darker blue */
-	--color-progressive-subtle: #e7f0fa;   /* derived light blue (AA with progressive text) */
-	--color-interactive-subtle: #dbe7ff;   /* derived hover/focus wash */
-	--color-hero-tint: #f5f9ff;            /* derived hero gradient midpoint */
-	--color-favorite: #b8860b;             /* derived saved/favorite state */
+	--color-progressive-hover: #09437f; /* derived darker blue */
+	--color-progressive-subtle: #e7f0fa; /* derived light blue (AA with progressive text) */
+	--color-interactive-subtle: #dbe7ff; /* derived hover/focus wash */
+	--color-hero-tint: #f5f9ff; /* derived hero gradient midpoint */
+	--color-favorite: #b8860b; /* derived saved/favorite state */
 
 	/* Status — Creative light bg + AAA/derived text */
-	--color-success: var(--wmf-green-aaa);     --color-success-subtle: var(--wmf-green-light);
-	--color-destructive: var(--wmf-red-aaa);   --color-destructive-subtle: var(--wmf-red-light);
-	--color-warning: var(--wmf-orange);        --color-warning-subtle: var(--wmf-orange-light);
-	--color-warning-text: #8a4b08;             /* derived: dark orange, AA on warning-subtle */
+	--color-success: var(--wmf-green-aaa);
+	--color-success-subtle: var(--wmf-green-light);
+	--color-destructive: var(--wmf-red-aaa);
+	--color-destructive-subtle: var(--wmf-red-light);
+	--color-warning: var(--wmf-orange);
+	--color-warning-subtle: var(--wmf-orange-light);
+	--color-warning-text: #8a4b08; /* derived: dark orange, AA on warning-subtle */
 
 	/* ---- Typography — native Wikimedia/Codex system stacks; no web font loaded --- */
-	--font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Liberation Sans", Arial, sans-serif;
-	--font-serif: "Linux Libertine", Georgia, "Times New Roman", Times, serif;
+	--font-sans: system-ui, -apple-system, "Segoe UI", roboto, "Helvetica Neue", "Liberation Sans", arial, sans-serif;
+	--font-serif: "Linux Libertine", georgia, "Times New Roman", times, serif;
 	--font-weight-bold: 700;
 
 	/* ---- Type scale -------------------------------------------------------- */
-	--fs-micro: 11px;    /* micro labels / badges */
-	--fs-caption: 13px;  /* meta / captions */
-	--fs-small: 14px;    /* slightly smaller than body */
-	--fs-body: 16px;     /* base */
+	--fs-micro: 11px; /* micro labels / badges */
+	--fs-fine: 12px; /* tiny control labels */
+	--fs-caption: 13px; /* meta / captions */
+	--fs-small: 14px; /* slightly smaller than body */
+	--fs-ui: 15px; /* compact composed controls */
+	--fs-body: 16px; /* base */
+	--fs-body-large: 17px; /* prominent compact headings */
 	--fs-subtitle: 21px; /* compact section headings / large icon labels */
-	--fs-title: 26px;    /* 16 × phi  — page / section titles */
+	--fs-title: 26px; /* 16 × phi  — page / section titles */
 	--fs-headline: 34px; /* responsive hero / error title */
-	--fs-display: 42px;  /* 16 × phi² — hero */
+	--fs-display: 42px; /* 16 × phi² — hero */
+	--fs-code: 0.92em;
 
 	/* ---- Spacing scale ----------------------------------------------------- */
 	--space-0: 0;
+	--space-px: 1px;
+	--space-0-5: 2px;
+	--space-0-75: 3px;
 	--space-1: 4px;
+	--space-1-5: 6px;
 	--space-2: 8px;
 	--space-3: 13px;
 	--space-4: 21px;
@@ -91,22 +126,47 @@
 	--space-6: 56px;
 	--space-7: 72px;
 	--space-8: 89px;
+	--space-prose-xs: 0.25em;
+	--space-prose-sm: 0.45em;
+	--space-prose-md: 1em;
+	--space-prose-heading-before: 1.35em;
+	--space-prose-indent: 1.4em;
+	--space-intent-word-inline: 0.12em;
+	--space-intent-word-end: 0.08em;
+	--space-layout-gutter: 44px;
+	--space-error-block: 80px;
+	--space-modal-block: 6vh;
 
 	/* ---- Layout ------------------------------------------------------------ */
 	--container-wide: 1760px;
 
 	/* ---- Radius & elevation ----------------------------------------------- */
+
 	/* Squared design: no rounded corners. Kept as named tokens so call sites stay
 	   stable; circles (dots, spinner) use border-radius:50% directly, not these. */
-	--radius-sm: 0; --radius-md: 0; --radius-lg: 0; --radius-pill: 0;
-	--shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
-	--shadow-hover: 0 6px 18px rgba(0,0,0,.10);
-	--shadow-popover: 0 1px 3px rgba(0,0,0,.3);
-	--shadow-modal: 0 21px 64px rgba(0,0,0,.3);
-	--shadow-sm: 0 1px 2px rgba(0,0,0,.3);
+	--radius-sm: 0;
+	--radius-md: 0;
+	--radius-lg: 0;
+	--radius-pill: 0;
+	--shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.06);
+	--shadow-hover: 0 6px 18px rgb(0 0 0 / 0.1);
+	--shadow-popover: 0 1px 3px rgb(0 0 0 / 0.3);
+	--shadow-modal: 0 21px 64px rgb(0 0 0 / 0.3);
+	--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+	--shadow-progressive-glow: 0 6px 18px color-mix(in srgb, var(--color-progressive) 20%, transparent);
 
 	/* ---- Focus ------------------------------------------------------------- */
 	--focus-ring: 0 0 0 3px var(--color-interactive-subtle);
+
+	/* ---- Component affordances -------------------------------------------- */
+	--tcard-corner-color: var(--color-border);
+	--tcard-corner-color-hover: var(--color-border-hover);
+	--tcard-corner-color-focus: var(--color-progressive);
+	--tcard-corner-color-complete: var(--color-success);
+	--tcard-corner-length: 16px;
+	--tcard-corner-length-complete: 18px;
+	--tcard-corner-width: var(--border-width-base);
+	--tcard-corner-width-complete: var(--border-width-strong);
 
 	/* ---- Controls ---------------------------------------------------------- */
 	--ctl-h-sm: 28px;
@@ -144,9 +204,9 @@
 	--color-surface: #111418;
 	--color-surface-muted: #1d2422;
 	--color-surface-pattern: #2c332f;
-	--color-row-hover: rgba(255,255,255,.06);
-	--color-overlay-modal: rgba(0,0,0,.72);
-	--color-badge-neutral: rgba(255,255,255,.16);
+	--color-row-hover: rgb(255 255 255 / 0.06);
+	--color-overlay-modal: rgb(0 0 0 / 0.72);
+	--color-badge-neutral: rgb(255 255 255 / 0.16);
 
 	/* Borders */
 	--color-border: #3b443f;
@@ -176,9 +236,9 @@
 	--color-warning-text: #ffd27a;
 
 	/* Elevation */
-	--shadow: 0 1px 3px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.35);
-	--shadow-hover: 0 8px 24px rgba(0,0,0,.45);
-	--shadow-popover: 0 8px 28px rgba(0,0,0,.55);
-	--shadow-modal: 0 24px 72px rgba(0,0,0,.65);
-	--shadow-sm: 0 1px 2px rgba(0,0,0,.55);
+	--shadow: 0 1px 3px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.35);
+	--shadow-hover: 0 8px 24px rgb(0 0 0 / 0.45);
+	--shadow-popover: 0 8px 28px rgb(0 0 0 / 0.55);
+	--shadow-modal: 0 24px 72px rgb(0 0 0 / 0.65);
+	--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.55);
 }
