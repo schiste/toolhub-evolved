@@ -25,6 +25,9 @@ export function completenessMeter(c) {
 	const total = Math.max(0, Number(score && score.total) || 0);
 	const filled = Math.max(0, Math.min(total, Number(score && score.filled) || 0));
 	const pct = total ? Math.round((filled / total) * 100) : 0;
+	if (total && filled === total) {
+		return `<span class="signal signal--complete" title="${esc(`Listing ${filled} of ${total} fields complete`)}">${icon("check")} Well documented</span>`;
+	}
 	return `<span class="signal" title="${esc(`Listing ${filled} of ${total} fields complete`)}"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:${pct}%"></span></span>${filled}/${total}</span>`;
 }
 export function fitChip(tool) {

@@ -280,6 +280,7 @@
 	height: 100%;
 	--corner: var(--color-border);   /* bracket colour, swapped on hover/focus */
 	--corner-len: 16px;
+	--corner-width: 1px;
 	padding: var(--space-4);
 	background-color: var(--color-surface);
 	/* Corner brackets only — no full border. 8 thin segments: a horizontal + a
@@ -291,10 +292,10 @@
 		linear-gradient(var(--corner), var(--corner)), linear-gradient(var(--corner), var(--corner));
 	background-repeat: no-repeat;
 	background-size:
-		var(--corner-len) 1px, 1px var(--corner-len),
-		var(--corner-len) 1px, 1px var(--corner-len),
-		var(--corner-len) 1px, 1px var(--corner-len),
-		var(--corner-len) 1px, 1px var(--corner-len);
+		var(--corner-len) var(--corner-width), var(--corner-width) var(--corner-len),
+		var(--corner-len) var(--corner-width), var(--corner-width) var(--corner-len),
+		var(--corner-len) var(--corner-width), var(--corner-width) var(--corner-len),
+		var(--corner-len) var(--corner-width), var(--corner-width) var(--corner-len);
 	background-position:
 		top left, top left,
 		top right, top right,
@@ -323,6 +324,15 @@
 	--corner: var(--color-progressive);
 	box-shadow: var(--focus-ring);
 	text-decoration: none;
+}
+.tcard--complete {
+	--corner: var(--color-success);
+	--corner-len: 18px;
+	--corner-width: 2px;
+}
+.tcard--complete:hover,
+.tcard--complete:focus-visible {
+	--corner: var(--color-success);
 }
 
 .tcard:hover .tcard__title { color: var(--color-progressive); }

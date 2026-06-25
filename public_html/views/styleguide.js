@@ -688,6 +688,7 @@ function atomsSection() {
 			${example("popularityBadge(tool)", "atoms", popularityBadge(FIXTURE_TOOL))}
 			${example("endorsementChip(5)", "atoms", endorsementChip(5))}
 			${example("completenessMeter({ filled: 7, total: 9 })", "atoms", completenessMeter({ filled: 7, total: 9 }))}
+			${example("completenessMeter({ filled: 9, total: 9 })", "atoms", completenessMeter({ filled: 9, total: 9 }))}
 			${example("fitChip(tool)", "atoms", fitChipExample())}
 			${example("reviewsBlock(tool)", "atoms", reviewsBlock(FIXTURE_TOOL))}
 			${example("usageBlock(tool)", "atoms", usageBlock(FIXTURE_TOOL))}

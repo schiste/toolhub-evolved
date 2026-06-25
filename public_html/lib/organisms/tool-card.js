@@ -28,10 +28,12 @@ export function toolCard(t, opts) {
 	const footLeft = opts.popular
 		? popularityBadge(t)
 		: `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
-	const signalLine = endorsementChip(t.endorsement && t.endorsement.count) + completenessMeter(completeness(t)) + fitChip(t);
+	const complete = completeness(t);
+	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
+	const signalLine = endorsementChip(t.endorsement && t.endorsement.count) + completenessMeter(complete) + fitChip(t);
 	// The whole card opens the quick-view; (5) a hover cue signals the peek.
 	return `
-	<article class="tcard${opts.popular ? " tcard--popular" : ""}" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
+	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
 		${flag}
 		<div class="tcard__head">
 			${rank}${toolIcon(t)}

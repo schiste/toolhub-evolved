@@ -277,7 +277,8 @@ textarea.le__input {
 	white-space: nowrap;
 }
 
-.signal--fit { color: var(--color-success); }
+.signal--fit,
+.signal--complete { color: var(--color-success); }
 .signal .icon { width: 1em; height: 1em; }
 
 .meter {
