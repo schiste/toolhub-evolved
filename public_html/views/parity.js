@@ -15,6 +15,7 @@ const RECENT_FILTERS = [
 	{ value: "lists", label: "Lists" },
 	{ value: "other", label: "Other" },
 ];
+const UNSUPPORTED_PATROL_FILTERS = new Set(["patrolled", "unpatrolled"]);
 function recentFilterKey(r) {
 	if (r.content_type === "tool") return "tools";
 	if (r.content_type === "list") return "lists";
@@ -25,17 +26,19 @@ function recentFilterKey(r) {
 export async function viewRecent() {
 	const requestedShow = new URLSearchParams(location.search).get("show") || "all";
 	const show = RECENT_FILTERS.some((o) => o.value === requestedShow) ? requestedShow : "all";
+	const patrolFilterRequested = UNSUPPORTED_PATROL_FILTERS.has(requestedShow);
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
 	// Lane B: your demo edits appear at the top of the live feed.
 	const merged = demoFeed(DEMO_KEYS.revisions, data.results || []);
 	// The read-only /recent/ feed does not expose true patrolled/unpatrolled state, so this filters by change type.
 	const filtered = show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === show);
-	const present = new Set(["all", ...merged.map(recentFilterKey)]);
-	if (show !== "all") present.add(show);
-	const filters = RECENT_FILTERS.filter((o) => present.has(o.value)).map((o) => {
+	const filters = RECENT_FILTERS.map((o) => {
 		const active = o.value === show;
 		return `<a class="rc-filter__link${active ? " is-active" : ""}" href="/recent?show=${esc(o.value)}"${active ? ' aria-current="page"' : ""}>${esc(o.label)}</a>`;
 	}).join("");
+	const patrolNote = patrolFilterRequested
+		? '<p class="page__intro">Patrolled and unpatrolled state is not exposed by the read-only feed, so this prototype keeps the content-type filters stable instead.</p>'
+		: "";
 	const rows = filtered.map((r) => {
 		const title = esc(r.content_title || r.content_id || "—");
 		const who = esc((r.user && r.user.username) || "system");
@@ -52,6 +55,7 @@ export async function viewRecent() {
 			<h1 class="page__title">Recent changes</h1>
 			<p class="page__intro">The latest edits across the catalog.</p>
 			<nav class="rc-filter" aria-label="Filter recent changes">${filters}</nav>
+			${patrolNote}
 			<ul class="feed">${rows || '<li><div class="feed__static">No recent changes.</div></li>'}</ul>
 		</div>` };
 }
