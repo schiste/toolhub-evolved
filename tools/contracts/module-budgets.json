@@ -1,0 +1,535 @@
+{
+	"defaults": {
+		"lines": {
+			".js": 220,
+			".mjs": 220,
+			".css": 420,
+			".html": 720,
+			".py": 120,
+			".sh": 120
+		},
+		"branches": {
+			".js": 40,
+			".mjs": 40,
+			".py": 24,
+			".sh": 24
+		},
+		"fanIn": 8,
+		"fanOut": 8,
+		"importDepth": 6
+	},
+	"modules": {
+		"eslint.config.js": {
+			"lines": 180,
+			"cyclomatic": 8,
+			"cognitive": 18,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"playwright.config.mjs": {
+			"lines": 18,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"proxy/app.py": {
+			"lines": 57,
+			"cyclomatic": 9,
+			"cognitive": 8,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/index.html": {
+			"lines": 216,
+			"cyclomatic": 10,
+			"cognitive": 25,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/lib/atoms/avatar.js": {
+			"lines": 59,
+			"cyclomatic": 31,
+			"cognitive": 58,
+			"fanIn": 8,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/lib/atoms/badges.js": {
+			"lines": 60,
+			"cyclomatic": 21,
+			"cognitive": 40,
+			"fanIn": 4,
+			"fanOut": 5,
+			"importDepth": 5
+		},
+		"public_html/lib/atoms/button.js": {
+			"lines": 78,
+			"cyclomatic": 27,
+			"cognitive": 54,
+			"fanIn": 11,
+			"fanOut": 2,
+			"importDepth": 2
+		},
+		"public_html/lib/atoms/form-fields.js": {
+			"lines": 80,
+			"cyclomatic": 33,
+			"cognitive": 64,
+			"fanIn": 3,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/lib/atoms/icon.js": {
+			"lines": 55,
+			"cyclomatic": 3,
+			"cognitive": 4,
+			"fanIn": 16,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/atoms/labels.js": {
+			"lines": 61,
+			"cyclomatic": 27,
+			"cognitive": 48,
+			"fanIn": 5,
+			"fanOut": 3,
+			"importDepth": 3
+		},
+		"public_html/lib/atoms/signals.js": {
+			"lines": 19,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 2,
+			"fanOut": 4,
+			"importDepth": 3
+		},
+		"public_html/lib/core/api.js": {
+			"lines": 219,
+			"cyclomatic": 76,
+			"cognitive": 156,
+			"fanIn": 13,
+			"fanOut": 3,
+			"importDepth": 3
+		},
+		"public_html/lib/core/author-index.js": {
+			"lines": 40,
+			"cyclomatic": 20,
+			"cognitive": 53,
+			"fanIn": 2,
+			"fanOut": 2,
+			"importDepth": 4
+		},
+		"public_html/lib/core/dom.js": {
+			"lines": 51,
+			"cyclomatic": 21,
+			"cognitive": 35,
+			"fanIn": 30,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/core/graph.js": {
+			"lines": 263,
+			"cyclomatic": 104,
+			"cognitive": 260,
+			"fanIn": 2,
+			"fanOut": 4,
+			"importDepth": 5
+		},
+		"public_html/lib/core/i18n.js": {
+			"lines": 82,
+			"cyclomatic": 20,
+			"cognitive": 38,
+			"fanIn": 16,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/lib/core/markdown.js": {
+			"lines": 195,
+			"cyclomatic": 59,
+			"cognitive": 111,
+			"fanIn": 2,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/lib/core/routing.js": {
+			"lines": 56,
+			"cyclomatic": 7,
+			"cognitive": 11,
+			"fanIn": 10,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/core/session.js": {
+			"lines": 37,
+			"cyclomatic": 6,
+			"cognitive": 9,
+			"fanIn": 10,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/core/signals.js": {
+			"lines": 122,
+			"cyclomatic": 45,
+			"cognitive": 104,
+			"fanIn": 9,
+			"fanOut": 2,
+			"importDepth": 4
+		},
+		"public_html/lib/core/similarity.js": {
+			"lines": 143,
+			"cyclomatic": 44,
+			"cognitive": 97,
+			"fanIn": 3,
+			"fanOut": 2,
+			"importDepth": 4
+		},
+		"public_html/lib/core/store.js": {
+			"lines": 242,
+			"cyclomatic": 33,
+			"cognitive": 74,
+			"fanIn": 10,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/lib/core/synth.js": {
+			"lines": 33,
+			"cyclomatic": 5,
+			"cognitive": 8,
+			"fanIn": 3,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/lib/core/theme.js": {
+			"lines": 49,
+			"cyclomatic": 18,
+			"cognitive": 30,
+			"fanIn": 1,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/core/util.js": {
+			"lines": 18,
+			"cyclomatic": 5,
+			"cognitive": 7,
+			"fanIn": 4,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/molecules/facet-group.js": {
+			"lines": 32,
+			"cyclomatic": 10,
+			"cognitive": 20,
+			"fanIn": 2,
+			"fanOut": 2,
+			"importDepth": 3
+		},
+		"public_html/lib/molecules/favbtn.js": {
+			"lines": 25,
+			"cyclomatic": 12,
+			"cognitive": 32,
+			"fanIn": 5,
+			"fanOut": 3,
+			"importDepth": 3
+		},
+		"public_html/lib/molecules/pager.js": {
+			"lines": 17,
+			"cyclomatic": 10,
+			"cognitive": 20,
+			"fanIn": 2,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/molecules/savemenu.js": {
+			"lines": 20,
+			"cyclomatic": 6,
+			"cognitive": 17,
+			"fanIn": 2,
+			"fanOut": 3,
+			"importDepth": 3
+		},
+		"public_html/lib/organisms/account.js": {
+			"lines": 73,
+			"cyclomatic": 12,
+			"cognitive": 22,
+			"fanIn": 2,
+			"fanOut": 5,
+			"importDepth": 3
+		},
+		"public_html/lib/organisms/force-graph.js": {
+			"lines": 413,
+			"cyclomatic": 94,
+			"cognitive": 191,
+			"fanIn": 3,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/organisms/grid.js": {
+			"lines": 7,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 5,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/lib/organisms/langpicker.js": {
+			"lines": 114,
+			"cyclomatic": 15,
+			"cognitive": 33,
+			"fanIn": 1,
+			"fanOut": 3,
+			"importDepth": 3
+		},
+		"public_html/lib/organisms/list-card.js": {
+			"lines": 27,
+			"cyclomatic": 5,
+			"cognitive": 11,
+			"fanIn": 3,
+			"fanOut": 4,
+			"importDepth": 3
+		},
+		"public_html/lib/organisms/quickview.js": {
+			"lines": 104,
+			"cyclomatic": 27,
+			"cognitive": 53,
+			"fanIn": 5,
+			"fanOut": 11,
+			"importDepth": 6
+		},
+		"public_html/lib/organisms/tool-card.js": {
+			"lines": 59,
+			"cyclomatic": 13,
+			"cognitive": 17,
+			"fanIn": 6,
+			"fanOut": 9,
+			"importDepth": 6
+		},
+		"public_html/main.js": {
+			"lines": 220,
+			"cyclomatic": 52,
+			"cognitive": 123,
+			"fanIn": 0,
+			"fanOut": 12,
+			"importDepth": 9
+		},
+		"public_html/styles/atoms.css": {
+			"lines": 416,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/styles/base.css": {
+			"lines": 291,
+			"cyclomatic": 5,
+			"cognitive": 4,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/styles/molecules.css": {
+			"lines": 887,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/styles/organisms.css": {
+			"lines": 1624,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/styles/styleguide.css": {
+			"lines": 412,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/styles/templates.css": {
+			"lines": 319,
+			"cyclomatic": 2,
+			"cognitive": 1,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/styles/tokens.css": {
+			"lines": 245,
+			"cyclomatic": 3,
+			"cognitive": 2,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"public_html/views/_fixtures.js": {
+			"lines": 87,
+			"cyclomatic": 2,
+			"cognitive": 2,
+			"fanIn": 1,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"public_html/views/authors.js": {
+			"lines": 35,
+			"cyclomatic": 6,
+			"cognitive": 10,
+			"fanIn": 1,
+			"fanOut": 6,
+			"importDepth": 7
+		},
+		"public_html/views/experiments.js": {
+			"lines": 159,
+			"cyclomatic": 5,
+			"cognitive": 15,
+			"fanIn": 1,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"public_html/views/graph.js": {
+			"lines": 52,
+			"cyclomatic": 9,
+			"cognitive": 19,
+			"fanIn": 1,
+			"fanOut": 5,
+			"importDepth": 7
+		},
+		"public_html/views/home.js": {
+			"lines": 366,
+			"cyclomatic": 89,
+			"cognitive": 211,
+			"fanIn": 1,
+			"fanOut": 11,
+			"importDepth": 7
+		},
+		"public_html/views/lists.js": {
+			"lines": 241,
+			"cyclomatic": 49,
+			"cognitive": 117,
+			"fanIn": 1,
+			"fanOut": 14,
+			"importDepth": 7
+		},
+		"public_html/views/parity.js": {
+			"lines": 157,
+			"cyclomatic": 50,
+			"cognitive": 131,
+			"fanIn": 1,
+			"fanOut": 8,
+			"importDepth": 4
+		},
+		"public_html/views/router.js": {
+			"lines": 193,
+			"cyclomatic": 47,
+			"cognitive": 97,
+			"fanIn": 1,
+			"fanOut": 18,
+			"importDepth": 8
+		},
+		"public_html/views/search.js": {
+			"lines": 173,
+			"cyclomatic": 49,
+			"cognitive": 75,
+			"fanIn": 1,
+			"fanOut": 10,
+			"importDepth": 7
+		},
+		"public_html/views/static.js": {
+			"lines": 321,
+			"cyclomatic": 30,
+			"cognitive": 62,
+			"fanIn": 4,
+			"fanOut": 4,
+			"importDepth": 4
+		},
+		"public_html/views/styleguide.js": {
+			"lines": 1069,
+			"cyclomatic": 48,
+			"cognitive": 127,
+			"fanIn": 1,
+			"fanOut": 21,
+			"importDepth": 7
+		},
+		"public_html/views/tool.js": {
+			"lines": 377,
+			"cyclomatic": 80,
+			"cognitive": 161,
+			"fanIn": 1,
+			"fanOut": 22,
+			"importDepth": 7
+		},
+		"public_html/views/toolforms.js": {
+			"lines": 431,
+			"cyclomatic": 97,
+			"cognitive": 202,
+			"fanIn": 1,
+			"fanOut": 11,
+			"importDepth": 7
+		},
+		"stylelint.config.mjs": {
+			"lines": 82,
+			"cyclomatic": 6,
+			"cognitive": 9,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"tests/e2e/smoke.spec.mjs": {
+			"lines": 60,
+			"cyclomatic": 6,
+			"cognitive": 17,
+			"fanIn": 0,
+			"fanOut": 1,
+			"importDepth": 2
+		},
+		"tests/unit/core.test.mjs": {
+			"lines": 371,
+			"cyclomatic": 15,
+			"cognitive": 35,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"tools/deploy.sh": {
+			"lines": 49,
+			"cyclomatic": 13,
+			"cognitive": 12,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"tools/install-hooks.sh": {
+			"lines": 17,
+			"cyclomatic": 1,
+			"cognitive": 0,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 0
+		},
+		"tools/quality.mjs": {
+			"lines": 1437,
+			"cyclomatic": 429,
+			"cognitive": 1067,
+			"fanIn": 0,
+			"fanOut": 0,
+			"importDepth": 1
+		},
+		"tools/smoke-server.mjs": {
+			"lines": 225,
+			"cyclomatic": 29,
+			"cognitive": 54,
+			"fanIn": 1,
+			"fanOut": 0,
+			"importDepth": 1
+		}
+	}
+}

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const QUALITY_DIR = ".quality";
 const REPORT_PATH = path.join(QUALITY_DIR, "report.json");
+const CONTRACT_DIR = "tools/contracts";
+const API_CONTRACT_PATH = path.join(CONTRACT_DIR, "public-api.json");
+const MODULE_BUDGET_PATH = path.join(CONTRACT_DIR, "module-budgets.json");
 const SOURCE_EXTS = new Set([".js", ".mjs", ".css", ".html", ".md", ".py", ".sh", ".json", ".svg"]);
 const CODE_EXTS = new Set([".js", ".mjs", ".css", ".html", ".py", ".sh"]);
 const JS_EXTS = new Set([".js", ".mjs"]);
@@ -23,9 +26,19 @@ const FUNCTION_LIMITS = {
 	nesting: 6,
 	params: 8
 };
+const MODULE_DEFAULT_LIMITS = {
+	lines: { ".js": 220, ".mjs": 220, ".css": 420, ".html": 720, ".py": 120, ".sh": 120 },
+	branches: { ".js": 40, ".mjs": 40, ".py": 24, ".sh": 24 },
+	fanIn: 8,
+	fanOut: 8,
+	importDepth: 6
+};
+const MUTATION_THRESHOLD = 95;
+const MAX_DIRECT_DEPENDENCY_RELEASE_AGE_DAYS = 548;
 const DUPLICATE_WINDOW = 12;
 const DESIGN_TOKEN_FILE = "public_html/styles/tokens.css";
 const APP_ENTRY = "public_html/main.js";
+const UPDATE_CONTRACTS = process.argv.includes("--update-contracts");
 const GENERATED_PATTERNS = [
 	/(^|\/)node_modules\//,
 	/(^|\/)\.quality\//,
@@ -140,6 +153,16 @@ function command(check, cmd, args) {
 	}
 }
 
+function commandWithEnv(cmd, args, env, opts = {}) {
+	return spawnSync(cmd, args, {
+		encoding: "utf8",
+		cwd: root,
+		env: { ...process.env, ...env },
+		maxBuffer: opts.maxBuffer || 1024 * 1024,
+		timeout: opts.timeout || 0
+	});
+}
+
 function bin(name) {
 	return path.join("node_modules", ".bin", name);
 }
@@ -150,6 +173,42 @@ function pyBin(name) {
 
 function requireFile(check, file, hint) {
 	if (!existsSync(file)) fail(check, file, null, hint);
+}
+
+function stableJson(value) {
+	return `${JSON.stringify(value, null, "\t")}\n`;
+}
+
+function formattedSnapshot(file, value) {
+	const raw = stableJson(value);
+	if (!existsSync(bin("prettier"))) return raw;
+	const out = spawnSync(bin("prettier"), ["--stdin-filepath", file], {
+		cwd: root,
+		encoding: "utf8",
+		input: raw
+	});
+	return out.status === 0 ? out.stdout : raw;
+}
+
+function readJson(file) {
+	return JSON.parse(read(file));
+}
+
+function updateOrCompareSnapshot(check, file, actual, label) {
+	const text = formattedSnapshot(file, actual);
+	if (UPDATE_CONTRACTS) {
+		mkdirSync(path.dirname(file), { recursive: true });
+		writeFileSync(file, text);
+		return;
+	}
+	if (!existsSync(file)) {
+		fail(check, file, null, `${label} snapshot is missing; run npm run contracts:update`);
+		return;
+	}
+	const expected = read(file);
+	if (expected !== text) {
+		fail(check, file, null, `${label} changed; review the diff and run npm run contracts:update if intentional`);
+	}
 }
 
 runCheck("toolchain", (check) => {
@@ -234,6 +293,96 @@ runCheck("npm audit", (check) => {
 	if (existsSync("package-lock.json")) command(check, "npm", ["audit", "--audit-level=moderate"]);
 });
 
+function directDependencies(pkg) {
+	const sections = ["dependencies", "devDependencies", "optionalDependencies"];
+	return sections
+		.flatMap((section) => (pkg[section] ? Object.entries(pkg[section]) : []))
+		.sort(([a], [b]) => a.localeCompare(b));
+}
+
+function npmViewJson(args) {
+	const out = spawnSync("npm", ["view", ...args, "--json"], { encoding: "utf8", cwd: root });
+	if (out.status !== 0) throw new Error([out.stdout, out.stderr].filter(Boolean).join("\n").trim());
+	const text = out.stdout.trim();
+	return text ? JSON.parse(text) : null;
+}
+
+runCheck("dependency policy", (check) => {
+	const exactVersion = /^\d+\.\d+\.\d+(?:-[\d.A-Za-z-]+)?$/;
+	requireFile(check, "package.json", "package.json is required");
+	requireFile(check, "package-lock.json", "package-lock.json is required");
+	if (!existsSync("package.json") || !existsSync("package-lock.json")) return;
+
+	const pkg = readJson("package.json");
+	const lock = readJson("package-lock.json");
+	const rootPackage = lock.packages && lock.packages[""];
+	if (!rootPackage) {
+		fail(check, "package-lock.json", null, "lockfile root package metadata is missing");
+		return;
+	}
+
+	for (const [name, version] of directDependencies(pkg)) {
+		if (!exactVersion.test(version)) {
+			fail(check, "package.json", null, `${name} must use an exact pinned version; found ${version}`);
+		}
+		const lockedSpec =
+			(rootPackage.dependencies && rootPackage.dependencies[name]) ||
+			(rootPackage.devDependencies && rootPackage.devDependencies[name]) ||
+			(rootPackage.optionalDependencies && rootPackage.optionalDependencies[name]);
+		if (lockedSpec !== version) {
+			fail(
+				check,
+				"package-lock.json",
+				null,
+				`${name} lockfile spec ${lockedSpec || "<missing>"} must equal ${version}`
+			);
+		}
+		const lockedPackage = lock.packages[`node_modules/${name}`];
+		if (!lockedPackage || lockedPackage.version !== version) {
+			fail(
+				check,
+				"package-lock.json",
+				null,
+				`${name} resolved version ${lockedPackage && lockedPackage.version ? lockedPackage.version : "<missing>"} must equal ${version}`
+			);
+		}
+	}
+
+	for (const [location, meta] of Object.entries(lock.packages || {})) {
+		if (meta && meta.deprecated) {
+			fail(check, "package-lock.json", null, `${location || "<root>"} is deprecated: ${meta.deprecated}`);
+		}
+	}
+
+	for (const [name, version] of directDependencies(pkg)) {
+		let deprecated;
+		let time;
+		try {
+			deprecated = npmViewJson([`${name}@${version}`, "deprecated"]);
+			time = npmViewJson([name, "time"]);
+		} catch (error) {
+			fail(check, "package.json", null, `could not read npm metadata for ${name}: ${error.message}`);
+			continue;
+		}
+		if (deprecated) fail(check, "package.json", null, `${name}@${version} is deprecated: ${deprecated}`);
+		const modifiedAt = time && time.modified ? Date.parse(time.modified) : Number.NaN;
+		const versionPublishedAt = time && time[version] ? Date.parse(time[version]) : Number.NaN;
+		if (!Number.isFinite(modifiedAt) || !Number.isFinite(versionPublishedAt)) {
+			fail(check, "package.json", null, `${name} is missing registry release timestamps`);
+			continue;
+		}
+		const ageDays = Math.floor((Date.now() - modifiedAt) / 86400000);
+		if (ageDays > MAX_DIRECT_DEPENDENCY_RELEASE_AGE_DAYS) {
+			fail(
+				check,
+				"package.json",
+				null,
+				`${name} has no release in ${ageDays} days; limit is ${MAX_DIRECT_DEPENDENCY_RELEASE_AGE_DAYS}`
+			);
+		}
+	}
+});
+
 runCheck("ruff", (check) => {
 	requireFile(check, pyBin("ruff"), "run tools/install-hooks.sh before pushing");
 	if (existsSync(pyBin("ruff"))) {
@@ -247,6 +396,21 @@ runCheck("pip audit", (check) => {
 	if (existsSync(pyBin("pip-audit"))) {
 		command(check, pyBin("pip-audit"), ["-r", "proxy/requirements.txt", "--strict"]);
 	}
+});
+
+function unitTestFiles() {
+	return files
+		.filter((file) => rel(file).startsWith("tests/unit/") && file.endsWith(".test.mjs"))
+		.map((file) => rel(file));
+}
+
+runCheck("unit tests", (check) => {
+	const tests = unitTestFiles();
+	if (tests.length === 0) {
+		fail(check, "tests/unit", null, "unit tests are required for mutation testing");
+		return;
+	}
+	command(check, process.execPath, ["--test", ...tests]);
 });
 
 runCheck("playwright axe smoke", (check) => {
@@ -374,6 +538,211 @@ runCheck("imports and architecture", (check) => {
 		visited.add(node);
 	}
 	for (const node of graph.keys()) dfs(node);
+});
+
+function exportedNames(file) {
+	const text = read(file);
+	const names = new Set();
+	for (const match of text.matchAll(/export\s+(?:async\s+)?function\s+([$A-Z_a-z][\w$]*)/g)) names.add(match[1]);
+	for (const match of text.matchAll(/export\s+(?:const|let|var)\s+([$A-Z_a-z][\w$]*)/g)) names.add(match[1]);
+	for (const match of text.matchAll(/export\s*{\s*([^}]+)\s*}/g)) {
+		for (const raw of match[1].split(",")) {
+			const exported = raw
+				.trim()
+				.split(/\s+as\s+/)
+				.pop()
+				.trim();
+			if (exported) names.add(exported);
+		}
+	}
+	return [...names].sort();
+}
+
+function matchingBraceEnd(text, start) {
+	let depth = 0;
+	let quote = "";
+	let lineComment = false;
+	let blockComment = false;
+	let escaped = false;
+	for (let index = start; index < text.length; index += 1) {
+		const char = text[index];
+		const next = text[index + 1];
+		if (lineComment) {
+			if (char === "\n") lineComment = false;
+			continue;
+		}
+		if (blockComment) {
+			if (char === "*" && next === "/") {
+				blockComment = false;
+				index += 1;
+			}
+			continue;
+		}
+		if (quote) {
+			if (escaped) {
+				escaped = false;
+			} else if (char === "\\") {
+				escaped = true;
+			} else if (char === quote) {
+				quote = "";
+			}
+			continue;
+		}
+		if (char === "/" && next === "/") {
+			lineComment = true;
+			index += 1;
+			continue;
+		}
+		if (char === "/" && next === "*") {
+			blockComment = true;
+			index += 1;
+			continue;
+		}
+		if (char === '"' || char === "'" || char === "`") {
+			quote = char;
+			continue;
+		}
+		if (char === "{") {
+			depth += 1;
+		} else if (char === "}") {
+			depth -= 1;
+			if (depth === 0) return index;
+		}
+	}
+	return -1;
+}
+
+function extractObjectBody(text, marker) {
+	const markerIndex = text.indexOf(marker);
+	if (markerIndex === -1) return "";
+	const start = text.indexOf("{", markerIndex);
+	if (start === -1) return "";
+	const end = matchingBraceEnd(text, start);
+	return end === -1 ? "" : text.slice(start + 1, end);
+}
+
+function quotedKeyAt(body, index, quoteChar) {
+	let end = index + 1;
+	while (end < body.length) {
+		if (body[end] === "\\" && end + 1 < body.length) {
+			end += 2;
+			continue;
+		}
+		if (body[end] === quoteChar) break;
+		end += 1;
+	}
+	if (end >= body.length) return null;
+	return { key: body.slice(index + 1, end), index: end };
+}
+
+function identifierKeyAt(body, index) {
+	const match = /^[$A-Z_a-z][\w$-]*/.exec(body.slice(index));
+	return match ? { key: match[0], index: index + match[0].length - 1 } : null;
+}
+
+function objectKeyAt(body, index) {
+	const char = body[index];
+	if (char === '"' || char === "'") return quotedKeyAt(body, index, char);
+	return /[$A-Z_a-z]/.test(char) ? identifierKeyAt(body, index) : null;
+}
+
+function hasColonAfterKey(body, index) {
+	let probe = index + 1;
+	while (/\s/.test(body[probe] || "")) probe += 1;
+	return body[probe] === ":";
+}
+
+function topLevelObjectKeys(body) {
+	const keys = [];
+	let depth = 0;
+	let quote = "";
+	let escaped = false;
+	for (let index = 0; index < body.length; index += 1) {
+		const char = body[index];
+		if (quote) {
+			if (escaped) escaped = false;
+			else if (char === "\\") escaped = true;
+			else if (char === quote) quote = "";
+			continue;
+		}
+
+		if (depth === 0) {
+			const candidate = objectKeyAt(body, index);
+			if (candidate && hasColonAfterKey(body, candidate.index)) {
+				keys.push(candidate.key);
+				index = candidate.index;
+				continue;
+			}
+		}
+
+		if (char === '"' || char === "'" || char === "`") {
+			quote = char;
+			continue;
+		}
+		if (char === "{" || char === "(" || char === "[") depth += 1;
+		else if (char === "}" || char === ")" || char === "]") depth = Math.max(0, depth - 1);
+	}
+	return [...new Set(keys)].sort();
+}
+
+function objectKeysFromConst(file, name) {
+	const text = read(file);
+	return [
+		...topLevelObjectKeys(extractObjectBody(text, `const ${name} =`)),
+		...topLevelObjectKeys(extractObjectBody(text, `export const ${name} =`))
+	];
+}
+
+function publicRoutes() {
+	const routeKeys = objectKeysFromConst("public_html/views/router.js", "ROUTES").map((key) => `/${key}`);
+	const staticKeys = objectKeysFromConst("public_html/views/static.js", "STATIC").map((key) => `/${key}`);
+	const patterns = [
+		"/",
+		"/search",
+		"/by/:name",
+		"/tools/create",
+		"/tools/:name",
+		"/tools/:name/edit",
+		"/tools/:name/edit-annotations",
+		"/tools/:name/history",
+		"/tools/:name/history/:revision",
+		"/lists/create",
+		"/lists/:id",
+		"/lists/:id/edit",
+		"/lists/:id/history"
+	];
+	return [...new Set([...patterns, ...routeKeys, ...staticKeys])].sort();
+}
+
+function schemaShapes() {
+	const apiText = read("public_html/lib/core/api.js");
+	const normalizedTool = [
+		...topLevelObjectKeys(extractObjectBody(apiText, "const o =")),
+		"status",
+		"weeklyViews"
+	].sort();
+	const normalizedList = topLevelObjectKeys(extractObjectBody(apiText, "return"));
+	return {
+		normalizeList: normalizedList,
+		normalizeTool: [...new Set(normalizedTool)].sort()
+	};
+}
+
+function publicApiContract() {
+	const exports = {};
+	for (const file of files.filter((item) => JS_EXTS.has(ext(item)) && rel(item).startsWith("public_html/"))) {
+		const names = exportedNames(file);
+		if (names.length > 0) exports[rel(file)] = names;
+	}
+	return {
+		exports,
+		routes: publicRoutes(),
+		schemas: schemaShapes()
+	};
+}
+
+runCheck("public API contract", (check) => {
+	updateOrCompareSnapshot(check, API_CONTRACT_PATH, publicApiContract(), "public API contract");
 });
 
 runCheck("links and route safety", (check) => {
@@ -572,6 +941,110 @@ function browserModuleGraph() {
 	return graph;
 }
 
+function jsModuleGraph() {
+	const moduleFiles = files.filter((item) => JS_EXTS.has(ext(item))).map((file) => rel(file));
+	const graph = new Map(moduleFiles.map((file) => [file, []]));
+	for (const file of moduleFiles) {
+		for (const item of importsFor(file)) {
+			if (!item.spec.startsWith(".")) continue;
+			const target = resolveImport(file, item.spec);
+			if (graph.has(target)) graph.get(file).push(target);
+		}
+	}
+	return graph;
+}
+
+function importDepthFor(file, graph, seen = new Set()) {
+	if (seen.has(file)) return 0;
+	const deps = graph.get(file) || [];
+	if (deps.length === 0) return graph.has(file) ? 1 : 0;
+	const nextSeen = new Set(seen);
+	nextSeen.add(file);
+	return 1 + Math.max(...deps.map((dep) => importDepthFor(dep, graph, nextSeen)));
+}
+
+function codeModuleFiles() {
+	return files.filter((file) => CODE_EXTS.has(ext(file))).map((file) => rel(file));
+}
+
+function moduleCyclomatic(text) {
+	return 1 + (text.match(/\b(if|for|while|case|catch)\b|\?|&&|\|\|/g) || []).length;
+}
+
+function moduleCognitive(text) {
+	let score = 0;
+	let nesting = 0;
+	for (const line of text.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (/^[)\]}]/.test(trimmed)) nesting = Math.max(0, nesting - 1);
+		const controls = trimmed.match(/\b(if|for|while|case|catch|switch)\b|\?|&&|\|\|/g) || [];
+		score += controls.length * (1 + nesting);
+		const opens = (trimmed.match(/[([{]/g) || []).length;
+		const closes = (trimmed.match(/[)\]}]/g) || []).length;
+		nesting = Math.max(0, nesting + opens - closes);
+	}
+	return score;
+}
+
+function moduleMetrics() {
+	const graph = jsModuleGraph();
+	const fanIn = new Map([...graph.keys()].map((file) => [file, 0]));
+	for (const deps of graph.values()) {
+		for (const dep of deps) fanIn.set(dep, (fanIn.get(dep) || 0) + 1);
+	}
+	const modules = {};
+	for (const file of codeModuleFiles()) {
+		const text = read(file);
+		modules[file] = {
+			lines: text.split(/\r?\n/).length,
+			cyclomatic: moduleCyclomatic(text),
+			cognitive: moduleCognitive(text),
+			fanIn: fanIn.get(file) || 0,
+			fanOut: (graph.get(file) || []).length,
+			importDepth: importDepthFor(file, graph)
+		};
+	}
+	return { defaults: MODULE_DEFAULT_LIMITS, modules };
+}
+
+function defaultModuleBudget(file) {
+	const extension = ext(file);
+	return {
+		lines: MODULE_DEFAULT_LIMITS.lines[extension] || 120,
+		cyclomatic: MODULE_DEFAULT_LIMITS.branches[extension] || 20,
+		cognitive: (MODULE_DEFAULT_LIMITS.branches[extension] || 20) * 2,
+		fanIn: MODULE_DEFAULT_LIMITS.fanIn,
+		fanOut: MODULE_DEFAULT_LIMITS.fanOut,
+		importDepth: MODULE_DEFAULT_LIMITS.importDepth
+	};
+}
+
+runCheck("module complexity budgets", (check) => {
+	const actual = moduleMetrics();
+	if (UPDATE_CONTRACTS) {
+		updateOrCompareSnapshot(check, MODULE_BUDGET_PATH, actual, "module budgets");
+		return;
+	}
+	if (!existsSync(MODULE_BUDGET_PATH)) {
+		fail(check, MODULE_BUDGET_PATH, null, "module budget snapshot is missing; run npm run contracts:update");
+		return;
+	}
+	const expected = readJson(MODULE_BUDGET_PATH);
+	for (const file of Object.keys(expected.modules || {})) {
+		if (!actual.modules[file]) {
+			fail(check, MODULE_BUDGET_PATH, null, `${file} was deleted; update module budget snapshot`);
+		}
+	}
+	for (const [file, metrics] of Object.entries(actual.modules)) {
+		const budget = (expected.modules && expected.modules[file]) || defaultModuleBudget(file);
+		for (const [metric, value] of Object.entries(metrics)) {
+			if (value > budget[metric]) {
+				fail(check, file, null, `${metric} is ${value}; budget is ${budget[metric]}`);
+			}
+		}
+	}
+});
+
 function reachableModules(graph, entry) {
 	const seen = new Set();
 	function visit(node) {
@@ -676,19 +1149,9 @@ function functionRanges(text) {
 	const regex = /function\s+([$A-Z_a-z][\w$]*)\s*\(([^)]*)\)\s*{/g;
 	let match;
 	while ((match = regex.exec(text))) {
-		let depth = 0;
-		let end = match.index;
-		for (let i = match.index; i < text.length; i += 1) {
-			if (text[i] === "{") {
-				depth += 1;
-			} else if (text[i] === "}") {
-				depth -= 1;
-				if (depth === 0) {
-					end = i + 1;
-					break;
-				}
-			}
-		}
+		const open = text.indexOf("{", match.index);
+		const close = matchingBraceEnd(text, open);
+		const end = close === -1 ? match.index : close + 1;
 		ranges.push({ name: match[1], params: match[2], start: match.index, end });
 	}
 	return ranges;
@@ -761,6 +1224,193 @@ runCheck("duplicate functions", (check) => {
 			} else {
 				seen.set(body, { file, line: lineNumber(text, fn.start) });
 			}
+		}
+	}
+});
+
+const MUTATION_TARGETS = new Map([
+	["public_html/lib/core/api.js", ["firstUrl", "hasValue", "normalizeList", "normalizeTool", "pick", "statusOf"]],
+	["public_html/lib/core/dom.js", ["dirAttrs", "esc", "hash", "normalizeVcsUrl", "safeUrl"]],
+	["public_html/lib/core/routing.js", ["authorHref", "listHref", "toolHref"]],
+	["public_html/lib/core/signals.js", ["completeness", "endorsementOf", "fitsContext", "freshness", "wikiMatches"]],
+	[
+		"public_html/lib/core/similarity.js",
+		["cosine", "idf", "nearestNeighbors", "normalizeVector", "termsOf", "vectorFor"]
+	],
+	["public_html/lib/core/synth.js", ["synthHealth", "synthSeed", "synthThanks", "synthUsage", "synthViews"]],
+	["public_html/lib/core/util.js", ["memoizeAsync", "normStr"]]
+]);
+
+const MUTATORS = [
+	{ name: "strict equality", pattern: /===/g, replacement: "!==" },
+	{ name: "strict inequality", pattern: /!==/g, replacement: "===" },
+	{ name: "less-or-equal", pattern: /(?<=\s)<=(?=\s)/g, replacement: "<" },
+	{ name: "greater-or-equal", pattern: /(?<=\s)>=(?=\s)/g, replacement: ">" },
+	{ name: "less-than", pattern: /(?<=\s)<(?=\s)/g, replacement: "<=" },
+	{ name: "greater-than", pattern: /(?<=\s)>(?=\s)/g, replacement: ">=" },
+	{ name: "logical and", pattern: /&&/g, replacement: "||" },
+	{ name: "logical or", pattern: /\|\|/g, replacement: "&&" },
+	{ name: "true literal", pattern: /\btrue\b/g, replacement: "false" },
+	{ name: "false literal", pattern: /\bfalse\b/g, replacement: "true" },
+	{ name: "math max", pattern: /\bMath\.max\b/g, replacement: "Math.min" },
+	{ name: "math min", pattern: /\bMath\.min\b/g, replacement: "Math.max" },
+	{ name: "empty string return", pattern: /return ""/g, replacement: "return null" },
+	{ name: "null return", pattern: /return null/g, replacement: 'return ""' }
+];
+
+function mutationCandidates() {
+	const candidates = [];
+	for (const [file, names] of MUTATION_TARGETS) {
+		if (!existsSync(file)) {
+			candidates.push({ missing: true, file, name: "<file>", line: null });
+			continue;
+		}
+		const text = read(file);
+		const ranges = functionRanges(text).filter((range) => names.includes(range.name));
+		const found = new Set(ranges.map((range) => range.name));
+		for (const name of names) {
+			if (!found.has(name)) candidates.push({ missing: true, file, name, line: null });
+		}
+		for (const range of ranges) {
+			const body = text.slice(range.start, range.end);
+			for (const mutator of MUTATORS) {
+				let match;
+				while ((match = mutator.pattern.exec(body))) {
+					const index = range.start + match.index;
+					const candidate = {
+						file,
+						functionName: range.name,
+						line: lineNumber(text, index),
+						mutator: mutator.name,
+						index,
+						from: match[0],
+						to: mutator.replacement
+					};
+					if (!isEquivalentMutation(text, candidate)) candidates.push(candidate);
+				}
+			}
+		}
+	}
+	return candidates;
+}
+
+function isEquivalentMutation(text, mutant) {
+	const line = text.split(/\r?\n/)[mutant.line - 1] || "";
+	if (
+		mutant.file === "public_html/lib/core/dom.js" &&
+		mutant.functionName === "safeUrl" &&
+		mutant.mutator === "logical or" &&
+		line.includes("u === null || u === undefined")
+	) {
+		return true;
+	}
+	if (
+		mutant.file === "public_html/lib/core/similarity.js" &&
+		mutant.functionName === "vectorFor" &&
+		mutant.mutator === "logical or" &&
+		line.includes("FACET_WEIGHTS[facet] || 1")
+	) {
+		return true;
+	}
+	if (
+		mutant.file === "public_html/lib/core/similarity.js" &&
+		mutant.functionName === "cosine" &&
+		mutant.mutator === "less-or-equal" &&
+		line.includes("vecA.size <= vecB.size")
+	) {
+		return true;
+	}
+	return false;
+}
+
+function applyMutation(text, mutant) {
+	return text.slice(0, mutant.index) + mutant.to + text.slice(mutant.index + mutant.from.length);
+}
+
+function runUnitTestsAgainst(rootDir) {
+	return commandWithEnv(
+		process.execPath,
+		["--max-old-space-size=256", "--test", ...unitTestFiles()],
+		{ TOOLHUB_CORE_ROOT: path.resolve(rootDir) },
+		{ timeout: 8000 }
+	);
+}
+
+function runMutant(mutant) {
+	const tempRoot = mkdtempSync(path.join(QUALITY_DIR, "mutation-"));
+	try {
+		cpSync("public_html", path.join(tempRoot, "public_html"), { recursive: true });
+		const target = path.join(tempRoot, mutant.file);
+		writeFileSync(target, applyMutation(read(mutant.file), mutant));
+		const out = runUnitTestsAgainst(tempRoot);
+		return {
+			killed: out.status !== 0,
+			stdout: out.stdout,
+			stderr: out.stderr
+		};
+	} finally {
+		rmSync(tempRoot, { recursive: true, force: true });
+	}
+}
+
+runCheck("mutation testing", (check) => {
+	const tests = unitTestFiles();
+	if (tests.length === 0) {
+		fail(check, "tests/unit", null, "unit tests are required before mutation testing");
+		return;
+	}
+	const baseline = runUnitTestsAgainst(root);
+	if (baseline.status !== 0) {
+		fail(check, "tests/unit", null, [baseline.stdout, baseline.stderr].filter(Boolean).join("\n").trim());
+		return;
+	}
+
+	const candidates = mutationCandidates();
+	const missing = candidates.filter((candidate) => candidate.missing);
+	for (const candidate of missing) {
+		fail(check, candidate.file, candidate.line, `mutation target ${candidate.name} was not found`);
+	}
+	const mutants = candidates.filter((candidate) => !candidate.missing);
+	if (mutants.length === 0) {
+		fail(check, null, null, "no mutation candidates were generated");
+		return;
+	}
+
+	const survivors = [];
+	let killed = 0;
+	for (const mutant of mutants) {
+		const result = runMutant(mutant);
+		if (result.killed) {
+			killed += 1;
+		} else {
+			survivors.push(mutant);
+		}
+	}
+	const score = (killed / mutants.length) * 100;
+	writeFileSync(
+		path.join(QUALITY_DIR, "mutation-report.json"),
+		stableJson({
+			threshold: MUTATION_THRESHOLD,
+			score: Number(score.toFixed(2)),
+			killed,
+			total: mutants.length,
+			survivors
+		})
+	);
+	if (score < MUTATION_THRESHOLD) {
+		fail(
+			check,
+			path.join(QUALITY_DIR, "mutation-report.json"),
+			null,
+			`mutation score ${score.toFixed(2)}% is below ${MUTATION_THRESHOLD}% (${survivors.length} survived)`
+		);
+		for (const survivor of survivors.slice(0, 10)) {
+			fail(
+				check,
+				survivor.file,
+				survivor.line,
+				`survived mutant in ${survivor.functionName}: ${survivor.mutator} (${survivor.from} -> ${survivor.to})`
+			);
 		}
 	}
 });
