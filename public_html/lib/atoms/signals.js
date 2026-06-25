@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../core/dom.js";
-import { countLabel, fmt, plural } from "../core/i18n.js";
-import { starString, synthReviews, synthUsage } from "../core/synth.js";
+import { fmt, plural } from "../core/i18n.js";
+import { synthThanks, synthUsage } from "../core/synth.js";
+import { icon } from "./icon.js";
 
-export function reviewsBlock(t) {
-	const r = synthReviews(t.name);
-	return `<div class="reviews__agg">
-						<span class="reviews__stars" aria-hidden="true">${starString(r.rating)}</span>
-						<span class="reviews__score">${r.rating.toFixed(1)}</span>
-						<span class="reviews__count">· ${esc(countLabel(r.count, "review", "reviews"))}</span>
+export function thanksBlock(t) {
+	const thanks = synthThanks(t.name);
+	return `<div class="thanks__agg">
+						<span class="thanks__icon" aria-hidden="true">${icon("heart")}</span>
+						<span class="thanks__score">${esc(fmt(thanks))}</span>
+						<span class="thanks__count">${esc(plural(thanks, { one: "person thanked", other: "people thanked" }))}</span>
 					</div>`;
 }
 export function usageBlock(t) {

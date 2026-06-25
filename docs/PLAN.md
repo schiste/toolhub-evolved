@@ -55,7 +55,7 @@ ever productionized," not as work for this plan.
 - The **experimental toggle already exists** and its synthetic features already
   use the exact pattern this plan generalizes: a **real record overloaded with a
   feature-specific fixture**. `synthViews(name)` decorates a real tool with a
-  deterministic view count; reviews, health, usage, and screenshots likewise
+  deterministic view count; thanks, health, usage, and screenshots likewise
   hang off real tools, each behind an `exp-badge` and a
   `// EXPERIMENTAL — MISSING …` comment. **Lane B's mechanism is already in the
   codebase** — every new experiment follows the same overload shape.
@@ -144,8 +144,8 @@ There are two overlay kinds:
 
 - **Synthetic-signal overlays — deterministic, no persistence.** A pure function
   of the real record decorates it with a signal the API can't give us:
-  `synthViews(name)` (exists), and the same shape for reviews, health, usage, and
-  screenshots. Backed by a tiny bundled seed JSON (a **few** sample reviews / demo
+  `synthViews(name)` (exists), and the same shape for thanks, health, usage, and
+  screenshots. Backed by a tiny bundled seed JSON (a **few** sample thanks / demo
   lists / examples — decision §8.7) keyed by tool name for believable content;
   computed/seeded offline, never a runtime data source. These need no store —
   they are recomputed from the live record each render.
@@ -190,7 +190,7 @@ Appendix A as the contract each simulation imitates.
 | **Add / remove tools** | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest | local crawler-url + revision/audit deltas merged into the live feeds | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
 | **Developer settings** | **Hidden** (decision §8.5) — route stays a brief "not part of this demo" note | none | Token/OAuth-app backend |
 | **History & feeds** | Demo actions append revision/audit rows so `/recent`, `/audit-logs`, history reflect *your* edits | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds | Server write-side-effects |
-| **Already-synthetic** (popularity/`weeklyViews`, reviews, health, usage, screenshots) | unchanged; the original overload pattern | deterministic per-tool signal computed from the live record (optional seed JSON) | Real usage/health/review data source |
+| **Already-synthetic** (popularity/`weeklyViews`, thanks, health, usage, screenshots) | unchanged; the original overload pattern | deterministic per-tool signal computed from the live record (optional seed JSON) | Real usage/health/thanks data source |
 
 ### 3.3 Route & chrome behavior under the flag
 
@@ -235,7 +235,7 @@ explains the model in plain language:
   recent changes, crawler history, audit logs: all **live, read-only** from
   `toolhub.wikimedia.org` through a read-only proxy.
 - **What's simulated** (experiments) — sign-in, favorites, list create/edit, tool
-  submit/edit, annotations, and synthetic signals (popularity, reviews, health,
+  submit/edit, annotations, and synthetic signals (popularity, thanks, health,
   usage, screenshots). These **overload the real records with fixtures/local
   overlays**.
 - **Where your actions go** — stored only in this browser (`localStorage`),
@@ -327,9 +327,9 @@ that, if this day ever comes, callers don't change — only the adapter's target
    `origin="api"`. (Recommendation; flip to faithful/annotation-only on request.)
 5. **Developer settings → hidden.** The route keeps a brief "not part of this
    demo" note in both states.
-6. **Synthetic features (reviews/health/popularity/screenshots) → keep as
+6. **Synthetic features (thanks/health/popularity/screenshots) → keep as
    fixtures**, unified under the overload pattern.
-7. **Seed scope → small.** A few sample reviews and a few demo lists/examples —
+7. **Seed scope → small.** A few sample thanks and a few demo lists/examples —
    just enough to make the experiments believable.
 
 Always-on labeling (from these decisions): the **red mockup banner** shows on

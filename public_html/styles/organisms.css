@@ -632,11 +632,11 @@ body.exp-off .experimental { display: none !important; }
 	.shotstrip__frames { grid-template-columns: 1fr; }
 }
 
-/* Reviews + usage. */
-.reviews { margin-top: var(--space-2); }
-.reviews__agg { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-3); }
-.reviews__stars { color: var(--wmf-yellow); font-size: var(--fs-subtitle); letter-spacing: 2px; }
-.reviews__score { font-size: var(--fs-subtitle); font-weight: 700; }
-.reviews__count { color: var(--color-text-muted); }
+/* Thanks + usage. */
+.thanks { margin-top: var(--space-2); }
+.thanks__agg { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); }
+.thanks__icon { color: var(--color-progressive); display: inline-flex; }
+.thanks__score { font-size: var(--fs-subtitle); font-weight: 700; }
+.thanks__count { color: var(--color-text-muted); }
 .usage { margin: var(--space-0); color: var(--color-text-secondary); }
 .usage strong { font-size: var(--fs-subtitle); color: var(--color-text); }

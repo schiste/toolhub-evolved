@@ -127,7 +127,7 @@ export const STATIC = {
 		<p>When you switch on <em>"Show me prospective features"</em>, the app turns on a
 		set of experiments that the read-only API can't actually back: signing in,
 		favoriting tools, creating and editing lists, submitting and editing tools,
-		community annotations, and signals like popularity, reviews, health, and usage.</p>
+		community annotations, and signals like popularity, thanks, health, and usage.</p>
 		<p>These don't replace the real data — each one <strong>overloads a real record with
 		a feature-specific fixture</strong> (for example, a real tool decorated with a
 		synthetic "popular this week" count, or your favorite flag layered on top of the

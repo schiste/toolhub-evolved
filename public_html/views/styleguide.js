@@ -9,7 +9,7 @@ import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, fArea, fCheck, fInput, fSelect } from "../lib/atoms/form-fields.js";
 import { ICON_NAMES, icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
-import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
+import { thanksBlock, usageBlock } from "../lib/atoms/signals.js";
 import { renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { renderPager } from "../lib/molecules/pager.js";
@@ -93,9 +93,9 @@ function withStyleguideDemoState(render) {
 			tools: [FIXTURE_TOOL.name, FIXTURE_TOOL_EXPERIMENTAL.name],
 		},
 		{
-			id: "demo-styleguide-review",
-			title: "Review queue",
-			description: "Tools saved for later evaluation.",
+			id: "demo-styleguide-thanks",
+			title: "Tools to thank",
+			description: "Tools whose maintainers deserve appreciation.",
 			tools: [FIXTURE_TOOL_DEPRECATED.name],
 		},
 	];
@@ -690,7 +690,7 @@ function atomsSection() {
 			${example("completenessMeter({ filled: 7, total: 9 })", "atoms", completenessMeter({ filled: 7, total: 9 }))}
 			${example("completenessMeter({ filled: 9, total: 9 })", "atoms", completenessMeter({ filled: 9, total: 9 }))}
 			${example("fitChip(tool)", "atoms", fitChipExample())}
-			${example("reviewsBlock(tool)", "atoms", reviewsBlock(FIXTURE_TOOL))}
+			${example("thanksBlock(tool)", "atoms", thanksBlock(FIXTURE_TOOL))}
 			${example("usageBlock(tool)", "atoms", usageBlock(FIXTURE_TOOL))}
 			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(FIXTURE_TOOL)}</div>`, { wide: true })}
 			${example("glanceChips(tool)", "atoms", `<div class="sg-inline-list">${glanceChips(FIXTURE_TOOL)}</div>`, { wide: true })}

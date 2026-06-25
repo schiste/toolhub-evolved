@@ -16,14 +16,7 @@ export function synthHealth(name) {
 	if (b >= 85) return { level: "yellow", label: "Degraded" };
 	return { level: "green", label: "Healthy" };
 }
-// Ratings & reviews — Needs: a reviews data model + authenticated submissions.
-export function synthReviews(name) {
-	const h = synthSeed(name, "rating");
-	return { rating: (35 + (h % 16)) / 10, count: 3 + (synthSeed(name, "rcount") % 140) }; // 3.5–5.0
-}
-export function starString(rating) {
-	const full = Math.floor(rating), half = rating - full >= 0.5;
-	return "★".repeat(full) + (half ? "½" : "") + "☆".repeat(5 - full - (half ? 1 : 0));
-}
+// Thanks — Needs: an authenticated appreciation event model with abuse controls.
+export function synthThanks(name) { return 3 + (synthSeed(name, "thanks") % 140); }
 // 30-day usage — Needs: usage analytics the API doesn't expose.
 export function synthUsage(name) { return 50 + (synthSeed(name, "usage") % 9000); }

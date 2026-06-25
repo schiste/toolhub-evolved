@@ -15,7 +15,7 @@ import { completenessMeter, endorsementChip, fitChip, freshnessNote, healthBadge
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
-import { reviewsBlock, usageBlock } from "../lib/atoms/signals.js";
+import { thanksBlock, usageBlock } from "../lib/atoms/signals.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { forceGraph } from "../lib/organisms/force-graph.js";
@@ -241,11 +241,11 @@ export async function viewTool(name) {
 					${metaItem("Audiences", (t.audiences || []).map(esc).join(", "))}
 				</div>
 
-				<!-- EXPERIMENTAL — ratings & reviews. Needs: a reviews data model + authenticated submissions. -->
-				<div class="experimental reviews">
-					<h2 class="toolpage__h2">Reviews <span class="exp-badge">Experimental</span></h2>
-					${reviewsBlock(t)}
-					${button("Write a review", { variant: "outline", disabled: true })}
+				<!-- EXPERIMENTAL — thanks. Needs: an authenticated appreciation event model with abuse controls. -->
+				<div class="experimental thanks">
+					<h2 class="toolpage__h2">Thanks <span class="exp-badge">Experimental</span></h2>
+					${thanksBlock(t)}
+					${button("Thank maintainers", { variant: "outline", disabled: true })}
 				</div>
 
 				${relatedHtml}

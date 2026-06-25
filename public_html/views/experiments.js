@@ -20,7 +20,7 @@ export const EXPERIMENTS = [
 	{ group: "Synthetic signals — computed deterministically per tool", items: [
 		{ name: "Popularity", what: "View counts and a “Popular this week” ranking.", sim: "A stable pseudo-random number derived from the tool name.", needs: "Usage / view tracking", tryHref: "/search?sort=views", tryLabel: "Most viewed" },
 		{ name: "Operational health", what: "A Healthy / Degraded / Down status pill.", sim: "Deterministic per tool.", needs: "An uptime / health-check service" },
-		{ name: "Ratings & reviews", what: "A star rating and review count.", sim: "Deterministic per tool.", needs: "A reviews data model + authenticated submissions" },
+		{ name: "Thanks", what: "A lightweight way to appreciate useful tools without rating maintainers' work.", sim: "Deterministic per tool.", needs: "An authenticated appreciation event model with abuse controls" },
 		{ name: "30-day usage", what: "An “editors used this in the last 30 days” figure.", sim: "Deterministic per tool.", needs: "Usage analytics" },
 		{ name: "Screenshots", what: "A preview image strip on the tool page.", sim: "A static placeholder — no per-tool data is possible.", needs: "A screenshot field in toolinfo + image storage" },
 	] },

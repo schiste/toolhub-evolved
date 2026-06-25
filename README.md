@@ -19,7 +19,7 @@ explore how tool discovery could look and feel.
 - **Footer & policy pages** — About, Help, Community, Privacy, Terms, Code of Conduct, API, Feeds.
 - **Help maintain Toolhub** (`/contribute`) — a hub linking source, tasks, translation and docs.
 - **Wikimedia brand** — Montserrat + Source Serif 4, the 2022 brand palette, all in `tokens.css`.
-- **Experimental toggle** — flip prospective features (popularity, health, reviews, …) on/off. Off = what's shippable against today's API. Each prospective feature is documented in code with what's missing (grep `EXPERIMENTAL`).
+- **Experimental toggle** — flip prospective features (popularity, thanks, health, …) on/off. Off = what's shippable against today's API. Each prospective feature is documented in code with what's missing (grep `EXPERIMENTAL`).
 - **Accessible & responsive** — keyboard, focus management, AA contrast, no horizontal overflow at any width.
 
 ## Architecture

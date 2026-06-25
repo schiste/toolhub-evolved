@@ -26,6 +26,7 @@
 
 .layout__main > .section-head:first-child { margin-top: var(--space-0); }
 .section-head h2 { font-size: var(--fs-subtitle); margin: var(--space-0); }
+.layout__side .panel__title { font-size: var(--fs-subtitle); }
 .link { font-size: var(--fs-caption); }
 
 /* Card grids. */
