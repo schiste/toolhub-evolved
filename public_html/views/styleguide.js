@@ -4,7 +4,14 @@ import { INDEX } from "../lib/core/api.js";
 import { DEMO_KEYS, DEMO_NS } from "../lib/core/store.js";
 import { completeness, getUserContext, setUserContext } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
-import { completenessMeter, endorsementChip, fitChip, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import {
+	completenessMeter,
+	endorsementChip,
+	fitChip,
+	healthBadge,
+	popularityBadge,
+	statusBadge
+} from "../lib/atoms/badges.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, fArea, fCheck, fInput, fSelect } from "../lib/atoms/form-fields.js";
 import { ICON_NAMES, icon } from "../lib/atoms/icon.js";
@@ -26,15 +33,17 @@ import {
 	FIXTURE_SELECTED_FACETS,
 	FIXTURE_TOOL,
 	FIXTURE_TOOL_DEPRECATED,
-	FIXTURE_TOOL_EXPERIMENTAL,
+	FIXTURE_TOOL_EXPERIMENTAL
 } from "./_fixtures.js";
 
 const STYLEGUIDE_TOOLS = [FIXTURE_TOOL, FIXTURE_TOOL_DEPRECATED, FIXTURE_TOOL_EXPERIMENTAL];
 const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
+const QUICK_VIEW_BUTTON_STYLE =
+	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 const STYLEGUIDE_GRAPH = {
 	communityMeta: [
 		{ id: 0, label: "commons", size: 3 },
-		{ id: 1, label: "wikidata", size: 3 },
+		{ id: 1, label: "wikidata", size: 3 }
 	],
 	nodes: [
 		{ id: "upload", title: "Commons Upload", community: 0, weight: 8, fits: true },
@@ -42,7 +51,7 @@ const STYLEGUIDE_GRAPH = {
 		{ id: "map", title: "WLM Map", community: 0, weight: 5 },
 		{ id: "query", title: "Query Helper", community: 1, weight: 7 },
 		{ id: "reconcile", title: "Reconcile Tool", community: 1, weight: 5 },
-		{ id: "citations", title: "Citation Helper", community: 1, weight: 4 },
+		{ id: "citations", title: "Citation Helper", community: 1, weight: 4 }
 	],
 	edges: [
 		{ source: "upload", target: "pattypan", weight: 0.82 },
@@ -50,33 +59,80 @@ const STYLEGUIDE_GRAPH = {
 		{ source: "pattypan", target: "map", weight: 0.55 },
 		{ source: "query", target: "reconcile", weight: 0.78 },
 		{ source: "query", target: "citations", weight: 0.52 },
-		{ source: "map", target: "query", weight: 0.22 },
-	],
+		{ source: "map", target: "query", weight: 0.22 }
+	]
 };
 
 const FALLBACK_TOKENS = {
 	colors: [
-		"--color-surface", "--color-surface-muted", "--color-surface-pattern", "--color-row-hover",
-		"--color-overlay-modal", "--color-badge-neutral", "--color-border", "--color-border-hover",
-		"--color-border-accent", "--color-text", "--color-text-secondary", "--color-text-muted",
-		"--color-progressive", "--color-progressive-hover", "--color-progressive-subtle",
-		"--color-interactive-subtle", "--color-hero-tint", "--color-favorite", "--color-success",
-		"--color-success-subtle", "--color-destructive", "--color-destructive-subtle", "--color-warning",
-		"--color-warning-subtle", "--color-warning-text",
+		"--color-surface",
+		"--color-surface-muted",
+		"--color-surface-pattern",
+		"--color-row-hover",
+		"--color-overlay-modal",
+		"--color-badge-neutral",
+		"--color-border",
+		"--color-border-hover",
+		"--color-border-accent",
+		"--color-text",
+		"--color-text-secondary",
+		"--color-text-muted",
+		"--color-progressive",
+		"--color-progressive-hover",
+		"--color-progressive-subtle",
+		"--color-interactive-subtle",
+		"--color-hero-tint",
+		"--color-favorite",
+		"--color-success",
+		"--color-success-subtle",
+		"--color-destructive",
+		"--color-destructive-subtle",
+		"--color-warning",
+		"--color-warning-subtle",
+		"--color-warning-text"
 	],
 	wmf: [
-		"--wmf-white", "--wmf-green-aaa", "--wmf-blue-aaa", "--wmf-red-aaa", "--wmf-orange",
-		"--wmf-yellow", "--wmf-purple", "--wmf-red-light", "--wmf-orange-light", "--wmf-green-light",
+		"--wmf-white",
+		"--wmf-green-aaa",
+		"--wmf-blue-aaa",
+		"--wmf-red-aaa",
+		"--wmf-orange",
+		"--wmf-yellow",
+		"--wmf-purple",
+		"--wmf-red-light",
+		"--wmf-orange-light",
+		"--wmf-green-light"
 	],
-	fs: ["--fs-micro", "--fs-small", "--fs-caption", "--fs-body", "--fs-subtitle", "--fs-title", "--fs-headline", "--fs-display"],
+	fs: [
+		"--fs-micro",
+		"--fs-small",
+		"--fs-caption",
+		"--fs-body",
+		"--fs-subtitle",
+		"--fs-title",
+		"--fs-headline",
+		"--fs-display"
+	],
 	layout: ["--container-wide"],
 	radius: ["--radius-sm", "--radius-md", "--radius-lg", "--radius-pill"],
 	shadow: ["--shadow", "--shadow-hover", "--shadow-popover", "--shadow-modal", "--shadow-sm"],
-	space: ["--space-0", "--space-1", "--space-2", "--space-3", "--space-4", "--space-5", "--space-6", "--space-7", "--space-8"],
+	space: [
+		"--space-0",
+		"--space-1",
+		"--space-2",
+		"--space-3",
+		"--space-4",
+		"--space-5",
+		"--space-6",
+		"--space-7",
+		"--space-8"
+	]
 };
 
 function seedFixtureIndex() {
-	STYLEGUIDE_TOOLS.forEach((tool) => { INDEX[tool.name] = tool; });
+	STYLEGUIDE_TOOLS.forEach((tool) => {
+		INDEX[tool.name] = tool;
+	});
 }
 
 function withStyleguideDemoState(render) {
@@ -90,23 +146,23 @@ function withStyleguideDemoState(render) {
 			id: "demo-styleguide-campaign",
 			title: FIXTURE_LIST.title,
 			description: FIXTURE_LIST.description,
-			tools: [FIXTURE_TOOL.name, FIXTURE_TOOL_EXPERIMENTAL.name],
+			tools: [FIXTURE_TOOL.name, FIXTURE_TOOL_EXPERIMENTAL.name]
 		},
 		{
 			id: "demo-styleguide-thanks",
 			title: "Tools to thank",
 			description: "Tools whose maintainers deserve appreciation.",
-			tools: [FIXTURE_TOOL_DEPRECATED.name],
-		},
+			tools: [FIXTURE_TOOL_DEPRECATED.name]
+		}
 	];
 	try {
 		localStorage.setItem(favKey, JSON.stringify([FIXTURE_TOOL_DEPRECATED.name]));
 		localStorage.setItem(listsKey, JSON.stringify(lists));
 		return render();
 	} finally {
-		if (prevFavs == null) localStorage.removeItem(favKey);
+		if (prevFavs === null) localStorage.removeItem(favKey);
 		else localStorage.setItem(favKey, prevFavs);
-		if (prevLists == null) localStorage.removeItem(listsKey);
+		if (prevLists === null) localStorage.removeItem(listsKey);
 		else localStorage.setItem(listsKey, prevLists);
 	}
 }
@@ -124,8 +180,12 @@ function fitChipExample() {
 
 function listingCompletenessExample() {
 	const complete = completeness(FIXTURE_TOOL);
-	const rows = complete.items.map((item) => `
-		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`).join("");
+	const rows = complete.items
+		.map(
+			(item) => `
+		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`
+		)
+		.join("");
 	return `<div class="panel">
 		<h3 class="panel__title">Listing completeness</h3>
 		${completenessMeter(complete)}
@@ -228,18 +288,20 @@ function relatedToolsExample() {
 	const t = {
 		name: "osm-commons-map",
 		title: "OpenStreetMap Commons Map",
-		maintainer: "Maps team",
+		maintainer: "Maps team"
 	};
-	const chips = ["maps", "OpenStreetMap", "Commons"].map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+	const chips = ["maps", "OpenStreetMap", "Commons"]
+		.map((label) => `<span class="tag">${esc(label)}</span>`)
+		.join("");
 	return `<div class="sg-related-frame">
 		<section class="related" aria-labelledby="sg-related-title">
 			<div class="section-head"><h2 id="sg-related-title">Related tools</h2></div>
 			<p class="related__subtitle">Overlapping function and scope, by shared metadata.</p>
 			<div class="related__list">
-				<article class="related__item" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
+				<article class="related__item" data-tool="${esc(t.name)}">
 					${avatar(t.title)}
 					<div class="related__body">
-						<div class="related__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+						<button class="related__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>
 						<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
 						<div class="related__chips">${chips}</div>
 					</div>
@@ -251,8 +313,12 @@ function relatedToolsExample() {
 
 function forceGraphExample() {
 	const colors = communityColors(STYLEGUIDE_GRAPH.communityMeta);
-	const legend = STYLEGUIDE_GRAPH.communityMeta.map((community) => `
-		<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get(community.id))}"></span><span class="graph__legend-text">${esc(community.label)} <span class="graph__legend-count">(${esc(String(community.size))})</span></span></span>`).join("");
+	const legend = STYLEGUIDE_GRAPH.communityMeta
+		.map(
+			(community) => `
+		<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get(community.id))}"></span><span class="graph__legend-text">${esc(community.label)} <span class="graph__legend-count">(${esc(String(community.size))})</span></span></span>`
+		)
+		.join("");
 	return `<div class="sg-force-graph-frame">
 		<div class="graph graph--sg">
 			<div id="sg-force-graph" class="graph__canvas"></div>
@@ -341,14 +407,14 @@ function mockupBannerExample() {
 
 function experimentsBarExample() {
 	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
-		<div class="expbar">
+		<section class="expbar" aria-label="Experimental feature controls">
 			<div class="container expbar__inner">
 				<button class="exp-toggle" type="button" role="switch" aria-checked="false">
 					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
 					<span class="exp-toggle__label">Show me prospective features</span>
 				</button>
 			</div>
-		</div>
+		</section>
 	</div>`;
 }
 
@@ -558,14 +624,13 @@ function runsExample() {
 }
 
 function section(title, body) {
-	return `<section class="sg-section" aria-labelledby="sg-${esc(title.toLowerCase().replace(/\s+/g, "-"))}">
-		<h2 class="sg-section__title" id="sg-${esc(title.toLowerCase().replace(/\s+/g, "-"))}">${esc(title)}</h2>
+	return `<section class="sg-section" aria-labelledby="sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}">
+		<h2 class="sg-section__title" id="sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}">${esc(title)}</h2>
 		${body}
 	</section>`;
 }
 
-function example(name, layer, html, opts) {
-	opts = opts || {};
+function example(name, layer, html, opts = {}) {
 	const shown = html || '<span class="sg-empty">No visual markup in this state.</span>';
 	return `<figure class="sg-example${opts.wide ? " sg-example--wide" : ""}${opts.compact ? " sg-example--compact" : ""}">
 		<div class="sg-example__demo">${shown}</div>
@@ -574,7 +639,9 @@ function example(name, layer, html, opts) {
 }
 
 function tokenSection() {
-	return section("Tokens", `
+	return section(
+		"Tokens",
+		`
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">Semantic colors</h3>
 			<div class="sg-token-grid sg-token-grid--colors" id="sg-color-tokens" aria-live="polite"></div>
@@ -604,11 +671,14 @@ function tokenSection() {
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">Layout</h3>
 			<div class="sg-token-stack" id="sg-layout-tokens" aria-live="polite"></div>
-		</div>`);
+		</div>`
+	);
 }
 
 function buttonsSection() {
-	return section("Buttons", `
+	return section(
+		"Buttons",
+		`
 		<div class="sg-examples sg-examples--buttons">
 			${example("button('Primary', { variant: 'primary' })", "atoms", button("Primary", { variant: "primary" }))}
 			${example("button('Outline', { variant: 'outline' })", "atoms", button("Outline", { variant: "outline" }))}
@@ -626,32 +696,43 @@ function buttonsSection() {
 			${example("iconButton('close', 'Close', { size: 'sm' })", "atoms", iconButton("close", "Close", { size: "sm" }))}
 			${example("iconButton('close', 'Remove', { size: 'sm', variant: 'danger' })", "atoms", iconButton("close", "Remove", { size: "sm", variant: "danger" }))}
 			${example("iconButton('search', 'Search')", "atoms", iconButton("search", "Search"))}
-		</div>`);
+		</div>`
+	);
 }
 
 function iconsSection() {
-	return section("Icons", `
+	return section(
+		"Icons",
+		`
 		<div class="sg-token-grid">
-			${ICON_NAMES.map((name) => `<div class="sg-token">
+			${ICON_NAMES.map(
+				(name) => `<div class="sg-token">
 				${icon(name, "icon--lg")}
 				<span class="sg-token__meta"><code>${esc(name)}</code></span>
-			</div>`).join("")}
-		</div>`);
+			</div>`
+			).join("")}
+		</div>`
+	);
 }
 
 function chromeSection() {
-	return section("Chrome", `
+	return section(
+		"Chrome",
+		`
 		<div class="sg-examples sg-examples--organisms">
 			${example("Nav + brand", "app chrome", chromeNavExample(), { wide: true })}
 			${example("Footer", "app chrome", footerExample(), { wide: true })}
 			${example("Mockup banner + mock tag", "app chrome", mockupBannerExample(), { wide: true, compact: true })}
 			${example("Experiments bar", "app chrome", experimentsBarExample(), { wide: true, compact: true })}
 			${example("Full hero block", "app chrome / organism", fullHeroExample(), { wide: true })}
-		</div>`);
+		</div>`
+	);
 }
 
 function layoutStatesSection() {
-	return section("Layout & states", `
+	return section(
+		"Layout & states",
+		`
 		<div class="sg-examples sg-examples--organisms">
 			${example("Page header + section head", "templates", pageHeaderExample(), { wide: true })}
 			${example("Two-column layout", "templates", layoutExample(), { wide: true })}
@@ -661,7 +742,8 @@ function layoutStatesSection() {
 			${example("Error page", "templates", errorPageExample(), { wide: true })}
 			${example("Prose page", "templates", proseExample(), { wide: true })}
 			${example("Sign-in note", "molecules", signInNoteExample(), { wide: true })}
-		</div>`);
+		</div>`
+	);
 }
 
 function formControlsGroup() {
@@ -678,7 +760,9 @@ function formControlsGroup() {
 }
 
 function atomsSection() {
-	return section("Atoms", `
+	return section(
+		"Atoms",
+		`
 		<div class="sg-examples">
 			${example("avatar(title)", "atoms", avatar("Citation Helper"))}
 			${example('toolIcon(tool, "lg")', "atoms", toolIcon(FIXTURE_TOOL, "lg"))}
@@ -695,20 +779,28 @@ function atomsSection() {
 			${example("usageBlock(tool)", "atoms", usageBlock(FIXTURE_TOOL))}
 			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(FIXTURE_TOOL)}</div>`, { wide: true })}
 			${example("glanceChips(tool)", "atoms", `<div class="sg-inline-list">${glanceChips(FIXTURE_TOOL)}</div>`, { wide: true })}
-			${example("fInput / fArea / fCheck / fSelect", "atoms", `<div class="sg-form">
+			${example(
+				"fInput / fArea / fCheck / fSelect",
+				"atoms",
+				`<div class="sg-form">
 				${fInput("Tool title", "sg-tool-title", FIXTURE_TOOL.title, { req: true })}
 				${fArea("Description", "sg-tool-description", FIXTURE_TOOL.description, "Shown in search results and detail pages.")}
 				<div class="le__checks">${fCheck("Experimental", "sg-tool-experimental", true)}${fCheck("Deprecated", "sg-tool-deprecated", false)}</div>
 				${fSelect("Tool type", "sg-tool-type", FIXTURE_TOOL.toolType, TOOL_TYPES)}
-			</div>`, { wide: true })}
+			</div>`,
+				{ wide: true }
+			)}
 			${formControlsGroup()}
 			${example("metaItem(key, value)", "atoms", `<div class="detail__meta">${metaItem("License", FIXTURE_TOOL.license)}${metaItem("Wikis", wikiLabel(FIXTURE_TOOL.forWikis))}</div>`, { wide: true })}
 			${example("linkOut(label, url)", "atoms", linkOut("Repository", FIXTURE_TOOL.repository))}
-		</div>`);
+		</div>`
+	);
 }
 
 function moleculesSection() {
-	return section("Molecules", `
+	return section(
+		"Molecules",
+		`
 		<div class="sg-examples">
 			${example("favBtn(name)", "molecules", favBtn(FIXTURE_TOOL.name, { label: true }))}
 			${example("favBtn(savedName)", "molecules", favBtn(FIXTURE_TOOL_DEPRECATED.name, { label: true }))}
@@ -721,13 +813,16 @@ function moleculesSection() {
 			${example("Annotation editor controls", "molecules", annotationEditorExample(), { wide: true })}
 			${example("List editor full row", "molecules", listEditorControlsExample(), { wide: true })}
 			${example(".icon-btn", "organisms", navIconButtonExample())}
-			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="#">${icon("edit")} Editors</a><a class="persona" href="#">${icon("code")} Developers</a><a class="persona" href="#">${icon("book")} Readers</a></div>`, { wide: true })}
+			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="/search?q=editors">${icon("edit")} Editors</a><a class="persona" href="/search?q=developers">${icon("code")} Developers</a><a class="persona" href="/search?q=readers">${icon("book")} Readers</a></div>`, { wide: true })}
 			${example(".intent sentence builder", "molecules", fitControlExample(), { wide: true })}
-		</div>`);
+		</div>`
+	);
 }
 
 function contentComponentsSection() {
-	return section("Content components", `
+	return section(
+		"Content components",
+		`
 		<div class="sg-examples sg-examples--organisms">
 			${example(".detail__meta / .meta__k / .meta__v", "atoms / molecules", metaExample(), { wide: true })}
 			${example("sort control", "molecules", sortControlExample())}
@@ -737,12 +832,17 @@ function contentComponentsSection() {
 			${example("linkgrid + linkcard", "molecules", linkCardsExample(), { wide: true })}
 			${example("browse bar", "organisms", browseBarExample(), { wide: true })}
 			${example("maintainer list", "organisms", maintainerListExample())}
-		</div>`);
+		</div>`
+	);
 }
 
 function organismsSection() {
-	const gridHtml = grid("grid-tools", [FIXTURE_TOOL, FIXTURE_TOOL_EXPERIMENTAL, FIXTURE_TOOL_DEPRECATED], (tool, i) => toolCard(tool, i === 1 ? { popular: true, rank: 2 } : {}));
-	return section("Organisms", `
+	const gridHtml = grid("grid-tools", [FIXTURE_TOOL, FIXTURE_TOOL_EXPERIMENTAL, FIXTURE_TOOL_DEPRECATED], (tool, i) =>
+		toolCard(tool, i === 1 ? { popular: true, rank: 2 } : {})
+	);
+	return section(
+		"Organisms",
+		`
 		<div class="sg-examples sg-examples--organisms">
 			${example("toolCard(tool)", "organisms", toolCard(FIXTURE_TOOL))}
 			${example("toolCard(tool, { popular: true, rank: 1 })", "organisms", toolCard(FIXTURE_TOOL, { popular: true, rank: 1 }))}
@@ -754,36 +854,44 @@ function organismsSection() {
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
 			${example("Related tools (similarity)", "organisms", relatedToolsExample(), { wide: true })}
 			${example("Similarity graph (canvas)", "organisms", forceGraphExample(), { wide: true })}
-		</div>`);
+		</div>`
+	);
 }
 
 function activityParitySection() {
-	return section("Activity & parity", `
+	return section(
+		"Activity & parity",
+		`
 		<div class="sg-examples sg-examples--organisms">
 			${example("member card grid", "parity views", memberGridExample(), { wide: true })}
 			${example("activity feed", "parity views", activityFeedExample(), { wide: true })}
 			${example("crawler runs table", "parity views", runsExample(), { wide: true })}
-		</div>`);
+		</div>`
+	);
 }
 
 function collectCustomPropertyNames(prefix, fallback) {
 	const names = [];
 	const seen = new Set();
 	const visitRules = (rules) => {
-		Array.from(rules || []).forEach((rule) => {
+		[...(rules || [])].forEach((rule) => {
 			if (rule.cssRules) {
-				try { visitRules(rule.cssRules); } catch (e) {}
+				try {
+					visitRules(rule.cssRules);
+				} catch {}
 			}
 			if (!rule.style) return;
-			Array.from(rule.style).forEach((prop) => {
+			[...rule.style].forEach((prop) => {
 				if (!prop.startsWith(prefix) || seen.has(prop)) return;
 				seen.add(prop);
 				names.push(prop);
 			});
 		});
 	};
-	Array.from(document.styleSheets || []).forEach((sheet) => {
-		try { visitRules(sheet.cssRules); } catch (e) {}
+	[...(document.styleSheets || [])].forEach((sheet) => {
+		try {
+			visitRules(sheet.cssRules);
+		} catch {}
 	});
 	(fallback || []).forEach((name) => {
 		if (seen.has(name)) return;
@@ -807,75 +915,87 @@ function resolveToken(name, cssProp) {
 }
 
 function renderColorTokens(targetId, names) {
-	const target = document.getElementById(targetId);
+	const target = document.querySelector(`#${targetId}`);
 	if (!target) return;
-	target.innerHTML = names.map((name) => {
-		const value = resolveToken(name, "backgroundColor");
-		return `<div class="sg-token sg-token--color">
+	target.innerHTML = names
+		.map((name) => {
+			const value = resolveToken(name, "backgroundColor");
+			return `<div class="sg-token sg-token--color">
 			<span class="sg-token__swatch" style="background: var(${esc(name)})"></span>
 			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
 		</div>`;
-	}).join("");
+		})
+		.join("");
 }
 
 function renderTypeTokens(names) {
-	const target = document.getElementById("sg-type-tokens");
+	const target = document.querySelector("#sg-type-tokens");
 	if (!target) return;
-	target.innerHTML = names.map((name) => {
-		const value = resolveToken(name, "fontSize");
-		return `<div class="sg-type-row">
+	target.innerHTML = names
+		.map((name) => {
+			const value = resolveToken(name, "fontSize");
+			return `<div class="sg-type-row">
 			<div class="sg-type-row__specimen" style="font-size: var(${esc(name)})">Toolhub Aa 123</div>
 			<div class="sg-type-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
 		</div>`;
-	}).join("");
+		})
+		.join("");
 }
 
 function renderRadiusTokens(names) {
-	const target = document.getElementById("sg-radius-tokens");
+	const target = document.querySelector("#sg-radius-tokens");
 	if (!target) return;
-	target.innerHTML = names.map((name) => {
-		const value = resolveToken(name, "borderRadius");
-		return `<div class="sg-token">
+	target.innerHTML = names
+		.map((name) => {
+			const value = resolveToken(name, "borderRadius");
+			return `<div class="sg-token">
 			<span class="sg-radius-box" style="border-radius: var(${esc(name)})"></span>
 			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
 		</div>`;
-	}).join("");
+		})
+		.join("");
 }
 
 function renderShadowTokens(names) {
-	const target = document.getElementById("sg-shadow-tokens");
+	const target = document.querySelector("#sg-shadow-tokens");
 	if (!target) return;
-	target.innerHTML = names.map((name) => {
-		const value = resolveToken(name, "boxShadow");
-		return `<div class="sg-token">
+	target.innerHTML = names
+		.map((name) => {
+			const value = resolveToken(name, "boxShadow");
+			return `<div class="sg-token">
 			<span class="sg-shadow-box" style="box-shadow: var(${esc(name)})"></span>
 			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
 		</div>`;
-	}).join("");
+		})
+		.join("");
 }
 
 function renderSpaceTokens(names) {
-	const target = document.getElementById("sg-space-tokens");
+	const target = document.querySelector("#sg-space-tokens");
 	if (!target) return;
-	target.innerHTML = names.map((name) => {
-		const value = resolveToken(name, "width");
-		return `<div class="sg-space-row">
+	target.innerHTML = names
+		.map((name) => {
+			const value = resolveToken(name, "width");
+			return `<div class="sg-space-row">
 			<div class="sg-space-row__bar"><span style="width: var(${esc(name)})"></span></div>
 			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
 		</div>`;
-	}).join("");
+		})
+		.join("");
 }
 
 function renderLayoutTokens(names) {
-	const target = document.getElementById("sg-layout-tokens");
+	const target = document.querySelector("#sg-layout-tokens");
 	if (!target) return;
-	target.innerHTML = names.map((name) => {
-		const value = resolveToken(name, "maxWidth");
-		return `<div class="sg-space-row sg-layout-row">
+	target.innerHTML = names
+		.map((name) => {
+			const value = resolveToken(name, "maxWidth");
+			return `<div class="sg-space-row sg-layout-row">
 			<div class="sg-space-row__bar sg-space-row__bar--layout"><span style="width: min(100%, var(${esc(name)}))"></span></div>
 			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
 		</div>`;
-	}).join("");
+		})
+		.join("");
 }
 
 function mountStyleguide() {
@@ -889,33 +1009,46 @@ function mountStyleguide() {
 	renderShadowTokens(collectCustomPropertyNames("--shadow", FALLBACK_TOKENS.shadow));
 	renderSpaceTokens(collectCustomPropertyNames("--space-", FALLBACK_TOKENS.space));
 	renderLayoutTokens(collectCustomPropertyNames("--container-", FALLBACK_TOKENS.layout));
-	const graphTarget = document.getElementById("sg-force-graph");
+	const graphTarget = document.querySelector("#sg-force-graph");
 	if (graphTarget) graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
 
 	const page = document.querySelector(".sg-page");
 	if (!page) return;
-	page.addEventListener("click", (e) => {
-		if (e.target.closest("[data-tool], [data-fav], [data-listadd], [data-q]")) {
+	page.addEventListener(
+		"click",
+		(e) => {
+			if (e.target.closest("[data-tool], [data-fav], [data-listadd], [data-q]")) {
+				e.preventDefault();
+				e.stopPropagation();
+			}
+		},
+		true
+	);
+	page.addEventListener(
+		"keydown",
+		(e) => {
+			if ((e.key === "Enter" || e.key === " ") && e.target.closest("[data-tool]")) {
+				e.preventDefault();
+				e.stopPropagation();
+			}
+		},
+		true
+	);
+	page.addEventListener(
+		"submit",
+		(e) => {
+			if (!e.target.closest(".sg-example")) return;
 			e.preventDefault();
 			e.stopPropagation();
-		}
-	}, true);
-	page.addEventListener("keydown", (e) => {
-		if ((e.key === "Enter" || e.key === " ") && e.target.closest("[data-tool]")) {
-			e.preventDefault();
-			e.stopPropagation();
-		}
-	}, true);
-	page.addEventListener("submit", (e) => {
-		if (!e.target.closest(".sg-example")) return;
-		e.preventDefault();
-		e.stopPropagation();
-	}, true);
+		},
+		true
+	);
 }
 
 export function viewStyleguide() {
 	seedFixtureIndex();
-	const html = withStyleguideDemoState(() => `
+	const html = withStyleguideDemoState(
+		() => `
 		<div class="container page sg-page">
 			<h1 class="page__title">Design system</h1>
 			<p class="page__intro">A living reference for Toolhub tokens and component functions, rendered from the same modules used by the application.</p>
@@ -929,6 +1062,7 @@ export function viewStyleguide() {
 			${contentComponentsSection()}
 			${organismsSection()}
 			${activityParitySection()}
-		</div>`);
+		</div>`
+	);
 	return { title: "Design system — Toolhub", html, mount: mountStyleguide };
 }

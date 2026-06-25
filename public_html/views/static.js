@@ -6,14 +6,20 @@ import { icon } from "../lib/atoms/icon.js";
 
 /* ---- Static prose pages (T9) ------------------------------------------- */
 export function prosePage(title, bodyHtml) {
-	return { title: `${title} — Toolhub`, html: `<div class="container page"><article class="prose prose--page"><h1>${esc(title)}</h1>${bodyHtml}</article></div>` };
+	return {
+		title: `${title} — Toolhub`,
+		html: `<div class="container page"><article class="prose prose--page"><h1>${esc(title)}</h1>${bodyHtml}</article></div>`
+	};
 }
 const EXTERNAL_REL = "noopener nofollow";
-export const ext = (url, label) => `<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
+export const ext = (url, label) =>
+	`<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
 // Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
 // Canonical policies link out to their authoritative source (as the real site does).
 export const STATIC = {
-	about: { title: "About Toolhub", body: `
+	about: {
+		title: "About Toolhub",
+		body: `
 		<p>Toolhub is <strong>a community-managed catalog of software tools used in the
 		Wikimedia movement</strong>. Technical volunteers document the tools they build,
 		and all Wikimedians can search the catalog, build lists, and share them.</p>
@@ -34,10 +40,13 @@ export const STATIC = {
 		<p>Structured data is released under CC0; attribution via links back is
 		encouraged but not required. Sign in with your existing Wikimedia account — no
 		new account or password is needed.</p>
-		<p>Want to help build Toolhub itself? See ${"<a href=\"/contribute\">Help maintain Toolhub</a>"}.</p>
+		<p>Want to help build Toolhub itself? See ${'<a href="/contribute">Help maintain Toolhub</a>'}.</p>
 		<blockquote>This is a design prototype that reads live, read-only data from the
-		public Toolhub API — not the production site.</blockquote>` },
-	help: { title: "Help", body: `
+		public Toolhub API — not the production site.</blockquote>`
+	},
+	help: {
+		title: "Help",
+		body: `
 		<p>New to Toolhub? Here is the quickest path to finding and sharing tools. Sign
 		in with your Wikimedia account (via OAuth) to save favourites and edit listings —
 		no new account needed.</p>
@@ -54,8 +63,11 @@ export const STATIC = {
 		<h2>Build a list</h2>
 		<p>Group useful tools into a list and share it — great for onboarding new editors
 		or running an event.</p>
-		<p>${"<a href=\"/about\">Learn more about Toolhub →</a>"}</p>` },
-	community: { title: "Community", body: `
+		<p>${'<a href="/about">Learn more about Toolhub →</a>'}</p>`
+	},
+	community: {
+		title: "Community",
+		body: `
 		<p>Toolhub is developed in the open under Wikimedia Cloud Services. Everyone is
 		welcome to take part — reporting bugs, suggesting tools, translating, or writing
 		code.</p>
@@ -66,8 +78,11 @@ export const STATIC = {
 			<li>Help translate the interface on ${ext("https://translatewiki.net/wiki/Translating:Toolhub", "translatewiki.net")}.</li>
 		</ul>
 		<p>Looking to contribute code or report an issue? Start at
-		${"<a href=\"/contribute\">Help maintain Toolhub</a>"}.</p>` },
-	privacy: { title: "Privacy policy", body: `
+		${'<a href="/contribute">Help maintain Toolhub</a>'}.</p>`
+	},
+	privacy: {
+		title: "Privacy policy",
+		body: `
 		<p>Toolhub is operated by the Wikimedia Foundation and is governed by the
 		${ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", "Wikimedia Foundation Privacy Policy")}.</p>
 		<h2>What this means in practice</h2>
@@ -78,15 +93,21 @@ export const STATIC = {
 			are <strong>public</strong> and attributed to your username.</li>
 			<li>Catalog data is released under CC0.</li>
 		</ul>
-		<p>Please read the full ${ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", "Privacy Policy")} for the authoritative details.</p>` },
-	terms: { title: "Terms of Use", body: `
+		<p>Please read the full ${ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", "Privacy Policy")} for the authoritative details.</p>`
+	},
+	terms: {
+		title: "Terms of Use",
+		body: `
 		<p>Use of Toolhub is subject to the
 		${ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", "Wikimedia Foundation Terms of Use")}.</p>
 		<p>By contributing, you agree that your edits are public and that structured
 		catalog data is made available under CC0. Tools listed here are owned and operated
 		by their respective maintainers; Toolhub catalogs them but does not host or endorse
-		them. See the full ${ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", "Terms of Use")} for details.</p>` },
-	"code-of-conduct": { title: "Code of Conduct", body: `
+		them. See the full ${ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", "Terms of Use")} for details.</p>`
+	},
+	"code-of-conduct": {
+		title: "Code of Conduct",
+		body: `
 		<p>Toolhub follows the
 		${ext("https://www.mediawiki.org/wiki/Code_of_Conduct", "Code of Conduct for Wikimedia technical spaces")},
 		which applies to MediaWiki.org, Phabricator, Gerrit, mailing lists, chat, and
@@ -101,19 +122,25 @@ export const STATIC = {
 		<p>Ask the person to stop and point them to the Code of Conduct; at events, notify
 		organisers; or report directly to the Code of Conduct Committee at
 		<code>techconduct@wikimedia.org</code>. For threats of harm, contact local
-		authorities first, then <code>emergency@wikimedia.org</code>.</p>` },
-	api: { title: "API", body: `
+		authorities first, then <code>emergency@wikimedia.org</code>.</p>`
+	},
+	api: {
+		title: "API",
+		body: `
 		<p>Toolhub is built <strong>API-first</strong>: everything you can do in this
 		interface is also available over a documented HTTP API, so anyone can build their
 		own tools on top of the catalog.</p>
 		<ul>
 			<li>Browse the interactive documentation at ${ext("https://toolhub.wikimedia.org/api-docs", "toolhub.wikimedia.org/api-docs")}.</li>
-			<li>Use this prototype's ${"<a href=\"/api-docs\">API documentation page</a>"} for read-only examples and schema pointers.</li>
+			<li>Use this prototype's ${'<a href="/api-docs">API documentation page</a>'} for read-only examples and schema pointers.</li>
 			<li>The OpenAPI schema and endpoints live under ${ext("https://toolhub.wikimedia.org/api/", "/api/")}.</li>
 			<li>Read access is anonymous; creating or editing records uses your Wikimedia
 			OAuth identity. For example, <code>POST /api/tools/</code> adds a tool.</li>
-		</ul>` },
-	"rules-of-engagement": { title: "Rules of Engagement", body: `
+		</ul>`
+	},
+	"rules-of-engagement": {
+		title: "Rules of Engagement",
+		body: `
 		<p><strong>This is a design prototype on a separate domain — not the production
 		Toolhub.</strong> It exists to explore how tool discovery could look and feel. Here's
 		exactly what is real and what is simulated, so nothing is misleading.</p>
@@ -147,14 +174,18 @@ export const STATIC = {
 		won't appear in live search — it lives only as your local overlay, shown on its own
 		page and in your "my…" views. We label these rather than fake them.</p>
 		<blockquote>In short: the data is real and read-only; your contributions are a local,
-		in-browser simulation. Nothing you do here touches the real Toolhub.</blockquote>` },
-	rss: { title: "Feeds", body: `
+		in-browser simulation. Nothing you do here touches the real Toolhub.</blockquote>`
+	},
+	rss: {
+		title: "Feeds",
+		body: `
 		<p>Follow changes to the catalog without checking back. Toolhub publishes Atom/RSS
 		feeds for activity such as recently added and recently updated tools, and for the
 		history of individual tools and lists.</p>
 		<p>Browse the latest additions on the ${ext("https://toolhub.wikimedia.org/", "live site")},
-		or sort the ${"<a href=\"/search?sort=recent\">Browse page</a>"} by "Recently
-		updated".</p>` },
+		or sort the ${'<a href="/search?sort=recent">Browse page</a>'} by "Recently
+		updated".</p>`
+	}
 };
 export function viewStatic(slug) {
 	const p = STATIC[slug];
@@ -214,14 +245,18 @@ export function viewContribute() {
 export async function viewApiDocs() {
 	const root = await apiGet("/").catch(() => ({}));
 	const endpoints = Object.keys(root).sort();
-	const endpointCards = endpoints.map((ep) => {
-		const href = "/api/" + ep + "/";
-		return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="${EXTERNAL_REL}">
+	const endpointCards = endpoints
+		.map((ep) => {
+			const href = `/api/${ep}/`;
+			return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="${EXTERNAL_REL}">
 			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
 			<span class="linkcard__body"><span class="linkcard__title"><code>GET ${esc(href)}</code> ${icon("external")}</span>
 			<span class="linkcard__desc">Open the live JSON response through this app's read-only proxy.</span></span></a>`;
-	}).join("");
-	return { title: "API documentation — Toolhub", html: `
+		})
+		.join("");
+	return {
+		title: "API documentation — Toolhub",
+		html: `
 		<div class="container page">
 			<h1 class="page__title">API documentation</h1>
 			<p class="page__intro">Toolhub is API-first. This prototype reads the live catalog through a same-origin proxy, but it is intentionally read-only: inspect schemas and <code>GET</code> endpoints here, and use the production site for authenticated writes.</p>
@@ -237,7 +272,7 @@ export async function viewApiDocs() {
 				<code>https://toolhub.wikimedia.org/api/schema/</code> URL when generating a
 				production client, or this prototype's proxied <code>/api/schema/</code> when
 				you want to inspect the same document without leaving the demo.</p>
-				<pre><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
+				<pre tabindex="0" aria-label="OpenAPI Generator command"><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
 			</div>
 			<h2 class="contribute__h2">Read-only boundary</h2>
 			<p class="page__intro">The proxy exposes live Toolhub responses for browsing and examples. Anonymous <code>GET</code> requests work here. Authenticated writes, OAuth, permission checks, crawler side effects, and validation errors belong to production Toolhub.</p>
@@ -252,11 +287,14 @@ export async function viewApiDocs() {
 			</ul>
 			<h2 class="contribute__h2">Live proxy endpoints</h2>
 			<div class="linkgrid">${endpointCards || '<p class="empty">The live endpoint index is unavailable.</p>'}</div>
-		</div>` };
+		</div>`
+	};
 }
 /* ---- Sign-in-required stubs (auth/write features) ---------------------- */
 export function signInPage(title, lead) {
-	return { title: `${title} — Toolhub`, html: `
+	return {
+		title: `${title} — Toolhub`,
+		html: `
 		<div class="container page"><article class="prose prose--page">
 			<h1>${esc(title)}</h1>
 			<p>${lead}</p>
@@ -266,13 +304,17 @@ export function signInPage(title, lead) {
 			<p class="signin-note">In this prototype these actions are read-only: they need an
 			authenticated session and the live back-end. See
 			<a href="/contribute">Help maintain Toolhub</a> to contribute.</p>
-		</article></div>` };
+		</article></div>`
+	};
 }
 export function viewNotFound() {
-	return { title: "Not found — Toolhub", html: `
+	return {
+		title: "Not found — Toolhub",
+		html: `
 		<div class="container page errorpage">
 			<h1>Page not found</h1>
 			<p class="prose">We couldn't find that page. It may have moved, or the link may be incomplete.</p>
 			${button("Go to the home page", { variant: "primary", href: "/" })}
-		</div>` };
+		</div>`
+	};
 }

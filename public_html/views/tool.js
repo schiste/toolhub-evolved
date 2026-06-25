@@ -11,7 +11,15 @@ import { demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
 import { authorHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
-import { completenessMeter, endorsementChip, fitChip, freshnessNote, healthBadge, popularityBadge, statusBadge } from "../lib/atoms/badges.js";
+import {
+	completenessMeter,
+	endorsementChip,
+	fitChip,
+	freshnessNote,
+	healthBadge,
+	popularityBadge,
+	statusBadge
+} from "../lib/atoms/badges.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
@@ -22,16 +30,21 @@ import { forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 import { prosePage, viewNotFound } from "./static.js";
 
+const QUICK_VIEW_BUTTON_STYLE =
+	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
+
 function relatedToolRow(item) {
 	const t = item.tool;
 	const chips = (item.shared || []).map((label) => `<span class="tag">${esc(label)}</span>`).join("");
-	const deprecated = t.deprecated ? '<span class="related__status status status--red"><span class="dot dot--red"></span>Deprecated</span>' : "";
+	const deprecated = t.deprecated
+		? '<span class="related__status status status--red"><span class="dot dot--red"></span>Deprecated</span>'
+		: "";
 	return `
-		<article class="related__item" data-tool="${esc(t.name)}" role="button" tabindex="0" aria-label="Quick look: ${esc(t.title)}">
+		<article class="related__item" data-tool="${esc(t.name)}">
 			${avatar(t.title)}
 			<div class="related__body">
 				<div class="related__titleline">
-					<div class="related__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+					<button class="related__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>
 					${deprecated}
 				</div>
 				<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
@@ -41,8 +54,8 @@ function relatedToolRow(item) {
 }
 
 function viewToolNotFound(name) {
-	const rawName = String(name == null ? "" : name);
-	const searchHref = "/search?q=" + encodeURIComponent(rawName);
+	const rawName = String(name ?? "");
+	const searchHref = `/search?q=${encodeURIComponent(rawName)}`;
 	return {
 		title: "Tool not found — Toolhub",
 		html: `
@@ -51,16 +64,18 @@ function viewToolNotFound(name) {
 			<h1 class="page__title">Tool not found</h1>
 			<p class="page__intro">The record for <code${dirAttrs(rawName)}>${esc(rawName)}</code> may have been <strong>deleted, renamed, or never registered</strong>.</p>
 			<p><a href="${searchHref}">Search for "${esc(rawName)}"</a> · <a href="/search">Browse all tools</a></p>
-		</div>`,
+		</div>`
 	};
 }
 
 function authorEntries(t) {
-	const names = (t.authors && t.authors.length ? t.authors : [t.maintainer]).filter(Boolean);
+	const names = (t.authors && t.authors.length > 0 ? t.authors : [t.maintainer]).filter(Boolean);
 	const records = t.authorObjs || [];
 	return names.map((name, i) => {
 		const byIndex = records[i];
-		const record = (byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name)) || { name };
+		const record = (byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name)) || {
+			name
+		};
 		return { name, profile: { url: record.url, wikiUsername: record.wikiUsername } };
 	});
 }
@@ -76,29 +91,41 @@ function authorLink(entry) {
 }
 
 function authorInlineList(t) {
-	return authorEntries(t).map(authorLink).join('<span class="toolpage__sep">, </span>');
+	return authorEntries(t)
+		.map((entry) => authorLink(entry))
+		.join('<span class="toolpage__sep">, </span>');
 }
 
 function wikidataChip(qid) {
 	const id = String(qid || "").trim();
 	if (!id) return "";
-	const url = safeUrl("https://www.wikidata.org/wiki/" + encodeURIComponent(id));
+	const url = safeUrl(`https://www.wikidata.org/wiki/${encodeURIComponent(id)}`);
 	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener nofollow">Wikidata: <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
 }
 
 function sponsorEntry(entry) {
-	let name = "", url = "";
-	if (typeof entry === "string") name = entry;
-	else if (entry && typeof entry === "object") { name = entry.name || entry.url || ""; url = entry.url || ""; }
+	let name = "",
+		url = "";
+	if (typeof entry === "string") {
+		name = entry;
+	} else if (entry && typeof entry === "object") {
+		name = entry.name || entry.url || "";
+		url = entry.url || "";
+	}
 	if (!name) return "";
 	const body = esc(name);
 	const href = safeUrl(url);
-	return href ? `<a href="${href}" target="_blank" rel="noopener nofollow"${dirAttrs(name)}>${body}</a>` : `<span${dirAttrs(name)}>${body}</span>`;
+	return href
+		? `<a href="${href}" target="_blank" rel="noopener nofollow"${dirAttrs(name)}>${body}</a>`
+		: `<span${dirAttrs(name)}>${body}</span>`;
 }
 
 function sponsorLine(sponsor) {
-	const entries = Array.isArray(sponsor) ? sponsor : (sponsor ? [sponsor] : []);
-	const html = entries.map(sponsorEntry).filter(Boolean).join(", ");
+	const entries = Array.isArray(sponsor) ? sponsor : sponsor ? [sponsor] : [];
+	const html = entries
+		.map((entry) => sponsorEntry(entry))
+		.filter(Boolean)
+		.join(", ");
 	return html ? `<div class="toolpage__sponsor"><span class="toolpage__label">Sponsor:</span> ${html}</div>` : "";
 }
 
@@ -119,22 +146,32 @@ export async function viewTool(name) {
 	if (!t) return viewToolNotFound(name);
 	const provTags = [
 		wikidataChip(t.wikidata),
-		...(!signedIn() ? [] : [
-			isNewTool(name) ? '<span class="exp-badge">Demo submission</span>' : "",
-			t.edited ? '<span class="exp-badge">Edited · demo</span>' : "",
-			t.annotated ? '<span class="exp-badge">Community annotations · demo</span>' : "",
-		]),
-	].filter(Boolean).join(" ");
+		...(signedIn()
+			? [
+					isNewTool(name) ? '<span class="exp-badge">Demo submission</span>' : "",
+					t.edited ? '<span class="exp-badge">Edited · demo</span>' : "",
+					t.annotated ? '<span class="exp-badge">Community annotations · demo</span>' : ""
+				]
+			: [])
+	]
+		.filter(Boolean)
+		.join(" ");
 	const tags = keywordTags(t, { empty: "—" });
 	const authors = authorInlineList(t);
 
 	// REAL links — render only the ones present on the record.
 	const actions = [
-		linkOut("Open tool", t.url), linkOut("Source code", t.repository),
-		linkOut("API", t.apiUrl), linkOut("User docs", t.userDocs),
-		linkOut("Developer docs", t.devDocs), linkOut("Report a bug", t.bugtracker),
-		linkOut("Give feedback", t.feedback), linkOut("Translate", t.translate),
-	].filter(Boolean).join("");
+		linkOut("Open tool", t.url),
+		linkOut("Source code", t.repository),
+		linkOut("API", t.apiUrl),
+		linkOut("User docs", t.userDocs),
+		linkOut("Developer docs", t.devDocs),
+		linkOut("Report a bug", t.bugtracker),
+		linkOut("Give feedback", t.feedback),
+		linkOut("Translate", t.translate)
+	]
+		.filter(Boolean)
+		.join("");
 
 	// REAL status — only the deprecated/experimental flags (shown even when exp off).
 	const realBadge = statusBadge(t);
@@ -145,21 +182,22 @@ export async function viewTool(name) {
 	try {
 		const simIndex = await getSimilarityIndex();
 		related = nearestNeighbors(t, simIndex, 6);
-	} catch (e) {
+	} catch {
 		related = [];
 	}
-	const relatedHtml = related.length
-		? `<section class="related" aria-labelledby="related-title">
+	const relatedHtml =
+		related.length > 0
+			? `<section class="related" aria-labelledby="related-title">
 				<div class="section-head"><h2 id="related-title">Related tools</h2></div>
 				<p class="related__subtitle">Overlapping function and scope, by shared metadata.</p>
-				<div class="related__list">${related.map(relatedToolRow).join("")}</div>
+				<div class="related__list">${related.map((item) => relatedToolRow(item)).join("")}</div>
 			</section>`
-		: "";
+			: "";
 	let ego = null;
 	try {
 		const graph = await egoGraph(name, 10);
 		if ((graph.nodes || []).length >= 3) ego = graph;
-	} catch (e) {
+	} catch {
 		ego = null;
 	}
 	const neighborhoodHtml = ego
@@ -174,10 +212,15 @@ export async function viewTool(name) {
 	const glance = glanceChips(t);
 
 	const maintList = authorEntries(t)
-		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`).join("");
+		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`)
+		.join("");
 	const complete = completeness(t);
-	const completeRows = complete.items.map((item) => `
-		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`).join("");
+	const completeRows = complete.items
+		.map(
+			(item) => `
+		<li><span class="complete-list__icon${item.ok ? "" : " complete-list__icon--empty"}">${item.ok ? icon("check") : "○"}</span><span>${esc(item.label)}</span></li>`
+		)
+		.join("");
 
 	const html = `
 	<div class="container page">
@@ -237,8 +280,8 @@ export async function viewTool(name) {
 					${metaItem("License", esc(t.license))}
 					${metaItem("Works on", wikiLabel(t.forWikis))}
 					${metaItem("Interface languages", langLabel(t.uiLanguages))}
-					${metaItem("Technology", (t.technologyUsed || []).map(esc).join(", "))}
-					${metaItem("Audiences", (t.audiences || []).map(esc).join(", "))}
+					${metaItem("Technology", (t.technologyUsed || []).map((item) => esc(item)).join(", "))}
+					${metaItem("Audiences", (t.audiences || []).map((item) => esc(item)).join(", "))}
 				</div>
 
 				<!-- EXPERIMENTAL — thanks. Needs: an authenticated appreciation event model with abuse controls. -->
@@ -258,9 +301,11 @@ export async function viewTool(name) {
 					<div class="toolpage__actions">${actions || '<span class="meta__v">No links provided</span>'}</div>
 					<div class="toolpage__sub">
 						<a href="${toolHref(t.name)}/history">View history</a>
-						${signedIn()
-							? `<a href="${toolHref(t.name)}/edit">Edit tool</a> <a href="${toolHref(t.name)}/edit-annotations">Edit annotations</a>`
-							: `<a href="${toolHref(t.name)}/edit">Suggest an edit</a>`}
+						${
+							signedIn()
+								? `<a href="${toolHref(t.name)}/edit">Edit tool</a> <a href="${toolHref(t.name)}/edit-annotations">Edit annotations</a>`
+								: `<a href="${toolHref(t.name)}/edit">Suggest an edit</a>`
+						}
 					</div>
 				</div>
 				<div class="panel">
@@ -281,7 +326,7 @@ export async function viewTool(name) {
 		</div>
 	</div>`;
 	function mount() {
-		const target = document.getElementById("ego-canvas");
+		const target = document.querySelector("#ego-canvas");
 		if (!target || !ego) return;
 		target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
 	}
@@ -292,30 +337,40 @@ export async function viewTool(name) {
 export async function viewToolHistory(name) {
 	const [liveT, data] = await Promise.all([
 		getTool(name),
-		apiGet("/tools/" + encodeURIComponent(name) + "/revisions/", { page_size: "20" }).catch(() => ({ results: [] })),
+		apiGet(`/tools/${encodeURIComponent(name)}/revisions/`, { page_size: "20" }).catch(() => ({ results: [] }))
 	]);
 	// Lane B: your demo edits show as the most recent revisions.
-	const revs = demoRevisionsFor(name).concat(data.results || []);
+	const revs = [...demoRevisionsFor(name), ...(data.results || [])];
 	const t = liveT;
-	if (!t && !revs.length) return viewNotFound();
+	if (!t && revs.length === 0) return viewNotFound();
 	const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
-	const rows = revs.map((r, i) => `
+	const rows = revs
+		.map(
+			(r, i) => `
 		<li>${icon("history", "feed__ic")}
-			<span class="feed__main">Revision by <strong${dirAttrs((r.user && r.user.username) || "system")}>${esc((r.user && r.user.username) || "system")}</strong> · ${timeTag(r.timestamp)}${r.comment ? " — <span dir=\"auto\">" + esc(r.comment) + "</span>" : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
-			<span class="feed__when">#${esc(String(r.id))}</span></li>`).join("");
-	return { title: `History: ${title} — Toolhub`, html: `
+			<span class="feed__main">Revision by <strong${dirAttrs((r.user && r.user.username) || "system")}>${esc((r.user && r.user.username) || "system")}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+			<span class="feed__when">#${esc(String(r.id))}</span></li>`
+		)
+		.join("");
+	return {
+		title: `History: ${title} — Toolhub`,
+		html: `
 		<div class="container page">
 			<a class="back" href="${toolHref(name)}">← Back to ${esc(title)}</a>
 			<h1 class="page__title">Revision history</h1>
 			<ul class="feed">${rows || '<li><div class="feed__static">No revisions recorded.</div></li>'}</ul>
-		</div>` };
+		</div>`
+	};
 }
 export function viewDiffStub(name) {
 	const t = INDEX[name];
-	return prosePage("Revision diff", `
+	return prosePage(
+		"Revision diff",
+		`
 		<p>Compare two revisions of <strong>${esc(t ? t.title : name)}</strong> side by side.</p>
 		<p>Revision diffs are served from Toolhub's versioning API. In this prototype the
 		diff viewer is not wired up — see it on the
 		<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>
-		<p><a href="${toolHref(name)}/history">← Back to history</a></p>`);
+		<p><a href="${toolHref(name)}/history">← Back to history</a></p>`
+	);
 }
