@@ -11,7 +11,7 @@ import { renderPager } from "../lib/molecules/pager.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 
 export const PAGE_SIZE_OPTIONS = [12, 24, 48];
-export const DEFAULT_PAGE_SIZE = PAGE_SIZE_OPTIONS[0];
+export const DEFAULT_PAGE_SIZE = 24;
 const CLIENT_STATUS_FILTERS = [
 	{ value: "deprecated", label: "Deprecated", match: (t) => t.deprecated },
 	{ value: "experimental", label: "Experimental", match: (t) => t.experimental },
