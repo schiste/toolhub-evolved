@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { startSmokeServer } from "../../tools/smoke-server.mjs";
+import { useSmokeServer } from "./harness.mjs";
 
 const routes = [
 	{ path: "/", title: /community catalog/i },
@@ -14,26 +14,13 @@ const routes = [
 ];
 
 test.describe("deterministic app smoke", () => {
-	let smokeServer;
-	let smokeUrl;
-
-	test.beforeAll(async () => {
-		smokeServer = await startSmokeServer({ port: 0 });
-		smokeUrl = smokeServer.url;
-	});
-
-	test.afterAll(async () => {
-		if (!smokeServer) return;
-		await new Promise((resolve, reject) => {
-			smokeServer.server.close((error) => (error ? reject(error) : resolve()));
-		});
-	});
+	const smoke = useSmokeServer();
 
 	for (const route of routes) registerSmokeCase(route);
 
 	function registerSmokeCase(route) {
 		test(`${route.path} renders, stays clean, and passes axe`, async ({ page }) => {
-			await smokeRoute(page, route, smokeUrl);
+			await smokeRoute(page, route, smoke.url);
 		});
 	}
 });
