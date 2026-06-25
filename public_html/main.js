@@ -8,6 +8,7 @@ import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
+import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview.js";
 import { render } from "./views/router.js";
 
@@ -120,6 +121,7 @@ document.addEventListener("keydown", (e) => {
 	if (e.key === "Escape") {
 		closeQuickView();
 		closeAcctMenu();
+		closeLangMenu();
 	} else {
 		qvTrap(e);
 	}
@@ -162,6 +164,28 @@ document.addEventListener("click", (e) => {
 });
 renderAccount();
 syncSubmitButton();
+
+/* Language picker: open/close the dropdown; picking a language shows the
+   "not available yet" popin instead of switching locale (prototype is EN only). */
+renderLangPicker();
+const langEl = document.querySelector("#langpicker");
+if (langEl) {
+	langEl.addEventListener("click", (e) => {
+		if (e.target.closest("#lang-btn")) {
+			e.preventDefault();
+			toggleLangMenu();
+			return;
+		}
+		const opt = e.target.closest("[data-lang]");
+		if (opt) {
+			e.preventDefault();
+			showLangNote(opt.getAttribute("data-lang-name"));
+		}
+	});
+}
+document.addEventListener("click", (e) => {
+	if (!e.target.closest("#langpicker")) closeLangMenu();
+});
 
 /* Experimental toggle: persist, flip body state, re-render so JS-conditional
    experimental logic (e.g. the sort options) updates too. */

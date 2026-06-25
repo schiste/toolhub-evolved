@@ -559,7 +559,8 @@ li.le__empty {
 	color: var(--color-text-muted);
 	padding: var(--space-2);
 }
-.acct__menu :where(a, button) {
+.acct__menu :where(a, button),
+.lang__opt {
 	display: flex;
 	align-items: center;
 	gap: var(--space-2);
@@ -574,9 +575,14 @@ li.le__empty {
 	cursor: pointer;
 	text-decoration: none;
 }
-.acct__menu :where(a, button):hover {
+.acct__menu :where(a, button):hover,
+.lang__opt:hover,
+.lang__opt:focus-visible {
 	background: var(--color-surface-muted);
 	text-decoration: none;
+}
+.lang__opt:focus-visible {
+	outline: none;
 }
 .acct__menu hr {
 	border: none;
@@ -585,6 +591,100 @@ li.le__empty {
 }
 .acct__logout {
 	color: var(--color-destructive);
+}
+
+/* Language picker. Mirrors the account dropdown pattern. */
+.lang {
+	position: relative;
+}
+.lang__btn {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	height: var(--btn-h-md);
+	background: var(--color-surface);
+	border: var(--border-base);
+	border-radius: var(--radius-sm);
+	padding: var(--space-0) var(--space-2);
+	cursor: pointer;
+	font: inherit;
+	color: var(--color-text);
+	transition:
+		background 0.15s ease,
+		border-color 0.15s ease,
+		color 0.15s ease;
+}
+.lang__btn:hover,
+.lang__btn:focus-visible {
+	border-color: var(--color-progressive);
+}
+.lang__btn:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 1px;
+	box-shadow: none;
+}
+.lang__globe {
+	color: var(--color-text-muted);
+	width: 1.05em;
+	height: 1.05em;
+}
+.lang__current {
+	font-size: var(--fs-caption);
+	font-weight: 600;
+}
+.lang__caret {
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.lang__menu {
+	position: absolute;
+	inset-inline-end: var(--space-0);
+	top: calc(100% + var(--space-2));
+	background: var(--color-surface);
+	border: var(--border-base);
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-popover);
+	min-width: 248px;
+	padding: var(--space-2);
+	z-index: 70;
+}
+.lang__menu[hidden] {
+	display: none;
+}
+.lang__list {
+	list-style: none;
+	margin: var(--space-0);
+	padding: var(--space-0);
+	max-height: 320px;
+	overflow-y: auto;
+}
+.lang__opt {
+	text-decoration: none;
+}
+.lang__opt.is-active {
+	font-weight: 700;
+}
+.lang__native {
+	flex: 1 1 auto;
+}
+.lang__english {
+	font-size: var(--fs-caption);
+	color: var(--color-text-muted);
+}
+.lang__check {
+	flex: 0 0 auto;
+	color: var(--color-progressive);
+}
+.lang__note {
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	padding: var(--space-2);
+	border-top: var(--border-muted);
+	font-size: var(--fs-caption);
+	color: var(--color-text-secondary);
+	line-height: 1.4;
+}
+.lang__note[hidden] {
+	display: none;
 }
 
 /* Detail metadata. */
