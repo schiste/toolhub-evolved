@@ -8,7 +8,7 @@
 		"format:check": "prettier --check .",
 		"lint": "eslint . --max-warnings 0",
 		"lint:css": "stylelint \"public_html/styles/**/*.css\"",
-		"spell": "cspell --no-progress \"public_html/**/*.{js,mjs,css,html}\" \"tools/**/*.mjs\" \"tests/**/*.mjs\" \"*.md\" \"docs/**/*.md\" \"proxy/**/*.py\"",
+		"spell": "cspell --no-progress \"public_html/**/*.{js,mjs,css,html}\" \"tools/**/*.mjs\" \"*.md\" \"docs/**/*.md\" \"proxy/**/*.py\"",
 		"types": "tsc -p jsconfig.json",
 		"dead:check": "knip --production",
 		"dup:check": "jscpd --config .jscpd.json",

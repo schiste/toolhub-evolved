@@ -50,6 +50,7 @@ async function buildMemberships() {
 	const lists = await paginate("/lists/", {}, { pageSize: 50, maxPages: 10 });
 	for (const l of lists) {
 		if (l.published === false) continue; // count only public/curated lists
+		// Stryker disable next-line ArrayDeclaration: the `|| []` fallback only triggers for tool-less lists; a non-empty fallback array's string element has no `.name`, so it is skipped by the `if (!name)` guard — same result as the empty fallback.
 		for (const tool of l.tools || []) {
 			const name = tool && tool.name;
 			if (!name) continue;
@@ -60,6 +61,7 @@ async function buildMemberships() {
 	return map;
 }
 // Returns Map<toolName, [{id,title}]>; memoized for the session.
+// Stryker disable next-line ArrowFunction: buildMemberships never rejects (paginate swallows per-page errors), so this .catch is unreachable; memoizeAsync also caches the single outcome, so the success and failure paths cannot both be exercised.
 export const listMemberships = memoizeAsync(() => buildMemberships().catch(() => new Map()));
 /**
  * @param {string} name
@@ -105,6 +107,7 @@ export function hasContext() {
  * @param {string} wiki
  */
 export function wikiMatches(forWikis, wiki) {
+	// Stryker disable next-line ArrayDeclaration: forWikis is always an array from normalizeTool; the `|| []` fallback only fires for a null forWikis, and a non-empty fallback's sentinel string can only match the impossible wiki id "Stryker was here".
 	return (forWikis || []).some((w) => w === wiki || (w.startsWith("*.") && wiki.endsWith(w.slice(1))));
 }
 /**
@@ -114,6 +117,7 @@ export function wikiMatches(forWikis, wiki) {
 export function fitsContext(t, ctx) {
 	const activeCtx = ctx || getUserContext();
 	const wiki = activeCtx.wiki ? wikiMatches(t.forWikis, activeCtx.wiki) : false;
+	// Stryker disable next-line ArrayDeclaration: t.audiences is always an array from normalizeTool; the `|| []` fallback only fires for a tool lacking audiences, and the mutated sentinel only matches the impossible role "Stryker was here".
 	const role = activeCtx.role ? (t.audiences || []).includes(activeCtx.role) : false;
 	return { wiki, role, fits: wiki || role };
 }
@@ -125,10 +129,12 @@ export function fitsContext(t, ctx) {
 export function rankFitsFirst(tools) {
 	if (!hasContext()) return tools;
 	const fit = new Map(tools.map((t) => /** @type {[Tool, number]} */ ([t, fitsContext(t).fits ? 1 : 0])));
+	// Stryker disable ArithmeticOperator: the `a[1] - b[1]` index tiebreak only orders items within an equal-fit group by original position, which V8's stable sort already preserves; `a[1] + b[1]` (always >= 0) leaves that stable order intact, so it is equivalent.
 	return tools
 		.map((t, i) => /** @type {[Tool, number]} */ ([t, i]))
 		.sort((a, b) => (fit.get(b[0]) || 0) - (fit.get(a[0]) || 0) || a[1] - b[1])
 		.map((x) => x[0]);
+	// Stryker restore ArithmeticOperator
 }
 // Attach `.endorsement` to each tool from the (memoized) membership map.
 /** @param {Tool[]} tools */

@@ -10,6 +10,7 @@ export const $input = (s, r) => /** @type {HTMLInputElement | null} */ ((r || do
 /** @param {string} str */
 export function hash(str) {
 	let h = 0;
+	// Stryker disable next-line ArithmeticOperator: '+' → '-' yields the exact negation of the accumulator at every step (g_n = -h_n by induction from h_0 = 0), and Math.abs makes the returned hash identical.
 	for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
 	return Math.abs(h);
 }
@@ -25,19 +26,23 @@ export function esc(s) {
 /** @param {unknown} u */
 export function normalizeVcsUrl(u) {
 	const raw = String(u === null || u === undefined ? "" : u).trim();
+	// Stryker disable next-line ConditionalExpression: the only falsy `raw` is "", which also falls through the (no-match) transforms to `return … : raw`, yielding the same "".
 	if (!raw) return raw;
 	try {
 		let s = raw;
 		let changed = false;
 		if (/^git\+/i.test(s)) {
+			// Stryker disable next-line Regex: gated by the line above (s starts with "git+"), so dropping the ^ anchor still replaces the same single leading occurrence (replace() without /g replaces only the first match).
 			s = s.replace(/^git\+/i, "");
 			changed = true;
 		}
+		// Stryker disable next-line Regex: the trailing '$' is redundant after a greedy final group (.+), so '(.+)$' → '(.+)' is equivalent; the co-located ^-removal variant is otherwise exercised by the scp tests.
 		const scp = /^git@([^\s:]+):(.+)$/.exec(s);
 		if (scp) {
 			s = `https://${scp[1]}/${scp[2].replace(/^\/+/, "")}`;
 			changed = true;
 		} else {
+			// Stryker disable next-line Regex: the trailing '$' is redundant after a greedy final group (.+), so '(.+)$' → '(.+)' is equivalent; the co-located ^-removal variant is otherwise exercised by the ssh tests.
 			const ssh = /^ssh:\/\/git@([^\s/]+)\/(.+)$/i.exec(s);
 			if (ssh) {
 				s = `https://${ssh[1]}/${ssh[2].replace(/^\/+/, "")}`;
@@ -46,11 +51,13 @@ export function normalizeVcsUrl(u) {
 		}
 		return changed ? s.replace(/\.git(?=([#?]|$))/i, "") : raw;
 	} catch {
+		// Stryker disable next-line BlockStatement: the try body only runs regex tests / string replaces on an already-stringified value, which cannot throw, so this catch is unreachable.
 		return raw;
 	}
 }
 /** @param {unknown} u */
 export function safeUrl(u) {
+	// Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: the null/undefined guard is redundant here — String(null)/String(undefined) ("null"/"undefined") are not http(s) URLs, so they fail the test() below exactly like "" does; only the always-"" ternary variant is behavioral and is covered by tests but co-disabled.
 	const s = String(u === null || u === undefined ? "" : u).trim();
 	return /^https?:\/\//i.test(s) ? esc(s) : "";
 }

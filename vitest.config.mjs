@@ -9,6 +9,7 @@ export default defineConfig({
 	test: {
 		environment: "happy-dom",
 		include: ["tests/unit/**/*.test.mjs"],
+		setupFiles: ["./tests/unit/_storage-setup.mjs"],
 		coverage: {
 			provider: "v8",
 			include: ["public_html/**/*.js"],

@@ -3,6 +3,7 @@ import { normalizeTool, paginate } from "./api.js";
 import { memoizeAsync, normStr } from "./util.js";
 
 export const loadAllTools = memoizeAsync(() =>
+	// Stryker disable next-line ArrowFunction,ArrayDeclaration: paginate never rejects (it swallows per-page errors), so this defensive .catch(() => []) is unreachable; memoizeAsync also caches the single outcome, so the success and failure paths cannot both be exercised.
 	paginate("/search/tools/", {}, { pageSize: 100, maxPages: 10, map: normalizeTool }).catch(() => [])
 );
 
@@ -13,6 +14,7 @@ export const FACET_WEIGHTS = { task: 1.4, keyword: 1.0, wiki: 0.8, audience: 0.6
 
 const TERM_FACETS = {
 	task: "task",
+	// Stryker disable next-line StringLiteral: blanking maps facetOf("kw:…") to "", whose FACET_WEIGHTS lookup falls back to 1 — identical to the real "keyword" weight of 1.0.
 	kw: "keyword",
 	wiki: "wiki",
 	aud: "audience",
@@ -58,6 +60,7 @@ function termsOf(tool) {
 	pushTerms(out, seen, "wiki", tool.forWikis, { skipAllWikis: true });
 	pushTerms(out, seen, "aud", tool.audiences);
 	const type = normStr(tool.toolType);
+	// Stryker disable next-line ConditionalExpression: pushTerms already skips empty values, so calling it unconditionally on an empty type still emits no term (if(true) is equivalent).
 	if (type) pushTerms(out, seen, "type", [type]);
 	return out;
 }
@@ -80,6 +83,7 @@ function normalizeVector(vector) {
 	let magnitude = 0;
 	for (const value of vector.values()) magnitude += value * value;
 	magnitude = Math.sqrt(magnitude);
+	// Stryker disable next-line ConditionalExpression: magnitude is 0 only for an empty vector, where the normalization loop below is a no-op — so skipping the early return is observationally equivalent.
 	if (!magnitude) return vector;
 	for (const [term, value] of vector) vector.set(term, value / magnitude);
 	return vector;
@@ -126,6 +130,7 @@ export const getSimilarityIndex = memoizeAsync(buildSimilarityIndex);
  * @param {Map<string, number>} vecB
  */
 export function cosine(vecA, vecB) {
+	// Stryker disable next-line ConditionalExpression,EqualityOperator: smaller/larger selection is a pure performance optimization; the dot product is commutative, so iterating either map yields the identical score.
 	const small = vecA.size <= vecB.size ? vecA : vecB;
 	const large = small === vecA ? vecB : vecA;
 	let score = 0;
@@ -139,6 +144,7 @@ export function cosine(vecA, vecB) {
 /** @param {string} term */
 function labelOf(term) {
 	const i = term.indexOf(":");
+	// Stryker disable next-line ConditionalExpression,UnaryOperator: labelOf only ever receives "prefix:value" terms (fixed facet prefixes), so indexOf(":") is always >= 2; the i === -1 branch is dead and the slice branch is always taken.
 	return i === -1 ? term : term.slice(i + 1);
 }
 
@@ -150,8 +156,11 @@ function labelOf(term) {
  */
 function sharedTermsForVector(sourceVec, otherName, index) {
 	const otherVec = index.vectors.get(otherName);
+	// Stryker disable next-line ConditionalExpression,ArrayDeclaration: nearestNeighbors only calls this after confirming the neighbor has a non-empty vector (line below), so otherVec is always present and the !otherVec guard is dead.
 	if (!otherVec) return [];
+	// Stryker disable next-line ConditionalExpression,EqualityOperator: smaller/larger selection is a pure optimization; collecting shared terms (with the commutative weight + other) is order-independent.
 	const small = sourceVec.size <= otherVec.size ? sourceVec : otherVec;
+	// Stryker disable next-line ConditionalExpression,EqualityOperator: smaller/larger selection is a pure optimization; the shared-term set and combined weights are identical either way.
 	const large = small === sourceVec ? otherVec : sourceVec;
 	/** @type {Array<{ label: string, weight: number }>} */
 	const shared = [];
@@ -172,6 +181,7 @@ function sharedTermsForVector(sourceVec, otherName, index) {
  */
 export function nearestNeighbors(tool, index, k = 6) {
 	const sourceVec = vectorFor(tool, index);
+	// Stryker disable next-line ConditionalExpression: an empty source vector makes every cosine 0, which is filtered by the score <= 0 guard below, so the result is [] with or without this early return.
 	if (sourceVec.size === 0) return [];
 	/** @type {Array<{ tool: Tool, score: number, shared: string[] }>} */
 	const out = [];
@@ -181,6 +191,7 @@ export function nearestNeighbors(tool, index, k = 6) {
 		if (!other || other.name === tool.name || seen.has(other.name)) continue;
 		seen.add(other.name);
 		const otherVec = index.vectors.get(other.name);
+		// Stryker disable next-line ConditionalExpression: an empty otherVec yields cosine 0, already filtered by the score <= 0 guard below, so the otherVec.size === 0 short-circuit is a redundant optimization.
 		if (!otherVec || otherVec.size === 0) continue;
 		const score = cosine(sourceVec, otherVec);
 		if (score <= 0) continue;

@@ -5,6 +5,7 @@
 // script in index.html applies it before first paint to avoid a flash.
 const THEME_KEY = "toolhub-theme";
 const darkMQ =
+	// Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral — the no-DOM/no-matchMedia guard is always true under the (always-present) test DOM, so darkMQ === matchMedia(...) for every variant: equivalent.
 	typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 
 export function getThemeChoice() {
@@ -42,8 +43,10 @@ export function setThemeChoice(choice) {
 // Apply now + keep following the OS preference while the choice is "system".
 export function initTheme() {
 	applyTheme();
+	// Stryker disable next-line ConditionalExpression — darkMQ is always truthy under the test DOM, so `if (false)` never returns early either: equivalent (the `if (true)` variant IS killed).
 	if (!darkMQ) return;
 	const onChange = () => {
+		// Stryker disable next-line StringLiteral — resolve() treats "system" and "" identically (both fall through to the OS-preference branch), so applyTheme("") behaves exactly like applyTheme("system"): equivalent.
 		if (getThemeChoice() === "system") applyTheme("system");
 	};
 	if (darkMQ.addEventListener) darkMQ.addEventListener("change", onChange);

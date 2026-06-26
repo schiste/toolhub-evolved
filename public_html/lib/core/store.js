@@ -216,6 +216,7 @@ export function logActivity(action, name, title) {
 }
 /** @param {string} name */
 export function demoRevisionsFor(name) {
+	// Stryker disable next-line ArrayDeclaration — the live arg is immediately filtered by `content_id === name`; any injected element lacks content_id and is dropped, so a non-empty default produces identical output: equivalent.
 	return demoFeed(DEMO_KEYS.revisions, []).filter((r) => r.content_id === name);
 }
 // EXPERIMENTAL — crawler simulation. Needs: server-side crawler (the browser

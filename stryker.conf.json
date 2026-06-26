@@ -5,10 +5,10 @@
 	"coverageAnalysis": "perTest",
 	"mutate": ["public_html/lib/core/**/*.js"],
 	"reporters": ["clear-text", "progress"],
-	"_thresholds_note": "break is a ratchet floor; raised as tests are added (Phase 3 targets 100% across all layers).",
+	"_thresholds_note": "break is a ratchet floor, raised as tests are added. Core is at ~97% (13/14 modules at 100%; graph.js in progress). Target is 100% across all layers.",
 	"thresholds": {
-		"high": 80,
-		"low": 40,
-		"break": 20
+		"high": 100,
+		"low": 90,
+		"break": 90
 	}
 }

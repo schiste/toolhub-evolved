@@ -33,12 +33,15 @@ export const NEEDS = [
 ];
 
 export function parseRoute() {
+	// Stryker disable next-line StringLiteral: location.pathname is never the empty string in a browser (it is at minimum "/"), so the `|| "/"` fallback is unreachable.
 	const path = location.pathname || "/";
+	// Stryker disable next-line ConditionalExpression,StringLiteral: `path` is never "" (the `|| "/"` above guarantees it), so the `path === ""` branch is dead code — the ternary always returns `path`.
 	return { path: path === "" ? "/" : path };
 }
 
 export function normalizeLegacyHashRoute() {
 	if (!location.hash.startsWith("#/")) return false;
+	// Stryker disable next-line StringLiteral: the 2nd arg is the legacy (ignored) history title; mutating it has no observable effect.
 	history.replaceState({}, "", location.hash.slice(1));
 	return true;
 }
@@ -56,6 +59,7 @@ export function navigateTo(href, opts = {}) {
 	const next = url.pathname + url.search;
 	const current = location.pathname + location.search;
 	if (next !== current) {
+		// Stryker disable next-line StringLiteral: the 2nd arg is the legacy (ignored) history title; mutating it has no observable effect. (The method-name strings are exercised by the push/replace tests.)
 		history[opts.replace ? "replaceState" : "pushState"]({}, "", next);
 	}
 	window.dispatchEvent(new Event("toolhub:navigate"));

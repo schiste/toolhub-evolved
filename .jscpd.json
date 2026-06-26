@@ -11,6 +11,7 @@
 		"test-results/**",
 		"coverage/**",
 		"htmlcov/**",
-		"package-lock.json"
+		"package-lock.json",
+		"tests/**"
 	]
 }

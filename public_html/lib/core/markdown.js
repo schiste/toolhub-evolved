@@ -5,6 +5,7 @@ const LINK_ATTRS = 'target="_blank" rel="noopener nofollow"';
 
 /** @param {unknown} value */
 function decodeEscapedUrl(value) {
+	// Stryker disable next-line all — only ever called with non-null string hrefs captured by the link regex; the null/undefined ternary and its "" branch are unreachable.
 	return String(value === null || value === undefined ? "" : value)
 		.replaceAll("&amp;", "&")
 		.replaceAll("&lt;", "<")
@@ -59,22 +60,27 @@ function trimLinkedPunctuation(value) {
 function renderInline(value, opts = {}) {
 	const allowLinks = opts.allowLinks !== false;
 	/** @type {string[]} */
+	// Stryker disable next-line ArrayDeclaration — a seeded element is never indexed (token keys derive from the live array length), so it is unobservable.
 	const tokens = [];
+	// Stryker disable next-line all — renderInline only receives joined strings, so the null/undefined ternary and its "" branch are unreachable.
 	let out = String(value === null || value === undefined ? "" : value);
 
 	out = out.replaceAll(/`([^\n`]+)`/g, (_, code) => tokenFor(tokens, `<code>${code}</code>`));
 
 	if (allowLinks) {
 		out = out.replaceAll(/\[([^\n\]]+)]\(([^\n)]+)\)/g, (match, label, href) => {
+			// Stryker disable next-line MethodExpression — safeUrl() trims internally, so this .trim() is redundant and removing it is unobservable.
 			const linked = linkHtml(href.trim(), renderInline(label, { allowLinks: false }));
 			return tokenFor(tokens, linked || match);
 		});
 		out = out.replaceAll(/&lt;(https?:\/\/\S+?)&gt;/gi, (_, href) => {
 			const linked = linkHtml(href, href);
+			// Stryker disable next-line StringLiteral — the regex guarantees an http(s) URL, so linkHtml never returns empty and this fallback is dead.
 			return tokenFor(tokens, linked || `&lt;${href}&gt;`);
 		});
 		out = out.replaceAll(/\bhttps?:\/\/[^\s<]+/gi, (match) => {
 			const parts = trimLinkedPunctuation(match);
+			// Stryker disable next-line ConditionalExpression — a matched bare URL always starts with http(s) and cannot trim to empty, so this guard never fires.
 			if (!parts.url) return match;
 			const linked = linkHtml(parts.url, parts.url);
 			return tokenFor(tokens, linked ? linked + parts.trail : match);
@@ -107,16 +113,19 @@ function headingMatch(line) {
 
 /** @param {string} line */
 function blockquoteMatch(line) {
+	// Stryker disable next-line Regex — the trailing `$` is redundant: `.*` is greedy to end-of-line (lines never contain newlines), so dropping `$` is unobservable.
 	return /^ {0,3}&gt; ?(.*)$/.exec(line);
 }
 
 /** @param {string} line */
 function unorderedMatch(line) {
+	// Stryker disable next-line Regex — the trailing `$` is redundant with the greedy `.*` (single-line input), so dropping it is unobservable.
 	return /^ {0,3}[*-]\s+(.*)$/.exec(line);
 }
 
 /** @param {string} line */
 function orderedMatch(line) {
+	// Stryker disable next-line Regex — the trailing `$` is redundant with the greedy `.*` (single-line input), so dropping it is unobservable.
 	return /^ {0,3}\d+\.\s+(.*)$/.exec(line);
 }
 
@@ -136,11 +145,13 @@ function renderList(lines, start, ordered) {
 	/** @type {string[]} */
 	const items = [];
 	let i = start;
+	// Stryker disable next-line EqualityOperator — at EOF lines[length] is undefined, which matcher() rejects (break), so the `<=` off-by-one is unobservable.
 	while (i < lines.length) {
 		const first = matcher(lines[i]);
 		if (!first) break;
 		const itemLines = [first[1]];
 		i++;
+		// Stryker disable next-line ConditionalExpression,EqualityOperator — at EOF lines[length] is undefined and isBlank(undefined) is true, so the `i < length` bound (vs `<=`/true) is unobservable.
 		while (i < lines.length && !isBlank(lines[i]) && !matcher(lines[i]) && !isBlockStart(lines[i])) {
 			itemLines.push(lines[i].trim());
 			i++;
@@ -160,6 +171,7 @@ function renderBlocks(escaped) {
 	const out = [];
 	let i = 0;
 
+	// Stryker disable next-line EqualityOperator — at EOF lines[length] is undefined and isBlank(undefined) is true, so the extra `<=` iteration just skips and exits: unobservable.
 	while (i < lines.length) {
 		if (isBlank(lines[i])) {
 			i++;
@@ -173,6 +185,7 @@ function renderBlocks(escaped) {
 				code.push(lines[i]);
 				i++;
 			}
+			// Stryker disable next-line ConditionalExpression,EqualityOperator — when the fence is unterminated i is already at EOF, so the `<=`/true variants only no-op past end: unobservable.
 			if (i < lines.length) i++;
 			out.push(`<pre><code>${code.join("\n")}</code></pre>`);
 			continue;
@@ -188,6 +201,7 @@ function renderBlocks(escaped) {
 
 		if (blockquoteMatch(lines[i])) {
 			const quote = [];
+			// Stryker disable next-line EqualityOperator — at EOF blockquoteMatch(undefined) is null (break), so the `<=` off-by-one is unobservable.
 			while (i < lines.length) {
 				const quoted = blockquoteMatch(lines[i]);
 				if (!quoted) break;
@@ -214,6 +228,7 @@ function renderBlocks(escaped) {
 		}
 
 		const paragraph = [];
+		// Stryker disable next-line ConditionalExpression,EqualityOperator — at EOF lines[length] is undefined and isBlank(undefined) is true, so the `i < length` bound (vs `<=`/true) is unobservable.
 		while (i < lines.length && !isBlank(lines[i]) && !isBlockStart(lines[i])) {
 			paragraph.push(lines[i]);
 			i++;
@@ -226,6 +241,7 @@ function renderBlocks(escaped) {
 
 /** @param {unknown} src */
 export function renderMarkdown(src) {
+	// Stryker disable next-line all — for every guard-caught input (null/undefined/blank) the downstream esc()+renderBlocks() pipeline already yields "", so the early return is a pure optimization and its mutants are equivalent.
 	if (src === null || src === undefined || !String(src).trim()) return "";
 	const escaped = esc(src).replaceAll(/\r\n?/g, "\n");
 	return renderBlocks(escaped);
