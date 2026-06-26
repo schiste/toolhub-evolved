@@ -20,7 +20,7 @@ jobs:
         name: JS quality
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
               with:
                   fetch-depth: 0
             - uses: actions/setup-node@v4
@@ -61,7 +61,7 @@ jobs:
         name: Python quality
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - uses: actions/setup-python@v5
               with:
                   python-version: "3.11"
@@ -81,7 +81,7 @@ jobs:
         name: Secret scan
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             # No npm ci: a clean checkout has no node_modules, so gitleaks scans
             # only first-party files (the .gitleaks.toml allowlist covers the rest).
             - name: gitleaks (pinned, checksum-verified)
@@ -101,7 +101,7 @@ jobs:
         if: github.event_name == 'pull_request'
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
               with:
                   fetch-depth: 0
             - uses: actions/setup-node@v4
