@@ -78,6 +78,14 @@ h3,
 	font-weight: var(--font-weight-bold);
 }
 
+a {
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+a:hover {
+	text-decoration: underline;
+}
+
 /* Long-form copy: tool descriptions, About/Help/Terms pages. */
 .prose,
 .qv__desc {
@@ -123,7 +131,8 @@ h3,
 :where(.prose, .qv__desc) h6 {
 	font-size: var(--fs-body);
 }
-:where(.prose, .qv__desc) a {
+.prose a,
+.qv__desc a {
 	color: var(--color-progressive);
 	text-decoration: underline;
 }
@@ -166,14 +175,6 @@ h3,
 .prose--page h1 {
 	font-size: var(--fs-title);
 	margin: var(--space-0) var(--space-0) var(--space-prose-sm);
-}
-
-a {
-	color: var(--color-progressive);
-	text-decoration: none;
-}
-a:hover {
-	text-decoration: underline;
 }
 
 a:focus-visible,

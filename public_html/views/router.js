@@ -55,6 +55,12 @@ export function dispatch() {
 	const { path } = parseRoute();
 	const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
 	if (path === "/") return viewHome();
+	if (seg[0] === "user" && seg[1] === "login") {
+		return signInPage("Sign in", "Sign in to save favourites, build lists, and edit tool information.");
+	}
+	if (seg[0] === "user" && seg[1] === "logout") {
+		return signInPage("Signed out", "You are signed out of this Toolhub prototype.");
+	}
 	if (seg[0] === "search") return viewSearch();
 	if (seg[0] === "by" && seg[1]) return viewAuthor(decodeURIComponent(seg[1]));
 	// Tool + its sub-routes

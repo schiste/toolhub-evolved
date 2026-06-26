@@ -32,6 +32,13 @@ function activeClientStatuses(value) {
 	);
 }
 
+function sortFromOfficialOrdering(ordering, fallback) {
+	if (ordering === "-modified_date") return "recent";
+	if (ordering === "name") return "name";
+	if (ordering === "-score") return "relevance";
+	return fallback;
+}
+
 function renderStatusFacetGroup(selectedStatuses) {
 	const rows = CLIENT_STATUS_FILTERS.map((s) => {
 		const checked = selectedStatuses.has(s.value) ? " checked" : "";
@@ -47,7 +54,7 @@ export async function viewSearch() {
 	const pageSize = activePageSize(usp.get("page_size"));
 	const exp = expOn();
 	const defaultSort = exp ? "relevance" : "recent";
-	const requestedSort = usp.get("sort") || defaultSort;
+	const requestedSort = usp.get("sort") || sortFromOfficialOrdering(usp.get("ordering"), defaultSort);
 	const allowedSorts = exp ? ["relevance", "recent", "name", "views", "complete"] : ["recent", "name", "complete"];
 	const sort = allowedSorts.includes(requestedSort) ? requestedSort : defaultSort;
 	const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";

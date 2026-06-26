@@ -6,11 +6,14 @@ import { useSmokeServer } from "./harness.mjs";
 const routes = [
 	{ path: "/", title: /community catalog/i },
 	{ path: "/search", title: /browse tools/i },
+	{ path: "/search?ordering=-modified_date", title: /browse tools/i },
 	{ path: "/tools/toolforge-admin", title: /toolforge admin/i },
 	{ path: "/by/Bryan%20Davis", title: /bryan davis/i },
 	{ path: "/lists", title: /curated lists/i },
 	{ path: "/recent?show=unpatrolled", title: /recent changes/i },
-	{ path: "/api-docs", title: /api documentation/i }
+	{ path: "/api-docs", title: /api documentation/i },
+	{ path: "/user/login/?next=/", title: /sign in/i },
+	{ path: "/user/logout/", title: /signed out/i }
 ];
 
 test.describe("deterministic app smoke", () => {
