@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "../core/dom.js";
+import { $, esc } from "../core/dom.js";
 import { localeDir } from "../core/i18n.js";
 import { icon } from "../atoms/icon.js";
 
@@ -54,7 +54,7 @@ export function selectionNote(englishName) {
 }
 
 export function renderLangPicker() {
-	const el = document.querySelector("#langpicker");
+	const el = $("#langpicker");
 	if (!el) return;
 	const [, autonym] = activeEntry();
 	el.innerHTML = `
@@ -79,34 +79,34 @@ export function renderLangPicker() {
 }
 
 export function closeLangMenu() {
-	const m = document.querySelector("#lang-menu"),
-		b = document.querySelector("#lang-btn"),
-		note = document.querySelector("#lang-note");
+	const m = $("#lang-menu"),
+		b = $("#lang-btn"),
+		note = $("#lang-note");
 	if (m) m.hidden = true;
 	if (b) b.setAttribute("aria-expanded", "false");
 	if (note) note.hidden = true; // reset the popin so it re-announces next time
 }
 
 export function toggleLangMenu() {
-	const m = document.querySelector("#lang-menu"),
-		b = document.querySelector("#lang-btn");
+	const m = $("#lang-menu"),
+		b = $("#lang-btn");
 	if (!m) return;
 	const willOpen = m.hidden;
 	m.hidden = !willOpen;
 	b.setAttribute("aria-expanded", String(willOpen));
 	if (!willOpen) {
-		const note = document.querySelector("#lang-note");
+		const note = $("#lang-note");
 		if (note) note.hidden = true;
 		return;
 	}
-	const first = m.querySelector(".lang__opt");
+	const first = $(".lang__opt", m);
 	if (first) first.focus();
 }
 
 // Reveal the "not available yet" popin for the chosen language without changing
 // the active locale — the prototype stays English only.
 export function showLangNote(englishName) {
-	const note = document.querySelector("#lang-note");
+	const note = $("#lang-note");
 	if (!note) return;
 	note.innerHTML = selectionNote(englishName);
 	note.hidden = false;

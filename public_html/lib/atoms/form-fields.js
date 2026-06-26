@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "../core/dom.js";
+import { $, $input, esc } from "../core/dom.js";
 
 // Shared form-field renderers (reused by all Lane B forms).
 function fHint(id, hint) {
@@ -52,16 +52,16 @@ export function fSelect(label, id, value, options, opts = {}) {
 		<select class="${fInputClass(opts)}" id="${id}"${fDescAttrs(id, hint, false)}>${options.map((o) => `<option value="${esc(o)}"${o === (value || "") ? " selected" : ""}>${esc(o || "—")}</option>`).join("")}</select></label>`;
 }
 export function fieldValue(id) {
-	const el = document.querySelector(`#${id}`);
+	const el = $input(`#${id}`);
 	return el ? el.value.trim() : "";
 }
 export function checkedValue(id) {
-	const el = document.querySelector(`#${id}`);
+	const el = $input(`#${id}`);
 	return Boolean(el && el.checked);
 }
 export function setFieldError(id, msg) {
-	const el = document.querySelector(`#${id}`);
-	const err = document.querySelector(`#${id}-err`);
+	const el = $(`#${id}`);
+	const err = $(`#${id}-err`);
 	if (!el || !err) return;
 	el.setAttribute("aria-invalid", "true");
 	el.classList.add("is-invalid");
@@ -69,8 +69,8 @@ export function setFieldError(id, msg) {
 	err.hidden = false;
 }
 export function clearFieldError(id) {
-	const el = document.querySelector(`#${id}`);
-	const err = document.querySelector(`#${id}-err`);
+	const el = $(`#${id}`);
+	const err = $(`#${id}-err`);
 	if (!el || !err) return;
 	el.removeAttribute("aria-invalid");
 	el.classList.remove("is-invalid");

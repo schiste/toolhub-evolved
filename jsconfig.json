@@ -11,6 +11,6 @@
 		"lib": ["es2022", "dom", "dom.iterable"],
 		"skipLibCheck": true
 	},
-	"include": ["public_html/lib/core/**/*.js"],
+	"include": ["public_html/**/*.js", "types/**/*.d.ts"],
 	"exclude": ["node_modules", ".quality", "playwright-report", "test-results"]
 }

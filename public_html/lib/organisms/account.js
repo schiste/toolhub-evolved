@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "../core/dom.js";
+import { $, esc } from "../core/dom.js";
 import { USER, expOn, signedIn } from "../core/session.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
 
 export function renderAccount() {
-	const el = document.querySelector("#account");
+	const el = $("#account");
 	if (!el) return;
 	if (!expOn()) {
 		// honest read-only: real sign-in needs OAuth we don't have
@@ -35,20 +35,20 @@ export function renderAccount() {
 		</div>`;
 }
 export function closeAcctMenu() {
-	const m = document.querySelector("#acct-menu"),
-		b = document.querySelector("#acct-btn");
+	const m = $("#acct-menu"),
+		b = $("#acct-btn");
 	if (m) m.hidden = true;
 	if (b) b.setAttribute("aria-expanded", "false");
 }
 export function toggleAcctMenu() {
-	const m = document.querySelector("#acct-menu"),
-		b = document.querySelector("#acct-btn");
+	const m = $("#acct-menu"),
+		b = $("#acct-btn");
 	if (!m) return;
 	const willOpen = m.hidden;
 	m.hidden = !willOpen;
 	b.setAttribute("aria-expanded", String(willOpen));
 	if (willOpen) {
-		const first = m.querySelector("a, button");
+		const first = $("a, button", m);
 		if (first) first.focus();
 	}
 }
@@ -56,7 +56,7 @@ export function toggleAcctMenu() {
 // Header "Submit a tool": in-app create form when experimenting (decision §8.3),
 // else the real production link.
 export function syncSubmitButton() {
-	const b = document.querySelector("#submit-tool");
+	const b = $("#submit-tool");
 	if (!b) return;
 	if (expOn()) {
 		b.setAttribute("href", "/tools/create");

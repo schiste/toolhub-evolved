@@ -85,11 +85,10 @@ export function closeQuickView() {
 export function qvTrap(e) {
 	const qv = $("#qv");
 	if (e.key !== "Tab" || qv.classList.contains("hidden")) return;
-	const f = [
-		...qv.querySelectorAll(
-			'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
-		)
-	].filter((el) => !el.hidden && el.offsetParent !== null);
+	const f = $$(
+		'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+		qv
+	).filter((el) => !el.hidden && el.offsetParent !== null);
 	if (f.length === 0) return;
 	const first = f[0],
 		last = f[f.length - 1];

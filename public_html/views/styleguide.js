@@ -1004,7 +1004,8 @@ function mountStyleguide() {
 	page.addEventListener(
 		"keydown",
 		(e) => {
-			if ((e.key === "Enter" || e.key === " ") && e.target.closest("[data-tool]")) {
+			const key = /** @type {KeyboardEvent} */ (e).key;
+			if ((key === "Enter" || key === " ") && e.target.closest("[data-tool]")) {
 				e.preventDefault();
 				e.stopPropagation();
 			}

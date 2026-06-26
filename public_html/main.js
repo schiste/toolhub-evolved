@@ -213,7 +213,7 @@ if (expBtn) {
 /* Clean SPA links use the History API; direct loads are handled by the Flask fallback. */
 document.addEventListener("click", (e) => {
 	if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-	const a = e.target.closest("a[href]");
+	const a = /** @type {HTMLAnchorElement | null} */ (e.target.closest("a[href]"));
 	if (!a) return;
 	const href = a.getAttribute("href");
 	if (!href || href.startsWith("#") || a.target || a.hasAttribute("download")) return;

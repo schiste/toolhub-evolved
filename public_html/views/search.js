@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt } from "../lib/core/i18n.js";
 import { expOn } from "../lib/core/session.js";
 import { apiGet, normalizeTool } from "../lib/core/api.js";
@@ -135,29 +135,29 @@ export async function viewSearch() {
 		</div>`;
 
 	function mount() {
-		$("#sort").value = sort;
-		$("#page-size").value = String(pageSize);
+		$input("#sort").value = sort;
+		$input("#page-size").value = String(pageSize);
 		const navigate = (extra) => {
 			const u = new URLSearchParams();
-			const qv = $("#facet-q").value.trim();
+			const qv = $input("#facet-q").value.trim();
 			if (qv) u.set("q", qv);
 			$$(".facets input[type=checkbox][data-facet]:checked").forEach((c) =>
-				u.append(c.getAttribute("data-facet"), c.value)
+				u.append(c.getAttribute("data-facet"), /** @type {HTMLInputElement} */ (c).value)
 			);
 			const statuses = $$(".facets input[type=checkbox][data-client-status]:checked").map((c) =>
 				c.getAttribute("data-client-status")
 			);
 			if (statuses.length > 0) u.set("status", statuses.join(","));
-			const sv = $("#sort").value;
+			const sv = $input("#sort").value;
 			if (sv && sv !== defaultSort) u.set("sort", sv);
-			const psv = activePageSize($("#page-size").value);
+			const psv = activePageSize($input("#page-size").value);
 			if (psv !== DEFAULT_PAGE_SIZE) u.set("page_size", String(psv));
 			if (extra && extra.page > 1) u.set("page", String(extra.page));
 			navigateTo(`/search${u.toString() ? `?${u.toString()}` : ""}`);
 		};
 		$(".facets").addEventListener("change", () => navigate({}));
-		$("#sort").addEventListener("change", () => navigate({}));
-		$("#page-size").addEventListener("change", () => navigate({}));
+		$input("#sort").addEventListener("change", () => navigate({}));
+		$input("#page-size").addEventListener("change", () => navigate({}));
 		$("[data-facet-q]").addEventListener("submit", (e) => {
 			e.preventDefault();
 			navigate({});

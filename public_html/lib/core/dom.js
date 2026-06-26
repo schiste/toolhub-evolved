@@ -3,6 +3,9 @@
 export const $ = (s, r) => /** @type {HTMLElement | null} */ ((r || document).querySelector(s));
 /** @type {(selector: string, root?: ParentNode) => HTMLElement[]} */
 export const $$ = (s, r) => /** @type {HTMLElement[]} */ ([...(r || document).querySelectorAll(s)]);
+/** Query a form control by selector (typed for .value/.checked access). */
+/** @type {(selector: string, root?: ParentNode) => HTMLInputElement | null} */
+export const $input = (s, r) => /** @type {HTMLInputElement | null} */ ((r || document).querySelector(s));
 
 export function hash(str) {
 	let h = 0;

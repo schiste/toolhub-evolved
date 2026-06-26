@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
 import { apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
@@ -176,7 +176,7 @@ export function viewListEdit(id) {
 			renderTools();
 		});
 		async function runSearch() {
-			const q = $("#le-q").value.trim();
+			const q = $input("#le-q").value.trim();
 			if (!q) return;
 			resultsEl.innerHTML = '<p class="le__searching">Searching…</p>';
 			try {
@@ -197,14 +197,14 @@ export function viewListEdit(id) {
 			}
 		}
 		$("[data-le-search]").addEventListener("click", runSearch);
-		$("#le-q").addEventListener("keydown", (e) => {
+		$input("#le-q").addEventListener("keydown", (e) => {
 			if (e.key === "Enter") {
 				e.preventDefault();
 				runSearch();
 			}
 		});
 		resultsEl.addEventListener("click", (e) => {
-			const b = e.target.closest("[data-add]");
+			const b = /** @type {HTMLButtonElement | null} */ (e.target.closest("[data-add]"));
 			if (!b) return;
 			const n = b.getAttribute("data-add");
 			if (!work.tools.includes(n)) {

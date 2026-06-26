@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
 import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
@@ -50,13 +50,13 @@ function validateHttpField(id, msg, opts = {}) {
 	clearFieldError(id);
 	if ((opts.required || value) && !isHttpUrl(value)) {
 		setFieldError(id, msg);
-		return document.querySelector(`#${id}`);
+		return $(`#${id}`);
 	}
 	return null;
 }
 
 function clearHttpErrorWhenValid(id) {
-	const el = document.querySelector(`#${id}`);
+	const el = $input(`#${id}`);
 	if (!el) return;
 	el.addEventListener("input", () => {
 		const value = el.value.trim();
@@ -220,7 +220,7 @@ export async function viewToolForm(name) {
 			const invalidUrl = validateHttpField("tf-url", "Enter a valid http(s) URL.", { required: true });
 			const invalidRepo = validateHttpField("tf-repo", "Enter a valid http(s) repository URL.");
 			if (!tname || !title) {
-				document.querySelector(editing ? "#tf-title" : "#tf-name").focus();
+				$(editing ? "#tf-title" : "#tf-name").focus();
 				return;
 			}
 			if (invalidUrl || invalidRepo) {
@@ -229,7 +229,7 @@ export async function viewToolForm(name) {
 			}
 			if (!editing && isNewTool(tname)) {
 				setFieldError("tf-name", "A demo tool with that name already exists.");
-				document.querySelector("#tf-name").focus();
+				$("#tf-name").focus();
 				return;
 			}
 			const fields = {
@@ -330,7 +330,7 @@ export function viewAddTools() {
 	function mount() {
 		$("[data-url-form]").addEventListener("submit", (e) => {
 			e.preventDefault();
-			const u = $("#at-url").value.trim();
+			const u = $input("#at-url").value.trim();
 			const invalidUrl = validateHttpField("at-url", "Enter a valid http(s) toolinfo URL.");
 			if (invalidUrl) {
 				invalidUrl.focus();
@@ -338,7 +338,7 @@ export function viewAddTools() {
 			}
 			if (!u) return;
 			crawlerUrlAdd(u);
-			$("#at-url").value = "";
+			$input("#at-url").value = "";
 			clearFieldError("at-url");
 			$("[data-url-list]").innerHTML = urlRows();
 		});
@@ -349,10 +349,10 @@ export function viewAddTools() {
 			$("[data-url-list]").innerHTML = urlRows();
 		});
 		$("[data-sample]").addEventListener("click", () => {
-			$("#at-json").value = SAMPLE_TOOLINFO;
+			$input("#at-json").value = SAMPLE_TOOLINFO;
 		});
 		$("[data-ingest]").addEventListener("click", () => {
-			const res = ingestToolinfo($("#at-json").value.trim());
+			const res = ingestToolinfo($input("#at-json").value.trim());
 			const out = $("[data-ingest-result]");
 			if (res.error) {
 				out.className = "at__result at__result--err";

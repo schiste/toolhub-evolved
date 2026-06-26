@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext, wikiMatches } from "../lib/core/signals.js";
@@ -227,7 +227,7 @@ export async function viewHome() {
 		mount() {
 			$("[data-home-search]").addEventListener("submit", (e) => {
 				e.preventDefault();
-				const q = $("#home-q").value.trim();
+				const q = $input("#home-q").value.trim();
 				navigateTo(`/search${q ? `?q=${encodeURIComponent(q)}` : ""}`);
 			});
 			const intentForm = $("[data-intent-form]");
@@ -278,7 +278,7 @@ export async function viewHome() {
 					wikiItems,
 					state.wiki
 				);
-				const clear = $("[data-intent-clear]", intentForm);
+				const clear = $input("[data-intent-clear]", intentForm);
 				if (clear) clear.disabled = !hasHomeFilters(state);
 			};
 			const persistIntent = () => {
@@ -347,7 +347,7 @@ export async function viewHome() {
 				closeMenus();
 			});
 			document.addEventListener("click", (e) => {
-				if (!intentForm.contains(e.target)) closeMenus();
+				if (!intentForm.contains(/** @type {Node} */ (e.target))) closeMenus();
 			});
 			document.addEventListener("keydown", (e) => {
 				if (e.key === "Escape") closeMenus();
