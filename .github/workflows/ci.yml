@@ -34,6 +34,8 @@ jobs:
               run: npx eslint . --max-warnings 0
             - name: Stylelint
               run: npx stylelint "public_html/styles/**/*.css"
+            - name: Spell-check (cspell)
+              run: npm run spell
             - name: Types (tsc --checkJs)
               run: npx tsc -p jsconfig.json
             - name: Dead code (knip)
