@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scanText } from "../../tools/checks.mjs";
+import { scanTemplates, scanText } from "../../tools/checks.mjs";
 
 test("scanText flags external _blank links without rel=noopener", () => {
 	const bad = `<a href="https://x.test" target="_blank">x</a>`;
@@ -31,4 +31,34 @@ test("scanText flags hash-router URLs", () => {
 
 test("scanText passes clean internal links", () => {
 	assert.deepEqual(scanText(`<a href="/search">Search</a>`, "f.js"), []);
+});
+
+// Fixtures use escaped \${ / \` so the literal source text contains real
+// template interpolations without tripping no-template-curly-in-string.
+test("scanTemplates flags a raw risky-field interpolation in HTML", () => {
+	const code = `export const v = (t) => \`<h2>\${t.title}</h2>\`;`;
+	const issues = scanTemplates(code, "v.js");
+	assert.equal(issues.length, 1);
+	assert.match(issues[0].message, /unescaped interpolation/);
+	assert.equal(issues[0].line, 1);
+});
+
+test("scanTemplates accepts esc(), components, and bare vars", () => {
+	const code = `export const v = (t, rows) => \`<h2>\${esc(t.title)}</h2>\${icon('x')}\${rows}<b>\${t.count}</b>\`;`;
+	assert.deepEqual(scanTemplates(code, "v.js"), []);
+});
+
+test("scanTemplates ignores non-HTML template literals", () => {
+	const code = `export const u = (t) => \`/tools/\${t.title}\`;`; // a URL, no HTML tag
+	assert.deepEqual(scanTemplates(code, "u.js"), []);
+});
+
+test("scanTemplates accepts non-risky member access (config/CSS)", () => {
+	const code = `export const v = (opts) => \`<input type="\${opts.type}" rows="\${opts.rows}">\`;`;
+	assert.deepEqual(scanTemplates(code, "v.js"), []);
+});
+
+test("scanTemplates sees risky fields inside ternary/logical", () => {
+	const code = `export const v = (t) => \`<p>\${t.deprecated ? t.name : ""}</p><i>\${t && t.description}</i>\`;`;
+	assert.equal(scanTemplates(code, "v.js").length, 2);
 });
