@@ -17,6 +17,7 @@
 		"test:e2e": "playwright test",
 		"mutation": "stryker run",
 		"commitlint": "commitlint --from origin/main --to HEAD",
+		"secrets": "gitleaks dir . -c .gitleaks.toml --redact --no-banner",
 		"audit:js": "npm audit --audit-level=moderate",
 		"hooks:install": "tools/install-hooks.sh"
 	},

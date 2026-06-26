@@ -1,0 +1,19 @@
+# gitleaks config — secret scanning for toolhub-evolved.
+# Extends the upstream default ruleset (the standard, maintained set of
+# credential/private-key/token detectors) and only adds path allowlists for
+# generated or vendored trees that are not first-party source.
+title = "toolhub-evolved"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated, vendored, or report output — not first-party source."
+paths = [
+    '''node_modules/''',
+    '''package-lock\.json''',
+    '''playwright-report/''',
+    '''reports/''',
+    '''dist/''',
+    '''\.git/'''
+]
