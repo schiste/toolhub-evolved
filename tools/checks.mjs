@@ -306,6 +306,53 @@ export function scanComments(code, file) {
 	return issues;
 }
 
+// ---- Floating promises (unhandled async data calls) -----------------------
+// These core functions return a Promise of data the caller MUST consume. Calling
+// one as a bare statement (`apiGet("/x");`) drops the result and silently
+// swallows rejections — a real, hard-to-spot bug. Scoped deliberately to the
+// data-fetch API: void UI functions (render, refreshHome) are legitimately
+// fire-and-forget in event handlers, so flagging them would be the noise the
+// gate must avoid. await / return / assignment / .then()/.catch() / `void` all
+// satisfy it (a bare `void apiGet(x)` is the explicit fire-and-forget opt-out).
+const DATA_FETCHERS = new Set([
+	"apiGet",
+	"paginate",
+	"getTool",
+	"getToolsByName",
+	"attachEndorsements",
+	"egoGraph",
+	"toolsByAuthor"
+]);
+
+/**
+ * Flag floating calls to the async data-fetch API (result dropped, rejection
+ * swallowed). await/return/assign/.then/.catch/void all satisfy the check.
+ * @param {string} code
+ * @param {string} file
+ * @returns {{ file: string, line: number, message: string }[]}
+ */
+export function scanFloating(code, file) {
+	const issues = [];
+	let tree;
+	try {
+		tree = espree.parse(code, ESPREE_OPTS);
+	} catch {
+		return issues; // parse errors are eslint's job
+	}
+	walkAst(tree, (node) => {
+		if (node.type !== "ExpressionStatement" || node.expression?.type !== "CallExpression") return;
+		const callee = node.expression.callee;
+		if (callee?.type === "Identifier" && DATA_FETCHERS.has(callee.name)) {
+			issues.push({
+				file,
+				line: node.loc.start.line,
+				message: `floating promise: ${callee.name}(…) result is dropped — await it, return it, or void it`
+			});
+		}
+	});
+	return issues;
+}
+
 /**
  * @param {string} text
  * @param {string} file
@@ -344,7 +391,9 @@ function main() {
 	const issues = files.flatMap((file) => {
 		const code = readFileSync(file, "utf8");
 		const found = [...scanText(code, file), ...scanA11y(code, file)];
-		if (file.endsWith(".js")) found.push(...scanTemplates(code, file), ...scanComments(code, file));
+		if (file.endsWith(".js")) {
+			found.push(...scanTemplates(code, file), ...scanComments(code, file), ...scanFloating(code, file));
+		}
 		return found;
 	});
 	for (const issue of issues) console.error(`${issue.file}:${issue.line} ${issue.message}`);
@@ -352,7 +401,7 @@ function main() {
 		console.error(`checks: ${issues.length} issue(s)`);
 		process.exit(1);
 	}
-	console.log("checks: links, routes, HTML escaping, a11y, and dead code OK");
+	console.log("checks: links, routes, HTML escaping, a11y, dead code, and floating promises OK");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

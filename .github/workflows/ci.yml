@@ -42,7 +42,7 @@ jobs:
               run: npx knip --production
             - name: Duplication (jscpd)
               run: npx jscpd --config .jscpd.json
-            - name: Link/route + XSS + a11y + dead-code checks
+            - name: Link/route + XSS + a11y + dead-code + floating-promise checks
               run: node tools/checks.mjs
             - name: Unit tests
               run: node --test tests/unit/*.test.mjs

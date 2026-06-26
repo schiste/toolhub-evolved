@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scanA11y, scanComments, scanTemplates, scanText } from "../../tools/checks.mjs";
+import { scanA11y, scanComments, scanFloating, scanTemplates, scanText } from "../../tools/checks.mjs";
 
 test("scanText flags external _blank links without rel=noopener", () => {
 	const bad = `<a href="https://x.test" target="_blank">x</a>`;
@@ -126,4 +126,24 @@ test("scanComments reports the comment's line number", () => {
 	const issues = scanComments(`const ok = 1;\n\n// legacyInit();`, "f.js");
 	assert.equal(issues.length, 1);
 	assert.equal(issues[0].line, 3);
+});
+
+// ---- scanFloating (unhandled async data calls) ----------------------------
+test("scanFloating flags a bare data-fetch call", () => {
+	const issues = scanFloating(`async function f() { apiGet("/tools/"); }`, "f.js");
+	assert.equal(issues.length, 1);
+	assert.match(issues[0].message, /floating promise/);
+});
+
+test("scanFloating accepts await/return/assignment/.catch/void", () => {
+	assert.deepEqual(scanFloating(`async function f() { await apiGet("/x"); }`, "f.js"), []);
+	assert.deepEqual(scanFloating(`function f() { return getTool("x"); }`, "f.js"), []);
+	assert.deepEqual(scanFloating(`async function f() { const d = await paginate("/x"); return d; }`, "f.js"), []);
+	assert.deepEqual(scanFloating(`function f() { apiGet("/x").catch(() => {}); }`, "f.js"), []);
+	assert.deepEqual(scanFloating(`function f() { void getToolsByName(["a"]); }`, "f.js"), []);
+});
+
+test("scanFloating ignores void UI functions and unrelated calls", () => {
+	assert.deepEqual(scanFloating(`function h() { render(); refreshHome(); }`, "f.js"), []);
+	assert.deepEqual(scanFloating(`function h() { doThing(); store.set("k", 1); }`, "f.js"), []);
 });
