@@ -25,9 +25,9 @@ import { viewNotFound } from "./static.js";
 /* ---- Lists overview + list detail -------------------------------------- */
 export async function viewLists() {
 	const data = await apiGet("/lists/", { page_size: "30" }).catch(() => ({ results: [] }));
-	const live = (data.results || []).map((list) => normalizeList(list));
+	const live = (data.results || []).map((/** @type {any} */ list) => normalizeList(list));
 	// When experimenting, the user's demo lists appear first (clearly tagged).
-	const mine = signedIn() ? demoLists().map((list) => listCardData(list)) : [];
+	const mine = signedIn() ? demoLists().map((/** @type {any} */ list) => listCardData(list)) : [];
 	const all = [...mine, ...live];
 	const html = `
 	<div class="container page">
@@ -38,16 +38,21 @@ export async function viewLists() {
 	</div>`;
 	return { title: "Curated lists — Toolhub", html };
 }
+/**
+ * @param {string} id
+ * @returns {Promise<{ title: string, html: string }>}
+ */
 export async function viewList(id) {
 	const isDemo = isDemoListId(id);
 	let l,
-		tools,
 		demoTag = "",
 		editBtn = "";
+	/** @type {Tool[]} */
+	let tools = [];
 	if (isDemo) {
 		const d = demoListGet(id);
 		if (!d) return viewNotFound();
-		tools = await getToolsByName(d.tools);
+		tools = /** @type {Tool[]} */ (await getToolsByName(d.tools));
 		l = { title: d.title || "Untitled list", description: d.description || "", toolCount: tools.length };
 		demoTag = ' <span class="exp-badge">Demo list</span>';
 		if (signedIn()) {
@@ -68,13 +73,13 @@ export async function viewList(id) {
 		<a class="back" href="/lists">← All lists</a>
 		<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(countLabel(l.toolCount, "tool", "tools"))}</span></h1>${editBtn}</div>
 		<div class="prose page__intro"${dirAttrs(l.description)}>${esc(l.description)}</div>
-		${tools.length > 0 ? grid("grid-tools", tools, (t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
+		${tools.length > 0 ? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
 	</div>`;
 	return { title: `${l.title} — Toolhub`, html };
 }
 // EXPERIMENTAL — your demo lists. Needs: GET /api/lists/ scoped to the user.
 export function viewMyLists() {
-	const cards = demoLists().map((list) => listCardData(list));
+	const cards = demoLists().map((/** @type {any} */ list) => listCardData(list));
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
@@ -88,11 +93,11 @@ export function viewMyLists() {
 // EXPERIMENTAL — favorites view. Tools are read by name (local-first via getTool); the
 // overlay only stores which names are favorited. Needs: GET /api/user/favorites/ in production.
 export async function viewFavorites() {
-	const tools = await getToolsByName(favNames());
+	const tools = /** @type {Tool[]} */ (await getToolsByName(favNames()));
 	await attachEndorsements(tools);
 	const body =
 		tools.length > 0
-			? grid("grid-tools", tools, (t) => toolCard(t))
+			? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t))
 			: `<p class="empty">No favorites yet. Tap the ${icon("starOutline")}<span class="skip-label">star</span> on any tool card or page to save it here.</p>`;
 	return {
 		title: "Favorites — Toolhub",
@@ -106,10 +111,14 @@ export async function viewFavorites() {
 	};
 }
 // EXPERIMENTAL — create/edit a demo list. Needs: POST/PUT /api/lists/.
+/**
+ * @param {string | null} id
+ * @returns {{ title: string, html: string, mount: () => void } | { title: string, html: string }}
+ */
 export function viewListEdit(id) {
 	const editing = id !== null && id !== undefined;
 	const src = editing ? demoListGet(id) : demoListNew();
-	if (editing && !src) return viewNotFound();
+	if (!src) return viewNotFound();
 	const work = {
 		id: src.id,
 		title: src.title || "",
@@ -137,9 +146,9 @@ export function viewListEdit(id) {
 		</form>
 	</div>`;
 	function mount() {
-		const toolsEl = $("[data-le-tools]"),
-			countEl = $("[data-le-count]"),
-			resultsEl = $("[data-le-results]");
+		const toolsEl = /** @type {HTMLElement} */ ($("[data-le-tools]")),
+			countEl = /** @type {HTMLElement} */ ($("[data-le-count]")),
+			resultsEl = /** @type {HTMLElement} */ ($("[data-le-results]"));
 		function renderTools() {
 			countEl.textContent = countLabel(work.tools.length, "tool", "tools");
 			toolsEl.innerHTML =
@@ -159,14 +168,15 @@ export function viewListEdit(id) {
 		}
 		renderTools();
 		toolsEl.addEventListener("click", (e) => {
-			const li = e.target.closest("[data-tn]");
+			const target = /** @type {EventTarget} */ (e.target);
+			const li = target.closest("[data-tn]");
 			if (!li) return;
-			const n = li.getAttribute("data-tn"),
+			const n = /** @type {string} */ (li.getAttribute("data-tn")),
 				i = work.tools.indexOf(n);
 			if (i === -1) return;
-			const up = e.target.closest('[data-move="up"]');
-			const down = e.target.closest('[data-move="down"]');
-			if (e.target.closest("[data-rm]")) {
+			const up = target.closest('[data-move="up"]');
+			const down = target.closest('[data-move="down"]');
+			if (target.closest("[data-rm]")) {
 				work.tools.splice(i, 1);
 			} else if ((up && i > 0) || (down && i < work.tools.length - 1)) {
 				work.tools.splice(i + (up ? -1 : 1), 0, work.tools.splice(i, 1)[0]);
@@ -176,16 +186,16 @@ export function viewListEdit(id) {
 			renderTools();
 		});
 		async function runSearch() {
-			const q = $input("#le-q").value.trim();
+			const q = /** @type {HTMLInputElement} */ ($input("#le-q")).value.trim();
 			if (!q) return;
 			resultsEl.innerHTML = '<p class="le__searching">Searching…</p>';
 			try {
 				const data = await apiGet("/search/tools/", { q, page_size: "8" });
-				const rows = (data.results || []).map((tool) => normalizeTool(tool));
+				const rows = (data.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
 				resultsEl.innerHTML =
 					rows.length > 0
 						? rows
-								.map((t) => {
+								.map((/** @type {Tool} */ t) => {
 									const inList = work.tools.includes(t.name);
 									return `<button class="le__result${inList ? " is-in" : ""}" type="button" data-add="${esc(t.name)}" ${inList ? "disabled" : ""}>
 						${inList ? icon("check") : icon("add")} <span${dirAttrs(t.title)}>${esc(t.title)}</span></button>`;
@@ -196,17 +206,19 @@ export function viewListEdit(id) {
 				resultsEl.innerHTML = '<p class="le__empty">Search failed.</p>';
 			}
 		}
-		$("[data-le-search]").addEventListener("click", runSearch);
-		$input("#le-q").addEventListener("keydown", (e) => {
+		/** @type {HTMLElement} */ ($("[data-le-search]")).addEventListener("click", runSearch);
+		/** @type {HTMLInputElement} */ ($input("#le-q")).addEventListener("keydown", (e) => {
 			if (e.key === "Enter") {
 				e.preventDefault();
 				runSearch();
 			}
 		});
 		resultsEl.addEventListener("click", (e) => {
-			const b = /** @type {HTMLButtonElement | null} */ (e.target.closest("[data-add]"));
+			const b = /** @type {HTMLButtonElement | null} */ (
+				/** @type {EventTarget} */ (e.target).closest("[data-add]")
+			);
 			if (!b) return;
-			const n = b.getAttribute("data-add");
+			const n = /** @type {string} */ (b.getAttribute("data-add"));
 			if (!work.tools.includes(n)) {
 				work.tools.push(n);
 				renderTools();
@@ -216,11 +228,11 @@ export function viewListEdit(id) {
 				if (ic) ic.outerHTML = icon("check");
 			}
 		});
-		$("[data-le-form]").addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-le-form]")).addEventListener("submit", (e) => {
 			e.preventDefault();
 			const title = fieldValue("le-title");
 			if (!title) {
-				$("#le-title").focus();
+				/** @type {HTMLElement} */ ($("#le-title")).focus();
 				return;
 			}
 			work.title = title;

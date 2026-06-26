@@ -3,9 +3,17 @@ import { dirAttrs, esc, normalizeVcsUrl, safeUrl } from "../core/dom.js";
 import { countLabel } from "../core/i18n.js";
 import { button } from "./button.js";
 
+/**
+ * @param {string} k
+ * @param {string | null | undefined} v
+ */
 export function metaItem(k, v) {
 	return `<div><div class="meta__k">${k}</div><div class="meta__v" dir="auto">${v || "—"}</div></div>`;
 }
+/**
+ * @param {string} label
+ * @param {string | null | undefined} url
+ */
 export function linkOut(label, url) {
 	const raw = String(url === null || url === undefined ? "" : url).trim();
 	if (!raw) return "";
@@ -20,10 +28,13 @@ export function linkOut(label, url) {
 	}
 	return `<span class="linkout-bad">${esc(label)}: <span${dirAttrs(raw)}>${esc(raw)}</span></span>`;
 }
+/** @param {string[] | null | undefined} a @returns {string} */
 export const wikiLabel = (a) =>
 	!a || a.length === 0 ? "Any wiki" : a.includes("*") ? "All wikis" : a.map((item) => esc(item)).join(", ");
+/** @param {string[] | null | undefined} a @returns {string} */
 export const langLabel = (a) => (!a || a.length === 0 ? "English (default)" : a.map((item) => esc(item)).join(", "));
 // Compact "works on" label for cards (full list shown on the detail page).
+/** @param {string[] | null | undefined} a @returns {string} */
 export const wikiShort = (a) =>
 	!a || a.length === 0
 		? "Any wiki"
@@ -32,6 +43,11 @@ export const wikiShort = (a) =>
 			: a.length === 1
 				? a[0]
 				: countLabel(a.length, "wiki", "wikis");
+/**
+ * @param {Tool} t
+ * @param {{ limit?: number | null; empty?: string }} [opts]
+ * @returns {string}
+ */
 export function keywordTags(t, opts = {}) {
 	const keys =
 		opts.limit === null || opts.limit === undefined ? t.keywords || [] : (t.keywords || []).slice(0, opts.limit);
@@ -46,6 +62,7 @@ export function keywordTags(t, opts = {}) {
 		""
 	);
 }
+/** @param {Tool} t */
 export function glanceChips(t) {
 	return [
 		t.toolType && `<span class="glance"${dirAttrs(t.toolType)}>${esc(t.toolType)}</span>`,

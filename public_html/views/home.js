@@ -35,20 +35,34 @@ const INTENT_AXES = {
 	}
 };
 
+/** @typedef {{ axis: string, term: string, wiki: string }} IntentState */
+/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[] }} HomeModel */
+/** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
+
 function intentAxisItems() {
 	return Object.entries(INTENT_AXES).map(([value, cfg]) => [value, cfg.label]);
 }
+/** @param {string} axis */
 function intentTermItems(axis) {
-	const cfg = INTENT_AXES[axis] || INTENT_AXES.audiences;
+	const cfg = INTENT_AXES[/** @type {keyof typeof INTENT_AXES} */ (axis)] || INTENT_AXES.audiences;
 	return [["", cfg.any], ...cfg.options];
 }
 function projectItems() {
 	return WIKI_OPTIONS.map(([value, label]) => [value, value ? label : "any project"]);
 }
+/**
+ * @param {string[][]} items
+ * @param {string} value
+ */
 function itemLabel(items, value) {
 	const hit = items.find(([v]) => v === (value || ""));
 	return hit ? hit[1] : (items[0] && items[0][1]) || "";
 }
+/**
+ * @param {string} kind
+ * @param {string[][]} items
+ * @param {string} [selected]
+ */
 function intentOptionButtons(kind, items, selected = "") {
 	return items
 		.map(
@@ -57,29 +71,46 @@ function intentOptionButtons(kind, items, selected = "") {
 		)
 		.join("");
 }
+/**
+ * @param {string} kind
+ * @param {string} label
+ * @param {string[][]} items
+ * @param {string} selected
+ */
 function intentChoice(kind, label, items, selected) {
 	return `<span class="intent__choice" data-intent-choice="${esc(kind)}">
 		<button class="intent__word" type="button" data-intent-trigger="${esc(kind)}" aria-haspopup="menu" aria-expanded="false"><span data-intent-label="${esc(kind)}">${esc(label)}</span></button>
 		<span class="intent__menu" data-intent-menu="${esc(kind)}" role="menu" hidden>${intentOptionButtons(kind, items, selected)}</span>
 	</span>`;
 }
+/**
+ * @param {{ role?: string, wiki?: string } | null | undefined} ctx
+ * @returns {IntentState}
+ */
 function intentStateFromContext(ctx) {
 	return { axis: "audiences", term: (ctx && ctx.role) || "", wiki: (ctx && ctx.wiki) || "" };
 }
+/** @param {IntentState} state */
 function homeFilterParams(state) {
 	const params = new URLSearchParams();
-	const cfg = INTENT_AXES[state.axis] || INTENT_AXES.audiences;
+	const cfg = INTENT_AXES[/** @type {keyof typeof INTENT_AXES} */ (state.axis)] || INTENT_AXES.audiences;
 	if (state.term) params.set(cfg.param, state.term);
 	if (state.wiki) params.set("wiki__term", state.wiki);
 	return params;
 }
+/** @param {IntentState} state */
 function hasHomeFilters(state) {
 	return Boolean(state.term || state.wiki);
 }
+/** @param {IntentState} state */
 function searchHrefForState(state) {
 	const params = homeFilterParams(state);
 	return `/search${params.toString() ? `?${params.toString()}` : ""}`;
 }
+/**
+ * @param {Tool} t
+ * @param {IntentState} state
+ */
 function toolMatchesIntent(t, state) {
 	if (state.term) {
 		const values = state.axis === "tasks" ? t.tasks : t.audiences;
@@ -88,9 +119,15 @@ function toolMatchesIntent(t, state) {
 	if (state.wiki && !wikiMatches(t.forWikis, state.wiki)) return false;
 	return true;
 }
+/**
+ * @param {Tool[]} tools
+ * @returns {Tool[]}
+ */
 function dedupeTools(tools) {
-	const seen = new Set(),
-		out = [];
+	/** @type {Set<string>} */
+	const seen = new Set();
+	/** @type {Tool[]} */
+	const out = [];
 	for (const t of tools) {
 		if (!t || !t.name || seen.has(t.name)) continue;
 		seen.add(t.name);
@@ -98,6 +135,10 @@ function dedupeTools(tools) {
 	}
 	return out;
 }
+/**
+ * @param {HomeTool[]} tools
+ * @returns {HomeTool[]}
+ */
 function sortedByEndorsements(tools) {
 	return [...tools].sort(
 		(a, b) =>
@@ -105,6 +146,7 @@ function sortedByEndorsements(tools) {
 			a.title.localeCompare(b.title)
 	);
 }
+/** @param {Tool[]} recentTools */
 function recentToolsHTML(recentTools) {
 	return (
 		recentTools
@@ -118,14 +160,27 @@ function recentToolsHTML(recentTools) {
 			.join("") || '<li class="recent__empty">No recently updated tools match this sentence.</li>'
 	);
 }
+/**
+ * @param {Tool[]} tools
+ * @param {string} empty
+ * @param {(t: Tool, i: number) => string} [render]
+ */
 function toolsGridHTML(tools, empty, render) {
 	return tools.length > 0
-		? grid("grid-tools", tools, render || ((t) => toolCard(t)))
+		? grid("grid-tools", tools, render || ((/** @type {Tool} */ t) => toolCard(t)))
 		: `<p class="empty">${esc(empty)}</p>`;
 }
+/**
+ * @param {ToolList[]} lists
+ * @param {string} empty
+ */
 function listsGridHTML(lists, empty) {
 	return lists.length > 0 ? grid("grid-lists", lists, listCard) : `<p class="empty">${esc(empty)}</p>`;
 }
+/**
+ * @param {HomeModel} model
+ * @param {IntentState} state
+ */
 function renderHomeMain(model, state) {
 	const filtered = hasHomeFilters(state);
 	const featuredHref = filtered
@@ -141,6 +196,10 @@ function renderHomeMain(model, state) {
 		<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>
 		${listsGridHTML(model.lists.slice(0, 6), "No curated lists match this sentence.")}`;
 }
+/**
+ * @param {IntentState} state
+ * @returns {Promise<HomeModel>}
+ */
 async function homeSectionsModel(state) {
 	const filters = homeFilterParams(state);
 	const filtered = filters.toString() !== "";
@@ -152,13 +211,22 @@ async function homeSectionsModel(state) {
 	toolParams.set("page_size", "24");
 	const [flists, recent, filteredToolsData] = await Promise.all([
 		apiGet("/lists/", listParams).catch(() => ({ results: [] })),
-		apiGet("/search/tools/", recentParams).catch(() => ({ results: [] })),
-		filtered ? apiGet("/search/tools/", toolParams).catch(() => ({ results: [] })) : Promise.resolve(null)
+		apiGet("/search/tools/", /** @type {Record<string, string>} */ (/** @type {unknown} */ (recentParams))).catch(
+			() => ({ results: [] })
+		),
+		filtered
+			? apiGet(
+					"/search/tools/",
+					/** @type {Record<string, string>} */ (/** @type {unknown} */ (toolParams))
+				).catch(() => ({ results: [] }))
+			: Promise.resolve(null)
 	]);
-	let lists = (flists.results || []).map((list) => normalizeList(list));
+	/** @type {ToolList[]} */
+	let lists = (flists.results || []).map((/** @type {any} */ list) => normalizeList(list));
+	/** @type {Tool[]} */
 	let featured;
 	if (filtered) {
-		featured = (filteredToolsData.results || []).map((tool) => normalizeTool(tool));
+		featured = (filteredToolsData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
 		await attachEndorsements(featured);
 		const matchingNames = new Set(featured.map((t) => t.name));
 		lists = lists.filter((l) =>
@@ -168,7 +236,7 @@ async function homeSectionsModel(state) {
 		featured = dedupeTools(lists.flatMap((l) => l.tools || []));
 		await attachEndorsements(featured);
 	}
-	const recentTools = (recent.results || []).map((tool) => normalizeTool(tool));
+	const recentTools = (recent.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
 	const mostListed = sortedByEndorsements(featured);
 	return {
 		lists,
@@ -225,14 +293,14 @@ export async function viewHome() {
 		title: "Toolhub — discover Wikimedia tools",
 		html,
 		mount() {
-			$("[data-home-search]").addEventListener("submit", (e) => {
+			/** @type {HTMLElement} */ ($("[data-home-search]")).addEventListener("submit", (e) => {
 				e.preventDefault();
-				const q = $input("#home-q").value.trim();
+				const q = /** @type {HTMLInputElement} */ ($input("#home-q")).value.trim();
 				navigateTo(`/search${q ? `?q=${encodeURIComponent(q)}` : ""}`);
 			});
-			const intentForm = $("[data-intent-form]");
-			const homeMain = $("[data-home-main]");
-			const homeRecent = $("[data-home-recent]");
+			const intentForm = /** @type {HTMLElement} */ ($("[data-intent-form]"));
+			const homeMain = /** @type {HTMLElement} */ ($("[data-home-main]"));
+			const homeRecent = /** @type {HTMLElement} */ ($("[data-home-recent]"));
 			const state = {
 				axis: intentForm.dataset.axis || "audiences",
 				term: intentForm.dataset.term || "",
@@ -247,6 +315,7 @@ export async function viewHome() {
 					trigger.setAttribute("aria-expanded", "false")
 				);
 			};
+			/** @param {string | null} kind @param {boolean | null | undefined} on */
 			const setMenu = (kind, on) => {
 				closeMenus();
 				if (!on) return;
@@ -260,20 +329,29 @@ export async function viewHome() {
 				const axisItems = intentAxisItems();
 				const termItems = intentTermItems(state.axis);
 				const wikiItems = projectItems();
-				$('[data-intent-label="axis"]', intentForm).textContent = itemLabel(axisItems, state.axis);
-				$('[data-intent-label="term"]', intentForm).textContent = itemLabel(termItems, state.term);
-				$('[data-intent-label="wiki"]', intentForm).textContent = itemLabel(wikiItems, state.wiki);
-				$('[data-intent-menu="axis"]', intentForm).innerHTML = intentOptionButtons(
+				/** @type {HTMLElement} */ ($('[data-intent-label="axis"]', intentForm)).textContent = itemLabel(
+					axisItems,
+					state.axis
+				);
+				/** @type {HTMLElement} */ ($('[data-intent-label="term"]', intentForm)).textContent = itemLabel(
+					termItems,
+					state.term
+				);
+				/** @type {HTMLElement} */ ($('[data-intent-label="wiki"]', intentForm)).textContent = itemLabel(
+					wikiItems,
+					state.wiki
+				);
+				/** @type {HTMLElement} */ ($('[data-intent-menu="axis"]', intentForm)).innerHTML = intentOptionButtons(
 					"axis",
 					axisItems,
 					state.axis
 				);
-				$('[data-intent-menu="term"]', intentForm).innerHTML = intentOptionButtons(
+				/** @type {HTMLElement} */ ($('[data-intent-menu="term"]', intentForm)).innerHTML = intentOptionButtons(
 					"term",
 					termItems,
 					state.term
 				);
-				$('[data-intent-menu="wiki"]', intentForm).innerHTML = intentOptionButtons(
+				/** @type {HTMLElement} */ ($('[data-intent-menu="wiki"]', intentForm)).innerHTML = intentOptionButtons(
 					"wiki",
 					wikiItems,
 					state.wiki
@@ -284,6 +362,7 @@ export async function viewHome() {
 			const persistIntent = () => {
 				setUserContext({ wiki: state.wiki, role: state.axis === "audiences" ? state.term : "" });
 			};
+			/** @param {HomeModel} model */
 			const renderHomeModel = (model) => {
 				homeMain.innerHTML = renderHomeMain(model, state);
 				homeRecent.innerHTML = recentToolsHTML(model.recentTools);
@@ -311,7 +390,8 @@ export async function viewHome() {
 				}
 			};
 			intentForm.addEventListener("click", (e) => {
-				const trigger = e.target.closest("[data-intent-trigger]");
+				const target = /** @type {EventTarget} */ (e.target);
+				const trigger = target.closest("[data-intent-trigger]");
 				if (trigger) {
 					e.preventDefault();
 					const kind = trigger.getAttribute("data-intent-trigger");
@@ -319,7 +399,7 @@ export async function viewHome() {
 					setMenu(kind, menu && menu.hidden);
 					return;
 				}
-				const option = e.target.closest("[data-intent-option]");
+				const option = target.closest("[data-intent-option]");
 				if (!option) return;
 				e.preventDefault();
 				const kind = option.getAttribute("data-intent-option");
@@ -337,7 +417,7 @@ export async function viewHome() {
 				refreshHome();
 				closeMenus();
 			});
-			$("[data-intent-clear]", intentForm).addEventListener("click", () => {
+			/** @type {HTMLElement} */ ($("[data-intent-clear]", intentForm)).addEventListener("click", () => {
 				state.axis = "audiences";
 				state.term = "";
 				state.wiki = "";

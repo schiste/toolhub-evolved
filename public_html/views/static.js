@@ -5,6 +5,11 @@ import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 
 /* ---- Static prose pages (T9) ------------------------------------------- */
+/**
+ * @param {string} title
+ * @param {string} bodyHtml
+ * @returns {{ title: string, html: string }}
+ */
 export function prosePage(title, bodyHtml) {
 	return {
 		title: `${title} — Toolhub`,
@@ -12,6 +17,7 @@ export function prosePage(title, bodyHtml) {
 	};
 }
 const EXTERNAL_REL = "noopener nofollow";
+/** @param {string} url @param {string} label */
 export const ext = (url, label) =>
 	`<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
 // Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
@@ -187,12 +193,20 @@ export const STATIC = {
 		updated".</p>`
 	}
 };
+/** @param {string} slug */
 export function viewStatic(slug) {
-	const p = STATIC[slug];
+	const p = STATIC[/** @type {keyof typeof STATIC} */ (slug)];
 	return p ? prosePage(p.title, p.body) : viewNotFound();
 }
 
 /* ---- Help maintain Toolhub: the contribution hub ----------------------- */
+/**
+ * @param {string} iconHtml
+ * @param {string} title
+ * @param {string} desc
+ * @param {string} url
+ * @param {boolean} [internal]
+ */
 export function linkCard(iconHtml, title, desc, url, internal) {
 	const href = internal ? url : safeUrl(url);
 	const attrs = internal ? "" : ` target="_blank" rel="${EXTERNAL_REL}"`;
@@ -202,6 +216,12 @@ export function linkCard(iconHtml, title, desc, url, internal) {
 		<span class="linkcard__body"><span class="linkcard__title">${esc(title)}${arrow}</span>
 		<span class="linkcard__desc">${esc(desc)}</span></span></a>`;
 }
+/**
+ * @param {string} iconHtml
+ * @param {string} title
+ * @param {string} desc
+ * @param {string} href
+ */
 function proxyCard(iconHtml, title, desc, href) {
 	return `<a class="linkcard" href="${esc(href)}" target="_blank" rel="${EXTERNAL_REL}">
 		<span class="linkcard__icon" aria-hidden="true">${iconHtml}</span>
@@ -291,6 +311,11 @@ export async function viewApiDocs() {
 	};
 }
 /* ---- Sign-in-required stubs (auth/write features) ---------------------- */
+/**
+ * @param {string} title
+ * @param {string} [lead]
+ * @returns {{ title: string, html: string }}
+ */
 export function signInPage(title, lead) {
 	return {
 		title: `${title} — Toolhub`,

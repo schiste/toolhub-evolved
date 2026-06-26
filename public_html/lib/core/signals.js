@@ -8,6 +8,7 @@ import { memoizeAsync } from "./util.js";
 /* ---- Listing completeness --------------------------------------------------
    What fraction of the toolinfo a maintainer could fill is actually filled.
    Doubles as a user quality cue and a maintainer checklist. */
+/** @type {Array<{ key: string, label: string, ok: (t: Tool) => boolean }>} */
 const COMPLETENESS_FIELDS = [
 	{ key: "description", label: "Description", ok: (t) => hasValue(t.description) && t.description.length >= 30 },
 	{ key: "url", label: "Tool URL", ok: (t) => hasValue(t.url) },
@@ -23,6 +24,7 @@ const COMPLETENESS_FIELDS = [
 	{ key: "icon", label: "Icon", ok: (t) => hasValue(t.icon) },
 	{ key: "contact", label: "Issue tracker or feedback", ok: (t) => hasValue(t.bugtracker) || hasValue(t.feedback) }
 ];
+/** @param {Tool} t */
 export function completeness(t) {
 	const items = COMPLETENESS_FIELDS.map((f) => ({ key: f.key, label: f.label, ok: Boolean(f.ok(t)) }));
 	const filled = items.filter((i) => i.ok).length;
@@ -32,6 +34,7 @@ export function completeness(t) {
 /* ---- Freshness ------------------------------------------------------------
    Is the listing recently maintained? Derived from the real modified date. */
 const FRESH_MS = 18 * 30 * 24 * 60 * 60 * 1000; // ~18 months
+/** @param {Tool} t */
 export function freshness(t) {
 	const d = t.modified ? new Date(t.modified) : null;
 	if (!d || Number.isNaN(d.getTime())) return { known: false, fresh: false };
@@ -58,6 +61,10 @@ async function buildMemberships() {
 }
 // Returns Map<toolName, [{id,title}]>; memoized for the session.
 export const listMemberships = memoizeAsync(() => buildMemberships().catch(() => new Map()));
+/**
+ * @param {string} name
+ * @param {Map<string, Array<{ id: string, title: string }>>} map
+ */
 export function endorsementOf(name, map) {
 	const lists = (map && map.get(name)) || [];
 	return { count: lists.length, lists };
@@ -71,11 +78,12 @@ export function endorsementOf(name, map) {
 const CONTEXT_KEY = "toolhub-context";
 export function getUserContext() {
 	try {
-		return JSON.parse(localStorage.getItem(CONTEXT_KEY)) || {};
+		return JSON.parse(/** @type {string} */ (localStorage.getItem(CONTEXT_KEY))) || {};
 	} catch {
 		return {};
 	}
 }
+/** @param {{ wiki?: string, role?: string } | null | undefined} ctx */
 export function setUserContext(ctx) {
 	try {
 		if (ctx && (ctx.wiki || ctx.role)) {
@@ -92,9 +100,17 @@ export function hasContext() {
 // Wiki match is explicit: an exact id, or a "*.suffix" family entry (e.g.
 // "*.wikipedia.org" fits "en.wikipedia.org"). "*" (all wikis) is NOT a specific
 // fit, so the cue stays meaningful instead of matching everything.
+/**
+ * @param {string[]} forWikis
+ * @param {string} wiki
+ */
 export function wikiMatches(forWikis, wiki) {
 	return (forWikis || []).some((w) => w === wiki || (w.startsWith("*.") && wiki.endsWith(w.slice(1))));
 }
+/**
+ * @param {Tool} t
+ * @param {{ wiki?: string, role?: string }} [ctx]
+ */
 export function fitsContext(t, ctx) {
 	const activeCtx = ctx || getUserContext();
 	const wiki = activeCtx.wiki ? wikiMatches(t.forWikis, activeCtx.wiki) : false;
@@ -105,17 +121,20 @@ export function fitsContext(t, ctx) {
 /* ---- View helpers (shared by the card-grid views) ------------------------- */
 // Stable-sort tools so context-fitting ones lead, but only when a context is
 // set (otherwise the original order is preserved). Fit is computed once per tool.
+/** @param {Tool[]} tools */
 export function rankFitsFirst(tools) {
 	if (!hasContext()) return tools;
-	const fit = new Map(tools.map((t) => [t, fitsContext(t).fits ? 1 : 0]));
+	const fit = new Map(tools.map((t) => /** @type {[Tool, number]} */ ([t, fitsContext(t).fits ? 1 : 0])));
 	return tools
-		.map((t, i) => [t, i])
-		.sort((a, b) => fit.get(b[0]) - fit.get(a[0]) || a[1] - b[1])
+		.map((t, i) => /** @type {[Tool, number]} */ ([t, i]))
+		.sort((a, b) => (fit.get(b[0]) || 0) - (fit.get(a[0]) || 0) || a[1] - b[1])
 		.map((x) => x[0]);
 }
 // Attach `.endorsement` to each tool from the (memoized) membership map.
+/** @param {Tool[]} tools */
 export async function attachEndorsements(tools) {
 	const lm = await listMemberships();
-	for (const t of tools) t.endorsement = endorsementOf(t.name, lm);
+	// `endorsement` is a view-attached extra not declared on the Tool interface.
+	for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, lm);
 	return tools;
 }

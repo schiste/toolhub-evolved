@@ -3,12 +3,21 @@ import { $$, esc } from "../core/dom.js";
 import { isFav } from "../core/store.js";
 import { icon } from "../atoms/icon.js";
 
+/**
+ * @param {string} name
+ * @param {{ label?: boolean; cls?: string }} [opts]
+ * @returns {string}
+ */
 export function favBtn(name, opts = {}) {
 	const on = isFav(name);
 	const txt = opts.label ? `<span class="favbtn__t">${on ? "Saved" : "Save"}</span>` : "";
 	return `<button class="favbtn${on ? " is-on" : ""}${opts.cls ? ` ${opts.cls}` : ""}" type="button" data-fav="${esc(name)}" aria-pressed="${on}" aria-label="${on ? "Remove from favorites" : "Save to favorites"}"><span class="favbtn__ic" aria-hidden="true">${on ? icon("star") : icon("starOutline")}</span>${txt}</button>`;
 }
 // Reflect a toggled favorite on its button(s) in place (no full re-render).
+/**
+ * @param {string | null} name
+ * @param {boolean} on
+ */
 export function syncFavButtons(name, on) {
 	$$("[data-fav]")
 		.filter((b) => b.getAttribute("data-fav") === name)

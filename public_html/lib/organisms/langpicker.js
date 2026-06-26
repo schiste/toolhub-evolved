@@ -49,6 +49,7 @@ function activeEntry() {
 
 // The "small popin" copy shown after a language is chosen. This is the product
 // voice of the prototype, so it lives in one place and is easy to retune.
+/** @param {string | null} englishName */
 export function selectionNote(englishName) {
 	return `<strong>${esc(englishName)}</strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype is English only for now.`;
 }
@@ -93,7 +94,7 @@ export function toggleLangMenu() {
 	if (!m) return;
 	const willOpen = m.hidden;
 	m.hidden = !willOpen;
-	b.setAttribute("aria-expanded", String(willOpen));
+	if (b) b.setAttribute("aria-expanded", String(willOpen));
 	if (!willOpen) {
 		const note = $("#lang-note");
 		if (note) note.hidden = true;
@@ -105,6 +106,7 @@ export function toggleLangMenu() {
 
 // Reveal the "not available yet" popin for the chosen language without changing
 // the active locale — the prototype stays English only.
+/** @param {string | null} englishName */
 export function showLangNote(englishName) {
 	const note = $("#lang-note");
 	if (!note) return;

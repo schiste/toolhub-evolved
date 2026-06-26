@@ -19,11 +19,23 @@ const TERM_FACETS = {
 	type: "type"
 };
 
+/**
+ * @typedef {{ tools: Tool[], byName: Map<string, Tool>, vectors: Map<string, Map<string, number>>, df: Map<string, number>, N: number }} SimIndex
+ */
+
+/** @param {string} term */
 function facetOf(term) {
 	const prefix = term.slice(0, term.indexOf(":"));
-	return TERM_FACETS[prefix];
+	return TERM_FACETS[/** @type {keyof typeof TERM_FACETS} */ (prefix)];
 }
 
+/**
+ * @param {string[]} out
+ * @param {Set<string>} seen
+ * @param {string} prefix
+ * @param {unknown[] | null | undefined} values
+ * @param {{ skipAllWikis?: boolean }} [opts]
+ */
 function pushTerms(out, seen, prefix, values, opts) {
 	for (const raw of values || []) {
 		const value = normStr(raw);
@@ -35,8 +47,11 @@ function pushTerms(out, seen, prefix, values, opts) {
 	}
 }
 
+/** @param {Tool} tool */
 function termsOf(tool) {
+	/** @type {string[]} */
 	const out = [];
+	/** @type {Set<string>} */
 	const seen = new Set();
 	pushTerms(out, seen, "task", tool.tasks);
 	pushTerms(out, seen, "kw", tool.keywords);
@@ -47,12 +62,20 @@ function termsOf(tool) {
 	return out;
 }
 
+/**
+ * @param {string} term
+ * @param {SimIndex} index
+ */
 function idf(term, index) {
 	const n = Math.max(index.N || 0, 1);
 	const df = index.df.get(term) || 0;
 	return Math.log(n / (1 + df)) + 1;
 }
 
+/**
+ * @param {Map<string, number>} vector
+ * @returns {Map<string, number>}
+ */
 function normalizeVector(vector) {
 	let magnitude = 0;
 	for (const value of vector.values()) magnitude += value * value;
@@ -62,11 +85,17 @@ function normalizeVector(vector) {
 	return vector;
 }
 
+/**
+ * @param {Tool} tool
+ * @param {SimIndex} index
+ * @returns {Map<string, number>}
+ */
 export function vectorFor(tool, index) {
+	/** @type {Map<string, number>} */
 	const vector = new Map();
 	for (const term of termsOf(tool)) {
 		const facet = facetOf(term);
-		const facetWeight = FACET_WEIGHTS[facet] || 1;
+		const facetWeight = FACET_WEIGHTS[/** @type {keyof typeof FACET_WEIGHTS} */ (facet)] || 1;
 		vector.set(term, idf(term, index) * facetWeight);
 	}
 	return normalizeVector(vector);
@@ -92,6 +121,10 @@ async function buildSimilarityIndex() {
 
 export const getSimilarityIndex = memoizeAsync(buildSimilarityIndex);
 
+/**
+ * @param {Map<string, number>} vecA
+ * @param {Map<string, number>} vecB
+ */
 export function cosine(vecA, vecB) {
 	const small = vecA.size <= vecB.size ? vecA : vecB;
 	const large = small === vecA ? vecB : vecA;
@@ -103,16 +136,24 @@ export function cosine(vecA, vecB) {
 	return Math.max(0, Math.min(1, score));
 }
 
+/** @param {string} term */
 function labelOf(term) {
 	const i = term.indexOf(":");
 	return i === -1 ? term : term.slice(i + 1);
 }
 
+/**
+ * @param {Map<string, number>} sourceVec
+ * @param {string} otherName
+ * @param {SimIndex} index
+ * @returns {string[]}
+ */
 function sharedTermsForVector(sourceVec, otherName, index) {
 	const otherVec = index.vectors.get(otherName);
 	if (!otherVec) return [];
 	const small = sourceVec.size <= otherVec.size ? sourceVec : otherVec;
 	const large = small === sourceVec ? otherVec : sourceVec;
+	/** @type {Array<{ label: string, weight: number }>} */
 	const shared = [];
 	for (const [term, weight] of small) {
 		const other = large.get(term);
@@ -123,10 +164,18 @@ function sharedTermsForVector(sourceVec, otherName, index) {
 	return shared.slice(0, 5).map((item) => item.label);
 }
 
+/**
+ * @param {Tool} tool
+ * @param {SimIndex} index
+ * @param {number} [k]
+ * @returns {Array<{ tool: Tool, score: number, shared: string[] }>}
+ */
 export function nearestNeighbors(tool, index, k = 6) {
 	const sourceVec = vectorFor(tool, index);
 	if (sourceVec.size === 0) return [];
+	/** @type {Array<{ tool: Tool, score: number, shared: string[] }>} */
 	const out = [];
+	/** @type {Set<string>} */
 	const seen = new Set();
 	for (const other of index.tools) {
 		if (!other || other.name === tool.name || seen.has(other.name)) continue;

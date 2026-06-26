@@ -13,16 +13,18 @@ import { toolCard } from "../lib/organisms/tool-card.js";
 export const PAGE_SIZE_OPTIONS = [12, 24, 48];
 export const DEFAULT_PAGE_SIZE = 24;
 const CLIENT_STATUS_FILTERS = [
-	{ value: "deprecated", label: "Deprecated", match: (t) => t.deprecated },
-	{ value: "experimental", label: "Experimental", match: (t) => t.experimental }
+	{ value: "deprecated", label: "Deprecated", match: (/** @type {Tool} */ t) => t.deprecated },
+	{ value: "experimental", label: "Experimental", match: (/** @type {Tool} */ t) => t.experimental }
 ];
 const CLIENT_STATUS_VALUES = new Set(CLIENT_STATUS_FILTERS.map((s) => s.value));
 
+/** @param {string | null} value */
 function activePageSize(value) {
-	const parsed = Number.parseInt(value, 10);
+	const parsed = Number.parseInt(value ?? "", 10);
 	return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
 }
 
+/** @param {string | null} value */
 function activeClientStatuses(value) {
 	return new Set(
 		String(value || "")
@@ -32,6 +34,11 @@ function activeClientStatuses(value) {
 	);
 }
 
+/**
+ * @param {string | null} ordering
+ * @param {string} fallback
+ * @returns {string}
+ */
 function sortFromOfficialOrdering(ordering, fallback) {
 	if (ordering === "-modified_date") return "recent";
 	if (ordering === "name") return "name";
@@ -39,6 +46,7 @@ function sortFromOfficialOrdering(ordering, fallback) {
 	return fallback;
 }
 
+/** @param {Set<string>} selectedStatuses */
 function renderStatusFacetGroup(selectedStatuses) {
 	const rows = CLIENT_STATUS_FILTERS.map((s) => {
 		const checked = selectedStatuses.has(s.value) ? " checked" : "";
@@ -50,7 +58,7 @@ function renderStatusFacetGroup(selectedStatuses) {
 export async function viewSearch() {
 	const usp = new URLSearchParams(location.search || "");
 	const q = usp.get("q") || "";
-	const page = Math.max(1, Number.parseInt(usp.get("page"), 10) || 1);
+	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
 	const pageSize = activePageSize(usp.get("page_size"));
 	const exp = expOn();
 	const defaultSort = exp ? "relevance" : "recent";
@@ -74,8 +82,9 @@ export async function viewSearch() {
 		}
 	}
 
-	const data = await apiGet("/search/tools/", api);
-	let results = (data.results || []).map((tool) => normalizeTool(tool));
+	const data = await apiGet("/search/tools/", /** @type {Record<string, string>} */ (/** @type {unknown} */ (api)));
+	/** @type {Tool[]} */
+	let results = (data.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
 	await attachEndorsements(results);
 	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
 	if (clientStatuses.size > 0) {
@@ -143,37 +152,41 @@ export async function viewSearch() {
 	</div>`;
 
 	function mount() {
-		$input("#sort").value = sort;
-		$input("#page-size").value = String(pageSize);
+		/** @type {HTMLInputElement} */ ($input("#sort")).value = sort;
+		/** @type {HTMLInputElement} */ ($input("#page-size")).value = String(pageSize);
+		/** @param {{ page?: number }} extra */
 		const navigate = (extra) => {
 			const u = new URLSearchParams();
-			const qv = $input("#facet-q").value.trim();
+			const qv = /** @type {HTMLInputElement} */ ($input("#facet-q")).value.trim();
 			if (qv) u.set("q", qv);
 			$$(".facets input[type=checkbox][data-facet]:checked").forEach((c) =>
-				u.append(c.getAttribute("data-facet"), /** @type {HTMLInputElement} */ (c).value)
+				u.append(
+					/** @type {string} */ (c.getAttribute("data-facet")),
+					/** @type {HTMLInputElement} */ (c).value
+				)
 			);
 			const statuses = $$(".facets input[type=checkbox][data-client-status]:checked").map((c) =>
 				c.getAttribute("data-client-status")
 			);
 			if (statuses.length > 0) u.set("status", statuses.join(","));
-			const sv = $input("#sort").value;
+			const sv = /** @type {HTMLInputElement} */ ($input("#sort")).value;
 			if (sv && sv !== defaultSort) u.set("sort", sv);
-			const psv = activePageSize($input("#page-size").value);
+			const psv = activePageSize(/** @type {HTMLInputElement} */ ($input("#page-size")).value);
 			if (psv !== DEFAULT_PAGE_SIZE) u.set("page_size", String(psv));
-			if (extra && extra.page > 1) u.set("page", String(extra.page));
+			if (extra && extra.page && extra.page > 1) u.set("page", String(extra.page));
 			navigateTo(`/search${u.toString() ? `?${u.toString()}` : ""}`);
 		};
-		$(".facets").addEventListener("change", () => navigate({}));
-		$input("#sort").addEventListener("change", () => navigate({}));
-		$input("#page-size").addEventListener("change", () => navigate({}));
-		$("[data-facet-q]").addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($(".facets")).addEventListener("change", () => navigate({}));
+		/** @type {HTMLInputElement} */ ($input("#sort")).addEventListener("change", () => navigate({}));
+		/** @type {HTMLInputElement} */ ($input("#page-size")).addEventListener("change", () => navigate({}));
+		/** @type {HTMLElement} */ ($("[data-facet-q]")).addEventListener("submit", (e) => {
 			e.preventDefault();
 			navigate({});
 		});
-		$(".pager").addEventListener("click", (e) => {
-			const b = e.target.closest("[data-page]");
+		/** @type {HTMLElement} */ ($(".pager")).addEventListener("click", (e) => {
+			const b = /** @type {EventTarget} */ (e.target).closest("[data-page]");
 			if (!b) return;
-			navigate({ page: Number.parseInt(b.getAttribute("data-page"), 10) });
+			navigate({ page: Number.parseInt(/** @type {string} */ (b.getAttribute("data-page")), 10) });
 		});
 	}
 	return { title: q ? `“${q}” — Toolhub` : "Browse tools — Toolhub", html, mount };

@@ -37,7 +37,10 @@ import {
 	FIXTURE_TOOL_EXPERIMENTAL
 } from "./_fixtures.js";
 
-const STYLEGUIDE_TOOLS = [FIXTURE_TOOL, FIXTURE_TOOL_DEPRECATED, FIXTURE_TOOL_EXPERIMENTAL];
+const SG_TOOL = /** @type {Tool} */ (FIXTURE_TOOL);
+const SG_TOOL_DEPRECATED = /** @type {Tool} */ (FIXTURE_TOOL_DEPRECATED);
+const SG_TOOL_EXPERIMENTAL = /** @type {Tool} */ (FIXTURE_TOOL_EXPERIMENTAL);
+const STYLEGUIDE_TOOLS = [SG_TOOL, SG_TOOL_DEPRECATED, SG_TOOL_EXPERIMENTAL];
 const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
@@ -132,28 +135,29 @@ const FALLBACK_TOKENS = {
 
 function seedFixtureIndex() {
 	STYLEGUIDE_TOOLS.forEach((tool) => {
-		INDEX[tool.name] = tool;
+		/** @type {Record<string, Tool>} */ (INDEX)[tool.name] = tool;
 	});
 }
 
+/** @param {() => string} render */
 function withStyleguideDemoState(render) {
 	const lists = [
 		{
 			id: "demo-styleguide-campaign",
 			title: FIXTURE_LIST.title,
 			description: FIXTURE_LIST.description,
-			tools: [FIXTURE_TOOL.name, FIXTURE_TOOL_EXPERIMENTAL.name]
+			tools: [SG_TOOL.name, SG_TOOL_EXPERIMENTAL.name]
 		},
 		{
 			id: "demo-styleguide-thanks",
 			title: "Tools to thank",
 			description: "Tools whose maintainers deserve appreciation.",
-			tools: [FIXTURE_TOOL_DEPRECATED.name]
+			tools: [SG_TOOL_DEPRECATED.name]
 		}
 	];
 	return withDemoFixture(
 		{
-			[DEMO_KEYS.favorites]: [FIXTURE_TOOL_DEPRECATED.name],
+			[DEMO_KEYS.favorites]: [SG_TOOL_DEPRECATED.name],
 			[DEMO_KEYS.lists]: lists
 		},
 		render
@@ -162,7 +166,7 @@ function withStyleguideDemoState(render) {
 
 function fitChipExample() {
 	const prev = getUserContext();
-	const fittingTool = { ...FIXTURE_TOOL, audiences: ["editor"], forWikis: ["wikidata.org"] };
+	const fittingTool = { ...SG_TOOL, audiences: ["editor"], forWikis: ["wikidata.org"] };
 	setUserContext({ wiki: "wikidata.org", role: "editor" });
 	try {
 		return fitChip(fittingTool) || `<span class="signal signal--fit">${icon("check")} Fits you</span>`;
@@ -172,7 +176,7 @@ function fitChipExample() {
 }
 
 function listingCompletenessExample() {
-	const complete = completeness(FIXTURE_TOOL);
+	const complete = completeness(SG_TOOL);
 	return `<div class="panel">
 		<h3 class="panel__title">Listing completeness</h3>
 		${completenessMeter(complete)}
@@ -481,10 +485,10 @@ function signInNoteExample() {
 
 function metaExample() {
 	return `<div class="detail__meta">
-		${metaItem("License", FIXTURE_TOOL.license)}
-		${metaItem("Wikis", wikiLabel(FIXTURE_TOOL.forWikis))}
-		${metaItem("Maintainer", FIXTURE_TOOL.maintainer)}
-		${metaItem("Tool type", FIXTURE_TOOL.toolType)}
+		${metaItem("License", SG_TOOL.license)}
+		${metaItem("Wikis", wikiLabel(SG_TOOL.forWikis))}
+		${metaItem("Maintainer", SG_TOOL.maintainer)}
+		${metaItem("Tool type", SG_TOOL.toolType)}
 	</div>`;
 }
 
@@ -610,6 +614,10 @@ function runsExample() {
 	</table>`;
 }
 
+/**
+ * @param {string} title
+ * @param {string} body
+ */
 function section(title, body) {
 	return `<section class="sg-section" aria-labelledby="sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}">
 		<h2 class="sg-section__title" id="sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}">${esc(title)}</h2>
@@ -617,6 +625,12 @@ function section(title, body) {
 	</section>`;
 }
 
+/**
+ * @param {string} name
+ * @param {string} layer
+ * @param {string} html
+ * @param {{ wide?: boolean, compact?: boolean }} [opts]
+ */
 function example(name, layer, html, opts = {}) {
 	const shown = html || '<span class="sg-empty">No visual markup in this state.</span>';
 	return `<figure class="sg-example${opts.wide ? " sg-example--wide" : ""}${opts.compact ? " sg-example--compact" : ""}">
@@ -752,34 +766,34 @@ function atomsSection() {
 		`
 		<div class="sg-examples">
 			${example("avatar(title)", "atoms", avatar("Citation Helper"))}
-			${example('toolIcon(tool, "lg")', "atoms", toolIcon(FIXTURE_TOOL, "lg"))}
-			${example("statusBadge(healthy)", "atoms", statusBadge(FIXTURE_TOOL))}
-			${example("statusBadge(deprecated)", "atoms", statusBadge(FIXTURE_TOOL_DEPRECATED))}
-			${example("statusBadge(experimental)", "atoms", statusBadge(FIXTURE_TOOL_EXPERIMENTAL))}
-			${example("healthBadge(tool)", "atoms", healthBadge(FIXTURE_TOOL))}
-			${example("popularityBadge(tool)", "atoms", popularityBadge(FIXTURE_TOOL))}
+			${example('toolIcon(tool, "lg")', "atoms", toolIcon(SG_TOOL, "lg"))}
+			${example("statusBadge(healthy)", "atoms", statusBadge(SG_TOOL))}
+			${example("statusBadge(deprecated)", "atoms", statusBadge(SG_TOOL_DEPRECATED))}
+			${example("statusBadge(experimental)", "atoms", statusBadge(SG_TOOL_EXPERIMENTAL))}
+			${example("healthBadge(tool)", "atoms", healthBadge(SG_TOOL))}
+			${example("popularityBadge(tool)", "atoms", popularityBadge(SG_TOOL))}
 			${example("endorsementChip(5)", "atoms", endorsementChip(5))}
 			${example("completenessMeter({ filled: 7, total: 9 })", "atoms", completenessMeter({ filled: 7, total: 9 }))}
 			${example("completenessMeter({ filled: 9, total: 9 })", "atoms", completenessMeter({ filled: 9, total: 9 }))}
 			${example("fitChip(tool)", "atoms", fitChipExample())}
-			${example("thanksBlock(tool)", "atoms", thanksBlock(FIXTURE_TOOL))}
-			${example("usageBlock(tool)", "atoms", usageBlock(FIXTURE_TOOL))}
-			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(FIXTURE_TOOL)}</div>`, { wide: true })}
-			${example("glanceChips(tool)", "atoms", `<div class="sg-inline-list">${glanceChips(FIXTURE_TOOL)}</div>`, { wide: true })}
+			${example("thanksBlock(tool)", "atoms", thanksBlock(SG_TOOL))}
+			${example("usageBlock(tool)", "atoms", usageBlock(SG_TOOL))}
+			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(SG_TOOL)}</div>`, { wide: true })}
+			${example("glanceChips(tool)", "atoms", `<div class="sg-inline-list">${glanceChips(SG_TOOL)}</div>`, { wide: true })}
 			${example(
 				"fInput / fArea / fCheck / fSelect",
 				"atoms",
 				`<div class="sg-form">
-				${fInput("Tool title", "sg-tool-title", FIXTURE_TOOL.title, { req: true })}
-				${fArea("Description", "sg-tool-description", FIXTURE_TOOL.description, "Shown in search results and detail pages.")}
+				${fInput("Tool title", "sg-tool-title", SG_TOOL.title, { req: true })}
+				${fArea("Description", "sg-tool-description", SG_TOOL.description, "Shown in search results and detail pages.")}
 				<div class="le__checks">${fCheck("Experimental", "sg-tool-experimental", true)}${fCheck("Deprecated", "sg-tool-deprecated", false)}</div>
-				${fSelect("Tool type", "sg-tool-type", FIXTURE_TOOL.toolType, TOOL_TYPES)}
+				${fSelect("Tool type", "sg-tool-type", SG_TOOL.toolType, TOOL_TYPES)}
 			</div>`,
 				{ wide: true }
 			)}
 			${formControlsGroup()}
-			${example("metaItem(key, value)", "atoms", `<div class="detail__meta">${metaItem("License", FIXTURE_TOOL.license)}${metaItem("Wikis", wikiLabel(FIXTURE_TOOL.forWikis))}</div>`, { wide: true })}
-			${example("linkOut(label, url)", "atoms", linkOut("Repository", FIXTURE_TOOL.repository))}
+			${example("metaItem(key, value)", "atoms", `<div class="detail__meta">${metaItem("License", SG_TOOL.license)}${metaItem("Wikis", wikiLabel(SG_TOOL.forWikis))}</div>`, { wide: true })}
+			${example("linkOut(label, url)", "atoms", linkOut("Repository", SG_TOOL.repository))}
 		</div>`
 	);
 }
@@ -789,9 +803,9 @@ function moleculesSection() {
 		"Molecules",
 		`
 		<div class="sg-examples">
-			${example("favBtn(name)", "molecules", favBtn(FIXTURE_TOOL.name, { label: true }))}
-			${example("favBtn(savedName)", "molecules", favBtn(FIXTURE_TOOL_DEPRECATED.name, { label: true }))}
-			${example("saveToListControl(name)", "molecules", saveToListControl(FIXTURE_TOOL.name), { wide: true })}
+			${example("favBtn(name)", "molecules", favBtn(SG_TOOL.name, { label: true }))}
+			${example("favBtn(savedName)", "molecules", favBtn(SG_TOOL_DEPRECATED.name, { label: true }))}
+			${example("saveToListControl(name)", "molecules", saveToListControl(SG_TOOL.name), { wide: true })}
 			${example("renderFacetGroup(group, facets, selected)", "molecules", renderFacetGroup(FIXTURE_FACET_GROUP, FIXTURE_FACETS, FIXTURE_SELECTED_FACETS), { wide: true })}
 			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="Pagination">${renderPager(2, 7)}</nav>`, { wide: true })}
 			${example(".acct__btn", "molecules", accountButtonExample())}
@@ -824,21 +838,23 @@ function contentComponentsSection() {
 }
 
 function organismsSection() {
-	const gridHtml = grid("grid-tools", [FIXTURE_TOOL, FIXTURE_TOOL_EXPERIMENTAL, FIXTURE_TOOL_DEPRECATED], (tool, i) =>
-		toolCard(tool, i === 1 ? { popular: true, rank: 2 } : {})
+	const gridHtml = grid(
+		"grid-tools",
+		[SG_TOOL, SG_TOOL_EXPERIMENTAL, SG_TOOL_DEPRECATED],
+		(/** @type {Tool} */ tool, /** @type {number} */ i) => toolCard(tool, i === 1 ? { popular: true, rank: 2 } : {})
 	);
 	return section(
 		"Organisms",
 		`
 		<div class="sg-examples sg-examples--organisms">
-			${example("toolCard(tool)", "organisms", toolCard(FIXTURE_TOOL))}
-			${example("toolCard(tool, { popular: true, rank: 1 })", "organisms", toolCard(FIXTURE_TOOL, { popular: true, rank: 1 }))}
-			${example("toolCard(deprecatedTool)", "organisms", toolCard(FIXTURE_TOOL_DEPRECATED))}
+			${example("toolCard(tool)", "organisms", toolCard(SG_TOOL))}
+			${example("toolCard(tool, { popular: true, rank: 1 })", "organisms", toolCard(SG_TOOL, { popular: true, rank: 1 }))}
+			${example("toolCard(deprecatedTool)", "organisms", toolCard(SG_TOOL_DEPRECATED))}
 			${example("listCard(list)", "organisms", listCard(FIXTURE_LIST))}
 			${example("panel (sidebar)", "organisms", `<div class="panel"><h3 class="panel__title">Browse by need</h3><p class="sg-note">Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.</p></div>`)}
 			${example("Listing completeness", "organisms", listingCompletenessExample())}
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
-			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(FIXTURE_TOOL)}</div>`, { wide: true })}
+			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(SG_TOOL)}</div>`, { wide: true })}
 			${example("Related tools (similarity)", "organisms", relatedToolsExample(), { wide: true })}
 			${example("Similarity graph (canvas)", "organisms", forceGraphExample(), { wide: true })}
 		</div>`
@@ -857,9 +873,17 @@ function activityParitySection() {
 	);
 }
 
+/**
+ * @param {string} prefix
+ * @param {string[]} [fallback]
+ * @returns {string[]}
+ */
 function collectCustomPropertyNames(prefix, fallback) {
+	/** @type {string[]} */
 	const names = [];
+	/** @type {Set<string>} */
 	const seen = new Set();
+	/** @param {any} rules */
 	const visitRules = (rules) => {
 		[...(rules || [])].forEach((rule) => {
 			if (rule.cssRules) {
@@ -888,15 +912,19 @@ function collectCustomPropertyNames(prefix, fallback) {
 	return names;
 }
 
+/**
+ * @param {string} name
+ * @param {string} cssProp
+ */
 function resolveToken(name, cssProp) {
 	const probe = document.createElement("span");
 	probe.style.position = "absolute";
 	probe.style.display = "block";
 	probe.style.visibility = "hidden";
 	probe.style.pointerEvents = "none";
-	probe.style[cssProp] = `var(${name})`;
+	/** @type {any} */ (probe.style)[cssProp] = `var(${name})`;
 	document.body.appendChild(probe);
-	const value = getComputedStyle(probe)[cssProp];
+	const value = /** @type {any} */ (getComputedStyle(probe))[cssProp];
 	probe.remove();
 	return value || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -904,6 +932,12 @@ function resolveToken(name, cssProp) {
 // Shared token-gallery renderer: resolve each token's live value and lay out the
 // rows. Per-family markup differs only in classes/units, so it is parameterised
 // rather than duplicated across one function per token type.
+/**
+ * @param {string} targetId
+ * @param {string[]} names
+ * @param {string} prop
+ * @param {(name: string, value: string) => string} rowHtml
+ */
 function renderTokenTarget(targetId, names, prop, rowHtml) {
 	const target = document.querySelector(`#${targetId}`);
 	if (!target) return;
@@ -911,6 +945,14 @@ function renderTokenTarget(targetId, names, prop, rowHtml) {
 }
 
 // Swatch family: a styled preview box + meta (colours, radii, shadows).
+/**
+ * @param {string} targetId
+ * @param {string[]} names
+ * @param {string} prop
+ * @param {string} wrapperClass
+ * @param {string} boxClass
+ * @param {string} cssDecl
+ */
 function renderSwatchTokens(targetId, names, prop, wrapperClass, boxClass, cssDecl) {
 	renderTokenTarget(
 		targetId,
@@ -923,6 +965,7 @@ function renderSwatchTokens(targetId, names, prop, wrapperClass, boxClass, cssDe
 	);
 }
 
+/** @param {string[]} names */
 function renderTypeTokens(names) {
 	renderTokenTarget(
 		"sg-type-tokens",
@@ -936,6 +979,14 @@ function renderTypeTokens(names) {
 }
 
 // Bar family: a proportional bar + meta (spacing, layout widths).
+/**
+ * @param {string} targetId
+ * @param {string[]} names
+ * @param {string} prop
+ * @param {string} rowClass
+ * @param {string} barClass
+ * @param {boolean} clampLayout
+ */
 function renderBarTokens(targetId, names, prop, rowClass, barClass, clampLayout) {
 	renderTokenTarget(targetId, names, prop, (name, value) => {
 		const width = clampLayout ? `min(100%, var(${esc(name)}))` : `var(${esc(name)})`;
@@ -986,7 +1037,7 @@ function mountStyleguide() {
 		"sg-space-row__bar sg-space-row__bar--layout",
 		true
 	);
-	const graphTarget = document.querySelector("#sg-force-graph");
+	const graphTarget = /** @type {HTMLElement | null} */ (document.querySelector("#sg-force-graph"));
 	if (graphTarget) graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
 
 	const page = document.querySelector(".sg-page");
@@ -994,7 +1045,7 @@ function mountStyleguide() {
 	page.addEventListener(
 		"click",
 		(e) => {
-			if (e.target.closest("[data-tool], [data-fav], [data-listadd], [data-q]")) {
+			if (/** @type {EventTarget} */ (e.target).closest("[data-tool], [data-fav], [data-listadd], [data-q]")) {
 				e.preventDefault();
 				e.stopPropagation();
 			}
@@ -1005,7 +1056,7 @@ function mountStyleguide() {
 		"keydown",
 		(e) => {
 			const key = /** @type {KeyboardEvent} */ (e).key;
-			if ((key === "Enter" || key === " ") && e.target.closest("[data-tool]")) {
+			if ((key === "Enter" || key === " ") && /** @type {EventTarget} */ (e.target).closest("[data-tool]")) {
 				e.preventDefault();
 				e.stopPropagation();
 			}
@@ -1015,7 +1066,7 @@ function mountStyleguide() {
 	page.addEventListener(
 		"submit",
 		(e) => {
-			if (!e.target.closest(".sg-example")) return;
+			if (!(/** @type {EventTarget} */ (e.target).closest(".sg-example"))) return;
 			e.preventDefault();
 			e.stopPropagation();
 		},

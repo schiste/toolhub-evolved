@@ -16,6 +16,10 @@ const RECENT_FILTERS = [
 	{ value: "other", label: "Other" }
 ];
 const UNSUPPORTED_PATROL_FILTERS = new Set(["patrolled", "unpatrolled"]);
+/**
+ * @param {{ content_type?: string }} r
+ * @returns {string}
+ */
 function recentFilterKey(r) {
 	if (r.content_type === "tool") return "tools";
 	if (r.content_type === "list") return "lists";
@@ -73,7 +77,7 @@ export async function viewRecent() {
 export async function viewMembers() {
 	const data = await apiGet("/users/", { page_size: "60" }).catch(() => ({ results: [], count: 0 }));
 	const cards = (data.results || [])
-		.map((u) => {
+		.map((/** @type {{ username: string, groups?: string[], date_joined?: string }} */ u) => {
 			const meta = u.groups && u.groups.length > 0 ? esc(u.groups.join(", ")) : "Member";
 			return `<div class="mcard">${avatar(u.username)}<div class="mcard__b">
 			<div class="mcard__n"${dirAttrs(u.username)}>${esc(u.username)}</div>
@@ -97,7 +101,9 @@ export async function viewCrawler() {
 	const last = runs[0] || {};
 	const rows = runs
 		.map(
-			(r) => `
+			(
+				/** @type {{ start_date?: string, crawled_urls?: number, new_tools?: number, updated_tools?: number, total_tools?: number }} */ r
+			) => `
 		<tr><td>${timeTag(r.start_date)}</td><td>${fmt(r.crawled_urls || 0)}</td>
 		<td>${fmt(r.new_tools || 0)}</td><td>${fmt(r.updated_tools || 0)}</td><td>${fmt(r.total_tools || 0)}</td></tr>`
 		)
@@ -122,6 +128,10 @@ export async function viewCrawler() {
 	};
 }
 // Audit logs — live from /api/auditlogs/.
+/**
+ * @param {{ id?: string, type?: string } | null | undefined} target
+ * @returns {string | null}
+ */
 export function targetHref(target) {
 	if (!target || !target.id) return null;
 	if (target.type === "tool") return toolHref(target.id);

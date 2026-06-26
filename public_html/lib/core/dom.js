@@ -7,11 +7,13 @@ export const $$ = (s, r) => /** @type {HTMLElement[]} */ ([...(r || document).qu
 /** @type {(selector: string, root?: ParentNode) => HTMLInputElement | null} */
 export const $input = (s, r) => /** @type {HTMLInputElement | null} */ ((r || document).querySelector(s));
 
+/** @param {string} str */
 export function hash(str) {
 	let h = 0;
 	for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
 	return Math.abs(h);
 }
+/** @param {unknown} s */
 export function esc(s) {
 	return String(s === null || s === undefined ? "" : s)
 		.replaceAll("&", "&amp;")
@@ -20,6 +22,7 @@ export function esc(s) {
 		.replaceAll('"', "&quot;")
 		.replaceAll("'", "&#39;");
 }
+/** @param {unknown} u */
 export function normalizeVcsUrl(u) {
 	const raw = String(u === null || u === undefined ? "" : u).trim();
 	if (!raw) return raw;
@@ -46,10 +49,12 @@ export function normalizeVcsUrl(u) {
 		return raw;
 	}
 }
+/** @param {unknown} u */
 export function safeUrl(u) {
 	const s = String(u === null || u === undefined ? "" : u).trim();
 	return /^https?:\/\//i.test(s) ? esc(s) : "";
 }
+/** @param {unknown} value */
 export function dirAttrs(value) {
 	return value ? ' dir="auto"' : "";
 }

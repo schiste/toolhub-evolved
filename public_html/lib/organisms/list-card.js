@@ -4,6 +4,7 @@ import { countLabel } from "../core/i18n.js";
 import { listHref } from "../core/routing.js";
 import { avatar } from "../atoms/avatar.js";
 
+/** @param {ToolList} l */
 export function listCardData(l) {
 	return {
 		id: l.id,
@@ -13,6 +14,10 @@ export function listCardData(l) {
 		demo: true
 	};
 }
+/**
+ * @param {{ id: string; title: string; description: string; toolCount: number; demo?: boolean }} l
+ * @returns {string}
+ */
 export function listCard(l) {
 	const count = countLabel(l.toolCount, "tool", "tools");
 	return `

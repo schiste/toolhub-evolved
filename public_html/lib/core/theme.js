@@ -17,15 +17,18 @@ export function getThemeChoice() {
 	return v === "light" || v === "dark" ? v : "system";
 }
 
+/** @param {string} choice */
 function resolve(choice) {
 	if (choice === "light" || choice === "dark") return choice;
 	return darkMQ && darkMQ.matches ? "dark" : "light";
 }
 
+/** @param {string} [choice] */
 export function applyTheme(choice = getThemeChoice()) {
 	document.documentElement.setAttribute("data-theme", resolve(choice));
 }
 
+/** @param {string} choice */
 export function setThemeChoice(choice) {
 	try {
 		if (choice === "light" || choice === "dark") localStorage.setItem(THEME_KEY, choice);

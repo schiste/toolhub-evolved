@@ -13,12 +13,22 @@ export const AVATAR_COLORS = [
 	"var(--color-favorite)",
 	"var(--color-progressive-hover)"
 ];
+/**
+ * @param {string | null | undefined} title
+ * @param {string} [cls]
+ * @returns {string}
+ */
 export function avatar(title, cls) {
 	const ch = (title || "?").trim().charAt(0).toUpperCase();
 	const color = AVATAR_COLORS[hash(title || "?") % AVATAR_COLORS.length];
 	return `<span class="avatar ${cls || ""}" style="background:${color}" aria-hidden="true">${esc(ch)}</span>`;
 }
 // Commons "File:Foo.svg" page URL → a rendered thumbnail URL.
+/**
+ * @param {string | null | undefined} fileUrl
+ * @param {number} w
+ * @returns {string | null}
+ */
 export function commonsThumb(fileUrl, w) {
 	const m = /file(?::|%3a)(.+)$/i.exec(fileUrl || "");
 	if (!m) return null;
@@ -30,9 +40,11 @@ export function commonsThumb(fileUrl, w) {
 	}
 	return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(fileName)}?width=${w}`;
 }
+/** @param {string | null | undefined} url */
 function isCommonsFilePageUrl(url) {
 	return /\/wiki\/file(?::|%3a)/i.test(String(url || "").split(/[#?]/, 1)[0]);
 }
+/** @param {string | null | undefined} url */
 function isDirectImageUrl(url) {
 	const s = String(url || "").trim();
 	if (!/^https?:\/\//i.test(s)) return false;
@@ -46,6 +58,11 @@ function isDirectImageUrl(url) {
 	}
 }
 // Tool icon: real Commons image if the tool has one, else a letter avatar.
+/**
+ * @param {Tool} t
+ * @param {string} [variant]
+ * @returns {string}
+ */
 export function toolIcon(t, variant) {
 	const px = variant === "lg" ? 72 : 48;
 	const cls = `avatar${variant === "lg" ? " avatar--lg" : ""}`;

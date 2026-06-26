@@ -36,6 +36,7 @@ import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
 
+/** @param {string} value */
 function isHttpUrl(value) {
 	try {
 		const u = new URL(String(value || "").trim());
@@ -45,6 +46,12 @@ function isHttpUrl(value) {
 	}
 }
 
+/**
+ * @param {string} id
+ * @param {string} msg
+ * @param {{ required?: boolean }} [opts]
+ * @returns {HTMLElement | null}
+ */
 function validateHttpField(id, msg, opts = {}) {
 	const value = fieldValue(id);
 	clearFieldError(id);
@@ -55,6 +62,7 @@ function validateHttpField(id, msg, opts = {}) {
 	return null;
 }
 
+/** @param {string} id */
 function clearHttpErrorWhenValid(id) {
 	const el = $input(`#${id}`);
 	if (!el) return;
@@ -72,6 +80,7 @@ function duplicateRegion() {
 	</section>`;
 }
 
+/** @param {Tool} t */
 function renderDuplicateItem(t) {
 	const title = t.title || t.name;
 	const maintainer = t.maintainer || (t.authors && t.authors[0]) || "Unknown maintainer";
@@ -83,6 +92,7 @@ function renderDuplicateItem(t) {
 	</li>`;
 }
 
+/** @param {Tool[]} tools */
 function renderDuplicates(tools) {
 	const box = $("[data-dupes]");
 	const list = $("[data-dupes-list]");
@@ -96,6 +106,11 @@ function renderDuplicates(tools) {
 	box.hidden = false;
 }
 
+/**
+ * @param {() => void} fn
+ * @param {number} wait
+ * @returns {() => void}
+ */
 function debounce(fn, wait) {
 	let timer = 0;
 	return () => {
@@ -108,6 +123,7 @@ function setupDuplicateSuggestions() {
 	const titleEl = document.querySelector("#tf-title");
 	const keywordsEl = document.querySelector("#tf-keywords");
 	if (!titleEl || !keywordsEl) return;
+	/** @type {Promise<any> | null} */
 	let indexPromise = null;
 	const loadIndex = () => {
 		if (!indexPromise) indexPromise = getSimilarityIndex();
@@ -133,9 +149,11 @@ function setupDuplicateSuggestions() {
 			renderDuplicates([]);
 			return;
 		}
+		/** @type {Set<string>} */
 		const seen = new Set();
+		/** @type {Tool[]} */
 		const candidates = [];
-		const add = (tool) => {
+		const add = (/** @type {Tool} */ tool) => {
 			if (!tool || !tool.name) return;
 			if (typedName && normStr(tool.name) === typedName) return;
 			if (seen.has(tool.name)) return;
@@ -151,7 +169,9 @@ function setupDuplicateSuggestions() {
 			}
 		}
 		const partial = { keywords, forWikis: [], audiences: [], tasks: [], toolType };
-		for (const item of nearestNeighbors(partial, index, 5)) add(item.tool);
+		for (const item of nearestNeighbors(/** @type {Tool} */ (/** @type {unknown} */ (partial)), index, 5)) {
+			add(item.tool);
+		}
 		renderDuplicates(candidates.slice(0, 5));
 	}, 300);
 	titleEl.addEventListener("input", update);
@@ -162,25 +182,29 @@ function setupDuplicateSuggestions() {
 
 // EXPERIMENTAL — create/edit a tool's CORE fields. name=null → create.
 // Edits overload the live record; new tools live only in the browser.
+/** @param {string | null} name */
 export async function viewToolForm(name) {
 	const editing = name !== null && name !== undefined;
-	let cur = {
-		name: "",
-		title: "",
-		description: "",
-		url: "",
-		repository: null,
-		license: null,
-		toolType: null,
-		keywords: [],
-		forWikis: [],
-		uiLanguages: [],
-		deprecated: false,
-		experimental: false
-	};
+	let cur = /** @type {Tool} */ (
+		/** @type {unknown} */ ({
+			name: "",
+			title: "",
+			description: "",
+			url: "",
+			repository: null,
+			license: null,
+			toolType: null,
+			keywords: [],
+			forWikis: [],
+			uiLanguages: [],
+			deprecated: false,
+			experimental: false
+		})
+	);
 	if (editing) {
-		cur = await getTool(name);
-		if (!cur) return viewNotFound();
+		const fetched = await getTool(name);
+		if (!fetched) return viewNotFound();
+		cur = fetched;
 	}
 	const isCrawler = editing && cur.origin && cur.origin !== "api";
 	const html = `
@@ -211,7 +235,7 @@ export async function viewToolForm(name) {
 		</form>
 	</div>`;
 	function mount() {
-		$("[data-tool-form]").addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-tool-form]")).addEventListener("submit", (e) => {
 			e.preventDefault();
 			const title = fieldValue("tf-title"),
 				url = fieldValue("tf-url"),
@@ -220,16 +244,16 @@ export async function viewToolForm(name) {
 			const invalidUrl = validateHttpField("tf-url", "Enter a valid http(s) URL.", { required: true });
 			const invalidRepo = validateHttpField("tf-repo", "Enter a valid http(s) repository URL.");
 			if (!tname || !title) {
-				$(editing ? "#tf-title" : "#tf-name").focus();
+				/** @type {HTMLElement} */ ($(editing ? "#tf-title" : "#tf-name")).focus();
 				return;
 			}
 			if (invalidUrl || invalidRepo) {
-				(invalidUrl || invalidRepo).focus();
+				/** @type {HTMLElement} */ (invalidUrl || invalidRepo).focus();
 				return;
 			}
 			if (!editing && isNewTool(tname)) {
 				setFieldError("tf-name", "A demo tool with that name already exists.");
-				$("#tf-name").focus();
+				/** @type {HTMLElement} */ ($("#tf-name")).focus();
 				return;
 			}
 			const fields = {
@@ -262,16 +286,16 @@ export async function viewToolForm(name) {
 		if (rev) {
 			rev.addEventListener("click", () => {
 				const m = toolEditsMap();
-				delete m[name];
+				delete m[/** @type {string} */ (name)];
 				demoStore.set(DEMO_KEYS.toolEdits, m);
-				navigateTo(toolHref(name));
+				navigateTo(toolHref(/** @type {string} */ (name)));
 			});
 		}
 		const del = $("[data-tf-delete]");
 		if (del) {
 			del.addEventListener("click", () => {
 				const m = toolNewMap();
-				delete m[name];
+				delete m[/** @type {string} */ (name)];
 				demoStore.set(DEMO_KEYS.toolNew, m);
 				navigateTo("/add-or-remove-tools");
 			});
@@ -290,16 +314,16 @@ export function viewAddTools() {
 		return u.length > 0
 			? u
 					.map(
-						(x) =>
+						(/** @type {{ url: string }} */ x) =>
 							`<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"` })}</li>`
 					)
 					.join("")
 			: '<li class="le__empty">No URLs registered.</li>';
 	}
 	function subGrid() {
-		const cards = Object.keys(toolNewMap()).map((n) => newToolBase(n));
+		const cards = /** @type {Tool[]} */ (Object.keys(toolNewMap()).map((n) => newToolBase(n)));
 		return cards.length > 0
-			? grid("grid-tools", cards, (t) => toolCard(t))
+			? grid("grid-tools", cards, (/** @type {Tool} */ t) => toolCard(t))
 			: '<p class="empty">No tools yet. Submit one above, or ingest sample toolinfo.</p>';
 	}
 	const html = `
@@ -328,9 +352,9 @@ export function viewAddTools() {
 		<div data-sub-grid>${subGrid()}</div>
 	</div>`;
 	function mount() {
-		$("[data-url-form]").addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-url-form]")).addEventListener("submit", (e) => {
 			e.preventDefault();
-			const u = $input("#at-url").value.trim();
+			const u = /** @type {HTMLInputElement} */ ($input("#at-url")).value.trim();
 			const invalidUrl = validateHttpField("at-url", "Enter a valid http(s) toolinfo URL.");
 			if (invalidUrl) {
 				invalidUrl.focus();
@@ -338,34 +362,35 @@ export function viewAddTools() {
 			}
 			if (!u) return;
 			crawlerUrlAdd(u);
-			$input("#at-url").value = "";
+			/** @type {HTMLInputElement} */ ($input("#at-url")).value = "";
 			clearFieldError("at-url");
-			$("[data-url-list]").innerHTML = urlRows();
+			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
 		});
-		$("[data-url-list]").addEventListener("click", (e) => {
-			const b = e.target.closest("[data-url-rm]");
+		/** @type {HTMLElement} */ ($("[data-url-list]")).addEventListener("click", (e) => {
+			const b = /** @type {EventTarget} */ (e.target).closest("[data-url-rm]");
 			if (!b) return;
-			crawlerUrlDelete(b.getAttribute("data-url-rm"));
-			$("[data-url-list]").innerHTML = urlRows();
+			crawlerUrlDelete(/** @type {string} */ (b.getAttribute("data-url-rm")));
+			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
 		});
-		$("[data-sample]").addEventListener("click", () => {
-			$input("#at-json").value = SAMPLE_TOOLINFO;
+		/** @type {HTMLElement} */ ($("[data-sample]")).addEventListener("click", () => {
+			/** @type {HTMLInputElement} */ ($input("#at-json")).value = SAMPLE_TOOLINFO;
 		});
-		$("[data-ingest]").addEventListener("click", () => {
-			const res = ingestToolinfo($input("#at-json").value.trim());
-			const out = $("[data-ingest-result]");
+		/** @type {HTMLElement} */ ($("[data-ingest]")).addEventListener("click", () => {
+			const res = ingestToolinfo(/** @type {HTMLInputElement} */ ($input("#at-json")).value.trim());
+			const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
 			if (res.error) {
 				out.className = "at__result at__result--err";
 				out.textContent = res.error;
 				return;
 			}
+			const errors = res.errors || [];
 			const parts = [];
 			if (res.added) parts.push(`${res.added} added`);
 			if (res.updated) parts.push(`${res.updated} updated`);
-			out.className = `at__result${res.errors.length > 0 && parts.length === 0 ? " at__result--err" : " at__result--ok"}`;
+			out.className = `at__result${errors.length > 0 && parts.length === 0 ? " at__result--err" : " at__result--ok"}`;
 			out.textContent =
-				(parts.join(", ") || "Nothing ingested") + (res.errors.length > 0 ? ` · ${res.errors.join("; ")}` : "");
-			$("[data-sub-grid]").innerHTML = subGrid();
+				(parts.join(", ") || "Nothing ingested") + (errors.length > 0 ? ` · ${errors.join("; ")}` : "");
+			/** @type {HTMLElement} */ ($("[data-sub-grid]")).innerHTML = subGrid();
 			const c = $("[data-sub-count]");
 			if (c) c.textContent = countLabel(Object.keys(toolNewMap()).length, "tool", "tools");
 		});
@@ -375,9 +400,11 @@ export function viewAddTools() {
 }
 
 // EXPERIMENTAL — edit a tool's COMMUNITY ANNOTATIONS (overlay on live record).
+/** @param {string} name */
 export async function viewAnnotationsEdit(name) {
-	const cur = await getTool(name);
-	if (!cur) return viewNotFound();
+	const fetched = await getTool(name);
+	if (!fetched) return viewNotFound();
+	const cur = fetched;
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${toolHref(name)}">← Back to ${esc(cur.title)}</a>
@@ -397,7 +424,7 @@ export async function viewAnnotationsEdit(name) {
 		</form>
 	</div>`;
 	function mount() {
-		$("[data-anno-form]").addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-anno-form]")).addEventListener("submit", (e) => {
 			e.preventDefault();
 			const anno = {
 				audiences: fromCsv(fieldValue("an-aud")),

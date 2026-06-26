@@ -5,26 +5,38 @@ import { synthViews } from "./synth.js";
 
 /* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
    as live data arrives (search results, lists, tool pages). No snapshot. */
+/** @type {Record<string, Tool>} */
 export const INDEX = {};
 
+/** @param {string} name */
 export function isNewTool(name) {
 	return Boolean(toolNewMap()[name]);
 }
+/**
+ * @param {Tool} o
+ * @returns {Tool}
+ */
 export function applyToolOverlay(o) {
 	const e = toolEditsMap()[o.name];
 	if (e) {
 		Object.assign(o, e);
-		o.edited = true;
+		// `edited`/`annotated`/`status` (object) are runtime extras the static
+		// Tool interface doesn't model; cast through any for these writes.
+		/** @type {any} */ (o).edited = true;
 	}
 	const a = toolAnnosMap()[o.name];
 	if (a) {
 		Object.assign(o, a);
-		o.annotated = true;
+		/** @type {any} */ (o).annotated = true;
 	}
-	if (e || a) o.status = statusOf(o); // flags may have changed
+	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
 	return o;
 }
 // Build a compact tool object for a net-new demo submission, then overlay edits.
+/**
+ * @param {string} name
+ * @returns {Tool | null}
+ */
 export function newToolBase(name) {
 	const rec = toolNewMap()[name];
 	if (!rec) return null;
@@ -50,6 +62,7 @@ export function newToolBase(name) {
 	INDEX[name] = o;
 	return applyToolOverlay(o);
 }
+/** @param {Tool} t */
 export function statusOf(t) {
 	return t.deprecated
 		? { level: "red", label: "Deprecated" }
@@ -76,6 +89,7 @@ const apiInflight = new Map(); // url -> Promise<data>
 // a hiccup self-heals; fail fast on real client errors (4xx).
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 const API_RETRIES = 3;
+/** @param {number} ms */
 function sleep(ms) {
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
@@ -104,6 +118,7 @@ async function fetchJson(url, attempts = API_RETRIES) {
 	}
 	throw lastError;
 }
+/** @param {string} url */
 function apiFetch(url) {
 	if (apiInflight.has(url)) return apiInflight.get(url);
 	const p = fetchJson(url)
@@ -117,6 +132,10 @@ function apiFetch(url) {
 	apiInflight.set(url, p);
 	return p;
 }
+/**
+ * @param {string} path
+ * @param {Record<string, string>} [params]
+ */
 export async function apiGet(path, params) {
 	const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
 	const url = API_BASE + path + qs;
@@ -151,6 +170,7 @@ export async function paginate(path, params = {}, { pageSize = 100, maxPages = 1
 	}
 	return out;
 }
+/** @param {unknown} v */
 export function firstUrl(v) {
 	if (!v) return null;
 	if (typeof v === "string") return v;
@@ -160,14 +180,25 @@ export function firstUrl(v) {
 	}
 	return null;
 }
+/** @param {unknown} v */
 export function hasValue(v) {
 	return Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
 }
+/**
+ * @param {unknown} core
+ * @param {unknown} annotation
+ * @param {unknown} fallback
+ */
 export function pick(core, annotation, fallback) {
 	if (hasValue(core)) return core;
 	if (hasValue(annotation)) return annotation;
 	return fallback;
 }
+/**
+ * Raw author records from the upstream API are heterogeneous (string | object |
+ * null), so `a` is typed `any` here.
+ * @param {any} a
+ */
 function normalizeAuthorObj(a) {
 	if (!a) return null;
 	if (typeof a === "string") return a ? { name: a, url: null, wikiUsername: null, developerUsername: null } : null;
@@ -180,6 +211,14 @@ function normalizeAuthorObj(a) {
 		developerUsername: a.developer_username || null
 	};
 }
+/**
+ * Normalize a raw upstream tool record into the compact `Tool` shape. The raw
+ * record is untyped API JSON, so `t` is `any`; the constructed object is also
+ * `any` because it is mutated post-construction (weeklyViews/status/overlay
+ * flags) in ways the static `Tool` interface intentionally does not model.
+ * @param {any} t
+ * @returns {Tool}
+ */
 export function normalizeTool(t) {
 	const ann = t.annotations || {};
 	const ra = t.author;
@@ -191,6 +230,7 @@ export function normalizeTool(t) {
 	const authorObjs = Array.isArray(ra)
 		? ra.map((author) => normalizeAuthorObj(author)).filter(Boolean)
 		: [normalizeAuthorObj(ra)].filter(Boolean);
+	/** @type {any} */
 	const o = {
 		name: t.name,
 		title: t.title || t.name,
@@ -230,6 +270,10 @@ export function normalizeTool(t) {
 	INDEX[o.name] = o; // cache for quick-view
 	return o;
 }
+/**
+ * @param {string} name
+ * @returns {Promise<Tool | null>}
+ */
 export async function getTool(name) {
 	if (signedIn() && isNewTool(name)) return newToolBase(name);
 	try {
@@ -238,12 +282,17 @@ export async function getTool(name) {
 		return null;
 	}
 }
+/** @param {string[]} names */
 export async function getToolsByName(names) {
 	const tools = await Promise.all((names || []).map((name) => getTool(name)));
 	return tools.filter(Boolean);
 }
+/**
+ * @param {any} l
+ * @returns {ToolList}
+ */
 export function normalizeList(l) {
-	const tools = (l.tools || []).map((tool) => normalizeTool(tool));
+	const tools = /** @type {any[]} */ (l.tools || []).map((tool) => normalizeTool(tool));
 	return {
 		id: l.id,
 		title: l.title || "Untitled list",

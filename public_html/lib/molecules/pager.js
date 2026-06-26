@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+/**
+ * @param {number} page
+ * @param {number} pages
+ * @returns {string}
+ */
 export function renderPager(page, pages) {
 	if (pages <= 1) return "";
+	/**
+	 * @param {number} p
+	 * @param {string | number} label
+	 * @param {boolean} dis
+	 * @param {boolean} [cur]
+	 */
 	const btn = (p, label, dis, cur) =>
 		`<button class="pager__btn${cur ? " is-current" : ""}" type="button" ${dis ? "disabled" : ""} data-page="${p}"${cur ? ' aria-current="page"' : ""}>${label}</button>`;
 	let out = btn(page - 1, "‹ Prev", page <= 1),

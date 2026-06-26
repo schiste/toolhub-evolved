@@ -18,12 +18,26 @@ import { viewGraph } from "./graph.js";
 import { viewStyleguide } from "./styleguide.js";
 import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
 
+/** @typedef {{ title: string, html: string, mount?: () => void }} View */
+/** @typedef {View | Promise<View>} ViewResult */
+
+/** @type {((title: string, lead?: string) => View) | null} */
 let signInFallback = null;
+/**
+ * @param {(title: string, lead?: string) => View} fn
+ * @returns {void}
+ */
 export function setSignInFallback(fn) {
 	signInFallback = fn;
 }
+/**
+ * @param {() => ViewResult} viewFn
+ * @param {string} title
+ * @param {string} [lead]
+ * @returns {ViewResult}
+ */
 export function requireSignIn(viewFn, title, lead) {
-	return signedIn() ? viewFn() : signInFallback(title, lead);
+	return signedIn() ? viewFn() : /** @type {(title: string, lead?: string) => View} */ (signInFallback)(title, lead);
 }
 setSignInFallback(signInPage);
 
@@ -117,10 +131,17 @@ export function dispatch() {
 		}
 		return viewList(decodeURIComponent(seg[1]));
 	}
-	if (ROUTES[seg[0]]) return ROUTES[seg[0]]();
-	if (STATIC[seg[0]]) return viewStatic(seg[0]);
+	if (ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]) {
+		return ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]();
+	}
+	if (STATIC[/** @type {keyof typeof STATIC} */ (seg[0])]) return viewStatic(seg[0]);
 	return viewNotFound();
 }
+/**
+ * @param {string} pathHash
+ * @param {string | null} href
+ * @returns {boolean}
+ */
 function navHrefMatches(pathHash, href) {
 	if (href === "/search") return pathHash === "/search" || pathHash.startsWith("/search/");
 	if (href === "/lists") return pathHash === "/lists" || pathHash.startsWith("/lists/");
@@ -142,16 +163,24 @@ export function setActiveNav() {
 		});
 	});
 }
+/** @type {string | null} */
 export let lastPath = null;
 export let navSeq = 0;
 export const loadingHTML = () =>
 	'<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>';
+/** @param {unknown} e */
 export const errorHTML = (e) => `<div class="container page errorpage"><h1>Couldn't load live data</h1>
-	<p class="prose">The Toolhub API didn't respond (${esc(String((e && e.message) || e))}).</p>
+	<p class="prose">The Toolhub API didn't respond (${esc(String((e && /** @type {{ message?: unknown }} */ (e).message) || e))}).</p>
 	${button("Back to home", { variant: "primary", href: "/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
 // the current page stays on screen — fast/cached loads never flash a spinner.
 const SPINNER_DELAY = 250;
+/**
+ * @param {HTMLElement} viewEl
+ * @param {View} view
+ * @param {string} path
+ * @returns {void}
+ */
 function commitView(viewEl, view, path) {
 	viewEl.innerHTML = view.html;
 	viewEl.setAttribute("aria-busy", "false");
@@ -172,7 +201,8 @@ export async function render() {
 	closeAcctMenu(); // …and the account dropdown
 	const seq = ++navSeq;
 	const { path } = parseRoute();
-	const viewEl = $("#view");
+	const viewEl = /** @type {HTMLElement} */ ($("#view"));
+	/** @type {ReturnType<typeof setTimeout> | null} */
 	let spinnerTimer = null;
 	if (path !== lastPath) {
 		viewEl.setAttribute("aria-busy", "true"); // announce busy immediately (a11y)

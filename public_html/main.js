@@ -19,6 +19,7 @@ setAuthRender(() => {
 applyLocaleAttrs();
 // Reflect experimental mode into the DOM (core holds the flag; the app owns the
 // CSS hook). CSS hides .experimental elements while body has .exp-off.
+/** @param {boolean} on */
 function syncExpDom(on) {
 	document.body.classList.toggle("exp-off", !on);
 	const btn = $("#exp-toggle");
@@ -51,9 +52,9 @@ renderThemeToggle();
 const themeToggle = $("#theme-toggle");
 if (themeToggle) {
 	themeToggle.addEventListener("click", (e) => {
-		const btn = e.target.closest("[data-theme-choice]");
+		const btn = e.target?.closest("[data-theme-choice]");
 		if (!btn) return;
-		setThemeChoice(btn.getAttribute("data-theme-choice"));
+		setThemeChoice(/** @type {string} */ (btn.getAttribute("data-theme-choice")));
 		renderThemeToggle();
 	});
 }
@@ -66,61 +67,64 @@ if (skip) {
 	skip.addEventListener("click", (e) => {
 		e.preventDefault();
 		const m = $("#view");
-		m.focus();
-		m.scrollIntoView();
+		m?.focus();
+		m?.scrollIntoView();
 	});
 }
 
 /* Keyword chips inside tool cards filter search; card body clicks open peek. */
-$("#view").addEventListener("click", (e) => {
-	const fav = e.target.closest("[data-fav]");
+$("#view")?.addEventListener("click", (e) => {
+	const fav = e.target?.closest("[data-fav]");
 	if (fav) {
 		e.preventDefault();
 		e.stopPropagation();
-		syncFavButtons(fav.getAttribute("data-fav"), toggleFav(fav.getAttribute("data-fav")));
+		syncFavButtons(fav.getAttribute("data-fav"), toggleFav(/** @type {string} */ (fav.getAttribute("data-fav"))));
 		return;
 	}
-	const add = e.target.closest("[data-listadd]");
+	const add = e.target?.closest("[data-listadd]");
 	if (add) {
 		e.preventDefault();
-		const on = listToolToggle(add.getAttribute("data-listadd"), add.getAttribute("data-tn"));
+		const on = listToolToggle(
+			/** @type {string} */ (add.getAttribute("data-listadd")),
+			/** @type {string} */ (add.getAttribute("data-tn"))
+		);
 		add.classList.toggle("is-on", on);
 		add.setAttribute("aria-pressed", String(on));
 		const m = add.querySelector(".savemenu__mark");
 		if (m) m.innerHTML = on ? icon("check") : icon("add");
 		return;
 	}
-	const q = e.target.closest("[data-q]");
+	const q = e.target?.closest("[data-q]");
 	if (q && !q.matches("a[href]")) {
 		e.preventDefault();
-		navigateTo(`/search?q=${encodeURIComponent(q.getAttribute("data-q"))}`);
+		navigateTo(`/search?q=${encodeURIComponent(/** @type {string} */ (q.getAttribute("data-q")))}`);
 		return;
 	}
-	if (e.target.closest("a[href]")) return; // real links route natively
-	const card = e.target.closest("[data-tool]");
+	if (e.target?.closest("a[href]")) return; // real links route natively
+	const card = e.target?.closest("[data-tool]");
 	if (card) {
-		openQuickView(card.getAttribute("data-tool"));
+		openQuickView(/** @type {string} */ (card.getAttribute("data-tool")));
 	} // default: peek
 });
 // Keyboard: Enter/Space on a focused tool card opens the quick-view.
-$("#view").addEventListener("keydown", (e) => {
+$("#view")?.addEventListener("keydown", (e) => {
 	if (e.key !== "Enter" && e.key !== " ") return;
-	const card = e.target.closest("[data-tool]");
+	const card = e.target?.closest("[data-tool]");
 	if (card && e.target === card) {
 		e.preventDefault();
-		openQuickView(card.getAttribute("data-tool"));
+		openQuickView(/** @type {string} */ (card.getAttribute("data-tool")));
 	}
 });
 
 /* Quick-view modal: backdrop/close, Esc + Tab-trap */
-$("#qv").addEventListener("click", (e) => {
-	const fav = e.target.closest("[data-fav]");
+$("#qv")?.addEventListener("click", (e) => {
+	const fav = e.target?.closest("[data-fav]");
 	if (fav) {
 		e.preventDefault();
-		syncFavButtons(fav.getAttribute("data-fav"), toggleFav(fav.getAttribute("data-fav")));
+		syncFavButtons(fav.getAttribute("data-fav"), toggleFav(/** @type {string} */ (fav.getAttribute("data-fav"))));
 		return;
 	}
-	if (e.target.id === "qv" || e.target.closest("[data-qv-close]")) {
+	if (e.target?.id === "qv" || e.target?.closest("[data-qv-close]")) {
 		e.preventDefault();
 		closeQuickView();
 	}
@@ -139,36 +143,36 @@ document.addEventListener("keydown", (e) => {
 const accountEl = document.querySelector("#account");
 if (accountEl) {
 	accountEl.addEventListener("click", (e) => {
-		if (e.target.closest("#acct-btn")) {
+		if (e.target?.closest("#acct-btn")) {
 			e.preventDefault();
 			toggleAcctMenu();
 			return;
 		}
-		if (e.target.closest("[data-logout]")) {
+		if (e.target?.closest("[data-logout]")) {
 			e.preventDefault();
 			closeAcctMenu();
 			setAuth(false);
 			return;
 		}
-		if (e.target.closest("[data-login]")) {
+		if (e.target?.closest("[data-login]")) {
 			e.preventDefault();
 			setAuth(true);
 			return;
 		}
-		if (e.target.closest("[data-reset]")) {
+		if (e.target?.closest("[data-reset]")) {
 			e.preventDefault();
 			closeAcctMenu();
 			demoStore.clearAll();
 			render();
 			return;
 		}
-		if (e.target.closest("#acct-menu a, #acct-menu button")) {
+		if (e.target?.closest("#acct-menu a, #acct-menu button")) {
 			closeAcctMenu();
 		} // links route natively
 	});
 }
 document.addEventListener("click", (e) => {
-	if (!e.target.closest("#account")) closeAcctMenu();
+	if (!e.target?.closest("#account")) closeAcctMenu();
 });
 renderAccount();
 syncSubmitButton();
@@ -179,12 +183,12 @@ renderLangPicker();
 const langEl = document.querySelector("#langpicker");
 if (langEl) {
 	langEl.addEventListener("click", (e) => {
-		if (e.target.closest("#lang-btn")) {
+		if (e.target?.closest("#lang-btn")) {
 			e.preventDefault();
 			toggleLangMenu();
 			return;
 		}
-		const opt = e.target.closest("[data-lang]");
+		const opt = e.target?.closest("[data-lang]");
 		if (opt) {
 			e.preventDefault();
 			showLangNote(opt.getAttribute("data-lang-name"));
@@ -192,7 +196,7 @@ if (langEl) {
 	});
 }
 document.addEventListener("click", (e) => {
-	if (!e.target.closest("#langpicker")) closeLangMenu();
+	if (!e.target?.closest("#langpicker")) closeLangMenu();
 });
 
 /* Experimental toggle: persist, flip body state, re-render so JS-conditional
@@ -213,7 +217,7 @@ if (expBtn) {
 /* Clean SPA links use the History API; direct loads are handled by the Flask fallback. */
 document.addEventListener("click", (e) => {
 	if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-	const a = /** @type {HTMLAnchorElement | null} */ (e.target.closest("a[href]"));
+	const a = /** @type {HTMLAnchorElement | null} */ (e.target?.closest("a[href]"));
 	if (!a) return;
 	const href = a.getAttribute("href");
 	if (!href || href.startsWith("#") || a.target || a.hasAttribute("download")) return;

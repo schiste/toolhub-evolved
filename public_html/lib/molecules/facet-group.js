@@ -14,6 +14,17 @@ export const FACET_GROUPS = [
 	{ field: "license", label: "License" },
 	{ field: "wiki", label: "Works on wiki" }
 ];
+/**
+ * @typedef {object} FacetInner
+ * @property {{ param?: string }} [meta]
+ * @property {{ key: string; doc_count: number }[]} [buckets]
+ */
+/**
+ * @param {{ field: string; label: string }} g
+ * @param {Record<string, Record<string, FacetInner>> | null | undefined} facets
+ * @param {Set<string>} selected
+ * @returns {string}
+ */
 export function renderFacetGroup(g, facets, selected) {
 	const wrap = facets && facets[`_filter_${g.field}`];
 	const inner = wrap && wrap[g.field];

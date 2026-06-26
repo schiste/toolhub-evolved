@@ -46,7 +46,7 @@ export function toggleAcctMenu() {
 	if (!m) return;
 	const willOpen = m.hidden;
 	m.hidden = !willOpen;
-	b.setAttribute("aria-expanded", String(willOpen));
+	if (b) b.setAttribute("aria-expanded", String(willOpen));
 	if (willOpen) {
 		const first = $("a, button", m);
 		if (first) first.focus();

@@ -21,31 +21,111 @@ const FALLBACK_COLORS = {
 	surface: "Canvas"
 };
 
+/**
+ * @typedef {object} FGOpts
+ * @property {number} [height]
+ * @property {string[]} [palette]
+ * @property {string} [neutral]
+ * @property {boolean} [fitHalo]
+ * @property {(id: string) => void} [onSelect]
+ * @property {(community: number | string) => string | null | undefined} [communityColor]
+ */
+
+/**
+ * A working graph node: input fields plus the simulation bookkeeping that
+ * graphStructure() attaches (index/x/y/vx/vy are always present afterward).
+ * @typedef {object} FGNode
+ * @property {string} id
+ * @property {number} index
+ * @property {number} x
+ * @property {number} y
+ * @property {number} vx
+ * @property {number} vy
+ * @property {string} [title]
+ * @property {number | string} [community]
+ * @property {boolean} [center]
+ * @property {number} [weight]
+ * @property {number} [score]
+ * @property {boolean} [fits]
+ */
+
+/**
+ * @typedef {object} FGEdge
+ * @property {string} source
+ * @property {string} target
+ * @property {number} [weight]
+ */
+
+/**
+ * @typedef {FGEdge & { sourceNode: FGNode; targetNode: FGNode }} FGResolvedEdge
+ */
+
+/**
+ * @typedef {object} FGData
+ * @property {Partial<FGNode>[]} [nodes]
+ * @property {FGEdge[]} [edges]
+ * @property {{ id: string | number }[]} [communityMeta]
+ */
+
+/**
+ * @typedef {object} FGColors
+ * @property {string} border
+ * @property {string} center
+ * @property {string} fit
+ * @property {string} labelBg
+ * @property {string} labelText
+ * @property {Map<string | number, string>} communityMap
+ * @property {((community: number | string) => string | null | undefined) | null} communityColor
+ * @property {string} other
+ * @property {string} score
+ * @property {string} surface
+ * @property {string[]} palette
+ */
+
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ */
 function clamp(value, min, max) {
 	return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * @param {CSSStyleDeclaration | null} styles
+ * @param {string} name
+ * @param {string} fallback
+ * @returns {string}
+ */
 function cssVar(styles, name, fallback) {
 	if (!styles) return fallback;
 	const value = styles.getPropertyValue(name).trim();
 	return value || fallback;
 }
 
+/** @returns {CSSStyleDeclaration | null} */
 function rootStyles() {
 	if (typeof document === "undefined" || typeof getComputedStyle !== "function") return null;
 	return getComputedStyle(document.documentElement);
 }
 
+/** @param {CSSStyleDeclaration | null} styles */
 function paletteFromTokens(styles) {
 	return COMMUNITY_PALETTE.map((token) => cssVar(styles, token, "")).filter(Boolean);
 }
 
+/** @param {FGNode} node */
 function nodeSize(node) {
 	if (node.center) return 18;
 	const weight = Math.max(0, Number(node.weight) || 0);
 	return clamp(7 + Math.sqrt(weight) * 3.2, 7, 18);
 }
 
+/**
+ * @param {FGNode} node
+ * @param {FGColors} colors
+ * @returns {string}
+ */
 function colorForNode(node, colors) {
 	if (node.center) return colors.center;
 	if (node.community !== null && node.community !== undefined) {
@@ -53,8 +133,12 @@ function colorForNode(node, colors) {
 			const custom = colors.communityColor(node.community);
 			if (custom) return custom;
 		}
-		if (colors.communityMap.has(node.community)) return colors.communityMap.get(node.community);
-		if (colors.communityMap.has(String(node.community))) return colors.communityMap.get(String(node.community));
+		if (colors.communityMap.has(node.community)) {
+			return /** @type {string} */ (colors.communityMap.get(node.community));
+		}
+		if (colors.communityMap.has(String(node.community))) {
+			return /** @type {string} */ (colors.communityMap.get(String(node.community)));
+		}
 		const index = Number(node.community);
 		if (Number.isFinite(index)) return colors.palette[index % colors.palette.length];
 	}
@@ -62,6 +146,11 @@ function colorForNode(node, colors) {
 	return colors.palette[0];
 }
 
+/**
+ * @param {{ id: string | number }[] | null | undefined} communityMeta
+ * @param {{ palette?: string[]; neutral?: string }} [opts]
+ * @returns {Map<string | number, string>}
+ */
 export function communityColors(communityMeta, opts = {}) {
 	const styles = rootStyles();
 	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
@@ -80,6 +169,11 @@ export function communityColors(communityMeta, opts = {}) {
 	return colors;
 }
 
+/**
+ * @param {FGData} data
+ * @param {FGOpts} opts
+ * @returns {FGColors}
+ */
 function buildColors(data, opts) {
 	const styles = rootStyles();
 	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
@@ -101,10 +195,19 @@ function buildColors(data, opts) {
 	};
 }
 
+/**
+ * @param {string} a
+ * @param {string} b
+ */
 function edgeKey(a, b) {
 	return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
 }
 
+/**
+ * @param {FGNode[]} nodes
+ * @param {number} width
+ * @param {number} height
+ */
 function seedNodes(nodes, width, height) {
 	const cx = width / 2;
 	const cy = height / 2;
@@ -119,10 +222,11 @@ function seedNodes(nodes, width, height) {
 	});
 }
 
+/** @param {HTMLElement} container */
 function createGraphSurface(container) {
 	const canvas = document.createElement("canvas");
 	const tooltip = document.createElement("div");
-	const ctx = canvas.getContext("2d");
+	const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
 	canvas.className = "force-graph";
 	canvas.setAttribute("aria-label", "Tool similarity graph");
 	canvas.setAttribute("role", "img");
@@ -133,24 +237,36 @@ function createGraphSurface(container) {
 	return { canvas, tooltip, ctx };
 }
 
+/** @param {FGData} data */
 function graphStructure(data) {
-	const nodes = (data.nodes || []).map((node, index) => Object.assign({ index, x: 0, y: 0, vx: 0, vy: 0 }, node));
+	const nodes = /** @type {FGNode[]} */ (
+		(data.nodes || []).map((node, index) => Object.assign({ index, x: 0, y: 0, vx: 0, vy: 0 }, node))
+	);
 	const byId = new Map(nodes.map((node) => [node.id, node]));
-	const edges = (data.edges || [])
-		.map((edge) =>
-			Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) })
-		)
-		.filter((edge) => edge.sourceNode && edge.targetNode);
+	const edges = /** @type {FGResolvedEdge[]} */ (
+		(data.edges || [])
+			.map((edge) =>
+				Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) })
+			)
+			.filter((edge) => edge.sourceNode && edge.targetNode)
+	);
+	/** @type {Map<string, Set<string>>} */
 	const neighborMap = new Map(nodes.map((node) => [node.id, new Set()]));
+	/** @type {Set<string>} */
 	const edgeSet = new Set();
 	edges.forEach((edge) => {
-		neighborMap.get(edge.source).add(edge.target);
-		neighborMap.get(edge.target).add(edge.source);
+		neighborMap.get(edge.source)?.add(edge.target);
+		neighborMap.get(edge.target)?.add(edge.source);
 		edgeSet.add(edgeKey(edge.source, edge.target));
 	});
 	return { nodes, edges, neighborMap, edgeSet };
 }
 
+/**
+ * @param {HTMLElement} container
+ * @param {FGData} data
+ * @param {FGOpts} [opts]
+ */
 export function forceGraph(container, data, opts = {}) {
 	const { canvas, tooltip, ctx } = createGraphSurface(container);
 	const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -160,8 +276,10 @@ export function forceGraph(container, data, opts = {}) {
 	let raf = 0;
 	let ticks = 0;
 	let stopped = false;
+	/** @type {FGNode | null} */
 	let hovered = null;
 	let pointer = { x: 0, y: 0 };
+	/** @type {MutationObserver | null} */
 	let detachObserver = null;
 	let colors = buildColors(data, opts);
 
@@ -251,6 +369,10 @@ export function forceGraph(container, data, opts = {}) {
 		}
 	}
 
+	/**
+	 * @param {FGResolvedEdge} edge
+	 * @param {Set<string> | null} active
+	 */
 	function drawEdge(edge, active) {
 		const isActive =
 			!active ||
@@ -264,6 +386,10 @@ export function forceGraph(container, data, opts = {}) {
 		ctx.stroke();
 	}
 
+	/**
+	 * @param {FGNode} node
+	 * @param {Set<string> | null} active
+	 */
 	function drawNode(node, active) {
 		const isActive = !active || active.has(node.id);
 		const size = nodeSize(node);
@@ -299,6 +425,11 @@ export function forceGraph(container, data, opts = {}) {
 		ctx.globalAlpha = 1;
 	}
 
+	/**
+	 * @param {number} x
+	 * @param {number} y
+	 * @returns {FGNode | null}
+	 */
 	function findNode(x, y) {
 		for (let i = nodes.length - 1; i >= 0; i--) {
 			const node = nodes[i];
@@ -322,6 +453,7 @@ export function forceGraph(container, data, opts = {}) {
 		tooltip.style.top = `${y}px`;
 	}
 
+	/** @param {MouseEvent} event */
 	function onMove(event) {
 		const rect = canvas.getBoundingClientRect();
 		pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };

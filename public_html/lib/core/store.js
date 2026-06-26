@@ -16,7 +16,15 @@ export const FEED_LOG_CAP = 100;
    user-created delta (favorites, …) that overloads live data while experiments
    are on; never sent to Toolhub. Wiped by "Reset demo data". */
 export const DEMO_NS = "thdemo:";
+/**
+ * @typedef {{ id: string, title: string, description: string, tools: string[], modified?: string, created?: string }} DemoList
+ */
 export const demoStore = {
+	/**
+	 * @param {string} k
+	 * @param {any} [def]
+	 * @returns {any}
+	 */
 	get(k, def) {
 		try {
 			const v = localStorage.getItem(DEMO_NS + k);
@@ -25,11 +33,16 @@ export const demoStore = {
 			return def;
 		}
 	},
+	/**
+	 * @param {string} k
+	 * @param {any} v
+	 */
 	set(k, v) {
 		try {
 			localStorage.setItem(DEMO_NS + k, JSON.stringify(v));
 		} catch {}
 	},
+	/** @param {string} k */
 	remove(k) {
 		try {
 			localStorage.removeItem(DEMO_NS + k);
@@ -46,6 +59,12 @@ const ABSENT = Symbol("absent");
 // DEMO_KEYS → value), restoring each key's prior value afterward. Lets previews
 // (e.g. the styleguide) show stateful components without touching localStorage
 // directly — keeping persistent storage confined to this core module.
+/**
+ * @template T
+ * @param {Record<string, any>} fixture
+ * @param {() => T} render
+ * @returns {T}
+ */
 export function withDemoFixture(fixture, render) {
 	const entries = Object.entries(fixture);
 	const prior = entries.map(([k]) => [k, demoStore.get(k, ABSENT)]);
@@ -62,12 +81,15 @@ export function withDemoFixture(fixture, render) {
 // EXPERIMENTAL — favorites overlay. Needs: POST/DELETE /api/user/favorites/
 // (Toolhub read-only API does not expose this). A set of tool names layered
 // over the live catalog; the tool data itself is always the live record.
+/** @returns {string[]} */
 export function favNames() {
 	return demoStore.get(DEMO_KEYS.favorites, []);
 }
+/** @param {string} name */
 export function isFav(name) {
 	return favNames().includes(name);
 }
+/** @param {string} name */
 export function toggleFav(name) {
 	const f = favNames(),
 		i = f.indexOf(name);
@@ -78,15 +100,22 @@ export function toggleFav(name) {
 }
 // EXPERIMENTAL — demo lists overlay. Needs: POST/PUT/DELETE /api/lists/.
 // A demo list stores real tool NAMES; the tool data itself stays live.
+/** @returns {DemoList[]} */
 export function demoLists() {
 	return demoStore.get(DEMO_KEYS.lists, []);
 }
+/**
+ * @param {string} id
+ * @returns {DemoList | null}
+ */
 export function demoListGet(id) {
 	return demoLists().find((l) => String(l.id) === String(id)) || null;
 }
+/** @param {string} id */
 export function isDemoListId(id) {
 	return String(id).indexOf("demo-") === 0;
 }
+/** @returns {DemoList} */
 export function demoListNew() {
 	return {
 		id: `demo-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`,
@@ -95,6 +124,7 @@ export function demoListNew() {
 		tools: []
 	};
 }
+/** @param {DemoList} list */
 export function demoListSave(list) {
 	const all = demoLists(),
 		i = all.findIndex((l) => l.id === list.id);
@@ -108,6 +138,7 @@ export function demoListSave(list) {
 	demoStore.set(DEMO_KEYS.lists, all);
 	return list;
 }
+/** @param {string} id */
 export function demoListDelete(id) {
 	demoStore.set(
 		DEMO_KEYS.lists,
@@ -115,6 +146,10 @@ export function demoListDelete(id) {
 	);
 }
 // Toggle a tool's membership in a demo list; returns true if now present.
+/**
+ * @param {string} id
+ * @param {string} name
+ */
 export function listToolToggle(id, name) {
 	const l = demoListGet(id);
 	if (!l) return false;
@@ -129,9 +164,18 @@ export function listToolToggle(id, name) {
    PUT /api/tools/{name}/annotations/. Edits & annotations are COMPACT-shaped
    overrides merged onto the live record by applyToolOverlay(); new submissions
    are full compact records that live only in the browser. */
+/**
+ * @param {string} key
+ * @returns {Record<string, any>}
+ */
 export function storeMap(key) {
 	return demoStore.get(key, {});
 }
+/**
+ * @param {string} key
+ * @param {any[]} [live]
+ * @returns {any[]}
+ */
 export function demoFeed(key, live) {
 	return [...(signedIn() ? demoStore.get(key, []) : []), ...(live || [])];
 }
@@ -139,6 +183,11 @@ export const toolEditsMap = () => storeMap(DEMO_KEYS.toolEdits);
 export const toolAnnosMap = () => storeMap(DEMO_KEYS.toolAnnos);
 export const toolNewMap = () => storeMap(DEMO_KEYS.toolNew);
 // Append local revision + audit-log rows so feeds/history reflect demo edits.
+/**
+ * @param {string} action
+ * @param {string} name
+ * @param {string} title
+ */
 export function logActivity(action, name, title) {
 	const ts = new Date().toISOString(),
 		id = `d${Date.now()}${Math.floor(Math.random() * 1e3)}`;
@@ -165,15 +214,18 @@ export function logActivity(action, name, title) {
 	});
 	demoStore.set(DEMO_KEYS.auditlogs, aud.slice(0, FEED_LOG_CAP));
 }
+/** @param {string} name */
 export function demoRevisionsFor(name) {
 	return demoFeed(DEMO_KEYS.revisions, []).filter((r) => r.content_id === name);
 }
 // EXPERIMENTAL — crawler simulation. Needs: server-side crawler (the browser
 // can't fetch arbitrary toolinfo.json — CORS). URLs are just recorded; actual
 // ingestion is simulated from pasted/sample JSON.
+/** @returns {Array<{ url: string, added: string }>} */
 export function crawlerUrls() {
 	return demoStore.get(DEMO_KEYS.crawlerUrls, []);
 }
+/** @param {string} url */
 export function crawlerUrlAdd(url) {
 	const a = crawlerUrls();
 	if (!a.some((x) => x.url === url)) {
@@ -181,6 +233,7 @@ export function crawlerUrlAdd(url) {
 		demoStore.set(DEMO_KEYS.crawlerUrls, a);
 	}
 }
+/** @param {string} url */
 export function crawlerUrlDelete(url) {
 	demoStore.set(
 		DEMO_KEYS.crawlerUrls,
@@ -213,17 +266,19 @@ export const SAMPLE_TOOLINFO = JSON.stringify(
 	2
 );
 // Ingest one toolinfo object or an array, upserting demo records (origin=crawler).
+/** @param {string} text */
 export function ingestToolinfo(text) {
 	let data;
 	try {
 		data = JSON.parse(text);
 	} catch (e) {
-		return { error: `Invalid JSON: ${e.message}` };
+		return { error: `Invalid JSON: ${/** @type {Error} */ (e).message}` };
 	}
 	const items = Array.isArray(data) ? data : [data];
 	const m = toolNewMap();
 	let added = 0,
 		updated = 0;
+	/** @type {string[]} */
 	const errors = [];
 	items.forEach((it, i) => {
 		if (!it || !it.name || !it.title || !it.description || !it.url) {
@@ -253,9 +308,11 @@ export function ingestToolinfo(text) {
 	return { added, updated, errors };
 }
 // CSV helpers for array form fields.
+/** @param {string[] | null | undefined} a */
 export function toCsv(a) {
 	return (a || []).join(", ");
 }
+/** @param {unknown} s */
 export function fromCsv(s) {
 	return String(s || "")
 		.split(",")

@@ -47,8 +47,13 @@ const ICONS = {
 	system: '<path d="M18 2a1 1 0 011 1v10a1 1 0 01-1 1h-5v2h2a1 1 0 010 2H6a1 1 0 010-2h2v-2H2a1 1 0 01-1-1V3a1 1 0 011-1zm-1 2H3v8h14z"/>'
 };
 export const ICON_NAMES = Object.keys(ICONS);
+/**
+ * @param {string} name
+ * @param {string} [cls]
+ * @returns {string}
+ */
 export function icon(name, cls) {
-	const p = ICONS[name];
+	const p = ICONS[/** @type {keyof typeof ICONS} */ (name)];
 	if (!p) return "";
 	return `<svg class="icon${cls ? ` ${cls}` : ""}" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">${p}</svg>`;
 }

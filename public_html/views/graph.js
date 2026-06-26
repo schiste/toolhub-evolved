@@ -5,6 +5,10 @@ import { hasContext } from "../lib/core/signals.js";
 import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 
+/**
+ * @param {{ id: string | number, label: string, size: number }[]} communityMeta
+ * @returns {string}
+ */
 function communityLegend(communityMeta) {
 	const colors = communityColors(communityMeta);
 	const items = (communityMeta || []).map((community) => {
@@ -43,7 +47,7 @@ export async function viewGraph() {
 		</div>
 	</div>`;
 	function mount() {
-		const target = document.querySelector("#graph-canvas");
+		const target = /** @type {HTMLElement | null} */ (document.querySelector("#graph-canvas"));
 		if (!target || g.nodes.length === 0) return;
 		target.forceGraphHandle = forceGraph(target, g, { onSelect: openQuickView, height: 560 });
 	}

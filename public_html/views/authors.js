@@ -6,6 +6,10 @@ import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 
+/**
+ * @param {string} name
+ * @returns {Promise<{ title: string, html: string }>}
+ */
 export async function viewAuthor(name) {
 	const entry = await toolsByAuthor(name);
 	const authorName = entry.name || name;
@@ -16,7 +20,7 @@ export async function viewAuthor(name) {
 		: "";
 	const body =
 		tools.length > 0
-			? grid("grid-tools", tools, (t) => toolCard(t))
+			? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t))
 			: '<p class="empty">No tools found for this author.</p>';
 	const html = `
 	<div class="container page author-page">

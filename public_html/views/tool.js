@@ -34,6 +34,9 @@ import { prosePage, viewNotFound } from "./static.js";
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
+/** @typedef {{ name: string, profile: { url?: string | null, wikiUsername?: string } }} AuthorEntry */
+
+/** @param {{ tool: Tool, shared?: string[] }} item */
 function relatedToolRow(item) {
 	const t = item.tool;
 	const chips = (item.shared || []).map((label) => `<span class="tag">${esc(label)}</span>`).join("");
@@ -54,6 +57,7 @@ function relatedToolRow(item) {
 		</article>`;
 }
 
+/** @param {string} name */
 function viewToolNotFound(name) {
 	const rawName = String(name ?? "");
 	const searchHref = `/search?q=${encodeURIComponent(rawName)}`;
@@ -69,34 +73,45 @@ function viewToolNotFound(name) {
 	};
 }
 
+/**
+ * @param {Tool} t
+ * @returns {AuthorEntry[]}
+ */
 function authorEntries(t) {
 	const names = (t.authors && t.authors.length > 0 ? t.authors : [t.maintainer]).filter(Boolean);
+	/** @type {Array<{ name?: string, url?: string | null, wikiUsername?: string }>} */
 	const records = t.authorObjs || [];
 	return names.map((name, i) => {
 		const byIndex = records[i];
-		const record = (byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name)) || {
-			name
-		};
+		const record =
+			(byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name)) ||
+			/** @type {{ name: string, url?: string | null, wikiUsername?: string }} */ ({
+				name
+			});
 		return { name, profile: { url: record.url, wikiUsername: record.wikiUsername } };
 	});
 }
 
+/** @param {AuthorEntry} entry */
 function authorExternalLink(entry) {
 	const url = safeUrl(authorProfileUrl(entry.profile));
 	if (!url) return "";
 	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="External profile for ${esc(entry.name)}">${icon("external")}</a>`;
 }
 
+/** @param {AuthorEntry} entry */
 function authorLink(entry) {
 	return `<span class="author-ref"><a href="${esc(authorHref(entry.name))}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>${authorExternalLink(entry)}</span>`;
 }
 
+/** @param {Tool} t */
 function authorInlineList(t) {
 	return authorEntries(t)
 		.map((entry) => authorLink(entry))
 		.join('<span class="toolpage__sep">, </span>');
 }
 
+/** @param {string | null} qid */
 function wikidataChip(qid) {
 	const id = String(qid || "").trim();
 	if (!id) return "";
@@ -104,6 +119,7 @@ function wikidataChip(qid) {
 	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener nofollow">Wikidata: <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
 }
 
+/** @param {string | { name?: string, url?: string } | null | undefined} entry */
 function sponsorEntry(entry) {
 	let name = "",
 		url = "";
@@ -121,6 +137,7 @@ function sponsorEntry(entry) {
 		: `<span${dirAttrs(name)}>${body}</span>`;
 }
 
+/** @param {string[] | string | null | undefined} sponsor */
 function sponsorLine(sponsor) {
 	const entries = Array.isArray(sponsor) ? sponsor : sponsor ? [sponsor] : [];
 	const html = entries
@@ -130,9 +147,10 @@ function sponsorLine(sponsor) {
 	return html ? `<div class="toolpage__sponsor"><span class="toolpage__label">Sponsor:</span> ${html}</div>` : "";
 }
 
+/** @param {Tool} t */
 function replacementNote(t) {
 	if (!t.deprecated || !t.replacedBy) return "";
-	const value = t.replacedBy;
+	const value = /** @type {string | { name?: string, title?: string } | null} */ (t.replacedBy);
 	const name = typeof value === "string" ? value : (value && (value.name || value.title)) || "";
 	if (!name) return "";
 	const label = esc(name);
@@ -142,8 +160,12 @@ function replacementNote(t) {
 	return `<div class="toolpage__notice">Replaced by ${linked}</div>`;
 }
 
+/** @param {string} name */
 export async function viewTool(name) {
-	const t = await getTool(name);
+	const t =
+		/** @type {(Tool & { edited?: boolean, annotated?: boolean, endorsement?: { count?: number } }) | null} */ (
+			await getTool(name)
+		);
 	if (!t) return viewToolNotFound(name);
 	const provTags = [
 		wikidataChip(t.wikidata),
@@ -179,6 +201,7 @@ export async function viewTool(name) {
 	const membershipMap = await listMemberships();
 	t.endorsement = endorsementOf(t.name, membershipMap);
 
+	/** @type {Array<{ tool: Tool, shared?: string[] }>} */
 	let related = [];
 	try {
 		const simIndex = await getSimilarityIndex();
@@ -194,6 +217,7 @@ export async function viewTool(name) {
 				<div class="related__list">${related.map((item) => relatedToolRow(item)).join("")}</div>
 			</section>`
 			: "";
+	/** @type {{ nodes: GraphNode[], edges: GraphEdge[] } | null} */
 	let ego = null;
 	try {
 		const graph = await egoGraph(name, 10);
@@ -232,7 +256,7 @@ export async function viewTool(name) {
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
-					${endorsementChip(t.endorsement.count)}
+					${endorsementChip(t.endorsement?.count)}
 					${fitChip(t)}
 					${updatedTimeTag(t.modified, "toolpage__when")}
 					${freshnessNote(t)}
@@ -275,8 +299,8 @@ export async function viewTool(name) {
 					${metaItem("License", esc(t.license))}
 					${metaItem("Works on", wikiLabel(t.forWikis))}
 					${metaItem("Interface languages", langLabel(t.uiLanguages))}
-					${metaItem("Technology", (t.technologyUsed || []).map((item) => esc(item)).join(", "))}
-					${metaItem("Audiences", (t.audiences || []).map((item) => esc(item)).join(", "))}
+					${metaItem("Technology", (t.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
+					${metaItem("Audiences", (t.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
 
 				<!-- EXPERIMENTAL — thanks. Needs: an authenticated appreciation event model with abuse controls. -->
@@ -321,7 +345,7 @@ export async function viewTool(name) {
 		</div>
 	</div>`;
 	function mount() {
-		const target = document.querySelector("#ego-canvas");
+		const target = /** @type {HTMLElement | null} */ (document.querySelector("#ego-canvas"));
 		if (!target || !ego) return;
 		target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
 	}
@@ -329,6 +353,7 @@ export async function viewTool(name) {
 }
 
 // Tool revision history — live from /api/tools/{name}/revisions/.
+/** @param {string} name */
 export async function viewToolHistory(name) {
 	const [liveT, data] = await Promise.all([
 		getTool(name),
@@ -357,8 +382,9 @@ export async function viewToolHistory(name) {
 		</div>`
 	};
 }
+/** @param {string} name */
 export function viewDiffStub(name) {
-	const t = INDEX[name];
+	const t = /** @type {Record<string, Tool>} */ (INDEX)[name];
 	return prosePage(
 		"Revision diff",
 		`

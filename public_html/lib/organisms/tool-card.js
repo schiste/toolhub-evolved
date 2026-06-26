@@ -13,6 +13,11 @@ export const CARD_TAG_LIMIT = 2;
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
+/**
+ * @param {Tool} t
+ * @param {{ rank?: number; popular?: boolean }} [opts]
+ * @returns {string}
+ */
 export function toolCard(t, opts = {}) {
 	// (3) Tags: 2 + "+N" overflow chip so every card is the same height.
 	const allk = t.keywords || [];
@@ -37,7 +42,10 @@ export function toolCard(t, opts = {}) {
 	const footLeft = opts.popular ? popularityBadge(t) : `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
 	const complete = completeness(t);
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
-	const signalLine = endorsementChip(t.endorsement && t.endorsement.count) + completenessMeter(complete) + fitChip(t);
+	// `endorsement` (an {count,lists} object) is attached at runtime by signals.js but
+	// isn't on the ambient Tool type — narrow via a structural cast.
+	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (t).endorsement;
+	const signalLine = endorsementChip(endorsement && endorsement.count) + completenessMeter(complete) + fitChip(t);
 	// The whole card opens the quick-view; (5) a hover cue signals the peek.
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">

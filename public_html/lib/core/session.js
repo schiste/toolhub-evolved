@@ -10,6 +10,7 @@ export const EXP_KEY = "toolhub-exp";
 export function expStored() {
 	return localStorage.getItem(EXP_KEY) === "on";
 }
+/** @param {boolean} on */
 export function setExpStored(on) {
 	localStorage.setItem(EXP_KEY, on ? "on" : "off");
 }
@@ -19,6 +20,7 @@ let expActive = false;
 export function expOn() {
 	return expActive;
 }
+/** @param {unknown} on */
 export function applyExp(on) {
 	expActive = Boolean(on);
 }
@@ -33,10 +35,13 @@ export const AUTH_KEY = "toolhub-auth";
 export function signedIn() {
 	return expOn() && localStorage.getItem(AUTH_KEY) !== "out";
 }
+/** @type {() => void} */
 let authRender = () => {};
+/** @param {unknown} fn */
 export function setAuthRender(fn) {
-	authRender = typeof fn === "function" ? fn : () => {};
+	authRender = typeof fn === "function" ? /** @type {() => void} */ (fn) : () => {};
 }
+/** @param {boolean} on */
 export function setAuth(on) {
 	if (on) localStorage.removeItem(AUTH_KEY);
 	else localStorage.setItem(AUTH_KEY, "out");

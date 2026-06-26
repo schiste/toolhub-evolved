@@ -8,18 +8,35 @@ const GLOBAL_NODE_LIMIT = 250;
 const COMMUNITY_LIMIT = 8;
 
 // Order [label, members] entries by community size (desc), label as tiebreak.
+/**
+ * @param {[unknown, unknown[]]} a
+ * @param {[unknown, unknown[]]} b
+ */
 const byCommunitySize = (a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]));
 
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {[string, string]}
+ */
 function sortedPair(a, b) {
 	return a < b ? [a, b] : [b, a];
 }
 
+/**
+ * @param {string[]} names
+ * @param {import("./similarity.js").SimIndex} index
+ * @param {number} [k]
+ * @returns {GraphEdge[]}
+ */
 export function knnEdges(names, index, k = 4) {
 	const nodeNames = [...new Set(names || [])].filter((name) => index.vectors.has(name));
+	/** @type {Map<string, GraphEdge>} */
 	const edgeMap = new Map();
 	for (const source of nodeNames) {
 		const sourceVec = index.vectors.get(source);
 		if (!sourceVec || sourceVec.size === 0) continue;
+		/** @type {Array<{ target: string, weight: number }>} */
 		const scored = [];
 		for (const target of nodeNames) {
 			if (target === source) continue;
@@ -40,17 +57,25 @@ export function knnEdges(names, index, k = 4) {
 	return [...edgeMap.values()].sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
 }
 
+/**
+ * @param {Array<string | GraphNode>} nodes
+ * @param {GraphEdge[]} edges
+ * @returns {Map<string, number | undefined>}
+ */
 export function detectCommunities(nodes, edges) {
 	const ids = [
 		...new Set((nodes || []).map((node) => (typeof node === "string" ? node : node.id)).filter(Boolean))
 	].sort();
-	const labels = new Map(ids.map((id) => [id, id]));
-	const adjacency = new Map(ids.map((id) => [id, []]));
+	const labels = new Map(ids.map((id) => /** @type {[string, string]} */ ([id, id])));
+	/** @type {Map<string, Array<{ id: string, weight: number }>>} */
+	const adjacency = new Map(
+		ids.map((id) => /** @type {[string, Array<{ id: string, weight: number }>]} */ ([id, []]))
+	);
 	for (const edge of edges || []) {
 		if (!adjacency.has(edge.source) || !adjacency.has(edge.target)) continue;
 		const weight = Number(edge.weight) || 0;
-		adjacency.get(edge.source).push({ id: edge.target, weight });
-		adjacency.get(edge.target).push({ id: edge.source, weight });
+		adjacency.get(edge.source)?.push({ id: edge.target, weight });
+		adjacency.get(edge.target)?.push({ id: edge.source, weight });
 	}
 
 	for (let pass = 0; pass < 8; pass++) {
@@ -61,7 +86,7 @@ export function detectCommunities(nodes, edges) {
 				const label = labels.get(neighbor.id);
 				scores.set(label, (scores.get(label) || 0) + neighbor.weight);
 			}
-			let bestLabel = labels.get(id);
+			let bestLabel = labels.get(id) || id;
 			let bestScore = -1;
 			for (const [label, score] of scores) {
 				if (score > bestScore || (score === bestScore && String(label).localeCompare(String(bestLabel)) < 0)) {
@@ -88,10 +113,12 @@ export function detectCommunities(nodes, edges) {
 	ordered.forEach(([label], index) => {
 		renumbered.set(label, index);
 	});
-	return new Map(ids.map((id) => [id, renumbered.get(labels.get(id))]));
+	return new Map(ids.map((id) => /** @type {[string, number | undefined]} */ ([id, renumbered.get(labels.get(id))])));
 }
 
+/** @param {unknown[]} values */
 function rankedFrequentTerms(values) {
+	/** @type {Map<string, number>} */
 	const counts = new Map();
 	for (const raw of values || []) {
 		const value = normStr(raw);
@@ -101,10 +128,13 @@ function rankedFrequentTerms(values) {
 	return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([value]) => value);
 }
 
+/** @param {Tool[]} tools */
 function communityTerms(tools) {
+	/** @type {string[]} */
 	const terms = [];
+	/** @type {Set<string>} */
 	const seen = new Set();
-	for (const key of ["keywords", "tasks", "audiences"]) {
+	for (const key of /** @type {Array<"keywords" | "tasks" | "audiences">} */ (["keywords", "tasks", "audiences"])) {
 		for (const term of rankedFrequentTerms((tools || []).flatMap((tool) => tool?.[key] || []))) {
 			if (seen.has(term)) continue;
 			seen.add(term);
@@ -114,19 +144,32 @@ function communityTerms(tools) {
 	return terms;
 }
 
+/** @param {string} value */
 function escapeRegExp(value) {
 	return value.replaceAll(/[$()*+.?[\\\]^{|}]/g, "\\$&");
 }
 
+/**
+ * @param {string} value
+ * @param {string} term
+ */
 function containsWholeTerm(value, term) {
 	if (!value || !term) return false;
 	return new RegExp(`(^|[^a-z0-9])${escapeRegExp(term)}([^a-z0-9]|$)`).test(value);
 }
 
+/**
+ * @param {string} a
+ * @param {string} b
+ */
 function termsOverlap(a, b) {
 	return containsWholeTerm(a, b) || containsWholeTerm(b, a);
 }
 
+/**
+ * @param {string} term
+ * @param {Set<string>} usedTerms
+ */
 function termAlreadyUsed(term, usedTerms) {
 	for (const usedTerm of usedTerms) {
 		if (termsOverlap(term, usedTerm)) return true;
@@ -134,12 +177,22 @@ function termAlreadyUsed(term, usedTerms) {
 	return false;
 }
 
+/**
+ * @param {number} index
+ * @param {Set<string>} usedLabels
+ */
 function fallbackCommunityLabel(index, usedLabels) {
 	const label = `Cluster ${index + 1}`;
 	usedLabels.add(label);
 	return label;
 }
 
+/**
+ * @param {string[]} terms
+ * @param {number} index
+ * @param {Set<string>} usedTerms
+ * @param {Set<string>} usedLabels
+ */
 function communityLabel(terms, index, usedTerms, usedLabels) {
 	const topTerm = terms[0] || "";
 	const distinctTerm = terms.find((term) => !termAlreadyUsed(term, usedTerms));
@@ -152,15 +205,21 @@ function communityLabel(terms, index, usedTerms, usedLabels) {
 	return label;
 }
 
+/**
+ * @param {Array<{ name: string, tool: Tool }>} selected
+ * @param {Map<string, number | undefined>} detected
+ */
 function capCommunities(selected, detected) {
+	/** @type {Map<number | undefined, Array<{ name: string, tool: Tool }>>} */
 	const groups = new Map();
 	for (const item of selected || []) {
 		const id = detected.has(item.name) ? detected.get(item.name) : 0;
 		if (!groups.has(id)) groups.set(id, []);
-		groups.get(id).push(item);
+		groups.get(id)?.push(item);
 	}
 	const ordered = [...groups.entries()].sort(byCommunitySize);
 	const kept = ordered.slice(0, COMMUNITY_LIMIT);
+	/** @type {Map<number | undefined, number>} */
 	const remap = new Map();
 	kept.forEach(([id], index) => {
 		remap.set(id, index);
@@ -170,7 +229,9 @@ function capCommunities(selected, detected) {
 		const id = detected.has(item.name) ? detected.get(item.name) : 0;
 		nodeCommunities.set(item.name, remap.has(id) ? remap.get(id) : "other");
 	}
+	/** @type {Set<string>} */
 	const usedTerms = new Set();
+	/** @type {Set<string>} */
 	const usedLabels = new Set();
 	const communityMeta = kept.map(([, items], index) => ({
 		id: index,
@@ -199,10 +260,10 @@ async function buildGlobalGraph() {
 	const edges = knnEdges(nodeNames, index, 4);
 	const detected = detectCommunities(nodeNames, edges);
 	const { nodeCommunities, communityMeta } = capCommunities(selected, detected);
-	const degree = new Map(nodeNames.map((name) => [name, 0]));
+	const degree = new Map(nodeNames.map((name) => /** @type {[string, number]} */ ([name, 0])));
 	for (const edge of edges) {
-		if (degree.has(edge.source)) degree.set(edge.source, degree.get(edge.source) + 1);
-		if (degree.has(edge.target)) degree.set(edge.target, degree.get(edge.target) + 1);
+		if (degree.has(edge.source)) degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
+		if (degree.has(edge.target)) degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
 	}
 	const nodes = selected.map(({ name, tool, endorsement }) => ({
 		id: name,
@@ -217,6 +278,11 @@ async function buildGlobalGraph() {
 
 export const globalGraph = memoizeAsync(buildGlobalGraph);
 
+/**
+ * @param {import("./similarity.js").SimIndex} index
+ * @param {Tool} tool
+ * @returns {import("./similarity.js").SimIndex}
+ */
 function indexWithTool(index, tool) {
 	if (index.byName.has(tool.name) && index.vectors.has(tool.name)) return index;
 	const byName = new Map(index.byName);
@@ -230,6 +296,10 @@ function indexWithTool(index, tool) {
 	});
 }
 
+/**
+ * @param {string} toolName
+ * @param {number} [k]
+ */
 export async function egoGraph(toolName, k = 10) {
 	const index = await getSimilarityIndex();
 	const tool = index.byName.get(toolName) || (await getTool(toolName));

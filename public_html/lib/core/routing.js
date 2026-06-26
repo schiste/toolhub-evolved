@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+/** @param {string} name */
 export function toolHref(name) {
 	return `/tools/${encodeURIComponent(name)}`;
 }
+/** @param {string} id */
 export function listHref(id) {
 	return `/lists/${encodeURIComponent(id)}`;
 }
+/** @param {string} name */
 export function authorHref(name) {
 	return `/by/${encodeURIComponent(name)}`;
 }
@@ -40,6 +43,10 @@ export function normalizeLegacyHashRoute() {
 	return true;
 }
 
+/**
+ * @param {string} href
+ * @param {{ replace?: boolean }} [opts]
+ */
 export function navigateTo(href, opts = {}) {
 	const url = new URL(href, location.href);
 	if (url.origin !== location.origin) {

@@ -3,6 +3,7 @@ import { esc, safeUrl } from "./dom.js";
 
 const LINK_ATTRS = 'target="_blank" rel="noopener nofollow"';
 
+/** @param {unknown} value */
 function decodeEscapedUrl(value) {
 	return String(value === null || value === undefined ? "" : value)
 		.replaceAll("&amp;", "&")
@@ -12,22 +13,35 @@ function decodeEscapedUrl(value) {
 		.replaceAll("&#39;", "'");
 }
 
+/**
+ * @param {string[]} tokens
+ * @param {string} html
+ */
 function tokenFor(tokens, html) {
 	const key = `\uE000MD${tokens.length}\uE000`;
 	tokens.push(html);
 	return key;
 }
 
+/**
+ * @param {string} value
+ * @param {string[]} tokens
+ */
 function restoreTokens(value, tokens) {
 	return value.replaceAll(/\uE000MD(\d+)\uE000/g, (_, i) => tokens[Number(i)] || "");
 }
 
+/**
+ * @param {string} hrefText
+ * @param {string} labelHtml
+ */
 function linkHtml(hrefText, labelHtml) {
 	const href = safeUrl(decodeEscapedUrl(hrefText));
 	if (!href) return "";
 	return `<a href="${href}" ${LINK_ATTRS}>${labelHtml}</a>`;
 }
 
+/** @param {string} value */
 function trimLinkedPunctuation(value) {
 	let url = value;
 	let trail = "";
@@ -38,8 +52,13 @@ function trimLinkedPunctuation(value) {
 	return { url, trail };
 }
 
+/**
+ * @param {string | null | undefined} value
+ * @param {{ allowLinks?: boolean }} [opts]
+ */
 function renderInline(value, opts = {}) {
 	const allowLinks = opts.allowLinks !== false;
+	/** @type {string[]} */
 	const tokens = [];
 	let out = String(value === null || value === undefined ? "" : value);
 
@@ -71,37 +90,50 @@ function renderInline(value, opts = {}) {
 	return restoreTokens(out, tokens);
 }
 
+/** @param {string} line */
 function isBlank(line) {
 	return !String(line || "").trim();
 }
 
+/** @param {string} line */
 function isFence(line) {
 	return /^ {0,3}```/.test(line);
 }
 
+/** @param {string} line */
 function headingMatch(line) {
 	return /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
 }
 
+/** @param {string} line */
 function blockquoteMatch(line) {
 	return /^ {0,3}&gt; ?(.*)$/.exec(line);
 }
 
+/** @param {string} line */
 function unorderedMatch(line) {
 	return /^ {0,3}[*-]\s+(.*)$/.exec(line);
 }
 
+/** @param {string} line */
 function orderedMatch(line) {
 	return /^ {0,3}\d+\.\s+(.*)$/.exec(line);
 }
 
+/** @param {string} line */
 function isBlockStart(line) {
 	return isFence(line) || headingMatch(line) || blockquoteMatch(line) || unorderedMatch(line) || orderedMatch(line);
 }
 
+/**
+ * @param {string[]} lines
+ * @param {number} start
+ * @param {boolean} ordered
+ */
 function renderList(lines, start, ordered) {
 	const tag = ordered ? "ol" : "ul";
 	const matcher = ordered ? orderedMatch : unorderedMatch;
+	/** @type {string[]} */
 	const items = [];
 	let i = start;
 	while (i < lines.length) {
@@ -118,8 +150,13 @@ function renderList(lines, start, ordered) {
 	return { html: `<${tag}>${items.join("")}</${tag}>`, next: i };
 }
 
+/**
+ * @param {string} escaped
+ * @returns {string}
+ */
 function renderBlocks(escaped) {
 	const lines = escaped.split("\n");
+	/** @type {string[]} */
 	const out = [];
 	let i = 0;
 
@@ -187,6 +224,7 @@ function renderBlocks(escaped) {
 	return out.join("\n");
 }
 
+/** @param {unknown} src */
 export function renderMarkdown(src) {
 	if (src === null || src === undefined || !String(src).trim()) return "";
 	const escaped = esc(src).replaceAll(/\r\n?/g, "\n");
