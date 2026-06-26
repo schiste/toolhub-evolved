@@ -55,6 +55,15 @@ function walkAst(node, visit) {
 	for (const child of astChildren(node)) walkAst(child, visit);
 }
 
+// Parse JS, returning null on failure (syntax errors are eslint's job, not ours).
+function parseModule(code, options = ESPREE_OPTS) {
+	try {
+		return espree.parse(code, options);
+	} catch {
+		return null;
+	}
+}
+
 // Is this interpolation safe to drop into HTML without esc()? Calls (components/
 // helpers escape by contract), bare identifiers (usually pre-built HTML), and
 // literals are accepted; raw data access (obj.prop) is the flagged XSS risk.
@@ -91,12 +100,8 @@ function isSafeInterpolation(node) {
  */
 export function scanTemplates(code, file) {
 	const issues = [];
-	let tree;
-	try {
-		tree = espree.parse(code, ESPREE_OPTS);
-	} catch {
-		return issues; // parse errors are eslint's job
-	}
+	const tree = parseModule(code);
+	if (!tree) return issues;
 	walkAst(tree, (node) => {
 		if (node.type !== "TemplateLiteral" || !node.quasis.some((q) => HTML_TAG.test(q.value.raw))) return;
 		for (const expr of node.expressions) {
@@ -286,12 +291,8 @@ function looksLikeCode(text) {
  */
 export function scanComments(code, file) {
 	const issues = [];
-	let tree;
-	try {
-		tree = espree.parse(code, { ...ESPREE_OPTS, comment: true });
-	} catch {
-		return issues; // parse errors are eslint's job
-	}
+	const tree = parseModule(code, { ...ESPREE_OPTS, comment: true });
+	if (!tree) return issues;
 	for (const comment of tree.comments || []) {
 		if (code.slice(comment.range[0], comment.range[1]).startsWith("/**")) continue; // JSDoc = types
 		const lines = comment.value.split("\n").map((l) => l.replace(/^\s*\*?\s?/, "").trimEnd());
@@ -333,12 +334,8 @@ const DATA_FETCHERS = new Set([
  */
 export function scanFloating(code, file) {
 	const issues = [];
-	let tree;
-	try {
-		tree = espree.parse(code, ESPREE_OPTS);
-	} catch {
-		return issues; // parse errors are eslint's job
-	}
+	const tree = parseModule(code);
+	if (!tree) return issues;
 	walkAst(tree, (node) => {
 		if (node.type !== "ExpressionStatement" || node.expression?.type !== "CallExpression") return;
 		const callee = node.expression.callee;
@@ -411,12 +408,8 @@ export function scanBalance(code, file) {
 		if (reason) issues.push({ file, line: 1, message: `unbalanced HTML: ${reason}` });
 		return issues;
 	}
-	let tree;
-	try {
-		tree = espree.parse(code, ESPREE_OPTS);
-	} catch {
-		return issues; // parse errors are eslint's job
-	}
+	const tree = parseModule(code);
+	if (!tree) return issues;
 	walkAst(tree, (node) => {
 		if (node.type !== "TemplateLiteral" || !node.quasis.some((q) => HTML_TAG.test(q.value.raw))) return;
 		let skeleton = "";
