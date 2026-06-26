@@ -4,7 +4,12 @@ line-length = 120
 src = ["proxy"]
 
 [tool.ruff.lint]
+# "ALL" includes flake8-bandit (the S* rules) — that IS our Python security
+# scan (shell injection, eval, hardcoded secrets, requests without timeout, …).
+# If you ever narrow this select list, keep "S" so security coverage stays on.
 select = ["ALL"]
+# Only non-security rules may be ignored. Never add an "S*" code here; silence a
+# specific finding with an inline `# noqa: S### <reason>` so it stays auditable.
 ignore = [
   "ANN101",
   "COM812",
