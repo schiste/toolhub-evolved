@@ -1,14 +1,11 @@
 {
 	"$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-	"_comment": "Mutation testing for the pure core logic, via the node:test runner. Replaces the bespoke mutation runner in the old quality.mjs.",
-	"testRunner": "command",
-	"commandRunner": {
-		"command": "node --test tests/unit/*.test.mjs"
-	},
+	"_comment": "Mutation testing via the Vitest runner: per-test coverage means only the tests covering a mutant rerun, so mutating the whole app stays fast in CI.",
+	"testRunner": "vitest",
+	"coverageAnalysis": "perTest",
 	"mutate": ["public_html/lib/core/**/*.js"],
-	"coverageAnalysis": "off",
 	"reporters": ["clear-text", "progress"],
-	"_thresholds_note": "Full scope (no hand-picked subset). Current ~22% is honest: several core modules (graph/markdown/store/author-index/theme/session) lack unit tests. break is a ratchet floor to prevent regression; raise it as tests are added.",
+	"_thresholds_note": "break is a ratchet floor; raised as tests are added (Phase 3 targets 100% across all layers).",
 	"thresholds": {
 		"high": 80,
 		"low": 40,

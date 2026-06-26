@@ -47,7 +47,7 @@ jobs:
             - name: JS payload budget
               run: node tools/js-budget.mjs
             - name: Unit tests
-              run: node --test tests/unit/*.test.mjs
+              run: npx vitest run
             - name: Mutation (Stryker)
               run: npx stryker run
             - name: Install Playwright browser

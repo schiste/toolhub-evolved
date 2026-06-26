@@ -1,61 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import path from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
-
-const repoRoot = process.env.TOOLHUB_CORE_ROOT || path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-
-const storage = new Map();
-globalThis.localStorage = {
-	getItem(key) {
-		return storage.has(key) ? storage.get(key) : null;
-	},
-	setItem(key, value) {
-		storage.set(key, String(value));
-	},
-	removeItem(key) {
-		storage.delete(key);
-	},
-	clear() {
-		storage.clear();
-	},
-	key(index) {
-		return [...storage.keys()][index] || null;
-	},
-	get length() {
-		return storage.size;
-	}
-};
-
-globalThis.document = {
-	body: {
-		classList: {
-			contains(name) {
-				return name === "exp-off";
-			},
-			toggle() {}
-		}
-	},
-	querySelector() {
-		return null;
-	},
-	querySelectorAll() {
-		return [];
-	}
-};
-
-function moduleUrl(relativePath) {
-	return pathToFileURL(path.join(repoRoot, relativePath)).href;
-}
-
-const util = await import(moduleUrl("public_html/lib/core/util.js"));
-const dom = await import(moduleUrl("public_html/lib/core/dom.js"));
-const routing = await import(moduleUrl("public_html/lib/core/routing.js"));
-const api = await import(moduleUrl("public_html/lib/core/api.js"));
-const signals = await import(moduleUrl("public_html/lib/core/signals.js"));
-const similarity = await import(moduleUrl("public_html/lib/core/similarity.js"));
-const synth = await import(moduleUrl("public_html/lib/core/synth.js"));
+import { test } from "vitest";
+// Static imports (not dynamic path imports) so Stryker's vitest runner can
+// instrument and mutate these modules. The DOM/localStorage/fetch globals these
+// modules touch are provided by the happy-dom environment (see vitest.config.mjs).
+import * as util from "../../public_html/lib/core/util.js";
+import * as dom from "../../public_html/lib/core/dom.js";
+import * as routing from "../../public_html/lib/core/routing.js";
+import * as api from "../../public_html/lib/core/api.js";
+import * as signals from "../../public_html/lib/core/signals.js";
+import * as similarity from "../../public_html/lib/core/similarity.js";
+import * as synth from "../../public_html/lib/core/synth.js";
 
 test("normStr normalizes absent, padded, and mixed-case values", () => {
 	assert.equal(util.normStr(null), "");

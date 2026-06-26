@@ -6,7 +6,8 @@
 		"playwright.config.mjs",
 		"eslint.config.js",
 		"stylelint.config.mjs",
-		"commitlint.config.js"
+		"commitlint.config.js",
+		"vitest.config.mjs"
 	],
 	"project": ["public_html/**/*.js", "tools/**/*.mjs", "tests/**/*.mjs", "*.js", "*.mjs"],
 	"ignoreDependencies": [
