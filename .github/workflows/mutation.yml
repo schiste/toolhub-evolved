@@ -1,7 +1,8 @@
-# Mutation testing (Stryker) over the whole app. A full-scope run is ~1 hour on
-# the 2-core runner — too slow for a per-push gate — so it runs nightly and on
-# demand. Per-push CI relies on the unit suite plus the coverage threshold gate;
-# this workflow enforces the mutation-score floor (see stryker.conf.json break).
+# Mutation testing (Stryker) over the whole app, at a literal 100% score.
+# A single full-scope run is ~70 min (7k+ mutants) and exceeds the runner's
+# per-job ceiling, so it is SHARDED into a matrix of short per-area jobs (each a
+# few thousand mutants, well under the limit) that together cover public_html/**.
+# Runs nightly and on demand; per-push CI relies on the unit suite + coverage gate.
 name: Mutation
 
 on:
@@ -18,9 +19,27 @@ concurrency:
 
 jobs:
     stryker:
-        name: Stryker mutation
+        name: Stryker (${{ matrix.name }})
         runs-on: ubuntu-latest
-        timeout-minutes: 120
+        timeout-minutes: 60
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - name: core
+                      scope: "public_html/lib/core/**/*.js"
+                    - name: atoms+molecules
+                      scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
+                    - name: organisms
+                      scope: "public_html/lib/organisms/**/*.js"
+                    - name: views-a
+                      scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
+                    - name: views-b
+                      scope: "public_html/views/lists.js,public_html/views/toolforms.js"
+                    - name: styleguide
+                      scope: "public_html/views/styleguide.js"
+                    - name: views-rest+main
+                      scope: "public_html/views/router.js,public_html/views/static.js,public_html/views/parity.js,public_html/views/graph.js,public_html/views/authors.js,public_html/views/experiments.js,public_html/views/_fixtures.js,public_html/main.js"
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
@@ -29,4 +48,6 @@ jobs:
                   cache: npm
             - run: npm ci
             - name: Stryker (vitest runner, happy-dom — no browser needed)
-              run: npx stryker run
+              env:
+                  SCOPE: ${{ matrix.scope }}
+              run: npx stryker run --mutate "$SCOPE"
