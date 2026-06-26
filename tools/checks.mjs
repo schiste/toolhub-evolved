@@ -211,6 +211,101 @@ export function scanA11y(text, file) {
 	return issues;
 }
 
+// ---- Commented-out code ---------------------------------------------------
+// AI tends to leave disabled code behind in comments. eslint's no-warning-
+// comments rule already bans the warning markers; this catches dead code.
+// The signal (a comment line ending in ; { or }) is cheap and matches intent,
+// but on its own it false-positives on prose ("url -> { data, ts }") and on the
+// JSDoc type annotations this repo now carries (@returns {{…}[]}). So a
+// candidate is CONFIRMED only if it actually parses as JavaScript and contains a
+// real statement — dead code parses, prose does not. JSDoc (/** … */) is skipped
+// outright: it is types, never disabled code.
+const CODE_LINE_END = /[;{}]$/;
+const CODE_STATEMENTS = new Set([
+	"VariableDeclaration",
+	"FunctionDeclaration",
+	"ClassDeclaration",
+	"IfStatement",
+	"ForStatement",
+	"ForInStatement",
+	"ForOfStatement",
+	"WhileStatement",
+	"DoWhileStatement",
+	"SwitchStatement",
+	"TryStatement",
+	"ThrowStatement",
+	"ReturnStatement",
+	"BreakStatement",
+	"ContinueStatement",
+	"ImportDeclaration",
+	"ExportNamedDeclaration",
+	"ExportDefaultDeclaration",
+	"ExportAllDeclaration"
+]);
+// Expression statements that DO something (vs. a bare identifier/literal/object,
+// which is how prose tends to parse when it parses at all).
+const ACTING_EXPRESSIONS = new Set([
+	"CallExpression",
+	"NewExpression",
+	"AssignmentExpression",
+	"UpdateExpression",
+	"AwaitExpression",
+	"YieldExpression"
+]);
+
+function looksLikeCode(text) {
+	// module catches commented import/export; script+globalReturn catches a bare
+	// `return …;`. Either parsing cleanly into a real statement means it is code.
+	for (const opts of [{ sourceType: "module" }, { sourceType: "script", ecmaFeatures: { globalReturn: true } }]) {
+		let tree;
+		try {
+			tree = espree.parse(text, { ecmaVersion: 2023, ...opts });
+		} catch {
+			continue;
+		}
+		let isCode = false;
+		walkAst(tree, (node) => {
+			if (
+				CODE_STATEMENTS.has(node.type) ||
+				(node.type === "ExpressionStatement" && ACTING_EXPRESSIONS.has(node.expression?.type))
+			) {
+				isCode = true;
+			}
+		});
+		if (isCode) return true;
+	}
+	return false;
+}
+
+/**
+ * Flag comments that are actually disabled code (eslint owns the warning
+ * markers). JSDoc is exempt. Confirmed by parsing, so prose never trips it.
+ * @param {string} code
+ * @param {string} file
+ * @returns {{ file: string, line: number, message: string }[]}
+ */
+export function scanComments(code, file) {
+	const issues = [];
+	let tree;
+	try {
+		tree = espree.parse(code, { ...ESPREE_OPTS, comment: true });
+	} catch {
+		return issues; // parse errors are eslint's job
+	}
+	for (const comment of tree.comments || []) {
+		if (code.slice(comment.range[0], comment.range[1]).startsWith("/**")) continue; // JSDoc = types
+		const lines = comment.value.split("\n").map((l) => l.replace(/^\s*\*?\s?/, "").trimEnd());
+		if (!lines.some((l) => CODE_LINE_END.test(l.trim()))) continue; // the cheap signal
+		if (!looksLikeCode(lines.join("\n"))) continue; // the parse-confirm
+		issues.push({
+			file,
+			line: comment.loc.start.line,
+			message: `commented-out code — delete it (history keeps it); comments should explain, not disable`
+		});
+	}
+	return issues;
+}
+
 /**
  * @param {string} text
  * @param {string} file
@@ -249,7 +344,7 @@ function main() {
 	const issues = files.flatMap((file) => {
 		const code = readFileSync(file, "utf8");
 		const found = [...scanText(code, file), ...scanA11y(code, file)];
-		if (file.endsWith(".js")) found.push(...scanTemplates(code, file));
+		if (file.endsWith(".js")) found.push(...scanTemplates(code, file), ...scanComments(code, file));
 		return found;
 	});
 	for (const issue of issues) console.error(`${issue.file}:${issue.line} ${issue.message}`);
@@ -257,7 +352,7 @@ function main() {
 		console.error(`checks: ${issues.length} issue(s)`);
 		process.exit(1);
 	}
-	console.log("checks: links, routes, HTML escaping, and a11y OK");
+	console.log("checks: links, routes, HTML escaping, a11y, and dead code OK");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scanA11y, scanTemplates, scanText } from "../../tools/checks.mjs";
+import { scanA11y, scanComments, scanTemplates, scanText } from "../../tools/checks.mjs";
 
 test("scanText flags external _blank links without rel=noopener", () => {
 	const bad = `<a href="https://x.test" target="_blank">x</a>`;
@@ -103,4 +103,27 @@ test("scanA11y flags an icon-only control but not one with visible text or a nam
 	assert.deepEqual(scanA11y(`<button type="button" aria-label="Close">\${icon("close")}</button>`, "f.js"), []);
 	assert.deepEqual(scanA11y(`<button type="button">\${icon("add")} <span>Add</span></button>`, "f.js"), []);
 	assert.deepEqual(scanA11y(`<a href="/x">\${icon("ext")} Profile</a>`, "f.js"), []);
+});
+
+// ---- scanComments (commented-out code) ------------------------------------
+test("scanComments flags disabled statements, blocks, imports, and block comments", () => {
+	assert.match(scanComments(`// foo(x);`, "f.js")[0].message, /commented-out code/);
+	assert.equal(scanComments(`// if (ready) {\n//   start();\n// }`, "f.js").length, 1);
+	assert.equal(scanComments(`// import { x } from "./y.js";`, "f.js").length, 1);
+	assert.equal(scanComments(`/* const n = 1; */`, "f.js").length, 1);
+	assert.equal(scanComments(`x = 1; // n--;`, "f.js").length, 1);
+});
+
+test("scanComments ignores prose, JSDoc types, and bare identifiers", () => {
+	assert.deepEqual(scanComments(`// url -> { data, ts }`, "f.js"), []); // prose, not valid JS
+	assert.deepEqual(scanComments(`/** @returns {{ a: string }[]} */\nexport const f = () => [];`, "f.js"), []);
+	assert.deepEqual(scanComments(`// returns the count.`, "f.js"), []);
+	assert.deepEqual(scanComments(`// done;`, "f.js"), []); // bare identifier, not an action
+	assert.deepEqual(scanComments(`// Wrap user data in esc() before use.`, "f.js"), []);
+});
+
+test("scanComments reports the comment's line number", () => {
+	const issues = scanComments(`const ok = 1;\n\n// legacyInit();`, "f.js");
+	assert.equal(issues.length, 1);
+	assert.equal(issues[0].line, 3);
 });
