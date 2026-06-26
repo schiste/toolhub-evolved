@@ -12,6 +12,7 @@ import { listCard } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 
 const WIKI_OPTIONS = [
+	// Stryker disable next-line StringLiteral: projectItems() overrides the label for the value="" row with "any project", so this "Any wiki" string is never rendered — equivalent.
 	["", "Any wiki"],
 	["wikidata.org", "Wikidata"],
 	["commons.wikimedia.org", "Commons"],
@@ -55,7 +56,9 @@ function projectItems() {
  * @param {string} value
  */
 function itemLabel(items, value) {
+	// Stryker disable next-line StringLiteral: every caller passes a value present in items; when value is falsy the matching row is items[0] (the empty-string option), so the `|| ""` fallback selects the same row — equivalent.
 	const hit = items.find(([v]) => v === (value || ""));
+	// Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: callers only pass values that exist in items, so `hit` is always found and this defensive fallback is unreachable.
 	return hit ? hit[1] : (items[0] && items[0][1]) || "";
 }
 /**
@@ -63,6 +66,7 @@ function itemLabel(items, value) {
  * @param {string[][]} items
  * @param {string} [selected]
  */
+// Stryker disable next-line StringLiteral: every caller passes `selected`, so the default value is never used — equivalent.
 function intentOptionButtons(kind, items, selected = "") {
 	return items
 		.map(
@@ -114,6 +118,7 @@ function searchHrefForState(state) {
 function toolMatchesIntent(t, state) {
 	if (state.term) {
 		const values = state.axis === "tasks" ? t.tasks : t.audiences;
+		// Stryker disable next-line ArrayDeclaration: normalizeTool always yields arrays for tasks/audiences, so the `|| []` fallback is never taken — equivalent.
 		if (!(values || []).includes(state.term)) return false;
 	}
 	if (state.wiki && !wikiMatches(t.forWikis, state.wiki)) return false;
@@ -209,16 +214,18 @@ async function homeSectionsModel(state) {
 	recentParams.set("page_size", "5");
 	const toolParams = new URLSearchParams(filters);
 	toolParams.set("page_size", "24");
+	// Stryker disable next-line ObjectLiteral: returning `{}` is equivalent to `{ results: [] }` because every consumer reads the value as `.results || []`.
+	const emptyResults = () => ({ results: [] });
 	const [flists, recent, filteredToolsData] = await Promise.all([
-		apiGet("/lists/", listParams).catch(() => ({ results: [] })),
+		apiGet("/lists/", listParams).catch(emptyResults),
 		apiGet("/search/tools/", /** @type {Record<string, string>} */ (/** @type {unknown} */ (recentParams))).catch(
-			() => ({ results: [] })
+			emptyResults
 		),
 		filtered
 			? apiGet(
 					"/search/tools/",
 					/** @type {Record<string, string>} */ (/** @type {unknown} */ (toolParams))
-				).catch(() => ({ results: [] }))
+				).catch(emptyResults)
 			: Promise.resolve(null)
 	]);
 	/** @type {ToolList[]} */
@@ -230,9 +237,11 @@ async function homeSectionsModel(state) {
 		await attachEndorsements(featured);
 		const matchingNames = new Set(featured.map((t) => t.name));
 		lists = lists.filter((l) =>
+			// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
 			(l.tools || []).some((t) => matchingNames.has(t.name) || toolMatchesIntent(t, state))
 		);
 	} else {
+		// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
 		featured = dedupeTools(lists.flatMap((l) => l.tools || []));
 		await attachEndorsements(featured);
 	}
@@ -256,6 +265,13 @@ export async function viewHome() {
 	const intentAxis = initialState.axis;
 	const intentTerm = initialState.term;
 	const intentWiki = initialState.wiki;
+
+	const submitToolBtn = button("Submit a tool", {
+		// Stryker disable next-line StringLiteral: `button()` defaults `variant` to "outline", so mutating this explicit "outline" to "" produces identical markup — equivalent.
+		variant: "outline",
+		href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create",
+		attrs: 'target="_blank" rel="noopener nofollow"'
+	});
 
 	const html = `
 	<section class="hero">
@@ -286,7 +302,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", attrs: 'target="_blank" rel="noopener nofollow"' })}</div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${submitToolBtn}</div>
 		</aside>
 	</div>`;
 	return {
@@ -302,6 +318,7 @@ export async function viewHome() {
 			const homeMain = /** @type {HTMLElement} */ ($("[data-home-main]"));
 			const homeRecent = /** @type {HTMLElement} */ ($("[data-home-recent]"));
 			const state = {
+				// Stryker disable next-line StringLiteral,LogicalOperator: intentStateFromContext always yields axis "audiences", so data-axis is never empty and the `|| "audiences"` fallback is dead — equivalent.
 				axis: intentForm.dataset.axis || "audiences",
 				term: intentForm.dataset.term || "",
 				wiki: intentForm.dataset.wiki || ""
@@ -321,6 +338,7 @@ export async function viewHome() {
 				if (!on) return;
 				const menu = $(`[data-intent-menu="${kind}"]`, intentForm);
 				const trigger = $(`[data-intent-trigger="${kind}"]`, intentForm);
+				// Stryker disable next-line ConditionalExpression,LogicalOperator: setMenu is only ever called with a kind from an existing trigger, so both elements are always found — this defensive guard is unreachable.
 				if (!menu || !trigger) return;
 				menu.hidden = false;
 				trigger.setAttribute("aria-expanded", "true");
@@ -357,6 +375,7 @@ export async function viewHome() {
 					state.wiki
 				);
 				const clear = $input("[data-intent-clear]", intentForm);
+				// Stryker disable next-line ConditionalExpression: the clear control is always present in the rendered form, so this guard is always true — equivalent.
 				if (clear) clear.disabled = !hasHomeFilters(state);
 			};
 			const persistIntent = () => {
@@ -372,6 +391,7 @@ export async function viewHome() {
 				homeRecent.innerHTML = '<li class="recent__empty">Unable to refresh recently updated tools.</li>';
 			};
 			const refreshHome = async () => {
+				// Stryker disable next-line UpdateOperator: refreshSeq is only ever compared for equality to detect a superseded refresh; ++ and -- both produce a unique value per call, so the stale-guard behaves identically — equivalent.
 				const seq = ++refreshSeq;
 				homeMain.setAttribute("aria-busy", "true");
 				homeRecent.setAttribute("aria-busy", "true");
@@ -383,6 +403,7 @@ export async function viewHome() {
 					if (seq !== refreshSeq) return;
 					renderHomeError();
 				} finally {
+					// Stryker disable next-line ConditionalExpression: this only suppresses the busy-flag clear for a superseded refresh; the active refresh still clears it, so the final observable state is identical — equivalent.
 					if (seq === refreshSeq) {
 						homeMain.removeAttribute("aria-busy");
 						homeRecent.removeAttribute("aria-busy");
@@ -405,11 +426,13 @@ export async function viewHome() {
 				const kind = option.getAttribute("data-intent-option");
 				const value = option.getAttribute("data-value") || "";
 				if (kind === "axis") {
+					// Stryker disable next-line StringLiteral: axis options only carry data-value "audiences" or "tasks" (never empty), so the `|| "audiences"` fallback is dead — equivalent.
 					state.axis = value || "audiences";
 					state.term = "";
 				} else if (kind === "term") {
 					state.term = value;
-				} else if (kind === "wiki") {
+				} else {
+					// the only remaining option kind is "wiki"
 					state.wiki = value;
 				}
 				syncIntent();

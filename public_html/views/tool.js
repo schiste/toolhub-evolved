@@ -39,6 +39,7 @@ const QUICK_VIEW_BUTTON_STYLE =
 /** @param {{ tool: Tool, shared?: string[] }} item */
 function relatedToolRow(item) {
 	const t = item.tool;
+	// Stryker disable next-line ArrayDeclaration: nearestNeighbors() always provides a `shared` array; the `|| []` fallback is never taken — equivalent.
 	const chips = (item.shared || []).map((label) => `<span class="tag">${esc(label)}</span>`).join("");
 	const deprecated = t.deprecated
 		? '<span class="related__status status status--red"><span class="dot dot--red"></span>Deprecated</span>'
@@ -80,14 +81,13 @@ function viewToolNotFound(name) {
 function authorEntries(t) {
 	const names = (t.authors && t.authors.length > 0 ? t.authors : [t.maintainer]).filter(Boolean);
 	/** @type {Array<{ name?: string, url?: string | null, wikiUsername?: string }>} */
+	// Stryker disable next-line ArrayDeclaration: normalizeTool always provides an `authorObjs` array; the `|| []` fallback is never taken — equivalent.
 	const records = t.authorObjs || [];
 	return names.map((name, i) => {
 		const byIndex = records[i];
-		const record =
-			(byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name)) ||
-			/** @type {{ name: string, url?: string | null, wikiUsername?: string }} */ ({
-				name
-			});
+		const found = byIndex && byIndex.name === name ? byIndex : records.find((a) => a && a.name === name);
+		// Stryker disable next-line ObjectLiteral: only `record.url`/`record.wikiUsername` are read below (both undefined here), so `{ name }` and `{}` are indistinguishable — equivalent.
+		const record = found || /** @type {{ name: string, url?: string | null, wikiUsername?: string }} */ ({ name });
 		return { name, profile: { url: record.url, wikiUsername: record.wikiUsername } };
 	});
 }
@@ -121,12 +121,14 @@ function wikidataChip(qid) {
 
 /** @param {string | { name?: string, url?: string } | null | undefined} entry */
 function sponsorEntry(entry) {
-	let name = "",
-		url = "";
+	let name = "";
+	// Stryker disable next-line StringLiteral: `url` is only ever read through safeUrl(); a non-http(s) sentinel is rejected to "" just like the empty default — equivalent.
+	let url = "";
 	if (typeof entry === "string") {
 		name = entry;
-	} else if (entry && typeof entry === "object") {
+	} else if (entry) {
 		name = entry.name || entry.url || "";
+		// Stryker disable next-line StringLiteral: safeUrl() rejects any non-http(s) sentinel to "", so the empty fallback is indistinguishable — equivalent.
 		url = entry.url || "";
 	}
 	if (!name) return "";
@@ -192,9 +194,7 @@ export async function viewTool(name) {
 		linkOut("Report a bug", t.bugtracker),
 		linkOut("Give feedback", t.feedback),
 		linkOut("Translate", t.translate)
-	]
-		.filter(Boolean)
-		.join("");
+	].join("");
 
 	// REAL status — only the deprecated/experimental flags (shown even when exp off).
 	const realBadge = statusBadge(t);
@@ -207,7 +207,7 @@ export async function viewTool(name) {
 		const simIndex = await getSimilarityIndex();
 		related = nearestNeighbors(t, simIndex, 6);
 	} catch {
-		related = [];
+		// keep the initial empty list
 	}
 	const relatedHtml =
 		related.length > 0
@@ -221,9 +221,10 @@ export async function viewTool(name) {
 	let ego = null;
 	try {
 		const graph = await egoGraph(name, 10);
+		// Stryker disable next-line ArrayDeclaration: egoGraph always returns a `nodes` array; the `|| []` fallback is never taken, and the sentinel array's length (1) is still < 3 — equivalent.
 		if ((graph.nodes || []).length >= 3) ego = graph;
 	} catch {
-		ego = null;
+		// keep ego null
 	}
 	const neighborhoodHtml = ego
 		? `<section class="neighborhood" aria-labelledby="neighborhood-title">
@@ -240,6 +241,10 @@ export async function viewTool(name) {
 		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`)
 		.join("");
 	const complete = completeness(t);
+	// Stryker disable next-line OptionalChaining: `t.endorsement` is always assigned above via endorsementOf(), so optional vs plain access is equivalent.
+	const endorsementCount = t.endorsement?.count;
+	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
+	const thankBtn = button("Thank maintainers", { variant: "outline", disabled: true });
 
 	const html = `
 	<div class="container page">
@@ -256,7 +261,7 @@ export async function viewTool(name) {
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
-					${endorsementChip(t.endorsement?.count)}
+					${endorsementChip(endorsementCount)}
 					${fitChip(t)}
 					${updatedTimeTag(t.modified, "toolpage__when")}
 					${freshnessNote(t)}
@@ -307,7 +312,7 @@ export async function viewTool(name) {
 				<div class="experimental thanks">
 					<h2 class="toolpage__h2">Thanks <span class="exp-badge">Experimental</span></h2>
 					${thanksBlock(t)}
-					${button("Thank maintainers", { variant: "outline", disabled: true })}
+					${thankBtn}
 				</div>
 
 				${relatedHtml}
@@ -346,6 +351,7 @@ export async function viewTool(name) {
 	</div>`;
 	function mount() {
 		const target = /** @type {HTMLElement | null} */ (document.querySelector("#ego-canvas"));
+		// Stryker disable next-line LogicalOperator: #ego-canvas is rendered exactly when `ego` is set, so `target` and `ego` are both present or both absent — `&&` vs `||` is indistinguishable here.
 		if (!target || !ego) return;
 		target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
 	}
@@ -357,6 +363,7 @@ export async function viewTool(name) {
 export async function viewToolHistory(name) {
 	const [liveT, data] = await Promise.all([
 		getTool(name),
+		// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` because the value is read as `data.results || []`.
 		apiGet(`/tools/${encodeURIComponent(name)}/revisions/`, { page_size: "20" }).catch(() => ({ results: [] }))
 	]);
 	// Lane B: your demo edits show as the most recent revisions.
@@ -365,12 +372,13 @@ export async function viewToolHistory(name) {
 	if (!t && revs.length === 0) return viewNotFound();
 	const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
 	const rows = revs
-		.map(
-			(r, i) => `
+		.map((r, i) => {
+			const username = (r.user && r.user.username) || "system";
+			return `
 		<li>${icon("history", "feed__ic")}
-			<span class="feed__main">Revision by <strong${dirAttrs((r.user && r.user.username) || "system")}>${esc((r.user && r.user.username) || "system")}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
-			<span class="feed__when">#${esc(String(r.id))}</span></li>`
-		)
+			<span class="feed__main">Revision by <strong${dirAttrs(username)}>${esc(username)}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+			<span class="feed__when">#${esc(String(r.id))}</span></li>`;
+		})
 		.join("");
 	return {
 		title: `History: ${title} — Toolhub`,

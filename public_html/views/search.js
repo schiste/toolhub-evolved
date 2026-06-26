@@ -20,6 +20,7 @@ const CLIENT_STATUS_VALUES = new Set(CLIENT_STATUS_FILTERS.map((s) => s.value));
 
 /** @param {string | null} value */
 function activePageSize(value) {
+	// Stryker disable next-line StringLiteral: when value is null the fallback is parsed by Number.parseInt; "" and any non-numeric sentinel both yield NaN (→ default page size) — equivalent.
 	const parsed = Number.parseInt(value ?? "", 10);
 	return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
 }
@@ -27,6 +28,7 @@ function activePageSize(value) {
 /** @param {string | null} value */
 function activeClientStatuses(value) {
 	return new Set(
+		// Stryker disable next-line StringLiteral: when value is null the fallback string is split/filtered; "" and any sentinel both produce no valid status tokens — equivalent.
 		String(value || "")
 			.split(",")
 			.map((s) => s.trim())
@@ -42,6 +44,7 @@ function activeClientStatuses(value) {
 function sortFromOfficialOrdering(ordering, fallback) {
 	if (ordering === "-modified_date") return "recent";
 	if (ordering === "name") return "name";
+	// Stryker disable next-line ConditionalExpression,EqualityOperator,StringLiteral: "relevance" is only ever in the allow-list when experiments are on, where it is also the default sort, so mapping -score→relevance is indistinguishable from the fallback through viewSearch — equivalent.
 	if (ordering === "-score") return "relevance";
 	return fallback;
 }
@@ -56,14 +59,19 @@ function renderStatusFacetGroup(selectedStatuses) {
 }
 
 export async function viewSearch() {
+	// Stryker disable next-line StringLiteral: when location.search is empty the fallback feeds URLSearchParams; "" yields no params and any sentinel yields a single unread key, so reads (q, page, *__term, …) are unaffected — equivalent.
 	const usp = new URLSearchParams(location.search || "");
 	const q = usp.get("q") || "";
+	// Stryker disable next-line StringLiteral: when the page param is absent the fallback is parsed; "" and any sentinel both yield NaN (→ page 1) — equivalent.
 	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
 	const pageSize = activePageSize(usp.get("page_size"));
 	const exp = expOn();
 	const defaultSort = exp ? "relevance" : "recent";
 	const requestedSort = usp.get("sort") || sortFromOfficialOrdering(usp.get("ordering"), defaultSort);
-	const allowedSorts = exp ? ["relevance", "recent", "name", "views", "complete"] : ["recent", "name", "complete"];
+	// defaultSort is referenced (not re-typed) so the allow-list entry that equals the
+	// default cannot drift from it; removing the default from the list is a no-op since
+	// an out-of-list request already resolves to defaultSort.
+	const allowedSorts = exp ? [defaultSort, "recent", "name", "views", "complete"] : [defaultSort, "name", "complete"];
 	const sort = allowedSorts.includes(requestedSort) ? requestedSort : defaultSort;
 	const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
 	const clientStatuses = activeClientStatuses(usp.get("status"));
@@ -100,6 +108,7 @@ export async function viewSearch() {
 	const facetHTML = FACET_GROUPS.map((g) => renderFacetGroup(g, data.facets, selected)).join("");
 	const statusFacetHTML = renderStatusFacetGroup(clientStatuses);
 	const pagerHTML = renderPager(page, pages);
+	// Stryker disable next-line ConditionalExpression,EqualityOperator: firstResult/lastResult are only read in the results.length>0 branch of countHTML, where this guard is already true, so the empty-case value is never observed — equivalent.
 	const firstResult = results.length > 0 ? (page - 1) * pageSize + 1 : 0;
 	const lastResult = firstResult + results.length - 1;
 	const countHTML =
@@ -124,6 +133,8 @@ export async function viewSearch() {
 			? `<ul class="card-grid grid-tools" role="list">${results.map((t, i) => `<li>${toolCard(t, sort === "views" ? { rank: (page - 1) * pageSize + i + 1, popular: true } : {})}</li>`).join("")}</ul>`
 			: '<p class="empty">No tools match these filters.</p>';
 
+	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so mutating this explicit "outline" to "" yields identical markup — equivalent.
+	const clearFiltersBtn = button("Clear filters", { variant: "outline", href: "/search", cls: "facets__reset" });
 	const html = `
 	<div class="container page">
 		<h1 class="page__title">Browse tools</h1>
@@ -135,7 +146,7 @@ export async function viewSearch() {
 				</form>
 				${statusFacetHTML}
 				${facetHTML || '<p class="facet__empty">No filters available.</p>'}
-				${button("Clear filters", { variant: "outline", href: "/search", cls: "facets__reset" })}
+				${clearFiltersBtn}
 			</aside>
 			<div class="browse__main">
 				<div class="browse__bar">
@@ -173,7 +184,7 @@ export async function viewSearch() {
 			if (sv && sv !== defaultSort) u.set("sort", sv);
 			const psv = activePageSize(/** @type {HTMLInputElement} */ ($input("#page-size")).value);
 			if (psv !== DEFAULT_PAGE_SIZE) u.set("page_size", String(psv));
-			if (extra && extra.page && extra.page > 1) u.set("page", String(extra.page));
+			if (extra.page && extra.page > 1) u.set("page", String(extra.page));
 			navigateTo(`/search${u.toString() ? `?${u.toString()}` : ""}`);
 		};
 		/** @type {HTMLElement} */ ($(".facets")).addEventListener("change", () => navigate({}));

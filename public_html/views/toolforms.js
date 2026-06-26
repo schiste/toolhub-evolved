@@ -38,12 +38,14 @@ import { viewNotFound } from "./static.js";
 
 /** @param {string} value */
 function isHttpUrl(value) {
+	let u;
 	try {
-		const u = new URL(String(value || "").trim());
-		return u.protocol === "http:" || u.protocol === "https:";
+		// Stryker disable next-line StringLiteral,MethodExpression: callers pass already-trimmed field values; an empty string and any sentinel both fail `new URL`, and the redundant .trim() has nothing to strip — equivalent.
+		u = new URL(String(value || "").trim());
 	} catch {
 		return false;
 	}
+	return u.protocol === "http:" || u.protocol === "https:";
 }
 
 /**
@@ -65,8 +67,10 @@ function validateHttpField(id, msg, opts = {}) {
 /** @param {string} id */
 function clearHttpErrorWhenValid(id) {
 	const el = $input(`#${id}`);
+	// Stryker disable next-line ConditionalExpression: this is only wired to fields the form always renders (tf-url/tf-repo/at-url), so `el` is never null — defensive guard.
 	if (!el) return;
 	el.addEventListener("input", () => {
+		// Stryker disable next-line MethodExpression: these are type="url" inputs, which strip surrounding whitespace, so the value is already trimmed — equivalent.
 		const value = el.value.trim();
 		if (!value || isHttpUrl(value)) clearFieldError(id);
 	});
@@ -96,6 +100,7 @@ function renderDuplicateItem(t) {
 function renderDuplicates(tools) {
 	const box = $("[data-dupes]");
 	const list = $("[data-dupes-list]");
+	// Stryker disable next-line ConditionalExpression,LogicalOperator: the duplicate region (with both elements) is always present on the create form where suggestions run — defensive guard.
 	if (!box || !list) return;
 	if (tools.length === 0) {
 		list.innerHTML = "";
@@ -122,6 +127,7 @@ function debounce(fn, wait) {
 function setupDuplicateSuggestions() {
 	const titleEl = document.querySelector("#tf-title");
 	const keywordsEl = document.querySelector("#tf-keywords");
+	// Stryker disable next-line ConditionalExpression,LogicalOperator: setupDuplicateSuggestions runs only on the create form, which always renders both fields — defensive guard.
 	if (!titleEl || !keywordsEl) return;
 	/** @type {Promise<any> | null} */
 	let indexPromise = null;
@@ -142,8 +148,7 @@ function setupDuplicateSuggestions() {
 		try {
 			index = await loadIndex();
 		} catch {
-			renderDuplicates([]);
-			return;
+			// Swallow: a failed load leaves `index` undefined and the guard below renders empty duplicates.
 		}
 		if (!index || !Array.isArray(index.tools)) {
 			renderDuplicates([]);
@@ -154,6 +159,7 @@ function setupDuplicateSuggestions() {
 		/** @type {Tool[]} */
 		const candidates = [];
 		const add = (/** @type {Tool} */ tool) => {
+			// Stryker disable next-line ConditionalExpression,LogicalOperator: candidates come from the similarity index / nearestNeighbors, which only yield real tools with names — defensive guard.
 			if (!tool || !tool.name) return;
 			if (typedName && normStr(tool.name) === typedName) return;
 			if (seen.has(tool.name)) return;
@@ -177,6 +183,7 @@ function setupDuplicateSuggestions() {
 	titleEl.addEventListener("input", update);
 	keywordsEl.addEventListener("input", update);
 	const typeEl = document.querySelector("#tf-type");
+	// Stryker disable next-line ConditionalExpression: the create form always renders the #tf-type select, so this guard is always true — defensive.
 	if (typeEl) typeEl.addEventListener("change", update);
 }
 
@@ -186,7 +193,9 @@ function setupDuplicateSuggestions() {
 export async function viewToolForm(name) {
 	const editing = name !== null && name !== undefined;
 	let cur = /** @type {Tool} */ (
+		// Stryker disable next-line ObjectLiteral: this blank draft is only used in create mode, where every field renders as an empty control, so `{}` yields an identical form — equivalent.
 		/** @type {unknown} */ ({
+			// Stryker disable next-line StringLiteral: in create mode the name field is rendered from its own literal, so this `name` value is never read — equivalent.
 			name: "",
 			title: "",
 			description: "",
@@ -206,7 +215,8 @@ export async function viewToolForm(name) {
 		if (!fetched) return viewNotFound();
 		cur = fetched;
 	}
-	const isCrawler = editing && cur.origin && cur.origin !== "api";
+	const crawlerOwned = Boolean(cur.origin) && cur.origin !== "api";
+	const isCrawler = editing && crawlerOwned;
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">← Back</a>
@@ -326,6 +336,10 @@ export function viewAddTools() {
 			? grid("grid-tools", cards, (/** @type {Tool} */ t) => toolCard(t))
 			: '<p class="empty">No tools yet. Submit one above, or ingest sample toolinfo.</p>';
 	}
+	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
+	const registerBtn = button("Register", { variant: "outline", type: "submit" });
+	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
+	const loadSampleBtn = button("Load sample", { variant: "outline", attrs: "data-sample" });
 	const html = `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
@@ -336,7 +350,7 @@ export function viewAddTools() {
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
 		<form class="le__add" data-url-form novalidate>
 			${fInput("toolinfo.json URL", "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: "Full public URL the crawler should re-read, usually ending in toolinfo.json." })}
-			${button("Register", { variant: "outline", type: "submit" })}
+			${registerBtn}
 		</form>
 		<ul class="at__urls" data-url-list>${urlRows()}</ul>
 
@@ -344,7 +358,7 @@ export function viewAddTools() {
 		${fArea("Toolinfo JSON", "at-json", "", "Paste one tool object or an array; successful entries appear below in Your tools.", { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
 		<div class="le__actions">
 			${button("Ingest", { variant: "primary", attrs: "data-ingest" })}
-			${button("Load sample", { variant: "outline", attrs: "data-sample" })}
+			${loadSampleBtn}
 		</div>
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
@@ -354,6 +368,7 @@ export function viewAddTools() {
 	function mount() {
 		/** @type {HTMLElement} */ ($("[data-url-form]")).addEventListener("submit", (e) => {
 			e.preventDefault();
+			// Stryker disable next-line MethodExpression: #at-url is a type="url" input, which strips surrounding whitespace, so the value is already trimmed — equivalent.
 			const u = /** @type {HTMLInputElement} */ ($input("#at-url")).value.trim();
 			const invalidUrl = validateHttpField("at-url", "Enter a valid http(s) toolinfo URL.");
 			if (invalidUrl) {
@@ -392,6 +407,7 @@ export function viewAddTools() {
 				(parts.join(", ") || "Nothing ingested") + (errors.length > 0 ? ` · ${errors.join("; ")}` : "");
 			/** @type {HTMLElement} */ ($("[data-sub-grid]")).innerHTML = subGrid();
 			const c = $("[data-sub-count]");
+			// Stryker disable next-line ConditionalExpression: the [data-sub-count] element is always present in this view, so the guard is always true — defensive.
 			if (c) c.textContent = countLabel(Object.keys(toolNewMap()).length, "tool", "tools");
 		});
 		clearHttpErrorWhenValid("at-url");

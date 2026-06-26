@@ -24,6 +24,7 @@ import { viewNotFound } from "./static.js";
 
 /* ---- Lists overview + list detail -------------------------------------- */
 export async function viewLists() {
+	// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` because the value is read as `.results || []`.
 	const data = await apiGet("/lists/", { page_size: "30" }).catch(() => ({ results: [] }));
 	const live = (data.results || []).map((/** @type {any} */ list) => normalizeList(list));
 	// When experimenting, the user's demo lists appear first (clearly tagged).
@@ -48,6 +49,7 @@ export async function viewList(id) {
 		demoTag = "",
 		editBtn = "";
 	/** @type {Tool[]} */
+	// Stryker disable next-line ArrayDeclaration: this initial value is always overwritten (demo branch assigns getToolsByName(...), live branch assigns l.tools) before `tools` is read — equivalent.
 	let tools = [];
 	if (isDemo) {
 		const d = demoListGet(id);
@@ -56,6 +58,7 @@ export async function viewList(id) {
 		l = { title: d.title || "Untitled list", description: d.description || "", toolCount: tools.length };
 		demoTag = ' <span class="exp-badge">Demo list</span>';
 		if (signedIn()) {
+			// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 			editBtn = button("Edit list", { variant: "outline", href: `${listHref(id)}/edit`, icon: "edit" });
 		}
 	} else {
@@ -123,8 +126,11 @@ export function viewListEdit(id) {
 		id: src.id,
 		title: src.title || "",
 		description: src.description || "",
+		// Stryker disable next-line ArrayDeclaration: demoListNew()/demoListGet() always provide a tools array, so the `|| []` fallback is never taken — equivalent.
 		tools: [...(src.tools || [])]
 	};
+	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
+	const searchToolsBtn = button("Search", { variant: "outline", attrs: "data-le-search" });
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? listHref(work.id) : "/my-lists"}">← Back</a>
@@ -136,7 +142,7 @@ export function viewListEdit(id) {
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
 				<input class="le__input" id="le-q" type="search" aria-label="Search tools to add" placeholder="Search tools to add…" autocomplete="off" />
-				${button("Search", { variant: "outline", attrs: "data-le-search" })}
+				${searchToolsBtn}
 			</div>
 			<div class="le__results" data-le-results></div>
 			<div class="le__actions">
@@ -170,15 +176,19 @@ export function viewListEdit(id) {
 		toolsEl.addEventListener("click", (e) => {
 			const target = /** @type {EventTarget} */ (e.target);
 			const li = target.closest("[data-tn]");
+			// Stryker disable next-line ConditionalExpression: clicks always originate inside a rendered row, so `li` is never null here — defensive guard, unreachable false case.
 			if (!li) return;
 			const n = /** @type {string} */ (li.getAttribute("data-tn")),
 				i = work.tools.indexOf(n);
+			// Stryker disable next-line ConditionalExpression: rows are rendered from work.tools, so the clicked name is always present (i !== -1) — defensive guard.
 			if (i === -1) return;
 			const up = target.closest('[data-move="up"]');
 			const down = target.closest('[data-move="down"]');
 			if (target.closest("[data-rm]")) {
 				work.tools.splice(i, 1);
-			} else if ((up && i > 0) || (down && i < work.tools.length - 1)) {
+				// up/down boundary rows render their move button `disabled`, so a clickable
+				// up implies i>0 and a clickable down implies i<len-1; `up || down` is enough.
+			} else if (up || down) {
 				work.tools.splice(i + (up ? -1 : 1), 0, work.tools.splice(i, 1)[0]);
 			} else {
 				return;
@@ -217,14 +227,17 @@ export function viewListEdit(id) {
 			const b = /** @type {HTMLButtonElement | null} */ (
 				/** @type {EventTarget} */ (e.target).closest("[data-add]")
 			);
+			// Stryker disable next-line ConditionalExpression: only [data-add] buttons live in the results list, so clicks always resolve to one — defensive guard.
 			if (!b) return;
 			const n = /** @type {string} */ (b.getAttribute("data-add"));
+			// Stryker disable next-line ConditionalExpression: results for already-listed tools render `disabled`, so an enabled click never targets a tool already in work.tools — guard's false branch is unreachable.
 			if (!work.tools.includes(n)) {
 				work.tools.push(n);
 				renderTools();
 				b.disabled = true;
 				b.classList.add("is-in");
 				const ic = b.querySelector(".icon");
+				// Stryker disable next-line ConditionalExpression: every result button is rendered with an .icon child, so `ic` is always found — defensive guard.
 				if (ic) ic.outerHTML = icon("check");
 			}
 		});

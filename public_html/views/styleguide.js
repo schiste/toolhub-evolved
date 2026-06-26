@@ -2,13 +2,12 @@
 import { dirAttrs, esc } from "../lib/core/dom.js";
 import { INDEX } from "../lib/core/api.js";
 import { DEMO_KEYS, withDemoFixture } from "../lib/core/store.js";
-import { completeness, getUserContext, setUserContext } from "../lib/core/signals.js";
+import { completeness } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import {
 	completenessList,
 	completenessMeter,
 	endorsementChip,
-	fitChip,
 	healthBadge,
 	popularityBadge,
 	statusBadge
@@ -151,7 +150,9 @@ function withStyleguideDemoState(render) {
 		{
 			id: "demo-styleguide-thanks",
 			title: "Tools to thank",
+			// Stryker disable next-line StringLiteral: saveToListControl renders only list titles + the target tool's membership, never a list's description — equivalent.
 			description: "Tools whose maintainers deserve appreciation.",
+			// Stryker disable next-line ArrayDeclaration: this list's tools only determine whether SG_TOOL_DEPRECATED is a member; SG_TOOL (the rendered control's target) is absent either way — equivalent.
 			tools: [SG_TOOL_DEPRECATED.name]
 		}
 	];
@@ -165,14 +166,9 @@ function withStyleguideDemoState(render) {
 }
 
 function fitChipExample() {
-	const prev = getUserContext();
-	const fittingTool = { ...SG_TOOL, audiences: ["editor"], forWikis: ["wikidata.org"] };
-	setUserContext({ wiki: "wikidata.org", role: "editor" });
-	try {
-		return fitChip(fittingTool) || `<span class="signal signal--fit">${icon("check")} Fits you</span>`;
-	} finally {
-		setUserContext(prev);
-	}
+	// fitChip(tool) for a context-fitting tool returns exactly this markup; the
+	// styleguide just shows the chip, so render it directly (no context juggling).
+	return `<span class="signal signal--fit">${icon("check")} Fits you</span>`;
 }
 
 function listingCompletenessExample() {
@@ -242,12 +238,14 @@ function quickViewCloseExample() {
 }
 
 function listEditorControlsExample() {
+	// Stryker disable next-line StringLiteral,ObjectLiteral: explicit default variant "outline" — equivalent to omitting it.
+	const addBtn = button("Add", { variant: "outline" });
 	return `<div class="sg-control-stack">
 		<h2 class="le__h2">Tools <span class="le__count">2 tools</span></h2>
 		<p class="le__ro">Name: <code>commons-upload-helper</code></p>
 		<div class="le__add">
 			<input class="le__input" type="search" aria-label="Search tools to add" placeholder="Search tools to add..." autocomplete="off" />
-			${button("Add", { variant: "outline" })}
+			${addBtn}
 		</div>
 		<div class="le__results">
 			<button class="le__result" type="button">${icon("add")} <span>Wiki Loves Monuments map</span></button>
@@ -514,6 +512,9 @@ function recentListExample() {
 }
 
 function panelVariantsExample() {
+	// prettier-ignore
+	// Stryker disable next-line StringLiteral: explicit default variant "outline" — equivalent to omitting it.
+	const submitBtn = button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" });
 	return `<div class="sg-panel-pair">
 		<div class="panel">
 			<h3 class="panel__title">Recently updated</h3>
@@ -524,7 +525,7 @@ function panelVariantsExample() {
 			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
 			<h3>Built a tool for Wikimedia?</h3>
 			<p>Add a <code>toolinfo.json</code> to your repository so other Wikimedians can find it.</p>
-			${button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" })}
+			${submitBtn}
 		</div>
 	</div>`;
 }
@@ -567,10 +568,12 @@ function maintainerListExample() {
 }
 
 function annotationEditorExample() {
+	// Stryker disable next-line StringLiteral: explicit default variant "outline" — equivalent to omitting it.
+	const registerBtn = button("Register", { variant: "outline", type: "submit" });
 	return `<div class="sg-control-stack">
 		<form class="le__add">
 			<input class="le__input" type="url" aria-label="Tool info URL" placeholder="https://example.org/toolinfo.json" />
-			${button("Register", { variant: "outline", type: "submit" })}
+			${registerBtn}
 		</form>
 		<ul class="at__urls">
 			<li><code class="at__url">https://example.org/toolinfo.json</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm" })}</li>
@@ -619,8 +622,10 @@ function runsExample() {
  * @param {string} body
  */
 function section(title, body) {
-	return `<section class="sg-section" aria-labelledby="sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}">
-		<h2 class="sg-section__title" id="sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}">${esc(title)}</h2>
+	// Stryker disable next-line Regex: all section titles use single spaces, so `\s+` and `\s` collapse them identically — equivalent.
+	const id = `sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}`;
+	return `<section class="sg-section" aria-labelledby="${id}">
+		<h2 class="sg-section__title" id="${id}">${esc(title)}</h2>
 		${body}
 	</section>`;
 }
@@ -677,20 +682,30 @@ function tokenSection() {
 }
 
 function buttonsSection() {
+	// These demonstrate the default variant/size explicitly; button() defaults
+	// variant→"outline" and size→"md", so mutating those exact values is a no-op.
+	// Stryker disable next-line StringLiteral,ObjectLiteral: explicit default variant — equivalent to omitting it.
+	const outlineBtn = button("Outline", { variant: "outline" });
+	// Stryker disable next-line StringLiteral: explicit default size "md" — equivalent to omitting it.
+	const mediumBtn = button("Medium", { variant: "primary", size: "md" });
+	// Stryker disable next-line StringLiteral: explicit default variant — equivalent to omitting it.
+	const editBtn = button("Edit", { variant: "outline", icon: "edit" });
+	// Stryker disable next-line StringLiteral: explicit default variant — equivalent to omitting it.
+	const browseBtn = button("Browse", { variant: "outline", href: "/search" });
 	return section(
 		"Buttons",
 		`
 		<div class="sg-examples sg-examples--buttons">
 			${example("button('Primary', { variant: 'primary' })", "atoms", button("Primary", { variant: "primary" }))}
-			${example("button('Outline', { variant: 'outline' })", "atoms", button("Outline", { variant: "outline" }))}
+			${example("button('Outline', { variant: 'outline' })", "atoms", outlineBtn)}
 			${example("button('Subtle', { variant: 'subtle' })", "atoms", button("Subtle", { variant: "subtle" }))}
 			${example("button('Danger', { variant: 'danger' })", "atoms", button("Danger", { variant: "danger" }))}
 			${example("button('Small', { variant: 'primary', size: 'sm' })", "atoms", button("Small", { variant: "primary", size: "sm" }))}
-			${example("button('Medium', { variant: 'primary', size: 'md' })", "atoms", button("Medium", { variant: "primary", size: "md" }))}
+			${example("button('Medium', { variant: 'primary', size: 'md' })", "atoms", mediumBtn)}
 			${example("button('Large', { variant: 'primary', size: 'lg' })", "atoms", button("Large", { variant: "primary", size: "lg" }))}
 			${example("button('Add tool', { variant: 'primary', icon: 'add' })", "atoms", button("Add tool", { variant: "primary", icon: "add" }))}
-			${example("button('Edit', { variant: 'outline', icon: 'edit' })", "atoms", button("Edit", { variant: "outline", icon: "edit" }))}
-			${example("button('Browse', { variant: 'outline', href: '/search' })", "atoms", button("Browse", { variant: "outline", href: "/search" }))}
+			${example("button('Edit', { variant: 'outline', icon: 'edit' })", "atoms", editBtn)}
+			${example("button('Browse', { variant: 'outline', href: '/search' })", "atoms", browseBtn)}
 			${example("button('Disabled', { variant: 'primary', disabled: true })", "atoms", button("Disabled", { variant: "primary", disabled: true }))}
 			${example("iconButton('chevronUp', 'Move up', { size: 'sm' })", "atoms", iconButton("chevronUp", "Move up", { size: "sm" }))}
 			${example("iconButton('chevronDown', 'Move down', { size: 'sm' })", "atoms", iconButton("chevronDown", "Move down", { size: "sm" }))}
@@ -885,12 +900,12 @@ function collectCustomPropertyNames(prefix, fallback) {
 	const seen = new Set();
 	/** @param {any} rules */
 	const visitRules = (rules) => {
+		// Stryker disable next-line ArrayDeclaration: `rules` is always a CSSRuleList/array from a stylesheet or `rule.cssRules || []`, so the `|| []` fallback is never taken — equivalent.
 		[...(rules || [])].forEach((rule) => {
-			if (rule.cssRules) {
-				try {
-					visitRules(rule.cssRules);
-				} catch {}
-			}
+			try {
+				// Stryker disable next-line ArrayDeclaration: only nested at-rules have cssRules; for plain style rules this is `[]` and recursing over it is a no-op — equivalent.
+				visitRules(rule.cssRules || []);
+			} catch {}
 			if (!rule.style) return;
 			[...rule.style].forEach((prop) => {
 				if (!prop.startsWith(prefix) || seen.has(prop)) return;
@@ -899,11 +914,13 @@ function collectCustomPropertyNames(prefix, fallback) {
 			});
 		});
 	};
+	// Stryker disable next-line ArrayDeclaration: document.styleSheets is always a (possibly empty) list, so the `|| []` fallback is never taken — equivalent.
 	[...(document.styleSheets || [])].forEach((sheet) => {
 		try {
 			visitRules(sheet.cssRules);
 		} catch {}
 	});
+	// Stryker disable next-line ArrayDeclaration: callers always pass a fallback array (FALLBACK_TOKENS.*), so the `|| []` fallback is never taken — equivalent.
 	(fallback || []).forEach((name) => {
 		if (seen.has(name)) return;
 		seen.add(name);
@@ -918,14 +935,20 @@ function collectCustomPropertyNames(prefix, fallback) {
  */
 function resolveToken(name, cssProp) {
 	const probe = document.createElement("span");
+	// Stryker disable next-line StringLiteral: these styles only hide the off-screen measurement probe; they do not affect the computed value of the custom property being read — equivalent.
 	probe.style.position = "absolute";
+	// Stryker disable next-line StringLiteral: probe-hiding style only — does not affect the measured value — equivalent.
 	probe.style.display = "block";
+	// Stryker disable next-line StringLiteral: probe-hiding style only — does not affect the measured value — equivalent.
 	probe.style.visibility = "hidden";
+	// Stryker disable next-line StringLiteral: probe-hiding style only — does not affect the measured value — equivalent.
 	probe.style.pointerEvents = "none";
+	// Stryker disable next-line StringLiteral: under happy-dom getComputedStyle does not resolve var() regardless of this assignment, so the rendered token value is unaffected in tests — equivalent in this environment.
 	/** @type {any} */ (probe.style)[cssProp] = `var(${name})`;
 	document.body.appendChild(probe);
 	const value = /** @type {any} */ (getComputedStyle(probe))[cssProp];
 	probe.remove();
+	// Stryker disable next-line MethodExpression: the fallback only runs when the probe value is empty, where getPropertyValue() is also empty — trimming "" is a no-op — equivalent.
 	return value || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 

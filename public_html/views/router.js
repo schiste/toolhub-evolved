@@ -222,6 +222,7 @@ export async function render() {
 	} catch (e) {
 		view = { title: "Error — Toolhub", html: errorHTML(e) };
 	}
+	// Stryker disable next-line ConditionalExpression: when spinnerTimer is null the guard is skipped; forcing it true only runs clearTimeout(null), a documented no-op, so behaviour is identical.
 	if (spinnerTimer) clearTimeout(spinnerTimer); // resolved (or superseded) before the delay
 	if (seq !== navSeq) return; // a newer navigation superseded this one
 	commitView(viewEl, view, path);

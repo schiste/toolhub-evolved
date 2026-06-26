@@ -63,4 +63,18 @@ used sparingly and only where a killing test is genuinely impossible.
   equivalents (`dpr===1`, pre-trimmed CSS, measure-zero hit-test boundaries) and
   state overwritten before it can be observed (initial size/pointer, re-settle).
 
+## By module (views + main.js)
+
+- **all views** — `button()` default `variant`/`size` literals (the atom
+  re-supplies them); defensive `||[]` / `||""` on data that normalizeTool/
+  normalizeList/nearestNeighbors already guarantee; `.catch(() => ({results:[]}))`
+  shapes read only as `.results||[]`; unreachable post-render DOM guards
+  (`if (!el)` on elements just rendered into the view).
+- **search.js** — `??""` parse fallbacks (NaN either way), `-score`→relevance
+  only reachable when relevance is already the default (experimental on).
+- **toolforms.js** — pre-trimmed URL inputs, blank-draft fields that render empty.
+- **router.js** — `clearTimeout(null)` no-op guard.
+- **parity.js** — missing `show` re-derives to `"all"`; catch-fallback shapes
+  read only via `.results||[]` / `.count||0`.
+
 Run `grep -rn "Stryker disable" public_html/` for the exact lines and reasons.

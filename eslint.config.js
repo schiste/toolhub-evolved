@@ -285,5 +285,20 @@ export default [
 			...importRules,
 			"no-console": "off"
 		}
+	},
+	// Unit tests legitimately use a few patterns the strict rules flag only because
+	// of the test context: stubbing timers/globals (no-promise-executor-return,
+	// require-atomic-updates), javascript:-URL fixtures that verify URL sanitizing
+	// (no-script-url), and cache-busting dynamic imports of the side-effecting entry
+	// module (import/no-unresolved). Product code keeps all of these — relaxed for
+	// unit tests only.
+	{
+		files: ["tests/unit/**/*.test.mjs"],
+		rules: {
+			"no-promise-executor-return": "off",
+			"require-atomic-updates": "off",
+			"no-script-url": "off",
+			"import/no-unresolved": "off"
+		}
 	}
 ];

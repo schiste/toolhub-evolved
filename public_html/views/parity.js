@@ -28,9 +28,11 @@ function recentFilterKey(r) {
 
 // Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
 export async function viewRecent() {
+	// Stryker disable next-line StringLiteral: the "all" fallback is unobservable — a missing `show` is not a valid RECENT_FILTER, so `show` re-derives to "all" and the patrol check is false either way (any non-filter default behaves identically).
 	const requestedShow = new URLSearchParams(location.search).get("show") || "all";
 	const show = RECENT_FILTERS.some((o) => o.value === requestedShow) ? requestedShow : "all";
 	const patrolFilterRequested = UNSUPPORTED_PATROL_FILTERS.has(requestedShow);
+	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
 	// Lane B: your demo edits appear at the top of the live feed.
 	const merged = demoFeed(DEMO_KEYS.revisions, data.results || []);
@@ -75,6 +77,7 @@ export async function viewRecent() {
 }
 // Members — live from /api/users/.
 export async function viewMembers() {
+	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only reads are `data.results || []` and `data.count || 0`, which coerce missing fields to the same [] / 0 as the explicit fallback object.
 	const data = await apiGet("/users/", { page_size: "60" }).catch(() => ({ results: [], count: 0 }));
 	const cards = (data.results || [])
 		.map((/** @type {{ username: string, groups?: string[], date_joined?: string }} */ u) => {
@@ -96,6 +99,7 @@ export async function viewMembers() {
 }
 // Crawler history — live from /api/crawler/runs/.
 export async function viewCrawler() {
+	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/crawler/runs/", { page_size: "12" }).catch(() => ({ results: [] }));
 	const runs = data.results || [];
 	const last = runs[0] || {};
@@ -139,6 +143,7 @@ export function targetHref(target) {
 	return null;
 }
 export async function viewAudit() {
+	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/auditlogs/", { page_size: "25" }).catch(() => ({ results: [] }));
 	const merged = demoFeed(DEMO_KEYS.auditlogs, data.results || []);
 	const rows = merged
