@@ -1,0 +1,32 @@
+# Mutation testing (Stryker) over the whole app. A full-scope run is ~1 hour on
+# the 2-core runner — too slow for a per-push gate — so it runs nightly and on
+# demand. Per-push CI relies on the unit suite plus the coverage threshold gate;
+# this workflow enforces the mutation-score floor (see stryker.conf.json break).
+name: Mutation
+
+on:
+    schedule:
+        - cron: "37 4 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: mutation-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    stryker:
+        name: Stryker mutation
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - name: Stryker (vitest runner, happy-dom — no browser needed)
+              run: npx stryker run
