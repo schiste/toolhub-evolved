@@ -126,7 +126,7 @@ export function viewListEdit(id) {
 			<h2 class="le__h2">Tools <span class="le__count" data-le-count></span></h2>
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
-				<input class="le__input" id="le-q" type="search" placeholder="Search tools to add…" autocomplete="off" />
+				<input class="le__input" id="le-q" type="search" aria-label="Search tools to add" placeholder="Search tools to add…" autocomplete="off" />
 				${button("Search", { variant: "outline", attrs: "data-le-search" })}
 			</div>
 			<div class="le__results" data-le-results></div>

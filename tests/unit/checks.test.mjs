@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scanTemplates, scanText } from "../../tools/checks.mjs";
+import { scanA11y, scanTemplates, scanText } from "../../tools/checks.mjs";
 
 test("scanText flags external _blank links without rel=noopener", () => {
 	const bad = `<a href="https://x.test" target="_blank">x</a>`;
@@ -61,4 +61,46 @@ test("scanTemplates accepts non-risky member access (config/CSS)", () => {
 test("scanTemplates sees risky fields inside ternary/logical", () => {
 	const code = `export const v = (t) => \`<p>\${t.deprecated ? t.name : ""}</p><i>\${t && t.description}</i>\`;`;
 	assert.equal(scanTemplates(code, "v.js").length, 2);
+});
+
+// ---- scanA11y -------------------------------------------------------------
+test("scanA11y flags <img> with no alt and accepts decorative alt=''", () => {
+	assert.match(scanA11y(`<img src="x.png">`, "f.js")[0].message, /alt attribute/);
+	assert.deepEqual(scanA11y(`<img src="x.png" alt="">`, "f.js"), []);
+	assert.deepEqual(scanA11y(`<img src="x.png" alt="A logo">`, "f.js"), []);
+});
+
+test("scanA11y flags a placeholder-only form control", () => {
+	const issues = scanA11y(`<input type="search" placeholder="Search…">`, "f.js");
+	assert.equal(issues.length, 1);
+	assert.match(issues[0].message, /accessible name/);
+});
+
+test("scanA11y accepts every labelling pattern, literal or interpolated", () => {
+	assert.deepEqual(scanA11y(`<label>Name <input type="text"></label>`, "f.js"), []); // wrapping
+	assert.deepEqual(scanA11y(`<label for="q">Q</label><input id="q" type="search">`, "f.js"), []); // for/id
+	assert.deepEqual(scanA11y(`<input type="search" aria-label="Search tools">`, "f.js"), []); // aria-label
+	assert.deepEqual(scanA11y(`<input type="search" aria-label="\${i18n('search')}">`, "f.js"), []); // i18n lookup
+	assert.deepEqual(scanA11y(`<select aria-labelledby="lbl"><option>a</option></select>`, "f.js"), []);
+});
+
+test("scanA11y ignores self-named inputs (submit/hidden/button/reset)", () => {
+	assert.deepEqual(scanA11y(`<input type="submit" value="Go"><input type="hidden" name="t">`, "f.js"), []);
+});
+
+test("scanA11y flags positive tabindex but not 0 or -1", () => {
+	assert.match(scanA11y(`<div tabindex="3">x</div>`, "f.js")[0].message, /positive tabindex/);
+	assert.deepEqual(scanA11y(`<div tabindex="0">x</div><main tabindex="-1"></main>`, "f.js"), []);
+});
+
+test("scanA11y does not treat a CSS selector string as a tabindex element", () => {
+	const code = `const SEL = 'a[href],button:not([tabindex="-1"])';`;
+	assert.deepEqual(scanA11y(code, "f.js"), []);
+});
+
+test("scanA11y flags an icon-only control but not one with visible text or a name", () => {
+	assert.match(scanA11y(`<button type="button">\${icon("close")}</button>`, "f.js")[0].message, /icon-only/);
+	assert.deepEqual(scanA11y(`<button type="button" aria-label="Close">\${icon("close")}</button>`, "f.js"), []);
+	assert.deepEqual(scanA11y(`<button type="button">\${icon("add")} <span>Add</span></button>`, "f.js"), []);
+	assert.deepEqual(scanA11y(`<a href="/x">\${icon("ext")} Profile</a>`, "f.js"), []);
 });

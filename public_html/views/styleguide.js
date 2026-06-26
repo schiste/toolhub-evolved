@@ -242,7 +242,7 @@ function listEditorControlsExample() {
 		<h2 class="le__h2">Tools <span class="le__count">2 tools</span></h2>
 		<p class="le__ro">Name: <code>commons-upload-helper</code></p>
 		<div class="le__add">
-			<input class="le__input" type="search" placeholder="Search tools to add..." autocomplete="off" />
+			<input class="le__input" type="search" aria-label="Search tools to add" placeholder="Search tools to add..." autocomplete="off" />
 			${button("Add", { variant: "outline" })}
 		</div>
 		<div class="le__results">
@@ -543,7 +543,7 @@ function linkCardsExample() {
 function browseBarExample() {
 	return `<div class="browse sg-browse-demo">
 		<aside class="facets">
-			<input class="facets__search" type="search" placeholder="Search filters" />
+			<input class="facets__search" type="search" aria-label="Search filters" placeholder="Search filters" />
 		</aside>
 		<div class="browse__main">
 			<div class="browse__bar">
@@ -565,13 +565,13 @@ function maintainerListExample() {
 function annotationEditorExample() {
 	return `<div class="sg-control-stack">
 		<form class="le__add">
-			<input class="le__input" type="url" placeholder="https://example.org/toolinfo.json" />
+			<input class="le__input" type="url" aria-label="Tool info URL" placeholder="https://example.org/toolinfo.json" />
 			${button("Register", { variant: "outline", type: "submit" })}
 		</form>
 		<ul class="at__urls">
 			<li><code class="at__url">https://example.org/toolinfo.json</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm" })}</li>
 		</ul>
-		<textarea class="le__input at__json" rows="4" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
+		<textarea class="le__input at__json" rows="4" aria-label="Tool info JSON" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
 		<p class="at__result at__result--ok">1 added, 2 updated</p>
 		<p class="at__result at__result--err">Invalid JSON: expected a tool object.</p>
 	</div>`;
@@ -738,9 +738,9 @@ function formControlsGroup() {
 		<h3 class="sg-group__title">Form controls</h3>
 		<p class="sg-group__note">Standalone search, facet, list-editor, and intent-builder controls now share one control foundation.</p>
 		<div class="sg-examples sg-examples--controls">
-			${example("input.search__input", "atoms / shared control foundation", '<input class="search__input" id="sg-search-input" type="search" placeholder="Search tools..." autocomplete="off" />')}
-			${example("input.facets__search", "atoms / shared control foundation", '<input class="facets__search" id="sg-facet-search" type="search" placeholder="Search tools..." autocomplete="off" />')}
-			${example("input.le__input", "atoms / shared control foundation", '<input class="le__input" id="sg-list-editor-input" type="text" placeholder="List title" />')}
+			${example("input.search__input", "atoms / shared control foundation", '<input class="search__input" id="sg-search-input" type="search" aria-label="Search tools" placeholder="Search tools..." autocomplete="off" />')}
+			${example("input.facets__search", "atoms / shared control foundation", '<input class="facets__search" id="sg-facet-search" type="search" aria-label="Search tools" placeholder="Search tools..." autocomplete="off" />')}
+			${example("input.le__input", "atoms / shared control foundation", '<input class="le__input" id="sg-list-editor-input" type="text" aria-label="List title" placeholder="List title" />')}
 			${example("button.intent__word", "atoms / editable phrase", '<button class="intent__word" type="button">Wikidata</button>')}
 		</div>
 	</div>`;

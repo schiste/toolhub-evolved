@@ -112,6 +112,105 @@ export function scanTemplates(code, file) {
 	return issues;
 }
 
+// ---- A11y: accessible names + safe attributes in HTML templates -----------
+// A static complement to the runtime axe pass (smoke.spec) and the interaction
+// tests: this checks EVERY template at the source, including views that no smoke
+// route ever renders. It mirrors how the production Toolhub sources accessible-
+// name text from translatewiki — an interpolated name (e.g.
+// aria-label="${i18n('message-close')}") is a message lookup and counts as
+// present, so this verifies STRUCTURE, never the words. Heading order is
+// deliberately NOT checked here: it is a rendered document-order property that a
+// per-template scan cannot judge without false positives (this SPA composes each
+// page from many fragments), and axe's best-practice heading-order rule already
+// covers it at runtime.
+const ANY_TAG = /<(\/?)([A-Za-z][\dA-Za-z]*)((?:"[^"]*"|'[^']*'|[^"'>])*)\/?>/g;
+const BUTTON_EL = /<button\b((?:"[^"]*"|'[^']*'|[^"'>])*)>([\S\s]*?)<\/button\s*>/gi;
+const ANCHOR_EL = /<a\b((?:"[^"]*"|'[^']*'|[^"'>])*)>([\S\s]*?)<\/a\s*>/gi;
+const ICON_INTERPOLATION = /\${\s*icon\s*\([^}]*\)\s*}/g;
+const CHILD_TAG = /<[^>]*>/g;
+const NAME_ATTR = /\b(?:aria-label|aria-labelledby|title)\s*=/i;
+// input types that carry their own name (value/none) and need no label.
+const SELF_NAMED_INPUTS = new Set(["hidden", "submit", "button", "reset"]);
+
+function lineAt(text, index) {
+	return text.slice(0, index).split("\n").length;
+}
+function attrValue(attrs, name) {
+	const m = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, "i").exec(attrs);
+	return m ? m[1] : null;
+}
+
+/**
+ * Static accessibility checks over HTML authored in index.html and JS template
+ * literals: img alt, labelled form controls, no positive tabindex, named
+ * icon-only controls. Accessible names may be literal or interpolated.
+ * @param {string} text
+ * @param {string} file
+ * @returns {{ file: string, line: number, message: string }[]}
+ */
+export function scanA11y(text, file) {
+	const issues = [];
+	// Pass 1: ids that an explicit <label for="X"> points at (the for/id pattern).
+	const labelFor = new Set();
+	for (const m of text.matchAll(ANY_TAG)) {
+		if (m[1] || m[2].toLowerCase() !== "label") continue;
+		const target = attrValue(m[3], "for");
+		if (target) labelFor.add(target);
+	}
+	// Pass 2: walk tags in order, tracking <label> wrapping depth (implicit names).
+	let labelDepth = 0;
+	for (const m of text.matchAll(ANY_TAG)) {
+		const closing = Boolean(m[1]);
+		const tag = m[2].toLowerCase();
+		const attrs = m[3] || "";
+		if (tag === "label") {
+			labelDepth = Math.max(0, labelDepth + (closing ? -1 : 1));
+			continue;
+		}
+		if (closing) continue;
+		const line = lineAt(text, m.index);
+		const tabindex = attrValue(attrs, "tabindex");
+		if (tabindex !== null && Number(tabindex) > 0) {
+			issues.push({ file, line, message: `positive tabindex="${tabindex}" — use 0 or -1 to keep DOM order` });
+		}
+		if (tag === "img" && !/\balt\s*=/i.test(attrs)) {
+			issues.push({ file, line, message: `<img> needs an alt attribute (alt="" if decorative)` });
+			continue;
+		}
+		if (tag === "input" || tag === "select" || tag === "textarea") {
+			const type = (attrValue(attrs, "type") || "").toLowerCase();
+			if (tag === "input" && SELF_NAMED_INPUTS.has(type)) continue;
+			const id = attrValue(attrs, "id");
+			const named = NAME_ATTR.test(attrs) || labelDepth > 0 || (id !== null && labelFor.has(id));
+			if (!named) {
+				issues.push({
+					file,
+					line,
+					message: `<${tag}> needs an accessible name (wrap in <label>, add aria-label, or a <label for>)`
+				});
+			}
+		}
+	}
+	// Icon-only controls: a literal <button>/<a> whose only content is an icon().
+	// (The button/iconButton atoms emit a dynamic <${tag}> and already guarantee a
+	// name, so they are not matched here — only hand-rolled tags are.)
+	for (const [ctl, re] of [
+		["button", BUTTON_EL],
+		["a", ANCHOR_EL]
+	]) {
+		for (const m of text.matchAll(re)) {
+			const attrs = m[1] || "";
+			if (NAME_ATTR.test(attrs) || /\baria-hidden\s*=\s*["']true/i.test(attrs)) continue;
+			// Strip icon() interpolations and child markup; any leftover text or a
+			// non-icon ${…} (likely a visible label) means the control is named.
+			const visible = m[2].replaceAll(ICON_INTERPOLATION, "").replaceAll(CHILD_TAG, "");
+			if (/\S/.test(visible)) continue;
+			issues.push({ file, line: lineAt(text, m.index), message: `icon-only <${ctl}> needs an aria-label` });
+		}
+	}
+	return issues;
+}
+
 /**
  * @param {string} text
  * @param {string} file
@@ -149,7 +248,7 @@ function main() {
 		.filter(Boolean);
 	const issues = files.flatMap((file) => {
 		const code = readFileSync(file, "utf8");
-		const found = scanText(code, file);
+		const found = [...scanText(code, file), ...scanA11y(code, file)];
 		if (file.endsWith(".js")) found.push(...scanTemplates(code, file));
 		return found;
 	});
@@ -158,7 +257,7 @@ function main() {
 		console.error(`checks: ${issues.length} issue(s)`);
 		process.exit(1);
 	}
-	console.log("checks: links, routes, and HTML escaping OK");
+	console.log("checks: links, routes, HTML escaping, and a11y OK");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
