@@ -40,8 +40,14 @@ jobs:
                     - name: organisms-graph
                       scope: "public_html/lib/organisms/force-graph.js"
                       concurrency: "1"
+                    # quickview's modal/focus-trap mutants leave pending happy-dom work
+                    # under the vitest runner, so they are reaped by Stryker's timeout
+                    # rather than an assertion. Two such hung workers at once accumulate
+                    # happy-dom heaps and OOM the 2-vCPU runner (~4.5 min in), so this
+                    # shard also runs single-worker to halve peak memory.
                     - name: organisms-rest
                       scope: "public_html/lib/organisms/**/*.js,!public_html/lib/organisms/force-graph.js"
+                      concurrency: "1"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
                     - name: views-b
