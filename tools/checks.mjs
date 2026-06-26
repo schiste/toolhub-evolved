@@ -459,7 +459,10 @@ export function scanText(text, file) {
 }
 
 function main() {
-	const files = execFileSync("git", ["ls-files", "public_html/index.html", "public_html/**/*.js"], {
+	// :(glob) magic makes ** match across path segments INCLUDING zero, so the
+	// top-level entry point (public_html/main.js) is covered — a plain
+	// "public_html/**/*.js" pathspec silently skips it.
+	const files = execFileSync("git", ["ls-files", "public_html/index.html", ":(glob)public_html/**/*.js"], {
 		encoding: "utf8"
 	})
 		.split("\n")

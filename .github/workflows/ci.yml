@@ -44,6 +44,8 @@ jobs:
               run: npx jscpd --config .jscpd.json
             - name: Link/route + XSS + a11y + dead-code + floating-promise + HTML-balance checks
               run: node tools/checks.mjs
+            - name: JS payload budget
+              run: node tools/js-budget.mjs
             - name: Unit tests
               run: node --test tests/unit/*.test.mjs
             - name: Mutation (Stryker)
