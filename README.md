@@ -87,6 +87,26 @@ See **[docs/deploy-toolforge.md](docs/deploy-toolforge.md)**. In short: create a
 clone this repo, point the `python3.13` webservice entrypoint at `proxy/`, build the
 virtualenv inside the runtime image, and start the webservice.
 
+## Quality gates
+
+Every push runs the full suite in CI (`.github/workflows/ci.yml`):
+
+- **Formatting / lint** — Prettier, ESLint (architecture-boundary rules + license
+  headers, zero warnings), Stylelint (design-token enforcement), cspell.
+- **Types** — `tsc --checkJs` in **full strict mode** across the whole app.
+- **Tests** — Vitest (happy-dom), with a V8 **coverage gate** (lines ≥ 99 %,
+  branches ≥ 95 %); Playwright e2e (smoke + axe accessibility).
+- **Hygiene** — knip (dead code), jscpd (duplication), a small AST checker
+  (`tools/checks.mjs`: XSS, a11y, dead code, floating promises, HTML balance),
+  a JS payload budget, and gitleaks secret scanning.
+- **Proxy** — ruff (`select = ALL`, incl. flake8-bandit security), pip-audit,
+  and a pytest asserting the CSP + security headers.
+
+**Mutation testing** (Stryker) runs nightly (`.github/workflows/mutation.yml`)
+at a **literal 100 % score** over `public_html/**`. The handful of genuinely
+equivalent mutants carry documented `// Stryker disable` comments — the project's
+only in-code suppressions — indexed in [EQUIVALENTS.md](EQUIVALENTS.md).
+
 ## License
 
 GNU General Public License v3.0 or later (GPL-3.0-or-later). See [LICENSE](LICENSE).

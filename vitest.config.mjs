@@ -13,7 +13,12 @@ export default defineConfig({
 		coverage: {
 			provider: "v8",
 			include: ["public_html/**/*.js"],
-			reporter: ["text", "html"]
+			reporter: ["text", "html"],
+			// Honest floor (a ratchet), not a vanity 100. The app is at 100% MUTATION;
+			// branch coverage caps below 100 because documented equivalent-mutant
+			// defensive guards (e.g. `if (!el)` that never fires) are unreachable —
+			// forcing them to "execute" would mean deleting safety code.
+			thresholds: { statements: 98, branches: 95, functions: 99, lines: 99 }
 		}
 	}
 });

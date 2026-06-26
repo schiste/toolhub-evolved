@@ -5,10 +5,10 @@
 	"coverageAnalysis": "perTest",
 	"mutate": ["public_html/**/*.js"],
 	"reporters": ["clear-text", "progress"],
-	"_thresholds_note": "break is a ratchet floor, raised as tests are added. Core is at ~97% (13/14 modules at 100%; graph.js in progress). Target is 100% across all layers.",
+	"_thresholds_note": "The whole app (public_html/**) is at a literal 100% mutation score; genuine equivalent mutants carry documented // Stryker disable comments (see EQUIVALENTS.md). break: 100 holds that line. Runs nightly via .github/workflows/mutation.yml.",
 	"thresholds": {
 		"high": 100,
-		"low": 90,
-		"break": 90
+		"low": 100,
+		"break": 100
 	}
 }

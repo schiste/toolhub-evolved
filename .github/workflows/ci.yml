@@ -46,8 +46,8 @@ jobs:
               run: node tools/checks.mjs
             - name: JS payload budget
               run: node tools/js-budget.mjs
-            - name: Unit tests
-              run: npx vitest run
+            - name: Unit tests + coverage gate
+              run: npx vitest run --coverage
             # Mutation testing (Stryker) runs in its own workflow (.github/
             # workflows/mutation.yml) on a schedule + manual dispatch: a full-scope
             # run is ~60 min on the 2-core runner, too slow for a per-push gate.
