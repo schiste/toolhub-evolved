@@ -30,8 +30,18 @@ jobs:
                       scope: "public_html/lib/core/**/*.js"
                     - name: atoms+molecules
                       scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
-                    - name: organisms
-                      scope: "public_html/lib/organisms/**/*.js"
+                    # force-graph is isolated: its rAF/canvas physics loop yields
+                    # infinite-loop mutants (e.g. a counting-up `for` flipped to count
+                    # down) that peg a core until Stryker's timeout. Bundled with the
+                    # rest of organisms on a 2-vCPU runner, several at once starve the
+                    # runner agent's heartbeat → "runner lost communication" (an OOM/CPU
+                    # infra failure, not a survivor). Its own shard + concurrency 1 keeps
+                    # one core free for the agent so these mutants are killed, not lost.
+                    - name: organisms-graph
+                      scope: "public_html/lib/organisms/force-graph.js"
+                      concurrency: "1"
+                    - name: organisms-rest
+                      scope: "public_html/lib/organisms/**/*.js,!public_html/lib/organisms/force-graph.js"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
                     - name: views-b
@@ -50,4 +60,8 @@ jobs:
             - name: Stryker (vitest runner, happy-dom — no browser needed)
               env:
                   SCOPE: ${{ matrix.scope }}
-              run: npx stryker run --mutate "$SCOPE"
+                  # Default 2 keeps a core's worth of headroom on the 2-vCPU runner so
+                  # infinite-loop mutants are killed by Stryker's timeout, never by
+                  # starving the runner agent. Heavy shards may pin it lower (matrix).
+                  CONCURRENCY: ${{ matrix.concurrency || '2' }}
+              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY"
