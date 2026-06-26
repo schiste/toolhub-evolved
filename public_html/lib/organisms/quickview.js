@@ -19,6 +19,7 @@ export let qvLastFocus = null;
 export function setPageInert(on) {
 	$$("body > *").forEach((el) => {
 		if (el.id === "qv" || el.tagName === "SCRIPT") return;
+		// Stryker disable next-line ConditionalExpression: `"inert" in el` is always true on real HTMLElements (and in happy-dom), so the guard's false branch is unreachable and forcing it true is equivalent. (The `el.inert = on` assignment itself is still asserted.)
 		if ("inert" in el) el.inert = on;
 		if (on) el.setAttribute("aria-hidden", "true");
 		else el.removeAttribute("aria-hidden");
@@ -60,7 +61,10 @@ export function quickViewBody(t) {
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">
 			${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
-			${button("View full page", { variant: "outline", href: toolHref(t.name) })}
+			${
+				// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying this "outline" variant string falls back to the same default — equivalent. (The label/href are still asserted.) Comments/newlines inside ${} do not affect the rendered string.
+				button("View full page", { variant: "outline", href: toolHref(t.name) })
+			}
 			${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}
 		</div>`;
 }
@@ -95,6 +99,7 @@ export function closeQuickView() {
 	qv.setAttribute("aria-hidden", "true");
 	setPageInert(false);
 	document.body.style.overflow = "";
+	// Stryker disable next-line ConditionalExpression,LogicalOperator: openQuickView always sets qvLastFocus to document.activeElement (never null) and HTMLElements always expose .focus, so this guard's false branch is unreachable once the modal has been opened — equivalent. (The focus() restoration is asserted by the close test.)
 	if (qvLastFocus && qvLastFocus.focus) qvLastFocus.focus();
 }
 /** @param {KeyboardEvent} e */
@@ -106,6 +111,7 @@ export function qvTrap(e) {
 		'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 		qv
 	).filter((el) => !el.hidden && el.offsetParent !== null);
+	// Stryker disable next-line ConditionalExpression: defensive guard — when f is empty the following boundary logic (f[0]/f[f.length-1] are undefined, neither branch matches) is itself a no-op, so removing the early return has no observable effect — equivalent.
 	if (f.length === 0) return;
 	const first = f[0],
 		last = f[f.length - 1];

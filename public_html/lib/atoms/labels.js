@@ -20,6 +20,7 @@ export function linkOut(label, url) {
 	const u = safeUrl(normalizeVcsUrl(raw));
 	if (u) {
 		return button(label, {
+			// Stryker disable next-line StringLiteral: button()'s variantClass("") falls back to the same "btn--outline" as variantClass("outline"), so "outline" → "" is not observable — equivalent.
 			variant: "outline",
 			href: u,
 			icon: "external",
@@ -42,7 +43,8 @@ export const wikiShort = (a) =>
 			? "All wikis"
 			: a.length === 1
 				? a[0]
-				: countLabel(a.length, "wiki", "wikis");
+				: // Stryker disable next-line StringLiteral: this branch runs only when a.length >= 2, so countLabel() always selects the plural form; the singular "wiki" is unreachable (co-disables the asserted "wikis" literal on this line) — equivalent.
+					countLabel(a.length, "wiki", "wikis");
 /**
  * @param {Tool} t
  * @param {{ limit?: number | null; empty?: string }} [opts]
@@ -50,6 +52,7 @@ export const wikiShort = (a) =>
  */
 export function keywordTags(t, opts = {}) {
 	const keys =
+		// Stryker disable next-line ConditionalExpression: mutating `opts.limit === undefined` to false only changes the undefined case, where the else-branch runs `.slice(0, undefined)` — a full shallow copy identical to `t.keywords || []` — so it is equivalent. (ArrayDeclaration mutants on this line stay killed.)
 		opts.limit === null || opts.limit === undefined ? t.keywords || [] : (t.keywords || []).slice(0, opts.limit);
 	return (
 		keys

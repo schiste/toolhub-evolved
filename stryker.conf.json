@@ -3,7 +3,12 @@
 	"_comment": "Mutation testing via the Vitest runner: per-test coverage means only the tests covering a mutant rerun, so mutating the whole app stays fast in CI.",
 	"testRunner": "vitest",
 	"coverageAnalysis": "perTest",
-	"mutate": ["public_html/lib/core/**/*.js"],
+	"mutate": [
+		"public_html/lib/core/**/*.js",
+		"public_html/lib/atoms/**/*.js",
+		"public_html/lib/molecules/**/*.js",
+		"public_html/lib/organisms/**/*.js"
+	],
 	"reporters": ["clear-text", "progress"],
 	"_thresholds_note": "break is a ratchet floor, raised as tests are added. Core is at ~97% (13/14 modules at 100%; graph.js in progress). Target is 100% across all layers.",
 	"thresholds": {

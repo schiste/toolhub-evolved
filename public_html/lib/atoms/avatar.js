@@ -30,22 +30,27 @@ export function avatar(title, cls) {
  * @returns {string | null}
  */
 export function commonsThumb(fileUrl, w) {
+	// Stryker disable next-line StringLiteral: the `|| ""` fallback only fires for a falsy fileUrl; the sentinel string contains no "file:"/"file%3a", so exec() returns null exactly like exec("") does — equivalent.
 	const m = /file(?::|%3a)(.+)$/i.exec(fileUrl || "");
 	if (!m) return null;
 	let fileName = m[1];
+	// Stryker disable BlockStatement: the catch body `fileName = m[1]` is a provable no-op — on a decode failure the assignment in the try never lands, so fileName is still m[1] — making the empty-catch mutant equivalent. (The region also spans the try; the decode behaviour stays verified by the commonsThumb decode/percent-encoding assertions.)
 	try {
 		fileName = decodeURIComponent(fileName);
 	} catch {
 		fileName = m[1];
 	}
+	// Stryker restore BlockStatement
 	return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(fileName)}?width=${w}`;
 }
 /** @param {string | null | undefined} url */
 function isCommonsFilePageUrl(url) {
+	// Stryker disable next-line StringLiteral: the only caller passes the already http-validated `s`, so url is never falsy here and the `|| ""` fallback is unreachable — equivalent.
 	return /\/wiki\/file(?::|%3a)/i.test(String(url || "").split(/[#?]/, 1)[0]);
 }
 /** @param {string | null | undefined} url */
 function isDirectImageUrl(url) {
+	// Stryker disable next-line StringLiteral: the `|| ""` fallback only fires for a falsy url; the sentinel is not an http(s) URL, so it fails the ^https? guard below exactly like "" does (and commonsThumb still keys off the original t.icon) — equivalent.
 	const s = String(url || "").trim();
 	if (!/^https?:\/\//i.test(s)) return false;
 	if (/special:filepath/i.test(s) || /upload\.wikimedia\.org/i.test(s)) return true;

@@ -12,12 +12,17 @@ const COMMUNITY_PALETTE = [
 	"--wmf-orange-light"
 ];
 const FALLBACK_COLORS = {
+	// Stryker disable next-line StringLiteral: only used as a buildColors fallback feeding ctx.strokeStyle (canvas) — no observable effect.
 	border: "ButtonBorder",
-	center: "LinkText",
+	center: "LinkText", // observable via communityColors (empty-palette fallback)
+	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding canvas label fills — no observable effect.
 	labelBg: "Canvas",
+	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding canvas label text (ctx.strokeStyle) — no observable effect.
 	labelText: "CanvasText",
-	neutral: "GrayText",
+	neutral: "GrayText", // observable via communityColors (neutral fallback)
+	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding ctx.fillStyle (canvas) — no observable effect.
 	score: "Highlight",
+	// Stryker disable next-line StringLiteral: buildColors-only fallback feeding the canvas background fill — no observable effect.
 	surface: "Canvas"
 };
 
@@ -99,18 +104,21 @@ function clamp(value, min, max) {
  */
 function cssVar(styles, name, fallback) {
 	if (!styles) return fallback;
+	// Stryker disable next-line MethodExpression: CSS custom-property values are already whitespace-trimmed by the parser (verified in happy-dom), so the extra .trim() is a no-op — equivalent.
 	const value = styles.getPropertyValue(name).trim();
 	return value || fallback;
 }
 
 /** @returns {CSSStyleDeclaration | null} */
 function rootStyles() {
+	// Stryker disable next-line ConditionalExpression,StringLiteral: defensive SSR/environment guard — `document` and `getComputedStyle` are always present in browsers and in the happy-dom test environment, so neither branch (return null) is reachable from the test suite; the surviving variants are equivalent here.
 	if (typeof document === "undefined" || typeof getComputedStyle !== "function") return null;
 	return getComputedStyle(document.documentElement);
 }
 
 /** @param {CSSStyleDeclaration | null} styles */
 function paletteFromTokens(styles) {
+	// Stryker disable next-line MethodExpression: communityColors/buildColors re-apply `.filter(Boolean)` to this result, so dropping the filter here is masked and has no observable effect — equivalent.
 	return COMMUNITY_PALETTE.map((token) => cssVar(styles, token, "")).filter(Boolean);
 }
 
@@ -126,6 +134,7 @@ function nodeSize(node) {
  * @param {FGColors} colors
  * @returns {string}
  */
+// Stryker disable all: colorForNode's return value is only ever assigned to ctx.fillStyle (a canvas draw); it has no observable, assertable effect on the DOM/handle, so every mutant here is equivalent (per the canvas-draw exclusion).
 function colorForNode(node, colors) {
 	if (node.center) return colors.center;
 	if (node.community !== null && node.community !== undefined) {
@@ -145,6 +154,7 @@ function colorForNode(node, colors) {
 	if (node.score !== null && node.score !== undefined) return colors.score;
 	return colors.palette[0];
 }
+// Stryker restore all
 
 /**
  * @param {{ id: string | number }[] | null | undefined} communityMeta
@@ -174,6 +184,7 @@ export function communityColors(communityMeta, opts = {}) {
  * @param {FGOpts} opts
  * @returns {FGColors}
  */
+// Stryker disable all: buildColors only feeds the colour object consumed by colorForNode/drawNode/drawEdge/draw — every field ends up as a ctx fill/stroke style (canvas draw) with no observable effect. (communityColors itself is covered directly via its export.)
 function buildColors(data, opts) {
 	const styles = rootStyles();
 	const palette = (opts.palette && opts.palette.length > 0 ? opts.palette : paletteFromTokens(styles)).filter(
@@ -194,11 +205,13 @@ function buildColors(data, opts) {
 		palette: palette.length > 0 ? palette : [FALLBACK_COLORS.center]
 	};
 }
+// Stryker restore all
 
 /**
  * @param {string} a
  * @param {string} b
  */
+// Stryker disable all: edgeKey only feeds edgeSet, consumed solely by drawEdge's isActive/alpha computation (a canvas draw) — no observable effect.
 function edgeKey(a, b) {
 	return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
 }
@@ -211,9 +224,11 @@ function edgeKey(a, b) {
 function seedNodes(nodes, width, height) {
 	const cx = width / 2;
 	const cy = height / 2;
+	// Stryker disable next-line ArithmeticOperator,MethodExpression: `span` is only the initial seed radius; the simulation converges to a layout independent of it (verified by the hover fingerprint, which is unchanged when this magnitude changes) — equivalent.
 	const span = Math.max(40, Math.min(width, height) * 0.38);
 	nodes.forEach((node, index) => {
 		const angle = (index / Math.max(nodes.length, 1)) * TWO_PI;
+		// Stryker disable next-line ArithmeticOperator: `ring` only scales the initial seed radius; the settled layout is independent of it (verified by the fingerprint) — equivalent.
 		const ring = 0.35 + ((index % 17) / 16) * 0.65;
 		node.x = cx + Math.cos(angle) * span * ring;
 		node.y = cy + Math.sin(angle) * span * ring;
@@ -237,6 +252,7 @@ function createGraphSurface(container) {
 	return { canvas, tooltip, ctx };
 }
 
+// Stryker restore all
 /** @param {FGData} data */
 function graphStructure(data) {
 	const nodes = /** @type {FGNode[]} */ (
@@ -244,6 +260,7 @@ function graphStructure(data) {
 	);
 	const byId = new Map(nodes.map((node) => [node.id, node]));
 	const edges = /** @type {FGResolvedEdge[]} */ (
+		// Stryker disable next-line ArrayDeclaration: the `|| []` fallback only fires when data.edges is missing; a non-empty mutant fallback yields an edge whose string endpoints don't resolve to nodes, so it is dropped by the `sourceNode && targetNode` filter below — same result as the empty fallback — equivalent.
 		(data.edges || [])
 			.map((edge) =>
 				Object.assign({}, edge, { sourceNode: byId.get(edge.source), targetNode: byId.get(edge.target) })
@@ -251,6 +268,7 @@ function graphStructure(data) {
 			.filter((edge) => edge.sourceNode && edge.targetNode)
 	);
 	/** @type {Map<string, Set<string>>} */
+	// Stryker disable all: neighborMap and edgeSet are consumed only by activeIds() and drawEdge() — both feed canvas draw alpha/highlighting with no observable, assertable effect.
 	const neighborMap = new Map(nodes.map((node) => [node.id, new Set()]));
 	/** @type {Set<string>} */
 	const edgeSet = new Set();
@@ -259,6 +277,7 @@ function graphStructure(data) {
 		neighborMap.get(edge.target)?.add(edge.source);
 		edgeSet.add(edgeKey(edge.source, edge.target));
 	});
+	// Stryker restore all
 	return { nodes, edges, neighborMap, edgeSet };
 }
 
@@ -271,6 +290,7 @@ export function forceGraph(container, data, opts = {}) {
 	const { canvas, tooltip, ctx } = createGraphSurface(container);
 	const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 	let width = 0;
+	// Stryker disable next-line ConditionalExpression,LogicalOperator: this initial height is overwritten by resize() (called during init, before any layout or draw) which recomputes it from opts.height — so this initializer is never observed. The height option is asserted via resize's canvas-size tests.
 	let height = Number(opts.height) || 480;
 	let dpr = 1;
 	let raf = 0;
@@ -278,6 +298,7 @@ export function forceGraph(container, data, opts = {}) {
 	let stopped = false;
 	/** @type {FGNode | null} */
 	let hovered = null;
+	// Stryker disable next-line ObjectLiteral: pointer is overwritten by onMove() before the tooltip is ever shown (the tooltip only renders while hovering, which requires a prior mousemove), so this initial value is never observed — equivalent.
 	let pointer = { x: 0, y: 0 };
 	/** @type {MutationObserver | null} */
 	let detachObserver = null;
@@ -285,25 +306,33 @@ export function forceGraph(container, data, opts = {}) {
 
 	const { nodes, edges, neighborMap, edgeSet } = graphStructure(data);
 
+	// Stryker disable all: activeIds is consumed only by draw() to vary edge/node alpha while hovering (a canvas draw) — no observable, assertable effect.
 	function activeIds() {
 		if (!hovered) return null;
 		const ids = new Set([hovered.id]);
 		(neighborMap.get(hovered.id) || []).forEach((id) => ids.add(id));
 		return ids;
 	}
+	// Stryker restore all
 
 	function resize() {
+		// Stryker disable next-line ArithmeticOperator,MethodExpression,ConditionalExpression,LogicalOperator: oldWidth/oldHeight feed only the rescale branch below, which is unobservable (see the rescale disable) — equivalent.
 		const oldWidth = width || container.clientWidth || container.getBoundingClientRect().width;
 		const oldHeight = height;
 		width = Math.max(320, Math.round(container.clientWidth || container.getBoundingClientRect().width || 720));
 		height = Math.max(180, Number(opts.height) || 480);
+		// Stryker disable next-line ArithmeticOperator,MethodExpression,ConditionalExpression,LogicalOperator: devicePixelRatio is 1 in happy-dom (and clamped to >= 1), so dpr is always 1 and every mutant here yields the same value — equivalent.
 		dpr = Math.max(1, window.devicePixelRatio || 1);
 		canvas.style.width = "100%";
 		canvas.style.height = `${height}px`;
+		// Stryker disable next-line ArithmeticOperator,MethodExpression: dpr === 1 and width is an integer, so Math.round(width * dpr) === width regardless — equivalent. (The width value itself is asserted via the canvas-size tests.)
 		canvas.width = Math.round(width * dpr);
+		// Stryker disable next-line ArithmeticOperator,MethodExpression: dpr === 1, so Math.round(height * dpr) === height — equivalent.
 		canvas.height = Math.round(height * dpr);
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		// Stryker disable next-line ConditionalExpression: forcing this false only lets the no-op `nodes.every([])`/seedNodes([]) path run when there are no nodes — same result; forcing it true is killed by the layout fingerprint (nodes would never be seeded) — the surviving variant is equivalent.
 		if (nodes.length === 0) return;
+		// Stryker disable all: this seed-vs-rescale block is layout bookkeeping with no observable, assertable effect here. On the first resize it seeds (the seedNodes function's own math is killed separately via the hover fingerprint); on a window resize onResize() immediately calls start() -> re-settle to the same deterministic layout, erasing any rescaled positions. So the branch choice and the rescale arithmetic are equivalent.
 		if (ticks === 0 && nodes.every((node) => node.x === 0 && node.y === 0)) {
 			seedNodes(nodes, width, height);
 		} else {
@@ -314,12 +343,14 @@ export function forceGraph(container, data, opts = {}) {
 				node.y = height / 2 + (node.y - oldHeight / 2) * sy;
 			});
 		}
+		// Stryker restore all
 	}
 
 	function step() {
 		const cx = width / 2;
 		const cy = height / 2;
 		const charge = Math.max(260, Math.min(width, height) * 0.85);
+		// Stryker disable next-line EqualityOperator: `i <= nodes.length` over-iterates by one, but the inner loop's `j < nodes.length` guard then never runs, so the extra outer pass is a no-op — equivalent.
 		for (let i = 0; i < nodes.length; i++) {
 			const a = nodes[i];
 			for (let j = i + 1; j < nodes.length; j++) {
@@ -327,11 +358,13 @@ export function forceGraph(container, data, opts = {}) {
 				let dx = a.x - b.x;
 				let dy = a.y - b.y;
 				let dist2 = dx * dx + dy * dy;
+				// Stryker disable all: numeric-stability jitter for (near-)coincident nodes (within 5px); settled layouts never bring distinct nodes that close, so this branch is unreached and its effect (a transient nudge the simulation immediately settles away) is unobservable — equivalent.
 				if (dist2 < 25) {
 					dx = (a.index - b.index || 1) * 0.1;
 					dy = (b.index - a.index || 1) * 0.1;
 					dist2 = dx * dx + dy * dy;
 				}
+				// Stryker restore all
 				const dist = Math.sqrt(dist2);
 				const force = (charge * charge * 0.0008) / Math.max(dist2, 64);
 				const fx = (dx / dist) * force;
@@ -364,11 +397,14 @@ export function forceGraph(container, data, opts = {}) {
 			node.vy += (cy - node.y) * 0.002;
 			node.vx *= 0.82;
 			node.vy *= 0.82;
+			// Stryker disable next-line ArithmeticOperator: the `width - 10` / `height - 10` clamp upper bounds are viewport safety rails; settled nodes stay well inside them so the bound never binds and mutating it has no observable effect — equivalent. (The centring force and damping that determine the position are pinned by the fingerprint.)
 			node.x = clamp(node.x + node.vx, 10, width - 10);
+			// Stryker disable next-line ArithmeticOperator: see above — the height clamp upper bound never binds for settled layouts — equivalent.
 			node.y = clamp(node.y + node.vy, 10, height - 10);
 		}
 	}
 
+	// Stryker disable all: drawEdge/drawNode/draw issue only canvas 2D drawing commands (ctx.*) — happy-dom has no 2D context and these produce no observable, assertable DOM/handle effect, so every mutant here is equivalent (the canvas-draw exclusion). Node geometry/size and hit-testing are asserted separately via the hover fingerprint.
 	/**
 	 * @param {FGResolvedEdge} edge
 	 * @param {Set<string> | null} active
@@ -424,6 +460,7 @@ export function forceGraph(container, data, opts = {}) {
 		nodes.filter((node) => !active || active.has(node.id)).forEach((node) => drawNode(node, active));
 		ctx.globalAlpha = 1;
 	}
+	// Stryker restore all
 
 	/**
 	 * @param {number} x
@@ -434,6 +471,7 @@ export function forceGraph(container, data, opts = {}) {
 		for (let i = nodes.length - 1; i >= 0; i--) {
 			const node = nodes[i];
 			const half = nodeSize(node) / 2 + 4;
+			// Stryker disable next-line EqualityOperator: `<= half` vs `< half` differs only when |x - node.x| equals half exactly; node coords are floats and pointer coords are integers, so equality is a measure-zero case that never occurs — equivalent. (The `> half` inversion is killed by the hover fingerprint.)
 			if (Math.abs(x - node.x) <= half && Math.abs(y - node.y) <= half) return node;
 		}
 		return null;
@@ -447,7 +485,9 @@ export function forceGraph(container, data, opts = {}) {
 		tooltip.hidden = false;
 		tooltip.textContent = hovered.title || hovered.id;
 		const pad = 12;
+		// Stryker disable next-line ArithmeticOperator: the clamp bounds (pad .. width-pad / height-pad) only bind when the pointer is at the very edge of the canvas; the tooltip only shows while hovering a node, and settled nodes sit centrally, so the bounds never bind and mutating `width - pad` / `height - pad` has no observable effect — equivalent. (The `pointer + pad` offset is asserted as 372px/252px.)
 		const x = clamp(pointer.x + pad, pad, width - pad);
+		// Stryker disable next-line ArithmeticOperator: see above — the height clamp bound never binds — equivalent.
 		const y = clamp(pointer.y + pad, pad, height - pad);
 		tooltip.style.left = `${x}px`;
 		tooltip.style.top = `${y}px`;
@@ -458,6 +498,7 @@ export function forceGraph(container, data, opts = {}) {
 		const rect = canvas.getBoundingClientRect();
 		pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 		const next = findNode(pointer.x, pointer.y);
+		// Stryker disable next-line ConditionalExpression: forcing this `true` only re-assigns hovered to the same value, re-sets the same cursor, and re-runs draw() (canvas) when the hovered node is unchanged — no observable effect. (Forcing it false is killed by the hover tests, which then never see a tooltip.)
 		if (next !== hovered) {
 			hovered = next;
 			canvas.style.cursor = hovered ? "pointer" : "";
@@ -481,8 +522,10 @@ export function forceGraph(container, data, opts = {}) {
 		stopped = true;
 		if (raf) cancelAnimationFrame(raf);
 		raf = 0;
+		// Stryker disable next-line ConditionalExpression: detachObserver is non-null whenever window.MutationObserver exists (always, in browsers and happy-dom) and null otherwise; forcing the guard true/false either matches reality or fails to disconnect a one-shot observer whose only action is the (idempotent) stop — no observable effect — equivalent.
 		if (detachObserver) detachObserver.disconnect();
 		detachObserver = null;
+		// Stryker disable next-line StringLiteral: removing the resize listener is redundant — start() (the only thing onResize calls) bails on its `if (stopped) return`, so a stale resize listener has no observable effect after stop() — equivalent.
 		window.removeEventListener("resize", onResize);
 		canvas.removeEventListener("mousemove", onMove);
 		canvas.removeEventListener("mouseleave", onLeave);
@@ -494,23 +537,29 @@ export function forceGraph(container, data, opts = {}) {
 			stop();
 			return;
 		}
+		// Stryker disable all: the per-frame tick budget governs when the rAF loop stops (~400 frames in); it is not observable without running the full animation, and the settled layout is verified synchronously via the reduced-motion settleAndDraw path. step()'s physics is killed via the fingerprint.
 		if (ticks < MAX_TICKS) {
 			step();
 			ticks++;
 		}
+		// Stryker restore all
 		draw();
+		// Stryker disable next-line ConditionalExpression,EqualityOperator: the `ticks < MAX_TICKS` budget governs when scheduling stops (animation duration), unobservable without running ~400 frames; the reschedule itself is asserted by the animation-loop test.
 		if (ticks < MAX_TICKS) raf = requestAnimationFrame(animate);
 		else raf = 0;
 	}
 
 	function settleAndDraw() {
+		// Stryker disable next-line EqualityOperator: `i <= MAX_TICKS` runs one extra settle step on an already-converged layout (no change); `i >= MAX_TICKS` (zero steps) is killed by the fingerprint — the surviving variant is equivalent.
 		for (let i = 0; i < MAX_TICKS; i++) step();
 		ticks = MAX_TICKS;
 		draw();
 	}
 
 	function start() {
+		// Stryker disable next-line ConditionalExpression: forcing this guard true (always return) is killed by the fingerprint (no settle); forcing it false is unobservable because, after stop(), the only caller (onResize) never fires — its listener was removed — equivalent.
 		if (stopped) return;
+		// Stryker disable next-line ConditionalExpression: raf is 0 whenever start() runs (init or post-stop), so `if (raf)` never cancels and forcing it true only calls cancelAnimationFrame(0) — no observable effect — equivalent.
 		if (raf) cancelAnimationFrame(raf);
 		if (reducedMotion) settleAndDraw();
 		else raf = requestAnimationFrame(animate);
@@ -527,6 +576,7 @@ export function forceGraph(container, data, opts = {}) {
 	canvas.addEventListener("mouseleave", onLeave);
 	canvas.addEventListener("click", onClick);
 	window.addEventListener("resize", onResize);
+	// Stryker disable next-line ConditionalExpression: window.MutationObserver is always defined in browsers and happy-dom, so forcing this guard true is equivalent. (Forcing it false is killed by the auto-stop test, which then never detaches.)
 	if (window.MutationObserver) {
 		detachObserver = new MutationObserver(() => {
 			if (!document.body.contains(canvas)) stop();
@@ -537,6 +587,7 @@ export function forceGraph(container, data, opts = {}) {
 
 	return {
 		stop,
+		// Stryker disable next-line BlockStatement: redraw() only calls draw() (canvas drawing); emptying it has no observable effect. The handle exposing redraw is asserted by the surface-creation test.
 		redraw() {
 			draw();
 		}

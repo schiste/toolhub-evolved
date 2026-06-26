@@ -329,6 +329,35 @@ test("detectCommunities does not merge across a negative-weight edge", () => {
 	]);
 });
 
+test("detectCommunities tie-break is order-independent: smaller label wins even when discovered first", () => {
+	// "m" ties between the {a,a2} and {z,z2} clusters (weight 1 to each). The a-m edge is
+	// registered BEFORE the z-m edge, so "a"'s cluster label is the FIRST tied candidate the
+	// argmax loop visits. A strict `>` plus the lexicographic tie-break keeps the smaller label;
+	// a `>=` (last-tie-wins) or an always-true tie-break would let the later "z" overwrite it,
+	// flipping which cluster is numbered 0. This pins the tie-break direction independent of
+	// discovery order, which the existing z-first tie test cannot do.
+	assert.deepEqual(
+		entries(
+			graph.detectCommunities(
+				["a", "a2", "z", "z2", "m"],
+				[
+					{ source: "a", target: "a2", weight: 5 },
+					{ source: "z", target: "z2", weight: 5 },
+					{ source: "a", target: "m", weight: 1 },
+					{ source: "z", target: "m", weight: 1 }
+				]
+			)
+		),
+		[
+			["a", 0],
+			["a2", 0],
+			["m", 0],
+			["z", 1],
+			["z2", 1]
+		]
+	);
+});
+
 // ---- globalGraph (memoized; one shot) -------------------------------------
 
 function rep(name, base, count, extra = {}) {
@@ -519,4 +548,23 @@ test("egoGraph returns an empty graph when the tool is unknown", async () => {
 	similarity.getSimilarityIndex.mockResolvedValue(buildIndex([T1, T2]));
 	api.getTool.mockResolvedValue(null);
 	assert.deepEqual(await graph.egoGraph("ghost"), { nodes: [], edges: [], center: "ghost" });
+});
+
+// Runs LAST: swaps in the REAL nearestNeighbors so it actually reads workingIndex.tools.
+// This proves indexWithTool must carry the existing tools forward (plus the freshly resolved
+// center). If the working index dropped its tool list, the real neighbor search would find
+// nobody and the ego graph would collapse to the center node alone.
+test("egoGraph feeds the working index's full tool list to the real nearestNeighbors", async () => {
+	const realSim = /** @type {typeof similarity} */ (
+		await vi.importActual("../../public_html/lib/core/similarity.js")
+	);
+	similarity.nearestNeighbors.mockImplementation(realSim.nearestNeighbors);
+	similarity.getSimilarityIndex.mockResolvedValue(buildIndex([T1, T2]));
+	api.getTool.mockResolvedValue(T4); // unknown center; shares keyword "x" with both T1 and T2
+	const g = await graph.egoGraph("t4", 5);
+	// Real neighbor search over [T1, T2, T4] surfaces both T1 and T2; center stays first.
+	assert.deepEqual(g.nodes.map((n) => n.id).sort(), ["t1", "t2", "t4"]);
+	assert.equal(g.nodes[0].id, "t4");
+	assert.equal(g.center, "t4");
+	assert.ok(g.edges.length > 0);
 });

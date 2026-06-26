@@ -10,11 +10,13 @@ export function renderAccount() {
 	if (!el) return;
 	if (!expOn()) {
 		// honest read-only: real sign-in needs OAuth we don't have
+		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/href strings are still asserted by the renderAccount tests.)
 		el.innerHTML = button("Log in", { variant: "outline", href: "/login" });
 		return;
 	}
 	if (!signedIn()) {
 		// experiments on but logged out → offer the demo sign-in
+		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/attrs strings are still asserted by the renderAccount tests.)
 		el.innerHTML = button("Sign in demo", { variant: "outline", attrs: "data-login" });
 		return;
 	}

@@ -51,9 +51,11 @@ function fInputClass(opts) {
 export function fInput(label, id, value, opts = {}) {
 	const hint = opts.hint;
 	const hasError = opts.errorSlot !== false;
+	// Stryker disable ConditionalExpression,LogicalOperator: the `value === null || value === undefined ? "" : value` guard is redundant — esc() already coerces null/undefined to "", so the result is identical for every input. The disable spans the template because the guard sits on an interpolated line that cannot carry its own JS comment; the co-disabled req/ph/hasError ternaries and type/max `||` defaults remain verified by the fInput assertions.
 	return `<label class="le__label">${esc(label)}${opts.req && opts.reqMark !== false ? ' <span class="le__req">*</span>' : ""}
 		${fHint(id, hint)}
 		<input class="${fInputClass(opts)}" id="${id}" type="${opts.type || "text"}"${opts.req ? " required" : ""}${fDescAttrs(id, hint, hasError)} maxlength="${opts.max || 300}" value="${esc(value === null || value === undefined ? "" : value)}" ${opts.ph ? `placeholder="${esc(opts.ph)}"` : ""} />${hasError ? `<span class="le__error" id="${esc(id)}-err" hidden></span>` : ""}</label>`;
+	// Stryker restore ConditionalExpression,LogicalOperator
 }
 /**
  * @param {string} label
@@ -66,8 +68,10 @@ export function fInput(label, id, value, opts = {}) {
 export function fArea(label, id, value, hint, opts = {}) {
 	const fieldHint = hint === null || hint === undefined ? opts.hint : hint;
 	const maxAttr = opts.max === false ? "" : ` maxlength="${opts.max || 2000}"`;
+	// Stryker disable ConditionalExpression,LogicalOperator: the `value === null || value === undefined ? "" : value` guard is redundant — esc() already coerces null/undefined to "". The disable spans the template because the guard sits on an interpolated line that cannot carry its own JS comment; the co-disabled rows/ph defaults remain verified by the fArea assertions.
 	return `<label class="le__label">${esc(label)}${fHint(id, fieldHint)}
 		<textarea class="${fInputClass(opts)}" id="${id}" rows="${opts.rows || 3}"${fDescAttrs(id, fieldHint, false)}${maxAttr}${opts.ph ? ` placeholder="${esc(opts.ph)}"` : ""}>${esc(value === null || value === undefined ? "" : value)}</textarea></label>`;
+	// Stryker restore ConditionalExpression,LogicalOperator
 }
 /**
  * @param {string} label

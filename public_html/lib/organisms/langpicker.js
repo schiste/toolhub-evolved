@@ -44,6 +44,7 @@ const LANGUAGES = [
 ];
 
 function activeEntry() {
+	// Stryker disable next-line ArrowFunction,ConditionalExpression,LogicalOperator,EqualityOperator: ACTIVE ("en") is LANGUAGES[0], so this always resolves to the English entry whether the find predicate matches, is inverted, or the `|| LANGUAGES[0]` fallback fires — every mutation here is equivalent. (StringLiteral mutants on the LANGUAGES table are still killed by renderLangPicker.)
 	return LANGUAGES.find(([code]) => code === ACTIVE) || LANGUAGES[0];
 }
 

@@ -30,6 +30,7 @@ export function renderFacetGroup(g, facets, selected) {
 	const inner = wrap && wrap[g.field];
 	if (!inner) return "";
 	const param = inner.meta && inner.meta.param;
+	// Stryker disable next-line ArrayDeclaration: the `|| []` fallback only fires when inner.buckets is missing; a non-empty fallback's sentinel string has no `.key`/`.doc_count`, so `.filter(...)` drops it and the result is the same empty list — equivalent.
 	const buckets = (inner.buckets || []).filter((b) => b.key !== "--" && b.doc_count > 0).slice(0, FACET_BUCKET_LIMIT);
 	if (buckets.length === 0 || !param) return "";
 	const rows = buckets

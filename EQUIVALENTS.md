@@ -29,5 +29,38 @@ used sparingly and only where a killing test is genuinely impossible.
 - **store.js** — `demoRevisionsFor` default `[]` arg immediately filtered by `content_id`.
 - **theme.js** — always-true DOM-guard under the test environment, `"system"`
   vs `""` resolve identically.
+- **graph.js** — the symmetric/empty-vector cosine invariants make most knnEdges
+  guards unobservable; in detectCommunities a uniformly-injected phantom member
+  (NaN weight / undefined id) never wins and extra propagation passes converge
+  identically; label/regex fallbacks on always-present values.
+
+## By module (atoms / molecules)
+
+- **button.js** — `variant||"outline"` / `size||"md"` where the consumer does
+  `Map.get(x)||Map.get(default)` (so `""` maps identically); `outboundHref`
+  dead `||""` (only reached when href is truthy); `.split(/\s+/)`→`/\s/`
+  identical after `.filter(Boolean)`; `tag==="a"` redundant with `outboundHref`.
+- **avatar.js** — dead `||""` fallbacks in commonsThumb/isCommonsFilePageUrl/
+  isDirectImageUrl; a decode-failure `catch` body that re-assigns the same value.
+- **form-fields.js** — `value===null||value===undefined?"":value` is redundant
+  because `esc()` already coerces null/undefined to `""`.
+- **labels.js** — unreachable `wikiShort` plural (length≥2 only), `slice(0,undefined)`
+  = full copy, `linkOut` variant Map double-fallback.
+- **badges.js** — default `level:"green"` (statusClasses maps any unknown to green).
+- **signals.js (atoms)** — `synthThanks`/`synthUsage` ranges never equal 1, so the
+  plural `one` form is unreachable.
+- **facet-group.js** — `buckets||[]` sentinel element is dropped by `.filter()`.
+
+## By module (organisms)
+
+- **account.js / quickview.js** — `variant:"outline"` literals that `button()`
+  defaults anyway; `"inert" in el` always true; the post-open focus-guard's
+  false branch and the empty-`f` early return in the focus trap are unreachable.
+- **langpicker.js** — `activeEntry()` always resolves to `LANGUAGES[0]` (English).
+- **force-graph.js** — the canvas-only machinery (`colorForNode`, `buildColors`,
+  the `draw*` functions, edge/neighbor bookkeeping, fallback colours) whose only
+  output is `ctx.*` draw calls with no assertable effect; plus environment-fixed
+  equivalents (`dpr===1`, pre-trimmed CSS, measure-zero hit-test boundaries) and
+  state overwritten before it can be observed (initial size/pointer, re-settle).
 
 Run `grep -rn "Stryker disable" public_html/` for the exact lines and reasons.

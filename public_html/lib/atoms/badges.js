@@ -31,6 +31,7 @@ export function statusBadge(t) {
 	// `status` is typed as a string on the ambient Tool, but normalizeTool()/statusOf()
 	// attaches a {level,label} object at runtime — narrow through `unknown`.
 	const st = /** @type {{ level: string; label: string }} */ (/** @type {unknown} */ (t.status)) || {
+		// Stryker disable next-line StringLiteral: statusClasses() maps any unrecognized level (including "") to the green classes, so the default level string is not observable in the output — equivalent.
 		level: "green",
 		label: "Healthy"
 	};
