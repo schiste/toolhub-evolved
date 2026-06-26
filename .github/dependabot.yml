@@ -1,0 +1,18 @@
+# Automated dependency updates. Keeps the pinned (exact-version) dev toolchain,
+# CI actions, and the proxy's Python deps current, with security updates surfaced
+# as PRs that run the full CI suite before they can merge.
+version: 2
+updates:
+    - package-ecosystem: npm
+      directory: "/"
+      schedule:
+          interval: weekly
+      open-pull-requests-limit: 5
+    - package-ecosystem: github-actions
+      directory: "/"
+      schedule:
+          interval: weekly
+    - package-ecosystem: pip
+      directory: "/proxy"
+      schedule:
+          interval: weekly

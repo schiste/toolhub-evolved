@@ -6,5 +6,7 @@ coverage/
 htmlcov/
 .git/
 .chau7/
+.stryker-tmp/
+reports/
 pyproject.toml
 proxy/requirements.txt
