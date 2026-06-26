@@ -28,32 +28,29 @@ export function normalizeVcsUrl(u) {
 	const raw = String(u === null || u === undefined ? "" : u).trim();
 	// Stryker disable next-line ConditionalExpression: the only falsy `raw` is "", which also falls through the (no-match) transforms to `return … : raw`, yielding the same "".
 	if (!raw) return raw;
-	try {
-		let s = raw;
-		let changed = false;
-		if (/^git\+/i.test(s)) {
-			// Stryker disable next-line Regex: gated by the line above (s starts with "git+"), so dropping the ^ anchor still replaces the same single leading occurrence (replace() without /g replaces only the first match).
-			s = s.replace(/^git\+/i, "");
-			changed = true;
-		}
-		// Stryker disable next-line Regex: the trailing '$' is redundant after a greedy final group (.+), so '(.+)$' → '(.+)' is equivalent; the co-located ^-removal variant is otherwise exercised by the scp tests.
-		const scp = /^git@([^\s:]+):(.+)$/.exec(s);
-		if (scp) {
-			s = `https://${scp[1]}/${scp[2].replace(/^\/+/, "")}`;
-			changed = true;
-		} else {
-			// Stryker disable next-line Regex: the trailing '$' is redundant after a greedy final group (.+), so '(.+)$' → '(.+)' is equivalent; the co-located ^-removal variant is otherwise exercised by the ssh tests.
-			const ssh = /^ssh:\/\/git@([^\s/]+)\/(.+)$/i.exec(s);
-			if (ssh) {
-				s = `https://${ssh[1]}/${ssh[2].replace(/^\/+/, "")}`;
-				changed = true;
-			}
-		}
-		return changed ? s.replace(/\.git(?=([#?]|$))/i, "") : raw;
-	} catch {
-		// Stryker disable next-line BlockStatement: the try body only runs regex tests / string replaces on an already-stringified value, which cannot throw, so this catch is unreachable.
-		return raw;
+	// No try/catch: the body only runs regex tests and string replaces on an
+	// already-stringified value (raw), none of which can throw.
+	let s = raw;
+	let changed = false;
+	if (/^git\+/i.test(s)) {
+		// Stryker disable next-line Regex: gated by the line above (s starts with "git+"), so dropping the ^ anchor still replaces the same single leading occurrence (replace() without /g replaces only the first match).
+		s = s.replace(/^git\+/i, "");
+		changed = true;
 	}
+	// Stryker disable next-line Regex: the trailing '$' is redundant after a greedy final group (.+), so '(.+)$' → '(.+)' is equivalent; the co-located ^-removal variant is otherwise exercised by the scp tests.
+	const scp = /^git@([^\s:]+):(.+)$/.exec(s);
+	if (scp) {
+		s = `https://${scp[1]}/${scp[2].replace(/^\/+/, "")}`;
+		changed = true;
+	} else {
+		// Stryker disable next-line Regex: the trailing '$' is redundant after a greedy final group (.+), so '(.+)$' → '(.+)' is equivalent; the co-located ^-removal variant is otherwise exercised by the ssh tests.
+		const ssh = /^ssh:\/\/git@([^\s/]+)\/(.+)$/i.exec(s);
+		if (ssh) {
+			s = `https://${ssh[1]}/${ssh[2].replace(/^\/+/, "")}`;
+			changed = true;
+		}
+	}
+	return changed ? s.replace(/\.git(?=([#?]|$))/i, "") : raw;
 }
 /** @param {unknown} u */
 export function safeUrl(u) {
