@@ -70,6 +70,10 @@ jobs:
               run: ruff format --check proxy
             - name: pip-audit
               run: pip-audit -r proxy/requirements.txt --strict
+            - name: Proxy tests (security headers)
+              run: |
+                  pip install -r proxy/requirements.txt
+                  pytest tests/proxy -q
 
     secrets:
         name: Secret scan
