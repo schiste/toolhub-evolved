@@ -139,7 +139,8 @@ export async function viewSearch() {
 				${resultsHTML}
 				<nav class="pager" aria-label="Pagination">${pagerHTML}</nav>
 			</div>
-		</div>`;
+		</div>
+	</div>`;
 
 	function mount() {
 		$input("#sort").value = sort;

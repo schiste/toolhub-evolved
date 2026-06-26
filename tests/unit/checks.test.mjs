@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { scanA11y, scanComments, scanFloating, scanTemplates, scanText } from "../../tools/checks.mjs";
+import { scanA11y, scanBalance, scanComments, scanFloating, scanTemplates, scanText } from "../../tools/checks.mjs";
 
 test("scanText flags external _blank links without rel=noopener", () => {
 	const bad = `<a href="https://x.test" target="_blank">x</a>`;
@@ -146,4 +146,32 @@ test("scanFloating accepts await/return/assignment/.catch/void", () => {
 test("scanFloating ignores void UI functions and unrelated calls", () => {
 	assert.deepEqual(scanFloating(`function h() { render(); refreshHome(); }`, "f.js"), []);
 	assert.deepEqual(scanFloating(`function h() { doThing(); store.set("k", 1); }`, "f.js"), []);
+});
+
+// ---- scanBalance (HTML well-formedness) -----------------------------------
+test("scanBalance flags an unclosed or mis-nested tag in a template", () => {
+	assert.match(scanBalance("export const v = `<div><span>x</span>`;", "f.js")[0].message, /unclosed <div>/);
+	assert.match(scanBalance("export const v = `<div><b>x</div></b>`;", "f.js")[0].message, /<\/div> closes <b>/);
+});
+
+test("scanBalance accepts balanced templates, void elements, and self-closing", () => {
+	assert.deepEqual(scanBalance("export const v = `<div><span>x</span></div>`;", "f.js"), []);
+	assert.deepEqual(scanBalance('export const v = `<p>a<br>b<img src="z.png"></p>`;', "f.js"), []);
+	assert.deepEqual(scanBalance('export const v = `<input type="text" />`;', "f.js"), []);
+});
+
+test("scanBalance treats interpolations as opaque (fragments + dynamic tags don't trip it)", () => {
+	// Backtick fixtures with escaped \${ / \` so the source text holds real
+	// template interpolations (matching the scanComments/scanFloating fixtures).
+	assert.deepEqual(scanBalance(`export const v = (c) => \`<ul>\${c ? "<li>x</li>" : ""}</ul>\`;`, "f.js"), []);
+	assert.deepEqual(scanBalance(`export const v = (c) => \`<div>\${c ? "<span>" : "</span>"}</div>\`;`, "f.js"), []);
+	assert.deepEqual(
+		scanBalance(`export const v = (tag, body) => \`<\${tag} class="x">\${body}</\${tag}>\`;`, "f.js"),
+		[]
+	);
+});
+
+test("scanBalance checks raw HTML files whole", () => {
+	assert.deepEqual(scanBalance("<main><p>hi</p></main>", "index.html"), []);
+	assert.match(scanBalance("<main><p>hi</main>", "index.html")[0].message, /unclosed <p>|<\/main> closes <p>/);
 });

@@ -353,6 +353,82 @@ export function scanFloating(code, file) {
 	return issues;
 }
 
+// ---- HTML well-formedness (balanced tags) ---------------------------------
+// Checks that the literal HTML scaffold of each template (and index.html) has
+// balanced, properly-nested tags. The trick that keeps this false-positive-free
+// in a template-literal codebase: balance only the QUASIS (the literal text),
+// replacing every ${…} with an opaque placeholder. So a conditional fragment
+// like ${c ? "<div>" : ""} or a nested template lives INSIDE the interpolation
+// and never affects balance — only the template's own scaffold is checked. A
+// dynamic tag name (<${tag}>) reduces to "< >", which matches no tag and is
+// skipped on both ends, so the button/iconButton atoms don't trip it.
+const VOID_ELEMENTS = new Set([
+	"area",
+	"base",
+	"br",
+	"col",
+	"embed",
+	"hr",
+	"img",
+	"input",
+	"link",
+	"meta",
+	"param",
+	"source",
+	"track",
+	"wbr"
+]);
+const BALANCE_TAG = /<(\/?)([A-Za-z][\dA-Za-z-]*)((?:"[^"]*"|'[^']*'|[^"'>])*?)(\/?)>/g;
+const HTML_COMMENT = /<!--[\S\s]*?-->/g;
+
+function unbalancedReason(skeleton) {
+	const stack = [];
+	for (const m of skeleton.replaceAll(HTML_COMMENT, "").matchAll(BALANCE_TAG)) {
+		const tag = m[2].toLowerCase();
+		if (VOID_ELEMENTS.has(tag) || m[4]) continue; // void element or self-closing
+		if (!m[1]) {
+			stack.push(tag);
+			continue;
+		}
+		if (stack.length === 0) return `stray </${tag}>`;
+		const open = stack.pop();
+		if (open !== tag) return `</${tag}> closes <${open}>`;
+	}
+	return stack.length > 0 ? `unclosed <${stack[stack.length - 1]}>` : null;
+}
+
+/**
+ * Flag unbalanced/mis-nested HTML in index.html and in JS template-literal
+ * scaffolds (interpolations are treated as opaque, so fragments never trip it).
+ * @param {string} code
+ * @param {string} file
+ * @returns {{ file: string, line: number, message: string }[]}
+ */
+export function scanBalance(code, file) {
+	const issues = [];
+	if (!file.endsWith(".js")) {
+		const reason = unbalancedReason(code);
+		if (reason) issues.push({ file, line: 1, message: `unbalanced HTML: ${reason}` });
+		return issues;
+	}
+	let tree;
+	try {
+		tree = espree.parse(code, ESPREE_OPTS);
+	} catch {
+		return issues; // parse errors are eslint's job
+	}
+	walkAst(tree, (node) => {
+		if (node.type !== "TemplateLiteral" || !node.quasis.some((q) => HTML_TAG.test(q.value.raw))) return;
+		let skeleton = "";
+		node.quasis.forEach((q, i) => {
+			skeleton += q.value.raw + (i < node.expressions.length ? "  " : "");
+		});
+		const reason = unbalancedReason(skeleton);
+		if (reason) issues.push({ file, line: node.loc.start.line, message: `unbalanced HTML in template: ${reason}` });
+	});
+	return issues;
+}
+
 /**
  * @param {string} text
  * @param {string} file
@@ -390,7 +466,7 @@ function main() {
 		.filter(Boolean);
 	const issues = files.flatMap((file) => {
 		const code = readFileSync(file, "utf8");
-		const found = [...scanText(code, file), ...scanA11y(code, file)];
+		const found = [...scanText(code, file), ...scanA11y(code, file), ...scanBalance(code, file)];
 		if (file.endsWith(".js")) {
 			found.push(...scanTemplates(code, file), ...scanComments(code, file), ...scanFloating(code, file));
 		}
@@ -401,7 +477,7 @@ function main() {
 		console.error(`checks: ${issues.length} issue(s)`);
 		process.exit(1);
 	}
-	console.log("checks: links, routes, HTML escaping, a11y, dead code, and floating promises OK");
+	console.log("checks: links, routes, HTML escaping/balance, a11y, dead code, and floating promises OK");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
