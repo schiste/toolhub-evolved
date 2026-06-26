@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Properties that must reference a design token (var(--…)) rather than a raw
+// value, enforced by scale-unlimited/declaration-strict-value. Spacing and gap
+// use regex (/^margin/, /^padding/, /gap$/) so EVERY physical/logical longhand
+// is covered — a raw `margin-inline-end: 12px` or `row-gap: 8px` can't slip
+// through a gap in an enumerated list. Deliberately NOT enforced: width/height/
+// grid/inset (one-off layout dimensions, no token family) and border-radius
+// (circles legitimately use `50%`); enforcing those would be noise, not drift.
 const tokenizedProperties = [
 	"/color$/",
+	"/^margin/",
+	"/^padding/",
+	"/gap$/",
 	"background",
 	"background-color",
 	"border",
@@ -12,15 +22,6 @@ const tokenizedProperties = [
 	"color",
 	"fill",
 	"font-size",
-	"gap",
-	"margin",
-	"margin-bottom",
-	"margin-inline-start",
-	"margin-top",
-	"padding",
-	"padding-bottom",
-	"padding-inline-start",
-	"padding-top",
 	"text-decoration-color"
 ];
 

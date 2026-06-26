@@ -243,7 +243,7 @@ input.le__input,
 select.le__input,
 .sort select {
 	height: var(--ctl-h-md);
-	padding-block: 0;
+	padding-block: var(--space-0);
 	padding-inline: var(--space-3);
 	line-height: 1;
 	box-sizing: border-box;
