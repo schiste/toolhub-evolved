@@ -82,7 +82,7 @@ function authorEntries(t) {
 }
 
 function authorExternalLink(entry) {
-	const url = safeUrl(authorProfileUrl(entry.profile, entry.name));
+	const url = safeUrl(authorProfileUrl(entry.profile));
 	if (!url) return "";
 	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="External profile for ${esc(entry.name)}">${icon("external")}</a>`;
 }

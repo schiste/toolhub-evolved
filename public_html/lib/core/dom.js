@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-export const $ = (s, r) => (r || document).querySelector(s);
-export const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+/** @type {(selector: string, root?: ParentNode) => HTMLElement | null} */
+export const $ = (s, r) => /** @type {HTMLElement | null} */ ((r || document).querySelector(s));
+/** @type {(selector: string, root?: ParentNode) => HTMLElement[]} */
+export const $$ = (s, r) => /** @type {HTMLElement[]} */ ([...(r || document).querySelectorAll(s)]);
 
 export function hash(str) {
 	let h = 0;
