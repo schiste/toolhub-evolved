@@ -22,8 +22,8 @@ used sparingly and only where a killing test is genuinely impossible.
   anchors in already-gated regexes, unreachable `catch`, `String(null)`-isn't-a-URL guard.
 - **routing.js** — `||"/"` / `path===""` fallbacks (pathname is never empty),
   ignored history `title` argument.
-- **author-index.js** — `authorObjs`/`authors` co-emptiness invariant from
-  `normalizeTool`, `tools||[]` defaults, `[]`-vs-`undefined` indistinguishable via `||[]`.
+- **author-index.js** — the author-list / author-object co-emptiness invariant
+  from `normalizeTool`, `tools||[]` defaults, `[]`-vs-`undefined` indistinguishable via `||[]`.
 - **signals.js** — never-rejecting `.catch`, `||[]` array fallbacks that a
   sentinel can't match, stable-sort index tiebreak (`-` vs `+` preserves order).
 - **store.js** — `demoRevisionsFor` default `[]` arg immediately filtered by `content_id`.
