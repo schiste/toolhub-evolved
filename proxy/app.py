@@ -18,6 +18,13 @@ STATIC_DIR = (HERE.parent / "public_html").resolve()
 UPSTREAM = "https://toolhub.wikimedia.org"
 UA = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
 
+# The proxy buffers the upstream body before relaying it; cap that buffer so a
+# (hypothetical) runaway upstream response can't exhaust the webservice's memory.
+# Toolhub JSON pages are a few hundred KiB at most, so 10 MiB is generous slack.
+_MAX_UPSTREAM_BYTES = 10 * 1024 * 1024
+_CHUNK_BYTES = 64 * 1024
+_UPSTREAM_CACHE = "public, max-age=300"
+
 app = Flask(__name__, static_folder=None)
 
 # CSP hash of the one inline theme script in index.html (kept inline so the theme
@@ -59,8 +66,14 @@ def set_security_headers(resp: Response) -> Response:
     return resp
 
 
-@app.route("/api/", defaults={"path": ""})
-@app.route("/api/<path:path>")
+# Accept write verbs at the routing layer (not just GET) so the view itself can
+# answer them with a JSON 405 — the explicit read-only contract — instead of
+# Flask's generic HTML 405. The SPA only ever issues GETs.
+_PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+
+
+@app.route("/api/", defaults={"path": ""}, methods=_PROXY_METHODS)
+@app.route("/api/<path:path>", methods=_PROXY_METHODS)
 def api_proxy(path: str) -> Response:
     """Read-only reverse proxy to the live Toolhub API (same-origin for the SPA)."""
     if request.method != "GET":
@@ -68,15 +81,34 @@ def api_proxy(path: str) -> Response:
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
     try:
-        upstream = requests.get(url, headers={"User-Agent": UA, "Accept": "application/json"}, timeout=20)
+        # allow_redirects=False: this is a fixed-target read-only proxy, so it must
+        # never chase a 3xx the upstream returns (an upstream open redirect would
+        # otherwise become SSRF to whatever host the Location names). A 3xx is
+        # relayed through verbatim instead. stream=True so the body is read under
+        # the size cap below rather than fully buffered by requests up front.
+        upstream = requests.get(
+            url,
+            headers={"User-Agent": UA, "Accept": "application/json"},
+            timeout=20,
+            allow_redirects=False,
+            stream=True,
+        )
+        body = bytearray()
+        for chunk in upstream.iter_content(_CHUNK_BYTES):
+            body.extend(chunk)
+            if len(body) > _MAX_UPSTREAM_BYTES:
+                upstream.close()
+                return Response('{"error":"upstream response too large"}', status=502, content_type="application/json")
     except requests.RequestException:
         return Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
     resp = Response(
-        upstream.content,
+        bytes(body),
         status=upstream.status_code,
         content_type=upstream.headers.get("content-type", "application/json"),
     )
-    resp.headers["Cache-Control"] = "public, max-age=300"
+    # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
+    # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
+    resp.headers["Cache-Control"] = _UPSTREAM_CACHE if upstream.ok else "no-store"
     return resp
 
 
@@ -95,5 +127,5 @@ def static_files(path: str) -> Response:
     return send_from_directory(STATIC_DIR, "index.html")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - local dev entrypoint, not exercised by tests
     app.run(host="127.0.0.1", port=8000)

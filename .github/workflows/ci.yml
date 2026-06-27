@@ -72,10 +72,10 @@ jobs:
               run: ruff format --check proxy
             - name: pip-audit
               run: pip-audit -r proxy/requirements.txt --strict
-            - name: Proxy tests (security headers)
+            - name: Proxy tests + coverage gate (proxy/app.py at 100%)
               run: |
                   pip install -r proxy/requirements.txt
-                  pytest tests/proxy -q
+                  PYTHONPATH=proxy pytest tests/proxy -q --cov --cov-report=term-missing
 
     secrets:
         name: Secret scan

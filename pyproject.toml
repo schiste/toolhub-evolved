@@ -23,3 +23,14 @@ ignore = [
 
 [tool.ruff.format]
 line-ending = "lf"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+# The proxy is small and security-sensitive; require full coverage so every
+# branch of the reverse proxy and the static-file traversal guard is exercised.
+fail_under = 100
+show_missing = true
+exclude_also = ["if __name__ == .__main__.:"]
