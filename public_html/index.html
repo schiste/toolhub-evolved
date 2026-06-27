@@ -30,6 +30,20 @@
 		<link rel="stylesheet" href="/styles/organisms.css" />
 		<link rel="stylesheet" href="/styles/templates.css" />
 		<link rel="stylesheet" href="/styles/styleguide.css" />
+
+		<!-- Flatten the ES-module waterfall: start fetching the always-needed core
+		     chain + the home critical path during HTML parse, instead of discovering
+		     each level only after the previous module is fetched and parsed. -->
+		<link rel="modulepreload" href="/main.js" />
+		<link rel="modulepreload" href="/lib/core/dom.js" />
+		<link rel="modulepreload" href="/lib/core/i18n.js" />
+		<link rel="modulepreload" href="/lib/core/session.js" />
+		<link rel="modulepreload" href="/lib/core/store.js" />
+		<link rel="modulepreload" href="/lib/core/routing.js" />
+		<link rel="modulepreload" href="/lib/core/api.js" />
+		<link rel="modulepreload" href="/lib/core/signals.js" />
+		<link rel="modulepreload" href="/views/router.js" />
+		<link rel="modulepreload" href="/views/home.js" />
 	</head>
 	<body>
 		<a class="skip" href="#view">Skip to content</a>

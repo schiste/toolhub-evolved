@@ -13,10 +13,12 @@ import { viewAuthor } from "./authors.js";
 import { viewLists, viewList, viewMyLists, viewFavorites, viewListEdit } from "./lists.js";
 import { viewToolForm, viewAddTools, viewAnnotationsEdit } from "./toolforms.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
-import { viewExperiments } from "./experiments.js";
-import { viewGraph } from "./graph.js";
-import { viewStyleguide } from "./styleguide.js";
 import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
+
+// Heavyweight, rarely-first-paint routes are loaded on demand via dynamic
+// import() so their code stays out of the initial module graph (styleguide is
+// ~47 KB and only the /styleguide route needs it; graph pulls in force-graph).
+// render() already awaits dispatch(), so a returned Promise<View> just works.
 
 /** @typedef {{ title: string, html: string, mount?: () => void }} View */
 /** @typedef {View | Promise<View>} ViewResult */
@@ -43,7 +45,7 @@ setSignInFallback(signInPage);
 
 export const ROUTES = {
 	lists: viewLists,
-	graph: viewGraph,
+	graph: () => import("./graph.js").then((m) => m.viewGraph()),
 	"published-lists": viewLists,
 	"my-lists": () => requireSignIn(viewMyLists, "Your lists", "See and manage the lists you've created."),
 	favorites: () => requireSignIn(viewFavorites, "Favorites", "Your saved tools, all in one place."),
@@ -62,8 +64,8 @@ export const ROUTES = {
 	"audit-logs": viewAudit,
 	"api-docs": viewApiDocs,
 	contribute: viewContribute,
-	experiments: viewExperiments,
-	styleguide: viewStyleguide
+	experiments: () => import("./experiments.js").then((m) => m.viewExperiments()),
+	styleguide: () => import("./styleguide.js").then((m) => m.viewStyleguide())
 };
 /** Tool sub-routes (/tools/:name and its create/edit/history variants). @param {string[]} seg */
 function dispatchToolRoute(seg) {

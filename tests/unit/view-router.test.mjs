@@ -250,18 +250,20 @@ test("dispatch /lists/<id>/history → prosePage with the live-site note", () =>
 
 /* ---- dispatch: ROUTES table ------------------------------------------- */
 
-test("dispatch routes the ungated ROUTES entries to their views", () => {
+test("dispatch routes the ungated ROUTES entries to their views", async () => {
 	assert.deepEqual(at("/lists"), { tag: "lists" });
 	assert.deepEqual(at("/published-lists"), { tag: "lists" });
-	assert.deepEqual(at("/graph"), { tag: "graph" });
+	// graph / experiments / styleguide are lazy-loaded (dynamic import), so dispatch
+	// returns a Promise<View> for them — render() awaits it the same way.
+	assert.deepEqual(await at("/graph"), { tag: "graph" });
 	assert.deepEqual(at("/recent"), { tag: "recent" });
 	assert.deepEqual(at("/members"), { tag: "members" });
 	assert.deepEqual(at("/crawler-history"), { tag: "crawler" });
 	assert.deepEqual(at("/audit-logs"), { tag: "audit" });
 	assert.deepEqual(at("/api-docs"), { tag: "apidocs" });
 	assert.deepEqual(at("/contribute"), { tag: "contribute" });
-	assert.deepEqual(at("/experiments"), { tag: "experiments" });
-	assert.deepEqual(at("/styleguide"), { tag: "styleguide" });
+	assert.deepEqual(await at("/experiments"), { tag: "experiments" });
+	assert.deepEqual(await at("/styleguide"), { tag: "styleguide" });
 	assert.equal(lists.viewLists.mock.calls.length, 2); // lists + published-lists
 });
 
