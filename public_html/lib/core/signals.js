@@ -78,6 +78,7 @@ export function endorsementOf(name, map) {
    never wiped by "Reset demo data"). Fit is an EXPLICIT match (a tool that names
    your wiki or your audience), so the cue stays meaningful rather than universal. */
 const CONTEXT_KEY = "toolhub-context";
+/** @returns {UserContext} */
 export function getUserContext() {
 	try {
 		return JSON.parse(/** @type {string} */ (localStorage.getItem(CONTEXT_KEY))) || {};
@@ -85,7 +86,7 @@ export function getUserContext() {
 		return {};
 	}
 }
-/** @param {{ wiki?: string, role?: string } | null | undefined} ctx */
+/** @param {UserContext | null | undefined} ctx */
 export function setUserContext(ctx) {
 	try {
 		if (ctx && (ctx.wiki || ctx.role)) {
@@ -112,7 +113,7 @@ export function wikiMatches(forWikis, wiki) {
 }
 /**
  * @param {Tool} t
- * @param {{ wiki?: string, role?: string }} [ctx]
+ * @param {UserContext} [ctx]
  */
 export function fitsContext(t, ctx) {
 	const activeCtx = ctx || getUserContext();

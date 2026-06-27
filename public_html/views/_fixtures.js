@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/** @type {Tool} */
 export const FIXTURE_TOOL = {
 	name: "styleguide-citation-helper",
 	title: "Citation Helper",
@@ -10,6 +11,13 @@ export const FIXTURE_TOOL = {
 	keywords: ["citations", "references", "editing", "quality", "wikidata", "sources"],
 	maintainer: "Ada Lovelace",
 	authors: ["Ada Lovelace", "Grace Hopper"],
+	// Empty/null to match the prior (implicitly-undefined) render exactly; present
+	// now so the fixture is a complete, type-checked Tool rather than a cast.
+	authorObjs: [],
+	wikidata: null,
+	subtitle: null,
+	sponsor: [],
+	replacedBy: null,
 	toolType: "web app",
 	license: "GPL-3.0-or-later",
 	repository: "https://github.com/example/citation-helper",
@@ -32,6 +40,7 @@ export const FIXTURE_TOOL = {
 	status: { level: "green", label: "Healthy" }
 };
 
+/** @type {Tool} */
 export const FIXTURE_TOOL_DEPRECATED = {
 	...FIXTURE_TOOL,
 	name: "styleguide-deprecated-citation-helper",
@@ -44,6 +53,7 @@ export const FIXTURE_TOOL_DEPRECATED = {
 	status: { level: "red", label: "Deprecated" }
 };
 
+/** @type {Tool} */
 export const FIXTURE_TOOL_EXPERIMENTAL = {
 	...FIXTURE_TOOL,
 	name: "styleguide-experimental-citation-helper",

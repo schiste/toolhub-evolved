@@ -34,7 +34,7 @@ import { prosePage, viewNotFound } from "./static.js";
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
-/** @typedef {{ name: string, profile: { url?: string | null, wikiUsername?: string } }} AuthorEntry */
+/** @typedef {{ name: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
 
 /** @param {{ tool: Tool, shared?: string[] }} item */
 function relatedToolRow(item) {
@@ -80,7 +80,7 @@ function viewToolNotFound(name) {
  */
 function authorEntries(t) {
 	const names = (t.authors && t.authors.length > 0 ? t.authors : [t.maintainer]).filter(Boolean);
-	/** @type {Array<{ name?: string, url?: string | null, wikiUsername?: string }>} */
+	/** @type {Array<{ name?: string, url?: string | null, wikiUsername?: string | null }>} */
 	// Stryker disable next-line ArrayDeclaration: normalizeTool always provides an `authorObjs` array; the `|| []` fallback is never taken — equivalent.
 	const records = t.authorObjs || [];
 	return names.map((name, i) => {

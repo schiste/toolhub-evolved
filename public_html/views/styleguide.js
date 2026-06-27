@@ -36,9 +36,10 @@ import {
 	FIXTURE_TOOL_EXPERIMENTAL
 } from "./_fixtures.js";
 
-const SG_TOOL = /** @type {Tool} */ (FIXTURE_TOOL);
-const SG_TOOL_DEPRECATED = /** @type {Tool} */ (FIXTURE_TOOL_DEPRECATED);
-const SG_TOOL_EXPERIMENTAL = /** @type {Tool} */ (FIXTURE_TOOL_EXPERIMENTAL);
+// The fixtures are now complete, type-checked `Tool`s (see _fixtures.js) — no cast.
+const SG_TOOL = FIXTURE_TOOL;
+const SG_TOOL_DEPRECATED = FIXTURE_TOOL_DEPRECATED;
+const SG_TOOL_EXPERIMENTAL = FIXTURE_TOOL_EXPERIMENTAL;
 const STYLEGUIDE_TOOLS = [SG_TOOL, SG_TOOL_DEPRECATED, SG_TOOL_EXPERIMENTAL];
 const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
 const QUICK_VIEW_BUTTON_STYLE =

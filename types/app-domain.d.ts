@@ -8,7 +8,15 @@
 interface AuthorObj {
 	name: string;
 	url: string | null;
+	wikiUsername: string | null;
+	developerUsername: string | null;
 }
+
+/** The level/label pair statusOf() produces — a closed domain, not free strings. */
+type ToolStatus =
+	| { level: "green"; label: "Healthy" }
+	| { level: "yellow"; label: "Experimental" }
+	| { level: "red"; label: "Deprecated" };
 
 /** A normalized tool record — the shape every view/component consumes. */
 interface Tool {
@@ -44,8 +52,8 @@ interface Tool {
 	modified: string | null;
 	origin: string;
 	weeklyViews: number;
-	// statusOf() returns a {level,label} pair, not a bare string.
-	status: { level: string; label: string };
+	// statusOf() returns one of three fixed level/label pairs (see ToolStatus).
+	status: ToolStatus;
 	// Attached later by signals.js / Lane-B overlay — optional so freshly
 	// normalized records and enriched ones both type-check.
 	endorsement?: { count: number; lists: unknown[] };
@@ -63,11 +71,10 @@ interface ToolList {
 	featured: boolean;
 }
 
-/** The user's saved context signals (audience/wiki/tasks) for fit ranking. */
+/** The user's saved fit-ranking context — a chosen wiki and/or audience role. */
 interface UserContext {
-	audiences: string[];
-	wikis: string[];
-	tasks: string[];
+	wiki?: string;
+	role?: string;
 }
 
 /** A node in the similarity / ego graph. */

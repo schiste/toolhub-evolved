@@ -128,6 +128,16 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 	assert.equal(typeof normalized.weeklyViews, "number");
 });
 
+test("normalizeTool derives status from the tool's own deprecated/experimental flags", () => {
+	const dep = api.normalizeTool({ name: "dep", deprecated: true });
+	assert.deepEqual(dep.status, { level: "red", label: "Deprecated" });
+	// annotation-sourced deprecation flows through the same path
+	const annDep = api.normalizeTool({ name: "anndep", annotations: { deprecated: true } });
+	assert.equal(annDep.status.level, "red");
+	const exp = api.normalizeTool({ name: "exp", experimental: true });
+	assert.deepEqual(exp.status, { level: "yellow", label: "Experimental" });
+});
+
 test("normalizeTool covers author and annotation fallbacks", () => {
 	const stringAuthor = api.normalizeTool({
 		name: "string-author",

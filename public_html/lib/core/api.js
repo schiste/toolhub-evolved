@@ -62,7 +62,10 @@ export function newToolBase(name) {
 	INDEX[name] = o;
 	return applyToolOverlay(o);
 }
-/** @param {Tool} t */
+/**
+ * @param {{ deprecated: boolean; experimental: boolean }} t
+ * @returns {ToolStatus}
+ */
 export function statusOf(t) {
 	return t.deprecated
 		? { level: "red", label: "Deprecated" }
@@ -201,13 +204,19 @@ export function hasValue(v) {
 	return Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
 }
 /**
+ * Choose the first of core/annotation that has a value, else the fallback. The
+ * fallback's type `T` is asserted onto the chosen raw value: this is the single
+ * place normalizeTool trusts the upstream shape, so the constructed record can be
+ * a checked `Tool` instead of `any`.
+ * @template T
  * @param {unknown} core
  * @param {unknown} annotation
- * @param {unknown} fallback
+ * @param {T} fallback
+ * @returns {T}
  */
 export function pick(core, annotation, fallback) {
-	if (hasValue(core)) return core;
-	if (hasValue(annotation)) return annotation;
+	if (hasValue(core)) return /** @type {T} */ (core);
+	if (hasValue(annotation)) return /** @type {T} */ (annotation);
 	return fallback;
 }
 /**
@@ -243,10 +252,16 @@ export function normalizeTool(t) {
 		: typeof ra === "string" && ra
 			? [ra]
 			: [];
-	const authorObjs = Array.isArray(ra)
-		? ra.map((author) => normalizeAuthorObj(author)).filter(Boolean)
-		: [normalizeAuthorObj(ra)].filter(Boolean);
-	/** @type {any} */
+	// filter(Boolean) drops the nulls at runtime but TS can't narrow it, so assert
+	// the post-filter element type (no soundness loss — the nulls are gone).
+	const authorObjs = /** @type {AuthorObj[]} */ (
+		Array.isArray(ra)
+			? ra.map((author) => normalizeAuthorObj(author)).filter(Boolean)
+			: [normalizeAuthorObj(ra)].filter(Boolean)
+	);
+	const deprecated = Boolean(t.deprecated || ann.deprecated);
+	const experimental = Boolean(t.experimental || ann.experimental);
+	/** @type {Tool} */
 	const o = {
 		name: t.name,
 		title: t.title || t.name,
@@ -275,13 +290,13 @@ export function normalizeTool(t) {
 		feedback: firstUrl(pick(t.feedback_url, ann.feedback_url, [])),
 		bugtracker: pick(t.bugtracker_url, ann.bugtracker_url, null),
 		translate: pick(t.translate_url, ann.translate_url, null),
-		deprecated: Boolean(t.deprecated || ann.deprecated),
-		experimental: Boolean(t.experimental || ann.experimental),
+		deprecated,
+		experimental,
 		modified: t.modified_date || t.modified || null,
-		origin: t.origin || "crawler"
+		origin: t.origin || "crawler",
+		weeklyViews: synthViews(t.name),
+		status: statusOf({ deprecated, experimental })
 	};
-	o.weeklyViews = synthViews(o.name);
-	o.status = statusOf(o);
 	if (expOn()) applyToolOverlay(o); // Lane B: edits/annotations overload the live record
 	INDEX[o.name] = o; // cache for quick-view
 	return o;
