@@ -599,6 +599,24 @@ async function mountHome(opts = {}) {
 
 const tick = () => new Promise((res) => setTimeout(res, 0));
 
+test("mount: re-mounting home removes the prior document listeners (no leak)", async () => {
+	const removed = [];
+	const origRemove = document.removeEventListener.bind(document);
+	document.removeEventListener = (type, fn, opts) => {
+		removed.push(type);
+		return origRemove(type, fn, opts);
+	};
+	try {
+		await mountHome(); // registers the outside-click / Escape pair
+		removed.length = 0; // only care about what the *re-mount* cleans up
+		await mountHome(); // must remove the prior pair before re-registering
+		assert.ok(removed.includes("click"), "prior outside-click listener removed on re-mount");
+		assert.ok(removed.includes("keydown"), "prior Escape listener removed on re-mount");
+	} finally {
+		document.removeEventListener = origRemove;
+	}
+});
+
 test("mount: home search submit navigates with query", async () => {
 	await mountHome();
 	const input = document.querySelector("#home-q");

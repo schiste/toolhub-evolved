@@ -72,6 +72,9 @@ used sparingly and only where a killing test is genuinely impossible.
   (`if (!el)` on elements just rendered into the view).
 - **search.js** — `??""` parse fallbacks (NaN either way), `-score`→relevance
   only reachable when relevance is already the default (experimental on).
+- **home.js** — the `if (intentDocClick)` / `if (intentDocKeydown)` guards before
+  removing the prior mount's document listeners: forcing them true on a first-ever
+  mount only removes a null/absent listener (a no-op).
 - **toolforms.js** — pre-trimmed URL inputs, blank-draft fields that render empty.
 - **router.js** — `clearTimeout(null)` no-op guard.
 - **parity.js** — missing `show` re-derives to `"all"`; catch-fallback shapes

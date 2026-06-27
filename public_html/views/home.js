@@ -11,6 +11,15 @@ import { grid } from "../lib/organisms/grid.js";
 import { listCard } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 
+// The intent menus close on an outside click / Escape via document-level
+// listeners. They are registered in mount(), so without cleanup each revisit to
+// home would add another pair onto `document`. Keep the live pair here and
+// remove it before re-registering, so at most one pair is ever attached.
+/** @type {((e: MouseEvent) => void) | null} */
+let intentDocClick = null;
+/** @type {((e: KeyboardEvent) => void) | null} */
+let intentDocKeydown = null;
+
 const WIKI_OPTIONS = [
 	// Stryker disable next-line StringLiteral: projectItems() overrides the label for the value="" row with "any project", so this "Any wiki" string is never rendered — equivalent.
 	["", "Any wiki"],
@@ -462,12 +471,20 @@ export async function viewHome() {
 				refreshHome();
 				closeMenus();
 			});
-			document.addEventListener("click", (e) => {
+			// Remove the previous home mount's document listeners before adding this
+			// one's, so navigating back to home never accumulates handlers.
+			// Stryker disable next-line ConditionalExpression: forcing this guard true (on the first-ever mount, when intentDocClick is null) only calls removeEventListener with a null listener — a no-op — so it is unobservable: equivalent.
+			if (intentDocClick) document.removeEventListener("click", intentDocClick);
+			// Stryker disable next-line ConditionalExpression: as above — removing a null/absent keydown listener is a no-op: equivalent.
+			if (intentDocKeydown) document.removeEventListener("keydown", intentDocKeydown);
+			intentDocClick = (e) => {
 				if (!intentForm.contains(/** @type {Node} */ (e.target))) closeMenus();
-			});
-			document.addEventListener("keydown", (e) => {
+			};
+			intentDocKeydown = (e) => {
 				if (e.key === "Escape") closeMenus();
-			});
+			};
+			document.addEventListener("click", intentDocClick);
+			document.addEventListener("keydown", intentDocKeydown);
 			intentForm.addEventListener("submit", (e) => {
 				e.preventDefault();
 				persistIntent();
