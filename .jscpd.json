@@ -2,6 +2,7 @@
 	"threshold": 0,
 	"minLines": 8,
 	"minTokens": 60,
+	"format": ["javascript"],
 	"reporters": ["console", "json"],
 	"output": ".quality/jscpd",
 	"ignore": [

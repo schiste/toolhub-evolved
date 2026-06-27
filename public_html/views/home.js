@@ -354,7 +354,7 @@ export async function viewHome() {
 					trigger.setAttribute("aria-expanded", "false")
 				);
 			};
-			/** @param {string | null} kind @param {boolean | null | undefined} on */
+			/** @param {string | null} kind @param {boolean | string | null | undefined} on */
 			const setMenu = (kind, on) => {
 				closeMenus();
 				if (!on) return;
