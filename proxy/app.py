@@ -8,6 +8,7 @@ data without hitting CORS (the upstream API sends no CORS headers).
 It is NOT an open proxy: requests only ever go to UPSTREAM/api/... and only GET.
 """
 
+import time
 from pathlib import Path
 
 import requests
@@ -26,6 +27,35 @@ _CHUNK_BYTES = 64 * 1024
 _UPSTREAM_CACHE = "public, max-age=300"
 
 app = Flask(__name__, static_folder=None)
+
+# One pooled HTTPS connection set to the upstream, reused across requests so each
+# proxied call skips a fresh TCP + TLS handshake to toolhub.wikimedia.org
+# (~100-200ms saved per request — the SPA makes several per page).
+_SESSION = requests.Session()
+
+# Tiny in-process TTL cache for successful upstream GETs: a burst of cold clients
+# hitting a hot endpoint (e.g. /api/ui/home/) collapses to one upstream fetch.
+# Per-worker, bounded, short-lived; the browser also caches 5 min on top.
+_CACHE_TTL_SECONDS = 30
+_CACHE_MAX_ENTRIES = 256
+# url -> (expiry_monotonic, status, content_type, body)
+_ttl_cache: dict[str, tuple[float, int, str, bytes]] = {}
+
+
+def _cache_get(url: str) -> tuple[int, str, bytes] | None:
+    """Return (status, content_type, body) for a fresh cache hit, else None."""
+    hit = _ttl_cache.get(url)
+    if hit is not None and hit[0] > time.monotonic():
+        return hit[1], hit[2], hit[3]
+    return None
+
+
+def _cache_put(url: str, status: int, content_type: str, body: bytes) -> None:
+    """Cache a successful upstream payload, bounding the cache size."""
+    if len(_ttl_cache) >= _CACHE_MAX_ENTRIES:
+        _ttl_cache.clear()  # short-lived cache; a wholesale clear is fine as a bound
+    _ttl_cache[url] = (time.monotonic() + _CACHE_TTL_SECONDS, status, content_type, body)
+
 
 # CSP hash of the one inline theme script in index.html (kept inline so the theme
 # resolves before first paint — no FOUC). tests/proxy/test_app.py recomputes this
@@ -80,13 +110,20 @@ def api_proxy(path: str) -> Response:
         return Response('{"error":"read-only proxy"}', status=405, content_type="application/json")
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
+    cached = _cache_get(url)
+    if cached is not None:
+        status, content_type, body = cached
+        resp = Response(body, status=status, content_type=content_type)
+        resp.headers["Cache-Control"] = _UPSTREAM_CACHE
+        return resp
     try:
         # allow_redirects=False: this is a fixed-target read-only proxy, so it must
         # never chase a 3xx the upstream returns (an upstream open redirect would
         # otherwise become SSRF to whatever host the Location names). A 3xx is
         # relayed through verbatim instead. stream=True so the body is read under
-        # the size cap below rather than fully buffered by requests up front.
-        upstream = requests.get(
+        # the size cap below rather than fully buffered by requests up front. The
+        # pooled _SESSION reuses the TCP/TLS connection to the upstream.
+        upstream = _SESSION.get(
             url,
             headers={"User-Agent": UA, "Accept": "application/json"},
             timeout=20,
@@ -101,13 +138,13 @@ def api_proxy(path: str) -> Response:
                 return Response('{"error":"upstream response too large"}', status=502, content_type="application/json")
     except requests.RequestException:
         return Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
-    resp = Response(
-        bytes(body),
-        status=upstream.status_code,
-        content_type=upstream.headers.get("content-type", "application/json"),
-    )
+    payload = bytes(body)
+    content_type = upstream.headers.get("content-type", "application/json")
     # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
     # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
+    if upstream.ok:
+        _cache_put(url, upstream.status_code, content_type, payload)
+    resp = Response(payload, status=upstream.status_code, content_type=content_type)
     resp.headers["Cache-Control"] = _UPSTREAM_CACHE if upstream.ok else "no-store"
     return resp
 

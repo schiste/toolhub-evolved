@@ -21,6 +21,14 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import app as proxy_app  # noqa: E402  (path injected above)
 
 
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """The proxy's TTL cache is module-level; isolate each test from the others."""
+    proxy_app._ttl_cache.clear()
+    yield
+    proxy_app._ttl_cache.clear()
+
+
 @pytest.fixture
 def client():
     proxy_app.app.config["TESTING"] = True
@@ -50,18 +58,19 @@ class FakeUpstream:
 
 @pytest.fixture
 def fake_get(monkeypatch):
-    """Install a stub `requests.get`; return a dict capturing the call args."""
-    captured = {}
+    """Stub the pooled session's `.get`; return a dict capturing args + call count."""
+    captured = {"calls": 0}
 
     def install(response=None, *, raises=None):
         def _get(url, **kwargs):
+            captured["calls"] += 1
             captured["url"] = url
             captured["kwargs"] = kwargs
             if raises is not None:
                 raise raises
             return response
 
-        monkeypatch.setattr(proxy_app.requests, "get", _get)
+        monkeypatch.setattr(proxy_app._SESSION, "get", _get)
         return captured
 
     return install
@@ -143,6 +152,42 @@ def test_oversize_response_is_rejected(client, fake_get, monkeypatch):
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "upstream response too large"
     assert upstream.closed is True, "the oversized stream must be closed"
+
+
+def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
+    captured = fake_get(FakeUpstream(200, b'{"v":1}'))
+    first = client.get("/api/ui/home/")
+    second = client.get("/api/ui/home/")
+    assert captured["calls"] == 1, "second identical GET must hit the in-process cache"
+    assert first.data == second.data == b'{"v":1}'
+    assert second.headers["Cache-Control"] == "public, max-age=300"
+
+
+def test_cache_expires_after_ttl(client, fake_get, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(proxy_app.time, "monotonic", lambda: clock["t"])
+    captured = fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    assert captured["calls"] == 1
+    clock["t"] = 1000.0 + proxy_app._CACHE_TTL_SECONDS + 1  # past the TTL window
+    client.get("/api/tools/")
+    assert captured["calls"] == 2, "an expired entry must be re-fetched"
+
+
+def test_error_response_is_not_cached(client, fake_get):
+    captured = fake_get(FakeUpstream(503, b'{"error":"x"}'))
+    client.get("/api/tools/")
+    client.get("/api/tools/")
+    assert captured["calls"] == 2, "a 5xx must not be cached — every call re-fetches"
+
+
+def test_cache_is_bounded(client, fake_get, monkeypatch):
+    monkeypatch.setattr(proxy_app, "_CACHE_MAX_ENTRIES", 2)
+    fake_get(FakeUpstream(200, b"{}"))
+    client.get("/api/a/")
+    client.get("/api/b/")  # cache now at the cap
+    client.get("/api/c/")  # cap reached → cache cleared, then c inserted
+    assert len(proxy_app._ttl_cache) == 1
 
 
 # ---- static files ----------------------------------------------------------
