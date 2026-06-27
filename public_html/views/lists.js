@@ -49,8 +49,7 @@ export async function viewList(id) {
 		demoTag = "",
 		editBtn = "";
 	/** @type {Tool[]} */
-	// Stryker disable next-line ArrayDeclaration: this initial value is always overwritten (demo branch assigns getToolsByName(...), live branch assigns l.tools) before `tools` is read — equivalent.
-	let tools = [];
+	let tools;
 	if (isDemo) {
 		const d = demoListGet(id);
 		if (!d) return viewNotFound();

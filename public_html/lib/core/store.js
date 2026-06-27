@@ -121,7 +121,7 @@ export function demoListGet(id) {
 }
 /** @param {string} id */
 export function isDemoListId(id) {
-	return String(id).indexOf("demo-") === 0;
+	return String(id).startsWith("demo-");
 }
 /** @returns {DemoList} */
 export function demoListNew() {

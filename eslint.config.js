@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import js from "@eslint/js";
 import globals from "globals";
-import importPlugin from "eslint-plugin-import";
+// eslint-plugin-import-x: the maintained fork of eslint-plugin-import, used
+// because upstream eslint-plugin-import has no ESLint 10 peer support yet. Same
+// `import/*` rule names, so the rule config below is unchanged.
+import importPlugin from "eslint-plugin-import-x";
 import sonarjs from "eslint-plugin-sonarjs";
 import unicorn from "eslint-plugin-unicorn";
 import headers from "eslint-plugin-headers";

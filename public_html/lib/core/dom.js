@@ -16,7 +16,7 @@ export function hash(str) {
 }
 /** @param {unknown} s */
 export function esc(s) {
-	return String(s === null || s === undefined ? "" : s)
+	return String(s ?? "")
 		.replaceAll("&", "&amp;")
 		.replaceAll("<", "&lt;")
 		.replaceAll(">", "&gt;")
@@ -25,7 +25,7 @@ export function esc(s) {
 }
 /** @param {unknown} u */
 export function normalizeVcsUrl(u) {
-	const raw = String(u === null || u === undefined ? "" : u).trim();
+	const raw = String(u ?? "").trim();
 	// Stryker disable next-line ConditionalExpression: the only falsy `raw` is "", which also falls through the (no-match) transforms to `return … : raw`, yielding the same "".
 	if (!raw) return raw;
 	// No try/catch: the body only runs regex tests and string replaces on an
@@ -54,8 +54,8 @@ export function normalizeVcsUrl(u) {
 }
 /** @param {unknown} u */
 export function safeUrl(u) {
-	// Stryker disable next-line ConditionalExpression,LogicalOperator,StringLiteral: the null/undefined guard is redundant here — String(null)/String(undefined) ("null"/"undefined") are not http(s) URLs, so they fail the test() below exactly like "" does; only the always-"" ternary variant is behavioral and is covered by tests but co-disabled.
-	const s = String(u === null || u === undefined ? "" : u).trim();
+	// Stryker disable next-line LogicalOperator,StringLiteral: any falsy-non-null u and String(null)/String(undefined) ("null"/"undefined") all fail the http(s) test() below exactly as "" does, so `u ?? ""` → `u || ""` and mutating the "" default are both unobservable here — equivalent.
+	const s = String(u ?? "").trim();
 	return /^https?:\/\//i.test(s) ? esc(s) : "";
 }
 /** @param {unknown} value */

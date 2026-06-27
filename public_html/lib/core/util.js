@@ -21,7 +21,7 @@ export function memoizeAsync(builder) {
  * @returns {string}
  */
 export function normStr(value) {
-	return String(value === null || value === undefined ? "" : value)
+	return String(value ?? "")
 		.trim()
 		.toLowerCase();
 }

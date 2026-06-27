@@ -42,7 +42,7 @@ function termsOf(tool) {
 	const seen = new Set();
 	const push = (prefix, values, skipStar) => {
 		for (const raw of values || []) {
-			const v = String(raw === null || raw === undefined ? "" : raw)
+			const v = String(raw ?? "")
 				.trim()
 				.toLowerCase();
 			if (!v || (skipStar && v === "*")) continue;
@@ -56,7 +56,7 @@ function termsOf(tool) {
 	push("kw", tool.keywords);
 	push("wiki", tool.forWikis, true);
 	push("aud", tool.audiences);
-	const type = String(tool.toolType === null || tool.toolType === undefined ? "" : tool.toolType)
+	const type = String(tool.toolType ?? "")
 		.trim()
 		.toLowerCase();
 	if (type) push("type", [type]);

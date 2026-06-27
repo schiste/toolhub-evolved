@@ -5,8 +5,8 @@ const LINK_ATTRS = 'target="_blank" rel="noopener nofollow"';
 
 /** @param {unknown} value */
 function decodeEscapedUrl(value) {
-	// Stryker disable next-line all — only ever called with non-null string hrefs captured by the link regex; the null/undefined ternary and its "" branch are unreachable.
-	return String(value === null || value === undefined ? "" : value)
+	// Stryker disable next-line all — only ever called with non-null string hrefs captured by the link regex; the `?? ""` nullish branch is unreachable.
+	return String(value ?? "")
 		.replaceAll("&amp;", "&")
 		.replaceAll("&lt;", "<")
 		.replaceAll("&gt;", ">")
@@ -62,8 +62,8 @@ function renderInline(value, opts = {}) {
 	/** @type {string[]} */
 	// Stryker disable next-line ArrayDeclaration — a seeded element is never indexed (token keys derive from the live array length), so it is unobservable.
 	const tokens = [];
-	// Stryker disable next-line all — renderInline only receives joined strings, so the null/undefined ternary and its "" branch are unreachable.
-	let out = String(value === null || value === undefined ? "" : value);
+	// Stryker disable next-line all — renderInline only receives joined strings, so the `?? ""` nullish branch is unreachable.
+	let out = String(value ?? "");
 
 	out = out.replaceAll(/`([^\n`]+)`/g, (_, code) => tokenFor(tokens, `<code>${code}</code>`));
 

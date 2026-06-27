@@ -15,7 +15,7 @@ export function metaItem(k, v) {
  * @param {string | null | undefined} url
  */
 export function linkOut(label, url) {
-	const raw = String(url === null || url === undefined ? "" : url).trim();
+	const raw = String(url ?? "").trim();
 	if (!raw) return "";
 	const u = safeUrl(normalizeVcsUrl(raw));
 	if (u) {
