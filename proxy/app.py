@@ -15,8 +15,16 @@ import requests
 from flask import Flask, Response, request, send_from_directory
 
 HERE = Path(__file__).resolve().parent
-STATIC_DIR = (HERE.parent / "public_html").resolve()
+_SOURCE_DIR = (HERE.parent / "public_html").resolve()
+_DIST_DIR = (HERE.parent / "dist").resolve()
 UPSTREAM = "https://toolhub.wikimedia.org"
+
+
+def _static_root() -> Path:
+    """Serve the minified `dist/` build when present (production), else raw source."""
+    return _DIST_DIR if _DIST_DIR.is_dir() else _SOURCE_DIR
+
+
 UA = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
 
 # The proxy buffers the upstream body before relaying it; cap that buffer so a
@@ -158,10 +166,11 @@ def static_files(path: str) -> Response:
     assets are cached but always revalidated (304 when unchanged, fresh after a
     deploy) — no stale modules, no blanket no-store perf hit.
     """
-    candidate = (STATIC_DIR / path).resolve()
-    if path and STATIC_DIR in candidate.parents and candidate.is_file():
-        return send_from_directory(STATIC_DIR, path)
-    return send_from_directory(STATIC_DIR, "index.html")
+    root = _static_root()
+    candidate = (root / path).resolve()
+    if path and root in candidate.parents and candidate.is_file():
+        return send_from_directory(root, path)
+    return send_from_directory(root, "index.html")
 
 
 if __name__ == "__main__":  # pragma: no cover - local dev entrypoint, not exercised by tests

@@ -30,3 +30,7 @@ reports/
 # Python coverage data
 .coverage
 htmlcov/
+
+# Minified production build (proxy/build_dist.py); built on deploy
+dist/
+dist.tmp/

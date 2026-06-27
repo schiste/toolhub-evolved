@@ -14,6 +14,19 @@ git -C "$REPO_DIR" pull --ff-only
 mkdir -p "$HOME/www/python"
 ln -sfn "$REPO_DIR/proxy" "$HOME/www/python/src"
 
+# Build the minified dist/ (best-effort). app.py serves dist/ when present and
+# falls back to public_html/ otherwise, so any failure here just means the raw
+# source is served (still gzipped at the edge) — never a broken deploy. Toolforge
+# has no Node, so we minify with pure-Python rjsmin/rcssmin in the webservice venv.
+VENV_PY="$HOME/www/python/venv/bin/python"
+if [ -x "$VENV_PY" ]; then
+	echo "Building minified dist/ ..."
+	"$VENV_PY" -m pip install -q rjsmin==1.2.5 rcssmin==1.2.2 >/dev/null 2>&1 || true
+	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  minify skipped — serving raw source"
+else
+	echo "Webservice venv not found; serving raw source (dist/ not built)."
+fi
+
 echo "Restarting webservice ..."
 if webservice status >/dev/null 2>&1; then
 	webservice restart

@@ -205,6 +205,19 @@ def test_unknown_route_falls_back_to_index(client):
     assert "<!doctype html" in resp.get_data(as_text=True).lower()
 
 
+def test_serves_from_dist_build_when_present(client, monkeypatch, tmp_path):
+    # A built dist/ (production) must be preferred over the raw public_html source.
+    dist = tmp_path.resolve()
+    (dist / "main.js").write_text("//min\n", encoding="utf-8")
+    (dist / "index.html").write_text("<!doctype html><title>min</title>", encoding="utf-8")
+    monkeypatch.setattr(proxy_app, "_DIST_DIR", dist)
+    assert proxy_app._static_root() == dist
+    served = client.get("/main.js")
+    assert served.status_code == 200
+    assert b"//min" in served.data
+    assert b"<title>min</title>" in client.get("/any/spa/route").data  # SPA fallback from dist
+
+
 def test_path_traversal_falls_back_to_index_not_the_file():
     # A path that resolves OUTSIDE public_html must serve index.html, never the
     # target file — the containment guard, belt-and-suspenders to Werkzeug.
