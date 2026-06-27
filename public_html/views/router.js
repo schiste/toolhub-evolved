@@ -65,6 +65,60 @@ export const ROUTES = {
 	experiments: viewExperiments,
 	styleguide: viewStyleguide
 };
+/** Tool sub-routes (/tools/:name and its create/edit/history variants). @param {string[]} seg */
+function dispatchToolRoute(seg) {
+	if (seg[1] === "create") {
+		return requireSignIn(
+			() => viewToolForm(null),
+			"Submit a tool",
+			"Create a new tool record — title, description, URL and more."
+		);
+	}
+	const nm = decodeURIComponent(seg[1]);
+	if (seg[2] === "edit") {
+		return requireSignIn(
+			() => viewToolForm(nm),
+			"Edit tool",
+			"Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data."
+		);
+	}
+	if (seg[2] === "edit-annotations") {
+		return requireSignIn(
+			() => viewAnnotationsEdit(nm),
+			"Edit annotations",
+			"Add or refine community annotations for this tool — audiences, tasks and more."
+		);
+	}
+	if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
+	return viewTool(nm);
+}
+/** List sub-routes (/lists/:id and its create/edit/history variants). @param {string[]} seg */
+function dispatchListRoute(seg) {
+	if (seg[1] === "create") {
+		return requireSignIn(
+			() => viewListEdit(null),
+			"Create a list",
+			"Create a new list to group and share useful tools."
+		);
+	}
+	if (seg[2] === "edit") {
+		return requireSignIn(
+			() =>
+				isDemoListId(seg[1])
+					? viewListEdit(decodeURIComponent(seg[1]))
+					: signInPage("Edit list", "Edit this list's title, description and tools."),
+			"Edit list",
+			"Edit this list's title, description and tools."
+		);
+	}
+	if (seg[2] === "history") {
+		return prosePage(
+			"List history",
+			'<p>Revision history for this list is available on the <a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>'
+		);
+	}
+	return viewList(decodeURIComponent(seg[1]));
+}
 export function dispatch() {
 	const { path } = parseRoute();
 	const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
@@ -77,60 +131,8 @@ export function dispatch() {
 	}
 	if (seg[0] === "search") return viewSearch();
 	if (seg[0] === "by" && seg[1]) return viewAuthor(decodeURIComponent(seg[1]));
-	// Tool + its sub-routes
-	if (seg[0] === "tools" && seg[1] === "create") {
-		return requireSignIn(
-			() => viewToolForm(null),
-			"Submit a tool",
-			"Create a new tool record — title, description, URL and more."
-		);
-	}
-	if (seg[0] === "tools" && seg[1]) {
-		const nm = decodeURIComponent(seg[1]);
-		if (seg[2] === "edit") {
-			return requireSignIn(
-				() => viewToolForm(nm),
-				"Edit tool",
-				"Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data."
-			);
-		}
-		if (seg[2] === "edit-annotations") {
-			return requireSignIn(
-				() => viewAnnotationsEdit(nm),
-				"Edit annotations",
-				"Add or refine community annotations for this tool — audiences, tasks and more."
-			);
-		}
-		if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
-		return viewTool(nm);
-	}
-	// Lists + sub-routes
-	if (seg[0] === "lists" && seg[1] === "create") {
-		return requireSignIn(
-			() => viewListEdit(null),
-			"Create a list",
-			"Create a new list to group and share useful tools."
-		);
-	}
-	if (seg[0] === "lists" && seg[1]) {
-		if (seg[2] === "edit") {
-			return requireSignIn(
-				() =>
-					isDemoListId(seg[1])
-						? viewListEdit(decodeURIComponent(seg[1]))
-						: signInPage("Edit list", "Edit this list's title, description and tools."),
-				"Edit list",
-				"Edit this list's title, description and tools."
-			);
-		}
-		if (seg[2] === "history") {
-			return prosePage(
-				"List history",
-				'<p>Revision history for this list is available on the <a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>'
-			);
-		}
-		return viewList(decodeURIComponent(seg[1]));
-	}
+	if (seg[0] === "tools" && seg[1]) return dispatchToolRoute(seg);
+	if (seg[0] === "lists" && seg[1]) return dispatchListRoute(seg);
 	if (ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]) {
 		return ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]();
 	}

@@ -58,14 +58,14 @@ function renderStatusFacetGroup(selectedStatuses) {
 	return `<div class="facet-group"><h2 class="facet-group__title">Status</h2>${rows}</div>`;
 }
 
-export async function viewSearch() {
-	// Stryker disable next-line StringLiteral: when location.search is empty the fallback feeds URLSearchParams; "" yields no params and any sentinel yields a single unread key, so reads (q, page, *__term, …) are unaffected — equivalent.
-	const usp = new URLSearchParams(location.search || "");
-	const q = usp.get("q") || "";
-	// Stryker disable next-line StringLiteral: when the page param is absent the fallback is parsed; "" and any sentinel both yield NaN (→ page 1) — equivalent.
-	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
-	const pageSize = activePageSize(usp.get("page_size"));
-	const exp = expOn();
+/**
+ * Resolve the active sort + upstream ordering from the URL, clamped to the
+ * experiment-gated allow-list (out-of-list requests fall back to the default).
+ * @param {URLSearchParams} usp
+ * @param {boolean} exp
+ * @returns {{ sort: string, ordering: string, defaultSort: string }}
+ */
+function resolveSort(usp, exp) {
 	const defaultSort = exp ? "relevance" : "recent";
 	const requestedSort = usp.get("sort") || sortFromOfficialOrdering(usp.get("ordering"), defaultSort);
 	// defaultSort is referenced (not re-typed) so the allow-list entry that equals the
@@ -74,6 +74,17 @@ export async function viewSearch() {
 	const allowedSorts = exp ? [defaultSort, "recent", "name", "views", "complete"] : [defaultSort, "name", "complete"];
 	const sort = allowedSorts.includes(requestedSort) ? requestedSort : defaultSort;
 	const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
+	return { sort, ordering, defaultSort };
+}
+export async function viewSearch() {
+	// Stryker disable next-line StringLiteral: when location.search is empty the fallback feeds URLSearchParams; "" yields no params and any sentinel yields a single unread key, so reads (q, page, *__term, …) are unaffected — equivalent.
+	const usp = new URLSearchParams(location.search || "");
+	const q = usp.get("q") || "";
+	// Stryker disable next-line StringLiteral: when the page param is absent the fallback is parsed; "" and any sentinel both yield NaN (→ page 1) — equivalent.
+	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
+	const pageSize = activePageSize(usp.get("page_size"));
+	const exp = expOn();
+	const { sort, ordering, defaultSort } = resolveSort(usp, exp);
 	const clientStatuses = activeClientStatuses(usp.get("status"));
 
 	// Live API params: q, paging, ordering + every *__term facet filter from the URL.
