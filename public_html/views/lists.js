@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel } from "../lib/core/i18n.js";
-import { apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
+import { ApiError, apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
 import { listHref, navigateTo } from "../lib/core/routing.js";
@@ -65,8 +65,11 @@ export async function viewList(id) {
 		try {
 			l = normalizeList(await apiGet(`/lists/${encodeURIComponent(id)}/`));
 			tools = l.tools;
-		} catch {
-			return viewNotFound();
+		} catch (error) {
+			// 404 → the list is genuinely absent; anything else is an outage and
+			// must reach the router boundary, not masquerade as "not found".
+			if (error instanceof ApiError && error.status === 404) return viewNotFound();
+			throw error;
 		}
 	}
 	await attachEndorsements(tools);

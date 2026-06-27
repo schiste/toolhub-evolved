@@ -779,11 +779,46 @@ test("apiGet receives exact params (filtered)", async () => {
 	assert.ok(searches.has("audiences__term=editor&wiki__term=wikidata.org&page_size=24"));
 });
 
-test("all apiGet reject → catch fallbacks produce the empty page", async () => {
-	h.apiGet.mockRejectedValue(new Error("down"));
+test("all sources resolve empty → the empty page renders (genuinely no data, not an outage)", async () => {
+	h.apiGet.mockResolvedValue({ results: [] }); // /ui/home/ → total 0; /lists/ & recent → empty
 	const r = await home.viewHome();
-	// /ui/home/ catch → {} → total 0; /lists/ & recent catch → {results:[]}.
 	assert.equal(r.html, S.empty);
+});
+
+test("total outage (every source rejects) surfaces an error, not an empty catalog", async () => {
+	h.apiGet.mockRejectedValue(new Error("down"));
+	// homeSectionsModel counts the failures and, with nothing loaded, rethrows so
+	// the router shows the error page instead of "No tools match this sentence".
+	await assert.rejects(() => home.viewHome(), /live catalog unavailable/);
+});
+
+test("partial outage but a list loaded → renders, no error (lists.length keeps it alive)", async () => {
+	h.apiGet.mockImplementation(async (path) => {
+		if (path === "/ui/home/") return { total_tools: 1 };
+		// a tool-less list still counts as loaded content (lists.length > 0), so
+		// even though recent fails and featured is empty, this is not a total outage.
+		if (path === "/lists/") return { results: [{ id: "E1", title: "Loaded Listy", description: "d", tools: [] }] };
+		throw new Error("recent down"); // failures = 1
+	});
+	const r = await home.viewHome();
+	assert.ok(r.html.includes("Loaded Listy"), "the loaded list renders instead of the outage error");
+});
+
+test("partial outage but featured loaded → renders, no error (featured.length keeps it alive)", async () => {
+	setUserContext({ role: "editor", wiki: "wikidata.org" });
+	h.apiGet.mockImplementation(async (path, params) => {
+		if (path === "/ui/home/") return { total_tools: 5 };
+		if (path === "/lists/") return { results: [] }; // lists empty
+		// recent fails (failures = 1); the filtered featured fetch returns content
+		if (path === "/search/tools/" && String(params).includes("ordering=-modified_date")) {
+			throw new Error("recent down");
+		}
+		return {
+			results: [rawTool("feat1", { title: "Featured One", audiences: ["editor"], for_wikis: ["wikidata.org"] })]
+		};
+	});
+	const r = await home.viewHome();
+	assert.ok(r.html.includes("Featured One"), "loaded featured tools render instead of the outage error");
 });
 
 test("dedupeTools drops empty-name and duplicate tools (unfiltered featured)", async () => {
@@ -1101,16 +1136,22 @@ test("home filtered by wiki only (empty term) keeps wiki-matching lists", async 
 	assert.ok(r.html.includes("Wiki kept"), "list kept via wiki match with empty term");
 });
 
-test("filtered tool fetch rejects → catch fallback yields empty featured", async () => {
+test("filtered tool fetch rejects but recent loads → empty featured, page still renders (partial)", async () => {
 	setUserContext({ role: "editor", wiki: "wikidata.org" });
 	h.apiGet.mockImplementation(async (path, params) => {
 		if (path === "/ui/home/") return { total_tools: 1 };
 		if (path === "/lists/") return { results: [] };
-		if (path === "/search/tools/" && String(params).includes("ordering=-modified_date")) return { results: [] };
+		// recent succeeds with content, so this is a partial failure (not a total
+		// outage): the featured fetch's onFail yields empty featured, but the page
+		// still renders rather than throwing.
+		if (path === "/search/tools/" && String(params).includes("ordering=-modified_date")) {
+			return { results: [rawTool("recentish", { title: "Recentish" })] };
+		}
 		throw new Error("filtered tools down");
 	});
 	const r = await home.viewHome();
-	assert.ok(r.html.includes('<p class="empty">No tools match this sentence.</p>'), "featured empty via catch");
+	assert.ok(r.html.includes('<p class="empty">No tools match this sentence.</p>'), "featured empty via onFail");
+	assert.ok(r.html.includes("Recentish"), "recent section still rendered");
 });
 
 test("mount: filtered context with empty {} responses → empty page (filtered `.results || []`)", async () => {

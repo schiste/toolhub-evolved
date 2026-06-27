@@ -96,6 +96,22 @@ function sleep(ms) {
 	});
 }
 /**
+ * An HTTP-level API failure carrying the upstream status, so callers can tell a
+ * genuine 404 (resource absent) from a transient outage (5xx / network) and
+ * react differently — e.g. show "not found" vs. propagate to the error boundary.
+ */
+export class ApiError extends Error {
+	/**
+	 * @param {number} status
+	 * @param {string} url
+	 */
+	constructor(status, url) {
+		super(`API ${status} ${url}`); // message kept stable: tests/log scrapers match it
+		this.name = "ApiError";
+		this.status = status;
+	}
+}
+/**
  * @param {string} url
  * @param {number} [attempts]
  * @returns {Promise<any>}
@@ -113,7 +129,7 @@ async function fetchJson(url, attempts = API_RETRIES) {
 			continue;
 		}
 		if (res.ok) return res.json();
-		if (!RETRYABLE_STATUS.has(res.status) || attempt >= attempts) throw new Error(`API ${res.status} ${url}`);
+		if (!RETRYABLE_STATUS.has(res.status) || attempt >= attempts) throw new ApiError(res.status, url);
 		await sleep(200 * 2 ** (attempt - 1));
 	}
 	throw lastError;
@@ -278,13 +294,23 @@ export async function getTool(name) {
 	if (signedIn() && isNewTool(name)) return newToolBase(name);
 	try {
 		return normalizeTool(await apiGet(`/tools/${encodeURIComponent(name)}/`));
-	} catch {
-		return null;
+	} catch (error) {
+		// A real 404 means the tool is absent → null (caller shows "not found").
+		// Any other failure (5xx, network, parse) is an outage, not an absence —
+		// rethrow so the router's error boundary surfaces it instead of the page
+		// claiming the tool doesn't exist.
+		if (error instanceof ApiError && error.status === 404) return null;
+		throw error;
 	}
 }
 /** @param {string[]} names */
 export async function getToolsByName(names) {
-	const tools = await Promise.all((names || []).map((name) => getTool(name)));
+	// Batch name-resolution stays resilient: a single missing/erroring tool is
+	// dropped, not fatal (unlike the single-tool getTool page above).
+	const tools = await Promise.all(
+		// Stryker disable next-line ArrowFunction: `() => undefined` is equivalent — the next line's `.filter(Boolean)` drops null and undefined identically.
+		(names || []).map((name) => getTool(name).catch(() => null))
+	);
 	return tools.filter(Boolean);
 }
 /**

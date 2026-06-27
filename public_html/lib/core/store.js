@@ -40,13 +40,19 @@ export const demoStore = {
 	set(k, v) {
 		try {
 			localStorage.setItem(DEMO_NS + k, JSON.stringify(v));
-		} catch {}
+			return true;
+		} catch {
+			return false; // quota exceeded / storage disabled (e.g. private mode)
+		}
 	},
 	/** @param {string} k */
 	remove(k) {
 		try {
 			localStorage.removeItem(DEMO_NS + k);
-		} catch {}
+			return true;
+		} catch {
+			return false;
+		}
 	},
 	clearAll() {
 		Object.keys(localStorage)
@@ -93,10 +99,12 @@ export function isFav(name) {
 export function toggleFav(name) {
 	const f = favNames(),
 		i = f.indexOf(name);
-	if (i === -1) f.push(name);
+	const willFavorite = i === -1;
+	if (willFavorite) f.push(name);
 	else f.splice(i, 1);
-	demoStore.set(DEMO_KEYS.favorites, f);
-	return i === -1; // true => now favorited
+	// If the write failed (quota/private mode) nothing persisted, so report the
+	// UNCHANGED state — the star must not show a favorite that wasn't stored.
+	return demoStore.set(DEMO_KEYS.favorites, f) ? willFavorite : !willFavorite;
 }
 // EXPERIMENTAL — demo lists overlay. Needs: POST/PUT/DELETE /api/lists/.
 // A demo list stores real tool NAMES; the tool data itself stays live.

@@ -52,6 +52,7 @@ vi.mock("../../public_html/lib/core/store.js", async (orig) => {
 });
 
 const { applyExp } = await import("../../public_html/lib/core/session.js");
+const { ApiError } = await import("../../public_html/lib/core/api.js");
 const lists = await import("../../public_html/views/lists.js");
 const { viewNotFound } = await import("../../public_html/views/static.js");
 
@@ -455,11 +456,17 @@ test("viewList live (normalizeList)", async () => {
 	expect("detail_live", r.html);
 });
 
-test("viewList live apiGet rejects → viewNotFound", async () => {
+test("viewList live 404 → viewNotFound", async () => {
 	h.isDemoListId.mockReturnValue(false);
-	h.apiGet.mockRejectedValue(new Error("404"));
+	h.apiGet.mockRejectedValue(new ApiError(404, "/api/lists/L1/"));
 	const r = await lists.viewList("L1");
 	assert.deepEqual(r, viewNotFound());
+});
+
+test("viewList live outage (non-404) propagates instead of faking not-found", async () => {
+	h.isDemoListId.mockReturnValue(false);
+	h.apiGet.mockRejectedValue(new ApiError(503, "/api/lists/L1/"));
+	await assert.rejects(() => lists.viewList("L1"), /API 503 /);
 });
 
 /* ---------------- viewMyLists ---------------- */

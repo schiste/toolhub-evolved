@@ -214,18 +214,25 @@ async function homeSectionsModel(state) {
 	recentParams.set("page_size", "5");
 	const toolParams = new URLSearchParams(filters);
 	toolParams.set("page_size", "24");
-	// Stryker disable next-line ObjectLiteral: returning `{}` is equivalent to `{ results: [] }` because every consumer reads the value as `.results || []`.
-	const emptyResults = () => ({ results: [] });
+	// Each section degrades independently (one endpoint down still renders the
+	// rest), but a *total* outage must not masquerade as an empty catalog — we
+	// count failures and, if nothing loaded at all, rethrow to the error boundary.
+	let failures = 0;
+	const onFail = () => {
+		failures += 1;
+		// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` — every consumer reads the value as `.results || []`.
+		return { results: [] };
+	};
 	const [flists, recent, filteredToolsData] = await Promise.all([
-		apiGet("/lists/", listParams).catch(emptyResults),
+		apiGet("/lists/", listParams).catch(onFail),
 		apiGet("/search/tools/", /** @type {Record<string, string>} */ (/** @type {unknown} */ (recentParams))).catch(
-			emptyResults
+			onFail
 		),
 		filtered
 			? apiGet(
 					"/search/tools/",
 					/** @type {Record<string, string>} */ (/** @type {unknown} */ (toolParams))
-				).catch(emptyResults)
+				).catch(onFail)
 			: Promise.resolve(null)
 	]);
 	/** @type {ToolList[]} */
@@ -246,6 +253,12 @@ async function homeSectionsModel(state) {
 		await attachEndorsements(featured);
 	}
 	const recentTools = (recent.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
+	// Something failed AND nothing loaded → this is an outage, not an empty
+	// catalog. Rethrow so viewHome's caller (the router) shows the error page;
+	// the interactive refreshHome path catches this and shows its own notice.
+	if (failures > 0 && lists.length === 0 && featured.length === 0 && recentTools.length === 0) {
+		throw new Error("home: live catalog unavailable");
+	}
 	const mostListed = sortedByEndorsements(featured);
 	return {
 		lists,

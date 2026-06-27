@@ -336,11 +336,11 @@ test("normalizeTool applies the demo overlay only when experimental mode is on",
 });
 
 // ----------------------------------------------------------------- getTool / getToolsByName
-test("getTool fetches+normalizes, returns null on failure, and uses newToolBase when signed in", async () => {
+test("getTool returns the tool on success and null only on a true 404", async () => {
 	let seenUrl;
 	globalThis.fetch = async (url) => {
 		seenUrl = url;
-		if (/\/tools\/Bad\//.test(String(url))) throw new Error("nope");
+		if (/\/tools\/Gone\//.test(String(url))) return { ok: false, status: 404 };
 		return { ok: true, json: async () => ({ name: "Good", title: "Good Tool" }) };
 	};
 	const good = await api.getTool("Good");
@@ -348,9 +348,25 @@ test("getTool fetches+normalizes, returns null on failure, and uses newToolBase 
 	assert.equal(good.title, "Good Tool");
 	assert.equal(seenUrl, "/api/tools/Good/");
 
-	assert.equal(await api.getTool("Bad"), null);
+	// A genuine 404 means the tool is absent → null (caller renders "not found").
+	assert.equal(await api.getTool("Gone"), null);
+});
 
-	// signed-in + new tool => newToolBase path, no fetch
+test("getTool propagates a non-404 outage instead of masking it as not-found", async () => {
+	// 500 is non-retryable, so it throws immediately (no backoff) as an ApiError.
+	globalThis.fetch = async () => ({ ok: false, status: 500 });
+	await assert.rejects(() => api.getTool("Flaky"), /API 500 /);
+	// the error carries the status so callers can branch on it
+	const err = await api.getTool("Flaky").then(
+		() => null,
+		(e) => e
+	);
+	assert.ok(err instanceof api.ApiError);
+	assert.equal(err.name, "ApiError");
+	assert.equal(err.status, 500);
+});
+
+test("getTool uses newToolBase when signed in, without fetching", async () => {
 	session.applyExp(true);
 	session.setAuth(true);
 	demoStore.set(DEMO_KEYS.toolNew, { NewOne: { title: "N", description: "d", url: "u" } });
@@ -371,7 +387,9 @@ test("getTool ignores newToolBase when not signed in (uses the live API path)", 
 
 test("getToolsByName resolves each name and filters out failures", async () => {
 	globalThis.fetch = async (url) => {
-		if (/\/tools\/B\//.test(String(url))) throw new Error("nope");
+		// 500 is non-retryable → getTool("B") throws an ApiError instantly; the
+		// batch must swallow that one (its own .catch) and keep A and C.
+		if (/\/tools\/B\//.test(String(url))) return { ok: false, status: 500 };
 		const m = /\/tools\/([^/]+)\//.exec(String(url));
 		const name = m ? decodeURIComponent(m[1]) : "?";
 		return { ok: true, json: async () => ({ name }) };

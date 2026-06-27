@@ -92,12 +92,23 @@ test("demoStore.get returns parsed value, default for missing, default for bad J
 	assert.equal(store.demoStore.get("broken", "DEF"), "DEF");
 });
 
-test("demoStore.set/remove round-trip through the namespaced key", () => {
-	store.demoStore.set("k", [1, 2]);
+test("demoStore.set/remove round-trip through the namespaced key, reporting success", () => {
+	assert.equal(store.demoStore.set("k", [1, 2]), true);
 	assert.deepEqual(store.demoStore.get("k"), [1, 2]);
-	store.demoStore.remove("k");
+	assert.equal(store.demoStore.remove("k"), true);
 	assert.equal(store.demoStore.get("k", "GONE"), "GONE");
 	assert.equal(localStorage.getItem("thdemo:k"), null);
+});
+
+test("demoStore.set/remove report failure when storage throws (quota / private mode)", () => {
+	localStorage.setItem = () => {
+		throw new Error("quota exceeded");
+	};
+	localStorage.removeItem = () => {
+		throw new Error("storage disabled");
+	};
+	assert.equal(store.demoStore.set("x", 1), false);
+	assert.equal(store.demoStore.remove("x"), false);
 });
 
 test("demoStore.clearAll wipes only namespaced keys", () => {
@@ -146,6 +157,15 @@ test("toggleFav adds then removes, returning the new state and preserving order"
 	// removing "a" splices exactly one element, leaving "b"
 	assert.equal(store.toggleFav("a"), false);
 	assert.deepEqual(store.favNames(), ["b"]);
+});
+
+test("toggleFav reports the unchanged state when the write fails (no false 'favorited')", () => {
+	localStorage.setItem = () => {
+		throw new Error("quota exceeded");
+	};
+	// the write can't persist, so the star must report still-not-favorited
+	assert.equal(store.toggleFav("z"), false);
+	assert.equal(store.isFav("z"), false);
 });
 
 test("demoLists / demoListGet read stored lists with string-coerced ids", () => {
