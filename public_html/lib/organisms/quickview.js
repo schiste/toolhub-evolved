@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, dirAttrs, esc, safeUrl } from "../core/dom.js";
-import { updatedTimeTag } from "../core/i18n.js";
+import { t, updatedTimeTag } from "../core/i18n.js";
 import { INDEX, getTool } from "../core/api.js";
 import { renderMarkdown } from "../core/markdown.js";
 import { signedIn } from "../core/session.js";
@@ -26,64 +26,66 @@ export function setPageInert(on) {
 	});
 }
 /**
- * @param {Tool} t
+ * @param {Tool} tool
  * @returns {string}
  */
-export function quickViewBody(t) {
-	const authors = (t.authors || []).map((author) => esc(author)).join(", ") || esc(t.maintainer);
-	const tags = keywordTags(t, { limit: QV_TAG_LIMIT });
+export function quickViewBody(tool) {
+	const authors = (tool.authors || []).map((author) => esc(author)).join(", ") || esc(tool.maintainer);
+	const tags = keywordTags(tool, { limit: QV_TAG_LIMIT });
 	// `endorsement` is attached at runtime by signals.js but isn't on the ambient Tool.
-	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (t).endorsement;
+	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (tool).endorsement;
 	const realBadge = [
-		t.deprecated && '<span class="status status--red"><span class="dot dot--red"></span>Deprecated</span>',
-		t.experimental && '<span class="status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>'
+		tool.deprecated &&
+			`<span class="status status--red"><span class="dot dot--red"></span>${t("quickview.deprecated", "Deprecated")}</span>`,
+		tool.experimental &&
+			`<span class="status status--yellow"><span class="dot dot--yellow"></span>${t("quickview.experimental", "Experimental")}</span>`
 	]
 		.filter(Boolean)
 		.join("");
-	const glance = glanceChips(t);
+	const glance = glanceChips(tool);
 	return `
-		<div class="qv__head">${toolIcon(t, "lg")}
-			<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(t.title)}>${esc(t.title)}</h2>
-			<div class="qv__by">by <span dir="auto">${authors}</span></div></div>
+		<div class="qv__head">${toolIcon(tool, "lg")}
+			<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(tool.title)}>${esc(tool.title)}</h2>
+			<div class="qv__by">${t("quickview.by", "by")} <span dir="auto">${authors}</span></div></div>
 		</div>
 		<div class="qv__status">
 			${realBadge}
 			${endorsementChip(endorsement && endorsement.count)}
-			${fitChip(t)}
+			${fitChip(tool)}
 			<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
-			${healthBadge(t)}
+			${healthBadge(tool)}
 			<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking. -->
-			${popularityBadge(t)}
-			${updatedTimeTag(t.modified, "toolpage__when")}
+			${popularityBadge(tool)}
+			${updatedTimeTag(tool.modified, "toolpage__when")}
 		</div>
-		<div class="qv__desc"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>
+		<div class="qv__desc"${dirAttrs(tool.description)}>${renderMarkdown(tool.description) || `<em>${t("quickview.noDescription", "No description provided.")}</em>`}</div>
 		<div class="toolpage__glance">${glance}</div>
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">
-			${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
+			${tool.url ? button(t("quickview.openTool", "Open tool"), { variant: "primary", href: safeUrl(tool.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
 			${
 				// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying this "outline" variant string falls back to the same default — equivalent. (The label/href are still asserted.) Comments/newlines inside ${} do not affect the rendered string.
-				button("View full page", { variant: "outline", href: toolHref(t.name) })
+				button(t("quickview.viewFullPage", "View full page"), { variant: "outline", href: toolHref(tool.name) })
 			}
-			${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}
+			${signedIn() ? favBtn(tool.name, { label: true, cls: "favbtn--btn" }) : ""}
 		</div>`;
 }
 /** @param {string} name */
 export async function openQuickView(name) {
 	/** @type {Tool | undefined} */
-	let t = /** @type {Record<string, Tool | undefined>} */ (INDEX)[name];
-	if (!t) {
+	let tool = /** @type {Record<string, Tool | undefined>} */ (INDEX)[name];
+	if (!tool) {
 		const fetched = await getTool(name);
 		if (!fetched) {
 			navigateTo(toolHref(name));
 			return;
 		}
-		t = /** @type {Tool} */ (fetched);
+		tool = /** @type {Tool} */ (fetched);
 	}
 	qvLastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
 	const body = $("#qv-body");
 	const qv = $("#qv");
-	if (body) body.innerHTML = quickViewBody(t);
+	if (body) body.innerHTML = quickViewBody(tool);
 	if (qv) {
 		qv.classList.remove("hidden");
 		qv.setAttribute("aria-hidden", "false");

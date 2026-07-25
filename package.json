@@ -14,6 +14,7 @@
 		"dup:check": "jscpd --config .jscpd.json",
 		"checks": "node tools/checks.mjs",
 		"budget": "node tools/js-budget.mjs",
+		"i18n:extract": "node tools/i18n-extract.mjs",
 		"test:unit": "vitest run",
 		"coverage": "vitest run --coverage",
 		"test:e2e": "playwright test",

@@ -34,3 +34,8 @@ htmlcov/
 # Minified production build (proxy/build_dist.py); built on deploy
 dist/
 dist.tmp/
+
+# Backend local database + local CI venv
+proxy/var/
+*.sqlite3
+.venv-ci/

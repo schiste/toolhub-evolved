@@ -19,11 +19,63 @@ export const RTL_LANGS = new Set([
 	"ur",
 	"yi"
 ]);
+export const LOCALE_KEY = "toolhub-locale";
 export function appLocale() {
-	const stored = localStorage.getItem("toolhub-locale");
+	const stored = localStorage.getItem(LOCALE_KEY);
 	return (stored || DEFAULT_LOCALE).replaceAll("_", "-");
 }
 export const LOCALE = appLocale();
+
+/* ---- Message catalog (t) ------------------------------------------------
+   Chrome strings live in code as `t("key", "English…", params)`: the English
+   source doubles as the fallback, and `i18n/en.json` is generated from the
+   sources (npm run i18n:extract) so translatewiki-style catalogs always match.
+   Non-English catalogs are fetched at boot (main.js) and installed here. */
+/** Locales a catalog ships for (the switcher offers the rest as "not yet"). */
+export const AVAILABLE_LOCALES = ["en"];
+/** @type {Record<string, string>} */
+let messages = {};
+/** @param {unknown} catalog */
+export function setMessages(catalog) {
+	messages = catalog && typeof catalog === "object" ? /** @type {Record<string, string>} */ (catalog) : {};
+}
+/**
+ * Translate a chrome string. `fallback` is the English source (also what the
+ * catalog extractor collects); `params` fill `{name}` placeholders after
+ * lookup, so translations control word order.
+ * @param {string} key
+ * @param {string} fallback
+ * @param {Record<string, string | number>} [params]
+ */
+export function t(key, fallback, params) {
+	let out = Object.prototype.hasOwnProperty.call(messages, key) ? String(messages[key]) : fallback;
+	if (params) {
+		for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
+	}
+	return out;
+}
+/**
+ * Persist a locale choice; the app reloads so every `Intl` formatter and the
+ * document `lang`/`dir` rebind to it (main.js owns the reload).
+ * @param {string} locale
+ */
+export function setLocale(locale) {
+	localStorage.setItem(LOCALE_KEY, String(locale));
+}
+/**
+ * Localized-field resolver for API data (audit §2.2 item 2): Toolhub fields
+ * are usually plain strings, but when a per-language object arrives, prefer
+ * the active locale, then its base language, then English, then anything.
+ * @param {unknown} value
+ * @returns {any}
+ */
+export function pickLocalized(value) {
+	if (value && typeof value === "object" && !Array.isArray(value)) {
+		const map = /** @type {Record<string, unknown>} */ (value);
+		return map[LOCALE] ?? map[LOCALE.split("-")[0]] ?? map[DEFAULT_LOCALE] ?? Object.values(map)[0] ?? "";
+	}
+	return value;
+}
 const numberFmt = new Intl.NumberFormat(LOCALE);
 const compactNumberFmt = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });
 const relativeTimeFmt = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
@@ -77,7 +129,7 @@ export function relativeTime(iso) {
 /** @param {string | null | undefined} iso */
 export function relTime(iso) {
 	const rel = relativeTime(iso);
-	return rel ? `Updated ${rel}` : "";
+	return rel ? t("time.updated", "Updated {rel}", { rel }) : "";
 }
 /**
  * @param {string | null | undefined} iso
@@ -101,5 +153,5 @@ export function updatedTimeTag(iso, cls) {
 }
 /** @param {unknown} n */
 export function views(n) {
-	return `${compactFmt(n)} ${plural(n, { one: "view", other: "views" })}`;
+	return `${compactFmt(n)} ${plural(n, { one: t("count.viewOne", "view"), other: t("count.viewOther", "views") })}`;
 }

@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Toolforge webservice for Toolhub Evolved.
 
-Serves the static single-page app AND reverse-proxies read-only GET requests to
-the live Toolhub API at the same origin, so the browser can read live catalog
-data without hitting CORS (the upstream API sends no CORS headers).
+Serves the static single-page app, reverse-proxies read-only GET requests to
+the live Toolhub API at the same origin (so the browser can read live catalog
+data without hitting CORS — the upstream API sends no CORS headers), and hosts
+the site's own backend (backend/): Wikimedia OAuth sign-in plus the /v1 API
+over the project-specific database that complements the live catalog.
 
-It is NOT an open proxy: requests only ever go to UPSTREAM/api/... and only GET.
+The /api proxy is NOT an open proxy: requests only ever go to UPSTREAM/api/...
+and only GET. All writes land in our own database via /v1 — never upstream.
 """
 
 import time
@@ -13,6 +16,8 @@ from pathlib import Path
 
 import requests
 from flask import Flask, Response, request, send_from_directory
+
+import backend
 
 HERE = Path(__file__).resolve().parent
 _SOURCE_DIR = (HERE.parent / "public_html").resolve()
@@ -35,6 +40,7 @@ _CHUNK_BYTES = 64 * 1024
 _UPSTREAM_CACHE = "public, max-age=300"
 
 app = Flask(__name__, static_folder=None)
+backend.register(app)
 
 # One pooled HTTPS connection set to the upstream, reused across requests so each
 # proxied call skips a fresh TCP + TLS handshake to toolhub.wikimedia.org

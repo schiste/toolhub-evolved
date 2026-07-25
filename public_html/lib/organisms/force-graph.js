@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { t } from "../core/i18n.js";
+
 const TWO_PI = Math.PI * 2;
 const MAX_TICKS = 400;
 const COMMUNITY_PALETTE = [
@@ -243,7 +245,7 @@ function createGraphSurface(container) {
 	const tooltip = document.createElement("div");
 	const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
 	canvas.className = "force-graph";
-	canvas.setAttribute("aria-label", "Tool similarity graph");
+	canvas.setAttribute("aria-label", t("forceGraph.toolSimilarityGraph", "Tool similarity graph"));
 	canvas.setAttribute("role", "img");
 	tooltip.className = "graph__tip";
 	tooltip.hidden = true;

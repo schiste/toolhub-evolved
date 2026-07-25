@@ -7,11 +7,11 @@ const SCRATCH =
 	"/private/tmp/claude-501/-Users-christophehenner-Downloads-Wikimedia-striker-toolhub-demo/bad07c6e-1967-4490-8d44-3fe4ee515e59/scratchpad";
 const BAKE = process.env.BAKE === "1";
 
-const h = vi.hoisted(() => ({ apiGet: vi.fn(), paginate: vi.fn(), navigateTo: vi.fn() }));
+const h = vi.hoisted(() => ({ apiGet: vi.fn(), paginate: vi.fn(), navigateTo: vi.fn(), backendGetJson: vi.fn() }));
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, apiGet: h.apiGet, paginate: h.paginate };
+	return { ...actual, apiGet: h.apiGet, paginate: h.paginate, backendGetJson: h.backendGetJson };
 });
 vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
@@ -291,7 +291,9 @@ beforeEach(() => {
 	h.apiGet.mockReset();
 	h.paginate.mockReset();
 	h.navigateTo.mockReset();
+	h.backendGetJson.mockReset();
 	h.paginate.mockResolvedValue([]);
+	h.backendGetJson.mockRejectedValue(new Error("backend offline")); // default: no local strip
 	setUrl("");
 });
 
@@ -624,4 +626,45 @@ test("mount: clicking the current page button does not add a page param", async 
 		.querySelector('.pager [data-page="1"]')
 		.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/search"]);
+});
+
+/* ---- federated local strip (docs/PRODUCTION.md P5, phase 1) ------------- */
+
+test("local strip: matching registered tools render above live results, deduped", async () => {
+	setUrl("q=cite");
+	h.apiGet.mockResolvedValue({ results: [rawTool("alpha", { title: "Alpha" })], count: 1, facets: {} });
+	h.backendGetJson.mockResolvedValue({
+		count: 2,
+		results: [
+			{ name: "alpha", title: "Echo of live", description: "d", url: "https://dupe.example" }, // deduped by name
+			{ name: "local-cite", title: "Local Cite", description: "Cites things", url: "https://l.example" }
+		]
+	});
+	const r = await search.viewSearch();
+	assert.deepEqual(h.backendGetJson.mock.calls.at(-1), ["/v1/search/tools/?q=cite"]);
+	assert.ok(r.html.includes("Registered on this site"), "strip heading renders");
+	assert.ok(r.html.includes('data-tool="local-cite"'), "local tool card renders");
+	// the live "alpha" card renders exactly once (strip deduped it)
+	assert.equal(r.html.split('data-tool="alpha"').length - 1, 2, "alpha only in the live grid (card + title button)");
+});
+
+test("local strip: absent when the backend fails, has no matches, or page > 1", async () => {
+	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: {} });
+	let r = await search.viewSearch(); // default mock rejects → strip suppressed
+	assert.ok(!r.html.includes("Registered on this site"));
+	h.backendGetJson.mockResolvedValue({ count: 0, results: [] });
+	r = await search.viewSearch();
+	assert.ok(!r.html.includes("Registered on this site"));
+	h.backendGetJson.mockResolvedValue(null); // non-ok response body
+	r = await search.viewSearch();
+	assert.ok(!r.html.includes("Registered on this site"));
+	setUrl("page=2");
+	h.backendGetJson.mockClear(); // count only the page-2 render below
+	h.backendGetJson.mockResolvedValue({
+		count: 1,
+		results: [{ name: "x", title: "X", description: "d", url: "https://x.example" }]
+	});
+	h.apiGet.mockResolvedValue({ results: [], count: 60, facets: {} });
+	await search.viewSearch();
+	assert.equal(h.backendGetJson.mock.calls.length, 0, "no local fetch beyond page 1");
 });

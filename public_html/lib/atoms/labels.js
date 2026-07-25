@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, normalizeVcsUrl, safeUrl } from "../core/dom.js";
-import { countLabel } from "../core/i18n.js";
+import { countLabel, t } from "../core/i18n.js";
 import { button } from "./button.js";
 
 /**
@@ -31,20 +31,25 @@ export function linkOut(label, url) {
 }
 /** @param {string[] | null | undefined} a @returns {string} */
 export const wikiLabel = (a) =>
-	!a || a.length === 0 ? "Any wiki" : a.includes("*") ? "All wikis" : a.map((item) => esc(item)).join(", ");
+	!a || a.length === 0
+		? t("labels.anyWiki", "Any wiki")
+		: a.includes("*")
+			? t("labels.allWikis", "All wikis")
+			: a.map((item) => esc(item)).join(", ");
 /** @param {string[] | null | undefined} a @returns {string} */
-export const langLabel = (a) => (!a || a.length === 0 ? "English (default)" : a.map((item) => esc(item)).join(", "));
+export const langLabel = (a) =>
+	!a || a.length === 0 ? t("labels.englishDefault", "English (default)") : a.map((item) => esc(item)).join(", ");
 // Compact "works on" label for cards (full list shown on the detail page).
 /** @param {string[] | null | undefined} a @returns {string} */
 export const wikiShort = (a) =>
 	!a || a.length === 0
-		? "Any wiki"
+		? t("labels.anyWiki", "Any wiki")
 		: a.includes("*")
-			? "All wikis"
+			? t("labels.allWikis", "All wikis")
 			: a.length === 1
 				? a[0]
 				: // Stryker disable next-line StringLiteral: this branch runs only when a.length >= 2, so countLabel() always selects the plural form; the singular "wiki" is unreachable (co-disables the asserted "wikis" literal on this line) — equivalent.
-					countLabel(a.length, "wiki", "wikis");
+					countLabel(a.length, t("labels.wikiOne", "wiki"), t("labels.wikiOther", "wikis"));
 /**
  * @param {Tool} t
  * @param {{ limit?: number | null; empty?: string }} [opts]
@@ -65,15 +70,15 @@ export function keywordTags(t, opts = {}) {
 		""
 	);
 }
-/** @param {Tool} t */
-export function glanceChips(t) {
+/** @param {Tool} tool */
+export function glanceChips(tool) {
 	return [
-		t.toolType && `<span class="glance"${dirAttrs(t.toolType)}>${esc(t.toolType)}</span>`,
-		t.license && `<span class="glance"${dirAttrs(t.license)}>${esc(t.license)}</span>`,
-		`<span class="glance"${dirAttrs(wikiLabel(t.forWikis))}>${esc(wikiLabel(t.forWikis))}</span>`,
-		t.uiLanguages &&
-			t.uiLanguages.length > 0 &&
-			`<span class="glance">${esc(countLabel(t.uiLanguages.length, "language", "languages"))}</span>`
+		tool.toolType && `<span class="glance"${dirAttrs(tool.toolType)}>${esc(tool.toolType)}</span>`,
+		tool.license && `<span class="glance"${dirAttrs(tool.license)}>${esc(tool.license)}</span>`,
+		`<span class="glance"${dirAttrs(wikiLabel(tool.forWikis))}>${esc(wikiLabel(tool.forWikis))}</span>`,
+		tool.uiLanguages &&
+			tool.uiLanguages.length > 0 &&
+			`<span class="glance">${esc(countLabel(tool.uiLanguages.length, t("labels.languageOne", "language"), t("labels.languageOther", "languages")))}</span>`
 	]
 		.filter(Boolean)
 		.join("");

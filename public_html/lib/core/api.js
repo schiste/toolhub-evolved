@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { pickLocalized, t } from "./i18n.js";
 import { expOn, signedIn, USER } from "./session.js";
 import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
 import { synthViews } from "./synth.js";
@@ -32,35 +33,51 @@ export function applyToolOverlay(o) {
 	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
 	return o;
 }
-// Build a compact tool object for a net-new demo submission, then overlay edits.
+// Build a compact tool object from a locally-registered record (the project
+// database that complements the live catalog), then overlay edits.
+/**
+ * @param {string} name
+ * @param {Record<string, any>} rec
+ * @returns {Tool}
+ */
+export function localToolBase(name, rec) {
+	// The defaults + record spread produce a structurally-complete compact tool;
+	// assert the Tool shape once here (same trust boundary as normalizeTool).
+	const o = /** @type {Tool} */ (
+		/** @type {unknown} */ (
+			Object.assign(
+				{
+					name,
+					keywords: [],
+					authors: [],
+					audiences: [],
+					tasks: [],
+					forWikis: [],
+					uiLanguages: [],
+					technologyUsed: [],
+					maintainer: USER.name,
+					deprecated: false,
+					experimental: false,
+					origin: "api"
+				},
+				rec
+			)
+		)
+	);
+	o.name = name;
+	o.weeklyViews = synthViews(name);
+	o.status = statusOf(o);
+	INDEX[name] = o;
+	return applyToolOverlay(o);
+}
+// Net-new submission from this browser's overlay cache.
 /**
  * @param {string} name
  * @returns {Tool | null}
  */
 export function newToolBase(name) {
 	const rec = toolNewMap()[name];
-	if (!rec) return null;
-	const o = Object.assign(
-		{
-			name,
-			keywords: [],
-			authors: [],
-			audiences: [],
-			tasks: [],
-			forWikis: [],
-			uiLanguages: [],
-			technologyUsed: [],
-			maintainer: USER.name,
-			deprecated: false,
-			experimental: false,
-			origin: "api"
-		},
-		rec
-	);
-	o.weeklyViews = synthViews(name);
-	o.status = statusOf(o);
-	INDEX[name] = o;
-	return applyToolOverlay(o);
+	return rec ? localToolBase(name, rec) : null;
 }
 /**
  * @param {{ deprecated: boolean; experimental: boolean }} t
@@ -219,6 +236,12 @@ export function pick(core, annotation, fallback) {
 	if (hasValue(annotation)) return /** @type {T} */ (annotation);
 	return fallback;
 }
+/* Called lazily (not a module-level constant) so a locale catalog installed at
+   boot is picked up. Named helper because normalizeTool's raw-record param is
+   `t`, which shadows the i18n t() inside that function body. */
+function unknownMaintainer() {
+	return t("api.unknownMaintainer", "Unknown");
+}
 /**
  * Raw author records from the upstream API are heterogeneous (string | object |
  * null), so `a` is typed `any` here.
@@ -264,12 +287,12 @@ export function normalizeTool(t) {
 	/** @type {Tool} */
 	const o = {
 		name: t.name,
-		title: t.title || t.name,
-		description: t.description || "",
+		title: pickLocalized(t.title) || t.name,
+		description: pickLocalized(t.description) || "",
 		url: pick(t.url, ann.url, ""),
 		icon: pick(t.icon, ann.icon, null),
 		keywords: t.keywords || [],
-		maintainer: authors[0] || (t.created_by && t.created_by.username) || "Unknown",
+		maintainer: authors[0] || (t.created_by && t.created_by.username) || unknownMaintainer(),
 		authors,
 		authorObjs,
 		wikidata: pick(t.wikidata_qid, ann.wikidata_qid, null),
@@ -336,10 +359,39 @@ export function normalizeList(l) {
 	const tools = /** @type {any[]} */ (l.tools || []).map((tool) => normalizeTool(tool));
 	return {
 		id: l.id,
-		title: l.title || "Untitled list",
+		title: l.title || t("api.untitledList", "Untitled list"),
 		description: l.description || "",
 		toolCount: tools.length,
 		tools,
 		featured: Boolean(l.featured)
 	};
+}
+/* ===== Backend (/v1) transport — production server sync ====================
+   The only other network calls in the app: same-origin requests to our own
+   backend (session probe, overlay pull, write-through pushes). Kept here so
+   the "network only in api.js" architecture rule stays true. */
+/**
+ * @param {string} path
+ * @returns {Promise<any>} parsed JSON, or null on any non-2xx status
+ */
+export async function backendGetJson(path) {
+	const res = await fetch(path, { headers: { Accept: "application/json" } });
+	return res.ok ? res.json() : null;
+}
+/**
+ * @param {string} path
+ * @param {any} body
+ * @param {string} csrf
+ * @returns {Promise<void>} resolves either way — write-through pushes never throw
+ */
+export async function backendPutJson(path, body, csrf) {
+	try {
+		await fetch(path, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+			body: JSON.stringify(body)
+		});
+	} catch {
+		// offline blip: the localStorage cache still holds the value
+	}
 }

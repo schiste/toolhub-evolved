@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
-import { countLabel } from "../lib/core/i18n.js";
+import { countLabel, t } from "../lib/core/i18n.js";
 import { ApiError, apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
@@ -32,12 +32,12 @@ export async function viewLists() {
 	const all = [...mine, ...live];
 	const html = `
 	<div class="container page">
-		<div class="section-head"><h1 class="page__title">Curated lists</h1>
-			${signedIn() ? button("Create a list", { variant: "primary", href: "/lists/create", icon: "add" }) : ""}</div>
-		<p class="page__intro">Community-published collections of tools for specific tasks and communities.</p>
-		${all.length > 0 ? grid("grid-lists", all, listCard) : '<p class="empty">No lists found.</p>'}
+		<div class="section-head"><h1 class="page__title">${t("lists.curatedLists", "Curated lists")}</h1>
+			${signedIn() ? button(t("lists.createAList", "Create a list"), { variant: "primary", href: "/lists/create", icon: "add" }) : ""}</div>
+		<p class="page__intro">${t("lists.listsIntro", "Community-published collections of tools for specific tasks and communities.")}</p>
+		${all.length > 0 ? grid("grid-lists", all, listCard) : `<p class="empty">${t("lists.noListsFound", "No lists found.")}</p>`}
 	</div>`;
-	return { title: "Curated lists — Toolhub", html };
+	return { title: t("lists.curatedListsDocTitle", "Curated lists — Toolhub"), html };
 }
 /**
  * @param {string} id
@@ -54,11 +54,19 @@ export async function viewList(id) {
 		const d = demoListGet(id);
 		if (!d) return viewNotFound();
 		tools = /** @type {Tool[]} */ (await getToolsByName(d.tools));
-		l = { title: d.title || "Untitled list", description: d.description || "", toolCount: tools.length };
-		demoTag = ' <span class="exp-badge">Demo list</span>';
+		l = {
+			title: d.title || t("lists.untitledList", "Untitled list"),
+			description: d.description || "",
+			toolCount: tools.length
+		};
+		demoTag = ` <span class="exp-badge">${t("lists.demoList", "Demo list")}</span>`;
 		if (signedIn()) {
 			// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-			editBtn = button("Edit list", { variant: "outline", href: `${listHref(id)}/edit`, icon: "edit" });
+			editBtn = button(t("lists.editList", "Edit list"), {
+				variant: "outline",
+				href: `${listHref(id)}/edit`,
+				icon: "edit"
+			});
 		}
 	} else {
 		try {
@@ -75,25 +83,25 @@ export async function viewList(id) {
 	tools = rankFitsFirst(tools);
 	const html = `
 	<div class="container page">
-		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(countLabel(l.toolCount, "tool", "tools"))}</span></h1>${editBtn}</div>
+		<a class="back" href="/lists">${t("lists.allLists", "← All lists")}</a>
+		<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(countLabel(l.toolCount, t("lists.toolOne", "tool"), t("lists.toolOther", "tools")))}</span></h1>${editBtn}</div>
 		<div class="prose page__intro"${dirAttrs(l.description)}>${esc(l.description)}</div>
-		${tools.length > 0 ? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t)) : '<p class="empty">This list has no tools yet.</p>'}
+		${tools.length > 0 ? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t)) : `<p class="empty">${t("lists.noToolsInList", "This list has no tools yet.")}</p>`}
 	</div>`;
-	return { title: `${l.title} — Toolhub`, html };
+	return { title: t("lists.docTitle", "{title} — Toolhub", { title: l.title }), html };
 }
 // EXPERIMENTAL — your demo lists. Needs: GET /api/lists/ scoped to the user.
 export function viewMyLists() {
 	const cards = demoLists().map((/** @type {any} */ list) => listCardData(list));
 	const html = `
 	<div class="container page">
-		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
-			${button("Create a list", { variant: "primary", href: "/lists/create", icon: "add" })}</div>
-		<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
-		<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
-		${cards.length > 0 ? grid("grid-lists", cards, listCard) : '<p class="empty">No lists yet. <a href="/lists/create">Create your first list</a>.</p>'}
+		<div class="section-head"><h1 class="page__title">${t("lists.yourLists", "Your lists")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
+			${button(t("lists.createAList", "Create a list"), { variant: "primary", href: "/lists/create", icon: "add" })}</div>
+		<p class="page__intro">${t("lists.yourListsIntro", "Lists you've built in this demo. Stored only in this browser — see")}
+		<a href="/rules-of-engagement">${t("lists.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
+		${cards.length > 0 ? grid("grid-lists", cards, listCard) : `<p class="empty">${t("lists.noListsYet", "No lists yet.")} <a href="/lists/create">${t("lists.createFirstList", "Create your first list")}</a>.</p>`}
 	</div>`;
-	return { title: "Your lists — Toolhub", html };
+	return { title: t("lists.yourListsDocTitle", "Your lists — Toolhub"), html };
 }
 // EXPERIMENTAL — favorites view. Tools are read by name (local-first via getTool); the
 // overlay only stores which names are favorited. Needs: GET /api/user/favorites/ in production.
@@ -103,14 +111,14 @@ export async function viewFavorites() {
 	const body =
 		tools.length > 0
 			? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t))
-			: `<p class="empty">No favorites yet. Tap the ${icon("starOutline")}<span class="skip-label">star</span> on any tool card or page to save it here.</p>`;
+			: `<p class="empty">${t("lists.noFavoritesYet", "No favorites yet. Tap the")} ${icon("starOutline")}<span class="skip-label">${t("lists.star", "star")}</span> ${t("lists.favoritesHint", "on any tool card or page to save it here.")}</p>`;
 	return {
-		title: "Favorites — Toolhub",
+		title: t("lists.favoritesDocTitle", "Favorites — Toolhub"),
 		html: `
 		<div class="container page">
-			<h1 class="page__title">Favorites <span class="exp-badge">Experimental</span></h1>
-			<p class="page__intro">Tools you've saved. Stored only in this browser — see
-			<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+			<h1 class="page__title">${t("lists.favorites", "Favorites")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
+			<p class="page__intro">${t("lists.favoritesIntro", "Tools you've saved. Stored only in this browser — see")}
+			<a href="/rules-of-engagement">${t("lists.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 			${body}
 		</div>`
 	};
@@ -132,24 +140,24 @@ export function viewListEdit(id) {
 		tools: [...(src.tools || [])]
 	};
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-	const searchToolsBtn = button("Search", { variant: "outline", attrs: "data-le-search" });
+	const searchToolsBtn = button(t("lists.search", "Search"), { variant: "outline", attrs: "data-le-search" });
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${editing ? listHref(work.id) : "/my-lists"}">← Back</a>
-		<h1 class="page__title">${editing ? "Edit list" : "Create a list"} <span class="exp-badge">Experimental</span></h1>
+		<a class="back" href="${editing ? listHref(work.id) : "/my-lists"}">${t("lists.back", "← Back")}</a>
+		<h1 class="page__title">${editing ? t("lists.editList", "Edit list") : t("lists.createAList", "Create a list")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
 		<form data-le-form>
-			${fInput("Title", "le-title", work.title, { req: true, max: 120, reqMark: false })}
-			${fArea("Description", "le-desc", work.description, null, { max: 600 })}
-			<h2 class="le__h2">Tools <span class="le__count" data-le-count></span></h2>
+			${fInput(t("lists.title", "Title"), "le-title", work.title, { req: true, max: 120, reqMark: false })}
+			${fArea(t("lists.description", "Description"), "le-desc", work.description, null, { max: 600 })}
+			<h2 class="le__h2">${t("lists.tools", "Tools")} <span class="le__count" data-le-count></span></h2>
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
-				<input class="le__input" id="le-q" type="search" aria-label="Search tools to add" placeholder="Search tools to add…" autocomplete="off" />
+				<input class="le__input" id="le-q" type="search" aria-label="${t("lists.searchToolsToAdd", "Search tools to add")}" placeholder="${t("lists.searchToolsToAddPlaceholder", "Search tools to add…")}" autocomplete="off" />
 				${searchToolsBtn}
 			</div>
 			<div class="le__results" data-le-results></div>
 			<div class="le__actions">
-				${button(editing ? "Save changes" : "Create list", { variant: "primary", type: "submit" })}
-				${editing ? button("Delete list", { variant: "danger", cls: "le__delete", attrs: "data-le-delete" }) : ""}
+				${button(editing ? t("lists.saveChanges", "Save changes") : t("lists.createList", "Create list"), { variant: "primary", type: "submit" })}
+				${editing ? button(t("lists.deleteList", "Delete list"), { variant: "danger", cls: "le__delete", attrs: "data-le-delete" }) : ""}
 			</div>
 		</form>
 	</div>`;
@@ -158,7 +166,11 @@ export function viewListEdit(id) {
 			countEl = /** @type {HTMLElement} */ ($("[data-le-count]")),
 			resultsEl = /** @type {HTMLElement} */ ($("[data-le-results]"));
 		function renderTools() {
-			countEl.textContent = countLabel(work.tools.length, "tool", "tools");
+			countEl.textContent = countLabel(
+				work.tools.length,
+				t("lists.toolOne", "tool"),
+				t("lists.toolOther", "tools")
+			);
 			toolsEl.innerHTML =
 				work.tools.length > 0
 					? work.tools
@@ -166,13 +178,13 @@ export function viewListEdit(id) {
 								(n, i) => `
 				<li data-tn="${esc(n)}"><span class="le__tn"${dirAttrs(n)}>${esc(n)}</span>
 					<span class="le__rowact">
-						${iconButton("chevronUp", "Move up", { size: "sm", attrs: 'data-move="up"', disabled: i === 0 })}
-						${iconButton("chevronDown", "Move down", { size: "sm", attrs: 'data-move="down"', disabled: i === work.tools.length - 1 })}
-						${iconButton("close", "Remove from list", { size: "sm", variant: "danger", attrs: "data-rm" })}
+						${iconButton("chevronUp", t("lists.moveUp", "Move up"), { size: "sm", attrs: 'data-move="up"', disabled: i === 0 })}
+						${iconButton("chevronDown", t("lists.moveDown", "Move down"), { size: "sm", attrs: 'data-move="down"', disabled: i === work.tools.length - 1 })}
+						${iconButton("close", t("lists.removeFromList", "Remove from list"), { size: "sm", variant: "danger", attrs: "data-rm" })}
 					</span></li>`
 							)
 							.join("")
-					: '<li class="le__empty">No tools yet — search below to add some.</li>';
+					: `<li class="le__empty">${t("lists.noToolsYet", "No tools yet — search below to add some.")}</li>`;
 		}
 		renderTools();
 		toolsEl.addEventListener("click", (e) => {
@@ -200,7 +212,7 @@ export function viewListEdit(id) {
 		async function runSearch() {
 			const q = /** @type {HTMLInputElement} */ ($input("#le-q")).value.trim();
 			if (!q) return;
-			resultsEl.innerHTML = '<p class="le__searching">Searching…</p>';
+			resultsEl.innerHTML = `<p class="le__searching">${t("lists.searching", "Searching…")}</p>`;
 			try {
 				const data = await apiGet("/search/tools/", { q, page_size: "8" });
 				const rows = (data.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
@@ -213,9 +225,9 @@ export function viewListEdit(id) {
 						${inList ? icon("check") : icon("add")} <span${dirAttrs(t.title)}>${esc(t.title)}</span></button>`;
 								})
 								.join("")
-						: '<p class="le__empty">No matches.</p>';
+						: `<p class="le__empty">${t("lists.noMatches", "No matches.")}</p>`;
 			} catch {
-				resultsEl.innerHTML = '<p class="le__empty">Search failed.</p>';
+				resultsEl.innerHTML = `<p class="le__empty">${t("lists.searchFailed", "Search failed.")}</p>`;
 			}
 		}
 		/** @type {HTMLElement} */ ($("[data-le-search]")).addEventListener("click", runSearch);
@@ -263,5 +275,11 @@ export function viewListEdit(id) {
 			});
 		}
 	}
-	return { title: `${editing ? "Edit list" : "Create a list"} — Toolhub`, html, mount };
+	return {
+		title: t("lists.docTitle", "{title} — Toolhub", {
+			title: editing ? t("lists.editList", "Edit list") : t("lists.createAList", "Create a list")
+		}),
+		html,
+		mount
+	};
 }

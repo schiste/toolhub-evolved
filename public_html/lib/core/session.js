@@ -27,13 +27,24 @@ export function applyExp(on) {
 // Default OFF (decision §8.1): first visit is the honest live read-only
 // interface; the user opts into experiments via the toggle.
 
-/* ---- Account: logged-in user fixture + profile dropdown ---------------- */
-export const USER = { name: "Ada Lovelace" }; // mock demo identity (sign-in is a Lane B experiment)
+/* ---- Account: identity + profile dropdown ------------------------------ */
+export const USER = { name: "Ada Lovelace" }; // demo identity until a real session takes over
 export const AUTH_KEY = "toolhub-auth";
-// EXPERIMENTAL — mock identity. Needs: real Wikimedia OAuth + server session.
-// Signed-in state only exists while experiments are on; default is signed-in.
+
+/* ---- Real server session (production sign-in) ---------------------------
+   When the backend reports an authenticated Wikimedia session (serversync.js),
+   the real username replaces the demo identity and feature mode turns on —
+   writes then persist server-side instead of only in this browser. */
+/** @type {string | null} */
+let serverUser = null;
+export function serverUserName() {
+	return serverUser;
+}
+
+// Signed-in state exists only while feature mode is on: a real server session
+// (Wikimedia OAuth) or, failing that, the browser-local demo identity.
 export function signedIn() {
-	return expOn() && localStorage.getItem(AUTH_KEY) !== "out";
+	return expOn() && (serverUser !== null || localStorage.getItem(AUTH_KEY) !== "out");
 }
 /** @type {() => void} */
 let authRender = () => {};
@@ -46,4 +57,16 @@ export function setAuth(on) {
 	if (on) localStorage.removeItem(AUTH_KEY);
 	else localStorage.setItem(AUTH_KEY, "out");
 	authRender(); // refresh fav buttons / gated views
+}
+/** @param {string | null} name */
+export function setServerUser(name) {
+	serverUser = name;
+	if (name) {
+		USER.name = name;
+		// A real session means the features are real for this user: turn the
+		// feature mode on (and persist the choice) so the UI renders them.
+		setExpStored(true);
+		applyExp(true);
+	}
+	authRender();
 }

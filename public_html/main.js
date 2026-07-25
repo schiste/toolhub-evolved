@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $ } from "./lib/core/dom.js";
-import { applyLocaleAttrs } from "./lib/core/i18n.js";
+import { backendGetJson } from "./lib/core/api.js";
+import {
+	appLocale,
+	applyLocaleAttrs,
+	AVAILABLE_LOCALES,
+	DEFAULT_LOCALE,
+	setLocale,
+	setMessages
+} from "./lib/core/i18n.js";
 import { applyExp, expOn, expStored, setAuth, setAuthRender, setExpStored } from "./lib/core/session.js";
+import { initServerSync } from "./lib/core/serversync.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
@@ -13,7 +22,9 @@ import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview
 import { render } from "./views/router.js";
 
 setAuthRender(() => {
+	syncExpDom(expOn()); // a real sign-in turns feature mode on — reflect it
 	renderAccount();
+	syncSubmitButton();
 	render();
 });
 applyLocaleAttrs();
@@ -191,7 +202,15 @@ if (langEl) {
 		const opt = e.target?.closest("[data-lang]");
 		if (opt) {
 			e.preventDefault();
-			showLangNote(opt.getAttribute("data-lang-name"));
+			const code = opt.getAttribute("data-lang") || "";
+			if (AVAILABLE_LOCALES.includes(code)) {
+				// A shipped catalog: persist the choice and reload so every
+				// Intl formatter and lang/dir attribute rebinds to it.
+				setLocale(code);
+				location.reload();
+			} else {
+				showLangNote(opt.getAttribute("data-lang-name"));
+			}
 		}
 	});
 }
@@ -222,7 +241,9 @@ document.addEventListener("click", (e) => {
 	const href = a.getAttribute("href");
 	if (!href || href.startsWith("#") || a.target || a.hasAttribute("download")) return;
 	const url = new URL(href, location.href);
-	if (url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
+	// /api/ and /oauth/ are server routes (proxy reads; OAuth redirects) — never SPA-routed.
+	const serverRoute = url.pathname.startsWith("/api/") || url.pathname.startsWith("/oauth/");
+	if (url.origin !== location.origin || serverRoute) return;
 	e.preventDefault();
 	navigateTo(url.pathname + url.search);
 });
@@ -230,3 +251,23 @@ window.addEventListener("popstate", render);
 window.addEventListener("toolhub:navigate", render);
 normalizeLegacyHashRoute();
 render();
+// Non-English locale: fetch its catalog, install it, repaint the chrome.
+// (English needs no fetch — the t() fallbacks ARE the English catalog.)
+const bootLocale = appLocale();
+if (bootLocale !== DEFAULT_LOCALE) {
+	backendGetJson(`/i18n/${encodeURIComponent(bootLocale)}.json`)
+		.then((catalog) => {
+			if (catalog) {
+				setMessages(catalog);
+				renderAccount();
+				syncSubmitButton();
+				render();
+			}
+			return undefined;
+		})
+		.catch(() => undefined);
+}
+// Production sync: with a real Wikimedia session the server overlay replaces
+// the browser-local one and mutations write through (lib/core/serversync.js).
+// Kicked off after first paint; a re-render follows via the auth-render hook.
+initServerSync().catch(() => false);

@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc } from "../core/dom.js";
-import { fmt } from "../core/i18n.js";
+import { fmt, t } from "../core/i18n.js";
 
 /* ---- Search / Browse (T2): facets + sort + pagination ------------------ */
 export const FACET_BUCKET_LIMIT = 10;
 // Facet groups we surface (a subset of the API's 11), in display order.
 export const FACET_GROUPS = [
-	{ field: "tool_type", label: "Tool type" },
-	{ field: "keywords", label: "Keywords" },
-	{ field: "audiences", label: "Audience" },
-	{ field: "tasks", label: "Task" },
-	{ field: "ui_language", label: "Interface language" },
-	{ field: "license", label: "License" },
-	{ field: "wiki", label: "Works on wiki" }
+	{ field: "tool_type", label: t("facetGroup.toolType", "Tool type") },
+	{ field: "keywords", label: t("facetGroup.keywords", "Keywords") },
+	{ field: "audiences", label: t("facetGroup.audience", "Audience") },
+	{ field: "tasks", label: t("facetGroup.task", "Task") },
+	{ field: "ui_language", label: t("facetGroup.interfaceLanguage", "Interface language") },
+	{ field: "license", label: t("facetGroup.license", "License") },
+	{ field: "wiki", label: t("facetGroup.worksOnWiki", "Works on wiki") }
 ];
 /**
  * @typedef {object} FacetInner
