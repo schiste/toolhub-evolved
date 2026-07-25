@@ -109,7 +109,10 @@ function dispatchToolRoute(seg) {
 		return requireSignIn(
 			() => viewAnnotationsEdit(nm),
 			t("router.editAnnotationsTitle", "Edit annotations"),
-			t("router.editAnnotationsLead", "Add or refine community annotations for this tool — audiences, tasks and more.")
+			t(
+				"router.editAnnotationsLead",
+				"Add or refine community annotations for this tool — audiences, tasks and more."
+			)
 		);
 	}
 	if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
@@ -203,7 +206,9 @@ export let navSeq = 0;
 export const loadingHTML = () =>
 	`<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">${t("router.loading", "Loading")}</span></div>`;
 /** @param {unknown} e */
-export const errorHTML = (e) => `<div class="container page errorpage"><h1>${t("router.loadErrorTitle", "Couldn't load live data")}</h1>
+export const errorHTML = (
+	e
+) => `<div class="container page errorpage"><h1>${t("router.loadErrorTitle", "Couldn't load live data")}</h1>
 	<p class="prose">${t("router.loadErrorBody", "The Toolhub API didn't respond ({msg}).", { msg: esc(String((e && /** @type {{ message?: unknown }} */ (e).message) || e)) })}</p>
 	${button(t("router.backToHome", "Back to home"), { variant: "primary", href: "/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
