@@ -90,7 +90,7 @@ class ActivityRow(Base):
     """One revision-or-audit feed row (kind: "revisions" | "auditlogs")."""
 
     __tablename__ = "activity"
-    __table_args__ = (UniqueConstraint("kind", "client_id", "user_id"),)
+    __table_args__ = (UniqueConstraint("kind", "client_id"),)  # feed rows are global — one row per client id
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String(16), index=True)
     client_id: Mapped[str] = mapped_column(String(64))

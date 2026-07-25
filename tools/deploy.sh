@@ -20,6 +20,12 @@ ln -sfn "$REPO_DIR/proxy" "$HOME/www/python/src"
 # has no Node, so we minify with pure-Python rjsmin/rcssmin in the webservice venv.
 VENV_PY="$HOME/www/python/venv/bin/python"
 if [ -x "$VENV_PY" ]; then
+	# Keep the venv in sync with requirements BEFORE restarting: a pull that adds
+	# a dependency (e.g. SQLAlchemy) would otherwise restart into ImportError.
+	# Under `set -eu` a failed install aborts the deploy while the old process
+	# keeps serving — loud failure, no broken restart.
+	echo "Syncing Python dependencies ..."
+	"$VENV_PY" -m pip install -q -r "$REPO_DIR/proxy/requirements.txt"
 	echo "Building minified dist/ ..."
 	"$VENV_PY" -m pip install -q rjsmin==1.2.5 rcssmin==1.2.2 >/dev/null 2>&1 || true
 	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  minify skipped — serving raw source"

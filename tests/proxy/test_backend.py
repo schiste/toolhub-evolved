@@ -17,7 +17,8 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 from backend import db, oauth, security  # noqa: E402
-from backend.models import ActivityRow, ToolRecord, User, utcnow  # noqa: E402
+from backend.models import ActivityRow, ToolOverlay, ToolRecord, User, utcnow  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 from backend.v1 import FEED_KEEP_CAP, _iso, _parse_iso  # noqa: E402
 
 
@@ -171,7 +172,8 @@ def test_overlay_roundtrip_all_keys(client):
     assert put_overlay(client, "crawlerUrls", [{"url": "https://example.org/t.json", "added": "bogus-date"}]).status_code == 200
     assert put_overlay(client, "toolEdits", {"tool-a": {"title": "New"}}).status_code == 200
     assert put_overlay(client, "toolAnnos", {"tool-a": {"audiences": ["editors"]}}).status_code == 200
-    assert put_overlay(client, "toolNew", {"my-tool": {"title": "T", "url": "https://example.org"}}).status_code == 200
+    new_tool = {"title": "T", "description": "A tool", "url": "https://example.org", "keywords": ["k"]}
+    assert put_overlay(client, "toolNew", {"my-tool": new_tool}).status_code == 200
     revs = [{"id": "d1", "timestamp": "2026-07-25T10:00:00Z", "comment": "Demo: edited"}]
     assert put_overlay(client, "revisions", revs).status_code == 200
     assert put_overlay(client, "revisions", revs).status_code == 200  # idempotent (known id skipped)
@@ -217,8 +219,46 @@ def test_put_validation_errors(client):
     assert put_overlay(client, "crawlerUrls", [{"url": "http://insecure"}]).status_code == 400
     assert put_overlay(client, "toolEdits", {"t": "not-an-object"}).status_code == 400
     assert put_overlay(client, "toolNew", []).status_code == 400
+    # record validation: a broken record must never reach the public feed/search
+    assert put_overlay(client, "toolNew", {"bad": {"url": None, "keywords": None}}).status_code == 400
+    assert put_overlay(client, "toolNew", {"bad": {"title": "T", "description": "d", "url": "http://x"}}).status_code == 400
     assert put_overlay(client, "revisions", [{"no-id": True}]).status_code == 400
     assert put_overlay(client, "unknown-key", []).status_code == 404
+
+
+TOOL_A = {"title": "Ada's tool", "description": "d", "url": "https://a.example"}
+
+
+def test_pushed_echoes_never_reowned(client):
+    """The pulled cache is globally merged; pushing it back must not re-own
+    other users' records (Codex P1 finding on serversync write-through)."""
+    uid_a = add_user("Ada", "1")
+    uid_b = add_user("Grace", "2")
+    sign_in(client, uid_a)
+    assert put_overlay(client, "toolNew", {"adas-tool": TOOL_A}).status_code == 200
+    assert put_overlay(client, "toolEdits", {"x": {"title": "ada-edit"}}).status_code == 200
+    assert put_overlay(client, "revisions", [{"id": "r1", "comment": "ada"}]).status_code == 200
+    # B pulls the merged overlay, adds their own tool, and pushes everything back
+    sign_in(client, uid_b)
+    pulled = client.get("/v1/overlay/").get_json()
+    tool_b = {"title": "Grace's tool", "description": "d", "url": "https://g.example"}
+    assert put_overlay(client, "toolNew", {**pulled["toolNew"], "graces-tool": tool_b}).status_code == 200
+    assert put_overlay(client, "toolEdits", pulled["toolEdits"]).status_code == 200  # pure echo
+    assert put_overlay(client, "revisions", [*pulled["revisions"], {"id": "r2", "comment": "grace"}]).status_code == 200
+    with db.session_scope() as s:
+        ada_tool = s.execute(select(ToolRecord).where(ToolRecord.tool_name == "adas-tool")).scalar_one()
+        assert ada_tool.user_id == uid_a  # still Ada's — no copy under Grace
+        assert s.query(ToolRecord).count() == 2
+        assert s.query(ToolOverlay).count() == 1  # echoed edit not duplicated
+        assert s.query(ActivityRow).filter(ActivityRow.kind == "revisions").count() == 2  # r1 not re-inserted
+    # B genuinely changing an overlay entry makes it B's own contribution
+    sign_in(client, uid_b)
+    assert put_overlay(client, "toolEdits", {"x": {"title": "grace-edit"}}).status_code == 200
+    with db.session_scope() as s:
+        assert {(o.user_id, o.patch["title"]) for o in s.query(ToolOverlay)} == {
+            (uid_a, "ada-edit"),
+            (uid_b, "grace-edit"),
+        }
 
 
 def test_feed_trim(client):

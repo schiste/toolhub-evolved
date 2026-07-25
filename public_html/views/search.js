@@ -2,7 +2,7 @@
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt, t } from "../lib/core/i18n.js";
 import { expOn } from "../lib/core/session.js";
-import { apiGet, normalizeTool } from "../lib/core/api.js";
+import { apiGet, backendGetJson, localToolBase, normalizeTool } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
 import { attachEndorsements, completeness, rankFitsFirst } from "../lib/core/signals.js";
 import { button } from "../lib/atoms/button.js";
@@ -84,6 +84,31 @@ function resolveSort(usp, exp) {
 	const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
 	return { sort, ordering, defaultSort };
 }
+const LOCAL_STRIP_CAP = 12;
+/**
+ * Federated search, phase 1 (docs/PRODUCTION.md P5): tools registered on this
+ * site, matching the same query, deduped by name against the live page. The
+ * live Toolhub results always come straight from the upstream API; this strip
+ * only ever adds clearly-provenanced local records. Any backend failure yields
+ * an empty strip — local records never block live search.
+ * @param {string} q
+ * @param {Tool[]} live
+ * @returns {Promise<Tool[]>}
+ */
+async function localResults(q, live) {
+	let data;
+	try {
+		data = await backendGetJson(`/v1/search/tools/?q=${encodeURIComponent(q)}`);
+	} catch {
+		return [];
+	}
+	const seen = new Set(live.map((tool) => tool.name));
+	return (data && Array.isArray(data.results) ? data.results : [])
+		.filter((/** @type {any} */ rec) => rec && rec.name && !seen.has(rec.name))
+		.slice(0, LOCAL_STRIP_CAP)
+		.map((/** @type {any} */ rec) => localToolBase(rec.name, rec));
+}
+
 export async function viewSearch() {
 	// Stryker disable next-line StringLiteral: when location.search is empty the fallback feeds URLSearchParams; "" yields no params and any sentinel yields a single unread key, so reads (q, page, *__term, …) are unaffected — equivalent.
 	const usp = new URLSearchParams(location.search || "");
@@ -112,6 +137,8 @@ export async function viewSearch() {
 	const data = await apiGet("/search/tools/", /** @type {Record<string, string>} */ (/** @type {unknown} */ (api)));
 	/** @type {Tool[]} */
 	let results = (data.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
+	// Federated strip (page 1 only — the strip is additive, never paginated).
+	const local = page === 1 ? await localResults(q, results) : [];
 	await attachEndorsements(results);
 	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
 	if (clientStatuses.size > 0) {
@@ -167,6 +194,10 @@ export async function viewSearch() {
 		results.length > 0
 			? `<ul class="card-grid grid-tools" role="list">${results.map((t, i) => `<li>${toolCard(t, sort === "views" ? { rank: (page - 1) * pageSize + i + 1, popular: true } : {})}</li>`).join("")}</ul>`
 			: `<p class="empty">${t("search.noToolsMatch", "No tools match these filters.")}</p>`;
+	const localHTML =
+		local.length > 0
+			? `<div class="panel browse__local"><h3 class="panel__title">${t("search.registeredHere", "Registered on this site")}</h3><ul class="card-grid grid-tools" role="list">${local.map((tool) => `<li>${toolCard(tool)}</li>`).join("")}</ul></div>`
+			: "";
 
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so mutating this explicit "outline" to "" yields identical markup — equivalent.
 	const clearFiltersBtn = button(t("search.clearFilters", "Clear filters"), {
@@ -195,7 +226,7 @@ export async function viewSearch() {
 						<label class="sort"><span class="skip-label">${t("search.sortBy", "Sort by")}</span><select id="sort">${sortOpts}</select></label>
 					</span>
 				</div>
-				${resultsHTML}
+				${localHTML}${resultsHTML}
 				<nav class="pager" aria-label="${t("search.pagination", "Pagination")}">${pagerHTML}</nav>
 			</div>
 		</div>

@@ -34,6 +34,8 @@ class FakeResp:
     def __init__(self, body=b"[]", status=200):
         self._body = body
         self.status_code = status
+        self.is_redirect = 300 <= status < 400
+        self.is_permanent_redirect = status in (301, 308)
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -69,8 +71,10 @@ class FakeSession:
         return FakeResp(self.feed_body, self.feed_status)
 
 
-def run_with(monkeypatch, session):
+def run_with(monkeypatch, session, *, public=True):
     monkeypatch.setattr(crawl.requests, "Session", lambda: session)
+    if public:  # tests must not depend on real DNS; the guard has its own tests
+        monkeypatch.setattr(crawl, "_require_public_https", lambda url: None)
     return crawl.run_crawl()
 
 
@@ -128,3 +132,33 @@ def test_main_exit_codes(monkeypatch, capsys, tmp_path):
     add_url()  # lands in the file-backed DB main() just configured
     monkeypatch.setattr(crawl.requests, "Session", lambda: FakeSession(raises="feed"))
     assert crawl.main() == 1
+
+
+def test_require_public_https_guard(monkeypatch):
+    with pytest.raises(ValueError, match="only https"):
+        crawl._require_public_https("http://example.org/toolinfo.json")
+    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("127.0.0.1", 443))])
+    with pytest.raises(ValueError, match="non-public"):
+        crawl._require_public_https("https://sneaky.example/toolinfo.json")
+    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("10.0.0.7", 443))])
+    with pytest.raises(ValueError, match="non-public"):
+        crawl._require_public_https("https://internal.example/toolinfo.json")
+
+    def nxdomain(*a, **k):
+        raise OSError("nxdomain")
+
+    monkeypatch.setattr(crawl.socket, "getaddrinfo", nxdomain)
+    with pytest.raises(ValueError, match="cannot resolve"):
+        crawl._require_public_https("https://nope.example/toolinfo.json")
+    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("93.184.216.34", 443))])
+    crawl._require_public_https("https://ok.example/toolinfo.json")  # public → no raise
+
+
+def test_crawl_refuses_redirects_and_private_hosts(monkeypatch):
+    add_url()
+    # Real guard first (a later run_with(public=True) no-ops it for the rest of the test).
+    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("192.168.1.10", 443))])
+    run = run_with(monkeypatch, FakeSession(), public=False)  # private resolution → refused
+    assert "non-public" in run.errors[0]
+    run = run_with(monkeypatch, FakeSession(feed_status=302))
+    assert "redirects are not followed" in run.errors[0]

@@ -33,35 +33,51 @@ export function applyToolOverlay(o) {
 	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
 	return o;
 }
-// Build a compact tool object for a net-new demo submission, then overlay edits.
+// Build a compact tool object from a locally-registered record (the project
+// database that complements the live catalog), then overlay edits.
+/**
+ * @param {string} name
+ * @param {Record<string, any>} rec
+ * @returns {Tool}
+ */
+export function localToolBase(name, rec) {
+	// The defaults + record spread produce a structurally-complete compact tool;
+	// assert the Tool shape once here (same trust boundary as normalizeTool).
+	const o = /** @type {Tool} */ (
+		/** @type {unknown} */ (
+			Object.assign(
+				{
+					name,
+					keywords: [],
+					authors: [],
+					audiences: [],
+					tasks: [],
+					forWikis: [],
+					uiLanguages: [],
+					technologyUsed: [],
+					maintainer: USER.name,
+					deprecated: false,
+					experimental: false,
+					origin: "api"
+				},
+				rec
+			)
+		)
+	);
+	o.name = name;
+	o.weeklyViews = synthViews(name);
+	o.status = statusOf(o);
+	INDEX[name] = o;
+	return applyToolOverlay(o);
+}
+// Net-new submission from this browser's overlay cache.
 /**
  * @param {string} name
  * @returns {Tool | null}
  */
 export function newToolBase(name) {
 	const rec = toolNewMap()[name];
-	if (!rec) return null;
-	const o = Object.assign(
-		{
-			name,
-			keywords: [],
-			authors: [],
-			audiences: [],
-			tasks: [],
-			forWikis: [],
-			uiLanguages: [],
-			technologyUsed: [],
-			maintainer: USER.name,
-			deprecated: false,
-			experimental: false,
-			origin: "api"
-		},
-		rec
-	);
-	o.weeklyViews = synthViews(name);
-	o.status = statusOf(o);
-	INDEX[name] = o;
-	return applyToolOverlay(o);
+	return rec ? localToolBase(name, rec) : null;
 }
 /**
  * @param {{ deprecated: boolean; experimental: boolean }} t

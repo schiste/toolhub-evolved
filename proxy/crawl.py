@@ -9,9 +9,12 @@ skipped: the live API stays that record's source of truth — we never store a
 shadow copy of upstream data.
 """
 
+import ipaddress
 import json
 import os
+import socket
 import sys
+from urllib.parse import urlparse
 
 import requests
 from sqlalchemy import select
@@ -27,9 +30,41 @@ MAX_ITEMS_PER_URL = 200
 HTTP_NOT_FOUND = 404
 
 
+def _require_public_https(url: str) -> None:
+    """Reject non-https URLs and hosts that resolve to non-public addresses.
+
+    Registered URLs are user-supplied, so the scheduled job must never be
+    turned into an SSRF probe of the Toolforge network: loopback, private,
+    link-local, reserved and multicast destinations are all refused, and
+    redirects are never followed (below) so a public host can't bounce the
+    fetch somewhere internal. (Resolution happens just before the fetch; a
+    DNS-rebinding TOCTOU window remains, which is why the job also only ever
+    speaks HTTPS — an internal service would still need a valid certificate.)
+    """
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if parsed.scheme != "https" or not host:
+        msg = f"{url}: only https toolinfo URLs are crawled"
+        raise ValueError(msg)
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        msg = f"{url}: cannot resolve host ({exc})"
+        raise ValueError(msg) from exc
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0])
+        if not addr.is_global:
+            msg = f"{url}: resolves to a non-public address — refused"
+            raise ValueError(msg)
+
+
 def _fetch_json(session: requests.Session, url: str) -> object:
-    """GET a toolinfo URL with a hard size cap; raises on any failure."""
-    with session.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT, stream=True) as resp:
+    """GET a toolinfo URL with SSRF guards and a hard size cap; raises on failure."""
+    _require_public_https(url)
+    with session.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT, stream=True, allow_redirects=False) as resp:
+        if resp.is_redirect or resp.is_permanent_redirect:
+            msg = f"{url}: redirects are not followed — register the final URL"
+            raise ValueError(msg)
         resp.raise_for_status()
         body = bytearray()
         for chunk in resp.iter_content(64 * 1024):

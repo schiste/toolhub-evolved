@@ -233,25 +233,86 @@ def _valid_map(value: Any) -> bool:  # noqa: ANN401
     )
 
 
+MAX_DESCRIPTION = 5000
+MAX_URL = 2000
+_STR_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")
+_OPT_STR_FIELDS = ("repository", "license", "toolType")
+
+
+def _clean_tool_record(rec: dict) -> dict | None:
+    """Validate + whitelist a toolNew record; None when it can't be a tool.
+
+    The stored shape is exactly what the public feed and search render, so a
+    signed-in client must never be able to persist a record that breaks them
+    (missing url, non-list keywords, …).
+    """
+    title, description, url = rec.get("title"), rec.get("description"), rec.get("url")
+    text_ok = isinstance(title, str) and title.strip() and isinstance(description, str)
+    if not (text_ok and isinstance(url, str) and url.startswith("https://")):
+        return None
+    clean: dict[str, Any] = {
+        "title": title[:MAX_NAME],
+        "description": description[:MAX_DESCRIPTION],
+        "url": url[:MAX_URL],
+        "deprecated": bool(rec.get("deprecated")),
+        "experimental": bool(rec.get("experimental")),
+        "origin": "crawler" if rec.get("origin") == "crawler" else "api",
+    }
+    for field in _OPT_STR_FIELDS:
+        raw = rec.get(field)
+        clean[field] = raw[:MAX_NAME] if isinstance(raw, str) and raw else None
+    for field in _STR_LIST_FIELDS:
+        raw = rec.get(field)
+        items = raw if isinstance(raw, list) else []
+        clean[field] = [str(item)[:MAX_NAME] for item in items[:50] if isinstance(item, str | int | float)]
+    return clean
+
+
+def _put_tool_new(uid: int, entries: dict[str, dict], s: Any) -> Response | None:  # noqa: ANN401
+    # A tool name registered by someone else is not writable here: the pulled
+    # cache holds the globally merged view, so a client legitimately pushes
+    # other users' records back verbatim — those must never be re-owned.
+    # Edits to other people's tools flow through the toolEdits/toolAnnos
+    # overlays instead.
+    others = {r.tool_name for r in s.execute(select(ToolRecord).where(ToolRecord.user_id != uid)).scalars()}
+    cleaned: dict[str, dict] = {}
+    for name, rec in entries.items():
+        if name in others:
+            continue  # echo of (or attempt on) another user's registration
+        clean = _clean_tool_record(rec)
+        if clean is None:
+            return _bad(f"toolNew record '{name}' needs title, description and an https url")
+        cleaned[name] = clean
+    s.execute(delete(ToolRecord).where(ToolRecord.user_id == uid))
+    s.add_all([ToolRecord(tool_name=n, user_id=uid, record=rec, modified_at=utcnow()) for n, rec in cleaned.items()])
+    return None
+
+
 def _put_tool_map(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: ANN401
     if not _valid_map(value):
         return _bad(f"{key} must be a map of tool name to object")
     entries = dict(list(value.items())[:MAX_ITEMS])
     with db.session_scope() as s:
         if key == "toolNew":
-            s.execute(delete(ToolRecord).where(ToolRecord.user_id == uid))
-            s.add_all(
-                [ToolRecord(tool_name=n, user_id=uid, record=rec, modified_at=utcnow()) for n, rec in entries.items()]
-            )
-        else:
-            kind = OVERLAY_KINDS[key]
-            s.execute(delete(ToolOverlay).where(ToolOverlay.user_id == uid, ToolOverlay.kind == kind))
-            s.add_all(
-                [
-                    ToolOverlay(kind=kind, tool_name=n, user_id=uid, patch=patch, modified_at=utcnow())
-                    for n, patch in entries.items()
-                ]
-            )
+            return _put_tool_new(uid, entries, s)
+        kind = OVERLAY_KINDS[key]
+        # Echo suppression: entries identical to another user's current overlay
+        # came in via the merged pull — replaying them must not create a copy
+        # owned by the caller. Only genuinely new/changed patches are theirs.
+        others = {
+            r.tool_name: r.patch
+            for r in s.execute(
+                select(ToolOverlay).where(ToolOverlay.kind == kind, ToolOverlay.user_id != uid)
+            ).scalars()
+        }
+        own = {n: patch for n, patch in entries.items() if others.get(n) != patch}
+        s.execute(delete(ToolOverlay).where(ToolOverlay.user_id == uid, ToolOverlay.kind == kind))
+        s.add_all(
+            [
+                ToolOverlay(kind=kind, tool_name=n, user_id=uid, patch=patch, modified_at=utcnow())
+                for n, patch in own.items()
+            ]
+        )
     return None
 
 
@@ -260,13 +321,13 @@ def _put_feed(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: AN
     if not ok:
         return _bad(f"{key} must be a list of rows with string ids")
     with db.session_scope() as s:
-        known = set(
-            s.execute(
-                select(ActivityRow.client_id).where(ActivityRow.kind == key, ActivityRow.user_id == uid)
-            ).scalars()
-        )
+        # Dedupe globally, not per user: pulled feeds are global, so clients
+        # push other users' rows back — those must not be duplicated under the
+        # caller's account.
+        known = set(s.execute(select(ActivityRow.client_id).where(ActivityRow.kind == key)).scalars())
         for row in value[:MAX_ITEMS]:
             if row["id"] not in known:
+                known.add(row["id"])  # a payload may repeat an id — insert once
                 s.add(
                     ActivityRow(
                         kind=key,
@@ -327,14 +388,17 @@ def v1_search() -> Response:
     q = request.args.get("q", "").strip().lower()
     with db.session_scope() as s:
         merged = _merged_maps(list(s.execute(select(ToolRecord).order_by(ToolRecord.modified_at)).scalars()))
-    results = [
-        {"name": name, **rec}
-        for name, rec in merged.items()
-        if not q
-        or any(q in str(rec.get(f, "")).lower() for f in ("title", "description"))
-        or q in name.lower()
-        or any(q in str(k).lower() for k in rec.get("keywords", []))
-    ]
+
+    def matches(name: str, rec: dict) -> bool:
+        keywords = rec.get("keywords")
+        return (
+            not q
+            or any(q in str(rec.get(f, "")).lower() for f in ("title", "description"))
+            or q in name.lower()
+            or any(q in str(k).lower() for k in (keywords if isinstance(keywords, list) else []))
+        )
+
+    results = [{"name": name, **rec} for name, rec in merged.items() if matches(name, rec)]
     return jsonify({"count": len(results), "results": results})
 
 
@@ -347,20 +411,24 @@ def toolinfo_feed() -> Response:
     """
     with db.session_scope() as s:
         merged = _merged_maps(list(s.execute(select(ToolRecord).order_by(ToolRecord.modified_at)).scalars()))
-    feed = [
-        {
+
+    def entry(name: str, rec: dict) -> dict:
+        # Defensive reads: writes are validated (_clean_tool_record), but a bad
+        # legacy row must degrade to an empty field, never break the feed.
+        keywords = rec.get("keywords")
+        wikis = rec.get("forWikis")
+        return {
             "name": f"toolhub-evolved-{name}",
-            "title": rec.get("title", name),
-            "description": rec.get("description", ""),
-            "url": rec.get("url", ""),
-            "keywords": ",".join(rec.get("keywords", [])),
+            "title": str(rec.get("title") or name),
+            "description": str(rec.get("description") or ""),
+            "url": str(rec.get("url") or ""),
+            "keywords": ",".join(str(k) for k in keywords) if isinstance(keywords, list) else "",
             "repository": rec.get("repository") or None,
             "license": rec.get("license") or None,
             "tool_type": rec.get("toolType") or None,
-            "for_wikis": rec.get("forWikis", []),
+            "for_wikis": wikis if isinstance(wikis, list) else [],
             "$schema": "/toolinfo/1.2.2",
         }
-        for name, rec in merged.items()
-        if rec.get("url", "").startswith("https://")
-    ]
+
+    feed = [entry(name, rec) for name, rec in merged.items() if str(rec.get("url") or "").startswith("https://")]
     return jsonify(feed)
