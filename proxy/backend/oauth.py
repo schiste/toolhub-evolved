@@ -31,6 +31,11 @@ def _client() -> tuple[str, str] | None:
     return (cid, secret) if cid and secret else None
 
 
+def configured() -> bool:
+    """Report whether the OAuth consumer is configured (used by /v1/config/)."""
+    return _client() is not None
+
+
 @oauth_bp.route("/oauth/login")
 def oauth_login() -> Response:
     """Start the flow: remember a state nonce, send the browser to Wikimedia."""

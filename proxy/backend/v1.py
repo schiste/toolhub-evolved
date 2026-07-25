@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select, text
 
 from backend import db
 from backend.models import ActivityRow, CrawlerUrl, Favorite, ToolList, ToolOverlay, ToolRecord, User, utcnow
+from backend.oauth import configured as oauth_configured
 from backend.security import current_user_id, login_required, write_guard
 
 v1_bp = Blueprint("v1", __name__)
@@ -83,6 +84,12 @@ def v1_user() -> Response:
             resp.status_code = 401
             return resp
         return jsonify({"authenticated": True, "username": user.username, "csrf": session.get("csrf", "")})
+
+
+@v1_bp.route("/v1/config/")
+def v1_config() -> Response:
+    """Report which production capabilities are configured (no secrets)."""
+    return jsonify({"oauth": oauth_configured()})
 
 
 def _merged_maps(kind_rows: list[Any]) -> dict[str, dict]:

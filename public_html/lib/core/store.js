@@ -16,6 +16,33 @@ export const FEED_LOG_CAP = 100;
    user-created delta (favorites, …) that overloads live data while experiments
    are on; never sent to Toolhub. Wiped by "Reset demo data". */
 export const DEMO_NS = "thdemo:";
+/* ---- Server write-through hook (production sync) ------------------------
+   When a real session exists, serversync.js registers a handler here and every
+   overlay mutation is pushed to the backend as well — localStorage becomes a
+   synchronous cache of the server copy. With no handler (logged out / local
+   dev) behavior is exactly the browser-local demo mode. */
+/** @type {((key: string, value: any) => void) | null} */
+let storeSync = null;
+let syncMuted = false;
+/** @param {unknown} fn */
+export function setStoreSync(fn) {
+	storeSync = typeof fn === "function" ? /** @type {(key: string, value: any) => void} */ (fn) : null;
+}
+/**
+ * Run `run` without pushing mutations to the server (fixture previews, and the
+ * initial pull that writes the server copy into the cache).
+ * @template T
+ * @param {() => T} run
+ * @returns {T}
+ */
+export function withSyncMuted(run) {
+	syncMuted = true;
+	try {
+		return run();
+	} finally {
+		syncMuted = false;
+	}
+}
 /**
  * @typedef {{ id: string, title: string, description: string, tools: string[], modified?: string, created?: string }} DemoList
  */
@@ -40,10 +67,11 @@ export const demoStore = {
 	set(k, v) {
 		try {
 			localStorage.setItem(DEMO_NS + k, JSON.stringify(v));
-			return true;
 		} catch {
 			return false; // quota exceeded / storage disabled (e.g. private mode)
 		}
+		if (storeSync && !syncMuted) storeSync(k, v); // write-through to the server copy
+		return true;
 	},
 	/** @param {string} k */
 	remove(k) {
@@ -75,13 +103,17 @@ export function withDemoFixture(fixture, render) {
 	const entries = Object.entries(fixture);
 	const prior = entries.map(([k]) => [k, demoStore.get(k, ABSENT)]);
 	try {
-		for (const [k, v] of entries) demoStore.set(k, v);
+		withSyncMuted(() => {
+			for (const [k, v] of entries) demoStore.set(k, v);
+		});
 		return render();
 	} finally {
-		for (const [k, v] of prior) {
-			if (v === ABSENT) demoStore.remove(k);
-			else demoStore.set(k, v);
-		}
+		withSyncMuted(() => {
+			for (const [k, v] of prior) {
+				if (v === ABSENT) demoStore.remove(k);
+				else demoStore.set(k, v);
+			}
+		});
 	}
 }
 // EXPERIMENTAL — favorites overlay. Needs: POST/DELETE /api/user/favorites/

@@ -343,3 +343,32 @@ export function normalizeList(l) {
 		featured: Boolean(l.featured)
 	};
 }
+/* ===== Backend (/v1) transport — production server sync ====================
+   The only other network calls in the app: same-origin requests to our own
+   backend (session probe, overlay pull, write-through pushes). Kept here so
+   the "network only in api.js" architecture rule stays true. */
+/**
+ * @param {string} path
+ * @returns {Promise<any>} parsed JSON, or null on any non-2xx status
+ */
+export async function backendGetJson(path) {
+	const res = await fetch(path, { headers: { Accept: "application/json" } });
+	return res.ok ? res.json() : null;
+}
+/**
+ * @param {string} path
+ * @param {any} body
+ * @param {string} csrf
+ * @returns {Promise<void>} resolves either way — write-through pushes never throw
+ */
+export async function backendPutJson(path, body, csrf) {
+	try {
+		await fetch(path, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+			body: JSON.stringify(body)
+		});
+	} catch {
+		// offline blip: the localStorage cache still holds the value
+	}
+}

@@ -292,6 +292,14 @@ def configure_oauth(monkeypatch):
     monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_SECRET", "csec")
 
 
+def test_v1_config_reports_oauth(client, monkeypatch):
+    monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_SECRET", raising=False)
+    assert client.get("/v1/config/").get_json() == {"oauth": False}
+    configure_oauth(monkeypatch)
+    assert client.get("/v1/config/").get_json() == {"oauth": True}
+
+
 def test_oauth_login_unconfigured(client, monkeypatch):
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_SECRET", raising=False)

@@ -2,6 +2,7 @@
 import { $ } from "./lib/core/dom.js";
 import { applyLocaleAttrs } from "./lib/core/i18n.js";
 import { applyExp, expOn, expStored, setAuth, setAuthRender, setExpStored } from "./lib/core/session.js";
+import { initServerSync } from "./lib/core/serversync.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
@@ -13,7 +14,9 @@ import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview
 import { render } from "./views/router.js";
 
 setAuthRender(() => {
+	syncExpDom(expOn()); // a real sign-in turns feature mode on — reflect it
 	renderAccount();
+	syncSubmitButton();
 	render();
 });
 applyLocaleAttrs();
@@ -222,7 +225,9 @@ document.addEventListener("click", (e) => {
 	const href = a.getAttribute("href");
 	if (!href || href.startsWith("#") || a.target || a.hasAttribute("download")) return;
 	const url = new URL(href, location.href);
-	if (url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
+	// /api/ and /oauth/ are server routes (proxy reads; OAuth redirects) — never SPA-routed.
+	if (url.origin !== location.origin || url.pathname.startsWith("/api/") || url.pathname.startsWith("/oauth/"))
+		return;
 	e.preventDefault();
 	navigateTo(url.pathname + url.search);
 });
@@ -230,3 +235,7 @@ window.addEventListener("popstate", render);
 window.addEventListener("toolhub:navigate", render);
 normalizeLegacyHashRoute();
 render();
+// Production sync: with a real Wikimedia session the server overlay replaces
+// the browser-local one and mutations write through (lib/core/serversync.js).
+// Kicked off after first paint; a re-render follows via the auth-render hook.
+initServerSync().catch(() => false);
