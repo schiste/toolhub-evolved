@@ -21,6 +21,13 @@ turning the demonstrator into a real, standalone production service.
 - **Launch blocker: Lane A i18n/a11y must be finished first** (`PLAN.md`
   §2.2–2.3). Nothing user-facing launches before the interface is localizable
   and the deferred accessibility items are closed.
+- **Data architecture (resolved 2026-07-25): API + complementary database.**
+  All Toolhub catalog data is read **live from the Toolhub API** — it is never
+  mirrored, synced, or copied into our database. The **project-specific
+  database complements** that data: user accounts and sessions, favorites,
+  lists, annotation/field overlays on upstream tools, net-new tool
+  registrations, and revision/audit history. If a record exists upstream, the
+  API is its source of truth and our DB holds only the delta.
 
 The demonstrator was deliberately built for this pivot: the write adapter
 (`apiWrite`/`demoApi`) is shaped like Toolhub's real endpoints (`PLAN.md`
@@ -30,7 +37,8 @@ are.
 
 ## 1. Product architecture — "live base + owned overlay", now server-side
 
-The core insight of the demonstrator carries over unchanged, one level up:
+The resolved data architecture (§0) is the demonstrator's core insight carried
+over unchanged, one level up:
 
 - **The base catalog stays live Toolhub data.** `apiGet` keeps reading
   `toolhub.wikimedia.org` through the same-origin read proxy. We do not fork or
@@ -172,6 +180,9 @@ restart; migrations run via a documented one-liner.
   with per-URL outcomes; surface runs on the existing `/crawler` history UI.
 - Safety: request timeouts, response-size caps (mirror `_MAX_UPSTREAM_BYTES`),
   no redirects to private ranges, per-run URL budget.
+- Dedupe by tool name (per the §0 data architecture): if a registered URL
+  yields a record that already exists upstream, the live API stays its source
+  of truth — we keep at most an overlay, never a shadow copy of upstream data.
 
 ### P5 — Search that includes our tools (~1–2 weeks)
 
