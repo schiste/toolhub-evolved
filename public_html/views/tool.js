@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
-import { timeTag, updatedTimeTag } from "../lib/core/i18n.js";
+import { t, timeTag, updatedTimeTag } from "../lib/core/i18n.js";
 import { INDEX, apiGet, getTool, isNewTool } from "../lib/core/api.js";
 import { egoGraph } from "../lib/core/graph.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
@@ -38,21 +38,21 @@ const QUICK_VIEW_BUTTON_STYLE =
 
 /** @param {{ tool: Tool, shared?: string[] }} item */
 function relatedToolRow(item) {
-	const t = item.tool;
+	const tool = item.tool;
 	// Stryker disable next-line ArrayDeclaration: nearestNeighbors() always provides a `shared` array; the `|| []` fallback is never taken — equivalent.
 	const chips = (item.shared || []).map((label) => `<span class="tag">${esc(label)}</span>`).join("");
-	const deprecated = t.deprecated
-		? '<span class="related__status status status--red"><span class="dot dot--red"></span>Deprecated</span>'
+	const deprecated = tool.deprecated
+		? `<span class="related__status status status--red"><span class="dot dot--red"></span>${t("tool.deprecated", "Deprecated")}</span>`
 		: "";
 	return `
-		<article class="related__item" data-tool="${esc(t.name)}">
-			${avatar(t.title)}
+		<article class="related__item" data-tool="${esc(tool.name)}">
+			${avatar(tool.title)}
 			<div class="related__body">
 				<div class="related__titleline">
-					<button class="related__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>
+					<button class="related__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("tool.quickLookAria", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(tool.title)}>${esc(tool.title)}</button>
 					${deprecated}
 				</div>
-				<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
+				<div class="related__maint">${t("tool.by", "by")} <span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></div>
 				${chips ? `<div class="related__chips">${chips}</div>` : ""}
 			</div>
 		</article>`;
@@ -63,13 +63,13 @@ function viewToolNotFound(name) {
 	const rawName = String(name ?? "");
 	const searchHref = `/search?q=${encodeURIComponent(rawName)}`;
 	return {
-		title: "Tool not found — Toolhub",
+		title: t("tool.notFoundDocTitle", "Tool not found — Toolhub"),
 		html: `
 		<div class="container page">
-			<a class="back" href="/search">← Back to tools</a>
-			<h1 class="page__title">Tool not found</h1>
-			<p class="page__intro">The record for <code${dirAttrs(rawName)}>${esc(rawName)}</code> may have been <strong>deleted, renamed, or never registered</strong>.</p>
-			<p><a href="${searchHref}">Search for "${esc(rawName)}"</a> · <a href="/search">Browse all tools</a></p>
+			<a class="back" href="/search">${t("tool.backToTools", "← Back to tools")}</a>
+			<h1 class="page__title">${t("tool.notFoundTitle", "Tool not found")}</h1>
+			<p class="page__intro">${t("tool.notFoundIntroLead", "The record for")} <code${dirAttrs(rawName)}>${esc(rawName)}</code> ${t("tool.notFoundIntroMid", "may have been")} <strong>${t("tool.notFoundIntroFates", "deleted, renamed, or never registered")}</strong>.</p>
+			<p><a href="${searchHref}">${t("tool.searchForName", 'Search for "{name}"', { name: esc(rawName) })}</a> · <a href="/search">${t("tool.browseAllTools", "Browse all tools")}</a></p>
 		</div>`
 	};
 }
@@ -96,7 +96,7 @@ function authorEntries(t) {
 function authorExternalLink(entry) {
 	const url = safeUrl(authorProfileUrl(entry.profile));
 	if (!url) return "";
-	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="External profile for ${esc(entry.name)}">${icon("external")}</a>`;
+	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="${t("tool.externalProfileAria", "External profile for {name}", { name: esc(entry.name) })}">${icon("external")}</a>`;
 }
 
 /** @param {AuthorEntry} entry */
@@ -116,7 +116,7 @@ function wikidataChip(qid) {
 	const id = String(qid || "").trim();
 	if (!id) return "";
 	const url = safeUrl(`https://www.wikidata.org/wiki/${encodeURIComponent(id)}`);
-	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener nofollow">Wikidata: <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
+	return `<a class="glance toolpage__wikidata" href="${url}" target="_blank" rel="noopener nofollow">${t("tool.wikidataLabel", "Wikidata:")} <span dir="auto">${esc(id)}</span>${icon("external")}</a>`;
 }
 
 /** @param {string | { name?: string, url?: string } | null | undefined} entry */
@@ -146,74 +146,78 @@ function sponsorLine(sponsor) {
 		.map((entry) => sponsorEntry(entry))
 		.filter(Boolean)
 		.join(", ");
-	return html ? `<div class="toolpage__sponsor"><span class="toolpage__label">Sponsor:</span> ${html}</div>` : "";
+	return html
+		? `<div class="toolpage__sponsor"><span class="toolpage__label">${t("tool.sponsorLabel", "Sponsor:")}</span> ${html}</div>`
+		: "";
 }
 
-/** @param {Tool} t */
-function replacementNote(t) {
-	if (!t.deprecated || !t.replacedBy) return "";
-	const value = /** @type {string | { name?: string, title?: string } | null} */ (t.replacedBy);
+/** @param {Tool} tool */
+function replacementNote(tool) {
+	if (!tool.deprecated || !tool.replacedBy) return "";
+	const value = /** @type {string | { name?: string, title?: string } | null} */ (tool.replacedBy);
 	const name = typeof value === "string" ? value : (value && (value.name || value.title)) || "";
 	if (!name) return "";
 	const label = esc(name);
 	const linked = /^https?:\/\//i.test(name)
 		? `<a href="${safeUrl(name)}" target="_blank" rel="noopener nofollow">${label}</a>`
 		: `<a href="${esc(toolHref(name))}"${dirAttrs(name)}>${label}</a>`;
-	return `<div class="toolpage__notice">Replaced by ${linked}</div>`;
+	return `<div class="toolpage__notice">${t("tool.replacedBy", "Replaced by")} ${linked}</div>`;
 }
 
 /** @param {string} name */
 export async function viewTool(name) {
-	const t =
+	const tool =
 		/** @type {(Tool & { edited?: boolean, annotated?: boolean, endorsement?: { count?: number } }) | null} */ (
 			await getTool(name)
 		);
-	if (!t) return viewToolNotFound(name);
+	if (!tool) return viewToolNotFound(name);
 	const provTags = [
-		wikidataChip(t.wikidata),
+		wikidataChip(tool.wikidata),
 		...(signedIn()
 			? [
-					isNewTool(name) ? '<span class="exp-badge">Demo submission</span>' : "",
-					t.edited ? '<span class="exp-badge">Edited · demo</span>' : "",
-					t.annotated ? '<span class="exp-badge">Community annotations · demo</span>' : ""
+					isNewTool(name) ? `<span class="exp-badge">${t("tool.demoSubmissionBadge", "Demo submission")}</span>` : "",
+					tool.edited ? `<span class="exp-badge">${t("tool.editedDemoBadge", "Edited · demo")}</span>` : "",
+					tool.annotated
+						? `<span class="exp-badge">${t("tool.annotatedDemoBadge", "Community annotations · demo")}</span>`
+						: ""
 				]
 			: [])
 	]
 		.filter(Boolean)
 		.join(" ");
-	const tags = keywordTags(t, { empty: "—" });
-	const authors = authorInlineList(t);
+	const tags = keywordTags(tool, { empty: "—" });
+	const authors = authorInlineList(tool);
 
 	// REAL links — render only the ones present on the record.
 	const actions = [
-		linkOut("Open tool", t.url),
-		linkOut("Source code", t.repository),
-		linkOut("API", t.apiUrl),
-		linkOut("User docs", t.userDocs),
-		linkOut("Developer docs", t.devDocs),
-		linkOut("Report a bug", t.bugtracker),
-		linkOut("Give feedback", t.feedback),
-		linkOut("Translate", t.translate)
+		linkOut(t("tool.openTool", "Open tool"), tool.url),
+		linkOut(t("tool.sourceCode", "Source code"), tool.repository),
+		linkOut(t("tool.apiLabel", "API"), tool.apiUrl),
+		linkOut(t("tool.userDocs", "User docs"), tool.userDocs),
+		linkOut(t("tool.developerDocs", "Developer docs"), tool.devDocs),
+		linkOut(t("tool.reportABug", "Report a bug"), tool.bugtracker),
+		linkOut(t("tool.giveFeedback", "Give feedback"), tool.feedback),
+		linkOut(t("tool.translate", "Translate"), tool.translate)
 	].join("");
 
 	// REAL status — only the deprecated/experimental flags (shown even when exp off).
-	const realBadge = statusBadge(t);
+	const realBadge = statusBadge(tool);
 	const membershipMap = await listMemberships();
-	t.endorsement = endorsementOf(t.name, membershipMap);
+	tool.endorsement = endorsementOf(tool.name, membershipMap);
 
 	/** @type {Array<{ tool: Tool, shared?: string[] }>} */
 	let related = [];
 	try {
 		const simIndex = await getSimilarityIndex();
-		related = nearestNeighbors(t, simIndex, 6);
+		related = nearestNeighbors(tool, simIndex, 6);
 	} catch {
 		// keep the initial empty list
 	}
 	const relatedHtml =
 		related.length > 0
 			? `<section class="related" aria-labelledby="related-title">
-				<div class="section-head"><h2 id="related-title">Related tools</h2></div>
-				<p class="related__subtitle">Overlapping function and scope, by shared metadata.</p>
+				<div class="section-head"><h2 id="related-title">${t("tool.relatedTitle", "Related tools")}</h2></div>
+				<p class="related__subtitle">${t("tool.relatedSubtitle", "Overlapping function and scope, by shared metadata.")}</p>
 				<div class="related__list">${related.map((item) => relatedToolRow(item)).join("")}</div>
 			</section>`
 			: "";
@@ -228,54 +232,54 @@ export async function viewTool(name) {
 	}
 	const neighborhoodHtml = ego
 		? `<section class="neighborhood" aria-labelledby="neighborhood-title">
-				<div class="section-head"><h2 id="neighborhood-title">Neighborhood</h2></div>
+				<div class="section-head"><h2 id="neighborhood-title">${t("tool.neighborhoodTitle", "Neighborhood")}</h2></div>
 				<div class="graph graph--ego"><div id="ego-canvas"></div></div>
-				<p class="graph__caption">This tool and its nearest neighbors by metadata. Click a node to peek.</p>
+				<p class="graph__caption">${t("tool.neighborhoodCaption", "This tool and its nearest neighbors by metadata. Click a node to peek.")}</p>
 			</section>`
 		: "";
 
 	// At-a-glance chips (real metadata).
-	const glance = glanceChips(t);
+	const glance = glanceChips(tool);
 
-	const maintList = authorEntries(t)
+	const maintList = authorEntries(tool)
 		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`)
 		.join("");
-	const complete = completeness(t);
-	// Stryker disable next-line OptionalChaining: `t.endorsement` is always assigned above via endorsementOf(), so optional vs plain access is equivalent.
-	const endorsementCount = t.endorsement?.count;
+	const complete = completeness(tool);
+	// Stryker disable next-line OptionalChaining: `tool.endorsement` is always assigned above via endorsementOf(), so optional vs plain access is equivalent.
+	const endorsementCount = tool.endorsement?.count;
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-	const thankBtn = button("Thank maintainers", { variant: "outline", disabled: true });
+	const thankBtn = button(t("tool.thankMaintainers", "Thank maintainers"), { variant: "outline", disabled: true });
 
 	const html = `
 	<div class="container page">
-		<a class="back" href="/search">← Back to tools</a>
+		<a class="back" href="/search">${t("tool.backToTools", "← Back to tools")}</a>
 		<header class="toolpage__head">
-			${toolIcon(t, "lg")}
+			${toolIcon(tool, "lg")}
 			<div class="toolpage__id">
-				<h1 class="toolpage__title"${dirAttrs(t.title)}>${esc(t.title)}</h1>
-				${t.subtitle ? `<p class="toolpage__subtitle"${dirAttrs(t.subtitle)}>${esc(t.subtitle)}</p>` : ""}
-				<div class="toolpage__by">by ${authors}</div>
-				${sponsorLine(t.sponsor)}
-				${replacementNote(t)}
+				<h1 class="toolpage__title"${dirAttrs(tool.title)}>${esc(tool.title)}</h1>
+				${tool.subtitle ? `<p class="toolpage__subtitle"${dirAttrs(tool.subtitle)}>${esc(tool.subtitle)}</p>` : ""}
+				<div class="toolpage__by">${t("tool.by", "by")} ${authors}</div>
+				${sponsorLine(tool.sponsor)}
+				${replacementNote(tool)}
 				${provTags ? `<div class="toolpage__prov">${provTags}</div>` : ""}
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
 					${endorsementChip(endorsementCount)}
-					${fitChip(t)}
-					${updatedTimeTag(t.modified, "toolpage__when")}
-					${freshnessNote(t)}
+					${fitChip(tool)}
+					${updatedTimeTag(tool.modified, "toolpage__when")}
+					${freshnessNote(tool)}
 					<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
-					${healthBadge(t)}
+					${healthBadge(tool)}
 					<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking the API doesn't expose. -->
-					${popularityBadge(t)}
+					${popularityBadge(tool)}
 				</div>
 			</div>
 			<div class="toolpage__cta">
-				${t.url ? button("Open tool", { variant: "primary", size: "lg", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
-				${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
+				${tool.url ? button(t("tool.openTool", "Open tool"), { variant: "primary", size: "lg", href: safeUrl(tool.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
+				${signedIn() ? favBtn(tool.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
 				<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
-				${signedIn() ? saveToListControl(t.name) : ""}
+				${signedIn() ? saveToListControl(tool.name) : ""}
 			</div>
 		</header>
 
@@ -285,33 +289,33 @@ export async function viewTool(name) {
 				     toolinfo schema + image storage (no per-tool data possible here). -->
 				<div class="experimental shotstrip">
 					<div class="shotstrip__copy">
-						<span class="exp-badge shotstrip__badge">Screenshots · prospective feature</span>
-						<span class="shotstrip__note">Toolhub has no screenshot field yet; these frames are placeholders.</span>
+						<span class="exp-badge shotstrip__badge">${t("tool.screenshotsBadge", "Screenshots · prospective feature")}</span>
+						<span class="shotstrip__note">${t("tool.screenshotsNote", "Toolhub has no screenshot field yet; these frames are placeholders.")}</span>
 					</div>
 					<div class="shotstrip__frames" aria-hidden="true">
-						<div class="shot shot--hero">${toolIcon(t, "lg")}</div>
+						<div class="shot shot--hero">${toolIcon(tool, "lg")}</div>
 						<div class="shot shot--split"><span></span><span></span></div>
 						<div class="shot shot--stack"><span></span><span></span><span></span></div>
 					</div>
 				</div>
 
-				<div class="prose"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>
+				<div class="prose"${dirAttrs(tool.description)}>${renderMarkdown(tool.description) || `<em>${t("tool.noDescription", "No description provided.")}</em>`}</div>
 				<div class="tcard__tags toolpage__tags">${tags}</div>
 
-				<h2 class="toolpage__h2">Details</h2>
+				<h2 class="toolpage__h2">${t("tool.detailsTitle", "Details")}</h2>
 				<div class="detail__meta">
-					${metaItem("Type", esc(t.toolType))}
-					${metaItem("License", esc(t.license))}
-					${metaItem("Works on", wikiLabel(t.forWikis))}
-					${metaItem("Interface languages", langLabel(t.uiLanguages))}
-					${metaItem("Technology", (t.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
-					${metaItem("Audiences", (t.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
+					${metaItem(t("tool.metaType", "Type"), esc(tool.toolType))}
+					${metaItem(t("tool.metaLicense", "License"), esc(tool.license))}
+					${metaItem(t("tool.metaWorksOn", "Works on"), wikiLabel(tool.forWikis))}
+					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
+					${metaItem(t("tool.metaTechnology", "Technology"), (tool.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
+					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
 
 				<!-- EXPERIMENTAL — thanks. Needs: an authenticated appreciation event model with abuse controls. -->
 				<div class="experimental thanks">
-					<h2 class="toolpage__h2">Thanks <span class="exp-badge">Experimental</span></h2>
-					${thanksBlock(t)}
+					<h2 class="toolpage__h2">${t("tool.thanksTitle", "Thanks")} <span class="exp-badge">${t("tool.experimentalBadge", "Experimental")}</span></h2>
+					${thanksBlock(tool)}
 					${thankBtn}
 				</div>
 
@@ -321,30 +325,30 @@ export async function viewTool(name) {
 
 			<aside class="toolpage__side">
 				<div class="panel">
-					<h2 class="panel__title">Get started</h2>
-					<div class="toolpage__actions">${actions || '<span class="meta__v">No links provided</span>'}</div>
+					<h2 class="panel__title">${t("tool.getStarted", "Get started")}</h2>
+					<div class="toolpage__actions">${actions || `<span class="meta__v">${t("tool.noLinksProvided", "No links provided")}</span>`}</div>
 					<div class="toolpage__sub">
-						<a href="${toolHref(t.name)}/history">View history</a>
+						<a href="${toolHref(tool.name)}/history">${t("tool.viewHistory", "View history")}</a>
 						${
 							signedIn()
-								? `<a href="${toolHref(t.name)}/edit">Edit tool</a> <a href="${toolHref(t.name)}/edit-annotations">Edit annotations</a>`
-								: `<a href="${toolHref(t.name)}/edit">Suggest an edit</a>`
+								? `<a href="${toolHref(tool.name)}/edit">${t("tool.editTool", "Edit tool")}</a> <a href="${toolHref(tool.name)}/edit-annotations">${t("tool.editAnnotations", "Edit annotations")}</a>`
+								: `<a href="${toolHref(tool.name)}/edit">${t("tool.suggestAnEdit", "Suggest an edit")}</a>`
 						}
 					</div>
 				</div>
 				<div class="panel">
-					<h2 class="panel__title">Maintainers</h2>
+					<h2 class="panel__title">${t("tool.maintainersTitle", "Maintainers")}</h2>
 					<ul class="maint-list">${maintList}</ul>
 				</div>
 				<div class="panel">
-					<h2 class="panel__title">Listing completeness</h2>
+					<h2 class="panel__title">${t("tool.listingCompleteness", "Listing completeness")}</h2>
 					${completenessMeter(complete)}
 					${completenessList(complete)}
 				</div>
 				<!-- EXPERIMENTAL — usage stat. Needs: usage analytics the API doesn't expose. -->
 				<div class="panel experimental">
-					<h2 class="panel__title">Usage <span class="exp-badge">Experimental</span></h2>
-					${usageBlock(t)}
+					<h2 class="panel__title">${t("tool.usageTitle", "Usage")} <span class="exp-badge">${t("tool.experimentalBadge", "Experimental")}</span></h2>
+					${usageBlock(tool)}
 				</div>
 			</aside>
 		</div>
@@ -355,7 +359,7 @@ export async function viewTool(name) {
 		if (!target || !ego) return;
 		target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
 	}
-	return { title: `${t.title} — Toolhub`, html, mount };
+	return { title: t("tool.docTitle", "{title} — Toolhub", { title: tool.title }), html, mount };
 }
 
 // Tool revision history — live from /api/tools/{name}/revisions/.
@@ -368,38 +372,37 @@ export async function viewToolHistory(name) {
 	]);
 	// Lane B: your demo edits show as the most recent revisions.
 	const revs = [...demoRevisionsFor(name), ...(data.results || [])];
-	const t = liveT;
-	if (!t && revs.length === 0) return viewNotFound();
-	const title = t ? t.title : (revs[0] && revs[0].content_title) || name;
+	const tool = liveT;
+	if (!tool && revs.length === 0) return viewNotFound();
+	const title = tool ? tool.title : (revs[0] && revs[0].content_title) || name;
 	const rows = revs
 		.map((r, i) => {
 			const username = (r.user && r.user.username) || "system";
 			return `
 		<li>${icon("history", "feed__ic")}
-			<span class="feed__main">Revision by <strong${dirAttrs(username)}>${esc(username)}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ' <span class="tag">current</span>' : ""}</span>
+			<span class="feed__main">${t("tool.revisionBy", "Revision by")} <strong${dirAttrs(username)}>${esc(username)}</strong> · ${timeTag(r.timestamp)}${r.comment ? ` — <span dir="auto">${esc(r.comment)}</span>` : ""}${i === 0 ? ` <span class="tag">${t("tool.currentTag", "current")}</span>` : ""}</span>
 			<span class="feed__when">#${esc(String(r.id))}</span></li>`;
 		})
 		.join("");
 	return {
-		title: `History: ${title} — Toolhub`,
+		title: t("tool.historyDocTitle", "History: {title} — Toolhub", { title }),
 		html: `
 		<div class="container page">
-			<a class="back" href="${toolHref(name)}">← Back to ${esc(title)}</a>
-			<h1 class="page__title">Revision history</h1>
-			<ul class="feed">${rows || '<li><div class="feed__static">No revisions recorded.</div></li>'}</ul>
+			<a class="back" href="${toolHref(name)}">${t("tool.backToName", "← Back to {title}", { title: esc(title) })}</a>
+			<h1 class="page__title">${t("tool.revisionHistoryTitle", "Revision history")}</h1>
+			<ul class="feed">${rows || `<li><div class="feed__static">${t("tool.noRevisions", "No revisions recorded.")}</div></li>`}</ul>
 		</div>`
 	};
 }
 /** @param {string} name */
 export function viewDiffStub(name) {
-	const t = /** @type {Record<string, Tool>} */ (INDEX)[name];
+	const tool = /** @type {Record<string, Tool>} */ (INDEX)[name];
 	return prosePage(
-		"Revision diff",
+		t("tool.revisionDiffTitle", "Revision diff"),
 		`
-		<p>Compare two revisions of <strong>${esc(t ? t.title : name)}</strong> side by side.</p>
-		<p>Revision diffs are served from Toolhub's versioning API. In this prototype the
-		diff viewer is not wired up — see it on the
-		<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>
-		<p><a href="${toolHref(name)}/history">← Back to history</a></p>`
+		<p>${t("tool.diffCompareLead", "Compare two revisions of")} <strong>${esc(tool ? tool.title : name)}</strong> ${t("tool.diffCompareTail", "side by side.")}</p>
+		<p>${t("tool.diffIntro", "Revision diffs are served from Toolhub's versioning API. In this prototype the\n\t\tdiff viewer is not wired up — see it on the")}
+		<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${t("tool.liveSite", "live site")}</a>.</p>
+		<p><a href="${toolHref(name)}/history">${t("tool.backToHistory", "← Back to history")}</a></p>`
 	);
 }
