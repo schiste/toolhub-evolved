@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
-import { countLabel, updatedTimeTag } from "../lib/core/i18n.js";
+import { countLabel, t, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext, wikiMatches } from "../lib/core/signals.js";
 import { listHref, navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
@@ -23,23 +23,23 @@ let intentDocKeydown = null;
 const WIKI_OPTIONS = [
 	// Stryker disable next-line StringLiteral: projectItems() overrides the label for the value="" row with "any project", so this "Any wiki" string is never rendered — equivalent.
 	["", "Any wiki"],
-	["wikidata.org", "Wikidata"],
-	["commons.wikimedia.org", "Commons"],
-	["en.wikipedia.org", "English Wikipedia"],
-	["*.wikipedia.org", "Any Wikipedia"],
-	["*.wikisource.org", "Any Wikisource"],
-	["meta.wikimedia.org", "Meta-Wiki"]
+	["wikidata.org", t("home.wikiWikidata", "Wikidata")],
+	["commons.wikimedia.org", t("home.wikiCommons", "Commons")],
+	["en.wikipedia.org", t("home.wikiEnglishWikipedia", "English Wikipedia")],
+	["*.wikipedia.org", t("home.wikiAnyWikipedia", "Any Wikipedia")],
+	["*.wikisource.org", t("home.wikiAnyWikisource", "Any Wikisource")],
+	["meta.wikimedia.org", t("home.wikiMetaWiki", "Meta-Wiki")]
 ];
 const INTENT_AXES = {
 	audiences: {
-		label: "made for",
-		any: "anyone",
+		label: t("home.madeFor", "made for"),
+		any: t("home.anyone", "anyone"),
 		param: "audiences__term",
 		options: PERSONAS.map(([, label, term]) => [term, label.toLowerCase()])
 	},
 	tasks: {
-		label: "to",
-		any: "do anything",
+		label: t("home.to", "to"),
+		any: t("home.doAnything", "do anything"),
 		param: "tasks__term",
 		options: NEEDS.map(([, label, term]) => [term, label.toLowerCase()])
 	}
@@ -58,7 +58,7 @@ function intentTermItems(axis) {
 	return [["", cfg.any], ...cfg.options];
 }
 function projectItems() {
-	return WIKI_OPTIONS.map(([value, label]) => [value, value ? label : "any project"]);
+	return WIKI_OPTIONS.map(([value, label]) => [value, value ? label : t("home.anyProject", "any project")]);
 }
 /**
  * @param {string[][]} items
@@ -162,16 +162,18 @@ function sortedByEndorsements(tools) {
 }
 /** @param {Tool[]} recentTools */
 function recentToolsHTML(recentTools) {
+	const maintainerLabel = t("home.maintainer", "Maintainer:");
 	return (
 		recentTools
 			.map(
 				(t) => `
 		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
 			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
-			<div class="recent__meta">Maintainer: <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div></div>
+			<div class="recent__meta">${maintainerLabel} <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div></div>
 			${updatedTimeTag(t.modified, "recent__when")}</a></li>`
 			)
-			.join("") || '<li class="recent__empty">No recently updated tools match this sentence.</li>'
+			.join("") ||
+		`<li class="recent__empty">${t("home.recentEmpty", "No recently updated tools match this sentence.")}</li>`
 	);
 }
 /**
@@ -203,12 +205,12 @@ function renderHomeMain(model, state) {
 			? listHref(model.lists[0].id)
 			: "/lists";
 	return `
-		<div class="section-head"><h2>Featured tools</h2><a class="link" href="${featuredHref}">View all</a></div>
-		${toolsGridHTML(model.featuredRanked.slice(0, 8), "No tools match this sentence.")}
-		<div class="section-head"><h2>Most listed</h2><a class="link" href="${filtered ? searchHrefForState(state) : "/lists"}">${filtered ? "View all" : "View lists"}</a></div>
-		${toolsGridHTML(model.mostListedRanked.slice(0, 8), "No listed tools match this sentence.", (t, i) => toolCard(t, { rank: i + 1 }))}
-		<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>
-		${listsGridHTML(model.lists.slice(0, 6), "No curated lists match this sentence.")}`;
+		<div class="section-head"><h2>${t("home.featuredTools", "Featured tools")}</h2><a class="link" href="${featuredHref}">${t("home.viewAll", "View all")}</a></div>
+		${toolsGridHTML(model.featuredRanked.slice(0, 8), t("home.noToolsMatch", "No tools match this sentence."))}
+		<div class="section-head"><h2>${t("home.mostListed", "Most listed")}</h2><a class="link" href="${filtered ? searchHrefForState(state) : "/lists"}">${filtered ? t("home.viewAll", "View all") : t("home.viewLists", "View lists")}</a></div>
+		${toolsGridHTML(model.mostListedRanked.slice(0, 8), t("home.noListedToolsMatch", "No listed tools match this sentence."), (t, i) => toolCard(t, { rank: i + 1 }))}
+		<div class="section-head"><h2>${t("home.curatedLists", "Curated lists")}</h2><a class="link" href="/lists">${t("home.viewAllLists", "View all lists")}</a></div>
+		${listsGridHTML(model.lists.slice(0, 6), t("home.noCuratedListsMatch", "No curated lists match this sentence."))}`;
 }
 /**
  * @param {IntentState} state
@@ -288,7 +290,7 @@ export async function viewHome() {
 	const intentTerm = initialState.term;
 	const intentWiki = initialState.wiki;
 
-	const submitToolBtn = button("Submit a tool", {
+	const submitToolBtn = button(t("home.submitATool", "Submit a tool"), {
 		// Stryker disable next-line StringLiteral: `button()` defaults `variant` to "outline", so mutating this explicit "outline" to "" produces identical markup — equivalent.
 		variant: "outline",
 		href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create",
@@ -297,25 +299,25 @@ export async function viewHome() {
 
 	const html = `
 	<section class="hero">
-		<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
+		<h1 class="hero__title">${t("home.heroTitle", "The community catalog of Wikimedia tools")}</h1>
 		<div class="hero__explore">
 			<form class="intent" data-intent-form data-axis="${esc(intentAxis)}" data-term="${esc(intentTerm)}" data-wiki="${esc(intentWiki)}">
-				<div class="intent__sentence" aria-label="Build a tool search">
-					<span class="intent__copy">I want to see tools</span>
+				<div class="intent__sentence" aria-label="${t("home.buildAToolSearch", "Build a tool search")}">
+					<span class="intent__copy">${t("home.iWantToSeeTools", "I want to see tools")}</span>
 					${intentChoice("axis", itemLabel(intentAxisItems(), intentAxis), intentAxisItems(), intentAxis)}
 					${intentChoice("term", itemLabel(intentTermItems(intentAxis), intentTerm), intentTermItems(intentAxis), intentTerm)}
-					<span class="intent__copy">on</span>
+					<span class="intent__copy">${t("home.on", "on")}</span>
 					${intentChoice("wiki", itemLabel(projectItems(), intentWiki), projectItems(), intentWiki)}
-					<button class="intent__go" type="submit">See tools</button>
-					<button class="intent__clear" type="button" data-intent-clear${hasHomeFilters(initialState) ? "" : " disabled"}>clear</button>
+					<button class="intent__go" type="submit">${t("home.seeTools", "See tools")}</button>
+					<button class="intent__clear" type="button" data-intent-clear${hasHomeFilters(initialState) ? "" : " disabled"}>${t("home.clear", "clear")}</button>
 				</div>
 			</form>
 		</div>
-		<div class="hero__or" aria-hidden="true">or</div>
+		<div class="hero__or" aria-hidden="true">${t("home.or", "or")}</div>
 		<form class="search" role="search" data-home-search>
-			<label for="home-q" class="skip-label">Search tools</label>
-			<input id="home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search ${esc(countLabel(total, "tool", "tools"))}…" autocomplete="off" />
-			${button("Search", { variant: "primary", type: "submit", cls: "search__btn" })}
+			<label for="home-q" class="skip-label">${t("home.searchTools", "Search tools")}</label>
+			<input id="home-q" class="search__input" type="search" aria-label="${t("home.searchTools", "Search tools")}" placeholder="${t("home.searchPlaceholder", "Search {count}…", { count: esc(countLabel(total, t("home.toolOne", "tool"), t("home.toolOther", "tools"))) })}" autocomplete="off" />
+			${button(t("home.search", "Search"), { variant: "primary", type: "submit", cls: "search__btn" })}
 		</form>
 	</section>
 	<div class="container layout">
@@ -323,12 +325,12 @@ export async function viewHome() {
 			${renderHomeMain(initialModel, initialState)}
 		</div>
 		<aside class="layout__side">
-			<div class="panel"><h3 class="panel__title">Recently updated</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>Built a tool for Wikimedia?</h3><p>Add a <code>toolinfo.json</code> to your repository, or register it here, so other Wikimedians can find it.</p>${submitToolBtn}</div>
+			<div class="panel"><h3 class="panel__title">${t("home.recentlyUpdated", "Recently updated")}</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${t("home.ctaBodyBefore", "Add a ")}<code>toolinfo.json</code>${t("home.ctaBodyAfter", " to your repository, or register it here, so other Wikimedians can find it.")}</p>${submitToolBtn}</div>
 		</aside>
 	</div>`;
 	return {
-		title: "Toolhub — discover Wikimedia tools",
+		title: t("home.docTitle", "Toolhub — discover Wikimedia tools"),
 		html,
 		mount() {
 			/** @type {HTMLElement} */ ($("[data-home-search]")).addEventListener("submit", (e) => {
@@ -409,8 +411,8 @@ export async function viewHome() {
 				homeRecent.innerHTML = recentToolsHTML(model.recentTools);
 			};
 			const renderHomeError = () => {
-				homeMain.innerHTML = '<p class="empty">Unable to refresh tools right now.</p>';
-				homeRecent.innerHTML = '<li class="recent__empty">Unable to refresh recently updated tools.</li>';
+				homeMain.innerHTML = `<p class="empty">${t("home.refreshError", "Unable to refresh tools right now.")}</p>`;
+				homeRecent.innerHTML = `<li class="recent__empty">${t("home.recentRefreshError", "Unable to refresh recently updated tools.")}</li>`;
 			};
 			const refreshHome = async () => {
 				// Stryker disable next-line UpdateOperator: refreshSeq is only ever compared for equality to detect a superseded refresh; ++ and -- both produce a unique value per call, so the stale-guard behaves identically — equivalent.
