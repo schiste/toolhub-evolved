@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { t } from "../core/i18n.js";
+
 /**
  * @param {number} page
  * @param {number} pages
@@ -14,7 +16,7 @@ export function renderPager(page, pages) {
 	 */
 	const btn = (p, label, dis, cur) =>
 		`<button class="pager__btn${cur ? " is-current" : ""}" type="button" ${dis ? "disabled" : ""} data-page="${p}"${cur ? ' aria-current="page"' : ""}>${label}</button>`;
-	let out = btn(page - 1, "‹ Prev", page <= 1),
+	let out = btn(page - 1, t("pager.prev", "‹ Prev"), page <= 1),
 		last = 0;
 	const win = [];
 	for (let p = 1; p <= pages; p++) if (p === 1 || p === pages || Math.abs(p - page) <= 2) win.push(p);
@@ -23,5 +25,5 @@ export function renderPager(page, pages) {
 		out += btn(p, p, false, p === page);
 		last = p;
 	});
-	return out + btn(page + 1, "Next ›", page >= pages);
+	return out + btn(page + 1, t("pager.next", "Next ›"), page >= pages);
 }
