@@ -45,6 +45,22 @@ webservice python3.13 start
 # → https://<toolname>.toolforge.org/
 ```
 
+## Production backend (database, sign-in, crawler)
+
+The webservice also hosts the site's own backend (`proxy/backend/`): Wikimedia
+OAuth sign-in and the `/v1` API over the project database that complements the
+live catalog. It activates fully once configured:
+
+1. Create the ToolsDB database and set the env vars (`TOOLHUB_DB_URL`,
+   `TOOLHUB_SECRET_KEY`, OAuth consumer id/secret, `TOOLHUB_DB_NAME`) with
+   `toolforge envvars create` — the full table and the OAuth-consumer steps
+   are in [`RUNBOOK.md`](RUNBOOK.md).
+2. Load the scheduled jobs (hourly crawler, nightly backup):
+   `toolforge jobs load ~/repo/jobs.yaml`.
+
+Unconfigured, the site still runs — read-only interface plus browser-local
+demo mode, with `/oauth/login` answering 503.
+
 ## Updating after a change
 
 ```sh

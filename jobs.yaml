@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Toolforge Jobs framework definitions (docs/RUNBOOK.md).
+# Load/refresh with:  toolforge jobs load ~/repo/jobs.yaml
+---
+- name: crawler
+  # Hourly toolinfo crawl: fetches every registered URL, validates records,
+  # upserts locally-registered tools (skipping names that exist upstream).
+  command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/crawl.py
+  image: python3.13
+  schedule: "17 * * * *"
+  emails: onfailure
+
+- name: db-backup
+  # Nightly ToolsDB dump with 14-day rotation (tools/backup-db.sh).
+  # The mariadb image ships the client tools; check `toolforge jobs images`
+  # if the image name changes.
+  command: sh $HOME/repo/tools/backup-db.sh
+  image: mariadb
+  schedule: "45 2 * * *"
+  emails: onfailure
