@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "../core/dom.js";
-import { localeDir } from "../core/i18n.js";
+import { appLocale, localeDir } from "../core/i18n.js";
 import { icon } from "../atoms/icon.js";
 
-// The active locale of this prototype. The real Toolhub UI is localised through
-// translatewiki.net (the Wikimedia translation platform), but this demo ships
-// English copy only — so the picker is honest about that (see selectionNote).
-const ACTIVE = "en";
+// The active UI locale. Locales with a shipped catalog (AVAILABLE_LOCALES in
+// core/i18n.js) really switch — main.js persists the choice and reloads; the
+// rest show the honest "not available yet" note (see selectionNote). A locale
+// change reloads the page, so binding at module load is safe.
+const ACTIVE = appLocale();
 
 // A representative slice of the languages Toolhub is translated into on
 // translatewiki.net. Each entry is [code, autonym (native name), English name].

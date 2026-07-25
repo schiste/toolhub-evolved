@@ -46,6 +46,8 @@ jobs:
               run: node tools/checks.mjs
             - name: JS payload budget
               run: node tools/js-budget.mjs
+            - name: i18n catalog in sync (en.json generated from t() calls)
+              run: node tools/i18n-extract.mjs --check
             - name: Unit tests + coverage gate
               run: npx vitest run --coverage
             # Mutation testing (Stryker) runs in its own workflow (.github/

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { pickLocalized } from "./i18n.js";
 import { expOn, signedIn, USER } from "./session.js";
 import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
 import { synthViews } from "./synth.js";
@@ -264,8 +265,8 @@ export function normalizeTool(t) {
 	/** @type {Tool} */
 	const o = {
 		name: t.name,
-		title: t.title || t.name,
-		description: t.description || "",
+		title: pickLocalized(t.title) || t.name,
+		description: pickLocalized(t.description) || "",
 		url: pick(t.url, ann.url, ""),
 		icon: pick(t.icon, ann.icon, null),
 		keywords: t.keywords || [],
