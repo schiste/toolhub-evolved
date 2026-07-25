@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
-import { countLabel, fmt } from "../lib/core/i18n.js";
+import { countLabel, fmt, t } from "../lib/core/i18n.js";
 import { expOn } from "../lib/core/session.js";
 import { apiGet, normalizeTool } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
@@ -13,8 +13,16 @@ import { toolCard } from "../lib/organisms/tool-card.js";
 export const PAGE_SIZE_OPTIONS = [12, 24, 48];
 export const DEFAULT_PAGE_SIZE = 24;
 const CLIENT_STATUS_FILTERS = [
-	{ value: "deprecated", label: "Deprecated", match: (/** @type {Tool} */ t) => t.deprecated },
-	{ value: "experimental", label: "Experimental", match: (/** @type {Tool} */ t) => t.experimental }
+	{
+		value: "deprecated",
+		label: t("search.deprecated", "Deprecated"),
+		match: (/** @type {Tool} */ t) => t.deprecated
+	},
+	{
+		value: "experimental",
+		label: t("search.experimental", "Experimental"),
+		match: (/** @type {Tool} */ t) => t.experimental
+	}
 ];
 const CLIENT_STATUS_VALUES = new Set(CLIENT_STATUS_FILTERS.map((s) => s.value));
 
@@ -55,7 +63,7 @@ function renderStatusFacetGroup(selectedStatuses) {
 		const checked = selectedStatuses.has(s.value) ? " checked" : "";
 		return `<label class="facet"><input type="checkbox" data-client-status="${s.value}"${checked}> <span>${esc(s.label)}</span></label>`;
 	}).join("");
-	return `<div class="facet-group"><h2 class="facet-group__title">Status</h2>${rows}</div>`;
+	return `<div class="facet-group"><h2 class="facet-group__title">${t("search.status", "Status")}</h2>${rows}</div>`;
 }
 
 /**
@@ -125,50 +133,70 @@ export async function viewSearch() {
 	const countHTML =
 		clientStatuses.size > 0
 			? results.length > 0
-				? `Showing ${esc(fmt(results.length))} on this page of ${esc(countLabel(total, "tool", "tools"))}`
-				: `No visible tools on this page of ${esc(countLabel(total, "tool", "tools"))}`
+				? t("search.showingOnPage", "Showing {count} on this page of {total}", {
+						count: esc(fmt(results.length)),
+						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
+					})
+				: t("search.noVisibleOnPage", "No visible tools on this page of {total}", {
+						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
+					})
 			: results.length > 0
-				? `Showing ${esc(fmt(firstResult))}-${esc(fmt(lastResult))} of ${esc(countLabel(total, "tool", "tools"))}`
-				: esc(countLabel(total, "tool", "tools"));
+				? t("search.showingRange", "Showing {first}-{last} of {total}", {
+						first: esc(fmt(firstResult)),
+						last: esc(fmt(lastResult)),
+						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
+					})
+				: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")));
 	const countNoteHTML =
-		clientStatuses.size > 0 ? ' <span class="browse__count-note">filtered in your browser</span>' : "";
+		clientStatuses.size > 0
+			? ` <span class="browse__count-note">${t("search.filteredInBrowser", "filtered in your browser")}</span>`
+			: "";
 
 	const sortOpts = `${
-		exp ? '<option value="relevance">Most relevant</option>' : ""
-	}<option value="recent">Recently updated</option><option value="name">Name (A–Z)</option>${
-		exp ? '<option value="views">Popular this week</option>' : ""
-	}<option value="complete">Most complete</option>`;
-	const pageSizeOpts = PAGE_SIZE_OPTIONS.map((size) => `<option value="${size}">${size} per page</option>`).join("");
+		exp ? `<option value="relevance">${t("search.mostRelevant", "Most relevant")}</option>` : ""
+	}<option value="recent">${t("search.recentlyUpdated", "Recently updated")}</option><option value="name">${t(
+		"search.nameAZ",
+		"Name (A–Z)"
+	)}</option>${
+		exp ? `<option value="views">${t("search.popularThisWeek", "Popular this week")}</option>` : ""
+	}<option value="complete">${t("search.mostComplete", "Most complete")}</option>`;
+	const pageSizeOpts = PAGE_SIZE_OPTIONS.map(
+		(size) => `<option value="${size}">${t("search.perPage", "{size} per page", { size })}</option>`
+	).join("");
 	const resultsHTML =
 		results.length > 0
 			? `<ul class="card-grid grid-tools" role="list">${results.map((t, i) => `<li>${toolCard(t, sort === "views" ? { rank: (page - 1) * pageSize + i + 1, popular: true } : {})}</li>`).join("")}</ul>`
-			: '<p class="empty">No tools match these filters.</p>';
+			: `<p class="empty">${t("search.noToolsMatch", "No tools match these filters.")}</p>`;
 
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so mutating this explicit "outline" to "" yields identical markup — equivalent.
-	const clearFiltersBtn = button("Clear filters", { variant: "outline", href: "/search", cls: "facets__reset" });
+	const clearFiltersBtn = button(t("search.clearFilters", "Clear filters"), {
+		variant: "outline",
+		href: "/search",
+		cls: "facets__reset"
+	});
 	const html = `
 	<div class="container page">
-		<h1 class="page__title">Browse tools</h1>
+		<h1 class="page__title">${t("search.browseTools", "Browse tools")}</h1>
 		<div class="browse">
-			<aside class="facets" aria-label="Filters">
+			<aside class="facets" aria-label="${t("search.filters", "Filters")}">
 				<form data-facet-q role="search">
-					<label for="facet-q" class="skip-label">Search within tools</label>
-					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="${esc(q)}" />
+					<label for="facet-q" class="skip-label">${t("search.searchWithinTools", "Search within tools")}</label>
+					<input id="facet-q" class="facets__search" type="search" placeholder="${t("search.searchToolsPlaceholder", "Search tools…")}" autocomplete="off" value="${esc(q)}" />
 				</form>
 				${statusFacetHTML}
-				${facetHTML || '<p class="facet__empty">No filters available.</p>'}
+				${facetHTML || `<p class="facet__empty">${t("search.noFiltersAvailable", "No filters available.")}</p>`}
 				${clearFiltersBtn}
 			</aside>
 			<div class="browse__main">
 				<div class="browse__bar">
 					<span class="browse__count" aria-live="polite">${countHTML}${q ? ` for &ldquo;<span${dirAttrs(q)}>${esc(q)}</span>&rdquo;` : ""}${countNoteHTML}</span>
 					<span class="browse__controls">
-						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size">${pageSizeOpts}</select></label>
-						<label class="sort"><span class="skip-label">Sort by</span><select id="sort">${sortOpts}</select></label>
+						<label class="sort"><span class="skip-label">${t("search.resultsPerPage", "Results per page")}</span><select id="page-size">${pageSizeOpts}</select></label>
+						<label class="sort"><span class="skip-label">${t("search.sortBy", "Sort by")}</span><select id="sort">${sortOpts}</select></label>
 					</span>
 				</div>
 				${resultsHTML}
-				<nav class="pager" aria-label="Pagination">${pagerHTML}</nav>
+				<nav class="pager" aria-label="${t("search.pagination", "Pagination")}">${pagerHTML}</nav>
 			</div>
 		</div>
 	</div>`;
@@ -211,5 +239,9 @@ export async function viewSearch() {
 			navigate({ page: Number.parseInt(/** @type {string} */ (b.getAttribute("data-page")), 10) });
 		});
 	}
-	return { title: q ? `“${q}” — Toolhub` : "Browse tools — Toolhub", html, mount };
+	return {
+		title: q ? t("search.docTitleQuery", "“{q}” — Toolhub", { q }) : t("search.docTitle", "Browse tools — Toolhub"),
+		html,
+		mount
+	};
 }
