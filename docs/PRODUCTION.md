@@ -35,6 +35,29 @@ Appendix A), so productionizing is mostly **swapping the adapter's target from
 `localStorage` to a real API** — callers, views, and the merge step stay as they
 are.
 
+### Implementation status (2026-07-25)
+
+Landed in this repo (see the runbook for the Toolforge configuration steps):
+
+- **Backend** (`proxy/backend/`): ToolsDB/SQLite via SQLAlchemy, Wikimedia
+  OAuth 2.0, sessions + CSRF + rate limiting, the `/v1` overlay API,
+  `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed.
+- **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
+  write-through cache of the server overlay; demo mode intact when signed out.
+- **Crawler** (`proxy/crawl.py` + `jobs.yaml`): scheduled ingest of registered
+  toolinfo URLs, upstream-name dedupe, per-run history.
+- **Ops**: nightly DB backup + rotation, `docs/RUNBOOK.md`.
+- **i18n**: `t()` catalog mechanism, generated `i18n/en.json` (CI-enforced),
+  working locale switcher for shipped catalogs, `pickLocalized()` for API
+  fields; chrome strings extracted across views/components. The a11y items
+  §2.3 listed as deferred (card grids as lists, crawler table caption/scope)
+  were already fixed in code.
+
+Still open before a public launch: register the OAuth consumer + ToolsDB and
+run through the runbook once for real; obtain actual translations (the
+mechanism ships English-only catalogs); the long-term card-as-link a11y
+refactor; the privacy-policy rewrite for server-side accounts (P6).
+
 ## 1. Product architecture — "live base + owned overlay", now server-side
 
 The resolved data architecture (§0) is the demonstrator's core insight carried

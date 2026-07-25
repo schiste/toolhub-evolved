@@ -25,16 +25,29 @@ explore how tool discovery could look and feel.
 ## Architecture
 
 The Toolhub API sends **no CORS headers**, so the browser can't call it directly
-from another origin. A tiny Flask app (`proxy/app.py`) solves this by doing two
-things from the same origin:
+from another origin. The Flask app (`proxy/app.py`) serves everything from one
+origin:
 
 1. Serves the static SPA from `public_html/`.
 2. Reverse-proxies read-only `GET /api/*` to `toolhub.wikimedia.org/api/*`.
+3. Hosts the production backend (`proxy/backend/`): Wikimedia OAuth sign-in and
+   the `/v1` API over a **project-specific database that complements the live
+   catalog** — favorites, lists, tool registrations, edit/annotation overlays,
+   activity history and crawler URLs. Upstream catalog data is never mirrored:
+   if a record exists on Toolhub, the live API is its source of truth and our
+   database only holds the delta (see [`docs/PRODUCTION.md`](docs/PRODUCTION.md)).
 
 The SPA (`public_html/main.js`, `public_html/views/`, and `public_html/lib/`) fetches everything live through `/api/…` — there is
 no bundled catalog. Live endpoints used: `/api/search/tools/` (faceted),
 `/api/tools/{name}/`, `/api/tools/{name}/revisions/`, `/api/lists/`, `/api/users/`,
 `/api/recent/`, `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.
+
+Signed out, user actions stay browser-local (`localStorage` demo mode, behind
+the prospective-features toggle). Signed in with a real Wikimedia account, the
+same localStorage acts as a synchronous cache of the server copy: it is pulled
+from `GET /v1/overlay/` at boot and every mutation writes through with
+`PUT /v1/overlay/<key>`. Locally-registered tools are also published at
+`/toolinfo.json` so the official Toolhub crawler can ingest them.
 
 ## Repository layout
 
