@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
-import { countLabel } from "../lib/core/i18n.js";
+import { countLabel, t } from "../lib/core/i18n.js";
 import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
@@ -78,20 +78,21 @@ function clearHttpErrorWhenValid(id) {
 
 function duplicateRegion() {
 	return `<section class="dupes" data-dupes aria-labelledby="dupes-title" aria-live="polite" hidden>
-		<h3 class="dupes__title" id="dupes-title">Possible duplicates</h3>
-		<p class="dupes__note">These existing tools look similar — check before creating a duplicate.</p>
+		<h3 class="dupes__title" id="dupes-title">${t("toolforms.dupesTitle", "Possible duplicates")}</h3>
+		<p class="dupes__note">${t("toolforms.dupesNote", "These existing tools look similar — check before creating a duplicate.")}</p>
 		<ul class="dupes__list" data-dupes-list></ul>
 	</section>`;
 }
 
-/** @param {Tool} t */
-function renderDuplicateItem(t) {
-	const title = t.title || t.name;
-	const maintainer = t.maintainer || (t.authors && t.authors[0]) || "Unknown maintainer";
+/** @param {Tool} tool */
+function renderDuplicateItem(tool) {
+	const title = tool.title || tool.name;
+	const maintainer =
+		tool.maintainer || (tool.authors && tool.authors[0]) || t("toolforms.unknownMaintainer", "Unknown maintainer");
 	return `<li class="dupes__item">
-		<a href="${esc(toolHref(t.name))}">
+		<a href="${esc(toolHref(tool.name))}">
 			<span class="dupes__name"${dirAttrs(title)}>${esc(title)}</span>
-			<span class="dupes__meta">by <span${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>
+			<span class="dupes__meta">${t("toolforms.by", "by")} <span${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>
 		</a>
 	</li>`;
 }
@@ -219,28 +220,28 @@ export async function viewToolForm(name) {
 	const isCrawler = editing && crawlerOwned;
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">← Back</a>
-		<h1 class="page__title">${editing ? "Edit tool" : "Submit a tool"} <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Changes are saved only in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.
+		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
+		<h1 class="page__title">${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
+		<p class="page__intro">${t("toolforms.introSaved", "Changes are saved only in this browser — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.
 		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
 		<form data-tool-form novalidate>
-			<h2 class="le__h2">Core information</h2>
-			${editing ? `<p class="le__ro">Name: <code>${esc(name)}</code></p>` : fInput("Name (unique id)", "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: "Stable lowercase id used in Toolhub URLs; it cannot be changed later." })}
-			${fInput("Title", "tf-title", cur.title, { req: true, hint: "Short public name shown in search results and tool pages." })}
-			${fArea("Description", "tf-desc", cur.description, "One or two useful sentences: what it does, who it helps, and when to use it.")}
-			${fInput("URL", "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: "Primary place people launch the tool or read its documentation." })}
-			${fInput("Source code repository", "tf-repo", cur.repository, { type: "url", hint: "Optional public repository where contributors can inspect or patch the code." })}
-			${fInput("License (SPDX id)", "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: "Use an SPDX identifier when known; leave blank if the license is unknown." })}
-			${fSelect("Tool type", "tf-type", cur.toolType, TOOL_TYPES, { hint: "Choose the closest match; community annotations can refine discovery later." })}
-			${fInput("Keywords (comma-separated)", "tf-keywords", toCsv(cur.keywords), { hint: "Search terms people may try; avoid repeating only the title." })}
+			<h2 class="le__h2">${t("toolforms.coreInformation", "Core information")}</h2>
+			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code></p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}
+			${fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") })}
+			${fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it."))}
+			${fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") })}
+			${fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") })}
+			${fInput(t("toolforms.fieldLicense", "License (SPDX id)"), "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: t("toolforms.fieldLicenseHint", "Use an SPDX identifier when known; leave blank if the license is unknown.") })}
+			${fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") })}
+			${fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") })}
 			${editing ? "" : duplicateRegion()}
-			${fInput("Works on wikis (comma-separated, * for all)", "tf-wikis", toCsv(cur.forWikis), { hint: "Use wiki database names such as enwiki or commonswiki, or * for all wikis." })}
-			${fInput("Available UI languages (comma-separated codes)", "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: "BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo." })}
-			<div class="le__checks">${fCheck("Deprecated", "tf-deprecated", cur.deprecated)}${fCheck("Experimental", "tf-experimental", cur.experimental)}</div>
+			${fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki database names such as enwiki or commonswiki, or * for all wikis.") })}
+			${fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.") })}
+			<div class="le__checks">${fCheck(t("toolforms.fieldDeprecated", "Deprecated"), "tf-deprecated", cur.deprecated)}${fCheck(t("toolforms.experimentalBadge", "Experimental"), "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
-				${button(editing ? "Save changes" : "Submit tool", { variant: "primary", type: "submit" })}
-				${editing && !isNewTool(name) ? button("Revert demo edits", { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) : ""}
-				${editing && isNewTool(name) ? button("Delete submission", { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
+				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Submit tool"), { variant: "primary", type: "submit" })}
+				${editing && !isNewTool(name) ? button(t("toolforms.revertDemoEdits", "Revert demo edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) : ""}
+				${editing && isNewTool(name) ? button(t("toolforms.deleteSubmission", "Delete submission"), { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
 			</div>
 		</form>
 	</div>`;
@@ -251,8 +252,13 @@ export async function viewToolForm(name) {
 				url = fieldValue("tf-url"),
 				desc = fieldValue("tf-desc");
 			const tname = editing ? name : fieldValue("tf-name");
-			const invalidUrl = validateHttpField("tf-url", "Enter a valid http(s) URL.", { required: true });
-			const invalidRepo = validateHttpField("tf-repo", "Enter a valid http(s) repository URL.");
+			const invalidUrl = validateHttpField("tf-url", t("toolforms.errInvalidUrl", "Enter a valid http(s) URL."), {
+				required: true
+			});
+			const invalidRepo = validateHttpField(
+				"tf-repo",
+				t("toolforms.errInvalidRepoUrl", "Enter a valid http(s) repository URL.")
+			);
 			if (!tname || !title) {
 				/** @type {HTMLElement} */ ($(editing ? "#tf-title" : "#tf-name")).focus();
 				return;
@@ -262,7 +268,7 @@ export async function viewToolForm(name) {
 				return;
 			}
 			if (!editing && isNewTool(tname)) {
-				setFieldError("tf-name", "A demo tool with that name already exists.");
+				setFieldError("tf-name", t("toolforms.errDuplicateName", "A demo tool with that name already exists."));
 				/** @type {HTMLElement} */ ($("#tf-name")).focus();
 				return;
 			}
@@ -314,7 +320,11 @@ export async function viewToolForm(name) {
 		clearHttpErrorWhenValid("tf-repo");
 		if (!editing) setupDuplicateSuggestions();
 	}
-	return { title: `${editing ? "Edit tool" : "Submit a tool"} — Toolhub`, html, mount };
+	return {
+		title: `${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} — Toolhub`,
+		html,
+		mount
+	};
 }
 
 // EXPERIMENTAL — add/remove tools: submissions + crawler-URL register + JSON ingest.
@@ -325,44 +335,47 @@ export function viewAddTools() {
 			? u
 					.map(
 						(/** @type {{ url: string }} */ x) =>
-							`<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"` })}</li>`
+							`<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"` })}</li>`
 					)
 					.join("")
-			: '<li class="le__empty">No URLs registered.</li>';
+			: `<li class="le__empty">${t("toolforms.noUrls", "No URLs registered.")}</li>`;
 	}
 	function subGrid() {
 		const cards = /** @type {Tool[]} */ (Object.keys(toolNewMap()).map((n) => newToolBase(n)));
 		return cards.length > 0
 			? grid("grid-tools", cards, (/** @type {Tool} */ t) => toolCard(t))
-			: '<p class="empty">No tools yet. Submit one above, or ingest sample toolinfo.</p>';
+			: `<p class="empty">${t("toolforms.noToolsYet", "No tools yet. Submit one above, or ingest sample toolinfo.")}</p>`;
 	}
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-	const registerBtn = button("Register", { variant: "outline", type: "submit" });
+	const registerBtn = button(t("toolforms.register", "Register"), { variant: "outline", type: "submit" });
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-	const loadSampleBtn = button("Load sample", { variant: "outline", attrs: "data-sample" });
+	const loadSampleBtn = button(t("toolforms.loadSample", "Load sample"), {
+		variant: "outline",
+		attrs: "data-sample"
+	});
 	const html = `
 	<div class="container page at">
-		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
-			${button("Submit a tool", { variant: "primary", href: "/tools/create", icon: "add" })}</div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
-		Everything stays in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		<div class="section-head"><h1 class="page__title">${t("toolforms.addOrRemoveTools", "Add or remove tools")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
+			${button(t("toolforms.submitATool", "Submit a tool"), { variant: "primary", href: "/tools/create", icon: "add" })}</div>
+		<p class="page__intro">${t("toolforms.ingestIntroLead", "Register a")} <code>toolinfo.json</code> ${t("toolforms.ingestIntroTail", "URL, or paste/ingest toolinfo to add records.")}
+		${t("toolforms.introEverything", "Everything stays in this browser — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 
-		<h2 class="le__h2">Register a toolinfo.json URL</h2>
+		<h2 class="le__h2">${t("toolforms.registerUrlTitle", "Register a toolinfo.json URL")}</h2>
 		<form class="le__add" data-url-form novalidate>
-			${fInput("toolinfo.json URL", "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: "Full public URL the crawler should re-read, usually ending in toolinfo.json." })}
+			${fInput(t("toolforms.fieldToolinfoUrl", "toolinfo.json URL"), "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: t("toolforms.fieldToolinfoUrlHint", "Full public URL the crawler should re-read, usually ending in toolinfo.json.") })}
 			${registerBtn}
 		</form>
 		<ul class="at__urls" data-url-list>${urlRows()}</ul>
 
-		<h2 class="le__h2">Ingest toolinfo</h2>
-		${fArea("Toolinfo JSON", "at-json", "", "Paste one tool object or an array; successful entries appear below in Your tools.", { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
+		<h2 class="le__h2">${t("toolforms.ingestToolinfoTitle", "Ingest toolinfo")}</h2>
+		${fArea(t("toolforms.fieldToolinfoJson", "Toolinfo JSON"), "at-json", "", t("toolforms.fieldToolinfoJsonHint", "Paste one tool object or an array; successful entries appear below in Your tools."), { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
 		<div class="le__actions">
-			${button("Ingest", { variant: "primary", attrs: "data-ingest" })}
+			${button(t("toolforms.ingest", "Ingest"), { variant: "primary", attrs: "data-ingest" })}
 			${loadSampleBtn}
 		</div>
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
-		<h2 class="le__h2">Your tools <span class="le__count" data-sub-count></span></h2>
+		<h2 class="le__h2">${t("toolforms.yourToolsTitle", "Your tools")} <span class="le__count" data-sub-count></span></h2>
 		<div data-sub-grid>${subGrid()}</div>
 	</div>`;
 	function mount() {
@@ -370,7 +383,10 @@ export function viewAddTools() {
 			e.preventDefault();
 			// Stryker disable next-line MethodExpression: #at-url is a type="url" input, which strips surrounding whitespace, so the value is already trimmed — equivalent.
 			const u = /** @type {HTMLInputElement} */ ($input("#at-url")).value.trim();
-			const invalidUrl = validateHttpField("at-url", "Enter a valid http(s) toolinfo URL.");
+			const invalidUrl = validateHttpField(
+				"at-url",
+				t("toolforms.errInvalidToolinfoUrl", "Enter a valid http(s) toolinfo URL.")
+			);
 			if (invalidUrl) {
 				invalidUrl.focus();
 				return;
@@ -400,19 +416,26 @@ export function viewAddTools() {
 			}
 			const errors = res.errors || [];
 			const parts = [];
-			if (res.added) parts.push(`${res.added} added`);
-			if (res.updated) parts.push(`${res.updated} updated`);
+			if (res.added) parts.push(t("toolforms.nAdded", "{n} added", { n: res.added }));
+			if (res.updated) parts.push(t("toolforms.nUpdated", "{n} updated", { n: res.updated }));
 			out.className = `at__result${errors.length > 0 && parts.length === 0 ? " at__result--err" : " at__result--ok"}`;
 			out.textContent =
-				(parts.join(", ") || "Nothing ingested") + (errors.length > 0 ? ` · ${errors.join("; ")}` : "");
+				(parts.join(", ") || t("toolforms.nothingIngested", "Nothing ingested")) +
+				(errors.length > 0 ? ` · ${errors.join("; ")}` : "");
 			/** @type {HTMLElement} */ ($("[data-sub-grid]")).innerHTML = subGrid();
 			const c = $("[data-sub-count]");
 			// Stryker disable next-line ConditionalExpression: the [data-sub-count] element is always present in this view, so the guard is always true — defensive.
-			if (c) c.textContent = countLabel(Object.keys(toolNewMap()).length, "tool", "tools");
+			if (c) {
+				c.textContent = countLabel(
+					Object.keys(toolNewMap()).length,
+					t("toolforms.toolOne", "tool"),
+					t("toolforms.toolOther", "tools")
+				);
+			}
 		});
 		clearHttpErrorWhenValid("at-url");
 	}
-	return { title: "Add or remove tools — Toolhub", html, mount };
+	return { title: t("toolforms.addOrRemoveToolsDocTitle", "Add or remove tools — Toolhub"), html, mount };
 }
 
 // EXPERIMENTAL — edit a tool's COMMUNITY ANNOTATIONS (overlay on live record).
@@ -423,19 +446,18 @@ export async function viewAnnotationsEdit(name) {
 	const cur = fetched;
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${toolHref(name)}">← Back to ${esc(cur.title)}</a>
-		<h1 class="page__title">Edit annotations <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Community annotations enrich a tool without touching its core data. Saved only in
-		this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		<a class="back" href="${toolHref(name)}">${t("toolforms.backToName", "← Back to {title}", { title: esc(cur.title) })}</a>
+		<h1 class="page__title">${t("toolforms.editAnnotations", "Edit annotations")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
+		<p class="page__intro">${t("toolforms.annoIntro", "Community annotations enrich a tool without touching its core data. Saved only in\n\t\tthis browser — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 		<form data-anno-form>
-			<h2 class="le__h2">Community annotations for <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
-			${fInput("Audiences (comma-separated)", "an-aud", toCsv(cur.audiences), { hint: "User groups this tool serves, such as editors, admins, researchers, or developers." })}
-			${fInput("Tasks (comma-separated)", "an-tasks", toCsv(cur.tasks), { hint: "Workflows this tool supports, such as editing, patrolling, importing, or analysis." })}
-			${fSelect("Tool type", "an-type", cur.toolType, TOOL_TYPES, { hint: "Community classification used for discovery when core metadata is sparse." })}
-			${fInput("Icon (Commons File: URL)", "an-icon", cur.icon, { type: "url", hint: "Optional Commons-hosted image URL for visual identification." })}
+			<h2 class="le__h2">${t("toolforms.annoForTitle", "Community annotations for")} <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
+			${fInput(t("toolforms.fieldAudiences", "Audiences (comma-separated)"), "an-aud", toCsv(cur.audiences), { hint: t("toolforms.fieldAudiencesHint", "User groups this tool serves, such as editors, admins, researchers, or developers.") })}
+			${fInput(t("toolforms.fieldTasks", "Tasks (comma-separated)"), "an-tasks", toCsv(cur.tasks), { hint: t("toolforms.fieldTasksHint", "Workflows this tool supports, such as editing, patrolling, importing, or analysis.") })}
+			${fSelect(t("toolforms.fieldToolType", "Tool type"), "an-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldAnnoToolTypeHint", "Community classification used for discovery when core metadata is sparse.") })}
+			${fInput(t("toolforms.fieldIcon", "Icon (Commons File: URL)"), "an-icon", cur.icon, { type: "url", hint: t("toolforms.fieldIconHint", "Optional Commons-hosted image URL for visual identification.") })}
 			<div class="le__actions">
-				${button("Save annotations", { variant: "primary", type: "submit" })}
-				${toolAnnosMap()[name] ? button("Revert annotations", { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
+				${button(t("toolforms.saveAnnotations", "Save annotations"), { variant: "primary", type: "submit" })}
+				${toolAnnosMap()[name] ? button(t("toolforms.revertAnnotations", "Revert annotations"), { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
 			</div>
 		</form>
 	</div>`;
@@ -464,5 +486,5 @@ export async function viewAnnotationsEdit(name) {
 			});
 		}
 	}
-	return { title: `Edit annotations — Toolhub`, html, mount };
+	return { title: `${t("toolforms.editAnnotations", "Edit annotations")} — Toolhub`, html, mount };
 }

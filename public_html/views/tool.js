@@ -175,7 +175,9 @@ export async function viewTool(name) {
 		wikidataChip(tool.wikidata),
 		...(signedIn()
 			? [
-					isNewTool(name) ? `<span class="exp-badge">${t("tool.demoSubmissionBadge", "Demo submission")}</span>` : "",
+					isNewTool(name)
+						? `<span class="exp-badge">${t("tool.demoSubmissionBadge", "Demo submission")}</span>`
+						: "",
 					tool.edited ? `<span class="exp-badge">${t("tool.editedDemoBadge", "Edited · demo")}</span>` : "",
 					tool.annotated
 						? `<span class="exp-badge">${t("tool.annotatedDemoBadge", "Community annotations · demo")}</span>`
