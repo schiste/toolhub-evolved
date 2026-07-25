@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { pickLocalized } from "./i18n.js";
+import { pickLocalized, t } from "./i18n.js";
 import { expOn, signedIn, USER } from "./session.js";
 import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
 import { synthViews } from "./synth.js";
@@ -220,6 +220,12 @@ export function pick(core, annotation, fallback) {
 	if (hasValue(annotation)) return /** @type {T} */ (annotation);
 	return fallback;
 }
+/* Called lazily (not a module-level constant) so a locale catalog installed at
+   boot is picked up. Named helper because normalizeTool's raw-record param is
+   `t`, which shadows the i18n t() inside that function body. */
+function unknownMaintainer() {
+	return t("api.unknownMaintainer", "Unknown");
+}
 /**
  * Raw author records from the upstream API are heterogeneous (string | object |
  * null), so `a` is typed `any` here.
@@ -270,7 +276,7 @@ export function normalizeTool(t) {
 		url: pick(t.url, ann.url, ""),
 		icon: pick(t.icon, ann.icon, null),
 		keywords: t.keywords || [],
-		maintainer: authors[0] || (t.created_by && t.created_by.username) || "Unknown",
+		maintainer: authors[0] || (t.created_by && t.created_by.username) || unknownMaintainer(),
 		authors,
 		authorObjs,
 		wikidata: pick(t.wikidata_qid, ann.wikidata_qid, null),
@@ -337,7 +343,7 @@ export function normalizeList(l) {
 	const tools = /** @type {any[]} */ (l.tools || []).map((tool) => normalizeTool(tool));
 	return {
 		id: l.id,
-		title: l.title || "Untitled list",
+		title: l.title || t("api.untitledList", "Untitled list"),
 		description: l.description || "",
 		toolCount: tools.length,
 		tools,
