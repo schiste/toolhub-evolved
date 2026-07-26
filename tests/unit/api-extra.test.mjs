@@ -158,6 +158,21 @@ test("apiFetch dedupes concurrent requests for the same url", async () => {
 	assert.equal(calls, 1);
 });
 
+test("clearApiCache evicts cached GET data", async () => {
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return { ok: true, json: async () => ({ calls }) };
+	};
+	const first = await api.apiGet("/cache-clear/");
+	const cached = await api.apiGet("/cache-clear/");
+	api.clearApiCache();
+	const refreshed = await api.apiGet("/cache-clear/");
+	assert.equal(first.calls, 1);
+	assert.equal(cached.calls, 1);
+	assert.equal(refreshed.calls, 2);
+});
+
 // ----------------------------------------------------------------- paginate
 function pageFetch(pages) {
 	// pages: map of page-number -> { results, next }

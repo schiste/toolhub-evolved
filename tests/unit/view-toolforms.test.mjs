@@ -951,6 +951,20 @@ test("mount addtools: signed-in URL registration stores the official crawler id"
 	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
 });
 
+test("mount addtools: rejected official URL registration keeps a local URL", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("upstream refused"));
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([{ url: "https://added.example/toolinfo.json" }]);
+	setVal("at-url", "https://added.example/toolinfo.json");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["https://added.example/toolinfo.json"]);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("upstream refused"));
+});
+
 test("mount addtools: invalid url is rejected (focused, not added)", () => {
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
@@ -981,6 +995,36 @@ test("mount addtools: removing a url updates the list", () => {
 		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
 	assert.ok(document.querySelector("[data-url-list]").innerHTML.includes("No URLs registered."));
+});
+
+test("mount addtools: removing an official url asks Toolhub to delete it", () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([{ url: "https://x.example/toolinfo.json", id: 12 }]);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([]);
+	document
+		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
+		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/crawler/urls/12/"]);
+	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
+});
+
+test("mount addtools: failed official url delete still removes the local url", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("delete failed"));
+	h.crawlerUrls.mockReturnValue([{ url: "https://x.example/toolinfo.json", id: 12 }]);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([]);
+	document
+		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
+		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/crawler/urls/12/"]);
+	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
 });
 
 test("mount addtools: url-list click outside a remove button is a no-op", () => {

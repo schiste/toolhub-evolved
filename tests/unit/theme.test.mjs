@@ -185,3 +185,15 @@ test("initTheme tolerates a media query lacking listener APIs", () => {
 	assert.equal(document.documentElement.getAttribute("data-theme"), "light");
 	assert.equal(darkMQMock._listeners.length, 0);
 });
+
+test("initTheme returns cleanly when matchMedia is unavailable at module load", async () => {
+	const saved = window.matchMedia;
+	delete window.matchMedia;
+	try {
+		const noMqTheme = await import("../../public_html/lib/core/theme.js?no-match-media");
+		noMqTheme.initTheme();
+		assert.equal(document.documentElement.getAttribute("data-theme"), "light");
+	} finally {
+		window.matchMedia = saved;
+	}
+});

@@ -79,6 +79,17 @@ test("toolsByAuthor keeps the requested name and empty profile when nothing matc
 	assert.deepEqual(entry.profile, {});
 });
 
+test("toolsByAuthor matches legacy plain author names", async () => {
+	const payload = {
+		next: null,
+		results: [{ name: "legacy", authors: ["Ada Legacy"] }]
+	};
+	const entry = await withFetch(payload, () => authorIndex.toolsByAuthor("Ada Legacy"));
+	assert.equal(entry.name, "Ada Legacy");
+	assert.equal(entry.tools.length, 1);
+	assert.deepEqual(entry.profile, {});
+});
+
 test("toolsByAuthor recovers from a pagination failure with an empty tool list", async () => {
 	// A null record makes the per-item map (normalizeTool) throw, rejecting paginate;
 	// toolsByAuthor's .catch(() => []) then yields an empty entry.

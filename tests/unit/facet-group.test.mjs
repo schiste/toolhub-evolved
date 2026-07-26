@@ -42,6 +42,11 @@ test("renderFacetGroup() empty when param meta is missing", () => {
 	assert.equal(renderFacetGroup(G, facets, new Set()), "");
 });
 
+test("renderFacetGroup() empty when bucket data is missing", () => {
+	const facets = { _filter_tool_type: { tool_type: { meta: { param: "p" } } } };
+	assert.equal(renderFacetGroup(G, facets, new Set()), "");
+});
+
 test("renderFacetGroup() empty when all buckets are filtered out", () => {
 	const facets = {
 		_filter_tool_type: {

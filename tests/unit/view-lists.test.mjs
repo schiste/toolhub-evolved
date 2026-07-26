@@ -542,6 +542,19 @@ test("viewListEdit missing source → viewNotFound", async () => {
 	assert.deepEqual(r, viewNotFound());
 });
 
+test("viewListEdit live 404 → viewNotFound", async () => {
+	h.demoListGet.mockReturnValue(null);
+	h.apiGet.mockRejectedValue(new ApiError(404, "/api/lists/gone/"));
+	const r = await lists.viewListEdit("gone");
+	assert.deepEqual(r, viewNotFound());
+});
+
+test("viewListEdit live non-404 errors bubble to the app error boundary", async () => {
+	h.demoListGet.mockReturnValue(null);
+	h.apiGet.mockRejectedValue(new ApiError(503, "/api/lists/down/"));
+	await assert.rejects(lists.viewListEdit("down"), /API 503/);
+});
+
 /* ---------------- viewListEdit mount ---------------- */
 
 function mountEdit(id, src) {

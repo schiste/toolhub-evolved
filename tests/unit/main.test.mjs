@@ -8,6 +8,7 @@ import { test, vi, beforeAll } from "vitest";
 // (a fresh module instance that still shares the singleton mocks) and assert it never throws.
 import * as session from "../../public_html/lib/core/session.js";
 import * as i18n from "../../public_html/lib/core/i18n.js";
+import * as api from "../../public_html/lib/core/api.js";
 import * as theme from "../../public_html/lib/core/theme.js";
 import * as store from "../../public_html/lib/core/store.js";
 import * as serversync from "../../public_html/lib/core/serversync.js";
@@ -27,7 +28,16 @@ vi.mock("../../public_html/lib/core/session.js", async (o) => ({
 	setAuthRender: vi.fn(),
 	setExpStored: vi.fn()
 }));
-vi.mock("../../public_html/lib/core/i18n.js", async (o) => ({ ...(await o()), applyLocaleAttrs: vi.fn() }));
+vi.mock("../../public_html/lib/core/api.js", async (o) => ({
+	...(await o()),
+	backendGetJson: vi.fn(() => Promise.resolve(null))
+}));
+vi.mock("../../public_html/lib/core/i18n.js", async (o) => ({
+	...(await o()),
+	applyLocaleAttrs: vi.fn(),
+	setLocale: vi.fn(),
+	setMessages: vi.fn()
+}));
 vi.mock("../../public_html/lib/core/theme.js", async (o) => ({
 	...(await o()),
 	initTheme: vi.fn(),
@@ -454,6 +464,22 @@ test("#langpicker: the button toggles the menu; a language shows the not-yet not
 	assert.equal(langpicker.closeLangMenu.mock.calls.length, 0);
 });
 
+test("#langpicker: an available language persists selection and reloads", () => {
+	vi.clearAllMocks();
+	const opt = $("#langpicker [data-lang]");
+	opt.setAttribute("data-lang", "en");
+	const reloadSpy = vi.spyOn(window.location, "reload").mockImplementation(() => {});
+	try {
+		click(opt);
+		assert.deepEqual(i18n.setLocale.mock.calls[0], ["en"]);
+		assert.equal(reloadSpy.mock.calls.length, 1);
+		assert.equal(langpicker.showLangNote.mock.calls.length, 0);
+	} finally {
+		opt.setAttribute("data-lang", "");
+		reloadSpy.mockRestore();
+	}
+});
+
 test("a document click outside the language picker closes it", () => {
 	vi.clearAllMocks();
 	click($("#view")); // outside #langpicker
@@ -577,5 +603,56 @@ test("main imports without throwing when optional elements are absent", async ()
 	} finally {
 		window.matchMedia = savedMM;
 		document.body.innerHTML = SHELL; // restore for any later use
+	}
+});
+
+test("main boot fetches and installs a stored non-English message catalog", async () => {
+	vi.clearAllMocks();
+	localStorage.setItem(i18n.LOCALE_KEY, "fr");
+	api.backendGetJson.mockResolvedValueOnce({ "app.title": "Catalogue" });
+	document.body.innerHTML = SHELL;
+	try {
+		await import("../../public_html/main.js?v=frboot");
+		await Promise.resolve();
+		assert.deepEqual(api.backendGetJson.mock.calls[0], ["/i18n/fr.json"]);
+		assert.deepEqual(i18n.setMessages.mock.calls[0], [{ "app.title": "Catalogue" }]);
+		assert.equal(account.renderAccount.mock.calls.length > 0, true);
+		assert.equal(account.syncSubmitButton.mock.calls.length > 0, true);
+		assert.equal(router.render.mock.calls.length > 0, true);
+	} finally {
+		localStorage.removeItem(i18n.LOCALE_KEY);
+		document.body.innerHTML = SHELL;
+	}
+});
+
+test("main boot ignores a failed stored-locale catalog fetch", async () => {
+	vi.clearAllMocks();
+	localStorage.setItem(i18n.LOCALE_KEY, "fr");
+	api.backendGetJson.mockRejectedValueOnce(new Error("catalog down"));
+	document.body.innerHTML = SHELL;
+	try {
+		await import("../../public_html/main.js?v=frboot-fail");
+		await Promise.resolve();
+		assert.deepEqual(api.backendGetJson.mock.calls[0], ["/i18n/fr.json"]);
+		assert.equal(i18n.setMessages.mock.calls.length, 0);
+	} finally {
+		localStorage.removeItem(i18n.LOCALE_KEY);
+		document.body.innerHTML = SHELL;
+	}
+});
+
+test("main boot skips message install when a stored-locale catalog is empty", async () => {
+	vi.clearAllMocks();
+	localStorage.setItem(i18n.LOCALE_KEY, "fr");
+	api.backendGetJson.mockResolvedValueOnce(null);
+	document.body.innerHTML = SHELL;
+	try {
+		await import("../../public_html/main.js?v=frboot-empty");
+		await Promise.resolve();
+		assert.deepEqual(api.backendGetJson.mock.calls[0], ["/i18n/fr.json"]);
+		assert.equal(i18n.setMessages.mock.calls.length, 0);
+	} finally {
+		localStorage.removeItem(i18n.LOCALE_KEY);
+		document.body.innerHTML = SHELL;
 	}
 });

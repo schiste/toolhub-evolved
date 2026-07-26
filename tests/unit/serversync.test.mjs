@@ -132,6 +132,12 @@ test("officialWrite uses the authenticated session CSRF token", async () => {
 	session.applyExp(false);
 });
 
+test("officialWrite rejects before a Toolhub session is established", async () => {
+	const { serversync } = await load();
+	assert.equal(serversync.officialWriteAvailable(), false);
+	assert.throws(() => serversync.officialWrite("POST", "/v1/toolhub/tools/", { name: "x" }), /sign-in is required/);
+});
+
 test("push failures are swallowed; later pushes still run", async () => {
 	const { serversync, store, session } = await load();
 	const calls = mockFetch({
