@@ -79,7 +79,7 @@ function clearHttpErrorWhenValid(id) {
 
 /** @param {string} value */
 function isOfficialWikiTarget(value) {
-	return /^(\*|(.*)?\.?(mediawiki|wiktionary|wiki(pedia|quote|books|source|news|versity|data|voyage|media))\.org)$/i.test(
+	return /^(\*|(.*)?\.?(mediawiki|wikibooks|wikidata|wikimedia|wikinews|wikipedia|wikiquote|wikisource|wiktionary|wikiversity|wikivoyage)\.org)$/i.test(
 		value
 	);
 }
