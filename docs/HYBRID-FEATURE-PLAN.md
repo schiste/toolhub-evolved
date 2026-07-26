@@ -15,6 +15,9 @@ The product model is deliberately hybrid:
   metadata.
 - Every Evolved-owned datum must carry provenance so the UI can distinguish
   official Toolhub data from Evolved-local data.
+- Production launch requires a clean data surface: no fixtures, mock records,
+  browser-local demo writes, deterministic fake metrics, or placeholder media
+  may remain in the user-facing production experience.
 
 ## Current Backend Baseline
 
@@ -72,6 +75,20 @@ These are prerequisites before expanding any feature deeply.
     - Keep OAuth tokens encrypted or otherwise protected at rest before broader
       production use.
 
+5. **Production cleanliness**
+    - Inventory every fixture, mock helper, deterministic synthetic generator,
+      placeholder asset, and browser-local demo write path.
+    - Remove them from the production bundle or guard them so they are available
+      only in tests/local development, never on Toolforge production.
+    - Replace synthetic metrics with real Evolved-owned backend data before
+      showing them in production; if the real source is not ready, remove or
+      hide the feature instead of shipping fake numbers.
+    - Remove signed-out mutation flows. Signed-out users can read live Toolhub
+      data; any create/update/delete action must require Toolhub sign-in.
+    - Add CI checks that fail on production-facing "mock", "fixture", "demo
+      data", placeholder media, and deterministic metric paths outside
+      test/dev-only files.
+
 ## Feature-By-Feature Plan
 
 ### 1. Toolhub Sign-In
@@ -101,8 +118,10 @@ Current: clears browser-local demo keys.
 
 Make it fully real:
 
-- Keep "Reset demo data" for signed-out browser-local mode.
-- Add separate signed-in actions:
+- Remove "Reset demo data" from production because production must not create
+  demo data.
+- Keep any fixture reset helper only in local development or tests.
+- Add signed-in production account/data actions:
     - clear browser cache and pull fresh server overlay;
     - delete selected Evolved-local data from the server;
     - disconnect Toolhub OAuth.
@@ -120,6 +139,8 @@ stores names locally.
 
 Make it fully real:
 
+- Remove signed-out favorite writes from production; prompt users to sign in
+  with Toolhub instead.
 - Treat official Toolhub favorite state as canonical after a successful write.
 - Keep `favorites` as a local optimistic cache and offline/error fallback.
 - Pull official favorites on login where Toolhub exposes them; reconcile with
@@ -263,7 +284,8 @@ Current: deterministic pseudo-random number derived from tool name.
 
 Make it fully real:
 
-- Replace synthetic counts with Evolved-owned aggregate metrics.
+- Remove deterministic synthetic counts from production.
+- Replace them with Evolved-owned aggregate metrics.
 - Count privacy-preserving interactions on this site:
     - tool detail views;
     - search result clicks;
@@ -285,6 +307,7 @@ Current: deterministic health pill per tool.
 
 Make it fully real:
 
+- Remove deterministic health states from production.
 - Add a health target model separate from official Toolhub data.
 - Default target can be the tool URL, but support maintainer-provided health
   URLs in Evolved.
@@ -305,6 +328,7 @@ Current: deterministic thanks count per tool.
 
 Make it fully real:
 
+- Remove deterministic thanks counts from production.
 - Add authenticated "thanks" events stored in Evolved.
 - Enforce one active thanks per user/tool, with optional undo.
 - Aggregate counts per tool and show "thanks on Evolved".
@@ -323,6 +347,7 @@ Current: deterministic per-tool usage number.
 
 Make it fully real:
 
+- Remove deterministic usage numbers from production.
 - Reframe the metric as "30-day Evolved usage" unless an official source is
   later provided.
 - Use the same privacy-preserving event stream as popularity.
@@ -342,6 +367,7 @@ Current: static placeholder strip.
 
 Make it fully real:
 
+- Remove placeholder screenshot strips from production.
 - Add media records for screenshots owned by Evolved, not Toolhub.
 - Support upload or URL-based capture only with explicit license/source fields.
 - Store files on Toolforge storage or another approved Wikimedia-compatible
@@ -359,6 +385,10 @@ Evolved-only backend data:
 
 ### Phase 0: Data Contract Hardening
 
+- Remove or test/dev-guard all production-facing fixtures, mock data, demo write
+  paths, deterministic metrics, and placeholder media.
+- Add a CI cleanliness check that blocks new production-facing fixture/mock/demo
+  data.
 - Add provenance and sync-status columns to existing local tables.
 - Add structured activity events and migrate existing `activity` rows if needed.
 - Keep the backend data register in `docs/RUNBOOK.md` current.
@@ -389,7 +419,8 @@ Evolved-only backend data:
 ### Phase 4: Real Signals
 
 - Implement event collection with privacy constraints.
-- Replace synthetic popularity and 30-day usage with aggregates.
+- Replace synthetic popularity and 30-day usage with aggregates, or keep the
+  features hidden until real aggregates exist.
 - Add thanks events and aggregate counts.
 - Add health targets/checks and replace deterministic health.
 

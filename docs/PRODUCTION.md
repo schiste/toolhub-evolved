@@ -50,7 +50,9 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   limiting, the `/v1` overlay API, `/v1/toolhub/*` official write bridge,
   `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed.
 - **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
-  write-through cache of the server overlay; demo mode intact when signed out.
+  write-through cache of the server overlay; the remaining signed-out demo write
+  paths are temporary and must be removed or test/dev-guarded before clean
+  production launch.
 - **Crawler** (`proxy/crawl.py` + `jobs.yaml`): scheduled ingest of registered
   toolinfo URLs, upstream-name dedupe, per-run history.
 - **Ops**: nightly DB backup + rotation, `docs/RUNBOOK.md`.
@@ -61,10 +63,11 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   were already fixed in code.
 
 Still open before a public launch: register the Toolhub OAuth application +
-ToolsDB and run through the runbook once for real; obtain actual translations
-(the mechanism ships English-only catalogs); the long-term card-as-link a11y
-refactor; the privacy-policy rewrite for server-side accounts and stored OAuth
-grants (P6).
+ToolsDB and run through the runbook once for real; remove all production-facing
+fixtures, mock data, demo writes, deterministic fake metrics, and placeholder
+media; obtain actual translations (the mechanism ships English-only catalogs);
+the long-term card-as-link a11y refactor; the privacy-policy rewrite for
+server-side accounts and stored OAuth grants (P6).
 
 ## 1. Product architecture — "live base + local overlay + official bridge"
 
@@ -133,17 +136,18 @@ The architecture avoids creating a second canonical catalog:
 Small, because the pivot was designed in:
 
 - **`demoApi` → real API.** The write adapter's mode flag flips: `post/put/delete`
-  call `/v1/*`; `localStorage` mode remains available for local dev and as the
-  logged-out preview mode if we want to keep it.
+  call `/v1/*`; `localStorage` mutation mode remains available only for tests
+  and local development, not production.
 - **Mock identity → real session.** The identity picker becomes "Sign in with
   Toolhub"; Toolhub OAuth stores a server-side grant and `GET /v1/user/` drives
-  the account menu. Logged-out users get the live read interface plus
-  browser-local demo mode.
+  the account menu. Logged-out users get the live read interface, with
+  create/update/delete actions prompting Toolhub sign-in.
 - **The Evolved feature toggle documents the hybrid boundary.** Some additions
-  are real signed-in write paths through Toolhub OAuth; others are local drafts,
-  fallback overlays, or synthetic signals. The banner, feature-status page, and
-  _Rules of Engagement_ page explain what is live from Toolhub, what is stored
-  in Evolved, where user data goes, and which signals remain synthetic.
+  are real signed-in write paths through Toolhub OAuth; others are local drafts
+  or fallback overlays. The banner, feature-status page, and _Rules of
+  Engagement_ page explain what is live from Toolhub and what is stored in
+  Evolved. Synthetic signals do not ship to clean production; they are replaced
+  with real Evolved-owned backend data or hidden.
 - **Search UI** gains a provenance facet (Toolhub / registered here) driven by
   the federated search.
 
@@ -276,7 +280,7 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
 | Upstream API changes/outage breaks the base catalog                    | Already-graceful "couldn't load live data" states; proxy TTL cache absorbs blips; contract tests vs. `/api/schema/` in CI |
 | Community perception (unofficial service using Toolhub data and OAuth) | Early, explicit outreach to maintainers; honest naming; GPL-3.0 code; cached, identified API use; clear write attribution |
 | Solo-maintainer ops burden                                             | Everything scripted and in-repo (deploy, jobs, migrations, backups); external uptime alerting; runbook                    |
-| Toolhub OAuth application setup blocks write flows                     | Register the OAuth application before launch; keep read/demo mode working when OAuth is unconfigured                      |
+| Toolhub OAuth application setup blocks write flows                     | Register the OAuth application before launch; keep read-only mode working when OAuth is unconfigured                      |
 | ToolsDB/ES quota limits                                                | Federated-search fallback needs no ES; quota requests early with load estimates                                           |
 | Spam/abuse once writes are real                                        | Wikimedia-account gate, rate limits, audit log, admin delete path; new-account throttle if needed                         |
 
@@ -285,7 +289,8 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
 - Replacing or upstreaming into the official Toolhub frontend (a separate
   endeavor with a separate process — nothing here precludes it later).
 - Custom domain / off-Toolforge hosting (revisit only if Toolforge limits bite).
-- Real-time usage/health/pageview signals for _upstream_ tools — still not
-  obtainable; those stay labeled synthetic behind the toggle or are dropped.
+- Fake usage/health/pageview signals for _upstream_ tools. If real sources are
+  not obtainable, those features are dropped from production until they have
+  real Evolved-owned backend data.
 - Mirroring Toolhub's database or bypassing Toolhub permissions. Official writes
   must always go through Toolhub's API with the user's Toolhub OAuth grant.
