@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../core/dom.js";
-import { countLabel, t, views } from "../core/i18n.js";
+import { countLabel, t } from "../core/i18n.js";
 import { completeness, endorsementOf, fitsContext, freshness, getUserContext } from "../core/signals.js";
-import { synthHealth } from "../core/synth.js";
 import { icon } from "./icon.js";
 
 const STATUS_CLASSES = new Map([
@@ -36,15 +35,6 @@ export function statusBadge(t) {
 		label: "Healthy"
 	};
 	return t.deprecated || t.experimental ? statusMarkup(st) : "";
-}
-/** @param {Tool} t */
-export function healthBadge(t) {
-	const h = synthHealth(t.name);
-	return statusMarkup(h, "experimental");
-}
-/** @param {Tool} t */
-export function popularityBadge(t) {
-	return `<span class="views experimental">${icon("popular")} ${views(t.weeklyViews)}</span>`;
 }
 /** @param {number | null | undefined} count */
 export function endorsementChip(count) {

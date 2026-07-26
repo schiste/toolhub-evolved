@@ -4,7 +4,7 @@ import { t, updatedTimeTag } from "../core/i18n.js";
 import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
-import { completenessMeter, endorsementChip, fitChip, popularityBadge } from "../atoms/badges.js";
+import { completenessMeter, endorsementChip, fitChip } from "../atoms/badges.js";
 import { icon } from "../atoms/icon.js";
 import { wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
@@ -38,8 +38,7 @@ export function toolCard(tool, opts = {}) {
 	}
 	// (1,2,4) Calm footer-left: real tool type + "works on" facet (no colour noise).
 	const meta = [tool.toolType && esc(tool.toolType), esc(wikiShort(tool.forWikis))].filter(Boolean).join(" · ");
-	// EXPERIMENTAL — popularity (only the home "Popular" grid; shown when toggle on).
-	const footLeft = opts.popular ? popularityBadge(tool) : `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
+	const footLeft = `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
 	const complete = completeness(tool);
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	// `endorsement` (an {count,lists} object) is attached at runtime by signals.js but

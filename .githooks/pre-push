@@ -12,4 +12,5 @@ cd "$repo_root"
 npx eslint . --max-warnings 0
 npx prettier --check .
 npm run checks
+npm run clean:prod
 npm run features:docs:check

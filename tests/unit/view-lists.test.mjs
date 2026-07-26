@@ -64,7 +64,7 @@ vi.mock("../../public_html/lib/core/store.js", async (orig) => {
 	};
 });
 
-const { applyExp } = await import("../../public_html/lib/core/session.js");
+const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
 const { ApiError } = await import("../../public_html/lib/core/api.js");
 const lists = await import("../../public_html/views/lists.js");
 const { viewNotFound } = await import("../../public_html/views/static.js");
@@ -73,7 +73,7 @@ const S = {
 	detail_demo: `
 	<div class="container page">
 		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="exp-badge">Demo list</span> <span class="lcard__count">2 tools</span></h1><a class="btn btn--outline btn--md" href="/lists/demo-1/edit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m15.765 7.875-8.483 8.484a1 1 0 01-.253.184l-4.214 2.15-1.357-1.33L3.58 13.12q.073-.145.188-.26l8.48-8.48zm3.534-3.532-2.12 2.118-3.517-3.496 2.13-2.13z"/></svg> Edit list</a></div>
+		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="exp-badge">Evolved-local list</span> <span class="lcard__count">2 tools</span></h1><a class="btn btn--outline btn--md" href="/lists/demo-1/edit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m15.765 7.875-8.483 8.484a1 1 0 01-.253.184l-4.214 2.15-1.357-1.33L3.58 13.12q.073-.145.188-.26l8.48-8.48zm3.534-3.532-2.12 2.118-3.517-3.496 2.13-2.13z"/></svg> Edit list</a></div>
 		<div class="prose page__intro" dir="auto">demo desc</div>
 		<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
@@ -110,14 +110,14 @@ const S = {
 	detail_demo_emptytools: `
 	<div class="container page">
 		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title" dir="auto">Empty Demo <span class="exp-badge">Demo list</span> <span class="lcard__count">0 tools</span></h1></div>
+		<div class="section-head"><h1 class="page__title" dir="auto">Empty Demo <span class="exp-badge">Evolved-local list</span> <span class="lcard__count">0 tools</span></h1></div>
 		<div class="prose page__intro"></div>
 		<p class="empty">This list has no tools yet.</p>
 	</div>`,
 	detail_demo_out: `
 	<div class="container page">
 		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="exp-badge">Demo list</span> <span class="lcard__count">1 tool</span></h1></div>
+		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="exp-badge">Evolved-local list</span> <span class="lcard__count">1 tool</span></h1></div>
 		<div class="prose page__intro" dir="auto">demo desc</div>
 		<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
@@ -276,13 +276,13 @@ const S = {
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div>
-		<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
+		<p class="page__intro">Lists saved in Evolved as drafts, fallbacks, or local records — see
 		<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<ul class="card-grid grid-lists" role="list"><li>
 	<a class="lcard" href="/lists/demo-1" aria-label="Mine list, 2 tools">
 		<span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">M</span>
 		<div class="lcard__body">
-			<div class="lcard__title" dir="auto">Mine <span class="lcard__count">2 tools</span> <span class="exp-badge">Demo</span></div>
+			<div class="lcard__title" dir="auto">Mine <span class="lcard__count">2 tools</span> <span class="exp-badge">Local draft</span></div>
 			<div class="lcard__desc" dir="auto">d</div>
 		</div>
 	</a></li></ul>
@@ -291,7 +291,7 @@ const S = {
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div>
-		<p class="page__intro">Lists you've built in this demo. Stored only in this browser — see
+		<p class="page__intro">Lists saved in Evolved as drafts, fallbacks, or local records — see
 		<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<p class="empty">No lists yet. <a href="/lists/create">Create your first list</a>.</p>
 	</div>`,
@@ -311,7 +311,7 @@ const S = {
 	<a class="lcard" href="/lists/demo-1" aria-label="My Demo list, 1 tool">
 		<span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">M</span>
 		<div class="lcard__body">
-			<div class="lcard__title" dir="auto">My Demo <span class="lcard__count">1 tool</span> <span class="exp-badge">Demo</span></div>
+			<div class="lcard__title" dir="auto">My Demo <span class="lcard__count">1 tool</span> <span class="exp-badge">Local draft</span></div>
 			<div class="lcard__desc" dir="auto">mine</div>
 		</div>
 	</a></li><li>
@@ -379,6 +379,7 @@ function tool(name, o = {}) {
 beforeEach(() => {
 	localStorage.clear();
 	applyExp(false);
+	setServerUser(null);
 	document.body.innerHTML = "";
 	for (const fn of Object.values(h)) fn.mockReset();
 	h.paginate.mockResolvedValue([]);
@@ -408,6 +409,7 @@ test("viewLists signed out: live lists only", async () => {
 
 test("viewLists signed in: create button + demo lists first", async () => {
 	applyExp(true);
+	setServerUser("Grace Hopper");
 	h.apiGet.mockResolvedValue({ results: [RAW_LIST] });
 	h.demoLists.mockReturnValue([{ id: "demo-1", title: "My Demo", description: "mine", tools: [{ name: "x" }] }]);
 	const r = await lists.viewLists();
@@ -430,6 +432,7 @@ test("viewLists apiGet rejects → catch fallback empty", async () => {
 
 test("viewList demo, signed in: tag + edit button + tools", async () => {
 	applyExp(true);
+	setServerUser("Grace Hopper");
 	h.isDemoListId.mockReturnValue(true);
 	h.demoListGet.mockReturnValue({
 		id: "demo-1",
@@ -675,19 +678,17 @@ test("mount edit: non-Enter key does not search", async () => {
 	assert.equal(h.apiGet.mock.calls.length, 0);
 });
 
-test("mount edit: submit with title saves and navigates", () => {
+test("mount edit: submit without Toolhub sign-in is blocked", () => {
 	mountEdit("demo-1", { id: "demo-1", title: "Orig", description: "", tools: ["a"] });
 	document.querySelector("#le-title").value = "New Title";
 	document.querySelector("#le-desc").value = "New Desc";
 	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(h.demoListSave.mock.calls.length, 1);
-	assert.deepEqual(h.demoListSave.mock.calls[0][0], {
-		id: "demo-1",
-		title: "New Title",
-		description: "New Desc",
-		tools: ["a"]
-	});
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/demo-1"]);
+	assert.equal(h.demoListSave.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving lists."
+	);
 });
 
 test("mount create: signed-in submit publishes to official Toolhub first", async () => {
@@ -749,11 +750,15 @@ test("mount edit: submit with empty title focuses title and does not save", () =
 	assert.equal(document.activeElement, document.querySelector("#le-title"));
 });
 
-test("mount edit: delete button removes the list and navigates", () => {
+test("mount edit: delete without Toolhub sign-in is blocked", () => {
 	mountEdit("demo-1", { id: "demo-1", title: "T", description: "", tools: [] });
 	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-	assert.deepEqual(h.demoListDelete.mock.calls[0], ["demo-1"]);
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/my-lists"]);
+	assert.equal(h.demoListDelete.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving lists."
+	);
 });
 
 test("mount official edit: delete publishes to official Toolhub", async () => {

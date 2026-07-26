@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
 	getTool: vi.fn(),
 	isNewTool: vi.fn(),
 	apiGet: vi.fn(),
+	backendGetJson: vi.fn(),
+	serverWrite: vi.fn(),
 	egoGraph: vi.fn(),
 	listMemberships: vi.fn(),
 	getSimilarityIndex: vi.fn(),
@@ -22,7 +24,17 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, getTool: h.getTool, isNewTool: h.isNewTool, apiGet: h.apiGet };
+	return {
+		...actual,
+		getTool: h.getTool,
+		isNewTool: h.isNewTool,
+		apiGet: h.apiGet,
+		backendGetJson: h.backendGetJson
+	};
+});
+vi.mock("../../public_html/lib/core/serversync.js", async (orig) => {
+	const actual = await orig();
+	return { ...actual, serverWrite: h.serverWrite };
 });
 vi.mock("../../public_html/lib/core/graph.js", async (orig) => {
 	const actual = await orig();
@@ -57,8 +69,9 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 	};
 });
 
-const { applyExp } = await import("../../public_html/lib/core/session.js");
+const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
 const tool = await import("../../public_html/views/tool.js");
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const S = {
 	deprecated: `
@@ -476,6 +489,7 @@ function toolFixture(name, o = {}) {
 beforeEach(() => {
 	localStorage.clear();
 	applyExp(false);
+	setServerUser(null);
 	document.body.innerHTML = "";
 	for (const fn of Object.values(h)) fn.mockReset();
 	h.isNewTool.mockReturnValue(false);
@@ -485,6 +499,10 @@ beforeEach(() => {
 	h.egoGraph.mockResolvedValue({ nodes: [], edges: [] });
 	h.demoRevisionsFor.mockReturnValue([]);
 	h.apiGet.mockResolvedValue({ results: [] });
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(path.includes("/media/") ? { results: [] } : { thanks: {}, usage30d: {}, health: {} })
+	);
+	h.serverWrite.mockResolvedValue({ ok: true });
 });
 
 /* ---------------- viewTool ---------------- */
@@ -500,11 +518,18 @@ test("viewTool minimal (signed out, sparse fields, no related, no ego)", async (
 	h.getTool.mockResolvedValue(toolFixture("minimal", { title: "Minimal Tool" }));
 	const r = await tool.viewTool("minimal");
 	assert.equal(r.title, "Minimal Tool — Toolhub");
-	expect("minimal", r.html);
+	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Minimal Tool</h1>'));
+	assert.ok(r.html.includes("Suggest an edit"));
+	assert.ok(!r.html.includes("Save to favorites"));
+	assert.ok(!r.html.includes("shotstrip"));
+	assert.ok(!r.html.includes("thanks__agg"));
+	assert.ok(!r.html.includes("views experimental"));
+	assert.ok(!r.html.includes("Usage <span"));
 });
 
 test("viewTool full (signed in, rich fields, related + ego graph)", async () => {
 	applyExp(true);
+	setServerUser("Grace Hopper");
 	h.listMemberships.mockResolvedValue(new Map([["full", [{ id: "L1", title: "List One" }]]]));
 	h.nearestNeighbors.mockReturnValue([
 		{ tool: toolFixture("rel-1", { title: "Related One", maintainer: "Maint R" }), shared: ["maps", "commons"] },
@@ -545,11 +570,21 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	h.getTool.mockResolvedValue(t);
 	const r = await tool.viewTool("full");
 	assert.equal(r.title, "Full Tool — Toolhub");
-	expect("full", r.html);
+	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Full Tool</h1>'));
+	assert.ok(r.html.includes("Related tools"));
+	assert.ok(r.html.includes("Neighborhood"));
+	assert.ok(r.html.includes('data-fav="full"'));
+	assert.ok(r.html.includes('href="/tools/full/edit">Edit tool</a>'));
+	assert.ok(r.html.includes('href="/tools/full/edit-annotations">Edit annotations</a>'));
+	assert.ok(!r.html.includes("shotstrip"));
+	assert.ok(!r.html.includes("thanks__agg"));
+	assert.ok(!r.html.includes("views experimental"));
+	assert.ok(!r.html.includes("Usage <span"));
 });
 
 test("viewTool deprecated with replacement (string name) + new-tool/edited/annotated badges", async () => {
 	applyExp(true);
+	setServerUser("Grace Hopper");
 	h.isNewTool.mockReturnValue(true);
 	const t = toolFixture("dep", {
 		title: "Deprecated Tool",
@@ -560,7 +595,59 @@ test("viewTool deprecated with replacement (string name) + new-tool/edited/annot
 	});
 	h.getTool.mockResolvedValue(t);
 	const r = await tool.viewTool("dep");
-	expect("deprecated", r.html);
+	assert.ok(r.html.includes('Replaced by <a href="/tools/replacement-tool"'));
+	assert.ok(r.html.includes("Local draft"));
+	assert.ok(r.html.includes("Edited in Evolved"));
+	assert.ok(r.html.includes("Community annotations in Evolved"));
+	assert.ok(!r.html.includes("Demo submission"));
+	assert.ok(!r.html.includes("Edited · demo"));
+	assert.ok(!r.html.includes("Community annotations · demo"));
+	assert.ok(!r.html.includes("shotstrip"));
+	assert.ok(!r.html.includes("thanks__agg"));
+	assert.ok(!r.html.includes("views experimental"));
+	assert.ok(!r.html.includes("Usage <span"));
+});
+
+test("viewTool renders real Evolved signals, approved media, thanks, and media submit", async () => {
+	applyExp(true);
+	setServerUser("Grace Hopper");
+	h.getTool.mockResolvedValue(toolFixture("sig", { title: "Signal Tool", url: "https://sig.example" }));
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(
+			path.includes("/media/")
+				? {
+						results: [
+							{
+								url: "https://img.example/sig.png",
+								title: "Signal screenshot",
+								license: "CC-BY-SA-4.0"
+							}
+						]
+					}
+				: { thanks: { count: 2, userThanked: false }, usage30d: { count: 5 }, health: { status: "healthy" } }
+		)
+	);
+	const r = await tool.viewTool("sig");
+	assert.ok(r.html.includes("2 thanks on Evolved"));
+	assert.ok(r.html.includes("5 Evolved interactions in 30 days"));
+	assert.ok(r.html.includes("Signal screenshot"));
+	document.body.innerHTML = r.html;
+	r.mount();
+	assert.deepEqual(h.serverWrite.mock.calls[0], ["POST", "/v1/tools/sig/events/", { eventType: "view" }]);
+	document.querySelector("[data-thanks]").click();
+	await tick();
+	assert.deepEqual(h.serverWrite.mock.calls[1], ["POST", "/v1/tools/sig/thanks/"]);
+	document.querySelector("[data-media-url]").value = "https://img.example/next.png";
+	document.querySelector("[data-media-license]").value = "CC0-1.0";
+	document.querySelector("[data-media-source]").value = "Maintainer";
+	document.querySelector("[data-media-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.serverWrite.mock.calls[2], [
+		"POST",
+		"/v1/tools/sig/media/",
+		{ url: "https://img.example/next.png", license: "CC0-1.0", source: "Maintainer" }
+	]);
+	assert.ok(document.querySelector("[data-media-result]").textContent.includes("submitted for review"));
 });
 
 test("viewTool deprecated with replacement as URL", async () => {

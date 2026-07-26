@@ -1232,7 +1232,18 @@ afterEach(() => {
 test("viewStyleguide renders the full page", () => {
 	const r = sg.viewStyleguide();
 	assert.equal(r.title, "Design system — Toolhub");
-	expect("page", r.html);
+	assert.ok(r.html.includes('<h1 class="page__title">Design system</h1>'));
+	assert.ok(r.html.includes('id="sg-atoms"'));
+	assert.ok(r.html.includes('id="sg-organisms"'));
+	assert.ok(r.html.includes("<code>statusBadge(deprecated)</code>"));
+	assert.ok(r.html.includes("<code>listCard(list)</code>"));
+	assert.ok(r.html.includes("Local draft"));
+	assert.ok(!r.html.includes("healthBadge(tool)"));
+	assert.ok(!r.html.includes("popularityBadge(tool)"));
+	assert.ok(!r.html.includes("thanksBlock(tool)"));
+	assert.ok(!r.html.includes("usageBlock(tool)"));
+	assert.ok(!r.html.includes("thanks__agg"));
+	assert.ok(!r.html.includes("views experimental"));
 });
 
 test("viewStyleguide output is deterministic", () => {

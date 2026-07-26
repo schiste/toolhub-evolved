@@ -11,6 +11,7 @@ import * as tool from "../../public_html/views/tool.js";
 import * as authors from "../../public_html/views/authors.js";
 import * as lists from "../../public_html/views/lists.js";
 import * as toolforms from "../../public_html/views/toolforms.js";
+import * as accountView from "../../public_html/views/account.js";
 import * as staticViews from "../../public_html/views/static.js";
 import * as styleguide from "../../public_html/views/styleguide.js";
 import * as parity from "../../public_html/views/parity.js";
@@ -38,6 +39,9 @@ vi.mock("../../public_html/views/toolforms.js", () => ({
 	viewToolForm: vi.fn((n) => ({ tag: "toolform", n })),
 	viewAddTools: vi.fn(() => ({ tag: "addtools" })),
 	viewAnnotationsEdit: vi.fn((n) => ({ tag: "annotations", n }))
+}));
+vi.mock("../../public_html/views/account.js", () => ({
+	viewAccountSettings: vi.fn(() => ({ tag: "account" }))
 }));
 vi.mock("../../public_html/views/static.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -295,6 +299,14 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", () => {
 		"Add or remove tools",
 		"Register a toolinfo.json URL to be crawled, or create a tool record directly."
 	]);
+
+	vi.clearAllMocks();
+	session.signedIn.mockReturnValue(false);
+	at("/account");
+	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
+		"Evolved data settings",
+		"Export or delete Evolved-local data for this Toolhub sign-in."
+	]);
 });
 
 test("dispatch gated ROUTES entries: signed-in → their real views", () => {
@@ -302,7 +314,9 @@ test("dispatch gated ROUTES entries: signed-in → their real views", () => {
 	assert.deepEqual(at("/my-lists"), { tag: "mylists" });
 	assert.deepEqual(at("/favorites"), { tag: "favorites" });
 	assert.deepEqual(at("/add-or-remove-tools"), { tag: "addtools" });
+	assert.deepEqual(at("/account"), { tag: "account" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
+	assert.equal(accountView.viewAccountSettings.mock.calls.length, 1);
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */

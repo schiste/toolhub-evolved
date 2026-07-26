@@ -6,7 +6,7 @@ import { renderMarkdown } from "../core/markdown.js";
 import { signedIn } from "../core/session.js";
 import { navigateTo, toolHref } from "../core/routing.js";
 import { toolIcon } from "../atoms/avatar.js";
-import { endorsementChip, fitChip, healthBadge, popularityBadge } from "../atoms/badges.js";
+import { endorsementChip, fitChip } from "../atoms/badges.js";
 import { button } from "../atoms/button.js";
 import { glanceChips, keywordTags } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
@@ -52,10 +52,6 @@ export function quickViewBody(tool) {
 			${realBadge}
 			${endorsementChip(endorsement && endorsement.count)}
 			${fitChip(tool)}
-			<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
-			${healthBadge(tool)}
-			<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking. -->
-			${popularityBadge(tool)}
 			${updatedTimeTag(tool.modified, "toolpage__when")}
 		</div>
 		<div class="qv__desc"${dirAttrs(tool.description)}>${renderMarkdown(tool.description) || `<em>${t("quickview.noDescription", "No description provided.")}</em>`}</div>

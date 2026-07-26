@@ -5,26 +5,28 @@ import { listCard, listCardData } from "../../public_html/lib/organisms/list-car
 import { dirAttrs, esc } from "../../public_html/lib/core/dom.js";
 import { countLabel } from "../../public_html/lib/core/i18n.js";
 import { listHref } from "../../public_html/lib/core/routing.js";
+import { syncStatusLabel } from "../../public_html/lib/core/store.js";
 import { avatar } from "../../public_html/lib/atoms/avatar.js";
 
 /** @param {any} l */
 function oracle(l) {
 	const count = countLabel(l.toolCount, "tool", "tools");
-	return `\n\t<a class="lcard" href="${listHref(l.id)}" aria-label="${esc(l.title)} list, ${esc(count)}">\n\t\t${avatar(l.title)}\n\t\t<div class="lcard__body">\n\t\t\t<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span>${l.demo ? ' <span class="exp-badge">Demo</span>' : ""}</div>\n\t\t\t<div class="lcard__desc"${dirAttrs(l.description)}>${esc(l.description)}</div>\n\t\t</div>\n\t</a>`;
+	const status = l.local ? l.syncLabel || syncStatusLabel(l.syncStatus) : "";
+	return `\n\t<a class="lcard" href="${listHref(l.id)}" aria-label="${esc(l.title)} list, ${esc(count)}">\n\t\t${avatar(l.title)}\n\t\t<div class="lcard__body">\n\t\t\t<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span>${status ? ` <span class="exp-badge">${esc(status)}</span>` : ""}</div>\n\t\t\t<div class="lcard__desc"${dirAttrs(l.description)}>${esc(l.description)}</div>\n\t\t</div>\n\t</a>`;
 }
 
-test("listCard exact HTML, demo badge present", () => {
-	const l = { id: "L 1", title: "Cool <List>", description: "D & e", toolCount: 3, demo: true };
+test("listCard exact HTML, local badge present", () => {
+	const l = { id: "L 1", title: "Cool <List>", description: "D & e", toolCount: 3, local: true };
 	assert.equal(listCard(l), oracle(l));
 });
 
-test("listCard exact HTML, no demo badge, singular count", () => {
-	const l = { id: "L2", title: "One", description: "", toolCount: 1, demo: false };
+test("listCard exact HTML, no local badge, singular count", () => {
+	const l = { id: "L2", title: "One", description: "", toolCount: 1, local: false };
 	assert.equal(listCard(l), oracle(l));
 });
 
 test("listCard zero count", () => {
-	const l = { id: "L3", title: "Empty", description: "x", toolCount: 0, demo: true };
+	const l = { id: "L3", title: "Empty", description: "x", toolCount: 0, local: true };
 	assert.equal(listCard(l), oracle(l));
 });
 
@@ -34,7 +36,9 @@ test("listCardData fully populated", () => {
 		title: "T",
 		description: "D",
 		toolCount: 3,
-		demo: true
+		local: true,
+		syncStatus: "local_draft",
+		syncLabel: "Local draft"
 	});
 });
 
@@ -44,7 +48,9 @@ test("listCardData falls back for missing title/description/tools", () => {
 		title: "Untitled list",
 		description: "",
 		toolCount: 0,
-		demo: true
+		local: true,
+		syncStatus: "local_draft",
+		syncLabel: "Local draft"
 	});
 });
 
@@ -55,6 +61,8 @@ test("listCardData keeps provided empty title fallback only when falsy", () => {
 		title: "Untitled list",
 		description: "keep",
 		toolCount: 1,
-		demo: true
+		local: true,
+		syncStatus: "local_draft",
+		syncLabel: "Local draft"
 	});
 });

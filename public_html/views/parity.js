@@ -34,7 +34,7 @@ export async function viewRecent() {
 	const patrolFilterRequested = UNSUPPORTED_PATROL_FILTERS.has(requestedShow);
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
-	// Lane B: your demo edits appear at the top of the live feed.
+	// Local Evolved edits appear at the top of the live feed.
 	const merged = demoFeed(DEMO_KEYS.revisions, data.results || []);
 	// The read-only /recent/ feed does not expose true patrolled/unpatrolled state, so this filters by change type.
 	const filtered = show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === show);

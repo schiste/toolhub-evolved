@@ -2,12 +2,34 @@
 import { pickLocalized, t } from "./i18n.js";
 import { expOn, signedIn, USER } from "./session.js";
 import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
-import { synthViews } from "./synth.js";
 
 /* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
    as live data arrives (search results, lists, tool pages). No snapshot. */
 /** @type {Record<string, Tool>} */
 export const INDEX = {};
+const OVERLAY_META_KEYS = new Set([
+	"source",
+	"syncStatus",
+	"syncLabel",
+	"lastSyncedAt",
+	"lastError",
+	"officialId",
+	"officialName",
+	"visibility",
+	"toolhubResponse",
+	"validationErrors",
+	"baseRevision",
+	"fieldStatuses",
+	"reviewStatus"
+]);
+
+/**
+ * @param {Record<string, any>} patch
+ * @returns {Record<string, any>}
+ */
+function dataPatch(patch) {
+	return Object.fromEntries(Object.entries(patch || {}).filter(([key]) => !OVERLAY_META_KEYS.has(key)));
+}
 
 /** @param {string} name */
 export function isNewTool(name) {
@@ -20,15 +42,19 @@ export function isNewTool(name) {
 export function applyToolOverlay(o) {
 	const e = toolEditsMap()[o.name];
 	if (e) {
-		Object.assign(o, e);
+		Object.assign(o, dataPatch(e));
 		// `edited`/`annotated`/`status` (object) are runtime extras the static
 		// Tool interface doesn't model; cast through any for these writes.
 		/** @type {any} */ (o).edited = true;
+		/** @type {any} */ (o).editSyncStatus = e.syncStatus;
+		/** @type {any} */ (o).editLastError = e.lastError;
 	}
 	const a = toolAnnosMap()[o.name];
 	if (a) {
-		Object.assign(o, a);
+		Object.assign(o, dataPatch(a));
 		/** @type {any} */ (o).annotated = true;
+		/** @type {any} */ (o).annotationSyncStatus = a.syncStatus;
+		/** @type {any} */ (o).annotationLastError = a.lastError;
 	}
 	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
 	return o;
@@ -65,7 +91,7 @@ export function localToolBase(name, rec) {
 		)
 	);
 	o.name = name;
-	o.weeklyViews = synthViews(name);
+	o.weeklyViews = 0;
 	o.status = statusOf(o);
 	INDEX[name] = o;
 	return applyToolOverlay(o);
@@ -321,7 +347,7 @@ export function normalizeTool(t) {
 		experimental,
 		modified: t.modified_date || t.modified || null,
 		origin: t.origin || "crawler",
-		weeklyViews: synthViews(t.name),
+		weeklyViews: 0,
 		status: statusOf({ deprecated, experimental })
 	};
 	if (expOn()) applyToolOverlay(o); // Lane B: edits/annotations overload the live record
@@ -398,6 +424,10 @@ export function backendErrorMessage(error) {
 		return JSON.stringify(details);
 	}
 	return error instanceof Error ? error.message : String(error);
+}
+/** @param {unknown} error */
+export function backendErrorBody(error) {
+	return error instanceof BackendError ? error.body : null;
 }
 /**
  * @param {string} path

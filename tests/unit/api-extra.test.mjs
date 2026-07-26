@@ -11,10 +11,12 @@ beforeEach(() => {
 	installStorage();
 	originalFetch = globalThis.fetch;
 	session.applyExp(false);
+	session.setServerUser(null);
 });
 afterEach(() => {
 	globalThis.fetch = originalFetch;
 	session.applyExp(false);
+	session.setServerUser(null);
 });
 
 const tick = () =>
@@ -331,6 +333,7 @@ test("applyToolOverlay merges edits, then annotations, and recomputes status", (
 
 test("newToolBase builds a compact record with defaults or null for unknown names", () => {
 	// rec omits keywords so the default [] is used (and asserted).
+	session.setServerUser("Ada Lovelace");
 	demoStore.set(DEMO_KEYS.toolNew, { NT: { title: "New", description: "d", url: "u" } });
 	const o = api.newToolBase("NT");
 	assert.equal(o.name, "NT");
@@ -396,12 +399,13 @@ test("getTool propagates a non-404 outage instead of masking it as not-found", a
 
 test("getTool uses newToolBase when signed in, without fetching", async () => {
 	session.applyExp(true);
-	session.setAuth(true);
+	session.setServerUser("Ada Lovelace");
 	demoStore.set(DEMO_KEYS.toolNew, { NewOne: { title: "N", description: "d", url: "u" } });
 	const nt = await api.getTool("NewOne");
 	assert.equal(nt.name, "NewOne");
 	assert.equal(nt.origin, "api");
 	session.applyExp(false);
+	session.setServerUser(null);
 });
 
 test("getTool ignores newToolBase when not signed in (uses the live API path)", async () => {

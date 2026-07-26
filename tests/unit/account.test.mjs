@@ -26,19 +26,14 @@ function htmlEqual(actual, expected, msg) {
 	assert.equal(a.innerHTML, b.innerHTML, msg);
 }
 
-function menuOracle(real = false) {
-	const tag = real ? "" : '<span class="mock-tag">demo</span>';
-	const actions = real
-		? `<a class="acct__logout" href="/oauth/logout">${icon("logout")} Log out</a>`
-		: `<button class="acct__reset" type="button" data-reset>${icon("reset")} Reset demo data</button><button class="acct__logout" type="button" data-logout>${icon("logout")} Log out</button>`;
-	return `\n\t\t<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">\n\t\t\t${avatar(USER.name, "avatar--sm")}\n\t\t\t<span class="acct__name">${esc(USER.name)}</span>\n\t\t\t${icon("chevronDown", "acct__caret")}\n\t\t</button>\n\t\t<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>\n\t\t\t<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong> ${tag}</div>\n\t\t\t<a href="/my-lists">${icon("list")} Your lists</a>\n\t\t\t<a href="/favorites">${icon("star")} Favorites</a>\n\t\t\t<a href="/add-or-remove-tools">${icon("tools")} Add or remove tools</a>\n\t\t\t<hr />\n\t\t\t${actions}\n\t\t</div>`;
+function menuOracle() {
+	return `\n\t\t<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">\n\t\t\t${avatar(USER.name, "avatar--sm")}\n\t\t\t<span class="acct__name">${esc(USER.name)}</span>\n\t\t\t${icon("chevronDown", "acct__caret")}\n\t\t</button>\n\t\t<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>\n\t\t\t<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong></div>\n\t\t\t<a href="/my-lists">${icon("list")} Your lists</a>\n\t\t\t<a href="/favorites">${icon("star")} Favorites</a>\n\t\t\t<a href="/add-or-remove-tools">${icon("tools")} Add or remove tools</a>\n\t\t\t<a href="/account">${icon("tools")} Evolved data settings</a>\n\t\t\t<hr />\n\t\t\t<a class="acct__logout" href="/oauth/logout">${icon("logout")} Log out</a>\n\t\t</div>`;
 }
 
 beforeEach(() => {
 	document.body.innerHTML = "";
 	oauthOn = false;
 	setServerUser(null);
-	USER.name = "Ada Lovelace";
 	applyExp(true);
 	setAuth(true);
 });
@@ -58,18 +53,17 @@ test("renderAccount shows Log in when experiments are off", () => {
 	htmlEqual(el.innerHTML, button("Log in", { variant: "outline", href: "/login" }));
 });
 
-test("renderAccount shows Sign in demo when exp on but signed out", () => {
+test("renderAccount shows Log in when exp on but signed out and OAuth is unavailable", () => {
 	applyExp(true);
 	setAuth(false);
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
-	htmlEqual(el.innerHTML, button("Sign in demo", { variant: "outline", attrs: "data-login" }));
+	htmlEqual(el.innerHTML, button("Log in", { variant: "outline", href: "/login" }));
 });
 
 test("renderAccount shows the account menu when signed in", () => {
-	applyExp(true);
-	setAuth(true);
+	setServerUser("Grace Hopper");
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
@@ -94,10 +88,7 @@ test("renderAccount offers Toolhub sign-in ahead of the demo one when configured
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
-	htmlEqual(
-		el.innerHTML,
-		`${button("Sign in with Toolhub", { href: "/oauth/login" })}${button("Sign in demo", { variant: "outline", attrs: "data-login" })}`
-	);
+	htmlEqual(el.innerHTML, button("Sign in with Toolhub", { href: "/oauth/login" }));
 });
 
 test("renderAccount renders a real session: no demo tag, no reset, server logout", () => {
@@ -105,7 +96,7 @@ test("renderAccount renders a real session: no demo tag, no reset, server logout
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
-	htmlEqual(el.innerHTML, menuOracle(true));
+	htmlEqual(el.innerHTML, menuOracle());
 	assert.equal(el.querySelector(".mock-tag"), null);
 	assert.equal(el.querySelector("[data-reset]"), null);
 	assert.ok(el.querySelector('a[href="/oauth/logout"]'));

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "../core/dom.js";
 import { t } from "../core/i18n.js";
-import { USER, expOn, serverUserName, signedIn } from "../core/session.js";
+import { USER, expOn, signedIn } from "../core/session.js";
 import { oauthAvailable } from "../core/serversync.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
@@ -21,17 +21,12 @@ export function renderAccount() {
 		return;
 	}
 	if (!signedIn()) {
-		// Feature mode on but logged out → real Toolhub sign-in first (when configured),
-		// with the browser-local demo identity as the fallback preview.
-		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/attrs strings are still asserted by the renderAccount tests.)
-		const wm = oauthAvailable()
+		// Feature mode on but logged out -> real Toolhub sign-in only.
+		el.innerHTML = oauthAvailable()
 			? button(t("account.signInWithToolhub", "Sign in with Toolhub"), { href: "/oauth/login" })
-			: "";
-		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/attrs strings are still asserted by the renderAccount tests.)
-		el.innerHTML = `${wm}${button(t("account.signInDemo", "Sign in demo"), { variant: "outline", attrs: "data-login" })}`;
+			: button(t("account.logIn", "Log in"), { variant: "outline", href: "/login" });
 		return;
 	}
-	const real = serverUserName() !== null;
 	el.innerHTML = `
 		<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">
 			${avatar(USER.name, "avatar--sm")}
@@ -39,12 +34,13 @@ export function renderAccount() {
 			${icon("chevronDown", "acct__caret")}
 		</button>
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
-			<div class="acct__head">${t("account.signedInAs", "Signed in as")} <strong>${esc(USER.name)}</strong> ${real ? "" : `<span class="mock-tag">${t("account.demo", "demo")}</span>`}</div>
+			<div class="acct__head">${t("account.signedInAs", "Signed in as")} <strong>${esc(USER.name)}</strong></div>
 			<a href="/my-lists">${icon("list")} ${t("account.yourLists", "Your lists")}</a>
 			<a href="/favorites">${icon("star")} ${t("account.favorites", "Favorites")}</a>
 			<a href="/add-or-remove-tools">${icon("tools")} ${t("account.addOrRemoveTools", "Add or remove tools")}</a>
+			<a href="/account">${icon("tools")} ${t("account.dataSettings", "Evolved data settings")}</a>
 			<hr />
-			${real ? `<a class="acct__logout" href="/oauth/logout">${icon("logout")} ${t("account.logOut", "Log out")}</a>` : `<button class="acct__reset" type="button" data-reset>${icon("reset")} ${t("account.resetDemoData", "Reset demo data")}</button><button class="acct__logout" type="button" data-logout>${icon("logout")} ${t("account.logOut", "Log out")}</button>`}
+			<a class="acct__logout" href="/oauth/logout">${icon("logout")} ${t("account.logOut", "Log out")}</a>
 		</div>`;
 }
 export function closeAcctMenu() {

@@ -24,7 +24,6 @@ vi.mock("../../public_html/lib/core/session.js", async (o) => ({
 	applyExp: vi.fn(),
 	expOn: vi.fn(),
 	expStored: vi.fn(),
-	setAuth: vi.fn(),
 	setAuthRender: vi.fn(),
 	setExpStored: vi.fn()
 }));
@@ -90,9 +89,6 @@ const SHELL = `
 	<header id="account">
 		<button id="acct-btn">Account</button>
 		<div id="acct-menu">
-			<button data-logout>Log out</button>
-			<button data-login>Log in</button>
-			<button data-reset>Reset</button>
 			<a href="/help">Help</a>
 		</div>
 	</header>
@@ -108,7 +104,7 @@ const SHELL = `
 		<a href="/about" data-q="ignored">qlink</a>
 		<article data-tool="tool-x" tabindex="0"><span class="tcard__inner">x</span><a href="/incard">deep link</a></article>
 		<a href="/internal?x=1">internal</a>
-		<a href="/search?sort=views" data-enable-evolved>feature try</a>
+		<a href="/features" data-enable-evolved>feature try</a>
 		<a href="/api/tools/">api</a>
 		<a href="https://ext.example/">ext</a>
 		<a href="#frag">frag</a>
@@ -408,27 +404,6 @@ test("#account: the button toggles the menu", () => {
 	assert.equal(account.toggleAcctMenu.mock.calls.length, 1);
 });
 
-test("#account: log out closes the menu and signs out", () => {
-	vi.clearAllMocks();
-	click($("#account [data-logout]"));
-	assert.equal(account.closeAcctMenu.mock.calls.length, 1);
-	assert.deepEqual(session.setAuth.mock.calls[0], [false]);
-});
-
-test("#account: log in signs in", () => {
-	vi.clearAllMocks();
-	click($("#account [data-login]"));
-	assert.deepEqual(session.setAuth.mock.calls[0], [true]);
-});
-
-test("#account: reset clears demo data and re-renders", () => {
-	vi.clearAllMocks();
-	click($("#account [data-reset]"));
-	assert.equal(account.closeAcctMenu.mock.calls.length, 1);
-	assert.equal(store.demoStore.clearAll.mock.calls.length, 1);
-	assert.equal(router.render.mock.calls.length, 1);
-});
-
 test("#account: a menu link closes the menu (lets navigation happen natively)", () => {
 	vi.clearAllMocks();
 	click($("#acct-menu a"));
@@ -547,7 +522,7 @@ test("SPA links: feature-status try links enable Evolved mode before routing", (
 	assert.equal($("#exp-toggle").getAttribute("aria-checked"), "true");
 	assert.equal(account.renderAccount.mock.calls.length, 1);
 	assert.equal(account.syncSubmitButton.mock.calls.length, 1);
-	assert.deepEqual(routing.navigateTo.mock.calls.at(-1), ["/search?sort=views"]);
+	assert.deepEqual(routing.navigateTo.mock.calls.at(-1), ["/features"]);
 });
 
 /* ---- history events ---------------------------------------------------- */

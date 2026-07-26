@@ -309,7 +309,7 @@ test("search default (exp off, no query, populated results)", async () => {
 	expect("default", r.html);
 });
 
-test("search exp on, query, sort=views, page=2, popular cards", async () => {
+test("search exp on ignores removed popularity sort and renders normal cards", async () => {
 	applyExp(true);
 	setUrl("q=maps&sort=views&page=2&page_size=12");
 	h.apiGet.mockResolvedValue({
@@ -322,7 +322,10 @@ test("search exp on, query, sort=views, page=2, popular cards", async () => {
 	});
 	const r = await search.viewSearch();
 	assert.equal(r.title, "“maps” — Toolhub");
-	expect("exp_views", r.html);
+	assert.ok(r.html.includes('<option value="relevance">Most relevant</option>'));
+	assert.ok(!r.html.includes('<option value="views">Popular this week</option>'));
+	assert.ok(!r.html.includes("views experimental"));
+	assert.ok(!r.html.includes("tcard--popular"));
 });
 
 test("search client status filter (deprecated + experimental), some visible", async () => {

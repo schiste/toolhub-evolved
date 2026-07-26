@@ -59,6 +59,20 @@ interface Tool {
 	endorsement?: { count: number; lists: unknown[] };
 	edited?: boolean;
 	annotated?: boolean;
+	source?: string;
+	syncStatus?: string;
+	syncLabel?: string;
+	lastSyncedAt?: string;
+	lastError?: string;
+	officialId?: number;
+	officialName?: string;
+	toolhubResponse?: Record<string, unknown> | null;
+	validationErrors?: unknown[];
+	visibility?: string;
+	editSyncStatus?: string;
+	editLastError?: string;
+	annotationSyncStatus?: string;
+	annotationLastError?: string;
 }
 
 /** A normalized curated-list record. */
@@ -69,6 +83,12 @@ interface ToolList {
 	toolCount: number;
 	tools: Tool[];
 	featured: boolean;
+	source?: string;
+	syncStatus?: string;
+	syncLabel?: string;
+	lastSyncedAt?: string;
+	lastError?: string;
+	officialId?: number;
 }
 
 /** The user's saved fit-ranking context — a chosen wiki and/or audience role. */

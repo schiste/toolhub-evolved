@@ -46,12 +46,12 @@ test("renderFeatureDocs emits a stable markdown table", () => {
 			group: "Group - Signals",
 			items: [
 				{
-					name: "30-day usage",
-					what: 'An "editors used this" figure.',
-					current: "Deterministic per tool.",
-					need: "Usage / view tracking",
-					tryHref: "/search?sort=views",
-					tryLabel: "Most viewed"
+					name: "Screenshots",
+					what: "A preview image strip.",
+					current: "Hidden until a real backend data source exists.",
+					need: "Image storage",
+					tryHref: "/features",
+					tryLabel: "Feature plan"
 				}
 			]
 		}
@@ -60,6 +60,6 @@ test("renderFeatureDocs emits a stable markdown table", () => {
 	assert.match(md, /Total listed features: 1/);
 	assert.match(
 		md,
-		/\| Group - Signals \| 30-day usage \| An "editors used this" figure\. \| Deterministic per tool\. \| Usage \/ view tracking \| \[Most viewed\]\(\/search\?sort=views\) \|/
+		/\| Group - Signals\s+\| Screenshots\s+\| A preview image strip\.\s+\| Hidden until a real backend data source exists\.\s+\| Image storage\s+\| \[Feature plan\]\(\/features\) \|/
 	);
 });

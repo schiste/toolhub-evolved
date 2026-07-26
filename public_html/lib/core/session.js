@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /* ---- Evolved feature mode ----------------------------------------------
    The toggle reveals Toolhub Evolved additions: official-first write paths,
-   local fallback/draft overlays, and synthetic signals that Toolhub does not
-   expose. Each optional element is marked `class="experimental"` in the DOM.
+   local fallback/draft overlays, and Evolved-only backend data. Each optional
+   element is marked `class="experimental"` in the DOM.
    When the header toggle is OFF, body gets `.exp-off` and CSS hides those
    elements. Default: OFF. */
 export const EXP_KEY = "toolhub-exp";
@@ -28,7 +28,7 @@ export function applyExp(on) {
 // the user opts into Evolved additions via the toggle.
 
 /* ---- Account: identity + profile dropdown ------------------------------ */
-export const USER = { name: "Ada Lovelace" }; // demo identity until a real session takes over
+export const USER = { name: "" };
 export const AUTH_KEY = "toolhub-auth";
 
 /* ---- Real server session (production sign-in) ---------------------------
@@ -41,10 +41,10 @@ export function serverUserName() {
 	return serverUser;
 }
 
-// Signed-in state exists only while feature mode is on: a real server session
-// (Toolhub OAuth) or, failing that, the browser-local demo identity.
+// Signed-in state is production-only: a real Toolhub OAuth-backed server
+// session. Browser-local demo identity is not allowed in clean production.
 export function signedIn() {
-	return expOn() && (serverUser !== null || localStorage.getItem(AUTH_KEY) !== "out");
+	return serverUser !== null;
 }
 /** @type {() => void} */
 let authRender = () => {};
@@ -52,10 +52,9 @@ let authRender = () => {};
 export function setAuthRender(fn) {
 	authRender = typeof fn === "function" ? /** @type {() => void} */ (fn) : () => {};
 }
-/** @param {boolean} on */
-export function setAuth(on) {
-	if (on) localStorage.removeItem(AUTH_KEY);
-	else localStorage.setItem(AUTH_KEY, "out");
+/** @param {boolean} _on */
+export function setAuth(_on) {
+	localStorage.removeItem(AUTH_KEY);
 	authRender(); // refresh fav buttons / gated views
 }
 /** @param {string | null} name */
@@ -67,6 +66,8 @@ export function setServerUser(name) {
 		// feature mode on (and persist the choice) so the UI renders them.
 		setExpStored(true);
 		applyExp(true);
+	} else {
+		USER.name = "";
 	}
 	authRender();
 }

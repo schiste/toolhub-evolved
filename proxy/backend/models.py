@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_LOCAL_DRAFT
+
 
 def utcnow() -> datetime:
     """Return the current UTC time with tzinfo stripped.
@@ -49,6 +51,8 @@ class ToolhubToken(Base):
     token_type: Mapped[str] = mapped_column(String(32), default="Bearer")
     scope: Mapped[str] = mapped_column(String(255), default="")
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -61,6 +65,10 @@ class Favorite(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     tool_name: Mapped[str] = mapped_column(String(255))
     position: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ToolList(Base):
@@ -74,6 +82,12 @@ class ToolList(Base):
     tools: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     modified_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    official_list_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ToolRecord(Base):
@@ -86,6 +100,15 @@ class ToolRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     record: Mapped[dict] = mapped_column(JSON, default=dict)
     modified_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    official_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(32), default="private")
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_toolhub_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    validation_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ToolOverlay(Base):
@@ -99,6 +122,14 @@ class ToolOverlay(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     patch: Mapped[dict] = mapped_column(JSON, default=dict)
     modified_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    base_revision: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    field_statuses: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_status: Mapped[str] = mapped_column(String(32), default="open")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ActivityRow(Base):
@@ -112,6 +143,11 @@ class ActivityRow(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     row: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    object_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    object_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    official_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class CrawlerUrl(Base):
@@ -123,6 +159,14 @@ class CrawlerUrl(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     url: Mapped[str] = mapped_column(String(2000))
     added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    official_crawler_url_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class CrawlerRun(Base):
@@ -137,3 +181,77 @@ class CrawlerRun(Base):
     updated: Mapped[int] = mapped_column(Integer, default=0)
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     errors: Mapped[list] = mapped_column(JSON, default=list)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+
+
+class ToolEvent(Base):
+    """Privacy-limited interaction event used for Evolved aggregate metrics."""
+
+    __tablename__ = "tool_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    event_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolThanks(Base):
+    """One active Evolved thanks relation per user/tool."""
+
+    __tablename__ = "tool_thanks"
+    __table_args__ = (UniqueConstraint("tool_name", "user_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolHealthTarget(Base):
+    """A URL Evolved may check to report health for one tool."""
+
+    __tablename__ = "tool_health_targets"
+    __table_args__ = (UniqueConstraint("tool_name", "created_by_user_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    target_url: Mapped[str] = mapped_column(String(2000))
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolHealthCheck(Base):
+    """One observed health-check result for an Evolved health target."""
+
+    __tablename__ = "tool_health_checks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("tool_health_targets.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolMedia(Base):
+    """Screenshot or preview metadata owned and moderated by Evolved."""
+
+    __tablename__ = "tool_media"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    url: Mapped[str] = mapped_column(String(2000))
+    title: Mapped[str] = mapped_column(String(255), default="")
+    license: Mapped[str] = mapped_column(String(255), default="")
+    source: Mapped[str] = mapped_column(String(2000), default="")
+    review_status: Mapped[str] = mapped_column(String(32), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

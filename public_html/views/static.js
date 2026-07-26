@@ -149,25 +149,21 @@ export const STATIC = {
 		actual Toolhub data</strong>, refreshed every time you load a page. When you sign in
 		with Toolhub, supported writes are sent back to the official Toolhub API using your
 		OAuth grant.</p>
-		<h2>${t("static.rulesOfEngagement.whatsEvolved", "What's Evolved-only or synthetic")}</h2>
+		<h2>${t("static.rulesOfEngagement.whatsEvolved", "What's Evolved-only")}</h2>
 		<p>When you switch on <em>"Show Evolved features"</em>, the app turns on a
 		set of additions. Some have real official write paths when you are signed in:
 		favorites, lists, direct tool submissions, core edits where Toolhub permits them,
-		community annotations, and crawler URL registration. Others remain synthetic:
-		popularity, thanks, health, screenshots, and usage.</p>
-		<p>These don't replace the real data — each one <strong>overloads a real record with
-		a feature-specific fixture</strong> (for example, a real tool decorated with a
-		synthetic "popular this week" count, or your favorite flag layered on top of the
-		live tool).</p>
+		community annotations, and crawler URL registration.</p>
+		<p>Future Evolved-only signals such as popularity, thanks, health, usage, and
+		screenshots stay hidden until they have real backend data. They do not ship as
+		fixtures or generated values.</p>
 		<h2>${t("static.rulesOfEngagement.whereActionsGo", "Where your actions go")}</h2>
 		<ul>
 			<li>Signed-in supported writes go first to official Toolhub. If Toolhub rejects
 			a write, Evolved keeps it locally as a draft or overlay where the feature
 			supports that.</li>
-			<li>Signed-out demo data is stored only in this browser
-			(<code>localStorage</code>), on this device.</li>
-			<li><strong>"Reset demo data"</strong> (in the account menu) clears browser-local
-			demo data.</li>
+			<li>Signed-out users can read live Toolhub data, but create/update/delete
+			actions require Toolhub sign-in.</li>
 			<li>Turning the toggle <strong>off</strong> strips every overlay and returns the
 			app to the honest, live, read-only experience.</li>
 		</ul>
@@ -282,7 +278,7 @@ export async function viewApiDocs() {
 				<p><code>GET /api/schema/</code> returns Toolhub's OpenAPI document. Use the live
 				<code>https://toolhub.wikimedia.org/api/schema/</code> URL when generating a
 				production client, or this prototype's proxied <code>/api/schema/</code> when
-				you want to inspect the same document without leaving the demo.</p>
+				you want to inspect the same document without leaving this site.</p>
 				<pre tabindex="0" aria-label="${t("static.apiDocs.generatorCommandLabel", "OpenAPI Generator command")}"><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.readOnlyBoundary", "Read-only boundary")}</h2>

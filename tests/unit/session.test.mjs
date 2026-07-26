@@ -71,8 +71,8 @@ test("experimental mode is off by default", () => {
 test("exported identity constants are exact", () => {
 	assert.equal(session.EXP_KEY, "toolhub-exp");
 	assert.equal(session.AUTH_KEY, "toolhub-auth");
-	assert.deepEqual(session.USER, { name: "Ada Lovelace" });
-	assert.equal(session.USER.name, "Ada Lovelace");
+	assert.deepEqual(session.USER, { name: "" });
+	assert.equal(session.USER.name, "");
 });
 
 test("expStored reads the persisted opt-in flag", () => {
@@ -103,31 +103,30 @@ test("applyExp coerces to boolean and expOn reflects it", () => {
 	assert.equal(session.expOn(), false);
 });
 
-test("signedIn requires experiments on AND auth not opted out", () => {
-	// exp off, no auth-out marker -> still signed out (the && short-circuits)
+test("signedIn requires an OAuth-backed server user", () => {
+	session.setServerUser(null);
 	session.applyExp(false);
 	assert.equal(session.signedIn(), false);
-	// exp on, no marker -> signed in
 	session.applyExp(true);
-	assert.equal(session.signedIn(), true);
-	// exp on, but explicitly signed out -> false
+	assert.equal(session.signedIn(), false);
 	localStorage.setItem("toolhub-auth", "out");
 	assert.equal(session.signedIn(), false);
-	// any other marker value counts as signed in
 	localStorage.setItem("toolhub-auth", "in");
+	assert.equal(session.signedIn(), false);
+	session.setServerUser("Grace Hopper");
 	assert.equal(session.signedIn(), true);
 });
 
-test("setAuth toggles the persisted out-marker and refreshes via authRender", () => {
+test("setAuth is a compatibility shim that clears legacy markers and refreshes", () => {
 	let calls = 0;
 	session.setAuthRender(() => {
 		calls += 1;
 	});
-	// sign out: writes the "out" marker
+	localStorage.setItem("toolhub-auth", "out");
 	session.setAuth(false);
-	assert.equal(localStorage.getItem("toolhub-auth"), "out");
+	assert.equal(localStorage.getItem("toolhub-auth"), null);
 	assert.equal(calls, 1);
-	// sign in: removes the marker
+	localStorage.setItem("toolhub-auth", "in");
 	session.setAuth(true);
 	assert.equal(localStorage.getItem("toolhub-auth"), null);
 	assert.equal(calls, 2);

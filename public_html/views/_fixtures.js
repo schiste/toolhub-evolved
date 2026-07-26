@@ -74,7 +74,7 @@ export const FIXTURE_LIST = {
 	toolCount: 3,
 	tools: [FIXTURE_TOOL, FIXTURE_TOOL_EXPERIMENTAL, FIXTURE_TOOL_DEPRECATED],
 	featured: true,
-	demo: true
+	local: true
 };
 
 export const FIXTURE_FACET_GROUP = { field: "tool_type", label: "Tool type" };

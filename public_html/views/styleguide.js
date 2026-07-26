@@ -4,19 +4,11 @@ import { INDEX } from "../lib/core/api.js";
 import { DEMO_KEYS, withDemoFixture } from "../lib/core/store.js";
 import { completeness } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
-import {
-	completenessList,
-	completenessMeter,
-	endorsementChip,
-	healthBadge,
-	popularityBadge,
-	statusBadge
-} from "../lib/atoms/badges.js";
+import { completenessList, completenessMeter, endorsementChip, statusBadge } from "../lib/atoms/badges.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { TOOL_TYPES, fArea, fCheck, fInput, fSelect } from "../lib/atoms/form-fields.js";
 import { ICON_NAMES, icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
-import { thanksBlock, usageBlock } from "../lib/atoms/signals.js";
 import { renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { renderPager } from "../lib/molecules/pager.js";
@@ -786,14 +778,10 @@ function atomsSection() {
 			${example("statusBadge(healthy)", "atoms", statusBadge(SG_TOOL))}
 			${example("statusBadge(deprecated)", "atoms", statusBadge(SG_TOOL_DEPRECATED))}
 			${example("statusBadge(experimental)", "atoms", statusBadge(SG_TOOL_EXPERIMENTAL))}
-			${example("healthBadge(tool)", "atoms", healthBadge(SG_TOOL))}
-			${example("popularityBadge(tool)", "atoms", popularityBadge(SG_TOOL))}
 			${example("endorsementChip(5)", "atoms", endorsementChip(5))}
 			${example("completenessMeter({ filled: 7, total: 9 })", "atoms", completenessMeter({ filled: 7, total: 9 }))}
 			${example("completenessMeter({ filled: 9, total: 9 })", "atoms", completenessMeter({ filled: 9, total: 9 }))}
 			${example("fitChip(tool)", "atoms", fitChipExample())}
-			${example("thanksBlock(tool)", "atoms", thanksBlock(SG_TOOL))}
-			${example("usageBlock(tool)", "atoms", usageBlock(SG_TOOL))}
 			${example("keywordTags(tool)", "atoms", `<div class="sg-inline-list">${keywordTags(SG_TOOL)}</div>`, { wide: true })}
 			${example("glanceChips(tool)", "atoms", `<div class="sg-inline-list">${glanceChips(SG_TOOL)}</div>`, { wide: true })}
 			${example(

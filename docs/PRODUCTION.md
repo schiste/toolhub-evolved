@@ -50,9 +50,8 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   limiting, the `/v1` overlay API, `/v1/toolhub/*` official write bridge,
   `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed.
 - **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
-  write-through cache of the server overlay; the remaining signed-out demo write
-  paths are temporary and must be removed or test/dev-guarded before clean
-  production launch.
+  write-through cache of the server overlay; signed-out write paths are removed
+  from the production UI.
 - **Crawler** (`proxy/crawl.py` + `jobs.yaml`): scheduled ingest of registered
   toolinfo URLs, upstream-name dedupe, per-run history.
 - **Ops**: nightly DB backup + rotation, `docs/RUNBOOK.md`.
@@ -146,8 +145,9 @@ Small, because the pivot was designed in:
   are real signed-in write paths through Toolhub OAuth; others are local drafts
   or fallback overlays. The banner, feature-status page, and _Rules of
   Engagement_ page explain what is live from Toolhub and what is stored in
-  Evolved. Synthetic signals do not ship to clean production; they are replaced
-  with real Evolved-owned backend data or hidden.
+  Evolved. Signals and screenshots are shown only from real Evolved-owned
+  backend records (`tool_events`, `tool_thanks`, `tool_health_*`,
+  `tool_media`); there is no synthetic production fallback.
 - **Search UI** gains a provenance facet (Toolhub / registered here) driven by
   the federated search.
 
@@ -191,8 +191,8 @@ via a documented one-liner.
 ### P2 — First real features: favorites + lists (~1.5 weeks)
 
 - Favorites use `/v1/toolhub/user/favorites/` for official add/delete when
-  signed in, with the local overlay as the responsive cache and signed-out demo
-  fallback.
+  signed in, with the local overlay as the responsive cache/fallback after an
+  authenticated write attempt.
 - Lists use `/v1/toolhub/lists/…` for official create/update/delete when
   Toolhub permits it. Evolved draft lists remain local fallback data, rendered
   alongside live upstream lists with provenance labels.

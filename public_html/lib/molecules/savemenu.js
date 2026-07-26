@@ -4,7 +4,7 @@ import { t } from "../core/i18n.js";
 import { demoLists } from "../core/store.js";
 import { icon } from "../atoms/icon.js";
 
-// "Save to a list" control: a native <details> menu of the user's demo lists.
+// "Save to a list" control: a native <details> menu of the user's local Evolved lists.
 /**
  * @param {string} name
  * @returns {string}

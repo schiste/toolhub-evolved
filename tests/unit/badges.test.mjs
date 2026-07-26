@@ -4,8 +4,6 @@ import { afterEach, beforeEach, test } from "vitest";
 import { installStorage } from "./_storage-setup.mjs";
 import {
 	statusBadge,
-	healthBadge,
-	popularityBadge,
 	endorsementChip,
 	completenessMeter,
 	completenessList,
@@ -14,7 +12,6 @@ import {
 	endorsementOf
 } from "../../public_html/lib/atoms/badges.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
-import { synthHealth } from "../../public_html/lib/core/synth.js";
 
 let store;
 beforeEach(() => {
@@ -64,41 +61,6 @@ test("statusBadge() unknown level falls back to green classes", () => {
 	assert.equal(
 		statusBadge({ deprecated: true, status: { level: "blue", label: "Weird" } }),
 		'<span class="status status--green"><span class="dot dot--green"></span>Weird</span>'
-	);
-});
-
-// ---- healthBadge (synthHealth is a pure fn of name) ---------------------------
-test("healthBadge() renders the synthetic health with an 'experimental' extra class", () => {
-	// names chosen so synthHealth() returns each level
-	assert.equal(synthHealth("t9").level, "red");
-	assert.equal(synthHealth("t1").level, "yellow");
-	assert.equal(synthHealth("t0").level, "green");
-	assert.equal(
-		healthBadge({ name: "t9" }),
-		'<span class="status status--red experimental"><span class="dot dot--red"></span>Down</span>'
-	);
-	assert.equal(
-		healthBadge({ name: "t1" }),
-		'<span class="status status--yellow experimental"><span class="dot dot--yellow"></span>Degraded</span>'
-	);
-	assert.equal(
-		healthBadge({ name: "t0" }),
-		'<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>'
-	);
-});
-
-// ---- popularityBadge ----------------------------------------------------------
-test("popularityBadge() renders the popular icon + compact view count", () => {
-	assert.equal(
-		popularityBadge({ weeklyViews: 1500 }),
-		`<span class="views experimental">${icon("popular")} 1.5K views</span>`
-	);
-});
-
-test("popularityBadge() with zero views", () => {
-	assert.equal(
-		popularityBadge({ weeklyViews: 0 }),
-		`<span class="views experimental">${icon("popular")} 0 views</span>`
 	);
 });
 

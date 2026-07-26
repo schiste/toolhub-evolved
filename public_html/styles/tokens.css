@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 /* =============================================================================
-   Wikimedia design tokens — SINGLE SOURCE OF TRUTH for the Toolhub demo.
+   Wikimedia design tokens — SINGLE SOURCE OF TRUTH for Toolhub Evolved.
 
    Layers (always consume the highest layer you can):
      1. Raw brand palette   --wmf-*      verbatim from the brand guidelines
@@ -42,19 +42,9 @@
 	/* Surfaces */
 	--color-surface: var(--wmf-white);
 	--color-surface-muted: #f4f5f7; /* derived: faint neutral fill */
-	--color-surface-pattern: #eef0f3; /* derived: screenshot placeholder stripe */
 	--color-row-hover: rgb(0 0 0 / 0.02); /* derived: table row hover */
 	--color-overlay-modal: rgb(16 20 30 / 0.55);
 	--color-badge-neutral: rgb(0 0 0 / 0.12);
-	--background-shot-placeholder:
-		linear-gradient(135deg, transparent 0 42%, var(--color-surface) 42% 48%, transparent 48% 100%),
-		repeating-linear-gradient(
-			45deg,
-			var(--color-surface-muted),
-			var(--color-surface-muted) var(--space-2),
-			var(--color-surface-pattern) var(--space-2),
-			var(--color-surface-pattern) var(--space-4)
-		);
 
 	/* Borders */
 	--color-border: #d4d7db; /* derived: hairline (black-25 is too heavy) */

@@ -21,7 +21,9 @@ import {
 	demoListSave,
 	demoLists,
 	favNames,
-	isDemoListId
+	isDemoListId,
+	SOURCE,
+	SYNC_STATUS
 } from "../lib/core/store.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
@@ -42,12 +44,16 @@ function officialListPayload(list) {
 	};
 }
 
+function toolhubSignInRequiredMessage() {
+	return t("lists.signInRequired", "Toolhub sign-in is required before saving lists.");
+}
+
 /* ---- Lists overview + list detail -------------------------------------- */
 export async function viewLists() {
 	// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` because the value is read as `.results || []`.
 	const data = await apiGet("/lists/", { page_size: "30" }).catch(() => ({ results: [] }));
 	const live = (data.results || []).map((/** @type {any} */ list) => normalizeList(list));
-	// When experimenting, the user's demo lists appear first (clearly tagged).
+	// Signed-in local Evolved lists appear first, clearly tagged.
 	const mine = signedIn() ? demoLists().map((/** @type {any} */ list) => listCardData(list)) : [];
 	const all = [...mine, ...live];
 	const html = `
@@ -79,7 +85,7 @@ export async function viewList(id) {
 			description: d.description || "",
 			toolCount: tools.length
 		};
-		demoTag = ` <span class="exp-badge">${t("lists.demoList", "Demo list")}</span>`;
+		demoTag = ` <span class="exp-badge">${t("lists.evolvedList", "Evolved-local list")}</span>`;
 	} else {
 		try {
 			l = normalizeList(await apiGet(`/lists/${encodeURIComponent(id)}/`));
@@ -110,14 +116,14 @@ export async function viewList(id) {
 	</div>`;
 	return { title: t("lists.docTitle", "{title} — Toolhub", { title: l.title }), html };
 }
-// EXPERIMENTAL — your demo lists. Needs: GET /api/lists/ scoped to the user.
+// Evolved-local list drafts/fallbacks for the signed-in user.
 export function viewMyLists() {
 	const cards = demoLists().map((/** @type {any} */ list) => listCardData(list));
 	const html = `
 	<div class="container page">
 		<div class="section-head"><h1 class="page__title">${t("lists.yourLists", "Your lists")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
 			${button(t("lists.createAList", "Create a list"), { variant: "primary", href: "/lists/create", icon: "add" })}</div>
-		<p class="page__intro">${t("lists.yourListsIntro", "Lists you've built in this demo. Stored only in this browser — see")}
+		<p class="page__intro">${t("lists.yourListsIntro", "Lists saved in Evolved as drafts, fallbacks, or local records — see")}
 		<a href="/rules-of-engagement">${t("lists.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 		${cards.length > 0 ? grid("grid-lists", cards, listCard) : `<p class="empty">${t("lists.noListsYet", "No lists yet.")} <a href="/lists/create">${t("lists.createFirstList", "Create your first list")}</a>.</p>`}
 	</div>`;
@@ -345,22 +351,29 @@ function renderListEdit(src, { editing, officialEditing }) {
 					navigateTo(officialId ? listHref(String(officialId)) : listHref(work.id));
 					return;
 				} catch (error) {
-					if (!officialEditing) demoListSave(work);
+					const msg = backendErrorMessage(error);
+					if (!officialEditing) {
+						demoListSave(work, {
+							source: SOURCE.local,
+							syncStatus: SYNC_STATUS.localFallback,
+							lastError: msg
+						});
+					}
 					out.className = "at__result at__result--err";
 					out.textContent = officialEditing
 						? t("lists.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
-								msg: backendErrorMessage(error)
+								msg
 							})
 						: t(
 								"lists.officialWriteFailed",
 								"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-								{ msg: backendErrorMessage(error) }
+								{ msg }
 							);
 					return;
 				}
 			}
-			demoListSave(work);
-			navigateTo(listHref(work.id));
+			out.className = "at__result at__result--err";
+			out.textContent = toolhubSignInRequiredMessage();
 		});
 		const del = $("[data-le-delete]");
 		if (del) {
@@ -386,8 +399,8 @@ function renderListEdit(src, { editing, officialEditing }) {
 						return;
 					}
 				}
-				demoListDelete(work.id);
-				navigateTo("/my-lists");
+				out.className = "at__result at__result--err";
+				out.textContent = toolhubSignInRequiredMessage();
 			});
 		}
 	}

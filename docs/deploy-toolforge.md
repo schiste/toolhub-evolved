@@ -63,7 +63,7 @@ It activates fully once configured:
 2. Load the scheduled jobs (hourly crawler, nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
 
-Unconfigured, the site still runs — live read interface plus browser-local demo
+Unconfigured, the site still runs — live read interface plus signed-out read-only
 mode, with `/oauth/login` answering 503 and official write endpoints returning
 `reauth: true` until the user has a stored Toolhub grant.
 

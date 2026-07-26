@@ -12,17 +12,28 @@ export const DEMO_KEYS = {
 	crawlerUrls: "crawlerUrls"
 };
 export const FEED_LOG_CAP = 100;
+export const SYNC_STATUS = {
+	official: "official",
+	localDraft: "local_draft",
+	localFallback: "local_fallback",
+	evolvedReal: "evolved_real",
+	syncError: "sync_error"
+};
+export const SOURCE = {
+	official: "official",
+	local: "local"
+};
 /* ===== Evolved overlay store — localStorage cache, namespaced. Holds the
-   user-created delta (favorites, lists, drafts, annotations) that overloads
-   live data while experiments are on. With a real session these keys sync to
+   user-created delta (favorites, lists, drafts, annotations) layered onto live
+   data while Evolved features are on. With a real session these keys sync to
    Evolved's backend; supported flows may also publish to official Toolhub via
-   /v1/toolhub/* first. "Reset demo data" only wipes browser-local data. */
+   /v1/toolhub/* first. */
 export const DEMO_NS = "thdemo:";
 /* ---- Server write-through hook (production sync) ------------------------
    When a real session exists, serversync.js registers a handler here and every
    overlay mutation is pushed to the backend as well — localStorage becomes a
    synchronous cache of the server copy. With no handler (logged out / local
-   dev) behavior is exactly the browser-local demo mode. */
+   dev), write routes stay gated by Toolhub sign-in. */
 /** @type {((key: string, value: any) => void) | null} */
 let storeSync = null;
 let syncMuted = false;
@@ -46,7 +57,8 @@ export function withSyncMuted(run) {
 	}
 }
 /**
- * @typedef {{ id: string, title: string, description: string, tools: string[], modified?: string, created?: string }} DemoList
+ * @typedef {{ source?: string, syncStatus?: string, syncLabel?: string, lastSyncedAt?: string, lastError?: string, officialId?: number, officialName?: string, visibility?: string, toolhubResponse?: Record<string, any> | null, validationErrors?: any[] }} SyncMeta
+ * @typedef {{ id: string, title: string, description: string, tools: string[], modified?: string, created?: string } & SyncMeta} DemoList
  */
 export const demoStore = {
 	/**
@@ -118,9 +130,48 @@ export function withDemoFixture(fixture, render) {
 		});
 	}
 }
+/**
+ * @param {string | null | undefined} status
+ * @returns {string}
+ */
+export function syncStatusLabel(status) {
+	return (
+		{
+			[SYNC_STATUS.official]: "Official Toolhub",
+			[SYNC_STATUS.localDraft]: "Local draft",
+			[SYNC_STATUS.localFallback]: "Local fallback",
+			[SYNC_STATUS.evolvedReal]: "Evolved data",
+			[SYNC_STATUS.syncError]: "Sync error"
+		}[String(status || "")] || "Local draft"
+	);
+}
+/**
+ * @template {Record<string, any>} T
+ * @param {T} item
+ * @param {Partial<SyncMeta>} [meta]
+ * @returns {T}
+ */
+export function stampSyncMeta(item, meta = {}) {
+	const out = /** @type {T & SyncMeta & { id?: unknown }} */ (item);
+	const idCandidate = meta.officialId ?? out.officialId ?? (typeof out.id === "number" ? out.id : undefined);
+	const officialId = typeof idCandidate === "number" && Number.isFinite(idCandidate) ? idCandidate : undefined;
+	if (meta.source) out.source = meta.source;
+	if (!out.source) out.source = officialId ? SOURCE.official : SOURCE.local;
+	if (meta.syncStatus) out.syncStatus = meta.syncStatus;
+	if (!out.syncStatus) out.syncStatus = officialId ? SYNC_STATUS.official : SYNC_STATUS.localDraft;
+	if (meta.lastError !== undefined) out.lastError = meta.lastError;
+	if (meta.lastSyncedAt !== undefined) out.lastSyncedAt = meta.lastSyncedAt;
+	if (meta.officialId !== undefined) out.officialId = meta.officialId;
+	if (meta.officialName !== undefined) out.officialName = meta.officialName;
+	if (meta.visibility !== undefined) out.visibility = meta.visibility;
+	if (meta.toolhubResponse !== undefined) out.toolhubResponse = meta.toolhubResponse;
+	if (meta.validationErrors !== undefined) out.validationErrors = meta.validationErrors;
+	if (out.syncStatus === SYNC_STATUS.official && !out.lastSyncedAt) out.lastSyncedAt = new Date().toISOString();
+	out.syncLabel = syncStatusLabel(out.syncStatus);
+	return out;
+}
 // Favorites overlay. Signed-in UI attempts POST/DELETE /api/user/favorites/
-// through the backend bridge; this local set keeps the UI responsive and is the
-// signed-out demo fallback.
+// through the backend bridge; this local set keeps the UI responsive.
 /** @returns {string[]} */
 export function favNames() {
 	return demoStore.get(DEMO_KEYS.favorites, []);
@@ -159,18 +210,22 @@ export function isDemoListId(id) {
 }
 /** @returns {DemoList} */
 export function demoListNew() {
-	return {
+	return stampSyncMeta({
 		id: `demo-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`,
 		title: "",
 		description: "",
 		tools: []
-	};
+	});
 }
-/** @param {DemoList} list */
-export function demoListSave(list) {
+/**
+ * @param {DemoList} list
+ * @param {Partial<SyncMeta>} [meta]
+ */
+export function demoListSave(list, meta = {}) {
 	const all = demoLists(),
 		i = all.findIndex((l) => l.id === list.id);
 	list.modified = new Date().toISOString();
+	stampSyncMeta(list, meta);
 	if (i === -1) {
 		list.created = list.modified;
 		all.unshift(list);
@@ -187,7 +242,7 @@ export function demoListDelete(id) {
 		demoLists().filter((l) => String(l.id) !== String(id))
 	);
 }
-// Toggle a tool's membership in a demo list; returns true if now present.
+// Toggle a tool's membership in a local Evolved list; returns true if now present.
 /**
  * @param {string} id
  * @param {string} name
@@ -223,7 +278,7 @@ export function demoFeed(key, live) {
 export const toolEditsMap = () => storeMap(DEMO_KEYS.toolEdits);
 export const toolAnnosMap = () => storeMap(DEMO_KEYS.toolAnnos);
 export const toolNewMap = () => storeMap(DEMO_KEYS.toolNew);
-// Append local revision + audit-log rows so feeds/history reflect demo edits.
+// Append local revision + audit-log rows so feeds/history reflect Evolved edits.
 /**
  * @param {string} action
  * @param {string} name
@@ -237,11 +292,11 @@ export function logActivity(action, name, title) {
 		id,
 		timestamp: ts,
 		user: { username: USER.name },
-		comment: `Demo: ${action}`,
+		comment: `Evolved: ${action}`,
 		content_type: "tool",
 		content_id: name,
 		content_title: title,
-		_demo: true
+		_evolved: true
 	});
 	demoStore.set(DEMO_KEYS.revisions, rev.slice(0, FEED_LOG_CAP));
 	const aud = demoStore.get(DEMO_KEYS.auditlogs, []);
@@ -251,7 +306,7 @@ export function logActivity(action, name, title) {
 		user: { username: USER.name },
 		action,
 		target: { type: "tool", id: name, label: title },
-		_demo: true
+		_evolved: true
 	});
 	demoStore.set(DEMO_KEYS.auditlogs, aud.slice(0, FEED_LOG_CAP));
 }
@@ -260,25 +315,34 @@ export function demoRevisionsFor(name) {
 	// Stryker disable next-line ArrayDeclaration — the live arg is immediately filtered by `content_id === name`; any injected element lacks content_id and is dropped, so a non-empty default produces identical output: equivalent.
 	return demoFeed(DEMO_KEYS.revisions, []).filter((r) => r.content_id === name);
 }
-// EXPERIMENTAL — crawler simulation. Needs: server-side crawler (the browser
-// can't fetch arbitrary toolinfo.json — CORS). URLs are just recorded; actual
-// ingestion is simulated from pasted/sample JSON.
-/** @returns {Array<{ url: string, added: string, id?: number }>} */
+// Evolved crawler registration cache. Official URL writes go to Toolhub first;
+// local URLs and pasted Toolinfo are stored in Evolved.
+/** @returns {Array<{ url: string, added: string, id?: number, officialId?: number } & SyncMeta>} */
 export function crawlerUrls() {
 	return demoStore.get(DEMO_KEYS.crawlerUrls, []);
 }
 /**
  * @param {string} url
  * @param {number | undefined} [id]
+ * @param {Partial<SyncMeta>} [meta]
  */
-export function crawlerUrlAdd(url, id) {
+export function crawlerUrlAdd(url, id, meta = {}) {
 	const a = crawlerUrls();
 	const existing = a.find((x) => x.url === url);
+	const nextMeta =
+		id === undefined
+			? meta
+			: { source: SOURCE.official, syncStatus: SYNC_STATUS.official, officialId: id, ...meta };
 	if (existing) {
-		if (id !== undefined) existing.id = id;
+		if (id !== undefined) {
+			existing.id = id;
+			existing.officialId = id;
+		}
+		stampSyncMeta(existing, nextMeta);
 		demoStore.set(DEMO_KEYS.crawlerUrls, a);
 	} else {
-		a.unshift({ url, id, added: new Date().toISOString() });
+		const row = stampSyncMeta({ url, id, officialId: id, added: new Date().toISOString() }, nextMeta);
+		a.unshift(row);
 		demoStore.set(DEMO_KEYS.crawlerUrls, a);
 	}
 }
@@ -289,32 +353,7 @@ export function crawlerUrlDelete(url) {
 		crawlerUrls().filter((x) => x.url !== url)
 	);
 }
-export const SAMPLE_TOOLINFO = JSON.stringify(
-	[
-		{
-			name: "demo-citation-helper",
-			title: "Citation Helper",
-			description: "Suggests reliable sources while you edit.",
-			url: "https://example.org/citation-helper",
-			tool_type: "web app",
-			keywords: ["citations", "references"],
-			for_wikis: ["*"],
-			license: "MIT"
-		},
-		{
-			name: "demo-stub-finder",
-			title: "Stub Finder",
-			description: "Finds short articles in a topic that need expansion.",
-			url: "https://example.org/stub-finder",
-			tool_type: "bot",
-			keywords: ["stubs", "cleanup"],
-			repository: "https://github.com/example/stub-finder"
-		}
-	],
-	null,
-	2
-);
-// Ingest one toolinfo object or an array, upserting demo records (origin=crawler).
+// Ingest one toolinfo object or an array, upserting Evolved records (origin=crawler).
 /** @param {string} text */
 export function ingestToolinfo(text) {
 	let data;
@@ -335,20 +374,24 @@ export function ingestToolinfo(text) {
 			return;
 		}
 		const existed = Boolean(m[it.name]);
-		m[it.name] = {
-			title: it.title,
-			description: it.description,
-			url: it.url,
-			repository: it.repository || null,
-			license: it.license || null,
-			toolType: it.tool_type || null,
-			keywords: it.keywords || [],
-			forWikis: it.for_wikis || [],
-			uiLanguages: it.available_ui_languages || [],
-			deprecated: Boolean(it.deprecated),
-			experimental: Boolean(it.experimental),
-			origin: "crawler"
-		};
+		m[it.name] = stampSyncMeta(
+			{
+				title: it.title,
+				description: it.description,
+				url: it.url,
+				repository: it.repository || null,
+				license: it.license || null,
+				toolType: it.tool_type || null,
+				keywords: it.keywords || [],
+				forWikis: it.for_wikis || [],
+				uiLanguages: it.available_ui_languages || [],
+				deprecated: Boolean(it.deprecated),
+				experimental: Boolean(it.experimental),
+				origin: "crawler",
+				visibility: "public"
+			},
+			{ source: SOURCE.local, syncStatus: SYNC_STATUS.evolvedReal }
+		);
 		if (existed) updated++;
 		else added++;
 		logActivity(existed ? "crawl-updated" : "crawl-created", it.name, it.title);

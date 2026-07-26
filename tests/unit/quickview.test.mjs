@@ -23,10 +23,10 @@ import { INDEX, getTool } from "../../public_html/lib/core/api.js";
 import { dirAttrs, esc, safeUrl } from "../../public_html/lib/core/dom.js";
 import { updatedTimeTag } from "../../public_html/lib/core/i18n.js";
 import { renderMarkdown } from "../../public_html/lib/core/markdown.js";
-import { applyExp, setAuth, signedIn } from "../../public_html/lib/core/session.js";
+import { applyExp, setServerUser, signedIn } from "../../public_html/lib/core/session.js";
 import { toolHref } from "../../public_html/lib/core/routing.js";
 import { toolIcon } from "../../public_html/lib/atoms/avatar.js";
-import { endorsementChip, fitChip, healthBadge, popularityBadge } from "../../public_html/lib/atoms/badges.js";
+import { endorsementChip, fitChip } from "../../public_html/lib/atoms/badges.js";
 import { button } from "../../public_html/lib/atoms/button.js";
 import { glanceChips, keywordTags } from "../../public_html/lib/atoms/labels.js";
 import { favBtn } from "../../public_html/lib/molecules/favbtn.js";
@@ -45,7 +45,7 @@ function qvOracle(t) {
 		.filter(Boolean)
 		.join("");
 	const glance = glanceChips(t);
-	return `\n\t\t<div class="qv__head">${toolIcon(t, "lg")}\n\t\t\t<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(t.title)}>${esc(t.title)}</h2>\n\t\t\t<div class="qv__by">by <span dir="auto">${authors}</span></div></div>\n\t\t</div>\n\t\t<div class="qv__status">\n\t\t\t${realBadge}\n\t\t\t${endorsementChip(endorsement && endorsement.count)}\n\t\t\t${fitChip(t)}\n\t\t\t<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->\n\t\t\t${healthBadge(t)}\n\t\t\t<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking. -->\n\t\t\t${popularityBadge(t)}\n\t\t\t${updatedTimeTag(t.modified, "toolpage__when")}\n\t\t</div>\n\t\t<div class="qv__desc"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>\n\t\t<div class="toolpage__glance">${glance}</div>\n\t\t<div class="tcard__tags qv__tags">${tags}</div>\n\t\t<div class="qv__actions">\n\t\t\t${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}\n\t\t\t${button("View full page", { variant: "outline", href: toolHref(t.name) })}\n\t\t\t${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}\n\t\t</div>`;
+	return `\n\t\t<div class="qv__head">${toolIcon(t, "lg")}\n\t\t\t<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(t.title)}>${esc(t.title)}</h2>\n\t\t\t<div class="qv__by">by <span dir="auto">${authors}</span></div></div>\n\t\t</div>\n\t\t<div class="qv__status">\n\t\t\t${realBadge}\n\t\t\t${endorsementChip(endorsement && endorsement.count)}\n\t\t\t${fitChip(t)}\n\t\t\t${updatedTimeTag(t.modified, "toolpage__when")}\n\t\t</div>\n\t\t<div class="qv__desc"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>\n\t\t<div class="toolpage__glance">${glance}</div>\n\t\t<div class="tcard__tags qv__tags">${tags}</div>\n\t\t<div class="qv__actions">\n\t\t\t${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}\n\t\t\t${button("View full page", { variant: "outline", href: toolHref(t.name) })}\n\t\t\t${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}\n\t\t</div>`;
 }
 
 const base = {
@@ -68,7 +68,7 @@ function qvCheck(label, t) {
 beforeEach(() => {
 	document.body.innerHTML = "";
 	applyExp(true);
-	setAuth(true);
+	setServerUser("Grace Hopper");
 	for (const k of Object.keys(INDEX)) delete INDEX[k];
 	getTool.mockReset();
 });
@@ -93,7 +93,7 @@ test("quickViewBody exact HTML across content branches", () => {
 });
 
 test("quickViewBody omits favBtn when signed out", () => {
-	setAuth(false);
+	setServerUser(null);
 	qvCheck("signed out", base);
 });
 

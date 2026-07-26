@@ -13,12 +13,6 @@ export const EXPERIMENTS = [
 				what: t("experiments.signinWhat", "Sign in through Toolhub OAuth and sign out."),
 				current: t("experiments.signinCurrent", "Official Toolhub OAuth plus an Evolved server session."),
 				need: t("experiments.signinNeed", "An approved Toolhub OAuth application.")
-			},
-			{
-				name: t("experiments.resetName", "Reset demo data"),
-				what: t("experiments.resetWhat", "Clear everything you've saved in this demo."),
-				current: t("experiments.resetCurrent", "Wipes demo keys in this browser's localStorage."),
-				need: "—"
 			}
 		]
 	},
@@ -30,7 +24,7 @@ export const EXPERIMENTS = [
 				what: t("experiments.favoritesWhat", "Save tools and see them collected in one place."),
 				current: t(
 					"experiments.favoritesCurrent",
-					"Signed-in changes write to Toolhub favorites; signed-out demo mode stores names locally."
+					"Signed-in changes write to Toolhub favorites; Evolved keeps a local cache/fallback."
 				),
 				need: "POST / DELETE /api/user/favorites/",
 				tryHref: "/favorites",
@@ -78,10 +72,7 @@ export const EXPERIMENTS = [
 			},
 			{
 				name: t("experiments.crawlerName", "Add / remove tools (crawler)"),
-				what: t(
-					"experiments.crawlerWhat",
-					"Register a toolinfo.json URL, or paste / load sample toolinfo to ingest tools."
-				),
+				what: t("experiments.crawlerWhat", "Register a toolinfo.json URL, or paste toolinfo to ingest tools."),
 				current: t(
 					"experiments.crawlerCurrent",
 					"Signed-in URL registrations write to Toolhub; pasted JSON ingestion remains local to Evolved."
@@ -94,7 +85,7 @@ export const EXPERIMENTS = [
 				name: t("experiments.feedsName", "Activity feeds"),
 				what: t(
 					"experiments.feedsWhat",
-					"Your demo edits appear at the top of Recent changes, Audit logs and tool history."
+					"Evolved edits appear at the top of Recent changes, Audit logs and tool history."
 				),
 				current: t("experiments.feedsCurrent", "Local revision/audit rows merged on top of the live feeds."),
 				need: t("experiments.feedsNeed", "Server-side write side-effects"),
@@ -104,24 +95,25 @@ export const EXPERIMENTS = [
 		]
 	},
 	{
-		group: t("experiments.groupSignals", "Synthetic signals — computed deterministically per tool"),
+		group: t("experiments.groupSignals", "Evolved-only signals — real Evolved data only"),
 		items: [
 			{
 				name: t("experiments.popularityName", "Popularity"),
-				what: t("experiments.popularityWhat", "View counts and a “Popular this week” ranking."),
+				what: t("experiments.popularityWhat", "View counts and a popularity ranking."),
 				current: t(
 					"experiments.popularityCurrent",
-					"A stable pseudo-random number derived from the tool name."
+					"Public popularity ranking remains hidden; signed-in tool views now feed real Evolved aggregate events."
 				),
-				need: t("experiments.popularityNeed", "Usage / view tracking"),
-				tryHref: "/search?sort=views",
-				tryLabel: t("experiments.popularityTry", "Most viewed")
+				need: t("experiments.popularityNeed", "Daily aggregate rollups and privacy thresholds")
 			},
 			{
 				name: t("experiments.healthName", "Operational health"),
 				what: t("experiments.healthWhat", "A Healthy / Degraded / Down status pill."),
-				current: t("experiments.deterministicCurrent", "Deterministic per tool."),
-				need: t("experiments.healthNeed", "An uptime / health-check service")
+				current: t(
+					"experiments.healthCurrent",
+					"Evolved stores maintainer-provided health targets and shows only real checked status when available."
+				),
+				need: t("experiments.healthNeed", "Scheduled health-check job and moderation")
 			},
 			{
 				name: t("experiments.thanksName", "Thanks"),
@@ -129,20 +121,29 @@ export const EXPERIMENTS = [
 					"experiments.thanksWhat",
 					"A lightweight way to appreciate useful tools without rating maintainers' work."
 				),
-				current: t("experiments.deterministicCurrent", "Deterministic per tool."),
-				need: t("experiments.thanksNeed", "An authenticated appreciation event model with abuse controls")
+				current: t(
+					"experiments.thanksCurrent",
+					"Signed-in users can thank a tool; counts are stored in Evolved and labeled as Evolved data."
+				),
+				need: t("experiments.thanksNeed", "Abuse controls and aggregate daily rollups")
 			},
 			{
 				name: t("experiments.usageName", "30-day usage"),
 				what: t("experiments.usageWhat", "An “editors used this in the last 30 days” figure."),
-				current: t("experiments.deterministicCurrent", "Deterministic per tool."),
-				need: t("experiments.usageNeed", "Usage analytics")
+				current: t(
+					"experiments.usageCurrent",
+					"Signed-in tool-page interactions are counted as privacy-limited 30-day Evolved usage."
+				),
+				need: t("experiments.usageNeed", "Daily aggregate rollups and minimum-count suppression")
 			},
 			{
 				name: t("experiments.screenshotsName", "Screenshots"),
 				what: t("experiments.screenshotsWhat", "A preview image strip on the tool page."),
-				current: t("experiments.screenshotsCurrent", "A static placeholder — no per-tool data is possible."),
-				need: t("experiments.screenshotsNeed", "A screenshot field in toolinfo + image storage")
+				current: t(
+					"experiments.screenshotsCurrent",
+					"Approved Evolved media records render on tool pages; signed-in users can submit URL-based screenshots for review."
+				),
+				need: t("experiments.screenshotsNeed", "Review queue and durable approved media storage")
 			}
 		]
 	}
@@ -180,7 +181,7 @@ export function viewExperiments() {
 			<h1 class="page__title">${t("experiments.title", "Feature status")}</h1>
 			<p class="page__intro">${t("experiments.introLead", "The {total} features below describe Toolhub Evolved's hybrid model:", { total: esc(String(total)) })}
 			<strong>${t("experiments.introLive", "live Toolhub data stays the base")}</strong>, ${t("experiments.introWrites", "supported signed-in writes publish to official Toolhub first, and")}
-			<strong>${t("experiments.introOverlay", "local overlays cover drafts, fallback data, and synthetic signals")}</strong>.
+			<strong>${t("experiments.introOverlay", "local overlays cover drafts, fallback data, and Evolved-owned data")}</strong>.
 			${t("experiments.introToggleLead", "Some UI is shown only when")}
 			<strong>${t("experiments.introToggle", "“Show Evolved features”")}</strong> ${t("experiments.introTail", "is on. For the live-vs-local model and where your data goes, see")}
 			<a href="/rules-of-engagement">${t("experiments.rulesOfEngagement", "Rules of Engagement")}</a>.</p>

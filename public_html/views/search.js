@@ -79,7 +79,7 @@ function resolveSort(usp, exp) {
 	// defaultSort is referenced (not re-typed) so the allow-list entry that equals the
 	// default cannot drift from it; removing the default from the list is a no-op since
 	// an out-of-list request already resolves to defaultSort.
-	const allowedSorts = exp ? [defaultSort, "recent", "name", "views", "complete"] : [defaultSort, "name", "complete"];
+	const allowedSorts = exp ? [defaultSort, "recent", "name", "complete"] : [defaultSort, "name", "complete"];
 	const sort = allowedSorts.includes(requestedSort) ? requestedSort : defaultSort;
 	const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
 	return { sort, ordering, defaultSort };
@@ -144,7 +144,6 @@ export async function viewSearch() {
 	if (clientStatuses.size > 0) {
 		results = results.filter((t) => CLIENT_STATUS_FILTERS.some((s) => clientStatuses.has(s.value) && s.match(t)));
 	}
-	if (sort === "views") results.sort((a, b) => b.weeklyViews - a.weeklyViews || a.title.localeCompare(b.title));
 	if (sort === "complete") {
 		results.sort((a, b) => completeness(b).filled - completeness(a).filled || a.title.localeCompare(b.title));
 	}
@@ -184,15 +183,13 @@ export async function viewSearch() {
 	}<option value="recent">${t("search.recentlyUpdated", "Recently updated")}</option><option value="name">${t(
 		"search.nameAZ",
 		"Name (A–Z)"
-	)}</option>${
-		exp ? `<option value="views">${t("search.popularThisWeek", "Popular this week")}</option>` : ""
-	}<option value="complete">${t("search.mostComplete", "Most complete")}</option>`;
+	)}</option><option value="complete">${t("search.mostComplete", "Most complete")}</option>`;
 	const pageSizeOpts = PAGE_SIZE_OPTIONS.map(
 		(size) => `<option value="${size}">${t("search.perPage", "{size} per page", { size })}</option>`
 	).join("");
 	const resultsHTML =
 		results.length > 0
-			? `<ul class="card-grid grid-tools" role="list">${results.map((t, i) => `<li>${toolCard(t, sort === "views" ? { rank: (page - 1) * pageSize + i + 1, popular: true } : {})}</li>`).join("")}</ul>`
+			? `<ul class="card-grid grid-tools" role="list">${results.map((t) => `<li>${toolCard(t)}</li>`).join("")}</ul>`
 			: `<p class="empty">${t("search.noToolsMatch", "No tools match these filters.")}</p>`;
 	const localHTML =
 		local.length > 0

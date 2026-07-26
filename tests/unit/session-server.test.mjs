@@ -7,13 +7,11 @@ beforeEach(() => {
 	localStorage.clear();
 	session.setAuthRender(() => {});
 	session.setServerUser(null);
-	session.USER.name = "Ada Lovelace";
 	session.applyExp(false);
 });
 
 afterAll(() => {
 	session.setServerUser(null);
-	session.USER.name = "Ada Lovelace";
 	session.applyExp(false);
 });
 
@@ -41,12 +39,13 @@ test("a real session signs in even when the demo identity had opted out", () => 
 	assert.equal(session.signedIn(), true); // the server session wins
 });
 
-test("clearing the server user returns to demo semantics without touching exp", () => {
+test("clearing the server user returns to signed-out read-only mode without touching exp", () => {
 	session.setServerUser("Grace Hopper");
 	session.setServerUser(null);
 	assert.equal(session.serverUserName(), null);
+	assert.equal(session.USER.name, "");
 	assert.equal(session.expOn(), true); // feature mode choice is left as-is
-	assert.equal(session.signedIn(), true); // demo identity is signed-in by default
+	assert.equal(session.signedIn(), false);
 	localStorage.setItem(session.AUTH_KEY, "out");
 	assert.equal(session.signedIn(), false);
 });

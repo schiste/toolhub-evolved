@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { backendErrorMessage, clearApiCache, getTool, isNewTool, newToolBase } from "../lib/core/api.js";
+import {
+	backendErrorBody,
+	backendErrorMessage,
+	backendGetJson,
+	clearApiCache,
+	getTool,
+	isNewTool,
+	newToolBase
+} from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
 import { officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { normStr } from "../lib/core/util.js";
 import {
 	DEMO_KEYS,
-	SAMPLE_TOOLINFO,
+	SOURCE,
+	SYNC_STATUS,
 	crawlerUrlAdd,
 	crawlerUrlDelete,
 	crawlerUrls,
@@ -16,6 +25,8 @@ import {
 	fromCsv,
 	ingestToolinfo,
 	logActivity,
+	stampSyncMeta,
+	syncStatusLabel,
 	toCsv,
 	toolAnnosMap,
 	toolEditsMap,
@@ -147,17 +158,22 @@ function officialToolPayload(name, fields, { includeName = true } = {}) {
  * @param {string} name
  * @param {Record<string, any>} fields
  * @param {boolean} editing
+ * @param {Record<string, any>} [meta]
  */
-function saveLocalToolDraft(name, fields, editing) {
+function saveLocalToolDraft(name, fields, editing, meta = {}) {
+	const stamped = stampSyncMeta(
+		{ ...fields, visibility: "private" },
+		{ source: SOURCE.local, syncStatus: SYNC_STATUS.localFallback, ...meta }
+	);
 	if (editing && !isNewTool(name)) {
 		const m = toolEditsMap();
-		m[name] = fields;
+		m[name] = stamped;
 		demoStore.set(DEMO_KEYS.toolEdits, m);
 		logActivity("edited", name, fields.title);
 		return;
 	}
 	const m = toolNewMap();
-	m[name] = fields;
+	m[name] = stamped;
 	demoStore.set(DEMO_KEYS.toolNew, m);
 	logActivity(editing ? "edited" : "created", name, fields.title);
 }
@@ -175,10 +191,11 @@ function clearLocalToolDraft(name) {
 /**
  * @param {string} name
  * @param {Record<string, any>} anno
+ * @param {Record<string, any>} [meta]
  */
-function saveLocalAnnotationDraft(name, anno) {
+function saveLocalAnnotationDraft(name, anno, meta = {}) {
 	const m = toolAnnosMap();
-	m[name] = anno;
+	m[name] = stampSyncMeta(anno, { source: SOURCE.local, syncStatus: SYNC_STATUS.localFallback, ...meta });
 	demoStore.set(DEMO_KEYS.toolAnnos, m);
 }
 
@@ -201,6 +218,10 @@ function officialAnnotationPayload(anno) {
 	if (!payload.tool_type) delete payload.tool_type;
 	if (!payload.icon) delete payload.icon;
 	return payload;
+}
+
+function toolhubSignInRequiredMessage() {
+	return t("toolforms.signInRequired", "Toolhub sign-in is required before saving changes.");
 }
 
 function duplicateRegion() {
@@ -351,7 +372,7 @@ export async function viewToolForm(name) {
 		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
 		<h1 class="page__title">${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 		<p class="page__intro">${t("toolforms.introSaved", "Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.
-		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
+		${isCrawler ? t("toolforms.crawlerOwnedNote", "Core fields of crawler-imported tools are owned by the maintainer's toolinfo.json; only origin=api tools are core-editable in official Toolhub.") : ""}</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">${t("toolforms.coreInformation", "Core information")}</h2>
 			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code></p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}
@@ -364,11 +385,11 @@ export async function viewToolForm(name) {
 			${fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") })}
 			${editing ? "" : duplicateRegion()}
 			${fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.") })}
-			${fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.") })}
+			${fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page after saving.") })}
 			<div class="le__checks">${fCheck(t("toolforms.fieldDeprecated", "Deprecated"), "tf-deprecated", cur.deprecated)}${fCheck(t("toolforms.experimentalBadge", "Experimental"), "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Submit tool"), { variant: "primary", type: "submit" })}
-				${existingOfficialTool ? button(t("toolforms.revertDemoEdits", "Revert demo edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) + (officialWriteAvailable() ? button(t("toolforms.deleteOfficialTool", "Delete official tool"), { variant: "danger", cls: "le__delete", attrs: "data-tf-official-delete" }) : "") : ""}
+				${existingOfficialTool ? button(t("toolforms.discardLocalEdits", "Discard local edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) + (officialWriteAvailable() ? button(t("toolforms.deleteOfficialTool", "Delete official tool"), { variant: "danger", cls: "le__delete", attrs: "data-tf-official-delete" }) : "") : ""}
 				${editing && isNewTool(name) ? button(t("toolforms.deleteSubmission", "Delete submission"), { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
@@ -398,7 +419,10 @@ export async function viewToolForm(name) {
 				return;
 			}
 			if (!editing && isNewTool(tname)) {
-				setFieldError("tf-name", t("toolforms.errDuplicateName", "A demo tool with that name already exists."));
+				setFieldError(
+					"tf-name",
+					t("toolforms.errDuplicateName", "An Evolved-local tool with that name already exists.")
+				);
 				/** @type {HTMLElement} */ ($("#tf-name")).focus();
 				return;
 			}
@@ -430,18 +454,22 @@ export async function viewToolForm(name) {
 					navigateTo(toolHref(tname));
 					return;
 				} catch (error) {
-					saveLocalToolDraft(tname, fields, editing);
+					const msg = backendErrorMessage(error);
+					saveLocalToolDraft(tname, fields, editing, {
+						lastError: msg,
+						toolhubResponse: backendErrorBody(error)
+					});
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: backendErrorMessage(error) }
+						{ msg }
 					);
 					return;
 				}
 			}
-			saveLocalToolDraft(tname, fields, editing);
-			navigateTo(toolHref(tname));
+			out.className = "at__result at__result--err";
+			out.textContent = toolhubSignInRequiredMessage();
 		});
 		const rev = $("[data-tf-revert]");
 		if (rev) {
@@ -506,8 +534,13 @@ export function viewAddTools() {
 		return u.length > 0
 			? u
 					.map(
-						(/** @type {{ url: string, id?: number }} */ x) =>
-							`<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${x.id ? ` data-url-id="${x.id}"` : ""}` })}</li>`
+						(
+							/** @type {{ url: string, id?: number, officialId?: number, syncStatus?: string, syncLabel?: string, lastError?: string }} */ x
+						) => {
+							const officialId = x.officialId ?? x.id;
+							const label = x.syncLabel || syncStatusLabel(x.syncStatus);
+							return `<li><code class="at__url">${esc(x.url)}</code> <span class="exp-badge">${esc(label)}</span>${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}` })}</li>`;
+						}
 					)
 					.join("")
 			: `<li class="le__empty">${t("toolforms.noUrls", "No URLs registered.")}</li>`;
@@ -516,20 +549,36 @@ export function viewAddTools() {
 		const cards = /** @type {Tool[]} */ (Object.keys(toolNewMap()).map((n) => newToolBase(n)));
 		return cards.length > 0
 			? grid("grid-tools", cards, (/** @type {Tool} */ t) => toolCard(t))
-			: `<p class="empty">${t("toolforms.noToolsYet", "No tools yet. Submit one above, or ingest sample toolinfo.")}</p>`;
+			: `<p class="empty">${t("toolforms.noToolsYet", "No tools yet. Submit one above, or ingest toolinfo.")}</p>`;
+	}
+	/** @param {Array<Record<string, any>>} runs */
+	function crawlerRunRows(runs) {
+		if (runs.length === 0) {
+			return `<p class="empty">${t("toolforms.noCrawlerRuns", "No local crawler runs recorded yet.")}</p>`;
+		}
+		return `<ol class="feed feed--compact">${runs
+			.map((run) => {
+				const status = run.ok ? t("toolforms.crawlerRunOk", "OK") : t("toolforms.crawlerRunErrors", "Errors");
+				const errors = Array.isArray(run.errors) && run.errors.length > 0 ? ` · ${esc(run.errors[0])}` : "";
+				return `<li><span>${status} · ${t(
+					"toolforms.crawlerRunCounts",
+					"{urls} URLs, {added} added, {updated} updated",
+					{
+						urls: String(run.urlsCount || 0),
+						added: String(run.added || 0),
+						updated: String(run.updated || 0)
+					}
+				)}${errors}</span><span class="feed__when">${esc(run.endedAt || run.startedAt || "")}</span></li>`;
+			})
+			.join("")}</ol>`;
 	}
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const registerBtn = button(t("toolforms.register", "Register"), { variant: "outline", type: "submit" });
-	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-	const loadSampleBtn = button(t("toolforms.loadSample", "Load sample"), {
-		variant: "outline",
-		attrs: "data-sample"
-	});
 	const html = `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">${t("toolforms.addOrRemoveTools", "Add or remove tools")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 			${button(t("toolforms.submitATool", "Submit a tool"), { variant: "primary", href: "/tools/create", icon: "add" })}</div>
-		<p class="page__intro">${t("toolforms.ingestIntroLead", "Register a")} <code>toolinfo.json</code> ${t("toolforms.ingestIntroTail", "URL, or paste/ingest toolinfo to add records.")}
+		<p class="page__intro">${t("toolforms.ingestIntroLead", "Register a")} <code>toolinfo.json</code> ${t("toolforms.ingestIntroTail", "URL, or paste toolinfo to add records.")}
 		${t("toolforms.introEverything", "Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 
 		<h2 class="le__h2">${t("toolforms.registerUrlTitle", "Register a toolinfo.json URL")}</h2>
@@ -543,14 +592,22 @@ export function viewAddTools() {
 		${fArea(t("toolforms.fieldToolinfoJson", "Toolinfo JSON"), "at-json", "", t("toolforms.fieldToolinfoJsonHint", "Paste one tool object or an array; successful entries appear below in Your tools."), { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
 		<div class="le__actions">
 			${button(t("toolforms.ingest", "Ingest"), { variant: "primary", attrs: "data-ingest" })}
-			${loadSampleBtn}
 		</div>
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
 		<h2 class="le__h2">${t("toolforms.yourToolsTitle", "Your tools")} <span class="le__count" data-sub-count></span></h2>
 		<div data-sub-grid>${subGrid()}</div>
+		<h2 class="le__h2">${t("toolforms.localCrawlerRunsTitle", "Local crawler runs")}</h2>
+		<div data-crawler-runs>${crawlerRunRows([])}</div>
 	</div>`;
 	function mount() {
+		backendGetJson("/v1/crawler/runs/")
+			.then((data) => {
+				const box = $("[data-crawler-runs]");
+				if (box) box.innerHTML = crawlerRunRows(Array.isArray(data?.results) ? data.results : []);
+				return undefined;
+			})
+			.catch(() => undefined);
 		/** @type {HTMLElement} */ ($("[data-url-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
 			// Stryker disable next-line MethodExpression: #at-url is a type="url" input, which strips surrounding whitespace, so the value is already trimmed — equivalent.
@@ -565,26 +622,44 @@ export function viewAddTools() {
 			}
 			if (!u) return;
 			const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
-			let officialId;
+			let officialId,
+				officialRegistered = false;
 			if (officialWriteAvailable()) {
 				out.className = "at__result";
 				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
 				try {
 					const res = await officialWrite("POST", "/v1/toolhub/crawler/urls/", { url: u });
 					officialId = res?.toolhub?.id;
+					officialRegistered = true;
 					out.className = "at__result at__result--ok";
 					out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
 				} catch (error) {
+					const msg = backendErrorMessage(error);
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: backendErrorMessage(error) }
+						{ msg }
 					);
+					crawlerUrlAdd(u, undefined, {
+						source: SOURCE.local,
+						syncStatus: SYNC_STATUS.localFallback,
+						lastError: msg,
+						toolhubResponse: backendErrorBody(error)
+					});
 				}
 			}
-			if (typeof officialId === "number") crawlerUrlAdd(u, officialId);
-			else crawlerUrlAdd(u);
+			if (typeof officialId === "number") {
+				crawlerUrlAdd(u, officialId);
+			} else if (officialRegistered) {
+				crawlerUrlAdd(u, undefined, { source: SOURCE.official, syncStatus: SYNC_STATUS.official });
+			} else if (officialWriteAvailable()) {
+				// The failure path above already stored the local fallback with its error.
+			} else {
+				out.className = "at__result at__result--err";
+				out.textContent = toolhubSignInRequiredMessage();
+				return;
+			}
 			/** @type {HTMLInputElement} */ ($input("#at-url")).value = "";
 			clearFieldError("at-url");
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
@@ -600,9 +675,6 @@ export function viewAddTools() {
 			}
 			crawlerUrlDelete(/** @type {string} */ (b.getAttribute("data-url-rm")));
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
-		});
-		/** @type {HTMLElement} */ ($("[data-sample]")).addEventListener("click", () => {
-			/** @type {HTMLInputElement} */ ($input("#at-json")).value = SAMPLE_TOOLINFO;
 		});
 		/** @type {HTMLElement} */ ($("[data-ingest]")).addEventListener("click", () => {
 			const res = ingestToolinfo(/** @type {HTMLInputElement} */ ($input("#at-json")).value.trim());
@@ -685,20 +757,20 @@ export async function viewAnnotationsEdit(name) {
 					navigateTo(toolHref(name));
 					return;
 				} catch (error) {
-					saveLocalAnnotationDraft(name, anno);
+					const msg = backendErrorMessage(error);
+					saveLocalAnnotationDraft(name, anno, { lastError: msg, toolhubResponse: backendErrorBody(error) });
 					logActivity("annotated", name, cur.title);
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: backendErrorMessage(error) }
+						{ msg }
 					);
 					return;
 				}
 			}
-			saveLocalAnnotationDraft(name, anno);
-			logActivity("annotated", name, cur.title);
-			navigateTo(toolHref(name));
+			out.className = "at__result at__result--err";
+			out.textContent = toolhubSignInRequiredMessage();
 		});
 		const rev = $("[data-an-revert]");
 		if (rev) {

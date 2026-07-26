@@ -5,9 +5,9 @@ import { toolCard, CARD_TAG_LIMIT } from "../../public_html/lib/organisms/tool-c
 import { dirAttrs, esc } from "../../public_html/lib/core/dom.js";
 import { updatedTimeTag } from "../../public_html/lib/core/i18n.js";
 import { completeness } from "../../public_html/lib/core/signals.js";
-import { applyExp, setAuth, signedIn } from "../../public_html/lib/core/session.js";
+import { applyExp, setServerUser, signedIn } from "../../public_html/lib/core/session.js";
 import { toolIcon } from "../../public_html/lib/atoms/avatar.js";
-import { completenessMeter, endorsementChip, fitChip, popularityBadge } from "../../public_html/lib/atoms/badges.js";
+import { completenessMeter, endorsementChip, fitChip } from "../../public_html/lib/atoms/badges.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
 import { wikiShort } from "../../public_html/lib/atoms/labels.js";
 import { favBtn } from "../../public_html/lib/molecules/favbtn.js";
@@ -39,7 +39,7 @@ function oracle(t, opts = {}) {
 		flag = `<span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>`;
 	}
 	const meta = [t.toolType && esc(t.toolType), esc(wikiShort(t.forWikis))].filter(Boolean).join(" · ");
-	const footLeft = opts.popular ? popularityBadge(t) : `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
+	const footLeft = `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
 	const complete = completeness(t);
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	const endorsement = t.endorsement;
@@ -83,9 +83,9 @@ function check(label, t, opts) {
 
 test("toolCard exact HTML across every branch (signed in)", () => {
 	applyExp(true);
-	setAuth(true);
+	setServerUser("Grace Hopper");
 	check("rank + >limit keywords", base, { rank: 3 });
-	check("popular", base, { popular: true, rank: 2 });
+	check("legacy popular option only adds the compatibility card class", base, { popular: true, rank: 2 });
 	check("no rank, no popular", base, {});
 	check("deprecated flag", { ...base, deprecated: true }, {});
 	check("experimental flag", { ...base, experimental: true }, {});
@@ -104,12 +104,12 @@ test("toolCard exact HTML across every branch (signed in)", () => {
 
 test("toolCard favBtn omitted when signed out / exp off", () => {
 	applyExp(true);
-	setAuth(false);
+	setServerUser(null);
 	check("signed out: no favBtn", base, { rank: 1 });
 	applyExp(false);
 	check("exp off: no favBtn", base, {});
 	applyExp(true);
-	setAuth(true);
+	setServerUser(null);
 });
 
 test("CARD_TAG_LIMIT export value", () => {

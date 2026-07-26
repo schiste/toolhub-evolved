@@ -75,7 +75,7 @@ export function endorsementOf(name, map) {
 /* ---- Fit to your context --------------------------------------------------
    Honest local personalization: who you are / where you work. Stored on its own
    key so it persists independently of the experimental Lane-B overlay (and is
-   never wiped by "Reset demo data"). Fit is an EXPLICIT match (a tool that names
+   never wiped by overlay/account cleanup). Fit is an EXPLICIT match (a tool that names
    your wiki or your audience), so the cue stays meaningful rather than universal. */
 const CONTEXT_KEY = "toolhub-context";
 /** @returns {UserContext} */

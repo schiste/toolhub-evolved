@@ -12,6 +12,7 @@ import { viewTool, viewToolHistory, viewDiffStub } from "./tool.js";
 import { viewAuthor } from "./authors.js";
 import { viewLists, viewList, viewMyLists, viewFavorites, viewListEdit } from "./lists.js";
 import { viewToolForm, viewAddTools, viewAnnotationsEdit } from "./toolforms.js";
+import { viewAccountSettings } from "./account.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
 import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
 
@@ -64,6 +65,12 @@ export const ROUTES = {
 			viewAddTools,
 			t("router.addToolsTitle", "Add or remove tools"),
 			t("router.addToolsLead", "Register a toolinfo.json URL to be crawled, or create a tool record directly.")
+		),
+	account: () =>
+		requireSignIn(
+			viewAccountSettings,
+			t("router.accountTitle", "Evolved data settings"),
+			t("router.accountLead", "Export or delete Evolved-local data for this Toolhub sign-in.")
 		),
 	"developer-settings": () =>
 		signInPage(

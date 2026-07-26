@@ -4,7 +4,7 @@
 // literals — things no standard linter covers. The detection is a pure function
 // (scanText) covered by tests/unit/checks.test.mjs; this file is intentionally
 // tiny, unlike the old bespoke quality.mjs.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import * as espree from "espree";
 
@@ -459,7 +459,7 @@ function main() {
 		encoding: "utf8"
 	})
 		.split("\n")
-		.filter(Boolean);
+		.filter((file) => file && existsSync(file));
 	const issues = files.flatMap((file) => {
 		const code = readFileSync(file, "utf8");
 		const found = [...scanText(code, file), ...scanA11y(code, file), ...scanBalance(code, file)];

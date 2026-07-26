@@ -3,7 +3,7 @@
    On boot, ask the backend who we are. With a real Toolhub session, pull the
    server-side overlay into the localStorage cache (store.js) and register the
    write-through hook so every later mutation is pushed back. Logged out, the
-   app stays in browser-local demo mode; we only remember whether OAuth is
+   app stays read-only for write features; we only remember whether OAuth is
    configured so the UI can offer the real sign-in. */
 import { backendGetJson, backendPutJson, backendWriteJson } from "./api.js";
 import { setServerUser } from "./session.js";
@@ -30,9 +30,20 @@ export function officialWriteAvailable() {
  * @param {any} [body]
  * @returns {Promise<any>}
  */
-export function officialWrite(method, path, body) {
+export function serverWrite(method, path, body) {
 	if (!csrf) throw new Error("Toolhub sign-in is required");
 	return backendWriteJson(method, path, body, csrf);
+}
+
+/**
+ * Perform a CSRF-protected backend write that may call official Toolhub.
+ * @param {string} method
+ * @param {string} path
+ * @param {any} [body]
+ * @returns {Promise<any>}
+ */
+export function officialWrite(method, path, body) {
+	return serverWrite(method, path, body);
 }
 
 /**
@@ -49,11 +60,11 @@ export async function initServerSync() {
 	try {
 		me = await backendGetJson("/v1/user/");
 	} catch {
-		return false; // backend unreachable → plain demo mode
+		return false; // backend unreachable -> read-only write features
 	}
 	if (!me || !me.authenticated) {
-		// Logged out: learn whether real sign-in is even configured, then let
-		// the account UI re-render with (or without) the Toolhub OAuth button.
+		// Logged out: learn whether real sign-in is configured, then let the
+		// account UI re-render with (or without) the Toolhub OAuth button.
 		try {
 			const cfg = await backendGetJson("/v1/config/");
 			oauthReady = Boolean(cfg && cfg.oauth);

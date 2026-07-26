@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from backend import DEFAULT_DB_URL, db
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, utcnow
+from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_ERROR
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
 UA = "toolhub-evolved-crawler/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -128,11 +129,25 @@ def _ingest_items(
                 select(ToolRecord).where(ToolRecord.tool_name == name, ToolRecord.user_id == owner_id)
             ).scalar_one_or_none()
             if existing is None:
-                s.add(ToolRecord(tool_name=name, user_id=owner_id, record=record, modified_at=utcnow()))
+                s.add(
+                    ToolRecord(
+                        tool_name=name,
+                        user_id=owner_id,
+                        record=record,
+                        modified_at=utcnow(),
+                        visibility="public",
+                        source=SOURCE_LOCAL,
+                        sync_status=SYNC_EVOLVED_REAL,
+                    )
+                )
                 counts["added"] += 1
             else:
                 existing.record = record
                 existing.modified_at = utcnow()
+                existing.visibility = "public"
+                existing.source = SOURCE_LOCAL
+                existing.sync_status = SYNC_EVOLVED_REAL
+                existing.last_error = None
                 counts["updated"] += 1
 
 
@@ -142,14 +157,27 @@ def run_crawl() -> CrawlerRun:
     counts = {"added": 0, "updated": 0}
     errors: list[str] = []
     with db.session_scope() as s:
-        targets = [(c.url, c.user_id) for c in s.execute(select(CrawlerUrl)).scalars()]
-    for url, owner_id in targets:
+        targets = [(c.id, c.url, c.user_id) for c in s.execute(select(CrawlerUrl).where(CrawlerUrl.enabled)).scalars()]
+    for url_id, url, owner_id in targets:
+        error_count = len(errors)
         try:
             data = _fetch_json(session, url)
         except (requests.RequestException, ValueError) as exc:
             errors.append(f"{url}: {exc}")
+            with db.session_scope() as s:
+                row = s.get(CrawlerUrl, url_id)
+                if row:
+                    row.last_checked_at = utcnow()
+                    row.last_status = SYNC_ERROR
+                    row.last_error = str(exc)[:2000]
             continue
         _ingest_items(data if isinstance(data, list) else [data], owner_id, session, counts, errors)
+        with db.session_scope() as s:
+            row = s.get(CrawlerUrl, url_id)
+            if row:
+                row.last_checked_at = utcnow()
+                row.last_status = SYNC_EVOLVED_REAL if len(errors) == error_count else SYNC_ERROR
+                row.last_error = None if len(errors) == error_count else errors[-1][:2000]
     run = CrawlerRun(
         started_at=utcnow(),
         ended_at=utcnow(),
@@ -158,6 +186,8 @@ def run_crawl() -> CrawlerRun:
         updated=counts["updated"],
         ok=not errors,
         errors=errors,
+        source=SOURCE_LOCAL,
+        sync_status=SYNC_EVOLVED_REAL if not errors else SYNC_ERROR,
     )
     with db.session_scope() as s:
         s.add(run)

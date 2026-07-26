@@ -7,7 +7,7 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 
 > This runs next to Toolhub, not instead of it. Official Toolhub remains the
 > catalog source of truth; Evolved stores only complementary overlay data,
-> drafts/fallbacks, and synthetic signals that Toolhub does not expose.
+> drafts/fallbacks, and real Evolved-owned data that Toolhub does not expose.
 
 ![Home](docs/screenshots/hero-lean.png)
 
@@ -19,7 +19,7 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 - **Footer & policy pages** — About, Help, Community, Privacy, Terms, Code of Conduct, API, Feeds.
 - **Help maintain Toolhub** (`/contribute`) — a hub linking source, tasks, translation and docs.
 - **Wikimedia brand** — Montserrat + Source Serif 4, the 2022 brand palette, all in `tokens.css`.
-- **Evolved feature toggle** — reveal the hybrid layer: official-first writes, local drafts/fallback overlays, and synthetic signals such as popularity, thanks, health, and usage.
+- **Evolved feature toggle** — reveal the hybrid layer: official-first writes, local drafts/fallback overlays, and future Evolved-owned signals when they are backed by real data.
 - **Accessible & responsive** — keyboard, focus management, AA contrast, no horizontal overflow at any width.
 
 ## Architecture
@@ -43,9 +43,8 @@ no bundled catalog. Live endpoints used: `/api/search/tools/` (faceted),
 `/api/tools/{name}/`, `/api/tools/{name}/revisions/`, `/api/lists/`, `/api/users/`,
 `/api/recent/`, `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.
 
-Signed out, user actions stay browser-local (`localStorage` demo mode, behind
-the Evolved feature toggle). Signed in with Toolhub, the same localStorage
-acts as a synchronous cache of the server overlay: it is pulled from
+Signed-out users get live Toolhub reads only. Signed in with Toolhub,
+localStorage acts as a synchronous cache of the server overlay: it is pulled from
 `GET /v1/overlay/` at boot and overlay mutations write through with
 `PUT /v1/overlay/<key>`. Supported create/update/delete actions first call the
 official Toolhub API through `/v1/toolhub/*`; when Toolhub rejects a supported

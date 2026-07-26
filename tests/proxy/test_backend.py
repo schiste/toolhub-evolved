@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 from backend import db, security, toolhub  # noqa: E402
-from backend.models import ActivityRow, ToolhubToken, ToolOverlay, ToolRecord, User, utcnow  # noqa: E402
+from backend.models import ActivityRow, CrawlerRun, CrawlerUrl, ToolEvent, ToolHealthTarget, ToolList, ToolMedia, ToolThanks, ToolhubToken, ToolOverlay, ToolRecord, User, utcnow  # noqa: E402
 from backend.v1 import FEED_KEEP_CAP, _iso, _parse_iso  # noqa: E402
 
 
@@ -193,10 +193,15 @@ def test_overlay_roundtrip_all_keys(client):
     assert data["favorites"] == ["tool-b", "tool-a"]
     assert data["lists"][0]["id"] == "demo-1"
     assert data["lists"][0]["modified"] == "2026-07-25T10:00:00Z"
+    assert data["lists"][0]["syncStatus"] == "local_draft"
     assert data["crawlerUrls"][0]["url"] == "https://example.org/t.json"
-    assert data["toolEdits"] == {"tool-a": {"title": "New"}}
-    assert data["toolAnnos"] == {"tool-a": {"audiences": ["editors"]}}
+    assert data["crawlerUrls"][0]["syncStatus"] == "local_draft"
+    assert data["toolEdits"]["tool-a"]["title"] == "New"
+    assert data["toolEdits"]["tool-a"]["syncStatus"] == "local_draft"
+    assert data["toolAnnos"]["tool-a"]["audiences"] == ["editors"]
+    assert data["toolAnnos"]["tool-a"]["syncStatus"] == "local_draft"
     assert data["toolNew"]["my-tool"]["title"] == "T"
+    assert data["toolNew"]["my-tool"]["visibility"] == "private"
     assert data["revisions"] == revs
     assert data["auditlogs"][0]["action"] == "edited"
 
@@ -291,6 +296,30 @@ def test_feed_trim(client):
         assert s.query(ActivityRow).filter(ActivityRow.kind == "revisions").count() == FEED_KEEP_CAP
 
 
+def test_crawler_runs_and_user_data_controls(client):
+    uid = add_user()
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(CrawlerRun(urls_count=2, added=1, updated=1, ok=False, errors=["bad url"], sync_status="sync_error"))
+    runs = client.get("/v1/crawler/runs/").get_json()
+    assert runs["count"] == 1
+    assert runs["results"][0]["errors"] == ["bad url"]
+    assert runs["results"][0]["syncStatus"] == "sync_error"
+
+    assert put_overlay(client, "favorites", ["tool-a"]).status_code == 200
+    assert put_overlay(client, "lists", [{"id": "demo-1", "title": "L", "tools": ["tool-a"]}]).status_code == 200
+    assert put_overlay(client, "crawlerUrls", [{"url": "https://example.org/toolinfo.json"}]).status_code == 200
+    exported = client.get("/v1/user/export/").get_json()
+    assert exported["user"] == {"username": "Ada"}
+    assert exported["overlay"]["favorites"] == ["tool-a"]
+    resp = client.delete("/v1/user/evolved-data/", headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 200
+    assert resp.get_json()["deleted"]["favorites"] == 1
+    with db.session_scope() as s:
+        assert s.query(CrawlerUrl).count() == 0
+        assert s.query(ToolList).count() == 0
+
+
 # ---- iso helpers -----------------------------------------------------------
 
 
@@ -325,16 +354,20 @@ def test_search_and_toolinfo_feed(client):
                     "description": "First",
                     "url": "https://a.example",
                     "keywords": ["cite"],
-                },
-                modified_at=utcnow(),
+                    },
+                    modified_at=utcnow(),
+                    visibility="public",
+                    sync_status="evolved_real",
+                )
             )
-        )
         s.add(
             ToolRecord(
                 tool_name="beta",
                 user_id=uid,
                 record={"title": "Beta", "description": "Second"},
                 modified_at=utcnow(),
+                visibility="public",
+                sync_status="evolved_real",
             )
         )
     all_results = client.get("/v1/search/tools/").get_json()
@@ -347,6 +380,43 @@ def test_search_and_toolinfo_feed(client):
     assert len(feed) == 1  # beta has no https url → excluded
     assert feed[0]["name"] == "toolhub-evolved-alpha"
     assert feed[0]["keywords"] == "cite"
+
+
+def test_real_evolved_signals_and_media(client):
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.get("/v1/tools/alpha/signals/").get_json()["thanks"]["count"] == 0
+    assert client.post("/v1/tools/alpha/events/", json={"eventType": "view"}, headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.post("/v1/tools/alpha/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    signals = client.get("/v1/tools/alpha/signals/").get_json()
+    assert signals["thanks"] == {"count": 1, "userThanked": True}
+    assert signals["usage30d"]["count"] == 1
+    assert client.delete("/v1/tools/alpha/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.get("/v1/tools/alpha/signals/").get_json()["thanks"]["count"] == 0
+
+    assert (
+        client.put(
+            "/v1/tools/alpha/health-target/",
+            json={"url": "https://alpha.example/healthz"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    media_payload = {"url": "https://img.example/shot.png", "license": "CC-BY-SA-4.0", "source": "Maintainer upload"}
+    media = client.post("/v1/tools/alpha/media/", json=media_payload, headers={"X-CSRF-Token": "tok"})
+    assert media.status_code == 200
+    assert media.get_json()["media"]["reviewStatus"] == "pending"
+    assert client.get("/v1/tools/alpha/media/").get_json()["count"] == 0  # pending media is not public
+    with db.session_scope() as s:
+        row = s.query(ToolMedia).one()
+        row.review_status = "approved"
+    assert client.get("/v1/tools/alpha/media/").get_json()["count"] == 1
+    assert client.delete(f"/v1/media/{media.get_json()['media']['id']}/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    with db.session_scope() as s:
+        assert s.query(ToolEvent).count() == 1
+        assert s.query(ToolThanks).count() == 1
+        assert s.query(ToolHealthTarget).count() == 1
+        assert s.query(ToolMedia).one().deleted_at is not None
 
 
 class FakeResp:

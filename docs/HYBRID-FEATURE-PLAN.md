@@ -34,6 +34,10 @@ Implemented local tables in `proxy/backend/models.py`:
 | `activity`       | Evolved revision/audit rows for local actions.        | Toolhub has official recent/audit/history feeds.                              |
 | `crawler_urls`   | User-registered local crawler URLs.                   | Toolhub has official crawler URL registration.                                |
 | `crawler_runs`   | Server crawler run outcomes.                          | Toolhub has official crawler runs for official URLs.                          |
+| `tool_events`    | Privacy-limited Evolved interaction events.           | Toolhub does not expose Evolved-site usage events.                            |
+| `tool_thanks`    | Authenticated thanks on Evolved.                      | Toolhub does not expose thanks.                                               |
+| `tool_health_*`  | Evolved health targets and observations.              | Toolhub does not expose tool health checks.                                   |
+| `tool_media`     | URL-based screenshot/media metadata for review.       | Toolhub does not expose screenshots.                                          |
 
 Backend endpoints already implemented:
 
@@ -43,6 +47,12 @@ Backend endpoints already implemented:
 - `/v1/toolhub/*` bridge for official tools, annotations, lists, favorites, and
   crawler URL writes
 - `GET /v1/search/tools/` for Evolved-local tools
+- `GET /v1/tools/<name>/signals/`, `POST /v1/tools/<name>/events/`,
+  `POST|DELETE /v1/tools/<name>/thanks/`
+- `PUT /v1/tools/<name>/health-target/`
+- `GET|POST /v1/tools/<name>/media/`, `DELETE /v1/media/<id>/`
+- `GET /v1/crawler/runs/`, `GET /v1/user/export/`,
+  `DELETE /v1/user/evolved-data/`
 - `GET /toolinfo.json` for feeding Evolved-local tools into official Toolhub
 
 ## Cross-Cutting Work First
@@ -51,11 +61,11 @@ These are prerequisites before expanding any feature deeply.
 
 1. **Provenance and sync status**
     - Add a shared status vocabulary: `official`, `local_draft`,
-      `local_fallback`, `synthetic`, `evolved_real`, `sync_error`.
+      `local_fallback`, `evolved_real`, `sync_error`.
     - Store `official_id` or `official_name` where Toolhub returns one.
     - Store `sync_status`, `last_synced_at`, `last_error`, and `source` on every
       local record that can be published to Toolhub.
-    - UI rule: official data has no warning; local or synthetic data is labeled
+    - UI rule: official data has no warning; local Evolved data is labeled
       near the affected field, not only in page-level copy.
 
 2. **Local object lifecycle**

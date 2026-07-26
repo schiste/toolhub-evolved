@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { t, timeTag, updatedTimeTag } from "../lib/core/i18n.js";
-import { INDEX, apiGet, getTool, isNewTool } from "../lib/core/api.js";
+import { INDEX, apiGet, backendGetJson, getTool, isNewTool } from "../lib/core/api.js";
 import { egoGraph } from "../lib/core/graph.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
+import { serverWrite } from "../lib/core/serversync.js";
 import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
-import { demoRevisionsFor } from "../lib/core/store.js";
+import { demoRevisionsFor, syncStatusLabel } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
 import { authorHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
@@ -17,14 +18,11 @@ import {
 	endorsementChip,
 	fitChip,
 	freshnessNote,
-	healthBadge,
-	popularityBadge,
 	statusBadge
 } from "../lib/atoms/badges.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
-import { thanksBlock, usageBlock } from "../lib/atoms/signals.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { forceGraph } from "../lib/organisms/force-graph.js";
@@ -164,6 +162,65 @@ function replacementNote(tool) {
 	return `<div class="toolpage__notice">${t("tool.replacedBy", "Replaced by")} ${linked}</div>`;
 }
 
+/** @param {Record<string, any> | null} signals */
+function evolvedSignalsPanel(signals) {
+	const thanks = signals?.thanks || {};
+	const usage = signals?.usage30d || {};
+	const health = signals?.health || {};
+	const thanksCount = Number(thanks.count || 0);
+	const usageCount = Number(usage.count || 0);
+	const healthStatus = health.status && health.status !== "unknown" ? String(health.status) : "";
+	if (!signedIn() && !thanksCount && !usageCount && !healthStatus) return "";
+	return `<div class="panel" data-evolved-signals>
+		<h2 class="panel__title">${t("tool.evolvedSignals", "Evolved signals")}</h2>
+		<div class="toolpage__signal-list">
+			${thanksCount ? `<span class="signal">${t("tool.thanksCount", "{count} thanks on Evolved", { count: String(thanksCount) })}</span>` : ""}
+			${usageCount ? `<span class="signal">${t("tool.usageCount", "{count} Evolved interactions in 30 days", { count: String(usageCount) })}</span>` : ""}
+			${healthStatus ? `<span class="signal">${t("tool.healthStatus", "Health: {status}", { status: esc(healthStatus) })}</span>` : ""}
+		</div>
+		${
+			signedIn()
+				? button(
+						thanks.userThanked ? t("tool.thanked", "Thanks sent") : t("tool.thankTool", "Thank this tool"),
+						{
+							variant: "outline",
+							attrs: `data-thanks${thanks.userThanked ? ' data-thanked="1"' : ""}`
+						}
+					)
+				: ""
+		}
+		<p class="at__result" data-signals-result aria-live="polite"></p>
+	</div>`;
+}
+
+/** @param {Array<Record<string, any>>} media */
+function mediaPanel(media) {
+	const approved = media
+		.map((item) => {
+			const url = safeUrl(item.url);
+			if (!url) return "";
+			const title = item.title || t("tool.screenshot", "Screenshot");
+			return `<figure class="tool-media__item"><img src="${url}" alt="${esc(title)}" loading="lazy" /><figcaption>${esc(title)} · ${esc(item.license || "")}</figcaption></figure>`;
+		})
+		.filter(Boolean)
+		.join("");
+	const submit = signedIn()
+		? `<form class="tool-media__form" data-media-form>
+			<input class="le__input" data-media-url type="url" placeholder="${t("tool.mediaUrl", "Screenshot URL")}" aria-label="${t("tool.mediaUrl", "Screenshot URL")}" />
+			<input class="le__input" data-media-license placeholder="${t("tool.mediaLicense", "License")}" aria-label="${t("tool.mediaLicense", "License")}" />
+			<input class="le__input" data-media-source placeholder="${t("tool.mediaSource", "Source")}" aria-label="${t("tool.mediaSource", "Source")}" />
+			${button(t("tool.submitMedia", "Submit screenshot"), { variant: "outline", type: "submit" })}
+		</form>`
+		: "";
+	if (!approved && !submit) return "";
+	return `<div class="panel tool-media">
+		<h2 class="panel__title">${t("tool.screenshotsTitle", "Screenshots")}</h2>
+		${approved ? `<div class="tool-media__grid">${approved}</div>` : ""}
+		${submit}
+		<p class="at__result" data-media-result aria-live="polite"></p>
+	</div>`;
+}
+
 /** @param {string} name */
 export async function viewTool(name) {
 	const tool =
@@ -171,22 +228,36 @@ export async function viewTool(name) {
 			await getTool(name)
 		);
 	if (!tool) return viewToolNotFound(name);
+	const [evolvedSignals, evolvedMedia] = await Promise.all([
+		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/signals/`).catch(() => null),
+		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
+	]);
+	const mediaRows = Array.isArray(evolvedMedia?.results) ? evolvedMedia.results : [];
 	const provTags = [
 		wikidataChip(tool.wikidata),
 		...(signedIn()
 			? [
 					isNewTool(name)
-						? `<span class="exp-badge">${t("tool.demoSubmissionBadge", "Demo submission")}</span>`
+						? `<span class="exp-badge">${esc(tool.syncLabel || syncStatusLabel(tool.syncStatus) || t("tool.localSubmissionBadge", "Evolved-local submission"))}</span>`
 						: "",
-					tool.edited ? `<span class="exp-badge">${t("tool.editedDemoBadge", "Edited · demo")}</span>` : "",
+					tool.edited
+						? `<span class="exp-badge">${t("tool.localEditBadge", "Edited in Evolved")} · ${esc(syncStatusLabel(tool.editSyncStatus))}</span>`
+						: "",
 					tool.annotated
-						? `<span class="exp-badge">${t("tool.annotatedDemoBadge", "Community annotations · demo")}</span>`
+						? `<span class="exp-badge">${t("tool.localAnnotationsBadge", "Community annotations in Evolved")} · ${esc(syncStatusLabel(tool.annotationSyncStatus))}</span>`
 						: ""
 				]
 			: [])
 	]
 		.filter(Boolean)
 		.join(" ");
+	const syncErrors = [tool.lastError, tool.editLastError, tool.annotationLastError]
+		.filter(Boolean)
+		.map(
+			(msg) =>
+				`<p class="toolpage__sync-error">${t("tool.syncErrorPrefix", "Sync issue:")} ${esc(String(msg))}</p>`
+		)
+		.join("");
 	const tags = keywordTags(tool, { empty: "—" });
 	const authors = authorInlineList(tool);
 
@@ -250,8 +321,6 @@ export async function viewTool(name) {
 	// Stryker disable next-line OptionalChaining: `tool.endorsement` is always assigned above via endorsementOf(), so optional vs plain access is equivalent.
 	const endorsementCount = tool.endorsement?.count;
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-	const thankBtn = button(t("tool.thankMaintainers", "Thank maintainers"), { variant: "outline", disabled: true });
-
 	const html = `
 	<div class="container page">
 		<a class="back" href="/search">${t("tool.backToTools", "← Back to tools")}</a>
@@ -264,6 +333,7 @@ export async function viewTool(name) {
 				${sponsorLine(tool.sponsor)}
 				${replacementNote(tool)}
 				${provTags ? `<div class="toolpage__prov">${provTags}</div>` : ""}
+				${syncErrors}
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
@@ -271,10 +341,6 @@ export async function viewTool(name) {
 					${fitChip(tool)}
 					${updatedTimeTag(tool.modified, "toolpage__when")}
 					${freshnessNote(tool)}
-					<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
-					${healthBadge(tool)}
-					<!-- EXPERIMENTAL — popularity. Needs: usage/view tracking the API doesn't expose. -->
-					${popularityBadge(tool)}
 				</div>
 			</div>
 			<div class="toolpage__cta">
@@ -287,20 +353,6 @@ export async function viewTool(name) {
 
 		<div class="toolpage__grid">
 			<div class="toolpage__main">
-				<!-- EXPERIMENTAL — screenshots/preview. Needs: a screenshot field in the
-				     toolinfo schema + image storage (no per-tool data possible here). -->
-				<div class="experimental shotstrip">
-					<div class="shotstrip__copy">
-						<span class="exp-badge shotstrip__badge">${t("tool.screenshotsBadge", "Screenshots · Evolved preview")}</span>
-						<span class="shotstrip__note">${t("tool.screenshotsNote", "Toolhub has no screenshot field yet; these frames are placeholders.")}</span>
-					</div>
-					<div class="shotstrip__frames" aria-hidden="true">
-						<div class="shot shot--hero">${toolIcon(tool, "lg")}</div>
-						<div class="shot shot--split"><span></span><span></span></div>
-						<div class="shot shot--stack"><span></span><span></span><span></span></div>
-					</div>
-				</div>
-
 				<div class="prose"${dirAttrs(tool.description)}>${renderMarkdown(tool.description) || `<em>${t("tool.noDescription", "No description provided.")}</em>`}</div>
 				<div class="tcard__tags toolpage__tags">${tags}</div>
 
@@ -312,13 +364,6 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaInterfaceLanguages", "Interface languages"), langLabel(tool.uiLanguages))}
 					${metaItem(t("tool.metaTechnology", "Technology"), (tool.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
-				</div>
-
-				<!-- EXPERIMENTAL — thanks. Needs: an authenticated appreciation event model with abuse controls. -->
-				<div class="experimental thanks">
-					<h2 class="toolpage__h2">${t("tool.thanksTitle", "Thanks")} <span class="exp-badge">${t("tool.experimentalBadge", "Experimental")}</span></h2>
-					${thanksBlock(tool)}
-					${thankBtn}
 				</div>
 
 				${relatedHtml}
@@ -347,15 +392,63 @@ export async function viewTool(name) {
 					${completenessMeter(complete)}
 					${completenessList(complete)}
 				</div>
-				<!-- EXPERIMENTAL — usage stat. Needs: usage analytics the API doesn't expose. -->
-				<div class="panel experimental">
-					<h2 class="panel__title">${t("tool.usageTitle", "Usage")} <span class="exp-badge">${t("tool.experimentalBadge", "Experimental")}</span></h2>
-					${usageBlock(tool)}
-				</div>
+				${evolvedSignalsPanel(evolvedSignals)}
+				${mediaPanel(mediaRows)}
 			</aside>
 		</div>
 	</div>`;
 	function mount() {
+		if (signedIn()) {
+			serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/events/`, { eventType: "view" }).catch(() => {});
+		}
+		document.querySelector("[data-thanks]")?.addEventListener("click", async (event) => {
+			const btn = /** @type {HTMLElement} */ (event.currentTarget);
+			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-signals-result]"));
+			const thanked = btn.getAttribute("data-thanked") === "1";
+			try {
+				await serverWrite(thanked ? "DELETE" : "POST", `/v1/tools/${encodeURIComponent(name)}/thanks/`);
+				btn.setAttribute("data-thanked", thanked ? "0" : "1");
+				btn.textContent = thanked ? t("tool.thankTool", "Thank this tool") : t("tool.thanked", "Thanks sent");
+				if (out) {
+					out.className = "at__result at__result--ok";
+					out.textContent = thanked
+						? t("tool.thanksRemoved", "Thanks removed.")
+						: t("tool.thanksSaved", "Thanks saved.");
+				}
+			} catch {
+				if (out) {
+					out.className = "at__result at__result--err";
+					out.textContent = t("tool.thanksFailed", "Could not update thanks.");
+				}
+			}
+		});
+		document.querySelector("[data-media-form]")?.addEventListener("submit", async (event) => {
+			event.preventDefault();
+			const form = /** @type {HTMLElement} */ (event.currentTarget);
+			/** @param {string} selector */
+			const value = (selector) =>
+				/** @type {HTMLInputElement | null} */ (form.querySelector(selector))?.value.trim() || "";
+			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-media-result]"));
+			try {
+				await serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/media/`, {
+					url: value("[data-media-url]"),
+					license: value("[data-media-license]"),
+					source: value("[data-media-source]")
+				});
+				if (out) {
+					out.className = "at__result at__result--ok";
+					out.textContent = t("tool.mediaSubmitted", "Screenshot submitted for review.");
+				}
+				form.querySelectorAll("input").forEach((input) => {
+					/** @type {HTMLInputElement} */ (input).value = "";
+				});
+			} catch {
+				if (out) {
+					out.className = "at__result at__result--err";
+					out.textContent = t("tool.mediaFailed", "Could not submit screenshot.");
+				}
+			}
+		});
 		const target = /** @type {HTMLElement | null} */ (document.querySelector("#ego-canvas"));
 		// Stryker disable next-line LogicalOperator: #ego-canvas is rendered exactly when `ego` is set, so `target` and `ego` are both present or both absent — `&&` vs `||` is indistinguishable here.
 		if (!target || !ego) return;
@@ -372,7 +465,7 @@ export async function viewToolHistory(name) {
 		// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` because the value is read as `data.results || []`.
 		apiGet(`/tools/${encodeURIComponent(name)}/revisions/`, { page_size: "20" }).catch(() => ({ results: [] }))
 	]);
-	// Lane B: your demo edits show as the most recent revisions.
+	// Local Evolved edits show as the most recent revisions.
 	const revs = [...demoRevisionsFor(name), ...(data.results || [])];
 	const tool = liveT;
 	if (!tool && revs.length === 0) return viewNotFound();

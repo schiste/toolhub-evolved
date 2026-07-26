@@ -9,6 +9,7 @@ const BAKE = process.env.BAKE === "1";
 
 const h = vi.hoisted(() => ({
 	getTool: vi.fn(),
+	backendGetJson: vi.fn(),
 	clearApiCache: vi.fn(),
 	isNewTool: vi.fn(),
 	newToolBase: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
 	return {
 		...actual,
+		backendGetJson: h.backendGetJson,
 		clearApiCache: h.clearApiCache,
 		getTool: h.getTool,
 		isNewTool: h.isNewTool,
@@ -76,14 +78,15 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 
 const tf = await import("../../public_html/views/toolforms.js");
 const { viewNotFound } = await import("../../public_html/views/static.js");
-const { DEMO_KEYS, SAMPLE_TOOLINFO } = await import("../../public_html/lib/core/store.js");
+const { DEMO_KEYS } = await import("../../public_html/lib/core/store.js");
+const tick = () => new Promise((res) => setTimeout(res, 0));
 
 const S = {
 	addtools: `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
+		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records.
 		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
@@ -93,14 +96,13 @@ const S = {
 		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/toolinfo.json" /><span class="le__error" id="at-url-err" hidden></span></label>
 			<button class="btn btn--outline btn--md" type="submit">Register</button>
 		</form>
-		<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
+		<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="exp-badge">Local draft</span> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="exp-badge">Local draft</span> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
 
 		<h2 class="le__h2">Ingest toolinfo</h2>
 		<label class="le__label">Toolinfo JSON <span class="le__hint" id="at-json-hint">Paste one tool object or an array; successful entries appear below in Your tools.</span>
 		<textarea class="le__input at__json" id="at-json" rows="10" aria-describedby="at-json-hint" placeholder="{ &quot;name&quot;: &quot;my-tool&quot;, &quot;title&quot;: &quot;My Tool&quot;, &quot;description&quot;: &quot;…&quot;, &quot;url&quot;: &quot;https://…&quot; }"></textarea></label>
 		<div class="le__actions">
 			<button class="btn btn--primary btn--md" type="button" data-ingest>Ingest</button>
-			<button class="btn btn--outline btn--md" type="button" data-sample>Load sample</button>
 		</div>
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
@@ -121,12 +123,14 @@ const S = {
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u||tcard__when></span></div>
 		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></li></ul></div>
+		<h2 class="le__h2">Local crawler runs</h2>
+		<div data-crawler-runs><p class="empty">No local crawler runs recorded yet.</p></div>
 	</div>`,
 	addtools_empty: `
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
+		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records.
 		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
@@ -143,12 +147,13 @@ const S = {
 		<textarea class="le__input at__json" id="at-json" rows="10" aria-describedby="at-json-hint" placeholder="{ &quot;name&quot;: &quot;my-tool&quot;, &quot;title&quot;: &quot;My Tool&quot;, &quot;description&quot;: &quot;…&quot;, &quot;url&quot;: &quot;https://…&quot; }"></textarea></label>
 		<div class="le__actions">
 			<button class="btn btn--primary btn--md" type="button" data-ingest>Ingest</button>
-			<button class="btn btn--outline btn--md" type="button" data-sample>Load sample</button>
 		</div>
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
 		<h2 class="le__h2">Your tools <span class="le__count" data-sub-count></span></h2>
-		<div data-sub-grid><p class="empty">No tools yet. Submit one above, or ingest sample toolinfo.</p></div>
+		<div data-sub-grid><p class="empty">No tools yet. Submit one above, or ingest toolinfo.</p></div>
+		<h2 class="le__h2">Local crawler runs</h2>
+		<div data-crawler-runs><p class="empty">No local crawler runs recorded yet.</p></div>
 	</div>`,
 	anno: `
 	<div class="container page le">
@@ -239,7 +244,7 @@ const S = {
 		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
 		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value=""  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
 			<label class="le__label">Available UI languages (comma-separated codes)
-		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.</span>
+		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page after saving.</span>
 		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
 			<div class="le__checks"><label class="le__check"><input type="checkbox" id="tf-deprecated" /> Deprecated</label><label class="le__check"><input type="checkbox" id="tf-experimental" /> Experimental</label></div>
 			<div class="le__actions">
@@ -304,12 +309,12 @@ const S = {
 		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
 		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value="en.wikipedia.org"  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
 			<label class="le__label">Available UI languages (comma-separated codes)
-		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.</span>
+		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page after saving.</span>
 		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="en" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
 			<div class="le__checks"><label class="le__check"><input type="checkbox" id="tf-deprecated" /> Deprecated</label><label class="le__check"><input type="checkbox" id="tf-experimental" /> Experimental</label></div>
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Save changes</button>
-				<button class="btn btn--danger btn--md le__delete" type="button" data-tf-revert>Revert demo edits</button>
+				<button class="btn btn--danger btn--md le__delete" type="button" data-tf-revert>Discard local edits</button>
 				
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
@@ -320,7 +325,7 @@ const S = {
 		<a class="back" href="/tools/crawled">← Back</a>
 		<h1 class="page__title">Edit tool <span class="exp-badge">Experimental</span></h1>
 		<p class="page__intro">Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.
-		In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway.</p>
+		Core fields of crawler-imported tools are owned by the maintainer's toolinfo.json; only origin=api tools are core-editable in official Toolhub.</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
 			<p class="le__ro">Name: <code>crawled</code></p>
@@ -348,7 +353,7 @@ const S = {
 		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
 		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value=""  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
 			<label class="le__label">Available UI languages (comma-separated codes)
-		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.</span>
+		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page after saving.</span>
 		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
 			<div class="le__checks"><label class="le__check"><input type="checkbox" id="tf-deprecated" /> Deprecated</label><label class="le__check"><input type="checkbox" id="tf-experimental" /> Experimental</label></div>
 			<div class="le__actions">
@@ -400,6 +405,7 @@ beforeEach(() => {
 	h.toolNewMap.mockReturnValue({});
 	h.toolEditsMap.mockReturnValue({});
 	h.toolAnnosMap.mockReturnValue({});
+	h.backendGetJson.mockResolvedValue({ results: [] });
 	h.officialWrite.mockResolvedValue({ ok: true });
 	h.officialWriteAvailable.mockReturnValue(false);
 });
@@ -465,6 +471,19 @@ test("viewAddTools with urls + submissions", async () => {
 	expect("addtools", r.html);
 });
 
+test("mount addtools loads recent local crawler runs", async () => {
+	h.backendGetJson.mockResolvedValue({
+		results: [{ ok: false, urlsCount: 2, added: 1, updated: 0, endedAt: "2026-07-26T10:00:00Z", errors: ["bad"] }]
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	await tick();
+	assert.deepEqual(h.backendGetJson.mock.calls[0], ["/v1/crawler/runs/"]);
+	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("Errors"));
+	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("2 URLs, 1 added, 0 updated"));
+});
+
 test("viewAddTools empty", async () => {
 	h.crawlerUrls.mockReturnValue([]);
 	h.toolNewMap.mockReturnValue({});
@@ -508,13 +527,12 @@ async function mountToolForm(name) {
 function setVal(id, v) {
 	document.querySelector(`#${id}`).value = v;
 }
-const tick = () => new Promise((res) => setTimeout(res, 0));
 // advance past the 300ms debounce on fake timers and flush the async update
 async function flushDebounce() {
 	await vi.advanceTimersByTimeAsync(350);
 }
 
-test("mount create: full valid submit saves a new tool and navigates", async () => {
+test("mount create: full valid submit without Toolhub sign-in is blocked", async () => {
 	h.isNewTool.mockReturnValue(false);
 	await mountToolForm(null);
 	setVal("tf-name", "new-tool");
@@ -528,24 +546,13 @@ test("mount create: full valid submit saves a new tool and navigates", async () 
 	setVal("tf-langs", "en, fr");
 	document.querySelector("#tf-deprecated").checked = true;
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(h.demoStoreSet.mock.calls.length, 1);
-	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolNew);
-	const saved = h.demoStoreSet.mock.calls[0][1]["new-tool"];
-	assert.deepEqual(saved, {
-		title: "New Tool",
-		description: "A description",
-		url: "https://example.org",
-		repository: "https://repo.example",
-		license: "MIT",
-		toolType: null,
-		keywords: ["a", "b"],
-		forWikis: ["en.wikipedia.org"],
-		uiLanguages: ["en", "fr"],
-		deprecated: true,
-		experimental: false
-	});
-	assert.deepEqual(h.logActivity.mock.calls[0], ["created", "new-tool", "New Tool"]);
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/new-tool"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.logActivity.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
 });
 
 test("mount create: signed-in submit publishes to official Toolhub first", async () => {
@@ -609,16 +616,20 @@ test("mount create: rejected official Toolhub write falls back to a local draft"
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("validation failed"));
 });
 
-test("mount edit: valid submit saves edits and logs 'edited'", async () => {
+test("mount edit: valid submit without Toolhub sign-in is blocked", async () => {
 	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", url: "https://x.example", origin: "api" }));
 	h.isNewTool.mockReturnValue(false);
 	await mountToolForm("my-tool");
 	setVal("tf-title", "Renamed");
 	setVal("tf-url", "https://x.example");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
-	assert.deepEqual(h.logActivity.mock.calls[0], ["edited", "my-tool", "Renamed"]);
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.logActivity.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
 });
 
 test("mount edit: signed-in submit publishes official tool update", async () => {
@@ -663,15 +674,19 @@ test("mount edit: signed-in submit publishes official tool update", async () => 
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
 });
 
-test("mount edit of a NEW tool: submit logs 'created' and writes toolNew", async () => {
+test("mount edit of a NEW tool without Toolhub sign-in is blocked", async () => {
 	h.getTool.mockResolvedValue(toolFixture("brand-new", { title: "Brand New", url: "https://x.example" }));
 	h.isNewTool.mockReturnValue(true);
 	await mountToolForm("brand-new");
 	setVal("tf-title", "Brand New");
 	setVal("tf-url", "https://x.example");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolNew);
-	assert.deepEqual(h.logActivity.mock.calls[0], ["edited", "brand-new", "Brand New"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.logActivity.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
 });
 
 test("mount create: missing name/title focuses the name field, no save", async () => {
@@ -920,16 +935,19 @@ test("mount create: type change triggers suggestions", async () => {
 
 /* ---------------- viewAddTools mount ---------------- */
 
-test("mount addtools: register a valid url adds it and refreshes the list", () => {
+test("mount addtools: valid url without Toolhub sign-in is blocked", () => {
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
 	r.mount();
 	h.crawlerUrls.mockReturnValue([{ url: "https://added.example/toolinfo.json" }]);
 	setVal("at-url", "https://added.example/toolinfo.json");
 	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["https://added.example/toolinfo.json"]);
-	assert.ok(document.querySelector("[data-url-list]").innerHTML.includes("https://added.example/toolinfo.json"));
-	assert.equal(document.querySelector("#at-url").value, "", "input cleared");
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-ingest-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
+	assert.equal(document.querySelector("#at-url").value, "https://added.example/toolinfo.json");
 });
 
 test("mount addtools: signed-in URL registration stores the official crawler id", async () => {
@@ -961,7 +979,11 @@ test("mount addtools: rejected official URL registration keeps a local URL", asy
 	setVal("at-url", "https://added.example/toolinfo.json");
 	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	await tick();
-	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["https://added.example/toolinfo.json"]);
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://added.example/toolinfo.json",
+		undefined,
+		{ source: "local", syncStatus: "local_fallback", lastError: "upstream refused", toolhubResponse: null }
+	]);
 	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("upstream refused"));
 });
 
@@ -1036,14 +1058,6 @@ test("mount addtools: url-list click outside a remove button is a no-op", () => 
 	assert.equal(h.crawlerUrlDelete.mock.calls.length, 0);
 });
 
-test("mount addtools: load sample fills the textarea", () => {
-	const r = tf.viewAddTools();
-	document.body.innerHTML = r.html;
-	r.mount();
-	document.querySelector("[data-sample]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-	assert.equal(document.querySelector("#at-json").value, SAMPLE_TOOLINFO);
-});
-
 test("mount addtools: ingest success shows summary and refreshes grid", () => {
 	h.ingestToolinfo.mockReturnValue({ added: 2, updated: 1 }); // no `errors` key → exercises `res.errors || []`
 	h.toolNewMap.mockReturnValue({ a: {}, b: {} });
@@ -1101,7 +1115,7 @@ test("mount addtools: ingest with adds and per-item errors stays ok class", () =
 
 /* ---------------- viewAnnotationsEdit mount ---------------- */
 
-test("mount annotations: submit saves annotation and navigates", async () => {
+test("mount annotations: submit without Toolhub sign-in is blocked", async () => {
 	h.getTool.mockResolvedValue(
 		toolFixture("my-tool", { title: "My Tool", audiences: ["editor"], tasks: ["editing"] })
 	);
@@ -1114,15 +1128,13 @@ test("mount annotations: submit saves annotation and navigates", async () => {
 	document.querySelector("#an-type").value = "bot";
 	setVal("an-icon", "https://commons.example/icon.png");
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
-	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["my-tool"], {
-		audiences: ["editor", "admin"],
-		tasks: ["editing"],
-		toolType: "bot",
-		icon: "https://commons.example/icon.png"
-	});
-	assert.deepEqual(h.logActivity.mock.calls[0], ["annotated", "my-tool", "My Tool"]);
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.logActivity.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
 });
 
 test("mount annotations: signed-in submit publishes official annotations", async () => {
@@ -1174,7 +1186,12 @@ test("mount annotations: rejected official write falls back locally", async () =
 		audiences: ["editor"],
 		tasks: [],
 		toolType: null,
-		icon: null
+		icon: null,
+		source: "local",
+		syncStatus: "local_fallback",
+		lastError: "not allowed",
+		toolhubResponse: null,
+		syncLabel: "Local fallback"
 	});
 	assert.deepEqual(h.logActivity.mock.calls[0], ["annotated", "my-tool", "My Tool"]);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
@@ -1201,15 +1218,19 @@ test("viewToolForm(undefined) is treated as create", async () => {
 	assert.equal(h.getTool.mock.calls.length, 0, "create does not fetch a tool");
 });
 
-test("mount create: an http:// (not https) URL is accepted", async () => {
+test("mount create: an http:// URL passes validation but still requires Toolhub sign-in", async () => {
 	h.isNewTool.mockReturnValue(false);
 	await mountToolForm(null);
 	setVal("tf-name", "n");
 	setVal("tf-title", "T");
 	setVal("tf-url", "http://insecure.example");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(h.demoStoreSet.mock.calls.length, 1, "http URL passes validation");
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/n"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(document.querySelector("#tf-url-err").textContent, "");
+	assert.equal(
+		document.querySelector("[data-official-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
 });
 
 test("mount create: duplicate list renders exact items (maintainer / authors / unknown)", async () => {
@@ -1359,7 +1380,10 @@ test("mount create: duplicate-name error message is exact", async () => {
 	setVal("tf-title", "T");
 	setVal("tf-url", "https://ok.example");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.equal(document.querySelector("#tf-name-err").textContent, "A demo tool with that name already exists.");
+	assert.equal(
+		document.querySelector("#tf-name-err").textContent,
+		"An Evolved-local tool with that name already exists."
+	);
 });
 
 test("edit (api origin) shows no crawler note", async () => {
@@ -1368,13 +1392,18 @@ test("edit (api origin) shows no crawler note", async () => {
 	assert.ok(!r.html.includes("In production, core fields"), "api-origin edit has no crawler note");
 });
 
-test("addtools: registering an http (not https) toolinfo URL is accepted", () => {
+test("addtools: registering an http toolinfo URL passes validation but still requires Toolhub sign-in", () => {
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
 	r.mount();
 	setVal("at-url", "http://insecure.example/toolinfo.json");
 	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
-	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["http://insecure.example/toolinfo.json"]);
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+	assert.equal(document.querySelector("#at-url-err").textContent, "");
+	assert.equal(
+		document.querySelector("[data-ingest-result]").textContent,
+		"Toolhub sign-in is required before saving changes."
+	);
 });
 
 test("addtools: invalid toolinfo URL message is exact", () => {

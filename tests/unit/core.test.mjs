@@ -10,7 +10,6 @@ import * as routing from "../../public_html/lib/core/routing.js";
 import * as api from "../../public_html/lib/core/api.js";
 import * as signals from "../../public_html/lib/core/signals.js";
 import * as similarity from "../../public_html/lib/core/similarity.js";
-import * as synth from "../../public_html/lib/core/synth.js";
 
 test("normStr normalizes absent, padded, and mixed-case values", () => {
 	assert.equal(util.normStr(null), "");
@@ -319,19 +318,6 @@ test("similarity vectors normalize weights and nearest neighbors are stable", ()
 		similarity.nearestNeighbors(source, tiedIndex, 2).map((item) => item.tool.name),
 		["alpha", "zeta"]
 	);
-});
-
-test("synthetic signals are deterministic and constrained", () => {
-	assert.equal(synth.synthSeed("toolforge-admin", "health"), synth.synthSeed("toolforge-admin", "health"));
-	assert.notEqual(synth.synthSeed("toolforge-admin", "health"), synth.synthSeed("toolforge-admin", "thanks"));
-	assert.equal(synth.synthViews("tool-140"), 2192);
-	assert.equal(synth.synthViews("tool-12"), 570);
-	assert.ok(synth.synthViews("toolforge-admin") >= 20);
-	assert.deepEqual(synth.synthHealth("health-4"), { level: "red", label: "Down" });
-	assert.deepEqual(synth.synthHealth("health-166"), { level: "yellow", label: "Degraded" });
-	assert.ok(synth.synthThanks("toolforge-admin") >= 3);
-	assert.ok(synth.synthUsage("toolforge-admin") >= 50);
-	assert.match(synth.synthHealth("toolforge-admin").level, /^(green|yellow|red)$/);
 });
 
 test("apiGet retries a transient 503, then resolves", async () => {

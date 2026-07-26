@@ -55,6 +55,7 @@ beforeEach(() => {
 		writable: true
 	});
 	session.applyExp(false);
+	session.setServerUser(null);
 	session.setAuthRender(() => {});
 });
 
@@ -62,6 +63,7 @@ beforeEach(() => {
 // leak into sibling test files sharing the process under the Stryker test runner.
 afterAll(() => {
 	session.applyExp(false);
+	session.setServerUser(null);
 });
 
 test("exported constants have their exact shape", () => {
@@ -284,9 +286,9 @@ test("demoFeed prepends stored items only when signed in, then appends live", ()
 	// signed out (exp off) => only live, and missing live arg => []
 	assert.deepEqual(store.demoFeed("revisions", [{ l: 1 }]), [{ l: 1 }]);
 	assert.deepEqual(store.demoFeed("revisions"), []);
-	// signed in => demo first, then live
+	// signed in => local Evolved feed first, then live
 	session.applyExp(true);
-	session.setAuth(true);
+	session.setServerUser("Grace Hopper");
 	assert.deepEqual(store.demoFeed("revisions", [{ l: 1 }]), [{ d: 1 }, { l: 1 }]);
 	assert.deepEqual(store.demoFeed("revisions"), [{ d: 1 }]);
 	// signed in but key missing => the stored default is an empty array
@@ -307,20 +309,20 @@ test("logActivity writes capped revision and audit-log rows", () => {
 		assert.deepEqual(rev[0], {
 			id: expectedId,
 			timestamp: "2026-05-05T00:00:00.000Z",
-			user: { username: "Ada Lovelace" },
-			comment: "Demo: edited",
+			user: { username: "" },
+			comment: "Evolved: edited",
 			content_type: "tool",
 			content_id: "tool-x",
 			content_title: "Tool X",
-			_demo: true
+			_evolved: true
 		});
 		assert.deepEqual(aud[0], {
 			id: expectedId,
 			timestamp: "2026-05-05T00:00:00.000Z",
-			user: { username: "Ada Lovelace" },
+			user: { username: "" },
 			action: "edited",
 			target: { type: "tool", id: "tool-x", label: "Tool X" },
-			_demo: true
+			_evolved: true
 		});
 	} finally {
 		rnd.mockRestore();
@@ -357,14 +359,14 @@ test("logActivity caps both feeds at FEED_LOG_CAP, newest first", () => {
 
 test("demoRevisionsFor returns only matching, signed-in revisions", () => {
 	session.applyExp(true);
-	session.setAuth(true);
+	session.setServerUser("Grace Hopper");
 	store.logActivity("edited", "alpha", "Alpha");
 	store.logActivity("edited", "beta", "Beta");
 	assert.equal(store.demoRevisionsFor("alpha").length, 1);
 	assert.equal(store.demoRevisionsFor("alpha")[0].content_id, "alpha");
 	assert.deepEqual(store.demoRevisionsFor("missing"), []);
 	// gated by signedIn
-	session.applyExp(false);
+	session.setServerUser(null);
 	assert.deepEqual(store.demoRevisionsFor("alpha"), []);
 });
 
@@ -393,35 +395,6 @@ test("crawlerUrls add/dedupe/delete", () => {
 	);
 });
 
-test("SAMPLE_TOOLINFO is the exact pretty-printed sample payload", () => {
-	const expected = JSON.stringify(
-		[
-			{
-				name: "demo-citation-helper",
-				title: "Citation Helper",
-				description: "Suggests reliable sources while you edit.",
-				url: "https://example.org/citation-helper",
-				tool_type: "web app",
-				keywords: ["citations", "references"],
-				for_wikis: ["*"],
-				license: "MIT"
-			},
-			{
-				name: "demo-stub-finder",
-				title: "Stub Finder",
-				description: "Finds short articles in a topic that need expansion.",
-				url: "https://example.org/stub-finder",
-				tool_type: "bot",
-				keywords: ["stubs", "cleanup"],
-				repository: "https://github.com/example/stub-finder"
-			}
-		],
-		null,
-		2
-	);
-	assert.equal(store.SAMPLE_TOOLINFO, expected);
-});
-
 test("ingestToolinfo reports invalid JSON", () => {
 	const res = store.ingestToolinfo("{not json");
 	assert.equal(typeof res.error, "string");
@@ -445,7 +418,11 @@ test("ingestToolinfo accepts a single object and maps defaults", () => {
 		uiLanguages: [],
 		deprecated: false,
 		experimental: false,
-		origin: "crawler"
+		origin: "crawler",
+		visibility: "public",
+		source: "local",
+		syncStatus: "evolved_real",
+		syncLabel: "Evolved data"
 	});
 	assert.equal(localStorage.getItem("thdemo:toolNew") !== null, true);
 });
@@ -479,7 +456,11 @@ test("ingestToolinfo maps every provided field for a full record", () => {
 		uiLanguages: ["en"],
 		deprecated: true,
 		experimental: true,
-		origin: "crawler"
+		origin: "crawler",
+		visibility: "public",
+		source: "local",
+		syncStatus: "evolved_real",
+		syncLabel: "Evolved data"
 	});
 });
 
@@ -508,11 +489,11 @@ test("ingestToolinfo validates each required field and indexes errors per item",
 test("ingestToolinfo counts updates and logs create vs update activity", () => {
 	const first = store.ingestToolinfo(JSON.stringify({ name: "dup", title: "T", description: "D", url: "U" }));
 	assert.deepEqual(first, { added: 1, updated: 0, errors: [] });
-	assert.equal(store.demoStore.get("revisions")[0].comment, "Demo: crawl-created");
+	assert.equal(store.demoStore.get("revisions")[0].comment, "Evolved: crawl-created");
 
 	const second = store.ingestToolinfo(JSON.stringify({ name: "dup", title: "T2", description: "D2", url: "U2" }));
 	assert.deepEqual(second, { added: 0, updated: 1, errors: [] });
-	assert.equal(store.demoStore.get("revisions")[0].comment, "Demo: crawl-updated");
+	assert.equal(store.demoStore.get("revisions")[0].comment, "Evolved: crawl-updated");
 	assert.equal(store.toolNewMap().dup.title, "T2");
 });
 

@@ -9,10 +9,10 @@ import {
 	setLocale,
 	setMessages
 } from "./lib/core/i18n.js";
-import { applyExp, expOn, expStored, setAuth, setAuthRender, setExpStored } from "./lib/core/session.js";
+import { applyExp, expOn, expStored, setAuthRender, setExpStored } from "./lib/core/session.js";
 import { initServerSync, officialWrite, officialWriteAvailable } from "./lib/core/serversync.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
-import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
+import { listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
@@ -162,31 +162,13 @@ document.addEventListener("keydown", (e) => {
 	}
 });
 
-/* Account dropdown: toggle, log out / log in, close on outside click */
+/* Account dropdown: toggle and close on outside click */
 const accountEl = document.querySelector("#account");
 if (accountEl) {
 	accountEl.addEventListener("click", (e) => {
 		if (e.target?.closest("#acct-btn")) {
 			e.preventDefault();
 			toggleAcctMenu();
-			return;
-		}
-		if (e.target?.closest("[data-logout]")) {
-			e.preventDefault();
-			closeAcctMenu();
-			setAuth(false);
-			return;
-		}
-		if (e.target?.closest("[data-login]")) {
-			e.preventDefault();
-			setAuth(true);
-			return;
-		}
-		if (e.target?.closest("[data-reset]")) {
-			e.preventDefault();
-			closeAcctMenu();
-			demoStore.clearAll();
-			render();
 			return;
 		}
 		if (e.target?.closest("#acct-menu a, #acct-menu button")) {
