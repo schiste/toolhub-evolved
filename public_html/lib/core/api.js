@@ -388,6 +388,17 @@ export class BackendError extends Error {
 		this.body = body;
 	}
 }
+/** @param {unknown} error */
+export function backendErrorMessage(error) {
+	if (error instanceof BackendError) {
+		const body = error.body || {};
+		const details = body.details || body;
+		if (typeof details.message === "string") return details.message;
+		if (typeof body.error === "string") return body.error;
+		return JSON.stringify(details);
+	}
+	return error instanceof Error ? error.message : String(error);
+}
 /**
  * @param {string} path
  * @returns {Promise<any>} parsed JSON, or null on any non-2xx status

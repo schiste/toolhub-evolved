@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { BackendError, clearApiCache, getTool, isNewTool, newToolBase } from "../lib/core/api.js";
+import { backendErrorMessage, clearApiCache, getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
 import { officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
@@ -112,18 +112,6 @@ function clearWikiErrorWhenValid(id) {
 		const bad = fromCsv(fieldValue(id)).find((value) => !isOfficialWikiTarget(value));
 		if (!bad) clearFieldError(id);
 	});
-}
-
-/** @param {unknown} error */
-function officialErrorMessage(error) {
-	if (error instanceof BackendError) {
-		const body = error.body || {};
-		const details = body.details || body;
-		if (typeof details.message === "string") return details.message;
-		if (typeof body.error === "string") return body.error;
-		return JSON.stringify(details);
-	}
-	return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -447,7 +435,7 @@ export async function viewToolForm(name) {
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: officialErrorMessage(error) }
+						{ msg: backendErrorMessage(error) }
 					);
 					return;
 				}
@@ -493,7 +481,7 @@ export async function viewToolForm(name) {
 						"toolforms.officialDeleteFailed",
 						"Official Toolhub did not delete the tool: {msg}",
 						{
-							msg: officialErrorMessage(error)
+							msg: backendErrorMessage(error)
 						}
 					);
 				}
@@ -591,7 +579,7 @@ export function viewAddTools() {
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: officialErrorMessage(error) }
+						{ msg: backendErrorMessage(error) }
 					);
 				}
 			}
@@ -703,7 +691,7 @@ export async function viewAnnotationsEdit(name) {
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: officialErrorMessage(error) }
+						{ msg: backendErrorMessage(error) }
 					);
 					return;
 				}

@@ -3,8 +3,8 @@ import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
 import {
 	ApiError,
-	BackendError,
 	apiGet,
+	backendErrorMessage,
 	clearApiCache,
 	getToolsByName,
 	normalizeList,
@@ -30,18 +30,6 @@ import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
-
-/** @param {unknown} error */
-function officialErrorMessage(error) {
-	if (error instanceof BackendError) {
-		const body = error.body || {};
-		const details = body.details || body;
-		if (typeof details.message === "string") return details.message;
-		if (typeof body.error === "string") return body.error;
-		return JSON.stringify(details);
-	}
-	return error instanceof Error ? error.message : String(error);
-}
 
 /** @param {{ title: string, description: string, tools: string[] }} list */
 function officialListPayload(list) {
@@ -361,12 +349,12 @@ function renderListEdit(src, { editing, officialEditing }) {
 					out.className = "at__result at__result--err";
 					out.textContent = officialEditing
 						? t("lists.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
-								msg: officialErrorMessage(error)
+								msg: backendErrorMessage(error)
 							})
 						: t(
 								"lists.officialWriteFailed",
 								"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-								{ msg: officialErrorMessage(error) }
+								{ msg: backendErrorMessage(error) }
 							);
 					return;
 				}
@@ -392,7 +380,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 							"lists.officialWriteFailedNoDraft",
 							"Official Toolhub did not accept the write: {msg}",
 							{
-								msg: officialErrorMessage(error)
+								msg: backendErrorMessage(error)
 							}
 						);
 						return;

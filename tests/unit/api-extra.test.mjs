@@ -37,6 +37,19 @@ test("isNewTool reflects the demo new-tool overlay", () => {
 	assert.equal(api.isNewTool("nope"), false);
 });
 
+test("backendErrorMessage prefers actionable backend payload details", () => {
+	assert.equal(
+		api.backendErrorMessage(new api.BackendError(400, "/v1/x", { details: { message: "Bad URL" } })),
+		"Bad URL"
+	);
+	assert.equal(api.backendErrorMessage(new api.BackendError(403, "/v1/x", { error: "Denied" })), "Denied");
+	assert.equal(
+		api.backendErrorMessage(new api.BackendError(500, "/v1/x", { details: { code: "upstream" } })),
+		'{"code":"upstream"}'
+	);
+	assert.equal(api.backendErrorMessage(new Error("Network down")), "Network down");
+});
+
 // ----------------------------------------------------------------- fetchJson retries
 test("apiGet retries network errors with exact backoff and rethrows after the cap", async () => {
 	const sleeps = [];
