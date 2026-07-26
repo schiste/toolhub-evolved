@@ -7,6 +7,9 @@ demonstrator. This document captures the current production target: run Evolved
 beside official Toolhub, using live Toolhub data and APIs while storing only the
 additional Evolved layer locally.
 
+For the feature-by-feature plan that turns the Evolved layer into real backend
+features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
+
 ## 0. The decision this plan implements
 
 - **Target: side-by-side product.** Toolhub Evolved runs as an independent

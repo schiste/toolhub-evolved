@@ -69,6 +69,7 @@ tools/
 TOKENS.md           ·  design-token reference + contribution rules
 docs/
   FEATURES.md          ·  generated feature listing from public_html/views/experiments.js
+  HYBRID-FEATURE-PLAN.md · feature-by-feature backend realization plan
   PLAN.md              ·  the comprehensive roadmap (ship lane + experiments lane)
   AUDIT-i18n-a11y.md   ·  detailed i18n / accessibility findings
   deploy-toolforge.md  ·  step-by-step Toolforge deployment
@@ -83,7 +84,8 @@ See **[docs/PLAN.md](docs/PLAN.md)** for the original demonstrator roadmap and
 The current direction is hybrid: live Toolhub reads remain canonical, supported
 signed-in writes publish through official Toolhub OAuth, and Evolved keeps a
 local overlay for drafts, fallback state, and features the official API does
-not expose.
+not expose. The feature-by-feature realization plan lives in
+**[docs/HYBRID-FEATURE-PLAN.md](docs/HYBRID-FEATURE-PLAN.md)**.
 
 ## Run locally
 

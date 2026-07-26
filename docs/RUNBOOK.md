@@ -52,6 +52,29 @@ write endpoints answer 401 with `reauth: true`.
   `ALTER TABLE` (write it down in the deploy notes) or a table rebuild; if
   migrations become frequent, introduce Alembic at that point.
 
+## Evolved-Owned Backend Data
+
+The feature plan in [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md) is the
+planning register for data and features that do not exist in official Toolhub.
+Keep this runbook current whenever a local table, job, retention rule, or
+failure mode changes.
+
+| Data             | Visibility                                      | Operational note                                                                                                          |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `users`          | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; delete with the user's Evolved account data.          |
+| `toolhub_tokens` | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion. |
+| `favorites`      | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync.                                          |
+| `lists`          | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids and sync status as the schema grows.                    |
+| `tools`          | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records feed `/toolinfo.json` for possible upstream ingestion.          |
+| `tool_overlays`  | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; label provenance in the UI.                    |
+| `activity`       | User-visible/admin-visible depending on event   | Local audit/revision rows only; merge with live Toolhub feeds without pretending to be official Toolhub activity.         |
+| `crawler_urls`   | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs.                       |
+| `crawler_runs`   | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                  |
+
+Before adding a new Evolved-only table, document the owner, purpose,
+visibility, retention/deletion behavior, export behavior, Toolhub handoff path,
+abuse controls, and backup/restore impact in the feature plan and this runbook.
+
 ## Deploy / rollback
 
 ```sh
