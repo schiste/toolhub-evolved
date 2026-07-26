@@ -9,9 +9,12 @@ const BAKE = process.env.BAKE === "1";
 
 const h = vi.hoisted(() => ({
 	apiGet: vi.fn(),
+	clearApiCache: vi.fn(),
 	getToolsByName: vi.fn(),
 	paginate: vi.fn(),
 	navigateTo: vi.fn(),
+	officialWrite: vi.fn(),
+	officialWriteAvailable: vi.fn(),
 	demoLists: vi.fn(),
 	demoListGet: vi.fn(),
 	isDemoListId: vi.fn(),
@@ -23,12 +26,22 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, apiGet: h.apiGet, getToolsByName: h.getToolsByName, paginate: h.paginate };
+	return {
+		...actual,
+		apiGet: h.apiGet,
+		clearApiCache: h.clearApiCache,
+		getToolsByName: h.getToolsByName,
+		paginate: h.paginate
+	};
 });
 vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
 	return { ...actual, navigateTo: h.navigateTo };
 });
+vi.mock("../../public_html/lib/core/serversync.js", () => ({
+	officialWrite: h.officialWrite,
+	officialWriteAvailable: h.officialWriteAvailable
+}));
 vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 	const actual = await orig();
 	return {
@@ -181,6 +194,7 @@ const S = {
 				<button class="btn btn--primary btn--md" type="submit">Create list</button>
 				
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
 	edit_edit: `
@@ -204,6 +218,7 @@ const S = {
 				<button class="btn btn--primary btn--md" type="submit">Save changes</button>
 				<button class="btn btn--danger btn--md le__delete" type="button" data-le-delete>Delete list</button>
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
 	favorites: `
@@ -370,6 +385,8 @@ beforeEach(() => {
 	h.demoLists.mockReturnValue([]);
 	h.favNames.mockReturnValue([]);
 	h.isDemoListId.mockReturnValue(false);
+	h.officialWrite.mockResolvedValue({ ok: true });
+	h.officialWriteAvailable.mockReturnValue(false);
 });
 
 const RAW_LIST = {
@@ -521,7 +538,7 @@ test("viewListEdit editing", async () => {
 
 test("viewListEdit missing source → viewNotFound", async () => {
 	h.demoListGet.mockReturnValue(null);
-	const r = lists.viewListEdit("gone");
+	const r = await lists.viewListEdit("gone");
 	assert.deepEqual(r, viewNotFound());
 });
 
@@ -658,6 +675,57 @@ test("mount edit: submit with title saves and navigates", () => {
 		tools: ["a"]
 	});
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/demo-1"]);
+});
+
+test("mount create: signed-in submit publishes to official Toolhub first", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ ok: true, toolhub: { id: 42 } });
+	mountEdit(null, { id: "new-1", title: "", description: "", tools: ["alpha"] });
+	document.querySelector("#le-title").value = "Official List";
+	document.querySelector("#le-desc").value = "Shared list";
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/toolhub/lists/",
+		{
+			title: "Official List",
+			description: "Shared list",
+			published: true,
+			tools: ["alpha"],
+			comment: "Published from Toolhub Evolved"
+		}
+	]);
+	assert.deepEqual(h.demoListDelete.mock.calls[0], ["new-1"]);
+	assert.equal(h.demoListSave.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/42"]);
+});
+
+test("mount official edit: rejected Toolhub write shows an error without creating a draft", async () => {
+	h.apiGet.mockResolvedValue({ id: 7, title: "Official", description: "old", tools: ["alpha"] });
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("permission denied"));
+	const r = await lists.viewListEdit("7");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("#le-title").value = "Official edited";
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"PUT",
+		"/v1/toolhub/lists/7/",
+		{
+			title: "Official edited",
+			description: "old",
+			published: true,
+			tools: ["alpha"],
+			comment: "Published from Toolhub Evolved"
+		}
+	]);
+	assert.equal(h.demoListSave.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("permission denied"));
 });
 
 test("mount edit: submit with empty title focuses title and does not save", () => {

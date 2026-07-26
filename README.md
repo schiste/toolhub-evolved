@@ -1,13 +1,13 @@
 # Toolhub Evolved
 
-A design **demonstrator** for a refreshed [Toolhub](https://toolhub.wikimedia.org/)
-— the community catalog of Wikimedia tools. It is a dependency-free single-page
-app that reads **live, read-only data** from the public Toolhub API, built to
-explore how tool discovery could look and feel.
+A companion interface for [Toolhub](https://toolhub.wikimedia.org/) — the
+community catalog of Wikimedia tools. It reads **live Toolhub data** from the
+public API, adds an Evolved overlay for extra/local data, and can publish
+supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 
-> This is a prototype, not the production site. All catalog data is real and live
-> (read-only, via the public API); a few clearly-labelled metrics are synthesized —
-> see the **Experimental toggle** below.
+> This runs next to Toolhub, not instead of it. Official Toolhub remains the
+> catalog source of truth; Evolved stores only complementary overlay data,
+> drafts/fallbacks, and synthetic signals that Toolhub does not expose.
 
 ![Home](docs/screenshots/hero-lean.png)
 
@@ -30,12 +30,13 @@ origin:
 
 1. Serves the static SPA from `public_html/`.
 2. Reverse-proxies read-only `GET /api/*` to `toolhub.wikimedia.org/api/*`.
-3. Hosts the production backend (`proxy/backend/`): Wikimedia OAuth sign-in and
-   the `/v1` API over a **project-specific database that complements the live
-   catalog** — favorites, lists, tool registrations, edit/annotation overlays,
-   activity history and crawler URLs. Upstream catalog data is never mirrored:
-   if a record exists on Toolhub, the live API is its source of truth and our
-   database only holds the delta (see [`docs/PRODUCTION.md`](docs/PRODUCTION.md)).
+3. Hosts the production backend (`proxy/backend/`): Toolhub OAuth sign-in,
+   server-side storage of the user's official Toolhub grant, the `/v1/overlay/*`
+   API for Evolved-local data, and the `/v1/toolhub/*` bridge that performs
+   official Toolhub writes on the user's behalf. Upstream catalog data is never
+   mirrored: if a record exists on Toolhub, the live API is its source of truth
+   and our database only holds the delta (see
+   [`docs/PRODUCTION.md`](docs/PRODUCTION.md)).
 
 The SPA (`public_html/main.js`, `public_html/views/`, and `public_html/lib/`) fetches everything live through `/api/…` — there is
 no bundled catalog. Live endpoints used: `/api/search/tools/` (faceted),
@@ -43,11 +44,13 @@ no bundled catalog. Live endpoints used: `/api/search/tools/` (faceted),
 `/api/recent/`, `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.
 
 Signed out, user actions stay browser-local (`localStorage` demo mode, behind
-the prospective-features toggle). Signed in with a real Wikimedia account, the
-same localStorage acts as a synchronous cache of the server copy: it is pulled
-from `GET /v1/overlay/` at boot and every mutation writes through with
-`PUT /v1/overlay/<key>`. Locally-registered tools are also published at
-`/toolinfo.json` so the official Toolhub crawler can ingest them.
+the prospective-features toggle). Signed in with Toolhub, the same localStorage
+acts as a synchronous cache of the server overlay: it is pulled from
+`GET /v1/overlay/` at boot and overlay mutations write through with
+`PUT /v1/overlay/<key>`. Supported create/update/delete actions first call the
+official Toolhub API through `/v1/toolhub/*`; when Toolhub rejects a supported
+draftable write, Evolved keeps the local draft/overlay so the user's work is
+not lost.
 
 ## Repository layout
 
@@ -74,14 +77,12 @@ LICENSE             ·  GNU GPL v3.0-or-later
 
 ## Roadmap
 
-See **[docs/PLAN.md](docs/PLAN.md)**. In short: the interface stays **frontend-only
-on live read-only data** (Lane A — correctness, i18n, a11y, polish). Every feature
-that would need a backend (writes, auth, signals the read-only API doesn't expose)
-lives behind the existing _"Show me prospective features"_ toggle and is built by
-**overloading the real live data with a feature-specific fixture overlay** (Lane B)
-— the way `synthViews()` already decorates a real tool with a synthetic view count.
-Live reads are never replaced; turning the toggle off strips every overlay and
-returns the app to a fully honest, live, read-only Toolhub experience.
+See **[docs/PLAN.md](docs/PLAN.md)** for the original demonstrator roadmap and
+**[docs/PRODUCTION.md](docs/PRODUCTION.md)** for the production architecture.
+The current direction is hybrid: live Toolhub reads remain canonical, supported
+signed-in writes publish through official Toolhub OAuth, and Evolved keeps a
+local overlay for drafts, fallback state, and features the official API does
+not expose.
 
 ## Run locally
 

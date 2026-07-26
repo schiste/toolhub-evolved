@@ -11,7 +11,7 @@ export function renderAccount() {
 	const el = $("#account");
 	if (!el) return;
 	if (!expOn()) {
-		// Feature mode off: real Wikimedia sign-in when the server offers it
+		// Feature mode off: real Toolhub sign-in when the server offers it
 		// (signing in turns feature mode on), else the explainer page.
 		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/href strings are still asserted by the renderAccount tests.)
 		el.innerHTML = button(t("account.logIn", "Log in"), {
@@ -21,11 +21,11 @@ export function renderAccount() {
 		return;
 	}
 	if (!signedIn()) {
-		// Feature mode on but logged out → real sign-in first (when configured),
+		// Feature mode on but logged out → real Toolhub sign-in first (when configured),
 		// with the browser-local demo identity as the fallback preview.
 		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/attrs strings are still asserted by the renderAccount tests.)
 		const wm = oauthAvailable()
-			? button(t("account.signInWithWikimedia", "Sign in with Wikimedia"), { href: "/oauth/login" })
+			? button(t("account.signInWithToolhub", "Sign in with Toolhub"), { href: "/oauth/login" })
 			: "";
 		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/attrs strings are still asserted by the renderAccount tests.)
 		el.innerHTML = `${wm}${button(t("account.signInDemo", "Sign in demo"), { variant: "outline", attrs: "data-login" })}`;

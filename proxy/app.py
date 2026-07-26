@@ -4,11 +4,13 @@
 Serves the static single-page app, reverse-proxies read-only GET requests to
 the live Toolhub API at the same origin (so the browser can read live catalog
 data without hitting CORS — the upstream API sends no CORS headers), and hosts
-the site's own backend (backend/): Wikimedia OAuth sign-in plus the /v1 API
-over the project-specific database that complements the live catalog.
+the site's own backend (backend/): Toolhub OAuth sign-in, the /v1 overlay API,
+and the official Toolhub write bridge over the project-specific database that
+complements the live catalog.
 
 The /api proxy is NOT an open proxy: requests only ever go to UPSTREAM/api/...
-and only GET. All writes land in our own database via /v1 — never upstream.
+and only GET. Official writes go through /v1/toolhub/* with a stored per-user
+OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 """
 
 import time

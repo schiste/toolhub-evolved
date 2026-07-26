@@ -32,7 +32,7 @@ export const USER = { name: "Ada Lovelace" }; // demo identity until a real sess
 export const AUTH_KEY = "toolhub-auth";
 
 /* ---- Real server session (production sign-in) ---------------------------
-   When the backend reports an authenticated Wikimedia session (serversync.js),
+   When the backend reports an authenticated Toolhub session (serversync.js),
    the real username replaces the demo identity and feature mode turns on —
    writes then persist server-side instead of only in this browser. */
 /** @type {string | null} */
@@ -42,7 +42,7 @@ export function serverUserName() {
 }
 
 // Signed-in state exists only while feature mode is on: a real server session
-// (Wikimedia OAuth) or, failing that, the browser-local demo identity.
+// (Toolhub OAuth) or, failing that, the browser-local demo identity.
 export function signedIn() {
 	return expOn() && (serverUser !== null || localStorage.getItem(AUTH_KEY) !== "out");
 }

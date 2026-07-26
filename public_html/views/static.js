@@ -44,14 +44,14 @@ export const STATIC = {
 		owner or administrators, plus community <em>annotations</em> that any logged-in
 		Wikimedian can enrich. When both are set for a field, Toolhub shows the core
 		value — balancing maintainer control with community contribution.</p>
-		<p>${t("static.about.cc0", "Structured data is released under CC0; attribution via links back is\n\t\tencouraged but not required. Sign in with your existing Wikimedia account — no\n\t\tnew account or password is needed.")}</p>
+		<p>${t("static.about.cc0", "Structured data is released under CC0; attribution via links back is\n\t\tencouraged but not required. Sign in with Toolhub — no separate Evolved account\n\t\tor password is needed.")}</p>
 		<p>Want to help build Toolhub itself? See ${`<a href="/contribute">${t("static.helpMaintainToolhub", "Help maintain Toolhub")}</a>`}.</p>
-		<blockquote>${t("static.about.prototypeNote", "This is a design prototype that reads live, read-only data from the\n\t\tpublic Toolhub API — not the production site.")}</blockquote>`
+		<blockquote>${t("static.about.prototypeNote", "This is a companion interface for Toolhub: it reads live catalog data from the public API, publishes official writes through Toolhub OAuth when you sign in, and keeps Evolved-only additions in its local overlay database.")}</blockquote>`
 	},
 	help: {
 		title: t("static.help.title", "Help"),
 		body: `
-		<p>${t("static.help.intro", "New to Toolhub? Here is the quickest path to finding and sharing tools. Sign\n\t\tin with your Wikimedia account (via OAuth) to save favourites and edit listings —\n\t\tno new account needed.")}</p>
+		<p>${t("static.help.intro", "New to Toolhub? Here is the quickest path to finding and sharing tools. Sign\n\t\tin with Toolhub to save favourites, build lists, and publish permitted edits —\n\t\tno separate Evolved account is needed.")}</p>
 		<h2>${t("static.help.findTool", "Find a tool")}</h2>
 		<ul>
 			<li><strong>Search</strong> by name, keyword, or what you want to do.</li>
@@ -86,11 +86,12 @@ export const STATIC = {
 		${ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyLink", "Wikimedia Foundation Privacy Policy"))}.</p>
 		<h2>${t("static.privacy.inPractice", "What this means in practice")}</h2>
 		<ul>
-			<li>You sign in with your Wikimedia account using OAuth; Toolhub does not store
-			a separate password.</li>
-			<li>Like a wiki, your contributions (tool edits, annotations, lists, comments)
-			are <strong>public</strong> and attributed to your username.</li>
-			<li>Catalog data is released under CC0.</li>
+			<li>You sign in with Toolhub using OAuth; Toolhub Evolved stores a local session
+			and a server-side OAuth grant, never your password.</li>
+			<li>Official writes are sent to Toolhub's API and follow Toolhub's attribution,
+			permission, and validation rules.</li>
+			<li>Evolved-only drafts and fallback data live in this site's local database and
+			browser cache so your work is not lost when official Toolhub rejects a write.</li>
 		</ul>
 		<p>Please read the full ${ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyShort", "Privacy Policy"))} for the authoritative details.</p>`
 	},
@@ -137,39 +138,44 @@ export const STATIC = {
 	"rules-of-engagement": {
 		title: t("static.rulesOfEngagement.title", "Rules of Engagement"),
 		body: `
-		<p><strong>This is a design prototype on a separate domain — not the production
-		Toolhub.</strong> It exists to explore how tool discovery could look and feel. Here's
-		exactly what is real and what is simulated, so nothing is misleading.</p>
-		<h2>${t("static.rulesOfEngagement.whatsReal", "What's real (live, read-only)")}</h2>
+		<p><strong>This is a companion interface on a separate domain — not the official
+		Toolhub frontend.</strong> It exists to run next to Toolhub: live Toolhub data remains
+		the base, while Evolved adds a local overlay for extra and fallback data.</p>
+		<h2>${t("static.rulesOfEngagement.whatsReal", "What's real")}</h2>
 		<p>The catalog itself is genuine: it is read live from
 		${ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org")} through a
 		read-only proxy. That means the tools, search and facets, tool detail pages, lists,
 		members, recent changes, crawler history, and audit logs you see are <strong>the
-		actual Toolhub data</strong>, refreshed every time you load a page. Nothing here is
-		ever written back to Toolhub.</p>
+		actual Toolhub data</strong>, refreshed every time you load a page. When you sign in
+		with Toolhub, supported writes are sent back to the official Toolhub API using your
+		OAuth grant.</p>
 		<h2>${t("static.rulesOfEngagement.whatsSimulated", "What's simulated (prospective features)")}</h2>
 		<p>When you switch on <em>"Show me prospective features"</em>, the app turns on a
-		set of experiments that the read-only API can't actually back: signing in,
-		favoriting tools, creating and editing lists, submitting and editing tools,
-		community annotations, and signals like popularity, thanks, health, and usage.</p>
+		set of experiments. Some now have real official write paths when you are signed in:
+		favorites, lists, direct tool submissions, core edits where Toolhub permits them,
+		community annotations, and crawler URL registration. Others remain synthetic:
+		popularity, thanks, health, screenshots, and usage.</p>
 		<p>These don't replace the real data — each one <strong>overloads a real record with
 		a feature-specific fixture</strong> (for example, a real tool decorated with a
 		synthetic "popular this week" count, or your favorite flag layered on top of the
 		live tool).</p>
 		<h2>${t("static.rulesOfEngagement.whereActionsGo", "Where your actions go")}</h2>
 		<ul>
-			<li>Everything you "save" — favorites, lists, edits — is stored
-			<strong>only in this browser</strong> (in <code>localStorage</code>), on this
-			device. It is never sent to Toolhub or shared with anyone else.</li>
-			<li><strong>"Reset demo data"</strong> (in the account menu) clears all of it.</li>
+			<li>Signed-in supported writes go first to official Toolhub. If Toolhub rejects
+			a write, Evolved keeps it locally as a draft or overlay where the feature
+			supports that.</li>
+			<li>Signed-out demo data is stored only in this browser
+			(<code>localStorage</code>), on this device.</li>
+			<li><strong>"Reset demo data"</strong> (in the account menu) clears browser-local
+			demo data.</li>
 			<li>Turning the toggle <strong>off</strong> strips every overlay and returns the
 			app to the honest, live, read-only experience.</li>
 		</ul>
 		<h2>${t("static.rulesOfEngagement.honestEdges", "The honest edges")}</h2>
-		<p>Because search is real and read-only, a tool you "create" or "edit" in the demo
-		won't appear in live search — it lives only as your local overlay, shown on its own
-		page and in your "my…" views. We label these rather than fake them.</p>
-		<blockquote>${t("static.rulesOfEngagement.summary", "In short: the data is real and read-only; your contributions are a local,\n\t\tin-browser simulation. Nothing you do here touches the real Toolhub.")}</blockquote>`
+		<p>Because search is still based on Toolhub's live search API, a locally saved draft
+		may not appear in live search until it has been accepted by official Toolhub. We
+		label local overlays rather than presenting them as canonical Toolhub data.</p>
+		<blockquote>${t("static.rulesOfEngagement.summary", "In short: Toolhub remains the source of truth for catalog data; Evolved publishes through Toolhub when signed in and keeps local overlay data for drafts, fallback, and features Toolhub does not expose.")}</blockquote>`
 	},
 	rss: {
 		title: t("static.rss.title", "Feeds"),
@@ -264,7 +270,7 @@ export async function viewApiDocs() {
 		html: `
 		<div class="container page">
 			<h1 class="page__title">${t("static.apiDocs.heading", "API documentation")}</h1>
-			<p class="page__intro">Toolhub is API-first. This prototype reads the live catalog through a same-origin proxy, but it is intentionally read-only: inspect schemas and <code>GET</code> endpoints here, and use the production site for authenticated writes.</p>
+			<p class="page__intro">Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own <code>/v1/toolhub/*</code> bridge after Toolhub OAuth sign-in.</p>
 			<div class="linkgrid">
 				${linkCard(icon("code"), t("static.apiDocs.interactiveDocs", "Interactive API docs"), t("static.apiDocs.interactiveDocsDesc", "Open the canonical Toolhub API documentation."), "https://toolhub.wikimedia.org/api-docs")}
 				${proxyCard(icon("code"), t("static.apiDocs.openApiSchema", "OpenAPI schema"), t("static.apiDocs.openApiSchemaDesc", "Machine-readable schema served at GET /api/schema/."), "/api/schema/")}
@@ -280,7 +286,7 @@ export async function viewApiDocs() {
 				<pre tabindex="0" aria-label="${t("static.apiDocs.generatorCommandLabel", "OpenAPI Generator command")}"><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.readOnlyBoundary", "Read-only boundary")}</h2>
-			<p class="page__intro">The proxy exposes live Toolhub responses for browsing and examples. Anonymous <code>GET</code> requests work here. Authenticated writes, OAuth, permission checks, crawler side effects, and validation errors belong to production Toolhub.</p>
+			<p class="page__intro">The public proxy exposes anonymous live Toolhub <code>GET</code> responses for browsing and examples. Authenticated writes never go through that proxy; they use Evolved's CSRF-protected backend bridge so official OAuth tokens stay server-side.</p>
 			<h2 class="contribute__h2">${t("static.apiDocs.endpointExamples", "Small endpoint examples")}</h2>
 			<ul class="page__intro">
 				<li><strong>${t("static.apiDocs.exampleSearchTools", "Search tools")}</strong><br><code>GET /api/search/tools/?q=wikidata&amp;page_size=5</code></li>
@@ -308,10 +314,9 @@ export function signInPage(title, lead) {
 		<div class="container page"><article class="prose prose--page">
 			<h1>${esc(title)}</h1>
 			<p>${lead}</p>
-			<p>${t("static.signIn.oauthNote", "Toolhub uses your existing Wikimedia account via OAuth — no new account or\n\t\t\tpassword is needed.")}</p>
-			<p>${button(t("static.signIn.continueButton", "Continue on toolhub.wikimedia.org"), { variant: "primary", href: "https://toolhub.wikimedia.org/", icon: "external", attrs: `target="_blank" rel="${EXTERNAL_REL}"` })}</p>
-			<p class="signin-note">${t("static.signIn.readOnlyNote", "In this prototype these actions are read-only: they need an\n\t\t\tauthenticated session and the live back-end. See")}
-			<a href="/contribute">${t("static.helpMaintainToolhub", "Help maintain Toolhub")}</a> to contribute.</p>
+			<p>${t("static.signIn.oauthNote", "Toolhub Evolved signs you in with official Toolhub OAuth, then uses Toolhub's user API to identify you locally.")}</p>
+			<p>${button(t("static.signIn.continueButton", "Sign in with Toolhub"), { variant: "primary", href: "/oauth/login", icon: "external" })}</p>
+			<p class="signin-note">${t("static.signIn.readOnlyNote", "Official writes still follow Toolhub's permissions. Evolved keeps supported rejected writes locally as drafts or overlays so you can revise them.")}</p>
 		</article></div>`
 	};
 }

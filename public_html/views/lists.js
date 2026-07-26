@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { ApiError, apiGet, getToolsByName, normalizeList, normalizeTool } from "../lib/core/api.js";
+import {
+	ApiError,
+	BackendError,
+	apiGet,
+	clearApiCache,
+	getToolsByName,
+	normalizeList,
+	normalizeTool
+} from "../lib/core/api.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
+import { officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
 import { listHref, navigateTo } from "../lib/core/routing.js";
 import {
 	demoListDelete,
@@ -21,6 +30,29 @@ import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
+
+/** @param {unknown} error */
+function officialErrorMessage(error) {
+	if (error instanceof BackendError) {
+		const body = error.body || {};
+		const details = body.details || body;
+		if (typeof details.message === "string") return details.message;
+		if (typeof body.error === "string") return body.error;
+		return JSON.stringify(details);
+	}
+	return error instanceof Error ? error.message : String(error);
+}
+
+/** @param {{ title: string, description: string, tools: string[] }} list */
+function officialListPayload(list) {
+	return {
+		title: list.title,
+		description: list.description || null,
+		published: true,
+		tools: list.tools,
+		comment: "Published from Toolhub Evolved"
+	};
+}
 
 /* ---- Lists overview + list detail -------------------------------------- */
 export async function viewLists() {
@@ -60,14 +92,6 @@ export async function viewList(id) {
 			toolCount: tools.length
 		};
 		demoTag = ` <span class="exp-badge">${t("lists.demoList", "Demo list")}</span>`;
-		if (signedIn()) {
-			// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
-			editBtn = button(t("lists.editList", "Edit list"), {
-				variant: "outline",
-				href: `${listHref(id)}/edit`,
-				icon: "edit"
-			});
-		}
 	} else {
 		try {
 			l = normalizeList(await apiGet(`/lists/${encodeURIComponent(id)}/`));
@@ -78,6 +102,14 @@ export async function viewList(id) {
 			if (error instanceof ApiError && error.status === 404) return viewNotFound();
 			throw error;
 		}
+	}
+	if (signedIn()) {
+		// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
+		editBtn = button(t("lists.editList", "Edit list"), {
+			variant: "outline",
+			href: `${listHref(id)}/edit`,
+			icon: "edit"
+		});
 	}
 	await attachEndorsements(tools);
 	tools = rankFitsFirst(tools);
@@ -123,15 +155,59 @@ export async function viewFavorites() {
 		</div>`
 	};
 }
-// EXPERIMENTAL — create/edit a demo list. Needs: POST/PUT /api/lists/.
+// Create/edit a list. Official lists write to Toolhub; Evolved draft lists keep
+// using the overlay store as a local fallback.
 /**
  * @param {string | null} id
- * @returns {{ title: string, html: string, mount: () => void } | { title: string, html: string }}
+ * @returns {{ title: string, html: string, mount: () => void } | { title: string, html: string } | Promise<{ title: string, html: string, mount: () => void } | { title: string, html: string }>}
  */
 export function viewListEdit(id) {
 	const editing = id !== null && id !== undefined;
-	const src = editing ? demoListGet(id) : demoListNew();
-	if (!src) return viewNotFound();
+	const localList = editing ? demoListGet(id) : null;
+	const src = localList || (editing ? null : demoListNew());
+	if (src) return renderListEdit(src, { editing, officialEditing: false });
+	if (editing) {
+		return Promise.resolve(apiGet(`/lists/${encodeURIComponent(id)}/`))
+			.then((raw) => {
+				const official = officialListSource(id, raw);
+				return official ? renderListEdit(official, { editing: true, officialEditing: true }) : viewNotFound();
+			})
+			.catch((error) => {
+				if (error instanceof ApiError && error.status === 404) return viewNotFound();
+				throw error;
+			});
+	}
+	return viewNotFound();
+}
+
+/**
+ * @param {string} fallbackId
+ * @param {any} raw
+ * @returns {{ id: string, title: string, description: string, tools: string[] } | null}
+ */
+function officialListSource(fallbackId, raw) {
+	if (!raw || typeof raw !== "object") return null;
+	return {
+		id: String(raw.id ?? fallbackId),
+		title: raw.title || "",
+		description: raw.description || "",
+		tools: (raw.tools || [])
+			.map((/** @type {string | { name?: string }} */ tool) => (typeof tool === "string" ? tool : tool.name))
+			.filter(Boolean)
+	};
+}
+
+/**
+ * @param {{ id: string, title: string, description: string, tools: string[] }} src
+ * @param {{ editing: boolean, officialEditing: boolean }} options
+ * @returns {{ title: string, html: string, mount: () => void }}
+ */
+function renderListEdit(src, { editing, officialEditing }) {
+	if (!src) {
+		return /** @type {{ title: string, html: string, mount: () => void }} */ (
+			/** @type {unknown} */ (viewNotFound())
+		);
+	}
 	const work = {
 		id: src.id,
 		title: src.title || "",
@@ -159,6 +235,7 @@ export function viewListEdit(id) {
 				${button(editing ? t("lists.saveChanges", "Save changes") : t("lists.createList", "Create list"), { variant: "primary", type: "submit" })}
 				${editing ? button(t("lists.deleteList", "Delete list"), { variant: "danger", cls: "le__delete", attrs: "data-le-delete" }) : ""}
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`;
 	function mount() {
@@ -255,7 +332,7 @@ export function viewListEdit(id) {
 				if (ic) ic.outerHTML = icon("check");
 			}
 		});
-		/** @type {HTMLElement} */ ($("[data-le-form]")).addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-le-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
 			const title = fieldValue("le-title");
 			if (!title) {
@@ -264,12 +341,63 @@ export function viewListEdit(id) {
 			}
 			work.title = title;
 			work.description = fieldValue("le-desc");
+			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+			if (officialWriteAvailable()) {
+				out.className = "at__result";
+				out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
+				try {
+					const res = await officialWrite(
+						officialEditing ? "PUT" : "POST",
+						officialEditing ? `/v1/toolhub/lists/${encodeURIComponent(work.id)}/` : "/v1/toolhub/lists/",
+						officialListPayload(work)
+					);
+					if (!officialEditing) demoListDelete(work.id);
+					clearApiCache();
+					const officialId = res?.toolhub?.id;
+					navigateTo(officialId ? listHref(String(officialId)) : listHref(work.id));
+					return;
+				} catch (error) {
+					if (!officialEditing) demoListSave(work);
+					out.className = "at__result at__result--err";
+					out.textContent = officialEditing
+						? t("lists.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
+								msg: officialErrorMessage(error)
+							})
+						: t(
+								"lists.officialWriteFailed",
+								"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+								{ msg: officialErrorMessage(error) }
+							);
+					return;
+				}
+			}
 			demoListSave(work);
 			navigateTo(listHref(work.id));
 		});
 		const del = $("[data-le-delete]");
 		if (del) {
-			del.addEventListener("click", () => {
+			del.addEventListener("click", async () => {
+				const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+				if (officialEditing && officialWriteAvailable()) {
+					out.className = "at__result";
+					out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
+					try {
+						await officialWrite("DELETE", `/v1/toolhub/lists/${encodeURIComponent(work.id)}/`);
+						clearApiCache();
+						navigateTo("/lists");
+						return;
+					} catch (error) {
+						out.className = "at__result at__result--err";
+						out.textContent = t(
+							"lists.officialWriteFailedNoDraft",
+							"Official Toolhub did not accept the write: {msg}",
+							{
+								msg: officialErrorMessage(error)
+							}
+						);
+						return;
+					}
+				}
 				demoListDelete(work.id);
 				navigateTo("/my-lists");
 			});

@@ -12,9 +12,11 @@ export const DEMO_KEYS = {
 	crawlerUrls: "crawlerUrls"
 };
 export const FEED_LOG_CAP = 100;
-/* ===== Demo overlay store (Lane B) — localStorage only, namespaced. Holds the
-   user-created delta (favorites, …) that overloads live data while experiments
-   are on; never sent to Toolhub. Wiped by "Reset demo data". */
+/* ===== Evolved overlay store — localStorage cache, namespaced. Holds the
+   user-created delta (favorites, lists, drafts, annotations) that overloads
+   live data while experiments are on. With a real session these keys sync to
+   Evolved's backend; supported flows may also publish to official Toolhub via
+   /v1/toolhub/* first. "Reset demo data" only wipes browser-local data. */
 export const DEMO_NS = "thdemo:";
 /* ---- Server write-through hook (production sync) ------------------------
    When a real session exists, serversync.js registers a handler here and every
@@ -116,9 +118,9 @@ export function withDemoFixture(fixture, render) {
 		});
 	}
 }
-// EXPERIMENTAL — favorites overlay. Needs: POST/DELETE /api/user/favorites/
-// (Toolhub read-only API does not expose this). A set of tool names layered
-// over the live catalog; the tool data itself is always the live record.
+// Favorites overlay. Signed-in UI attempts POST/DELETE /api/user/favorites/
+// through the backend bridge; this local set keeps the UI responsive and is the
+// signed-out demo fallback.
 /** @returns {string[]} */
 export function favNames() {
 	return demoStore.get(DEMO_KEYS.favorites, []);
@@ -138,8 +140,8 @@ export function toggleFav(name) {
 	// UNCHANGED state — the star must not show a favorite that wasn't stored.
 	return demoStore.set(DEMO_KEYS.favorites, f) ? willFavorite : !willFavorite;
 }
-// EXPERIMENTAL — demo lists overlay. Needs: POST/PUT/DELETE /api/lists/.
-// A demo list stores real tool NAMES; the tool data itself stays live.
+// List overlay. Official list writes go through Toolhub where possible; local
+// draft lists store real tool names while the tool data itself stays live.
 /** @returns {DemoList[]} */
 export function demoLists() {
 	return demoStore.get(DEMO_KEYS.lists, []);
@@ -199,11 +201,10 @@ export function listToolToggle(id, name) {
 	demoListSave(l);
 	return i === -1;
 }
-/* ===== Tool overlays (Lane B) — edits / annotations / new submissions ======
-   EXPERIMENTAL. Needs: POST /api/tools/, PUT /api/tools/{name}/,
-   PUT /api/tools/{name}/annotations/. Edits & annotations are COMPACT-shaped
-   overrides merged onto the live record by applyToolOverlay(); new submissions
-   are full compact records that live only in the browser. */
+/* ===== Tool overlays — edits / annotations / new submissions ===============
+   Official writes are attempted through /v1/toolhub/* when signed in. These
+   COMPACT-shaped records remain the local Evolved draft/fallback layer merged
+   onto live Toolhub data by applyToolOverlay(). */
 /**
  * @param {string} key
  * @returns {Record<string, any>}
@@ -262,15 +263,22 @@ export function demoRevisionsFor(name) {
 // EXPERIMENTAL — crawler simulation. Needs: server-side crawler (the browser
 // can't fetch arbitrary toolinfo.json — CORS). URLs are just recorded; actual
 // ingestion is simulated from pasted/sample JSON.
-/** @returns {Array<{ url: string, added: string }>} */
+/** @returns {Array<{ url: string, added: string, id?: number }>} */
 export function crawlerUrls() {
 	return demoStore.get(DEMO_KEYS.crawlerUrls, []);
 }
-/** @param {string} url */
-export function crawlerUrlAdd(url) {
+/**
+ * @param {string} url
+ * @param {number | undefined} [id]
+ */
+export function crawlerUrlAdd(url, id) {
 	const a = crawlerUrls();
-	if (!a.some((x) => x.url === url)) {
-		a.unshift({ url, added: new Date().toISOString() });
+	const existing = a.find((x) => x.url === url);
+	if (existing) {
+		if (id !== undefined) existing.id = id;
+		demoStore.set(DEMO_KEYS.crawlerUrls, a);
+	} else {
+		a.unshift({ url, id, added: new Date().toISOString() });
 		demoStore.set(DEMO_KEYS.crawlerUrls, a);
 	}
 }

@@ -10,7 +10,7 @@ import {
 	setMessages
 } from "./lib/core/i18n.js";
 import { applyExp, expOn, expStored, setAuth, setAuthRender, setExpStored } from "./lib/core/session.js";
-import { initServerSync } from "./lib/core/serversync.js";
+import { initServerSync, officialWrite, officialWriteAvailable } from "./lib/core/serversync.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { demoStore, listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
@@ -35,6 +35,18 @@ function syncExpDom(on) {
 	document.body.classList.toggle("exp-off", !on);
 	const btn = $("#exp-toggle");
 	if (btn) btn.setAttribute("aria-checked", String(on));
+}
+
+/** @param {string} name */
+function toggleFavorite(name) {
+	const on = toggleFav(name);
+	syncFavButtons(name, on);
+	if (officialWriteAvailable()) {
+		const path = on ? "/v1/toolhub/user/favorites/" : `/v1/toolhub/user/favorites/${encodeURIComponent(name)}/`;
+		officialWrite(on ? "POST" : "DELETE", path, on ? { name } : undefined).catch(() => {
+			// Keep the local overlay as a draft if official Toolhub rejects the write.
+		});
+	}
 }
 applyExp(expStored());
 syncExpDom(expOn());
@@ -89,7 +101,7 @@ $("#view")?.addEventListener("click", (e) => {
 	if (fav) {
 		e.preventDefault();
 		e.stopPropagation();
-		syncFavButtons(fav.getAttribute("data-fav"), toggleFav(/** @type {string} */ (fav.getAttribute("data-fav"))));
+		toggleFavorite(/** @type {string} */ (fav.getAttribute("data-fav")));
 		return;
 	}
 	const add = e.target?.closest("[data-listadd]");
@@ -132,7 +144,7 @@ $("#qv")?.addEventListener("click", (e) => {
 	const fav = e.target?.closest("[data-fav]");
 	if (fav) {
 		e.preventDefault();
-		syncFavButtons(fav.getAttribute("data-fav"), toggleFav(/** @type {string} */ (fav.getAttribute("data-fav"))));
+		toggleFavorite(/** @type {string} */ (fav.getAttribute("data-fav")));
 		return;
 	}
 	if (e.target?.id === "qv" || e.target?.closest("[data-qv-close]")) {
@@ -267,7 +279,7 @@ if (bootLocale !== DEFAULT_LOCALE) {
 		})
 		.catch(() => undefined);
 }
-// Production sync: with a real Wikimedia session the server overlay replaces
+// Production sync: with a real Toolhub session the server overlay replaces
 // the browser-local one and mutations write through (lib/core/serversync.js).
 // Kicked off after first paint; a re-render follows via the auth-render hook.
 initServerSync().catch(() => false);

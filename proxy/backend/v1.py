@@ -18,7 +18,7 @@ from typing import Any
 from flask import Blueprint, Response, jsonify, request, session
 from sqlalchemy import delete, func, select, text
 
-from backend import db
+from backend import db, toolhub
 from backend.models import ActivityRow, CrawlerUrl, Favorite, ToolList, ToolOverlay, ToolRecord, User, utcnow
 from backend.oauth import configured as oauth_configured
 from backend.security import current_user_id, login_required, write_guard
@@ -27,6 +27,7 @@ v1_bp = Blueprint("v1", __name__)
 
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
+HTTP_NO_CONTENT = 204
 MAX_ITEMS = 500  # per overlay key per user
 MAX_NAME = 255
 FEED_READ_CAP = 100
@@ -55,6 +56,46 @@ def _bad(error: str) -> Response:
     return resp
 
 
+def _upstream_path(fragment: str) -> str:
+    """Build a fixed official Toolhub API path from a route fragment."""
+    return f"/api/{fragment.lstrip('/')}"
+
+
+def _official_response(method: str, path: str, payload: object | None = None) -> Response:
+    """Call official Toolhub as the current user and normalize failures."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard/login_required guarantees this
+    try:
+        body, status = toolhub.api_request(uid, method, path, json=payload)
+    except toolhub.ToolhubAuthError as exc:
+        resp = jsonify({"error": str(exc), "reauth": True})
+        resp.status_code = 401
+        return resp
+    except toolhub.ToolhubAPIError as exc:
+        resp = jsonify(
+            {"error": "official Toolhub rejected the write", "status": exc.status_code, "details": exc.payload}
+        )
+        resp.status_code = exc.status_code
+        return resp
+    except toolhub.requests.RequestException:
+        resp = jsonify({"error": "official Toolhub is unavailable"})
+        resp.status_code = 502
+        return resp
+    if status == HTTP_NO_CONTENT:
+        return jsonify({"ok": True})
+    resp = jsonify({"ok": True, "toolhub": body})
+    resp.status_code = status
+    return resp
+
+
+def _official_json_response(method: str, path: str) -> Response:
+    """Parse a JSON object body and forward it to official Toolhub."""
+    value = request.get_json(silent=True)
+    if not isinstance(value, dict):
+        return _bad("body must be a JSON object")
+    return _official_response(method, path, value)
+
+
 @v1_bp.route("/healthz")
 def healthz() -> Response:
     """Liveness + database reachability (used by uptime monitoring)."""
@@ -73,23 +114,86 @@ def v1_user() -> Response:
     """Who am I? Adds the CSRF token the write endpoints require."""
     uid = current_user_id()
     if uid is None:
-        resp = jsonify({"authenticated": False})
-        resp.status_code = 401
-        return resp
+        return jsonify({"authenticated": False})
     with db.session_scope() as s:
         user = s.get(User, uid)
         if user is None:  # stale cookie for a deleted account
             session.clear()
-            resp = jsonify({"authenticated": False})
-            resp.status_code = 401
-            return resp
+            return jsonify({"authenticated": False})
         return jsonify({"authenticated": True, "username": user.username, "csrf": session.get("csrf", "")})
 
 
 @v1_bp.route("/v1/config/")
 def v1_config() -> Response:
     """Report which production capabilities are configured (no secrets)."""
-    return jsonify({"oauth": oauth_configured()})
+    return jsonify({"oauth": oauth_configured(), "officialWrites": oauth_configured()})
+
+
+@v1_bp.route("/v1/toolhub/tools/", methods=["POST"])
+@write_guard
+def official_tool_create() -> Response:
+    """Create an official Toolhub tool with the current user's grant."""
+    return _official_json_response("POST", "/api/tools/")
+
+
+@v1_bp.route("/v1/toolhub/tools/<name>/", methods=["PUT", "DELETE"])
+@write_guard
+def official_tool_update(name: str) -> Response:
+    """Update or delete an official Toolhub tool."""
+    if request.method == "DELETE":
+        return _official_response("DELETE", _upstream_path(f"tools/{name}/"))
+    return _official_json_response("PUT", _upstream_path(f"tools/{name}/"))
+
+
+@v1_bp.route("/v1/toolhub/tools/<name>/annotations/", methods=["PUT"])
+@write_guard
+def official_annotations_update(name: str) -> Response:
+    """Update official Toolhub annotations for a tool."""
+    return _official_json_response("PUT", _upstream_path(f"tools/{name}/annotations/"))
+
+
+@v1_bp.route("/v1/toolhub/lists/", methods=["POST"])
+@write_guard
+def official_list_create() -> Response:
+    """Create an official Toolhub list."""
+    return _official_json_response("POST", "/api/lists/")
+
+
+@v1_bp.route("/v1/toolhub/lists/<int:list_id>/", methods=["PUT", "DELETE"])
+@write_guard
+def official_list_update(list_id: int) -> Response:
+    """Update or delete an official Toolhub list."""
+    if request.method == "DELETE":
+        return _official_response("DELETE", _upstream_path(f"lists/{list_id}/"))
+    return _official_json_response("PUT", _upstream_path(f"lists/{list_id}/"))
+
+
+@v1_bp.route("/v1/toolhub/user/favorites/", methods=["POST"])
+@write_guard
+def official_favorite_add() -> Response:
+    """Add an official Toolhub favorite."""
+    return _official_json_response("POST", "/api/user/favorites/")
+
+
+@v1_bp.route("/v1/toolhub/user/favorites/<tool_name>/", methods=["DELETE"])
+@write_guard
+def official_favorite_delete(tool_name: str) -> Response:
+    """Remove an official Toolhub favorite."""
+    return _official_response("DELETE", _upstream_path(f"user/favorites/{tool_name}/"))
+
+
+@v1_bp.route("/v1/toolhub/crawler/urls/", methods=["POST"])
+@write_guard
+def official_crawler_url_add() -> Response:
+    """Register an official Toolhub crawler URL."""
+    return _official_json_response("POST", "/api/crawler/urls/")
+
+
+@v1_bp.route("/v1/toolhub/crawler/urls/<int:url_id>/", methods=["DELETE"])
+@write_guard
+def official_crawler_url_delete(url_id: int) -> Response:
+    """Unregister an official Toolhub crawler URL."""
+    return _official_response("DELETE", _upstream_path(f"crawler/urls/{url_id}/"))
 
 
 def _merged_maps(kind_rows: list[Any]) -> dict[str, dict]:

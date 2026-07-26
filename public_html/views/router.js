@@ -3,7 +3,6 @@ import { $, $$, esc } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 import { parseRoute } from "../lib/core/routing.js";
 import { signedIn } from "../lib/core/session.js";
-import { isDemoListId } from "../lib/core/store.js";
 import { button } from "../lib/atoms/button.js";
 import { closeAcctMenu } from "../lib/organisms/account.js";
 import { closeQuickView } from "../lib/organisms/quickview.js";
@@ -129,13 +128,7 @@ function dispatchListRoute(seg) {
 	}
 	if (seg[2] === "edit") {
 		return requireSignIn(
-			() =>
-				isDemoListId(seg[1])
-					? viewListEdit(decodeURIComponent(seg[1]))
-					: signInPage(
-							t("router.editListTitle", "Edit list"),
-							t("router.editListLead", "Edit this list's title, description and tools.")
-						),
+			() => viewListEdit(decodeURIComponent(seg[1])),
 			t("router.editListTitle", "Edit list"),
 			t("router.editListLead", "Edit this list's title, description and tools.")
 		);

@@ -15,25 +15,33 @@ them automatically.
 | ----------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
 | `TOOLHUB_DB_URL`              | yes      | SQLAlchemy URL for ToolsDB, e.g. `mysql+pymysql://sXXXX:PW@tools.db.svc.wikimedia.cloud/sXXXX__toolhub_evolved` |
 | `TOOLHUB_SECRET_KEY`          | yes      | Stable random string (`python3 -c "import secrets;print(secrets.token_hex(32))"`) — signs session cookies       |
-| `TOOLHUB_OAUTH_CLIENT_ID`     | yes      | Wikimedia OAuth 2.0 consumer id (see below)                                                                     |
-| `TOOLHUB_OAUTH_CLIENT_SECRET` | yes      | The consumer's secret                                                                                           |
+| `TOOLHUB_OAUTH_CLIENT_ID`     | yes      | Official Toolhub OAuth application client id (see below)                                                        |
+| `TOOLHUB_OAUTH_CLIENT_SECRET` | yes      | The Toolhub OAuth application's client secret                                                                   |
 | `TOOLHUB_DB_NAME`             | yes      | ToolsDB database name for backups, e.g. `sXXXX__toolhub_evolved`                                                |
+| `TOOLHUB_EVOLVED_BASE_URL`    | no       | Canonical public base URL used to build the OAuth callback, e.g. `https://<toolname>.toolforge.org`             |
+| `TOOLHUB_API_BASE`            | no       | Toolhub base URL override for staging/tests; defaults to `https://toolhub.wikimedia.org`                        |
 | `TOOLHUB_BACKUP_DIR`          | no       | Backup destination (default `~/backups`)                                                                        |
 | `TOOLHUB_INSECURE_COOKIES`    | no       | Set to `1` only for local http development — never in production                                                |
 
 Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
 (fine for development, unsafe on NFS under real traffic). Without the OAuth
-vars, `/oauth/login` answers 503 and the site runs read-only + demo mode.
+vars, `/oauth/login` answers 503 and the site runs with live reads plus
+browser-local demo mode. Without a stored per-user Toolhub grant, `/v1/toolhub/*`
+write endpoints answer 401 with `reauth: true`.
 
-## OAuth consumer (one-time)
+## Toolhub OAuth application (one-time)
 
-1. Propose a consumer at
-   `https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose`
-   — OAuth **2.0**, confidential client, callback
-   `https://<toolname>.toolforge.org/oauth/callback`, no extra grants needed
-   (we only read the user's identity).
-2. Store the id/secret via `toolforge envvars create` (never in the repo).
-3. Wikimedia review can take days — file this before you need it.
+1. Sign in to Toolhub and create an OAuth application from Toolhub's developer
+   settings. Use OAuth **2.0**, authorization-code flow, confidential client,
+   callback `https://<toolname>.toolforge.org/oauth/callback`, and scopes
+   `read write`.
+2. Store the client id/secret via `toolforge envvars create` (never in the
+   repo). Set `TOOLHUB_EVOLVED_BASE_URL` if the public callback URL cannot be
+   inferred reliably from Toolforge proxy headers.
+3. Smoke-check the flow: `/oauth/login` should redirect to
+   `https://toolhub.wikimedia.org/o/authorize/`, the callback should create a
+   local user using `GET /api/user/`, and `/v1/config/` should report
+   `"oauth": true` and `"officialWrites": true`.
 
 ## Database (ToolsDB)
 
@@ -95,6 +103,8 @@ then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/healthz` returns 503           | ToolsDB reachability: `sql tools`; check `TOOLHUB_DB_URL`; `webservice restart`                                                                         |
 | Site up, catalog empty           | Upstream Toolhub outage — the SPA shows "couldn't load live data"; nothing to do but wait/verify with `curl https://toolhub.wikimedia.org/api/ui/home/` |
-| Sign-in loops to `/?login=error` | Check OAuth env vars; consumer approved? callback URL exact? meta.wikimedia.org reachable?                                                              |
+| Sign-in loops to `/?login=error` | Check Toolhub OAuth env vars; callback URL exact? `TOOLHUB_EVOLVED_BASE_URL` needed? `toolhub.wikimedia.org` reachable?                                 |
+| Official writes return 401       | The user's stored grant is absent/expired — ask them to sign in with Toolhub again                                                                      |
+| Official writes return 4xx       | Toolhub rejected validation or permissions; check the response `details` from `/v1/toolhub/*` and revise the payload                                    |
 | Crawler failure emails           | `toolforge jobs logs crawler`; bad registered URL errors are recorded per-run in `crawler_runs`                                                         |
 | Disk quota                       | `du -sh ~/backups ~/repo`; prune old backups; `git -C ~/repo gc`                                                                                        |

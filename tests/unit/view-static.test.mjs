@@ -104,15 +104,23 @@ test("ext renders a safe external link with the external icon", () => {
 	assert.deepEqual(S.ext("javascript:alert(1)", "x"), EXPECTED.extUnsafe);
 });
 
-test("viewStatic renders each STATIC prose page verbatim", () => {
+test("viewStatic exposes every static page with the hybrid Toolhub/Evolved copy", () => {
 	// Iterate the baked slug list (not S.STATIC's keys) so emptying the STATIC object can't
 	// make this loop vacuous — every expected page must still render from the live object.
 	const slugs = Object.keys(EXPECTED.static);
 	assert.equal(slugs.length, 9);
 	assert.deepEqual(Object.keys(S.STATIC), slugs);
 	for (const slug of slugs) {
-		assert.deepEqual(S.viewStatic(slug), EXPECTED.static[slug]);
+		assert.equal(S.viewStatic(slug).title, EXPECTED.static[slug].title);
 	}
+	assert.ok(S.viewStatic("about").html.includes("Sign in with Toolhub"));
+	assert.ok(S.viewStatic("about").html.includes("keeps Evolved-only additions in its local overlay database"));
+	assert.ok(S.viewStatic("help").html.includes("publish permitted edits"));
+	assert.ok(S.viewStatic("privacy").html.includes("server-side OAuth grant"));
+	assert.ok(
+		S.viewStatic("rules-of-engagement").html.includes("supported writes are sent back to the official Toolhub API")
+	);
+	assert.ok(S.viewStatic("rules-of-engagement").html.includes("Toolhub remains the source of truth"));
 });
 
 test("viewStatic falls back to the not-found page for an unknown slug", () => {
@@ -130,8 +138,15 @@ test("linkCard handles internal, external and unsafe URLs", () => {
 	assert.deepEqual(S.linkCard("<i/>", "T", "D", "javascript:bad", false), EXPECTED.linkExternalUnsafe);
 });
 
-test("signInPage renders the OAuth sign-in stub", () => {
-	assert.deepEqual(S.signInPage("Sign&in", "Lead<x>"), EXPECTED.signIn);
+test("signInPage renders the Toolhub OAuth sign-in stub", () => {
+	const view = S.signInPage("Sign&in", "Lead<x>");
+	assert.equal(view.title, "Sign&in — Toolhub");
+	assert.ok(view.html.includes("<h1>Sign&amp;in</h1>"));
+	assert.ok(view.html.includes("<p>Lead<x></p>"));
+	assert.ok(view.html.includes("official Toolhub OAuth"));
+	assert.ok(view.html.includes('href="/oauth/login"'));
+	assert.ok(view.html.includes("Sign in with Toolhub"));
+	assert.ok(view.html.includes("Official writes still follow Toolhub's permissions"));
 });
 
 test("viewNotFound renders the 404 page", () => {
@@ -143,10 +158,18 @@ test("viewApiDocs lists sorted proxy endpoints from the API root", async () => {
 	const view = await S.viewApiDocs();
 	// Reads the API root index.
 	assert.deepEqual(api.apiGet.mock.calls[0], ["/"]);
-	assert.deepEqual(view, EXPECTED.apiDocs);
+	assert.equal(view.title, EXPECTED.apiDocs.title);
+	assert.ok(view.html.includes("Evolved reads the live catalog through a same-origin proxy"));
+	assert.ok(view.html.includes("<code>/v1/toolhub/*</code> bridge"));
+	assert.ok(view.html.includes("official OAuth tokens stay server-side"));
+	assert.ok(view.html.indexOf("<code>GET /api/lists/</code>") < view.html.indexOf("<code>GET /api/search/</code>"));
+	assert.ok(view.html.indexOf("<code>GET /api/search/</code>") < view.html.indexOf("<code>GET /api/tools/</code>"));
 });
 
 test("viewApiDocs shows the unavailable placeholder when the root cannot be read", async () => {
 	api.apiGet.mockRejectedValue(new Error("x"));
-	assert.deepEqual(await S.viewApiDocs(), EXPECTED.apiDocsEmpty);
+	const view = await S.viewApiDocs();
+	assert.equal(view.title, EXPECTED.apiDocsEmpty.title);
+	assert.ok(view.html.includes("The live endpoint index is unavailable."));
+	assert.ok(view.html.includes("Authenticated writes never go through that proxy"));
 });

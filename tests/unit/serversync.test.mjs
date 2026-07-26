@@ -68,11 +68,13 @@ test("logged out with config unavailable → oauth treated as unconfigured", asy
 	assert.equal(serversync.oauthAvailable(), false);
 });
 
-test("authenticated but overlay pull fails → stays local-only", async () => {
+test("authenticated but overlay pull fails → still shows the real session", async () => {
 	const { serversync, session } = await load();
 	mockFetch({ "/v1/user/": { json: { authenticated: true, username: "Ada", csrf: "c" } } });
-	assert.equal(await serversync.initServerSync(), false);
-	assert.equal(session.serverUserName(), null); // never went write-through
+	assert.equal(await serversync.initServerSync(), true);
+	assert.equal(session.serverUserName(), "Ada");
+	assert.equal(serversync.oauthAvailable(), true);
+	assert.equal(serversync.officialWriteAvailable(), true);
 });
 
 test("authenticated: pulls the overlay, activates identity + write-through", async () => {
@@ -104,6 +106,27 @@ test("authenticated: pulls the overlay, activates identity + write-through", asy
 	assert.equal(put.opts.headers["X-CSRF-Token"], "tok-1");
 	assert.deepEqual(JSON.parse(put.opts.body), ["alpha", "beta"]);
 	// cleanup: restore module-independent globals
+	session.setServerUser(null);
+	session.USER.name = "Ada Lovelace";
+	session.applyExp(false);
+});
+
+test("officialWrite uses the authenticated session CSRF token", async () => {
+	const { serversync, session } = await load();
+	const calls = mockFetch({
+		"/v1/user/": { json: { authenticated: true, username: "Ada", csrf: "tok-official" } },
+		"/v1/overlay/": { json: {} },
+		"/v1/toolhub/tools/": { json: { ok: true, toolhub: { name: "x" } } }
+	});
+	assert.equal(serversync.officialWriteAvailable(), false);
+	assert.equal(await serversync.initServerSync(), true);
+	assert.equal(serversync.officialWriteAvailable(), true);
+	const data = await serversync.officialWrite("POST", "/v1/toolhub/tools/", { name: "x" });
+	assert.deepEqual(data, { ok: true, toolhub: { name: "x" } });
+	const call = calls.find((c) => c.url === "/v1/toolhub/tools/");
+	assert.equal(call.opts.method, "POST");
+	assert.equal(call.opts.headers["X-CSRF-Token"], "tok-official");
+	assert.deepEqual(JSON.parse(call.opts.body), { name: "x" });
 	session.setServerUser(null);
 	session.USER.name = "Ada Lovelace";
 	session.applyExp(false);

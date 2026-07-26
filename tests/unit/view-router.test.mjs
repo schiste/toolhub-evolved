@@ -219,12 +219,11 @@ test("dispatch /lists/<id>/edit: signed-out → sign-in fallback", () => {
 	assert.equal(lists.viewListEdit.mock.calls.length, 0);
 });
 
-test("dispatch /lists/<id>/edit: signed-in demo list → editable; non-demo → sign-in", () => {
+test("dispatch /lists/<id>/edit: signed-in lists use the editor for local and official ids", () => {
 	session.signedIn.mockReturnValue(true);
 
 	store.isDemoListId.mockReturnValue(true);
 	at("/lists/demo%201/edit");
-	assert.deepEqual(store.isDemoListId.mock.calls[0], ["demo%201"]); // raw segment, not decoded
 	assert.deepEqual(lists.viewListEdit.mock.calls[0], ["demo 1"]); // decoded for the editor
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 
@@ -232,11 +231,9 @@ test("dispatch /lists/<id>/edit: signed-in demo list → editable; non-demo → 
 	session.signedIn.mockReturnValue(true);
 	store.isDemoListId.mockReturnValue(false);
 	at("/lists/real/edit");
-	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
-		"Edit list",
-		"Edit this list's title, description and tools."
-	]);
-	assert.equal(lists.viewListEdit.mock.calls.length, 0);
+	assert.deepEqual(lists.viewListEdit.mock.calls[0], ["real"]);
+	assert.equal(staticViews.signInPage.mock.calls.length, 0);
+	assert.equal(store.isDemoListId.mock.calls.length, 0);
 });
 
 test("dispatch /lists/<id>/history → prosePage with the live-site note", () => {

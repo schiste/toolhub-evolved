@@ -7,6 +7,8 @@ Toolhub Evolved runs as a small **Python (Flask) webservice** that does two thin
 2. Reverse-proxies read-only `GET /api/*` to the live Toolhub API
    (`toolhub.wikimedia.org`) **same-origin**, so the browser can read live
    catalog data without hitting CORS (the upstream API sends no CORS headers).
+3. Hosts `/v1/*`: Evolved's overlay API and the `/v1/toolhub/*` bridge that
+   performs official Toolhub writes with the signed-in user's OAuth grant.
 
 The app uses clean History API routes (`/search`, `/tools/:name`, etc.). The
 Flask webservice serves real files when present and falls back to `index.html`
@@ -47,19 +49,23 @@ webservice python3.13 start
 
 ## Production backend (database, sign-in, crawler)
 
-The webservice also hosts the site's own backend (`proxy/backend/`): Wikimedia
-OAuth sign-in and the `/v1` API over the project database that complements the
-live catalog. It activates fully once configured:
+The webservice also hosts the site's own backend (`proxy/backend/`): Toolhub
+OAuth sign-in, local overlay storage, and official Toolhub write forwarding.
+It activates fully once configured:
 
 1. Create the ToolsDB database and set the env vars (`TOOLHUB_DB_URL`,
-   `TOOLHUB_SECRET_KEY`, OAuth consumer id/secret, `TOOLHUB_DB_NAME`) with
-   `toolforge envvars create` — the full table and the OAuth-consumer steps
+   `TOOLHUB_SECRET_KEY`, `TOOLHUB_OAUTH_CLIENT_ID`,
+   `TOOLHUB_OAUTH_CLIENT_SECRET`, `TOOLHUB_DB_NAME`) with
+   `toolforge envvars create` — the full table and the Toolhub OAuth steps
    are in [`RUNBOOK.md`](RUNBOOK.md).
+   Set `TOOLHUB_EVOLVED_BASE_URL=https://<toolname>.toolforge.org` if the
+   callback URL needs to be forced.
 2. Load the scheduled jobs (hourly crawler, nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
 
-Unconfigured, the site still runs — read-only interface plus browser-local
-demo mode, with `/oauth/login` answering 503.
+Unconfigured, the site still runs — live read interface plus browser-local demo
+mode, with `/oauth/login` answering 503 and official write endpoints returning
+`reauth: true` until the user has a stored Toolhub grant.
 
 ## Updating after a change
 
@@ -75,6 +81,9 @@ webservice restart            # or: sh ~/repo/tools/deploy.sh
 
 - **Read-only proxy.** `proxy/app.py` only ever forwards `GET` to
   `toolhub.wikimedia.org/api/...`. It is not an open proxy and performs no writes.
+- **Official writes.** Authenticated create/update/delete flows call
+  `/v1/toolhub/*`; the backend attaches the stored Toolhub OAuth access token
+  and forwards to official `/api/*`. Tokens are never exposed to the SPA.
 - **Live endpoints used:** `/api/tools/`, `/api/tools/{name}/`,
   `/api/search/tools/` (faceted), `/api/lists/`, `/api/users/`, `/api/recent/`,
   `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.

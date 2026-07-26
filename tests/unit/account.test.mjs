@@ -87,7 +87,7 @@ test("renderAccount offers the real sign-in when OAuth is configured (exp off)",
 	htmlEqual(el.innerHTML, button("Log in", { variant: "outline", href: "/oauth/login" }));
 });
 
-test("renderAccount offers Wikimedia sign-in ahead of the demo one when configured", () => {
+test("renderAccount offers Toolhub sign-in ahead of the demo one when configured", () => {
 	oauthOn = true;
 	applyExp(true);
 	setAuth(false);
@@ -96,7 +96,7 @@ test("renderAccount offers Wikimedia sign-in ahead of the demo one when configur
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
 	htmlEqual(
 		el.innerHTML,
-		`${button("Sign in with Wikimedia", { href: "/oauth/login" })}${button("Sign in demo", { variant: "outline", attrs: "data-login" })}`
+		`${button("Sign in with Toolhub", { href: "/oauth/login" })}${button("Sign in demo", { variant: "outline", attrs: "data-login" })}`
 	);
 });
 

@@ -3,14 +3,15 @@
 
 The live Toolhub API stays the only source for upstream catalog data (served by
 the read-only proxy in app.py). This package adds what the API cannot give us —
-real Wikimedia sign-in and the site's own complementary records: favorites,
-lists, tool registrations, edit/annotation overlays, activity history, and
-crawler URLs. See docs/PRODUCTION.md for the architecture.
+Toolhub OAuth sign-in, stored official grants, the official write bridge, and
+the site's own complementary overlay records. See docs/PRODUCTION.md for the
+architecture.
 """
 
 import os
 import secrets
 from datetime import timedelta
+from pathlib import Path
 
 from flask import Flask
 
@@ -18,7 +19,7 @@ from backend import db
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
 
-DEFAULT_DB_URL = "sqlite:///" + os.path.join(os.path.dirname(os.path.dirname(__file__)), "var", "app.sqlite3")  # noqa: PTH118, PTH120
+DEFAULT_DB_URL = f"sqlite:///{Path(__file__).resolve().parent.parent / 'var' / 'app.sqlite3'}"
 SESSION_DAYS = 30
 
 
@@ -31,9 +32,9 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     stable random value in the tool account's env file (see docs/RUNBOOK.md).
     """
     url = db_url or os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL
-    parent = os.path.dirname(url.removeprefix("sqlite:///")) if url.startswith("sqlite:///") else ""  # noqa: PTH120
+    parent = Path(url.removeprefix("sqlite:///")).parent if url.startswith("sqlite:///") else None
     if parent:  # file-backed SQLite: make sure its directory exists
-        os.makedirs(parent, exist_ok=True)  # noqa: PTH103
+        parent.mkdir(parents=True, exist_ok=True)
     app.secret_key = secret_key or os.environ.get("TOOLHUB_SECRET_KEY") or secrets.token_hex(32)
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,

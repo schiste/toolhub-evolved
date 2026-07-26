@@ -1,33 +1,36 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
-# Production Plan — Toolhub Evolved as a standalone product
+# Production Plan — Toolhub Evolved beside Toolhub
 
-Last updated: 2026-07-25. Companion to [`PLAN.md`](PLAN.md), which governed the
-demonstrator. This document plans the step **`PLAN.md` §7 explicitly left out**:
-turning the demonstrator into a real, standalone production service.
+Last updated: 2026-07-26. Companion to [`PLAN.md`](PLAN.md), which governed the
+demonstrator. This document captures the current production target: run Evolved
+beside official Toolhub, using live Toolhub data and APIs while storing only the
+additional Evolved layer locally.
 
 ## 0. The decision this plan implements
 
-- **Target: standalone product.** Toolhub Evolved becomes an independent
-  production service — not a proposal to replace the official Toolhub frontend,
-  and not a hardened demo. It gains its own backend, its own users, and its own
-  data.
-- **Scope: everything.** All Lane B simulations become real features: Wikimedia
-  OAuth sign-in, favorites, lists CRUD, tool submit/edit, annotations, a
-  server-side crawler, and search that includes locally-registered tools.
+- **Target: side-by-side product.** Toolhub Evolved runs as an independent
+  interface next to official Toolhub, not as a replacement frontend and not as a
+  competing catalog.
+- **Scope: hybrid writes.** Supported signed-in actions use official Toolhub's
+  OAuth server and write to official Toolhub's API first: favorites, lists
+  CRUD, direct tool create/update/delete, annotations, and crawler URL
+  registration. Evolved keeps local fallback/draft/overlay data for rejected
+  writes and for features Toolhub does not expose.
 - **Hosting: Wikimedia Toolforge.** The product stays on Toolforge
   (`https://toolhub-evolved.toolforge.org/`), using Toolforge's webservice,
   ToolsDB, and Jobs framework.
 - **Launch blocker: Lane A i18n/a11y must be finished first** (`PLAN.md`
   §2.2–2.3). Nothing user-facing launches before the interface is localizable
   and the deferred accessibility items are closed.
-- **Data architecture (resolved 2026-07-25): API + complementary database.**
+- **Data architecture (updated 2026-07-26): live Toolhub + local overlay.**
   All Toolhub catalog data is read **live from the Toolhub API** — it is never
-  mirrored, synced, or copied into our database. The **project-specific
-  database complements** that data: user accounts and sessions, favorites,
-  lists, annotation/field overlays on upstream tools, net-new tool
-  registrations, and revision/audit history. If a record exists upstream, the
-  API is its source of truth and our DB holds only the delta.
+  mirrored, synced, or copied into our database. Official writes are sent to
+  Toolhub's API with the user's stored Toolhub OAuth grant. The
+  **project-specific database complements** Toolhub: local users mapped to
+  Toolhub identities, stored OAuth grants, sessions, drafts/fallback overlays,
+  Evolved-only state, and revision/audit rows for local actions. If a record
+  exists upstream, the API is its source of truth.
 
 The demonstrator was deliberately built for this pivot: the write adapter
 (`apiWrite`/`demoApi`) is shaped like Toolhub's real endpoints (`PLAN.md`
@@ -35,12 +38,13 @@ Appendix A), so productionizing is mostly **swapping the adapter's target from
 `localStorage` to a real API** — callers, views, and the merge step stay as they
 are.
 
-### Implementation status (2026-07-25)
+### Implementation status (2026-07-26)
 
 Landed in this repo (see the runbook for the Toolforge configuration steps):
 
-- **Backend** (`proxy/backend/`): ToolsDB/SQLite via SQLAlchemy, Wikimedia
-  OAuth 2.0, sessions + CSRF + rate limiting, the `/v1` overlay API,
+- **Backend** (`proxy/backend/`): ToolsDB/SQLite via SQLAlchemy, official
+  Toolhub OAuth 2.0, stored per-user Toolhub grants, sessions + CSRF + rate
+  limiting, the `/v1` overlay API, `/v1/toolhub/*` official write bridge,
   `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed.
 - **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
   write-through cache of the server overlay; demo mode intact when signed out.
@@ -53,12 +57,13 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   §2.3 listed as deferred (card grids as lists, crawler table caption/scope)
   were already fixed in code.
 
-Still open before a public launch: register the OAuth consumer + ToolsDB and
-run through the runbook once for real; obtain actual translations (the
-mechanism ships English-only catalogs); the long-term card-as-link a11y
-refactor; the privacy-policy rewrite for server-side accounts (P6).
+Still open before a public launch: register the Toolhub OAuth application +
+ToolsDB and run through the runbook once for real; obtain actual translations
+(the mechanism ships English-only catalogs); the long-term card-as-link a11y
+refactor; the privacy-policy rewrite for server-side accounts and stored OAuth
+grants (P6).
 
-## 1. Product architecture — "live base + owned overlay", now server-side
+## 1. Product architecture — "live base + local overlay + official bridge"
 
 The resolved data architecture (§0) is the demonstrator's core insight carried
 over unchanged, one level up:
@@ -66,24 +71,28 @@ over unchanged, one level up:
 - **The base catalog stays live Toolhub data.** `apiGet` keeps reading
   `toolhub.wikimedia.org` through the same-origin read proxy. We do not fork or
   mirror the upstream catalog; upstream tools always render from live data.
-- **Everything users do on this site lives in our own database.** Favorites,
-  lists, tool submissions, field edits, annotation overrides, revision/audit
-  rows — the exact deltas `demoOverlay` holds in `localStorage` today — move to
-  a server-side store keyed by user, shared between browsers and visitors.
+- **Officially supported writes go back to Toolhub.** Toolhub OAuth gives
+  Evolved a per-user grant. The browser calls `/v1/toolhub/*`; the backend
+  attaches the access token and forwards to official `/api/*`.
+- **Evolved keeps the additional layer.** Drafts/fallbacks, local overlays,
+  local activity rows, and any feature Toolhub does not expose live in our
+  database and sync into the browser's localStorage cache.
 - **The merge step is unchanged.** `normalizeTool()`/`normalizeList()` still
   merge an overlay onto the live record at render time; the overlay now comes
   from `GET /v1/…` instead of `localStorage`.
 
-This keeps the product honest by construction: our writes can never corrupt or
-misrepresent upstream data, and the boundary between "live from Toolhub" and
-"stored on this site" stays a first-class, labelable concept in the UI.
+This keeps the product honest by construction: official Toolhub accepts or
+rejects canonical writes, while Evolved labels its local overlay as local,
+draft, or fallback data instead of presenting it as accepted catalog data.
 
 ```
 Browser (SPA, public_html/)
   │  GET /api/*   ──────────────►  read proxy ──► toolhub.wikimedia.org (live, read-only)
-  │  GET/POST/PUT/DELETE /v1/* ──►  our API   ──► ToolsDB (MariaDB): users, favorites,
-  │                                              lists, tools, annotations, revisions, audit
-  └  GET /oauth/* ─────────────►  Wikimedia OAuth (meta.wikimedia.org)
+  │  GET/POST/PUT/DELETE /v1/overlay/* ─► Evolved API ─► ToolsDB: drafts,
+  │                                                        overlays, local state
+  │  POST/PUT/DELETE /v1/toolhub/* ─────► Evolved API ─► toolhub.wikimedia.org/api
+  │                                                        using stored OAuth grant
+  └  GET /oauth/* ─────────────────────► Toolhub OAuth (/o/authorize/, /o/token/)
 
 Toolforge Jobs framework (scheduled)
   └  crawler job ──► fetches registered toolinfo.json URLs ──► validates ──► ToolsDB
@@ -91,27 +100,26 @@ Toolforge Jobs framework (scheduled)
 
 ### Components
 
-| Component     | Choice                                                                                                                                 | Why                                                                                                     |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Web app       | Grow `proxy/app.py` into a small Flask package (blueprints)                                                                            | One Toolforge `python3.13` webservice already serves SPA + proxy; add a `/v1` blueprint, keep the stack |
-| Database      | **ToolsDB (MariaDB)** + SQLAlchemy + Alembic migrations                                                                                | SQLite on Toolforge NFS is unsafe (locking); ToolsDB is the platform-native managed DB                  |
-| Auth          | **Wikimedia OAuth 2.0** consumer (meta.wikimedia.org) + server session                                                                 | Real Wikimedia identity, natural on Toolforge; sessions in signed cookies backed by a DB session table  |
-| Crawler       | **Toolforge Jobs framework** scheduled job (same repo, `tools/`)                                                                       | Server-side fetch of `toolinfo.json` (schema 1.2.2 validation) — the thing the browser never could      |
-| Search        | Phase 1: **federated** (live upstream search + local DB search, merged) · Phase 2: Toolforge shared **Elasticsearch** if quota granted | Local tools become findable immediately without new infra; ES upgrades relevance later                  |
-| Static assets | Unchanged (`dist/` build via `tools/deploy.sh`)                                                                                        | Already works                                                                                           |
+| Component     | Choice                                                                                                                                 | Why                                                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Web app       | Grow `proxy/app.py` into a small Flask package (blueprints)                                                                            | One Toolforge `python3.13` webservice already serves SPA + proxy; add a `/v1` blueprint, keep the stack     |
+| Database      | **ToolsDB (MariaDB)** + SQLAlchemy + Alembic migrations                                                                                | SQLite on Toolforge NFS is unsafe (locking); ToolsDB is the platform-native managed DB                      |
+| Auth          | **Toolhub OAuth 2.0** application + server session                                                                                     | Toolhub is the authorization server for Toolhub API writes; `GET /api/user/` maps the official user locally |
+| Crawler       | **Toolforge Jobs framework** scheduled job (same repo, `tools/`)                                                                       | Server-side fetch of `toolinfo.json` (schema 1.2.2 validation) — the thing the browser never could          |
+| Search        | Phase 1: **federated** (live upstream search + local DB search, merged) · Phase 2: Toolforge shared **Elasticsearch** if quota granted | Local tools become findable immediately without new infra; ES upgrades relevance later                      |
+| Static assets | Unchanged (`dist/` build via `tools/deploy.sh`)                                                                                        | Already works                                                                                               |
 
 ### The two-catalog question (biggest product risk — decided up front)
 
-A standalone catalog that accepts tool submissions inevitably diverges from the
-official Toolhub. We defuse this rather than hide it:
+The architecture avoids creating a second canonical catalog:
 
-1. **Provenance is always visible.** Every record renders its origin: _live from
-   Toolhub_ vs. _registered on Toolhub Evolved_. Edits to upstream tools render
-   as clearly-labeled community overlays, never as replacements.
-2. **We publish, we don't fork.** Locally-registered tools are exposed as a
-   public **`toolinfo.json` feed** (`/toolinfo.json`), so the _official_
-   Toolhub crawler can ingest them. Toolhub Evolved becomes a feeder into the
-   real ecosystem instead of a competing silo.
+1. **Canonical data is always from Toolhub.** If an official write succeeds,
+   the live API becomes the source of truth. If it fails, Evolved can keep a
+   local draft/overlay, but it stays labeled as local.
+2. **Local additions are feeder/fallback data, not a fork.** Locally-registered
+   tools are exposed as a public **`toolinfo.json` feed** (`/toolinfo.json`) so
+   the _official_ Toolhub crawler can ingest them. Toolhub Evolved becomes a
+   feeder into the real ecosystem instead of a competing silo.
 3. **Upstream courtesy.** Before launch we notify the Toolhub maintainers
    (Phabricator + tool talk page): what the service is, its User-Agent, expected
    API load, and the feed URL. The proxy already identifies itself and caches
@@ -125,8 +133,9 @@ Small, because the pivot was designed in:
   call `/v1/*`; `localStorage` mode remains available for local dev and as the
   logged-out preview mode if we want to keep it.
 - **Mock identity → real session.** The identity picker becomes "Sign in with
-  Wikimedia"; `GET /v1/user/` drives the account menu. Logged-out users get the
-  read-only interface (which, per `PLAN.md`, is complete on its own).
+  Toolhub"; Toolhub OAuth stores a server-side grant and `GET /v1/user/` drives
+  the account menu. Logged-out users get the live read interface plus
+  browser-local demo mode.
 - **The experimental toggle retires from production semantics.** Features are no
   longer "prospective" — they're real. The red mockup banner and _Rules of
   Engagement_ page are rewritten into a plain **"About this site"** page: what's
@@ -162,33 +171,38 @@ clean; the audit's remaining WCAG findings closed or explicitly waived.
 - ToolsDB schema + Alembic: `users`, `sessions`, `favorites`, `lists`,
   `list_tools`, `tools` (locally registered), `tool_edits` (overlay on upstream
   names), `annotations`, `revisions`, `audit_log`, `crawler_urls`, `crawler_runs`.
-- Wikimedia OAuth 2.0: register the consumer, `/oauth/login|callback|logout`,
+- Toolhub OAuth 2.0: register the application, `/oauth/login|callback|logout`,
+  use `GET /api/user/` to identify the user locally, store the grant server-side,
   session cookie (HttpOnly, Secure, SameSite=Lax), CSRF token for all writes.
 - Cross-cutting: per-user and per-IP rate limits on writes, input validation
   (reuse toolinfo 1.2.2 schema), structured logs, `/healthz`.
 - Test story: the proxy tests extend to `/v1` (Flask test client + a throwaway
   MariaDB via container in CI); coverage gates stay at current thresholds.
 
-Exit gate: sign in with a real Wikimedia account on Toolforge; session survives
-restart; migrations run via a documented one-liner.
+Exit gate: sign in with Toolhub on Toolforge; session survives restart; a
+stored grant can perform a smoke write against official Toolhub; migrations run
+via a documented one-liner.
 
 ### P2 — First real features: favorites + lists (~1.5 weeks)
 
-- `GET/POST /v1/user/favorites/`, `DELETE /v1/user/favorites/{name}/` — flip the
-  adapter, `/favorites` now shared across the user's browsers.
-- Lists CRUD (`/v1/lists/…`) with reorder; own lists render alongside live
-  upstream lists, provenance-labeled.
-- Every write appends `revisions`/`audit_log` rows; `/recent` and `/audit-logs`
-  merge our rows over the live feeds (the P4 side-effect machinery lands here).
+- Favorites use `/v1/toolhub/user/favorites/` for official add/delete when
+  signed in, with the local overlay as the responsive cache and signed-out demo
+  fallback.
+- Lists use `/v1/toolhub/lists/…` for official create/update/delete when
+  Toolhub permits it. Evolved draft lists remain local fallback data, rendered
+  alongside live upstream lists with provenance labels.
+- Evolved-only writes append local `revisions`/`audit_log` rows; official
+  Toolhub writes rely on Toolhub's own feeds once accepted.
 
 ### P3 — Tool submit / edit / annotations (~2 weeks)
 
-- `POST /v1/tools/` (net-new, required: `name`,`title`,`description`,`url`),
-  `PUT /v1/tools/{name}/` — **adopting Toolhub's real permission rule**: core
-  fields editable only on records with `origin="api"` (i.e., registered here);
-  upstream/crawler-origin tools take **annotation edits only**
-  (`PUT /v1/tools/{name}/annotations/`). This retires demo decision §8.4's
-  "demo-friendly" laxity in favor of the faithful rule.
+- `POST /v1/toolhub/tools/`, `PUT/DELETE /v1/toolhub/tools/{name}/` — official
+  Toolhub remains the permission authority. Core edits are attempted against
+  Toolhub; rejected writes become local Evolved drafts/overlays where that is
+  honest to display.
+- `PUT /v1/toolhub/tools/{name}/annotations/` publishes community annotations
+  through official Toolhub first, falling back to the Evolved overlay if
+  rejected.
 - Server-side render-time merge parity: detail pages, cards, and "my
   submissions" show owned records and annotation overlays with provenance
   labels.
@@ -196,8 +210,8 @@ restart; migrations run via a documented one-liner.
 
 ### P4 — Crawler (~1.5 weeks)
 
-- `/v1/crawler/urls/` CRUD (auth required) + `Add or remove tools` page goes
-  real.
+- `/v1/toolhub/crawler/urls/` CRUD (auth required) + `Add or remove tools` page
+  writes official Toolhub crawler URL registrations when permitted.
 - Toolforge Jobs framework scheduled job (e.g. hourly): fetch each registered
   URL, validate against toolinfo 1.2.2, upsert `tools`, record `crawler_runs`
   with per-URL outcomes; surface runs on the existing `/crawler` history UI.
@@ -247,23 +261,23 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
   the crawler grows the catalog.
 - Jobs framework: crawler + nightly backup jobs; both defined in-repo
   (`jobs.yaml`) so the full production config is versioned.
-- Secrets (OAuth client secret, DB credentials): in the tool account's
-  `~/.env`-style file readable only by the tool, never in the repo; documented
-  in the runbook.
+- Secrets (OAuth client secret, DB URL/credentials, session key): Toolforge
+  envvars readable only by the tool, never in the repo; documented in the
+  runbook.
 - Known platform limits accepted: no custom domain, shared-infra SLAs, ES access
   needs a quota request (hence federated search first).
 
 ## 5. Risks
 
-| Risk                                                         | Mitigation                                                                                                                |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Catalog divergence from official Toolhub                     | Provenance labeling everywhere + `/toolinfo.json` feeder feed (§1.3) — we add to the ecosystem                            |
-| Upstream API changes/outage breaks the base catalog          | Already-graceful "couldn't load live data" states; proxy TTL cache absorbs blips; contract tests vs. `/api/schema/` in CI |
-| Community perception (unofficial service using Toolhub data) | Early, explicit outreach to maintainers; honest naming; GPL-3.0 code; read-only, cached, identified API use               |
-| Solo-maintainer ops burden                                   | Everything scripted and in-repo (deploy, jobs, migrations, backups); external uptime alerting; runbook                    |
-| OAuth consumer approval latency (Wikimedia review)           | Register the consumer at the _start_ of P1, not the end                                                                   |
-| ToolsDB/ES quota limits                                      | Federated-search fallback needs no ES; quota requests early with load estimates                                           |
-| Spam/abuse once writes are real                              | Wikimedia-account gate, rate limits, audit log, admin delete path; new-account throttle if needed                         |
+| Risk                                                                   | Mitigation                                                                                                                |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Catalog divergence from official Toolhub                               | Provenance labeling everywhere + `/toolinfo.json` feeder feed (§1.3) — we add to the ecosystem                            |
+| Upstream API changes/outage breaks the base catalog                    | Already-graceful "couldn't load live data" states; proxy TTL cache absorbs blips; contract tests vs. `/api/schema/` in CI |
+| Community perception (unofficial service using Toolhub data and OAuth) | Early, explicit outreach to maintainers; honest naming; GPL-3.0 code; cached, identified API use; clear write attribution |
+| Solo-maintainer ops burden                                             | Everything scripted and in-repo (deploy, jobs, migrations, backups); external uptime alerting; runbook                    |
+| Toolhub OAuth application setup blocks write flows                     | Register the OAuth application before launch; keep read/demo mode working when OAuth is unconfigured                      |
+| ToolsDB/ES quota limits                                                | Federated-search fallback needs no ES; quota requests early with load estimates                                           |
+| Spam/abuse once writes are real                                        | Wikimedia-account gate, rate limits, audit log, admin delete path; new-account throttle if needed                         |
 
 ## 6. Explicit non-goals
 
@@ -272,4 +286,5 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
 - Custom domain / off-Toolforge hosting (revisit only if Toolforge limits bite).
 - Real-time usage/health/pageview signals for _upstream_ tools — still not
   obtainable; those stay labeled synthetic behind the toggle or are dropped.
-- A write path to `toolhub.wikimedia.org` — never. All writes land in our DB.
+- Mirroring Toolhub's database or bypassing Toolhub permissions. Official writes
+  must always go through Toolhub's API with the user's Toolhub OAuth grant.

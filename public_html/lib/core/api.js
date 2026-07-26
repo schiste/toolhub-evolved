@@ -182,6 +182,10 @@ export async function apiGet(path, params) {
 	}
 	return apiFetch(url);
 }
+export function clearApiCache() {
+	apiCache.clear();
+	apiInflight.clear();
+}
 /**
  * Page through a list endpoint, collecting results. Stops on error, missing
  * `next`, or an empty page.
@@ -368,8 +372,22 @@ export function normalizeList(l) {
 }
 /* ===== Backend (/v1) transport — production server sync ====================
    The only other network calls in the app: same-origin requests to our own
-   backend (session probe, overlay pull, write-through pushes). Kept here so
-   the "network only in api.js" architecture rule stays true. */
+   backend (session probe, overlay pull, write-through pushes, and official
+   Toolhub writes performed server-side with the user's OAuth grant). Kept here
+   so the "network only in api.js" architecture rule stays true. */
+export class BackendError extends Error {
+	/**
+	 * @param {number} status
+	 * @param {string} path
+	 * @param {any} body
+	 */
+	constructor(status, path, body) {
+		super(`Backend ${status} ${path}`);
+		this.name = "BackendError";
+		this.status = status;
+		this.body = body;
+	}
+}
 /**
  * @param {string} path
  * @returns {Promise<any>} parsed JSON, or null on any non-2xx status
@@ -379,18 +397,31 @@ export async function backendGetJson(path) {
 	return res.ok ? res.json() : null;
 }
 /**
+ * @param {string} method
  * @param {string} path
  * @param {any} body
  * @param {string} csrf
- * @returns {Promise<void>} resolves either way — write-through pushes never throw
+ * @returns {Promise<any>}
+ */
+export async function backendWriteJson(method, path, body, csrf) {
+	const res = await fetch(path, {
+		method,
+		headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+		body: body === undefined ? undefined : JSON.stringify(body)
+	});
+	const data = res.status === 204 ? null : await res.json().catch(() => null);
+	if (!res.ok) throw new BackendError(res.status, path, data);
+	return data;
+}
+/**
+ * @param {string} path
+ * @param {any} body
+ * @param {string} csrf
+ * @returns {Promise<void>} resolves either way — overlay write-through pushes never throw
  */
 export async function backendPutJson(path, body, csrf) {
 	try {
-		await fetch(path, {
-			method: "PUT",
-			headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-			body: JSON.stringify(body)
-		});
+		await backendWriteJson("PUT", path, body, csrf);
 	} catch {
 		// offline blip: the localStorage cache still holds the value
 	}

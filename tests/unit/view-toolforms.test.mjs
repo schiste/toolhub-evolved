@@ -9,9 +9,12 @@ const BAKE = process.env.BAKE === "1";
 
 const h = vi.hoisted(() => ({
 	getTool: vi.fn(),
+	clearApiCache: vi.fn(),
 	isNewTool: vi.fn(),
 	newToolBase: vi.fn(),
 	navigateTo: vi.fn(),
+	officialWrite: vi.fn(),
+	officialWriteAvailable: vi.fn(),
 	getSimilarityIndex: vi.fn(),
 	nearestNeighbors: vi.fn(),
 	crawlerUrls: vi.fn(),
@@ -27,12 +30,22 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, getTool: h.getTool, isNewTool: h.isNewTool, newToolBase: h.newToolBase };
+	return {
+		...actual,
+		clearApiCache: h.clearApiCache,
+		getTool: h.getTool,
+		isNewTool: h.isNewTool,
+		newToolBase: h.newToolBase
+	};
 });
 vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
 	return { ...actual, navigateTo: h.navigateTo };
 });
+vi.mock("../../public_html/lib/core/serversync.js", () => ({
+	officialWrite: h.officialWrite,
+	officialWriteAvailable: h.officialWriteAvailable
+}));
 vi.mock("../../public_html/lib/core/similarity.js", async (orig) => {
 	const actual = await orig();
 	return { ...actual, getSimilarityIndex: h.getSimilarityIndex, nearestNeighbors: h.nearestNeighbors };
@@ -71,7 +84,7 @@ const S = {
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
-		Everything stays in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
 		<form class="le__add" data-url-form novalidate>
@@ -114,7 +127,7 @@ const S = {
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste/ingest toolinfo to add records.
-		Everything stays in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 
 		<h2 class="le__h2">Register a toolinfo.json URL</h2>
 		<form class="le__add" data-url-form novalidate>
@@ -141,8 +154,7 @@ const S = {
 	<div class="container page le">
 		<a class="back" href="/tools/my-tool">← Back to My Tool</a>
 		<h1 class="page__title">Edit annotations <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Community annotations enrich a tool without touching its core data. Saved only in
-		this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		<p class="page__intro">Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span dir="auto">My Tool</span></h2>
 			<label class="le__label">Audiences (comma-separated)
@@ -160,14 +172,14 @@ const S = {
 				<button class="btn btn--primary btn--md" type="submit">Save annotations</button>
 				<button class="btn btn--danger btn--md le__delete" type="button" data-an-revert>Revert annotations</button>
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
 	anno_norevert: `
 	<div class="container page le">
 		<a class="back" href="/tools/my-tool">← Back to My Tool</a>
 		<h1 class="page__title">Edit annotations <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Community annotations enrich a tool without touching its core data. Saved only in
-		this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		<p class="page__intro">Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span dir="auto">My Tool</span></h2>
 			<label class="le__label">Audiences (comma-separated)
@@ -185,13 +197,14 @@ const S = {
 				<button class="btn btn--primary btn--md" type="submit">Save annotations</button>
 				
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
 	create: `
 	<div class="container page le">
 		<a class="back" href="/add-or-remove-tools">← Back</a>
 		<h1 class="page__title">Submit a tool <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Changes are saved only in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.
+		<p class="page__intro">Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.
 		</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
@@ -234,6 +247,7 @@ const S = {
 				
 				
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
 	dupes: `<li class="dupes__item">
@@ -261,7 +275,7 @@ const S = {
 	<div class="container page le">
 		<a class="back" href="/tools/my-tool">← Back</a>
 		<h1 class="page__title">Edit tool <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Changes are saved only in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.
+		<p class="page__intro">Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.
 		</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
@@ -298,13 +312,14 @@ const S = {
 				<button class="btn btn--danger btn--md le__delete" type="button" data-tf-revert>Revert demo edits</button>
 				
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
 	edit_crawler_new: `
 	<div class="container page le">
 		<a class="back" href="/tools/crawled">← Back</a>
 		<h1 class="page__title">Edit tool <span class="exp-badge">Experimental</span></h1>
-		<p class="page__intro">Changes are saved only in this browser — see <a href="/rules-of-engagement">Rules of Engagement</a>.
+		<p class="page__intro">Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.
 		In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway.</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
@@ -341,6 +356,7 @@ const S = {
 				
 				<button class="btn btn--danger btn--md le__delete" type="button" data-tf-delete>Delete submission</button>
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`
 };
@@ -384,6 +400,8 @@ beforeEach(() => {
 	h.toolNewMap.mockReturnValue({});
 	h.toolEditsMap.mockReturnValue({});
 	h.toolAnnosMap.mockReturnValue({});
+	h.officialWrite.mockResolvedValue({ ok: true });
+	h.officialWriteAvailable.mockReturnValue(false);
 });
 
 afterEach(() => {
@@ -490,6 +508,7 @@ async function mountToolForm(name) {
 function setVal(id, v) {
 	document.querySelector(`#${id}`).value = v;
 }
+const tick = () => new Promise((res) => setTimeout(res, 0));
 // advance past the 300ms debounce on fake timers and flush the async update
 async function flushDebounce() {
 	await vi.advanceTimersByTimeAsync(350);
@@ -527,6 +546,67 @@ test("mount create: full valid submit saves a new tool and navigates", async () 
 	});
 	assert.deepEqual(h.logActivity.mock.calls[0], ["created", "new-tool", "New Tool"]);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/new-tool"]);
+});
+
+test("mount create: signed-in submit publishes to official Toolhub first", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	await mountToolForm(null);
+	setVal("tf-name", "new-tool");
+	setVal("tf-title", "New Tool");
+	setVal("tf-url", "https://example.org");
+	setVal("tf-desc", "A description");
+	setVal("tf-repo", "https://repo.example");
+	setVal("tf-license", "MIT");
+	document.querySelector("#tf-type").value = "bot";
+	setVal("tf-keywords", "a, b");
+	setVal("tf-wikis", "enwiki, commonswiki");
+	setVal("tf-langs", "en, fr");
+	document.querySelector("#tf-experimental").checked = true;
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/toolhub/tools/",
+		{
+			title: "New Tool",
+			description: "A description",
+			url: "https://example.org",
+			repository: "https://repo.example",
+			license: "MIT",
+			tool_type: "bot",
+			keywords: ["a", "b"],
+			for_wikis: ["enwiki", "commonswiki"],
+			available_ui_languages: ["en", "fr"],
+			deprecated: false,
+			experimental: true,
+			comment: "Published from Toolhub Evolved",
+			name: "new-tool"
+		}
+	]);
+	assert.deepEqual(
+		h.demoStoreSet.mock.calls.map((call) => call[0]),
+		[DEMO_KEYS.toolEdits, DEMO_KEYS.toolNew]
+	);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/new-tool"]);
+	assert.equal(h.logActivity.mock.calls.length, 0);
+});
+
+test("mount create: rejected official Toolhub write falls back to a local draft", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("validation failed"));
+	await mountToolForm(null);
+	setVal("tf-name", "new-tool");
+	setVal("tf-title", "New Tool");
+	setVal("tf-url", "https://example.org");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["POST", "/v1/toolhub/tools/"]);
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolNew);
+	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["new-tool"].title, "New Tool");
+	assert.deepEqual(h.logActivity.mock.calls[0], ["created", "new-tool", "New Tool"]);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("validation failed"));
 });
 
 test("mount edit: valid submit saves edits and logs 'edited'", async () => {
@@ -760,6 +840,25 @@ test("mount addtools: register a valid url adds it and refreshes the list", () =
 	assert.equal(document.querySelector("#at-url").value, "", "input cleared");
 });
 
+test("mount addtools: signed-in URL registration stores the official crawler id", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ ok: true, toolhub: { id: 9 } });
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([{ url: "https://added.example/toolinfo.json", id: 9 }]);
+	setVal("at-url", "https://added.example/toolinfo.json");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/toolhub/crawler/urls/",
+		{ url: "https://added.example/toolinfo.json" }
+	]);
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["https://added.example/toolinfo.json", 9]);
+	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
+});
+
 test("mount addtools: invalid url is rejected (focused, not added)", () => {
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
@@ -888,6 +987,62 @@ test("mount annotations: submit saves annotation and navigates", async () => {
 	});
 	assert.deepEqual(h.logActivity.mock.calls[0], ["annotated", "my-tool", "My Tool"]);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount annotations: signed-in submit publishes official annotations", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.getTool.mockResolvedValue(
+		toolFixture("my-tool", { title: "My Tool", audiences: ["editor"], tasks: ["editing"] })
+	);
+	h.toolAnnosMap.mockReturnValue({ "my-tool": { audiences: ["old"] } });
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("an-aud", "editor, admin");
+	setVal("an-tasks", "editing");
+	document.querySelector("#an-type").value = "bot";
+	setVal("an-icon", "https://commons.example/icon.png");
+	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"PUT",
+		"/v1/toolhub/tools/my-tool/annotations/",
+		{
+			audiences: ["editor", "admin"],
+			tasks: ["editing"],
+			tool_type: "bot",
+			icon: "https://commons.example/icon.png",
+			comment: "Annotated from Toolhub Evolved"
+		}
+	]);
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
+	assert.deepEqual(h.demoStoreSet.mock.calls[0][1], {});
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount annotations: rejected official write falls back locally", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("not allowed"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool" }));
+	h.toolAnnosMap.mockReturnValue({});
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("an-aud", "editor");
+	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/toolhub/tools/my-tool/annotations/"]);
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
+	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["my-tool"], {
+		audiences: ["editor"],
+		tasks: [],
+		toolType: null,
+		icon: null
+	});
+	assert.deepEqual(h.logActivity.mock.calls[0], ["annotated", "my-tool", "My Tool"]);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("not allowed"));
 });
 
 test("mount annotations: revert deletes the annotation and navigates", async () => {

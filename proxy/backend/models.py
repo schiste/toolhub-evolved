@@ -28,13 +28,28 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
-    """A Wikimedia account that signed in via OAuth."""
+    """A Toolhub account that authorized Toolhub Evolved via OAuth."""
 
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Historical column name: now stores the official Toolhub numeric user id as
+    # a string. Keeping the DB column avoids a destructive migration on Toolforge.
     wm_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(255))
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolhubToken(Base):
+    """The official Toolhub OAuth grant for one local user."""
+
+    __tablename__ = "toolhub_tokens"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_type: Mapped[str] = mapped_column(String(32), default="Bearer")
+    scope: Mapped[str] = mapped_column(String(255), default="")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Favorite(Base):

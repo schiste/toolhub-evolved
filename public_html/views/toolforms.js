@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { getTool, isNewTool, newToolBase } from "../lib/core/api.js";
+import { BackendError, clearApiCache, getTool, isNewTool, newToolBase } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
+import { officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { normStr } from "../lib/core/util.js";
 import {
@@ -74,6 +75,107 @@ function clearHttpErrorWhenValid(id) {
 		const value = el.value.trim();
 		if (!value || isHttpUrl(value)) clearFieldError(id);
 	});
+}
+
+/** @param {unknown} error */
+function officialErrorMessage(error) {
+	if (error instanceof BackendError) {
+		const body = error.body || {};
+		const details = body.details || body;
+		if (typeof details.message === "string") return details.message;
+		if (typeof body.error === "string") return body.error;
+		return JSON.stringify(details);
+	}
+	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * @param {string} name
+ * @param {Record<string, any>} fields
+ * @param {{ includeName?: boolean }} [options]
+ * @returns {Record<string, any>}
+ */
+function officialToolPayload(name, fields, { includeName = true } = {}) {
+	/** @type {Record<string, any>} */
+	const payload = {
+		title: fields.title,
+		description: fields.description,
+		url: fields.url,
+		repository: fields.repository,
+		license: fields.license,
+		tool_type: fields.toolType,
+		keywords: fields.keywords,
+		for_wikis: fields.forWikis,
+		available_ui_languages: fields.uiLanguages,
+		deprecated: fields.deprecated,
+		experimental: fields.experimental,
+		comment: fields.comment || "Published from Toolhub Evolved"
+	};
+	if (includeName) payload.name = name;
+	if (!payload.repository) delete payload.repository;
+	if (!payload.license) delete payload.license;
+	if (!payload.tool_type) delete payload.tool_type;
+	return payload;
+}
+
+/**
+ * @param {string} name
+ * @param {Record<string, any>} fields
+ * @param {boolean} editing
+ */
+function saveLocalToolDraft(name, fields, editing) {
+	if (editing && !isNewTool(name)) {
+		const m = toolEditsMap();
+		m[name] = fields;
+		demoStore.set(DEMO_KEYS.toolEdits, m);
+		logActivity("edited", name, fields.title);
+		return;
+	}
+	const m = toolNewMap();
+	m[name] = fields;
+	demoStore.set(DEMO_KEYS.toolNew, m);
+	logActivity(editing ? "edited" : "created", name, fields.title);
+}
+
+/** @param {string} name */
+function clearLocalToolDraft(name) {
+	const edits = toolEditsMap();
+	delete edits[name];
+	demoStore.set(DEMO_KEYS.toolEdits, edits);
+	const created = toolNewMap();
+	delete created[name];
+	demoStore.set(DEMO_KEYS.toolNew, created);
+}
+
+/**
+ * @param {string} name
+ * @param {Record<string, any>} anno
+ */
+function saveLocalAnnotationDraft(name, anno) {
+	const m = toolAnnosMap();
+	m[name] = anno;
+	demoStore.set(DEMO_KEYS.toolAnnos, m);
+}
+
+/** @param {string} name */
+function clearLocalAnnotationDraft(name) {
+	const m = toolAnnosMap();
+	delete m[name];
+	demoStore.set(DEMO_KEYS.toolAnnos, m);
+}
+
+/** @param {Record<string, any>} anno */
+function officialAnnotationPayload(anno) {
+	const payload = {
+		audiences: anno.audiences,
+		tasks: anno.tasks,
+		tool_type: anno.toolType,
+		icon: anno.icon,
+		comment: "Annotated from Toolhub Evolved"
+	};
+	if (!payload.tool_type) delete payload.tool_type;
+	if (!payload.icon) delete payload.icon;
+	return payload;
 }
 
 function duplicateRegion() {
@@ -188,8 +290,8 @@ function setupDuplicateSuggestions() {
 	if (typeEl) typeEl.addEventListener("change", update);
 }
 
-// EXPERIMENTAL — create/edit a tool's CORE fields. name=null → create.
-// Edits overload the live record; new tools live only in the browser.
+// Create/edit a tool's CORE fields. With a Toolhub session this publishes to
+// official Toolhub first; a rejected write is kept as an Evolved-local draft.
 /** @param {string | null} name */
 export async function viewToolForm(name) {
 	const editing = name !== null && name !== undefined;
@@ -222,7 +324,7 @@ export async function viewToolForm(name) {
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
 		<h1 class="page__title">${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
-		<p class="page__intro">${t("toolforms.introSaved", "Changes are saved only in this browser — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.
+		<p class="page__intro">${t("toolforms.introSaved", "Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.
 		${isCrawler ? "In production, core fields of crawler-imported tools are owned by the maintainer's <code>toolinfo.json</code>; only <code>origin=api</code> tools are core-editable. This demo lets you edit anyway." : ""}</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">${t("toolforms.coreInformation", "Core information")}</h2>
@@ -243,10 +345,11 @@ export async function viewToolForm(name) {
 				${editing && !isNewTool(name) ? button(t("toolforms.revertDemoEdits", "Revert demo edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) : ""}
 				${editing && isNewTool(name) ? button(t("toolforms.deleteSubmission", "Delete submission"), { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`;
 	function mount() {
-		/** @type {HTMLElement} */ ($("[data-tool-form]")).addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-tool-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
 			const title = fieldValue("tf-title"),
 				url = fieldValue("tf-url"),
@@ -285,17 +388,32 @@ export async function viewToolForm(name) {
 				deprecated: checkedValue("tf-deprecated"),
 				experimental: checkedValue("tf-experimental")
 			};
-			if (editing && !isNewTool(tname)) {
-				const m = toolEditsMap();
-				m[tname] = fields;
-				demoStore.set(DEMO_KEYS.toolEdits, m);
-				logActivity("edited", tname, title);
-			} else {
-				const m = toolNewMap();
-				m[tname] = fields;
-				demoStore.set(DEMO_KEYS.toolNew, m);
-				logActivity(editing ? "edited" : "created", tname, title);
+			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+			if (officialWriteAvailable()) {
+				out.className = "at__result";
+				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+				try {
+					await officialWrite(
+						editing ? "PUT" : "POST",
+						editing ? `/v1/toolhub/tools/${encodeURIComponent(tname)}/` : "/v1/toolhub/tools/",
+						officialToolPayload(tname, fields, { includeName: !editing })
+					);
+					clearLocalToolDraft(tname);
+					clearApiCache();
+					navigateTo(toolHref(tname));
+					return;
+				} catch (error) {
+					saveLocalToolDraft(tname, fields, editing);
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialWriteFailed",
+						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+						{ msg: officialErrorMessage(error) }
+					);
+					return;
+				}
 			}
+			saveLocalToolDraft(tname, fields, editing);
 			navigateTo(toolHref(tname));
 		});
 		const rev = $("[data-tf-revert]");
@@ -327,15 +445,15 @@ export async function viewToolForm(name) {
 	};
 }
 
-// EXPERIMENTAL — add/remove tools: submissions + crawler-URL register + JSON ingest.
+// Add/remove tools: official crawler URL registration plus local toolinfo ingest.
 export function viewAddTools() {
 	function urlRows() {
 		const u = crawlerUrls();
 		return u.length > 0
 			? u
 					.map(
-						(/** @type {{ url: string }} */ x) =>
-							`<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"` })}</li>`
+						(/** @type {{ url: string, id?: number }} */ x) =>
+							`<li><code class="at__url">${esc(x.url)}</code> ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${x.id ? ` data-url-id="${x.id}"` : ""}` })}</li>`
 					)
 					.join("")
 			: `<li class="le__empty">${t("toolforms.noUrls", "No URLs registered.")}</li>`;
@@ -358,7 +476,7 @@ export function viewAddTools() {
 		<div class="section-head"><h1 class="page__title">${t("toolforms.addOrRemoveTools", "Add or remove tools")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 			${button(t("toolforms.submitATool", "Submit a tool"), { variant: "primary", href: "/tools/create", icon: "add" })}</div>
 		<p class="page__intro">${t("toolforms.ingestIntroLead", "Register a")} <code>toolinfo.json</code> ${t("toolforms.ingestIntroTail", "URL, or paste/ingest toolinfo to add records.")}
-		${t("toolforms.introEverything", "Everything stays in this browser — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
+		${t("toolforms.introEverything", "Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 
 		<h2 class="le__h2">${t("toolforms.registerUrlTitle", "Register a toolinfo.json URL")}</h2>
 		<form class="le__add" data-url-form novalidate>
@@ -379,7 +497,7 @@ export function viewAddTools() {
 		<div data-sub-grid>${subGrid()}</div>
 	</div>`;
 	function mount() {
-		/** @type {HTMLElement} */ ($("[data-url-form]")).addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-url-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
 			// Stryker disable next-line MethodExpression: #at-url is a type="url" input, which strips surrounding whitespace, so the value is already trimmed — equivalent.
 			const u = /** @type {HTMLInputElement} */ ($input("#at-url")).value.trim();
@@ -392,14 +510,40 @@ export function viewAddTools() {
 				return;
 			}
 			if (!u) return;
-			crawlerUrlAdd(u);
+			const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
+			let officialId;
+			if (officialWriteAvailable()) {
+				out.className = "at__result";
+				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+				try {
+					const res = await officialWrite("POST", "/v1/toolhub/crawler/urls/", { url: u });
+					officialId = res?.toolhub?.id;
+					out.className = "at__result at__result--ok";
+					out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
+				} catch (error) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialWriteFailed",
+						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+						{ msg: officialErrorMessage(error) }
+					);
+				}
+			}
+			if (typeof officialId === "number") crawlerUrlAdd(u, officialId);
+			else crawlerUrlAdd(u);
 			/** @type {HTMLInputElement} */ ($input("#at-url")).value = "";
 			clearFieldError("at-url");
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
 		});
-		/** @type {HTMLElement} */ ($("[data-url-list]")).addEventListener("click", (e) => {
+		/** @type {HTMLElement} */ ($("[data-url-list]")).addEventListener("click", async (e) => {
 			const b = /** @type {EventTarget} */ (e.target).closest("[data-url-rm]");
 			if (!b) return;
+			const officialId = b.getAttribute("data-url-id");
+			if (officialWriteAvailable() && officialId) {
+				officialWrite("DELETE", `/v1/toolhub/crawler/urls/${officialId}/`).catch(() => {
+					// Keep local removal responsive; the user can re-register if upstream delete failed.
+				});
+			}
 			crawlerUrlDelete(/** @type {string} */ (b.getAttribute("data-url-rm")));
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
 		});
@@ -438,7 +582,8 @@ export function viewAddTools() {
 	return { title: t("toolforms.addOrRemoveToolsDocTitle", "Add or remove tools — Toolhub"), html, mount };
 }
 
-// EXPERIMENTAL — edit a tool's COMMUNITY ANNOTATIONS (overlay on live record).
+// Edit a tool's COMMUNITY ANNOTATIONS. With a Toolhub session this writes
+// official annotations first and falls back to the Evolved overlay if rejected.
 /** @param {string} name */
 export async function viewAnnotationsEdit(name) {
 	const fetched = await getTool(name);
@@ -448,7 +593,7 @@ export async function viewAnnotationsEdit(name) {
 	<div class="container page le">
 		<a class="back" href="${toolHref(name)}">${t("toolforms.backToName", "← Back to {title}", { title: esc(cur.title) })}</a>
 		<h1 class="page__title">${t("toolforms.editAnnotations", "Edit annotations")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
-		<p class="page__intro">${t("toolforms.annoIntro", "Community annotations enrich a tool without touching its core data. Saved only in\n\t\tthis browser — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
+		<p class="page__intro">${t("toolforms.annoIntro", "Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">${t("toolforms.annoForTitle", "Community annotations for")} <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
 			${fInput(t("toolforms.fieldAudiences", "Audiences (comma-separated)"), "an-aud", toCsv(cur.audiences), { hint: t("toolforms.fieldAudiencesHint", "User groups this tool serves, such as editors, admins, researchers, or developers.") })}
@@ -459,10 +604,11 @@ export async function viewAnnotationsEdit(name) {
 				${button(t("toolforms.saveAnnotations", "Save annotations"), { variant: "primary", type: "submit" })}
 				${toolAnnosMap()[name] ? button(t("toolforms.revertAnnotations", "Revert annotations"), { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
 			</div>
+			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`;
 	function mount() {
-		/** @type {HTMLElement} */ ($("[data-anno-form]")).addEventListener("submit", (e) => {
+		/** @type {HTMLElement} */ ($("[data-anno-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
 			const anno = {
 				audiences: fromCsv(fieldValue("an-aud")),
@@ -470,9 +616,33 @@ export async function viewAnnotationsEdit(name) {
 				toolType: fieldValue("an-type") || null,
 				icon: fieldValue("an-icon") || null
 			};
-			const m = toolAnnosMap();
-			m[name] = anno;
-			demoStore.set(DEMO_KEYS.toolAnnos, m);
+			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+			if (officialWriteAvailable()) {
+				out.className = "at__result";
+				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+				try {
+					await officialWrite(
+						"PUT",
+						`/v1/toolhub/tools/${encodeURIComponent(name)}/annotations/`,
+						officialAnnotationPayload(anno)
+					);
+					clearLocalAnnotationDraft(name);
+					clearApiCache();
+					navigateTo(toolHref(name));
+					return;
+				} catch (error) {
+					saveLocalAnnotationDraft(name, anno);
+					logActivity("annotated", name, cur.title);
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialWriteFailed",
+						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+						{ msg: officialErrorMessage(error) }
+					);
+					return;
+				}
+			}
+			saveLocalAnnotationDraft(name, anno);
 			logActivity("annotated", name, cur.title);
 			navigateTo(toolHref(name));
 		});

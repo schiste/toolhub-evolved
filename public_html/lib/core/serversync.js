@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 /* Production server sync — the client half of the /v1 overlay API.
-   On boot, ask the backend who we are. With a real Wikimedia session, pull the
+   On boot, ask the backend who we are. With a real Toolhub session, pull the
    server-side overlay into the localStorage cache (store.js) and register the
    write-through hook so every later mutation is pushed back. Logged out, the
    app stays in browser-local demo mode; we only remember whether OAuth is
    configured so the UI can offer the real sign-in. */
-import { backendGetJson, backendPutJson } from "./api.js";
+import { backendGetJson, backendPutJson, backendWriteJson } from "./api.js";
 import { setServerUser } from "./session.js";
 import { DEMO_KEYS, demoStore, setStoreSync, withSyncMuted } from "./store.js";
 
@@ -17,6 +17,22 @@ let chain = Promise.resolve();
 
 export function oauthAvailable() {
 	return oauthReady;
+}
+
+export function officialWriteAvailable() {
+	return Boolean(csrf);
+}
+
+/**
+ * Perform a CSRF-protected backend write that may call official Toolhub.
+ * @param {string} method
+ * @param {string} path
+ * @param {any} [body]
+ * @returns {Promise<any>}
+ */
+export function officialWrite(method, path, body) {
+	if (!csrf) throw new Error("Toolhub sign-in is required");
+	return backendWriteJson(method, path, body, csrf);
 }
 
 /**
@@ -37,7 +53,7 @@ export async function initServerSync() {
 	}
 	if (!me || !me.authenticated) {
 		// Logged out: learn whether real sign-in is even configured, then let
-		// the account UI re-render with (or without) the Wikimedia button.
+		// the account UI re-render with (or without) the Toolhub OAuth button.
 		try {
 			const cfg = await backendGetJson("/v1/config/");
 			oauthReady = Boolean(cfg && cfg.oauth);
@@ -47,21 +63,22 @@ export async function initServerSync() {
 		setServerUser(null);
 		return false;
 	}
+	csrf = String(me.csrf || "");
+	oauthReady = true;
 	let overlay;
 	try {
 		overlay = await backendGetJson("/v1/overlay/");
 	} catch {
 		overlay = null;
 	}
-	if (!overlay) return false; // don't go write-through without the server copy
-	csrf = String(me.csrf || "");
-	withSyncMuted(() => {
-		for (const key of Object.values(DEMO_KEYS)) {
-			if (overlay[key] !== undefined) demoStore.set(key, overlay[key]);
-		}
-	});
-	oauthReady = true;
-	setStoreSync(push);
+	if (overlay) {
+		withSyncMuted(() => {
+			for (const key of Object.values(DEMO_KEYS)) {
+				if (overlay[key] !== undefined) demoStore.set(key, overlay[key]);
+			}
+		});
+		setStoreSync(push);
+	}
 	setServerUser(String(me.username || ""));
 	return true;
 }

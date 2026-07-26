@@ -9,10 +9,10 @@ export const EXPERIMENTS = [
 		group: t("experiments.groupIdentity", "Identity & account"),
 		items: [
 			{
-				name: t("experiments.signinName", "Demo sign-in"),
-				what: t("experiments.signinWhat", "Sign in as a demo identity (Ada Lovelace) and sign out."),
-				sim: t("experiments.signinSim", "A session flag stored in your browser."),
-				needs: t("experiments.signinNeeds", "Real Wikimedia OAuth and a server session.")
+				name: t("experiments.signinName", "Toolhub sign-in"),
+				what: t("experiments.signinWhat", "Sign in through Toolhub OAuth and sign out."),
+				sim: t("experiments.signinSim", "Official Toolhub OAuth plus an Evolved server session."),
+				needs: t("experiments.signinNeeds", "An approved Toolhub OAuth application.")
 			},
 			{
 				name: t("experiments.resetName", "Reset demo data"),
@@ -23,12 +23,15 @@ export const EXPERIMENTS = [
 		]
 	},
 	{
-		group: t("experiments.groupContributions", "Your contributions — saved only in this browser"),
+		group: t("experiments.groupContributions", "Your contributions — official when possible, local when needed"),
 		items: [
 			{
 				name: t("experiments.favoritesName", "Favorites"),
 				what: t("experiments.favoritesWhat", "Save tools and see them collected in one place."),
-				sim: t("experiments.favoritesSim", "A set of tool names in localStorage; the tool data is read live."),
+				sim: t(
+					"experiments.favoritesSim",
+					"Signed-in changes write to Toolhub favorites; signed-out demo mode stores names locally."
+				),
 				needs: "POST / DELETE /api/user/favorites/",
 				tryHref: "/favorites",
 				tryLabel: t("experiments.favoritesTry", "Open favorites")
@@ -36,7 +39,10 @@ export const EXPERIMENTS = [
 			{
 				name: t("experiments.listsName", "Lists"),
 				what: t("experiments.listsWhat", "Create, edit, reorder and delete lists, and add tools to them."),
-				sim: t("experiments.listsSim", "Lists of tool names in localStorage, shown alongside the live lists."),
+				sim: t(
+					"experiments.listsSim",
+					"Official list create/edit/delete when permitted; local draft lists remain as fallback."
+				),
 				needs: "POST / PUT / DELETE /api/lists/",
 				tryHref: "/my-lists",
 				tryLabel: t("experiments.listsTry", "Your lists")
@@ -44,7 +50,10 @@ export const EXPERIMENTS = [
 			{
 				name: t("experiments.submitName", "Submit a tool"),
 				what: t("experiments.submitWhat", "Add a brand-new tool record."),
-				sim: t("experiments.submitSim", "A local record (clearly not shown in live search)."),
+				sim: t(
+					"experiments.submitSim",
+					"Official POST /api/tools/ first; rejected submissions become local Evolved drafts."
+				),
 				needs: "POST /api/tools/",
 				tryHref: "/tools/create",
 				tryLabel: t("experiments.submitName", "Submit a tool")
@@ -52,13 +61,19 @@ export const EXPERIMENTS = [
 			{
 				name: t("experiments.editToolName", "Edit a tool"),
 				what: t("experiments.editToolWhat", "Change a tool's core fields (title, description, links…)."),
-				sim: t("experiments.editToolSim", "Field overrides merged onto the live record at render time."),
+				sim: t(
+					"experiments.editToolSim",
+					"Official PUT when Toolhub permits; rejected edits remain local overlays."
+				),
 				needs: "PUT /api/tools/{name}/ and edit permissions"
 			},
 			{
 				name: t("experiments.editAnnosName", "Edit annotations"),
 				what: t("experiments.editAnnosWhat", "Add community annotations (audiences, tasks, type, icon)."),
-				sim: t("experiments.editAnnosSim", "Annotation overrides merged onto the live record."),
+				sim: t(
+					"experiments.editAnnosSim",
+					"Official annotation PUT first; rejected annotations remain local overlays."
+				),
 				needs: "PUT /api/tools/{name}/annotations/"
 			},
 			{
@@ -69,9 +84,9 @@ export const EXPERIMENTS = [
 				),
 				sim: t(
 					"experiments.crawlerSim",
-					"URLs recorded locally; ingestion parses pasted JSON (the browser can't fetch arbitrary URLs — CORS)."
+					"Signed-in URL registrations write to Toolhub; pasted JSON ingestion remains local to Evolved."
 				),
-				needs: t("experiments.crawlerNeeds", "A server-side crawler"),
+				needs: t("experiments.crawlerNeeds", "Toolhub crawler permissions and local fallback storage"),
 				tryHref: "/add-or-remove-tools",
 				tryLabel: t("experiments.crawlerTry", "Add or remove tools")
 			},
@@ -162,7 +177,7 @@ export function viewExperiments() {
 			<h1 class="page__title">${t("experiments.title", "Experimental features")}</h1>
 			<p class="page__intro">${t("experiments.introLead", "The {total} prospective features below appear only when", { total: esc(String(total)) })}
 			<strong>${t("experiments.introToggle", "“Show me prospective features”")}</strong> ${t("experiments.introReads", "is on. Each reads the real, live catalog and")}
-			<strong>${t("experiments.introOverloads", "overloads it with a feature-specific simulation")}</strong> ${t("experiments.introTail", "— nothing here is written to the\n\t\t\treal Toolhub. For the live-vs-simulated model and where your data goes, see")}
+			<strong>${t("experiments.introOverloads", "adds an Evolved-specific layer")}</strong> ${t("experiments.introTail", "— supported signed-in writes publish to official Toolhub first, while unsupported or rejected changes stay local. For the live-vs-local model and where your data goes, see")}
 			<a href="/rules-of-engagement">${t("experiments.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 			${groups}
 		</div>`
