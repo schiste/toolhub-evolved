@@ -68,6 +68,7 @@ tools/
   deploy.sh         ·  Toolforge update helper
 TOKENS.md           ·  design-token reference + contribution rules
 docs/
+  FEATURES.md          ·  generated feature listing from public_html/views/experiments.js
   PLAN.md              ·  the comprehensive roadmap (ship lane + experiments lane)
   AUDIT-i18n-a11y.md   ·  detailed i18n / accessibility findings
   deploy-toolforge.md  ·  step-by-step Toolforge deployment

@@ -1,8 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Fast pre-push: lint + format check across the repo (a few seconds). The full
-# suite (unit, e2e, types, mutation, dead-code, duplication, Python) runs in CI
-# — see .github/workflows/ci.yml. Kept fast on purpose so it isn't bypassed.
+# Fast pre-push: lint + format check + repo invariants that keep generated docs
+# current. The full suite (unit, e2e, types, mutation, dead-code, duplication,
+# Python) runs in CI — see .github/workflows/ci.yml. Kept fast on purpose so it
+# isn't bypassed.
 set -eu
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -10,3 +11,5 @@ cd "$repo_root"
 
 npx eslint . --max-warnings 0
 npx prettier --check .
+npm run checks
+npm run features:docs:check
