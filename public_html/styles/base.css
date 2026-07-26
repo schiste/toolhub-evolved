@@ -250,7 +250,7 @@ summary:focus-visible,
 	vertical-align: middle;
 }
 
-/* Mockup banner: shown only while prospective features are on. */
+/* Feature-status banner: shown only while Evolved feature mode is on. */
 .mockup-banner {
 	display: flex;
 	flex-wrap: wrap;

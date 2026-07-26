@@ -108,6 +108,7 @@ const SHELL = `
 		<a href="/about" data-q="ignored">qlink</a>
 		<article data-tool="tool-x" tabindex="0"><span class="tcard__inner">x</span><a href="/incard">deep link</a></article>
 		<a href="/internal?x=1">internal</a>
+		<a href="/search?sort=views" data-enable-evolved>feature try</a>
 		<a href="/api/tools/">api</a>
 		<a href="https://ext.example/">ext</a>
 		<a href="#frag">frag</a>
@@ -533,6 +534,20 @@ test("SPA links: modified clicks (ctrl/meta/shift/alt or non-left button) are ig
 		$('#view a[href="/internal?x=1"]').dispatchEvent(e);
 		assert.equal(routing.navigateTo.mock.calls.length, 0, `${JSON.stringify(mod)} should be ignored`);
 	}
+});
+
+test("SPA links: feature-status try links enable Evolved mode before routing", () => {
+	vi.clearAllMocks();
+	session.expOn.mockReturnValue(false);
+	const ev = new window.MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+	$("#view a[data-enable-evolved]").dispatchEvent(ev);
+	assert.equal(ev.defaultPrevented, true);
+	assert.deepEqual(session.setExpStored.mock.calls[0], [true]);
+	assert.deepEqual(session.applyExp.mock.calls[0], [true]);
+	assert.equal($("#exp-toggle").getAttribute("aria-checked"), "true");
+	assert.equal(account.renderAccount.mock.calls.length, 1);
+	assert.equal(account.syncSubmitButton.mock.calls.length, 1);
+	assert.deepEqual(routing.navigateTo.mock.calls.at(-1), ["/search?sort=views"]);
 });
 
 /* ---- history events ---------------------------------------------------- */

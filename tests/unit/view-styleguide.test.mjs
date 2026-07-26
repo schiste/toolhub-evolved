@@ -140,21 +140,21 @@ const S = {
 	</figure>
 			<figure class="sg-example sg-example--wide sg-example--compact">
 		<div class="sg-example__demo"><div class="sg-chrome-frame sg-chrome-frame--tight">
-		<div class="mockup-banner" role="region" aria-label="Prototype notice">
-			<span class="mockup-banner__txt"><span aria-hidden="true">!</span> Mockup - a prototype, not a working integration with the real Toolhub. <span class="mock-tag">Demo</span></span>
-			<a class="mockup-banner__link" href="/experiments">Experimental features</a>
+		<div class="mockup-banner" role="region" aria-label="Feature status notice">
+			<span class="mockup-banner__txt"><span aria-hidden="true">!</span> Evolved preview - live Toolhub data with an Evolved overlay. <span class="mock-tag">Hybrid</span></span>
+			<a class="mockup-banner__link" href="/experiments">Feature status</a>
 			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
 		</div>
 	</div></div>
-		<figcaption class="sg-example__caption"><code>Mockup banner + mock tag</code><span>app chrome</span></figcaption>
+		<figcaption class="sg-example__caption"><code>Feature banner + status tag</code><span>app chrome</span></figcaption>
 	</figure>
 			<figure class="sg-example sg-example--wide sg-example--compact">
 		<div class="sg-example__demo"><div class="sg-chrome-frame sg-chrome-frame--tight">
-		<section class="expbar" aria-label="Experimental feature controls">
+		<section class="expbar" aria-label="Evolved feature controls">
 			<div class="container expbar__inner">
 				<button class="exp-toggle" type="button" role="switch" aria-checked="false">
 					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-					<span class="exp-toggle__label">Show me prospective features</span>
+					<span class="exp-toggle__label">Show Evolved features</span>
 				</button>
 			</div>
 		</section>

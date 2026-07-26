@@ -3,14 +3,17 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import * as experiments from "../../public_html/views/experiments.js";
 
-const EXPECTED_TITLE = "Experimental features — Toolhub";
+const EXPECTED_TITLE = "Feature status — Toolhub Evolved";
 
 test("viewExperiments() renders the hybrid-feature showcase copy and title", () => {
 	const actual = experiments.viewExperiments();
 	assert.equal(actual.title, EXPECTED_TITLE);
 	// Pin the computed feature total derived from the reduce() over every group.
-	assert.ok(actual.html.includes("The 14 prospective features below appear only when"));
-	assert.ok(actual.html.includes("adds an Evolved-specific layer"));
+	assert.ok(actual.html.includes("The 14 features below describe Toolhub Evolved's hybrid model"));
+	assert.ok(actual.html.includes("live Toolhub data stays the base"));
+	assert.ok(actual.html.includes("local overlays cover drafts, fallback data, and synthetic signals"));
+	assert.ok(actual.html.includes("Current behavior"));
+	assert.ok(actual.html.includes("Production need"));
 	assert.ok(actual.html.includes("Toolhub sign-in"));
 	assert.ok(actual.html.includes("Official Toolhub OAuth plus an Evolved server session."));
 	assert.ok(actual.html.includes("Your contributions — official when possible, local when needed"));
@@ -18,6 +21,8 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 		actual.html.includes("Official list create/edit/delete when permitted; local draft lists remain as fallback.")
 	);
 	assert.ok(actual.html.includes("Official annotation PUT first; rejected annotations remain local overlays."));
+	assert.ok(actual.html.includes('href="/search?sort=views" data-enable-evolved'));
+	assert.ok(!actual.html.includes("Simulated with"));
 	assert.ok(!actual.html.includes("nothing here is written to the"));
 });
 
@@ -46,11 +51,13 @@ test("a tryHref item without a tryLabel falls back to the 'Try it' label", () =>
 	try {
 		experiments.EXPERIMENTS.push({
 			group: "Probe",
-			items: [{ name: "Probe item", what: "w", sim: "s", needs: "n", tryHref: "/probe" }]
+			items: [{ name: "Probe item", what: "w", current: "c", need: "n", tryHref: "/probe" }]
 		});
 		const { html } = experiments.viewExperiments();
 		assert.ok(
-			html.includes('<a class="exfeat__try" href="/probe">Try it <span aria-hidden="true">→</span></a>'),
+			html.includes(
+				'<a class="exfeat__try" href="/probe" data-enable-evolved>Try it <span aria-hidden="true">→</span></a>'
+			),
 			"missing tryLabel should render the 'Try it' fallback"
 		);
 		// And the &&-mutant guard: with a present label, that label (not "Try it") is shown.

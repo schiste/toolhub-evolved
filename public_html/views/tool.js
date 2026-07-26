@@ -291,7 +291,7 @@ export async function viewTool(name) {
 				     toolinfo schema + image storage (no per-tool data possible here). -->
 				<div class="experimental shotstrip">
 					<div class="shotstrip__copy">
-						<span class="exp-badge shotstrip__badge">${t("tool.screenshotsBadge", "Screenshots · prospective feature")}</span>
+						<span class="exp-badge shotstrip__badge">${t("tool.screenshotsBadge", "Screenshots · Evolved preview")}</span>
 						<span class="shotstrip__note">${t("tool.screenshotsNote", "Toolhub has no screenshot field yet; these frames are placeholders.")}</span>
 					</div>
 					<div class="shotstrip__frames" aria-hidden="true">

@@ -48,14 +48,14 @@
 	<body>
 		<a class="skip" href="#view">Skip to content</a>
 
-		<!-- Mockup banner: shown only while prospective features are on (CSS hides it
+		<!-- Feature-status banner: shown only while Evolved feature mode is on (CSS hides it
 	     when body.exp-off). Cannot be dismissed independently of the toggle. -->
-		<div class="mockup-banner" role="region" aria-label="Prototype notice">
+		<div class="mockup-banner" role="region" aria-label="Feature status notice">
 			<span class="mockup-banner__txt">
-				<span aria-hidden="true">⚠</span> Mockup — a prototype, not a working integration with the real Toolhub.
-				Experimental features are simulated and saved only in your browser.
+				<span aria-hidden="true">⚠</span> Evolved preview — live Toolhub data with an Evolved overlay. Signed-in
+				supported writes go to Toolhub first; local drafts stay in Evolved.
 			</span>
-			<a class="mockup-banner__link" href="/experiments">Experimental features</a>
+			<a class="mockup-banner__link" href="/experiments">Feature status</a>
 			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
 		</div>
 
@@ -120,8 +120,8 @@
 			</div>
 		</header>
 
-		<!-- Prospective-features toggle (its own strip, below the header) -->
-		<section class="expbar" aria-label="Experimental feature controls">
+		<!-- Evolved feature toggle (its own strip, below the header) -->
+		<section class="expbar" aria-label="Evolved feature controls">
 			<div class="container expbar__inner">
 				<button
 					class="exp-toggle"
@@ -129,10 +129,10 @@
 					type="button"
 					role="switch"
 					aria-checked="false"
-					title="Reveal features that would need data or a back-end Toolhub doesn't expose yet (popularity, health, thanks…)"
+					title="Reveal Toolhub Evolved additions, including official-first writes, local drafts, and synthetic signals."
 				>
 					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-					<span class="exp-toggle__label">Show me prospective features</span>
+					<span class="exp-toggle__label">Show Evolved features</span>
 				</button>
 			</div>
 		</section>

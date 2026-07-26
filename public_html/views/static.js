@@ -149,9 +149,9 @@ export const STATIC = {
 		actual Toolhub data</strong>, refreshed every time you load a page. When you sign in
 		with Toolhub, supported writes are sent back to the official Toolhub API using your
 		OAuth grant.</p>
-		<h2>${t("static.rulesOfEngagement.whatsSimulated", "What's simulated (prospective features)")}</h2>
-		<p>When you switch on <em>"Show me prospective features"</em>, the app turns on a
-		set of experiments. Some now have real official write paths when you are signed in:
+		<h2>${t("static.rulesOfEngagement.whatsEvolved", "What's Evolved-only or synthetic")}</h2>
+		<p>When you switch on <em>"Show Evolved features"</em>, the app turns on a
+		set of additions. Some have real official write paths when you are signed in:
 		favorites, lists, direct tool submissions, core edits where Toolhub permits them,
 		community annotations, and crawler URL registration. Others remain synthetic:
 		popularity, thanks, health, screenshots, and usage.</p>

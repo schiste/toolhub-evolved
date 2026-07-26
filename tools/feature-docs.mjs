@@ -82,8 +82,8 @@ function featureGroupsFromExpression(node) {
 			return {
 				name: requireText(itemProps, "name", label),
 				what: requireText(itemProps, "what", label),
-				sim: requireText(itemProps, "sim", label),
-				needs: requireText(itemProps, "needs", label),
+				current: requireText(itemProps, "current", label),
+				need: requireText(itemProps, "need", label),
 				tryHref: textValue(itemProps.get("tryHref")),
 				tryLabel: textValue(itemProps.get("tryLabel"))
 			};
@@ -114,8 +114,8 @@ export function renderFeatureDocs(groups) {
 				markdownText(group.group),
 				markdownText(item.name),
 				markdownText(item.what),
-				markdownText(item.sim),
-				markdownText(item.needs),
+				markdownText(item.current),
+				markdownText(item.need),
 				tryLink
 			]);
 		}
@@ -130,7 +130,7 @@ export function renderFeatureDocs(groups) {
 # Feature Listing
 
 This document is generated from \`${SOURCE}\` (\`EXPERIMENTS\`), the product-facing
-feature listing rendered at \`/experiments\`.
+feature-status listing rendered at \`/experiments\`.
 
 Run \`npm run features:docs\` after adding, removing, renaming, or changing a
 feature. Pre-push and CI run \`npm run features:docs:check\` to block stale docs.

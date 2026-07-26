@@ -136,13 +136,11 @@ Small, because the pivot was designed in:
   Toolhub"; Toolhub OAuth stores a server-side grant and `GET /v1/user/` drives
   the account menu. Logged-out users get the live read interface plus
   browser-local demo mode.
-- **The experimental toggle retires from production semantics.** Features are no
-  longer "prospective" — they're real. The red mockup banner and _Rules of
-  Engagement_ page are rewritten into a plain **"About this site"** page: what's
-  live from Toolhub, what's stored here, where your data lives, how to delete it.
-  Signals we still can't source for real (health, usage, thanks counts from
-  upstream tools) either ship from our own data (thanks given _on this site_ are
-  real) or stay behind the toggle, still labeled synthetic.
+- **The Evolved feature toggle documents the hybrid boundary.** Some additions
+  are real signed-in write paths through Toolhub OAuth; others are local drafts,
+  fallback overlays, or synthetic signals. The banner, feature-status page, and
+  _Rules of Engagement_ page explain what is live from Toolhub, what is stored
+  in Evolved, where user data goes, and which signals remain synthetic.
 - **Search UI** gains a provenance facet (Toolhub / registered here) driven by
   the federated search.
 

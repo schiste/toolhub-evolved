@@ -4,7 +4,7 @@
 # Feature Listing
 
 This document is generated from `public_html/views/experiments.js` (`EXPERIMENTS`), the product-facing
-feature listing rendered at `/experiments`.
+feature-status listing rendered at `/experiments`.
 
 Run `npm run features:docs` after adding, removing, renaming, or changing a
 feature. Pre-push and CI run `npm run features:docs:check` to block stale docs.
@@ -14,7 +14,7 @@ Total listed features: 14
 | Group                                                          | Feature                      | User value                                                                        | Current behavior                                                                              | Production need                                               | Try                                         |
 | -------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------- |
 | Identity & account                                             | Toolhub sign-in              | Sign in through Toolhub OAuth and sign out.                                       | Official Toolhub OAuth plus an Evolved server session.                                        | An approved Toolhub OAuth application.                        | -                                           |
-| Identity & account                                             | Reset demo data              | Clear everything you've saved in this demo.                                       | Wipes the demo keys in this browser's localStorage.                                           | -                                                             | -                                           |
+| Identity & account                                             | Reset demo data              | Clear everything you've saved in this demo.                                       | Wipes demo keys in this browser's localStorage.                                               | -                                                             | -                                           |
 | Your contributions - official when possible, local when needed | Favorites                    | Save tools and see them collected in one place.                                   | Signed-in changes write to Toolhub favorites; signed-out demo mode stores names locally.      | POST / DELETE /api/user/favorites/                            | [Open favorites](/favorites)                |
 | Your contributions - official when possible, local when needed | Lists                        | Create, edit, reorder and delete lists, and add tools to them.                    | Official list create/edit/delete when permitted; local draft lists remain as fallback.        | POST / PUT / DELETE /api/lists/                               | [Your lists](/my-lists)                     |
 | Your contributions - official when possible, local when needed | Submit a tool                | Add a brand-new tool record.                                                      | Official POST /api/tools/ first; rejected submissions become local Evolved drafts.            | POST /api/tools/                                              | [Submit a tool](/tools/create)              |

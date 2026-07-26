@@ -256,6 +256,13 @@ document.addEventListener("click", (e) => {
 	// /api/ and /oauth/ are server routes (proxy reads; OAuth redirects) — never SPA-routed.
 	const serverRoute = url.pathname.startsWith("/api/") || url.pathname.startsWith("/oauth/");
 	if (url.origin !== location.origin || serverRoute) return;
+	if (a.hasAttribute("data-enable-evolved") && !expOn()) {
+		setExpStored(true);
+		applyExp(true);
+		syncExpDom(true);
+		renderAccount();
+		syncSubmitButton();
+	}
 	e.preventDefault();
 	navigateTo(url.pathname + url.search);
 });

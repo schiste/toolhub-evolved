@@ -11,8 +11,8 @@ test("extractFeatureGroups reads translated defaults from EXPERIMENTS", () => {
 			items: [{
 				name: t("name", "Feature One"),
 				what: t("what", "Does useful work."),
-				sim: t("sim", "Local draft first."),
-				needs: "POST /api/example/",
+				current: t("current", "Local draft first."),
+				need: "POST /api/example/",
 				tryHref: "/example",
 				tryLabel: t("try", "Try example")
 			}]
@@ -25,8 +25,8 @@ test("extractFeatureGroups reads translated defaults from EXPERIMENTS", () => {
 				{
 					name: "Feature One",
 					what: "Does useful work.",
-					sim: "Local draft first.",
-					needs: "POST /api/example/",
+					current: "Local draft first.",
+					need: "POST /api/example/",
 					tryHref: "/example",
 					tryLabel: "Try example"
 				}
@@ -36,8 +36,8 @@ test("extractFeatureGroups reads translated defaults from EXPERIMENTS", () => {
 });
 
 test("extractFeatureGroups requires complete feature listing records", () => {
-	const code = `export const EXPERIMENTS = [{ group: "Group", items: [{ name: "Feature", what: "What", sim: "Sim" }] }];`;
-	assert.throws(() => extractFeatureGroups(code), /missing needs/);
+	const code = `export const EXPERIMENTS = [{ group: "Group", items: [{ name: "Feature", what: "What", current: "Current" }] }];`;
+	assert.throws(() => extractFeatureGroups(code), /missing need/);
 });
 
 test("renderFeatureDocs emits a stable markdown table", () => {
@@ -48,8 +48,8 @@ test("renderFeatureDocs emits a stable markdown table", () => {
 				{
 					name: "30-day usage",
 					what: 'An "editors used this" figure.',
-					sim: "Deterministic per tool.",
-					needs: "Usage / view tracking",
+					current: "Deterministic per tool.",
+					need: "Usage / view tracking",
 					tryHref: "/search?sort=views",
 					tryLabel: "Most viewed"
 				}

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-/* ---- Experimental mode -------------------------------------------------
-   "Experimental" features are ones we can't fully back with today's Toolhub
-   API/data. Each is marked `class="experimental"` in the DOM and documented
-   inline with what's MISSING. When the header toggle is OFF, body gets
-   `.exp-off` and CSS hides every `.experimental` element, leaving only the
-   genuinely shippable UI. Default: OFF. */
+/* ---- Evolved feature mode ----------------------------------------------
+   The toggle reveals Toolhub Evolved additions: official-first write paths,
+   local fallback/draft overlays, and synthetic signals that Toolhub does not
+   expose. Each optional element is marked `class="experimental"` in the DOM.
+   When the header toggle is OFF, body gets `.exp-off` and CSS hides those
+   elements. Default: OFF. */
 export const EXP_KEY = "toolhub-exp";
 // Persisted opt-in flag (storage stays in core; the app layer calls these).
 export function expStored() {
@@ -24,8 +24,8 @@ export function expOn() {
 export function applyExp(on) {
 	expActive = Boolean(on);
 }
-// Default OFF (decision §8.1): first visit is the honest live read-only
-// interface; the user opts into experiments via the toggle.
+// Default OFF (decision §8.1): first visit emphasizes the live Toolhub catalog;
+// the user opts into Evolved additions via the toggle.
 
 /* ---- Account: identity + profile dropdown ------------------------------ */
 export const USER = { name: "Ada Lovelace" }; // demo identity until a real session takes over
