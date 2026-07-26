@@ -10,6 +10,7 @@ import * as session from "../../public_html/lib/core/session.js";
 import * as i18n from "../../public_html/lib/core/i18n.js";
 import * as theme from "../../public_html/lib/core/theme.js";
 import * as store from "../../public_html/lib/core/store.js";
+import * as serversync from "../../public_html/lib/core/serversync.js";
 import * as routing from "../../public_html/lib/core/routing.js";
 import * as favbtn from "../../public_html/lib/molecules/favbtn.js";
 import * as account from "../../public_html/lib/organisms/account.js";
@@ -37,6 +38,12 @@ vi.mock("../../public_html/lib/core/store.js", async (o) => ({
 	demoStore: { clearAll: vi.fn() },
 	listToolToggle: vi.fn(() => true),
 	toggleFav: vi.fn(() => true)
+}));
+vi.mock("../../public_html/lib/core/serversync.js", async (o) => ({
+	...(await o()),
+	initServerSync: vi.fn(() => Promise.resolve(false)),
+	officialWrite: vi.fn(() => Promise.resolve({ ok: true })),
+	officialWriteAvailable: vi.fn(() => false)
 }));
 vi.mock("../../public_html/lib/core/routing.js", async (o) => ({
 	...(await o()),
@@ -242,6 +249,25 @@ test("#view: clicking a favorite toggles it and stops propagation", () => {
 	assert.deepEqual(favbtn.syncFavButtons.mock.calls[0], ["tool-a", "ON"]);
 	// stopPropagation → the document SPA handler never sees it as a navigation.
 	assert.equal(routing.navigateTo.mock.calls.length, 0);
+});
+
+test("#view: favorite add/remove writes to official Toolhub when signed in", async () => {
+	vi.clearAllMocks();
+	serversync.officialWriteAvailable.mockReturnValueOnce(true).mockReturnValueOnce(true);
+	store.toggleFav.mockReturnValueOnce(true).mockReturnValueOnce(false);
+	click($('#view [data-fav="tool-a"]'));
+	click($('#view [data-fav="tool-a"]'));
+	await Promise.resolve();
+	assert.deepEqual(serversync.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/toolhub/user/favorites/",
+		{ name: "tool-a" }
+	]);
+	assert.deepEqual(serversync.officialWrite.mock.calls[1], [
+		"DELETE",
+		"/v1/toolhub/user/favorites/tool-a/",
+		undefined
+	]);
 });
 
 test("#view: clicking add-to-list toggles state and swaps the mark icon", () => {

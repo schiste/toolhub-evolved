@@ -77,6 +77,43 @@ function clearHttpErrorWhenValid(id) {
 	});
 }
 
+/** @param {string} value */
+function isOfficialWikiTarget(value) {
+	return /^(\*|(.*)?\.?(mediawiki|wiktionary|wiki(pedia|quote|books|source|news|versity|data|voyage|media))\.org)$/i.test(
+		value
+	);
+}
+
+/**
+ * @param {string} id
+ * @returns {HTMLElement | null}
+ */
+function validateWikiTargets(id) {
+	clearFieldError(id);
+	const bad = fromCsv(fieldValue(id)).find((value) => !isOfficialWikiTarget(value));
+	if (bad) {
+		setFieldError(
+			id,
+			t(
+				"toolforms.errInvalidWikiTarget",
+				"Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or *."
+			)
+		);
+		return $(`#${id}`);
+	}
+	return null;
+}
+
+/** @param {string} id */
+function clearWikiErrorWhenValid(id) {
+	const el = $input(`#${id}`);
+	if (!el) return;
+	el.addEventListener("input", () => {
+		const bad = fromCsv(fieldValue(id)).find((value) => !isOfficialWikiTarget(value));
+		if (!bad) clearFieldError(id);
+	});
+}
+
 /** @param {unknown} error */
 function officialErrorMessage(error) {
 	if (error instanceof BackendError) {
@@ -320,6 +357,7 @@ export async function viewToolForm(name) {
 	}
 	const crawlerOwned = Boolean(cur.origin) && cur.origin !== "api";
 	const isCrawler = editing && crawlerOwned;
+	const existingOfficialTool = editing && !isNewTool(name);
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
@@ -337,12 +375,12 @@ export async function viewToolForm(name) {
 			${fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") })}
 			${fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") })}
 			${editing ? "" : duplicateRegion()}
-			${fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki database names such as enwiki or commonswiki, or * for all wikis.") })}
+			${fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.") })}
 			${fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.") })}
 			<div class="le__checks">${fCheck(t("toolforms.fieldDeprecated", "Deprecated"), "tf-deprecated", cur.deprecated)}${fCheck(t("toolforms.experimentalBadge", "Experimental"), "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Submit tool"), { variant: "primary", type: "submit" })}
-				${editing && !isNewTool(name) ? button(t("toolforms.revertDemoEdits", "Revert demo edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) : ""}
+				${existingOfficialTool ? button(t("toolforms.revertDemoEdits", "Revert demo edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) + (officialWriteAvailable() ? button(t("toolforms.deleteOfficialTool", "Delete official tool"), { variant: "danger", cls: "le__delete", attrs: "data-tf-official-delete" }) : "") : ""}
 				${editing && isNewTool(name) ? button(t("toolforms.deleteSubmission", "Delete submission"), { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
@@ -362,12 +400,13 @@ export async function viewToolForm(name) {
 				"tf-repo",
 				t("toolforms.errInvalidRepoUrl", "Enter a valid http(s) repository URL.")
 			);
+			const invalidWikis = validateWikiTargets("tf-wikis");
 			if (!tname || !title) {
 				/** @type {HTMLElement} */ ($(editing ? "#tf-title" : "#tf-name")).focus();
 				return;
 			}
-			if (invalidUrl || invalidRepo) {
-				/** @type {HTMLElement} */ (invalidUrl || invalidRepo).focus();
+			if (invalidUrl || invalidRepo || invalidWikis) {
+				/** @type {HTMLElement} */ (invalidUrl || invalidRepo || invalidWikis).focus();
 				return;
 			}
 			if (!editing && isNewTool(tname)) {
@@ -434,8 +473,35 @@ export async function viewToolForm(name) {
 				navigateTo("/add-or-remove-tools");
 			});
 		}
+		const officialDel = $("[data-tf-official-delete]");
+		if (officialDel) {
+			officialDel.addEventListener("click", async () => {
+				const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+				out.className = "at__result";
+				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+				try {
+					await officialWrite(
+						"DELETE",
+						`/v1/toolhub/tools/${encodeURIComponent(/** @type {string} */ (name))}/`
+					);
+					clearLocalToolDraft(/** @type {string} */ (name));
+					clearApiCache();
+					navigateTo("/add-or-remove-tools");
+				} catch (error) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialDeleteFailed",
+						"Official Toolhub did not delete the tool: {msg}",
+						{
+							msg: officialErrorMessage(error)
+						}
+					);
+				}
+			});
+		}
 		clearHttpErrorWhenValid("tf-url");
 		clearHttpErrorWhenValid("tf-repo");
+		clearWikiErrorWhenValid("tf-wikis");
 		if (!editing) setupDuplicateSuggestions();
 	}
 	return {

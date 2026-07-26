@@ -236,7 +236,7 @@ const S = {
 		<ul class="dupes__list" data-dupes-list></ul>
 	</section>
 			<label class="le__label">Works on wikis (comma-separated, * for all)
-		 <span class="le__hint" id="tf-wikis-hint">Use wiki database names such as enwiki or commonswiki, or * for all wikis.</span>
+		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
 		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value=""  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
 			<label class="le__label">Available UI languages (comma-separated codes)
 		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.</span>
@@ -301,8 +301,8 @@ const S = {
 		<input class="le__input" id="tf-keywords" type="text" aria-describedby="tf-keywords-hint tf-keywords-err" maxlength="300" value="k1, k2"  /><span class="le__error" id="tf-keywords-err" hidden></span></label>
 			
 			<label class="le__label">Works on wikis (comma-separated, * for all)
-		 <span class="le__hint" id="tf-wikis-hint">Use wiki database names such as enwiki or commonswiki, or * for all wikis.</span>
-		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value="enwiki"  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
+		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
+		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value="en.wikipedia.org"  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
 			<label class="le__label">Available UI languages (comma-separated codes)
 		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.</span>
 		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="en" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
@@ -345,7 +345,7 @@ const S = {
 		<input class="le__input" id="tf-keywords" type="text" aria-describedby="tf-keywords-hint tf-keywords-err" maxlength="300" value=""  /><span class="le__error" id="tf-keywords-err" hidden></span></label>
 			
 			<label class="le__label">Works on wikis (comma-separated, * for all)
-		 <span class="le__hint" id="tf-wikis-hint">Use wiki database names such as enwiki or commonswiki, or * for all wikis.</span>
+		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
 		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value=""  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
 			<label class="le__label">Available UI languages (comma-separated codes)
 		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page immediately in this demo.</span>
@@ -426,7 +426,7 @@ test("viewToolForm edit (api origin, existing tool) → revert button, no crawle
 			license: "MIT",
 			toolType: "bot",
 			keywords: ["k1", "k2"],
-			forWikis: ["enwiki"],
+			forWikis: ["en.wikipedia.org"],
 			uiLanguages: ["en"],
 			origin: "api"
 		})
@@ -524,7 +524,7 @@ test("mount create: full valid submit saves a new tool and navigates", async () 
 	setVal("tf-repo", "https://repo.example");
 	setVal("tf-license", "MIT");
 	setVal("tf-keywords", "a, b");
-	setVal("tf-wikis", "enwiki");
+	setVal("tf-wikis", "en.wikipedia.org");
 	setVal("tf-langs", "en, fr");
 	document.querySelector("#tf-deprecated").checked = true;
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
@@ -539,7 +539,7 @@ test("mount create: full valid submit saves a new tool and navigates", async () 
 		license: "MIT",
 		toolType: null,
 		keywords: ["a", "b"],
-		forWikis: ["enwiki"],
+		forWikis: ["en.wikipedia.org"],
 		uiLanguages: ["en", "fr"],
 		deprecated: true,
 		experimental: false
@@ -559,7 +559,7 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 	setVal("tf-license", "MIT");
 	document.querySelector("#tf-type").value = "bot";
 	setVal("tf-keywords", "a, b");
-	setVal("tf-wikis", "enwiki, commonswiki");
+	setVal("tf-wikis", "en.wikipedia.org, commons.wikimedia.org");
 	setVal("tf-langs", "en, fr");
 	document.querySelector("#tf-experimental").checked = true;
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
@@ -575,7 +575,7 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 			license: "MIT",
 			tool_type: "bot",
 			keywords: ["a", "b"],
-			for_wikis: ["enwiki", "commonswiki"],
+			for_wikis: ["en.wikipedia.org", "commons.wikimedia.org"],
 			available_ui_languages: ["en", "fr"],
 			deprecated: false,
 			experimental: true,
@@ -618,6 +618,48 @@ test("mount edit: valid submit saves edits and logs 'edited'", async () => {
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
 	assert.deepEqual(h.logActivity.mock.calls[0], ["edited", "my-tool", "Renamed"]);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount edit: signed-in submit publishes official tool update", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.getTool.mockResolvedValue(
+		toolFixture("my-tool", {
+			title: "My Tool",
+			description: "old",
+			url: "https://x.example",
+			forWikis: ["en.wikipedia.org"],
+			origin: "api"
+		})
+	);
+	h.isNewTool.mockReturnValue(false);
+	await mountToolForm("my-tool");
+	setVal("tf-title", "Renamed");
+	setVal("tf-desc", "Updated description");
+	setVal("tf-url", "https://x.example/updated");
+	setVal("tf-wikis", "en.wikipedia.org, *.wikisource.org");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"PUT",
+		"/v1/toolhub/tools/my-tool/",
+		{
+			title: "Renamed",
+			description: "Updated description",
+			url: "https://x.example/updated",
+			keywords: [],
+			for_wikis: ["en.wikipedia.org", "*.wikisource.org"],
+			available_ui_languages: [],
+			deprecated: false,
+			experimental: false,
+			comment: "Published from Toolhub Evolved"
+		}
+	]);
+	assert.deepEqual(
+		h.demoStoreSet.mock.calls.map((call) => call[0]),
+		[DEMO_KEYS.toolEdits, DEMO_KEYS.toolNew]
+	);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
 });
 
@@ -670,6 +712,25 @@ test("mount create: invalid repository URL is rejected and focused", async () =>
 	assert.equal(document.activeElement, document.querySelector("#tf-repo"));
 });
 
+test("mount create: invalid official wiki target is rejected and focused", async () => {
+	await mountToolForm(null);
+	setVal("tf-name", "n");
+	setVal("tf-title", "T");
+	setVal("tf-url", "https://ok.example");
+	setVal("tf-wikis", "enwiki");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(document.activeElement, document.querySelector("#tf-wikis"));
+	assert.equal(
+		document.querySelector("#tf-wikis-err").textContent,
+		"Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or *."
+	);
+	setVal("tf-wikis", "en.wikipedia.org");
+	document.querySelector("#tf-wikis").dispatchEvent(new Event("input", { bubbles: true }));
+	assert.equal(document.querySelector("#tf-wikis-err").hidden, true);
+});
+
 test("mount create: duplicate name shows an error and does not save", async () => {
 	h.isNewTool.mockReturnValue(true); // name already exists as a demo tool
 	await mountToolForm(null);
@@ -691,6 +752,37 @@ test("mount edit (existing): revert button clears the demo edit and navigates", 
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
 	assert.deepEqual(h.demoStoreSet.mock.calls[0][1], {}, "edit entry deleted");
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount edit (existing official): delete publishes official Toolhub delete", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "T", url: "https://x.example", origin: "api" }));
+	h.isNewTool.mockReturnValue(false);
+	await mountToolForm("my-tool");
+	document.querySelector("[data-tf-official-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/tools/my-tool/"]);
+	assert.deepEqual(
+		h.demoStoreSet.mock.calls.map((call) => call[0]),
+		[DEMO_KEYS.toolEdits, DEMO_KEYS.toolNew]
+	);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/add-or-remove-tools"]);
+});
+
+test("mount edit (existing official): rejected official delete shows error and stays put", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("permission denied"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "T", url: "https://x.example", origin: "api" }));
+	h.isNewTool.mockReturnValue(false);
+	await mountToolForm("my-tool");
+	document.querySelector("[data-tf-official-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/tools/my-tool/"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("permission denied"));
 });
 
 test("mount edit (new tool): delete button removes the submission and navigates", async () => {

@@ -743,6 +743,36 @@ test("mount edit: delete button removes the list and navigates", () => {
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/my-lists"]);
 });
 
+test("mount official edit: delete publishes to official Toolhub", async () => {
+	h.apiGet.mockResolvedValue({ id: 7, title: "Official", description: "", tools: ["alpha"] });
+	h.officialWriteAvailable.mockReturnValue(true);
+	const r = await lists.viewListEdit("7");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/lists/7/"]);
+	assert.equal(h.demoListDelete.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists"]);
+});
+
+test("mount official edit: rejected delete shows an error", async () => {
+	h.apiGet.mockResolvedValue({ id: 7, title: "Official", description: "", tools: ["alpha"] });
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("permission denied"));
+	const r = await lists.viewListEdit("7");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/lists/7/"]);
+	assert.equal(h.demoListDelete.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("permission denied"));
+});
+
 test("mount create: no delete button", () => {
 	mountEdit(null, { id: "new-1", title: "", description: "", tools: [] });
 	assert.equal(document.querySelector("[data-le-delete]"), null);
