@@ -38,6 +38,7 @@ class User(Base):
     # a string. Keeping the DB column avoids a destructive migration on Toolforge.
     wm_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32), default="user")
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

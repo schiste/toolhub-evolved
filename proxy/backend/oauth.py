@@ -14,7 +14,7 @@ import requests
 from flask import Blueprint, Response, jsonify, redirect, request, session, url_for
 from sqlalchemy import select
 
-from backend import db, toolhub
+from backend import authz, db, toolhub
 from backend.models import User
 
 oauth_bp = Blueprint("oauth", __name__)
@@ -65,11 +65,12 @@ def oauth_callback() -> Response:
     with db.session_scope() as s:
         user = s.execute(select(User).where(User.wm_sub == toolhub_user_id)).scalar_one_or_none()
         if user is None:
-            user = User(wm_sub=toolhub_user_id, username=username)
+            user = User(wm_sub=toolhub_user_id, username=username, role=authz.role_for_login(toolhub_user_id, username))
             s.add(user)
             s.flush()
         else:
             user.username = username
+            user.role = authz.role_for_login(toolhub_user_id, username, user.role)
         uid = user.id
     toolhub.save_grant(uid, token_payload)
     session.clear()

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, security, sync, toolhub  # noqa: E402
+from backend import authz, db, security, sync, toolhub  # noqa: E402
 from backend.models import (
     ActivityRow,
     CrawlerRun,
@@ -129,8 +129,11 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     db.configure("sqlite://")
     eng = db.engine()
     with eng.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE users (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE favorites (id INTEGER PRIMARY KEY)")
     db._upgrade_schema()
+    user_columns = {col["name"] for col in inspect(eng).get_columns("users")}
+    assert "role" in user_columns
     columns = {col["name"] for col in inspect(eng).get_columns("favorites")}
     assert {"source", "sync_status", "last_synced_at", "last_error"}.issubset(columns)
 
@@ -148,6 +151,56 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
 
     db.configure("sqlite://")
     db.init_schema()
+
+
+# ---- Evolved-local authorization ------------------------------------------
+
+
+def test_authz_role_cleaning_permissions_and_labels():
+    assert authz.clean_role("reviewer") == authz.ROLE_REVIEWER
+    assert authz.clean_role("bogus") == authz.ROLE_USER
+    assert authz.role_label(authz.ROLE_ADMIN) == "Admin/operator"
+    assert authz.role_label("bogus") == "Signed-in user"
+    assert authz.ACTION_PUBLIC_REVIEW not in authz.role_permissions(authz.ROLE_USER)
+    assert authz.ACTION_PUBLIC_REVIEW in authz.role_permissions(authz.ROLE_REVIEWER)
+    assert authz.ACTION_OPERATOR in authz.role_permissions(authz.ROLE_ADMIN)
+
+
+def test_authz_can_separates_owned_data_from_evolved_roles():
+    owner = User(id=1, wm_sub="1", username="Owner", role=authz.ROLE_USER)
+    admin = User(id=2, wm_sub="2", username="Admin", role=authz.ROLE_ADMIN)
+    assert authz.can(None, authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=1)) is False
+    assert authz.can(owner, "unknown.action") is False
+    assert authz.can(owner, authz.ACTION_PRIVATE_READ) is False
+    assert authz.can(owner, authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=1)) is True
+    assert authz.can(admin, authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=1)) is False
+    assert authz.can(admin, authz.ACTION_PUBLIC_REVIEW) is True
+    assert authz.can(admin, authz.ACTION_TOOLHUB_WRITE) is True
+
+
+def test_authz_accepts_orm_owner_columns():
+    user = User(id=7, wm_sub="7", username="Reviewer", role=authz.ROLE_REVIEWER)
+    assert authz.can(user, authz.ACTION_PRIVATE_WRITE, ToolList(user_id=7, client_id="l", title="L")) is True
+    assert (
+        authz.can(
+            user,
+            authz.ACTION_PRIVATE_DELETE,
+            ToolHealthTarget(tool_name="t", target_url="https://t.example", created_by_user_id=7),
+        )
+        is True
+    )
+    assert authz.can(user, authz.ACTION_PRIVATE_WRITE, object()) is False
+
+
+def test_authz_login_role_from_env(monkeypatch):
+    monkeypatch.setenv(authz.ADMIN_USERS_ENV, "42, Ada")
+    monkeypatch.setenv(authz.REVIEWER_USERS_ENV, "Grace")
+    assert authz.configured_login_role("42", "Someone") == authz.ROLE_ADMIN
+    assert authz.configured_login_role("9", "ada") == authz.ROLE_ADMIN
+    assert authz.configured_login_role("10", "Grace") == authz.ROLE_REVIEWER
+    assert authz.configured_login_role("11", "Linus") == authz.ROLE_USER
+    assert authz.role_for_login("11", "Linus", authz.ROLE_REVIEWER) == authz.ROLE_REVIEWER
+    assert authz.role_for_login("42", "Someone", authz.ROLE_USER) == authz.ROLE_ADMIN
 
 
 # ---- security guards -------------------------------------------------------

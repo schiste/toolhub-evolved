@@ -32,6 +32,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
     json_col = "JSON"
     true_default = "TRUE" if engine().dialect.name in {"mysql", "mariadb"} else "1"
     return {
+        "users": {
+            "role": "VARCHAR(32) NOT NULL DEFAULT 'user'",
+        },
         "toolhub_tokens": {
             "last_validated_at": "DATETIME NULL",
             "last_failure_at": "DATETIME NULL",
