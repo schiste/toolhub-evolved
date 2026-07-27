@@ -15,10 +15,10 @@ auditlogs) are append-only, idempotent by client id.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from flask import Blueprint, Response, jsonify, request, session
+from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import db, toolhub
+from backend import authz, db, toolhub
 from backend.models import (
     ActivityRow,
     CrawlerRun,
@@ -55,6 +55,8 @@ v1_bp = Blueprint("v1", __name__)
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
 HTTP_NO_CONTENT = 204
+HTTP_UNAUTHORIZED = 401
+HTTP_FORBIDDEN = 403
 MAX_ITEMS = 500  # per overlay key per user
 MAX_NAME = 255
 FEED_READ_CAP = 100
@@ -193,6 +195,50 @@ def _bad(error: str) -> Response:
     return resp
 
 
+def _deny(status: int, error: str) -> Response:
+    resp = jsonify({"error": error})
+    resp.status_code = status
+    return resp
+
+
+def _current_policy_user() -> tuple[User | None, Response | None]:
+    """Fetch the session user for Evolved-local policy checks."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — login_required/write_guard guarantees this
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+    if user is None:
+        session.clear()
+        return None, _deny(HTTP_UNAUTHORIZED, "sign in required")
+    return user, None
+
+
+def _enforce(user: User, action: str, resource: object | None = None) -> Response | None:
+    """Return a 403 when the Evolved-local policy rejects the action."""
+    return None if authz.can(user, action, resource) else _deny(HTTP_FORBIDDEN, "not allowed")
+
+
+def _require_policy(action: str, resource: object | None = None) -> tuple[User | None, Response | None]:
+    """Fetch the current user and enforce one Evolved-local policy action."""
+    user, denied = _current_policy_user()
+    if denied is not None:
+        return None, denied
+    assert user is not None  # noqa: S101 — _current_policy_user returned no denial
+    denied = _enforce(user, action, resource)
+    if denied is not None:
+        return None, denied
+    return user, None
+
+
+def _require_policy_or_abort(action: str, resource: object | None = None) -> User:
+    """Return the current user or abort with a normalized policy response."""
+    user, denied = _require_policy(action, resource)
+    if denied is not None:
+        abort(denied)
+    assert user is not None  # noqa: S101 — _require_policy returned no denial
+    return user
+
+
 def _upstream_path(fragment: str) -> str:
     """Build a fixed official Toolhub API path from a route fragment."""
     return f"/api/{fragment.lstrip('/')}"
@@ -200,10 +246,9 @@ def _upstream_path(fragment: str) -> str:
 
 def _official_response(method: str, path: str, payload: object | None = None) -> Response:
     """Call official Toolhub as the current user and normalize failures."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard/login_required guarantees this
+    user = _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
     try:
-        body, status = toolhub.api_request(uid, method, path, json=payload)
+        body, status = toolhub.api_request(user.id, method, path, json=payload)
     except toolhub.ToolhubAuthError as exc:
         resp = jsonify({"error": str(exc), "reauth": True})
         resp.status_code = 401
@@ -257,7 +302,17 @@ def v1_user() -> Response:
         if user is None:  # stale cookie for a deleted account
             session.clear()
             return jsonify({"authenticated": False})
-        return jsonify({"authenticated": True, "username": user.username, "csrf": session.get("csrf", "")})
+        role = authz.user_role(user)
+        return jsonify(
+            {
+                "authenticated": True,
+                "username": user.username,
+                "csrf": session.get("csrf", ""),
+                "evolvedRole": role,
+                "evolvedRoleLabel": authz.role_label(role),
+                "evolvedPermissions": authz.role_permissions(role),
+            }
+        )
 
 
 @v1_bp.route("/v1/config/")
@@ -448,6 +503,7 @@ def v1_overlay_get() -> Response:
     """Return the full overlay in the SPA's localStorage shapes (one pull at sign-in)."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     return jsonify(_assemble_overlay(uid))
 
 
@@ -728,6 +784,7 @@ def v1_overlay_put(key: str) -> Response:
     """Write-through target for one localStorage overlay key."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
     value = request.get_json(silent=True)
     if value is None:
         return _bad("body must be JSON")
@@ -779,6 +836,7 @@ def v1_user_export() -> Response:
     """Export the caller's Evolved-owned data; official Toolhub data is not copied."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         user = s.get(User, uid)
         username = user.username if user else ""
@@ -791,6 +849,7 @@ def v1_user_delete_evolved_data() -> Response:
     """Delete the caller's local Evolved data without touching official Toolhub."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
     deleted: dict[str, int] = {}
     with db.session_scope() as s:
         for key, model in {
@@ -873,6 +932,7 @@ def v1_tool_event(name: str) -> Response:
     """Record one privacy-limited Evolved interaction event."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
+    _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
     clean_name = _clean_name(name)
     value = request.get_json(silent=True) or {}
     event_type = value.get("eventType") if isinstance(value, dict) else None
@@ -899,6 +959,8 @@ def v1_tool_thanks(name: str) -> Response:
     """Add or remove the caller's Evolved thanks for one tool."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
+    action = authz.ACTION_PRIVATE_WRITE if request.method == "POST" else authz.ACTION_PRIVATE_DELETE
+    _require_policy_or_abort(action, authz.Resource(owner_user_id=uid))
     clean_name = _clean_name(name)
     if clean_name is None:
         return _bad("tool name is required")
@@ -921,6 +983,7 @@ def v1_tool_health_target(name: str) -> Response:
     """Store the caller's Evolved health target URL for a tool."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
     clean_name = _clean_name(name)
     value = request.get_json(silent=True) or {}
     target_url = value.get("url") if isinstance(value, dict) else None
@@ -942,32 +1005,31 @@ def v1_tool_health_target(name: str) -> Response:
     return jsonify({"ok": True})
 
 
-@v1_bp.route("/v1/tools/<name>/media/", methods=["GET", "POST"])
-def v1_tool_media(name: str) -> Response:
-    """List approved media, or submit URL-based media metadata for moderation."""
-    clean_name = _clean_name(name)
-    if clean_name is None:
-        return _bad("tool name is required")
-    if request.method == "GET":
-        with db.session_scope() as s:
-            rows = list(
-                s.execute(
-                    select(ToolMedia)
-                    .where(
-                        ToolMedia.tool_name == clean_name,
-                        ToolMedia.deleted_at.is_(None),
-                        ToolMedia.review_status == "approved",
-                    )
-                    .order_by(ToolMedia.created_at.desc(), ToolMedia.id.desc())
-                    .limit(12)
-                ).scalars()
-            )
-        return jsonify({"count": len(rows), "results": [_media_payload(row) for row in rows]})
+def _tool_media_get(clean_name: str) -> Response:
+    """Return approved public media for a tool."""
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(ToolMedia)
+                .where(
+                    ToolMedia.tool_name == clean_name,
+                    ToolMedia.deleted_at.is_(None),
+                    ToolMedia.review_status == "approved",
+                )
+                .order_by(ToolMedia.created_at.desc(), ToolMedia.id.desc())
+                .limit(12)
+            ).scalars()
+        )
+    return jsonify({"count": len(rows), "results": [_media_payload(row) for row in rows]})
+
+
+def _tool_media_post(clean_name: str) -> Response:
+    """Submit URL-based media metadata for Evolved moderation."""
     guard = write_guard(lambda: None)()
     if guard is not None:
         return guard
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard-compatible guard above guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    uid = user.id
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
         return _bad("media body must be a JSON object")
@@ -992,15 +1054,27 @@ def v1_tool_media(name: str) -> Response:
     return jsonify({"ok": True, "media": payload})
 
 
+@v1_bp.route("/v1/tools/<name>/media/", methods=["GET", "POST"])
+def v1_tool_media(name: str) -> Response:
+    """List approved media, or submit URL-based media metadata for moderation."""
+    clean_name = _clean_name(name)
+    if clean_name is None:
+        return _bad("tool name is required")
+    if request.method == "GET":
+        return _tool_media_get(clean_name)
+    return _tool_media_post(clean_name)
+
+
 @v1_bp.route("/v1/media/<int:media_id>/", methods=["DELETE"])
 @write_guard
 def v1_tool_media_delete(media_id: int) -> Response:
     """Soft-delete a media row owned by the caller."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         row = s.get(ToolMedia, media_id)
-        if row is None or row.user_id != uid:
+        if row is None or not authz.can(user, authz.ACTION_PRIVATE_DELETE, row):
             resp = jsonify({"error": "media not found"})
             resp.status_code = HTTP_NOT_FOUND
             return resp

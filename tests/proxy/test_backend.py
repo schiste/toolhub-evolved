@@ -22,6 +22,7 @@ from backend.models import (
     ActivityRow,
     CrawlerRun,
     CrawlerUrl,
+    Favorite,
     ToolEvent,
     ToolHealthTarget,
     ToolList,
@@ -223,11 +224,23 @@ def test_v1_user_ok(client):
     uid = add_user()
     sign_in(client, uid)
     data = client.get("/v1/user/").get_json()
-    assert data == {"authenticated": True, "username": "Ada", "csrf": "tok"}
+    assert data["authenticated"] is True
+    assert data["username"] == "Ada"
+    assert data["csrf"] == "tok"
+    assert data["evolvedRole"] == "user"
+    assert data["evolvedRoleLabel"] == "Signed-in user"
+    assert authz.ACTION_PRIVATE_WRITE in data["evolvedPermissions"]
 
 
 def test_overlay_get_requires_login(client):
     assert client.get("/v1/overlay/").status_code == 401
+
+
+def test_overlay_get_rejects_stale_policy_user(client):
+    sign_in(client, 999)
+    resp = client.get("/v1/overlay/")
+    assert resp.status_code == 401
+    assert resp.get_json() == {"error": "sign in required"}
 
 
 def test_put_requires_login(client):
@@ -251,6 +264,20 @@ def test_rate_limit(client, monkeypatch):
     assert put_overlay(client, "favorites", ["a"]).status_code == 429
     clock["t"] += security.WRITE_WINDOW_SECONDS + 1  # window expires → pruning branch
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
+
+
+def test_policy_denial_blocks_private_overlay_writes(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    monkeypatch.setattr(authz, "can", lambda *_args, **_kwargs: False)
+    resp = put_overlay(client, "favorites", ["a"])
+    assert resp.status_code == 403
+    assert resp.get_json() == {"error": "not allowed"}
+    with db.session_scope() as s:
+        assert s.query(Favorite).count() == 0
+        assert s.query(ToolList).count() == 0
+        assert s.query(ToolRecord).count() == 0
+        assert s.query(CrawlerUrl).count() == 0
 
 
 # ---- overlay round-trips ---------------------------------------------------
@@ -935,6 +962,18 @@ def test_official_write_upstream_unavailable(client, monkeypatch):
     assert resp.get_json() == {"error": "official Toolhub is unavailable"}
 
 
+def test_official_bridge_respects_evolved_policy_before_toolhub_call(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    calls = []
+    monkeypatch.setattr(authz, "can", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(toolhub.requests, "request", lambda *args, **kwargs: calls.append((args, kwargs)))
+    resp = client.post("/v1/toolhub/tools/", json={"name": "x"}, headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 403
+    assert calls == []
+
+
 def test_official_delete_normalizes_204(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)
@@ -1061,6 +1100,24 @@ def test_oauth_callback_success_and_relogin(client, monkeypatch):
     assert client.get("/v1/user/").get_json()["username"] == "Ada Renamed"
     with db.session_scope() as s:
         assert s.query(User).count() == 1
+
+
+def test_oauth_callback_promotes_configured_evolved_role(client, monkeypatch):
+    configure_oauth(monkeypatch)
+    monkeypatch.setenv(authz.ADMIN_USERS_ENV, "7")
+    monkeypatch.setattr(toolhub.requests, "post", lambda *a, **k: FakeResp({"access_token": "at"}))
+    monkeypatch.setattr(
+        toolhub.requests,
+        "request",
+        lambda *a, **k: FakeResp({"id": 7, "username": "Ada", "is_authenticated": True}),
+    )
+    state = start_login(client)
+    assert client.get(f"/oauth/callback?code=c&state={state}").headers["Location"] == "/"
+    data = client.get("/v1/user/").get_json()
+    assert data["evolvedRole"] == "admin"
+    assert authz.ACTION_OPERATOR in data["evolvedPermissions"]
+    with db.session_scope() as s:
+        assert s.query(User).one().role == "admin"
 
 
 def test_oauth_logout(client):
