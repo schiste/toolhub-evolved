@@ -258,6 +258,12 @@ function recentSortHeader(state, sort, label) {
 function recentDash(value) {
 	return value ? `<span${dirAttrs(value)}>${esc(value)}</span>` : `<span class="recent-table__muted">—</span>`;
 }
+/** @param {string | undefined | null} comment */
+function recentComment(comment) {
+	return comment
+		? `<button class="recent-comment" type="button" aria-expanded="false"><span class="recent-comment__text"${dirAttrs(comment)}>${esc(comment)}</span></button>`
+		: `<span class="recent-table__muted">—</span>`;
+}
 
 // Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
 export async function viewRecent() {
@@ -311,7 +317,7 @@ export async function viewRecent() {
 				<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
 				<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
 				<td data-label="${t("parity.updatedAt", "Updated")}">${timeTag(r.timestamp)}</td>
-				<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${r.comment ? `<span${dirAttrs(r.comment)}>${esc(r.comment)}</span>` : `<span class="recent-table__muted">—</span>`}</td>
+				<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentComment(r.comment)}</td>
 			</tr>`;
 		})
 		.join("");
@@ -383,6 +389,17 @@ export async function viewRecent() {
 			}
 			const controls = $(".recent-controls");
 			if (controls) controls.setAttribute("data-enhanced", "true");
+			$(".recent-table")?.addEventListener("click", (event) => {
+				const toggle =
+					event.target instanceof Element
+						? /** @type {HTMLButtonElement | null} */ (event.target.closest(".recent-comment"))
+						: null;
+				if (!toggle) return;
+				toggle.setAttribute(
+					"aria-expanded",
+					toggle.getAttribute("aria-expanded") === "true" ? "false" : "true"
+				);
+			});
 		}
 	};
 }

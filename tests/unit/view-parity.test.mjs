@@ -73,7 +73,7 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	assert.match(view.html, /<td data-label="Updated"><time datetime="2019-01-01T00:00:00\.000Z"/);
 	assert.match(
 		view.html,
-		/<td data-label="Comment" class="recent-table__comment"><span dir="auto">Initial listing<\/span><\/td>/
+		/<td data-label="Comment" class="recent-table__comment"><button class="recent-comment" type="button" aria-expanded="false"><span class="recent-comment__text" dir="auto">Initial listing<\/span><\/button><\/td>/
 	);
 	assert.match(view.html, /<th scope="col"><a href="\/recent\?sort=owner">Tool owner<\/a><\/th>/);
 	assert.match(
@@ -279,6 +279,31 @@ test("viewRecent mount: changing sort and review state updates the route", async
 	/** @type {HTMLInputElement} */ (document.querySelector("#recent-owner")).value = "Ada";
 	form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 	assert.equal(location.pathname + location.search, "/recent?show=tools&owner=Ada");
+});
+
+test("viewRecent mount: clicking a comment expands only that row", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{ content_type: "list", content_id: "1", comment: "First long import comment", timestamp: ISO },
+			{ content_type: "list", content_id: "2", comment: "Second long import comment", timestamp: ISO }
+		]
+	});
+	const view = await viewRecent();
+	document.body.innerHTML = view.html;
+	view.mount?.();
+
+	const comments = [...document.querySelectorAll(".recent-comment")];
+	assert.equal(comments.length, 2);
+	assert.equal(comments[0].getAttribute("aria-expanded"), "false");
+	assert.equal(comments[1].getAttribute("aria-expanded"), "false");
+
+	comments[0].click();
+	assert.equal(comments[0].getAttribute("aria-expanded"), "true");
+	assert.equal(comments[1].getAttribute("aria-expanded"), "false");
+
+	comments[0].click();
+	assert.equal(comments[0].getAttribute("aria-expanded"), "false");
 });
 
 test("viewRecent: an API failure yields the empty placeholder", async () => {

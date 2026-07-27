@@ -1447,6 +1447,43 @@
 	line-height: 1.45;
 }
 
+.recent-comment {
+	display: block;
+	width: 100%;
+	padding: var(--space-0);
+	border: none;
+	appearance: none;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	line-height: inherit;
+	text-align: start;
+}
+
+.recent-comment__text {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.recent-comment:hover .recent-comment__text {
+	color: var(--color-progressive);
+}
+
+.recent-comment:focus-visible {
+	outline: 0;
+	box-shadow: var(--focus-ring);
+}
+
+.recent-comment[aria-expanded="true"] .recent-comment__text {
+	overflow: visible;
+	overflow-wrap: anywhere;
+	text-overflow: clip;
+	white-space: normal;
+}
+
 .recent-table__sort {
 	color: var(--color-progressive);
 	display: inline-block;
