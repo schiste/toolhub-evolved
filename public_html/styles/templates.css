@@ -87,103 +87,17 @@
 }
 
 .route-loading {
-	min-height: 42vh;
-}
-
-.hero--loading {
-	display: grid;
-	gap: var(--space-4);
-}
-
-.skel,
-.skel-card,
-.skel-row > span {
-	display: block;
-	position: relative;
-	overflow: hidden;
-	background: var(--color-surface-muted);
-	border-radius: var(--radius-sm);
-}
-
-.skel::after,
-.skel-card::after,
-.skel-row > span::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	transform: translateX(-100%);
-	background: linear-gradient(90deg, transparent, var(--color-skeleton-shine), transparent);
-	animation: skel-shimmer 1.25s ease-in-out infinite;
-}
-
-.skel--hero-title {
-	width: min(720px, 74%);
-	height: clamp(40px, 7vw, 72px);
-}
-
-.skel--hero-line {
-	width: min(580px, 88%);
-	height: 32px;
-}
-
-.skel--search {
-	width: min(720px, 100%);
-	height: 48px;
-}
-
-.skel--section-title {
-	width: min(260px, 60%);
-	height: 28px;
-	margin: var(--space-5) var(--space-0) var(--space-4);
-}
-
-.skel-card {
-	min-height: 168px;
-}
-
-.skel--panel {
-	width: 100%;
-	height: 180px;
-	margin-bottom: var(--space-4);
-}
-
-.skel--panel-short {
-	height: 132px;
-}
-
-.skel--title {
-	width: min(460px, 70%);
-	height: 34px;
-	margin-bottom: var(--space-3);
-}
-
-.skel--intro {
-	width: min(680px, 92%);
-	height: 22px;
-	margin-bottom: var(--space-5);
-}
-
-.skel-table {
-	display: grid;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	gap: var(--space-3);
+	min-height: 42vh;
+	color: var(--color-text-secondary);
+	font-weight: 600;
 }
 
-.skel-row {
-	display: grid;
-	grid-template-columns: minmax(180px, 1.4fr) minmax(80px, 0.6fr) minmax(120px, 0.9fr) minmax(100px, 0.7fr);
-	gap: var(--space-4);
-	padding: var(--space-3) var(--space-0);
-	border-bottom: var(--border-muted);
-}
-
-.skel-row > span {
-	height: 22px;
-}
-
-@keyframes skel-shimmer {
-	to {
-		transform: translateX(100%);
-	}
+.route-loading__label {
+	font-size: var(--fs-body);
 }
 
 .spinner {
@@ -399,9 +313,6 @@
 		.linkcard,
 		.home-results,
 		.recent,
-		.skel,
-		.skel-card,
-		.skel-row > span,
 		.spinner
 	) {
 		transition: none;

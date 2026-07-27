@@ -88,8 +88,15 @@ export const ROUTES = {
 			t("router.accountTitle", "Evolved data settings"),
 			t("router.accountLead", "Export or delete Evolved-local data for this Toolhub sign-in.")
 		),
+	"my-apps": () =>
+		requireSignIn(
+			() => loadAccount().then((m) => m.viewMyApps()),
+			t("router.myAppsTitle", "My apps"),
+			t("router.myAppsLead", "View OAuth applications registered on Toolhub by this account.")
+		),
 	"developer-settings": () =>
-		signInPage(
+		requireSignIn(
+			() => loadAccount().then((m) => m.viewDeveloperSettings()),
 			t("router.devSettingsTitle", "Developer settings"),
 			t("router.devSettingsLead", "Manage your API tokens and registered OAuth applications.")
 		),
@@ -219,53 +226,11 @@ export function setActiveNav() {
 /** @type {string | null} */
 export let lastPath = null;
 export let navSeq = 0;
-/** @param {number} count */
-function skeletonCards(count) {
-	return Array.from({ length: count }, () => `<li class="skel-card"></li>`).join("");
-}
-/** @param {number} count */
-function skeletonRows(count) {
-	return Array.from(
-		{ length: count },
-		() => `<div class="skel-row"><span></span><span></span><span></span><span></span></div>`
-	).join("");
-}
-/** @param {string} [path] */
-export const loadingHTML = (path = parseRoute().path) => {
-	const label = `<span class="skip-label">${t("router.loading", "Loading")}</span>`;
-	if (path === "/") {
-		return `<div class="route-loading route-loading--home" role="status" aria-live="polite">${label}
-	<section class="hero hero--loading" aria-hidden="true">
-		<span class="skel skel--hero-title"></span>
-		<span class="skel skel--hero-line"></span>
-		<span class="skel skel--search"></span>
-	</section>
-	<div class="container layout" aria-hidden="true">
-		<div class="layout__main">
-			<span class="skel skel--section-title"></span>
-			<ul class="card-grid grid-tools skeleton-grid">${skeletonCards(6)}</ul>
-			<span class="skel skel--section-title"></span>
-			<ul class="card-grid grid-tools skeleton-grid">${skeletonCards(4)}</ul>
-		</div>
-		<aside class="layout__side">
-			<span class="skel skel--panel"></span>
-			<span class="skel skel--panel skel--panel-short"></span>
-		</aside>
-	</div></div>`;
-	}
-	if (path.startsWith("/recent") || path.startsWith("/members") || path.startsWith("/audit-logs")) {
-		return `<div class="container page route-loading route-loading--table" role="status" aria-live="polite">${label}
-		<span class="skel skel--title"></span>
-		<span class="skel skel--intro"></span>
-		<div class="skel-table" aria-hidden="true">${skeletonRows(7)}</div>
-	</div>`;
-	}
-	return `<div class="container page route-loading" role="status" aria-live="polite">${label}
-		<span class="skel skel--title"></span>
-		<span class="skel skel--intro"></span>
-		<ul class="card-grid grid-tools skeleton-grid" aria-hidden="true">${skeletonCards(6)}</ul>
-	</div>`;
-};
+/** @param {string} [_path] */
+export const loadingHTML = (_path) => `<div class="container page route-loading" role="status" aria-live="polite">
+	<span class="spinner" aria-hidden="true"></span>
+	<span class="route-loading__label">${t("router.loadingToolhubData", "Loading Toolhub data")}</span>
+</div>`;
 /** @param {unknown} e */
 export const errorHTML = (
 	e

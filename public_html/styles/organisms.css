@@ -768,6 +768,57 @@
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 }
+.account-data__links {
+	margin-top: var(--space-3);
+}
+.account-apps__head {
+	align-items: flex-start;
+}
+.account-apps__source {
+	display: inline-flex;
+	align-items: center;
+	flex: 0 0 auto;
+	padding: var(--space-1) var(--space-2);
+	background: var(--color-progressive-subtle);
+	color: var(--color-progressive);
+	border-radius: var(--radius-sm);
+	font-size: var(--fs-caption);
+	font-weight: 700;
+}
+.account-apps__summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	margin: var(--space-4) var(--space-0);
+}
+.account-apps__table-wrap {
+	overflow-x: auto;
+	border-top: var(--border-base);
+}
+.account-apps__table {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+.account-apps__table th,
+.account-apps__table td {
+	padding: var(--space-3) var(--space-2);
+	text-align: start;
+	vertical-align: top;
+	border-bottom: var(--border-muted);
+}
+.account-apps__table th {
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-weight: 700;
+}
+.account-apps__table td {
+	overflow-wrap: anywhere;
+}
+.account-apps__table code {
+	font-size: var(--fs-caption);
+}
 .panel__foot {
 	display: inline-block;
 	margin-top: var(--space-2);

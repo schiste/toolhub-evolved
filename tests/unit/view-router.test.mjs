@@ -38,7 +38,9 @@ vi.mock("../../public_html/views/toolforms.js", () => ({
 	viewAnnotationsEdit: vi.fn((n) => ({ tag: "annotations", n }))
 }));
 vi.mock("../../public_html/views/account.js", () => ({
-	viewAccountSettings: vi.fn(() => ({ tag: "account" }))
+	viewAccountSettings: vi.fn(() => ({ tag: "account" })),
+	viewDeveloperSettings: vi.fn(() => ({ tag: "developer" })),
+	viewMyApps: vi.fn(() => ({ tag: "myapps" }))
 }));
 vi.mock("../../public_html/views/static.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -257,14 +259,8 @@ test("dispatch routes the ungated ROUTES entries to their views", async () => {
 });
 
 test("dispatch ROUTES sign-in stubs use their exact copy", async () => {
-	await at("/developer-settings");
-	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
-		"Developer settings",
-		"Manage your API tokens and registered OAuth applications."
-	]);
-
 	await at("/login");
-	assert.deepEqual(staticViews.signInPage.mock.calls[1], [
+	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Sign in",
 		"Sign in to save favourites, build lists, and edit tool information."
 	]);
@@ -295,6 +291,22 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 		"Evolved data settings",
 		"Export or delete Evolved-local data for this Toolhub sign-in."
 	]);
+
+	vi.clearAllMocks();
+	session.signedIn.mockReturnValue(false);
+	await at("/developer-settings");
+	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
+		"Developer settings",
+		"Manage your API tokens and registered OAuth applications."
+	]);
+
+	vi.clearAllMocks();
+	session.signedIn.mockReturnValue(false);
+	await at("/my-apps");
+	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
+		"My apps",
+		"View OAuth applications registered on Toolhub by this account."
+	]);
 });
 
 test("dispatch gated ROUTES entries: signed-in → their real views", async () => {
@@ -303,8 +315,12 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	assert.deepEqual(await at("/favorites"), { tag: "favorites" });
 	assert.deepEqual(await at("/add-or-remove-tools"), { tag: "addtools" });
 	assert.deepEqual(await at("/account"), { tag: "account" });
+	assert.deepEqual(await at("/developer-settings"), { tag: "developer" });
+	assert.deepEqual(await at("/my-apps"), { tag: "myapps" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 	assert.equal(accountView.viewAccountSettings.mock.calls.length, 1);
+	assert.equal(accountView.viewDeveloperSettings.mock.calls.length, 1);
+	assert.equal(accountView.viewMyApps.mock.calls.length, 1);
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */
@@ -426,10 +442,10 @@ test("setActiveNav does not match a look-alike prefix and only marks the first m
 /* ---- render / commitView / errorHTML / loadingHTML -------------------- */
 
 test("loadingHTML and errorHTML render the exact fixed markup", () => {
-	assert.match(router.loadingHTML("/"), /route-loading--home/);
-	assert.match(router.loadingHTML("/"), /hero--loading/);
-	assert.match(router.loadingHTML("/recent"), /route-loading--table/);
-	assert.match(router.loadingHTML("/search"), /skeleton-grid/);
+	assert.match(router.loadingHTML(), /Loading Toolhub data/);
+	assert.match(router.loadingHTML(), /class="spinner"/);
+	assert.doesNotMatch(router.loadingHTML("/"), /skel|skeleton-grid|hero--loading|route-loading--home/);
+	assert.doesNotMatch(router.loadingHTML("/recent"), /route-loading--table/);
 	assert.equal(
 		router.errorHTML(new Error("oops")),
 		'<div class="container page errorpage"><h1>Couldn\'t load live data</h1>\n\t<p class="prose">The Toolhub API didn\'t respond (oops).</p>\n\t<a class="btn btn--primary btn--md" href="/">Back to home</a></div>'

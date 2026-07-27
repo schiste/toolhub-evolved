@@ -26,8 +26,10 @@ export function renderAccount() {
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">${t("account.signedInAs", "Signed in as")} <strong>${esc(USER.name)}</strong></div>
 			<a href="/my-lists">${icon("list")} ${t("account.yourLists", "Your lists")}</a>
+			<a href="/my-apps">${icon("code")} ${t("account.myApps", "My apps")}</a>
 			<a href="/favorites">${icon("star")} ${t("account.favorites", "Favorites")}</a>
 			<a href="/add-or-remove-tools">${icon("tools")} ${t("account.addOrRemoveTools", "Add or remove tools")}</a>
+			<a href="/developer-settings">${icon("key")} ${t("account.developerSettings", "Developer settings")}</a>
 			<a href="/account">${icon("tools")} ${t("account.dataSettings", "Evolved data settings")}</a>
 			<hr />
 			<a class="acct__logout" href="/oauth/logout">${icon("logout")} ${t("account.logOut", "Log out")}</a>
