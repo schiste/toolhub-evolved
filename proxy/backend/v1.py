@@ -41,6 +41,7 @@ from backend.sync import (
     REVIEW_APPROVED,
     REVIEW_OPEN,
     REVIEW_PENDING,
+    REVIEW_REJECTED,
     SOURCE_LOCAL,
     SOURCE_OFFICIAL,
     SYNC_ERROR,
@@ -71,6 +72,14 @@ FEED_KEYS = ("revisions", "auditlogs")
 VISIBILITY_PRIVATE = "private"
 VISIBILITY_PUBLIC = "public"
 EVENT_TYPES = {"view", "launch", "save", "list_add"}
+MODERATION_MODELS = {
+    "tool-records": ToolRecord,
+    "health-targets": ToolHealthTarget,
+    "media": ToolMedia,
+    "thanks": ToolThanks,
+}
+PUBLIC_REVIEW_STATUSES = {REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED}
+MODERATION_KINDS = set(MODERATION_MODELS)
 META_KEYS = {
     "source",
     "syncStatus",
@@ -145,7 +154,9 @@ def _media_payload(row: ToolMedia) -> dict:
         "title": row.title,
         "license": row.license,
         "source": row.source,
-        "reviewStatus": row.review_status,
+        "reviewStatus": clean_review_status(row.review_status, REVIEW_PENDING),
+        "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
+        "syncLabel": _sync_label(row.sync_status or SYNC_EVOLVED_REAL),
         "createdAt": _iso(row.created_at),
     }
 
@@ -219,16 +230,14 @@ def _local_tool_is_public(row: ToolRecord) -> bool:
     """Public Evolved records are searchable/feedable; private drafts are not."""
     record = row.record if isinstance(row.record, dict) else {}
     is_public = row.visibility == VISIBILITY_PUBLIC or record.get("origin") == "crawler"
-    default_review = REVIEW_APPROVED if record.get("origin") == "crawler" else REVIEW_PENDING
-    return is_public and clean_review_status(getattr(row, "review_status", None), default_review) == REVIEW_APPROVED
+    return is_public and clean_review_status(getattr(row, "review_status", None), REVIEW_PENDING) == REVIEW_APPROVED
 
 
 def _tool_record_payload(row: ToolRecord) -> dict:
     record = row.record if isinstance(row.record, dict) else {}
     out = _with_common_meta(record, row)
     out["visibility"] = row.visibility or VISIBILITY_PRIVATE
-    default_review = REVIEW_APPROVED if record.get("origin") == "crawler" else REVIEW_PENDING
-    out["reviewStatus"] = clean_review_status(getattr(row, "review_status", None), default_review)
+    out["reviewStatus"] = clean_review_status(getattr(row, "review_status", None), REVIEW_PENDING)
     if row.official_name:
         out["officialName"] = row.official_name
     if row.last_toolhub_response:
@@ -236,6 +245,47 @@ def _tool_record_payload(row: ToolRecord) -> dict:
     if row.validation_errors:
         out["validationErrors"] = row.validation_errors
     return out
+
+
+def _health_target_payload(row: ToolHealthTarget) -> dict:
+    return {
+        "id": row.id,
+        "toolName": row.tool_name,
+        "targetUrl": row.target_url,
+        "enabled": row.enabled,
+        "reviewStatus": clean_review_status(row.review_status, REVIEW_PENDING),
+        "lastCheckedAt": _iso(row.last_checked_at),
+        "lastStatus": row.last_status or "",
+        "lastError": row.last_error or "",
+        "source": SOURCE_LOCAL,
+        "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
+        "syncLabel": _sync_label(row.sync_status or SYNC_EVOLVED_REAL),
+        "createdAt": _iso(row.created_at),
+    }
+
+
+def _thanks_payload(row: ToolThanks) -> dict:
+    return {
+        "id": row.id,
+        "toolName": row.tool_name,
+        "active": row.active,
+        "reviewStatus": clean_review_status(row.review_status, REVIEW_APPROVED),
+        "source": SOURCE_LOCAL,
+        "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
+        "syncLabel": _sync_label(row.sync_status or SYNC_EVOLVED_REAL),
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
+    }
+
+
+def _moderation_item(kind: str, row: object) -> dict:
+    payload_builders = {
+        "tool-records": _tool_record_payload,
+        "health-targets": _health_target_payload,
+        "media": _media_payload,
+        "thanks": _thanks_payload,
+    }
+    return {"kind": kind, "id": row.id, "data": payload_builders[kind](row)}
 
 
 def _bad(error: str) -> Response:
@@ -2011,28 +2061,28 @@ def _tool_record_meta(
     *,
     can_review: bool = False,
     existing_review_status: str | None = None,
+    record_changed: bool = True,
 ) -> dict[str, Any]:
     """Extract lifecycle metadata from a toolNew payload."""
     is_crawler_record = rec.get("origin") == "crawler"
     visibility = _visibility(
         _payload_value(rec, "visibility"), VISIBILITY_PUBLIC if is_crawler_record else VISIBILITY_PRIVATE
     )
-    default_review = REVIEW_APPROVED if is_crawler_record else REVIEW_PENDING
-    preserved_review = clean_review_status(existing_review_status, default_review)
-    review_status = (
-        clean_review_status(_payload_value(rec, "reviewStatus", "review_status"), preserved_review)
-        if can_review
-        else preserved_review
-    )
+    preserved_review = clean_review_status(existing_review_status, REVIEW_PENDING)
+    if can_review:
+        review_status = clean_review_status(_payload_value(rec, "reviewStatus", "review_status"), preserved_review)
+    elif visibility == VISIBILITY_PUBLIC and not record_changed:
+        review_status = preserved_review
+    else:
+        review_status = REVIEW_PENDING
     default_status = SYNC_EVOLVED_REAL if visibility == VISIBILITY_PUBLIC else SYNC_LOCAL_DRAFT
     status = clean_sync_status(_payload_value(rec, "syncStatus", "sync_status"), default_status)
-    source = clean_source(_payload_value(rec, "source"), SOURCE_LOCAL)
     official_name = _payload_value(rec, "officialName", "official_name")
     response = _payload_value(rec, "toolhubResponse", "last_toolhub_response")
     validation_errors = _payload_value(rec, "validationErrors", "validation_errors")
     return {
         "visibility": visibility,
-        "source": source,
+        "source": SOURCE_LOCAL,
         "sync_status": status,
         "review_status": review_status,
         "last_synced_at": _parse_optional_iso(_payload_value(rec, "lastSyncedAt", "last_synced_at")),
@@ -2094,12 +2144,15 @@ def _put_tool_new(uid: int, entries: dict[str, dict], s: Any, *, can_review: boo
         clean = _clean_tool_record(rec)
         if clean is None:
             return _bad(f"toolNew record '{name}' needs title, description and an https url")
+        existing = existing_own.get(name)
         cleaned[name] = (
             clean,
             _tool_record_meta(
                 rec,
                 can_review=can_review,
-                existing_review_status=getattr(existing_own.get(name), "review_status", None),
+                existing_review_status=getattr(existing, "review_status", None),
+                record_changed=existing is None
+                or (existing.record if isinstance(existing.record, dict) else {}) != clean,
             ),
         )
     s.execute(delete(ToolRecord).where(ToolRecord.user_id == uid))
@@ -2304,7 +2357,11 @@ def v1_tool_signals(name: str) -> Response:
         thanks_count = s.execute(
             select(func.count())
             .select_from(ToolThanks)
-            .where(ToolThanks.tool_name == clean_name, ToolThanks.active.is_(True))
+            .where(
+                ToolThanks.tool_name == clean_name,
+                ToolThanks.active.is_(True),
+                ToolThanks.review_status == REVIEW_APPROVED,
+            )
         ).scalar_one()
         user_thanked = (
             bool(
@@ -2313,6 +2370,7 @@ def v1_tool_signals(name: str) -> Response:
                         ToolThanks.tool_name == clean_name,
                         ToolThanks.user_id == uid,
                         ToolThanks.active.is_(True),
+                        ToolThanks.review_status == REVIEW_APPROVED,
                     )
                 ).first()
             )
@@ -2326,6 +2384,7 @@ def v1_tool_signals(name: str) -> Response:
             select(ToolHealthTarget)
             .where(ToolHealthTarget.tool_name == clean_name, ToolHealthTarget.enabled.is_(True))
             .where(ToolHealthTarget.deleted_at.is_(None))
+            .where(ToolHealthTarget.review_status == REVIEW_APPROVED)
             .order_by(ToolHealthTarget.last_checked_at.desc(), ToolHealthTarget.id.desc())
             .limit(1)
         ).scalar_one_or_none()
@@ -2333,13 +2392,27 @@ def v1_tool_signals(name: str) -> Response:
         {
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
-            "thanks": {"count": int(thanks_count), "userThanked": user_thanked},
-            "usage30d": {"count": int(events_30d), "label": "30-day Evolved usage"},
+            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
+            "thanks": {
+                "count": int(thanks_count),
+                "userThanked": user_thanked,
+                "syncStatus": SYNC_EVOLVED_REAL,
+                "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
+            },
+            "usage30d": {
+                "count": int(events_30d),
+                "label": "30-day Evolved usage",
+                "syncStatus": SYNC_EVOLVED_REAL,
+                "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
+            },
             "health": {
                 "status": health.last_status if health and health.last_status else "unknown",
                 "checkedAt": _iso(health.last_checked_at) if health else "",
                 "targetUrl": health.target_url if health else "",
                 "lastError": health.last_error if health else "",
+                "reviewStatus": clean_review_status(health.review_status, REVIEW_APPROVED) if health else "",
+                "syncStatus": SYNC_EVOLVED_REAL,
+                "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
             },
         }
     )
@@ -2379,8 +2452,10 @@ def v1_tool_thanks(name: str) -> Response:
     """Add or remove the caller's Evolved thanks for one tool."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    action = authz.ACTION_PRIVATE_WRITE if request.method == "POST" else authz.ACTION_PRIVATE_DELETE
-    _require_policy_or_abort(action, authz.Resource(owner_user_id=uid))
+    if request.method == "POST":
+        _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    else:
+        _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
     clean_name = _clean_name(name)
     if clean_name is None:
         return _bad("tool name is required")
@@ -2394,14 +2469,23 @@ def v1_tool_thanks(name: str) -> Response:
                 user_id=uid,
                 created_by_user_id=uid,
                 active=request.method == "POST",
+                review_status=REVIEW_APPROVED,
             )
             s.add(row)
         else:
             if row.created_by_user_id is None:
                 row.created_by_user_id = uid
+            row.review_status = clean_review_status(row.review_status, REVIEW_APPROVED)
             row.active = request.method == "POST"
             row.updated_at = utcnow()
-    return jsonify({"ok": True})
+    return jsonify(
+        {
+            "ok": True,
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
+            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
+        }
+    )
 
 
 @v1_bp.route("/v1/tools/<name>/health-target/", methods=["PUT"])
@@ -2410,7 +2494,7 @@ def v1_tool_health_target(name: str) -> Response:
     """Store the caller's Evolved health target URL for a tool."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
     clean_name = _clean_name(name)
     value = request.get_json(silent=True) or {}
     target_url = value.get("url") if isinstance(value, dict) else None
@@ -2424,13 +2508,27 @@ def v1_tool_health_target(name: str) -> Response:
             )
         ).scalar_one_or_none()
         if row is None:
-            s.add(ToolHealthTarget(tool_name=clean_name, created_by_user_id=uid, target_url=target_url[:MAX_URL]))
+            row = ToolHealthTarget(
+                tool_name=clean_name,
+                created_by_user_id=uid,
+                target_url=target_url[:MAX_URL],
+                source=SOURCE_LOCAL,
+                sync_status=SYNC_EVOLVED_REAL,
+                review_status=REVIEW_PENDING,
+            )
+            s.add(row)
         else:
+            if row.target_url != target_url[:MAX_URL]:
+                row.review_status = REVIEW_PENDING
             row.target_url = target_url[:MAX_URL]
+            row.source = SOURCE_LOCAL
+            row.sync_status = SYNC_EVOLVED_REAL
             row.enabled = True
             row.deleted_at = None
             row.last_error = None
-    return jsonify({"ok": True})
+        s.flush()
+        payload = _health_target_payload(row)
+    return jsonify({"ok": True, "healthTarget": payload})
 
 
 def _tool_media_get(clean_name: str) -> Response:
@@ -2442,7 +2540,7 @@ def _tool_media_get(clean_name: str) -> Response:
                 .where(
                     ToolMedia.tool_name == clean_name,
                     ToolMedia.deleted_at.is_(None),
-                    ToolMedia.review_status == "approved",
+                    ToolMedia.review_status == REVIEW_APPROVED,
                 )
                 .order_by(ToolMedia.created_at.desc(), ToolMedia.id.desc())
                 .limit(12)
@@ -2475,7 +2573,8 @@ def _tool_media_post(clean_name: str) -> Response:
             title=str(value.get("title") or "")[:MAX_NAME],
             license=license_id[:MAX_NAME],
             source=source[:MAX_URL],
-            review_status="pending",
+            review_status=REVIEW_PENDING,
+            sync_status=SYNC_EVOLVED_REAL,
         )
         s.add(row)
         s.flush()
@@ -2509,6 +2608,130 @@ def v1_tool_media_delete(media_id: int) -> Response:
             return resp
         row.deleted_at = utcnow()
     return jsonify({"ok": True})
+
+
+def _moderation_row(s: Any, kind: str, item_id: int) -> object | None:  # noqa: ANN401
+    return s.get(MODERATION_MODELS[kind], item_id)
+
+
+def _moderation_row_visible(kind: str, row: object | None) -> bool:
+    if row is None:
+        return False
+    if getattr(row, "deleted_at", None) is not None:
+        return False
+    if kind == "tool-records":
+        return getattr(row, "visibility", None) == VISIBILITY_PUBLIC
+    return True
+
+
+@v1_bp.route("/v1/moderation/public-data/")
+@login_required
+def v1_moderation_public_data() -> Response:
+    """Return pending Evolved-owned public data for reviewer moderation."""
+    _require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
+    with db.session_scope() as s:
+        items = [
+            *[
+                _moderation_item("tool-records", row)
+                for row in s.execute(
+                    select(ToolRecord)
+                    .where(
+                        ToolRecord.deleted_at.is_(None),
+                        ToolRecord.visibility == VISIBILITY_PUBLIC,
+                        ToolRecord.review_status == REVIEW_PENDING,
+                    )
+                    .order_by(ToolRecord.modified_at.desc(), ToolRecord.id.desc())
+                    .limit(50)
+                ).scalars()
+            ],
+            *[
+                _moderation_item("health-targets", row)
+                for row in s.execute(
+                    select(ToolHealthTarget)
+                    .where(ToolHealthTarget.deleted_at.is_(None), ToolHealthTarget.review_status == REVIEW_PENDING)
+                    .order_by(ToolHealthTarget.created_at.desc(), ToolHealthTarget.id.desc())
+                    .limit(50)
+                ).scalars()
+            ],
+            *[
+                _moderation_item("media", row)
+                for row in s.execute(
+                    select(ToolMedia)
+                    .where(ToolMedia.deleted_at.is_(None), ToolMedia.review_status == REVIEW_PENDING)
+                    .order_by(ToolMedia.created_at.desc(), ToolMedia.id.desc())
+                    .limit(50)
+                ).scalars()
+            ],
+            *[
+                _moderation_item("thanks", row)
+                for row in s.execute(
+                    select(ToolThanks)
+                    .where(ToolThanks.review_status == REVIEW_PENDING)
+                    .order_by(ToolThanks.created_at.desc(), ToolThanks.id.desc())
+                    .limit(50)
+                ).scalars()
+            ],
+        ]
+    return jsonify(
+        {
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
+            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
+            "count": len(items),
+            "results": items,
+        }
+    )
+
+
+@v1_bp.route("/v1/moderation/public-data/<kind>/<int:item_id>/", methods=["PUT"])
+@write_guard
+def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
+    """Apply reviewer moderation to one Evolved-owned public record."""
+    if kind not in MODERATION_KINDS:
+        return _deny(HTTP_NOT_FOUND, "moderation record not found")
+    user = _require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
+    value = request.get_json(silent=True)
+    if not isinstance(value, dict):
+        return _bad("moderation body must be a JSON object")
+    review_status = value.get("reviewStatus") or value.get("review_status")
+    if review_status not in PUBLIC_REVIEW_STATUSES:
+        return _bad("reviewStatus must be pending, approved, or rejected")
+    with db.session_scope() as s:
+        row = _moderation_row(s, kind, item_id)
+        if not _moderation_row_visible(kind, row):
+            return _deny(HTTP_NOT_FOUND, "moderation record not found")
+        assert row is not None  # noqa: S101 - visible check excludes None
+        row.review_status = str(review_status)
+        if isinstance(row, ToolRecord):
+            row.source = SOURCE_LOCAL
+            row.sync_status = SYNC_EVOLVED_REAL
+            if review_status == REVIEW_APPROVED:
+                row.visibility = VISIBILITY_PUBLIC
+        elif isinstance(row, ToolHealthTarget):
+            row.source = SOURCE_LOCAL
+            row.sync_status = SYNC_EVOLVED_REAL
+        else:
+            row.sync_status = SYNC_EVOLVED_REAL
+        s.flush()
+        item = _moderation_item(kind, row)
+        _emit_structured_activity(
+            s,
+            user,
+            action="public-data-reviewed",
+            object_type=kind,
+            object_key=str(item_id),
+            official_status=SYNC_EVOLVED_REAL,
+            payload={"kind": kind, "reviewStatus": review_status, "item": item},
+        )
+    return jsonify(
+        {
+            "ok": True,
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
+            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
+            "item": item,
+        }
+    )
 
 
 @v1_bp.route("/v1/search/tools/")

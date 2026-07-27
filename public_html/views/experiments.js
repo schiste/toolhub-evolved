@@ -111,9 +111,9 @@ export const EXPERIMENTS = [
 				what: t("experiments.healthWhat", "A Healthy / Degraded / Down status pill."),
 				current: t(
 					"experiments.healthCurrent",
-					"Evolved stores maintainer-provided health targets and shows only real checked status when available."
+					"Signed-in users can submit health targets; approved Evolved health records show only real checked status."
 				),
-				need: t("experiments.healthNeed", "Scheduled health-check job and moderation")
+				need: t("experiments.healthNeed", "Scheduled health-check job and daily rollups")
 			},
 			{
 				name: t("experiments.thanksName", "Thanks"),
@@ -123,9 +123,9 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.thanksCurrent",
-					"Signed-in users can thank a tool; counts are stored in Evolved and labeled as Evolved data."
+					"Signed-in users can thank a tool; approved counts are stored in Evolved and labeled as Evolved data."
 				),
-				need: t("experiments.thanksNeed", "Abuse controls and aggregate daily rollups")
+				need: t("experiments.thanksNeed", "Burst detection and aggregate daily rollups")
 			},
 			{
 				name: t("experiments.usageName", "30-day usage"),
@@ -141,9 +141,9 @@ export const EXPERIMENTS = [
 				what: t("experiments.screenshotsWhat", "A preview image strip on the tool page."),
 				current: t(
 					"experiments.screenshotsCurrent",
-					"Approved Evolved media records render on tool pages; signed-in users can submit URL-based screenshots for review."
+					"Signed-in users can submit URL-based screenshots with license/source metadata; approved Evolved media renders on tool pages."
 				),
-				need: t("experiments.screenshotsNeed", "Review queue and durable approved media storage")
+				need: t("experiments.screenshotsNeed", "Durable upload/storage pipeline")
 			}
 		]
 	}

@@ -2,7 +2,7 @@
 
 # Production Plan — Toolhub Evolved beside Toolhub
 
-Last updated: 2026-07-26. Companion to [`PLAN.md`](PLAN.md), which governed the
+Last updated: 2026-07-27. Companion to [`PLAN.md`](PLAN.md), which governed the
 demonstrator. This document captures the current production target: run Evolved
 beside official Toolhub, using live Toolhub data and APIs while storing only the
 additional Evolved layer locally.
@@ -48,9 +48,9 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
 - **Backend** (`proxy/backend/`): ToolsDB/SQLite via SQLAlchemy, official
   Toolhub OAuth 2.0, stored per-user Toolhub grants, sessions + CSRF + rate
   limiting, the `/v1` overlay API, `/v1/write/*` official-first lifecycle,
-  `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed. The lower
-  level `/v1/toolhub/*` bridge remains available for compatibility and smoke
-  checks.
+  `/v1/search/tools/`, `/v1/moderation/public-data/`, `/healthz`, and the
+  `/toolinfo.json` feeder feed. The lower level `/v1/toolhub/*` bridge remains
+  available for compatibility and smoke checks.
 - **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
   the only sign-in path, while local `users.role` permission sets (`user`,
   `reviewer`, `admin`) gate Evolved-owned data/actions through
@@ -161,7 +161,9 @@ Small, because the pivot was designed in:
   feature-status page, and _Rules of Engagement_ page explain what is live from
   Toolhub and what is stored in Evolved. Signals and screenshots are shown only
   from real Evolved-owned backend records (`tool_events`, `tool_thanks`,
-  `tool_health_*`, `tool_media`); there is no synthetic production fallback.
+  `tool_health_*`, `tool_media`) and public local records require Evolved review
+  where they affect shared/public pages; there is no synthetic production
+  fallback.
 - **Search UI** gains a provenance facet (Toolhub / registered here) driven by
   the federated search.
 
@@ -292,15 +294,15 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
 
 ## 5. Risks
 
-| Risk                                                                   | Mitigation                                                                                                                |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Catalog divergence from official Toolhub                               | Provenance labeling everywhere + `/toolinfo.json` feeder feed (§1.3) — we add to the ecosystem                            |
-| Upstream API changes/outage breaks the base catalog                    | Already-graceful "couldn't load live data" states; proxy TTL cache absorbs blips; contract tests vs. `/api/schema/` in CI |
-| Community perception (unofficial service using Toolhub data and OAuth) | Early, explicit outreach to maintainers; honest naming; GPL-3.0 code; cached, identified API use; clear write attribution |
-| Solo-maintainer ops burden                                             | Everything scripted and in-repo (deploy, jobs, migrations, backups); external uptime alerting; runbook                    |
-| Toolhub OAuth application setup blocks write flows                     | Register the OAuth application before launch; keep read-only mode working when OAuth is unconfigured                      |
-| ToolsDB/ES quota limits                                                | Federated-search fallback needs no ES; quota requests early with load estimates                                           |
-| Spam/abuse once writes are real                                        | Wikimedia-account gate, rate limits, audit log, admin delete path; new-account throttle if needed                         |
+| Risk                                                                   | Mitigation                                                                                                                          |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog divergence from official Toolhub                               | Provenance labeling everywhere + `/toolinfo.json` feeder feed (§1.3) — we add to the ecosystem                                      |
+| Upstream API changes/outage breaks the base catalog                    | Already-graceful "couldn't load live data" states; proxy TTL cache absorbs blips; contract tests vs. `/api/schema/` in CI           |
+| Community perception (unofficial service using Toolhub data and OAuth) | Early, explicit outreach to maintainers; honest naming; GPL-3.0 code; cached, identified API use; clear write attribution           |
+| Solo-maintainer ops burden                                             | Everything scripted and in-repo (deploy, jobs, migrations, backups); external uptime alerting; runbook                              |
+| Toolhub OAuth application setup blocks write flows                     | Register the OAuth application before launch; keep read-only mode working when OAuth is unconfigured                                |
+| ToolsDB/ES quota limits                                                | Federated-search fallback needs no ES; quota requests early with load estimates                                                     |
+| Spam/abuse once writes are real                                        | Wikimedia-account gate, rate limits, Evolved public-data review queue, audit log, admin delete path; new-account throttle if needed |
 
 ## 6. Explicit non-goals
 

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from backend.sync import REVIEW_OPEN, REVIEW_PENDING, SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_LOCAL_DRAFT
+from backend.sync import REVIEW_APPROVED, REVIEW_OPEN, REVIEW_PENDING, SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_LOCAL_DRAFT
 
 
 def utcnow() -> datetime:
@@ -231,6 +231,7 @@ class ToolThanks(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_APPROVED)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
@@ -250,6 +251,7 @@ class ToolHealthTarget(Base):
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_PENDING)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -286,7 +288,7 @@ class ToolMedia(Base):
     title: Mapped[str] = mapped_column(String(255), default="")
     license: Mapped[str] = mapped_column(String(255), default="")
     source: Mapped[str] = mapped_column(String(2000), default="")
-    review_status: Mapped[str] = mapped_column(String(32), default="pending")
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_PENDING)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

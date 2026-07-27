@@ -7,7 +7,9 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 
 > This runs next to Toolhub, not instead of it. Official Toolhub remains the
 > catalog source of truth; Evolved stores only complementary overlay data,
-> drafts/fallbacks, and real Evolved-owned data that Toolhub does not expose.
+> drafts/fallbacks, and real Evolved-owned data that Toolhub does not expose;
+> public Evolved-owned records are labeled and review-gated before broad
+> visibility.
 
 ![Home](docs/screenshots/hero-lean.png)
 

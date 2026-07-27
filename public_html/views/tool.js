@@ -176,7 +176,7 @@ function evolvedSignalsPanel(signals) {
 		<div class="toolpage__signal-list">
 			${thanksCount ? `<span class="signal">${t("tool.thanksCount", "{count} thanks on Evolved", { count: String(thanksCount) })}</span>` : ""}
 			${usageCount ? `<span class="signal">${t("tool.usageCount", "{count} Evolved interactions in 30 days", { count: String(usageCount) })}</span>` : ""}
-			${healthStatus ? `<span class="signal">${t("tool.healthStatus", "Health: {status}", { status: esc(healthStatus) })}</span>` : ""}
+			${healthStatus ? `<span class="signal">${t("tool.healthStatus", "Evolved health: {status}", { status: esc(healthStatus) })}</span>` : ""}
 		</div>
 		${
 			signedIn()
@@ -200,7 +200,9 @@ function mediaPanel(media) {
 			const url = safeUrl(item.url);
 			if (!url) return "";
 			const title = item.title || t("tool.screenshot", "Screenshot");
-			return `<figure class="tool-media__item"><img src="${url}" alt="${esc(title)}" loading="lazy" /><figcaption>${esc(title)} · ${esc(item.license || "")}</figcaption></figure>`;
+			const license = item.license ? ` · ${esc(item.license)}` : "";
+			const label = item.syncLabel || t("tool.evolvedDataLabel", "Evolved data");
+			return `<figure class="tool-media__item"><img src="${url}" alt="${esc(title)}" loading="lazy" /><figcaption>${esc(title)}${license} · ${esc(label)}</figcaption></figure>`;
 		})
 		.filter(Boolean)
 		.join("");
@@ -214,7 +216,7 @@ function mediaPanel(media) {
 		: "";
 	if (!approved && !submit) return "";
 	return `<div class="panel tool-media">
-		<h2 class="panel__title">${t("tool.screenshotsTitle", "Screenshots")}</h2>
+		<h2 class="panel__title">${t("tool.screenshotsTitle", "Screenshots · Evolved data")}</h2>
 		${approved ? `<div class="tool-media__grid">${approved}</div>` : ""}
 		${submit}
 		<p class="at__result" data-media-result aria-live="polite"></p>

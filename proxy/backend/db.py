@@ -121,13 +121,16 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "tool_thanks": {
             "created_by_user_id": "INTEGER NULL",
+            "review_status": "VARCHAR(32) NOT NULL DEFAULT 'approved'",
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
             "last_synced_at": "DATETIME NULL",
             "last_error": f"{text_col} NULL",
         },
         "tool_health_targets": {
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "review_status": "VARCHAR(32) NOT NULL DEFAULT 'pending'",
             "last_synced_at": "DATETIME NULL",
             "deleted_at": "DATETIME NULL",
         },

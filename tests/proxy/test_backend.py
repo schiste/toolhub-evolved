@@ -62,9 +62,9 @@ def client(app):
     return app.test_client()
 
 
-def add_user(username="Ada", wm_sub="42"):
+def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER):
     with db.session_scope() as s:
-        user = User(wm_sub=wm_sub, username=username)
+        user = User(wm_sub=wm_sub, username=username, role=role)
         s.add(user)
         s.flush()
         return user.id
@@ -147,6 +147,8 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         conn.exec_driver_sql("CREATE TABLE tools (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_overlays (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE crawler_urls (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE tool_thanks (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE tool_health_targets (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_media (id INTEGER PRIMARY KEY)")
     db._upgrade_schema()
     user_columns = {col["name"] for col in inspect(eng).get_columns("users")}
@@ -163,6 +165,10 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     assert {"last_toolhub_response", "validation_errors"}.issubset(crawler_columns)
     media_columns = {col["name"] for col in inspect(eng).get_columns("tool_media")}
     assert {"created_by_user_id", "review_status", "sync_status", "deleted_at"}.issubset(media_columns)
+    thanks_columns = {col["name"] for col in inspect(eng).get_columns("tool_thanks")}
+    assert {"created_by_user_id", "review_status", "source", "sync_status"}.issubset(thanks_columns)
+    health_columns = {col["name"] for col in inspect(eng).get_columns("tool_health_targets")}
+    assert {"source", "sync_status", "review_status", "last_synced_at", "deleted_at"}.issubset(health_columns)
 
     assert sync.clean_source("official") == "official"
     assert sync.clean_source("bogus") == "local"
@@ -311,6 +317,39 @@ def test_policy_denial_blocks_private_overlay_writes(client, monkeypatch):
         assert s.query(CrawlerUrl).count() == 0
 
 
+def test_policy_denial_blocks_public_evolved_writes(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    monkeypatch.setattr(authz, "can", lambda *_args, **_kwargs: False)
+
+    assert (
+        client.post("/v1/tools/alpha/events/", json={"eventType": "view"}, headers={"X-CSRF-Token": "tok"}).status_code
+        == 403
+    )
+    assert client.post("/v1/tools/alpha/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    assert (
+        client.put(
+            "/v1/tools/alpha/health-target/",
+            json={"url": "https://alpha.example/healthz"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/v1/tools/alpha/media/",
+            json={"url": "https://img.example/shot.png", "license": "CC0", "source": "Maintainer"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 403
+    )
+    with db.session_scope() as s:
+        assert s.query(ToolEvent).count() == 0
+        assert s.query(ToolThanks).count() == 0
+        assert s.query(ToolHealthTarget).count() == 0
+        assert s.query(ToolMedia).count() == 0
+
+
 # ---- overlay round-trips ---------------------------------------------------
 
 
@@ -456,9 +495,15 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
     assert data["toolEdits"]["crawler-tool"]["validationErrors"] == [{"field": "title"}]
     assert data["toolNew"]["crawler-tool"]["officialName"] == "crawler-tool-official"
     assert data["toolNew"]["crawler-tool"]["visibility"] == "public"
-    assert data["toolNew"]["crawler-tool"]["reviewStatus"] == "approved"
+    assert data["toolNew"]["crawler-tool"]["source"] == "local"
+    assert data["toolNew"]["crawler-tool"]["reviewStatus"] == "pending"
     assert data["toolNew"]["crawler-tool"]["toolhubResponse"] == {"id": 99}
     assert data["toolNew"]["crawler-tool"]["validationErrors"] == [{"field": "url"}]
+    assert client.get("/v1/search/tools/?q=crawler").get_json()["count"] == 0
+    assert client.get("/toolinfo.json").get_json() == []
+    with db.session_scope() as s:
+        row = s.execute(select(ToolRecord).where(ToolRecord.tool_name == "crawler-tool")).scalar_one()
+        row.review_status = "approved"
     assert client.get("/v1/search/tools/?q=crawler").get_json()["count"] == 1
     assert client.get("/toolinfo.json").get_json()[0]["name"] == "toolhub-evolved-crawler-tool"
 
@@ -489,7 +534,7 @@ def test_local_overlays_cannot_replace_canonical_tool_identity(client):
         assert stored.patch == {"description": "local note"}
 
 
-def test_non_reviewer_public_tool_records_remain_pending_and_private_to_owner(client):
+def test_non_reviewer_public_tool_records_require_review_and_preserve_approved_state(client):
     uid_a = add_user("Ada", "1")
     uid_b = add_user("Grace", "2")
     sign_in(client, uid_a)
@@ -504,9 +549,18 @@ def test_non_reviewer_public_tool_records_remain_pending_and_private_to_owner(cl
     own = client.get("/v1/overlay/").get_json()["toolNew"]["public-draft"]
     assert own["reviewStatus"] == "pending"
     assert client.get("/v1/search/tools/?q=public").get_json()["count"] == 0
+    with db.session_scope() as s:
+        row = s.query(ToolRecord).filter_by(tool_name="public-draft").one()
+        row.review_status = "approved"
+    assert put_overlay(client, "toolNew", {"public-draft": public_tool}).status_code == 200
+    own = client.get("/v1/overlay/").get_json()["toolNew"]["public-draft"]
+    assert own["reviewStatus"] == "approved"
+    assert client.get("/v1/search/tools/?q=public").get_json()["count"] == 1
 
     sign_in(client, uid_b)
-    assert "public-draft" not in client.get("/v1/overlay/").get_json()["toolNew"]
+    public_to_others = client.get("/v1/overlay/").get_json()["toolNew"]["public-draft"]
+    assert public_to_others["reviewStatus"] == "approved"
+    assert public_to_others["source"] == "local"
 
 
 def test_overlay_replace_semantics_and_merge(client):
@@ -715,28 +769,50 @@ def test_real_evolved_signals_and_media(client):
     )
     assert client.post("/v1/tools/alpha/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     signals = client.get("/v1/tools/alpha/signals/").get_json()
-    assert signals["thanks"] == {"count": 1, "userThanked": True}
+    assert signals["source"] == "local"
+    assert signals["syncStatus"] == "evolved_real"
+    assert signals["syncLabel"] == "Evolved data"
+    assert signals["thanks"]["count"] == 1
+    assert signals["thanks"]["userThanked"] is True
+    assert signals["thanks"]["syncLabel"] == "Evolved data"
     assert signals["usage30d"]["count"] == 1
+    assert signals["usage30d"]["syncLabel"] == "Evolved data"
+    assert signals["health"]["status"] == "unknown"
     assert client.delete("/v1/tools/alpha/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     assert client.get("/v1/tools/alpha/signals/").get_json()["thanks"]["count"] == 0
 
-    assert (
-        client.put(
-            "/v1/tools/alpha/health-target/",
-            json={"url": "https://alpha.example/healthz"},
-            headers={"X-CSRF-Token": "tok"},
-        ).status_code
-        == 200
+    health = client.put(
+        "/v1/tools/alpha/health-target/",
+        json={"url": "https://alpha.example/healthz"},
+        headers={"X-CSRF-Token": "tok"},
     )
+    assert health.status_code == 200
+    assert health.get_json()["healthTarget"]["reviewStatus"] == "pending"
+    assert health.get_json()["healthTarget"]["syncLabel"] == "Evolved data"
+    assert client.get("/v1/tools/alpha/signals/").get_json()["health"]["status"] == "unknown"
+    with db.session_scope() as s:
+        target = s.query(ToolHealthTarget).one()
+        target.review_status = "approved"
+        target.last_status = "healthy"
+        target.last_checked_at = utcnow()
+    health_signals = client.get("/v1/tools/alpha/signals/").get_json()["health"]
+    assert health_signals["status"] == "healthy"
+    assert health_signals["targetUrl"] == "https://alpha.example/healthz"
+    assert health_signals["reviewStatus"] == "approved"
+    assert health_signals["syncLabel"] == "Evolved data"
+
     media_payload = {"url": "https://img.example/shot.png", "license": "CC-BY-SA-4.0", "source": "Maintainer upload"}
     media = client.post("/v1/tools/alpha/media/", json=media_payload, headers={"X-CSRF-Token": "tok"})
     assert media.status_code == 200
     assert media.get_json()["media"]["reviewStatus"] == "pending"
+    assert media.get_json()["media"]["syncLabel"] == "Evolved data"
     assert client.get("/v1/tools/alpha/media/").get_json()["count"] == 0  # pending media is not public
     with db.session_scope() as s:
         row = s.query(ToolMedia).one()
         row.review_status = "approved"
-    assert client.get("/v1/tools/alpha/media/").get_json()["count"] == 1
+    media_list = client.get("/v1/tools/alpha/media/").get_json()
+    assert media_list["count"] == 1
+    assert media_list["results"][0]["syncLabel"] == "Evolved data"
     assert (
         client.delete(f"/v1/media/{media.get_json()['media']['id']}/", headers={"X-CSRF-Token": "tok"}).status_code
         == 200
@@ -756,7 +832,9 @@ def test_real_signal_media_validation_and_update_paths(client):
         s.add(ToolThanks(tool_name="legacy-thanks", user_id=uid, active=False))
     assert client.post("/v1/tools/legacy-thanks/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     with db.session_scope() as s:
-        assert s.query(ToolThanks).filter_by(tool_name="legacy-thanks").one().created_by_user_id == uid
+        thanks = s.query(ToolThanks).filter_by(tool_name="legacy-thanks").one()
+        assert thanks.created_by_user_id == uid
+        assert thanks.review_status == "approved"
 
     assert client.get("/v1/tools/%20/signals/").status_code == 400
     assert (
@@ -788,10 +866,19 @@ def test_real_signal_media_validation_and_update_paths(client):
         ).status_code
         == 200
     )
+    assert (
+        client.put(
+            "/v1/tools/alpha/health-target/",
+            json={"url": "https://alpha.example/second"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
     with db.session_scope() as s:
         target = s.query(ToolHealthTarget).one()
         assert target.target_url == "https://alpha.example/second"
         assert target.enabled is True
+        assert target.review_status == "pending"
         assert target.last_error is None
 
     assert (
@@ -828,6 +915,194 @@ def test_real_signal_media_validation_and_update_paths(client):
         s.flush()
         other_media_id = s.query(ToolMedia).filter(ToolMedia.user_id == other.id).one().id
     assert client.delete(f"/v1/media/{other_media_id}/", headers={"X-CSRF-Token": "tok"}).status_code == 404
+
+
+def test_public_evolved_data_moderation_lifecycle(client):
+    uid = add_user("Ada", "1")
+    sign_in(client, uid)
+    public_tool = {"title": "Public Draft", "description": "Needs review", "url": "https://draft.example"}
+    assert put_overlay(client, "toolNew", {"public-draft": {**public_tool, "visibility": "public"}}).status_code == 200
+    assert (
+        client.put(
+            "/v1/tools/public-draft/health-target/",
+            json={"url": "https://draft.example/healthz"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    media = client.post(
+        "/v1/tools/public-draft/media/",
+        json={"url": "https://img.example/draft.png", "license": "CC0", "source": "Maintainer"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert media.status_code == 200
+    assert client.post("/v1/tools/public-draft/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    with db.session_scope() as s:
+        tool_row = s.query(ToolRecord).filter_by(tool_name="public-draft").one()
+        health_row = s.query(ToolHealthTarget).one()
+        media_row = s.query(ToolMedia).filter_by(tool_name="public-draft").one()
+        thanks_row = s.query(ToolThanks).one()
+        health_row.last_status = "healthy"
+        health_row.last_checked_at = utcnow()
+        thanks_row.review_status = "pending"
+        deleted_media = ToolMedia(
+            tool_name="public-draft",
+            user_id=uid,
+            created_by_user_id=uid,
+            url="https://img.example/deleted.png",
+            license="CC0",
+            source="Maintainer",
+            deleted_at=utcnow(),
+        )
+        private_record = ToolRecord(
+            tool_name="private-draft",
+            user_id=uid,
+            created_by_user_id=uid,
+            record={**public_tool, "title": "Private Draft"},
+            visibility="private",
+            review_status="pending",
+        )
+        s.add_all([deleted_media, private_record])
+        s.flush()
+        ids = {
+            "tool": tool_row.id,
+            "health": health_row.id,
+            "media": media_row.id,
+            "thanks": thanks_row.id,
+            "deletedMedia": deleted_media.id,
+            "privateTool": private_record.id,
+        }
+
+    assert client.get("/v1/moderation/public-data/").status_code == 403
+    reviewer_id = add_user("Reviewer", "2", role=authz.ROLE_REVIEWER)
+    sign_in(client, reviewer_id)
+    headers = {"X-CSRF-Token": "tok"}
+    reviewer_tool = {
+        "title": "Reviewer Tool",
+        "description": "Reviewer-approved local record",
+        "url": "https://reviewer.example",
+        "visibility": "public",
+        "reviewStatus": "approved",
+    }
+    assert put_overlay(client, "toolNew", {"reviewer-tool": reviewer_tool}).status_code == 200
+    assert client.get("/v1/search/tools/?q=reviewer").get_json()["count"] == 1
+    queue = client.get("/v1/moderation/public-data/").get_json()
+    assert queue["source"] == "local"
+    assert queue["syncStatus"] == "evolved_real"
+    assert queue["syncLabel"] == "Evolved data"
+    assert queue["count"] == 4
+    assert {item["kind"] for item in queue["results"]} == {"tool-records", "health-targets", "media", "thanks"}
+    assert {item["data"]["syncLabel"] for item in queue["results"]} == {"Evolved data"}
+
+    assert (
+        client.put(
+            "/v1/moderation/public-data/unknown/1/", json={"reviewStatus": "approved"}, headers=headers
+        ).status_code
+        == 404
+    )
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/tool-records/{ids['tool']}/", data="not-json", headers=headers
+        ).status_code
+        == 400
+    )
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/tool-records/{ids['tool']}/",
+            json={"reviewStatus": "open"},
+            headers=headers,
+        ).status_code
+        == 400
+    )
+    assert (
+        client.put(
+            "/v1/moderation/public-data/tool-records/999/", json={"reviewStatus": "approved"}, headers=headers
+        ).status_code
+        == 404
+    )
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/tool-records/{ids['privateTool']}/",
+            json={"reviewStatus": "approved"},
+            headers=headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/media/{ids['deletedMedia']}/",
+            json={"reviewStatus": "approved"},
+            headers=headers,
+        ).status_code
+        == 404
+    )
+
+    pending = client.put(
+        f"/v1/moderation/public-data/tool-records/{ids['tool']}/",
+        json={"reviewStatus": "pending"},
+        headers=headers,
+    )
+    assert pending.status_code == 200
+    assert pending.get_json()["item"]["data"]["reviewStatus"] == "pending"
+    assert client.get("/v1/search/tools/?q=public").get_json()["count"] == 0
+
+    approve_tool = client.put(
+        f"/v1/moderation/public-data/tool-records/{ids['tool']}/",
+        json={"reviewStatus": "approved"},
+        headers=headers,
+    )
+    assert approve_tool.status_code == 200
+    assert approve_tool.get_json()["item"]["data"]["source"] == "local"
+    assert approve_tool.get_json()["item"]["data"]["syncLabel"] == "Evolved data"
+    assert client.get("/v1/search/tools/?q=public").get_json()["count"] == 1
+    assert client.get("/toolinfo.json").get_json()[0]["name"] == "toolhub-evolved-public-draft"
+
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/health-targets/{ids['health']}/",
+            json={"reviewStatus": "approved"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    health = client.get("/v1/tools/public-draft/signals/").get_json()["health"]
+    assert health["status"] == "healthy"
+    assert health["syncLabel"] == "Evolved data"
+
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/media/{ids['media']}/",
+            json={"review_status": "approved"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    media_list = client.get("/v1/tools/public-draft/media/").get_json()
+    assert media_list["count"] == 1
+    assert media_list["results"][0]["syncStatus"] == "evolved_real"
+
+    assert (
+        client.put(
+            f"/v1/moderation/public-data/thanks/{ids['thanks']}/",
+            json={"reviewStatus": "rejected"},
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    assert client.get("/v1/tools/public-draft/signals/").get_json()["thanks"]["count"] == 0
+    sign_in(client, uid)
+    assert client.post("/v1/tools/public-draft/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.get("/v1/tools/public-draft/signals/").get_json()["thanks"]["count"] == 0
+    with db.session_scope() as s:
+        assert s.get(ToolThanks, ids["thanks"]).review_status == "rejected"
+        activity = s.query(ActivityRow).filter(ActivityRow.action == "public-data-reviewed").all()
+        assert len(activity) == 10
+        assert {row.kind for row in activity} == {"revisions", "auditlogs"}
+        assert len({(row.object_type, row.object_key) for row in activity}) == 4
+        assert {row.payload["reviewStatus"] for row in activity if row.object_type == "tool-records"} == {
+            "pending",
+            "approved",
+        }
 
 
 class FakeResp:
@@ -1462,14 +1737,16 @@ def test_write_retry_and_discard_paths_for_fallback_records(client, monkeypatch)
     )
     assert client.post("/v1/write/lists/demo-retry/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     assert client.delete("/v1/write/lists/demo-discard/fallback/", headers={"X-CSRF-Token": "tok"}).status_code == 200
-    assert client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     assert (
-        client.delete(f"/v1/write/crawler/urls/{discard_crawler_id}/fallback/", headers={"X-CSRF-Token": "tok"}).status_code
+        client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    )
+    assert (
+        client.delete(
+            f"/v1/write/crawler/urls/{discard_crawler_id}/fallback/", headers={"X-CSRF-Token": "tok"}
+        ).status_code
         == 200
     )
-    assert (
-        client.post("/v1/write/user/favorites/retry-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
-    )
+    assert client.post("/v1/write/user/favorites/retry-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     assert (
         client.delete("/v1/write/user/favorites/discard-tool/fallback/", headers={"X-CSRF-Token": "tok"}).status_code
         == 200
@@ -1489,7 +1766,9 @@ def test_write_retry_and_discard_paths_for_fallback_records(client, monkeypatch)
         assert s.get(ToolList, "demo-discard").deleted_at is not None
         assert s.get(CrawlerUrl, crawler_id).sync_status == "official"
         assert s.get(CrawlerUrl, discard_crawler_id) is None
-        assert s.execute(select(Favorite).where(Favorite.tool_name == "retry-tool")).scalar_one().sync_status == "official"
+        assert (
+            s.execute(select(Favorite).where(Favorite.tool_name == "retry-tool")).scalar_one().sync_status == "official"
+        )
         assert s.execute(select(Favorite).where(Favorite.tool_name == "discard-tool")).scalar_one_or_none() is None
 
 
@@ -1606,7 +1885,10 @@ def test_write_create_list_favorite_and_delete_fallback_paths(client, monkeypatc
     assert fav_resp.status_code == 202
     assert fav_delete_resp.status_code == 202
     with db.session_scope() as s:
-        assert s.execute(select(ToolRecord).where(ToolRecord.tool_name == "my-tool")).scalar_one().sync_status == "local_fallback"
+        assert (
+            s.execute(select(ToolRecord).where(ToolRecord.tool_name == "my-tool")).scalar_one().sync_status
+            == "local_fallback"
+        )
         assert s.get(ToolList, "demo-local").sync_status == "local_fallback"
         assert s.execute(select(Favorite).where(Favorite.tool_name == "my-tool")).scalar_one_or_none() is None
 
@@ -1726,7 +2008,9 @@ def test_write_retry_failure_and_missing_record_paths(client, monkeypatch):
         == 202
     )
     assert client.post("/v1/write/lists/demo-fail/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
-    assert client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
+    assert (
+        client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
+    )
     assert client.post("/v1/write/user/favorites/fail-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
     missing_cases = [
         ("POST", "/v1/write/tools/missing/retry/", {"kind": "new"}),
@@ -1762,8 +2046,12 @@ def test_write_retry_permission_denials_for_owned_fallback_records(client, monke
         lambda _user, action, _resource=None: action == authz.ACTION_TOOLHUB_WRITE,
     )
     assert client.post("/v1/write/lists/demo-denied/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
-    assert client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
-    assert client.post("/v1/write/user/favorites/denied-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    assert (
+        client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    )
+    assert (
+        client.post("/v1/write/user/favorites/denied-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    )
 
 
 def test_write_lifecycle_local_permission_denials_after_official_rejection(client, monkeypatch):

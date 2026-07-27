@@ -42,9 +42,9 @@ Evolved permissions are separate from Toolhub permissions:
 - `user` — baseline role for every signed-in Toolhub user. Can manage their own
   private Evolved data: drafts, overlays, favorites cache/fallback, lists,
   crawler URLs, thanks, health targets, and submitted media.
-- `reviewer` — Evolved-only reviewer/moderator role for future public local
-  queues such as media review. It does not grant private-data access to other
-  users.
+- `reviewer` — Evolved-only reviewer/moderator role for public local queues
+  such as local tool records, health targets, media, and flagged thanks. It
+  does not grant private-data access to other users.
 - `admin` — Evolved-only operator role for future local administration. It does
   not grant any special right on official Toolhub.
 
@@ -104,25 +104,39 @@ only after an upstream `404`; server-side crawler ingestion skips names that
 already exist upstream; local edit/annotation overlays strip canonical identity
 fields such as `name` and `origin` before storage or merge.
 
-| Data                                         | Visibility                                      | Operational note                                                                                                                                        |
-| -------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.      |
-| `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                               |
-| `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                  |
-| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, sync status, Toolhub response details, and validation errors.  |
-| `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion. |
-| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and keep Toolhub validation metadata.        |
-| `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.          |
-| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.     |
-| `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                |
-| `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                      |
-| `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts are labeled as Evolved data and deleted with the user's local data.                                             |
-| `tool_health_targets` / `tool_health_checks` | Public checked status after observation         | Maintainer/user-provided targets; scheduled checks must use conservative timeouts and store errors without faking health.                               |
-| `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed and can be soft-deleted.                                    |
+| Data                                         | Visibility                                      | Operational note                                                                                                                                                       |
+| -------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                     |
+| `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                              |
+| `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                                 |
+| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, sync status, Toolhub response details, and validation errors.                 |
+| `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion.                |
+| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and keep Toolhub validation metadata.                       |
+| `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.                         |
+| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.                    |
+| `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                               |
+| `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                     |
+| `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.              |
+| `tool_health_targets` / `tool_health_checks` | Public checked status after approval            | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health. |
+| `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                         |
 
 Before adding a new Evolved-only table, document the owner, purpose,
 visibility, retention/deletion behavior, export behavior, Toolhub handoff path,
 abuse controls, and backup/restore impact in the feature plan and this runbook.
+
+## Public-data moderation
+
+Reviewers/admins use `GET /v1/moderation/public-data/` to list pending
+Evolved-only public data and
+`PUT /v1/moderation/public-data/<kind>/<id>/` with `reviewStatus` set to
+`pending`, `approved`, or `rejected` to change visibility. Supported kinds are
+`tool-records`, `health-targets`, `media`, and `thanks`.
+
+Approval only affects Toolhub Evolved. It can make a local tool record visible
+in Evolved search and `/toolinfo.json`, or make local health/media/thanks data
+visible on Evolved pages, but it never turns the row into official Toolhub data
+and never grants Toolhub admin rights. All public write routes still require
+Toolhub sign-in, CSRF, per-user rate limiting, and `backend.authz.can(...)`.
 
 ## Deploy / rollback
 

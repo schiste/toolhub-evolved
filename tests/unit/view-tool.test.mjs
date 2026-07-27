@@ -632,8 +632,11 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 	const r = await tool.viewTool("sig");
 	assert.ok(r.html.includes("2 thanks on Evolved"));
 	assert.ok(r.html.includes("5 Evolved interactions in 30 days"));
-	assert.ok(r.html.includes("Screenshot · </figcaption>"));
+	assert.ok(r.html.includes("Evolved health: healthy"));
+	assert.ok(r.html.includes("Screenshots · Evolved data"));
+	assert.ok(r.html.includes("Screenshot · Evolved data</figcaption>"));
 	assert.ok(r.html.includes("Signal screenshot"));
+	assert.ok(r.html.includes("Signal screenshot · CC-BY-SA-4.0 · Evolved data"));
 	document.body.innerHTML = r.html;
 	r.mount();
 	assert.deepEqual(h.serverWrite.mock.calls[0], ["POST", "/v1/tools/sig/events/", { eventType: "view" }]);

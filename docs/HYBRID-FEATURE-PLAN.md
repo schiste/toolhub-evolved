@@ -52,6 +52,9 @@ Backend endpoints already implemented:
   `POST|DELETE /v1/tools/<name>/thanks/`
 - `PUT /v1/tools/<name>/health-target/`
 - `GET|POST /v1/tools/<name>/media/`, `DELETE /v1/media/<id>/`
+- `GET /v1/moderation/public-data/` and
+  `PUT /v1/moderation/public-data/<kind>/<id>/` for Evolved-only reviewer
+  approval/rejection of public local data
 - `GET /v1/crawler/runs/`, `GET /v1/user/export/`,
   `DELETE /v1/user/evolved-data/`
 - `GET /toolinfo.json` for feeding Evolved-local tools into official Toolhub
@@ -69,7 +72,8 @@ These are prerequisites before expanding any feature deeply.
     - Store `sync_status`, `last_synced_at`, `last_error`, `source`, and
       `created_by_user_id` where relevant to Evolved-owned local records.
     - Store `deleted_at` for soft-deleted records and `review_status` for
-      public Evolved-owned records such as local tools, overlays, and media.
+      public Evolved-owned records such as local tools, health targets, thanks,
+      and media.
     - Canonical data rule: local new-tool records only fill in after a live
       Toolhub 404, and local overlays cannot persist or apply canonical
       identity fields such as `name` and `origin`.
@@ -106,8 +110,11 @@ These are prerequisites before expanding any feature deeply.
     - Feed pages should merge live Toolhub rows plus Evolved rows with labels.
 
 5. **Abuse controls**
-    - Rate-limit write-heavy local features by user, IP hash, and action.
-    - Add moderation flags for public Evolved-only records, media, and thanks.
+    - Status: implemented baseline for signed-in write guards, per-user rate
+      limiting, public-data review states, and reviewer approval/rejection.
+    - Expand rate limits to include IP hash and per-action buckets.
+    - Keep moderation flags for public Evolved-only records, health targets,
+      media, and thanks.
     - Keep OAuth tokens encrypted or otherwise protected at rest before broader
       production use.
 
@@ -342,43 +349,46 @@ Evolved-only backend data:
 
 ### 11. Operational Health
 
-Current: deterministic health pill per tool.
+Current: signed-in users can submit Evolved health targets; public signals show
+only approved Evolved health records and never label them as Toolhub data.
 
 Make it fully real:
 
-- Remove deterministic health states from production.
-- Add a health target model separate from official Toolhub data.
-- Default target can be the tool URL, but support maintainer-provided health
-  URLs in Evolved.
+- Keep deterministic health states out of production.
+- Keep health target models separate from official Toolhub data.
+- Keep maintainer/user-provided health URLs pending until Evolved reviewer
+  approval.
 - Run scheduled checks with conservative timeout/rate limits.
 - Store observations and expose a recent aggregate: healthy, degraded, down, or
   unknown.
-- Show the checked URL/source and last checked time.
+- Show the checked URL/source, Evolved data label, review state, and last
+  checked time.
 
 Evolved-only backend data:
 
-- planned `tool_health_targets`
-- planned `tool_health_checks`
+- `tool_health_targets`
+- `tool_health_checks`
 - planned `tool_health_daily`
 
 ### 12. Thanks
 
-Current: deterministic thanks count per tool.
+Current: signed-in users can thank a tool; approved counts are stored in
+Evolved, labeled as Evolved data, and filter out rejected/pending rows.
 
 Make it fully real:
 
-- Remove deterministic thanks counts from production.
-- Add authenticated "thanks" events stored in Evolved.
-- Enforce one active thanks per user/tool, with optional undo.
+- Keep deterministic thanks counts out of production.
+- Keep authenticated "thanks" events stored in Evolved.
+- Keep one active thanks per user/tool, with optional undo.
 - Aggregate counts per tool and show "thanks on Evolved".
-- Add abuse controls: rate limits, self-thanks handling, and moderation for
-  suspicious bursts.
+- Add deeper abuse controls: self-thanks handling, suspicious-burst detection,
+  and daily aggregate rollups.
 
 Evolved-only backend data:
 
-- planned `tool_thanks`
+- `tool_thanks`
 - planned `tool_thanks_daily`
-- structured activity rows for thanks add/remove events
+- planned structured activity rows for thanks add/remove events
 
 ### 13. 30-Day Usage
 
@@ -402,23 +412,25 @@ Evolved-only backend data:
 
 ### 14. Screenshots
 
-Current: static placeholder strip.
+Current: signed-in users can submit URL-based screenshots with license/source
+metadata; approved Evolved media records render on tool pages with Evolved data
+labels.
 
 Make it fully real:
 
-- Remove placeholder screenshot strips from production.
-- Add media records for screenshots owned by Evolved, not Toolhub.
+- Keep placeholder screenshot strips out of production.
+- Keep media records for screenshots owned by Evolved, not Toolhub.
 - Support upload or URL-based capture only with explicit license/source fields.
 - Store files on Toolforge storage or another approved Wikimedia-compatible
   storage path; store only metadata in ToolsDB.
-- Add moderation and deletion before screenshots are public.
+- Keep moderation and deletion before screenshots are public.
 - Show provenance, license, uploader, and capture/upload date.
 
 Evolved-only backend data:
 
-- planned `tool_media`
+- `tool_media`
 - planned `tool_media_files`
-- planned `media_reviews`
+- reviewer decisions through `activity` rows
 
 ## Implementation Phases
 
@@ -433,6 +445,8 @@ Evolved-only backend data:
   bootstrap, and route-level ownership checks for private Evolved data.
 - Add provenance and sync-status columns to existing local tables.
 - Add structured activity events and migrate existing `activity` rows if needed.
+- Add the Evolved-only public-data moderation endpoint for local tool records,
+  health targets, thanks, and media.
 - Keep the backend data register in `docs/RUNBOOK.md` current.
 - Add tests proving local records never overwrite official Toolhub data.
 
@@ -460,17 +474,20 @@ Evolved-only backend data:
 
 ### Phase 4: Real Signals
 
+- Status: implemented baseline for real Evolved events, thanks, health-target
+  submission, public review states, and Evolved data labels.
 - Implement event collection with privacy constraints.
 - Replace synthetic popularity and 30-day usage with aggregates, or keep the
   features hidden until real aggregates exist.
-- Add thanks events and aggregate counts.
-- Add health targets/checks and replace deterministic health.
+- Expand thanks events into daily aggregate counts.
+- Add scheduled health checks and daily health rollups.
 
 ### Phase 5: Media
 
-- Add screenshot metadata and storage.
-- Add moderation, licensing, and deletion flows.
-- Replace placeholder screenshots with real Evolved-owned media.
+- Status: implemented baseline for URL metadata, license/source capture,
+  reviewer approval, deletion, and Evolved data labels.
+- Add durable upload/storage.
+- Replace any remaining placeholder screenshots with real Evolved-owned media.
 
 ## Documentation Requirements For Every New Backend Feature
 

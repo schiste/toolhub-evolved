@@ -23,7 +23,7 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 	assert.ok(actual.html.includes("Official annotation PUT first; rejected annotations remain local overlays."));
 	assert.ok(actual.html.includes("Public popularity ranking remains hidden"));
 	assert.ok(actual.html.includes("Signed-in users can thank a tool"));
-	assert.ok(actual.html.includes("Approved Evolved media records render on tool pages"));
+	assert.ok(actual.html.includes("approved Evolved media renders on tool pages"));
 	assert.ok(!actual.html.includes('href="/search?sort=views" data-enable-evolved'));
 	assert.ok(!actual.html.includes("Simulated with"));
 	assert.ok(!actual.html.includes("nothing here is written to the"));
