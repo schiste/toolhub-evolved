@@ -53,6 +53,18 @@ test("export action renders the JSON export", async () => {
 	assert.ok(document.querySelector("[data-account-result]").textContent.includes("Export generated"));
 });
 
+test("export action reports backend failures", async () => {
+	h.backendGetJson.mockRejectedValue(new Error("offline"));
+	const r = viewAccountSettings();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-export]").click();
+	await tick();
+	const out = document.querySelector("[data-account-result]");
+	assert.equal(out.className, "at__result at__result--err");
+	assert.equal(out.textContent, "Export failed: offline");
+});
+
 test("delete action calls the server and clears the local cache", async () => {
 	h.serverWrite.mockResolvedValue({ deleted: { favorites: 1, lists: 2 } });
 	const r = viewAccountSettings();
@@ -63,6 +75,41 @@ test("delete action calls the server and clears the local cache", async () => {
 	assert.deepEqual(h.serverWrite.mock.calls[0], ["DELETE", "/v1/user/evolved-data/"]);
 	assert.equal(h.clearAll.mock.calls.length, 1);
 	assert.ok(document.querySelector("[data-account-result]").textContent.includes("3 rows"));
+});
+
+test("delete action handles an empty deletion summary", async () => {
+	h.serverWrite.mockResolvedValue({});
+	const r = viewAccountSettings();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-delete-evolved]").click();
+	await tick();
+	assert.equal(h.clearAll.mock.calls.length, 1);
+	assert.ok(document.querySelector("[data-account-result]").textContent.includes("0 rows"));
+});
+
+test("delete action treats null row counts as zero", async () => {
+	h.serverWrite.mockResolvedValue({ deleted: { favorites: null } });
+	const r = viewAccountSettings();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-delete-evolved]").click();
+	await tick();
+	assert.equal(h.clearAll.mock.calls.length, 1);
+	assert.ok(document.querySelector("[data-account-result]").textContent.includes("0 rows"));
+});
+
+test("delete action reports backend failures without clearing local cache", async () => {
+	h.serverWrite.mockRejectedValue(new Error("permission denied"));
+	const r = viewAccountSettings();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-delete-evolved]").click();
+	await tick();
+	const out = document.querySelector("[data-account-result]");
+	assert.equal(out.className, "at__result at__result--err");
+	assert.equal(out.textContent, "Delete failed: permission denied");
+	assert.equal(h.clearAll.mock.calls.length, 0);
 });
 
 test("delete action can be cancelled", async () => {

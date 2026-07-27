@@ -11,15 +11,29 @@ from pathlib import Path
 
 import pytest
 from flask import Flask
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import db, security, toolhub  # noqa: E402
-from backend.models import ActivityRow, CrawlerRun, CrawlerUrl, ToolEvent, ToolHealthTarget, ToolList, ToolMedia, ToolThanks, ToolhubToken, ToolOverlay, ToolRecord, User, utcnow  # noqa: E402
-from backend.v1 import FEED_KEEP_CAP, _iso, _parse_iso  # noqa: E402
+from backend import db, security, sync, toolhub  # noqa: E402
+from backend.models import (
+    ActivityRow,
+    CrawlerRun,
+    CrawlerUrl,
+    ToolEvent,
+    ToolHealthTarget,
+    ToolList,
+    ToolMedia,
+    ToolThanks,
+    ToolhubToken,
+    ToolOverlay,
+    ToolRecord,
+    User,
+    utcnow,
+)  # noqa: E402
+from backend.v1 import FEED_KEEP_CAP, _iso, _merged_maps, _parse_iso, _parse_optional_iso  # noqa: E402
 
 
 @pytest.fixture
@@ -109,6 +123,31 @@ def test_session_scope_rolls_back_on_error(app):
         raise ValueError("boom")
     with db.session_scope() as s:
         assert s.query(User).count() == 0
+
+
+def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
+    db.configure("sqlite://")
+    eng = db.engine()
+    with eng.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE favorites (id INTEGER PRIMARY KEY)")
+    db._upgrade_schema()
+    columns = {col["name"] for col in inspect(eng).get_columns("favorites")}
+    assert {"source", "sync_status", "last_synced_at", "last_error"}.issubset(columns)
+
+    assert sync.clean_source("official") == "official"
+    assert sync.clean_source("bogus") == "local"
+    assert sync.clean_sync_status("sync_error") == "sync_error"
+    assert sync.clean_sync_status("bogus") == "local_draft"
+    assert sync.clean_error(None) is None
+    assert sync.clean_error("  upstream refused  ") == "upstream refused"
+    assert sync.clean_error("   ") is None
+    assert sync.clean_int(None) is None
+    assert sync.clean_int("") is None
+    assert sync.clean_int("42") == 42
+    assert sync.clean_int(object()) is None
+
+    db.configure("sqlite://")
+    db.init_schema()
 
 
 # ---- security guards -------------------------------------------------------
@@ -206,6 +245,95 @@ def test_overlay_roundtrip_all_keys(client):
     assert data["auditlogs"][0]["action"] == "edited"
 
 
+def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
+    uid = add_user()
+    sign_in(client, uid)
+    assert (
+        put_overlay(
+            client,
+            "lists",
+            [
+                {
+                    "id": "official-list",
+                    "title": "Official list",
+                    "description": "from Toolhub",
+                    "tools": ["crawler-tool"],
+                    "modified": "2026-07-26T10:00:00Z",
+                    "officialId": "77",
+                    "syncStatus": "official",
+                    "lastError": "  stale cache  ",
+                }
+            ],
+        ).status_code
+        == 200
+    )
+    assert (
+        put_overlay(
+            client,
+            "crawlerUrls",
+            [
+                {
+                    "url": "https://example.org/toolinfo.json",
+                    "added": "2026-07-26T11:00:00Z",
+                    "id": "88",
+                    "syncStatus": "official",
+                }
+            ],
+        ).status_code
+        == 200
+    )
+    assert (
+        put_overlay(
+            client,
+            "toolEdits",
+            {
+                "crawler-tool": {
+                    "title": "Overlay title",
+                    "baseRevision": "rev-1",
+                    "fieldStatuses": {"title": "accepted"},
+                    "reviewStatus": "reviewed",
+                    "lastError": "needs merge",
+                }
+            },
+        ).status_code
+        == 200
+    )
+    assert (
+        put_overlay(
+            client,
+            "toolNew",
+            {
+                "crawler-tool": {
+                    "title": "Crawler Tool",
+                    "description": "Public via crawler origin",
+                    "url": "https://crawler.example",
+                    "origin": "crawler",
+                    "officialName": "crawler-tool-official",
+                    "toolhubResponse": {"id": 99},
+                    "validationErrors": [{"field": "url"}],
+                    "lastError": "local warning",
+                }
+            },
+        ).status_code
+        == 200
+    )
+    data = client.get("/v1/overlay/").get_json()
+    assert data["lists"][0]["officialId"] == 77
+    assert data["lists"][0]["lastSyncedAt"] == "2026-07-26T10:00:00Z"
+    assert data["lists"][0]["lastError"] == "stale cache"
+    assert data["crawlerUrls"][0]["officialId"] == 88
+    assert data["crawlerUrls"][0]["id"] == 88
+    assert data["crawlerUrls"][0]["lastSyncedAt"] == "2026-07-26T11:00:00Z"
+    assert data["toolEdits"]["crawler-tool"]["baseRevision"] == "rev-1"
+    assert data["toolEdits"]["crawler-tool"]["fieldStatuses"] == {"title": "accepted"}
+    assert data["toolEdits"]["crawler-tool"]["reviewStatus"] == "reviewed"
+    assert data["toolNew"]["crawler-tool"]["officialName"] == "crawler-tool-official"
+    assert data["toolNew"]["crawler-tool"]["toolhubResponse"] == {"id": 99}
+    assert data["toolNew"]["crawler-tool"]["validationErrors"] == [{"field": "url"}]
+    assert client.get("/v1/search/tools/?q=crawler").get_json()["count"] == 1
+    assert client.get("/toolinfo.json").get_json()[0]["name"] == "toolhub-evolved-crawler-tool"
+
+
 def test_overlay_replace_semantics_and_merge(client):
     uid_a = add_user("Ada", "1")
     uid_b = add_user("Grace", "2")
@@ -254,11 +382,15 @@ def test_pushed_echoes_never_reowned(client):
     assert put_overlay(client, "toolNew", {"adas-tool": TOOL_A}).status_code == 200
     assert put_overlay(client, "toolEdits", {"x": {"title": "ada-edit"}}).status_code == 200
     assert put_overlay(client, "revisions", [{"id": "r1", "comment": "ada"}]).status_code == 200
-    # B pulls the merged overlay, adds their own tool, and pushes everything back
+    # B pulls the merged overlay, adds their own tool, and echoes Ada's toolNew
+    # row back; the server must skip the foreign toolNew row instead of re-owning it.
     sign_in(client, uid_b)
     pulled = client.get("/v1/overlay/").get_json()
     tool_b = {"title": "Grace's tool", "description": "d", "url": "https://g.example"}
-    assert put_overlay(client, "toolNew", {**pulled["toolNew"], "graces-tool": tool_b}).status_code == 200
+    assert (
+        put_overlay(client, "toolNew", {**pulled["toolNew"], "adas-tool": TOOL_A, "graces-tool": tool_b}).status_code
+        == 200
+    )
     assert put_overlay(client, "toolEdits", pulled["toolEdits"]).status_code == 200  # pure echo
     assert put_overlay(client, "revisions", [*pulled["revisions"], {"id": "r2", "comment": "grace"}]).status_code == 200
     with db.session_scope() as s:
@@ -329,6 +461,20 @@ def test_iso_helpers():
     assert _parse_iso("2026-07-25T10:00:00+02:00").hour == 8  # aware → UTC naive
     assert _parse_iso("2026-07-25T10:00:00").hour == 10  # naive kept
     assert _parse_iso(None).year >= 2026  # invalid → now
+    assert _parse_optional_iso("2026-07-25T10:00:00").hour == 10
+
+
+def test_merged_maps_handles_legacy_rows_and_missing_review_metadata():
+    overlay = ToolOverlay(tool_name="patched", kind="edits", patch={"title": "Patched"}, review_status=None)
+    assert _merged_maps([overlay]) == {
+        "patched": {"title": "Patched", "source": "local", "syncStatus": "local_draft", "syncLabel": "Local draft"}
+    }
+
+    class LegacyRow:
+        tool_name = "legacy"
+        record = {"title": "Legacy"}
+
+    assert _merged_maps([LegacyRow()]) == {"legacy": {"title": "Legacy"}}
 
 
 # ---- public endpoints ------------------------------------------------------
@@ -354,12 +500,12 @@ def test_search_and_toolinfo_feed(client):
                     "description": "First",
                     "url": "https://a.example",
                     "keywords": ["cite"],
-                    },
-                    modified_at=utcnow(),
-                    visibility="public",
-                    sync_status="evolved_real",
-                )
+                },
+                modified_at=utcnow(),
+                visibility="public",
+                sync_status="evolved_real",
             )
+        )
         s.add(
             ToolRecord(
                 tool_name="beta",
@@ -386,7 +532,10 @@ def test_real_evolved_signals_and_media(client):
     uid = add_user()
     sign_in(client, uid)
     assert client.get("/v1/tools/alpha/signals/").get_json()["thanks"]["count"] == 0
-    assert client.post("/v1/tools/alpha/events/", json={"eventType": "view"}, headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert (
+        client.post("/v1/tools/alpha/events/", json={"eventType": "view"}, headers={"X-CSRF-Token": "tok"}).status_code
+        == 200
+    )
     assert client.post("/v1/tools/alpha/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
     signals = client.get("/v1/tools/alpha/signals/").get_json()
     assert signals["thanks"] == {"count": 1, "userThanked": True}
@@ -411,12 +560,91 @@ def test_real_evolved_signals_and_media(client):
         row = s.query(ToolMedia).one()
         row.review_status = "approved"
     assert client.get("/v1/tools/alpha/media/").get_json()["count"] == 1
-    assert client.delete(f"/v1/media/{media.get_json()['media']['id']}/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert (
+        client.delete(f"/v1/media/{media.get_json()['media']['id']}/", headers={"X-CSRF-Token": "tok"}).status_code
+        == 200
+    )
     with db.session_scope() as s:
         assert s.query(ToolEvent).count() == 1
         assert s.query(ToolThanks).count() == 1
         assert s.query(ToolHealthTarget).count() == 1
         assert s.query(ToolMedia).one().deleted_at is not None
+
+
+def test_real_signal_media_validation_and_update_paths(client):
+    assert client.post("/v1/tools/alpha/media/", json={"url": "https://x.example"}).status_code == 401
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.get("/v1/tools/%20/signals/").status_code == 400
+    assert (
+        client.post("/v1/tools/alpha/events/", json={"eventType": "bogus"}, headers={"X-CSRF-Token": "tok"}).status_code
+        == 400
+    )
+    assert client.post("/v1/tools/%20/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 400
+    assert (
+        client.put(
+            "/v1/tools/alpha/health-target/",
+            json={"url": "ftp://bad.example"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.put(
+            "/v1/tools/alpha/health-target/",
+            json={"url": "https://alpha.example/first"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.put(
+            "/v1/tools/alpha/health-target/",
+            json={"url": "https://alpha.example/second"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    with db.session_scope() as s:
+        target = s.query(ToolHealthTarget).one()
+        assert target.target_url == "https://alpha.example/second"
+        assert target.enabled is True
+        assert target.last_error is None
+
+    assert (
+        client.post(
+            "/v1/tools/%20/media/",
+            json={"url": "https://img.example/shot.png", "license": "CC0", "source": "test"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert client.post("/v1/tools/alpha/media/", json=[], headers={"X-CSRF-Token": "tok"}).status_code == 400
+    assert (
+        client.post(
+            "/v1/tools/alpha/media/",
+            json={"url": "https://img.example/shot.png", "license": "", "source": "test"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert client.delete("/v1/media/999/", headers={"X-CSRF-Token": "tok"}).status_code == 404
+    with db.session_scope() as s:
+        other = User(wm_sub="other", username="Other")
+        s.add(other)
+        s.flush()
+        s.add(
+            ToolMedia(
+                tool_name="alpha",
+                user_id=other.id,
+                url="https://img.example/other.png",
+                license="CC0",
+                source="other",
+            )
+        )
+        s.flush()
+        other_media_id = s.query(ToolMedia).filter(ToolMedia.user_id == other.id).one().id
+    assert client.delete(f"/v1/media/{other_media_id}/", headers={"X-CSRF-Token": "tok"}).status_code == 404
 
 
 class FakeResp:
@@ -728,6 +956,7 @@ def start_login(client):
 def test_oauth_callback_upstream_failure(client, monkeypatch):
     configure_oauth(monkeypatch)
     state = start_login(client)
+
     def fail_post(*_args, **_kwargs):
         raise toolhub.requests.RequestException("down")
 

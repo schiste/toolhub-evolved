@@ -81,7 +81,7 @@ def _cache_put(url: str, status: int, content_type: str, body: bytes) -> None:
 # colours). img-src allows any https origin: tool icons are arbitrary remote
 # images. The browser only ever fetches same-origin (/api/ is proxied
 # server-side), hence connect-src 'self'.
-_THEME_SCRIPT_HASH = "sha256-mfahDh9sflhz+LKpkp0YGqaHhBK2KGi66qeLZGevMBI="
+_THEME_SCRIPT_HASH = "sha256-XASlFDDB4Ati9OFy/+a7zp7h86hBsK6RJ9H/0Db17GA="
 _CSP = (
     "default-src 'self'; "
     f"script-src 'self' '{_THEME_SCRIPT_HASH}'; "

@@ -395,6 +395,30 @@ test("crawlerUrls add/dedupe/delete", () => {
 	);
 });
 
+test("stampSyncMeta preserves hybrid sync metadata fields", () => {
+	const stamped = store.stampSyncMeta(
+		{ name: "official", id: 12 },
+		{
+			lastSyncedAt: "2026-07-26T12:00:00Z",
+			officialId: 34,
+			officialName: "toolhub-name",
+			visibility: "private",
+			validationErrors: [{ field: "url" }]
+		}
+	);
+	assert.equal(stamped.source, store.SOURCE.official);
+	assert.equal(stamped.syncStatus, store.SYNC_STATUS.official);
+	assert.equal(stamped.lastSyncedAt, "2026-07-26T12:00:00Z");
+	assert.equal(stamped.officialId, 34);
+	assert.equal(stamped.officialName, "toolhub-name");
+	assert.equal(stamped.visibility, "private");
+	assert.deepEqual(stamped.validationErrors, [{ field: "url" }]);
+
+	const local = store.stampSyncMeta({ name: "local" });
+	assert.equal(local.source, store.SOURCE.local);
+	assert.equal(local.syncStatus, store.SYNC_STATUS.localDraft);
+});
+
 test("ingestToolinfo reports invalid JSON", () => {
 	const res = store.ingestToolinfo("{not json");
 	assert.equal(typeof res.error, "string");

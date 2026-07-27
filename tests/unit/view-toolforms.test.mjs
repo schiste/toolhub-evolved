@@ -471,6 +471,21 @@ test("viewAddTools with urls + submissions", async () => {
 	expect("addtools", r.html);
 });
 
+test("viewAddTools renders URL sync labels, official ids, and last errors", async () => {
+	h.crawlerUrls.mockReturnValue([
+		{
+			url: "https://err.example/toolinfo.json",
+			officialId: 7,
+			syncLabel: "Needs review",
+			lastError: "Rejected upstream"
+		}
+	]);
+	const r = tf.viewAddTools();
+	assert.ok(r.html.includes("Needs review"));
+	assert.ok(r.html.includes("Rejected upstream"));
+	assert.ok(r.html.includes('data-url-id="7"'));
+});
+
 test("mount addtools loads recent local crawler runs", async () => {
 	h.backendGetJson.mockResolvedValue({
 		results: [{ ok: false, urlsCount: 2, added: 1, updated: 0, endedAt: "2026-07-26T10:00:00Z", errors: ["bad"] }]
@@ -482,6 +497,41 @@ test("mount addtools loads recent local crawler runs", async () => {
 	assert.deepEqual(h.backendGetJson.mock.calls[0], ["/v1/crawler/runs/"]);
 	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("Errors"));
 	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("2 URLs, 1 added, 0 updated"));
+});
+
+test("mount addtools renders successful crawler runs and ignores run-load failures", async () => {
+	h.backendGetJson.mockResolvedValueOnce({
+		results: [
+			{ ok: true, urlsCount: 1, added: 1, updated: 1, endedAt: "2026-07-26T11:00:00Z" },
+			{ ok: true, startedAt: "2026-07-26T12:00:00Z" },
+			{ ok: true }
+		]
+	});
+	let r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	await tick();
+	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("OK"));
+	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("0 URLs, 0 added, 0 updated"));
+	assert.ok(document.querySelector("[data-crawler-runs]").textContent.includes("2026-07-26T12:00:00Z"));
+
+	h.backendGetJson.mockResolvedValueOnce({});
+	r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	await tick();
+	assert.ok(
+		document.querySelector("[data-crawler-runs]").textContent.includes("No local crawler runs recorded yet.")
+	);
+
+	h.backendGetJson.mockRejectedValueOnce(new Error("runs down"));
+	r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	await tick();
+	assert.ok(
+		document.querySelector("[data-crawler-runs]").textContent.includes("No local crawler runs recorded yet.")
+	);
 });
 
 test("viewAddTools empty", async () => {
@@ -672,6 +722,24 @@ test("mount edit: signed-in submit publishes official tool update", async () => 
 	);
 	assert.equal(h.clearApiCache.mock.calls.length, 1);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount edit: rejected official Toolhub write falls back to a local edit draft", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("validation failed"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", url: "https://x.example", origin: "api" }));
+	h.toolEditsMap.mockReturnValue({});
+	h.isNewTool.mockReturnValue(false);
+	await mountToolForm("my-tool");
+	setVal("tf-title", "Renamed");
+	setVal("tf-url", "https://x.example/updated");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/toolhub/tools/my-tool/"]);
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
+	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["my-tool"].title, "Renamed");
+	assert.deepEqual(h.logActivity.mock.calls[0], ["edited", "my-tool", "Renamed"]);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("validation failed"));
 });
 
 test("mount edit of a NEW tool without Toolhub sign-in is blocked", async () => {
@@ -966,6 +1034,24 @@ test("mount addtools: signed-in URL registration stores the official crawler id"
 		{ url: "https://added.example/toolinfo.json" }
 	]);
 	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["https://added.example/toolinfo.json", 9]);
+	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
+});
+
+test("mount addtools: signed-in URL registration without an id is kept as official", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ ok: true, toolhub: {} });
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([{ url: "https://added.example/toolinfo.json" }]);
+	setVal("at-url", "https://added.example/toolinfo.json");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://added.example/toolinfo.json",
+		undefined,
+		{ source: "official", syncStatus: "official" }
+	]);
 	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
 });
 
