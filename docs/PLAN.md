@@ -45,9 +45,9 @@ ever productionized," not as work for this plan.
   History API routes; there is no bundled catalog and reads never move to
   fixtures. (Architecture: `main.js`, `views/`, `lib/`, `index.html`, `styles/`,
   `proxy/app.py`.)
-- The previous **experimental toggle** has been removed. Evolved additions are
-  now default-visible production features, with provenance and sync-status labels
-  replacing the old opt-in switch.
+- The previous **experimental-toggle surface** has been removed. Evolved
+  additions are now default-visible production features, with provenance and
+  sync-status labels replacing the old opt-in switch.
 - **Lane A correctness is done** (feature-fix sweep, §2.1).
 - **Lane A i18n/a11y primitives have landed** (Intl formatters, `lang`/`dir`,
   `<time>`, `dir="auto"`, modal `inert`/focus-trap, `aria-busy`, `aria-current`,

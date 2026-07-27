@@ -152,6 +152,34 @@ visible on Evolved pages, but it never turns the row into official Toolhub data
 and never grants Toolhub admin rights. All public write routes still require
 Toolhub sign-in, CSRF, per-user rate limiting, and `backend.authz.can(...)`.
 
+## GitHub issue hygiene
+
+The hybrid foundation is tracked by parent epic #102. Keep feature-area child
+issues linked from that epic and include a `Parent epic: #102` back link in each
+child issue. Current children are identity (#103), UI provenance (#104),
+official-first writes (#105), provenance (#106), docs hygiene (#107),
+production cleanliness (#108), and Evolved-only public data controls (#109).
+
+Before broad implementation or after changing the product model, search open
+issues for removed demonstrator language:
+
+```sh
+gh issue list --state open --limit 200 \
+  --json number,title,body \
+  --jq '.[] | select(((.title // "") + "\n" + (.body // "") | test("experimental[ -]toggle|localStorage[ -]demo"; "i"))) | [.number, .title] | @tsv'
+```
+
+Refresh stale issue text to the production vocabulary:
+
+- "Toolhub-first write" for official API attempts through `/v1/write/*`.
+- "Evolved-local backend overlay", "draft", or "fallback" for local records.
+- "Evolved data" for public data that official Toolhub does not expose.
+- "Hybrid/Evolved roadmap" for prospective work, not a removed toggle.
+
+Also keep labels aligned. The `lane-b` label describes prospective hybrid
+Evolved roadmap work; it must not refer to the removed experimental-toggle
+surface.
+
 ## Deploy / rollback
 
 ```sh

@@ -26,7 +26,7 @@ features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
 - **Launch blocker: Lane A i18n/a11y must be finished first** (`PLAN.md`
   §2.2–2.3). Nothing user-facing launches before the interface is localizable
   and the deferred accessibility items are closed.
-- **Data architecture (updated 2026-07-26): live Toolhub + local overlay.**
+- **Data architecture (updated 2026-07-27): live Toolhub + local overlay.**
   All Toolhub catalog data is read **live from the Toolhub API** — it is never
   mirrored, synced, or copied into our database. Official writes are sent to
   Toolhub's API with the user's stored Toolhub OAuth grant. The
@@ -41,7 +41,7 @@ Appendix A), so productionizing is mostly **swapping the adapter's target from
 `localStorage` to a real API** — callers, views, and the merge step stay as they
 are.
 
-### Implementation status (2026-07-26)
+### Implementation status (2026-07-27)
 
 Landed in this repo (see the runbook for the Toolforge configuration steps):
 
@@ -68,13 +68,17 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   fields; chrome strings extracted across views/components. The a11y items
   §2.3 listed as deferred (card grids as lists, crawler table caption/scope)
   were already fixed in code.
+- **Project tracking**: GitHub issue #102 is the parent epic for the hybrid
+  provenance/write-lifecycle foundation. Child issues #103-#109 track identity,
+  provenance, official-first writes, public Evolved-only data controls, UI
+  provenance, production data cleanliness, and docs/issue hygiene.
 
 Still open before a public launch: register the Toolhub OAuth application +
 ToolsDB and run through the runbook once for real; remove all production-facing
 fixtures, mock data, demo writes, deterministic fake metrics, and placeholder
-media; obtain actual translations (the mechanism ships English-only catalogs);
-the long-term card-as-link a11y refactor; the privacy-policy rewrite for
-server-side accounts and stored OAuth grants (P6).
+media (tracked by #108); obtain actual translations (the mechanism ships
+English-only catalogs); the long-term card-as-link a11y refactor; the
+privacy-policy rewrite for server-side accounts and stored OAuth grants (P6).
 
 ## 1. Product architecture — "live base + local overlay + official bridge"
 
@@ -261,6 +265,9 @@ via a documented one-liner.
   CSRF, rate limits, gitleaks in CI already; add dependency audit job.
 - **Ops runbook** (`docs/RUNBOOK.md`): deploy, rollback (git revert +
   `deploy.sh`), migration procedure, quota checks, "upstream API down" behavior.
+- **Issue hygiene**: keep #102 as the parent epic, keep child issues linked by
+  feature area, and rewrite stale demonstrator wording in open issues before it
+  drives implementation work.
 - **Backups**: nightly Jobs-framework `mariadb-dump` of ToolsDB to the tool's
   home (NFS is replicated), 14-day rotation; documented restore drill (do one).
 - **Monitoring**: external uptime check on `/healthz` (e.g. UptimeRobot free

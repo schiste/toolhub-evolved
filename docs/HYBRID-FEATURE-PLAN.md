@@ -132,6 +132,19 @@ These are prerequisites before expanding any feature deeply.
       data", placeholder media, and deterministic metric paths outside
       test/dev-only files.
 
+7. **Docs and issue hygiene**
+    - Status: parent epic created as GitHub issue #102, with feature-area child
+      issues #103 through #109.
+    - Keep this plan, `docs/PRODUCTION.md`, and `docs/RUNBOOK.md` in sync
+      whenever a local table, trust boundary, write lifecycle, review queue, or
+      production-cleanliness rule changes.
+    - Keep the GitHub issue tracker on the production hybrid vocabulary:
+      "Toolhub-first write", "Evolved-local backend overlay", "fallback",
+      "draft", "review", and "provenance". Do not reintroduce removed
+      experimental-toggle or browser-local demo wording for production work.
+    - Attach new implementation issues to the parent epic through a linked
+      checklist item and a `Parent epic: #102` back link in the child issue.
+
 ## Feature-By-Feature Plan
 
 ### 1. Toolhub Sign-In
@@ -494,6 +507,21 @@ Evolved-only backend data:
 - Add durable upload/storage.
 - Replace any remaining placeholder screenshots with real Evolved-owned media.
 
+### Phase 6: Docs And Issue Hygiene
+
+- Status: created the hybrid foundation parent epic (#102) and child tracking
+  issues for identity (#103), UI contract (#104), write lifecycle (#105),
+  provenance (#106), docs hygiene (#107), production cleanliness (#108), and
+  Evolved-only public data controls (#109).
+- Refresh open imported feature issues whenever their wording still describes
+  removed experimental-toggle flows, browser-local demo writes, browser-only
+  simulations, or Lane B as a separate demo surface.
+- Keep issue labels aligned with the production model; `lane-b` now means the
+  prospective hybrid Evolved roadmap rather than a toggle.
+- Treat issue hygiene as part of feature readiness: a feature is not ready for
+  broad work if its docs and tracking issue disagree about canonical Toolhub
+  data, local Evolved data, or write authority.
+
 ## Documentation Requirements For Every New Backend Feature
 
 Every backend feature that is not official Toolhub data must update:
@@ -506,6 +534,8 @@ Every backend feature that is not official Toolhub data must update:
   boundary is introduced.
 - `docs/FEATURES.md`: indirectly, by changing `EXPERIMENTS` in
   `public_html/views/experiments.js` and running `npm run features:docs`.
+- GitHub issues: update parent epic #102 or the relevant child issue so the
+  implementation status and open follow-up work are discoverable.
 - UI copy: provenance labels and Rules of Engagement language when users can
   create or expose new Evolved-owned data.
 
