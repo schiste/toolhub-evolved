@@ -169,8 +169,42 @@ debugging:
 | `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                               |
 | `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                     |
 | `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.              |
+| `tool_author_claims`                         | Public provenance label, private evidence cache | Per-tool author-name verification claims tied to a Toolhub username; use for Evolved provenance and "my tools" discovery, never as official Toolhub permission state.  |
+| `tool_author_keys`                           | Public-key registry for signed toolinfo claims  | Stores Evolved-registered public keys only; never store private keys, and ignore revoked keys during signed-toolinfo verification.                                     |
 | `tool_health_targets` / `tool_health_checks` | Public checked status after approval            | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health. |
 | `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                         |
+
+`tool_author_claims` rows are scoped to one `(tool_name, author_name,
+toolhub_username, verification_method)` tuple. `verification_status` is one of
+`verified`, `unverified`, `stale`, or `failed`; `verification_method` is one of
+`toolforge_maintainer`, `toolhub_write_access`, `signed_toolinfo`, or
+`author_display_name`. `author_display_name` is explicitly non-verified
+display metadata unless another method verifies the same per-tool claim.
+Verification is never global to an author display name or Toolhub username:
+`Christophe` verified on `toolhub-evolved` does not verify `Christophe` on any
+other tool without a separate verified claim row for that exact tool.
+`GET /v1/me/tools/` uses those rows as additional Toolhub author-search terms,
+records fresh display-name and Toolforge-maintainer evidence for candidate
+tools, and groups results into verified tools vs possible unverified matches for
+the signed-in user. Successful official Toolhub tool writes add
+`toolhub_write_access` claims without affecting the write response if evidence
+recording fails. Crawler ingestion records `signed_toolinfo` claims before
+upstream-name de-dupe, so official Toolhub data remains canonical while Evolved
+can still retain signed authorship evidence.
+
+Signed toolinfo metadata is read from `x_toolhub_evolved_signature` or
+`x-toolhub-evolved-signature`. The signed bytes are the canonical JSON toolinfo
+item with that metadata removed. Active `tool_author_keys` rows are matched by
+Toolhub username, key id, and algorithm; revoked keys are ignored. Operationally,
+claims are time-bounded and may become `stale`, while public keys can be kept
+until the user revokes them or deletes their Evolved-local data.
+
+Developer settings exposes the public-key lifecycle for signed toolinfo:
+`GET|POST /v1/author-keys/` lists/registers Ed25519 public keys,
+`DELETE /v1/author-keys/<key_id>/` revokes one key, and
+`POST /v1/toolinfo/signing-payload/` returns the canonical JSON and placeholder
+signature metadata for the exact toolinfo object a maintainer wants to publish.
+Evolved never stores or receives private keys.
 
 Before adding a new Evolved-only table, document the owner, purpose,
 visibility, retention/deletion behavior, export behavior, Toolhub handoff path,
@@ -253,6 +287,21 @@ toolforge jobs logs crawler            # last crawl output
 
 The crawler exits non-zero (→ failure email) when any URL errored; per-run
 results are also stored in the `crawler_runs` table.
+
+The crawler reads every enabled `crawler_urls` row hourly. For each toolinfo item
+it first records valid `signed_toolinfo` author-claim evidence when the URL
+owner has a matching active public key, then checks whether the tool name already
+exists in official Toolhub. Official names are skipped so live Toolhub remains
+canonical; Evolved-local rows are upserted only for names that Toolhub returns as
+missing.
+
+Tool creation can add `crawler_urls` rows too. When a signed-in user submits a
+tool with the optional create-only `toolinfo_url` field, `/v1/write/tools/`
+fetches that URL once with the same HTTPS/SSRF/size rules as the scheduled
+crawler, fills missing optional create fields before the official Toolhub POST,
+and stores the URL locally for future scheduled refreshes. A failed create-time
+fetch does not block an otherwise valid official Toolhub create; it records a
+`sync_error` row so the scheduler and crawler history can surface or retry it.
 
 ## Backups & restore
 

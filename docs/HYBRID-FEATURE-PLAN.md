@@ -23,21 +23,23 @@ The product model is deliberately hybrid:
 
 Implemented local tables in `proxy/backend/models.py`:
 
-| Table            | Purpose                                                | Toolhub equivalent                                                                     |
-| ---------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `users`          | Local record of a Toolhub OAuth user and Evolved role. | Toolhub `/api/user/` identity is official; local role gates Evolved-only data/actions. |
-| `toolhub_tokens` | Server-side official OAuth grant.                      | Toolhub owns authorization; Evolved stores grant secrets only server-side.             |
-| `favorites`      | Per-user local favorite cache/fallback.                | Toolhub has official favorites.                                                        |
-| `lists`          | Per-user local draft/fallback lists.                   | Toolhub has official lists.                                                            |
-| `tools`          | Net-new Evolved tool records, never upstream mirrors.  | Toolhub has official tools; Evolved-local rows feed `/toolinfo.json`.                  |
-| `tool_overlays`  | Evolved field patches for tool edits and annotations.  | Toolhub has official tool core fields and annotations.                                 |
-| `activity`       | Evolved revision/audit rows for local actions.         | Toolhub has official recent/audit/history feeds.                                       |
-| `crawler_urls`   | User-registered local crawler URLs.                    | Toolhub has official crawler URL registration.                                         |
-| `crawler_runs`   | Server crawler run outcomes.                           | Toolhub has official crawler runs for official URLs.                                   |
-| `tool_events`    | Privacy-limited Evolved interaction events.            | Toolhub does not expose Evolved-site usage events.                                     |
-| `tool_thanks`    | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
-| `tool_health_*`  | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
-| `tool_media`     | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
+| Table                | Purpose                                                | Toolhub equivalent                                                                     |
+| -------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `users`              | Local record of a Toolhub OAuth user and Evolved role. | Toolhub `/api/user/` identity is official; local role gates Evolved-only data/actions. |
+| `toolhub_tokens`     | Server-side official OAuth grant.                      | Toolhub owns authorization; Evolved stores grant secrets only server-side.             |
+| `favorites`          | Per-user local favorite cache/fallback.                | Toolhub has official favorites.                                                        |
+| `lists`              | Per-user local draft/fallback lists.                   | Toolhub has official lists.                                                            |
+| `tools`              | Net-new Evolved tool records, never upstream mirrors.  | Toolhub has official tools; Evolved-local rows feed `/toolinfo.json`.                  |
+| `tool_overlays`      | Evolved field patches for tool edits and annotations.  | Toolhub has official tool core fields and annotations.                                 |
+| `activity`           | Evolved revision/audit rows for local actions.         | Toolhub has official recent/audit/history feeds.                                       |
+| `crawler_urls`       | User-registered local crawler URLs.                    | Toolhub has official crawler URL registration.                                         |
+| `crawler_runs`       | Server crawler run outcomes.                           | Toolhub has official crawler runs for official URLs.                                   |
+| `tool_events`        | Privacy-limited Evolved interaction events.            | Toolhub does not expose Evolved-site usage events.                                     |
+| `tool_thanks`        | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
+| `tool_author_claims` | Per-tool author-name verification evidence.            | Toolhub exposes display author fields but not Evolved verification state.              |
+| `tool_author_keys`   | User-registered public keys for signed toolinfo proof. | Toolhub does not expose Evolved signed-toolinfo keys.                                  |
+| `tool_health_*`      | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
+| `tool_media`         | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
 
 Backend endpoints already implemented:
 
@@ -47,6 +49,15 @@ Backend endpoints already implemented:
 - `/v1/write/*` lifecycle for official-first tools, annotations, lists,
   favorites, and crawler URL writes; `/v1/toolhub/*` remains as a lower-level
   compatibility bridge
+- `POST /v1/write/tools/` also accepts an optional create-only `toolinfo_url`;
+  Evolved fetches it once with the crawler safety rules, fills missing optional
+  create fields, records local crawler/signed-toolinfo evidence, and still sends
+  the canonical create to official Toolhub first
+- `GET /v1/me/tools/` resolver for signed-in users, combining official Toolhub
+  author search with Evolved-local `tool_author_claims` verification signals
+- `GET|POST /v1/author-keys/`, `DELETE /v1/author-keys/<key_id>/`, and
+  `POST /v1/toolinfo/signing-payload/` for signed-toolinfo public-key
+  registration and canonical signing payload generation
 - `GET /v1/search/tools/` for Evolved-local tools
 - `GET /v1/tools/<name>/signals/`, `POST /v1/tools/<name>/events/`,
   `POST|DELETE /v1/tools/<name>/thanks/`
@@ -58,6 +69,18 @@ Backend endpoints already implemented:
 - `GET /v1/crawler/runs/`, `GET /v1/user/export/`,
   `DELETE /v1/user/evolved-data/`
 - `GET /toolinfo.json` for feeding Evolved-local tools into official Toolhub
+
+Author verification now uses provider-specific evidence rows rather than
+treating Toolhub author display names as proof. `AuthorNameProvider` records
+display-name matches as unverified candidates; `ToolforgeMaintainerProvider`
+checks public Toolsadmin maintainer pages; `ToolhubWriteProvider` records
+verification after a successful official Toolhub tool write by the same user;
+and `SignedToolinfoProvider` verifies signed `toolinfo.json` records against
+active `tool_author_keys` public keys. These claims improve Evolved provenance
+and "My tools" discovery only; they never become official Toolhub permissions or
+canonical Toolhub authorship. Verification is strictly per tool: a verified
+claim for `Christophe` on one `tool_name` does not verify `Christophe` on any
+other tool unless that other tool has its own verified claim row.
 
 ## Cross-Cutting Work First
 
@@ -240,6 +263,10 @@ Make it fully real:
 
 - Validate locally against the Toolhub tool schema before attempting official
   create.
+- Allow a create-only `toolinfo_url` so Evolved can fetch the maintainer's
+  `toolinfo.json` immediately, fill missing optional fields before the official
+  Toolhub create, and keep the URL registered locally for future scheduled
+  crawler refreshes.
 - Store full official-write response, validation errors, and local draft state.
 - For Evolved-local drafts, expose:
     - private draft view;
@@ -307,6 +334,9 @@ Make it fully real:
   officially or are intentionally local.
 - Run the server-side crawler job on local URLs, validate toolinfo, and upsert
   `tools` records without mirroring official Toolhub tools.
+- Reuse the same hardened fetch path during tool creation when a user supplies a
+  `toolinfo_url`; failed create-time fetches are stored as local `sync_error`
+  crawler rows so the scheduled crawler can retry and surface the error.
 - Surface crawler run history with per-URL errors and official/local labels.
 - Publish Evolved-local accepted tools through `/toolinfo.json`.
 

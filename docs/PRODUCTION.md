@@ -55,6 +55,14 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   `/v1/search/tools/`, `/v1/moderation/public-data/`, `/healthz`, and the
   `/toolinfo.json` feeder feed. The lower level `/v1/toolhub/*` bridge remains
   available for compatibility and smoke checks.
+- **Author verification**: `proxy/backend/author_claims.py` powers the signed-in
+  My tools resolver. It starts from the Toolhub OAuth username, searches official
+  Toolhub author data, records display-name matches as unverified, and upgrades
+  claims only through stronger Evolved evidence: public Toolsadmin maintainer
+  pages, successful official Toolhub tool writes, or signed `toolinfo.json`
+  records verified against active local public keys registered in Developer
+  settings. Verification is per tool, never global to an author display name or
+  Toolhub username.
 - **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
   the only sign-in path, while local `users.role` permission sets (`user`,
   `reviewer`, `admin`) gate Evolved-owned data/actions through
@@ -64,8 +72,10 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
 - **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
   write-through cache of the server overlay; signed-out write paths are removed
   from the production UI.
-- **Crawler** (`proxy/crawl.py` + `jobs.yaml`): scheduled ingest of registered
-  toolinfo URLs, upstream-name dedupe, per-run history.
+- **Crawler** (`proxy/crawl.py` + `jobs.yaml`): hourly ingest of enabled
+  registered toolinfo URLs, signed-toolinfo author-claim verification,
+  upstream-name de-dupe, create-time `toolinfo_url` enrichment for submitted
+  tools, and per-run history.
 - **Ops**: nightly DB backup + rotation, `docs/RUNBOOK.md`.
 - **i18n**: `t()` catalog mechanism, generated `i18n/en.json` (CI-enforced),
   working locale switcher for shipped catalogs, `pickLocalized()` for API
@@ -101,10 +111,18 @@ over unchanged, one level up:
 - **Officially supported writes go back to Toolhub.** Toolhub OAuth gives
   Evolved a per-user grant. The browser calls `/v1/write/*`; the backend
   validates locally, checks Evolved policy, attaches the access token, forwards
-  to official `/api/*`, and records sync/fallback metadata.
+  to official `/api/*`, and records sync/fallback metadata. Tool creation may
+  include a create-only `toolinfo_url`; Evolved fetches it once with the crawler
+  safety rules to fill missing optional fields and capture local evidence before
+  sending the official Toolhub create.
 - **Evolved keeps the additional layer.** Drafts/fallbacks, local overlays,
   local activity rows, and any feature Toolhub does not expose live in our
   database and sync into the browser's localStorage cache.
+- **Authorship proof stays Evolved-local.** Verification claims and registered
+  public keys help Evolved label "my tools" and provenance, but official Toolhub
+  remains authoritative for catalog records and Toolhub permissions. A verified
+  author claim is scoped to its exact `tool_name`; the same author name on
+  another tool remains unverified until that tool has its own evidence.
 - **The merge step is unchanged.** `normalizeTool()`/`normalizeList()` still
   merge an overlay onto the live record at render time; the overlay now comes
   from `GET /v1/…` instead of `localStorage`.
@@ -245,7 +263,8 @@ via a documented one-liner.
 - `POST /v1/write/tools/`, `PUT/DELETE /v1/write/tools/{name}/` — official
   Toolhub remains the permission authority. Core edits are attempted against
   Toolhub; rejected writes become local Evolved drafts/overlays where that is
-  honest to display.
+  honest to display. Create payloads may include `toolinfo_url` for one-shot
+  enrichment; Evolved never forwards that field itself to Toolhub.
 - `PUT /v1/write/tools/{name}/annotations/` publishes community annotations
   through official Toolhub first, falling back to the Evolved overlay if
   rejected.
@@ -258,6 +277,9 @@ via a documented one-liner.
 
 - `/v1/write/crawler/urls/` CRUD (auth required) + `Add or remove tools` page
   writes official Toolhub crawler URL registrations when permitted.
+- Tool creation can also register a local crawler URL opportunistically through
+  its create-only `toolinfo_url` field; that one-shot fetch is for immediate
+  enrichment and evidence, while the scheduled job remains the refresh path.
 - Toolforge Jobs framework scheduled job (e.g. hourly): fetch each registered
   URL, validate against toolinfo 1.2.2, upsert `tools`, record `crawler_runs`
   with per-URL outcomes; surface runs on the existing `/crawler` history UI.
