@@ -12,20 +12,41 @@ assembled GET merges all users' rows, newest first. Feed keys (revisions,
 auditlogs) are append-only, idempotent by client id.
 """
 
+import base64
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlencode
 from uuid import uuid4
 
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
 from backend import api_cache, authz, db, toolhub
+from backend.author_claims import (
+    SIGNATURE_META_KEY,
+    AuthorNameProvider,
+    SignedToolinfoProvider,
+    ToolforgeMaintainerProvider,
+    ToolhubWriteProvider,
+    author_names_from_toolhub_tool,
+    canonical_toolinfo_string,
+    dedupe_strings,
+    public_key_fingerprint,
+    string_key,
+    validate_ed25519_public_key,
+)
+from backend.author_claims import (
+    claim_payload as author_claim_payload,
+)
 from backend.models import (
     ActivityRow,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
+    ToolAuthorClaim,
+    ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
     ToolList,
@@ -64,6 +85,7 @@ HTTP_NOT_FOUND = 404
 HTTP_NO_CONTENT = 204
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
+HTTP_CONFLICT = 409
 UPSTREAM_KIND_INDEX = 1
 UPSTREAM_MIN_PARTS = 2
 UPSTREAM_OBJECT_INDEX = 2
@@ -72,6 +94,10 @@ MAX_ITEMS = 500  # per overlay key per user
 MAX_NAME = 255
 FEED_READ_CAP = 100
 FEED_KEEP_CAP = 500
+ME_TOOLS_SEARCH_PAGE_SIZE = 100
+ME_TOOLS_MAX_SEARCH_TERMS = 20
+AUTHOR_KEY_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+SIGNATURE_PLACEHOLDER = "<base64 signature>"
 OVERLAY_KINDS = {"toolEdits": "edits", "toolAnnos": "annos"}
 FEED_KEYS = ("revisions", "auditlogs")
 VISIBILITY_PRIVATE = "private"
@@ -108,6 +134,14 @@ CANONICAL_TOOL_KEYS = {"name", "origin"}
 TOOL_FALLBACK_KINDS = {"new", "edit", "annotations"}
 TOOL_OVERLAY_KIND_BY_FALLBACK = {"edit": "edits", "annotations": "annos"}
 OFFICIAL_STATUS_DISCARDED = "discarded"
+AUTHOR_NAME_PROVIDER = AuthorNameProvider()
+SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
+TOOLFORGE_MAINTAINER_PROVIDER = ToolforgeMaintainerProvider()
+TOOLHUB_WRITE_PROVIDER = ToolhubWriteProvider()
+TOOLINFO_CREATE_MAX_ITEMS = 200
+TOOLINFO_CREATE_OPT_FIELDS = ("repository", "license", "toolType")
+TOOLINFO_CREATE_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")
+TOOLINFO_CREATE_BOOL_FIELDS = ("deprecated", "experimental")
 
 
 def _iso(dt: datetime | None) -> str:
@@ -305,6 +339,209 @@ def _deny(status: int, error: str) -> Response:
     return resp
 
 
+def _string_key(value: Any) -> str:  # noqa: ANN401 - untrusted API JSON
+    """Return a case-insensitive key for display/user/tool names."""
+    return string_key(value)
+
+
+def _dedupe_strings(values: list[Any]) -> list[str]:
+    """Return non-empty strings in first-seen order, case-insensitively deduped."""
+    return dedupe_strings(values)
+
+
+def _toolhub_author_names(tool: dict) -> list[str]:
+    """Return author display and identity names from one official Toolhub tool."""
+    return author_names_from_toolhub_tool(tool)
+
+
+def _claim_payload(row: ToolAuthorClaim) -> dict:
+    """Serialize one stored author claim into the resolver response contract."""
+    return author_claim_payload(row)
+
+
+def _author_key_payload(row: ToolAuthorKey) -> dict:
+    """Serialize one registered public key for account export."""
+    return {
+        "keyId": row.key_id,
+        "algorithm": row.algorithm,
+        "fingerprint": public_key_fingerprint(row.public_key),
+        "publicKey": row.public_key,
+        "createdAt": _iso(row.created_at),
+        "revokedAt": _iso(row.revoked_at),
+        "lastUsedAt": _iso(row.last_used_at),
+    }
+
+
+def _clean_author_key_id(value: Any) -> str | None:  # noqa: ANN401 - untrusted JSON
+    """Return a valid author-key id for signed toolinfo metadata."""
+    text_value = str(value or "").strip()
+    return text_value if AUTHOR_KEY_ID_RE.fullmatch(text_value) else None
+
+
+def _toolinfo_body(value: Any) -> dict | None:  # noqa: ANN401 - untrusted JSON
+    """Return one toolinfo object from JSON input."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(value, dict):
+        return None
+    return value if _clean_name(value.get("name")) is not None else None
+
+
+def _signature_metadata(key_id: str) -> dict:
+    """Return the metadata block a maintainer adds after signing."""
+    return {"algorithm": "ed25519", "key_id": key_id, "signature": SIGNATURE_PLACEHOLDER}
+
+
+def _toolhub_search_results(term: str) -> list[dict]:
+    """Fetch candidate tools from official Toolhub search for one author term."""
+    payload = toolhub.public_api_get(
+        "/api/search/tools/",
+        params={
+            "author__term": term,
+            "ordering": "-score",
+            "page": 1,
+            "page_size": ME_TOOLS_SEARCH_PAGE_SIZE,
+        },
+    )
+    results = payload.get("results") if isinstance(payload, dict) else []
+    return [row for row in results if isinstance(row, dict)] if isinstance(results, list) else []
+
+
+def _claims_by_tool(claims: list[dict]) -> dict[str, list[dict]]:
+    """Group serialized author claims by Toolhub tool name."""
+    out: dict[str, list[dict]] = {}
+    for claim in claims:
+        out.setdefault(_string_key(claim.get("toolName")), []).append(claim)
+    return out
+
+
+def _search_terms_for_user(username: str, claims: list[ToolAuthorClaim]) -> list[str]:
+    """Return bounded Toolhub author-search terms for a signed-in user."""
+    return _dedupe_strings([username, *[row.author_name for row in claims]])[:ME_TOOLS_MAX_SEARCH_TERMS]
+
+
+def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> None:
+    """Merge one official Toolhub search result into the candidate map."""
+    tool_name = _clean_name(row.get("name"))
+    if tool_name is None:
+        return
+    entry = candidates.setdefault(
+        tool_name,
+        {
+            "tool": row,
+            "matchedAuthorNames": [],
+            "searchTerms": [],
+        },
+    )
+    entry["searchTerms"] = _dedupe_strings([*entry["searchTerms"], term])
+    author_names = _toolhub_author_names(row)
+    matched = [name for name in author_names if _string_key(name) == _string_key(term)] or [term]
+    entry["matchedAuthorNames"] = _dedupe_strings([*entry["matchedAuthorNames"], *matched])
+
+
+def _candidate_tools_for_terms(search_terms: list[str]) -> tuple[dict[str, dict], list[dict]]:
+    """Search official Toolhub for all resolver terms, preserving partial successes."""
+    candidates: dict[str, dict] = {}
+    errors: list[dict] = []
+    for term in search_terms:
+        try:
+            rows = _toolhub_search_results(term)
+        except toolhub.ToolhubAPIError as exc:
+            errors.append({"term": term, "status": exc.status_code, "details": exc.payload})
+            continue
+        except toolhub.requests.RequestException as exc:
+            errors.append({"term": term, "status": 502, "details": {"message": str(exc)}})
+            continue
+        for row in rows:
+            _add_candidate_tool(candidates, row, term)
+    return candidates, errors
+
+
+def _resolver_item(tool_name: str, entry: dict, claims_by_tool: dict[str, list[dict]]) -> dict:
+    """Attach only this tool's provider claims to one candidate Toolhub tool."""
+    claims = list(claims_by_tool.get(_string_key(tool_name), []))
+    return {
+        "tool": entry["tool"],
+        "matchedAuthorNames": entry["matchedAuthorNames"],
+        "searchTerms": entry["searchTerms"],
+        "claims": claims,
+    }
+
+
+def _resolver_groups(candidates: dict[str, dict], claims_by_tool: dict[str, list[dict]]) -> dict:
+    """Split candidate tools into verified and possible groups."""
+    groups: dict[str, list[dict]] = {"verified": [], "possible": []}
+    for tool_name, entry in candidates.items():
+        item = _resolver_item(tool_name, entry, claims_by_tool)
+        key = "verified" if any(claim.get("isVerified") for claim in item["claims"]) else "possible"
+        groups[key].append(item)
+    return groups
+
+
+def _author_search_evidence_url(search_term: str) -> str:
+    """Return the official Toolhub search URL that produced an author-name match."""
+    query = urlencode(
+        {
+            "author__term": search_term,
+            "ordering": "-score",
+            "page": 1,
+            "page_size": ME_TOOLS_SEARCH_PAGE_SIZE,
+        }
+    )
+    return f"{toolhub.base_url()}/api/search/tools/?{query}"
+
+
+def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -> list[dict]:
+    """Persist resolver-side provider evidence and return fresh claim payloads."""
+    with db.session_scope() as s:
+        for tool_name, entry in candidates.items():
+            search_term = entry["searchTerms"][0] if entry["searchTerms"] else user.username
+            AUTHOR_NAME_PROVIDER.record(
+                s,
+                user,
+                tool_name=tool_name,
+                author_names=entry["matchedAuthorNames"],
+                evidence_url=_author_search_evidence_url(search_term),
+                evidence_payload={"searchTerms": entry["searchTerms"]},
+            )
+            TOOLFORGE_MAINTAINER_PROVIDER.verify(
+                s,
+                user,
+                tool_name=tool_name,
+                author_names=entry["matchedAuthorNames"],
+                toolhub_tool=entry["tool"],
+            )
+        rows = list(
+            s.execute(select(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)).scalars()
+        )
+        return [_claim_payload(row) for row in rows]
+
+
+def _record_successful_toolhub_write(
+    user: User,
+    method: str,
+    path: str,
+    request_payload: object | None,
+    response_payload: object | None,
+) -> None:
+    """Persist Toolhub write-access evidence without affecting the completed write."""
+    try:
+        with db.session_scope() as s:
+            TOOLHUB_WRITE_PROVIDER.record_success(
+                s,
+                user,
+                method=method,
+                path=path,
+                request_payload=request_payload,
+                response_payload=response_payload,
+            )
+    except Exception:  # noqa: BLE001 - provider evidence must never break a successful official write.
+        return
+
+
 def _current_policy_user() -> tuple[User | None, Response | None]:
     """Fetch the session user for Evolved-local policy checks."""
     uid = current_user_id()
@@ -414,6 +651,7 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
         resp.status_code = 502
         return resp
     _invalidate_official_api_cache(path, payload, body)
+    _record_successful_toolhub_write(user, method, path, payload, body)
     if status == HTTP_NO_CONTENT:
         return jsonify({"ok": True})
     resp = jsonify({"ok": True, "toolhub": body})
@@ -504,6 +742,7 @@ def _attempt_official_write(user: User, method: str, path: str, payload: object 
             None,
         )
     _invalidate_official_api_cache(path, payload, body)
+    _record_successful_toolhub_write(user, method, path, payload, body)
     return {
         "ok": True,
         "status": status,
@@ -522,6 +761,8 @@ def _official_success_response(attempt: dict, local: dict | None = None) -> Resp
     }
     if local is not None:
         payload["local"] = local
+    if attempt.get("crawlerFetch") is not None:
+        payload["crawlerFetch"] = attempt["crawlerFetch"]
     resp = jsonify(payload)
     resp.status_code = 200 if attempt["status"] == HTTP_NO_CONTENT else int(attempt["status"])
     return resp
@@ -542,17 +783,18 @@ def _official_failure_response(failure: dict) -> Response:
 
 
 def _local_fallback_response(failure: dict, local: dict) -> Response:
-    resp = jsonify(
-        {
-            "ok": True,
-            "result": SYNC_LOCAL_FALLBACK,
-            "syncStatus": SYNC_LOCAL_FALLBACK,
-            "lastError": failure["lastError"],
-            "validationErrors": failure["validationErrors"],
-            "toolhubResponse": failure["details"],
-            "local": local,
-        }
-    )
+    payload = {
+        "ok": True,
+        "result": SYNC_LOCAL_FALLBACK,
+        "syncStatus": SYNC_LOCAL_FALLBACK,
+        "lastError": failure["lastError"],
+        "validationErrors": failure["validationErrors"],
+        "toolhubResponse": failure["details"],
+        "local": local,
+    }
+    if failure.get("crawlerFetch") is not None:
+        payload["crawlerFetch"] = failure["crawlerFetch"]
+    resp = jsonify(payload)
     resp.status_code = 202
     return resp
 
@@ -660,6 +902,160 @@ def _official_tool_payload(name: str, fields: dict, *, include_name: bool) -> di
         del payload["license"]
     if not payload["tool_type"]:
         del payload["tool_type"]
+    return payload
+
+
+def _validated_tool_write(
+    value: dict,
+    route_name: str | None,
+) -> tuple[str | None, dict | None, str | None, Response | None]:
+    """Validate a tool write request and extract create-only crawler metadata."""
+    name, fields = _compact_tool_payload(value, route_name)
+    if name is None or fields is None:
+        return None, None, None, _bad("tool write needs name, title, description and an https url")
+    if route_name is not None:
+        return name, fields, None, None
+    toolinfo_url, toolinfo_err = _create_toolinfo_url(value)
+    return name, fields, toolinfo_url, toolinfo_err
+
+
+def _create_toolinfo_url(payload: dict) -> tuple[str | None, Response | None]:
+    """Return a valid create-time toolinfo URL, when supplied."""
+    value = _payload_value(payload, "toolinfoUrl", "toolinfo_url")
+    if not isinstance(value, str) or not value.strip():
+        return None, None
+    url = value.strip()
+    if not url.startswith("https://") or len(url) > MAX_URL:
+        return None, _bad("toolinfo URL must be a public https URL")
+    return url, None
+
+
+def _fetch_toolinfo_json_once(url: str) -> object:
+    """Reuse the scheduled crawler's hardened fetcher for create-time enrichment."""
+    import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
+
+    return crawl._fetch_json(toolhub.requests.Session(), url)  # noqa: SLF001 - shared internal crawler primitive.
+
+
+def _normalize_toolinfo_item(item: dict) -> dict | None:
+    """Reuse the crawler's compact toolinfo→Evolved record mapping."""
+    import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
+
+    return crawl.normalize_record(item)
+
+
+def _matching_toolinfo_item(data: object, name: str) -> dict | None:
+    """Find the item for the tool being created in one toolinfo response."""
+    if isinstance(data, dict):
+        items = [data]
+    elif isinstance(data, list):
+        items = data[:TOOLINFO_CREATE_MAX_ITEMS]
+    else:
+        return None
+    for item in items:
+        if isinstance(item, dict) and _clean_name(item.get("name")) == name:
+            return item
+    return None
+
+
+def _merge_toolinfo_fields(fields: dict, record: dict) -> tuple[dict, list[str]]:
+    """Fill missing create fields from toolinfo while preserving explicit user input."""
+    merged = dict(fields)
+    enriched: list[str] = []
+    for field in TOOLINFO_CREATE_OPT_FIELDS:
+        if not merged.get(field) and record.get(field):
+            merged[field] = record[field]
+            enriched.append(field)
+    for field in TOOLINFO_CREATE_LIST_FIELDS:
+        if not merged.get(field) and record.get(field):
+            merged[field] = record[field]
+            enriched.append(field)
+    for field in TOOLINFO_CREATE_BOOL_FIELDS:
+        if not merged.get(field) and record.get(field):
+            merged[field] = True
+            enriched.append(field)
+    return merged, enriched
+
+
+def _create_toolinfo_enrichment(
+    fields: dict,
+    name: str,
+    toolinfo_url: str | None,
+) -> tuple[dict, dict | None, dict | None]:
+    """Fetch toolinfo once during create and return enriched fields plus evidence."""
+    if toolinfo_url is None:
+        return fields, None, None
+    result: dict[str, object] = {"url": toolinfo_url, "ok": False, "matched": False, "enrichedFields": []}
+    try:
+        data = _fetch_toolinfo_json_once(toolinfo_url)
+    except (toolhub.requests.RequestException, ValueError) as exc:
+        result["lastError"] = clean_error(str(exc)) or "toolinfo fetch failed"
+        return fields, None, result
+    item = _matching_toolinfo_item(data, name)
+    if item is None:
+        result["lastError"] = f"{name}: no matching item found in toolinfo"
+        return fields, None, result
+    record = _normalize_toolinfo_item(item)
+    if record is None:
+        result["matched"] = True
+        result["lastError"] = f"{name}: toolinfo item is missing name, title, description or url"
+        return fields, item, result
+    merged, enriched = _merge_toolinfo_fields(fields, record)
+    result.update({"ok": True, "matched": True, "enrichedFields": enriched})
+    return merged, item, result
+
+
+def _record_create_toolinfo_evidence(
+    s: Any,  # noqa: ANN401 - SQLAlchemy Session
+    user: User,
+    toolinfo_url: str | None,
+    toolinfo_item: dict | None,
+    crawler_fetch: dict | None,
+) -> None:
+    """Record create-time crawler evidence without changing Toolhub canonical data."""
+    if toolinfo_url is None or crawler_fetch is None:
+        return
+    if crawler_fetch.get("ok"):
+        _store_crawler_url_row(
+            s,
+            user,
+            toolinfo_url,
+            sync_status=SYNC_EVOLVED_REAL,
+            toolhub_body={
+                "source": "tool-create-fetch",
+                "toolName": toolinfo_item.get("name") if toolinfo_item else None,
+            },
+        )
+        if toolinfo_item is not None:
+            try:
+                owner = s.get(User, user.id) or user
+                SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=toolinfo_item, evidence_url=toolinfo_url)
+            except Exception:  # noqa: BLE001 - evidence collection must not break an already accepted create.
+                return
+        return
+    failure = _failure_payload(
+        422,
+        {"message": crawler_fetch.get("lastError"), "url": toolinfo_url},
+        str(crawler_fetch.get("lastError") or "toolinfo fetch failed"),
+    )
+    _store_crawler_url_row(s, user, toolinfo_url, sync_status=SYNC_ERROR, failure=failure)
+
+
+def _maybe_enrich_create_tool(
+    fields: dict,
+    name: str,
+    toolinfo_url: str | None,
+    *,
+    create_like: bool,
+) -> tuple[dict, dict | None, dict | None]:
+    """Run one-shot toolinfo enrichment only for create-like writes."""
+    return _create_toolinfo_enrichment(fields, name, toolinfo_url) if create_like else (fields, None, None)
+
+
+def _with_crawler_fetch(payload: dict, crawler_fetch: dict | None) -> dict:
+    """Attach create-time crawler fetch metadata when the request used it."""
+    if crawler_fetch is not None:
+        payload["crawlerFetch"] = crawler_fetch
     return payload
 
 
@@ -914,6 +1310,165 @@ def v1_user() -> Response:
         )
 
 
+@v1_bp.route("/v1/author-keys/")
+@login_required
+def v1_author_keys() -> Response:
+    """List public keys registered by the signed-in Toolhub user."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — login_required guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    with db.session_scope() as s:
+        keys = [
+            _author_key_payload(row)
+            for row in s.execute(
+                select(ToolAuthorKey)
+                .where(ToolAuthorKey.toolhub_username == user.username)
+                .order_by(ToolAuthorKey.revoked_at.is_not(None), ToolAuthorKey.created_at, ToolAuthorKey.id)
+            ).scalars()
+        ]
+    return jsonify({"username": user.username, "keys": keys})
+
+
+@v1_bp.route("/v1/author-keys/", methods=["POST"])
+@write_guard
+def v1_author_key_create() -> Response:
+    """Register one public key for signed-toolinfo verification."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = _json_object_body()
+    if bad is not None:
+        return bad
+    assert body is not None  # noqa: S101 — _json_object_body returned no error
+    key_id = _clean_author_key_id(_payload_value(body, "keyId", "key_id"))
+    if key_id is None:
+        return _bad("keyId must use 1-128 letters, digits, dots, colons, underscores or hyphens")
+    algorithm = str(_payload_value(body, "algorithm") or "ed25519").strip().lower()
+    if algorithm != "ed25519":
+        return _bad("only ed25519 public keys are supported")
+    try:
+        public_key = validate_ed25519_public_key(str(_payload_value(body, "publicKey", "public_key") or ""))
+    except (TypeError, ValueError) as exc:
+        return _bad(str(exc))
+    with db.session_scope() as s:
+        existing = s.execute(
+            select(ToolAuthorKey).where(ToolAuthorKey.toolhub_username == user.username, ToolAuthorKey.key_id == key_id)
+        ).scalar_one_or_none()
+        if existing is not None:
+            return _deny(HTTP_CONFLICT, "key id already exists")
+        row = ToolAuthorKey(toolhub_username=user.username, key_id=key_id, public_key=public_key, algorithm=algorithm)
+        s.add(row)
+        s.flush()
+        payload = _author_key_payload(row)
+    resp = jsonify({"ok": True, "key": payload})
+    resp.status_code = 201
+    return resp
+
+
+@v1_bp.route("/v1/author-keys/<key_id>/", methods=["DELETE"])
+@write_guard
+def v1_author_key_revoke(key_id: str) -> Response:
+    """Revoke one registered public key for the signed-in Toolhub user."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
+    clean_key_id = _clean_author_key_id(key_id)
+    if clean_key_id is None:
+        return _bad("invalid key id")
+    with db.session_scope() as s:
+        row = s.execute(
+            select(ToolAuthorKey).where(
+                ToolAuthorKey.toolhub_username == user.username,
+                ToolAuthorKey.key_id == clean_key_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return _deny(HTTP_NOT_FOUND, "public key not found")
+        if row.revoked_at is None:
+            row.revoked_at = utcnow()
+        payload = _author_key_payload(row)
+    return jsonify({"ok": True, "key": payload})
+
+
+@v1_bp.route("/v1/toolinfo/signing-payload/", methods=["POST"])
+@write_guard
+def v1_toolinfo_signing_payload() -> Response:
+    """Return the canonical toolinfo bytes that a registered key should sign."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    body, bad = _json_object_body()
+    if bad is not None:
+        return bad
+    assert body is not None  # noqa: S101 — _json_object_body returned no error
+    key_id = _clean_author_key_id(_payload_value(body, "keyId", "key_id"))
+    if key_id is None:
+        return _bad("choose a registered key id")
+    toolinfo = _toolinfo_body(_payload_value(body, "toolinfo"))
+    if toolinfo is None:
+        return _bad("toolinfo must be one JSON object with a valid name")
+    with db.session_scope() as s:
+        key = s.execute(
+            select(ToolAuthorKey).where(
+                ToolAuthorKey.toolhub_username == user.username,
+                ToolAuthorKey.key_id == key_id,
+                ToolAuthorKey.revoked_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if key is None:
+            return _deny(HTTP_NOT_FOUND, "active public key not found")
+    canonical_payload = canonical_toolinfo_string(toolinfo)
+    signature_metadata = _signature_metadata(key_id)
+    return jsonify(
+        {
+            "toolName": _clean_name(toolinfo.get("name")),
+            "keyId": key_id,
+            "algorithm": "ed25519",
+            "signatureField": SIGNATURE_META_KEY,
+            "canonicalPayload": canonical_payload,
+            "canonicalPayloadBase64": base64.b64encode(canonical_payload.encode("utf-8")).decode("ascii"),
+            "signatureMetadata": signature_metadata,
+            "signedToolinfoPreview": {**toolinfo, SIGNATURE_META_KEY: signature_metadata},
+        }
+    )
+
+
+@v1_bp.route("/v1/me/tools/")
+@login_required
+def v1_me_tools() -> Response:
+    """Resolve Toolhub tools that may belong to the signed-in Toolhub user."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — login_required guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+
+    with db.session_scope() as s:
+        stored_claims = list(
+            s.execute(select(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)).scalars()
+        )
+    search_terms = _search_terms_for_user(user.username, stored_claims)
+    candidates, errors = _candidate_tools_for_terms(search_terms)
+
+    if errors and not candidates and len(errors) == len(search_terms):
+        resp = jsonify({"error": "official Toolhub is unavailable", "username": user.username, "errors": errors})
+        resp.status_code = 502
+        return resp
+
+    claim_payloads = _record_candidate_provider_claims(user, candidates)
+    claims_by_tool = _claims_by_tool(claim_payloads)
+    groups = _resolver_groups(candidates, claims_by_tool)
+
+    return jsonify(
+        {
+            "username": user.username,
+            "searchTerms": search_terms,
+            "counts": {"verified": len(groups["verified"]), "possible": len(groups["possible"])},
+            "verified": groups["verified"],
+            "possible": groups["possible"],
+            "errors": errors,
+        }
+    )
+
+
 @v1_bp.route("/v1/config/")
 def v1_config() -> Response:
     """Report which production capabilities are configured (no secrets)."""
@@ -992,9 +1547,11 @@ def _write_tool_core(route_name: str | None = None) -> Response:
     if err is not None:
         return err
     assert value is not None  # noqa: S101 - err covers non-dict bodies
-    name, fields = _compact_tool_payload(value, route_name)
-    if name is None or fields is None:
-        return _bad("tool write needs name, title, description and an https url")
+    name, fields, toolinfo_url, toolinfo_err = _validated_tool_write(value, route_name)
+    if toolinfo_err is not None:
+        return toolinfo_err
+    assert name is not None  # noqa: S101 - _validated_tool_write returned no denial
+    assert fields is not None  # noqa: S101 - _validated_tool_write returned no denial
     user = _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
     with db.session_scope() as s:
         local_new = (
@@ -1011,6 +1568,12 @@ def _write_tool_core(route_name: str | None = None) -> Response:
     create_like = route_name is None or local_new
     method = "POST" if create_like else "PUT"
     path = "/api/tools/" if create_like else _upstream_path(f"tools/{name}/")
+    fields, toolinfo_item, crawler_fetch = _maybe_enrich_create_tool(
+        fields,
+        name,
+        toolinfo_url,
+        create_like=create_like,
+    )
     attempt, denied = _attempt_official_write(
         user,
         method,
@@ -1019,6 +1582,7 @@ def _write_tool_core(route_name: str | None = None) -> Response:
     )
     if denied is not None:
         return denied
+    _with_crawler_fetch(attempt, crawler_fetch)
     if attempt["ok"]:
         with db.session_scope() as s:
             s.execute(delete(ToolRecord).where(ToolRecord.tool_name == name, ToolRecord.user_id == user.id))
@@ -1029,6 +1593,7 @@ def _write_tool_core(route_name: str | None = None) -> Response:
                     ToolOverlay.kind == "edits",
                 )
             )
+            _record_create_toolinfo_evidence(s, user, toolinfo_url, toolinfo_item, crawler_fetch)
             _emit_structured_activity(
                 s,
                 user,
@@ -1036,7 +1601,10 @@ def _write_tool_core(route_name: str | None = None) -> Response:
                 object_type="tool",
                 object_key=name,
                 official_status=SYNC_OFFICIAL,
-                payload={"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+                payload=_with_crawler_fetch(
+                    {"toolhub": attempt["toolhub"], "syncStatus": SYNC_OFFICIAL},
+                    crawler_fetch,
+                ),
                 title=fields["title"],
             )
         return _official_success_response(attempt)
@@ -1049,6 +1617,7 @@ def _write_tool_core(route_name: str | None = None) -> Response:
         else:
             local = _store_tool_overlay_fallback(s, user, name, "edits", fields, attempt)
             action = "edited"
+        _record_create_toolinfo_evidence(s, user, toolinfo_url, toolinfo_item, crawler_fetch)
         _emit_structured_activity(
             s,
             user,
@@ -1056,7 +1625,10 @@ def _write_tool_core(route_name: str | None = None) -> Response:
             object_type="tool",
             object_key=name,
             official_status=SYNC_LOCAL_FALLBACK,
-            payload={"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
+            payload=_with_crawler_fetch(
+                {"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
+                crawler_fetch,
+            ),
             title=fields["title"],
         )
     return _local_fallback_response(attempt, local)
@@ -2360,11 +2932,38 @@ def v1_user_export() -> Response:
     """Export the caller's Evolved-owned data; official Toolhub data is not copied."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    username = user.username
     with db.session_scope() as s:
-        user = s.get(User, uid)
-        username = user.username if user else ""
-    return jsonify({"exportedAt": _iso(utcnow()), "user": {"username": username}, "overlay": _assemble_overlay(uid)})
+        author_claims = [
+            _claim_payload(row)
+            for row in s.execute(
+                select(ToolAuthorClaim)
+                .where(ToolAuthorClaim.toolhub_username == username)
+                .order_by(
+                    ToolAuthorClaim.tool_name,
+                    ToolAuthorClaim.author_name,
+                    ToolAuthorClaim.verification_method,
+                )
+            ).scalars()
+        ]
+        author_keys = [
+            _author_key_payload(row)
+            for row in s.execute(
+                select(ToolAuthorKey)
+                .where(ToolAuthorKey.toolhub_username == username)
+                .order_by(ToolAuthorKey.created_at, ToolAuthorKey.id)
+            ).scalars()
+        ]
+    return jsonify(
+        {
+            "exportedAt": _iso(utcnow()),
+            "user": {"username": username},
+            "overlay": _assemble_overlay(uid),
+            "authorClaims": author_claims,
+            "authorKeys": author_keys,
+        }
+    )
 
 
 @v1_bp.route("/v1/user/evolved-data/", methods=["DELETE"])
@@ -2373,7 +2972,7 @@ def v1_user_delete_evolved_data() -> Response:
     """Delete the caller's local Evolved data without touching official Toolhub."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
     deleted: dict[str, int] = {}
     with db.session_scope() as s:
         for key, model in {
@@ -2395,6 +2994,16 @@ def v1_user_delete_evolved_data() -> Response:
         ).scalar_one()
         deleted["healthTargets"] = int(health_count)
         s.execute(delete(ToolHealthTarget).where(ToolHealthTarget.created_by_user_id == uid))
+        author_claim_count = s.execute(
+            select(func.count()).select_from(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)
+        ).scalar_one()
+        deleted["authorClaims"] = int(author_claim_count)
+        s.execute(delete(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username))
+        author_key_count = s.execute(
+            select(func.count()).select_from(ToolAuthorKey).where(ToolAuthorKey.toolhub_username == user.username)
+        ).scalar_one()
+        deleted["authorKeys"] = int(author_key_count)
+        s.execute(delete(ToolAuthorKey).where(ToolAuthorKey.toolhub_username == user.username))
     return jsonify({"ok": True, "deleted": deleted})
 
 

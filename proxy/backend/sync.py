@@ -17,9 +17,31 @@ REVIEW_PENDING = "pending"
 REVIEW_APPROVED = "approved"
 REVIEW_REJECTED = "rejected"
 
+AUTHOR_CLAIM_VERIFIED = "verified"
+AUTHOR_CLAIM_UNVERIFIED = "unverified"
+AUTHOR_CLAIM_STALE = "stale"
+AUTHOR_CLAIM_FAILED = "failed"
+
+AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer"
+AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS = "toolhub_write_access"
+AUTHOR_CLAIM_SIGNED_TOOLINFO = "signed_toolinfo"
+AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME = "author_display_name"
+
 SOURCE_VALUES = {SOURCE_OFFICIAL, SOURCE_LOCAL}
 SYNC_VALUES = {SYNC_OFFICIAL, SYNC_LOCAL_DRAFT, SYNC_LOCAL_FALLBACK, SYNC_EVOLVED_REAL, SYNC_ERROR}
 REVIEW_VALUES = {REVIEW_OPEN, REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED}
+AUTHOR_CLAIM_STATUS_VALUES = {
+    AUTHOR_CLAIM_VERIFIED,
+    AUTHOR_CLAIM_UNVERIFIED,
+    AUTHOR_CLAIM_STALE,
+    AUTHOR_CLAIM_FAILED,
+}
+AUTHOR_CLAIM_METHOD_VALUES = {
+    AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+    AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
+    AUTHOR_CLAIM_SIGNED_TOOLINFO,
+    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+}
 
 
 def clean_source(value: Any, default: str = SOURCE_LOCAL) -> str:  # noqa: ANN401 - untrusted JSON
@@ -35,6 +57,16 @@ def clean_sync_status(value: Any, default: str = SYNC_LOCAL_DRAFT) -> str:  # no
 def clean_review_status(value: Any, default: str = REVIEW_PENDING) -> str:  # noqa: ANN401 - untrusted JSON
     """Return a known local review-state value."""
     return value if isinstance(value, str) and value in REVIEW_VALUES else default
+
+
+def clean_author_claim_status(value: Any, default: str = AUTHOR_CLAIM_UNVERIFIED) -> str:  # noqa: ANN401 - untrusted JSON
+    """Return a known author-claim verification state."""
+    return value if isinstance(value, str) and value in AUTHOR_CLAIM_STATUS_VALUES else default
+
+
+def clean_author_claim_method(value: Any, default: str = AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME) -> str:  # noqa: ANN401 - untrusted JSON
+    """Return a known author-claim verification method."""
+    return value if isinstance(value, str) and value in AUTHOR_CLAIM_METHOD_VALUES else default
 
 
 def clean_error(value: Any) -> str | None:  # noqa: ANN401 - untrusted JSON

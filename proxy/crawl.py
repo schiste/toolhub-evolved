@@ -20,7 +20,8 @@ import requests
 from sqlalchemy import select
 
 from backend import DEFAULT_DB_URL, db
-from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, utcnow
+from backend.author_claims import SignedToolinfoProvider
+from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, User, utcnow
 from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
@@ -29,6 +30,7 @@ TIMEOUT = 20
 MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_ITEMS_PER_URL = 200
 HTTP_NOT_FOUND = 404
+SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
 
 
 def _require_public_https(url: str) -> None:
@@ -112,16 +114,24 @@ def normalize_record(item: dict) -> dict | None:
     }
 
 
-def _ingest_items(
-    items: list, owner_id: int, session: requests.Session, counts: dict[str, int], errors: list[str]
+def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source URL plus crawl state.
+    items: list,
+    owner_id: int,
+    toolinfo_url: str,
+    session: requests.Session,
+    counts: dict[str, int],
+    errors: list[str],
 ) -> None:
     with db.session_scope() as s:
+        owner = s.get(User, owner_id)
         for item in items[:MAX_ITEMS_PER_URL]:
             record = normalize_record(item) if isinstance(item, dict) else None
             if record is None:
                 errors.append("invalid item (missing name/title/description/url)")
                 continue
             name = str(item["name"])
+            if owner is not None:
+                SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=item, evidence_url=toolinfo_url)
             if exists_upstream(session, name):
                 errors.append(f"{name}: exists upstream on Toolhub — skipped (live API is source of truth)")
                 continue
@@ -176,7 +186,7 @@ def run_crawl() -> CrawlerRun:
                     row.last_status = SYNC_ERROR
                     row.last_error = str(exc)[:2000]
             continue
-        _ingest_items(data if isinstance(data, list) else [data], owner_id, session, counts, errors)
+        _ingest_items(data if isinstance(data, list) else [data], owner_id, url, session, counts, errors)
         with db.session_scope() as s:
             row = s.get(CrawlerUrl, url_id)
             if row:

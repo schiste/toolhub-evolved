@@ -7,20 +7,29 @@ are monkeypatched. The suite exercises every branch (the coverage gate is
 """
 
 import sys
+from base64 import b64encode
 from contextlib import contextmanager
 from datetime import timedelta
+from json import dumps
 from pathlib import Path
 
 import pytest
 from flask import Flask
 from sqlalchemy import inspect, select
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import api_cache, authz, db, security, sync, toolhub  # noqa: E402
+import backend.v1 as v1_api  # noqa: E402
+from backend import api_cache, authz, author_claims, db, security, sync, toolhub  # noqa: E402
+from backend.author_claims import (  # noqa: E402
+    AuthorNameProvider,
+    SignedToolinfoProvider,
+    ToolforgeMaintainerProvider,
+    ToolhubWriteProvider,
+)
 from backend.models import (
     ActivityRow,
     ApiCache,
@@ -29,6 +38,8 @@ from backend.models import (
     CrawlerUrl,
     Favorite,
     ToolEvent,
+    ToolAuthorClaim,
+    ToolAuthorKey,
     ToolHealthTarget,
     ToolList,
     ToolMedia,
@@ -51,6 +62,7 @@ from backend.v1 import (  # noqa: E402
     _parse_optional_iso,
     _string_list,
     _string_payload_value,
+    _toolhub_author_names,
     _validation_errors,
 )
 
@@ -157,6 +169,57 @@ def test_init_schema_creates_persistent_api_cache_table():
     assert {"key", "value", "updated_at"}.issubset(meta_cols)
 
 
+def test_init_schema_creates_tool_author_claim_tables():
+    db.configure("sqlite://")
+    db.init_schema()
+    cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolAuthorClaim.__tablename__)}
+    assert {
+        "id",
+        "tool_name",
+        "author_name",
+        "toolhub_username",
+        "verification_status",
+        "verification_method",
+        "evidence_url",
+        "evidence_payload",
+        "checked_at",
+        "expires_at",
+        "last_error",
+    }.issubset(cols)
+    key_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolAuthorKey.__tablename__)}
+    assert {
+        "id",
+        "toolhub_username",
+        "key_id",
+        "public_key",
+        "algorithm",
+        "created_at",
+        "revoked_at",
+        "last_used_at",
+    }.issubset(key_cols)
+    with db.session_scope() as s:
+        claim = ToolAuthorClaim(tool_name="toolforge-example", author_name="Display Name", toolhub_username="owner")
+        key = ToolAuthorKey(toolhub_username="owner", key_id="k1", public_key="pk")
+        s.add(claim)
+        s.add(key)
+        s.flush()
+        assert claim.verification_status == sync.AUTHOR_CLAIM_UNVERIFIED
+        assert claim.verification_method == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
+        assert claim.checked_at is not None
+        assert key.algorithm == "ed25519"
+
+    with pytest.raises(IntegrityError):
+        with db.session_scope() as s:
+            s.add(
+                ToolAuthorClaim(
+                    tool_name="toolforge-example",
+                    author_name="Display Name",
+                    toolhub_username="owner",
+                    verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+                )
+            )
+
+
 def test_api_cache_recent_poll_baselines_marker_without_invalidating(app, monkeypatch):
     clock = {"t": utcnow()}
     monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
@@ -237,7 +300,10 @@ def test_api_cache_direct_invalidation_helpers_cover_noop_and_collection_paths(a
     api_cache.refresh("https://toolhub.wikimedia.org/api/missing/")
     assert api_cache.invalidate_tool("") == 0
     assert api_cache.invalidate_list("") == 0
-    assert api_cache.invalidate_recent_rows([{"content_type": "crawler_url", "content_id": "1"}, {"content_type": "tool"}]) == 0
+    assert (
+        api_cache.invalidate_recent_rows([{"content_type": "crawler_url", "content_id": "1"}, {"content_type": "tool"}])
+        == 0
+    )
     assert api_cache.invalidate_list_collection() == 1
 
 
@@ -358,6 +424,10 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     assert sync.clean_sync_status("bogus") == "local_draft"
     assert sync.clean_review_status("approved") == "approved"
     assert sync.clean_review_status("bogus") == "pending"
+    assert sync.clean_author_claim_status("verified") == "verified"
+    assert sync.clean_author_claim_status("bogus") == "unverified"
+    assert sync.clean_author_claim_method("toolforge_maintainer") == "toolforge_maintainer"
+    assert sync.clean_author_claim_method("bogus") == "author_display_name"
     assert sync.clean_error(None) is None
     assert sync.clean_error("  upstream refused  ") == "upstream refused"
     assert sync.clean_error("   ") is None
@@ -423,6 +493,355 @@ def test_authz_login_role_from_env(monkeypatch):
     assert authz.role_for_login("42", "Someone", authz.ROLE_USER) == authz.ROLE_ADMIN
 
 
+def test_toolhub_author_names_ignore_unknown_author_shapes():
+    assert _toolhub_author_names({"author": [None], "modified_by": {"username": "Ada"}}) == ["Ada"]
+
+
+def test_author_name_provider_records_unverified_claims(client):
+    user = User(id=7, wm_sub="7", username="Ada")
+    with db.session_scope() as s:
+        rows = AuthorNameProvider().record(
+            s,
+            user,
+            tool_name="ada-tool",
+            author_names=["Ada", "ada", ""],
+            evidence_url="https://toolhub.example/search",
+            evidence_payload={"searchTerms": ["Ada"]},
+        )
+        assert len(rows) == 1
+        payload = author_claims.claim_payload(rows[0])
+        assert payload["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
+        assert payload["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
+        assert payload["isVerified"] is False
+        forced = author_claims.record_author_claim(
+            s,
+            tool_name="ada-tool",
+            author_name="Ada",
+            toolhub_username="Ada",
+            verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+            verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+        )
+        assert forced.verification_status == sync.AUTHOR_CLAIM_UNVERIFIED
+
+
+def test_claim_payload_marks_expired_verified_claims_stale(client):
+    with db.session_scope() as s:
+        row = ToolAuthorClaim(
+            tool_name="stale-tool",
+            author_name="Ada",
+            toolhub_username="Ada",
+            verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+            verification_method=sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
+            expires_at=utcnow() - timedelta(seconds=1),
+        )
+        s.add(row)
+        s.flush()
+        payload = author_claims.claim_payload(row)
+    assert payload["verificationStatus"] == sync.AUTHOR_CLAIM_STALE
+    assert payload["isVerified"] is False
+
+
+def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):
+    uid = add_user(username="schiste")
+    user = User(id=uid, wm_sub="42", username="schiste")
+    html = '<section><h2>Maintainers</h2><a href="/profile/schiste/">Schiste</a></section>'
+    calls = []
+    provider = ToolforgeMaintainerProvider(fetcher=lambda name: calls.append(name) or (200, html))
+    with db.session_scope() as s:
+        rows = provider.verify(
+            s,
+            user,
+            tool_name="toolhub-evolved",
+            author_names=["Christophe"],
+            toolhub_tool={"url": "https://toolhub-evolved.toolforge.org"},
+        )
+        assert len(rows) == 1
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
+        assert rows[0].verification_method == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+        provider.verify(
+            s,
+            user,
+            tool_name="toolhub-evolved",
+            author_names=["Christophe"],
+            toolhub_tool={"url": "https://toolhub-evolved.toolforge.org"},
+        )
+    assert calls == ["toolhub-evolved"]
+
+
+def test_author_claim_provider_parsers_cover_malformed_public_shapes():
+    assert author_claims.parse_toolsadmin_maintainers('<a href="/profile/blank/"> </a>') == []
+    assert author_claims.parse_toolsadmin_maintainers("<p>No maintainers here</p>") == []
+    assert author_claims.author_names_from_toolinfo({"author": "Ada"}) == ["Ada"]
+    assert author_claims.author_names_from_toolinfo({"author": [None]}) == []
+    assert author_claims.toolforge_names_from_toolhub_tool(
+        "plain",
+        {"api_url": "https://toolsadmin.wikimedia.org/tools/id/from-api/toolinfo/1.2/toolinfo.json"},
+    ) == ["from-api"]
+    assert (
+        author_claims.toolforge_names_from_toolhub_tool(
+            "plain",
+            {"api_url": "https://toolsadmin.wikimedia.org/tools/id"},
+        )
+        == []
+    )
+    assert author_claims.signature_meta({"x_toolhub_evolved_signature": {"key_id": "k1"}}) is None
+
+
+def test_toolforge_maintainer_provider_records_failures(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+    provider = ToolforgeMaintainerProvider(fetcher=lambda name: (500, "down"))
+    with db.session_scope() as s:
+        rows = provider.verify(
+            s,
+            user,
+            tool_name="toolforge-alpha",
+            author_names=["Ada"],
+            toolhub_tool={},
+        )
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
+        assert "500" in rows[0].last_error
+    provider = ToolforgeMaintainerProvider(
+        fetcher=lambda name: (200, "Maintainers\nMaintainers\nOther\nGit repositories")
+    )
+    with db.session_scope() as s:
+        rows = provider.verify(
+            s,
+            user,
+            tool_name="toolforge-beta",
+            author_names=["Ada"],
+            toolhub_tool={},
+        )
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
+        assert "not listed" in rows[0].last_error
+
+
+def test_toolforge_maintainer_provider_tries_next_name_after_404(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+    calls = []
+
+    def fetcher(name):
+        calls.append(name)
+        return (404, "") if name == "alpha" else (200, '<a href="/profile/ada/">Ada</a>')
+
+    provider = ToolforgeMaintainerProvider(fetcher=fetcher)
+    with db.session_scope() as s:
+        rows = provider.verify(
+            s,
+            user,
+            tool_name="toolforge-alpha",
+            author_names=["Ada"],
+            toolhub_tool={"url": "https://beta.toolforge.org"},
+        )
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
+    assert calls == ["alpha", "beta"]
+
+
+def test_toolforge_maintainer_provider_records_fetch_errors(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+
+    def fetcher(_name):
+        raise toolhub.requests.ConnectionError("offline")
+
+    with db.session_scope() as s:
+        rows = ToolforgeMaintainerProvider(fetcher=fetcher).verify(
+            s,
+            user,
+            tool_name="toolforge-alpha",
+            author_names=[],
+            toolhub_tool={},
+        )
+        assert rows[0].author_name == "Ada"
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
+        assert "offline" in rows[0].last_error
+
+
+def test_toolforge_provider_skips_non_toolforge_candidates(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+    with db.session_scope() as s:
+        assert (
+            ToolforgeMaintainerProvider(fetcher=lambda name: pytest.fail("should not fetch")).verify(
+                s,
+                user,
+                tool_name="plain-tool",
+                author_names=["Ada"],
+                toolhub_tool={"url": "https://example.org"},
+            )
+            == []
+        )
+
+
+def test_toolhub_write_provider_records_tool_write_claims(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_API_BASE", "https://toolhub.example")
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+    provider = ToolhubWriteProvider()
+    with db.session_scope() as s:
+        assert (
+            provider.record_success(
+                s,
+                user,
+                method="POST",
+                path="/api/lists/",
+                request_payload={"title": "L"},
+                response_payload={"id": 1},
+            )
+            == []
+        )
+        rows = provider.record_success(
+            s,
+            user,
+            method="PUT",
+            path="/api/tools/ada-tool/annotations/",
+            request_payload={},
+            response_payload={"name": "ada-tool", "author": [{"name": "Ada Lovelace"}]},
+        )
+        assert rows[0].author_name == "Ada Lovelace"
+        assert rows[0].verification_method == sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS
+        assert rows[0].evidence_url == "https://toolhub.example/api/tools/ada-tool/"
+        rows = provider.record_success(
+            s,
+            user,
+            method="POST",
+            path="/api/tools/",
+            request_payload={"name": "created-tool"},
+            response_payload={},
+        )
+        assert rows[0].author_name == "Ada"
+
+
+def test_successful_toolhub_write_provider_errors_are_non_fatal(client, monkeypatch):
+    class RaisingProvider:
+        def record_success(self, *args, **kwargs):
+            raise RuntimeError("claim storage down")
+
+    monkeypatch.setattr(v1_api, "TOOLHUB_WRITE_PROVIDER", RaisingProvider())
+    v1_api._record_successful_toolhub_write(  # noqa: SLF001 - tests private non-fatal side effect
+        User(id=1, wm_sub="1", username="Ada"),
+        "POST",
+        "/api/tools/",
+        {"name": "ada-tool"},
+        {"name": "ada-tool"},
+    )
+
+
+def test_signed_toolinfo_provider_verifies_registered_key(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+    sig = "c2ln"
+    toolinfo = {
+        "name": "signed-tool",
+        "title": "Signed",
+        "author": [{"name": "Ada Lovelace"}],
+        "x_toolhub_evolved_signature": {"key_id": "k1", "signature": sig},
+    }
+    calls = []
+
+    def verifier(public_key, signature, message):
+        calls.append((public_key, signature, message))
+
+    with db.session_scope() as s:
+        s.add(ToolAuthorKey(toolhub_username="Ada", key_id="k1", public_key="pk"))
+        rows = SignedToolinfoProvider(verifier).verify(
+            s,
+            user,
+            toolinfo=toolinfo,
+            evidence_url="https://example.org/toolinfo.json",
+        )
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
+        assert rows[0].verification_method == sync.AUTHOR_CLAIM_SIGNED_TOOLINFO
+        assert rows[0].evidence_payload["signaturePrefix"] == sig
+        assert s.query(ToolAuthorKey).one().last_used_at is not None
+    assert calls == [
+        (
+            "pk",
+            b"sig",
+            b'{"author":[{"name":"Ada Lovelace"}],"name":"signed-tool","title":"Signed"}',
+        )
+    ]
+
+
+def test_signed_toolinfo_provider_records_failures(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+    provider = SignedToolinfoProvider(lambda *_args: None)
+    base = {"name": "signed-tool", "author": "Ada"}
+    with db.session_scope() as s:
+        assert provider.verify(s, user, toolinfo={"name": "unsigned"}) == []
+        assert (
+            provider.verify(s, user, toolinfo={"x_toolhub_evolved_signature": {"key_id": "k1", "signature": "xx"}})
+            == []
+        )
+        rows = provider.verify(
+            s,
+            user,
+            toolinfo={
+                **base,
+                "x-toolhub-evolved-signature": {"keyId": "missing", "signature": "c2ln"},
+            },
+        )
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
+        assert rows[0].last_error == "public key not found"
+        rows = provider.verify(
+            s,
+            user,
+            toolinfo={**base, "x_toolhub_evolved_signature": {"key_id": "k1", "algorithm": "rsa", "signature": "c2ln"}},
+        )
+        assert rows[0].last_error == "unsupported signature algorithm"
+        s.add(ToolAuthorKey(toolhub_username="Ada", key_id="k1", public_key="pk"))
+        rows = provider.verify(
+            s,
+            user,
+            toolinfo={**base, "x_toolhub_evolved_signature": {"key_id": "k1", "signature": "***"}},
+        )
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
+        assert "Only base64 data" in rows[0].last_error
+
+
+def test_signed_toolinfo_provider_records_verifier_failure(client):
+    uid = add_user(username="Ada")
+    user = User(id=uid, wm_sub="42", username="Ada")
+
+    def verifier(*_args):
+        raise ValueError("bad signature")
+
+    with db.session_scope() as s:
+        s.add(ToolAuthorKey(toolhub_username="Ada", key_id="k1", public_key="pk"))
+        rows = SignedToolinfoProvider(verifier).verify(
+            s,
+            user,
+            toolinfo={
+                "name": "signed-tool",
+                "author": [],
+                "x_toolhub_evolved_signature": {"key_id": "k1", "signature": "c2ln"},
+            },
+        )
+        assert rows[0].author_name == "Ada"
+        assert rows[0].last_error == "bad signature"
+
+
+def test_ed25519_public_key_validation_without_crypto_dependency(monkeypatch):
+    monkeypatch.setattr(author_claims, "Ed25519PublicKey", None)
+    monkeypatch.setattr(author_claims, "load_pem_public_key", None)
+    valid_raw = b64encode(b"1" * 32).decode("ascii")
+    assert author_claims.validate_ed25519_public_key(valid_raw) == valid_raw
+    valid_pem = "-----BEGIN PUBLIC KEY-----\nplaceholder\n-----END PUBLIC KEY-----"
+    assert author_claims.validate_ed25519_public_key(valid_pem) == valid_pem
+    with pytest.raises(ValueError, match="required"):
+        author_claims.validate_ed25519_public_key("")
+    with pytest.raises(ValueError, match="not a private key"):
+        author_claims.validate_ed25519_public_key("-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----")
+    with pytest.raises(ValueError, match="PUBLIC KEY"):
+        author_claims.validate_ed25519_public_key("-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----")
+    with pytest.raises(ValueError, match="PEM or base64"):
+        author_claims.validate_ed25519_public_key("***")
+    with pytest.raises(ValueError, match="32 bytes"):
+        author_claims.validate_ed25519_public_key(b64encode(b"short").decode("ascii"))
+
+
 # ---- security guards -------------------------------------------------------
 
 
@@ -449,6 +868,417 @@ def test_v1_user_ok(client):
     assert data["evolvedRole"] == "user"
     assert data["evolvedRoleLabel"] == "Signed-in user"
     assert authz.ACTION_PRIVATE_WRITE in data["evolvedPermissions"]
+
+
+def test_author_keys_require_login_and_csrf(client):
+    assert client.get("/v1/author-keys/").status_code == 401
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.post("/v1/author-keys/", json={"keyId": "k1", "publicKey": "pk"}).status_code == 403
+    assert client.delete("/v1/author-keys/k1/").status_code == 403
+
+
+def test_author_key_lifecycle(client):
+    uid = add_user()
+    sign_in(client, uid)
+    public_key = b64encode(b"1" * 32).decode("ascii")
+    resp = client.post(
+        "/v1/author-keys/",
+        json={"keyId": "release-2026", "publicKey": public_key},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["key"]["keyId"] == "release-2026"
+    assert data["key"]["algorithm"] == "ed25519"
+    assert data["key"]["fingerprint"].startswith("SHA256:")
+    assert data["key"]["revokedAt"] == ""
+
+    listed = client.get("/v1/author-keys/").get_json()
+    assert listed["username"] == "Ada"
+    assert listed["keys"][0]["keyId"] == "release-2026"
+
+    duplicate = client.post(
+        "/v1/author-keys/",
+        json={"keyId": "release-2026", "publicKey": public_key},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert duplicate.status_code == 409
+
+    revoked = client.delete("/v1/author-keys/release-2026/", headers={"X-CSRF-Token": "tok"}).get_json()
+    assert revoked["key"]["revokedAt"].endswith("Z")
+
+
+def test_author_key_registration_validates_input(client):
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.post("/v1/author-keys/", data="not json", headers={"X-CSRF-Token": "tok"}).status_code == 400
+    assert (
+        client.post(
+            "/v1/author-keys/",
+            json={"keyId": "bad key", "publicKey": b64encode(b"1" * 32).decode("ascii")},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/v1/author-keys/",
+            json={"keyId": "k1", "algorithm": "rsa", "publicKey": b64encode(b"1" * 32).decode("ascii")},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    resp = client.post(
+        "/v1/author-keys/",
+        json={"keyId": "k1", "publicKey": "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 400
+    assert "public key" in resp.get_json()["error"]
+
+
+def test_author_key_revoke_reports_bad_or_missing_keys(client):
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.delete("/v1/author-keys/bad%20key/", headers={"X-CSRF-Token": "tok"}).status_code == 400
+    assert client.delete("/v1/author-keys/missing/", headers={"X-CSRF-Token": "tok"}).status_code == 404
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorKey(
+                toolhub_username="Ada",
+                key_id="revoked",
+                public_key=b64encode(b"1" * 32).decode("ascii"),
+                revoked_at=utcnow(),
+            )
+        )
+    resp = client.delete("/v1/author-keys/revoked/", headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 200
+    assert resp.get_json()["key"]["revokedAt"].endswith("Z")
+
+
+def test_toolinfo_signing_payload_uses_registered_active_key(client):
+    uid = add_user()
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(ToolAuthorKey(toolhub_username="Ada", key_id="k1", public_key=b64encode(b"1" * 32).decode("ascii")))
+    toolinfo = {
+        "title": "Signed",
+        "name": "signed-tool",
+        "author": [{"name": "Ada"}],
+        "x_toolhub_evolved_signature": {"key_id": "old", "signature": "old"},
+    }
+    resp = client.post(
+        "/v1/toolinfo/signing-payload/",
+        json={"keyId": "k1", "toolinfo": toolinfo},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["toolName"] == "signed-tool"
+    assert data["signatureField"] == "x_toolhub_evolved_signature"
+    assert data["signatureMetadata"] == {
+        "algorithm": "ed25519",
+        "key_id": "k1",
+        "signature": "<base64 signature>",
+    }
+    assert data["canonicalPayload"] == '{"author":[{"name":"Ada"}],"name":"signed-tool","title":"Signed"}'
+    assert data["canonicalPayloadBase64"] == b64encode(data["canonicalPayload"].encode()).decode("ascii")
+    assert data["signedToolinfoPreview"]["x_toolhub_evolved_signature"] == data["signatureMetadata"]
+
+
+def test_toolinfo_signing_payload_rejects_missing_or_revoked_key(client):
+    uid = add_user()
+    sign_in(client, uid)
+    assert (
+        client.post("/v1/toolinfo/signing-payload/", data="not json", headers={"X-CSRF-Token": "tok"}).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/v1/toolinfo/signing-payload/",
+            json={"keyId": "bad key", "toolinfo": {"name": "signed-tool"}},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/v1/toolinfo/signing-payload/",
+            json={"keyId": "missing", "toolinfo": "["},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/v1/toolinfo/signing-payload/",
+            json={"keyId": "missing", "toolinfo": []},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/v1/toolinfo/signing-payload/",
+            json={"keyId": "missing", "toolinfo": {"name": "signed-tool"}},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 404
+    )
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorKey(
+                toolhub_username="Ada",
+                key_id="revoked",
+                public_key=b64encode(b"1" * 32).decode("ascii"),
+                revoked_at=utcnow(),
+            )
+        )
+    assert (
+        client.post(
+            "/v1/toolinfo/signing-payload/",
+            json={"keyId": "revoked", "toolinfo": {"name": "signed-tool"}},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/v1/toolinfo/signing-payload/",
+            json={"keyId": "revoked", "toolinfo": {"title": "missing name"}},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+
+
+def test_me_tools_requires_login(client):
+    assert client.get("/v1/me/tools/").status_code == 401
+
+
+def test_me_tools_returns_possible_display_author_matches(client, monkeypatch):
+    uid = add_user(username="Ada Lovelace")
+    sign_in(client, uid)
+    calls = []
+
+    def fake_public_api_get(path, *, params=None):
+        calls.append((path, params))
+        return {
+            "results": [
+                {
+                    "name": "ada-tool",
+                    "title": "Ada Tool",
+                    "author": "Ada Lovelace",
+                    "created_by": {"username": "Toolhub"},
+                    "modified_by": {"username": "Ada Lovelace"},
+                },
+                {"title": "Nameless", "author": [{"name": "Ada Lovelace"}]},
+            ]
+        }
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    resp = client.get("/v1/me/tools/")
+    data = resp.get_json()
+    assert resp.status_code == 200
+    assert calls == [
+        (
+            "/api/search/tools/",
+            {"author__term": "Ada Lovelace", "ordering": "-score", "page": 1, "page_size": 100},
+        )
+    ]
+    assert data["username"] == "Ada Lovelace"
+    assert data["counts"] == {"verified": 0, "possible": 1}
+    assert data["verified"] == []
+    item = data["possible"][0]
+    assert item["tool"]["name"] == "ada-tool"
+    assert item["matchedAuthorNames"] == ["Ada Lovelace"]
+    assert item["claims"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
+    assert item["claims"][0]["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
+    assert item["claims"][0]["isVerified"] is False
+
+
+def test_me_tools_uses_local_author_claims_as_verified_search_terms(client, monkeypatch):
+    uid = add_user(username="schiste")
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorClaim(
+                tool_name="toolhub-evolved",
+                author_name="Christophe",
+                toolhub_username="schiste",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                evidence_url="https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
+                evidence_payload={"maintainer": "Schiste"},
+            )
+        )
+    calls = []
+
+    def fake_public_api_get(path, *, params=None):
+        calls.append(params["author__term"])
+        if params["author__term"] == "schiste":
+            raise toolhub.ToolhubAPIError(503, {"message": "busy"})
+        if params["author__term"] == "Christophe":
+            return {
+                "results": [
+                    {
+                        "name": "toolhub-evolved",
+                        "title": "Toolhub Evolved",
+                        "author": [{"name": "Christophe"}],
+                    }
+                ]
+            }
+        return {"results": []}
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    data = client.get("/v1/me/tools/").get_json()
+    assert calls == ["schiste", "Christophe"]
+    assert data["searchTerms"] == ["schiste", "Christophe"]
+    assert data["counts"] == {"verified": 1, "possible": 0}
+    assert data["errors"] == [{"term": "schiste", "status": 503, "details": {"message": "busy"}}]
+    item = data["verified"][0]
+    assert item["tool"]["name"] == "toolhub-evolved"
+    assert item["matchedAuthorNames"] == ["Christophe"]
+    assert any(
+        claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER and claim["isVerified"]
+        for claim in item["claims"]
+    )
+
+
+def test_me_tools_verified_author_claims_are_per_tool_not_global(client, monkeypatch):
+    uid = add_user(username="schiste")
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorClaim(
+                tool_name="toolhub-evolved",
+                author_name="Christophe",
+                toolhub_username="schiste",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
+                evidence_url="https://toolhub.wikimedia.org/tools/toolhub-evolved",
+                evidence_payload={"method": "PUT"},
+            )
+        )
+
+    def fake_public_api_get(path, *, params=None):
+        if params["author__term"] == "schiste":
+            return {"results": []}
+        return {
+            "results": [
+                {
+                    "name": "toolhub-evolved",
+                    "title": "Toolhub Evolved",
+                    "author": [{"name": "Christophe"}],
+                },
+                {
+                    "name": "same-author-other-tool",
+                    "title": "Same Author Other Tool",
+                    "author": [{"name": "Christophe"}],
+                },
+            ]
+        }
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    data = client.get("/v1/me/tools/").get_json()
+    assert data["searchTerms"] == ["schiste", "Christophe"]
+    assert data["counts"] == {"verified": 1, "possible": 1}
+    assert data["verified"][0]["tool"]["name"] == "toolhub-evolved"
+    possible = data["possible"][0]
+    assert possible["tool"]["name"] == "same-author-other-tool"
+    assert all(claim["verificationMethod"] != sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS for claim in possible["claims"])
+    assert any(
+        claim["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME and not claim["isVerified"]
+        for claim in possible["claims"]
+    )
+
+
+def test_me_tools_toolforge_provider_upgrades_display_name_claim(client, monkeypatch):
+    uid = add_user(username="schiste")
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorClaim(
+                tool_name="toolhub-evolved",
+                author_name="Christophe",
+                toolhub_username="schiste",
+                verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+            )
+        )
+
+    def fake_public_api_get(path, *, params=None):
+        if params["author__term"] == "Christophe":
+            return {
+                "results": [
+                    {
+                        "name": "toolhub-evolved",
+                        "title": "Toolhub Evolved",
+                        "url": "https://toolhub-evolved.toolforge.org",
+                        "author": [{"name": "Christophe"}],
+                    }
+                ]
+            }
+        return {"results": []}
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    monkeypatch.setattr(
+        author_claims.requests,
+        "get",
+        lambda *a, **k: type("Resp", (), {"status_code": 200, "text": '<a href="/profile/schiste/">Schiste</a>'})(),
+    )
+    data = client.get("/v1/me/tools/").get_json()
+    assert data["counts"] == {"verified": 1, "possible": 0}
+    claims = data["verified"][0]["claims"]
+    assert any(
+        claim["authorName"] == "Christophe"
+        and claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+        and claim["isVerified"]
+        for claim in claims
+    )
+
+
+def test_me_tools_never_treats_display_author_claim_as_verified(client, monkeypatch):
+    uid = add_user(username="Ada")
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada",
+                toolhub_username="Ada",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+            )
+        )
+
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *args, **kwargs: {"results": [{"name": "ada-tool", "author": [{"name": "Ada"}]}]},
+    )
+    data = client.get("/v1/me/tools/").get_json()
+    assert data["counts"] == {"verified": 0, "possible": 1}
+    assert data["possible"][0]["claims"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
+    assert data["possible"][0]["claims"][0]["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
+    assert data["possible"][0]["claims"][0]["isVerified"] is False
+
+
+def test_me_tools_reports_upstream_failure_when_all_searches_fail(client, monkeypatch):
+    uid = add_user(username="Ada")
+    sign_in(client, uid)
+
+    def fail_public_api_get(*args, **kwargs):
+        raise toolhub.requests.ConnectionError("down")
+
+    monkeypatch.setattr(toolhub, "public_api_get", fail_public_api_get)
+    resp = client.get("/v1/me/tools/")
+    assert resp.status_code == 502
+    data = resp.get_json()
+    assert data["error"] == "official Toolhub is unavailable"
+    assert data["username"] == "Ada"
+    assert data["errors"][0]["status"] == 502
 
 
 def test_overlay_get_requires_login(client):
@@ -844,6 +1674,16 @@ def test_crawler_runs_and_user_data_controls(client):
     sign_in(client, uid)
     with db.session_scope() as s:
         s.add(CrawlerRun(urls_count=2, added=1, updated=1, ok=False, errors=["bad url"], sync_status="sync_error"))
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada",
+                toolhub_username="Ada",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
+            )
+        )
+        s.add(ToolAuthorKey(toolhub_username="Ada", key_id="k1", public_key="pk"))
     runs = client.get("/v1/crawler/runs/").get_json()
     assert runs["count"] == 1
     assert runs["results"][0]["errors"] == ["bad url"]
@@ -855,12 +1695,18 @@ def test_crawler_runs_and_user_data_controls(client):
     exported = client.get("/v1/user/export/").get_json()
     assert exported["user"] == {"username": "Ada"}
     assert exported["overlay"]["favorites"] == ["tool-a"]
+    assert exported["authorClaims"][0]["toolName"] == "ada-tool"
+    assert exported["authorKeys"][0]["keyId"] == "k1"
     resp = client.delete("/v1/user/evolved-data/", headers={"X-CSRF-Token": "tok"})
     assert resp.status_code == 200
     assert resp.get_json()["deleted"]["favorites"] == 1
+    assert resp.get_json()["deleted"]["authorClaims"] == 1
+    assert resp.get_json()["deleted"]["authorKeys"] == 1
     with db.session_scope() as s:
         assert s.query(CrawlerUrl).count() == 0
         assert s.query(ToolList).count() == 0
+        assert s.query(ToolAuthorClaim).count() == 0
+        assert s.query(ToolAuthorKey).count() == 0
 
 
 # ---- iso helpers -----------------------------------------------------------
@@ -1288,11 +2134,13 @@ def test_public_evolved_data_moderation_lifecycle(client):
 
 
 class FakeResp:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, headers=None, content=None):
         self._payload = payload
         self.status_code = status
         self.text = str(payload)
         self.ok = status < 400
+        self.headers = headers or {"content-type": "application/json"}
+        self.content = content if content is not None else dumps(payload).encode("utf-8")
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -1360,6 +2208,52 @@ def test_toolhub_text_error_payload(monkeypatch):
         toolhub.request_with_token("POST", "/api/tools/", access_token="at", json={"name": "x"})
     assert exc.value.status_code == 418
     assert exc.value.payload == {"message": "plain upstream error"}
+
+
+def test_toolhub_public_api_get_uses_shared_cache(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_API_BASE", "https://toolhub.example")
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResp({"results": [{"name": "cached"}]}, headers={"content-type": "application/json", "etag": "e1"})
+
+    monkeypatch.setattr(toolhub.requests, "get", fake_get)
+    assert toolhub.public_api_get("/api/search/tools/", params={"author__term": "Ada"}) == {
+        "results": [{"name": "cached"}]
+    }
+    assert calls[0][0] == "https://toolhub.example/api/search/tools/?author__term=Ada"
+    assert calls[0][1]["headers"]["Accept"] == "application/json"
+    assert toolhub.public_api_get("/api/search/tools/", params={"author__term": "Ada"}) == {
+        "results": [{"name": "cached"}]
+    }
+    assert len(calls) == 1
+
+
+def test_toolhub_public_api_get_rejects_non_api_paths():
+    with pytest.raises(ValueError, match="/api/"):
+        toolhub.public_api_get("/oauth/login")
+
+
+def test_toolhub_public_api_get_leaves_noncacheable_success_uncached(client, monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return FakeResp({"message": "unchanged"}, 304)
+
+    monkeypatch.setattr(toolhub.requests, "get", fake_get)
+    assert toolhub.public_api_get("/api/schema/") == {"message": "unchanged"}
+    assert toolhub.public_api_get("/api/schema/") == {"message": "unchanged"}
+    assert len(calls) == 2
+
+
+def test_toolhub_public_api_get_raises_upstream_error(client, monkeypatch):
+    monkeypatch.setattr(toolhub.requests, "get", lambda *a, **k: FakeResp({"message": "bad"}, 503))
+    with pytest.raises(toolhub.ToolhubAPIError) as exc:
+        toolhub.public_api_get("/api/search/tools/")
+    assert exc.value.status_code == 503
+    assert exc.value.payload == {"message": "bad"}
 
 
 def test_toolhub_refreshes_expired_grant(client, monkeypatch):
@@ -1459,6 +2353,10 @@ def test_official_tool_write_forwards_with_bearer_token(client, monkeypatch):
     assert calls[0][2]["json"] == payload
     with db.session_scope() as s:
         assert s.query(ApiCache).count() == 0
+        claim = s.query(ToolAuthorClaim).filter_by(tool_name="my-tool", author_name="Ada").one()
+        assert claim.toolhub_username == "Ada"
+        assert claim.verification_status == sync.AUTHOR_CLAIM_VERIFIED
+        assert claim.verification_method == sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS
 
 
 def test_official_bridge_routes_forward_all_write_paths(client, monkeypatch):
@@ -1591,6 +2489,261 @@ def test_write_lifecycle_validation_helpers_normalize_toolhub_errors():
         "comment": "Annotated from Toolhub Evolved",
     }
     assert _official_id("not-dict", 5) == 5
+    assert v1_api._create_toolinfo_url({}) == (None, None)
+    assert v1_api._create_toolinfo_url({"toolinfoUrl": 7}) == (None, None)
+    assert v1_api._matching_toolinfo_item("bad", "my-tool") is None
+    assert v1_api._matching_toolinfo_item([{"name": "other"}, None, {"name": "my-tool"}], "my-tool") == {
+        "name": "my-tool"
+    }
+    assert v1_api._matching_toolinfo_item([{"name": "other"}], "my-tool") is None
+    merged, enriched = v1_api._merge_toolinfo_fields(
+        {
+            "repository": "https://manual.example/repo",
+            "license": "Apache-2.0",
+            "toolType": "web app",
+            "keywords": ["manual"],
+            "forWikis": ["en.wikipedia.org"],
+            "uiLanguages": ["en"],
+            "deprecated": True,
+            "experimental": True,
+        },
+        {
+            "repository": "https://toolinfo.example/repo",
+            "license": "MIT",
+            "toolType": "bot",
+            "keywords": ["crawler"],
+            "forWikis": ["commons.wikimedia.org"],
+            "uiLanguages": ["fr"],
+            "deprecated": True,
+            "experimental": True,
+        },
+    )
+    assert enriched == []
+    assert merged["repository"] == "https://manual.example/repo"
+
+
+def test_create_toolinfo_fetch_helpers_reuse_crawler_module(monkeypatch):
+    import crawl
+
+    monkeypatch.setattr(crawl, "_fetch_json", lambda _session, url: {"url": url})
+    assert v1_api._fetch_toolinfo_json_once("https://toolinfo.example/toolinfo.json") == {
+        "url": "https://toolinfo.example/toolinfo.json"
+    }
+
+
+def test_create_toolinfo_enrichment_handles_invalid_matching_item(monkeypatch):
+    fields = {
+        "title": "Manual title",
+        "description": "Manual description",
+        "url": "https://manual.example/tool",
+        "repository": None,
+        "license": None,
+        "toolType": None,
+        "keywords": [],
+        "forWikis": [],
+        "uiLanguages": [],
+        "deprecated": False,
+        "experimental": False,
+        "origin": "api",
+    }
+    monkeypatch.setattr(
+        v1_api,
+        "_fetch_toolinfo_json_once",
+        lambda _url: {"name": "my-tool", "title": "Incomplete", "url": "https://toolinfo.example/tool"},
+    )
+    merged, item, result = v1_api._create_toolinfo_enrichment(
+        fields,
+        "my-tool",
+        "https://toolinfo.example/toolinfo.json",
+    )
+    assert merged == fields
+    assert item["name"] == "my-tool"
+    assert result == {
+        "url": "https://toolinfo.example/toolinfo.json",
+        "ok": False,
+        "matched": True,
+        "enrichedFields": [],
+        "lastError": "my-tool: toolinfo item is missing name, title, description or url",
+    }
+
+
+def test_record_create_toolinfo_evidence_handles_no_item_and_provider_failure(client, monkeypatch):
+    uid = add_user(username="schiste")
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        v1_api._record_create_toolinfo_evidence(
+            s,
+            user,
+            "https://toolinfo.example/no-item.json",
+            None,
+            {"url": "https://toolinfo.example/no-item.json", "ok": True},
+        )
+
+    def fail_verify(*_args, **_kwargs):
+        msg = "verification backend failed"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(v1_api.SIGNED_TOOLINFO_PROVIDER, "verify", fail_verify)
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        v1_api._record_create_toolinfo_evidence(
+            s,
+            user,
+            "https://toolinfo.example/provider-failure.json",
+            {"name": "my-tool"},
+            {"url": "https://toolinfo.example/provider-failure.json", "ok": True},
+        )
+    with db.session_scope() as s:
+        assert s.query(CrawlerUrl).count() == 2
+
+
+def test_write_tool_create_fetches_toolinfo_and_records_evidence(client, monkeypatch):
+    uid = add_user(username="schiste")
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    toolinfo_item = {
+        "name": "my-tool",
+        "title": "Toolinfo title",
+        "description": "Toolinfo description",
+        "url": "https://toolinfo.example/tool",
+        "repository": "https://toolinfo.example/repo",
+        "license": "MIT",
+        "tool_type": "bot",
+        "keywords": ["crawler", "evolved"],
+        "for_wikis": ["commons.wikimedia.org"],
+        "available_ui_languages": ["fr"],
+        "deprecated": True,
+        "experimental": False,
+    }
+    official_calls = []
+    verify_calls = []
+
+    monkeypatch.setattr(v1_api, "_fetch_toolinfo_json_once", lambda url: {**toolinfo_item, "url": url})
+    monkeypatch.setattr(
+        v1_api.SIGNED_TOOLINFO_PROVIDER,
+        "verify",
+        lambda s, user, *, toolinfo, evidence_url: verify_calls.append((user.username, toolinfo["name"], evidence_url)),
+    )
+
+    def fake_request(method, url, **kwargs):
+        official_calls.append((method, url, kwargs.get("json")))
+        return FakeResp({"name": "my-tool"}, 201)
+
+    monkeypatch.setattr(toolhub.requests, "request", fake_request)
+    payload = {
+        "name": "my-tool",
+        "title": "Manual title",
+        "description": "Manual description",
+        "url": "https://manual.example/tool",
+        "keywords": [],
+        "for_wikis": [],
+        "available_ui_languages": [],
+        "deprecated": False,
+        "experimental": False,
+        "toolinfo_url": "https://toolinfo.example/toolinfo.json",
+    }
+    resp = client.post("/v1/write/tools/", json=payload, headers={"X-CSRF-Token": "tok"})
+    data = resp.get_json()
+    assert resp.status_code == 201
+    assert data["crawlerFetch"] == {
+        "url": "https://toolinfo.example/toolinfo.json",
+        "ok": True,
+        "matched": True,
+        "enrichedFields": [
+            "repository",
+            "license",
+            "toolType",
+            "keywords",
+            "forWikis",
+            "uiLanguages",
+            "deprecated",
+        ],
+    }
+    assert official_calls[0][2] == {
+        "name": "my-tool",
+        "title": "Manual title",
+        "description": "Manual description",
+        "url": "https://manual.example/tool",
+        "repository": "https://toolinfo.example/repo",
+        "license": "MIT",
+        "tool_type": "bot",
+        "keywords": ["crawler", "evolved"],
+        "for_wikis": ["commons.wikimedia.org"],
+        "available_ui_languages": ["fr"],
+        "deprecated": True,
+        "experimental": False,
+        "comment": "Published from Toolhub Evolved",
+    }
+    assert verify_calls == [("schiste", "my-tool", "https://toolinfo.example/toolinfo.json")]
+    with db.session_scope() as s:
+        crawler = s.execute(
+            select(CrawlerUrl).where(CrawlerUrl.url == "https://toolinfo.example/toolinfo.json")
+        ).scalar_one()
+        assert crawler.sync_status == "evolved_real"
+        assert crawler.last_error is None
+        activity = s.execute(select(ActivityRow).where(ActivityRow.kind == "revisions")).scalar_one()
+        assert activity.payload["crawlerFetch"]["ok"] is True
+
+
+def test_write_tool_create_toolinfo_fetch_failure_keeps_official_create(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    official_calls = []
+
+    def fail_fetch(_url):
+        msg = "temporary crawler outage"
+        raise ValueError(msg)
+
+    def fake_request(method, url, **kwargs):
+        official_calls.append(kwargs.get("json"))
+        return FakeResp({"name": "my-tool"}, 201)
+
+    monkeypatch.setattr(v1_api, "_fetch_toolinfo_json_once", fail_fetch)
+    monkeypatch.setattr(toolhub.requests, "request", fake_request)
+    resp = client.post(
+        "/v1/write/tools/",
+        json={**TOOL_WRITE_PAYLOAD, "toolinfo_url": "https://toolinfo.example/toolinfo.json"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    data = resp.get_json()
+    assert resp.status_code == 201
+    assert data["crawlerFetch"] == {
+        "url": "https://toolinfo.example/toolinfo.json",
+        "ok": False,
+        "matched": False,
+        "enrichedFields": [],
+        "lastError": "temporary crawler outage",
+    }
+    assert "toolinfo_url" not in official_calls[0]
+    with db.session_scope() as s:
+        crawler = s.execute(
+            select(CrawlerUrl).where(CrawlerUrl.url == "https://toolinfo.example/toolinfo.json")
+        ).scalar_one()
+        assert crawler.sync_status == "sync_error"
+        assert crawler.last_error == "temporary crawler outage"
+
+
+def test_write_tool_create_toolinfo_no_match_stays_in_local_fallback_response(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    monkeypatch.setattr(v1_api, "_fetch_toolinfo_json_once", lambda _url: [{"name": "other-tool"}])
+    monkeypatch.setattr(toolhub.requests, "request", lambda *_args, **_kwargs: FakeResp({"message": "bad"}, 400))
+    resp = client.post(
+        "/v1/write/tools/",
+        json={**TOOL_WRITE_PAYLOAD, "toolinfo_url": "https://toolinfo.example/toolinfo.json"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    data = resp.get_json()
+    assert resp.status_code == 202
+    assert data["crawlerFetch"] == {
+        "url": "https://toolinfo.example/toolinfo.json",
+        "ok": False,
+        "matched": False,
+        "enrichedFields": [],
+        "lastError": "my-tool: no matching item found in toolinfo",
+    }
 
 
 def test_write_tool_create_success_clears_local_state_and_emits_activity(client, monkeypatch):
@@ -1978,6 +3131,7 @@ def test_write_retry_and_discard_paths_for_fallback_records(client, monkeypatch)
     [
         ("POST", "/v1/write/tools/", "not-json"),
         ("POST", "/v1/write/tools/", {"name": "bad"}),
+        ("POST", "/v1/write/tools/", {**TOOL_WRITE_PAYLOAD, "toolinfo_url": "http://example.org/toolinfo.json"}),
         ("DELETE", "/v1/write/tools/%20/", None),
         ("PUT", "/v1/write/tools/%20/annotations/", {}),
         ("PUT", "/v1/write/tools/my-tool/annotations/", "not-json"),

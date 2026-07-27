@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import crawl  # noqa: E402
 from backend import db  # noqa: E402
-from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, User, utcnow  # noqa: E402
+from backend.models import CrawlerRun, CrawlerUrl, ToolAuthorClaim, ToolAuthorKey, ToolRecord, User, utcnow  # noqa: E402
+from backend.sync import AUTHOR_CLAIM_SIGNED_TOOLINFO, AUTHOR_CLAIM_VERIFIED  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -112,6 +113,29 @@ def test_crawl_skips_upstream_names(monkeypatch):
     assert run.added == 0  # upstream check erring counts as "exists" (never shadow)
 
 
+def test_crawl_records_signed_toolinfo_claim_even_when_upstream_exists(monkeypatch):
+    owner_id = add_url()
+    with db.session_scope() as s:
+        user = s.get(User, owner_id)
+        assert user is not None
+        s.add(ToolAuthorKey(toolhub_username=user.username, key_id="k1", public_key="pk"))
+    monkeypatch.setattr(crawl.SIGNED_TOOLINFO_PROVIDER, "verifier", lambda *_args: None)
+    signed_item = {
+        **ITEM,
+        "author": [{"name": "Crawler Fan"}],
+        "x_toolhub_evolved_signature": {"key_id": "k1", "signature": "c2ln"},
+    }
+    run = run_with(monkeypatch, FakeSession(feed_body=json.dumps([signed_item]).encode(), upstream_status=200))
+    assert run.added == 0
+    with db.session_scope() as s:
+        claim = s.query(ToolAuthorClaim).one()
+        assert claim.tool_name == "fresh-tool"
+        assert claim.author_name == "Crawler Fan"
+        assert claim.verification_status == AUTHOR_CLAIM_VERIFIED
+        assert claim.verification_method == AUTHOR_CLAIM_SIGNED_TOOLINFO
+        assert claim.evidence_url == "https://example.org/toolinfo.json"
+
+
 def test_crawl_fetch_failure_and_size_cap(monkeypatch):
     add_url()
     run = run_with(monkeypatch, FakeSession(raises="feed"))
@@ -129,6 +153,15 @@ def test_crawl_http_error_and_keyword_string(monkeypatch):
     run = run_with(monkeypatch, FakeSession(feed_body=json.dumps([item]).encode()))
     with db.session_scope() as s:
         assert s.query(ToolRecord).one().record["keywords"] == ["a", "b", "c"]
+
+
+def test_crawl_ingests_when_url_owner_row_is_missing(monkeypatch):
+    with db.session_scope() as s:
+        s.add(CrawlerUrl(user_id=999, url="https://orphan.example/toolinfo.json"))
+    run = run_with(monkeypatch, FakeSession(feed_body=json.dumps([ITEM]).encode()))
+    assert run.added == 1
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).one().user_id == 999
 
 
 def test_main_exit_codes(monkeypatch, capsys, tmp_path):
@@ -194,7 +227,7 @@ def test_crawl_tolerates_url_deleted_before_status_update(monkeypatch):
 
     monkeypatch.setattr(crawl, "_fetch_json", lambda _session, _url: ITEM)
 
-    def ingest_and_delete(_items, _owner_id, _session, _counts, _errors):
+    def ingest_and_delete(_items, _owner_id, _toolinfo_url, _session, _counts, _errors):
         with db.session_scope() as s:
             s.delete(s.get(CrawlerUrl, second_id))
 

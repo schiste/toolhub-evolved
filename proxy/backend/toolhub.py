@@ -8,12 +8,13 @@ per-user grant stored here to call the official Toolhub API.
 
 import os
 from datetime import UTC, datetime, timedelta
+from json import dumps, loads
 from urllib.parse import urlencode
 
 import requests
 from sqlalchemy import select
 
-from backend import db
+from backend import api_cache, db
 from backend.models import ToolhubToken, utcnow
 
 DEFAULT_BASE_URL = "https://toolhub.wikimedia.org"
@@ -21,6 +22,9 @@ REQUEST_TIMEOUT = 20
 TOKEN_REFRESH_SKEW_SECONDS = 60
 SCOPES = "read write"
 HTTP_NO_CONTENT = 204
+USER_AGENT = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
+_CACHEABLE_MIN_STATUS = 200
+_CACHEABLE_MAX_STATUS = 300
 
 
 class ToolhubAuthError(RuntimeError):
@@ -198,6 +202,49 @@ def _json_or_text(resp: requests.Response) -> object:
         return resp.json()
     except ValueError:
         return {"message": resp.text}
+
+
+def _public_api_url(path: str, params: dict[str, object] | None = None) -> str:
+    """Build a fixed anonymous Toolhub API URL for cacheable GET reads."""
+    normalized = "/" + path.lstrip("/")
+    if normalized != "/api/" and not normalized.startswith("/api/"):
+        msg = "anonymous reads are limited to Toolhub /api/"
+        raise ValueError(msg)
+    pairs = [(key, value) for key, value in (params or {}).items() if value is not None]
+    query = urlencode(pairs, doseq=True)
+    return f"{base_url()}{normalized}{('?' + query) if query else ''}"
+
+
+def _cached_json_payload(hit: api_cache.CachedResponse) -> object:
+    """Decode one JSON response stored in the anonymous Toolhub API cache."""
+    return loads(hit.body.decode("utf-8"))
+
+
+def public_api_get(path: str, *, params: dict[str, object] | None = None) -> object:
+    """GET anonymous official Toolhub API JSON through the shared persistent cache."""
+    url = _public_api_url(path, params)
+    cached = api_cache.get(url)
+    if cached is not None:
+        return _cached_json_payload(cached)
+
+    resp = requests.get(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, timeout=REQUEST_TIMEOUT)
+    payload = _json_or_text(resp)
+    if not resp.ok:
+        raise ToolhubAPIError(resp.status_code, payload)
+
+    if _CACHEABLE_MIN_STATUS <= resp.status_code < _CACHEABLE_MAX_STATUS:
+        body = resp.content or dumps(payload).encode("utf-8")
+        api_cache.put_success(
+            url,
+            api_cache.CacheableResponse(
+                status=resp.status_code,
+                content_type=resp.headers.get("content-type", "application/json"),
+                body=body,
+                etag=resp.headers.get("etag"),
+                last_modified=resp.headers.get("last-modified"),
+            ),
+        )
+    return payload
 
 
 def request_with_token(method: str, path: str, *, access_token: str, json: object | None = None) -> tuple[object, int]:

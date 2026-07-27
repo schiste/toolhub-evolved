@@ -13,7 +13,16 @@ from datetime import UTC, datetime
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from backend.sync import REVIEW_APPROVED, REVIEW_OPEN, REVIEW_PENDING, SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_LOCAL_DRAFT
+from backend.sync import (
+    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+    AUTHOR_CLAIM_UNVERIFIED,
+    REVIEW_APPROVED,
+    REVIEW_OPEN,
+    REVIEW_PENDING,
+    SOURCE_LOCAL,
+    SYNC_EVOLVED_REAL,
+    SYNC_LOCAL_DRAFT,
+)
 
 
 def utcnow() -> datetime:
@@ -264,6 +273,39 @@ class ToolThanks(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ToolAuthorClaim(Base):
+    """Per-tool proof state for a Toolhub author name claimed by a Toolhub user."""
+
+    __tablename__ = "tool_author_claims"
+    __table_args__ = (UniqueConstraint("tool_name", "author_name", "toolhub_username", "verification_method"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    author_name: Mapped[str] = mapped_column(String(255), index=True)
+    toolhub_username: Mapped[str] = mapped_column(String(255), index=True)
+    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
+    verification_method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
+    evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ToolAuthorKey(Base):
+    """A public key a Toolhub user registered for signed toolinfo ownership proofs."""
+
+    __tablename__ = "tool_author_keys"
+    __table_args__ = (UniqueConstraint("toolhub_username", "key_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    toolhub_username: Mapped[str] = mapped_column(String(255), index=True)
+    key_id: Mapped[str] = mapped_column(String(128), index=True)
+    public_key: Mapped[str] = mapped_column(Text)
+    algorithm: Mapped[str] = mapped_column(String(32), default="ed25519")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ToolHealthTarget(Base):
