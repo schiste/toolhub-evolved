@@ -132,14 +132,22 @@ def test_register_env_paths(monkeypatch, tmp_path):
     assert (tmp_path / "nested").is_dir()
 
 
-def test_register_defaults_generate_secret(monkeypatch):
+def test_register_refuses_to_start_without_a_session_secret(monkeypatch):
     monkeypatch.delenv("TOOLHUB_SECRET_KEY", raising=False)
     monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
     monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
+    with pytest.raises(RuntimeError, match="TOOLHUB_SECRET_KEY is required"):
+        backend.register(Flask(__name__))
+
+
+def test_register_allows_an_ephemeral_secret_only_in_development(monkeypatch):
+    monkeypatch.delenv("TOOLHUB_SECRET_KEY", raising=False)
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
+    monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
     application = Flask(__name__)
     backend.register(application)
-    assert len(application.secret_key) == 64  # random hex fallback
-    assert application.config["SESSION_COOKIE_SECURE"] is True
+    assert len(application.secret_key) == 64  # random hex fallback, dev only
+    assert application.config["SESSION_COOKIE_SECURE"] is False
 
 
 # ---- db plumbing -----------------------------------------------------------

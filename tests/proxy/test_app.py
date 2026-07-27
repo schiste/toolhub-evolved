@@ -9,6 +9,7 @@ hash can never silently drift out of sync.
 
 import base64
 import hashlib
+import os
 import re
 import sys
 from datetime import datetime, timedelta
@@ -18,6 +19,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
+
+# app.py calls backend.register() at import time, which refuses to start without
+# a session secret. Supply one before the import rather than weakening the guard.
+os.environ.setdefault("TOOLHUB_SECRET_KEY", "test-secret")
 
 import app as proxy_app  # noqa: E402  (path injected above)
 from backend import db  # noqa: E402
