@@ -141,7 +141,7 @@ const S = {
 			<figure class="sg-example sg-example--wide sg-example--compact">
 		<div class="sg-example__demo"><div class="sg-chrome-frame sg-chrome-frame--tight">
 		<div class="mockup-banner" role="region" aria-label="Feature status notice" data-sitenotice>
-			<span class="mockup-banner__txt"><span aria-hidden="true">!</span> Evolved preview - live Toolhub data with an Evolved overlay. <span class="mock-tag">Hybrid</span></span>
+			<span class="mockup-banner__txt">Evolved preview: live Toolhub data with Evolved additions. <span class="mock-tag">Hybrid</span></span>
 			<a class="mockup-banner__link" href="/experiments">Feature status</a>
 			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
 			<button class="mockup-banner__close" type="button" aria-label="Dismiss site notice"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button>
