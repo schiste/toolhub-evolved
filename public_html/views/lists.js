@@ -28,6 +28,7 @@ import {
 import { button, iconButton } from "../lib/atoms/button.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
+import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -73,6 +74,102 @@ function lifecycleMeta(res) {
 	return meta;
 }
 
+/** @param {{ id: string, title: string, description: string, tools: string[] }} work */
+function setupListRetry(work) {
+	const retry = $("[data-le-retry]");
+	if (!retry) return;
+	retry.addEventListener("click", async () => {
+		const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+		out.className = "at__result";
+		out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
+		try {
+			const res = await officialWrite("POST", `/v1/write/lists/${encodeURIComponent(work.id)}/retry/`);
+			if (res?.result === SYNC_STATUS.localFallback) {
+				const local = res?.local && typeof res.local === "object" ? res.local : null;
+				demoListSave(
+					{
+						id: String(local?.id || work.id),
+						title: local?.title || work.title,
+						description: local?.description || work.description,
+						tools: Array.isArray(local?.tools) ? local.tools : work.tools
+					},
+					lifecycleMeta(res)
+				);
+				out.className = "at__result at__result--err";
+				out.textContent = t(
+					"lists.officialWriteFailed",
+					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+					{ msg: res.lastError || t("lists.unknownOfficialError", "Unknown Toolhub error") }
+				);
+				return;
+			}
+			demoListDelete(work.id);
+			clearApiCache();
+			const officialId = res?.toolhub?.id;
+			navigateTo(officialId ? listHref(String(officialId)) : "/lists");
+		} catch (error) {
+			out.className = "at__result at__result--err";
+			out.textContent = t(
+				"lists.officialWriteFailedNoDraft",
+				"Official Toolhub did not accept the write: {msg}",
+				{
+					msg: backendErrorMessage(error)
+				}
+			);
+		}
+	});
+}
+
+/**
+ * @param {{ id: string }} work
+ * @param {boolean} officialEditing
+ */
+function setupListDelete(work, officialEditing) {
+	const del = $("[data-le-delete]");
+	if (!del) return;
+	del.addEventListener("click", async () => {
+		const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+		if (officialEditing && officialWriteAvailable()) {
+			out.className = "at__result";
+			out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
+			try {
+				await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/`);
+				clearApiCache();
+				navigateTo("/lists");
+				return;
+			} catch (error) {
+				out.className = "at__result at__result--err";
+				out.textContent = t(
+					"lists.officialWriteFailedNoDraft",
+					"Official Toolhub did not accept the write: {msg}",
+					{ msg: backendErrorMessage(error) }
+				);
+				return;
+			}
+		}
+		if (officialWriteAvailable()) {
+			await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/fallback/`).catch(
+				() => undefined
+			);
+			demoListDelete(work.id);
+			navigateTo("/my-lists");
+			return;
+		}
+		out.className = "at__result at__result--err";
+		out.textContent = toolhubSignInRequiredMessage();
+	});
+}
+
+/**
+ * @param {string} html
+ * @param {string} label
+ * @param {Record<string, any> | null} meta
+ * @returns {string}
+ */
+function withFieldProvenance(html, label, meta) {
+	return meta ? `<div class="sync-field-wrap">${html}${fieldProvenance(label, meta)}</div>` : html;
+}
+
 /* ---- Lists overview + list detail -------------------------------------- */
 export async function viewLists() {
 	// Stryker disable next-line ObjectLiteral: `{}` is equivalent to `{ results: [] }` because the value is read as `.results || []`.
@@ -110,7 +207,7 @@ export async function viewList(id) {
 			description: d.description || "",
 			toolCount: tools.length
 		};
-		demoTag = ` <span class="exp-badge">${t("lists.evolvedList", "Evolved-local list")}</span>`;
+		demoTag = ` ${syncBadge(d)}`;
 	} else {
 		try {
 			l = normalizeList(await apiGet(`/lists/${encodeURIComponent(id)}/`));
@@ -222,6 +319,10 @@ function officialListSource(fallbackId, raw) {
  * @returns {{ title: string, html: string, mount: () => void }}
  */
 function renderListEdit(src, { editing, officialEditing }) {
+	const metaSource =
+		/** @type {{ syncStatus?: string, lastError?: string, validationErrors?: any[], reviewStatus?: string }} */ (
+			src
+		);
 	const work = {
 		id: src.id,
 		title: src.title || "",
@@ -229,6 +330,26 @@ function renderListEdit(src, { editing, officialEditing }) {
 		// Stryker disable next-line ArrayDeclaration: demoListNew()/demoListGet() always provide a tools array, so the `|| []` fallback is never taken — equivalent.
 		tools: [...(src.tools || [])]
 	};
+	const listMeta = editing
+		? officialEditing
+			? { syncStatus: SYNC_STATUS.official }
+			: {
+					syncStatus: metaSource.syncStatus || SYNC_STATUS.localDraft,
+					lastError: metaSource.lastError,
+					validationErrors: metaSource.validationErrors,
+					reviewStatus: metaSource.reviewStatus
+				}
+		: null;
+	const listState = listMeta ? syncState(listMeta) : null;
+	const listStatusPanel = listMeta
+		? syncStatusPanel(listMeta, {
+				title: t("lists.writeStatus", "List write status"),
+				retryAttrs: listState?.retryAvailable && officialWriteAvailable() ? "data-le-retry" : "",
+				discardAttrs: officialEditing ? "" : "data-le-delete",
+				discardLabel: t("lists.discardLocalList", "Discard local list"),
+				showIfOfficial: true
+			})
+		: "";
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const searchToolsBtn = button(t("lists.search", "Search"), { variant: "outline", attrs: "data-le-search" });
 	const html = `
@@ -236,9 +357,11 @@ function renderListEdit(src, { editing, officialEditing }) {
 		<a class="back" href="${editing ? listHref(work.id) : "/my-lists"}">${t("lists.back", "← Back")}</a>
 		<h1 class="page__title">${editing ? t("lists.editList", "Edit list") : t("lists.createAList", "Create a list")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
 		<form data-le-form>
-			${fInput(t("lists.title", "Title"), "le-title", work.title, { req: true, max: 120, reqMark: false })}
-			${fArea(t("lists.description", "Description"), "le-desc", work.description, null, { max: 600 })}
+			${listStatusPanel}
+			${withFieldProvenance(fInput(t("lists.title", "Title"), "le-title", work.title, { req: true, max: 120, reqMark: false }), t("lists.title", "Title"), listMeta)}
+			${withFieldProvenance(fArea(t("lists.description", "Description"), "le-desc", work.description, null, { max: 600 }), t("lists.description", "Description"), listMeta)}
 			<h2 class="le__h2">${t("lists.tools", "Tools")} <span class="le__count" data-le-count></span></h2>
+			${listMeta ? fieldProvenance(t("lists.tools", "Tools"), listMeta) : ""}
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
 				<input class="le__input" id="le-q" type="search" aria-label="${t("lists.searchToolsToAdd", "Search tools to add")}" placeholder="${t("lists.searchToolsToAddPlaceholder", "Search tools to add…")}" autocomplete="off" />
@@ -247,7 +370,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 			<div class="le__results" data-le-results></div>
 			<div class="le__actions">
 				${button(editing ? t("lists.saveChanges", "Save changes") : t("lists.createList", "Create list"), { variant: "primary", type: "submit" })}
-				${editing ? button(t("lists.deleteList", "Delete list"), { variant: "danger", cls: "le__delete", attrs: "data-le-delete" }) : ""}
+				${editing && officialEditing ? button(t("lists.deleteList", "Delete list"), { variant: "danger", cls: "le__delete", attrs: "data-le-delete" }) : ""}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -406,42 +529,8 @@ function renderListEdit(src, { editing, officialEditing }) {
 			out.className = "at__result at__result--err";
 			out.textContent = toolhubSignInRequiredMessage();
 		});
-		const del = $("[data-le-delete]");
-		if (del) {
-			del.addEventListener("click", async () => {
-				const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
-				if (officialEditing && officialWriteAvailable()) {
-					out.className = "at__result";
-					out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
-					try {
-						await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/`);
-						clearApiCache();
-						navigateTo("/lists");
-						return;
-					} catch (error) {
-						out.className = "at__result at__result--err";
-						out.textContent = t(
-							"lists.officialWriteFailedNoDraft",
-							"Official Toolhub did not accept the write: {msg}",
-							{
-								msg: backendErrorMessage(error)
-							}
-						);
-						return;
-					}
-				}
-				if (officialWriteAvailable()) {
-					await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/fallback/`).catch(
-						() => undefined
-					);
-					demoListDelete(work.id);
-					navigateTo("/my-lists");
-					return;
-				}
-				out.className = "at__result at__result--err";
-				out.textContent = toolhubSignInRequiredMessage();
-			});
-		}
+		setupListRetry(work);
+		setupListDelete(work, officialEditing);
 	}
 	return {
 		title: t("lists.docTitle", "{title} — Toolhub", {

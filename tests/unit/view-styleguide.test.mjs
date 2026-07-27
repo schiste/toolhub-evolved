@@ -1212,7 +1212,7 @@ test("viewStyleguide renders the full page", () => {
 	assert.ok(r.html.includes('id="sg-organisms"'));
 	assert.ok(r.html.includes("<code>statusBadge(deprecated)</code>"));
 	assert.ok(r.html.includes("<code>listCard(list)</code>"));
-	assert.ok(r.html.includes("Local draft"));
+	assert.ok(r.html.includes("Saved locally"));
 	assert.ok(!r.html.includes("healthBadge(tool)"));
 	assert.ok(!r.html.includes("popularityBadge(tool)"));
 	assert.ok(!r.html.includes("thanksBlock(tool)"));

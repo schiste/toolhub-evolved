@@ -90,7 +90,7 @@ const S = {
 	detail_demo: `
 	<div class="container page">
 		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="exp-badge">Evolved-local list</span> <span class="lcard__count">2 tools</span></h1><a class="btn btn--outline btn--md" href="/lists/demo-1/edit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m15.765 7.875-8.483 8.484a1 1 0 01-.253.184l-4.214 2.15-1.357-1.33L3.58 13.12q.073-.145.188-.26l8.48-8.48zm3.534-3.532-2.12 2.118-3.517-3.496 2.13-2.13z"/></svg> Edit list</a></div>
+		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="sync-badge sync-badge--local-draft">Saved locally</span> <span class="lcard__count">2 tools</span></h1><a class="btn btn--outline btn--md" href="/lists/demo-1/edit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m15.765 7.875-8.483 8.484a1 1 0 01-.253.184l-4.214 2.15-1.357-1.33L3.58 13.12q.073-.145.188-.26l8.48-8.48zm3.534-3.532-2.12 2.118-3.517-3.496 2.13-2.13z"/></svg> Edit list</a></div>
 		<div class="prose page__intro" dir="auto">demo desc</div>
 		<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
@@ -127,14 +127,14 @@ const S = {
 	detail_demo_emptytools: `
 	<div class="container page">
 		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title" dir="auto">Empty Demo <span class="exp-badge">Evolved-local list</span> <span class="lcard__count">0 tools</span></h1></div>
+		<div class="section-head"><h1 class="page__title" dir="auto">Empty Demo <span class="sync-badge sync-badge--local-draft">Saved locally</span> <span class="lcard__count">0 tools</span></h1></div>
 		<div class="prose page__intro"></div>
 		<p class="empty">This list has no tools yet.</p>
 	</div>`,
 	detail_demo_out: `
 	<div class="container page">
 		<a class="back" href="/lists">← All lists</a>
-		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="exp-badge">Evolved-local list</span> <span class="lcard__count">1 tool</span></h1></div>
+		<div class="section-head"><h1 class="page__title" dir="auto">Demo List <span class="sync-badge sync-badge--local-draft">Saved locally</span> <span class="lcard__count">1 tool</span></h1></div>
 		<div class="prose page__intro" dir="auto">demo desc</div>
 		<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
@@ -195,12 +195,14 @@ const S = {
 		<a class="back" href="/my-lists">← Back</a>
 		<h1 class="page__title">Create a list <span class="exp-badge">Experimental</span></h1>
 		<form data-le-form>
+			
 			<label class="le__label">Title
 		
 		<input class="le__input" id="le-title" type="text" required aria-describedby="le-title-err" maxlength="120" value=""  /><span class="le__error" id="le-title-err" hidden></span></label>
 			<label class="le__label">Description
 		<textarea class="le__input" id="le-desc" rows="3" maxlength="600"></textarea></label>
 			<h2 class="le__h2">Tools <span class="le__count" data-le-count></span></h2>
+			
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
 				<input class="le__input" id="le-q" type="search" aria-label="Search tools to add" placeholder="Search tools to add…" autocomplete="off" />
@@ -219,12 +221,18 @@ const S = {
 		<a class="back" href="/lists/demo-1">← Back</a>
 		<h1 class="page__title">Edit list <span class="exp-badge">Experimental</span></h1>
 		<form data-le-form>
-			<label class="le__label">Title
+			<div class="sync-panel sync-panel--local-draft">
+		<div class="sync-panel__head"><strong>List write status</strong> <span class="sync-badge sync-badge--local-draft">Saved locally</span></div>
 		
-		<input class="le__input" id="le-title" type="text" required aria-describedby="le-title-err" maxlength="120" value="Edit Me"  /><span class="le__error" id="le-title-err" hidden></span></label>
-			<label class="le__label">Description
-		<textarea class="le__input" id="le-desc" rows="3" maxlength="600">desc</textarea></label>
+		<div class="sync-panel__actions"><button class="btn btn--danger btn--sm" type="button" data-le-delete><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg> Discard local list</button></div>
+	</div>
+			<div class="sync-field-wrap"><label class="le__label">Title
+		
+		<input class="le__input" id="le-title" type="text" required aria-describedby="le-title-err" maxlength="120" value="Edit Me"  /><span class="le__error" id="le-title-err" hidden></span></label><span class="sync-field" aria-label="Title provenance"><span class="sync-field__name">Title</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Description
+		<textarea class="le__input" id="le-desc" rows="3" maxlength="600">desc</textarea></label><span class="sync-field" aria-label="Description provenance"><span class="sync-field__name">Description</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
 			<h2 class="le__h2">Tools <span class="le__count" data-le-count></span></h2>
+			<span class="sync-field" aria-label="Tools provenance"><span class="sync-field__name">Tools</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span>
 			<ol class="le__tools" data-le-tools></ol>
 			<div class="le__add">
 				<input class="le__input" id="le-q" type="search" aria-label="Search tools to add" placeholder="Search tools to add…" autocomplete="off" />
@@ -233,7 +241,7 @@ const S = {
 			<div class="le__results" data-le-results></div>
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Save changes</button>
-				<button class="btn btn--danger btn--md le__delete" type="button" data-le-delete>Delete list</button>
+				
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -299,7 +307,7 @@ const S = {
 	<a class="lcard" href="/lists/demo-1" aria-label="Mine list, 2 tools">
 		<span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">M</span>
 		<div class="lcard__body">
-			<div class="lcard__title" dir="auto">Mine <span class="lcard__count">2 tools</span> <span class="exp-badge">Local draft</span></div>
+			<div class="lcard__title" dir="auto">Mine <span class="lcard__count">2 tools</span> <span class="sync-badge sync-badge--local-draft">Saved locally</span></div>
 			<div class="lcard__desc" dir="auto">d</div>
 		</div>
 	</a></li></ul>
@@ -328,7 +336,7 @@ const S = {
 	<a class="lcard" href="/lists/demo-1" aria-label="My Demo list, 1 tool">
 		<span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">M</span>
 		<div class="lcard__body">
-			<div class="lcard__title" dir="auto">My Demo <span class="lcard__count">1 tool</span> <span class="exp-badge">Local draft</span></div>
+			<div class="lcard__title" dir="auto">My Demo <span class="lcard__count">1 tool</span> <span class="sync-badge sync-badge--local-draft">Saved locally</span></div>
 			<div class="lcard__desc" dir="auto">mine</div>
 		</div>
 	</a></li><li>
@@ -582,6 +590,33 @@ test("viewListEdit live non-404 errors bubble to the app error boundary", async 
 	await assert.rejects(lists.viewListEdit("down"), /API 503/);
 });
 
+test("viewListEdit live empty response is not found", async () => {
+	h.demoListGet.mockReturnValue(null);
+	h.apiGet.mockResolvedValue(null);
+	const r = await lists.viewListEdit("missing");
+	assert.deepEqual(r, viewNotFound());
+});
+
+test("viewListEdit official source falls back to route id and object tool names", async () => {
+	h.demoListGet.mockReturnValue(null);
+	h.apiGet.mockResolvedValue({ tools: [{ name: "alpha" }, { title: "skip" }, "bravo"] });
+	const r = await lists.viewListEdit("fallback-id");
+	assert.equal(r.title, "Edit list — Toolhub");
+	assert.ok(r.html.includes('href="/lists/fallback-id"'));
+	document.body.innerHTML = r.html;
+	r.mount();
+	assert.equal(document.querySelector("[data-le-count]").textContent, "2 tools");
+});
+
+test("viewListEdit official source without tools renders an empty edit list", async () => {
+	h.demoListGet.mockReturnValue(null);
+	h.apiGet.mockResolvedValue({ id: 5 });
+	const r = await lists.viewListEdit("5");
+	document.body.innerHTML = r.html;
+	r.mount();
+	assert.equal(document.querySelector("[data-le-count]").textContent, "0 tools");
+});
+
 test("viewListEdit create without a local draft source → viewNotFound", async () => {
 	h.demoListNew.mockReturnValue(null);
 	const r = lists.viewListEdit(null);
@@ -616,6 +651,17 @@ test("mount edit: renders tool rows with count and move-button disabled states",
 test("mount edit: empty tool list shows placeholder", () => {
 	mountEdit("demo-1", { id: "demo-1", title: "T", description: "", tools: [] });
 	assert.ok(document.querySelector("[data-le-tools]").innerHTML.includes("No tools yet — search below to add some."));
+});
+
+test("mount edit: missing tool array is treated as empty", () => {
+	mountEdit("demo-1", { id: "demo-1", title: "T", description: "" });
+	assert.equal(document.querySelector("[data-le-count]").textContent, "0 tools");
+});
+
+test("mount edit: clicking outside a tool row is ignored", () => {
+	mountEdit("demo-1", { id: "demo-1", title: "T", description: "", tools: ["alpha"] });
+	document.querySelector("[data-le-tools]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.equal(document.querySelectorAll("[data-le-tools] [data-tn]").length, 1);
 });
 
 test("mount edit: move down then up reorders", () => {
@@ -813,6 +859,69 @@ test("mount create: sparse Toolhub fallback uses form values and an unknown-erro
 		{ source: "local", syncStatus: "local_fallback" }
 	]);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("Unknown Toolhub error"));
+});
+
+test("mount local edit: retry publishes the fallback list to Toolhub", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official", toolhub: { id: 42 } });
+	mountEdit("demo-1", {
+		id: "demo-1",
+		title: "Fallback",
+		description: "",
+		tools: ["alpha"],
+		syncStatus: "local_fallback"
+	});
+	document.querySelector("[data-le-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/lists/demo-1/retry/"]);
+	assert.deepEqual(h.demoListDelete.mock.calls[0], ["demo-1"]);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/42"]);
+});
+
+test("mount local edit: retry keeps the local fallback when Toolhub still rejects it", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue(
+		localFallbackResponse("still denied", { id: "demo-1", title: "Fallback", description: "d", tools: ["alpha"] })
+	);
+	mountEdit("demo-1", {
+		id: "demo-1",
+		title: "Fallback",
+		description: "d",
+		tools: ["alpha"],
+		syncStatus: "local_fallback"
+	});
+	document.querySelector("[data-le-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.demoListSave.mock.calls[0], [
+		{ id: "demo-1", title: "Fallback", description: "d", tools: ["alpha"] },
+		{
+			source: "local",
+			syncStatus: "local_fallback",
+			lastError: "still denied",
+			toolhubResponse: { message: "still denied" }
+		}
+	]);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("still denied"));
+});
+
+test("mount local edit: retry transport failure stays on the form", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	mountEdit("demo-1", {
+		id: "demo-1",
+		title: "Fallback",
+		description: "",
+		tools: ["alpha"],
+		syncStatus: "local_fallback"
+	});
+	document.querySelector("[data-le-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/lists/demo-1/retry/"]);
+	assert.equal(h.demoListSave.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
 });
 
 test("mount official edit: rejected Toolhub write shows an error without creating a draft", async () => {

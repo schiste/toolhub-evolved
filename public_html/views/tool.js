@@ -8,7 +8,7 @@ import { serverWrite } from "../lib/core/serversync.js";
 import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
-import { demoRevisionsFor, syncStatusLabel } from "../lib/core/store.js";
+import { demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
 import { authorHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
@@ -25,6 +25,7 @@ import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
+import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 import { prosePage, viewNotFound } from "./static.js";
@@ -223,6 +224,67 @@ function mediaPanel(media) {
 	</div>`;
 }
 
+/**
+ * @param {Tool & { edited?: boolean, annotated?: boolean }} tool
+ * @param {string} name
+ */
+function toolSyncUi(tool, name) {
+	const coreMeta = {
+		syncStatus: tool.syncStatus,
+		lastError: tool.lastError,
+		validationErrors: tool.validationErrors,
+		reviewStatus: tool.reviewStatus
+	};
+	const editMeta = {
+		syncStatus: tool.editSyncStatus,
+		lastError: tool.editLastError,
+		validationErrors: tool.editValidationErrors,
+		reviewStatus: tool.editReviewStatus
+	};
+	const annotationMeta = {
+		syncStatus: tool.annotationSyncStatus,
+		lastError: tool.annotationLastError,
+		validationErrors: tool.annotationValidationErrors,
+		reviewStatus: tool.annotationReviewStatus
+	};
+	const hasCoreSyncPanel =
+		isNewTool(name) || Boolean(tool.lastError || tool.validationErrors?.length || tool.reviewStatus);
+	const hasEditSyncPanel =
+		Boolean(tool.edited) ||
+		Boolean(tool.editLastError || tool.editValidationErrors?.length || tool.editReviewStatus);
+	const hasAnnotationSyncPanel =
+		Boolean(tool.annotated) ||
+		Boolean(tool.annotationLastError || tool.annotationValidationErrors?.length || tool.annotationReviewStatus);
+	const provTags = [
+		wikidataChip(tool.wikidata),
+		...(signedIn()
+			? [
+					isNewTool(name) ? fieldProvenance(t("tool.coreFields", "Core fields"), coreMeta) : "",
+					tool.edited ? fieldProvenance(t("tool.coreFields", "Core fields"), editMeta) : "",
+					tool.annotated
+						? fieldProvenance(t("tool.communityAnnotations", "Community annotations"), annotationMeta)
+						: ""
+				]
+			: [])
+	]
+		.filter(Boolean)
+		.join(" ");
+	const syncPanels = [
+		hasCoreSyncPanel
+			? syncStatusPanel(coreMeta, { title: t("tool.coreWriteStatus", "Core field write status") })
+			: "",
+		hasEditSyncPanel
+			? syncStatusPanel(editMeta, { title: t("tool.coreWriteStatus", "Core field write status") })
+			: "",
+		hasAnnotationSyncPanel
+			? syncStatusPanel(annotationMeta, { title: t("tool.annotationWriteStatus", "Annotation write status") })
+			: ""
+	]
+		.filter(Boolean)
+		.join("");
+	return { provTags, syncPanels };
+}
+
 /** @param {string} name */
 export async function viewTool(name) {
 	const tool =
@@ -235,31 +297,7 @@ export async function viewTool(name) {
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
 	]);
 	const mediaRows = Array.isArray(evolvedMedia?.results) ? evolvedMedia.results : [];
-	const provTags = [
-		wikidataChip(tool.wikidata),
-		...(signedIn()
-			? [
-					isNewTool(name)
-						? `<span class="exp-badge">${esc(tool.syncLabel || syncStatusLabel(tool.syncStatus) || t("tool.localSubmissionBadge", "Evolved-local submission"))}</span>`
-						: "",
-					tool.edited
-						? `<span class="exp-badge">${t("tool.localEditBadge", "Edited in Evolved")} · ${esc(syncStatusLabel(tool.editSyncStatus))}</span>`
-						: "",
-					tool.annotated
-						? `<span class="exp-badge">${t("tool.localAnnotationsBadge", "Community annotations in Evolved")} · ${esc(syncStatusLabel(tool.annotationSyncStatus))}</span>`
-						: ""
-				]
-			: [])
-	]
-		.filter(Boolean)
-		.join(" ");
-	const syncErrors = [tool.lastError, tool.editLastError, tool.annotationLastError]
-		.filter(Boolean)
-		.map(
-			(msg) =>
-				`<p class="toolpage__sync-error">${t("tool.syncErrorPrefix", "Sync issue:")} ${esc(String(msg))}</p>`
-		)
-		.join("");
+	const { provTags, syncPanels } = toolSyncUi(tool, name);
 	const tags = keywordTags(tool, { empty: "—" });
 	const authors = authorInlineList(tool);
 
@@ -335,7 +373,7 @@ export async function viewTool(name) {
 				${sponsorLine(tool.sponsor)}
 				${replacementNote(tool)}
 				${provTags ? `<div class="toolpage__prov">${provTags}</div>` : ""}
-				${syncErrors}
+				${syncPanels}
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}

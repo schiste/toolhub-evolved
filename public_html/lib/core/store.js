@@ -136,12 +136,12 @@ export function withDemoFixture(fixture, render) {
 export function syncStatusLabel(status) {
 	return (
 		{
-			[SYNC_STATUS.official]: "Official Toolhub",
-			[SYNC_STATUS.localDraft]: "Local draft",
-			[SYNC_STATUS.localFallback]: "Local fallback",
+			[SYNC_STATUS.official]: "Published to Toolhub",
+			[SYNC_STATUS.localDraft]: "Saved locally",
+			[SYNC_STATUS.localFallback]: "Saved locally after Toolhub rejected it",
 			[SYNC_STATUS.evolvedReal]: "Evolved data",
-			[SYNC_STATUS.syncError]: "Sync error"
-		}[String(status || "")] || "Local draft"
+			[SYNC_STATUS.syncError]: "Sync issue"
+		}[String(status || "")] || "Saved locally"
 	);
 }
 /**

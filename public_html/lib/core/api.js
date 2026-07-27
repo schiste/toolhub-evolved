@@ -55,6 +55,9 @@ export function applyToolOverlay(o) {
 		/** @type {any} */ (o).edited = true;
 		/** @type {any} */ (o).editSyncStatus = e.syncStatus;
 		/** @type {any} */ (o).editLastError = e.lastError;
+		/** @type {any} */ (o).editValidationErrors = e.validationErrors;
+		/** @type {any} */ (o).editReviewStatus = e.reviewStatus;
+		/** @type {any} */ (o).editLastSyncedAt = e.lastSyncedAt;
 	}
 	const a = toolAnnosMap()[o.name];
 	if (a) {
@@ -62,6 +65,9 @@ export function applyToolOverlay(o) {
 		/** @type {any} */ (o).annotated = true;
 		/** @type {any} */ (o).annotationSyncStatus = a.syncStatus;
 		/** @type {any} */ (o).annotationLastError = a.lastError;
+		/** @type {any} */ (o).annotationValidationErrors = a.validationErrors;
+		/** @type {any} */ (o).annotationReviewStatus = a.reviewStatus;
+		/** @type {any} */ (o).annotationLastSyncedAt = a.lastSyncedAt;
 	}
 	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
 	return o;

@@ -25,7 +25,6 @@ import {
 	ingestToolinfo,
 	logActivity,
 	stampSyncMeta,
-	syncStatusLabel,
 	toCsv,
 	toolAnnosMap,
 	toolEditsMap,
@@ -43,6 +42,7 @@ import {
 	fieldValue,
 	setFieldError
 } from "../lib/atoms/form-fields.js";
+import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
@@ -181,6 +181,64 @@ function lifecycleMeta(res) {
 }
 
 /**
+ * @returns {Record<string, any>}
+ */
+function readToolFormFields() {
+	return {
+		title: fieldValue("tf-title"),
+		description: fieldValue("tf-desc"),
+		url: fieldValue("tf-url"),
+		repository: fieldValue("tf-repo") || null,
+		license: fieldValue("tf-license") || null,
+		toolType: fieldValue("tf-type") || null,
+		keywords: fromCsv(fieldValue("tf-keywords")),
+		forWikis: fromCsv(fieldValue("tf-wikis")),
+		uiLanguages: fromCsv(fieldValue("tf-langs")),
+		deprecated: checkedValue("tf-deprecated"),
+		experimental: checkedValue("tf-experimental")
+	};
+}
+
+/**
+ * @param {string} html
+ * @param {string} label
+ * @param {Record<string, any> | null} meta
+ * @returns {string}
+ */
+function withFieldProvenance(html, label, meta) {
+	return meta ? `<div class="sync-field-wrap">${html}${fieldProvenance(label, meta)}</div>` : html;
+}
+
+/**
+ * @param {Record<string, any>} cur
+ * @param {string | null} name
+ * @param {boolean} editing
+ * @param {boolean} existingOfficialTool
+ * @returns {Record<string, any> | null}
+ */
+function toolCoreMeta(cur, name, editing, existingOfficialTool) {
+	if (!editing) return null;
+	if (name && isNewTool(name)) {
+		return {
+			syncStatus: cur.syncStatus || SYNC_STATUS.localDraft,
+			lastError: cur.lastError,
+			validationErrors: cur.validationErrors,
+			reviewStatus: cur.reviewStatus
+		};
+	}
+	const edit = name ? toolEditsMap()[name] : null;
+	if (cur.edited || edit) {
+		return {
+			syncStatus: cur.editSyncStatus || edit?.syncStatus || SYNC_STATUS.localDraft,
+			lastError: cur.editLastError || edit?.lastError,
+			validationErrors: cur.editValidationErrors || edit?.validationErrors,
+			reviewStatus: cur.editReviewStatus || edit?.reviewStatus
+		};
+	}
+	return existingOfficialTool ? { syncStatus: SYNC_STATUS.official } : null;
+}
+
+/**
  * @param {string} name
  * @param {Record<string, any>} fields
  * @param {boolean} editing
@@ -231,6 +289,87 @@ function clearLocalAnnotationDraft(name) {
 	const m = toolAnnosMap();
 	delete m[name];
 	demoStore.set(DEMO_KEYS.toolAnnos, m);
+}
+
+/** @param {string | null} name */
+function setupToolCoreRetry(name) {
+	const retry = $("[data-tf-retry]");
+	if (!retry || !name) return;
+	retry.addEventListener("click", async () => {
+		const kind = retry.getAttribute("data-tf-retry") || "edit";
+		const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+		out.className = "at__result";
+		out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+		try {
+			const res = await officialWrite("POST", `/v1/write/tools/${encodeURIComponent(name)}/retry/`, { kind });
+			if (res?.result === SYNC_STATUS.localFallback) {
+				saveLocalToolDraft(name, readToolFormFields(), kind === "edit", lifecycleMeta(res), { log: false });
+				out.className = "at__result at__result--err";
+				out.textContent = t(
+					"toolforms.officialWriteFailed",
+					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+					{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+				);
+				return;
+			}
+			clearLocalToolDraft(name);
+			clearApiCache();
+			navigateTo(toolHref(name));
+		} catch (error) {
+			out.className = "at__result at__result--err";
+			out.textContent = t(
+				"toolforms.officialWriteFailedNoDraft",
+				"Official Toolhub did not accept the write: {msg}",
+				{
+					msg: backendErrorMessage(error)
+				}
+			);
+		}
+	});
+}
+
+/** @param {string} name */
+function setupAnnotationRetry(name) {
+	const retry = $("[data-an-retry]");
+	if (!retry) return;
+	retry.addEventListener("click", async () => {
+		const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+		out.className = "at__result";
+		out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+		try {
+			const res = await officialWrite("POST", `/v1/write/tools/${encodeURIComponent(name)}/retry/`, {
+				kind: "annotations"
+			});
+			if (res?.result === SYNC_STATUS.localFallback) {
+				const anno = {
+					audiences: fromCsv(fieldValue("an-aud")),
+					tasks: fromCsv(fieldValue("an-tasks")),
+					toolType: fieldValue("an-type") || null,
+					icon: fieldValue("an-icon") || null
+				};
+				saveLocalAnnotationDraft(name, anno, lifecycleMeta(res));
+				out.className = "at__result at__result--err";
+				out.textContent = t(
+					"toolforms.officialWriteFailed",
+					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+					{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+				);
+				return;
+			}
+			clearLocalAnnotationDraft(name);
+			clearApiCache();
+			navigateTo(toolHref(name));
+		} catch (error) {
+			out.className = "at__result at__result--err";
+			out.textContent = t(
+				"toolforms.officialWriteFailedNoDraft",
+				"Official Toolhub did not accept the write: {msg}",
+				{
+					msg: backendErrorMessage(error)
+				}
+			);
+		}
+	});
 }
 
 /** @param {Record<string, any>} anno */
@@ -394,6 +533,29 @@ export async function viewToolForm(name) {
 	const crawlerOwned = Boolean(cur.origin) && cur.origin !== "api";
 	const isCrawler = editing && crawlerOwned;
 	const existingOfficialTool = editing && !isNewTool(name);
+	const hasLocalToolEdit = editing && name ? Boolean(toolEditsMap()[name]) || Boolean(cur.edited) : false;
+	const coreMeta = toolCoreMeta(cur, name, editing, existingOfficialTool);
+	const coreState = coreMeta ? syncState(coreMeta) : null;
+	const coreRetryAttrs =
+		editing && coreState?.retryAvailable && officialWriteAvailable()
+			? `data-tf-retry="${isNewTool(/** @type {string} */ (name)) ? "new" : "edit"}"`
+			: "";
+	const coreDiscardAttrs =
+		editing && isNewTool(/** @type {string} */ (name))
+			? "data-tf-delete"
+			: hasLocalToolEdit
+				? "data-tf-revert"
+				: "";
+	const coreStatusPanel = coreMeta
+		? syncStatusPanel(coreMeta, {
+				title: t("toolforms.coreWriteStatus", "Core field write status"),
+				retryAttrs: coreRetryAttrs,
+				discardAttrs: coreDiscardAttrs,
+				discardLabel: editing
+					? t("toolforms.discardLocalCore", "Discard local core fields")
+					: t("toolforms.discardLocalCopy", "Discard local copy")
+			})
+		: "";
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
@@ -402,22 +564,22 @@ export async function viewToolForm(name) {
 		${isCrawler ? t("toolforms.crawlerOwnedNote", "Core fields of crawler-imported tools are owned by the maintainer's toolinfo.json; only origin=api tools are core-editable in official Toolhub.") : ""}</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">${t("toolforms.coreInformation", "Core information")}</h2>
-			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code></p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}
-			${fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") })}
-			${fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it."))}
-			${fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") })}
-			${fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") })}
-			${fInput(t("toolforms.fieldLicense", "License (SPDX id)"), "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: t("toolforms.fieldLicenseHint", "Use an SPDX identifier when known; leave blank if the license is unknown.") })}
-			${fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") })}
-			${fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") })}
+			${coreStatusPanel}
+			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code>${coreMeta ? fieldProvenance(t("toolforms.fieldNameShort", "Name"), coreMeta) : ""}</p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}
+			${withFieldProvenance(fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") }), t("toolforms.fieldTitle", "Title"), coreMeta)}
+			${withFieldProvenance(fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it.")), t("toolforms.fieldDescription", "Description"), coreMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") }), t("toolforms.fieldUrl", "URL"), coreMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") }), t("toolforms.fieldRepository", "Source code repository"), coreMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldLicense", "License (SPDX id)"), "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: t("toolforms.fieldLicenseHint", "Use an SPDX identifier when known; leave blank if the license is unknown.") }), t("toolforms.fieldLicenseShort", "License"), coreMeta)}
+			${withFieldProvenance(fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") }), t("toolforms.fieldToolType", "Tool type"), coreMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") }), t("toolforms.fieldKeywordsShort", "Keywords"), coreMeta)}
 			${editing ? "" : duplicateRegion()}
-			${fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.") })}
-			${fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page after saving.") })}
+			${withFieldProvenance(fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.") }), t("toolforms.fieldWikisShort", "Works on wikis"), coreMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page after saving.") }), t("toolforms.fieldLangsShort", "Interface languages"), coreMeta)}
 			<div class="le__checks">${fCheck(t("toolforms.fieldDeprecated", "Deprecated"), "tf-deprecated", cur.deprecated)}${fCheck(t("toolforms.experimentalBadge", "Experimental"), "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Submit tool"), { variant: "primary", type: "submit" })}
-				${existingOfficialTool ? button(t("toolforms.discardLocalEdits", "Discard local edits"), { variant: "danger", cls: "le__delete", attrs: "data-tf-revert" }) + (officialWriteAvailable() ? button(t("toolforms.deleteOfficialTool", "Delete official tool"), { variant: "danger", cls: "le__delete", attrs: "data-tf-official-delete" }) : "") : ""}
-				${editing && isNewTool(name) ? button(t("toolforms.deleteSubmission", "Delete submission"), { variant: "danger", cls: "le__delete", attrs: "data-tf-delete" }) : ""}
+				${existingOfficialTool && officialWriteAvailable() ? button(t("toolforms.deleteOfficialTool", "Delete official tool"), { variant: "danger", cls: "le__delete", attrs: "data-tf-official-delete" }) : ""}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -425,9 +587,7 @@ export async function viewToolForm(name) {
 	function mount() {
 		/** @type {HTMLElement} */ ($("[data-tool-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
-			const title = fieldValue("tf-title"),
-				url = fieldValue("tf-url"),
-				desc = fieldValue("tf-desc");
+			const title = fieldValue("tf-title");
 			const tname = editing ? name : fieldValue("tf-name");
 			const invalidUrl = validateHttpField("tf-url", t("toolforms.errInvalidUrl", "Enter a valid http(s) URL."), {
 				required: true
@@ -453,19 +613,7 @@ export async function viewToolForm(name) {
 				/** @type {HTMLElement} */ ($("#tf-name")).focus();
 				return;
 			}
-			const fields = {
-				title,
-				description: desc,
-				url,
-				repository: fieldValue("tf-repo") || null,
-				license: fieldValue("tf-license") || null,
-				toolType: fieldValue("tf-type") || null,
-				keywords: fromCsv(fieldValue("tf-keywords")),
-				forWikis: fromCsv(fieldValue("tf-wikis")),
-				uiLanguages: fromCsv(fieldValue("tf-langs")),
-				deprecated: checkedValue("tf-deprecated"),
-				experimental: checkedValue("tf-experimental")
-			};
+			const fields = readToolFormFields();
 			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
 			if (officialWriteAvailable()) {
 				out.className = "at__result";
@@ -506,6 +654,7 @@ export async function viewToolForm(name) {
 			out.className = "at__result at__result--err";
 			out.textContent = toolhubSignInRequiredMessage();
 		});
+		setupToolCoreRetry(name);
 		const rev = $("[data-tf-revert]");
 		if (rev) {
 			rev.addEventListener("click", async () => {
@@ -592,8 +741,16 @@ export function viewAddTools() {
 						) => {
 							const officialId = x.officialId ?? x.id;
 							const localId = /** @type {{ localId?: number }} */ (x).localId;
-							const label = x.syncLabel || syncStatusLabel(x.syncStatus);
-							return `<li><code class="at__url">${esc(x.url)}</code> <span class="exp-badge">${esc(label)}</span>${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}${localId ? ` data-url-local-id="${localId}"` : ""}` })}</li>`;
+							const state = syncState(x);
+							const retryButton =
+								state.retryAvailable && localId && officialWriteAvailable()
+									? button(t("toolforms.retryUrl", "Retry"), {
+											size: "sm",
+											icon: "upload",
+											attrs: `data-url-retry="${localId}" data-url-retry-url="${esc(x.url)}"`
+										})
+									: "";
+							return `<li><code class="at__url">${esc(x.url)}</code> ${syncBadge(x)}${state.retryAvailable ? ` <span class="sync-badge sync-badge--retry">${t("syncStatus.retryAvailable", "Retry available")}</span>` : ""}${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${retryButton} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}${localId ? ` data-url-local-id="${localId}"` : ""}` })}</li>`;
 						}
 					)
 					.join("")
@@ -723,6 +880,59 @@ export function viewAddTools() {
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
 		});
 		/** @type {HTMLElement} */ ($("[data-url-list]")).addEventListener("click", async (e) => {
+			const retry = /** @type {EventTarget} */ (e.target).closest("[data-url-retry]");
+			if (retry) {
+				const localId = retry.getAttribute("data-url-retry");
+				const url = retry.getAttribute("data-url-retry-url") || "";
+				const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
+				if (!localId) return;
+				out.className = "at__result";
+				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+				try {
+					const res = await officialWrite(
+						"POST",
+						`/v1/write/crawler/urls/${encodeURIComponent(localId)}/retry/`
+					);
+					const local = res?.local || {};
+					const officialId =
+						local.officialId ??
+						(res?.result === SYNC_STATUS.official && typeof res?.toolhub?.id === "number"
+							? res.toolhub.id
+							: undefined);
+					const meta = lifecycleMeta(res);
+					const parsedLocalId = Number(localId);
+					if (typeof local.localId === "number") meta.localId = local.localId;
+					else if (Number.isFinite(parsedLocalId)) meta.localId = parsedLocalId;
+					crawlerUrlAdd(local.url || url, officialId, meta);
+					out.className =
+						res?.result === SYNC_STATUS.localFallback
+							? "at__result at__result--err"
+							: "at__result at__result--ok";
+					out.textContent =
+						res?.result === SYNC_STATUS.localFallback
+							? t(
+									"toolforms.officialWriteFailed",
+									"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+									{
+										msg:
+											res.lastError ||
+											t("toolforms.unknownOfficialError", "Unknown Toolhub error")
+									}
+								)
+							: t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
+					/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
+				} catch (error) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialWriteFailedNoDraft",
+						"Official Toolhub did not accept the write: {msg}",
+						{
+							msg: backendErrorMessage(error)
+						}
+					);
+				}
+				return;
+			}
 			const b = /** @type {EventTarget} */ (e.target).closest("[data-url-rm]");
 			if (!b) return;
 			const officialId = b.getAttribute("data-url-id");
@@ -776,6 +986,22 @@ export async function viewAnnotationsEdit(name) {
 	const fetched = await getTool(name);
 	if (!fetched) return viewNotFound();
 	const cur = fetched;
+	const annotationMeta = cur.annotated
+		? {
+				syncStatus: cur.annotationSyncStatus || SYNC_STATUS.localDraft,
+				lastError: cur.annotationLastError,
+				validationErrors: cur.annotationValidationErrors,
+				reviewStatus: cur.annotationReviewStatus
+			}
+		: { syncStatus: SYNC_STATUS.official };
+	const annotationState = syncState(annotationMeta);
+	const annotationStatusPanel = syncStatusPanel(annotationMeta, {
+		title: t("toolforms.annotationWriteStatus", "Annotation write status"),
+		retryAttrs: annotationState.retryAvailable && officialWriteAvailable() ? "data-an-retry" : "",
+		discardAttrs: toolAnnosMap()[name] ? "data-an-revert" : "",
+		discardLabel: t("toolforms.discardLocalAnnotations", "Discard local annotations"),
+		showIfOfficial: true
+	});
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${toolHref(name)}">${t("toolforms.backToName", "← Back to {title}", { title: esc(cur.title) })}</a>
@@ -783,13 +1009,13 @@ export async function viewAnnotationsEdit(name) {
 		<p class="page__intro">${t("toolforms.annoIntro", "Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">${t("toolforms.annoForTitle", "Community annotations for")} <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
-			${fInput(t("toolforms.fieldAudiences", "Audiences (comma-separated)"), "an-aud", toCsv(cur.audiences), { hint: t("toolforms.fieldAudiencesHint", "User groups this tool serves, such as editors, admins, researchers, or developers.") })}
-			${fInput(t("toolforms.fieldTasks", "Tasks (comma-separated)"), "an-tasks", toCsv(cur.tasks), { hint: t("toolforms.fieldTasksHint", "Workflows this tool supports, such as editing, patrolling, importing, or analysis.") })}
-			${fSelect(t("toolforms.fieldToolType", "Tool type"), "an-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldAnnoToolTypeHint", "Community classification used for discovery when core metadata is sparse.") })}
-			${fInput(t("toolforms.fieldIcon", "Icon (Commons File: URL)"), "an-icon", cur.icon, { type: "url", hint: t("toolforms.fieldIconHint", "Optional Commons-hosted image URL for visual identification.") })}
+			${annotationStatusPanel}
+			${withFieldProvenance(fInput(t("toolforms.fieldAudiences", "Audiences (comma-separated)"), "an-aud", toCsv(cur.audiences), { hint: t("toolforms.fieldAudiencesHint", "User groups this tool serves, such as editors, admins, researchers, or developers.") }), t("toolforms.fieldAudiencesShort", "Audiences"), annotationMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldTasks", "Tasks (comma-separated)"), "an-tasks", toCsv(cur.tasks), { hint: t("toolforms.fieldTasksHint", "Workflows this tool supports, such as editing, patrolling, importing, or analysis.") }), t("toolforms.fieldTasksShort", "Tasks"), annotationMeta)}
+			${withFieldProvenance(fSelect(t("toolforms.fieldToolType", "Tool type"), "an-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldAnnoToolTypeHint", "Community classification used for discovery when core metadata is sparse.") }), t("toolforms.fieldToolType", "Tool type"), annotationMeta)}
+			${withFieldProvenance(fInput(t("toolforms.fieldIcon", "Icon (Commons File: URL)"), "an-icon", cur.icon, { type: "url", hint: t("toolforms.fieldIconHint", "Optional Commons-hosted image URL for visual identification.") }), t("toolforms.fieldIconShort", "Icon"), annotationMeta)}
 			<div class="le__actions">
 				${button(t("toolforms.saveAnnotations", "Save annotations"), { variant: "primary", type: "submit" })}
-				${toolAnnosMap()[name] ? button(t("toolforms.revertAnnotations", "Revert annotations"), { variant: "danger", cls: "le__delete", attrs: "data-an-revert" }) : ""}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -843,6 +1069,7 @@ export async function viewAnnotationsEdit(name) {
 			out.className = "at__result at__result--err";
 			out.textContent = toolhubSignInRequiredMessage();
 		});
+		setupAnnotationRetry(name);
 		const rev = $("[data-an-revert]");
 		if (rev) {
 			rev.addEventListener("click", async () => {

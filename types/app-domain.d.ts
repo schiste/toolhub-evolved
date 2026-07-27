@@ -68,11 +68,18 @@ interface Tool {
 	officialName?: string;
 	toolhubResponse?: Record<string, unknown> | null;
 	validationErrors?: unknown[];
+	reviewStatus?: string;
 	visibility?: string;
 	editSyncStatus?: string;
 	editLastError?: string;
+	editValidationErrors?: unknown[];
+	editReviewStatus?: string;
+	editLastSyncedAt?: string;
 	annotationSyncStatus?: string;
 	annotationLastError?: string;
+	annotationValidationErrors?: unknown[];
+	annotationReviewStatus?: string;
+	annotationLastSyncedAt?: string;
 }
 
 /** A normalized curated-list record. */
@@ -89,6 +96,8 @@ interface ToolList {
 	lastSyncedAt?: string;
 	lastError?: string;
 	officialId?: number;
+	validationErrors?: unknown[];
+	reviewStatus?: string;
 }
 
 /** The user's saved fit-ranking context — a chosen wiki and/or audience role. */

@@ -582,7 +582,7 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.ok(!r.html.includes("Usage <span"));
 });
 
-test("viewTool deprecated with replacement (string name) + new-tool/edited/annotated badges", async () => {
+test("viewTool deprecated with replacement (string name) + field provenance labels", async () => {
 	applyExp(true);
 	setServerUser("Grace Hopper");
 	h.isNewTool.mockReturnValue(true);
@@ -596,9 +596,9 @@ test("viewTool deprecated with replacement (string name) + new-tool/edited/annot
 	h.getTool.mockResolvedValue(t);
 	const r = await tool.viewTool("dep");
 	assert.ok(r.html.includes('Replaced by <a href="/tools/replacement-tool"'));
-	assert.ok(r.html.includes("Local draft"));
-	assert.ok(r.html.includes("Edited in Evolved"));
-	assert.ok(r.html.includes("Community annotations in Evolved"));
+	assert.ok(r.html.includes("Saved locally"));
+	assert.ok(r.html.includes("Core fields"));
+	assert.ok(r.html.includes("Community annotations"));
 	assert.ok(!r.html.includes("Demo submission"));
 	assert.ok(!r.html.includes("Edited · demo"));
 	assert.ok(!r.html.includes("Community annotations · demo"));
@@ -675,9 +675,9 @@ test("viewTool renders all local sync errors", async () => {
 		})
 	);
 	const r = await tool.viewTool("sync-errors");
-	assert.ok(r.html.includes("Sync issue: create failed"));
-	assert.ok(r.html.includes("Sync issue: edit failed"));
-	assert.ok(r.html.includes("Sync issue: annotation failed"));
+	assert.ok(r.html.includes("Toolhub response: create failed"));
+	assert.ok(r.html.includes("Toolhub response: edit failed"));
+	assert.ok(r.html.includes("Toolhub response: annotation failed"));
 });
 
 test("viewTool thanks button removes an existing thank", async () => {

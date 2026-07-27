@@ -113,7 +113,7 @@ const S = {
 		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/toolinfo.json" /><span class="le__error" id="at-url-err" hidden></span></label>
 			<button class="btn btn--outline btn--md" type="submit">Register</button>
 		</form>
-		<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="exp-badge">Local draft</span> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="exp-badge">Local draft</span> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
+		<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
 
 		<h2 class="le__h2">Ingest toolinfo</h2>
 		<label class="le__label">Toolinfo JSON <span class="le__hint" id="at-json-hint">Paste one tool object or an array; successful entries appear below in Your tools.</span>
@@ -179,20 +179,24 @@ const S = {
 		<p class="page__intro">Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span dir="auto">My Tool</span></h2>
-			<label class="le__label">Audiences (comma-separated)
+			<div class="sync-panel sync-panel--official">
+		<div class="sync-panel__head"><strong>Annotation write status</strong> <span class="sync-badge sync-badge--official">Published to Toolhub</span></div>
+		
+		<div class="sync-panel__actions"><button class="btn btn--danger btn--sm" type="button" data-an-revert><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg> Discard local annotations</button></div>
+	</div>
+			<div class="sync-field-wrap"><label class="le__label">Audiences (comma-separated)
 		 <span class="le__hint" id="an-aud-hint">User groups this tool serves, such as editors, admins, researchers, or developers.</span>
-		<input class="le__input" id="an-aud" type="text" aria-describedby="an-aud-hint an-aud-err" maxlength="300" value="editor"  /><span class="le__error" id="an-aud-err" hidden></span></label>
-			<label class="le__label">Tasks (comma-separated)
+		<input class="le__input" id="an-aud" type="text" aria-describedby="an-aud-hint an-aud-err" maxlength="300" value="editor"  /><span class="le__error" id="an-aud-err" hidden></span></label><span class="sync-field" aria-label="Audiences provenance"><span class="sync-field__name">Audiences</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Tasks (comma-separated)
 		 <span class="le__hint" id="an-tasks-hint">Workflows this tool supports, such as editing, patrolling, importing, or analysis.</span>
-		<input class="le__input" id="an-tasks" type="text" aria-describedby="an-tasks-hint an-tasks-err" maxlength="300" value="editing"  /><span class="le__error" id="an-tasks-err" hidden></span></label>
-			<label class="le__label">Tool type <span class="le__hint" id="an-type-hint">Community classification used for discovery when core metadata is sparse.</span>
-		<select class="le__input" id="an-type" aria-describedby="an-type-hint"><option value="" selected>—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot">bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label>
-			<label class="le__label">Icon (Commons File: URL)
+		<input class="le__input" id="an-tasks" type="text" aria-describedby="an-tasks-hint an-tasks-err" maxlength="300" value="editing"  /><span class="le__error" id="an-tasks-err" hidden></span></label><span class="sync-field" aria-label="Tasks provenance"><span class="sync-field__name">Tasks</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Tool type <span class="le__hint" id="an-type-hint">Community classification used for discovery when core metadata is sparse.</span>
+		<select class="le__input" id="an-type" aria-describedby="an-type-hint"><option value="" selected>—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot">bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label><span class="sync-field" aria-label="Tool type provenance"><span class="sync-field__name">Tool type</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Icon (Commons File: URL)
 		 <span class="le__hint" id="an-icon-hint">Optional Commons-hosted image URL for visual identification.</span>
-		<input class="le__input" id="an-icon" type="url" aria-describedby="an-icon-hint an-icon-err" maxlength="300" value=""  /><span class="le__error" id="an-icon-err" hidden></span></label>
+		<input class="le__input" id="an-icon" type="url" aria-describedby="an-icon-hint an-icon-err" maxlength="300" value=""  /><span class="le__error" id="an-icon-err" hidden></span></label><span class="sync-field" aria-label="Icon provenance"><span class="sync-field__name">Icon</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Save annotations</button>
-				<button class="btn btn--danger btn--md le__delete" type="button" data-an-revert>Revert annotations</button>
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -204,20 +208,24 @@ const S = {
 		<p class="page__intro">Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
 		<form data-anno-form>
 			<h2 class="le__h2">Community annotations for <span dir="auto">My Tool</span></h2>
-			<label class="le__label">Audiences (comma-separated)
+			<div class="sync-panel sync-panel--official">
+		<div class="sync-panel__head"><strong>Annotation write status</strong> <span class="sync-badge sync-badge--official">Published to Toolhub</span></div>
+		
+		
+	</div>
+			<div class="sync-field-wrap"><label class="le__label">Audiences (comma-separated)
 		 <span class="le__hint" id="an-aud-hint">User groups this tool serves, such as editors, admins, researchers, or developers.</span>
-		<input class="le__input" id="an-aud" type="text" aria-describedby="an-aud-hint an-aud-err" maxlength="300" value=""  /><span class="le__error" id="an-aud-err" hidden></span></label>
-			<label class="le__label">Tasks (comma-separated)
+		<input class="le__input" id="an-aud" type="text" aria-describedby="an-aud-hint an-aud-err" maxlength="300" value=""  /><span class="le__error" id="an-aud-err" hidden></span></label><span class="sync-field" aria-label="Audiences provenance"><span class="sync-field__name">Audiences</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Tasks (comma-separated)
 		 <span class="le__hint" id="an-tasks-hint">Workflows this tool supports, such as editing, patrolling, importing, or analysis.</span>
-		<input class="le__input" id="an-tasks" type="text" aria-describedby="an-tasks-hint an-tasks-err" maxlength="300" value=""  /><span class="le__error" id="an-tasks-err" hidden></span></label>
-			<label class="le__label">Tool type <span class="le__hint" id="an-type-hint">Community classification used for discovery when core metadata is sparse.</span>
-		<select class="le__input" id="an-type" aria-describedby="an-type-hint"><option value="" selected>—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot">bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label>
-			<label class="le__label">Icon (Commons File: URL)
+		<input class="le__input" id="an-tasks" type="text" aria-describedby="an-tasks-hint an-tasks-err" maxlength="300" value=""  /><span class="le__error" id="an-tasks-err" hidden></span></label><span class="sync-field" aria-label="Tasks provenance"><span class="sync-field__name">Tasks</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Tool type <span class="le__hint" id="an-type-hint">Community classification used for discovery when core metadata is sparse.</span>
+		<select class="le__input" id="an-type" aria-describedby="an-type-hint"><option value="" selected>—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot">bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label><span class="sync-field" aria-label="Tool type provenance"><span class="sync-field__name">Tool type</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Icon (Commons File: URL)
 		 <span class="le__hint" id="an-icon-hint">Optional Commons-hosted image URL for visual identification.</span>
-		<input class="le__input" id="an-icon" type="url" aria-describedby="an-icon-hint an-icon-err" maxlength="300" value=""  /><span class="le__error" id="an-icon-err" hidden></span></label>
+		<input class="le__input" id="an-icon" type="url" aria-describedby="an-icon-hint an-icon-err" maxlength="300" value=""  /><span class="le__error" id="an-icon-err" hidden></span></label><span class="sync-field" aria-label="Icon provenance"><span class="sync-field__name">Icon</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Save annotations</button>
-				
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -230,6 +238,7 @@ const S = {
 		</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
+			
 			<label class="le__label">Name (unique id) <span class="le__req">*</span>
 		 <span class="le__hint" id="tf-name-hint">Stable lowercase id used in Toolhub URLs; it cannot be changed later.</span>
 		<input class="le__input" id="tf-name" type="text" required aria-describedby="tf-name-hint tf-name-err" maxlength="120" value="" placeholder="my-cool-tool" /><span class="le__error" id="tf-name-err" hidden></span></label>
@@ -267,7 +276,6 @@ const S = {
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Submit tool</button>
 				
-				
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -301,37 +309,37 @@ const S = {
 		</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
-			<p class="le__ro">Name: <code>my-tool</code></p>
-			<label class="le__label">Title <span class="le__req">*</span>
-		 <span class="le__hint" id="tf-title-hint">Short public name shown in search results and tool pages.</span>
-		<input class="le__input" id="tf-title" type="text" required aria-describedby="tf-title-hint tf-title-err" maxlength="300" value="My Tool"  /><span class="le__error" id="tf-title-err" hidden></span></label>
-			<label class="le__label">Description <span class="le__hint" id="tf-desc-hint">One or two useful sentences: what it does, who it helps, and when to use it.</span>
-		<textarea class="le__input" id="tf-desc" rows="3" aria-describedby="tf-desc-hint" maxlength="2000">desc</textarea></label>
-			<label class="le__label">URL <span class="le__req">*</span>
-		 <span class="le__hint" id="tf-url-hint">Primary place people launch the tool or read its documentation.</span>
-		<input class="le__input" id="tf-url" type="url" required aria-describedby="tf-url-hint tf-url-err" maxlength="300" value="https://x.example" placeholder="https://…" /><span class="le__error" id="tf-url-err" hidden></span></label>
-			<label class="le__label">Source code repository
-		 <span class="le__hint" id="tf-repo-hint">Optional public repository where contributors can inspect or patch the code.</span>
-		<input class="le__input" id="tf-repo" type="url" aria-describedby="tf-repo-hint tf-repo-err" maxlength="300" value="https://r.example"  /><span class="le__error" id="tf-repo-err" hidden></span></label>
-			<label class="le__label">License (SPDX id)
-		 <span class="le__hint" id="tf-license-hint">Use an SPDX identifier when known; leave blank if the license is unknown.</span>
-		<input class="le__input" id="tf-license" type="text" aria-describedby="tf-license-hint tf-license-err" maxlength="300" value="MIT" placeholder="GPL-3.0-or-later" /><span class="le__error" id="tf-license-err" hidden></span></label>
-			<label class="le__label">Tool type <span class="le__hint" id="tf-type-hint">Choose the closest match; community annotations can refine discovery later.</span>
-		<select class="le__input" id="tf-type" aria-describedby="tf-type-hint"><option value="">—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot" selected>bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label>
-			<label class="le__label">Keywords (comma-separated)
-		 <span class="le__hint" id="tf-keywords-hint">Search terms people may try; avoid repeating only the title.</span>
-		<input class="le__input" id="tf-keywords" type="text" aria-describedby="tf-keywords-hint tf-keywords-err" maxlength="300" value="k1, k2"  /><span class="le__error" id="tf-keywords-err" hidden></span></label>
 			
-			<label class="le__label">Works on wikis (comma-separated, * for all)
+			<p class="le__ro">Name: <code>my-tool</code><span class="sync-field" aria-label="Name provenance"><span class="sync-field__name">Name</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></p>
+			<div class="sync-field-wrap"><label class="le__label">Title <span class="le__req">*</span>
+		 <span class="le__hint" id="tf-title-hint">Short public name shown in search results and tool pages.</span>
+		<input class="le__input" id="tf-title" type="text" required aria-describedby="tf-title-hint tf-title-err" maxlength="300" value="My Tool"  /><span class="le__error" id="tf-title-err" hidden></span></label><span class="sync-field" aria-label="Title provenance"><span class="sync-field__name">Title</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Description <span class="le__hint" id="tf-desc-hint">One or two useful sentences: what it does, who it helps, and when to use it.</span>
+		<textarea class="le__input" id="tf-desc" rows="3" aria-describedby="tf-desc-hint" maxlength="2000">desc</textarea></label><span class="sync-field" aria-label="Description provenance"><span class="sync-field__name">Description</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">URL <span class="le__req">*</span>
+		 <span class="le__hint" id="tf-url-hint">Primary place people launch the tool or read its documentation.</span>
+		<input class="le__input" id="tf-url" type="url" required aria-describedby="tf-url-hint tf-url-err" maxlength="300" value="https://x.example" placeholder="https://…" /><span class="le__error" id="tf-url-err" hidden></span></label><span class="sync-field" aria-label="URL provenance"><span class="sync-field__name">URL</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Source code repository
+		 <span class="le__hint" id="tf-repo-hint">Optional public repository where contributors can inspect or patch the code.</span>
+		<input class="le__input" id="tf-repo" type="url" aria-describedby="tf-repo-hint tf-repo-err" maxlength="300" value="https://r.example"  /><span class="le__error" id="tf-repo-err" hidden></span></label><span class="sync-field" aria-label="Source code repository provenance"><span class="sync-field__name">Source code repository</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">License (SPDX id)
+		 <span class="le__hint" id="tf-license-hint">Use an SPDX identifier when known; leave blank if the license is unknown.</span>
+		<input class="le__input" id="tf-license" type="text" aria-describedby="tf-license-hint tf-license-err" maxlength="300" value="MIT" placeholder="GPL-3.0-or-later" /><span class="le__error" id="tf-license-err" hidden></span></label><span class="sync-field" aria-label="License provenance"><span class="sync-field__name">License</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Tool type <span class="le__hint" id="tf-type-hint">Choose the closest match; community annotations can refine discovery later.</span>
+		<select class="le__input" id="tf-type" aria-describedby="tf-type-hint"><option value="">—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot" selected>bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label><span class="sync-field" aria-label="Tool type provenance"><span class="sync-field__name">Tool type</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Keywords (comma-separated)
+		 <span class="le__hint" id="tf-keywords-hint">Search terms people may try; avoid repeating only the title.</span>
+		<input class="le__input" id="tf-keywords" type="text" aria-describedby="tf-keywords-hint tf-keywords-err" maxlength="300" value="k1, k2"  /><span class="le__error" id="tf-keywords-err" hidden></span></label><span class="sync-field" aria-label="Keywords provenance"><span class="sync-field__name">Keywords</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			
+			<div class="sync-field-wrap"><label class="le__label">Works on wikis (comma-separated, * for all)
 		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
-		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value="en.wikipedia.org"  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
-			<label class="le__label">Available UI languages (comma-separated codes)
+		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value="en.wikipedia.org"  /><span class="le__error" id="tf-wikis-err" hidden></span></label><span class="sync-field" aria-label="Works on wikis provenance"><span class="sync-field__name">Works on wikis</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Available UI languages (comma-separated codes)
 		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page after saving.</span>
-		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="en" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
+		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="en" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label><span class="sync-field" aria-label="Interface languages provenance"><span class="sync-field__name">Interface languages</span><span class="sync-badge sync-badge--official">Published to Toolhub</span></span></div>
 			<div class="le__checks"><label class="le__check"><input type="checkbox" id="tf-deprecated" /> Deprecated</label><label class="le__check"><input type="checkbox" id="tf-experimental" /> Experimental</label></div>
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Save changes</button>
-				<button class="btn btn--danger btn--md le__delete" type="button" data-tf-revert>Discard local edits</button>
 				
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
@@ -345,38 +353,42 @@ const S = {
 		Core fields of crawler-imported tools are owned by the maintainer's toolinfo.json; only origin=api tools are core-editable in official Toolhub.</p>
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">Core information</h2>
-			<p class="le__ro">Name: <code>crawled</code></p>
-			<label class="le__label">Title <span class="le__req">*</span>
+			<div class="sync-panel sync-panel--local-draft">
+		<div class="sync-panel__head"><strong>Core field write status</strong> <span class="sync-badge sync-badge--local-draft">Saved locally</span></div>
+		
+		<div class="sync-panel__actions"><button class="btn btn--danger btn--sm" type="button" data-tf-delete><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg> Discard local core fields</button></div>
+	</div>
+			<p class="le__ro">Name: <code>crawled</code><span class="sync-field" aria-label="Name provenance"><span class="sync-field__name">Name</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></p>
+			<div class="sync-field-wrap"><label class="le__label">Title <span class="le__req">*</span>
 		 <span class="le__hint" id="tf-title-hint">Short public name shown in search results and tool pages.</span>
-		<input class="le__input" id="tf-title" type="text" required aria-describedby="tf-title-hint tf-title-err" maxlength="300" value="Crawled"  /><span class="le__error" id="tf-title-err" hidden></span></label>
-			<label class="le__label">Description <span class="le__hint" id="tf-desc-hint">One or two useful sentences: what it does, who it helps, and when to use it.</span>
-		<textarea class="le__input" id="tf-desc" rows="3" aria-describedby="tf-desc-hint" maxlength="2000"></textarea></label>
-			<label class="le__label">URL <span class="le__req">*</span>
+		<input class="le__input" id="tf-title" type="text" required aria-describedby="tf-title-hint tf-title-err" maxlength="300" value="Crawled"  /><span class="le__error" id="tf-title-err" hidden></span></label><span class="sync-field" aria-label="Title provenance"><span class="sync-field__name">Title</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Description <span class="le__hint" id="tf-desc-hint">One or two useful sentences: what it does, who it helps, and when to use it.</span>
+		<textarea class="le__input" id="tf-desc" rows="3" aria-describedby="tf-desc-hint" maxlength="2000"></textarea></label><span class="sync-field" aria-label="Description provenance"><span class="sync-field__name">Description</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">URL <span class="le__req">*</span>
 		 <span class="le__hint" id="tf-url-hint">Primary place people launch the tool or read its documentation.</span>
-		<input class="le__input" id="tf-url" type="url" required aria-describedby="tf-url-hint tf-url-err" maxlength="300" value="" placeholder="https://…" /><span class="le__error" id="tf-url-err" hidden></span></label>
-			<label class="le__label">Source code repository
+		<input class="le__input" id="tf-url" type="url" required aria-describedby="tf-url-hint tf-url-err" maxlength="300" value="" placeholder="https://…" /><span class="le__error" id="tf-url-err" hidden></span></label><span class="sync-field" aria-label="URL provenance"><span class="sync-field__name">URL</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Source code repository
 		 <span class="le__hint" id="tf-repo-hint">Optional public repository where contributors can inspect or patch the code.</span>
-		<input class="le__input" id="tf-repo" type="url" aria-describedby="tf-repo-hint tf-repo-err" maxlength="300" value=""  /><span class="le__error" id="tf-repo-err" hidden></span></label>
-			<label class="le__label">License (SPDX id)
+		<input class="le__input" id="tf-repo" type="url" aria-describedby="tf-repo-hint tf-repo-err" maxlength="300" value=""  /><span class="le__error" id="tf-repo-err" hidden></span></label><span class="sync-field" aria-label="Source code repository provenance"><span class="sync-field__name">Source code repository</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">License (SPDX id)
 		 <span class="le__hint" id="tf-license-hint">Use an SPDX identifier when known; leave blank if the license is unknown.</span>
-		<input class="le__input" id="tf-license" type="text" aria-describedby="tf-license-hint tf-license-err" maxlength="300" value="" placeholder="GPL-3.0-or-later" /><span class="le__error" id="tf-license-err" hidden></span></label>
-			<label class="le__label">Tool type <span class="le__hint" id="tf-type-hint">Choose the closest match; community annotations can refine discovery later.</span>
-		<select class="le__input" id="tf-type" aria-describedby="tf-type-hint"><option value="" selected>—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot">bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label>
-			<label class="le__label">Keywords (comma-separated)
+		<input class="le__input" id="tf-license" type="text" aria-describedby="tf-license-hint tf-license-err" maxlength="300" value="" placeholder="GPL-3.0-or-later" /><span class="le__error" id="tf-license-err" hidden></span></label><span class="sync-field" aria-label="License provenance"><span class="sync-field__name">License</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Tool type <span class="le__hint" id="tf-type-hint">Choose the closest match; community annotations can refine discovery later.</span>
+		<select class="le__input" id="tf-type" aria-describedby="tf-type-hint"><option value="" selected>—</option><option value="web app">web app</option><option value="desktop app">desktop app</option><option value="bot">bot</option><option value="gadget">gadget</option><option value="user script">user script</option><option value="command line tool">command line tool</option><option value="coding framework">coding framework</option><option value="lua module">lua module</option><option value="template">template</option><option value="other">other</option></select></label><span class="sync-field" aria-label="Tool type provenance"><span class="sync-field__name">Tool type</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Keywords (comma-separated)
 		 <span class="le__hint" id="tf-keywords-hint">Search terms people may try; avoid repeating only the title.</span>
-		<input class="le__input" id="tf-keywords" type="text" aria-describedby="tf-keywords-hint tf-keywords-err" maxlength="300" value=""  /><span class="le__error" id="tf-keywords-err" hidden></span></label>
+		<input class="le__input" id="tf-keywords" type="text" aria-describedby="tf-keywords-hint tf-keywords-err" maxlength="300" value=""  /><span class="le__error" id="tf-keywords-err" hidden></span></label><span class="sync-field" aria-label="Keywords provenance"><span class="sync-field__name">Keywords</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
 			
-			<label class="le__label">Works on wikis (comma-separated, * for all)
+			<div class="sync-field-wrap"><label class="le__label">Works on wikis (comma-separated, * for all)
 		 <span class="le__hint" id="tf-wikis-hint">Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.</span>
-		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value=""  /><span class="le__error" id="tf-wikis-err" hidden></span></label>
-			<label class="le__label">Available UI languages (comma-separated codes)
+		<input class="le__input" id="tf-wikis" type="text" aria-describedby="tf-wikis-hint tf-wikis-err" maxlength="300" value=""  /><span class="le__error" id="tf-wikis-err" hidden></span></label><span class="sync-field" aria-label="Works on wikis provenance"><span class="sync-field__name">Works on wikis</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
+			<div class="sync-field-wrap"><label class="le__label">Available UI languages (comma-separated codes)
 		 <span class="le__hint" id="tf-langs-hint">BCP-47 / wiki language codes; saved values refresh the tool page after saving.</span>
-		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
+		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label><span class="sync-field" aria-label="Interface languages provenance"><span class="sync-field__name">Interface languages</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
 			<div class="le__checks"><label class="le__check"><input type="checkbox" id="tf-deprecated" /> Deprecated</label><label class="le__check"><input type="checkbox" id="tf-experimental" /> Experimental</label></div>
 			<div class="le__actions">
 				<button class="btn btn--primary btn--md" type="submit">Save changes</button>
 				
-				<button class="btn btn--danger btn--md le__delete" type="button" data-tf-delete>Delete submission</button>
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
@@ -493,12 +505,14 @@ test("viewAddTools renders URL sync labels, official ids, and last errors", asyn
 		{
 			url: "https://err.example/toolinfo.json",
 			officialId: 7,
-			syncLabel: "Needs review",
+			syncStatus: "local_fallback",
+			reviewStatus: "pending",
 			lastError: "Rejected upstream"
 		}
 	]);
 	const r = tf.viewAddTools();
-	assert.ok(r.html.includes("Needs review"));
+	assert.ok(r.html.includes("Saved locally after Toolhub rejected it"));
+	assert.ok(r.html.includes("Retry available"));
 	assert.ok(r.html.includes("Rejected upstream"));
 	assert.ok(r.html.includes('data-url-id="7"'));
 });
@@ -575,6 +589,14 @@ test("viewAnnotationsEdit without annotation → no revert", async () => {
 	h.toolAnnosMap.mockReturnValue({});
 	const r = await tf.viewAnnotationsEdit("my-tool");
 	expect("anno_norevert", r.html);
+});
+
+test("viewAnnotationsEdit annotated fallback without status defaults to saved locally", async () => {
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", annotated: true }));
+	h.toolAnnosMap.mockReturnValue({});
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	assert.ok(r.html.includes("Saved locally"));
+	assert.ok(!r.html.includes("Retry available"));
 });
 
 test("viewAnnotationsEdit not found → viewNotFound", async () => {
@@ -933,6 +955,57 @@ test("mount edit (new tool): delete button removes the submission and navigates"
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/add-or-remove-tools"]);
 });
 
+test("mount edit: retry publishes a local core edit fallback", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official" });
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "T", url: "https://x.example", origin: "api" }));
+	h.isNewTool.mockReturnValue(false);
+	h.toolEditsMap.mockReturnValue({ "my-tool": { syncStatus: "local_fallback" } });
+	await mountToolForm("my-tool");
+	document.querySelector("[data-tf-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/tools/my-tool/retry/", { kind: "edit" }]);
+	assert.deepEqual(
+		h.demoStoreSet.mock.calls.map((call) => call[0]),
+		[DEMO_KEYS.toolEdits, DEMO_KEYS.toolNew]
+	);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount edit: retry keeps a local core edit when Toolhub still rejects it", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue(localFallbackResponse("still denied"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "T", url: "https://x.example", origin: "api" }));
+	h.isNewTool.mockReturnValue(false);
+	h.toolEditsMap.mockReturnValue({ "my-tool": { syncStatus: "local_fallback" } });
+	await mountToolForm("my-tool");
+	setVal("tf-title", "Retried title");
+	document.querySelector("[data-tf-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
+	assert.equal(h.demoStoreSet.mock.calls[0][1]["my-tool"].title, "Retried title");
+	assert.equal(h.demoStoreSet.mock.calls[0][1]["my-tool"].syncStatus, "local_fallback");
+	assert.equal(h.demoStoreSet.mock.calls[0][1]["my-tool"].lastError, "still denied");
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("still denied"));
+});
+
+test("mount edit: retry transport failure stays on the form", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "T", url: "https://x.example", origin: "api" }));
+	h.isNewTool.mockReturnValue(false);
+	h.toolEditsMap.mockReturnValue({ "my-tool": { syncStatus: "local_fallback" } });
+	await mountToolForm("my-tool");
+	document.querySelector("[data-tf-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/tools/my-tool/retry/", { kind: "edit" }]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
+});
+
 test("mount create: typing keeps the URL error until the value becomes valid/empty", async () => {
 	await mountToolForm(null);
 	const url = document.querySelector("#tf-url");
@@ -1181,6 +1254,161 @@ test("mount addtools: backend transport failure does not create a local URL", as
 	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("session expired"));
 });
 
+test("mount addtools: retrying a local URL fallback publishes to Toolhub", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	h.officialWrite.mockResolvedValue({
+		result: "official",
+		syncStatus: "official",
+		toolhub: { id: 9 },
+		local: { url: "https://retry.example/toolinfo.json", officialId: 9 }
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/crawler/urls/13/retry/"]);
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://retry.example/toolinfo.json",
+		9,
+		{ source: "official", syncStatus: "official", officialId: 9, localId: 13 }
+	]);
+	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
+});
+
+test("mount addtools: URL retry can use Toolhub id without a local payload", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	h.officialWrite.mockResolvedValue({
+		result: "official",
+		syncStatus: "official",
+		toolhub: { id: 10 }
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://retry.example/toolinfo.json",
+		10,
+		{ source: "official", syncStatus: "official", localId: 13 }
+	]);
+});
+
+test("mount addtools: URL retry without a local id is ignored", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").setAttribute("data-url-retry", "");
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+});
+
+test("mount addtools: URL retry with a nonnumeric local id skips local id metadata", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	h.officialWrite.mockResolvedValue({
+		result: "official",
+		syncStatus: "official",
+		toolhub: { id: 11 }
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").setAttribute("data-url-retry", "abc");
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/crawler/urls/abc/retry/"]);
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://retry.example/toolinfo.json",
+		11,
+		{ source: "official", syncStatus: "official" }
+	]);
+});
+
+test("mount addtools: retrying a URL fallback can remain local", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	h.officialWrite.mockResolvedValue(
+		localFallbackResponse("still refused", {
+			url: "https://retry.example/toolinfo.json",
+			localId: 13
+		})
+	);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://retry.example/toolinfo.json",
+		undefined,
+		{
+			source: "local",
+			syncStatus: "local_fallback",
+			lastError: "still refused",
+			toolhubResponse: { message: "still refused" },
+			localId: 13
+		}
+	]);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("still refused"));
+});
+
+test("mount addtools: sparse URL retry fallback shows an unknown-error message", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	h.officialWrite.mockResolvedValue({
+		result: "local_fallback",
+		syncStatus: "local_fallback",
+		local: { source: "local", syncStatus: "local_fallback" }
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://retry.example/toolinfo.json",
+		undefined,
+		{ source: "local", syncStatus: "local_fallback", localId: 13 }
+	]);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("Unknown Toolhub error"));
+});
+
+test("mount addtools: URL retry transport failure keeps the fallback row", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://retry.example/toolinfo.json", localId: 13, syncStatus: "local_fallback" }
+	]);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-url-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["POST", "/v1/write/crawler/urls/13/retry/"]);
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("session expired"));
+});
+
 test("mount addtools: invalid url is rejected (focused, not added)", () => {
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
@@ -1403,7 +1631,7 @@ test("mount annotations: Toolhub rejection stores a local annotation fallback", 
 		syncStatus: "local_fallback",
 		lastError: "not allowed",
 		toolhubResponse: { message: "not allowed" },
-		syncLabel: "Local fallback"
+		syncLabel: "Saved locally after Toolhub rejected it"
 	});
 	assert.equal(h.logActivity.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
@@ -1441,6 +1669,92 @@ test("mount annotations: backend transport failure shows an error without local 
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/annotations/"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
+});
+
+test("mount annotations: retry publishes a local annotation fallback", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official" });
+	h.getTool.mockResolvedValue(
+		toolFixture("my-tool", {
+			title: "My Tool",
+			annotated: true,
+			annotationSyncStatus: "local_fallback"
+		})
+	);
+	h.toolAnnosMap.mockReturnValue({ "my-tool": { audiences: ["editor"], syncStatus: "local_fallback" } });
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-an-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/write/tools/my-tool/retry/",
+		{ kind: "annotations" }
+	]);
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
+	assert.deepEqual(h.demoStoreSet.mock.calls[0][1], {});
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount annotations: retry can keep a local fallback", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue(localFallbackResponse("still denied"));
+	h.getTool.mockResolvedValue(
+		toolFixture("my-tool", {
+			title: "My Tool",
+			annotated: true,
+			annotationSyncStatus: "local_fallback"
+		})
+	);
+	h.toolAnnosMap.mockReturnValue({ "my-tool": { audiences: ["editor"], syncStatus: "local_fallback" } });
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("an-aud", "editor, admin");
+	document.querySelector("[data-an-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
+	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["my-tool"], {
+		audiences: ["editor", "admin"],
+		tasks: [],
+		toolType: null,
+		icon: null,
+		source: "local",
+		syncStatus: "local_fallback",
+		lastError: "still denied",
+		toolhubResponse: { message: "still denied" },
+		syncLabel: "Saved locally after Toolhub rejected it"
+	});
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("still denied"));
+});
+
+test("mount annotations: retry transport failure stays on the form", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	h.getTool.mockResolvedValue(
+		toolFixture("my-tool", {
+			title: "My Tool",
+			annotated: true,
+			annotationSyncStatus: "local_fallback"
+		})
+	);
+	h.toolAnnosMap.mockReturnValue({ "my-tool": { audiences: ["editor"], syncStatus: "local_fallback" } });
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-an-retry]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/write/tools/my-tool/retry/",
+		{ kind: "annotations" }
+	]);
 	assert.equal(h.demoStoreSet.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));

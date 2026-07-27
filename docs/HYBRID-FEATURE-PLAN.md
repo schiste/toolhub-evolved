@@ -452,11 +452,16 @@ Evolved-only backend data:
 
 ### Phase 1: Official-First Contribution Features
 
+- Status: implemented baseline official-first write lifecycle, retry/discard
+  endpoints, and shared UI status components for tool core fields,
+  annotations, lists, and crawler URLs.
 - Finish favorites reconciliation against official state.
 - Add official id/sync status for lists.
 - Add official response capture and retry actions for tools, edits, annotations,
   and crawler URLs.
 - Make all local fallback states visible in the UI.
+- Keep field-level provenance labels on every create/edit surface that can mix
+  live Toolhub data with Evolved-local overlays.
 
 ### Phase 2: Local Catalog And Crawler
 

@@ -124,6 +124,20 @@ Before adding a new Evolved-only table, document the owner, purpose,
 visibility, retention/deletion behavior, export behavior, Toolhub handoff path,
 abuse controls, and backup/restore impact in the feature plan and this runbook.
 
+## Frontend provenance contract
+
+Hybrid write surfaces must use the shared `sync-status` UI components rather
+than ad hoc badges. Field groups that can show official data plus local overlays
+must render field-level provenance labels. Supported user-visible states are
+`Published to Toolhub`, `Saved locally`,
+`Saved locally after Toolhub rejected it`, `Pending review`, and
+`Retry available`.
+
+Retry buttons must call the dedicated `/v1/write/*/retry/` fallback endpoints.
+Discard buttons must call the matching fallback delete endpoint where the
+backend stores one. Evolved-only public rows must be labeled as `Evolved data`
+and use review badges rather than implying Toolhub approval.
+
 ## Public-data moderation
 
 Reviewers/admins use `GET /v1/moderation/public-data/` to list pending
