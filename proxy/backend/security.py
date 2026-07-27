@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Session, CSRF and rate-limit guards for the write API."""
 
+import secrets
 import time
 from collections import deque
 from collections.abc import Callable
@@ -46,6 +47,20 @@ def _rate_limited(uid: int) -> bool:
     return False
 
 
+def _csrf_ok(token: str) -> bool:
+    """Compare the submitted CSRF token to the session's in constant time.
+
+    `==` on the token leaks how many leading characters matched through timing.
+    That is a narrow oracle, but the token is the only thing standing between a
+    cross-origin page and an authenticated write, so it is compared with
+    compare_digest rather than reasoned about.
+    """
+    expected = session.get("csrf")
+    if not token or not isinstance(expected, str) or not expected:
+        return False
+    return secrets.compare_digest(token, expected)
+
+
 def login_required(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Require a signed-in session (401 otherwise)."""
 
@@ -66,8 +81,7 @@ def write_guard(fn: Callable[..., Any]) -> Callable[..., Any]:
         uid = current_user_id()
         if uid is None:
             return _reject(HTTP_UNAUTHORIZED, "sign in required")
-        token = request.headers.get("X-CSRF-Token", "")
-        if not token or token != session.get("csrf"):
+        if not _csrf_ok(request.headers.get("X-CSRF-Token", "")):
             return _reject(HTTP_FORBIDDEN, "bad CSRF token")
         if _rate_limited(uid):
             return _reject(HTTP_TOO_MANY, "rate limit exceeded")

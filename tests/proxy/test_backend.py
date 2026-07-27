@@ -1563,6 +1563,15 @@ def test_put_requires_csrf(client):
     assert put_overlay(client, "favorites", [], csrf="wrong").status_code == 403  # mismatch
 
 
+def test_put_rejects_csrf_when_session_holds_no_usable_token(client):
+    uid = add_user()
+    for stored in (None, "", 1234):  # absent, empty, and non-string all fail closed
+        with client.session_transaction() as sess:
+            sess["uid"] = uid
+            sess["csrf"] = stored
+        assert put_overlay(client, "favorites", [], csrf="tok").status_code == 403
+
+
 def test_rate_limit(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)
