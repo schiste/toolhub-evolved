@@ -102,6 +102,14 @@ test("demoStore.set/remove round-trip through the namespaced key, reporting succ
 	assert.equal(localStorage.getItem("thdemo:k"), null);
 });
 
+test("recent owner cache stores and deletes owner-by-tool entries", () => {
+	assert.equal(store.recentOwnerCacheGet("my-tool"), undefined);
+	store.recentOwnerCacheSet("my-tool", "Ada Maintainer");
+	assert.equal(store.recentOwnerCacheGet("my-tool"), "Ada Maintainer");
+	store.recentOwnerCacheDelete("my-tool");
+	assert.equal(store.recentOwnerCacheGet("my-tool"), undefined);
+});
+
 test("demoStore.set/remove report failure when storage throws (quota / private mode)", () => {
 	localStorage.setItem = () => {
 		throw new Error("quota exceeded");

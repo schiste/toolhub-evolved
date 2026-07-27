@@ -9,8 +9,9 @@ async function load() {
 	const serversync = await import("../../public_html/lib/core/serversync.js");
 	const store = await import("../../public_html/lib/core/store.js");
 	const session = await import("../../public_html/lib/core/session.js");
+	const api = await import("../../public_html/lib/core/api.js");
 	session.setAuthRender(() => {});
-	return { serversync, store, session };
+	return { api, serversync, store, session };
 }
 
 /** Install a fetch stub routing by URL; records every call. */
@@ -112,21 +113,26 @@ test("authenticated: pulls the overlay, activates identity + write-through", asy
 });
 
 test("officialWrite uses the authenticated session CSRF token", async () => {
-	const { serversync, session } = await load();
+	const { api, serversync, session } = await load();
 	const calls = mockFetch({
 		"/v1/user/": { json: { authenticated: true, username: "Ada", csrf: "tok-official" } },
 		"/v1/overlay/": { json: {} },
+		"/api/tools/x/": { json: { name: "x", title: "cached" } },
 		"/v1/toolhub/tools/": { json: { ok: true, toolhub: { name: "x" } } }
 	});
+	const cached = await api.apiGet("/tools/x/");
+	assert.equal(await api.apiGet("/tools/x/"), cached);
 	assert.equal(serversync.officialWriteAvailable(), false);
 	assert.equal(await serversync.initServerSync(), true);
 	assert.equal(serversync.officialWriteAvailable(), true);
 	const data = await serversync.officialWrite("POST", "/v1/toolhub/tools/", { name: "x" });
 	assert.deepEqual(data, { ok: true, toolhub: { name: "x" } });
+	await api.apiGet("/tools/x/");
 	const call = calls.find((c) => c.url === "/v1/toolhub/tools/");
 	assert.equal(call.opts.method, "POST");
 	assert.equal(call.opts.headers["X-CSRF-Token"], "tok-official");
 	assert.deepEqual(JSON.parse(call.opts.body), { name: "x" });
+	assert.equal(calls.filter((c) => c.url === "/api/tools/x/").length, 2);
 	session.setServerUser(null);
 	session.USER.name = "Ada Lovelace";
 	session.applyExp(false);

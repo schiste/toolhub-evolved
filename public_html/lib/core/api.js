@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { pickLocalized, t } from "./i18n.js";
 import { signedIn, USER } from "./session.js";
-import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
+import {
+	publicApiCacheClear,
+	publicApiCacheLoad,
+	publicApiCacheSave,
+	recentOwnerCacheDelete,
+	toolEditsMap,
+	toolAnnosMap,
+	toolNewMap
+} from "./store.js";
 
 /* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
    as live data arrives (search results, lists, tool pages). No snapshot. */
@@ -134,14 +142,39 @@ export function statusOf(t) {
    Tool/list objects are normalized to the compact shape the views/cards expect.
    There is no bundled snapshot — the catalog is always the live one. */
 export const API_BASE = "/api";
-/* In-memory stale-while-revalidate cache for GET reads. Keyed by full URL, it
-   lives only for the session (a full page reload starts fresh, so the catalog is
-   still "live on load"). A cache hit returns instantly — no spinner on revisits —
-   and, once the entry is older than API_TTL_MS, a background refresh updates it
-   for next time. Concurrent requests for the same URL share one in-flight fetch. */
-const API_TTL_MS = 30000;
+/* Stale-while-revalidate cache for anonymous Toolhub GET reads. Keyed by full
+   same-origin /api URL. Hot entries live in memory; a bounded public-data copy
+   also lives in localStorage so hard refreshes can render useful content before
+   the live API refresh finishes. /v1 session, OAuth, overlay, and write calls use
+   the backend* helpers below and never enter this cache. */
+const API_RECENT_TTL_MS = 30 * 1000;
+const API_SEARCH_TTL_MS = 2 * 60 * 1000;
+const API_DETAIL_TTL_MS = 15 * 60 * 1000;
+const API_CONFIG_TTL_MS = 24 * 60 * 60 * 1000;
+const API_DEFAULT_TTL_MS = 60 * 1000;
+const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
+const API_STORAGE_MAX_ENTRIES = 48;
+const API_STORAGE_MAX_CHARS = 240000;
+const API_PERSISTENT_MAX_AGE_MS = API_CONFIG_TTL_MS + API_STALE_IF_ERROR_MS;
 const apiCache = new Map(); // url -> { data, ts }
 const apiInflight = new Map(); // url -> Promise<data>
+let apiCacheLoaded = false;
+const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
+const TOOL_AGGREGATE_PATHS = new Set(["/api/search/tools/", "/api/ui/home/"]);
+const LIST_COLLECTION_PATH = "/api/lists/";
+const RECENT_COLLECTION_PATH = "/api/recent/";
+const CONFIG_PATHS = new Set([
+	"/api/",
+	"/api/schema/",
+	"/api/audiences/",
+	"/api/content-types/",
+	"/api/licenses/",
+	"/api/origins/",
+	"/api/tasks/",
+	"/api/tool-types/",
+	"/api/technology-used/",
+	"/api/wikis/"
+]);
 // Transient failures — a network blip (e.g. ERR_NETWORK_CHANGED on a WiFi/VPN
 // switch) or a momentary 5xx (e.g. the webservice restarting on deploy) — would
 // otherwise leave the SPA with no data. Retry those a few times with backoff so
@@ -153,6 +186,128 @@ function sleep(ms) {
 	return new Promise((resolve) => {
 		setTimeout(resolve, ms);
 	});
+}
+/** @param {string} url */
+function apiPath(url) {
+	const path = new URL(url, "https://toolhub-evolved.local").pathname;
+	return path.endsWith("/") ? path : `${path}/`;
+}
+/** @param {string} url */
+function apiPathParts(url) {
+	return apiPath(url)
+		.split("/")
+		.filter(Boolean)
+		.map((part) => decodeURIComponent(part));
+}
+/** @param {string} path */
+function isDetailPath(path) {
+	const parts = path.replaceAll(/^\/+|\/+$/g, "").split("/");
+	return parts.length === 3 && parts[0] === "api" && DETAIL_COLLECTIONS.has(parts[1]) && Boolean(parts[2]);
+}
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function cleanCacheId(value) {
+	if (value === null || value === undefined) return null;
+	const text = String(value).trim();
+	return text || null;
+}
+/**
+ * @param {any} object
+ * @param {...string} keys
+ * @returns {string | null}
+ */
+function objectStringValue(object, ...keys) {
+	if (!object || typeof object !== "object") return null;
+	for (const key of keys) {
+		const value = cleanCacheId(object[key]);
+		if (value) return value;
+	}
+	return null;
+}
+/**
+ * @param {string} url
+ * @param {Set<string>} toolNames
+ */
+function matchesToolCache(url, toolNames) {
+	const path = apiPath(url);
+	if (path === RECENT_COLLECTION_PATH || TOOL_AGGREGATE_PATHS.has(path)) return toolNames.size > 0;
+	const parts = apiPathParts(url);
+	return parts.length >= 3 && parts[0] === "api" && parts[1] === "tools" && toolNames.has(parts[2]);
+}
+/**
+ * @param {string} url
+ * @param {Set<string>} listIds
+ */
+function matchesListCache(url, listIds) {
+	const path = apiPath(url);
+	if (path === RECENT_COLLECTION_PATH || path === LIST_COLLECTION_PATH) return listIds.size > 0;
+	const parts = apiPathParts(url);
+	return parts.length >= 3 && parts[0] === "api" && parts[1] === "lists" && listIds.has(parts[2]);
+}
+/** @param {(url: string) => boolean} predicate */
+function invalidateApiCacheWhere(predicate) {
+	loadPersistentApiCache();
+	let removed = 0;
+	for (const url of apiCache.keys()) {
+		if (predicate(url)) {
+			apiCache.delete(url);
+			removed += 1;
+		}
+	}
+	for (const url of apiInflight.keys()) {
+		if (predicate(url)) apiInflight.delete(url);
+	}
+	if (removed > 0) persistApiCache();
+	return removed;
+}
+/**
+ * @param {string} url
+ * @returns {{ freshMs: number, staleIfErrorMs: number }}
+ */
+export function apiCachePolicy(url) {
+	const path = apiPath(url);
+	if (path === "/api/recent/") return { freshMs: API_RECENT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	if (path === "/api/search/tools/") return { freshMs: API_SEARCH_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	if (isDetailPath(path)) return { freshMs: API_DETAIL_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	if (CONFIG_PATHS.has(path)) return { freshMs: API_CONFIG_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	return { freshMs: API_DEFAULT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+}
+/** @param {string} url @param {string} state @param {unknown} [error] */
+function emitApiCacheRefresh(url, state, error) {
+	if (typeof document === "undefined" || typeof CustomEvent === "undefined") return;
+	document.dispatchEvent(new CustomEvent("toolhub:api-cache-refresh", { detail: { url, state, error } }));
+}
+function loadPersistentApiCache() {
+	if (apiCacheLoaded) return;
+	apiCacheLoaded = true;
+	try {
+		const now = Date.now();
+		for (const [url, entry] of publicApiCacheLoad(API_PERSISTENT_MAX_AGE_MS)) {
+			const policy = apiCachePolicy(url);
+			if (now - entry.ts > policy.freshMs + policy.staleIfErrorMs) continue;
+			apiCache.set(url, { data: entry.data, ts: entry.ts });
+		}
+	} catch {
+		return;
+	}
+}
+function persistApiCache() {
+	try {
+		const entries = [...apiCache.entries()]
+			.filter(([url, entry]) => {
+				if (!url.startsWith(API_BASE)) return false;
+				const policy = apiCachePolicy(url);
+				return Date.now() - entry.ts <= policy.freshMs + policy.staleIfErrorMs;
+			})
+			.sort((a, b) => b[1].ts - a[1].ts)
+			.slice(0, API_STORAGE_MAX_ENTRIES)
+			.filter(([, entry]) => JSON.stringify(entry.data).length <= API_STORAGE_MAX_CHARS);
+		publicApiCacheSave(entries);
+	} catch {
+		return;
+	}
 }
 /**
  * An HTTP-level API failure carrying the upstream status, so callers can tell a
@@ -193,13 +348,23 @@ async function fetchJson(url, attempts = API_RETRIES) {
 	}
 	throw lastError;
 }
-/** @param {string} url */
-function apiFetch(url) {
+/**
+ * @param {string} url
+ * @param {{ background?: boolean }} [options]
+ */
+function apiFetch(url, options = {}) {
 	if (apiInflight.has(url)) return apiInflight.get(url);
+	if (options.background) emitApiCacheRefresh(url, "start");
 	const p = fetchJson(url)
 		.then((data) => {
 			apiCache.set(url, { data, ts: Date.now() });
+			persistApiCache();
+			if (options.background) emitApiCacheRefresh(url, "success");
 			return data;
+		})
+		.catch((error) => {
+			if (options.background) emitApiCacheRefresh(url, "error", error);
+			throw error;
 		})
 		.finally(() => {
 			apiInflight.delete(url);
@@ -214,16 +379,77 @@ function apiFetch(url) {
 export async function apiGet(path, params) {
 	const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
 	const url = API_BASE + path + qs;
+	loadPersistentApiCache();
 	const hit = apiCache.get(url);
 	if (hit) {
-		if (Date.now() - hit.ts >= API_TTL_MS) apiFetch(url).catch(() => {}); // revalidate in background
-		return hit.data;
+		const policy = apiCachePolicy(url);
+		const age = Date.now() - hit.ts;
+		if (age <= policy.freshMs + policy.staleIfErrorMs) {
+			if (age >= policy.freshMs) apiFetch(url, { background: true }).catch(() => {});
+			return hit.data;
+		}
+		apiCache.delete(url);
+		persistApiCache();
 	}
 	return apiFetch(url);
 }
 export function clearApiCache() {
 	apiCache.clear();
 	apiInflight.clear();
+	apiCacheLoaded = false;
+	publicApiCacheClear();
+}
+/** @param {string} toolName */
+export function invalidateToolApiCache(toolName) {
+	const name = cleanCacheId(toolName);
+	if (!name) return 0;
+	recentOwnerCacheDelete(name);
+	return invalidateApiCacheWhere((url) => matchesToolCache(url, new Set([name])));
+}
+/** @param {string | number} listId */
+export function invalidateListApiCache(listId) {
+	const ident = cleanCacheId(listId);
+	if (!ident) return 0;
+	return invalidateApiCacheWhere((url) => matchesListCache(url, new Set([ident])));
+}
+export function invalidateListCollectionApiCache() {
+	return invalidateApiCacheWhere(
+		(url) => apiPath(url) === LIST_COLLECTION_PATH || apiPath(url) === RECENT_COLLECTION_PATH
+	);
+}
+/** @param {any} data */
+function officialWriteSucceeded(data) {
+	if (!data || typeof data !== "object") return false;
+	if (data.syncStatus) return data.syncStatus === "official";
+	if (data.result) return data.result === "official";
+	return data.ok === true;
+}
+/**
+ * @param {string} _method
+ * @param {string} path
+ * @param {any} body
+ * @param {any} data
+ */
+export function invalidateApiCacheForOfficialWrite(_method, path, body, data) {
+	if (!officialWriteSucceeded(data)) return 0;
+	const parts = new URL(path, "https://toolhub-evolved.local").pathname
+		.split("/")
+		.filter(Boolean)
+		.map((part) => decodeURIComponent(part));
+	const apiKind = parts[0] === "v1" && (parts[1] === "write" || parts[1] === "toolhub") ? parts[2] : null;
+	if (apiKind === "tools") {
+		const toolName =
+			cleanCacheId(parts[3]) || objectStringValue(data.toolhub, "name") || objectStringValue(body, "name");
+		return toolName ? invalidateToolApiCache(toolName) : 0;
+	}
+	if (apiKind === "lists") {
+		const listId =
+			objectStringValue(data.local, "officialId", "official_list_id") ||
+			objectStringValue(data.toolhub, "id") ||
+			cleanCacheId(parts[3]);
+		return listId ? invalidateListApiCache(listId) : invalidateListCollectionApiCache();
+	}
+	return 0;
 }
 /**
  * Page through a list endpoint, collecting results. Stops on error, missing

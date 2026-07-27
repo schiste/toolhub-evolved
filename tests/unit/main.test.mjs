@@ -181,6 +181,28 @@ test("importing main wires locale, theme, account, langpicker and the initial re
 	assert.deepEqual(window.matchMedia.mock.calls.at(-1), ["(prefers-color-scheme: dark)"]);
 });
 
+test("API cache refresh events show a toast and repaint once fresh data arrives", () => {
+	vi.useFakeTimers();
+	try {
+		vi.clearAllMocks();
+		document.dispatchEvent(
+			new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/ui/home/", state: "start" } })
+		);
+		assert.equal($("#toast-region").textContent, "Refreshing live Toolhub data…");
+
+		document.dispatchEvent(
+			new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/ui/home/", state: "success" } })
+		);
+		assert.equal($("#toast-region").textContent, "Live Toolhub data updated.");
+		vi.advanceTimersByTime(150);
+		assert.equal(router.render.mock.calls.length, 1);
+		vi.advanceTimersByTime(2400);
+		assert.equal($("#toast-region").textContent, "");
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 test("the initial theme toggle reflects the resolved <html data-theme>", () => {
 	const html = $("#theme-toggle").innerHTML;
 	// data-theme="dark" → the dark option is active, light is not.

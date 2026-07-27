@@ -219,8 +219,53 @@ export function setActiveNav() {
 /** @type {string | null} */
 export let lastPath = null;
 export let navSeq = 0;
-export const loadingHTML = () =>
-	`<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">${t("router.loading", "Loading")}</span></div>`;
+/** @param {number} count */
+function skeletonCards(count) {
+	return Array.from({ length: count }, () => `<li class="skel-card"></li>`).join("");
+}
+/** @param {number} count */
+function skeletonRows(count) {
+	return Array.from(
+		{ length: count },
+		() => `<div class="skel-row"><span></span><span></span><span></span><span></span></div>`
+	).join("");
+}
+/** @param {string} [path] */
+export const loadingHTML = (path = parseRoute().path) => {
+	const label = `<span class="skip-label">${t("router.loading", "Loading")}</span>`;
+	if (path === "/") {
+		return `<div class="route-loading route-loading--home" role="status" aria-live="polite">${label}
+	<section class="hero hero--loading" aria-hidden="true">
+		<span class="skel skel--hero-title"></span>
+		<span class="skel skel--hero-line"></span>
+		<span class="skel skel--search"></span>
+	</section>
+	<div class="container layout" aria-hidden="true">
+		<div class="layout__main">
+			<span class="skel skel--section-title"></span>
+			<ul class="card-grid grid-tools skeleton-grid">${skeletonCards(6)}</ul>
+			<span class="skel skel--section-title"></span>
+			<ul class="card-grid grid-tools skeleton-grid">${skeletonCards(4)}</ul>
+		</div>
+		<aside class="layout__side">
+			<span class="skel skel--panel"></span>
+			<span class="skel skel--panel skel--panel-short"></span>
+		</aside>
+	</div></div>`;
+	}
+	if (path.startsWith("/recent") || path.startsWith("/members") || path.startsWith("/audit-logs")) {
+		return `<div class="container page route-loading route-loading--table" role="status" aria-live="polite">${label}
+		<span class="skel skel--title"></span>
+		<span class="skel skel--intro"></span>
+		<div class="skel-table" aria-hidden="true">${skeletonRows(7)}</div>
+	</div>`;
+	}
+	return `<div class="container page route-loading" role="status" aria-live="polite">${label}
+		<span class="skel skel--title"></span>
+		<span class="skel skel--intro"></span>
+		<ul class="card-grid grid-tools skeleton-grid" aria-hidden="true">${skeletonCards(6)}</ul>
+	</div>`;
+};
 /** @param {unknown} e */
 export const errorHTML = (
 	e
@@ -261,12 +306,12 @@ export async function render() {
 	if (path !== lastPath) {
 		viewEl.setAttribute("aria-busy", "true"); // announce busy immediately (a11y)
 		if (lastPath === null) {
-			viewEl.innerHTML = loadingHTML(); // first load: nothing to keep on screen
+			viewEl.innerHTML = loadingHTML(path); // first load: show route structure immediately
 		} else {
 			// Keep the current page visible; only swap in the spinner if the next
 			// view is genuinely slow. Cached navigations resolve first and skip it.
 			spinnerTimer = setTimeout(() => {
-				if (seq === navSeq) viewEl.innerHTML = loadingHTML();
+				if (seq === navSeq) viewEl.innerHTML = loadingHTML(path);
 			}, SPINNER_DELAY);
 		}
 	}

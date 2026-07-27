@@ -7,7 +7,8 @@ import {
 	AVAILABLE_LOCALES,
 	DEFAULT_LOCALE,
 	setLocale,
-	setMessages
+	setMessages,
+	t
 } from "./lib/core/i18n.js";
 import { dismissSiteNotice, setAuthRender } from "./lib/core/session.js";
 import { initServerSync, officialWrite, officialWriteAvailable } from "./lib/core/serversync.js";
@@ -104,6 +105,70 @@ if (themeToggle) {
 }
 // While no explicit choice is stored, keep the active highlight in sync with the OS.
 if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderThemeToggle);
+
+/* Public API cache refresh toast: stale cached Toolhub data can render first,
+   then these events tell users the live refresh is happening in the background. */
+const refreshingApiUrls = new Set();
+/** @type {ReturnType<typeof setTimeout> | null} */
+let apiToastTimer = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let apiRefreshRenderTimer = null;
+function toastRegion() {
+	let region = $("#toast-region");
+	if (region) return region;
+	region = document.createElement("div");
+	region.id = "toast-region";
+	region.className = "toast-region";
+	region.setAttribute("aria-live", "polite");
+	region.setAttribute("aria-atomic", "true");
+	document.body.append(region);
+	return region;
+}
+/** @param {string} message @param {string} [variant] */
+function showApiToast(message, variant = "") {
+	const region = toastRegion();
+	const cls = variant ? ` toast--${variant}` : "";
+	const toast = document.createElement("div");
+	toast.className = `toast${cls}`;
+	toast.setAttribute("role", "status");
+	toast.textContent = message;
+	region.replaceChildren(toast);
+	if (apiToastTimer) clearTimeout(apiToastTimer);
+}
+/** @param {number} [ms] */
+function hideApiToastSoon(ms = 2400) {
+	if (apiToastTimer) clearTimeout(apiToastTimer);
+	apiToastTimer = setTimeout(() => {
+		const region = $("#toast-region");
+		if (region) region.innerHTML = "";
+	}, ms);
+}
+function scheduleApiRefreshRender() {
+	if (apiRefreshRenderTimer) clearTimeout(apiRefreshRenderTimer);
+	apiRefreshRenderTimer = setTimeout(() => {
+		apiRefreshRenderTimer = null;
+		render();
+	}, 150);
+}
+document.addEventListener("toolhub:api-cache-refresh", (e) => {
+	const detail = /** @type {{ url?: string, state?: string }} */ (/** @type {CustomEvent} */ (e).detail || {});
+	const url = String(detail.url || "");
+	if (detail.state === "start") {
+		if (url) refreshingApiUrls.add(url);
+		showApiToast(t("api.refreshingLiveData", "Refreshing live Toolhub data…"));
+		return;
+	}
+	if (url) refreshingApiUrls.delete(url);
+	if (refreshingApiUrls.size > 0) return;
+	if (detail.state === "success") {
+		showApiToast(t("api.liveDataUpdated", "Live Toolhub data updated."), "success");
+		scheduleApiRefreshRender();
+		hideApiToastSoon();
+	} else if (detail.state === "error") {
+		showApiToast(t("api.refreshFailed", "Showing saved Toolhub data; refresh failed."), "warning");
+		hideApiToastSoon(3600);
+	}
+});
 
 /* Skip link focuses the view without hijacking the route. */
 const skip = $(".skip");

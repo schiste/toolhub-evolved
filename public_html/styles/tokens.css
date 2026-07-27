@@ -45,6 +45,7 @@
 	--color-row-hover: rgb(0 0 0 / 0.02); /* derived: table row hover */
 	--color-overlay-modal: rgb(16 20 30 / 0.55);
 	--color-badge-neutral: rgb(0 0 0 / 0.12);
+	--color-skeleton-shine: rgb(255 255 255 / 0.42);
 
 	/* Borders */
 	--color-border: #d4d7db; /* derived: hairline (black-25 is too heavy) */
@@ -197,6 +198,7 @@
 	--color-row-hover: rgb(255 255 255 / 0.06);
 	--color-overlay-modal: rgb(0 0 0 / 0.72);
 	--color-badge-neutral: rgb(255 255 255 / 0.16);
+	--color-skeleton-shine: rgb(255 255 255 / 0.1);
 
 	/* Borders */
 	--color-border: #3b443f;

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, test, vi } from "vitest";
 import { installStorage } from "./_storage-setup.mjs";
 import * as api from "../../public_html/lib/core/api.js";
 import * as session from "../../public_html/lib/core/session.js";
-import { demoStore, DEMO_KEYS } from "../../public_html/lib/core/store.js";
+import { demoStore, DEMO_KEYS, recentOwnerCacheGet, recentOwnerCacheSet } from "../../public_html/lib/core/store.js";
 
 let originalFetch;
 beforeEach(() => {
@@ -150,6 +150,14 @@ test("fetchJson sends the JSON Accept header to the proxied /api URL", async () 
 });
 
 // ----------------------------------------------------------------- SWR cache
+test("apiCachePolicy classifies endpoint volatility", () => {
+	assert.deepEqual(api.apiCachePolicy("/api/recent/"), { freshMs: 30000, staleIfErrorMs: 86400000 });
+	assert.deepEqual(api.apiCachePolicy("/api/search/tools/?q=wiki"), { freshMs: 120000, staleIfErrorMs: 86400000 });
+	assert.deepEqual(api.apiCachePolicy("/api/tools/citoid/"), { freshMs: 900000, staleIfErrorMs: 86400000 });
+	assert.deepEqual(api.apiCachePolicy("/api/lists/123/"), { freshMs: 900000, staleIfErrorMs: 86400000 });
+	assert.deepEqual(api.apiCachePolicy("/api/schema/"), { freshMs: 86400000, staleIfErrorMs: 86400000 });
+});
+
 test("apiGet caches, serves fresh hits without refetching, and revalidates stale entries", async () => {
 	let now = 5_000_000;
 	const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -173,13 +181,70 @@ test("apiGet caches, serves fresh hits without refetching, and revalidates stale
 
 		// advance exactly the TTL => stale; returns stale value immediately and
 		// kicks off a background revalidate that replaces the cache.
-		now += 30000;
+		now += api.apiCachePolicy("/api/swr-1/").freshMs;
 		const d3 = await api.apiGet(url);
 		assert.equal(d3.v, "a");
 		await tick();
 		assert.equal(calls, 2); // revalidate fetched
 		const d4 = await api.apiGet(url);
 		assert.equal(d4.v, "b"); // cache updated (inflight was cleared in finally)
+	} finally {
+		nowSpy.mockRestore();
+	}
+});
+
+test("apiGet serves persisted public GET cache after hard refresh and refreshes in the background", async () => {
+	let now = 7_000_000;
+	const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+	let calls = 0;
+	const events = [];
+	const onRefresh = (e) => events.push(e.detail.state);
+	globalThis.fetch = async () => {
+		calls += 1;
+		const body = calls === 1 ? { v: "old" } : { v: "new" };
+		return { ok: true, json: async () => body };
+	};
+	document.addEventListener("toolhub:api-cache-refresh", onRefresh);
+	try {
+		const first = await api.apiGet("/recent/");
+		assert.equal(first.v, "old");
+		assert.ok(localStorage.getItem("toolhub-api-cache:v1"));
+
+		now += api.apiCachePolicy("/api/recent/").freshMs;
+		const hardRefreshApi = await import("../../public_html/lib/core/api.js?hard-refresh-test");
+		const stale = await hardRefreshApi.apiGet("/recent/");
+		assert.equal(stale.v, "old");
+		assert.equal(events[0], "start");
+
+		await tick();
+		assert.ok(events.includes("success"));
+		const refreshed = await hardRefreshApi.apiGet("/recent/");
+		assert.equal(refreshed.v, "new");
+		assert.equal(calls, 2);
+	} finally {
+		document.removeEventListener("toolhub:api-cache-refresh", onRefresh);
+		nowSpy.mockRestore();
+	}
+});
+
+test("apiGet discards cached data beyond the stale-if-error window", async () => {
+	let now = 8_000_000;
+	const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return { ok: true, json: async () => ({ calls }) };
+	};
+	try {
+		const path = "/tools/cached-detail/";
+		const first = await api.apiGet(path);
+		assert.equal(first.calls, 1);
+
+		const policy = api.apiCachePolicy("/api/tools/cached-detail/");
+		now += policy.freshMs + policy.staleIfErrorMs + 1;
+		const refreshed = await api.apiGet(path);
+		assert.equal(refreshed.calls, 2);
+		assert.equal(calls, 2);
 	} finally {
 		nowSpy.mockRestore();
 	}
@@ -206,11 +271,88 @@ test("clearApiCache evicts cached GET data", async () => {
 	};
 	const first = await api.apiGet("/cache-clear/");
 	const cached = await api.apiGet("/cache-clear/");
+	assert.ok(localStorage.getItem("toolhub-api-cache:v1"));
 	api.clearApiCache();
+	assert.equal(localStorage.getItem("toolhub-api-cache:v1"), null);
 	const refreshed = await api.apiGet("/cache-clear/");
 	assert.equal(first.calls, 1);
 	assert.equal(cached.calls, 1);
 	assert.equal(refreshed.calls, 2);
+	assert.ok(localStorage.getItem("toolhub-api-cache:v1"));
+});
+
+test("targeted tool invalidation evicts detail, revisions, recent, and aggregate API cache entries", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ seq: calls.length, url: String(url) }) };
+	};
+	const detail = await api.apiGet("/tools/my-tool/");
+	const revisions = await api.apiGet("/tools/my-tool/revisions/", { page_size: "20" });
+	const search = await api.apiGet("/search/tools/", { q: "my-tool" });
+	const home = await api.apiGet("/ui/home/");
+	const recent = await api.apiGet("/recent/", { page_size: "100" });
+	const other = await api.apiGet("/tools/other-tool/");
+
+	assert.equal(api.invalidateToolApiCache("my-tool"), 5);
+	assert.notEqual(await api.apiGet("/tools/my-tool/"), detail);
+	assert.notEqual(await api.apiGet("/tools/my-tool/revisions/", { page_size: "20" }), revisions);
+	assert.notEqual(await api.apiGet("/search/tools/", { q: "my-tool" }), search);
+	assert.notEqual(await api.apiGet("/ui/home/"), home);
+	assert.notEqual(await api.apiGet("/recent/", { page_size: "100" }), recent);
+	assert.equal(await api.apiGet("/tools/other-tool/"), other);
+	assert.equal(calls.length, 11);
+});
+
+test("targeted list invalidation evicts list detail, list collection, and recent cache entries", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ seq: calls.length, url: String(url) }) };
+	};
+	const detail = await api.apiGet("/lists/77/");
+	const collection = await api.apiGet("/lists/", { page: "1" });
+	const recent = await api.apiGet("/recent/");
+	const other = await api.apiGet("/lists/88/");
+
+	assert.equal(api.invalidateListApiCache(77), 3);
+	assert.notEqual(await api.apiGet("/lists/77/"), detail);
+	assert.notEqual(await api.apiGet("/lists/", { page: "1" }), collection);
+	assert.notEqual(await api.apiGet("/recent/"), recent);
+	assert.equal(await api.apiGet("/lists/88/"), other);
+	assert.equal(calls.length, 7);
+});
+
+test("official write invalidation only runs for official successes", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ seq: calls.length, url: String(url) }) };
+	};
+	const tool = await api.apiGet("/tools/official-tool/");
+	recentOwnerCacheSet("official-tool", "Old Owner");
+	assert.equal(
+		api.invalidateApiCacheForOfficialWrite(
+			"PUT",
+			"/v1/write/tools/official-tool/",
+			{},
+			{ syncStatus: "local_fallback" }
+		),
+		0
+	);
+	assert.equal(await api.apiGet("/tools/official-tool/"), tool);
+	assert.equal(recentOwnerCacheGet("official-tool"), "Old Owner");
+	assert.equal(
+		api.invalidateApiCacheForOfficialWrite(
+			"POST",
+			"/v1/write/tools/",
+			{ name: "official-tool" },
+			{ result: "official" }
+		),
+		1
+	);
+	assert.notEqual(await api.apiGet("/tools/official-tool/"), tool);
+	assert.equal(recentOwnerCacheGet("official-tool"), undefined);
 });
 
 // ----------------------------------------------------------------- paginate

@@ -12,6 +12,7 @@ export const DEMO_KEYS = {
 	crawlerUrls: "crawlerUrls"
 };
 export const FEED_LOG_CAP = 100;
+export const PUBLIC_API_CACHE_KEY = "toolhub-api-cache:v1";
 export const SYNC_STATUS = {
 	official: "official",
 	localDraft: "local_draft",
@@ -28,6 +29,95 @@ export const SOURCE = {
    data. With a real session these keys sync to Evolved's backend; supported
    flows publish through the backend's /v1/write/* official-first lifecycle. */
 export const DEMO_NS = "thdemo:";
+/**
+ * @param {number} maxAgeMs
+ * @returns {[string, { data: any, ts: number }][]}
+ */
+export function publicApiCacheLoad(maxAgeMs) {
+	try {
+		const raw = localStorage.getItem(PUBLIC_API_CACHE_KEY);
+		const parsed = raw ? JSON.parse(raw) : null;
+		const entries = /** @type {unknown[]} */ (Array.isArray(parsed && parsed.entries) ? parsed.entries : []);
+		const now = Date.now();
+		/** @type {[string, { data: any, ts: number }][]} */
+		const out = [];
+		for (const item of entries) {
+			if (!Array.isArray(item)) continue;
+			const [url, entry] = item;
+			if (typeof url !== "string" || !entry || typeof entry !== "object") continue;
+			const cached = /** @type {{ data?: any, ts?: unknown }} */ (entry);
+			if (typeof cached.ts !== "number") continue;
+			if (now - cached.ts <= maxAgeMs) out.push([url, { data: cached.data, ts: cached.ts }]);
+		}
+		return out;
+	} catch {
+		return [];
+	}
+}
+/** @param {[string, { data: any, ts: number }][]} entries */
+export function publicApiCacheSave(entries) {
+	try {
+		localStorage.setItem(PUBLIC_API_CACHE_KEY, JSON.stringify({ entries }));
+	} catch {}
+}
+export function publicApiCacheClear() {
+	try {
+		localStorage.removeItem(PUBLIC_API_CACHE_KEY);
+	} catch {}
+}
+const RECENT_OWNER_CACHE_KEY = "toolhub-recent-owner-by-tool:v1";
+const RECENT_OWNER_CACHE_TTL_MS = 15 * 60 * 1000;
+const RECENT_OWNER_CACHE_MAX = 120;
+/** @returns {Record<string, { owner: string, ts: number }>} */
+function recentOwnerCacheRead() {
+	try {
+		const now = Date.now();
+		const raw = JSON.parse(localStorage.getItem(RECENT_OWNER_CACHE_KEY) || "{}");
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+		return Object.fromEntries(
+			Object.entries(raw).filter(([, entry]) => {
+				return (
+					entry &&
+					typeof entry === "object" &&
+					typeof entry.owner === "string" &&
+					typeof entry.ts === "number" &&
+					now - entry.ts <= RECENT_OWNER_CACHE_TTL_MS
+				);
+			})
+		);
+	} catch {
+		return {};
+	}
+}
+/** @param {Record<string, { owner: string, ts: number }>} cache */
+function recentOwnerCacheWrite(cache) {
+	try {
+		const bounded = Object.fromEntries(
+			Object.entries(cache)
+				.sort((a, b) => b[1].ts - a[1].ts)
+				.slice(0, RECENT_OWNER_CACHE_MAX)
+		);
+		localStorage.setItem(RECENT_OWNER_CACHE_KEY, JSON.stringify(bounded));
+	} catch {}
+}
+/** @param {string} name */
+export function recentOwnerCacheGet(name) {
+	const cache = recentOwnerCacheRead();
+	return Object.hasOwn(cache, name) ? cache[name].owner : undefined;
+}
+/** @param {string} name @param {string} owner */
+export function recentOwnerCacheSet(name, owner) {
+	const cache = recentOwnerCacheRead();
+	cache[name] = { owner, ts: Date.now() };
+	recentOwnerCacheWrite(cache);
+}
+/** @param {string} name */
+export function recentOwnerCacheDelete(name) {
+	const cache = recentOwnerCacheRead();
+	if (!Object.hasOwn(cache, name)) return;
+	delete cache[name];
+	recentOwnerCacheWrite(cache);
+}
 /* ---- Server write-through hook (production sync) ------------------------
    When a real session exists, serversync.js registers a handler here and every
    overlay mutation is pushed to the backend as well — localStorage becomes a

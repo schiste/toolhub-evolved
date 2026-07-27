@@ -5,7 +5,7 @@
    write-through hook so every later mutation is pushed back. Logged out, the
    app stays read-only for write features; we only remember whether OAuth is
    configured so the UI can offer the real sign-in. */
-import { backendGetJson, backendPutJson, backendWriteJson } from "./api.js";
+import { backendGetJson, backendPutJson, backendWriteJson, invalidateApiCacheForOfficialWrite } from "./api.js";
 import { setServerUser } from "./session.js";
 import { DEMO_KEYS, demoStore, setStoreSync, withSyncMuted } from "./store.js";
 
@@ -43,7 +43,10 @@ export function serverWrite(method, path, body) {
  * @returns {Promise<any>}
  */
 export function officialWrite(method, path, body) {
-	return serverWrite(method, path, body);
+	return serverWrite(method, path, body).then((data) => {
+		invalidateApiCacheForOfficialWrite(method, path, body, data);
+		return data;
+	});
 }
 
 /**

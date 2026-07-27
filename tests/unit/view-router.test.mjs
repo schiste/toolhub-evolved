@@ -426,10 +426,10 @@ test("setActiveNav does not match a look-alike prefix and only marks the first m
 /* ---- render / commitView / errorHTML / loadingHTML -------------------- */
 
 test("loadingHTML and errorHTML render the exact fixed markup", () => {
-	assert.equal(
-		router.loadingHTML(),
-		'<div class="container page loading" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span></div>'
-	);
+	assert.match(router.loadingHTML("/"), /route-loading--home/);
+	assert.match(router.loadingHTML("/"), /hero--loading/);
+	assert.match(router.loadingHTML("/recent"), /route-loading--table/);
+	assert.match(router.loadingHTML("/search"), /skeleton-grid/);
 	assert.equal(
 		router.errorHTML(new Error("oops")),
 		'<div class="container page errorpage"><h1>Couldn\'t load live data</h1>\n\t<p class="prose">The Toolhub API didn\'t respond (oops).</p>\n\t<a class="btn btn--primary btn--md" href="/">Back to home</a></div>'
