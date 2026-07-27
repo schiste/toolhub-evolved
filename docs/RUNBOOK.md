@@ -183,14 +183,18 @@ display metadata unless another method verifies the same per-tool claim.
 Verification is never global to an author display name or Toolhub username:
 `Christophe` verified on `toolhub-evolved` does not verify `Christophe` on any
 other tool without a separate verified claim row for that exact tool.
-`GET /v1/me/tools/` uses those rows as additional Toolhub author-search terms,
-records fresh display-name and Toolforge-maintainer evidence for candidate
-tools, and groups results into verified tools vs possible unverified matches for
-the signed-in user. Successful official Toolhub tool writes add
-`toolhub_write_access` claims without affecting the write response if evidence
-recording fails. Crawler ingestion records `signed_toolinfo` claims before
-upstream-name de-dupe, so official Toolhub data remains canonical while Evolved
-can still retain signed authorship evidence.
+`GET /v1/me/tools/` uses those rows as additional Toolhub author-search terms
+and also discovers Toolforge `tools.*` memberships for the signed-in username
+through public LDAP. Each discovered Toolforge account is fetched from official
+Toolhub by exact `toolforge-<name>` record name, then checked against the public
+Toolsadmin maintainer page before it receives a verified Toolforge-maintainer
+claim. This means a user whose Toolhub records list a display author such as
+`Christophe` can still get verified `Schiste` Toolforge-owned tools without a
+manual alias. Successful official Toolhub tool writes add `toolhub_write_access`
+claims without affecting the write response if evidence recording fails. Crawler
+ingestion records `signed_toolinfo` claims before upstream-name de-dupe, so
+official Toolhub data remains canonical while Evolved can still retain signed
+authorship evidence.
 
 Signed toolinfo metadata is read from `x_toolhub_evolved_signature` or
 `x-toolhub-evolved-signature`. The signed bytes are the canonical JSON toolinfo

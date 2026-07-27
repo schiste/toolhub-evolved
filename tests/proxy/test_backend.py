@@ -27,8 +27,10 @@ from backend import api_cache, authz, author_claims, db, security, sync, toolhub
 from backend.author_claims import (  # noqa: E402
     AuthorNameProvider,
     SignedToolinfoProvider,
+    ToolforgeMembershipProvider,
     ToolforgeMaintainerProvider,
     ToolhubWriteProvider,
+    toolforge_tool_names_from_member_dns,
 )
 from backend.models import (
     ActivityRow,
@@ -218,6 +220,90 @@ def test_init_schema_creates_tool_author_claim_tables():
                     verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
                 )
             )
+
+
+def test_toolforge_membership_provider_extracts_tool_names_from_member_dns():
+    dns = [
+        "cn=project-tools,ou=groups,dc=wikimedia,dc=org",
+        "cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org",
+        "cn=tools.blybot,ou=servicegroups,dc=wikimedia,dc=org",
+        "cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org",
+    ]
+    assert toolforge_tool_names_from_member_dns(dns) == ["toolhub-evolved", "blybot"]
+    provider = ToolforgeMembershipProvider(lookup=lambda username: dns if username == "Schiste" else [])
+    assert provider.tool_names("Schiste") == ["toolhub-evolved", "blybot"]
+
+
+def test_toolforge_membership_provider_handles_empty_missing_and_failing_ldap(monkeypatch):
+    assert ToolforgeMembershipProvider(lookup=lambda _username: []).tool_names("") == []
+    assert ToolforgeMembershipProvider(lookup=lambda _username: (_ for _ in ()).throw(ValueError("bad"))).tool_names(
+        "Ada"
+    ) == []
+    monkeypatch.setattr(author_claims, "Connection", None)
+    monkeypatch.setattr(author_claims, "Server", None)
+    monkeypatch.setattr(author_claims, "escape_filter_chars", None)
+    assert ToolforgeMembershipProvider().tool_names("Ada") == []
+
+
+def test_toolforge_membership_provider_queries_ldap(monkeypatch):
+    calls = {}
+
+    class FakeServer:
+        def __init__(self, uri, *, connect_timeout):
+            calls["server"] = (uri, connect_timeout)
+
+    class FakeMemberOf:
+        values = ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
+
+    class FakeEntry:
+        memberOf = FakeMemberOf()
+
+    class FakeConnection:
+        def __init__(self, server, *, receive_timeout, auto_bind):
+            calls["connection"] = (server, receive_timeout, auto_bind)
+            self.entries = []
+
+        def search(self, base_dn, ldap_filter, *, attributes, size_limit):
+            calls["search"] = (base_dn, ldap_filter, attributes, size_limit)
+            self.entries = [FakeEntry()]
+
+        def unbind(self):
+            calls["unbind"] = True
+
+    monkeypatch.setattr(author_claims, "Server", FakeServer)
+    monkeypatch.setattr(author_claims, "Connection", FakeConnection)
+    monkeypatch.setattr(author_claims, "escape_filter_chars", lambda value: f"escaped:{value}")
+    assert ToolforgeMembershipProvider().tool_names("Schiste") == ["toolhub-evolved"]
+    assert calls["server"] == (author_claims.TOOLFORGE_LDAP_URI, author_claims.TOOLFORGE_LDAP_TIMEOUT)
+    assert calls["search"] == (
+        author_claims.TOOLFORGE_LDAP_BASE_DN,
+        "(uid=escaped:Schiste)",
+        ["memberOf"],
+        1,
+    )
+    assert calls["unbind"] is True
+
+
+def test_toolforge_membership_provider_handles_ldap_entries_without_member_of(monkeypatch):
+    class FakeConnection:
+        entries = []
+        next_entries = []
+
+        def __init__(self, *_args, **_kwargs):
+            self.entries = self.next_entries
+
+        def search(self, *_args, **_kwargs):
+            pass
+
+        def unbind(self):
+            pass
+
+    monkeypatch.setattr(author_claims, "Server", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(author_claims, "Connection", FakeConnection)
+    monkeypatch.setattr(author_claims, "escape_filter_chars", lambda value: value)
+    assert ToolforgeMembershipProvider().tool_names("Schiste") == []
+    FakeConnection.next_entries = [object()]
+    assert ToolforgeMembershipProvider().tool_names("Schiste") == []
 
 
 def test_api_cache_recent_poll_baselines_marker_without_invalidating(app, monkeypatch):
@@ -1144,6 +1230,180 @@ def test_me_tools_uses_local_author_claims_as_verified_search_terms(client, monk
         claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER and claim["isVerified"]
         for claim in item["claims"]
     )
+
+
+def test_me_tools_discovers_toolforge_memberships_when_author_name_differs(client, monkeypatch):
+    uid = add_user(username="Schiste")
+    sign_in(client, uid)
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MEMBERSHIP_PROVIDER",
+        ToolforgeMembershipProvider(
+            lookup=lambda username: [
+                "cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org",
+                "cn=tools.blybot,ou=servicegroups,dc=wikimedia,dc=org",
+                "cn=tools.missing,ou=servicegroups,dc=wikimedia,dc=org",
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MAINTAINER_PROVIDER",
+        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, '<td><a href="/profile/schiste/">Schiste</a></td>')),
+    )
+    calls = []
+
+    def fake_public_api_get(path, *, params=None):
+        calls.append((path, params))
+        if path == "/api/search/tools/":
+            assert params["author__term"] == "Schiste"
+            return {"results": []}
+        if path == "/api/tools/toolforge-toolhub-evolved/":
+            return {
+                "name": "toolforge-toolhub-evolved",
+                "title": "Toolhub Evolved",
+                "url": "https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
+                "author": [{"name": "Christophe"}],
+            }
+        if path == "/api/tools/toolforge-blybot/":
+            return {
+                "name": "toolforge-blybot",
+                "title": "Bly bot",
+                "url": "https://toolsadmin.wikimedia.org/tools/id/blybot",
+                "author": [{"name": "Christophe"}],
+            }
+        if path == "/api/tools/toolforge-missing/":
+            raise toolhub.ToolhubAPIError(404, {"detail": "not found"})
+        raise AssertionError(path)
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    data = client.get("/v1/me/tools/").get_json()
+    assert data["searchTerms"] == ["Schiste"]
+    assert data["toolforgeToolNames"] == ["toolhub-evolved", "blybot", "missing"]
+    assert data["counts"] == {"verified": 2, "possible": 0}
+    assert [item["tool"]["name"] for item in data["verified"]] == ["toolforge-toolhub-evolved", "toolforge-blybot"]
+    assert data["verified"][0]["matchedAuthorNames"] == ["Christophe"]
+    assert "toolforge:toolhub-evolved" in data["verified"][0]["searchTerms"]
+    assert data["verified"][0]["evidenceUrl"].endswith("/tools/id/toolhub-evolved")
+    assert any(
+        claim["authorName"] == "Christophe"
+        and claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+        and claim["isVerified"]
+        for claim in data["verified"][0]["claims"]
+    )
+    assert ("/api/tools/toolforge-missing/", None) in calls
+
+
+def test_toolforge_membership_candidate_fetch_handles_invalid_and_failed_toolhub_rows(monkeypatch):
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MEMBERSHIP_PROVIDER",
+        ToolforgeMembershipProvider(
+            lookup=lambda _username: [
+                "cn=tools.invalid,ou=servicegroups,dc=wikimedia,dc=org",
+                "cn=tools.busy,ou=servicegroups,dc=wikimedia,dc=org",
+                "cn=tools.down,ou=servicegroups,dc=wikimedia,dc=org",
+                "cn=tools.missing,ou=servicegroups,dc=wikimedia,dc=org",
+            ]
+        ),
+    )
+
+    def fake_detail(name):
+        if name == "toolforge-invalid":
+            return None
+        if name == "toolforge-busy":
+            raise toolhub.ToolhubAPIError(503, {"message": "busy"})
+        if name == "toolforge-down":
+            raise toolhub.requests.ConnectionError("down")
+        if name == "toolforge-missing":
+            raise toolhub.ToolhubAPIError(404, {"message": "missing"})
+        raise AssertionError(name)
+
+    monkeypatch.setattr(v1_api, "_toolhub_tool_detail", fake_detail)
+    candidates, errors, names = v1_api._candidate_tools_for_toolforge_memberships("Schiste")
+    assert candidates == {}
+    assert names == ["invalid", "busy", "down", "missing"]
+    assert errors == [
+        {"term": "toolforge-busy", "status": 503, "details": {"message": "busy"}},
+        {"term": "toolforge-down", "status": 502, "details": {"message": "down"}},
+    ]
+    v1_api._add_toolforge_candidate({}, {"title": "Nameless"}, "bad", "Schiste")
+
+
+def test_me_tools_merges_author_search_and_toolforge_membership_candidates(client, monkeypatch):
+    uid = add_user(username="Schiste")
+    sign_in(client, uid)
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MEMBERSHIP_PROVIDER",
+        ToolforgeMembershipProvider(
+            lookup=lambda _username: ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
+        ),
+    )
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MAINTAINER_PROVIDER",
+        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, '<td><a href="/profile/schiste/">Schiste</a></td>')),
+    )
+
+    def fake_public_api_get(path, *, params=None):
+        if path == "/api/search/tools/":
+            return {
+                "results": [
+                    {
+                        "name": "toolforge-toolhub-evolved",
+                        "title": "Toolhub Evolved",
+                        "url": "https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
+                        "author": [{"name": "Schiste"}],
+                    }
+                ]
+            }
+        if path == "/api/tools/toolforge-toolhub-evolved/":
+            return {
+                "name": "toolforge-toolhub-evolved",
+                "title": "Toolhub Evolved",
+                "url": "https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
+                "author": [{"name": "Christophe"}],
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    data = client.get("/v1/me/tools/").get_json()
+    assert data["counts"] == {"verified": 1, "possible": 0}
+    item = data["verified"][0]
+    assert item["matchedAuthorNames"] == ["Schiste", "Christophe"]
+    assert item["searchTerms"] == ["Schiste", "toolforge:toolhub-evolved"]
+    assert item["evidenceUrl"].endswith("/tools/id/toolhub-evolved")
+
+
+def test_me_tools_merges_toolforge_candidate_without_optional_evidence(client, monkeypatch):
+    uid = add_user(username="Ada")
+    sign_in(client, uid)
+    row = {"name": "toolforge-ada", "title": "Ada", "author": [{"name": "Ada"}]}
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *args, **kwargs: {"results": [row]})
+    monkeypatch.setattr(
+        v1_api,
+        "_candidate_tools_for_toolforge_memberships",
+        lambda _username: (
+            {
+                "toolforge-ada": {
+                    "tool": row,
+                    "matchedAuthorNames": ["Ada"],
+                    "searchTerms": ["toolforge:ada"],
+                }
+            },
+            [],
+            ["ada"],
+        ),
+    )
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MAINTAINER_PROVIDER",
+        ToolforgeMaintainerProvider(fetcher=lambda _name: (404, "")),
+    )
+    data = client.get("/v1/me/tools/").get_json()
+    assert data["counts"] == {"verified": 0, "possible": 1}
+    assert data["possible"][0]["searchTerms"] == ["Ada", "toolforge:ada"]
 
 
 def test_me_tools_verified_author_claims_are_per_tool_not_global(client, monkeypatch):

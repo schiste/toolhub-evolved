@@ -17,7 +17,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import unquote, urlencode
+from urllib.parse import quote, unquote, urlencode
 from uuid import uuid4
 
 from flask import Blueprint, Response, abort, jsonify, request, session
@@ -28,6 +28,7 @@ from backend.author_claims import (
     SIGNATURE_META_KEY,
     AuthorNameProvider,
     SignedToolinfoProvider,
+    ToolforgeMembershipProvider,
     ToolforgeMaintainerProvider,
     ToolhubWriteProvider,
     author_names_from_toolhub_tool,
@@ -137,6 +138,7 @@ OFFICIAL_STATUS_DISCARDED = "discarded"
 AUTHOR_NAME_PROVIDER = AuthorNameProvider()
 SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
 TOOLFORGE_MAINTAINER_PROVIDER = ToolforgeMaintainerProvider()
+TOOLFORGE_MEMBERSHIP_PROVIDER = ToolforgeMembershipProvider()
 TOOLHUB_WRITE_PROVIDER = ToolhubWriteProvider()
 TOOLINFO_CREATE_MAX_ITEMS = 200
 TOOLINFO_CREATE_OPT_FIELDS = ("repository", "license", "toolType")
@@ -410,6 +412,12 @@ def _toolhub_search_results(term: str) -> list[dict]:
     return [row for row in results if isinstance(row, dict)] if isinstance(results, list) else []
 
 
+def _toolhub_tool_detail(tool_name: str) -> dict | None:
+    """Fetch one exact official Toolhub tool record by name."""
+    payload = toolhub.public_api_get(f"/api/tools/{quote(tool_name, safe='')}/")
+    return payload if isinstance(payload, dict) and _clean_name(payload.get("name")) else None
+
+
 def _claims_by_tool(claims: list[dict]) -> dict[str, list[dict]]:
     """Group serialized author claims by Toolhub tool name."""
     out: dict[str, list[dict]] = {}
@@ -442,6 +450,32 @@ def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> No
     entry["matchedAuthorNames"] = _dedupe_strings([*entry["matchedAuthorNames"], *matched])
 
 
+def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_name: str, username: str) -> None:
+    """Merge one exact Toolforge-derived Toolhub tool into the candidate map."""
+    tool_name = _clean_name(row.get("name"))
+    if tool_name is None:
+        return
+    entry = candidates.setdefault(
+        tool_name,
+        {
+            "tool": row,
+            "matchedAuthorNames": [],
+            "searchTerms": [],
+        },
+    )
+    entry["tool"] = row
+    entry["searchTerms"] = _dedupe_strings([*entry["searchTerms"], f"toolforge:{toolforge_name}"])
+    entry["matchedAuthorNames"] = _dedupe_strings(
+        [*entry["matchedAuthorNames"], *(_toolhub_author_names(row) or [username])]
+    )
+    entry["evidenceUrl"] = TOOLFORGE_MAINTAINER_PROVIDER.evidence_url(toolforge_name)
+    entry["evidencePayload"] = {
+        **(entry.get("evidencePayload") if isinstance(entry.get("evidencePayload"), dict) else {}),
+        "toolforgeToolName": toolforge_name,
+        "discoveryMethod": "toolforge_ldap_membership",
+    }
+
+
 def _candidate_tools_for_terms(search_terms: list[str]) -> tuple[dict[str, dict], list[dict]]:
     """Search official Toolhub for all resolver terms, preserving partial successes."""
     candidates: dict[str, dict] = {}
@@ -460,6 +494,27 @@ def _candidate_tools_for_terms(search_terms: list[str]) -> tuple[dict[str, dict]
     return candidates, errors
 
 
+def _candidate_tools_for_toolforge_memberships(username: str) -> tuple[dict[str, dict], list[dict], list[str]]:
+    """Fetch official Toolhub candidates from Toolforge tool-account memberships."""
+    candidates: dict[str, dict] = {}
+    errors: list[dict] = []
+    toolforge_names = TOOLFORGE_MEMBERSHIP_PROVIDER.tool_names(username)
+    for toolforge_name in toolforge_names:
+        official_name = f"toolforge-{toolforge_name}"
+        try:
+            row = _toolhub_tool_detail(official_name)
+        except toolhub.ToolhubAPIError as exc:
+            if exc.status_code != HTTP_NOT_FOUND:
+                errors.append({"term": official_name, "status": exc.status_code, "details": exc.payload})
+            continue
+        except toolhub.requests.RequestException as exc:
+            errors.append({"term": official_name, "status": 502, "details": {"message": str(exc)}})
+            continue
+        if row is not None:
+            _add_toolforge_candidate(candidates, row, toolforge_name, username)
+    return candidates, errors, toolforge_names
+
+
 def _resolver_item(tool_name: str, entry: dict, claims_by_tool: dict[str, list[dict]]) -> dict:
     """Attach only this tool's provider claims to one candidate Toolhub tool."""
     claims = list(claims_by_tool.get(_string_key(tool_name), []))
@@ -467,6 +522,7 @@ def _resolver_item(tool_name: str, entry: dict, claims_by_tool: dict[str, list[d
         "tool": entry["tool"],
         "matchedAuthorNames": entry["matchedAuthorNames"],
         "searchTerms": entry["searchTerms"],
+        "evidenceUrl": entry.get("evidenceUrl"),
         "claims": claims,
     }
 
@@ -504,8 +560,8 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
                 user,
                 tool_name=tool_name,
                 author_names=entry["matchedAuthorNames"],
-                evidence_url=_author_search_evidence_url(search_term),
-                evidence_payload={"searchTerms": entry["searchTerms"]},
+                evidence_url=entry.get("evidenceUrl") or _author_search_evidence_url(search_term),
+                evidence_payload=entry.get("evidencePayload") or {"searchTerms": entry["searchTerms"]},
             )
             TOOLFORGE_MAINTAINER_PROVIDER.verify(
                 s,
@@ -1447,6 +1503,27 @@ def v1_me_tools() -> Response:
         )
     search_terms = _search_terms_for_user(user.username, stored_claims)
     candidates, errors = _candidate_tools_for_terms(search_terms)
+    toolforge_candidates, toolforge_errors, toolforge_tool_names = _candidate_tools_for_toolforge_memberships(
+        user.username
+    )
+    for tool_name, entry in toolforge_candidates.items():
+        existing = candidates.get(tool_name)
+        if existing is None:
+            candidates[tool_name] = entry
+            continue
+        existing["tool"] = entry["tool"]
+        existing["matchedAuthorNames"] = _dedupe_strings(
+            [*existing["matchedAuthorNames"], *entry["matchedAuthorNames"]]
+        )
+        existing["searchTerms"] = _dedupe_strings([*existing["searchTerms"], *entry["searchTerms"]])
+        if entry.get("evidenceUrl"):
+            existing["evidenceUrl"] = entry["evidenceUrl"]
+        if isinstance(entry.get("evidencePayload"), dict):
+            existing["evidencePayload"] = {
+                **(existing.get("evidencePayload") if isinstance(existing.get("evidencePayload"), dict) else {}),
+                **entry["evidencePayload"],
+            }
+    errors.extend(toolforge_errors)
 
     if errors and not candidates and len(errors) == len(search_terms):
         resp = jsonify({"error": "official Toolhub is unavailable", "username": user.username, "errors": errors})
@@ -1461,6 +1538,7 @@ def v1_me_tools() -> Response:
         {
             "username": user.username,
             "searchTerms": search_terms,
+            "toolforgeToolNames": toolforge_tool_names,
             "counts": {"verified": len(groups["verified"]), "possible": len(groups["possible"])},
             "verified": groups["verified"],
             "possible": groups["possible"],

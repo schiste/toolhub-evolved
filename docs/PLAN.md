@@ -240,8 +240,9 @@ explains the model in plain language:
 - **Shipped:** Developer settings now link to official Toolhub OAuth/app/token
   pages and expose Evolved-local signed-toolinfo public-key management.
 - **Shipped:** `/my-tools` resolves tools from the signed-in Toolhub username and
-  displays per-tool verification badges for Toolforge maintainer, Toolhub write
-  access, signed toolinfo, and unverified author-name matches.
+  Toolforge `tools.*` memberships, then displays per-tool verification badges
+  for Toolforge maintainer, Toolhub write access, signed toolinfo, and
+  unverified author-name matches.
 - **Shipped:** Tool creation accepts a create-only `toolinfo_url`; Evolved fetches
   it immediately to fill missing fields and register crawler/signed-toolinfo
   evidence, while official Toolhub remains canonical.

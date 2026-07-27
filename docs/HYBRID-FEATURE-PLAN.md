@@ -72,7 +72,9 @@ Backend endpoints already implemented:
 
 Author verification now uses provider-specific evidence rows rather than
 treating Toolhub author display names as proof. `AuthorNameProvider` records
-display-name matches as unverified candidates; `ToolforgeMaintainerProvider`
+display-name matches as unverified candidates; `ToolforgeMembershipProvider`
+discovers Toolforge `tools.*` memberships through public LDAP so Evolved can
+fetch exact official `toolforge-*` Toolhub records; `ToolforgeMaintainerProvider`
 checks public Toolsadmin maintainer pages; `ToolhubWriteProvider` records
 verification after a successful official Toolhub tool write by the same user;
 and `SignedToolinfoProvider` verifies signed `toolinfo.json` records against

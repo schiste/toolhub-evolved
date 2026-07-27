@@ -8,6 +8,7 @@ import binascii
 import hashlib
 import json
 import re
+import socket
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
@@ -45,8 +46,25 @@ except ImportError:  # pragma: no cover - local tests inject a verifier and do n
     Ed25519PublicKey = None
     load_pem_public_key = None
 
+try:  # pragma: no cover - exercised in production when ldap3 is installed.
+    from ldap3 import Connection, Server
+    from ldap3.core.exceptions import LDAPException
+    from ldap3.utils.conv import escape_filter_chars
+except ImportError:  # pragma: no cover - tests inject the membership lookup.
+    Connection = None
+    Server = None
+    escape_filter_chars = None
+
+    class LDAPException(Exception):
+        """Fallback exception type used when ldap3 is not installed."""
+
+
 TOOLFORGE_BASE_URL = "https://toolsadmin.wikimedia.org"
+TOOLFORGE_LDAP_URI = "ldap://ldap-ro.eqiad.wikimedia.org:389"
+TOOLFORGE_LDAP_BASE_DN = "ou=people,dc=wikimedia,dc=org"
 TOOLFORGE_TIMEOUT = 5
+TOOLFORGE_LDAP_TIMEOUT = 5
+TOOLFORGE_MAX_MEMBERSHIP_TOOLS = 100
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
 TOOLFORGE_CLAIM_TTL = timedelta(days=1)
@@ -68,6 +86,7 @@ AUTHOR_CLAIM_STRONG_METHODS = {
 
 SignatureVerifier = Callable[[str, bytes, bytes], None]
 ToolforgeFetcher = Callable[[str], tuple[int, str]]
+ToolforgeMembershipLookup = Callable[[str], list[str]]
 
 
 @dataclass(frozen=True)
@@ -535,6 +554,54 @@ def parse_toolsadmin_maintainers(html: str) -> list[str]:
     if marker is None:
         return []
     return dedupe_strings([line.strip() for line in marker.group(1).splitlines()])
+
+
+def toolforge_tool_names_from_member_dns(member_dns: list[Any]) -> list[str]:
+    """Extract Toolforge tool account names from LDAP memberOf DNs."""
+    names: list[str] = []
+    for member_dn in member_dns:
+        match = re.search(r"(?:^|,)cn=tools\.([^,]+),ou=servicegroups,", str(member_dn), flags=re.IGNORECASE)
+        if match:
+            names.append(match.group(1))
+    return dedupe_strings(names)[:TOOLFORGE_MAX_MEMBERSHIP_TOOLS]
+
+
+class ToolforgeMembershipProvider:
+    """Discover Toolforge tool accounts maintained by a Toolhub/Wikimedia user."""
+
+    def __init__(self, lookup: ToolforgeMembershipLookup | None = None) -> None:
+        """Store an injectable LDAP lookup."""
+        self.lookup = lookup or self._lookup_ldap
+
+    def tool_names(self, username: str) -> list[str]:
+        """Return Toolforge tool names from public LDAP membership data."""
+        clean_username = clean_string(username)
+        if not clean_username:
+            return []
+        try:
+            return toolforge_tool_names_from_member_dns(self.lookup(clean_username))
+        except (LDAPException, OSError, socket.timeout, TimeoutError, ValueError):
+            return []
+
+    def _lookup_ldap(self, username: str) -> list[str]:
+        if Connection is None or Server is None or escape_filter_chars is None:
+            return []
+        server = Server(TOOLFORGE_LDAP_URI, connect_timeout=TOOLFORGE_LDAP_TIMEOUT)
+        conn = Connection(server, receive_timeout=TOOLFORGE_LDAP_TIMEOUT, auto_bind=True)
+        try:
+            conn.search(
+                TOOLFORGE_LDAP_BASE_DN,
+                f"(uid={escape_filter_chars(username)})",
+                attributes=["memberOf"],
+                size_limit=1,
+            )
+            if not conn.entries:
+                return []
+            member_of = getattr(conn.entries[0], "memberOf", None)
+            values = getattr(member_of, "values", []) if member_of is not None else []
+            return list(values)
+        finally:
+            conn.unbind()
 
 
 def toolforge_names_from_toolhub_tool(tool_name: str, tool: dict) -> list[str]:

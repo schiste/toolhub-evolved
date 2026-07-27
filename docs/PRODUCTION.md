@@ -57,12 +57,13 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   available for compatibility and smoke checks.
 - **Author verification**: `proxy/backend/author_claims.py` powers the signed-in
   My tools resolver. It starts from the Toolhub OAuth username, searches official
-  Toolhub author data, records display-name matches as unverified, and upgrades
-  claims only through stronger Evolved evidence: public Toolsadmin maintainer
-  pages, successful official Toolhub tool writes, or signed `toolinfo.json`
-  records verified against active local public keys registered in Developer
-  settings. Verification is per tool, never global to an author display name or
-  Toolhub username.
+  Toolhub author data, discovers Toolforge `tools.*` memberships through public
+  LDAP, fetches matching official `toolforge-*` Toolhub records exactly, records
+  display-name matches as unverified, and upgrades claims only through stronger
+  Evolved evidence: public Toolsadmin maintainer pages, successful official
+  Toolhub tool writes, or signed `toolinfo.json` records verified against active
+  local public keys registered in Developer settings. Verification is per tool,
+  never global to an author display name or Toolhub username.
 - **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
   the only sign-in path, while local `users.role` permission sets (`user`,
   `reviewer`, `admin`) gate Evolved-owned data/actions through
