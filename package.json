@@ -54,7 +54,7 @@
 		"eslint-plugin-sonarjs": "4.1.0",
 		"eslint-plugin-unicorn": "69.0.0",
 		"espree": "11.2.0",
-		"globals": "16.5.0",
+		"globals": "17.7.0",
 		"happy-dom": "20.10.6",
 		"jscpd": "5.0.11",
 		"knip": "5.88.1",
