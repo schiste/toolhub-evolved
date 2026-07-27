@@ -14,12 +14,13 @@ auditlogs) are append-only, idempotent by client id.
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import unquote
 from uuid import uuid4
 
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import authz, db, toolhub
+from backend import api_cache, authz, db, toolhub
 from backend.models import (
     ActivityRow,
     CrawlerRun,
@@ -63,6 +64,10 @@ HTTP_NOT_FOUND = 404
 HTTP_NO_CONTENT = 204
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
+UPSTREAM_KIND_INDEX = 1
+UPSTREAM_MIN_PARTS = 2
+UPSTREAM_OBJECT_INDEX = 2
+UPSTREAM_OBJECT_PARTS = 3
 MAX_ITEMS = 500  # per overlay key per user
 MAX_NAME = 255
 FEED_READ_CAP = 100
@@ -343,6 +348,52 @@ def _upstream_path(fragment: str) -> str:
     return f"/api/{fragment.lstrip('/')}"
 
 
+def _upstream_path_parts(path: str) -> list[str]:
+    """Return decoded pieces from an official Toolhub API path."""
+    return [unquote(part) for part in path.strip("/").split("/") if part]
+
+
+def _string_payload_value(payload: object | None, *keys: str) -> str | None:
+    """Return the first non-empty string-like value from a JSON object payload."""
+    if not isinstance(payload, dict):
+        return None
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        text_value = str(value).strip()
+        if text_value:
+            return text_value
+    return None
+
+
+def _invalidate_official_api_cache(path: str, request_payload: object | None, response_payload: object | None) -> None:
+    """Invalidate anonymous cached reads affected by a successful official write."""
+    parts = _upstream_path_parts(path)
+    if len(parts) < UPSTREAM_MIN_PARTS or parts[0] != "api":
+        return
+    if parts[UPSTREAM_KIND_INDEX] == "tools":
+        tool_name = (
+            parts[UPSTREAM_OBJECT_INDEX]
+            if len(parts) >= UPSTREAM_OBJECT_PARTS
+            else _string_payload_value(response_payload, "name")
+        )
+        if tool_name is None:
+            tool_name = _string_payload_value(request_payload, "name")
+        if tool_name is not None:
+            api_cache.invalidate_tool(tool_name)
+    elif parts[UPSTREAM_KIND_INDEX] == "lists":
+        list_id = (
+            parts[UPSTREAM_OBJECT_INDEX]
+            if len(parts) >= UPSTREAM_OBJECT_PARTS
+            else _string_payload_value(response_payload, "id")
+        )
+        if list_id is not None:
+            api_cache.invalidate_list(list_id)
+        else:
+            api_cache.invalidate_list_collection()
+
+
 def _official_response(method: str, path: str, payload: object | None = None) -> Response:
     """Call official Toolhub as the current user and normalize failures."""
     user = _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
@@ -362,6 +413,7 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
         resp = jsonify({"error": "official Toolhub is unavailable"})
         resp.status_code = 502
         return resp
+    _invalidate_official_api_cache(path, payload, body)
     if status == HTTP_NO_CONTENT:
         return jsonify({"ok": True})
     resp = jsonify({"ok": True, "toolhub": body})
@@ -451,6 +503,7 @@ def _attempt_official_write(user: User, method: str, path: str, payload: object 
             _failure_payload(502, {"message": "official Toolhub is unavailable"}, "official Toolhub is unavailable"),
             None,
         )
+    _invalidate_official_api_cache(path, payload, body)
     return {
         "ok": True,
         "status": status,

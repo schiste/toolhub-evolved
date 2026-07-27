@@ -74,6 +74,15 @@ class ApiCache(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ApiCacheMeta(Base):
+    """Small persistent state used by the anonymous Toolhub API cache."""
+
+    __tablename__ = "api_cache_meta"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Favorite(Base):
     """One favorited tool name for one user."""
 

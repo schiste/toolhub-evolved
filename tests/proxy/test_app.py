@@ -25,9 +25,10 @@ from backend.models import ApiCache  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache(monkeypatch):
     """The proxy's API cache is shared through the DB; isolate tests."""
     proxy_app.api_cache.clear()
+    monkeypatch.setattr(proxy_app.api_cache, "maybe_poll_recent_changes", lambda *_args, **_kwargs: 0)
     yield
     proxy_app.api_cache.clear()
 
@@ -41,9 +42,10 @@ def client():
 class FakeUpstream:
     """Minimal stand-in for a streamed `requests` response."""
 
-    def __init__(self, status_code, body=b"{}", content_type="application/json", headers=None):
+    def __init__(self, status_code, body=b"{}", content_type="application/json", headers=None, json_payload=None):
         self.status_code = status_code
         self._body = body
+        self._json_payload = json_payload
         self.headers = {"content-type": content_type, **(headers or {})}
         self.closed = False
 
@@ -57,6 +59,11 @@ class FakeUpstream:
 
     def close(self):
         self.closed = True
+
+    def json(self):
+        if isinstance(self._json_payload, ValueError):
+            raise self._json_payload
+        return self._json_payload
 
 
 @pytest.fixture
@@ -119,6 +126,9 @@ def test_upstream_exception_returns_502(client, fake_get):
     resp = client.get("/api/tools/")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "upstream unavailable"
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "timeout"
 
 
 def test_success_is_relayed_and_cached(client, fake_get):
@@ -126,12 +136,13 @@ def test_success_is_relayed_and_cached(client, fake_get):
     resp = client.get("/api/search/tools/?q=wiki&page=2")
     assert resp.status_code == 200
     assert resp.data == b'{"ok":true}'
-    assert resp.headers["Cache-Control"] == "public, max-age=300"
+    assert resp.headers["Cache-Control"] == "public, max-age=120, stale-if-error=86400"
     # query string forwarded verbatim, and redirects must not be followed
     assert captured["url"] == "https://toolhub.wikimedia.org/api/search/tools/?q=wiki&page=2"
     assert captured["kwargs"]["allow_redirects"] is False
     assert captured["kwargs"]["timeout"] == 20
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "200"
     with db.session_scope() as s:
         row = s.query(ApiCache).one()
         assert row.url == captured["url"]
@@ -139,11 +150,49 @@ def test_success_is_relayed_and_cached(client, fake_get):
         assert row.body == b'{"ok":true}'
 
 
+def test_recent_invalidation_fetch_reads_toolhub_recent_rows(fake_get):
+    captured = fake_get(
+        FakeUpstream(
+            200,
+            json_payload={
+                "results": [
+                    {"id": 2, "content_type": "tool"},
+                    "not-a-row",
+                    {"id": 1, "content_type": "list"},
+                ]
+            },
+        )
+    )
+    assert proxy_app._fetch_recent_change_rows() == [
+        {"id": 2, "content_type": "tool"},
+        {"id": 1, "content_type": "list"},
+    ]
+    assert captured["url"] == "https://toolhub.wikimedia.org/api/recent/?page_size=50"
+    assert captured["kwargs"]["allow_redirects"] is False
+    assert captured["kwargs"]["timeout"] == 10
+
+
+def test_recent_invalidation_fetch_treats_failures_as_no_rows(fake_get):
+    fake_get(raises=proxy_app.requests.RequestException("timeout"))
+    assert proxy_app._fetch_recent_change_rows() == []
+
+    fake_get(FakeUpstream(503, json_payload={"results": [{"id": 1}]}))
+    assert proxy_app._fetch_recent_change_rows() == []
+
+    fake_get(FakeUpstream(200, json_payload=ValueError("bad json")))
+    assert proxy_app._fetch_recent_change_rows() == []
+
+    fake_get(FakeUpstream(200, json_payload={"results": "not-list"}))
+    assert proxy_app._fetch_recent_change_rows() == []
+
+
 def test_error_status_is_relayed_but_not_cached(client, fake_get):
     fake_get(FakeUpstream(503, b'{"error":"upstream"}'))
     resp = client.get("/api/tools/")
     assert resp.status_code == 503
     assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "503"
 
 
 def test_redirect_is_relayed_not_followed(client, fake_get):
@@ -151,6 +200,9 @@ def test_redirect_is_relayed_not_followed(client, fake_get):
     resp = client.get("/api/whatever/")
     assert resp.status_code == 302
     assert captured["kwargs"]["allow_redirects"] is False
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "302"
 
 
 def test_oversize_response_is_rejected(client, fake_get, monkeypatch):
@@ -160,6 +212,9 @@ def test_oversize_response_is_rejected(client, fake_get, monkeypatch):
     resp = client.get("/api/tools/")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "upstream response too large"
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "200"
     assert upstream.closed is True, "the oversized stream must be closed"
 
 
@@ -169,8 +224,29 @@ def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
     second = client.get("/api/ui/home/")
     assert captured["calls"] == 1, "second identical GET must hit the persistent API cache"
     assert first.data == second.data == b'{"v":1}'
-    assert second.headers["Cache-Control"] == "public, max-age=300"
+    assert second.headers["Cache-Control"] == "public, max-age=60, stale-if-error=86400"
     assert second.headers["X-Toolhub-Evolved-Cache"] == "hit"
+    assert second.headers["X-Toolhub-Evolved-Upstream"] == "200"
+
+
+def test_cache_policy_uses_endpoint_specific_ttls():
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/recent/").fresh_seconds == 30
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/search/tools/?q=wiki").fresh_seconds == 120
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/tools/citoid/").fresh_seconds == 900
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/lists/123/").fresh_seconds == 900
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/schema/").fresh_seconds == 86400
+
+
+def test_detail_cache_stores_stale_if_error_after_fresh_window(client, fake_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    fake_get(FakeUpstream(200, b'{"name":"citoid"}'))
+    resp = client.get("/api/tools/citoid/")
+    assert resp.headers["Cache-Control"] == "public, max-age=900, stale-if-error=86400"
+    with db.session_scope() as s:
+        row = s.query(ApiCache).one()
+        assert row.expires_at == clock["t"] + timedelta(seconds=900)
+        assert row.stale_until == clock["t"] + timedelta(seconds=900 + 86400)
 
 
 def test_cache_expires_after_ttl(client, fake_get, monkeypatch):
@@ -204,7 +280,24 @@ def test_stale_cache_is_served_on_transient_upstream_exception(client, fake_get,
     assert resp.status_code == 200
     assert resp.data == b'{"v":1}'
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "timeout"
     assert "Response is stale" in resp.headers["Warning"]
+
+
+def test_stale_cache_is_served_on_transient_upstream_status(client, fake_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    captured = fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+
+    fake_get(FakeUpstream(503, b'{"error":"upstream"}'))
+    resp = client.get("/api/tools/")
+    assert captured["calls"] == 2
+    assert resp.status_code == 200
+    assert resp.data == b'{"v":1}'
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "503"
 
 
 def test_stale_cache_is_not_served_after_stale_window(client, fake_get, monkeypatch):
@@ -212,12 +305,18 @@ def test_stale_cache_is_not_served_after_stale_window(client, fake_get, monkeypa
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     fake_get(FakeUpstream(200, b'{"v":1}'))
     client.get("/api/tools/")
-    clock["t"] += timedelta(seconds=proxy_app.api_cache.STALE_SECONDS + 1)
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + proxy_app.api_cache.STALE_SECONDS + 1)
 
     fake_get(raises=proxy_app.requests.RequestException("timeout"))
     resp = client.get("/api/tools/")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "upstream unavailable"
+
+
+def test_proxy_raises_if_fetch_contract_is_broken(client, monkeypatch):
+    monkeypatch.setattr(proxy_app, "_fetch_upstream", lambda *_args: (None, None, None))
+    with pytest.raises(RuntimeError):
+        client.get("/api/tools/")
 
 
 def test_stale_cache_revalidates_with_conditional_headers(client, fake_get, monkeypatch):
@@ -241,6 +340,7 @@ def test_stale_cache_revalidates_with_conditional_headers(client, fake_get, monk
     assert resp.status_code == 200
     assert resp.data == b'{"v":1}'
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "revalidated"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "304"
 
 
 # ---- static files ----------------------------------------------------------

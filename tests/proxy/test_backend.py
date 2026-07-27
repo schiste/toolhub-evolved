@@ -7,20 +7,24 @@ are monkeypatched. The suite exercises every branch (the coverage gate is
 """
 
 import sys
+from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from flask import Flask
 from sqlalchemy import inspect, select
+from sqlalchemy.exc import SQLAlchemyError
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import authz, db, security, sync, toolhub  # noqa: E402
+from backend import api_cache, authz, db, security, sync, toolhub  # noqa: E402
 from backend.models import (
     ActivityRow,
     ApiCache,
+    ApiCacheMeta,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
@@ -37,6 +41,7 @@ from backend.models import (
 )  # noqa: E402
 from backend.v1 import (  # noqa: E402
     FEED_KEEP_CAP,
+    _invalidate_official_api_cache,
     _iso,
     _merged_maps,
     _message_from_payload,
@@ -45,6 +50,7 @@ from backend.v1 import (  # noqa: E402
     _parse_iso,
     _parse_optional_iso,
     _string_list,
+    _string_payload_value,
     _validation_errors,
 )
 
@@ -147,6 +153,162 @@ def test_init_schema_creates_persistent_api_cache_table():
         "last_modified",
         "last_error",
     }.issubset(cols)
+    meta_cols = {col["name"] for col in inspect(db.engine()).get_columns(ApiCacheMeta.__tablename__)}
+    assert {"key", "value", "updated_at"}.issubset(meta_cols)
+
+
+def test_api_cache_recent_poll_baselines_marker_without_invalidating(app, monkeypatch):
+    clock = {"t": utcnow()}
+    monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/tools/my-tool/",
+        api_cache.CacheableResponse(200, "application/json", b'{"name":"my-tool"}'),
+    )
+
+    first = [{}, {"id": 1, "timestamp": "2026-07-27T10:00:00Z", "content_type": "tool", "content_id": "my-tool"}]
+    assert api_cache.maybe_poll_recent_changes(lambda: first) == 0
+    with db.session_scope() as s:
+        assert s.query(ApiCache).count() == 1
+        assert s.get(ApiCacheMeta, "recent_latest_marker") is not None
+
+    second = [{"id": 2, "timestamp": "2026-07-27T11:00:00Z", "content_type": "tool", "content_id": "my-tool"}]
+    assert api_cache.maybe_poll_recent_changes(lambda: second) == 0
+    with db.session_scope() as s:
+        assert s.query(ApiCache).count() == 1
+
+
+def test_api_cache_recent_poll_invalidates_changed_tool_and_list_rows(app, monkeypatch):
+    clock = {"t": utcnow()}
+    monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
+    baseline = [{"id": 10, "timestamp": "2026-07-27T09:00:00Z", "content_type": "tool", "content_id": "old"}]
+    assert api_cache.maybe_poll_recent_changes(lambda: baseline) == 0
+
+    cached_urls = [
+        "https://toolhub.wikimedia.org/api/tools/my-tool/",
+        "https://toolhub.wikimedia.org/api/tools/my-tool/revisions/?page_size=20",
+        "https://toolhub.wikimedia.org/api/search/tools/?q=my-tool",
+        "https://toolhub.wikimedia.org/api/ui/home/",
+        "https://toolhub.wikimedia.org/api/recent/?page_size=100",
+        "https://toolhub.wikimedia.org/api/lists/77/",
+        "https://toolhub.wikimedia.org/api/lists/?page=1",
+        "https://toolhub.wikimedia.org/api/tools/other-tool/",
+    ]
+    for url in cached_urls:
+        api_cache.put_success(url, api_cache.CacheableResponse(200, "application/json", b"{}"))
+    clock["t"] += timedelta(seconds=api_cache.RECENT_POLL_SECONDS + 1)
+
+    rows = [
+        {"id": 12, "timestamp": "2026-07-27T11:00:00Z", "content_type": "list", "content_id": 77},
+        {"id": 11, "timestamp": "2026-07-27T10:00:00Z", "content_type": "tool", "content_id": "my-tool"},
+        {"id": 10, "timestamp": "2026-07-27T09:00:00Z", "content_type": "tool", "content_id": "old"},
+    ]
+    assert api_cache.maybe_poll_recent_changes(lambda: rows) == 7
+    with db.session_scope() as s:
+        assert [row.url for row in s.query(ApiCache).all()] == ["https://toolhub.wikimedia.org/api/tools/other-tool/"]
+
+
+def test_api_cache_recent_poll_processes_page_when_old_marker_is_not_seen(app, monkeypatch):
+    clock = {"t": utcnow()}
+    monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
+    baseline = [{"id": 1, "timestamp": "2026-07-27T09:00:00Z", "content_type": "tool", "content_id": "old"}]
+    assert api_cache.maybe_poll_recent_changes(lambda: baseline) == 0
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/search/tools/?q=my-tool",
+        api_cache.CacheableResponse(200, "application/json", b"{}"),
+    )
+    clock["t"] += timedelta(seconds=api_cache.RECENT_POLL_SECONDS + 1)
+
+    rows = [
+        {"id": 3, "timestamp": "2026-07-27T11:00:00Z", "content_type": "tool", "content_id": "my-tool"},
+        {"id": 2, "timestamp": "2026-07-27T10:00:00Z", "content_type": "tool"},
+    ]
+    assert api_cache.maybe_poll_recent_changes(lambda: rows) == 1
+    with db.session_scope() as s:
+        assert s.query(ApiCache).count() == 0
+
+
+def test_api_cache_direct_invalidation_helpers_cover_noop_and_collection_paths(app):
+    policy = api_cache.policy_for_url("https://toolhub.wikimedia.org/api/tools/my-tool/")
+    assert policy.stale_until_seconds == policy.fresh_seconds + policy.stale_if_error_seconds
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/lists/?page=1",
+        api_cache.CacheableResponse(200, "application/json", b"{}"),
+    )
+    api_cache.refresh("https://toolhub.wikimedia.org/api/missing/")
+    assert api_cache.invalidate_tool("") == 0
+    assert api_cache.invalidate_list("") == 0
+    assert api_cache.invalidate_recent_rows([{"content_type": "crawler_url", "content_id": "1"}, {"content_type": "tool"}]) == 0
+    assert api_cache.invalidate_list_collection() == 1
+
+
+def test_api_cache_recent_poll_handles_invalid_marker_empty_rows_and_fetch_errors(app, monkeypatch):
+    clock = {"t": utcnow()}
+    monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
+    with db.session_scope() as s:
+        s.add(ApiCacheMeta(key="recent_last_polled_at", value="not-a-date"))
+
+    assert api_cache.maybe_poll_recent_changes(lambda: [{}]) == 0
+    clock["t"] += timedelta(seconds=api_cache.RECENT_POLL_SECONDS + 1)
+    assert api_cache.maybe_poll_recent_changes(lambda: (_ for _ in ()).throw(RuntimeError("boom"))) == 0
+
+
+def test_api_cache_database_failures_do_not_break_callers(app, monkeypatch):
+    @contextmanager
+    def broken_session_scope():
+        raise SQLAlchemyError("db down")
+        yield
+
+    monkeypatch.setattr(api_cache.db, "session_scope", broken_session_scope)
+    assert api_cache.get("https://toolhub.wikimedia.org/api/tools/my-tool/") is None
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/tools/my-tool/",
+        api_cache.CacheableResponse(200, "application/json", b"{}"),
+    )
+    api_cache.refresh("https://toolhub.wikimedia.org/api/tools/my-tool/")
+    api_cache.mark_failure("https://toolhub.wikimedia.org/api/tools/my-tool/", "timeout")
+    assert api_cache.invalidate_list_collection() == 0
+    assert api_cache.maybe_poll_recent_changes(lambda: []) == 0
+
+
+def test_api_cache_recent_poll_keeps_removed_count_when_marker_write_fails(app, monkeypatch):
+    clock = {"t": utcnow()}
+    monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/search/tools/?q=my-tool",
+        api_cache.CacheableResponse(200, "application/json", b"{}"),
+    )
+
+    original_set_metadata = api_cache._set_metadata
+
+    def flaky_set_metadata(*args):
+        if args[1] == "recent_latest_marker":
+            raise SQLAlchemyError("db down")
+        return original_set_metadata(*args)
+
+    monkeypatch.setattr(api_cache, "_set_metadata", flaky_set_metadata)
+    rows = [{"id": 3, "timestamp": "2026-07-27T11:00:00Z", "content_type": "tool", "content_id": "my-tool"}]
+    assert api_cache.maybe_poll_recent_changes(lambda: rows) == 0
+    clock["t"] += timedelta(seconds=api_cache.RECENT_POLL_SECONDS + 1)
+    with db.session_scope() as s:
+        original_set_metadata(s, "recent_latest_marker", '{"id":"1","timestamp":"old"}', clock["t"])
+    assert api_cache.maybe_poll_recent_changes(lambda: rows) == 1
+
+
+def test_official_cache_invalidation_helper_handles_edge_paths(monkeypatch):
+    calls = []
+    monkeypatch.setattr(api_cache, "invalidate_tool", lambda name: calls.append(("tool", name)))
+    monkeypatch.setattr(api_cache, "invalidate_list", lambda ident: calls.append(("list", ident)))
+    monkeypatch.setattr(api_cache, "invalidate_list_collection", lambda: calls.append(("lists", "*")))
+
+    assert _string_payload_value("not-json", "name") is None
+    assert _string_payload_value({"id": None, "name": " from-request "}, "id", "name") == "from-request"
+    assert _string_payload_value({"id": "", "name": "from-empty-fallback"}, "id", "name") == "from-empty-fallback"
+    _invalidate_official_api_cache("/not-api", None, None)
+    _invalidate_official_api_cache("/api/tools/", {}, {})
+    _invalidate_official_api_cache("/api/tools/", {"name": "from-request"}, ["not-a-dict"])
+    _invalidate_official_api_cache("/api/lists/", {}, {})
+
+    assert calls == [("tool", "from-request"), ("lists", "*")]
 
 
 def test_session_scope_rolls_back_on_error(app):
@@ -1272,6 +1434,14 @@ def test_official_tool_write_forwards_with_bearer_token(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)
     toolhub.save_grant(uid, {"access_token": "at"})
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/tools/my-tool/",
+        api_cache.CacheableResponse(200, "application/json", b'{"name":"my-tool","title":"old"}'),
+    )
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/search/tools/?q=my-tool",
+        api_cache.CacheableResponse(200, "application/json", b'{"results":[]}'),
+    )
     calls = []
 
     def fake_request(method, url, **kwargs):
@@ -1287,6 +1457,8 @@ def test_official_tool_write_forwards_with_bearer_token(client, monkeypatch):
     assert calls[0][1] == "https://toolhub.wikimedia.org/api/tools/"
     assert calls[0][2]["headers"]["Authorization"] == "Bearer at"
     assert calls[0][2]["json"] == payload
+    with db.session_scope() as s:
+        assert s.query(ApiCache).count() == 0
 
 
 def test_official_bridge_routes_forward_all_write_paths(client, monkeypatch):
@@ -1583,6 +1755,14 @@ def test_write_list_and_favorite_success_store_official_sync_metadata(client, mo
     uid = add_user()
     sign_in(client, uid)
     toolhub.save_grant(uid, {"access_token": "at"})
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/lists/77/",
+        api_cache.CacheableResponse(200, "application/json", b'{"id":77,"title":"old"}'),
+    )
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/lists/?page=1",
+        api_cache.CacheableResponse(200, "application/json", b'{"results":[]}'),
+    )
     calls = []
 
     def fake_request(method, url, **kwargs):
@@ -1616,6 +1796,7 @@ def test_write_list_and_favorite_success_store_official_sync_metadata(client, mo
         favorite = s.execute(select(Favorite).where(Favorite.tool_name == "my-tool")).scalar_one()
         assert favorite.sync_status == "official"
         assert favorite.last_synced_at is not None
+        assert s.query(ApiCache).count() == 0
 
 
 def test_write_delete_failures_do_not_create_canonical_local_deletions(client, monkeypatch):
