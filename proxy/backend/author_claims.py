@@ -13,6 +13,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import timedelta
+from html import unescape
 from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, unquote, urlparse
@@ -342,6 +343,7 @@ class ToolforgeMaintainerProvider:
                 ToolAuthorClaim.tool_name == tool_name,
                 ToolAuthorClaim.toolhub_username == username,
                 ToolAuthorClaim.verification_method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                ToolAuthorClaim.verification_status == AUTHOR_CLAIM_VERIFIED,
             )
         ).scalars()
         fresh = {string_key(row.author_name) for row in rows if not _is_expired(row.expires_at)}
@@ -544,8 +546,31 @@ class SignedToolinfoProvider:
         ]
 
 
+def _html_fragment_text(fragment: str) -> str:
+    """Return normalized visible-ish text from a small HTML fragment."""
+    text = re.sub(r"<[^>]+>", " ", unescape(fragment))
+    return clean_string(re.sub(r"\s+", " ", text))
+
+
+def _captioned_maintainer_table_names(html: str) -> list[str]:
+    """Extract names from the current Toolsadmin maintainer table markup."""
+    names: list[str] = []
+    for table in re.findall(r"<table\b[^>]*>.*?</table>", html, flags=re.DOTALL | re.IGNORECASE):
+        caption_match = re.search(r"<caption[^>]*>(.*?)</caption>", table, flags=re.DOTALL | re.IGNORECASE)
+        if caption_match is None or string_key(_html_fragment_text(caption_match.group(1))) != "maintainers":
+            continue
+        names.extend(
+            _html_fragment_text(cell)
+            for cell in re.findall(r"<td\b[^>]*>(.*?)</td>", table, flags=re.DOTALL | re.IGNORECASE)
+        )
+    return dedupe_strings(names)
+
+
 def parse_toolsadmin_maintainers(html: str) -> list[str]:
     """Extract public maintainer names from a Toolsadmin tool detail page."""
+    table_names = _captioned_maintainer_table_names(html)
+    if table_names:
+        return table_names
     parser = _MaintainerParser()
     parser.feed(html)
     if parser.maintainers:
