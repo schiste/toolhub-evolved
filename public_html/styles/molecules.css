@@ -538,9 +538,12 @@ li.le__empty {
 /* Recent changes filter. */
 .rc-filter {
 	display: inline-flex;
+	flex-wrap: wrap;
 	border: var(--border-base);
 	background: var(--color-surface);
 	margin: var(--space-1) var(--space-0) var(--space-4);
+	border-radius: var(--radius-sm);
+	overflow: hidden;
 }
 .rc-filter__link {
 	display: inline-flex;

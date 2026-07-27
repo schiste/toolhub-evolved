@@ -47,19 +47,30 @@ test("viewRecent: a tool change deep-links via toolHref with title and user", as
 	const store = await import("../../public_html/lib/core/store.js");
 	assert.equal(store.demoFeed.mock.calls[0][0], DEMO_KEYS.revisions);
 
-	assert.match(view.html, /<li><a href="\/tools\/my-tool"><svg class="icon feed__ic"/);
-	assert.match(view.html, /<strong dir="auto">My Tool<\/strong>/);
-	assert.match(view.html, /tool · <span dir="auto">alice<\/span>/);
+	assert.match(view.html, /<li><a href="\/tools\/my-tool"><svg class="icon feed__ic recent-row__ic"/);
+	assert.match(view.html, /<strong class="recent-row__title" dir="auto">My Tool<\/strong>/);
+	assert.match(view.html, /<span class="recent-chip recent-chip--tools">Tool<\/span>/);
+	assert.match(view.html, /<span class="recent-chip recent-chip--unknown">Review unknown<\/span>/);
+	assert.match(
+		view.html,
+		/<span class="feed__sub"><span dir="auto">alice<\/span> · Created · <span class="recent-row__id" dir="auto">my-tool<\/span><\/span>/
+	);
 	assert.match(view.html, /<time class="feed__when" datetime="2019-01-01T00:00:00\.000Z"/);
-	// show defaults to "all" → the "All" filter is active, "Tools" is not, and no patrol note.
+	assert.match(
+		view.html,
+		/<div class="recent-stat__k">Visible<\/div><div class="recent-stat__v">1 visible change<\/div>/
+	);
+	assert.match(
+		view.html,
+		/<div class="recent-stat__k">Feed loaded<\/div><div class="recent-stat__v">1 loaded change<\/div>/
+	);
+	// show defaults to "all" → the "All" filter is active, "Tools" is not.
 	// Adjacency (no text between the links) kills the filters' .join("") separator mutant.
 	assert.match(
 		view.html,
-		/show=all" aria-current="page">All<\/a><a class="rc-filter__link" href="\/recent\?show=tools">Tools<\/a>/
+		/href="\/recent" aria-current="page">All<\/a><a class="rc-filter__link" href="\/recent\?show=tools">Tools<\/a>/
 	);
-	// Empty patrolNote: <nav> closes directly onto the <ul> (kills the `: ""` → injected string).
-	assert.match(view.html, /<\/nav>\s*<ul class="feed">/);
-	assert.doesNotMatch(view.html, /Patrolled and unpatrolled/);
+	assert.match(view.html, /<span class="recent-control__label">Review state<\/span><select id="recent-status">/);
 });
 
 test("viewRecent: a list change uses content_id when title is absent and links via listHref", async () => {
@@ -67,9 +78,13 @@ test("viewRecent: a list change uses content_id when title is absent and links v
 	api.apiGet.mockResolvedValue({ results: [{ content_type: "list", content_id: "42", user: {}, timestamp: ISO }] });
 	const view = await viewRecent();
 	assert.match(view.html, /<li><a href="\/lists\/42">/);
-	assert.match(view.html, /<strong dir="auto">42<\/strong>/);
+	assert.match(view.html, /<strong class="recent-row__title" dir="auto">42<\/strong>/);
+	assert.match(view.html, /<span class="recent-chip recent-chip--lists">List<\/span>/);
 	// user:{} (present but no username) still falls back to "system".
-	assert.match(view.html, /list · <span dir="auto">system<\/span>/);
+	assert.match(
+		view.html,
+		/<span class="feed__sub"><span dir="auto">system<\/span> · Created · <span class="recent-row__id" dir="auto">42<\/span><\/span>/
+	);
 });
 
 test("viewRecent: untyped change renders static with dash/item/system defaults", async () => {
@@ -77,8 +92,9 @@ test("viewRecent: untyped change renders static with dash/item/system defaults",
 	api.apiGet.mockResolvedValue({ results: [{ timestamp: ISO }] });
 	const view = await viewRecent();
 	assert.match(view.html, /<li><div class="feed__static"><svg/);
-	assert.match(view.html, /<strong dir="auto">—<\/strong>/);
-	assert.match(view.html, /item · <span dir="auto">system<\/span>/);
+	assert.match(view.html, /<strong class="recent-row__title" dir="auto">—<\/strong>/);
+	assert.match(view.html, /<span class="recent-chip recent-chip--other">Other<\/span>/);
+	assert.match(view.html, /<span class="feed__sub"><span dir="auto">system<\/span> · Created<\/span>/);
 	assert.doesNotMatch(view.html, /<a href="\/tools/);
 });
 
@@ -93,8 +109,8 @@ test("viewRecent: typed changes without an id never become links", async () => {
 	const view = await viewRecent();
 	assert.doesNotMatch(view.html, /<a href="\/tools/);
 	assert.doesNotMatch(view.html, /<a href="\/lists/);
-	assert.match(view.html, /<strong dir="auto">NoId Tool<\/strong>/);
-	assert.match(view.html, /<strong dir="auto">NoId List<\/strong>/);
+	assert.match(view.html, /<strong class="recent-row__title" dir="auto">NoId Tool<\/strong>/);
+	assert.match(view.html, /<strong class="recent-row__title" dir="auto">NoId List<\/strong>/);
 });
 
 test("viewRecent: each filter keeps only its own content type", async () => {
@@ -111,7 +127,7 @@ test("viewRecent: each filter keeps only its own content type", async () => {
 	assert.doesNotMatch(view.html, />L</);
 	assert.doesNotMatch(view.html, />C</);
 	assert.match(view.html, /class="rc-filter__link is-active" href="\/recent\?show=tools" aria-current="page">Tools</);
-	assert.match(view.html, /class="rc-filter__link" href="\/recent\?show=all">All</);
+	assert.match(view.html, /class="rc-filter__link" href="\/recent">All/);
 
 	setSearch("?show=lists");
 	view = await viewRecent();
@@ -145,29 +161,78 @@ test("viewRecent: an unknown show falls back to all", async () => {
 	});
 	const view = await viewRecent();
 	assert.match(view.html, />Kept</);
-	assert.match(view.html, /class="rc-filter__link is-active" href="\/recent\?show=all" aria-current="page">All</);
+	assert.match(view.html, /class="rc-filter__link is-active" href="\/recent" aria-current="page">All</);
 	assert.doesNotMatch(view.html, /Patrolled and unpatrolled/);
 });
 
-test("viewRecent: both patrol filters add the note and still fall back to all", async () => {
-	api.apiGet.mockResolvedValue({ results: [] });
+test("viewRecent: legacy patrol show params map to real review-state filters", async () => {
+	api.apiGet.mockResolvedValue({
+		results: [
+			{ content_type: "tool", content_id: "yes", content_title: "Reviewed", patrolled: true, timestamp: ISO },
+			{ content_type: "tool", content_id: "no", content_title: "Needs Work", patrolled: false, timestamp: ISO }
+		]
+	});
 
 	setSearch("?show=patrolled");
 	let view = await viewRecent();
-	assert.match(view.html, /<p class="page__intro">Patrolled and unpatrolled state is not exposed/);
-	assert.match(view.html, /class="rc-filter__link is-active" href="\/recent\?show=all" aria-current="page">All</);
+	assert.match(view.html, />Reviewed</);
+	assert.doesNotMatch(view.html, />Needs Work</);
+	assert.match(view.html, /<option value="patrolled" selected>Patrolled<\/option>/);
+	assert.match(
+		view.html,
+		/class="rc-filter__link is-active" href="\/recent\?status=patrolled" aria-current="page">All/
+	);
 
-	// "unpatrolled" is the second member of the unsupported set (kills its literal).
+	// "unpatrolled" is the second legacy patrol value.
 	setSearch("?show=unpatrolled");
 	view = await viewRecent();
-	assert.match(view.html, /Patrolled and unpatrolled state is not exposed/);
+	assert.match(view.html, />Needs Work</);
+	assert.doesNotMatch(view.html, />Reviewed</);
+	assert.match(view.html, /<option value="unpatrolled" selected>Needs review<\/option>/);
+});
+
+test("viewRecent: sort=oldest reorders the loaded feed and marks the select", async () => {
+	setSearch("?sort=oldest");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{ content_type: "tool", content_id: "new", content_title: "Newer", timestamp: "2020-01-01T00:00:00Z" },
+			{ content_type: "tool", content_id: "old", content_title: "Older", timestamp: "2018-01-01T00:00:00Z" }
+		]
+	});
+	const view = await viewRecent();
+	assert.ok(view.html.indexOf(">Older<") < view.html.indexOf(">Newer<"));
+	assert.match(view.html, /<option value="oldest" selected>Oldest first<\/option>/);
+	assert.match(view.html, /href="\/recent\?show=tools&sort=oldest">Tools/);
+});
+
+test("viewRecent mount: changing sort and review state updates the route", async () => {
+	setSearch("?show=tools");
+	api.apiGet.mockResolvedValue({ results: [] });
+	const view = await viewRecent();
+	document.body.innerHTML = view.html;
+	view.mount?.();
+
+	const sort = document.querySelector("#recent-sort");
+	assert.ok(sort);
+	sort.value = "actor";
+	sort.dispatchEvent(new Event("change", { bubbles: true }));
+	assert.equal(location.pathname + location.search, "/recent?show=tools&sort=actor");
+
+	const status = document.querySelector("#recent-status");
+	assert.ok(status);
+	status.value = "unpatrolled";
+	status.dispatchEvent(new Event("change", { bubbles: true }));
+	assert.equal(location.pathname + location.search, "/recent?show=tools&status=unpatrolled");
 });
 
 test("viewRecent: an API failure yields the empty placeholder", async () => {
 	setSearch("");
 	api.apiGet.mockRejectedValue(new Error("down"));
 	const view = await viewRecent();
-	assert.match(view.html, /<ul class="feed"><li><div class="feed__static">No recent changes\.<\/div><\/li><\/ul>/);
+	assert.match(
+		view.html,
+		/<ul class="feed feed--recent"><li><div class="feed__static recent-empty">No recent changes\.<\/div><\/li><\/ul>/
+	);
 });
 
 test("viewRecent: a response with no results array also shows the placeholder", async () => {

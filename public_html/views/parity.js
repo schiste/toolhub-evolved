@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt, t, timeTag } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
-import { listHref, toolHref } from "../lib/core/routing.js";
+import { listHref, navigateTo, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, demoFeed } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -15,7 +15,19 @@ const RECENT_FILTERS = [
 	{ value: "lists", label: t("parity.lists", "Lists") },
 	{ value: "other", label: t("parity.other", "Other") }
 ];
-const UNSUPPORTED_PATROL_FILTERS = new Set(["patrolled", "unpatrolled"]);
+const RECENT_STATUS_FILTERS = [
+	{ value: "all", label: t("parity.anyReviewState", "Any review state") },
+	{ value: "unpatrolled", label: t("parity.needsReview", "Needs review") },
+	{ value: "patrolled", label: t("parity.patrolled", "Patrolled") },
+	{ value: "evolved", label: t("parity.evolvedLocal", "Evolved local") }
+];
+const RECENT_SORTS = [
+	{ value: "newest", label: t("parity.sortNewest", "Newest first") },
+	{ value: "oldest", label: t("parity.sortOldest", "Oldest first") },
+	{ value: "type", label: t("parity.sortType", "Type") },
+	{ value: "title", label: t("parity.sortTitle", "Title") },
+	{ value: "actor", label: t("parity.sortActor", "Actor") }
+];
 /**
  * @param {{ content_type?: string }} r
  * @returns {string}
@@ -25,32 +37,162 @@ function recentFilterKey(r) {
 	if (r.content_type === "list") return "lists";
 	return "other";
 }
+/** @param {{ _evolved?: boolean, source?: string, syncStatus?: string, patrolled?: boolean, suppressed?: boolean }} r */
+function recentReviewState(r) {
+	if (r._evolved || r.source || r.syncStatus) return "evolved";
+	if (r.suppressed) return "suppressed";
+	if (r.patrolled === true) return "patrolled";
+	if (r.patrolled === false) return "unpatrolled";
+	return "unknown";
+}
+/** @param {string} type */
+function recentTypeLabel(type) {
+	if (type === "tool") return t("parity.typeTool", "Tool");
+	if (type === "list") return t("parity.typeList", "List");
+	return t("parity.typeOther", "Other");
+}
+/** @param {string} reviewState */
+function recentReviewLabel(reviewState) {
+	if (reviewState === "evolved") return t("parity.evolvedData", "Evolved data");
+	if (reviewState === "suppressed") return t("parity.suppressed", "Suppressed");
+	if (reviewState === "patrolled") return t("parity.patrolled", "Patrolled");
+	if (reviewState === "unpatrolled") return t("parity.needsReview", "Needs review");
+	return t("parity.reviewUnknown", "Review unknown");
+}
+/**
+ * @param {{ parent_id?: unknown, _evolved?: boolean, comment?: string }} r
+ * @returns {string}
+ */
+function recentActionLabel(r) {
+	if (r._evolved || String(r.comment || "").startsWith("Evolved:")) {
+		return t("parity.evolvedChange", "Evolved change");
+	}
+	return r.parent_id ? t("parity.updated", "Updated") : t("parity.created", "Created");
+}
+/**
+ * @param {Array<any>} rows
+ * @param {string} sort
+ * @returns {Array<any>}
+ */
+function sortRecentRows(rows, sort) {
+	const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+	const text = (/** @type {any} */ r, /** @type {string} */ key) => String(r[key] || "").trim();
+	const ts = (/** @type {any} */ r) => new Date(r.timestamp || 0).getTime() || 0;
+	return [...rows].sort((a, b) => {
+		if (sort === "oldest") return ts(a) - ts(b);
+		if (sort === "type") return collator.compare(text(a, "content_type"), text(b, "content_type")) || ts(b) - ts(a);
+		if (sort === "title") {
+			return (
+				collator.compare(
+					text(a, "content_title") || text(a, "content_id"),
+					text(b, "content_title") || text(b, "content_id")
+				) || ts(b) - ts(a)
+			);
+		}
+		if (sort === "actor") {
+			return (
+				collator.compare((a.user && a.user.username) || "", (b.user && b.user.username) || "") || ts(b) - ts(a)
+			);
+		}
+		return ts(b) - ts(a);
+	});
+}
+/**
+ * @param {{ show: string, status: string, sort: string }} state
+ * @param {{ show?: string, status?: string, sort?: string }} next
+ */
+function recentHref(state, next = {}) {
+	const show = next.show || state.show;
+	const status = next.status || state.status;
+	const sort = next.sort || state.sort;
+	const params = new URLSearchParams();
+	if (show !== "all") params.set("show", show);
+	if (status !== "all") params.set("status", status);
+	if (sort !== "newest") params.set("sort", sort);
+	const qs = params.toString();
+	return `/recent${qs ? `?${qs}` : ""}`;
+}
+/** @param {string} value @param {{ value: string }[]} allowed @param {string} fallback */
+function clampRecentOption(value, allowed, fallback) {
+	return allowed.some((o) => o.value === value) ? value : fallback;
+}
+/** @param {Array<any>} rows @param {string} key */
+function countRecentByType(rows, key) {
+	return rows.filter((r) => recentFilterKey(r) === key).length;
+}
 
 // Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
 export async function viewRecent() {
-	// Stryker disable next-line StringLiteral: the "all" fallback is unobservable — a missing `show` is not a valid RECENT_FILTER, so `show` re-derives to "all" and the patrol check is false either way (any non-filter default behaves identically).
-	const requestedShow = new URLSearchParams(location.search).get("show") || "all";
-	const show = RECENT_FILTERS.some((o) => o.value === requestedShow) ? requestedShow : "all";
-	const patrolFilterRequested = UNSUPPORTED_PATROL_FILTERS.has(requestedShow);
+	const params = new URLSearchParams(location.search);
+	const requestedShow = params.get("show") || "all";
+	const requestedStatus =
+		params.get("status") || (["patrolled", "unpatrolled"].includes(requestedShow) ? requestedShow : "all");
+	const show = clampRecentOption(requestedShow, RECENT_FILTERS, "all");
+	const status = clampRecentOption(requestedStatus, RECENT_STATUS_FILTERS, "all");
+	const sort = clampRecentOption(params.get("sort") || "newest", RECENT_SORTS, "newest");
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
 	// Local Evolved edits appear at the top of the live feed.
 	const merged = demoFeed(DEMO_KEYS.revisions, data.results || []);
-	// The read-only /recent/ feed does not expose true patrolled/unpatrolled state, so this filters by change type.
-	const filtered = show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === show);
+	const byType = show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === show);
+	const filtered = status === "all" ? byType : byType.filter((r) => recentReviewState(r) === status);
+	const sorted = sortRecentRows(filtered, sort);
+	const state = { show, status, sort };
 	const filters = RECENT_FILTERS.map((o) => {
 		const active = o.value === show;
-		return `<a class="rc-filter__link${active ? " is-active" : ""}" href="/recent?show=${esc(o.value)}"${active ? ' aria-current="page"' : ""}>${esc(o.label)}</a>`;
+		return `<a class="rc-filter__link${active ? " is-active" : ""}" href="${recentHref(state, { show: o.value })}"${active ? ' aria-current="page"' : ""}>${esc(o.label)}</a>`;
 	}).join("");
-	const patrolNote = patrolFilterRequested
-		? `<p class="page__intro">${t("parity.patrolNote", "Patrolled and unpatrolled state is not exposed by the read-only feed, so this prototype keeps the content-type filters stable instead.")}</p>`
-		: "";
-	const rows = filtered
+	const statusOptions = RECENT_STATUS_FILTERS.map(
+		(o) => `<option value="${esc(o.value)}"${o.value === status ? " selected" : ""}>${esc(o.label)}</option>`
+	).join("");
+	const sortOptions = RECENT_SORTS.map(
+		(o) => `<option value="${esc(o.value)}"${o.value === sort ? " selected" : ""}>${esc(o.label)}</option>`
+	).join("");
+	const newest = sortRecentRows(merged, "newest")[0];
+	const visibleLabel = countLabel(
+		sorted.length,
+		t("parity.visibleChangeOne", "visible change"),
+		t("parity.visibleChangeOther", "visible changes")
+	);
+	const totalLabel = countLabel(
+		merged.length,
+		t("parity.loadedChangeOne", "loaded change"),
+		t("parity.loadedChangeOther", "loaded changes")
+	);
+	const summary = [
+		[t("parity.visible", "Visible"), esc(visibleLabel)],
+		[t("parity.feedLoaded", "Feed loaded"), esc(totalLabel)],
+		[t("parity.tools", "Tools"), fmt(countRecentByType(merged, "tools"))],
+		[
+			t("parity.needsReview", "Needs review"),
+			fmt(merged.filter((r) => recentReviewState(r) === "unpatrolled").length)
+		]
+	]
+		.map(
+			([label, value]) =>
+				`<div class="recent-stat"><div class="recent-stat__k">${label}</div><div class="recent-stat__v">${value}</div></div>`
+		)
+		.join("");
+	const rows = sorted
 		.map((r) => {
 			const title = esc(r.content_title || r.content_id || "—");
 			const who = esc((r.user && r.user.username) || t("parity.system", "system"));
-			const inner = `${icon("edit", "feed__ic")}
-			<span class="feed__main"><strong dir="auto">${title}</strong> <span class="feed__sub">${esc(r.content_type || t("parity.item", "item"))} · <span dir="auto">${who}</span></span></span>
+			const type = String(r.content_type || t("parity.item", "item"));
+			const reviewState = recentReviewState(r);
+			const typeKey = recentFilterKey(r);
+			const rowIcon = r.content_type === "tool" ? "tools" : r.content_type === "list" ? "list" : "edit";
+			const comment = r.comment
+				? `<span class="recent-row__comment"${dirAttrs(r.comment)}>${esc(r.comment)}</span>`
+				: "";
+			const contentId = r.content_id
+				? `<span class="recent-row__id"${dirAttrs(r.content_id)}>${esc(r.content_id)}</span>`
+				: "";
+			const inner = `${icon(rowIcon, "feed__ic recent-row__ic")}
+			<span class="feed__main recent-row__main">
+				<span class="recent-row__top"><strong class="recent-row__title" dir="auto">${title}</strong><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></span>
+				<span class="feed__sub"><span dir="auto">${who}</span> · ${esc(recentActionLabel(r))}${contentId ? " · " : ""}${contentId}</span>
+				${comment}
+			</span>
 			${timeTag(r.timestamp, "feed__when")}`;
 			const link =
 				r.content_type === "tool" && r.content_id
@@ -66,13 +208,39 @@ export async function viewRecent() {
 	return {
 		title: t("parity.recentChangesDocTitle", "Recent changes — Toolhub"),
 		html: `
-		<div class="container page">
-			<h1 class="page__title">${t("parity.recentChanges", "Recent changes")}</h1>
-			<p class="page__intro">${t("parity.recentIntro", "The latest edits across the catalog.")}</p>
-			<nav class="rc-filter" aria-label="${t("parity.filterRecentChanges", "Filter recent changes")}">${filters}</nav>
-			${patrolNote}
-			<ul class="feed">${rows || `<li><div class="feed__static">${t("parity.noRecentChanges", "No recent changes.")}</div></li>`}</ul>
-		</div>`
+		<div class="container page recent-page">
+			<header class="recent-head">
+				<div>
+					<h1 class="page__title">${t("parity.recentChanges", "Recent changes")}</h1>
+					<p class="page__intro">${t("parity.recentIntroHybrid", "Live Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
+				</div>
+				<div class="recent-head__fresh">
+					<span>${t("parity.latestChange", "Latest change")}</span>
+					<strong>${newest ? timeTag(newest.timestamp) : "—"}</strong>
+				</div>
+			</header>
+			<div class="recent-summary" aria-label="${t("parity.recentSummary", "Recent changes summary")}">${summary}</div>
+			<div class="recent-controls">
+				<nav class="rc-filter" aria-label="${t("parity.filterRecentChanges", "Filter recent changes")}">${filters}</nav>
+				<label class="sort recent-control"><span class="recent-control__label">${t("parity.reviewState", "Review state")}</span><select id="recent-status">${statusOptions}</select></label>
+				<label class="sort recent-control"><span class="recent-control__label">${t("parity.sortBy", "Sort by")}</span><select id="recent-sort">${sortOptions}</select></label>
+			</div>
+			<ul class="feed feed--recent">${rows || `<li><div class="feed__static recent-empty">${t("parity.noRecentChanges", "No recent changes.")}</div></li>`}</ul>
+		</div>`,
+		mount() {
+			/** @param {{ status?: string, sort?: string }} next */
+			const navigate = (next) => {
+				navigateTo(recentHref(state, next));
+			};
+			/** @type {HTMLInputElement} */ ($input("#recent-status")).addEventListener("change", () =>
+				navigate({ status: /** @type {HTMLInputElement} */ ($input("#recent-status")).value })
+			);
+			/** @type {HTMLInputElement} */ ($input("#recent-sort")).addEventListener("change", () =>
+				navigate({ sort: /** @type {HTMLInputElement} */ ($input("#recent-sort")).value })
+			);
+			const controls = $(".recent-controls");
+			if (controls) controls.setAttribute("data-enhanced", "true");
+		}
 	};
 }
 // Members — live from /api/users/.
