@@ -13,6 +13,7 @@ from flask import Response, jsonify, request, session
 WRITE_LIMIT = 60  # writes per user…
 WRITE_WINDOW_SECONDS = 60.0  # …per rolling minute
 _write_times: dict[int, deque[float]] = {}
+_last_sweep = 0.0
 
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
@@ -33,11 +34,30 @@ def _reject(status: int, error: str) -> Response:
 
 def clear_rate_limits() -> None:
     """Reset the in-memory write counters (tests; harmless in prod restarts)."""
+    global _last_sweep  # noqa: PLW0603 — module-level counter state by design
     _write_times.clear()
+    _last_sweep = 0.0
+
+
+def _sweep(now: float) -> None:
+    """Drop users whose whole window has expired.
+
+    Without this the table keeps one entry per user id that has ever written,
+    for the life of the process — a slow leak that a stream of distinct signed-in
+    users turns into unbounded growth. Sweeping is amortized to once per window
+    so the common path stays O(1) rather than O(users) per write.
+    """
+    global _last_sweep  # noqa: PLW0603 — module-level counter state by design
+    if now - _last_sweep < WRITE_WINDOW_SECONDS:
+        return
+    _last_sweep = now
+    for uid in [u for u, times in _write_times.items() if not times or now - times[-1] > WRITE_WINDOW_SECONDS]:
+        del _write_times[uid]
 
 
 def _rate_limited(uid: int) -> bool:
     now = time.monotonic()
+    _sweep(now)
     times = _write_times.setdefault(uid, deque())
     while times and now - times[0] > WRITE_WINDOW_SECONDS:
         times.popleft()

@@ -8,6 +8,7 @@ are monkeypatched. The suite exercises every branch (the coverage gate is
 
 import sys
 from base64 import b64encode
+from collections import deque
 from contextlib import contextmanager
 from datetime import timedelta
 from json import dumps
@@ -67,6 +68,22 @@ from backend.v1 import (  # noqa: E402
     _toolhub_author_names,
     _validation_errors,
 )
+
+TOOLSADMIN_MAINTAINERS_TABLE_HTML = """
+<div class="cdx-table">
+  <div class="cdx-table__header">
+    <div class="cdx-table__header__caption" aria-hidden="true">Maintainers</div>
+  </div>
+  <div class="cdx-table__table-wrapper">
+    <table class="cdx-table__table">
+      <caption>Maintainers</caption>
+      <tbody>
+        <tr><td>Schiste</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+"""
 
 
 @pytest.fixture
@@ -630,9 +647,13 @@ def test_claim_payload_marks_expired_verified_claims_stale(client):
 def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):
     uid = add_user(username="schiste")
     user = User(id=uid, wm_sub="42", username="schiste")
-    html = '<section><h2>Maintainers</h2><a href="/profile/schiste/">Schiste</a></section>'
     calls = []
-    provider = ToolforgeMaintainerProvider(fetcher=lambda name: calls.append(name) or (200, html))
+
+    def fetch_toolsadmin(name):
+        calls.append(name)
+        return 200, TOOLSADMIN_MAINTAINERS_TABLE_HTML
+
+    provider = ToolforgeMaintainerProvider(fetcher=fetch_toolsadmin)
     with db.session_scope() as s:
         rows = provider.verify(
             s,
@@ -654,7 +675,44 @@ def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):
     assert calls == ["toolhub-evolved"]
 
 
+def test_toolforge_maintainer_provider_retries_failed_claims(client):
+    uid = add_user(username="schiste")
+    user = User(id=uid, wm_sub="42", username="schiste")
+    with db.session_scope() as s:
+        author_claims.record_author_claim(
+            s,
+            tool_name="toolhub-evolved",
+            author_name="Christophe",
+            toolhub_username="schiste",
+            verification_status=sync.AUTHOR_CLAIM_FAILED,
+            verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+            expires_at=utcnow() + timedelta(days=1),
+            last_error="user is not listed as a Toolforge maintainer",
+        )
+        calls = []
+        rows = ToolforgeMaintainerProvider(
+            fetcher=lambda name: calls.append(name) or (200, TOOLSADMIN_MAINTAINERS_TABLE_HTML)
+        ).verify(
+            s,
+            user,
+            tool_name="toolhub-evolved",
+            author_names=["Christophe"],
+            toolhub_tool={"url": "https://toolhub-evolved.toolforge.org"},
+        )
+        assert len(rows) == 1
+        assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
+        assert rows[0].last_error is None
+    assert calls == ["toolhub-evolved"]
+
+
 def test_author_claim_provider_parsers_cover_malformed_public_shapes():
+    assert author_claims.parse_toolsadmin_maintainers(TOOLSADMIN_MAINTAINERS_TABLE_HTML) == ["Schiste"]
+    assert author_claims.parse_toolsadmin_maintainers(
+        '<table><tr><td>Not a maintainer</td></tr></table>'
+        "<table><caption>Other</caption><tbody><tr><td>Also not</td></tr></tbody></table>"
+        '<table><caption>Maintainers</caption><tbody><tr><td>'
+        '<a href="/profile/ada/">Ada Lovelace</a></td></tr></tbody></table>'
+    ) == ["Ada Lovelace"]
     assert author_claims.parse_toolsadmin_maintainers('<a href="/profile/blank/"> </a>') == []
     assert author_claims.parse_toolsadmin_maintainers("<p>No maintainers here</p>") == []
     assert author_claims.author_names_from_toolinfo({"author": "Ada"}) == ["Ada"]
@@ -1249,7 +1307,7 @@ def test_me_tools_discovers_toolforge_memberships_when_author_name_differs(clien
     monkeypatch.setattr(
         v1_api,
         "TOOLFORGE_MAINTAINER_PROVIDER",
-        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, '<td><a href="/profile/schiste/">Schiste</a></td>')),
+        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, TOOLSADMIN_MAINTAINERS_TABLE_HTML)),
     )
     calls = []
 
@@ -1343,7 +1401,7 @@ def test_me_tools_merges_author_search_and_toolforge_membership_candidates(clien
     monkeypatch.setattr(
         v1_api,
         "TOOLFORGE_MAINTAINER_PROVIDER",
-        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, '<td><a href="/profile/schiste/">Schiste</a></td>')),
+        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, TOOLSADMIN_MAINTAINERS_TABLE_HTML)),
     )
 
     def fake_public_api_get(path, *, params=None):
@@ -1582,6 +1640,20 @@ def test_rate_limit(client, monkeypatch):
     assert put_overlay(client, "favorites", ["a"]).status_code == 429
     clock["t"] += security.WRITE_WINDOW_SECONDS + 1  # window expires → pruning branch
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
+
+
+def test_rate_limit_table_evicts_idle_users(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    clock = {"t": 100.0}
+    monkeypatch.setattr(security.time, "monotonic", lambda: clock["t"])
+    assert put_overlay(client, "favorites", ["a"]).status_code == 200
+    security._write_times[999] = deque()  # an entry whose window already drained
+    assert uid in security._write_times
+    clock["t"] += security.WRITE_WINDOW_SECONDS + 1  # idle past the window → swept
+    assert put_overlay(client, "favorites", ["a"]).status_code == 200
+    assert 999 not in security._write_times
+    assert list(security._write_times) == [uid]  # only the active writer is retained
 
 
 def test_policy_denial_blocks_private_overlay_writes(client, monkeypatch):
