@@ -34,7 +34,18 @@ from backend.models import (
     User,
     utcnow,
 )  # noqa: E402
-from backend.v1 import FEED_KEEP_CAP, _iso, _merged_maps, _parse_iso, _parse_optional_iso  # noqa: E402
+from backend.v1 import (  # noqa: E402
+    FEED_KEEP_CAP,
+    _iso,
+    _merged_maps,
+    _message_from_payload,
+    _official_annotation_payload,
+    _official_id,
+    _parse_iso,
+    _parse_optional_iso,
+    _string_list,
+    _validation_errors,
+)
 
 
 @pytest.fixture
@@ -1074,6 +1085,709 @@ def test_official_delete_normalizes_204(client, monkeypatch):
     resp = client.delete("/v1/toolhub/user/favorites/my-tool/", headers={"X-CSRF-Token": "tok"})
     assert resp.status_code == 200
     assert resp.get_json() == {"ok": True}
+
+
+# ---- official-first write lifecycle ----------------------------------------
+
+
+TOOL_WRITE_PAYLOAD = {
+    "name": "my-tool",
+    "title": "My Tool",
+    "description": "Useful tool",
+    "url": "https://example.org/tool",
+    "repository": "https://example.org/repo",
+    "license": "GPL-3.0-or-later",
+    "tool_type": "web app",
+    "keywords": ["demo", 7],
+    "for_wikis": ["en.wikipedia.org"],
+    "available_ui_languages": ["en"],
+    "deprecated": False,
+    "experimental": True,
+}
+
+
+def test_write_lifecycle_validation_helpers_normalize_toolhub_errors():
+    assert _message_from_payload({"detail": "  explain it  "}, "fallback") == "explain it"
+    assert _message_from_payload({"message": ""}, "fallback") == "fallback"
+    assert _message_from_payload("plain", "fallback") == "fallback"
+    assert _string_list("not-list") == []
+    assert _validation_errors(["plain", {"field": "url"}]) == [{"message": "plain"}, {"field": "url"}]
+    assert _validation_errors({"errors": ["bad"]}) == [{"message": "bad"}]
+    assert _validation_errors({"title": ["too short"], "url": "bad", "message": "ignored"}) == [
+        {"field": "title", "messages": ["too short"]},
+        {"field": "url", "messages": ["bad"]},
+    ]
+    assert _validation_errors("plain") == []
+    assert _official_annotation_payload({"audiences": [], "tasks": [], "toolType": None, "icon": None}) == {
+        "audiences": [],
+        "tasks": [],
+        "comment": "Annotated from Toolhub Evolved",
+    }
+    assert _official_id("not-dict", 5) == 5
+
+
+def test_write_tool_create_success_clears_local_state_and_emits_activity(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    with db.session_scope() as s:
+        s.add(
+            ToolRecord(
+                tool_name="my-tool",
+                user_id=uid,
+                created_by_user_id=uid,
+                record={"title": "Draft", "description": "d", "url": "https://draft.example"},
+            )
+        )
+        s.add(
+            ToolOverlay(
+                kind="edits",
+                tool_name="my-tool",
+                user_id=uid,
+                created_by_user_id=uid,
+                patch={"title": "Local"},
+            )
+        )
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs.get("json")))
+        return FakeResp({"name": "my-tool"}, 201)
+
+    monkeypatch.setattr(toolhub.requests, "request", fake_request)
+    resp = client.post("/v1/write/tools/", json=TOOL_WRITE_PAYLOAD, headers={"X-CSRF-Token": "tok"})
+    data = resp.get_json()
+    assert resp.status_code == 201
+    assert data["result"] == "official"
+    assert data["syncStatus"] == "official"
+    assert calls == [
+        (
+            "POST",
+            "https://toolhub.wikimedia.org/api/tools/",
+            {
+                "name": "my-tool",
+                "title": "My Tool",
+                "description": "Useful tool",
+                "url": "https://example.org/tool",
+                "repository": "https://example.org/repo",
+                "license": "GPL-3.0-or-later",
+                "tool_type": "web app",
+                "keywords": ["demo", "7"],
+                "for_wikis": ["en.wikipedia.org"],
+                "available_ui_languages": ["en"],
+                "deprecated": False,
+                "experimental": True,
+                "comment": "Published from Toolhub Evolved",
+            },
+        )
+    ]
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).count() == 0
+        assert s.query(ToolOverlay).count() == 0
+        activity = s.execute(select(ActivityRow).where(ActivityRow.kind == "revisions")).scalar_one()
+        assert activity.object_type == "tool"
+        assert activity.object_key == "my-tool"
+        assert activity.action == "created"
+        assert activity.official_status == "official"
+        assert activity.last_synced_at is not None
+        assert activity.row["officialStatus"] == "official"
+
+
+def test_write_tool_rejection_stores_overlay_fallback_with_validation_errors(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    monkeypatch.setattr(
+        toolhub.requests,
+        "request",
+        lambda *a, **k: FakeResp({"message": "bad payload", "title": ["too short"]}, 400),
+    )
+    payload = {**TOOL_WRITE_PAYLOAD, "name": "ignored", "title": "New title"}
+    resp = client.put("/v1/write/tools/live-tool/", json=payload, headers={"X-CSRF-Token": "tok"})
+    data = resp.get_json()
+    assert resp.status_code == 202
+    assert data["result"] == "local_fallback"
+    assert data["lastError"] == "bad payload"
+    assert data["validationErrors"] == [{"field": "title", "messages": ["too short"]}]
+    assert data["local"]["title"] == "New title"
+    with db.session_scope() as s:
+        overlay = s.execute(select(ToolOverlay).where(ToolOverlay.tool_name == "live-tool")).scalar_one()
+        assert overlay.kind == "edits"
+        assert overlay.patch["title"] == "New title"
+        assert overlay.sync_status == "local_fallback"
+        assert overlay.last_toolhub_response == {"message": "bad payload", "title": ["too short"]}
+        assert overlay.validation_errors == [{"field": "title", "messages": ["too short"]}]
+        activity = s.execute(select(ActivityRow).where(ActivityRow.kind == "auditlogs")).scalar_one()
+        assert activity.official_status == "local_fallback"
+        assert activity.last_error == "bad payload"
+
+
+def test_write_tool_rejection_without_local_permission_returns_official_error(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    monkeypatch.setattr(
+        authz,
+        "can",
+        lambda _user, action, _resource=None: action == authz.ACTION_TOOLHUB_WRITE,
+    )
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"message": "denied"}, 403))
+    resp = client.post("/v1/write/tools/", json=TOOL_WRITE_PAYLOAD, headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 403
+    assert resp.get_json()["lastError"] == "denied"
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).count() == 0
+
+
+def test_write_lifecycle_requires_toolhub_grant_before_fallback(client):
+    uid = add_user()
+    sign_in(client, uid)
+    resp = client.post("/v1/write/tools/", json=TOOL_WRITE_PAYLOAD, headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 401
+    assert resp.get_json()["reauth"] is True
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).count() == 0
+
+
+def test_write_annotations_and_crawler_failures_store_local_fallbacks(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+
+    def fake_request(method, url, **kwargs):
+        if url.endswith("/api/crawler/urls/"):
+            raise toolhub.requests.ConnectionError("down")
+        assert method == "PUT"
+        assert kwargs["json"]["tool_type"] == "web app"
+        return FakeResp({"errors": [{"field": "audiences", "message": "bad"}]}, 400)
+
+    monkeypatch.setattr(toolhub.requests, "request", fake_request)
+    resp = client.put(
+        "/v1/write/tools/my-tool/annotations/",
+        json={"audiences": ["editors"], "tasks": ["patrol"], "tool_type": "web app"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 202
+    assert resp.get_json()["validationErrors"] == [{"field": "audiences", "message": "bad"}]
+    resp = client.post(
+        "/v1/write/crawler/urls/",
+        json={"url": "https://example.org/toolinfo.json"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 202
+    assert resp.get_json()["lastError"] == "official Toolhub is unavailable"
+    with db.session_scope() as s:
+        anno = s.execute(select(ToolOverlay).where(ToolOverlay.kind == "annos")).scalar_one()
+        assert anno.validation_errors == [{"field": "audiences", "message": "bad"}]
+        crawler = s.execute(select(CrawlerUrl)).scalar_one()
+        assert crawler.sync_status == "local_fallback"
+        assert crawler.last_error == "official Toolhub is unavailable"
+
+
+def test_write_list_and_favorite_success_store_official_sync_metadata(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url.removeprefix("https://toolhub.wikimedia.org"), kwargs.get("json")))
+        if url.endswith("/api/user/favorites/"):
+            return FakeResp({}, 204)
+        return FakeResp({"id": 77}, 201)
+
+    monkeypatch.setattr(toolhub.requests, "request", fake_request)
+    list_resp = client.post(
+        "/v1/write/lists/",
+        json={"clientId": "demo-list", "title": "List", "description": "d", "tools": ["my-tool"]},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    fav_resp = client.post(
+        "/v1/write/user/favorites/",
+        json={"name": "my-tool"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert list_resp.status_code == 201
+    assert list_resp.get_json()["local"]["officialId"] == 77
+    assert fav_resp.status_code == 200
+    assert fav_resp.get_json()["toolhub"] == {"ok": True}
+    assert calls[0][:2] == ("POST", "/api/lists/")
+    assert calls[1][:2] == ("POST", "/api/user/favorites/")
+    with db.session_scope() as s:
+        stored_list = s.get(ToolList, "demo-list")
+        assert stored_list.official_list_id == 77
+        assert stored_list.sync_status == "official"
+        assert stored_list.last_synced_at is not None
+        favorite = s.execute(select(Favorite).where(Favorite.tool_name == "my-tool")).scalar_one()
+        assert favorite.sync_status == "official"
+        assert favorite.last_synced_at is not None
+
+
+def test_write_delete_failures_do_not_create_canonical_local_deletions(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"message": "not owner"}, 403))
+    resp = client.delete("/v1/write/tools/live-tool/", headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 403
+    assert resp.get_json()["lastError"] == "not owner"
+    assert client.delete("/v1/write/lists/12/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    assert client.delete("/v1/write/crawler/urls/9/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).count() == 0
+        assert s.query(ToolOverlay).count() == 0
+
+
+def test_write_retry_and_discard_paths_for_fallback_records(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    tool_record = {
+        "title": "Retry Tool",
+        "description": "Retry me",
+        "url": "https://retry.example",
+        "repository": None,
+        "license": None,
+        "toolType": None,
+        "keywords": [],
+        "forWikis": [],
+        "uiLanguages": [],
+        "deprecated": False,
+        "experimental": False,
+        "origin": "api",
+    }
+    with db.session_scope() as s:
+        s.add(
+            ToolRecord(
+                tool_name="retry-tool",
+                user_id=uid,
+                created_by_user_id=uid,
+                record=tool_record,
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            ToolOverlay(
+                kind="edits",
+                tool_name="edit-retry",
+                user_id=uid,
+                created_by_user_id=uid,
+                patch={k: v for k, v in TOOL_WRITE_PAYLOAD.items() if k != "name"},
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            ToolOverlay(
+                kind="annos",
+                tool_name="anno-tool",
+                user_id=uid,
+                created_by_user_id=uid,
+                patch={"audiences": ["editors"], "tasks": []},
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            ToolList(
+                client_id="demo-retry",
+                user_id=uid,
+                created_by_user_id=uid,
+                title="Retry List",
+                description="d",
+                tools=["retry-tool"],
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            ToolList(
+                client_id="demo-discard",
+                user_id=uid,
+                created_by_user_id=uid,
+                title="Discard List",
+                description="d",
+                tools=[],
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            CrawlerUrl(
+                user_id=uid,
+                created_by_user_id=uid,
+                url="https://retry.example/toolinfo.json",
+                sync_status="local_fallback",
+            )
+        )
+        s.flush()
+        crawler_id = s.execute(select(CrawlerUrl.id)).scalar_one()
+        s.add(
+            CrawlerUrl(
+                user_id=uid,
+                created_by_user_id=uid,
+                url="https://discard.example/toolinfo.json",
+                sync_status="local_fallback",
+            )
+        )
+        s.flush()
+        discard_crawler_id = (
+            s.execute(select(CrawlerUrl.id).where(CrawlerUrl.url == "https://discard.example/toolinfo.json"))
+            .scalars()
+            .one()
+        )
+        s.add(Favorite(user_id=uid, created_by_user_id=uid, tool_name="retry-tool", sync_status="local_fallback"))
+        s.add(Favorite(user_id=uid, created_by_user_id=uid, tool_name="discard-tool", sync_status="local_fallback"))
+
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"id": 501}))
+    assert (
+        client.post(
+            "/v1/write/tools/retry-tool/retry/",
+            json={"kind": "new"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/v1/write/tools/edit-retry/retry/",
+            json={"kind": "edit"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.delete(
+            "/v1/write/tools/anno-tool/fallback/",
+            json={"kind": "annotations"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    assert client.post("/v1/write/lists/demo-retry/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.delete("/v1/write/lists/demo-discard/fallback/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert (
+        client.delete(f"/v1/write/crawler/urls/{discard_crawler_id}/fallback/", headers={"X-CSRF-Token": "tok"}).status_code
+        == 200
+    )
+    assert (
+        client.post("/v1/write/user/favorites/retry-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    )
+    assert (
+        client.delete("/v1/write/user/favorites/discard-tool/fallback/", headers={"X-CSRF-Token": "tok"}).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/v1/write/tools/missing/retry/",
+            json={"kind": "nope"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 400
+    )
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).count() == 0
+        assert s.query(ToolOverlay).count() == 0
+        assert s.get(ToolList, "demo-retry").sync_status == "official"
+        assert s.get(ToolList, "demo-discard").deleted_at is not None
+        assert s.get(CrawlerUrl, crawler_id).sync_status == "official"
+        assert s.get(CrawlerUrl, discard_crawler_id) is None
+        assert s.execute(select(Favorite).where(Favorite.tool_name == "retry-tool")).scalar_one().sync_status == "official"
+        assert s.execute(select(Favorite).where(Favorite.tool_name == "discard-tool")).scalar_one_or_none() is None
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "/v1/write/tools/", "not-json"),
+        ("POST", "/v1/write/tools/", {"name": "bad"}),
+        ("DELETE", "/v1/write/tools/%20/", None),
+        ("PUT", "/v1/write/tools/%20/annotations/", {}),
+        ("PUT", "/v1/write/tools/my-tool/annotations/", "not-json"),
+        ("POST", "/v1/write/lists/", "not-json"),
+        ("POST", "/v1/write/lists/", {"title": ""}),
+        ("PUT", "/v1/write/lists/not-a-number/", {"title": "L", "tools": []}),
+        ("DELETE", "/v1/write/lists/not-a-number/", None),
+        ("POST", "/v1/write/user/favorites/", "not-json"),
+        ("POST", "/v1/write/user/favorites/", {}),
+        ("DELETE", "/v1/write/user/favorites/%20/", None),
+        ("POST", "/v1/write/crawler/urls/", "not-json"),
+        ("POST", "/v1/write/crawler/urls/", {"url": "http://example.org/toolinfo.json"}),
+        ("POST", "/v1/write/tools/%20/retry/", {"kind": "new"}),
+        ("DELETE", "/v1/write/tools/%20/fallback/", {"kind": "new"}),
+        ("DELETE", "/v1/write/tools/my-tool/fallback/", {}),
+        ("POST", "/v1/write/user/favorites/%20/retry/", None),
+        ("DELETE", "/v1/write/user/favorites/%20/fallback/", None),
+    ],
+)
+def test_write_lifecycle_rejects_invalid_inputs(client, method, path, body):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    kwargs = {"headers": {"X-CSRF-Token": "tok"}}
+    if isinstance(body, dict):
+        kwargs["json"] = body
+    elif isinstance(body, str):
+        kwargs["data"] = body
+    resp = client.open(method=method, path=path, **kwargs)
+    assert resp.status_code == 400
+
+
+def test_write_lifecycle_success_paths_for_deletes_annotations_and_crawler(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    with db.session_scope() as s:
+        s.add(
+            ToolList(
+                client_id="12",
+                user_id=uid,
+                created_by_user_id=uid,
+                title="Official list cache",
+                tools=["my-tool"],
+                official_list_id=12,
+            )
+        )
+        s.add(
+            CrawlerUrl(
+                user_id=uid,
+                created_by_user_id=uid,
+                url="https://example.org/toolinfo.json",
+                official_crawler_url_id=9,
+            )
+        )
+        s.add(Favorite(user_id=uid, created_by_user_id=uid, tool_name="my-tool"))
+
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"id": 99}, 200))
+    assert (
+        client.put(
+            "/v1/write/tools/my-tool/annotations/",
+            json={"audiences": [], "tasks": [], "icon": "https://example.org/icon.png"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 200
+    )
+    assert client.delete("/v1/write/tools/my-tool/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.delete("/v1/write/lists/12/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    crawler_add = client.post(
+        "/v1/write/crawler/urls/",
+        json={"url": "https://example.org/new-toolinfo.json"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert crawler_add.status_code == 200
+    assert crawler_add.get_json()["local"]["officialId"] == 99
+    assert client.delete("/v1/write/crawler/urls/9/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    assert client.delete("/v1/write/user/favorites/my-tool/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    with db.session_scope() as s:
+        assert s.get(ToolList, "12").deleted_at is not None
+        crawler = s.execute(select(CrawlerUrl).where(CrawlerUrl.official_crawler_url_id == 9)).scalar_one()
+        assert crawler.enabled is False
+        assert s.execute(select(Favorite).where(Favorite.tool_name == "my-tool")).scalar_one_or_none() is None
+
+
+def test_write_create_list_favorite_and_delete_fallback_paths(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"message": "fallback please"}, 400))
+    tool_resp = client.post("/v1/write/tools/", json=TOOL_WRITE_PAYLOAD, headers={"X-CSRF-Token": "tok"})
+    tool_retry_resp = client.post("/v1/write/tools/", json=TOOL_WRITE_PAYLOAD, headers={"X-CSRF-Token": "tok"})
+    list_resp = client.post(
+        "/v1/write/lists/",
+        json={"clientId": "demo-local", "title": "Local", "tools": ["my-tool"]},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    fav_resp = client.post(
+        "/v1/write/user/favorites/",
+        json={"name": "my-tool"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    fav_delete_resp = client.delete("/v1/write/user/favorites/my-tool/", headers={"X-CSRF-Token": "tok"})
+    assert tool_resp.status_code == 202
+    assert tool_retry_resp.status_code == 202
+    assert list_resp.status_code == 202
+    assert fav_resp.status_code == 202
+    assert fav_delete_resp.status_code == 202
+    with db.session_scope() as s:
+        assert s.execute(select(ToolRecord).where(ToolRecord.tool_name == "my-tool")).scalar_one().sync_status == "local_fallback"
+        assert s.get(ToolList, "demo-local").sync_status == "local_fallback"
+        assert s.execute(select(Favorite).where(Favorite.tool_name == "my-tool")).scalar_one_or_none() is None
+
+
+def test_write_lifecycle_no_grant_branches_on_existing_retry_records(client):
+    uid = add_user()
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(
+            ToolOverlay(
+                kind="edits",
+                tool_name="edit-tool",
+                user_id=uid,
+                created_by_user_id=uid,
+                patch=TOOL_WRITE_PAYLOAD,
+            )
+        )
+        s.add(ToolList(client_id="demo-list", user_id=uid, created_by_user_id=uid, title="L", tools=[]))
+        s.add(CrawlerUrl(user_id=uid, created_by_user_id=uid, url="https://example.org/toolinfo.json"))
+        s.flush()
+        crawler_id = s.execute(select(CrawlerUrl.id)).scalar_one()
+        s.add(Favorite(user_id=uid, created_by_user_id=uid, tool_name="my-tool"))
+    cases = [
+        ("DELETE", "/v1/write/tools/edit-tool/", None),
+        ("PUT", "/v1/write/tools/edit-tool/annotations/", {}),
+        ("PUT", "/v1/write/lists/12/", {"title": "L", "tools": []}),
+        ("DELETE", "/v1/write/lists/12/", None),
+        ("POST", "/v1/write/user/favorites/", {"name": "my-tool"}),
+        ("DELETE", "/v1/write/user/favorites/my-tool/", None),
+        ("POST", "/v1/write/crawler/urls/", {"url": "https://example.org/new.json"}),
+        ("DELETE", "/v1/write/crawler/urls/9/", None),
+        ("POST", "/v1/write/tools/edit-tool/retry/", {"kind": "edit"}),
+        ("POST", "/v1/write/lists/demo-list/retry/", None),
+        ("POST", f"/v1/write/crawler/urls/{crawler_id}/retry/", None),
+        ("POST", "/v1/write/user/favorites/my-tool/retry/", None),
+    ]
+    for method, path, body in cases:
+        kwargs = {"headers": {"X-CSRF-Token": "tok"}}
+        if body is not None:
+            kwargs["json"] = body
+        assert client.open(method=method, path=path, **kwargs).status_code == 401
+
+
+def test_write_retry_failure_and_missing_record_paths(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    with db.session_scope() as s:
+        s.add(
+            ToolOverlay(
+                kind="edits",
+                tool_name="edit-tool",
+                user_id=uid,
+                created_by_user_id=uid,
+                patch={k: v for k, v in TOOL_WRITE_PAYLOAD.items() if k != "name"},
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            ToolRecord(
+                tool_name="new-fail",
+                user_id=uid,
+                created_by_user_id=uid,
+                record={
+                    "title": "New Fail",
+                    "description": "Retry fail",
+                    "url": "https://new-fail.example",
+                    "repository": None,
+                    "license": None,
+                    "toolType": None,
+                    "keywords": [],
+                    "forWikis": [],
+                    "uiLanguages": [],
+                    "deprecated": False,
+                    "experimental": False,
+                    "origin": "api",
+                },
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            ToolList(
+                client_id="demo-fail",
+                user_id=uid,
+                created_by_user_id=uid,
+                title="Fail List",
+                tools=[],
+                sync_status="local_fallback",
+            )
+        )
+        s.add(
+            CrawlerUrl(
+                user_id=uid,
+                created_by_user_id=uid,
+                url="https://fail.example/toolinfo.json",
+                sync_status="local_fallback",
+            )
+        )
+        s.flush()
+        crawler_id = s.execute(select(CrawlerUrl.id)).scalar_one()
+        s.add(Favorite(user_id=uid, created_by_user_id=uid, tool_name="fail-tool", sync_status="local_fallback"))
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"message": "still bad"}, 400))
+    assert (
+        client.post(
+            "/v1/write/tools/edit-tool/retry/",
+            json={"kind": "edit"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 202
+    )
+    assert (
+        client.post(
+            "/v1/write/tools/new-fail/retry/",
+            json={"kind": "new"},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 202
+    )
+    assert client.post("/v1/write/lists/demo-fail/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
+    assert client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
+    assert client.post("/v1/write/user/favorites/fail-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 202
+    missing_cases = [
+        ("POST", "/v1/write/tools/missing/retry/", {"kind": "new"}),
+        ("POST", "/v1/write/tools/missing/retry/", {"kind": "edit"}),
+        ("DELETE", "/v1/write/tools/missing/fallback/", {"kind": "new"}),
+        ("POST", "/v1/write/lists/missing/retry/", None),
+        ("DELETE", "/v1/write/lists/missing/fallback/", None),
+        ("POST", "/v1/write/crawler/urls/999/retry/", None),
+        ("DELETE", "/v1/write/crawler/urls/999/fallback/", None),
+        ("POST", "/v1/write/user/favorites/missing/retry/", None),
+        ("DELETE", "/v1/write/user/favorites/missing/fallback/", None),
+    ]
+    for method, path, body in missing_cases:
+        kwargs = {"headers": {"X-CSRF-Token": "tok"}}
+        if body is not None:
+            kwargs["json"] = body
+        assert client.open(method=method, path=path, **kwargs).status_code == 404
+
+
+def test_write_retry_permission_denials_for_owned_fallback_records(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    with db.session_scope() as s:
+        s.add(ToolList(client_id="demo-denied", user_id=uid, created_by_user_id=uid, title="L", tools=[]))
+        s.add(CrawlerUrl(user_id=uid, created_by_user_id=uid, url="https://denied.example/toolinfo.json"))
+        s.flush()
+        crawler_id = s.execute(select(CrawlerUrl.id)).scalar_one()
+        s.add(Favorite(user_id=uid, created_by_user_id=uid, tool_name="denied-tool"))
+    monkeypatch.setattr(
+        authz,
+        "can",
+        lambda _user, action, _resource=None: action == authz.ACTION_TOOLHUB_WRITE,
+    )
+    assert client.post("/v1/write/lists/demo-denied/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    assert client.post(f"/v1/write/crawler/urls/{crawler_id}/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+    assert client.post("/v1/write/user/favorites/denied-tool/retry/", headers={"X-CSRF-Token": "tok"}).status_code == 403
+
+
+def test_write_lifecycle_local_permission_denials_after_official_rejection(client, monkeypatch):
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    monkeypatch.setattr(
+        authz,
+        "can",
+        lambda _user, action, _resource=None: action == authz.ACTION_TOOLHUB_WRITE,
+    )
+    monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: FakeResp({"message": "no local"}, 400))
+    cases = [
+        ("PUT", "/v1/write/tools/my-tool/annotations/", {"audiences": []}),
+        ("POST", "/v1/write/lists/", {"title": "L", "tools": []}),
+        ("POST", "/v1/write/user/favorites/", {"name": "my-tool"}),
+        ("DELETE", "/v1/write/user/favorites/my-tool/", None),
+        ("POST", "/v1/write/crawler/urls/", {"url": "https://example.org/toolinfo.json"}),
+    ]
+    for method, path, body in cases:
+        kwargs = {"headers": {"X-CSRF-Token": "tok"}}
+        if body is not None:
+            kwargs["json"] = body
+        assert client.open(method=method, path=path, **kwargs).status_code == 400
 
 
 # ---- oauth -----------------------------------------------------------------
