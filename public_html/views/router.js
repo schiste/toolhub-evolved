@@ -4,25 +4,41 @@ import { t } from "../lib/core/i18n.js";
 import { parseRoute } from "../lib/core/routing.js";
 import { signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
-import { closeAcctMenu } from "../lib/organisms/account.js";
-import { closeQuickView } from "../lib/organisms/quickview.js";
-import { viewHome } from "./home.js";
-import { viewSearch } from "./search.js";
-import { viewTool, viewToolHistory, viewDiffStub } from "./tool.js";
-import { viewAuthor } from "./authors.js";
-import { viewLists, viewList, viewMyLists, viewFavorites, viewListEdit } from "./lists.js";
-import { viewToolForm, viewAddTools, viewAnnotationsEdit } from "./toolforms.js";
-import { viewAccountSettings } from "./account.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
-import { viewAudit, viewCrawler, viewMembers, viewRecent } from "./parity.js";
 
-// Heavyweight, rarely-first-paint routes are loaded on demand via dynamic
-// import() so their code stays out of the initial module graph (styleguide is
-// ~47 KB and only the /styleguide route needs it; graph pulls in force-graph).
+// Route modules are loaded on demand so first paint does not require every page's
+// module graph. On Toolforge this also avoids a burst of static-file requests,
+// where one transient 503 would otherwise blank the native ES-module app.
 // render() already awaits dispatch(), so a returned Promise<View> just works.
 
 /** @typedef {{ title: string, html: string, mount?: () => void }} View */
 /** @typedef {View | Promise<View>} ViewResult */
+/** @template T @typedef {Promise<T>} ModuleResult */
+
+/**
+ * Retry a failed dynamic import with a unique query string. Browsers may cache a
+ * failed module load for the original specifier; the retry specifier forces a
+ * fresh static-file request and lets render() recover into an error page if it
+ * still fails.
+ * @template T
+ * @param {string} specifier
+ * @param {() => ModuleResult<T>} loader
+ * @returns {ModuleResult<T>}
+ */
+function loadRouteModule(specifier, loader) {
+	return loader().catch(() => import(`${specifier}?retry=${Date.now().toString(36)}`));
+}
+const loadHome = () => loadRouteModule("./home.js", () => import("./home.js"));
+const loadSearch = () => loadRouteModule("./search.js", () => import("./search.js"));
+const loadTool = () => loadRouteModule("./tool.js", () => import("./tool.js"));
+const loadAuthors = () => loadRouteModule("./authors.js", () => import("./authors.js"));
+const loadLists = () => loadRouteModule("./lists.js", () => import("./lists.js"));
+const loadToolForms = () => loadRouteModule("./toolforms.js", () => import("./toolforms.js"));
+const loadAccount = () => loadRouteModule("./account.js", () => import("./account.js"));
+const loadParity = () => loadRouteModule("./parity.js", () => import("./parity.js"));
+const loadGraph = () => loadRouteModule("./graph.js", () => import("./graph.js"));
+const loadExperiments = () => loadRouteModule("./experiments.js", () => import("./experiments.js"));
+const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./styleguide.js"));
 
 /** @type {((title: string, lead?: string) => View) | null} */
 let signInFallback = null;
@@ -45,30 +61,30 @@ export function requireSignIn(viewFn, title, lead) {
 setSignInFallback(signInPage);
 
 export const ROUTES = {
-	lists: viewLists,
-	graph: () => import("./graph.js").then((m) => m.viewGraph()),
-	"published-lists": viewLists,
+	lists: () => loadLists().then((m) => m.viewLists()),
+	graph: () => loadGraph().then((m) => m.viewGraph()),
+	"published-lists": () => loadLists().then((m) => m.viewLists()),
 	"my-lists": () =>
 		requireSignIn(
-			viewMyLists,
+			() => loadLists().then((m) => m.viewMyLists()),
 			t("router.myListsTitle", "Your lists"),
 			t("router.myListsLead", "See and manage the lists you've created.")
 		),
 	favorites: () =>
 		requireSignIn(
-			viewFavorites,
+			() => loadLists().then((m) => m.viewFavorites()),
 			t("router.favoritesTitle", "Favorites"),
 			t("router.favoritesLead", "Your saved tools, all in one place.")
 		),
 	"add-or-remove-tools": () =>
 		requireSignIn(
-			viewAddTools,
+			() => loadToolForms().then((m) => m.viewAddTools()),
 			t("router.addToolsTitle", "Add or remove tools"),
 			t("router.addToolsLead", "Register a toolinfo.json URL to be crawled, or create a tool record directly.")
 		),
 	account: () =>
 		requireSignIn(
-			viewAccountSettings,
+			() => loadAccount().then((m) => m.viewAccountSettings()),
 			t("router.accountTitle", "Evolved data settings"),
 			t("router.accountLead", "Export or delete Evolved-local data for this Toolhub sign-in.")
 		),
@@ -82,20 +98,20 @@ export const ROUTES = {
 			t("router.signInTitle", "Sign in"),
 			t("router.signInLead", "Sign in to save favourites, build lists, and edit tool information.")
 		),
-	recent: viewRecent,
-	members: viewMembers,
-	"crawler-history": viewCrawler,
-	"audit-logs": viewAudit,
+	recent: () => loadParity().then((m) => m.viewRecent()),
+	members: () => loadParity().then((m) => m.viewMembers()),
+	"crawler-history": () => loadParity().then((m) => m.viewCrawler()),
+	"audit-logs": () => loadParity().then((m) => m.viewAudit()),
 	"api-docs": viewApiDocs,
 	contribute: viewContribute,
-	experiments: () => import("./experiments.js").then((m) => m.viewExperiments()),
-	styleguide: () => import("./styleguide.js").then((m) => m.viewStyleguide())
+	experiments: () => loadExperiments().then((m) => m.viewExperiments()),
+	styleguide: () => loadStyleguide().then((m) => m.viewStyleguide())
 };
 /** Tool sub-routes (/tools/:name and its create/edit/history variants). @param {string[]} seg */
 function dispatchToolRoute(seg) {
 	if (seg[1] === "create") {
 		return requireSignIn(
-			() => viewToolForm(null),
+			() => loadToolForms().then((m) => m.viewToolForm(null)),
 			t("router.submitToolTitle", "Submit a tool"),
 			t("router.submitToolLead", "Create a new tool record — title, description, URL and more.")
 		);
@@ -103,7 +119,7 @@ function dispatchToolRoute(seg) {
 	const nm = decodeURIComponent(seg[1]);
 	if (seg[2] === "edit") {
 		return requireSignIn(
-			() => viewToolForm(nm),
+			() => loadToolForms().then((m) => m.viewToolForm(nm)),
 			t("router.editToolTitle", "Edit tool"),
 			t(
 				"router.editToolLead",
@@ -113,7 +129,7 @@ function dispatchToolRoute(seg) {
 	}
 	if (seg[2] === "edit-annotations") {
 		return requireSignIn(
-			() => viewAnnotationsEdit(nm),
+			() => loadToolForms().then((m) => m.viewAnnotationsEdit(nm)),
 			t("router.editAnnotationsTitle", "Edit annotations"),
 			t(
 				"router.editAnnotationsLead",
@@ -121,21 +137,21 @@ function dispatchToolRoute(seg) {
 			)
 		);
 	}
-	if (seg[2] === "history") return seg[3] ? viewDiffStub(nm) : viewToolHistory(nm);
-	return viewTool(nm);
+	if (seg[2] === "history") return loadTool().then((m) => (seg[3] ? m.viewDiffStub(nm) : m.viewToolHistory(nm)));
+	return loadTool().then((m) => m.viewTool(nm));
 }
 /** List sub-routes (/lists/:id and its create/edit/history variants). @param {string[]} seg */
 function dispatchListRoute(seg) {
 	if (seg[1] === "create") {
 		return requireSignIn(
-			() => viewListEdit(null),
+			() => loadLists().then((m) => m.viewListEdit(null)),
 			t("router.createListTitle", "Create a list"),
 			t("router.createListLead", "Create a new list to group and share useful tools.")
 		);
 	}
 	if (seg[2] === "edit") {
 		return requireSignIn(
-			() => viewListEdit(decodeURIComponent(seg[1])),
+			() => loadLists().then((m) => m.viewListEdit(decodeURIComponent(seg[1]))),
 			t("router.editListTitle", "Edit list"),
 			t("router.editListLead", "Edit this list's title, description and tools.")
 		);
@@ -146,12 +162,12 @@ function dispatchListRoute(seg) {
 			`<p>Revision history for this list is available on the <a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${t("router.liveSite", "live site")}</a>.</p>`
 		);
 	}
-	return viewList(decodeURIComponent(seg[1]));
+	return loadLists().then((m) => m.viewList(decodeURIComponent(seg[1])));
 }
 export function dispatch() {
 	const { path } = parseRoute();
 	const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
-	if (path === "/") return viewHome();
+	if (path === "/") return loadHome().then((m) => m.viewHome());
 	if (seg[0] === "user" && seg[1] === "login") {
 		return signInPage(
 			t("router.signInTitle", "Sign in"),
@@ -164,8 +180,8 @@ export function dispatch() {
 			t("router.signedOutLead", "You are signed out of this Toolhub prototype.")
 		);
 	}
-	if (seg[0] === "search") return viewSearch();
-	if (seg[0] === "by" && seg[1]) return viewAuthor(decodeURIComponent(seg[1]));
+	if (seg[0] === "search") return loadSearch().then((m) => m.viewSearch());
+	if (seg[0] === "by" && seg[1]) return loadAuthors().then((m) => m.viewAuthor(decodeURIComponent(seg[1])));
 	if (seg[0] === "tools" && seg[1]) return dispatchToolRoute(seg);
 	if (seg[0] === "lists" && seg[1]) return dispatchListRoute(seg);
 	if (ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]) {
@@ -236,8 +252,7 @@ function commitView(viewEl, view, path) {
 	}
 }
 export async function render() {
-	closeQuickView(); // any navigation dismisses the peek modal
-	closeAcctMenu(); // …and the account dropdown
+	document.dispatchEvent(new Event("toolhub:route-render-start"));
 	const seq = ++navSeq;
 	const { path } = parseRoute();
 	const viewEl = /** @type {HTMLElement} */ ($("#view"));

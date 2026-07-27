@@ -18,8 +18,29 @@ import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
-import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview.js";
 import { render } from "./views/router.js";
+
+/** @type {Promise<typeof import("./lib/organisms/quickview.js")> | null} */
+let quickViewModule = null;
+function loadQuickView() {
+	quickViewModule ||= import("./lib/organisms/quickview.js");
+	return quickViewModule;
+}
+function closeQuickViewIfLoaded() {
+	if (!quickViewModule) return;
+	quickViewModule.then((m) => m.closeQuickView()).catch(() => undefined);
+}
+/** @param {KeyboardEvent} e */
+function trapQuickViewIfLoaded(e) {
+	if (!quickViewModule) return;
+	quickViewModule.then((m) => m.qvTrap(e)).catch(() => undefined);
+}
+/** @param {string} name */
+function openQuickViewFor(name) {
+	loadQuickView()
+		.then((m) => m.openQuickView(name))
+		.catch(() => undefined);
+}
 
 setAuthRender(() => {
 	renderAccount();
@@ -126,7 +147,7 @@ $("#view")?.addEventListener("click", (e) => {
 	if (e.target?.closest("a[href]")) return; // real links route natively
 	const card = e.target?.closest("[data-tool]");
 	if (card) {
-		openQuickView(/** @type {string} */ (card.getAttribute("data-tool")));
+		openQuickViewFor(/** @type {string} */ (card.getAttribute("data-tool")));
 	} // default: peek
 });
 // Keyboard: Enter/Space on a focused tool card opens the quick-view.
@@ -135,7 +156,7 @@ $("#view")?.addEventListener("keydown", (e) => {
 	const card = e.target?.closest("[data-tool]");
 	if (card && e.target === card) {
 		e.preventDefault();
-		openQuickView(/** @type {string} */ (card.getAttribute("data-tool")));
+		openQuickViewFor(/** @type {string} */ (card.getAttribute("data-tool")));
 	}
 });
 
@@ -149,16 +170,20 @@ $("#qv")?.addEventListener("click", (e) => {
 	}
 	if (e.target?.id === "qv" || e.target?.closest("[data-qv-close]")) {
 		e.preventDefault();
-		closeQuickView();
+		closeQuickViewIfLoaded();
 	}
+});
+document.addEventListener("toolhub:route-render-start", () => {
+	closeAcctMenu();
+	closeQuickViewIfLoaded();
 });
 document.addEventListener("keydown", (e) => {
 	if (e.key === "Escape") {
-		closeQuickView();
+		closeQuickViewIfLoaded();
 		closeAcctMenu();
 		closeLangMenu();
 	} else {
-		qvTrap(e);
+		trapQuickViewIfLoaded(e);
 	}
 });
 

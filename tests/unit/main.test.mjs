@@ -126,6 +126,15 @@ const click = (el, opts = {}) =>
 const keydown = (el, key) =>
 	el.dispatchEvent(new window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, key }));
 const $ = (s) => document.querySelector(s);
+const settleDynamicImports = async () => {
+	if (typeof vi.dynamicImportSettled === "function") await vi.dynamicImportSettled();
+	await Promise.resolve();
+};
+const loadQuickViewForTest = async () => {
+	click($("#view .tcard__inner"));
+	await settleDynamicImports();
+	vi.clearAllMocks();
+};
 
 beforeAll(async () => {
 	document.documentElement.setAttribute("data-theme", "dark");
@@ -312,9 +321,10 @@ test("#view: a data-q anchor is treated as a link, not a chip", () => {
 	assert.deepEqual(routing.navigateTo.mock.calls.at(-1), ["/about"]);
 });
 
-test("#view: clicking a card body opens the quick view", () => {
+test("#view: clicking a card body opens the quick view", async () => {
 	vi.clearAllMocks();
 	click($("#view .tcard__inner")); // inside the [data-tool] card, not a link
+	await settleDynamicImports();
 	assert.deepEqual(quickview.openQuickView.mock.calls[0], ["tool-x"]);
 });
 
@@ -336,14 +346,16 @@ test("#view: a link inside a card routes natively and never opens the quick view
 
 /* ---- #view keydown ----------------------------------------------------- */
 
-test("#view: Enter/Space on a focused card opens the quick view; other keys/targets do not", () => {
+test("#view: Enter/Space on a focused card opens the quick view; other keys/targets do not", async () => {
 	vi.clearAllMocks();
 	const card = $('#view [data-tool="tool-x"]');
 	keydown(card, "Enter");
+	await settleDynamicImports();
 	assert.deepEqual(quickview.openQuickView.mock.calls[0], ["tool-x"]);
 
 	vi.clearAllMocks();
 	keydown(card, " ");
+	await settleDynamicImports();
 	assert.deepEqual(quickview.openQuickView.mock.calls[0], ["tool-x"]);
 
 	vi.clearAllMocks();
@@ -357,7 +369,7 @@ test("#view: Enter/Space on a focused card opens the quick view; other keys/targ
 
 /* ---- #qv click --------------------------------------------------------- */
 
-test("#qv: a favorite toggles; the backdrop and close button dismiss the modal", () => {
+test("#qv: a favorite toggles; the backdrop and close button dismiss the modal", async () => {
 	vi.clearAllMocks();
 	store.toggleFav.mockReturnValue("Q");
 	click($('#qv [data-fav="tool-b"]'));
@@ -365,12 +377,15 @@ test("#qv: a favorite toggles; the backdrop and close button dismiss the modal",
 	assert.deepEqual(favbtn.syncFavButtons.mock.calls[0], ["tool-b", "Q"]);
 	assert.equal(quickview.closeQuickView.mock.calls.length, 0); // fav path returns early
 
+	await loadQuickViewForTest();
 	vi.clearAllMocks();
 	click($("#qv [data-qv-close]"));
+	await settleDynamicImports();
 	assert.equal(quickview.closeQuickView.mock.calls.length, 1);
 
 	vi.clearAllMocks();
 	click($("#qv")); // backdrop (target.id === "qv")
+	await settleDynamicImports();
 	assert.equal(quickview.closeQuickView.mock.calls.length, 1);
 
 	vi.clearAllMocks();
@@ -380,9 +395,11 @@ test("#qv: a favorite toggles; the backdrop and close button dismiss the modal",
 
 /* ---- document keydown -------------------------------------------------- */
 
-test("Escape closes the modal and menus; any other key feeds the focus trap", () => {
+test("Escape closes the modal and menus; any other key feeds the focus trap", async () => {
+	await loadQuickViewForTest();
 	vi.clearAllMocks();
 	keydown(document.body, "Escape");
+	await settleDynamicImports();
 	assert.equal(quickview.closeQuickView.mock.calls.length, 1);
 	assert.equal(account.closeAcctMenu.mock.calls.length, 1);
 	assert.equal(langpicker.closeLangMenu.mock.calls.length, 1);
@@ -390,8 +407,18 @@ test("Escape closes the modal and menus; any other key feeds the focus trap", ()
 
 	vi.clearAllMocks();
 	keydown(document.body, "Tab");
+	await settleDynamicImports();
 	assert.equal(quickview.qvTrap.mock.calls.length, 1);
 	assert.equal(quickview.closeQuickView.mock.calls.length, 0);
+});
+
+test("route-render-start closes entrypoint-owned transient UI", async () => {
+	await loadQuickViewForTest();
+	vi.clearAllMocks();
+	document.dispatchEvent(new window.Event("toolhub:route-render-start"));
+	await settleDynamicImports();
+	assert.equal(account.closeAcctMenu.mock.calls.length, 1);
+	assert.equal(quickview.closeQuickView.mock.calls.length, 1);
 });
 
 /* ---- #account ---------------------------------------------------------- */

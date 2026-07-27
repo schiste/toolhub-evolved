@@ -14,11 +14,8 @@ import * as toolforms from "../../public_html/views/toolforms.js";
 import * as accountView from "../../public_html/views/account.js";
 import * as staticViews from "../../public_html/views/static.js";
 import * as styleguide from "../../public_html/views/styleguide.js";
-import * as parity from "../../public_html/views/parity.js";
 import * as session from "../../public_html/lib/core/session.js";
 import * as store from "../../public_html/lib/core/store.js";
-import * as account from "../../public_html/lib/organisms/account.js";
-import * as quickview from "../../public_html/lib/organisms/quickview.js";
 
 vi.mock("../../public_html/views/home.js", () => ({ viewHome: vi.fn(() => ({ tag: "home" })) }));
 vi.mock("../../public_html/views/search.js", () => ({ viewSearch: vi.fn(() => ({ tag: "search" })) }));
@@ -72,15 +69,6 @@ vi.mock("../../public_html/lib/core/store.js", async (importOriginal) => {
 	const actual = await importOriginal();
 	return { ...actual, isDemoListId: vi.fn() };
 });
-vi.mock("../../public_html/lib/organisms/account.js", async (importOriginal) => {
-	const actual = await importOriginal();
-	return { ...actual, closeAcctMenu: vi.fn() };
-});
-vi.mock("../../public_html/lib/organisms/quickview.js", async (importOriginal) => {
-	const actual = await importOriginal();
-	return { ...actual, closeQuickView: vi.fn() };
-});
-
 const at = (path) => {
 	window.history.replaceState({}, "", path);
 	return router.dispatch();
@@ -93,57 +81,57 @@ beforeEach(() => {
 
 /* ---- dispatch: simple routes ------------------------------------------- */
 
-test('dispatch "/" → viewHome', () => {
-	const v = at("/");
+test('dispatch "/" → viewHome', async () => {
+	const v = await at("/");
 	assert.equal(home.viewHome.mock.calls.length, 1);
 	assert.deepEqual(v, { tag: "home" });
 });
 
-test("dispatch /user/login and /user/logout → signInPage with their copy", () => {
-	at("/user/login");
+test("dispatch /user/login and /user/logout → signInPage with their copy", async () => {
+	await at("/user/login");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Sign in",
 		"Sign in to save favourites, build lists, and edit tool information."
 	]);
 
-	at("/user/logout");
+	await at("/user/logout");
 	assert.deepEqual(staticViews.signInPage.mock.calls[1], [
 		"Signed out",
 		"You are signed out of this Toolhub prototype."
 	]);
 });
 
-test("dispatch /user/<other> is not a sign-in route → viewNotFound", () => {
+test("dispatch /user/<other> is not a sign-in route → viewNotFound", async () => {
 	// Guards the `seg[1] === "logout"` check from collapsing to `true`.
-	const v = at("/user/profile");
+	const v = await at("/user/profile");
 	assert.deepEqual(v, { tag: "notfound" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 });
 
-test("dispatch /<other>/create is neither the tools nor lists create route → viewNotFound", () => {
+test("dispatch /<other>/create is neither the tools nor lists create route → viewNotFound", async () => {
 	// Guards the `seg[0] === "lists"` checks (lines 108 & 115) from collapsing to `true`.
-	const v = at("/widgets/create");
+	const v = await at("/widgets/create");
 	assert.deepEqual(v, { tag: "notfound" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 	assert.equal(lists.viewList.mock.calls.length, 0);
 });
 
-test("dispatch /search and /search/foo → viewSearch", () => {
-	at("/search");
-	at("/search/foo");
+test("dispatch /search and /search/foo → viewSearch", async () => {
+	await at("/search");
+	await at("/search/foo");
 	assert.equal(search.viewSearch.mock.calls.length, 2);
 });
 
-test("dispatch /by/<name> → viewAuthor with the decoded name", () => {
-	const v = at("/by/Ada%20Lovelace");
+test("dispatch /by/<name> → viewAuthor with the decoded name", async () => {
+	const v = await at("/by/Ada%20Lovelace");
 	assert.deepEqual(authors.viewAuthor.mock.calls[0], ["Ada Lovelace"]);
 	assert.deepEqual(v, { tag: "author", n: "Ada Lovelace" });
 });
 
 /* ---- dispatch: tools --------------------------------------------------- */
 
-test("dispatch /tools/create gates behind sign-in", () => {
-	at("/tools/create"); // signedIn=false
+test("dispatch /tools/create gates behind sign-in", async () => {
+	await at("/tools/create"); // signedIn=false
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Submit a tool",
 		"Create a new tool record — title, description, URL and more."
@@ -151,71 +139,71 @@ test("dispatch /tools/create gates behind sign-in", () => {
 	assert.equal(toolforms.viewToolForm.mock.calls.length, 0);
 
 	session.signedIn.mockReturnValue(true);
-	at("/tools/create");
+	await at("/tools/create");
 	assert.deepEqual(toolforms.viewToolForm.mock.calls[0], [null]);
 });
 
-test("dispatch /tools/<name> → viewTool with decoded name", () => {
-	const v = at("/tools/My%2FTool");
+test("dispatch /tools/<name> → viewTool with decoded name", async () => {
+	const v = await at("/tools/My%2FTool");
 	assert.deepEqual(tool.viewTool.mock.calls[0], ["My/Tool"]);
 	assert.deepEqual(v, { tag: "tool", n: "My/Tool" });
 });
 
-test("dispatch /tools/<name>/edit gates behind sign-in", () => {
-	at("/tools/Foo/edit");
+test("dispatch /tools/<name>/edit gates behind sign-in", async () => {
+	await at("/tools/Foo/edit");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Edit tool",
 		"Edit this tool's core information — title, description, URL and more. Only the owner or an administrator can change core data."
 	]);
 
 	session.signedIn.mockReturnValue(true);
-	at("/tools/Foo%20Bar/edit");
+	await at("/tools/Foo%20Bar/edit");
 	assert.deepEqual(toolforms.viewToolForm.mock.calls[0], ["Foo Bar"]);
 });
 
-test("dispatch /tools/<name>/edit-annotations gates behind sign-in", () => {
-	at("/tools/Foo/edit-annotations");
+test("dispatch /tools/<name>/edit-annotations gates behind sign-in", async () => {
+	await at("/tools/Foo/edit-annotations");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Edit annotations",
 		"Add or refine community annotations for this tool — audiences, tasks and more."
 	]);
 
 	session.signedIn.mockReturnValue(true);
-	at("/tools/Bar%20Baz/edit-annotations");
+	await at("/tools/Bar%20Baz/edit-annotations");
 	assert.deepEqual(toolforms.viewAnnotationsEdit.mock.calls[0], ["Bar Baz"]);
 });
 
-test("dispatch /tools/<name>/history → history, with a revision id → diff stub", () => {
-	at("/tools/Foo/history");
+test("dispatch /tools/<name>/history → history, with a revision id → diff stub", async () => {
+	await at("/tools/Foo/history");
 	assert.deepEqual(tool.viewToolHistory.mock.calls[0], ["Foo"]);
 	assert.equal(tool.viewDiffStub.mock.calls.length, 0);
 
-	at("/tools/Foo/history/42");
+	await at("/tools/Foo/history/42");
 	assert.deepEqual(tool.viewDiffStub.mock.calls[0], ["Foo"]);
 });
 
 /* ---- dispatch: lists --------------------------------------------------- */
 
-test("dispatch /lists/create gates behind sign-in", () => {
-	at("/lists/create");
+test("dispatch /lists/create gates behind sign-in", async () => {
+	await at("/lists/create");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Create a list",
 		"Create a new list to group and share useful tools."
 	]);
 
 	session.signedIn.mockReturnValue(true);
-	at("/lists/create");
+	await at("/lists/create");
 	assert.deepEqual(lists.viewListEdit.mock.calls[0], [null]);
 });
 
-test("dispatch /lists/<id> → viewList with decoded id", () => {
-	const v = at("/lists/abc%20123");
+test("dispatch /lists/<id> → viewList with decoded id", async () => {
+	const v = await at("/lists/abc%20123");
 	assert.deepEqual(lists.viewList.mock.calls[0], ["abc 123"]);
 	assert.deepEqual(v, { tag: "list", n: "abc 123" });
 });
 
-test("dispatch /lists/<id>/edit: signed-out → sign-in fallback", () => {
-	at("/lists/abc/edit");
+test("dispatch /lists/<id>/edit: signed-out → sign-in fallback", async () => {
+	await at("/lists/abc/edit");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Edit list",
 		"Edit this list's title, description and tools."
@@ -223,25 +211,25 @@ test("dispatch /lists/<id>/edit: signed-out → sign-in fallback", () => {
 	assert.equal(lists.viewListEdit.mock.calls.length, 0);
 });
 
-test("dispatch /lists/<id>/edit: signed-in lists use the editor for local and official ids", () => {
+test("dispatch /lists/<id>/edit: signed-in lists use the editor for local and official ids", async () => {
 	session.signedIn.mockReturnValue(true);
 
 	store.isDemoListId.mockReturnValue(true);
-	at("/lists/demo%201/edit");
+	await at("/lists/demo%201/edit");
 	assert.deepEqual(lists.viewListEdit.mock.calls[0], ["demo 1"]); // decoded for the editor
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(true);
 	store.isDemoListId.mockReturnValue(false);
-	at("/lists/real/edit");
+	await at("/lists/real/edit");
 	assert.deepEqual(lists.viewListEdit.mock.calls[0], ["real"]);
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 	assert.equal(store.isDemoListId.mock.calls.length, 0);
 });
 
-test("dispatch /lists/<id>/history → prosePage with the live-site note", () => {
-	const v = at("/lists/abc/history");
+test("dispatch /lists/<id>/history → prosePage with the live-site note", async () => {
+	const v = await at("/lists/abc/history");
 	assert.deepEqual(staticViews.prosePage.mock.calls[0], [
 		"List history",
 		'<p>Revision history for this list is available on the <a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">live site</a>.</p>'
@@ -252,49 +240,49 @@ test("dispatch /lists/<id>/history → prosePage with the live-site note", () =>
 /* ---- dispatch: ROUTES table ------------------------------------------- */
 
 test("dispatch routes the ungated ROUTES entries to their views", async () => {
-	assert.deepEqual(at("/lists"), { tag: "lists" });
-	assert.deepEqual(at("/published-lists"), { tag: "lists" });
-	// graph / experiments / styleguide are lazy-loaded (dynamic import), so dispatch
-	// returns a Promise<View> for them — render() awaits it the same way.
+	assert.deepEqual(await at("/lists"), { tag: "lists" });
+	assert.deepEqual(await at("/published-lists"), { tag: "lists" });
+	// Real page modules are lazy-loaded (dynamic import), so dispatch returns a
+	// Promise<View> for them — render() awaits it the same way.
 	assert.deepEqual(await at("/graph"), { tag: "graph" });
-	assert.deepEqual(at("/recent"), { tag: "recent" });
-	assert.deepEqual(at("/members"), { tag: "members" });
-	assert.deepEqual(at("/crawler-history"), { tag: "crawler" });
-	assert.deepEqual(at("/audit-logs"), { tag: "audit" });
-	assert.deepEqual(at("/api-docs"), { tag: "apidocs" });
-	assert.deepEqual(at("/contribute"), { tag: "contribute" });
+	assert.deepEqual(await at("/recent"), { tag: "recent" });
+	assert.deepEqual(await at("/members"), { tag: "members" });
+	assert.deepEqual(await at("/crawler-history"), { tag: "crawler" });
+	assert.deepEqual(await at("/audit-logs"), { tag: "audit" });
+	assert.deepEqual(await at("/api-docs"), { tag: "apidocs" });
+	assert.deepEqual(await at("/contribute"), { tag: "contribute" });
 	assert.deepEqual(await at("/experiments"), { tag: "experiments" });
 	assert.deepEqual(await at("/styleguide"), { tag: "styleguide" });
 	assert.equal(lists.viewLists.mock.calls.length, 2); // lists + published-lists
 });
 
-test("dispatch ROUTES sign-in stubs use their exact copy", () => {
-	at("/developer-settings");
+test("dispatch ROUTES sign-in stubs use their exact copy", async () => {
+	await at("/developer-settings");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Developer settings",
 		"Manage your API tokens and registered OAuth applications."
 	]);
 
-	at("/login");
+	await at("/login");
 	assert.deepEqual(staticViews.signInPage.mock.calls[1], [
 		"Sign in",
 		"Sign in to save favourites, build lists, and edit tool information."
 	]);
 });
 
-test("dispatch gated ROUTES entries: signed-out → sign-in copy", () => {
-	at("/my-lists");
+test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
+	await at("/my-lists");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], ["Your lists", "See and manage the lists you've created."]);
 	assert.equal(lists.viewMyLists.mock.calls.length, 0);
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(false);
-	at("/favorites");
+	await at("/favorites");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], ["Favorites", "Your saved tools, all in one place."]);
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(false);
-	at("/add-or-remove-tools");
+	await at("/add-or-remove-tools");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Add or remove tools",
 		"Register a toolinfo.json URL to be crawled, or create a tool record directly."
@@ -302,31 +290,31 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", () => {
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(false);
-	at("/account");
+	await at("/account");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Evolved data settings",
 		"Export or delete Evolved-local data for this Toolhub sign-in."
 	]);
 });
 
-test("dispatch gated ROUTES entries: signed-in → their real views", () => {
+test("dispatch gated ROUTES entries: signed-in → their real views", async () => {
 	session.signedIn.mockReturnValue(true);
-	assert.deepEqual(at("/my-lists"), { tag: "mylists" });
-	assert.deepEqual(at("/favorites"), { tag: "favorites" });
-	assert.deepEqual(at("/add-or-remove-tools"), { tag: "addtools" });
-	assert.deepEqual(at("/account"), { tag: "account" });
+	assert.deepEqual(await at("/my-lists"), { tag: "mylists" });
+	assert.deepEqual(await at("/favorites"), { tag: "favorites" });
+	assert.deepEqual(await at("/add-or-remove-tools"), { tag: "addtools" });
+	assert.deepEqual(await at("/account"), { tag: "account" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 	assert.equal(accountView.viewAccountSettings.mock.calls.length, 1);
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */
 
-test("dispatch a STATIC slug → viewStatic; an unknown slug → viewNotFound", () => {
-	const v = at("/about");
+test("dispatch a STATIC slug → viewStatic; an unknown slug → viewNotFound", async () => {
+	const v = await at("/about");
 	assert.deepEqual(staticViews.viewStatic.mock.calls[0], ["about"]);
 	assert.deepEqual(v, { tag: "static", slug: "about" });
 
-	const nf = at("/this-route-does-not-exist");
+	const nf = await at("/this-route-does-not-exist");
 	assert.deepEqual(nf, { tag: "notfound" });
 	assert.equal(staticViews.viewNotFound.mock.calls.length, 1);
 });
@@ -456,6 +444,11 @@ const deferred = () => {
 	const promise = new Promise((r) => (resolve = r));
 	return { promise, resolve };
 };
+const settleDynamicImports = async (opts = {}) => {
+	if (!opts.fakeTimers && typeof vi.dynamicImportSettled === "function") await vi.dynamicImportSettled();
+	await Promise.resolve();
+	await Promise.resolve();
+};
 
 test("render: first load shows the spinner, then commits, sets on-home and focuses the h1", async () => {
 	// This is the first render() in the file, so lastPath is still null.
@@ -468,14 +461,21 @@ test("render: first load shows the spinner, then commits, sets on-home and focus
 	const scrollSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
 	const focusSpy = vi.spyOn(HTMLElement.prototype, "focus"); // calls through, records args
 	const navBefore = router.navSeq;
+	let routeStartEvents = 0;
+	const onRouteStart = () => {
+		routeStartEvents += 1;
+	};
+	document.addEventListener("toolhub:route-render-start", onRouteStart);
 
 	try {
 		const p = router.render();
 		const viewEl = document.querySelector("#view");
+		assert.equal(routeStartEvents, 1);
 		// lastPath === null → loadingHTML swapped in immediately.
 		assert.equal(viewEl.innerHTML, router.loadingHTML());
 		assert.equal(viewEl.getAttribute("aria-busy"), "true");
 
+		await settleDynamicImports();
 		d.resolve({ title: "Home — Toolhub", html: '<div><h1 id="hh">Home</h1></div>', mount });
 		await p;
 
@@ -493,10 +493,8 @@ test("render: first load shows the spinner, then commits, sets on-home and focus
 		assert.equal(document.activeElement, h1);
 		assert.deepEqual(scrollSpy.mock.calls.at(-1), [{ top: 0, behavior: "auto" }]);
 		assert.deepEqual(focusSpy.mock.calls.at(-1), [{ preventScroll: true }]);
-		// Navigation dismissed the quick-view and account menu.
-		assert.equal(quickview.closeQuickView.mock.calls.length, 1);
-		assert.equal(account.closeAcctMenu.mock.calls.length, 1);
 	} finally {
+		document.removeEventListener("toolhub:route-render-start", onRouteStart);
 		scrollSpy.mockRestore();
 		focusSpy.mockRestore();
 	}
@@ -516,6 +514,7 @@ test("render: re-rendering the same path keeps the current page (no spinner) and
 	assert.equal(viewEl.getAttribute("aria-busy"), "false");
 
 	// title "" → falls back to "Toolhub"; no mount; no <h1> → focus falls back to the view element.
+	await settleDynamicImports();
 	d.resolve({ title: "", html: "<p>no heading</p>" });
 	await p;
 	assert.equal(viewEl.innerHTML, "<p>no heading</p>");
@@ -537,6 +536,7 @@ test("render: a slow navigation to a new path swaps in the spinner after the del
 		assert.equal(viewEl.innerHTML, "KEEP");
 		assert.equal(viewEl.getAttribute("aria-busy"), "true");
 
+		await settleDynamicImports({ fakeTimers: true });
 		vi.advanceTimersByTime(250);
 		assert.equal(viewEl.innerHTML, router.loadingHTML());
 
@@ -556,31 +556,31 @@ test("render: a superseded navigation neither flashes its spinner nor commits", 
 		document.body.innerHTML = '<main id="view" aria-busy="false">START</main>';
 		const viewEl = document.querySelector("#view");
 
-		// Navigation A (slow) to /members.
-		window.history.replaceState({}, "", "/members");
+		// Navigation A (slow) to /api-docs.
+		window.history.replaceState({}, "", "/api-docs");
 		const dA = deferred();
-		parity.viewMembers.mockReturnValue(dA.promise);
+		staticViews.viewApiDocs.mockReturnValue(dA.promise);
 		const pA = router.render();
 
-		// Navigation B (also slow) to /recent supersedes A before A resolves.
-		window.history.replaceState({}, "", "/recent");
+		// Navigation B (also slow) to /contribute supersedes A before A resolves.
+		window.history.replaceState({}, "", "/contribute");
 		const dB = deferred();
-		parity.viewRecent.mockReturnValue(dB.promise);
+		staticViews.viewContribute.mockReturnValue(dB.promise);
 		const pB = router.render();
 
 		// B resolves first and commits.
-		dB.resolve({ title: "Recent — Toolhub", html: "<div>RECENT</div>" });
+		dB.resolve({ title: "Contribute — Toolhub", html: "<div>CONTRIBUTE</div>" });
 		await pB;
-		assert.equal(viewEl.innerHTML, "<div>RECENT</div>");
+		assert.equal(viewEl.innerHTML, "<div>CONTRIBUTE</div>");
 
 		// A's spinner timer fires now, but seq !== navSeq → it must NOT replace the page.
 		vi.advanceTimersByTime(250);
-		assert.equal(viewEl.innerHTML, "<div>RECENT</div>");
+		assert.equal(viewEl.innerHTML, "<div>CONTRIBUTE</div>");
 
 		// A finally resolves, but being superseded it returns without committing.
-		dA.resolve({ title: "Members — Toolhub", html: "<div>MEMBERS</div>" });
+		dA.resolve({ title: "API docs — Toolhub", html: "<div>API</div>" });
 		await pA;
-		assert.equal(viewEl.innerHTML, "<div>RECENT</div>");
+		assert.equal(viewEl.innerHTML, "<div>CONTRIBUTE</div>");
 	} finally {
 		vi.useRealTimers();
 	}

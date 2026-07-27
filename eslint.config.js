@@ -207,7 +207,9 @@ export default [
 			"playwright-report/**",
 			"test-results/**",
 			"coverage/**",
-			"htmlcov/**"
+			"htmlcov/**",
+			"dist/**",
+			"dist.tmp/**"
 		]
 	},
 	// License header on first-party source.
