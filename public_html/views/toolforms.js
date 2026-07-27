@@ -62,28 +62,31 @@ function isHttpUrl(value) {
 /**
  * @param {string} id
  * @param {string} msg
- * @param {{ required?: boolean }} [opts]
+ * @param {{ required?: boolean, httpsOnly?: boolean }} [opts]
  * @returns {HTMLElement | null}
  */
 function validateHttpField(id, msg, opts = {}) {
 	const value = fieldValue(id);
 	clearFieldError(id);
-	if ((opts.required || value) && !isHttpUrl(value)) {
+	if ((opts.required || value) && (!isHttpUrl(value) || (opts.httpsOnly && !String(value).startsWith("https://")))) {
 		setFieldError(id, msg);
 		return $(`#${id}`);
 	}
 	return null;
 }
 
-/** @param {string} id */
-function clearHttpErrorWhenValid(id) {
+/**
+ * @param {string} id
+ * @param {{ httpsOnly?: boolean }} [opts]
+ */
+function clearHttpErrorWhenValid(id, opts = {}) {
 	const el = $input(`#${id}`);
 	// Stryker disable next-line ConditionalExpression: this is only wired to fields the form always renders (tf-url/tf-repo/at-url), so `el` is never null — defensive guard.
 	if (!el) return;
 	el.addEventListener("input", () => {
 		// Stryker disable next-line MethodExpression: these are type="url" inputs, which strip surrounding whitespace, so the value is already trimmed — equivalent.
 		const value = el.value.trim();
-		if (!value || isHttpUrl(value)) clearFieldError(id);
+		if (!value || (isHttpUrl(value) && (!opts.httpsOnly || value.startsWith("https://")))) clearFieldError(id);
 	});
 }
 
@@ -147,6 +150,7 @@ function officialToolPayload(name, fields, { includeName = true } = {}) {
 		comment: fields.comment || "Published from Toolhub Evolved"
 	};
 	if (includeName) payload.name = name;
+	if (includeName && fields.toolinfoUrl) payload.toolinfo_url = fields.toolinfoUrl;
 	if (!payload.repository) delete payload.repository;
 	if (!payload.license) delete payload.license;
 	if (!payload.tool_type) delete payload.tool_type;
@@ -195,7 +199,8 @@ function readToolFormFields() {
 		forWikis: fromCsv(fieldValue("tf-wikis")),
 		uiLanguages: fromCsv(fieldValue("tf-langs")),
 		deprecated: checkedValue("tf-deprecated"),
-		experimental: checkedValue("tf-experimental")
+		experimental: checkedValue("tf-experimental"),
+		toolinfoUrl: fieldValue("tf-toolinfo-url") || null
 	};
 }
 
@@ -556,6 +561,10 @@ export async function viewToolForm(name) {
 					: t("toolforms.discardLocalCopy", "Discard local copy")
 			})
 		: "";
+	const createToolinfoField = editing
+		? ""
+		: `${fInput(t("toolforms.fieldToolinfoUrl", "toolinfo.json URL"), "tf-toolinfo-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: t("toolforms.fieldCreateToolinfoUrlHint", "Optional: Evolved will fetch it now to fill missing fields and keep it registered for future crawler refreshes.") })}
+			`;
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
@@ -569,7 +578,7 @@ export async function viewToolForm(name) {
 			${withFieldProvenance(fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") }), t("toolforms.fieldTitle", "Title"), coreMeta)}
 			${withFieldProvenance(fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it.")), t("toolforms.fieldDescription", "Description"), coreMeta)}
 			${withFieldProvenance(fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") }), t("toolforms.fieldUrl", "URL"), coreMeta)}
-			${withFieldProvenance(fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") }), t("toolforms.fieldRepository", "Source code repository"), coreMeta)}
+			${createToolinfoField}${withFieldProvenance(fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") }), t("toolforms.fieldRepository", "Source code repository"), coreMeta)}
 			${withFieldProvenance(fInput(t("toolforms.fieldLicense", "License (SPDX id)"), "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: t("toolforms.fieldLicenseHint", "Use an SPDX identifier when known; leave blank if the license is unknown.") }), t("toolforms.fieldLicenseShort", "License"), coreMeta)}
 			${withFieldProvenance(fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") }), t("toolforms.fieldToolType", "Tool type"), coreMeta)}
 			${withFieldProvenance(fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") }), t("toolforms.fieldKeywordsShort", "Keywords"), coreMeta)}
@@ -596,13 +605,20 @@ export async function viewToolForm(name) {
 				"tf-repo",
 				t("toolforms.errInvalidRepoUrl", "Enter a valid http(s) repository URL.")
 			);
+			const invalidToolinfo = editing
+				? null
+				: validateHttpField(
+						"tf-toolinfo-url",
+						t("toolforms.errInvalidCreateToolinfoUrl", "Enter a valid https toolinfo URL."),
+						{ httpsOnly: true }
+					);
 			const invalidWikis = validateWikiTargets("tf-wikis");
 			if (!tname || !title) {
 				/** @type {HTMLElement} */ ($(editing ? "#tf-title" : "#tf-name")).focus();
 				return;
 			}
-			if (invalidUrl || invalidRepo || invalidWikis) {
-				/** @type {HTMLElement} */ (invalidUrl || invalidRepo || invalidWikis).focus();
+			if (invalidUrl || invalidRepo || invalidToolinfo || invalidWikis) {
+				/** @type {HTMLElement} */ (invalidUrl || invalidRepo || invalidToolinfo || invalidWikis).focus();
 				return;
 			}
 			if (!editing && isNewTool(tname)) {
@@ -719,6 +735,7 @@ export async function viewToolForm(name) {
 		}
 		clearHttpErrorWhenValid("tf-url");
 		clearHttpErrorWhenValid("tf-repo");
+		if (!editing) clearHttpErrorWhenValid("tf-toolinfo-url", { httpsOnly: true });
 		clearWikiErrorWhenValid("tf-wikis");
 		if (!editing) setupDuplicateSuggestions();
 	}

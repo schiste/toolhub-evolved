@@ -250,6 +250,9 @@ const S = {
 			<label class="le__label">URL <span class="le__req">*</span>
 		 <span class="le__hint" id="tf-url-hint">Primary place people launch the tool or read its documentation.</span>
 		<input class="le__input" id="tf-url" type="url" required aria-describedby="tf-url-hint tf-url-err" maxlength="300" value="" placeholder="https://…" /><span class="le__error" id="tf-url-err" hidden></span></label>
+			<label class="le__label">toolinfo.json URL
+		 <span class="le__hint" id="tf-toolinfo-url-hint">Optional: Evolved will fetch it now to fill missing fields and keep it registered for future crawler refreshes.</span>
+		<input class="le__input" id="tf-toolinfo-url" type="url" aria-describedby="tf-toolinfo-url-hint tf-toolinfo-url-err" maxlength="300" value="" placeholder="https://example.org/toolinfo.json" /><span class="le__error" id="tf-toolinfo-url-err" hidden></span></label>
 			<label class="le__label">Source code repository
 		 <span class="le__hint" id="tf-repo-hint">Optional public repository where contributors can inspect or patch the code.</span>
 		<input class="le__input" id="tf-repo" type="url" aria-describedby="tf-repo-hint tf-repo-err" maxlength="300" value=""  /><span class="le__error" id="tf-repo-err" hidden></span></label>
@@ -657,6 +660,7 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 	setVal("tf-keywords", "a, b");
 	setVal("tf-wikis", "en.wikipedia.org, commons.wikimedia.org");
 	setVal("tf-langs", "en, fr");
+	setVal("tf-toolinfo-url", "https://example.org/toolinfo.json");
 	document.querySelector("#tf-experimental").checked = true;
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	await tick();
@@ -676,7 +680,8 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 			deprecated: false,
 			experimental: true,
 			comment: "Published from Toolhub Evolved",
-			name: "new-tool"
+			name: "new-tool",
+			toolinfo_url: "https://example.org/toolinfo.json"
 		}
 	]);
 	assert.deepEqual(
@@ -728,6 +733,20 @@ test("mount create: backend transport failure does not create a local draft", as
 	assert.equal(h.logActivity.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
+});
+
+test("mount create: invalid toolinfo URL focuses create-time crawler field", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	await mountToolForm(null);
+	setVal("tf-name", "new-tool");
+	setVal("tf-title", "New Tool");
+	setVal("tf-url", "https://example.org");
+	setVal("tf-toolinfo-url", "http://example.org/toolinfo.json");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(document.activeElement, document.querySelector("#tf-toolinfo-url"));
+	assert.equal(document.querySelector("#tf-toolinfo-url-err").textContent, "Enter a valid https toolinfo URL.");
 });
 
 test("mount edit: valid submit without Toolhub sign-in is blocked", async () => {

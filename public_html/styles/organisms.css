@@ -771,6 +771,31 @@
 .account-data__links {
 	margin-top: var(--space-3);
 }
+.account-keys__layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
+	gap: var(--space-4);
+	align-items: start;
+}
+.account-keys__form,
+.account-keys__signer,
+.account-keys__payloads {
+	display: grid;
+	gap: var(--space-3);
+}
+.account-keys__signer,
+.account-keys__payloads {
+	margin-top: var(--space-4);
+}
+.account-keys__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+.account-keys__output {
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
 .account-records__head {
 	align-items: flex-start;
 }
@@ -830,6 +855,11 @@
 	flex-wrap: wrap;
 	gap: var(--space-2);
 	font-size: var(--fs-caption);
+}
+.account-tools__badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
 }
 .panel__foot {
 	display: inline-block;
@@ -1617,6 +1647,9 @@
 }
 
 @media (width <= 640px) {
+	.account-keys__layout {
+		grid-template-columns: 1fr;
+	}
 	.recent-controls__filters {
 		grid-template-columns: 1fr;
 	}
