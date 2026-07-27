@@ -111,9 +111,53 @@ grant. Rows are performance artifacts with `fetched_at`, `expires_at`,
 `stale_until`, validators (`etag`, `last_modified`), and `last_error`; they can
 be safely truncated if stale or oversized.
 
+Browser cache rule: the SPA may store a bounded localStorage cache under
+`toolhub-api-cache:v1`, again only for anonymous `/api/*` reads. It exists solely
+to make hard refreshes feel instant: stale public data is rendered first, the app
+shows a refresh toast, and the route repaints after the freshest API response is
+available. Clearing browser storage only removes this performance cache and does
+not affect Evolved server data.
+
+Anonymous API cache TTLs:
+
+| Endpoint family                            | Fresh TTL | Stale-if-error window |
+| ------------------------------------------ | --------- | --------------------- |
+| `/api/recent/`                             | 30s       | 24h after freshness   |
+| `/api/search/tools/`                       | 2min      | 24h after freshness   |
+| `/api/tools/:name/`, `/api/lists/:id/`     | 15min     | 24h after freshness   |
+| `/api/schema/` and controlled vocab/config | 24h       | 24h after freshness   |
+| Other anonymous `/api/*` GETs              | 1min      | 24h after freshness   |
+
+Shared cache invalidation:
+
+- Every proxied anonymous `GET /api/*` may trigger a throttled
+  `GET /api/recent/?page_size=50` poll. `api_cache_meta` stores the last poll
+  time and latest seen recent-row timestamp/id so all workers share the same
+  invalidation state.
+- On new recent rows with `content_type = tool`, Evolved invalidates cached
+  `/api/tools/<name>/` reads, tool sub-resources such as revisions, `/api/recent/`,
+  `/api/search/tools/`, and `/api/ui/home/`.
+- On new recent rows with `content_type = list`, Evolved invalidates cached
+  `/api/lists/<id>/`, `/api/lists/`, and `/api/recent/`.
+- A successful official write through `/v1/write/*` or the compatibility
+  `/v1/toolhub/*` bridge invalidates the affected shared cache paths immediately.
+  Rejected writes that become local fallback records do not invalidate official
+  Toolhub cache rows.
+
+Anonymous `/api/*` responses include cache diagnostics for operators and browser
+debugging:
+
+- `X-Toolhub-Evolved-Cache: hit|miss|stale|revalidated` describes whether the
+  response came from the shared cache, live upstream, stale fallback, or a
+  conditional 304 revalidation.
+- `X-Toolhub-Evolved-Upstream` records the represented Toolhub result, such as
+  `200`, `304`, `503`, or `timeout`. Cached hits report the cached upstream
+  status; stale fallbacks report the failed revalidation result.
+
 | Data                                         | Visibility                                      | Operational note                                                                                                                                                       |
 | -------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api_cache`                                  | Anonymous public Toolhub API payload cache      | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                             |
+| `api_cache_meta`                             | Anonymous cache coordination state              | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.              |
 | `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                     |
 | `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                              |
 | `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                                 |

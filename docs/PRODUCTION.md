@@ -30,8 +30,10 @@ features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
   All Toolhub catalog data is read **live from the Toolhub API** — it is never
   mirrored, synced, or copied into our database as canonical catalog state. A
   short-lived `api_cache` table may store anonymous `GET /api/*` response bodies
-  only as a shared performance cache with expiry/stale metadata. Official writes
-  are sent to Toolhub's API with the user's stored Toolhub OAuth grant. The
+  only as a shared performance cache with expiry/stale metadata; the browser may
+  also keep a bounded localStorage copy of anonymous `/api/*` payloads so hard
+  refreshes can render stale public data while a live refresh runs. Official
+  writes are sent to Toolhub's API with the user's stored Toolhub OAuth grant. The
   **project-specific database complements** Toolhub: local users mapped to
   Toolhub identities, stored OAuth grants, sessions, drafts/fallback overlays,
   Evolved-only state, API cache rows, and revision/audit rows for local actions.
@@ -92,7 +94,10 @@ over unchanged, one level up:
   mirror the upstream catalog; upstream tools always render from live data. The
   read proxy keeps only anonymous, expiring `GET /api/*` payloads in `api_cache`
   so workers share hot responses and can serve short stale data during transient
-  upstream failures.
+  upstream failures. The SPA adds a stale-while-revalidate browser cache for the
+  same anonymous public reads: stale cached content can render immediately after a
+  hard refresh, then a toast announces the live refresh and the route repaints
+  when fresh data arrives.
 - **Officially supported writes go back to Toolhub.** Toolhub OAuth gives
   Evolved a per-user grant. The browser calls `/v1/write/*`; the backend
   validates locally, checks Evolved policy, attaches the access token, forwards
@@ -152,8 +157,13 @@ The architecture avoids creating a second canonical catalog:
 3. **Upstream courtesy.** Before launch we notify the Toolhub maintainers
    (Phabricator + tool talk page): what the service is, its User-Agent, expected
    API load, and the feed URL. The proxy already identifies itself and caches
-   (shared 30 s server freshness, short stale-on-error, and 5 min browser
-   cache); we keep respecting the API etiquette.
+   anonymous reads with per-endpoint freshness (`/recent` 30s, search 2min,
+   tool/list detail 15min, schema/config 24h) plus 24h stale-if-error; we keep
+   respecting the API etiquette. The proxy also polls
+   `GET /api/recent/?page_size=50` to track the latest timestamp/id and
+   invalidate affected tool, list, recent-feed, and aggregate cache rows; any
+   successful official write through Evolved invalidates the same shared cache
+   paths immediately.
 
 ## 2. What changes in the frontend
 
