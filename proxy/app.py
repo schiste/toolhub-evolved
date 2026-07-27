@@ -40,6 +40,8 @@ UA = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aep
 _MAX_UPSTREAM_BYTES = 10 * 1024 * 1024
 _CHUNK_BYTES = 64 * 1024
 _UPSTREAM_CACHE = "public, max-age=300"
+_VERSIONED_STATIC_CACHE = "public, max-age=31536000, immutable"
+_REVALIDATED_STATIC_CACHE = "no-cache"
 
 app = Flask(__name__, static_folder=None)
 backend.register(app)
@@ -170,15 +172,19 @@ def api_proxy(path: str) -> Response:
 def static_files(path: str) -> Response:
     """Serve a static file if it exists, else index.html (clean-routed SPA).
 
-    Flask's default send_from_directory adds ETag + Cache-Control: no-cache, so
-    assets are cached but always revalidated (304 when unchanged, fresh after a
-    deploy) — no stale modules, no blanket no-store perf hit.
+    The production dist build stamps JS/CSS URLs with ?v=<build>, so those
+    immutable assets can stay in the browser cache across visits. Unstamped
+    assets and the SPA shell keep ETag revalidation to avoid stale module graphs.
     """
     root = _static_root()
     candidate = (root / path).resolve()
     if path and root in candidate.parents and candidate.is_file():
-        return send_from_directory(root, path)
-    return send_from_directory(root, "index.html")
+        resp = send_from_directory(root, path)
+        resp.headers["Cache-Control"] = _VERSIONED_STATIC_CACHE if request.args.get("v") else _REVALIDATED_STATIC_CACHE
+        return resp
+    resp = send_from_directory(root, "index.html")
+    resp.headers["Cache-Control"] = _REVALIDATED_STATIC_CACHE
+    return resp
 
 
 if __name__ == "__main__":  # pragma: no cover - local dev entrypoint, not exercised by tests

@@ -197,11 +197,19 @@ def test_existing_asset_is_served(client):
     resp = client.get("/main.js")
     assert resp.status_code == 200
     assert "javascript" in resp.headers["Content-Type"]
+    assert resp.headers["Cache-Control"] == "no-cache"
+
+
+def test_versioned_asset_is_cached_immutably(client):
+    resp = client.get("/main.js?v=test-build")
+    assert resp.status_code == 200
+    assert resp.headers["Cache-Control"] == "public, max-age=31536000, immutable"
 
 
 def test_unknown_route_falls_back_to_index(client):
     resp = client.get("/tools/some-tool")
     assert resp.status_code == 200
+    assert resp.headers["Cache-Control"] == "no-cache"
     assert "<!doctype html" in resp.get_data(as_text=True).lower()
 
 
