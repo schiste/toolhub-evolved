@@ -286,7 +286,7 @@ export function viewDeveloperSettings() {
 		<section class="panel account-data__section" aria-labelledby="developer-pages-title">
 			<h2 class="panel__title" id="developer-pages-title">${t("developerSettings.pagesTitle", "Developer pages")}</h2>
 			<div class="linkgrid account-data__links">
-				${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools where this account is listed as author or maintainer."), "/my-tools", true)}
+				${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools and Evolved authorship verification for this account."), "/my-tools", true)}
 				${linkCard(icon("code"), t("developerSettings.myApps", "My apps"), t("developerSettings.myAppsDesc", "Open OAuth client applications registered on official Toolhub by this account."), officialMyAppsUrl())}
 				${linkCard(icon("key"), t("developerSettings.apiToken", "API token"), t("developerSettings.apiTokenDesc", "Create or retrieve your official Toolhub API token on Toolhub."), TOOLHUB_API_TOKEN_URL)}
 				${linkCard(icon("check"), t("developerSettings.authorizedApps", "Authorized apps"), t("developerSettings.authorizedAppsDesc", "Review applications you have authorized on official Toolhub."), TOOLHUB_AUTHORIZED_APPS_URL)}
@@ -423,7 +423,7 @@ export async function viewMyTools() {
 				<p class="page__intro">${t("accountTools.intro", "Official Toolhub tools where {username} is listed as author or maintainer.", { username: esc(USER.name) })}</p>
 				<p class="signin-note">${t("accountTools.verificationPolicy", "Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere.")}</p>
 			</div>
-			<span class="account-records__source">${t("accountTools.source", "Official Toolhub data")}</span>
+			<span class="account-records__source">${t("accountTools.source", "Official Toolhub data + Evolved verification")}</span>
 		</div>
 		<div class="account-records__summary">
 			<strong>${esc(count)}</strong>

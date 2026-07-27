@@ -51,6 +51,7 @@ test("viewDeveloperSettings renders the Toolhub developer hub and profile links"
 	assert.ok(r.html.includes("Register key"));
 	assert.ok(r.html.includes("Build payload"));
 	assert.ok(r.html.includes('href="/my-tools"'));
+	assert.ok(r.html.includes("Review official Toolhub tools and Evolved authorship verification"));
 	assert.ok(r.html.includes("My apps"));
 	assert.ok(
 		r.html.includes('href="https://toolhub.wikimedia.org/api/oauth/applications/?user__username=Ada%20Lovelace"')
@@ -210,6 +211,7 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.ok(r.html.includes("Verified: Toolhub write access"));
 	assert.ok(r.html.includes("Verified: signed toolinfo"));
 	assert.ok(r.html.includes("Unverified author name"));
+	assert.ok(r.html.includes("Official Toolhub data + Evolved verification"));
 	assert.ok(
 		r.html.includes(
 			"Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere."
