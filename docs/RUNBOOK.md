@@ -89,21 +89,36 @@ planning register for data and features that do not exist in official Toolhub.
 Keep this runbook current whenever a local table, job, retention rule, or
 failure mode changes.
 
-| Data                                         | Visibility                                      | Operational note                                                                                                                                   |
-| -------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data. |
-| `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                          |
-| `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync.                                                                   |
-| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids and sync status as the schema grows.                                             |
-| `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records feed `/toolinfo.json` for possible upstream ingestion.                                   |
-| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; label provenance in the UI.                                             |
-| `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; merge with live Toolhub feeds without pretending to be official Toolhub activity.                                  |
-| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs.                                                |
-| `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                           |
-| `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                 |
-| `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts are labeled as Evolved data and deleted with the user's local data.                                        |
-| `tool_health_targets` / `tool_health_checks` | Public checked status after observation         | Maintainer/user-provided targets; scheduled checks must use conservative timeouts and store errors without faking health.                          |
-| `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed and can be soft-deleted.                               |
+Shared provenance vocabulary lives in `backend.sync`: `official`,
+`local_draft`, `local_fallback`, `evolved_real`, and `sync_error`. Local tables
+that can cache, publish, review, or repair Evolved data carry the relevant mix
+of `source`, `sync_status`, `official_id`/`official_name`, `last_synced_at`,
+`last_error`, `created_by_user_id`, `deleted_at`, and `review_status`.
+`tool_media.source` remains the human-entered media attribution/source field;
+its Evolved provenance is tracked through `sync_status`, review state, creator,
+errors, and deletion state.
+
+Canonical data rule: official Toolhub catalog data is never replaced by local
+rows. Single-tool reads ask live Toolhub first and use a local new-tool record
+only after an upstream `404`; server-side crawler ingestion skips names that
+already exist upstream; local edit/annotation overlays strip canonical identity
+fields such as `name` and `origin` before storage or merge.
+
+| Data                                         | Visibility                                      | Operational note                                                                                                                                        |
+| -------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.      |
+| `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                               |
+| `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                  |
+| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, and sync status.                                               |
+| `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion. |
+| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and label provenance in the UI.              |
+| `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.          |
+| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs.                                                     |
+| `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                |
+| `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                      |
+| `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts are labeled as Evolved data and deleted with the user's local data.                                             |
+| `tool_health_targets` / `tool_health_checks` | Public checked status after observation         | Maintainer/user-provided targets; scheduled checks must use conservative timeouts and store errors without faking health.                               |
+| `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed and can be soft-deleted.                                    |
 
 Before adding a new Evolved-only table, document the owner, purpose,
 visibility, retention/deletion behavior, export behavior, Toolhub handoff path,

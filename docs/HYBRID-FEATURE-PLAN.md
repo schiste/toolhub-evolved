@@ -60,11 +60,18 @@ Backend endpoints already implemented:
 These are prerequisites before expanding any feature deeply.
 
 1. **Provenance and sync status**
-    - Add a shared status vocabulary: `official`, `local_draft`,
-      `local_fallback`, `evolved_real`, `sync_error`.
+    - Status: implemented baseline in `backend.sync` and the `/v1` overlay
+      write/read paths.
+    - Shared sync vocabulary: `official`, `local_draft`, `local_fallback`,
+      `evolved_real`, `sync_error`.
     - Store `official_id` or `official_name` where Toolhub returns one.
-    - Store `sync_status`, `last_synced_at`, `last_error`, and `source` on every
-      local record that can be published to Toolhub.
+    - Store `sync_status`, `last_synced_at`, `last_error`, `source`, and
+      `created_by_user_id` where relevant to Evolved-owned local records.
+    - Store `deleted_at` for soft-deleted records and `review_status` for
+      public Evolved-owned records such as local tools, overlays, and media.
+    - Canonical data rule: local new-tool records only fill in after a live
+      Toolhub 404, and local overlays cannot persist or apply canonical
+      identity fields such as `name` and `origin`.
     - UI rule: official data has no warning; local Evolved data is labeled
       near the affected field, not only in page-level copy.
 
@@ -195,8 +202,8 @@ Make it fully real:
 Evolved-only backend data:
 
 - `lists`
-- planned columns: `official_list_id`, `source`, `sync_status`,
-  `last_synced_at`, `last_error`, `deleted_at`
+- columns: `official_list_id`, `source`, `sync_status`, `last_synced_at`,
+  `last_error`, `created_by_user_id`, `deleted_at`
 - structured list activity rows
 
 ### 5. Submit A Tool
@@ -219,8 +226,9 @@ Make it fully real:
 Evolved-only backend data:
 
 - `tools`
-- planned columns: `visibility`, `sync_status`, `official_name`,
-  `validation_errors`, `last_toolhub_response`, `deleted_at`
+- columns: `visibility`, `source`, `sync_status`, `official_name`,
+  `validation_errors`, `last_toolhub_response`, `created_by_user_id`,
+  `review_status`, `deleted_at`
 - planned `tool_publication_attempts`
 - structured activity rows
 
@@ -240,8 +248,9 @@ Make it fully real:
 Evolved-only backend data:
 
 - `tool_overlays` with `kind = edits`
-- planned columns: `base_revision`, `field_statuses`, `sync_status`,
-  `last_error`, `review_status`
+- columns: `base_revision`, `field_statuses`, `source`, `sync_status`,
+  `last_synced_at`, `last_error`, `created_by_user_id`, `review_status`,
+  `deleted_at`
 - planned `overlay_reviews`
 
 ### 7. Edit Annotations
@@ -259,7 +268,7 @@ Make it fully real:
 Evolved-only backend data:
 
 - `tool_overlays` with `kind = annos`
-- planned same sync/review columns as edit overlays
+- same sync/review columns as edit overlays
 
 ### 8. Add / Remove Tools (Crawler)
 
@@ -281,8 +290,9 @@ Evolved-only backend data:
 - `crawler_urls`
 - `crawler_runs`
 - `tools`
-- planned columns: `official_crawler_url_id`, `source`, `enabled`,
-  `last_checked_at`, `last_status`, `last_error`
+- crawler URL columns: `official_crawler_url_id`, `source`, `enabled`,
+  `sync_status`, `last_synced_at`, `last_checked_at`, `last_status`,
+  `last_error`, `created_by_user_id`
 
 ### 9. Activity Feeds
 

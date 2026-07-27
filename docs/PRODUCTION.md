@@ -127,6 +127,9 @@ The architecture avoids creating a second canonical catalog:
 1. **Canonical data is always from Toolhub.** If an official write succeeds,
    the live API becomes the source of truth. If it fails, Evolved can keep a
    local draft/overlay, but it stays labeled as local.
+   Single-tool reads always ask live Toolhub first; local new-tool records are
+   used only after a real upstream `404`, and local overlays strip canonical
+   identity/source fields such as `name` and `origin`.
 2. **Local additions are feeder/fallback data, not a fork.** Locally-registered
    tools are exposed as a public **`toolinfo.json` feed** (`/toolinfo.json`) so
    the _official_ Toolhub crawler can ingest them. Toolhub Evolved becomes a
