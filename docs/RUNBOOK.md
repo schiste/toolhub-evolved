@@ -11,23 +11,53 @@ runs as the tool account on Toolforge (`become <toolname>`).
 Set with `toolforge envvars create <NAME> <value>`; the webservice and jobs see
 them automatically.
 
-| Variable                      | Required | Meaning                                                                                                         |
-| ----------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `TOOLHUB_DB_URL`              | yes      | SQLAlchemy URL for ToolsDB, e.g. `mysql+pymysql://sXXXX:PW@tools.db.svc.wikimedia.cloud/sXXXX__toolhub_evolved` |
-| `TOOLHUB_SECRET_KEY`          | yes      | Stable random string (`python3 -c "import secrets;print(secrets.token_hex(32))"`) — signs session cookies       |
-| `TOOLHUB_OAUTH_CLIENT_ID`     | yes      | Official Toolhub OAuth application client id (see below)                                                        |
-| `TOOLHUB_OAUTH_CLIENT_SECRET` | yes      | The Toolhub OAuth application's client secret                                                                   |
-| `TOOLHUB_DB_NAME`             | yes      | ToolsDB database name for backups, e.g. `sXXXX__toolhub_evolved`                                                |
-| `TOOLHUB_EVOLVED_BASE_URL`    | no       | Canonical public base URL used to build the OAuth callback, e.g. `https://<toolname>.toolforge.org`             |
-| `TOOLHUB_API_BASE`            | no       | Toolhub base URL override for staging/tests; defaults to `https://toolhub.wikimedia.org`                        |
-| `TOOLHUB_BACKUP_DIR`          | no       | Backup destination (default `~/backups`)                                                                        |
-| `TOOLHUB_INSECURE_COOKIES`    | no       | Set to `1` only for local http development — never in production                                                |
+| Variable                         | Required | Meaning                                                                                                         |
+| -------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `TOOLHUB_DB_URL`                 | yes      | SQLAlchemy URL for ToolsDB, e.g. `mysql+pymysql://sXXXX:PW@tools.db.svc.wikimedia.cloud/sXXXX__toolhub_evolved` |
+| `TOOLHUB_SECRET_KEY`             | yes      | Stable random string (`python3 -c "import secrets;print(secrets.token_hex(32))"`) — signs session cookies       |
+| `TOOLHUB_OAUTH_CLIENT_ID`        | yes      | Official Toolhub OAuth application client id (see below)                                                        |
+| `TOOLHUB_OAUTH_CLIENT_SECRET`    | yes      | The Toolhub OAuth application's client secret                                                                   |
+| `TOOLHUB_DB_NAME`                | yes      | ToolsDB database name for backups, e.g. `sXXXX__toolhub_evolved`                                                |
+| `TOOLHUB_EVOLVED_BASE_URL`       | no       | Canonical public base URL used to build the OAuth callback, e.g. `https://<toolname>.toolforge.org`             |
+| `TOOLHUB_EVOLVED_REVIEWER_USERS` | no       | Comma-separated Toolhub numeric ids or usernames promoted to the Evolved-only `reviewer` role on login          |
+| `TOOLHUB_EVOLVED_ADMIN_USERS`    | no       | Comma-separated Toolhub numeric ids or usernames promoted to the Evolved-only `admin` role on login             |
+| `TOOLHUB_API_BASE`               | no       | Toolhub base URL override for staging/tests; defaults to `https://toolhub.wikimedia.org`                        |
+| `TOOLHUB_BACKUP_DIR`             | no       | Backup destination (default `~/backups`)                                                                        |
+| `TOOLHUB_INSECURE_COOKIES`       | no       | Set to `1` only for local http development — never in production                                                |
 
 Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
 (fine for development, unsafe on NFS under real traffic). Without the OAuth
 vars, `/oauth/login` answers 503 and the site runs with live reads plus
 signed-out read-only mode. Without a stored per-user Toolhub grant, `/v1/toolhub/*`
 write endpoints answer 401 with `reauth: true`.
+
+## Evolved-local roles and permissions
+
+Toolhub OAuth is the only sign-in path. A successful login calls official
+Toolhub `GET /api/user/`, maps that identity into the local `users` table, and
+stores the official OAuth grant server-side for `/v1/toolhub/*` writes.
+
+Evolved permissions are separate from Toolhub permissions:
+
+- `user` — baseline role for every signed-in Toolhub user. Can manage their own
+  private Evolved data: drafts, overlays, favorites cache/fallback, lists,
+  crawler URLs, thanks, health targets, and submitted media.
+- `reviewer` — Evolved-only reviewer/moderator role for future public local
+  queues such as media review. It does not grant private-data access to other
+  users.
+- `admin` — Evolved-only operator role for future local administration. It does
+  not grant any special right on official Toolhub.
+
+Role promotion can be bootstrapped with
+`TOOLHUB_EVOLVED_REVIEWER_USERS` / `TOOLHUB_EVOLVED_ADMIN_USERS`. Values match
+either the stable Toolhub numeric user id or the current username, case
+insensitively. The persistent source is `users.role`; the env vars promote a
+matching user during login so operators do not need to expose Toolhub OAuth
+tokens or browser-side state.
+
+Official writes are still governed by official Toolhub. An Evolved `admin` can
+ask `/v1/toolhub/*` to call Toolhub with their own stored OAuth grant, but
+Toolhub remains the permission authority and may reject the request.
 
 ## Toolhub OAuth application (one-time)
 
@@ -59,21 +89,21 @@ planning register for data and features that do not exist in official Toolhub.
 Keep this runbook current whenever a local table, job, retention rule, or
 failure mode changes.
 
-| Data                                         | Visibility                                      | Operational note                                                                                                          |
-| -------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; delete with the user's Evolved account data.          |
-| `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion. |
-| `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync.                                          |
-| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids and sync status as the schema grows.                    |
-| `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records feed `/toolinfo.json` for possible upstream ingestion.          |
-| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; label provenance in the UI.                    |
-| `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; merge with live Toolhub feeds without pretending to be official Toolhub activity.         |
-| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs.                       |
-| `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                  |
-| `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.        |
-| `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts are labeled as Evolved data and deleted with the user's local data.               |
-| `tool_health_targets` / `tool_health_checks` | Public checked status after observation         | Maintainer/user-provided targets; scheduled checks must use conservative timeouts and store errors without faking health. |
-| `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed and can be soft-deleted.      |
+| Data                                         | Visibility                                      | Operational note                                                                                                                                   |
+| -------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data. |
+| `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                          |
+| `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync.                                                                   |
+| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids and sync status as the schema grows.                                             |
+| `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records feed `/toolinfo.json` for possible upstream ingestion.                                   |
+| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; label provenance in the UI.                                             |
+| `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; merge with live Toolhub feeds without pretending to be official Toolhub activity.                                  |
+| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs.                                                |
+| `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                           |
+| `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                 |
+| `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts are labeled as Evolved data and deleted with the user's local data.                                        |
+| `tool_health_targets` / `tool_health_checks` | Public checked status after observation         | Maintainer/user-provided targets; scheduled checks must use conservative timeouts and store errors without faking health.                          |
+| `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed and can be soft-deleted.                               |
 
 Before adding a new Evolved-only table, document the owner, purpose,
 visibility, retention/deletion behavior, export behavior, Toolhub handoff path,

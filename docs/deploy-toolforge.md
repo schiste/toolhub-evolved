@@ -59,7 +59,10 @@ It activates fully once configured:
    `toolforge envvars create` — the full table and the Toolhub OAuth steps
    are in [`RUNBOOK.md`](RUNBOOK.md).
    Set `TOOLHUB_EVOLVED_BASE_URL=https://<toolname>.toolforge.org` if the
-   callback URL needs to be forced.
+   callback URL needs to be forced. Optional
+   `TOOLHUB_EVOLVED_REVIEWER_USERS` and `TOOLHUB_EVOLVED_ADMIN_USERS` env vars
+   can promote Toolhub-authenticated users into Evolved-only reviewer/operator
+   roles without granting them any additional official Toolhub rights.
 2. Load the scheduled jobs (hourly crawler, nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
 

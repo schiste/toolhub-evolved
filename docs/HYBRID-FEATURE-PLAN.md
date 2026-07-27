@@ -23,21 +23,21 @@ The product model is deliberately hybrid:
 
 Implemented local tables in `proxy/backend/models.py`:
 
-| Table            | Purpose                                               | Toolhub equivalent                                                            |
-| ---------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `users`          | Local record of a Toolhub OAuth user.                 | Toolhub `/api/user/` identity is official; local row maps it to Evolved data. |
-| `toolhub_tokens` | Server-side official OAuth grant.                     | Toolhub owns authorization; Evolved stores grant secrets only server-side.    |
-| `favorites`      | Per-user local favorite cache/fallback.               | Toolhub has official favorites.                                               |
-| `lists`          | Per-user local draft/fallback lists.                  | Toolhub has official lists.                                                   |
-| `tools`          | Net-new Evolved tool records, never upstream mirrors. | Toolhub has official tools; Evolved-local rows feed `/toolinfo.json`.         |
-| `tool_overlays`  | Evolved field patches for tool edits and annotations. | Toolhub has official tool core fields and annotations.                        |
-| `activity`       | Evolved revision/audit rows for local actions.        | Toolhub has official recent/audit/history feeds.                              |
-| `crawler_urls`   | User-registered local crawler URLs.                   | Toolhub has official crawler URL registration.                                |
-| `crawler_runs`   | Server crawler run outcomes.                          | Toolhub has official crawler runs for official URLs.                          |
-| `tool_events`    | Privacy-limited Evolved interaction events.           | Toolhub does not expose Evolved-site usage events.                            |
-| `tool_thanks`    | Authenticated thanks on Evolved.                      | Toolhub does not expose thanks.                                               |
-| `tool_health_*`  | Evolved health targets and observations.              | Toolhub does not expose tool health checks.                                   |
-| `tool_media`     | URL-based screenshot/media metadata for review.       | Toolhub does not expose screenshots.                                          |
+| Table            | Purpose                                                | Toolhub equivalent                                                                     |
+| ---------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `users`          | Local record of a Toolhub OAuth user and Evolved role. | Toolhub `/api/user/` identity is official; local role gates Evolved-only data/actions. |
+| `toolhub_tokens` | Server-side official OAuth grant.                      | Toolhub owns authorization; Evolved stores grant secrets only server-side.             |
+| `favorites`      | Per-user local favorite cache/fallback.                | Toolhub has official favorites.                                                        |
+| `lists`          | Per-user local draft/fallback lists.                   | Toolhub has official lists.                                                            |
+| `tools`          | Net-new Evolved tool records, never upstream mirrors.  | Toolhub has official tools; Evolved-local rows feed `/toolinfo.json`.                  |
+| `tool_overlays`  | Evolved field patches for tool edits and annotations.  | Toolhub has official tool core fields and annotations.                                 |
+| `activity`       | Evolved revision/audit rows for local actions.         | Toolhub has official recent/audit/history feeds.                                       |
+| `crawler_urls`   | User-registered local crawler URLs.                    | Toolhub has official crawler URL registration.                                         |
+| `crawler_runs`   | Server crawler run outcomes.                           | Toolhub has official crawler runs for official URLs.                                   |
+| `tool_events`    | Privacy-limited Evolved interaction events.            | Toolhub does not expose Evolved-site usage events.                                     |
+| `tool_thanks`    | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
+| `tool_health_*`  | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
+| `tool_media`     | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
 
 Backend endpoints already implemented:
 
@@ -68,24 +68,38 @@ These are prerequisites before expanding any feature deeply.
     - UI rule: official data has no warning; local Evolved data is labeled
       near the affected field, not only in page-level copy.
 
-2. **Local object lifecycle**
+2. **Evolved-local authorization**
+    - Keep Toolhub OAuth as the only sign-in path and continue mapping
+      `GET /api/user/` into local `users`.
+    - Store the Evolved-only role on `users.role`: `user`, `reviewer`, or
+      `admin`.
+    - Route all Evolved-owned backend reads/writes through
+      `backend.authz.can(user, action, resource)`.
+    - Enforce ownership for private local data: drafts, overlays, fallback
+      lists/favorites, crawler URLs, thanks, health targets, and submitted
+      media.
+    - Keep elevated roles local to Evolved. They can unlock Evolved moderation
+      or operator actions, but they never imply special rights on official
+      Toolhub; official writes still succeed or fail through Toolhub's API.
+
+3. **Local object lifecycle**
     - Add common created/updated/deleted timestamps and soft-delete where useful.
     - Add "retry official publish" actions for fallback records.
     - Add account-level export/delete for Evolved-owned data.
 
-3. **Activity taxonomy**
+4. **Activity taxonomy**
     - Replace generic activity rows with structured rows:
       `kind`, `object_type`, `object_key`, `action`, `actor_user_id`,
       `official_status`, `payload`, `created_at`.
     - Feed pages should merge live Toolhub rows plus Evolved rows with labels.
 
-4. **Abuse controls**
+5. **Abuse controls**
     - Rate-limit write-heavy local features by user, IP hash, and action.
     - Add moderation flags for public Evolved-only records, media, and thanks.
     - Keep OAuth tokens encrypted or otherwise protected at rest before broader
       production use.
 
-5. **Production cleanliness**
+6. **Production cleanliness**
     - Inventory every fixture, mock helper, deterministic synthetic generator,
       placeholder asset, and browser-local demo write path.
     - Remove them from the production bundle or guard them so they are available
@@ -399,6 +413,9 @@ Evolved-only backend data:
   paths, deterministic metrics, and placeholder media.
 - Add a CI cleanliness check that blocks new production-facing fixture/mock/demo
   data.
+- Add the Evolved-local role/policy foundation: `users.role`,
+  `backend.authz.can(user, action, resource)`, env-based reviewer/admin
+  bootstrap, and route-level ownership checks for private Evolved data.
 - Add provenance and sync-status columns to existing local tables.
 - Add structured activity events and migrate existing `activity` rows if needed.
 - Keep the backend data register in `docs/RUNBOOK.md` current.

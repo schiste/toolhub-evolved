@@ -49,6 +49,12 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   Toolhub OAuth 2.0, stored per-user Toolhub grants, sessions + CSRF + rate
   limiting, the `/v1` overlay API, `/v1/toolhub/*` official write bridge,
   `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed.
+- **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
+  the only sign-in path, while local `users.role` permission sets (`user`,
+  `reviewer`, `admin`) gate Evolved-owned data/actions through
+  `can(user, action, resource)`. Elevated Evolved roles never bypass official
+  Toolhub permissions; `/v1/toolhub/*` still calls Toolhub with the user's own
+  OAuth grant and accepts Toolhub's decision.
 - **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
   write-through cache of the server overlay; signed-out write paths are removed
   from the production UI.
@@ -179,6 +185,10 @@ clean; the audit's remaining WCAG findings closed or explicitly waived.
 - Toolhub OAuth 2.0: register the application, `/oauth/login|callback|logout`,
   use `GET /api/user/` to identify the user locally, store the grant server-side,
   session cookie (HttpOnly, Secure, SameSite=Lax), CSRF token for all writes.
+- Evolved authorization: local role sets for signed-in users, reviewers, and
+  operators; one policy entrypoint (`can(user, action, resource)`); ownership
+  checks for private local drafts, overlays, lists, crawler URLs, account data,
+  thanks, health targets, and media submissions.
 - Cross-cutting: per-user and per-IP rate limits on writes, input validation
   (reuse toolinfo 1.2.2 schema), structured logs, `/healthz`.
 - Test story: the proxy tests extend to `/v1` (Flask test client + a throwaway
