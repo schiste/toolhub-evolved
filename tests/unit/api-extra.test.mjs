@@ -9,12 +9,14 @@ import { demoStore, DEMO_KEYS } from "../../public_html/lib/core/store.js";
 let originalFetch;
 beforeEach(() => {
 	installStorage();
+	api.clearApiCache();
 	originalFetch = globalThis.fetch;
 	session.applyExp(false);
 	session.setServerUser(null);
 });
 afterEach(() => {
 	globalThis.fetch = originalFetch;
+	api.clearApiCache();
 	session.applyExp(false);
 	session.setServerUser(null);
 });
@@ -367,6 +369,17 @@ test("applyToolOverlay merges edits, then annotations, and recomputes status", (
 	assert.equal(untouched.status, undefined); // neither edit nor anno => status not set
 });
 
+test("applyToolOverlay cannot replace canonical Toolhub identity fields", () => {
+	demoStore.set(DEMO_KEYS.toolEdits, {
+		Live: { name: "local-shadow", origin: "api", description: "edited", deprecated: false }
+	});
+	const out = api.applyToolOverlay({ name: "Live", origin: "crawler", description: "official", deprecated: true });
+	assert.equal(out.name, "Live");
+	assert.equal(out.origin, "crawler");
+	assert.equal(out.description, "edited");
+	assert.equal(out.deprecated, false);
+});
+
 test("newToolBase builds a compact record with defaults or null for unknown names", () => {
 	// rec omits keywords so the default [] is used (and asserted).
 	session.setServerUser("Ada Lovelace");
@@ -433,12 +446,32 @@ test("getTool propagates a non-404 outage instead of masking it as not-found", a
 	assert.equal(err.status, 500);
 });
 
-test("getTool uses newToolBase when signed in, without fetching", async () => {
+test("getTool prefers live Toolhub data over signed-in local newToolBase", async () => {
 	session.applyExp(true);
 	session.setServerUser("Ada Lovelace");
 	demoStore.set(DEMO_KEYS.toolNew, { NewOne: { title: "N", description: "d", url: "u" } });
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		return { ok: true, json: async () => ({ name: "NewOne", title: "Official NewOne" }) };
+	};
 	const nt = await api.getTool("NewOne");
 	assert.equal(nt.name, "NewOne");
+	assert.equal(nt.title, "Official NewOne");
+	assert.equal(nt.origin, "crawler");
+	assert.equal(calls, 1);
+	session.applyExp(false);
+	session.setServerUser(null);
+});
+
+test("getTool uses signed-in local newToolBase only after upstream 404", async () => {
+	session.applyExp(true);
+	session.setServerUser("Ada Lovelace");
+	demoStore.set(DEMO_KEYS.toolNew, { LocalOnly: { title: "Local", description: "d", url: "u" } });
+	globalThis.fetch = async () => ({ ok: false, status: 404 });
+	const nt = await api.getTool("LocalOnly");
+	assert.equal(nt.name, "LocalOnly");
+	assert.equal(nt.title, "Local");
 	assert.equal(nt.origin, "api");
 	session.applyExp(false);
 	session.setServerUser(null);

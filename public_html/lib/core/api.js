@@ -13,6 +13,10 @@ const OVERLAY_META_KEYS = new Set([
 	"syncLabel",
 	"lastSyncedAt",
 	"lastError",
+	"createdByUserId",
+	"created_by_user_id",
+	"deletedAt",
+	"deleted_at",
 	"officialId",
 	"officialName",
 	"visibility",
@@ -22,13 +26,16 @@ const OVERLAY_META_KEYS = new Set([
 	"fieldStatuses",
 	"reviewStatus"
 ]);
+const CANONICAL_TOOL_KEYS = new Set(["name", "origin"]);
 
 /**
  * @param {Record<string, any>} patch
  * @returns {Record<string, any>}
  */
 function dataPatch(patch) {
-	return Object.fromEntries(Object.entries(patch || {}).filter(([key]) => !OVERLAY_META_KEYS.has(key)));
+	return Object.fromEntries(
+		Object.entries(patch || {}).filter(([key]) => !OVERLAY_META_KEYS.has(key) && !CANONICAL_TOOL_KEYS.has(key))
+	);
 }
 
 /** @param {string} name */
@@ -359,7 +366,6 @@ export function normalizeTool(t) {
  * @returns {Promise<Tool | null>}
  */
 export async function getTool(name) {
-	if (signedIn() && isNewTool(name)) return newToolBase(name);
 	try {
 		return normalizeTool(await apiGet(`/tools/${encodeURIComponent(name)}/`));
 	} catch (error) {
@@ -367,7 +373,9 @@ export async function getTool(name) {
 		// Any other failure (5xx, network, parse) is an outage, not an absence —
 		// rethrow so the router's error boundary surfaces it instead of the page
 		// claiming the tool doesn't exist.
-		if (error instanceof ApiError && error.status === 404) return null;
+		if (error instanceof ApiError && error.status === 404) {
+			return signedIn() && isNewTool(name) ? newToolBase(name) : null;
+		}
 		throw error;
 	}
 }
