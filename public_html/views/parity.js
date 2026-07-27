@@ -17,16 +17,24 @@ const RECENT_FILTERS = [
 ];
 const RECENT_STATUS_FILTERS = [
 	{ value: "all", label: t("parity.anyReviewState", "Any review state") },
+	{ value: "unknown", label: t("parity.reviewUnknown", "Review unknown") },
 	{ value: "unpatrolled", label: t("parity.needsReview", "Needs review") },
 	{ value: "patrolled", label: t("parity.patrolled", "Patrolled") },
-	{ value: "evolved", label: t("parity.evolvedLocal", "Evolved local") }
+	{ value: "evolved", label: t("parity.evolvedLocal", "Evolved local") },
+	{ value: "suppressed", label: t("parity.suppressed", "Suppressed") }
 ];
 const RECENT_SORTS = [
-	{ value: "newest", label: t("parity.sortNewest", "Newest first") },
-	{ value: "oldest", label: t("parity.sortOldest", "Oldest first") },
-	{ value: "type", label: t("parity.sortType", "Type") },
+	{ value: "updated", label: t("parity.sortUpdated", "Updated") },
 	{ value: "title", label: t("parity.sortTitle", "Title") },
-	{ value: "actor", label: t("parity.sortActor", "Actor") }
+	{ value: "type", label: t("parity.sortType", "Type") },
+	{ value: "owner", label: t("parity.toolOwner", "Tool owner") },
+	{ value: "updated_by", label: t("parity.lastUpdatedBy", "Last updated by") },
+	{ value: "action", label: t("parity.action", "Action") },
+	{ value: "review", label: t("parity.reviewState", "Review state") }
+];
+const RECENT_DIRECTIONS = [
+	{ value: "desc", label: t("parity.descending", "Descending") },
+	{ value: "asc", label: t("parity.ascending", "Ascending") }
 ];
 /**
  * @param {{ content_type?: string }} r
@@ -69,46 +77,105 @@ function recentActionLabel(r) {
 	}
 	return r.parent_id ? t("parity.updated", "Updated") : t("parity.created", "Created");
 }
+/** @param {{ user?: { username?: string } }} r */
+function recentUpdatedBy(r) {
+	return (r.user && r.user.username) || t("parity.system", "system");
+}
+/** @param {{ content_title?: string, content_id?: string }} r */
+function recentTitle(r) {
+	return String(r.content_title || r.content_id || "—");
+}
+/** @param {any} raw */
+function ownerFromToolRecord(raw) {
+	const author = raw && raw.author;
+	if (Array.isArray(author)) {
+		const first = author.find((a) => (a && typeof a === "object" ? a.name : a));
+		if (first && typeof first === "object" && first.name) return String(first.name);
+		if (first) return String(first);
+	}
+	if (typeof author === "string" && author) return author;
+	if (raw && raw.created_by && raw.created_by.username) return String(raw.created_by.username);
+	return "";
+}
+/** @param {any} r */
+function ownerFromRecentRow(r) {
+	if (r._recentOwner) return String(r._recentOwner);
+	if (r.maintainer) return String(r.maintainer);
+	if (r.owner && typeof r.owner === "object" && r.owner.username) return String(r.owner.username);
+	if (r.owner) return String(r.owner);
+	if (r.created_by && r.created_by.username) return String(r.created_by.username);
+	return "";
+}
+/** @param {any[]} rows */
+async function enrichRecentOwners(rows) {
+	const names = [
+		...new Set(
+			rows
+				.filter((r) => r.content_type === "tool" && r.content_id && !ownerFromRecentRow(r))
+				.map((r) => String(r.content_id))
+		)
+	];
+	const entries = await Promise.all(
+		names.map((name) =>
+			apiGet(`/tools/${encodeURIComponent(name)}/`)
+				.then((tool) => /** @type {[string, string]} */ ([name, ownerFromToolRecord(tool)]))
+				.catch(() => /** @type {[string, string]} */ ([name, ""]))
+		)
+	);
+	const ownerByName = new Map(entries);
+	return rows.map((r) => ({
+		...r,
+		_recentOwner: ownerFromRecentRow(r) || ownerByName.get(String(r.content_id)) || ""
+	}));
+}
 /**
  * @param {Array<any>} rows
  * @param {string} sort
+ * @param {string} dir
  * @returns {Array<any>}
  */
-function sortRecentRows(rows, sort) {
+function sortRecentRows(rows, sort, dir) {
 	const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 	const text = (/** @type {any} */ r, /** @type {string} */ key) => String(r[key] || "").trim();
 	const ts = (/** @type {any} */ r) => new Date(r.timestamp || 0).getTime() || 0;
+	const direction = dir === "asc" ? 1 : -1;
+	/** @param {any} r */
+	const value = (r) => {
+		if (sort === "updated") return ts(r);
+		if (sort === "type") return recentTypeLabel(String(r.content_type || ""));
+		if (sort === "owner") return ownerFromRecentRow(r);
+		if (sort === "updated_by") return recentUpdatedBy(r);
+		if (sort === "action") return recentActionLabel(r);
+		if (sort === "review") return recentReviewLabel(recentReviewState(r));
+		return text(r, "content_title") || text(r, "content_id");
+	};
 	return [...rows].sort((a, b) => {
-		if (sort === "oldest") return ts(a) - ts(b);
-		if (sort === "type") return collator.compare(text(a, "content_type"), text(b, "content_type")) || ts(b) - ts(a);
-		if (sort === "title") {
-			return (
-				collator.compare(
-					text(a, "content_title") || text(a, "content_id"),
-					text(b, "content_title") || text(b, "content_id")
-				) || ts(b) - ts(a)
-			);
+		if (sort === "updated") {
+			return direction * (ts(a) - ts(b)) || collator.compare(recentTitle(a), recentTitle(b));
 		}
-		if (sort === "actor") {
-			return (
-				collator.compare((a.user && a.user.username) || "", (b.user && b.user.username) || "") || ts(b) - ts(a)
-			);
-		}
-		return ts(b) - ts(a);
+		return direction * collator.compare(String(value(a)), String(value(b))) || ts(b) - ts(a);
 	});
 }
 /**
- * @param {{ show: string, status: string, sort: string }} state
- * @param {{ show?: string, status?: string, sort?: string }} next
+ * @param {{ show: string, status: string, sort: string, dir: string, q: string, owner: string, user: string }} state
+ * @param {{ show?: string, status?: string, sort?: string, dir?: string, q?: string, owner?: string, user?: string }} next
  */
 function recentHref(state, next = {}) {
-	const show = next.show || state.show;
-	const status = next.status || state.status;
-	const sort = next.sort || state.sort;
+	const show = Object.hasOwn(next, "show") ? next.show || "all" : state.show;
+	const status = Object.hasOwn(next, "status") ? next.status || "all" : state.status;
+	const sort = Object.hasOwn(next, "sort") ? next.sort || "updated" : state.sort;
+	const dir = Object.hasOwn(next, "dir") ? next.dir || "desc" : state.dir;
+	const q = Object.hasOwn(next, "q") ? next.q || "" : state.q;
+	const owner = Object.hasOwn(next, "owner") ? next.owner || "" : state.owner;
+	const user = Object.hasOwn(next, "user") ? next.user || "" : state.user;
 	const params = new URLSearchParams();
 	if (show !== "all") params.set("show", show);
 	if (status !== "all") params.set("status", status);
-	if (sort !== "newest") params.set("sort", sort);
+	if (sort !== "updated") params.set("sort", sort);
+	if (dir !== (sort === "updated" ? "desc" : "asc")) params.set("dir", dir);
+	if (q) params.set("q", q);
+	if (owner) params.set("owner", owner);
+	if (user) params.set("user", user);
 	const qs = params.toString();
 	return `/recent${qs ? `?${qs}` : ""}`;
 }
@@ -116,93 +183,136 @@ function recentHref(state, next = {}) {
 function clampRecentOption(value, allowed, fallback) {
 	return allowed.some((o) => o.value === value) ? value : fallback;
 }
-/** @param {Array<any>} rows @param {string} key */
-function countRecentByType(rows, key) {
-	return rows.filter((r) => recentFilterKey(r) === key).length;
+/** @param {URLSearchParams} params */
+function recentState(params) {
+	const requestedShow = params.get("show") || "all";
+	const legacyStatus = ["patrolled", "unpatrolled"].includes(requestedShow) ? requestedShow : "";
+	const requestedSort = params.get("sort") || "updated";
+	const alias =
+		requestedSort === "newest"
+			? { sort: "updated", dir: "desc" }
+			: requestedSort === "oldest"
+				? { sort: "updated", dir: "asc" }
+				: requestedSort === "actor"
+					? { sort: "updated_by", dir: "asc" }
+					: { sort: requestedSort, dir: params.get("dir") || "" };
+	const sort = clampRecentOption(alias.sort, RECENT_SORTS, "updated");
+	const defaultDir = sort === "updated" ? "desc" : "asc";
+	return {
+		show: clampRecentOption(requestedShow, RECENT_FILTERS, "all"),
+		status: clampRecentOption(params.get("status") || legacyStatus || "all", RECENT_STATUS_FILTERS, "all"),
+		sort,
+		dir: clampRecentOption(alias.dir || defaultDir, RECENT_DIRECTIONS, defaultDir),
+		q: (params.get("q") || "").trim(),
+		owner: (params.get("owner") || "").trim(),
+		user: (params.get("user") || "").trim()
+	};
+}
+/** @param {{ value: string, label: string }[]} options @param {string} active */
+function recentSelectOptions(options, active) {
+	return options
+		.map((o) => `<option value="${esc(o.value)}"${o.value === active ? " selected" : ""}>${esc(o.label)}</option>`)
+		.join("");
+}
+/** @param {string} value @param {string} needle */
+function recentIncludes(value, needle) {
+	return value.toLocaleLowerCase().includes(needle.toLocaleLowerCase());
+}
+/** @param {any} r @param {{ q: string, owner: string, user: string }} state */
+function recentTextFiltersMatch(r, state) {
+	const owner = ownerFromRecentRow(r);
+	const updatedBy = recentUpdatedBy(r);
+	if (state.owner && !recentIncludes(owner, state.owner)) return false;
+	if (state.user && !recentIncludes(updatedBy, state.user)) return false;
+	if (!state.q) return true;
+	return recentIncludes(
+		[
+			recentTitle(r),
+			r.content_id || "",
+			recentTypeLabel(String(r.content_type || "")),
+			owner,
+			updatedBy,
+			recentActionLabel(r),
+			recentReviewLabel(recentReviewState(r)),
+			r.comment || ""
+		].join(" "),
+		state.q
+	);
+}
+/**
+ * @param {{ show: string, status: string, sort: string, dir: string, q: string, owner: string, user: string }} state
+ * @param {string} sort
+ * @param {string} label
+ */
+function recentSortHeader(state, sort, label) {
+	const active = state.sort === sort;
+	const firstDir = sort === "updated" ? "desc" : "asc";
+	const nextDir = active ? (state.dir === "asc" ? "desc" : "asc") : firstDir;
+	const aria = active ? ` aria-sort="${state.dir === "asc" ? "ascending" : "descending"}"` : "";
+	const marker = active
+		? `<span class="recent-table__sort" aria-hidden="true">${state.dir === "asc" ? "^" : "v"}</span>`
+		: "";
+	return `<th scope="col"${aria}><a href="${recentHref(state, { sort, dir: nextDir })}">${esc(label)}${marker}</a></th>`;
+}
+/** @param {string} value */
+function recentDash(value) {
+	return value ? `<span${dirAttrs(value)}>${esc(value)}</span>` : `<span class="recent-table__muted">—</span>`;
 }
 
 // Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
 export async function viewRecent() {
-	const params = new URLSearchParams(location.search);
-	const requestedShow = params.get("show") || "all";
-	const requestedStatus =
-		params.get("status") || (["patrolled", "unpatrolled"].includes(requestedShow) ? requestedShow : "all");
-	const show = clampRecentOption(requestedShow, RECENT_FILTERS, "all");
-	const status = clampRecentOption(requestedStatus, RECENT_STATUS_FILTERS, "all");
-	const sort = clampRecentOption(params.get("sort") || "newest", RECENT_SORTS, "newest");
+	const state = recentState(new URLSearchParams(location.search));
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
 	// Local Evolved edits appear at the top of the live feed.
-	const merged = demoFeed(DEMO_KEYS.revisions, data.results || []);
-	const byType = show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === show);
-	const filtered = status === "all" ? byType : byType.filter((r) => recentReviewState(r) === status);
-	const sorted = sortRecentRows(filtered, sort);
-	const state = { show, status, sort };
-	const filters = RECENT_FILTERS.map((o) => {
-		const active = o.value === show;
-		return `<a class="rc-filter__link${active ? " is-active" : ""}" href="${recentHref(state, { show: o.value })}"${active ? ' aria-current="page"' : ""}>${esc(o.label)}</a>`;
-	}).join("");
-	const statusOptions = RECENT_STATUS_FILTERS.map(
-		(o) => `<option value="${esc(o.value)}"${o.value === status ? " selected" : ""}>${esc(o.label)}</option>`
-	).join("");
-	const sortOptions = RECENT_SORTS.map(
-		(o) => `<option value="${esc(o.value)}"${o.value === sort ? " selected" : ""}>${esc(o.label)}</option>`
-	).join("");
-	const newest = sortRecentRows(merged, "newest")[0];
-	const visibleLabel = countLabel(
-		sorted.length,
-		t("parity.visibleChangeOne", "visible change"),
-		t("parity.visibleChangeOther", "visible changes")
-	);
-	const totalLabel = countLabel(
-		merged.length,
-		t("parity.loadedChangeOne", "loaded change"),
-		t("parity.loadedChangeOther", "loaded changes")
-	);
-	const summary = [
-		[t("parity.visible", "Visible"), esc(visibleLabel)],
-		[t("parity.feedLoaded", "Feed loaded"), esc(totalLabel)],
-		[t("parity.tools", "Tools"), fmt(countRecentByType(merged, "tools"))],
-		[
-			t("parity.needsReview", "Needs review"),
-			fmt(merged.filter((r) => recentReviewState(r) === "unpatrolled").length)
-		]
-	]
-		.map(
-			([label, value]) =>
-				`<div class="recent-stat"><div class="recent-stat__k">${label}</div><div class="recent-stat__v">${value}</div></div>`
-		)
-		.join("");
+	const merged = await enrichRecentOwners(demoFeed(DEMO_KEYS.revisions, data.results || []));
+	const byType = state.show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === state.show);
+	const byStatus = state.status === "all" ? byType : byType.filter((r) => recentReviewState(r) === state.status);
+	const filtered = byStatus.filter((r) => recentTextFiltersMatch(r, state));
+	const sorted = sortRecentRows(filtered, state.sort, state.dir);
+	const showOptions = recentSelectOptions(RECENT_FILTERS, state.show);
+	const statusOptions = recentSelectOptions(RECENT_STATUS_FILTERS, state.status);
+	const sortOptions = recentSelectOptions(RECENT_SORTS, state.sort);
+	const dirOptions = recentSelectOptions(RECENT_DIRECTIONS, state.dir);
+	const headers = [
+		recentSortHeader(state, "title", t("parity.itemTitle", "Item")),
+		recentSortHeader(state, "type", t("parity.type", "Type")),
+		recentSortHeader(state, "owner", t("parity.toolOwner", "Tool owner")),
+		recentSortHeader(state, "updated_by", t("parity.lastUpdatedBy", "Last updated by")),
+		recentSortHeader(state, "action", t("parity.action", "Action")),
+		recentSortHeader(state, "review", t("parity.reviewState", "Review state")),
+		recentSortHeader(state, "updated", t("parity.updatedAt", "Updated")),
+		`<th scope="col">${t("parity.comment", "Comment")}</th>`
+	].join("");
 	const rows = sorted
 		.map((r) => {
-			const title = esc(r.content_title || r.content_id || "—");
-			const who = esc((r.user && r.user.username) || t("parity.system", "system"));
+			const title = esc(recentTitle(r));
+			const who = recentUpdatedBy(r);
 			const type = String(r.content_type || t("parity.item", "item"));
 			const reviewState = recentReviewState(r);
 			const typeKey = recentFilterKey(r);
-			const rowIcon = r.content_type === "tool" ? "tools" : r.content_type === "list" ? "list" : "edit";
-			const comment = r.comment
-				? `<span class="recent-row__comment"${dirAttrs(r.comment)}>${esc(r.comment)}</span>`
-				: "";
 			const contentId = r.content_id
-				? `<span class="recent-row__id"${dirAttrs(r.content_id)}>${esc(r.content_id)}</span>`
+				? `<span class="recent-table__id"${dirAttrs(r.content_id)}>${esc(r.content_id)}</span>`
 				: "";
-			const inner = `${icon(rowIcon, "feed__ic recent-row__ic")}
-			<span class="feed__main recent-row__main">
-				<span class="recent-row__top"><strong class="recent-row__title" dir="auto">${title}</strong><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></span>
-				<span class="feed__sub"><span dir="auto">${who}</span> · ${esc(recentActionLabel(r))}${contentId ? " · " : ""}${contentId}</span>
-				${comment}
-			</span>
-			${timeTag(r.timestamp, "feed__when")}`;
 			const link =
 				r.content_type === "tool" && r.content_id
 					? toolHref(r.content_id)
 					: r.content_type === "list" && r.content_id
 						? listHref(r.content_id)
 						: null;
-			return link
-				? `<li><a href="${link}">${inner}</a></li>`
-				: `<li><div class="feed__static">${inner}</div></li>`;
+			const item = link
+				? `<a class="recent-table__item" href="${link}"><strong dir="auto">${title}</strong>${contentId}</a>`
+				: `<span class="recent-table__item"><strong dir="auto">${title}</strong>${contentId}</span>`;
+			return `<tr>
+				<td data-label="${t("parity.itemTitle", "Item")}">${item}</td>
+				<td data-label="${t("parity.type", "Type")}"><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span></td>
+				<td data-label="${t("parity.toolOwner", "Tool owner")}">${recentDash(ownerFromRecentRow(r))}</td>
+				<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}"><span${dirAttrs(who)}>${esc(who)}</span></td>
+				<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
+				<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
+				<td data-label="${t("parity.updatedAt", "Updated")}">${timeTag(r.timestamp)}</td>
+				<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${r.comment ? `<span${dirAttrs(r.comment)}>${esc(r.comment)}</span>` : `<span class="recent-table__muted">—</span>`}</td>
+			</tr>`;
 		})
 		.join("");
 	return {
@@ -210,34 +320,53 @@ export async function viewRecent() {
 		html: `
 		<div class="container page recent-page">
 			<header class="recent-head">
-				<div>
-					<h1 class="page__title">${t("parity.recentChanges", "Recent changes")}</h1>
-					<p class="page__intro">${t("parity.recentIntroHybrid", "Live Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
-				</div>
-				<div class="recent-head__fresh">
-					<span>${t("parity.latestChange", "Latest change")}</span>
-					<strong>${newest ? timeTag(newest.timestamp) : "—"}</strong>
-				</div>
+				<h1 class="page__title">${t("parity.recentChanges", "Recent changes")}</h1>
+				<p class="page__intro">${t("parity.recentIntroHybrid", "Live Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
 			</header>
-			<div class="recent-summary" aria-label="${t("parity.recentSummary", "Recent changes summary")}">${summary}</div>
-			<div class="recent-controls">
-				<nav class="rc-filter" aria-label="${t("parity.filterRecentChanges", "Filter recent changes")}">${filters}</nav>
+			<form class="recent-controls" id="recent-filter-form">
+				<label class="recent-control recent-control--wide"><span class="recent-control__label">${t("parity.searchRecent", "Search")}</span><input class="le__input" id="recent-q" type="search" value="${esc(state.q)}" placeholder="${t("parity.searchRecentPlaceholder", "Title, id, comment, owner...")}"></label>
+				<label class="sort recent-control"><span class="recent-control__label">${t("parity.type", "Type")}</span><select id="recent-show">${showOptions}</select></label>
 				<label class="sort recent-control"><span class="recent-control__label">${t("parity.reviewState", "Review state")}</span><select id="recent-status">${statusOptions}</select></label>
+				<label class="recent-control"><span class="recent-control__label">${t("parity.toolOwner", "Tool owner")}</span><input class="le__input" id="recent-owner" type="search" value="${esc(state.owner)}"></label>
+				<label class="recent-control"><span class="recent-control__label">${t("parity.lastUpdatedBy", "Last updated by")}</span><input class="le__input" id="recent-user" type="search" value="${esc(state.user)}"></label>
 				<label class="sort recent-control"><span class="recent-control__label">${t("parity.sortBy", "Sort by")}</span><select id="recent-sort">${sortOptions}</select></label>
+				<label class="sort recent-control"><span class="recent-control__label">${t("parity.direction", "Direction")}</span><select id="recent-dir">${dirOptions}</select></label>
+				<div class="recent-actions">
+					<button class="btn btn--primary" type="submit">${t("parity.applyFilters", "Apply")}</button>
+					<a class="btn btn--subtle" href="/recent">${t("parity.clearFilters", "Clear")}</a>
+				</div>
+			</form>
+			<div class="recent-table-wrap">
+				<table class="recent-table">
+					<caption class="skip-label">${t("parity.recentChangesTable", "Recent changes table")}</caption>
+					<thead><tr>${headers}</tr></thead>
+					<tbody>${rows || `<tr><td class="recent-empty" colspan="8">${t("parity.noRecentChanges", "No recent changes.")}</td></tr>`}</tbody>
+				</table>
 			</div>
-			<ul class="feed feed--recent">${rows || `<li><div class="feed__static recent-empty">${t("parity.noRecentChanges", "No recent changes.")}</div></li>`}</ul>
 		</div>`,
 		mount() {
-			/** @param {{ status?: string, sort?: string }} next */
-			const navigate = (next) => {
+			/** @param {{ show?: string, status?: string, sort?: string, dir?: string, q?: string, owner?: string, user?: string }} next */
+			const navigate = (next = {}) => {
 				navigateTo(recentHref(state, next));
 			};
-			/** @type {HTMLInputElement} */ ($input("#recent-status")).addEventListener("change", () =>
-				navigate({ status: /** @type {HTMLInputElement} */ ($input("#recent-status")).value })
-			);
-			/** @type {HTMLInputElement} */ ($input("#recent-sort")).addEventListener("change", () =>
-				navigate({ sort: /** @type {HTMLInputElement} */ ($input("#recent-sort")).value })
-			);
+			const readForm = () => ({
+				show: /** @type {HTMLInputElement} */ ($input("#recent-show")).value,
+				status: /** @type {HTMLInputElement} */ ($input("#recent-status")).value,
+				sort: /** @type {HTMLInputElement} */ ($input("#recent-sort")).value,
+				dir: /** @type {HTMLInputElement} */ ($input("#recent-dir")).value,
+				q: /** @type {HTMLInputElement} */ ($input("#recent-q")).value.trim(),
+				owner: /** @type {HTMLInputElement} */ ($input("#recent-owner")).value.trim(),
+				user: /** @type {HTMLInputElement} */ ($input("#recent-user")).value.trim()
+			});
+			/** @type {HTMLFormElement | null} */ ($("#recent-filter-form"))?.addEventListener("submit", (event) => {
+				event.preventDefault();
+				navigate(readForm());
+			});
+			for (const selector of ["#recent-show", "#recent-status", "#recent-sort", "#recent-dir"]) {
+				/** @type {HTMLInputElement} */ ($input(selector)).addEventListener("change", () =>
+					navigate(readForm())
+				);
+			}
 			const controls = $(".recent-controls");
 			if (controls) controls.setAttribute("data-enhanced", "true");
 		}
