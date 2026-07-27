@@ -617,6 +617,8 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 			path.includes("/media/")
 				? {
 						results: [
+							{ url: "javascript:alert(1)", title: "Rejected screenshot", license: "CC0" },
+							{ url: "https://img.example/untitled.png" },
 							{
 								url: "https://img.example/sig.png",
 								title: "Signal screenshot",
@@ -630,6 +632,7 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 	const r = await tool.viewTool("sig");
 	assert.ok(r.html.includes("2 thanks on Evolved"));
 	assert.ok(r.html.includes("5 Evolved interactions in 30 days"));
+	assert.ok(r.html.includes("Screenshot · </figcaption>"));
 	assert.ok(r.html.includes("Signal screenshot"));
 	document.body.innerHTML = r.html;
 	r.mount();
@@ -648,6 +651,65 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 		{ url: "https://img.example/next.png", license: "CC0-1.0", source: "Maintainer" }
 	]);
 	assert.ok(document.querySelector("[data-media-result]").textContent.includes("submitted for review"));
+});
+
+test("viewTool keeps rendering when Evolved signal and media reads fail", async () => {
+	h.getTool.mockResolvedValue(toolFixture("overlay-down", { title: "Overlay Down" }));
+	h.backendGetJson.mockRejectedValue(new Error("overlay down"));
+	const r = await tool.viewTool("overlay-down");
+	assert.ok(r.html.includes("Overlay Down"));
+	assert.ok(!r.html.includes("thanks__agg"));
+	assert.ok(!r.html.includes("tool-media__grid"));
+});
+
+test("viewTool renders all local sync errors", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("sync-errors", {
+			title: "Sync Errors",
+			lastError: "create failed",
+			editLastError: "edit failed",
+			annotationLastError: "annotation failed"
+		})
+	);
+	const r = await tool.viewTool("sync-errors");
+	assert.ok(r.html.includes("Sync issue: create failed"));
+	assert.ok(r.html.includes("Sync issue: edit failed"));
+	assert.ok(r.html.includes("Sync issue: annotation failed"));
+});
+
+test("viewTool thanks button removes an existing thank", async () => {
+	applyExp(true);
+	setServerUser("Grace Hopper");
+	h.getTool.mockResolvedValue(toolFixture("thanked", { title: "Thanked Tool" }));
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(path.includes("/media/") ? { results: [] } : { thanks: { count: 1, userThanked: true } })
+	);
+	const r = await tool.viewTool("thanked");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-thanks]").click();
+	await tick();
+	assert.deepEqual(h.serverWrite.mock.calls[1], ["DELETE", "/v1/tools/thanked/thanks/"]);
+	assert.equal(document.querySelector("[data-thanks]").getAttribute("data-thanked"), "0");
+	assert.equal(document.querySelector("[data-signals-result]").textContent, "Thanks removed.");
+});
+
+test("viewTool reports thanks and media write failures", async () => {
+	applyExp(true);
+	setServerUser("Grace Hopper");
+	h.getTool.mockResolvedValue(toolFixture("writefail", { title: "Write Fail" }));
+	h.serverWrite.mockResolvedValueOnce({ ok: true }).mockRejectedValue(new Error("nope"));
+	const r = await tool.viewTool("writefail");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-thanks]").click();
+	await tick();
+	assert.equal(document.querySelector("[data-signals-result]").className, "at__result at__result--err");
+	assert.equal(document.querySelector("[data-signals-result]").textContent, "Could not update thanks.");
+	document.querySelector("[data-media-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(document.querySelector("[data-media-result]").className, "at__result at__result--err");
+	assert.equal(document.querySelector("[data-media-result]").textContent, "Could not submit screenshot.");
 });
 
 test("viewTool deprecated with replacement as URL", async () => {

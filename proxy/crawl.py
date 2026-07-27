@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from backend import DEFAULT_DB_URL, db
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, utcnow
-from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_ERROR
+from backend.sync import SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
 UA = "toolhub-evolved-crawler/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"

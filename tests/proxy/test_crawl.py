@@ -162,3 +162,33 @@ def test_crawl_refuses_redirects_and_private_hosts(monkeypatch):
     assert "non-public" in run.errors[0]
     run = run_with(monkeypatch, FakeSession(feed_status=302))
     assert "redirects are not followed" in run.errors[0]
+
+
+def test_crawl_tolerates_url_deleted_before_status_update(monkeypatch):
+    uid = add_url()
+    with db.session_scope() as s:
+        first_id = s.query(CrawlerUrl).one().id
+
+    def fetch_delete_then_fail(_session, _url):
+        with db.session_scope() as s:
+            s.delete(s.get(CrawlerUrl, first_id))
+        raise ValueError("gone")
+
+    monkeypatch.setattr(crawl, "_fetch_json", fetch_delete_then_fail)
+    run = crawl.run_crawl()
+    assert run.ok is False
+    assert "gone" in run.errors[0]
+
+    with db.session_scope() as s:
+        s.add(CrawlerUrl(user_id=uid, url="https://example.org/second.json"))
+        s.flush()
+        second_id = s.query(CrawlerUrl).filter_by(url="https://example.org/second.json").one().id
+
+    monkeypatch.setattr(crawl, "_fetch_json", lambda _session, _url: ITEM)
+
+    def ingest_and_delete(_items, _owner_id, _session, _counts, _errors):
+        with db.session_scope() as s:
+            s.delete(s.get(CrawlerUrl, second_id))
+
+    monkeypatch.setattr(crawl, "_ingest_items", ingest_and_delete)
+    assert crawl.run_crawl().ok is True

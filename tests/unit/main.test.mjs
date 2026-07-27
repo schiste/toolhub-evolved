@@ -271,6 +271,22 @@ test("#view: favorite add/remove writes to official Toolhub when signed in", asy
 	]);
 });
 
+test("#view: favorite official-write rejection leaves the local favorite state intact", async () => {
+	vi.clearAllMocks();
+	serversync.officialWriteAvailable.mockReturnValueOnce(true);
+	serversync.officialWrite.mockRejectedValueOnce(new Error("upstream refused"));
+	store.toggleFav.mockReturnValueOnce(true);
+	click($('#view [data-fav="tool-a"]'));
+	await Promise.resolve();
+	assert.deepEqual(store.toggleFav.mock.calls[0], ["tool-a"]);
+	assert.deepEqual(favbtn.syncFavButtons.mock.calls[0], ["tool-a", true]);
+	assert.deepEqual(serversync.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/toolhub/user/favorites/",
+		{ name: "tool-a" }
+	]);
+});
+
 test("#view: clicking add-to-list toggles state and swaps the mark icon", () => {
 	vi.clearAllMocks();
 	store.listToolToggle.mockReturnValue(true);
@@ -627,6 +643,20 @@ test("main boot skips message install when a stored-locale catalog is empty", as
 		assert.equal(i18n.setMessages.mock.calls.length, 0);
 	} finally {
 		localStorage.removeItem(i18n.LOCALE_KEY);
+		document.body.innerHTML = SHELL;
+	}
+});
+
+test("main boot tolerates server-sync initialization failure", async () => {
+	vi.clearAllMocks();
+	serversync.initServerSync.mockRejectedValueOnce(new Error("session down"));
+	document.body.innerHTML = SHELL;
+	try {
+		await import("../../public_html/main.js?v=syncfail");
+		await Promise.resolve();
+		assert.equal(serversync.initServerSync.mock.calls.length, 1);
+		assert.equal(router.render.mock.calls.length > 0, true);
+	} finally {
 		document.body.innerHTML = SHELL;
 	}
 });

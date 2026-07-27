@@ -49,7 +49,43 @@ test("backendErrorMessage prefers actionable backend payload details", () => {
 		api.backendErrorMessage(new api.BackendError(500, "/v1/x", { details: { code: "upstream" } })),
 		'{"code":"upstream"}'
 	);
+	assert.equal(api.backendErrorMessage(new api.BackendError(500, "/v1/x", null)), "{}");
 	assert.equal(api.backendErrorMessage(new Error("Network down")), "Network down");
+	assert.equal(api.backendErrorMessage("plain failure"), "plain failure");
+	const backendError = new api.BackendError(422, "/v1/x", { field: "url" });
+	assert.deepEqual(api.backendErrorBody(backendError), { field: "url" });
+	assert.equal(api.backendErrorBody(new Error("not backend")), null);
+});
+
+test("backendWriteJson handles empty writes, invalid JSON bodies, and backend errors", async () => {
+	const seen = [];
+	globalThis.fetch = async (url, opts) => {
+		seen.push({ url: String(url), opts });
+		return { ok: true, status: 204, json: async () => ({ should: "not parse" }) };
+	};
+	assert.equal(await api.backendWriteJson("DELETE", "/v1/empty/", undefined, "csrf"), null);
+	assert.equal(seen[0].opts.body, undefined);
+	assert.equal(seen[0].opts.headers["X-CSRF-Token"], "csrf");
+
+	globalThis.fetch = async () => ({
+		ok: true,
+		status: 200,
+		json: async () => {
+			throw new Error("not json");
+		}
+	});
+	assert.equal(await api.backendWriteJson("POST", "/v1/not-json/", { ok: true }, "csrf"), null);
+
+	globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: "Bad write" }) });
+	await assert.rejects(
+		() => api.backendWriteJson("POST", "/v1/bad/", { name: "x" }, "csrf"),
+		(error) => {
+			assert.ok(error instanceof api.BackendError);
+			assert.equal(error.status, 400);
+			assert.deepEqual(error.body, { error: "Bad write" });
+			return true;
+		}
+	);
 });
 
 // ----------------------------------------------------------------- fetchJson retries

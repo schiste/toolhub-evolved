@@ -146,7 +146,7 @@ def _sync_label(status: str | None) -> str:
     return labels.get(status or "", "Local draft")
 
 
-def _with_common_meta(payload: dict, row: Any, *, include_official_id: bool = False) -> dict:
+def _with_common_meta(payload: dict, row: object, *, include_official_id: bool = False) -> dict:
     """Attach provenance fields without disturbing legacy payload shapes."""
     out = dict(payload)
     source = getattr(row, "source", None) or SOURCE_LOCAL
@@ -394,7 +394,9 @@ def _assemble_overlay(uid: int) -> dict[str, Any]:
                 include_official_id=True,
             )
             for c in s.execute(
-                select(CrawlerUrl).where(CrawlerUrl.user_id == uid, CrawlerUrl.enabled.is_(True)).order_by(CrawlerUrl.added_at.desc())
+                select(CrawlerUrl)
+                .where(CrawlerUrl.user_id == uid, CrawlerUrl.enabled.is_(True))
+                .order_by(CrawlerUrl.added_at.desc())
             ).scalars()
         ]
         overlays = {
@@ -495,7 +497,10 @@ def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
                     created_at=_parse_iso(item.get("created")),
                     modified_at=_parse_iso(item.get("modified")),
                     official_list_id=official_id,
-                    source=clean_source(_payload_value(item, "source"), SOURCE_OFFICIAL if official_id else SOURCE_LOCAL),
+                    source=clean_source(
+                        _payload_value(item, "source"),
+                        SOURCE_OFFICIAL if official_id else SOURCE_LOCAL,
+                    ),
                     sync_status=sync_status,
                     last_synced_at=last_synced_at,
                     last_error=clean_error(_payload_value(item, "lastError", "last_error")),
@@ -761,7 +766,9 @@ def v1_crawler_runs() -> Response:
                 "source": row.source or SOURCE_LOCAL,
                 "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
             }
-            for row in s.execute(select(CrawlerRun).order_by(CrawlerRun.started_at.desc(), CrawlerRun.id.desc()).limit(20)).scalars()
+            for row in s.execute(
+                select(CrawlerRun).order_by(CrawlerRun.started_at.desc(), CrawlerRun.id.desc()).limit(20)
+            ).scalars()
         ]
     return jsonify({"count": len(runs), "results": runs})
 
@@ -818,7 +825,9 @@ def v1_tool_signals(name: str) -> Response:
     uid = current_user_id()
     with db.session_scope() as s:
         thanks_count = s.execute(
-            select(func.count()).select_from(ToolThanks).where(ToolThanks.tool_name == clean_name, ToolThanks.active.is_(True))
+            select(func.count())
+            .select_from(ToolThanks)
+            .where(ToolThanks.tool_name == clean_name, ToolThanks.active.is_(True))
         ).scalar_one()
         user_thanked = (
             bool(

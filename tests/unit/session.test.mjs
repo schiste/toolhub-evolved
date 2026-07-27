@@ -67,8 +67,14 @@ test("Evolved feature mode is always on in production", () => {
 test("exported identity constants are exact", () => {
 	assert.equal(session.EXP_KEY, "toolhub-exp");
 	assert.equal(session.AUTH_KEY, "toolhub-auth");
+	assert.equal(session.SITENOTICE_KEY, "toolhub-sitenotice-dismissed");
 	assert.deepEqual(session.USER, { name: "" });
 	assert.equal(session.USER.name, "");
+});
+
+test("dismissSiteNotice persists the dismissal flag", () => {
+	session.dismissSiteNotice();
+	assert.equal(localStorage.getItem(session.SITENOTICE_KEY), "1");
 });
 
 test("expStored ignores the legacy opt-in flag", () => {
