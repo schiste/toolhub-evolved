@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from backend import DEFAULT_DB_URL, db
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, utcnow
-from backend.sync import SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
+from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
 UA = "toolhub-evolved-crawler/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -133,11 +133,13 @@ def _ingest_items(
                     ToolRecord(
                         tool_name=name,
                         user_id=owner_id,
+                        created_by_user_id=owner_id,
                         record=record,
                         modified_at=utcnow(),
                         visibility="public",
                         source=SOURCE_LOCAL,
                         sync_status=SYNC_EVOLVED_REAL,
+                        review_status=REVIEW_APPROVED,
                     )
                 )
                 counts["added"] += 1
@@ -147,6 +149,9 @@ def _ingest_items(
                 existing.visibility = "public"
                 existing.source = SOURCE_LOCAL
                 existing.sync_status = SYNC_EVOLVED_REAL
+                existing.review_status = REVIEW_APPROVED
+                if existing.created_by_user_id is None:
+                    existing.created_by_user_id = owner_id
                 existing.last_error = None
                 counts["updated"] += 1
 

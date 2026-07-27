@@ -40,12 +40,14 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "last_failure_at": "DATETIME NULL",
         },
         "favorites": {
+            "created_by_user_id": "INTEGER NULL",
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'local_draft'",
             "last_synced_at": "DATETIME NULL",
             "last_error": f"{text_col} NULL",
         },
         "lists": {
+            "created_by_user_id": "INTEGER NULL",
             "official_list_id": "INTEGER NULL",
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'local_draft'",
@@ -54,10 +56,12 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "deleted_at": "DATETIME NULL",
         },
         "tools": {
+            "created_by_user_id": "INTEGER NULL",
             "official_name": "VARCHAR(255) NULL",
             "visibility": "VARCHAR(32) NOT NULL DEFAULT 'private'",
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'local_draft'",
+            "review_status": "VARCHAR(32) NOT NULL DEFAULT 'approved'",
             "last_synced_at": "DATETIME NULL",
             "last_error": f"{text_col} NULL",
             "last_toolhub_response": f"{json_col} NULL",
@@ -65,6 +69,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "deleted_at": "DATETIME NULL",
         },
         "tool_overlays": {
+            "created_by_user_id": "INTEGER NULL",
             "base_revision": "VARCHAR(255) NULL",
             "field_statuses": f"{json_col} NULL",
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
@@ -75,13 +80,19 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "deleted_at": "DATETIME NULL",
         },
         "activity": {
+            "created_by_user_id": "INTEGER NULL",
             "object_type": "VARCHAR(32) NULL",
             "object_key": "VARCHAR(255) NULL",
             "action": "VARCHAR(64) NULL",
             "official_status": "VARCHAR(32) NULL",
             "payload": f"{json_col} NULL",
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "last_synced_at": "DATETIME NULL",
+            "last_error": f"{text_col} NULL",
         },
         "crawler_urls": {
+            "created_by_user_id": "INTEGER NULL",
             "official_crawler_url_id": "INTEGER NULL",
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "enabled": f"BOOLEAN NOT NULL DEFAULT {true_default}",
@@ -94,6 +105,37 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "crawler_runs": {
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+        },
+        "tool_events": {
+            "created_by_user_id": "INTEGER NULL",
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "last_synced_at": "DATETIME NULL",
+            "last_error": f"{text_col} NULL",
+        },
+        "tool_thanks": {
+            "created_by_user_id": "INTEGER NULL",
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "last_synced_at": "DATETIME NULL",
+            "last_error": f"{text_col} NULL",
+        },
+        "tool_health_targets": {
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "last_synced_at": "DATETIME NULL",
+            "deleted_at": "DATETIME NULL",
+        },
+        "tool_health_checks": {
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+        },
+        "tool_media": {
+            "created_by_user_id": "INTEGER NULL",
+            "review_status": "VARCHAR(32) NOT NULL DEFAULT 'pending'",
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "last_synced_at": "DATETIME NULL",
+            "last_error": f"{text_col} NULL",
+            "deleted_at": "DATETIME NULL",
         },
     }
 

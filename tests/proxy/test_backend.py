@@ -132,16 +132,24 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     with eng.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE users (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE favorites (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE tools (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE tool_media (id INTEGER PRIMARY KEY)")
     db._upgrade_schema()
     user_columns = {col["name"] for col in inspect(eng).get_columns("users")}
     assert "role" in user_columns
-    columns = {col["name"] for col in inspect(eng).get_columns("favorites")}
-    assert {"source", "sync_status", "last_synced_at", "last_error"}.issubset(columns)
+    favorite_columns = {col["name"] for col in inspect(eng).get_columns("favorites")}
+    assert {"created_by_user_id", "source", "sync_status", "last_synced_at", "last_error"}.issubset(favorite_columns)
+    tool_columns = {col["name"] for col in inspect(eng).get_columns("tools")}
+    assert {"created_by_user_id", "review_status", "deleted_at"}.issubset(tool_columns)
+    media_columns = {col["name"] for col in inspect(eng).get_columns("tool_media")}
+    assert {"created_by_user_id", "review_status", "sync_status", "deleted_at"}.issubset(media_columns)
 
     assert sync.clean_source("official") == "official"
     assert sync.clean_source("bogus") == "local"
     assert sync.clean_sync_status("sync_error") == "sync_error"
     assert sync.clean_sync_status("bogus") == "local_draft"
+    assert sync.clean_review_status("approved") == "approved"
+    assert sync.clean_review_status("bogus") == "pending"
     assert sync.clean_error(None) is None
     assert sync.clean_error("  upstream refused  ") == "upstream refused"
     assert sync.clean_error("   ") is None
@@ -149,6 +157,9 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     assert sync.clean_int("") is None
     assert sync.clean_int("42") == 42
     assert sync.clean_int(object()) is None
+    assert sync.created_by_user_id(ToolList(created_by_user_id=7, user_id=8, client_id="l", title="L")) == 7
+    assert sync.created_by_user_id(ToolList(user_id=8, client_id="legacy", title="L")) == 8
+    assert sync.created_by_user_id(object()) is None
 
     db.configure("sqlite://")
     db.init_schema()
@@ -321,8 +332,12 @@ def test_overlay_roundtrip_all_keys(client):
     assert data["toolAnnos"]["tool-a"]["syncStatus"] == "local_draft"
     assert data["toolNew"]["my-tool"]["title"] == "T"
     assert data["toolNew"]["my-tool"]["visibility"] == "private"
+    assert data["toolNew"]["my-tool"]["reviewStatus"] == "pending"
     assert data["revisions"] == revs
     assert data["auditlogs"][0]["action"] == "edited"
+    with db.session_scope() as s:
+        for model in (Favorite, ToolList, CrawlerUrl, ToolOverlay, ToolRecord, ActivityRow):
+            assert {row.created_by_user_id for row in s.query(model)} == {uid}
 
 
 def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
@@ -371,7 +386,7 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
                     "title": "Overlay title",
                     "baseRevision": "rev-1",
                     "fieldStatuses": {"title": "accepted"},
-                    "reviewStatus": "reviewed",
+                    "reviewStatus": "approved",
                     "lastError": "needs merge",
                 }
             },
@@ -406,12 +421,60 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
     assert data["crawlerUrls"][0]["lastSyncedAt"] == "2026-07-26T11:00:00Z"
     assert data["toolEdits"]["crawler-tool"]["baseRevision"] == "rev-1"
     assert data["toolEdits"]["crawler-tool"]["fieldStatuses"] == {"title": "accepted"}
-    assert data["toolEdits"]["crawler-tool"]["reviewStatus"] == "reviewed"
+    assert data["toolEdits"]["crawler-tool"]["reviewStatus"] == "open"
     assert data["toolNew"]["crawler-tool"]["officialName"] == "crawler-tool-official"
+    assert data["toolNew"]["crawler-tool"]["visibility"] == "public"
+    assert data["toolNew"]["crawler-tool"]["reviewStatus"] == "approved"
     assert data["toolNew"]["crawler-tool"]["toolhubResponse"] == {"id": 99}
     assert data["toolNew"]["crawler-tool"]["validationErrors"] == [{"field": "url"}]
     assert client.get("/v1/search/tools/?q=crawler").get_json()["count"] == 1
     assert client.get("/toolinfo.json").get_json()[0]["name"] == "toolhub-evolved-crawler-tool"
+
+
+def test_local_overlays_cannot_replace_canonical_tool_identity(client):
+    uid = add_user()
+    sign_in(client, uid)
+    patch = {
+        "live-tool": {
+            "name": "local-shadow",
+            "origin": "api",
+            "description": "local note",
+            "source": "local",
+            "createdByUserId": 999,
+            "deletedAt": "2026-07-26T12:00:00Z",
+        }
+    }
+    assert put_overlay(client, "toolEdits", patch).status_code == 200
+    data = client.get("/v1/overlay/").get_json()["toolEdits"]["live-tool"]
+    assert data["description"] == "local note"
+    assert data["source"] == "local"
+    assert "name" not in data
+    assert "origin" not in data
+    assert "createdByUserId" not in data
+    assert "deletedAt" not in data
+    with db.session_scope() as s:
+        stored = s.query(ToolOverlay).filter_by(tool_name="live-tool").one()
+        assert stored.patch == {"description": "local note"}
+
+
+def test_non_reviewer_public_tool_records_remain_pending_and_private_to_owner(client):
+    uid_a = add_user("Ada", "1")
+    uid_b = add_user("Grace", "2")
+    sign_in(client, uid_a)
+    public_tool = {
+        "title": "Public Draft",
+        "description": "Needs review",
+        "url": "https://draft.example",
+        "visibility": "public",
+        "reviewStatus": "approved",
+    }
+    assert put_overlay(client, "toolNew", {"public-draft": public_tool}).status_code == 200
+    own = client.get("/v1/overlay/").get_json()["toolNew"]["public-draft"]
+    assert own["reviewStatus"] == "pending"
+    assert client.get("/v1/search/tools/?q=public").get_json()["count"] == 0
+
+    sign_in(client, uid_b)
+    assert "public-draft" not in client.get("/v1/overlay/").get_json()["toolNew"]
 
 
 def test_overlay_replace_semantics_and_merge(client):
@@ -584,6 +647,7 @@ def test_search_and_toolinfo_feed(client):
                 modified_at=utcnow(),
                 visibility="public",
                 sync_status="evolved_real",
+                review_status="approved",
             )
         )
         s.add(
@@ -594,6 +658,7 @@ def test_search_and_toolinfo_feed(client):
                 modified_at=utcnow(),
                 visibility="public",
                 sync_status="evolved_real",
+                review_status="approved",
             )
         )
     all_results = client.get("/v1/search/tools/").get_json()
@@ -655,6 +720,12 @@ def test_real_signal_media_validation_and_update_paths(client):
     assert client.post("/v1/tools/alpha/media/", json={"url": "https://x.example"}).status_code == 401
     uid = add_user()
     sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(ToolThanks(tool_name="legacy-thanks", user_id=uid, active=False))
+    assert client.post("/v1/tools/legacy-thanks/thanks/", headers={"X-CSRF-Token": "tok"}).status_code == 200
+    with db.session_scope() as s:
+        assert s.query(ToolThanks).filter_by(tool_name="legacy-thanks").one().created_by_user_id == uid
+
     assert client.get("/v1/tools/%20/signals/").status_code == 400
     assert (
         client.post("/v1/tools/alpha/events/", json={"eventType": "bogus"}, headers={"X-CSRF-Token": "tok"}).status_code

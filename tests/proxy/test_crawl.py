@@ -82,17 +82,25 @@ ITEM = {"name": "fresh-tool", "title": "Fresh", "description": "New tool", "url"
 
 
 def test_crawl_adds_then_updates(monkeypatch):
-    add_url()
+    owner_id = add_url()
     body = json.dumps([ITEM, {"bad": "item"}]).encode()
     run = run_with(monkeypatch, FakeSession(feed_body=body))
     assert (run.added, run.updated, run.ok) == (1, 0, False)  # bad item recorded as error
     assert "invalid item" in run.errors[0]
+    with db.session_scope() as s:
+        s.query(ToolRecord).one().created_by_user_id = None
     run = run_with(monkeypatch, FakeSession(feed_body=json.dumps(ITEM).encode()))  # single object + update path
     assert (run.added, run.updated) == (0, 1)
     with db.session_scope() as s:
         rec = s.query(ToolRecord).one()
         assert rec.record["origin"] == "crawler"
+        assert rec.created_by_user_id == owner_id
         assert s.query(CrawlerRun).count() == 2
+    run = run_with(monkeypatch, FakeSession(feed_body=json.dumps(ITEM).encode()))
+    assert (run.added, run.updated) == (0, 1)
+    with db.session_scope() as s:
+        assert s.query(ToolRecord).one().created_by_user_id == owner_id
+        assert s.query(CrawlerRun).count() == 3
 
 
 def test_crawl_skips_upstream_names(monkeypatch):

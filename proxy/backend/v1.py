@@ -37,6 +37,9 @@ from backend.models import (
 from backend.oauth import configured as oauth_configured
 from backend.security import current_user_id, login_required, write_guard
 from backend.sync import (
+    REVIEW_APPROVED,
+    REVIEW_OPEN,
+    REVIEW_PENDING,
     SOURCE_LOCAL,
     SOURCE_OFFICIAL,
     SYNC_ERROR,
@@ -46,6 +49,7 @@ from backend.sync import (
     SYNC_OFFICIAL,
     clean_error,
     clean_int,
+    clean_review_status,
     clean_source,
     clean_sync_status,
 )
@@ -72,6 +76,10 @@ META_KEYS = {
     "syncLabel",
     "lastSyncedAt",
     "lastError",
+    "createdByUserId",
+    "created_by_user_id",
+    "deletedAt",
+    "deleted_at",
     "officialId",
     "officialName",
     "visibility",
@@ -81,6 +89,7 @@ META_KEYS = {
     "fieldStatuses",
     "reviewStatus",
 }
+CANONICAL_TOOL_KEYS = {"name", "origin"}
 
 
 def _iso(dt: datetime | None) -> str:
@@ -170,16 +179,18 @@ def _with_common_meta(payload: dict, row: object, *, include_official_id: bool =
 
 def _local_tool_is_public(row: ToolRecord) -> bool:
     """Public Evolved records are searchable/feedable; private drafts are not."""
-    if row.visibility == VISIBILITY_PUBLIC:
-        return True
     record = row.record if isinstance(row.record, dict) else {}
-    return record.get("origin") == "crawler"
+    is_public = row.visibility == VISIBILITY_PUBLIC or record.get("origin") == "crawler"
+    default_review = REVIEW_APPROVED if record.get("origin") == "crawler" else REVIEW_PENDING
+    return is_public and clean_review_status(getattr(row, "review_status", None), default_review) == REVIEW_APPROVED
 
 
 def _tool_record_payload(row: ToolRecord) -> dict:
     record = row.record if isinstance(row.record, dict) else {}
     out = _with_common_meta(record, row)
     out["visibility"] = row.visibility or VISIBILITY_PRIVATE
+    default_review = REVIEW_APPROVED if record.get("origin") == "crawler" else REVIEW_PENDING
+    out["reviewStatus"] = clean_review_status(getattr(row, "review_status", None), default_review)
     if row.official_name:
         out["officialName"] = row.official_name
     if row.last_toolhub_response:
@@ -474,6 +485,7 @@ def _assemble_overlay(uid: int) -> dict[str, Any]:
                 )
                 .order_by(ToolRecord.modified_at)
             ).scalars()
+            if row.user_id == uid or _local_tool_is_public(row)
         }
         feeds = {
             key: [
@@ -515,7 +527,14 @@ def _put_favorites(uid: int, value: Any) -> Response | None:  # noqa: ANN401
         s.execute(delete(Favorite).where(Favorite.user_id == uid))
         s.add_all(
             [
-                Favorite(user_id=uid, tool_name=n, position=i, source=SOURCE_LOCAL, sync_status=SYNC_LOCAL_DRAFT)
+                Favorite(
+                    user_id=uid,
+                    created_by_user_id=uid,
+                    tool_name=n,
+                    position=i,
+                    source=SOURCE_LOCAL,
+                    sync_status=SYNC_LOCAL_DRAFT,
+                )
                 for i, n in enumerate(names)
             ]
         )
@@ -547,6 +566,7 @@ def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
                 ToolList(
                     client_id=str(item["id"])[:64],
                     user_id=uid,
+                    created_by_user_id=uid,
                     title=str(item["title"])[:MAX_NAME],
                     description=str(item.get("description", "")),
                     tools=[str(t)[:MAX_NAME] for t in item["tools"][:MAX_ITEMS]],
@@ -583,6 +603,7 @@ def _put_crawler_urls(uid: int, value: Any) -> Response | None:  # noqa: ANN401
             s.add(
                 CrawlerUrl(
                     user_id=uid,
+                    created_by_user_id=uid,
                     url=str(u["url"])[:2000],
                     added_at=_parse_iso(u.get("added")),
                     official_crawler_url_id=official_id,
@@ -639,9 +660,24 @@ def _clean_tool_record(rec: dict) -> dict | None:
     return clean
 
 
-def _tool_record_meta(rec: dict) -> dict[str, Any]:
+def _tool_record_meta(
+    rec: dict,
+    *,
+    can_review: bool = False,
+    existing_review_status: str | None = None,
+) -> dict[str, Any]:
     """Extract lifecycle metadata from a toolNew payload."""
-    visibility = _visibility(_payload_value(rec, "visibility"))
+    is_crawler_record = rec.get("origin") == "crawler"
+    visibility = _visibility(
+        _payload_value(rec, "visibility"), VISIBILITY_PUBLIC if is_crawler_record else VISIBILITY_PRIVATE
+    )
+    default_review = REVIEW_APPROVED if is_crawler_record else REVIEW_PENDING
+    preserved_review = clean_review_status(existing_review_status, default_review)
+    review_status = (
+        clean_review_status(_payload_value(rec, "reviewStatus", "review_status"), preserved_review)
+        if can_review
+        else preserved_review
+    )
     default_status = SYNC_EVOLVED_REAL if visibility == VISIBILITY_PUBLIC else SYNC_LOCAL_DRAFT
     status = clean_sync_status(_payload_value(rec, "syncStatus", "sync_status"), default_status)
     source = clean_source(_payload_value(rec, "source"), SOURCE_LOCAL)
@@ -652,6 +688,7 @@ def _tool_record_meta(rec: dict) -> dict[str, Any]:
         "visibility": visibility,
         "source": source,
         "sync_status": status,
+        "review_status": review_status,
         "last_synced_at": _parse_optional_iso(_payload_value(rec, "lastSyncedAt", "last_synced_at")),
         "last_error": clean_error(_payload_value(rec, "lastError", "last_error")),
         "official_name": str(official_name)[:MAX_NAME] if isinstance(official_name, str) and official_name else None,
@@ -660,9 +697,15 @@ def _tool_record_meta(rec: dict) -> dict[str, Any]:
     }
 
 
-def _overlay_meta(patch: dict) -> dict[str, Any]:
+def _overlay_meta(
+    patch: dict,
+    *,
+    can_review: bool = False,
+    existing_review_status: str | None = None,
+) -> dict[str, Any]:
     """Extract lifecycle metadata from a toolEdits/toolAnnos payload."""
     field_statuses = _payload_value(patch, "fieldStatuses", "field_statuses")
+    preserved_review = clean_review_status(existing_review_status, REVIEW_OPEN)
     return {
         "base_revision": str(_payload_value(patch, "baseRevision", "base_revision") or "")[:MAX_NAME] or None,
         "field_statuses": field_statuses if isinstance(field_statuses, dict) else None,
@@ -673,22 +716,27 @@ def _overlay_meta(patch: dict) -> dict[str, Any]:
         ),
         "last_synced_at": _parse_optional_iso(_payload_value(patch, "lastSyncedAt", "last_synced_at")),
         "last_error": clean_error(_payload_value(patch, "lastError", "last_error")),
-        "review_status": str(_payload_value(patch, "reviewStatus", "review_status") or "open")[:32],
+        "review_status": (
+            clean_review_status(_payload_value(patch, "reviewStatus", "review_status"), preserved_review)
+            if can_review
+            else preserved_review
+        ),
     }
 
 
 def _data_patch(patch: dict) -> dict:
     """Remove lifecycle metadata before merging a local overlay into a tool."""
-    return {k: v for k, v in patch.items() if k not in META_KEYS}
+    return {k: v for k, v in patch.items() if k not in META_KEYS and k not in CANONICAL_TOOL_KEYS}
 
 
-def _put_tool_new(uid: int, entries: dict[str, dict], s: Any) -> Response | None:  # noqa: ANN401
+def _put_tool_new(uid: int, entries: dict[str, dict], s: Any, *, can_review: bool = False) -> Response | None:  # noqa: ANN401
     # A tool name registered by someone else is not writable here: the pulled
     # cache holds the globally merged view, so a client legitimately pushes
     # other users' records back verbatim — those must never be re-owned.
     # Edits to other people's tools flow through the toolEdits/toolAnnos
     # overlays instead.
     others = {r.tool_name for r in s.execute(select(ToolRecord).where(ToolRecord.user_id != uid)).scalars()}
+    existing_own = {r.tool_name: r for r in s.execute(select(ToolRecord).where(ToolRecord.user_id == uid)).scalars()}
     cleaned: dict[str, tuple[dict, dict[str, Any]]] = {}
     for name, rec in entries.items():
         if name in others:
@@ -696,24 +744,32 @@ def _put_tool_new(uid: int, entries: dict[str, dict], s: Any) -> Response | None
         clean = _clean_tool_record(rec)
         if clean is None:
             return _bad(f"toolNew record '{name}' needs title, description and an https url")
-        cleaned[name] = (clean, _tool_record_meta(rec))
+        cleaned[name] = (
+            clean,
+            _tool_record_meta(
+                rec,
+                can_review=can_review,
+                existing_review_status=getattr(existing_own.get(name), "review_status", None),
+            ),
+        )
     s.execute(delete(ToolRecord).where(ToolRecord.user_id == uid))
     s.add_all(
         [
-            ToolRecord(tool_name=n, user_id=uid, record=rec, modified_at=utcnow(), **meta)
+            ToolRecord(tool_name=n, user_id=uid, created_by_user_id=uid, record=rec, modified_at=utcnow(), **meta)
             for n, (rec, meta) in cleaned.items()
         ]
     )
     return None
 
 
-def _put_tool_map(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: ANN401
+def _put_tool_map(uid: int, value: Any, *, key: str, user: User) -> Response | None:  # noqa: ANN401
     if not _valid_map(value):
         return _bad(f"{key} must be a map of tool name to object")
     entries = dict(list(value.items())[:MAX_ITEMS])
     with db.session_scope() as s:
+        can_review = authz.can(user, authz.ACTION_PUBLIC_REVIEW)
         if key == "toolNew":
-            return _put_tool_new(uid, entries, s)
+            return _put_tool_new(uid, entries, s, can_review=can_review)
         kind = OVERLAY_KINDS[key]
         # Echo suppression: entries identical to another user's current overlay
         # came in via the merged pull — replaying them must not create a copy
@@ -725,6 +781,12 @@ def _put_tool_map(uid: int, value: Any, *, key: str) -> Response | None:  # noqa
             ).scalars()
         }
         own = {n: patch for n, patch in entries.items() if others.get(n) != _data_patch(patch)}
+        existing_own = {
+            r.tool_name: r
+            for r in s.execute(
+                select(ToolOverlay).where(ToolOverlay.kind == kind, ToolOverlay.user_id == uid)
+            ).scalars()
+        }
         s.execute(delete(ToolOverlay).where(ToolOverlay.user_id == uid, ToolOverlay.kind == kind))
         s.add_all(
             [
@@ -732,9 +794,14 @@ def _put_tool_map(uid: int, value: Any, *, key: str) -> Response | None:  # noqa
                     kind=kind,
                     tool_name=n,
                     user_id=uid,
+                    created_by_user_id=uid,
                     patch=_data_patch(patch),
                     modified_at=utcnow(),
-                    **_overlay_meta(patch),
+                    **_overlay_meta(
+                        patch,
+                        can_review=can_review,
+                        existing_review_status=getattr(existing_own.get(n), "review_status", None),
+                    ),
                 )
                 for n, patch in own.items()
             ]
@@ -759,6 +826,7 @@ def _put_feed(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: AN
                         kind=key,
                         client_id=str(row["id"])[:64],
                         user_id=uid,
+                        created_by_user_id=uid,
                         row=row,
                         created_at=_parse_iso(row.get("timestamp")),
                     )
@@ -784,7 +852,7 @@ def v1_overlay_put(key: str) -> Response:
     """Write-through target for one localStorage overlay key."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
     value = request.get_json(silent=True)
     if value is None:
         return _bad("body must be JSON")
@@ -795,7 +863,7 @@ def v1_overlay_put(key: str) -> Response:
     elif key == "crawlerUrls":
         err = _put_crawler_urls(uid, value)
     elif key in OVERLAY_KINDS or key == "toolNew":
-        err = _put_tool_map(uid, value, key=key)
+        err = _put_tool_map(uid, value, key=key, user=user)
     elif key in FEED_KEYS:
         err = _put_feed(uid, value, key=key)
     else:
@@ -907,6 +975,7 @@ def v1_tool_signals(name: str) -> Response:
         health = s.execute(
             select(ToolHealthTarget)
             .where(ToolHealthTarget.tool_name == clean_name, ToolHealthTarget.enabled.is_(True))
+            .where(ToolHealthTarget.deleted_at.is_(None))
             .order_by(ToolHealthTarget.last_checked_at.desc(), ToolHealthTarget.id.desc())
             .limit(1)
         ).scalar_one_or_none()
@@ -945,6 +1014,7 @@ def v1_tool_event(name: str) -> Response:
                 tool_name=clean_name,
                 event_type=event_type,
                 user_id=uid,
+                created_by_user_id=uid,
                 day=now.date().isoformat(),
                 event_meta=value.get("meta") if isinstance(value.get("meta"), dict) else None,
                 created_at=now,
@@ -969,9 +1039,16 @@ def v1_tool_thanks(name: str) -> Response:
             select(ToolThanks).where(ToolThanks.tool_name == clean_name, ToolThanks.user_id == uid)
         ).scalar_one_or_none()
         if row is None:
-            row = ToolThanks(tool_name=clean_name, user_id=uid, active=request.method == "POST")
+            row = ToolThanks(
+                tool_name=clean_name,
+                user_id=uid,
+                created_by_user_id=uid,
+                active=request.method == "POST",
+            )
             s.add(row)
         else:
+            if row.created_by_user_id is None:
+                row.created_by_user_id = uid
             row.active = request.method == "POST"
             row.updated_at = utcnow()
     return jsonify({"ok": True})
@@ -1001,6 +1078,7 @@ def v1_tool_health_target(name: str) -> Response:
         else:
             row.target_url = target_url[:MAX_URL]
             row.enabled = True
+            row.deleted_at = None
             row.last_error = None
     return jsonify({"ok": True})
 
@@ -1042,6 +1120,7 @@ def _tool_media_post(clean_name: str) -> Response:
         row = ToolMedia(
             tool_name=clean_name,
             user_id=uid,
+            created_by_user_id=uid,
             url=str(media_url)[:MAX_URL],
             title=str(value.get("title") or "")[:MAX_NAME],
             license=license_id[:MAX_NAME],

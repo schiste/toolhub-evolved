@@ -403,7 +403,12 @@ test("stampSyncMeta preserves hybrid sync metadata fields", () => {
 			officialId: 34,
 			officialName: "toolhub-name",
 			visibility: "private",
-			validationErrors: [{ field: "url" }]
+			validationErrors: [{ field: "url" }],
+			createdByUserId: 7,
+			deletedAt: "2026-07-27T08:00:00Z",
+			baseRevision: "rev-1",
+			fieldStatuses: { title: "accepted" },
+			reviewStatus: "approved"
 		}
 	);
 	assert.equal(stamped.source, store.SOURCE.official);
@@ -413,6 +418,11 @@ test("stampSyncMeta preserves hybrid sync metadata fields", () => {
 	assert.equal(stamped.officialName, "toolhub-name");
 	assert.equal(stamped.visibility, "private");
 	assert.deepEqual(stamped.validationErrors, [{ field: "url" }]);
+	assert.equal(stamped.createdByUserId, 7);
+	assert.equal(stamped.deletedAt, "2026-07-27T08:00:00Z");
+	assert.equal(stamped.baseRevision, "rev-1");
+	assert.deepEqual(stamped.fieldStatuses, { title: "accepted" });
+	assert.equal(stamped.reviewStatus, "approved");
 
 	const local = store.stampSyncMeta({ name: "local" });
 	assert.equal(local.source, store.SOURCE.local);

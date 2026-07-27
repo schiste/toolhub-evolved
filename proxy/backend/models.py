@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_LOCAL_DRAFT
+from backend.sync import REVIEW_OPEN, REVIEW_PENDING, SOURCE_LOCAL, SYNC_EVOLVED_REAL, SYNC_LOCAL_DRAFT
 
 
 def utcnow() -> datetime:
@@ -64,6 +64,7 @@ class Favorite(Base):
     __table_args__ = (UniqueConstraint("user_id", "tool_name"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     tool_name: Mapped[str] = mapped_column(String(255))
     position: Mapped[int] = mapped_column(Integer, default=0)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
@@ -78,6 +79,7 @@ class ToolList(Base):
     __tablename__ = "lists"
     client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
     tools: Mapped[list] = mapped_column(JSON, default=list)
@@ -99,12 +101,14 @@ class ToolRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     record: Mapped[dict] = mapped_column(JSON, default=dict)
     modified_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     official_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     visibility: Mapped[str] = mapped_column(String(32), default="private")
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_PENDING)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_toolhub_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -121,6 +125,7 @@ class ToolOverlay(Base):
     kind: Mapped[str] = mapped_column(String(16), index=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     patch: Mapped[dict] = mapped_column(JSON, default=dict)
     modified_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     base_revision: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -129,7 +134,7 @@ class ToolOverlay(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    review_status: Mapped[str] = mapped_column(String(32), default="open")
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_OPEN)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -142,6 +147,7 @@ class ActivityRow(Base):
     kind: Mapped[str] = mapped_column(String(16), index=True)
     client_id: Mapped[str] = mapped_column(String(64))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     row: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     object_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -149,6 +155,10 @@ class ActivityRow(Base):
     action: Mapped[str | None] = mapped_column(String(64), nullable=True)
     official_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class CrawlerUrl(Base):
@@ -158,6 +168,7 @@ class CrawlerUrl(Base):
     __table_args__ = (UniqueConstraint("user_id", "url"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     url: Mapped[str] = mapped_column(String(2000))
     added_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     official_crawler_url_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -194,9 +205,14 @@ class ToolEvent(Base):
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     event_type: Mapped[str] = mapped_column(String(32), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     day: Mapped[str] = mapped_column(String(10), index=True)
     event_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ToolThanks(Base):
@@ -207,9 +223,14 @@ class ToolThanks(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ToolHealthTarget(Base):
@@ -222,11 +243,14 @@ class ToolHealthTarget(Base):
     target_url: Mapped[str] = mapped_column(String(2000))
     created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ToolHealthCheck(Base):
@@ -240,6 +264,8 @@ class ToolHealthCheck(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 
 
 class ToolMedia(Base):
@@ -249,10 +275,14 @@ class ToolMedia(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     url: Mapped[str] = mapped_column(String(2000))
     title: Mapped[str] = mapped_column(String(255), default="")
     license: Mapped[str] = mapped_column(String(255), default="")
     source: Mapped[str] = mapped_column(String(2000), default="")
     review_status: Mapped[str] = mapped_column(String(32), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

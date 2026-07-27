@@ -57,7 +57,7 @@ export function withSyncMuted(run) {
 	}
 }
 /**
- * @typedef {{ source?: string, syncStatus?: string, syncLabel?: string, lastSyncedAt?: string, lastError?: string, officialId?: number, officialName?: string, visibility?: string, toolhubResponse?: Record<string, any> | null, validationErrors?: any[] }} SyncMeta
+ * @typedef {{ source?: string, syncStatus?: string, syncLabel?: string, lastSyncedAt?: string, lastError?: string, createdByUserId?: number, deletedAt?: string, officialId?: number, officialName?: string, visibility?: string, toolhubResponse?: Record<string, any> | null, validationErrors?: any[], baseRevision?: string, fieldStatuses?: Record<string, string>, reviewStatus?: string }} SyncMeta
  * @typedef {{ id: string, title: string, description: string, tools: string[], modified?: string, created?: string } & SyncMeta} DemoList
  */
 export const demoStore = {
@@ -161,11 +161,16 @@ export function stampSyncMeta(item, meta = {}) {
 	if (!out.syncStatus) out.syncStatus = officialId ? SYNC_STATUS.official : SYNC_STATUS.localDraft;
 	if (meta.lastError !== undefined) out.lastError = meta.lastError;
 	if (meta.lastSyncedAt !== undefined) out.lastSyncedAt = meta.lastSyncedAt;
+	if (meta.createdByUserId !== undefined) out.createdByUserId = meta.createdByUserId;
+	if (meta.deletedAt !== undefined) out.deletedAt = meta.deletedAt;
 	if (meta.officialId !== undefined) out.officialId = meta.officialId;
 	if (meta.officialName !== undefined) out.officialName = meta.officialName;
 	if (meta.visibility !== undefined) out.visibility = meta.visibility;
 	if (meta.toolhubResponse !== undefined) out.toolhubResponse = meta.toolhubResponse;
 	if (meta.validationErrors !== undefined) out.validationErrors = meta.validationErrors;
+	if (meta.baseRevision !== undefined) out.baseRevision = meta.baseRevision;
+	if (meta.fieldStatuses !== undefined) out.fieldStatuses = meta.fieldStatuses;
+	if (meta.reviewStatus !== undefined) out.reviewStatus = meta.reviewStatus;
 	if (out.syncStatus === SYNC_STATUS.official && !out.lastSyncedAt) out.lastSyncedAt = new Date().toISOString();
 	out.syncLabel = syncStatusLabel(out.syncStatus);
 	return out;
