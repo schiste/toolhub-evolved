@@ -40,7 +40,7 @@ vi.mock("../../public_html/views/toolforms.js", () => ({
 vi.mock("../../public_html/views/account.js", () => ({
 	viewAccountSettings: vi.fn(() => ({ tag: "account" })),
 	viewDeveloperSettings: vi.fn(() => ({ tag: "developer" })),
-	viewMyApps: vi.fn(() => ({ tag: "myapps" }))
+	viewMyTools: vi.fn(() => ({ tag: "mytools" }))
 }));
 vi.mock("../../public_html/views/static.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -302,10 +302,10 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(false);
-	await at("/my-apps");
+	await at("/my-tools");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
-		"My apps",
-		"View OAuth applications registered on Toolhub by this account."
+		"My tools",
+		"View Toolhub tools maintained by this account."
 	]);
 });
 
@@ -316,11 +316,11 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	assert.deepEqual(await at("/add-or-remove-tools"), { tag: "addtools" });
 	assert.deepEqual(await at("/account"), { tag: "account" });
 	assert.deepEqual(await at("/developer-settings"), { tag: "developer" });
-	assert.deepEqual(await at("/my-apps"), { tag: "myapps" });
+	assert.deepEqual(await at("/my-tools"), { tag: "mytools" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 	assert.equal(accountView.viewAccountSettings.mock.calls.length, 1);
 	assert.equal(accountView.viewDeveloperSettings.mock.calls.length, 1);
-	assert.equal(accountView.viewMyApps.mock.calls.length, 1);
+	assert.equal(accountView.viewMyTools.mock.calls.length, 1);
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */

@@ -26,7 +26,7 @@ export function renderAccount() {
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">${t("account.signedInAs", "Signed in as")} <strong>${esc(USER.name)}</strong></div>
 			<a href="/my-lists">${icon("list")} ${t("account.yourLists", "Your lists")}</a>
-			<a href="/my-apps">${icon("code")} ${t("account.myApps", "My apps")}</a>
+			<a href="/my-tools">${icon("tools")} ${t("account.myTools", "My tools")}</a>
 			<a href="/favorites">${icon("star")} ${t("account.favorites", "Favorites")}</a>
 			<a href="/add-or-remove-tools">${icon("tools")} ${t("account.addOrRemoveTools", "Add or remove tools")}</a>
 			<a href="/developer-settings">${icon("key")} ${t("account.developerSettings", "Developer settings")}</a>

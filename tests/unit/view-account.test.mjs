@@ -23,7 +23,7 @@ vi.mock("../../public_html/lib/core/store.js", async (orig) => {
 });
 
 const { setServerUser } = await import("../../public_html/lib/core/session.js");
-const { viewAccountSettings, viewDeveloperSettings, viewMyApps } = await import("../../public_html/views/account.js");
+const { viewAccountSettings, viewDeveloperSettings, viewMyTools } = await import("../../public_html/views/account.js");
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -47,53 +47,80 @@ test("viewDeveloperSettings renders the Toolhub developer hub and profile links"
 	const r = viewDeveloperSettings();
 	assert.equal(r.title, "Developer settings - Toolhub");
 	assert.ok(r.html.includes("Official Toolhub developer settings"));
-	assert.ok(r.html.includes('href="/my-apps"'));
+	assert.ok(r.html.includes('href="/my-tools"'));
+	assert.ok(r.html.includes("My apps"));
+	assert.ok(
+		r.html.includes('href="https://toolhub.wikimedia.org/api/oauth/applications/?user__username=Ada%20Lovelace"')
+	);
+	assert.ok(!r.html.includes('href="/my-apps"'));
 	assert.ok(r.html.includes("API token"));
 	assert.ok(r.html.includes("Authorized apps"));
 	assert.ok(r.html.includes('href="https://toolhub.wikimedia.org/developer-settings"'));
 });
 
-test("viewMyApps lists official Toolhub OAuth applications for the signed-in user", async () => {
+test("viewMyTools lists official Toolhub tools owned by the signed-in user", async () => {
 	h.paginate.mockResolvedValue([
 		{
-			name: "Evolved client",
-			redirectUrl: "https://toolhub-evolved.toolforge.org/oauth/callback",
-			clientId: "abc123",
-			username: "Ada Lovelace"
+			name: "ada-tool",
+			title: "Ada Tool",
+			url: "https://example.org/ada",
+			maintainer: "Ada Lovelace",
+			authors: ["Ada Lovelace"],
+			authorObjs: [],
+			toolType: "web app",
+			modified: "2026-01-01T00:00:00Z"
 		},
 		{
-			name: "Someone else's client",
-			redirectUrl: "https://example.org/callback",
-			clientId: "def456",
-			username: "Other User"
+			name: "ada-developer-tool",
+			title: "Ada Developer Tool",
+			url: "",
+			maintainer: "Different Display Name",
+			authors: [],
+			authorObjs: [
+				{ name: "Different Display Name", url: null, wikiUsername: null, developerUsername: "Ada Lovelace" }
+			],
+			toolType: null,
+			modified: null
+		},
+		{
+			name: "other-tool",
+			title: "Other Tool",
+			url: "https://example.org/other",
+			maintainer: "Other User",
+			authors: ["Other User"],
+			authorObjs: [],
+			toolType: "bot",
+			modified: "2026-01-01T00:00:00Z"
 		}
 	]);
-	const r = await viewMyApps();
-	assert.equal(r.title, "My apps - Toolhub");
+	const r = await viewMyTools();
+	assert.equal(r.title, "My tools - Toolhub");
 	const [path, params, options] = h.paginate.mock.calls[0];
-	assert.equal(path, "/oauth/applications/");
-	assert.deepEqual(params, { user__username: "Ada Lovelace", ordering: "name" });
+	assert.equal(path, "/search/tools/");
+	assert.deepEqual(params, { author__term: "Ada Lovelace", ordering: "-score" });
 	assert.equal(options.pageSize, 100);
 	assert.equal(options.maxPages, 20);
 	assert.equal(typeof options.map, "function");
-	assert.ok(r.html.includes("Evolved client"));
-	assert.ok(r.html.includes("abc123"));
-	assert.ok(r.html.includes("https://toolhub-evolved.toolforge.org/oauth/callback"));
-	assert.ok(r.html.includes("1 app"));
-	assert.ok(!r.html.includes("Someone else"));
+	assert.ok(r.html.includes("Ada Tool"));
+	assert.ok(r.html.includes("Ada Developer Tool"));
+	assert.ok(r.html.includes("ada-tool"));
+	assert.ok(r.html.includes("web app"));
+	assert.ok(r.html.includes("https://example.org/ada"));
+	assert.ok(r.html.includes("2 tools"));
+	assert.ok(!r.html.includes("Other Tool"));
 });
 
-test("viewMyApps renders an empty state", async () => {
+test("viewMyTools renders an empty state", async () => {
 	h.paginate.mockResolvedValue([]);
-	const r = await viewMyApps();
-	assert.ok(r.html.includes("No Toolhub OAuth applications are registered for this account."));
-	assert.ok(r.html.includes("0 apps"));
+	const r = await viewMyTools();
+	assert.ok(r.html.includes("No Toolhub tools list this account as an author or maintainer."));
+	assert.ok(r.html.includes("0 tools"));
 });
 
-test("viewMyApps reports load failures", async () => {
+test("viewMyTools reports load failures", async () => {
 	h.paginate.mockRejectedValue(new Error("offline"));
-	const r = await viewMyApps();
-	assert.ok(r.html.includes("Unable to load your Toolhub OAuth applications right now."));
+	const r = await viewMyTools();
+	assert.ok(r.html.includes("Unable to load your Toolhub tools right now."));
 });
 
 test("export action renders the JSON export", async () => {

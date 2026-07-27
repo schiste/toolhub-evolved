@@ -88,11 +88,11 @@ export const ROUTES = {
 			t("router.accountTitle", "Evolved data settings"),
 			t("router.accountLead", "Export or delete Evolved-local data for this Toolhub sign-in.")
 		),
-	"my-apps": () =>
+	"my-tools": () =>
 		requireSignIn(
-			() => loadAccount().then((m) => m.viewMyApps()),
-			t("router.myAppsTitle", "My apps"),
-			t("router.myAppsLead", "View OAuth applications registered on Toolhub by this account.")
+			() => loadAccount().then((m) => m.viewMyTools()),
+			t("router.myToolsTitle", "My tools"),
+			t("router.myToolsLead", "View Toolhub tools maintained by this account.")
 		),
 	"developer-settings": () =>
 		requireSignIn(
