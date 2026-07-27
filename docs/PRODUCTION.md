@@ -28,12 +28,14 @@ features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
   and the deferred accessibility items are closed.
 - **Data architecture (updated 2026-07-27): live Toolhub + local overlay.**
   All Toolhub catalog data is read **live from the Toolhub API** — it is never
-  mirrored, synced, or copied into our database. Official writes are sent to
-  Toolhub's API with the user's stored Toolhub OAuth grant. The
+  mirrored, synced, or copied into our database as canonical catalog state. A
+  short-lived `api_cache` table may store anonymous `GET /api/*` response bodies
+  only as a shared performance cache with expiry/stale metadata. Official writes
+  are sent to Toolhub's API with the user's stored Toolhub OAuth grant. The
   **project-specific database complements** Toolhub: local users mapped to
   Toolhub identities, stored OAuth grants, sessions, drafts/fallback overlays,
-  Evolved-only state, and revision/audit rows for local actions. If a record
-  exists upstream, the API is its source of truth.
+  Evolved-only state, API cache rows, and revision/audit rows for local actions.
+  If a record exists upstream, the API is its source of truth.
 
 The demonstrator was deliberately built for this pivot: the write adapter
 (`apiWrite`/`demoApi`) is shaped like Toolhub's real endpoints (`PLAN.md`
@@ -87,7 +89,10 @@ over unchanged, one level up:
 
 - **The base catalog stays live Toolhub data.** `apiGet` keeps reading
   `toolhub.wikimedia.org` through the same-origin read proxy. We do not fork or
-  mirror the upstream catalog; upstream tools always render from live data.
+  mirror the upstream catalog; upstream tools always render from live data. The
+  read proxy keeps only anonymous, expiring `GET /api/*` payloads in `api_cache`
+  so workers share hot responses and can serve short stale data during transient
+  upstream failures.
 - **Officially supported writes go back to Toolhub.** Toolhub OAuth gives
   Evolved a per-user grant. The browser calls `/v1/write/*`; the backend
   validates locally, checks Evolved policy, attaches the access token, forwards
@@ -105,7 +110,8 @@ draft, or fallback data instead of presenting it as accepted catalog data.
 
 ```
 Browser (SPA, public_html/)
-  │  GET /api/*   ──────────────►  read proxy ──► toolhub.wikimedia.org (live, read-only)
+  │  GET /api/*   ──────────────►  read proxy ──► api_cache ──► toolhub.wikimedia.org
+  │                                                     (anonymous, expiring)   (live, read-only)
   │  GET/POST/PUT/DELETE /v1/overlay/* ─► Evolved API ─► ToolsDB: drafts,
   │                                                        overlays, local state
   │  POST/PUT/DELETE /v1/write/* ───────► Evolved API ─► toolhub.wikimedia.org/api
@@ -146,7 +152,8 @@ The architecture avoids creating a second canonical catalog:
 3. **Upstream courtesy.** Before launch we notify the Toolhub maintainers
    (Phabricator + tool talk page): what the service is, its User-Agent, expected
    API load, and the feed URL. The proxy already identifies itself and caches
-   (30 s server TTL + 5 min browser); we keep respecting the API etiquette.
+   (shared 30 s server freshness, short stale-on-error, and 5 min browser
+   cache); we keep respecting the API etiquette.
 
 ## 2. What changes in the frontend
 

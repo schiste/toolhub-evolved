@@ -11,6 +11,7 @@ import base64
 import hashlib
 import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -19,14 +20,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import app as proxy_app  # noqa: E402  (path injected above)
+from backend import db  # noqa: E402
+from backend.models import ApiCache  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    """The proxy's TTL cache is module-level; isolate each test from the others."""
-    proxy_app._ttl_cache.clear()
+    """The proxy's API cache is shared through the DB; isolate tests."""
+    proxy_app.api_cache.clear()
     yield
-    proxy_app._ttl_cache.clear()
+    proxy_app.api_cache.clear()
 
 
 @pytest.fixture
@@ -38,10 +41,10 @@ def client():
 class FakeUpstream:
     """Minimal stand-in for a streamed `requests` response."""
 
-    def __init__(self, status_code, body=b"{}", content_type="application/json"):
+    def __init__(self, status_code, body=b"{}", content_type="application/json", headers=None):
         self.status_code = status_code
         self._body = body
-        self.headers = {"content-type": content_type}
+        self.headers = {"content-type": content_type, **(headers or {})}
         self.closed = False
 
     @property
@@ -128,6 +131,12 @@ def test_success_is_relayed_and_cached(client, fake_get):
     assert captured["url"] == "https://toolhub.wikimedia.org/api/search/tools/?q=wiki&page=2"
     assert captured["kwargs"]["allow_redirects"] is False
     assert captured["kwargs"]["timeout"] == 20
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+    with db.session_scope() as s:
+        row = s.query(ApiCache).one()
+        assert row.url == captured["url"]
+        assert row.status == 200
+        assert row.body == b'{"ok":true}'
 
 
 def test_error_status_is_relayed_but_not_cached(client, fake_get):
@@ -158,18 +167,19 @@ def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
     first = client.get("/api/ui/home/")
     second = client.get("/api/ui/home/")
-    assert captured["calls"] == 1, "second identical GET must hit the in-process cache"
+    assert captured["calls"] == 1, "second identical GET must hit the persistent API cache"
     assert first.data == second.data == b'{"v":1}'
     assert second.headers["Cache-Control"] == "public, max-age=300"
+    assert second.headers["X-Toolhub-Evolved-Cache"] == "hit"
 
 
 def test_cache_expires_after_ttl(client, fake_get, monkeypatch):
-    clock = {"t": 1000.0}
-    monkeypatch.setattr(proxy_app.time, "monotonic", lambda: clock["t"])
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
     client.get("/api/tools/")
     assert captured["calls"] == 1
-    clock["t"] = 1000.0 + proxy_app._CACHE_TTL_SECONDS + 1  # past the TTL window
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)  # past the fresh window
     client.get("/api/tools/")
     assert captured["calls"] == 2, "an expired entry must be re-fetched"
 
@@ -181,13 +191,56 @@ def test_error_response_is_not_cached(client, fake_get):
     assert captured["calls"] == 2, "a 5xx must not be cached — every call re-fetches"
 
 
-def test_cache_is_bounded(client, fake_get, monkeypatch):
-    monkeypatch.setattr(proxy_app, "_CACHE_MAX_ENTRIES", 2)
-    fake_get(FakeUpstream(200, b"{}"))
-    client.get("/api/a/")
-    client.get("/api/b/")  # cache now at the cap
-    client.get("/api/c/")  # cap reached → cache cleared, then c inserted
-    assert len(proxy_app._ttl_cache) == 1
+def test_stale_cache_is_served_on_transient_upstream_exception(client, fake_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    captured = fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+
+    fake_get(raises=proxy_app.requests.RequestException("timeout"))
+    resp = client.get("/api/tools/")
+    assert captured["calls"] == 2
+    assert resp.status_code == 200
+    assert resp.data == b'{"v":1}'
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
+    assert "Response is stale" in resp.headers["Warning"]
+
+
+def test_stale_cache_is_not_served_after_stale_window(client, fake_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.STALE_SECONDS + 1)
+
+    fake_get(raises=proxy_app.requests.RequestException("timeout"))
+    resp = client.get("/api/tools/")
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == "upstream unavailable"
+
+
+def test_stale_cache_revalidates_with_conditional_headers(client, fake_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    captured = fake_get(
+        FakeUpstream(
+            200,
+            b'{"v":1}',
+            headers={"etag": '"abc"', "last-modified": "Mon, 01 Jan 2024 00:00:00 GMT"},
+        )
+    )
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+
+    fake_get(FakeUpstream(304, b""))
+    resp = client.get("/api/tools/")
+    assert captured["calls"] == 2
+    assert captured["kwargs"]["headers"]["If-None-Match"] == '"abc"'
+    assert captured["kwargs"]["headers"]["If-Modified-Since"] == "Mon, 01 Jan 2024 00:00:00 GMT"
+    assert resp.status_code == 200
+    assert resp.data == b'{"v":1}'
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "revalidated"
 
 
 # ---- static files ----------------------------------------------------------

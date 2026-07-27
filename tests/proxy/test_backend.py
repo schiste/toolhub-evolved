@@ -20,6 +20,7 @@ import backend  # noqa: E402
 from backend import authz, db, security, sync, toolhub  # noqa: E402
 from backend.models import (
     ActivityRow,
+    ApiCache,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
@@ -127,6 +128,25 @@ def test_db_reconfigure_disposes_and_file_url(tmp_path):
         s.add(User(wm_sub="x", username="y"))
     db.configure("sqlite://")
     db.init_schema()
+
+
+def test_init_schema_creates_persistent_api_cache_table():
+    db.configure("sqlite://")
+    db.init_schema()
+    cols = {col["name"] for col in inspect(db.engine()).get_columns(ApiCache.__tablename__)}
+    assert {
+        "url_hash",
+        "url",
+        "status",
+        "content_type",
+        "body",
+        "fetched_at",
+        "expires_at",
+        "stale_until",
+        "etag",
+        "last_modified",
+        "last_error",
+    }.issubset(cols)
 
 
 def test_session_scope_rolls_back_on_error(app):

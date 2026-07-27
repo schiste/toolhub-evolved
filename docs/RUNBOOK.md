@@ -104,8 +104,16 @@ only after an upstream `404`; server-side crawler ingestion skips names that
 already exist upstream; local edit/annotation overlays strip canonical identity
 fields such as `name` and `origin` before storage or merge.
 
+Read-proxy cache rule: `api_cache` stores only anonymous official Toolhub
+`GET /api/*` responses. It never stores `/v1/user`, OAuth/session responses,
+CSRF-protected writes, or official write payloads made with a user's Toolhub
+grant. Rows are performance artifacts with `fetched_at`, `expires_at`,
+`stale_until`, validators (`etag`, `last_modified`), and `last_error`; they can
+be safely truncated if stale or oversized.
+
 | Data                                         | Visibility                                      | Operational note                                                                                                                                                       |
 | -------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_cache`                                  | Anonymous public Toolhub API payload cache      | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                             |
 | `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                     |
 | `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                              |
 | `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                                 |

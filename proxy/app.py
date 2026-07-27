@@ -13,13 +13,13 @@ and only GET. Official writes go through /v1/toolhub/* with a stored per-user
 OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 """
 
-import time
 from pathlib import Path
 
 import requests
 from flask import Flask, Response, request, send_from_directory
 
 import backend
+from backend import api_cache
 
 HERE = Path(__file__).resolve().parent
 _SOURCE_DIR = (HERE.parent / "public_html").resolve()
@@ -40,8 +40,11 @@ UA = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aep
 _MAX_UPSTREAM_BYTES = 10 * 1024 * 1024
 _CHUNK_BYTES = 64 * 1024
 _UPSTREAM_CACHE = "public, max-age=300"
+_UPSTREAM_STALE_CACHE = "public, max-age=30"
 _VERSIONED_STATIC_CACHE = "public, max-age=31536000, immutable"
 _REVALIDATED_STATIC_CACHE = "no-cache"
+_HTTP_NOT_MODIFIED = 304
+_TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
 
 app = Flask(__name__, static_folder=None)
 backend.register(app)
@@ -51,28 +54,112 @@ backend.register(app)
 # (~100-200ms saved per request — the SPA makes several per page).
 _SESSION = requests.Session()
 
-# Tiny in-process TTL cache for successful upstream GETs: a burst of cold clients
-# hitting a hot endpoint (e.g. /api/ui/home/) collapses to one upstream fetch.
-# Per-worker, bounded, short-lived; the browser also caches 5 min on top.
-_CACHE_TTL_SECONDS = 30
-_CACHE_MAX_ENTRIES = 256
-# url -> (expiry_monotonic, status, content_type, body)
-_ttl_cache: dict[str, tuple[float, int, str, bytes]] = {}
+
+def _cached_api_response(hit: api_cache.CachedResponse, state: str) -> Response:
+    """Build a proxy response from a detached cache hit."""
+    resp = Response(hit.body, status=hit.status, content_type=hit.content_type)
+    resp.headers["Cache-Control"] = _UPSTREAM_STALE_CACHE if hit.stale else _UPSTREAM_CACHE
+    resp.headers["X-Toolhub-Evolved-Cache"] = state
+    if hit.stale:
+        resp.headers["Warning"] = '110 - "Response is stale"'
+    return resp
 
 
-def _cache_get(url: str) -> tuple[int, str, bytes] | None:
-    """Return (status, content_type, body) for a fresh cache hit, else None."""
-    hit = _ttl_cache.get(url)
-    if hit is not None and hit[0] > time.monotonic():
-        return hit[1], hit[2], hit[3]
-    return None
+def _upstream_headers(stale: api_cache.CachedResponse | None = None) -> dict[str, str]:
+    """Headers for anonymous Toolhub API reads, optionally conditional."""
+    headers = {"User-Agent": UA, "Accept": "application/json"}
+    if stale and stale.etag:
+        headers["If-None-Match"] = stale.etag
+    if stale and stale.last_modified:
+        headers["If-Modified-Since"] = stale.last_modified
+    return headers
 
 
-def _cache_put(url: str, status: int, content_type: str, body: bytes) -> None:
-    """Cache a successful upstream payload, bounding the cache size."""
-    if len(_ttl_cache) >= _CACHE_MAX_ENTRIES:
-        _ttl_cache.clear()  # short-lived cache; a wholesale clear is fine as a bound
-    _ttl_cache[url] = (time.monotonic() + _CACHE_TTL_SECONDS, status, content_type, body)
+def _oversize_response() -> Response:
+    """Return the fixed JSON error for an oversized upstream body."""
+    return Response('{"error":"upstream response too large"}', status=502, content_type="application/json")
+
+
+def _unavailable_response() -> Response:
+    """Return the fixed JSON error for an unavailable upstream."""
+    return Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
+
+
+def _fetch_upstream(
+    url: str, stale: api_cache.CachedResponse | None
+) -> tuple[requests.Response | None, bytes | None, Response | None]:
+    """Fetch upstream under the proxy's no-redirect and response-size limits."""
+    try:
+        # allow_redirects=False: this is a fixed-target read-only proxy, so it must
+        # never chase a 3xx the upstream returns (an upstream open redirect would
+        # otherwise become SSRF to whatever host the Location names). A 3xx is
+        # relayed through verbatim instead. stream=True so the body is read under
+        # the size cap below rather than fully buffered by requests up front. The
+        # pooled _SESSION reuses the TCP/TLS connection to the upstream.
+        upstream = _SESSION.get(
+            url,
+            headers=_upstream_headers(stale),
+            timeout=20,
+            allow_redirects=False,
+            stream=True,
+        )
+        body = bytearray()
+        for chunk in upstream.iter_content(_CHUNK_BYTES):
+            body.extend(chunk)
+            if len(body) > _MAX_UPSTREAM_BYTES:
+                upstream.close()
+                return None, None, _oversize_response()
+    except requests.RequestException as exc:
+        api_cache.mark_failure(url, str(exc))
+        if stale is not None:
+            return None, None, _cached_api_response(stale, "stale")
+        return None, None, _unavailable_response()
+    return upstream, bytes(body), None
+
+
+def _freshened_cached_response(stale: api_cache.CachedResponse) -> Response:
+    """Return a stale body as fresh after upstream replied 304."""
+    return _cached_api_response(
+        api_cache.CachedResponse(
+            status=stale.status,
+            content_type=stale.content_type,
+            body=stale.body,
+            stale=False,
+            etag=stale.etag,
+            last_modified=stale.last_modified,
+        ),
+        "revalidated",
+    )
+
+
+def _relay_upstream_response(
+    url: str, upstream: requests.Response, payload: bytes, stale: api_cache.CachedResponse | None
+) -> Response:
+    """Persist/relay an upstream response according to the anonymous read-cache contract."""
+    content_type = upstream.headers.get("content-type", "application/json")
+    if upstream.status_code == _HTTP_NOT_MODIFIED and stale is not None:
+        api_cache.refresh(url)
+        return _freshened_cached_response(stale)
+    # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
+    # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
+    if upstream.ok:
+        api_cache.put_success(
+            url,
+            api_cache.CacheableResponse(
+                status=upstream.status_code,
+                content_type=content_type,
+                body=payload,
+                etag=upstream.headers.get("etag"),
+                last_modified=upstream.headers.get("last-modified"),
+            ),
+        )
+    elif stale is not None and upstream.status_code in _TRANSIENT_UPSTREAM_STATUSES:
+        api_cache.mark_failure(url, f"HTTP {upstream.status_code}")
+        return _cached_api_response(stale, "stale")
+    resp = Response(payload, status=upstream.status_code, content_type=content_type)
+    resp.headers["Cache-Control"] = _UPSTREAM_CACHE if upstream.ok else "no-store"
+    resp.headers["X-Toolhub-Evolved-Cache"] = "miss"
+    return resp
 
 
 # CSP hash of the one inline theme script in index.html (kept inline so the theme
@@ -128,43 +215,16 @@ def api_proxy(path: str) -> Response:
         return Response('{"error":"read-only proxy"}', status=405, content_type="application/json")
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
-    cached = _cache_get(url)
+    cached = api_cache.get(url)
     if cached is not None:
-        status, content_type, body = cached
-        resp = Response(body, status=status, content_type=content_type)
-        resp.headers["Cache-Control"] = _UPSTREAM_CACHE
-        return resp
-    try:
-        # allow_redirects=False: this is a fixed-target read-only proxy, so it must
-        # never chase a 3xx the upstream returns (an upstream open redirect would
-        # otherwise become SSRF to whatever host the Location names). A 3xx is
-        # relayed through verbatim instead. stream=True so the body is read under
-        # the size cap below rather than fully buffered by requests up front. The
-        # pooled _SESSION reuses the TCP/TLS connection to the upstream.
-        upstream = _SESSION.get(
-            url,
-            headers={"User-Agent": UA, "Accept": "application/json"},
-            timeout=20,
-            allow_redirects=False,
-            stream=True,
-        )
-        body = bytearray()
-        for chunk in upstream.iter_content(_CHUNK_BYTES):
-            body.extend(chunk)
-            if len(body) > _MAX_UPSTREAM_BYTES:
-                upstream.close()
-                return Response('{"error":"upstream response too large"}', status=502, content_type="application/json")
-    except requests.RequestException:
-        return Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
-    payload = bytes(body)
-    content_type = upstream.headers.get("content-type", "application/json")
-    # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
-    # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
-    if upstream.ok:
-        _cache_put(url, upstream.status_code, content_type, payload)
-    resp = Response(payload, status=upstream.status_code, content_type=content_type)
-    resp.headers["Cache-Control"] = _UPSTREAM_CACHE if upstream.ok else "no-store"
-    return resp
+        return _cached_api_response(cached, "hit")
+    stale = api_cache.get(url, allow_stale=True)
+    upstream, payload, early = _fetch_upstream(url, stale)
+    if early is not None:
+        return early
+    if upstream is None or payload is None:
+        raise RuntimeError
+    return _relay_upstream_response(url, upstream, payload, stale)
 
 
 @app.route("/", defaults={"path": ""})
