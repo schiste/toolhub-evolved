@@ -379,19 +379,32 @@ test("crawlerUrls add/dedupe/delete", () => {
 	);
 	assert.equal(typeof store.crawlerUrls()[0].added, "string");
 	assert.equal(localStorage.getItem("thdemo:crawlerUrls") !== null, true);
-	// duplicate is ignored
+	// duplicate keeps one row and refreshes metadata
 	store.crawlerUrlAdd("u1");
 	assert.equal(store.crawlerUrls().length, 1);
+	store.crawlerUrlAdd("u1", undefined, { localId: 5, syncStatus: "local_fallback" });
+	assert.equal(store.crawlerUrls()[0].localId, 5);
+	assert.equal(store.crawlerUrls()[0].syncStatus, "local_fallback");
 	// new url is unshifted to the front
 	store.crawlerUrlAdd("u2");
 	assert.deepEqual(
 		store.crawlerUrls().map((x) => x.url),
 		["u2", "u1"]
 	);
+	store.crawlerUrlAdd("u3", 9);
+	assert.equal(store.crawlerUrls()[0].id, 9);
+	assert.equal(store.crawlerUrls()[0].officialId, 9);
+	assert.equal(store.crawlerUrls()[0].syncStatus, "official");
+	store.crawlerUrlAdd("u3", 10);
+	assert.equal(store.crawlerUrls()[0].id, 10);
+	assert.equal(store.crawlerUrls()[0].officialId, 10);
+	store.crawlerUrlAdd("u-local", undefined, { localId: 8, syncStatus: "local_fallback" });
+	assert.equal(store.crawlerUrls()[0].localId, 8);
+	assert.equal(store.crawlerUrls()[0].syncStatus, "local_fallback");
 	store.crawlerUrlDelete("u1");
 	assert.deepEqual(
 		store.crawlerUrls().map((x) => x.url),
-		["u2"]
+		["u-local", "u3", "u2"]
 	);
 });
 

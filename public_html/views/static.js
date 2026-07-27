@@ -265,7 +265,7 @@ export async function viewApiDocs() {
 		html: `
 		<div class="container page">
 			<h1 class="page__title">${t("static.apiDocs.heading", "API documentation")}</h1>
-			<p class="page__intro">Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own <code>/v1/toolhub/*</code> bridge after Toolhub OAuth sign-in.</p>
+			<p class="page__intro">Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own <code>/v1/write/*</code> official-first lifecycle after Toolhub OAuth sign-in.</p>
 			<div class="linkgrid">
 				${linkCard(icon("code"), t("static.apiDocs.interactiveDocs", "Interactive API docs"), t("static.apiDocs.interactiveDocsDesc", "Open the canonical Toolhub API documentation."), "https://toolhub.wikimedia.org/api-docs")}
 				${proxyCard(icon("code"), t("static.apiDocs.openApiSchema", "OpenAPI schema"), t("static.apiDocs.openApiSchemaDesc", "Machine-readable schema served at GET /api/schema/."), "/api/schema/")}

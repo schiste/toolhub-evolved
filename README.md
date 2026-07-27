@@ -32,10 +32,11 @@ origin:
 2. Reverse-proxies read-only `GET /api/*` to `toolhub.wikimedia.org/api/*`.
 3. Hosts the production backend (`proxy/backend/`): Toolhub OAuth sign-in,
    server-side storage of the user's official Toolhub grant, the `/v1/overlay/*`
-   API for Evolved-local data, and the `/v1/toolhub/*` bridge that performs
-   official Toolhub writes on the user's behalf. Upstream catalog data is never
-   mirrored: if a record exists on Toolhub, the live API is its source of truth
-   and our database only holds the delta (see
+   API for Evolved-local data, and the `/v1/write/*` official-first lifecycle
+   that validates locally, checks Evolved policy, attempts Toolhub, and stores
+   sync/fallback metadata. Upstream catalog data is never mirrored: if a record
+   exists on Toolhub, the live API is its source of truth and our database only
+   holds the delta (see
    [`docs/PRODUCTION.md`](docs/PRODUCTION.md)).
 
 The SPA (`public_html/main.js`, `public_html/views/`, and `public_html/lib/`) fetches everything live through `/api/…` — there is
@@ -47,9 +48,9 @@ Signed-out users get live Toolhub reads only. Signed in with Toolhub,
 localStorage acts as a synchronous cache of the server overlay: it is pulled from
 `GET /v1/overlay/` at boot and overlay mutations write through with
 `PUT /v1/overlay/<key>`. Supported create/update/delete actions first call the
-official Toolhub API through `/v1/toolhub/*`; when Toolhub rejects a supported
-draftable write, Evolved keeps the local draft/overlay so the user's work is
-not lost.
+backend lifecycle through `/v1/write/*`; when Toolhub rejects a supported
+draftable write, Evolved stores a local fallback with Toolhub validation details
+so the user's work is not lost.
 
 ## Repository layout
 

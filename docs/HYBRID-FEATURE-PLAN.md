@@ -9,7 +9,7 @@ The product model is deliberately hybrid:
 
 - Toolhub remains the source of truth for official catalog records.
 - Supported signed-in actions publish to official Toolhub first through
-  `/v1/toolhub/*` with the user's Toolhub OAuth grant.
+  `/v1/write/*` with the user's Toolhub OAuth grant.
 - Evolved stores only complementary data: drafts, rejected-write fallbacks,
   local records, synthetic-to-real signals, media, activity rows, and sync
   metadata.
@@ -44,8 +44,9 @@ Backend endpoints already implemented:
 - `GET /v1/user/`, `GET /v1/config/`, `GET /v1/overlay/`
 - `PUT /v1/overlay/<key>` for `favorites`, `lists`, `crawlerUrls`,
   `toolNew`, `toolEdits`, `toolAnnos`, `revisions`, `auditlogs`
-- `/v1/toolhub/*` bridge for official tools, annotations, lists, favorites, and
-  crawler URL writes
+- `/v1/write/*` lifecycle for official-first tools, annotations, lists,
+  favorites, and crawler URL writes; `/v1/toolhub/*` remains as a lower-level
+  compatibility bridge
 - `GET /v1/search/tools/` for Evolved-local tools
 - `GET /v1/tools/<name>/signals/`, `POST /v1/tools/<name>/events/`,
   `POST|DELETE /v1/tools/<name>/thanks/`
@@ -90,11 +91,15 @@ These are prerequisites before expanding any feature deeply.
       Toolhub; official writes still succeed or fail through Toolhub's API.
 
 3. **Local object lifecycle**
+    - Status: implemented baseline for current write families through
+      `/v1/write/*`.
     - Add common created/updated/deleted timestamps and soft-delete where useful.
     - Add "retry official publish" actions for fallback records.
     - Add account-level export/delete for Evolved-owned data.
 
 4. **Activity taxonomy**
+    - Status: structured backend rows are emitted by the official-first write
+      lifecycle while legacy feed shapes remain available to the SPA.
     - Replace generic activity rows with structured rows:
       `kind`, `object_type`, `object_key`, `action`, `actor_user_id`,
       `official_status`, `payload`, `created_at`.

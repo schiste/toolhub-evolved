@@ -33,7 +33,7 @@ function toggleFavorite(name) {
 	const on = toggleFav(name);
 	syncFavButtons(name, on);
 	if (officialWriteAvailable()) {
-		const path = on ? "/v1/toolhub/user/favorites/" : `/v1/toolhub/user/favorites/${encodeURIComponent(name)}/`;
+		const path = on ? "/v1/write/user/favorites/" : `/v1/write/user/favorites/${encodeURIComponent(name)}/`;
 		officialWrite(on ? "POST" : "DELETE", path, on ? { name } : undefined).catch(() => {
 			// Keep the local overlay as a draft if official Toolhub rejects the write.
 		});

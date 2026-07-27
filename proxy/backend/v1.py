@@ -1231,7 +1231,7 @@ def write_favorite_delete(tool_name: str) -> Response:
             _emit_structured_activity(
                 s,
                 user,
-                action="unfavorited",
+                action="favorite-removed",
                 object_type="favorite",
                 object_key=name,
                 official_status=SYNC_OFFICIAL,
@@ -1254,7 +1254,7 @@ def write_favorite_delete(tool_name: str) -> Response:
         _emit_structured_activity(
             s,
             user,
-            action="unfavorited",
+            action="favorite-removed",
             object_type="favorite",
             object_key=name,
             official_status=SYNC_LOCAL_FALLBACK,

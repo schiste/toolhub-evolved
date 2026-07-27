@@ -28,14 +28,14 @@ them automatically.
 Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
 (fine for development, unsafe on NFS under real traffic). Without the OAuth
 vars, `/oauth/login` answers 503 and the site runs with live reads plus
-signed-out read-only mode. Without a stored per-user Toolhub grant, `/v1/toolhub/*`
+signed-out read-only mode. Without a stored per-user Toolhub grant, `/v1/write/*`
 write endpoints answer 401 with `reauth: true`.
 
 ## Evolved-local roles and permissions
 
 Toolhub OAuth is the only sign-in path. A successful login calls official
 Toolhub `GET /api/user/`, maps that identity into the local `users` table, and
-stores the official OAuth grant server-side for `/v1/toolhub/*` writes.
+stores the official OAuth grant server-side for `/v1/write/*` writes.
 
 Evolved permissions are separate from Toolhub permissions:
 
@@ -56,8 +56,8 @@ matching user during login so operators do not need to expose Toolhub OAuth
 tokens or browser-side state.
 
 Official writes are still governed by official Toolhub. An Evolved `admin` can
-ask `/v1/toolhub/*` to call Toolhub with their own stored OAuth grant, but
-Toolhub remains the permission authority and may reject the request.
+ask `/v1/write/*` to call Toolhub with their own stored OAuth grant, but Toolhub
+remains the permission authority and may reject the request.
 
 ## Toolhub OAuth application (one-time)
 
@@ -109,11 +109,11 @@ fields such as `name` and `origin` before storage or merge.
 | `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.      |
 | `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                               |
 | `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                  |
-| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, and sync status.                                               |
+| `lists`                                      | Private/user-visible fallback                   | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, sync status, Toolhub response details, and validation errors.  |
 | `tools`                                      | Local draft or public Evolved feed row          | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion. |
-| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and label provenance in the UI.              |
+| `tool_overlays`                              | User-visible local delta                        | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and keep Toolhub validation metadata.        |
 | `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.          |
-| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs.                                                     |
+| `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.     |
 | `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                |
 | `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                      |
 | `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts are labeled as Evolved data and deleted with the user's local data.                                             |
@@ -177,6 +177,6 @@ then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
 | Site up, catalog empty           | Upstream Toolhub outage — the SPA shows "couldn't load live data"; nothing to do but wait/verify with `curl https://toolhub.wikimedia.org/api/ui/home/` |
 | Sign-in loops to `/?login=error` | Check Toolhub OAuth env vars; callback URL exact? `TOOLHUB_EVOLVED_BASE_URL` needed? `toolhub.wikimedia.org` reachable?                                 |
 | Official writes return 401       | The user's stored grant is absent/expired — ask them to sign in with Toolhub again                                                                      |
-| Official writes return 4xx       | Toolhub rejected validation or permissions; check the response `details` from `/v1/toolhub/*` and revise the payload                                    |
+| Official writes return 4xx       | Toolhub rejected validation or permissions; check the response `details` from `/v1/write/*` and revise the payload                                      |
 | Crawler failure emails           | `toolforge jobs logs crawler`; bad registered URL errors are recorded per-run in `crawler_runs`                                                         |
 | Disk quota                       | `du -sh ~/backups ~/repo`; prune old backups; `git -C ~/repo gc`                                                                                        |

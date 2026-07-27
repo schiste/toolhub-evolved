@@ -7,8 +7,9 @@ Toolhub Evolved runs as a small **Python (Flask) webservice** that does two thin
 2. Reverse-proxies read-only `GET /api/*` to the live Toolhub API
    (`toolhub.wikimedia.org`) **same-origin**, so the browser can read live
    catalog data without hitting CORS (the upstream API sends no CORS headers).
-3. Hosts `/v1/*`: Evolved's overlay API and the `/v1/toolhub/*` bridge that
-   performs official Toolhub writes with the signed-in user's OAuth grant.
+3. Hosts `/v1/*`: Evolved's overlay API and the `/v1/write/*` official-first
+   lifecycle that performs Toolhub writes with the signed-in user's OAuth grant
+   and stores Evolved fallback metadata when appropriate.
 
 The app uses clean History API routes (`/search`, `/tools/:name`, etc.). The
 Flask webservice serves real files when present and falls back to `index.html`
@@ -85,8 +86,9 @@ webservice restart            # or: sh ~/repo/tools/deploy.sh
 - **Read-only proxy.** `proxy/app.py` only ever forwards `GET` to
   `toolhub.wikimedia.org/api/...`. It is not an open proxy and performs no writes.
 - **Official writes.** Authenticated create/update/delete flows call
-  `/v1/toolhub/*`; the backend attaches the stored Toolhub OAuth access token
-  and forwards to official `/api/*`. Tokens are never exposed to the SPA.
+  `/v1/write/*`; the backend validates locally, checks Evolved policy, attaches
+  the stored Toolhub OAuth access token, and forwards to official `/api/*`.
+  Tokens are never exposed to the SPA.
 - **Live endpoints used:** `/api/tools/`, `/api/tools/{name}/`,
   `/api/search/tools/` (faceted), `/api/lists/`, `/api/users/`, `/api/recent/`,
   `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.

@@ -2,7 +2,6 @@
 import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
 import {
-	backendErrorBody,
 	backendErrorMessage,
 	backendGetJson,
 	clearApiCache,
@@ -155,12 +154,40 @@ function officialToolPayload(name, fields, { includeName = true } = {}) {
 }
 
 /**
+ * @param {any} res
+ * @returns {Record<string, any>}
+ */
+function lifecycleMeta(res) {
+	const local = res && typeof res.local === "object" ? res.local : {};
+	const syncStatus =
+		local.syncStatus ||
+		res?.syncStatus ||
+		(res?.result === SYNC_STATUS.official ? SYNC_STATUS.official : SYNC_STATUS.localFallback);
+	/** @type {Record<string, any>} */
+	const meta = {
+		source: local.source || (syncStatus === SYNC_STATUS.official ? SOURCE.official : SOURCE.local),
+		syncStatus,
+		lastSyncedAt: local.lastSyncedAt || res?.lastSyncedAt,
+		lastError: local.lastError || res?.lastError,
+		toolhubResponse: local.toolhubResponse || res?.toolhubResponse,
+		validationErrors: local.validationErrors || res?.validationErrors,
+		officialId: local.officialId,
+		officialName: local.officialName,
+		visibility: local.visibility,
+		reviewStatus: local.reviewStatus
+	};
+	for (const key of Object.keys(meta)) if (meta[key] === undefined) delete meta[key];
+	return meta;
+}
+
+/**
  * @param {string} name
  * @param {Record<string, any>} fields
  * @param {boolean} editing
  * @param {Record<string, any>} [meta]
+ * @param {{ log?: boolean }} [options]
  */
-function saveLocalToolDraft(name, fields, editing, meta = {}) {
+function saveLocalToolDraft(name, fields, editing, meta = {}, options = {}) {
 	const stamped = stampSyncMeta(
 		{ ...fields, visibility: "private" },
 		{ source: SOURCE.local, syncStatus: SYNC_STATUS.localFallback, ...meta }
@@ -169,13 +196,13 @@ function saveLocalToolDraft(name, fields, editing, meta = {}) {
 		const m = toolEditsMap();
 		m[name] = stamped;
 		demoStore.set(DEMO_KEYS.toolEdits, m);
-		logActivity("edited", name, fields.title);
+		if (options.log !== false) logActivity("edited", name, fields.title);
 		return;
 	}
 	const m = toolNewMap();
 	m[name] = stamped;
 	demoStore.set(DEMO_KEYS.toolNew, m);
-	logActivity(editing ? "edited" : "created", name, fields.title);
+	if (options.log !== false) logActivity(editing ? "edited" : "created", name, fields.title);
 }
 
 /** @param {string} name */
@@ -444,26 +471,34 @@ export async function viewToolForm(name) {
 				out.className = "at__result";
 				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
 				try {
-					await officialWrite(
+					const res = await officialWrite(
 						editing ? "PUT" : "POST",
-						editing ? `/v1/toolhub/tools/${encodeURIComponent(tname)}/` : "/v1/toolhub/tools/",
+						editing ? `/v1/write/tools/${encodeURIComponent(tname)}/` : "/v1/write/tools/",
 						officialToolPayload(tname, fields, { includeName: !editing })
 					);
+					if (res?.result === SYNC_STATUS.localFallback) {
+						saveLocalToolDraft(tname, fields, editing, lifecycleMeta(res), { log: false });
+						out.className = "at__result at__result--err";
+						out.textContent = t(
+							"toolforms.officialWriteFailed",
+							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+							{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+						);
+						return;
+					}
 					clearLocalToolDraft(tname);
 					clearApiCache();
 					navigateTo(toolHref(tname));
 					return;
 				} catch (error) {
 					const msg = backendErrorMessage(error);
-					saveLocalToolDraft(tname, fields, editing, {
-						lastError: msg,
-						toolhubResponse: backendErrorBody(error)
-					});
 					out.className = "at__result at__result--err";
 					out.textContent = t(
-						"toolforms.officialWriteFailed",
-						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg }
+						"toolforms.officialWriteFailedNoDraft",
+						"Official Toolhub did not accept the write: {msg}",
+						{
+							msg
+						}
 					);
 					return;
 				}
@@ -473,7 +508,16 @@ export async function viewToolForm(name) {
 		});
 		const rev = $("[data-tf-revert]");
 		if (rev) {
-			rev.addEventListener("click", () => {
+			rev.addEventListener("click", async () => {
+				if (officialWriteAvailable()) {
+					await officialWrite(
+						"DELETE",
+						`/v1/write/tools/${encodeURIComponent(/** @type {string} */ (name))}/fallback/`,
+						{
+							kind: "edit"
+						}
+					).catch(() => undefined);
+				}
 				const m = toolEditsMap();
 				delete m[/** @type {string} */ (name)];
 				demoStore.set(DEMO_KEYS.toolEdits, m);
@@ -482,7 +526,16 @@ export async function viewToolForm(name) {
 		}
 		const del = $("[data-tf-delete]");
 		if (del) {
-			del.addEventListener("click", () => {
+			del.addEventListener("click", async () => {
+				if (officialWriteAvailable()) {
+					await officialWrite(
+						"DELETE",
+						`/v1/write/tools/${encodeURIComponent(/** @type {string} */ (name))}/fallback/`,
+						{
+							kind: "new"
+						}
+					).catch(() => undefined);
+				}
 				const m = toolNewMap();
 				delete m[/** @type {string} */ (name)];
 				demoStore.set(DEMO_KEYS.toolNew, m);
@@ -498,7 +551,7 @@ export async function viewToolForm(name) {
 				try {
 					await officialWrite(
 						"DELETE",
-						`/v1/toolhub/tools/${encodeURIComponent(/** @type {string} */ (name))}/`
+						`/v1/write/tools/${encodeURIComponent(/** @type {string} */ (name))}/`
 					);
 					clearLocalToolDraft(/** @type {string} */ (name));
 					clearApiCache();
@@ -538,8 +591,9 @@ export function viewAddTools() {
 							/** @type {{ url: string, id?: number, officialId?: number, syncStatus?: string, syncLabel?: string, lastError?: string }} */ x
 						) => {
 							const officialId = x.officialId ?? x.id;
+							const localId = /** @type {{ localId?: number }} */ (x).localId;
 							const label = x.syncLabel || syncStatusLabel(x.syncStatus);
-							return `<li><code class="at__url">${esc(x.url)}</code> <span class="exp-badge">${esc(label)}</span>${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}` })}</li>`;
+							return `<li><code class="at__url">${esc(x.url)}</code> <span class="exp-badge">${esc(label)}</span>${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}${localId ? ` data-url-local-id="${localId}"` : ""}` })}</li>`;
 						}
 					)
 					.join("")
@@ -622,39 +676,43 @@ export function viewAddTools() {
 			}
 			if (!u) return;
 			const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
-			let officialId,
-				officialRegistered = false;
 			if (officialWriteAvailable()) {
 				out.className = "at__result";
 				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
 				try {
-					const res = await officialWrite("POST", "/v1/toolhub/crawler/urls/", { url: u });
-					officialId = res?.toolhub?.id;
-					officialRegistered = true;
-					out.className = "at__result at__result--ok";
-					out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
+					const res = await officialWrite("POST", "/v1/write/crawler/urls/", { url: u });
+					const local = res?.local || {};
+					const officialId =
+						local.officialId ??
+						(res?.result === SYNC_STATUS.official && typeof res?.toolhub?.id === "number"
+							? res.toolhub.id
+							: undefined);
+					const meta = lifecycleMeta(res);
+					if (typeof local.localId === "number") meta.localId = local.localId;
+					crawlerUrlAdd(local.url || u, officialId, meta);
+					if (res?.result === SYNC_STATUS.localFallback) {
+						out.className = "at__result at__result--err";
+						out.textContent = t(
+							"toolforms.officialWriteFailed",
+							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+							{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+						);
+					} else {
+						out.className = "at__result at__result--ok";
+						out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
+					}
 				} catch (error) {
 					const msg = backendErrorMessage(error);
 					out.className = "at__result at__result--err";
 					out.textContent = t(
-						"toolforms.officialWriteFailed",
-						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg }
+						"toolforms.officialWriteFailedNoDraft",
+						"Official Toolhub did not accept the write: {msg}",
+						{
+							msg
+						}
 					);
-					crawlerUrlAdd(u, undefined, {
-						source: SOURCE.local,
-						syncStatus: SYNC_STATUS.localFallback,
-						lastError: msg,
-						toolhubResponse: backendErrorBody(error)
-					});
+					return;
 				}
-			}
-			if (typeof officialId === "number") {
-				crawlerUrlAdd(u, officialId);
-			} else if (officialRegistered) {
-				crawlerUrlAdd(u, undefined, { source: SOURCE.official, syncStatus: SYNC_STATUS.official });
-			} else if (officialWriteAvailable()) {
-				// The failure path above already stored the local fallback with its error.
 			} else {
 				out.className = "at__result at__result--err";
 				out.textContent = toolhubSignInRequiredMessage();
@@ -668,10 +726,13 @@ export function viewAddTools() {
 			const b = /** @type {EventTarget} */ (e.target).closest("[data-url-rm]");
 			if (!b) return;
 			const officialId = b.getAttribute("data-url-id");
+			const localId = b.getAttribute("data-url-local-id");
 			if (officialWriteAvailable() && officialId) {
-				officialWrite("DELETE", `/v1/toolhub/crawler/urls/${officialId}/`).catch(() => {
+				officialWrite("DELETE", `/v1/write/crawler/urls/${officialId}/`).catch(() => {
 					// Keep local removal responsive; the user can re-register if upstream delete failed.
 				});
+			} else if (officialWriteAvailable() && localId) {
+				officialWrite("DELETE", `/v1/write/crawler/urls/${localId}/fallback/`).catch(() => undefined);
 			}
 			crawlerUrlDelete(/** @type {string} */ (b.getAttribute("data-url-rm")));
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
@@ -747,24 +808,34 @@ export async function viewAnnotationsEdit(name) {
 				out.className = "at__result";
 				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
 				try {
-					await officialWrite(
+					const res = await officialWrite(
 						"PUT",
-						`/v1/toolhub/tools/${encodeURIComponent(name)}/annotations/`,
+						`/v1/write/tools/${encodeURIComponent(name)}/annotations/`,
 						officialAnnotationPayload(anno)
 					);
+					if (res?.result === SYNC_STATUS.localFallback) {
+						saveLocalAnnotationDraft(name, anno, lifecycleMeta(res));
+						out.className = "at__result at__result--err";
+						out.textContent = t(
+							"toolforms.officialWriteFailed",
+							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+							{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+						);
+						return;
+					}
 					clearLocalAnnotationDraft(name);
 					clearApiCache();
 					navigateTo(toolHref(name));
 					return;
 				} catch (error) {
 					const msg = backendErrorMessage(error);
-					saveLocalAnnotationDraft(name, anno, { lastError: msg, toolhubResponse: backendErrorBody(error) });
-					logActivity("annotated", name, cur.title);
 					out.className = "at__result at__result--err";
 					out.textContent = t(
-						"toolforms.officialWriteFailed",
-						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg }
+						"toolforms.officialWriteFailedNoDraft",
+						"Official Toolhub did not accept the write: {msg}",
+						{
+							msg
+						}
 					);
 					return;
 				}
@@ -774,7 +845,12 @@ export async function viewAnnotationsEdit(name) {
 		});
 		const rev = $("[data-an-revert]");
 		if (rev) {
-			rev.addEventListener("click", () => {
+			rev.addEventListener("click", async () => {
+				if (officialWriteAvailable()) {
+					await officialWrite("DELETE", `/v1/write/tools/${encodeURIComponent(name)}/fallback/`, {
+						kind: "annotations"
+					}).catch(() => undefined);
+				}
 				const m = toolAnnosMap();
 				delete m[name];
 				demoStore.set(DEMO_KEYS.toolAnnos, m);

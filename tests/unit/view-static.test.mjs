@@ -107,7 +107,7 @@ test("viewApiDocs lists sorted proxy endpoints from the API root", async () => {
 	assert.deepEqual(api.apiGet.mock.calls[0], ["/"]);
 	assert.equal(view.title, "API documentation — Toolhub");
 	assert.ok(view.html.includes("Evolved reads the live catalog through a same-origin proxy"));
-	assert.ok(view.html.includes("<code>/v1/toolhub/*</code> bridge"));
+	assert.ok(view.html.includes("<code>/v1/write/*</code> official-first lifecycle"));
 	assert.ok(view.html.includes("official OAuth tokens stay server-side"));
 	assert.ok(view.html.indexOf("<code>GET /api/lists/</code>") < view.html.indexOf("<code>GET /api/search/</code>"));
 	assert.ok(view.html.indexOf("<code>GET /api/search/</code>") < view.html.indexOf("<code>GET /api/tools/</code>"));

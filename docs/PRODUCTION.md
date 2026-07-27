@@ -47,14 +47,16 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
 
 - **Backend** (`proxy/backend/`): ToolsDB/SQLite via SQLAlchemy, official
   Toolhub OAuth 2.0, stored per-user Toolhub grants, sessions + CSRF + rate
-  limiting, the `/v1` overlay API, `/v1/toolhub/*` official write bridge,
-  `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed.
+  limiting, the `/v1` overlay API, `/v1/write/*` official-first lifecycle,
+  `/v1/search/tools/`, `/healthz`, the `/toolinfo.json` feeder feed. The lower
+  level `/v1/toolhub/*` bridge remains available for compatibility and smoke
+  checks.
 - **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
   the only sign-in path, while local `users.role` permission sets (`user`,
   `reviewer`, `admin`) gate Evolved-owned data/actions through
   `can(user, action, resource)`. Elevated Evolved roles never bypass official
-  Toolhub permissions; `/v1/toolhub/*` still calls Toolhub with the user's own
-  OAuth grant and accepts Toolhub's decision.
+  Toolhub permissions; `/v1/write/*` still calls Toolhub with the user's own
+  OAuth grant and accepts Toolhub's decision before storing any Evolved fallback.
 - **Frontend sync** (`lib/core/serversync.js`): real sign-in; localStorage as a
   write-through cache of the server overlay; signed-out write paths are removed
   from the production UI.
@@ -83,8 +85,9 @@ over unchanged, one level up:
   `toolhub.wikimedia.org` through the same-origin read proxy. We do not fork or
   mirror the upstream catalog; upstream tools always render from live data.
 - **Officially supported writes go back to Toolhub.** Toolhub OAuth gives
-  Evolved a per-user grant. The browser calls `/v1/toolhub/*`; the backend
-  attaches the access token and forwards to official `/api/*`.
+  Evolved a per-user grant. The browser calls `/v1/write/*`; the backend
+  validates locally, checks Evolved policy, attaches the access token, forwards
+  to official `/api/*`, and records sync/fallback metadata.
 - **Evolved keeps the additional layer.** Drafts/fallbacks, local overlays,
   local activity rows, and any feature Toolhub does not expose live in our
   database and sync into the browser's localStorage cache.
@@ -101,8 +104,10 @@ Browser (SPA, public_html/)
   │  GET /api/*   ──────────────►  read proxy ──► toolhub.wikimedia.org (live, read-only)
   │  GET/POST/PUT/DELETE /v1/overlay/* ─► Evolved API ─► ToolsDB: drafts,
   │                                                        overlays, local state
-  │  POST/PUT/DELETE /v1/toolhub/* ─────► Evolved API ─► toolhub.wikimedia.org/api
-  │                                                        using stored OAuth grant
+  │  POST/PUT/DELETE /v1/write/* ───────► Evolved API ─► toolhub.wikimedia.org/api
+  │                                      │                 using stored OAuth grant
+  │                                      └──────────────► ToolsDB: sync metadata,
+  │                                                        fallback rows, activity
   └  GET /oauth/* ─────────────────────► Toolhub OAuth (/o/authorize/, /o/token/)
 
 Toolforge Jobs framework (scheduled)
@@ -203,10 +208,10 @@ via a documented one-liner.
 
 ### P2 — First real features: favorites + lists (~1.5 weeks)
 
-- Favorites use `/v1/toolhub/user/favorites/` for official add/delete when
+- Favorites use `/v1/write/user/favorites/` for official add/delete when
   signed in, with the local overlay as the responsive cache/fallback after an
   authenticated write attempt.
-- Lists use `/v1/toolhub/lists/…` for official create/update/delete when
+- Lists use `/v1/write/lists/…` for official create/update/delete when
   Toolhub permits it. Evolved draft lists remain local fallback data, rendered
   alongside live upstream lists with provenance labels.
 - Evolved-only writes append local `revisions`/`audit_log` rows; official
@@ -214,11 +219,11 @@ via a documented one-liner.
 
 ### P3 — Tool submit / edit / annotations (~2 weeks)
 
-- `POST /v1/toolhub/tools/`, `PUT/DELETE /v1/toolhub/tools/{name}/` — official
+- `POST /v1/write/tools/`, `PUT/DELETE /v1/write/tools/{name}/` — official
   Toolhub remains the permission authority. Core edits are attempted against
   Toolhub; rejected writes become local Evolved drafts/overlays where that is
   honest to display.
-- `PUT /v1/toolhub/tools/{name}/annotations/` publishes community annotations
+- `PUT /v1/write/tools/{name}/annotations/` publishes community annotations
   through official Toolhub first, falling back to the Evolved overlay if
   rejected.
 - Server-side render-time merge parity: detail pages, cards, and "my
@@ -228,7 +233,7 @@ via a documented one-liner.
 
 ### P4 — Crawler (~1.5 weeks)
 
-- `/v1/toolhub/crawler/urls/` CRUD (auth required) + `Add or remove tools` page
+- `/v1/write/crawler/urls/` CRUD (auth required) + `Add or remove tools` page
   writes official Toolhub crawler URL registrations when permitted.
 - Toolforge Jobs framework scheduled job (e.g. hourly): fetch each registered
   URL, validate against toolinfo 1.2.2, upsert `tools`, record `crawler_runs`

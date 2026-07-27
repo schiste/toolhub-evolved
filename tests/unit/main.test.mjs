@@ -259,16 +259,8 @@ test("#view: favorite add/remove writes to official Toolhub when signed in", asy
 	click($('#view [data-fav="tool-a"]'));
 	click($('#view [data-fav="tool-a"]'));
 	await Promise.resolve();
-	assert.deepEqual(serversync.officialWrite.mock.calls[0], [
-		"POST",
-		"/v1/toolhub/user/favorites/",
-		{ name: "tool-a" }
-	]);
-	assert.deepEqual(serversync.officialWrite.mock.calls[1], [
-		"DELETE",
-		"/v1/toolhub/user/favorites/tool-a/",
-		undefined
-	]);
+	assert.deepEqual(serversync.officialWrite.mock.calls[0], ["POST", "/v1/write/user/favorites/", { name: "tool-a" }]);
+	assert.deepEqual(serversync.officialWrite.mock.calls[1], ["DELETE", "/v1/write/user/favorites/tool-a/", undefined]);
 });
 
 test("#view: favorite official-write rejection leaves the local favorite state intact", async () => {
@@ -280,11 +272,7 @@ test("#view: favorite official-write rejection leaves the local favorite state i
 	await Promise.resolve();
 	assert.deepEqual(store.toggleFav.mock.calls[0], ["tool-a"]);
 	assert.deepEqual(favbtn.syncFavButtons.mock.calls[0], ["tool-a", true]);
-	assert.deepEqual(serversync.officialWrite.mock.calls[0], [
-		"POST",
-		"/v1/toolhub/user/favorites/",
-		{ name: "tool-a" }
-	]);
+	assert.deepEqual(serversync.officialWrite.mock.calls[0], ["POST", "/v1/write/user/favorites/", { name: "tool-a" }]);
 });
 
 test("#view: clicking add-to-list toggles state and swaps the mark icon", () => {

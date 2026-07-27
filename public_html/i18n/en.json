@@ -230,6 +230,7 @@
 	"lists.toolOne": "tool",
 	"lists.toolOther": "tools",
 	"lists.tools": "Tools",
+	"lists.unknownOfficialError": "Unknown Toolhub error",
 	"lists.untitledList": "Untitled list",
 	"lists.yourLists": "Your lists",
 	"lists.yourListsDocTitle": "Your lists — Toolhub",
@@ -595,6 +596,7 @@
 	"toolforms.officialDeleteFailed": "Official Toolhub did not delete the tool: {msg}",
 	"toolforms.officialUrlRegistered": "Registered with official Toolhub.",
 	"toolforms.officialWriteFailed": "Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+	"toolforms.officialWriteFailedNoDraft": "Official Toolhub did not accept the write: {msg}",
 	"toolforms.publishingToToolhub": "Publishing to official Toolhub…",
 	"toolforms.register": "Register",
 	"toolforms.registerUrlTitle": "Register a toolinfo.json URL",
@@ -609,5 +611,6 @@
 	"toolforms.toolOne": "tool",
 	"toolforms.toolOther": "tools",
 	"toolforms.unknownMaintainer": "Unknown maintainer",
+	"toolforms.unknownOfficialError": "Unknown Toolhub error",
 	"toolforms.yourToolsTitle": "Your tools"
 }

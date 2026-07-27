@@ -25,9 +25,8 @@ export const SOURCE = {
 };
 /* ===== Evolved overlay store — localStorage cache, namespaced. Holds the
    user-created delta (favorites, lists, drafts, annotations) layered onto live
-   data while Evolved features are on. With a real session these keys sync to
-   Evolved's backend; supported flows may also publish to official Toolhub via
-   /v1/toolhub/* first. */
+   data. With a real session these keys sync to Evolved's backend; supported
+   flows publish through the backend's /v1/write/* official-first lifecycle. */
 export const DEMO_NS = "thdemo:";
 /* ---- Server write-through hook (production sync) ------------------------
    When a real session exists, serversync.js registers a handler here and every
@@ -262,7 +261,7 @@ export function listToolToggle(id, name) {
 	return i === -1;
 }
 /* ===== Tool overlays — edits / annotations / new submissions ===============
-   Official writes are attempted through /v1/toolhub/* when signed in. These
+   Official writes are attempted through /v1/write/* when signed in. These
    COMPACT-shaped records remain the local Evolved draft/fallback layer merged
    onto live Toolhub data by applyToolOverlay(). */
 /**
@@ -322,18 +321,19 @@ export function demoRevisionsFor(name) {
 }
 // Evolved crawler registration cache. Official URL writes go to Toolhub first;
 // local URLs and pasted Toolinfo are stored in Evolved.
-/** @returns {Array<{ url: string, added: string, id?: number, officialId?: number } & SyncMeta>} */
+/** @returns {Array<{ url: string, added: string, id?: number, officialId?: number, localId?: number } & SyncMeta>} */
 export function crawlerUrls() {
 	return demoStore.get(DEMO_KEYS.crawlerUrls, []);
 }
 /**
  * @param {string} url
  * @param {number | undefined} [id]
- * @param {Partial<SyncMeta>} [meta]
+ * @param {(Partial<SyncMeta> & { localId?: number })} [meta]
  */
 export function crawlerUrlAdd(url, id, meta = {}) {
 	const a = crawlerUrls();
 	const existing = a.find((x) => x.url === url);
+	const localId = typeof meta.localId === "number" && Number.isFinite(meta.localId) ? meta.localId : undefined;
 	const nextMeta =
 		id === undefined
 			? meta
@@ -343,10 +343,18 @@ export function crawlerUrlAdd(url, id, meta = {}) {
 			existing.id = id;
 			existing.officialId = id;
 		}
+		if (localId !== undefined) existing.localId = localId;
 		stampSyncMeta(existing, nextMeta);
 		demoStore.set(DEMO_KEYS.crawlerUrls, a);
 	} else {
-		const row = stampSyncMeta({ url, id, officialId: id, added: new Date().toISOString() }, nextMeta);
+		/** @type {{ url: string, added: string, id?: number, officialId?: number, localId?: number }} */
+		const row = { url, added: new Date().toISOString() };
+		if (id !== undefined) {
+			row.id = id;
+			row.officialId = id;
+		}
+		if (localId !== undefined) row.localId = localId;
+		stampSyncMeta(row, nextMeta);
 		a.unshift(row);
 		demoStore.set(DEMO_KEYS.crawlerUrls, a);
 	}

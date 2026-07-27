@@ -33,9 +33,10 @@ import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
 
-/** @param {{ title: string, description: string, tools: string[] }} list */
+/** @param {{ id: string, title: string, description: string, tools: string[] }} list */
 function officialListPayload(list) {
 	return {
+		clientId: list.id,
 		title: list.title,
 		description: list.description || null,
 		published: true,
@@ -46,6 +47,30 @@ function officialListPayload(list) {
 
 function toolhubSignInRequiredMessage() {
 	return t("lists.signInRequired", "Toolhub sign-in is required before saving lists.");
+}
+
+/**
+ * @param {any} res
+ * @returns {Record<string, any>}
+ */
+function lifecycleMeta(res) {
+	const local = res && typeof res.local === "object" ? res.local : {};
+	const syncStatus =
+		local.syncStatus ||
+		res?.syncStatus ||
+		(res?.result === SYNC_STATUS.official ? SYNC_STATUS.official : SYNC_STATUS.localFallback);
+	/** @type {Record<string, any>} */
+	const meta = {
+		source: local.source || (syncStatus === SYNC_STATUS.official ? SOURCE.official : SOURCE.local),
+		syncStatus,
+		lastSyncedAt: local.lastSyncedAt || res?.lastSyncedAt,
+		lastError: local.lastError || res?.lastError,
+		toolhubResponse: local.toolhubResponse || res?.toolhubResponse,
+		validationErrors: local.validationErrors || res?.validationErrors,
+		officialId: local.officialId
+	};
+	for (const key of Object.keys(meta)) if (meta[key] === undefined) delete meta[key];
+	return meta;
 }
 
 /* ---- Lists overview + list detail -------------------------------------- */
@@ -197,11 +222,6 @@ function officialListSource(fallbackId, raw) {
  * @returns {{ title: string, html: string, mount: () => void }}
  */
 function renderListEdit(src, { editing, officialEditing }) {
-	if (!src) {
-		return /** @type {{ title: string, html: string, mount: () => void }} */ (
-			/** @type {unknown} */ (viewNotFound())
-		);
-	}
 	const work = {
 		id: src.id,
 		title: src.title || "",
@@ -321,9 +341,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 				renderTools();
 				b.disabled = true;
 				b.classList.add("is-in");
-				const ic = b.querySelector(".icon");
-				// Stryker disable next-line ConditionalExpression: every result button is rendered with an .icon child, so `ic` is always found — defensive guard.
-				if (ic) ic.outerHTML = icon("check");
+				/** @type {HTMLElement} */ (b.querySelector(".icon")).outerHTML = icon("check");
 			}
 		});
 		/** @type {HTMLElement} */ ($("[data-le-form]")).addEventListener("submit", async (e) => {
@@ -342,33 +360,46 @@ function renderListEdit(src, { editing, officialEditing }) {
 				try {
 					const res = await officialWrite(
 						officialEditing ? "PUT" : "POST",
-						officialEditing ? `/v1/toolhub/lists/${encodeURIComponent(work.id)}/` : "/v1/toolhub/lists/",
+						officialEditing ? `/v1/write/lists/${encodeURIComponent(work.id)}/` : "/v1/write/lists/",
 						officialListPayload(work)
 					);
-					if (!officialEditing) demoListDelete(work.id);
+					const local = res?.local && typeof res.local === "object" ? res.local : null;
+					if (local) {
+						demoListSave(
+							{
+								id: String(local.id || work.id),
+								title: local.title || work.title,
+								description: local.description || work.description,
+								tools: Array.isArray(local.tools) ? local.tools : work.tools
+							},
+							lifecycleMeta(res)
+						);
+					} else if (!officialEditing) {
+						demoListDelete(work.id);
+					}
+					if (res?.result === SYNC_STATUS.localFallback) {
+						out.className = "at__result at__result--err";
+						out.textContent = t(
+							"lists.officialWriteFailed",
+							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+							{ msg: res.lastError || t("lists.unknownOfficialError", "Unknown Toolhub error") }
+						);
+						return;
+					}
 					clearApiCache();
 					const officialId = res?.toolhub?.id;
 					navigateTo(officialId ? listHref(String(officialId)) : listHref(work.id));
 					return;
 				} catch (error) {
 					const msg = backendErrorMessage(error);
-					if (!officialEditing) {
-						demoListSave(work, {
-							source: SOURCE.local,
-							syncStatus: SYNC_STATUS.localFallback,
-							lastError: msg
-						});
-					}
 					out.className = "at__result at__result--err";
-					out.textContent = officialEditing
-						? t("lists.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
-								msg
-							})
-						: t(
-								"lists.officialWriteFailed",
-								"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-								{ msg }
-							);
+					out.textContent = t(
+						"lists.officialWriteFailedNoDraft",
+						"Official Toolhub did not accept the write: {msg}",
+						{
+							msg
+						}
+					);
 					return;
 				}
 			}
@@ -383,7 +414,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 					out.className = "at__result";
 					out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
 					try {
-						await officialWrite("DELETE", `/v1/toolhub/lists/${encodeURIComponent(work.id)}/`);
+						await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/`);
 						clearApiCache();
 						navigateTo("/lists");
 						return;
@@ -398,6 +429,14 @@ function renderListEdit(src, { editing, officialEditing }) {
 						);
 						return;
 					}
+				}
+				if (officialWriteAvailable()) {
+					await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/fallback/`).catch(
+						() => undefined
+					);
+					demoListDelete(work.id);
+					navigateTo("/my-lists");
+					return;
 				}
 				out.className = "at__result at__result--err";
 				out.textContent = toolhubSignInRequiredMessage();

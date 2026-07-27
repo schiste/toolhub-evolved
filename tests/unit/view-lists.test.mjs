@@ -69,6 +69,23 @@ const { ApiError } = await import("../../public_html/lib/core/api.js");
 const lists = await import("../../public_html/views/lists.js");
 const { viewNotFound } = await import("../../public_html/views/static.js");
 
+function localFallbackResponse(lastError, local = {}) {
+	const toolhubResponse = { message: lastError };
+	return {
+		result: "local_fallback",
+		syncStatus: "local_fallback",
+		lastError,
+		toolhubResponse,
+		local: {
+			source: "local",
+			syncStatus: "local_fallback",
+			lastError,
+			toolhubResponse,
+			...local
+		}
+	};
+}
+
 const S = {
 	detail_demo: `
 	<div class="container page">
@@ -552,10 +569,23 @@ test("viewListEdit live 404 → viewNotFound", async () => {
 	assert.deepEqual(r, viewNotFound());
 });
 
+test("viewListEdit malformed live response → viewNotFound", async () => {
+	h.demoListGet.mockReturnValue(null);
+	h.apiGet.mockResolvedValue(null);
+	const r = await lists.viewListEdit("gone");
+	assert.deepEqual(r, viewNotFound());
+});
+
 test("viewListEdit live non-404 errors bubble to the app error boundary", async () => {
 	h.demoListGet.mockReturnValue(null);
 	h.apiGet.mockRejectedValue(new ApiError(503, "/api/lists/down/"));
 	await assert.rejects(lists.viewListEdit("down"), /API 503/);
+});
+
+test("viewListEdit create without a local draft source → viewNotFound", async () => {
+	h.demoListNew.mockReturnValue(null);
+	const r = lists.viewListEdit(null);
+	assert.deepEqual(r, viewNotFound());
 });
 
 /* ---------------- viewListEdit mount ---------------- */
@@ -626,6 +656,13 @@ test("mount edit: search renders results and add appends a tool", async () => {
 	const results = document.querySelector("[data-le-results]");
 	// "a" already in list → disabled result; "c" addable
 	assert.ok(results.querySelector('[data-add="a"]').hasAttribute("disabled"));
+	results.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	results.insertAdjacentHTML("beforeend", '<button class="le__result" type="button" data-add="a"></button>');
+	results.querySelectorAll('[data-add="a"]')[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.deepEqual(
+		[...document.querySelectorAll("[data-le-tools] [data-tn]")].map((li) => li.getAttribute("data-tn")),
+		["a"]
+	);
 	const addC = results.querySelector('[data-add="c"]');
 	assert.ok(!addC.hasAttribute("disabled"));
 	addC.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -701,8 +738,9 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"POST",
-		"/v1/toolhub/lists/",
+		"/v1/write/lists/",
 		{
+			clientId: "new-1",
 			title: "Official List",
 			description: "Shared list",
 			published: true,
@@ -714,6 +752,67 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 	assert.equal(h.demoListSave.mock.calls.length, 0);
 	assert.equal(h.clearApiCache.mock.calls.length, 1);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/42"]);
+});
+
+test("mount create: Toolhub validation fallback stores a local list with provenance", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue(
+		localFallbackResponse("permission denied", {
+			id: "new-1",
+			title: "Official List",
+			description: "Shared list",
+			tools: ["alpha"],
+			validationErrors: [{ field: "title", message: "Not allowed." }]
+		})
+	);
+	mountEdit(null, { id: "new-1", title: "", description: "", tools: ["alpha"] });
+	document.querySelector("#le-title").value = "Official List";
+	document.querySelector("#le-desc").value = "Shared list";
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.demoListSave.mock.calls[0], [
+		{
+			id: "new-1",
+			title: "Official List",
+			description: "Shared list",
+			tools: ["alpha"]
+		},
+		{
+			source: "local",
+			syncStatus: "local_fallback",
+			lastError: "permission denied",
+			toolhubResponse: { message: "permission denied" },
+			validationErrors: [{ field: "title", message: "Not allowed." }]
+		}
+	]);
+	assert.equal(h.demoListDelete.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("permission denied"));
+});
+
+test("mount create: sparse Toolhub fallback uses form values and an unknown-error message", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({
+		result: "local_fallback",
+		syncStatus: "local_fallback",
+		local: { source: "local", syncStatus: "local_fallback" }
+	});
+	mountEdit(null, { id: "new-1", title: "", description: "", tools: ["alpha"] });
+	document.querySelector("#le-title").value = "Official List";
+	document.querySelector("#le-desc").value = "Shared list";
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.demoListSave.mock.calls[0], [
+		{
+			id: "new-1",
+			title: "Official List",
+			description: "Shared list",
+			tools: ["alpha"]
+		},
+		{ source: "local", syncStatus: "local_fallback" }
+	]);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("Unknown Toolhub error"));
 });
 
 test("mount official edit: rejected Toolhub write shows an error without creating a draft", async () => {
@@ -728,8 +827,9 @@ test("mount official edit: rejected Toolhub write shows an error without creatin
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"PUT",
-		"/v1/toolhub/lists/7/",
+		"/v1/write/lists/7/",
 		{
+			clientId: "7",
 			title: "Official edited",
 			description: "old",
 			published: true,
@@ -740,6 +840,21 @@ test("mount official edit: rejected Toolhub write shows an error without creatin
 	assert.equal(h.demoListSave.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("permission denied"));
+});
+
+test("mount official edit: successful write without returned id stays on the current list", async () => {
+	h.apiGet.mockResolvedValue({ id: 7, title: "Official", description: "old", tools: ["alpha"] });
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official", toolhub: {} });
+	const r = await lists.viewListEdit("7");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("#le-title").value = "Official edited";
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.demoListSave.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/7"]);
 });
 
 test("mount edit: submit with empty title focuses title and does not save", () => {
@@ -761,6 +876,17 @@ test("mount edit: delete without Toolhub sign-in is blocked", () => {
 	);
 });
 
+test("mount edit: deleting a local fallback list discards it in Evolved", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("discard failed"));
+	mountEdit("demo-1", { id: "demo-1", title: "T", description: "", tools: [] });
+	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/lists/demo-1/fallback/"]);
+	assert.deepEqual(h.demoListDelete.mock.calls[0], ["demo-1"]);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/my-lists"]);
+});
+
 test("mount official edit: delete publishes to official Toolhub", async () => {
 	h.apiGet.mockResolvedValue({ id: 7, title: "Official", description: "", tools: ["alpha"] });
 	h.officialWriteAvailable.mockReturnValue(true);
@@ -769,7 +895,7 @@ test("mount official edit: delete publishes to official Toolhub", async () => {
 	r.mount();
 	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/lists/7/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/lists/7/"]);
 	assert.equal(h.demoListDelete.mock.calls.length, 0);
 	assert.equal(h.clearApiCache.mock.calls.length, 1);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists"]);
@@ -784,7 +910,7 @@ test("mount official edit: rejected delete shows an error", async () => {
 	r.mount();
 	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/lists/7/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/lists/7/"]);
 	assert.equal(h.demoListDelete.mock.calls.length, 0);
 	assert.equal(h.clearApiCache.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);

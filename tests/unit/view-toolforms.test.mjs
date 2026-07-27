@@ -81,6 +81,23 @@ const { viewNotFound } = await import("../../public_html/views/static.js");
 const { DEMO_KEYS } = await import("../../public_html/lib/core/store.js");
 const tick = () => new Promise((res) => setTimeout(res, 0));
 
+function localFallbackResponse(lastError, local = {}) {
+	const toolhubResponse = { message: lastError };
+	return {
+		result: "local_fallback",
+		syncStatus: "local_fallback",
+		lastError,
+		toolhubResponse,
+		local: {
+			source: "local",
+			syncStatus: "local_fallback",
+			lastError,
+			toolhubResponse,
+			...local
+		}
+	};
+}
+
 const S = {
 	addtools: `
 	<div class="container page at">
@@ -623,7 +640,7 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"POST",
-		"/v1/toolhub/tools/",
+		"/v1/write/tools/",
 		{
 			title: "New Tool",
 			description: "A description",
@@ -649,21 +666,46 @@ test("mount create: signed-in submit publishes to official Toolhub first", async
 	assert.equal(h.logActivity.mock.calls.length, 0);
 });
 
-test("mount create: rejected official Toolhub write falls back to a local draft", async () => {
+test("mount create: Toolhub validation fallback stores a local draft with provenance", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockRejectedValue(new Error("validation failed"));
+	h.officialWrite.mockResolvedValue(
+		localFallbackResponse("validation failed", {
+			validationErrors: [{ field: "url", message: "Enter a valid URL." }]
+		})
+	);
 	await mountToolForm(null);
 	setVal("tf-name", "new-tool");
 	setVal("tf-title", "New Tool");
 	setVal("tf-url", "https://example.org");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["POST", "/v1/toolhub/tools/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["POST", "/v1/write/tools/"]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolNew);
-	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["new-tool"].title, "New Tool");
-	assert.deepEqual(h.logActivity.mock.calls[0], ["created", "new-tool", "New Tool"]);
+	const saved = h.demoStoreSet.mock.calls[0][1]["new-tool"];
+	assert.equal(saved.title, "New Tool");
+	assert.equal(saved.syncStatus, "local_fallback");
+	assert.equal(saved.lastError, "validation failed");
+	assert.deepEqual(saved.toolhubResponse, { message: "validation failed" });
+	assert.deepEqual(saved.validationErrors, [{ field: "url", message: "Enter a valid URL." }]);
+	assert.equal(h.logActivity.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("validation failed"));
+});
+
+test("mount create: backend transport failure does not create a local draft", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	await mountToolForm(null);
+	setVal("tf-name", "new-tool");
+	setVal("tf-title", "New Tool");
+	setVal("tf-url", "https://example.org");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["POST", "/v1/write/tools/"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.logActivity.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
 });
 
 test("mount edit: valid submit without Toolhub sign-in is blocked", async () => {
@@ -703,7 +745,7 @@ test("mount edit: signed-in submit publishes official tool update", async () => 
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"PUT",
-		"/v1/toolhub/tools/my-tool/",
+		"/v1/write/tools/my-tool/",
 		{
 			title: "Renamed",
 			description: "Updated description",
@@ -724,9 +766,9 @@ test("mount edit: signed-in submit publishes official tool update", async () => 
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
 });
 
-test("mount edit: rejected official Toolhub write falls back to a local edit draft", async () => {
+test("mount edit: Toolhub validation fallback stores a local edit draft with provenance", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockRejectedValue(new Error("validation failed"));
+	h.officialWrite.mockResolvedValue(localFallbackResponse("validation failed"));
 	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", url: "https://x.example", origin: "api" }));
 	h.toolEditsMap.mockReturnValue({});
 	h.isNewTool.mockReturnValue(false);
@@ -735,10 +777,14 @@ test("mount edit: rejected official Toolhub write falls back to a local edit dra
 	setVal("tf-url", "https://x.example/updated");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/toolhub/tools/my-tool/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/"]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
-	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["my-tool"].title, "Renamed");
-	assert.deepEqual(h.logActivity.mock.calls[0], ["edited", "my-tool", "Renamed"]);
+	const saved = h.demoStoreSet.mock.calls[0][1]["my-tool"];
+	assert.equal(saved.title, "Renamed");
+	assert.equal(saved.syncStatus, "local_fallback");
+	assert.equal(saved.lastError, "validation failed");
+	assert.deepEqual(saved.toolhubResponse, { message: "validation failed" });
+	assert.equal(h.logActivity.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("validation failed"));
 });
 
@@ -827,11 +873,15 @@ test("mount create: duplicate name shows an error and does not save", async () =
 });
 
 test("mount edit (existing): revert button clears the demo edit and navigates", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("discard failed"));
 	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "T", url: "https://x.example", origin: "api" }));
 	h.isNewTool.mockReturnValue(false);
 	h.toolEditsMap.mockReturnValue({ "my-tool": { title: "edited" } });
 	await mountToolForm("my-tool");
 	document.querySelector("[data-tf-revert]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/my-tool/fallback/", { kind: "edit" }]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
 	assert.deepEqual(h.demoStoreSet.mock.calls[0][1], {}, "edit entry deleted");
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
@@ -844,7 +894,7 @@ test("mount edit (existing official): delete publishes official Toolhub delete",
 	await mountToolForm("my-tool");
 	document.querySelector("[data-tf-official-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/tools/my-tool/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/my-tool/"]);
 	assert.deepEqual(
 		h.demoStoreSet.mock.calls.map((call) => call[0]),
 		[DEMO_KEYS.toolEdits, DEMO_KEYS.toolNew]
@@ -861,7 +911,7 @@ test("mount edit (existing official): rejected official delete shows error and s
 	await mountToolForm("my-tool");
 	document.querySelector("[data-tf-official-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/tools/my-tool/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/my-tool/"]);
 	assert.equal(h.demoStoreSet.mock.calls.length, 0);
 	assert.equal(h.clearApiCache.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
@@ -869,11 +919,15 @@ test("mount edit (existing official): rejected official delete shows error and s
 });
 
 test("mount edit (new tool): delete button removes the submission and navigates", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("discard failed"));
 	h.getTool.mockResolvedValue(toolFixture("brand-new", { title: "T", url: "https://x.example" }));
 	h.isNewTool.mockReturnValue(true);
 	h.toolNewMap.mockReturnValue({ "brand-new": {} });
 	await mountToolForm("brand-new");
 	document.querySelector("[data-tf-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/brand-new/fallback/", { kind: "new" }]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolNew);
 	assert.deepEqual(h.demoStoreSet.mock.calls[0][1], {});
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/add-or-remove-tools"]);
@@ -1020,7 +1074,11 @@ test("mount addtools: valid url without Toolhub sign-in is blocked", () => {
 
 test("mount addtools: signed-in URL registration stores the official crawler id", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockResolvedValue({ ok: true, toolhub: { id: 9 } });
+	h.officialWrite.mockResolvedValue({
+		result: "official",
+		syncStatus: "official",
+		toolhub: { id: 9 }
+	});
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
 	r.mount();
@@ -1030,16 +1088,20 @@ test("mount addtools: signed-in URL registration stores the official crawler id"
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"POST",
-		"/v1/toolhub/crawler/urls/",
+		"/v1/write/crawler/urls/",
 		{ url: "https://added.example/toolinfo.json" }
 	]);
-	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], ["https://added.example/toolinfo.json", 9]);
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://added.example/toolinfo.json",
+		9,
+		{ source: "official", syncStatus: "official" }
+	]);
 	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
 });
 
 test("mount addtools: signed-in URL registration without an id is kept as official", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockResolvedValue({ ok: true, toolhub: {} });
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official", toolhub: {} });
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
 	r.mount();
@@ -1055,9 +1117,14 @@ test("mount addtools: signed-in URL registration without an id is kept as offici
 	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
 });
 
-test("mount addtools: rejected official URL registration keeps a local URL", async () => {
+test("mount addtools: Toolhub rejection keeps a local URL fallback", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockRejectedValue(new Error("upstream refused"));
+	h.officialWrite.mockResolvedValue(
+		localFallbackResponse("upstream refused", {
+			localId: 13,
+			url: "https://added.example/toolinfo.json"
+		})
+	);
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
 	r.mount();
@@ -1068,9 +1135,50 @@ test("mount addtools: rejected official URL registration keeps a local URL", asy
 	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
 		"https://added.example/toolinfo.json",
 		undefined,
-		{ source: "local", syncStatus: "local_fallback", lastError: "upstream refused", toolhubResponse: null }
+		{
+			source: "local",
+			syncStatus: "local_fallback",
+			lastError: "upstream refused",
+			toolhubResponse: { message: "upstream refused" },
+			localId: 13
+		}
 	]);
 	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("upstream refused"));
+});
+
+test("mount addtools: sparse Toolhub fallback keeps the submitted URL with unknown-error text", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({
+		result: "local_fallback",
+		syncStatus: "local_fallback",
+		local: { source: "local", syncStatus: "local_fallback" }
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("at-url", "https://added.example/toolinfo.json");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://added.example/toolinfo.json",
+		undefined,
+		{ source: "local", syncStatus: "local_fallback" }
+	]);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("Unknown Toolhub error"));
+});
+
+test("mount addtools: backend transport failure does not create a local URL", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("at-url", "https://added.example/toolinfo.json");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+	assert.equal(document.querySelector("#at-url").value, "https://added.example/toolinfo.json");
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("session expired"));
 });
 
 test("mount addtools: invalid url is rejected (focused, not added)", () => {
@@ -1115,7 +1223,7 @@ test("mount addtools: removing an official url asks Toolhub to delete it", () =>
 	document
 		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
 		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/crawler/urls/12/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/crawler/urls/12/"]);
 	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
 });
 
@@ -1131,7 +1239,25 @@ test("mount addtools: failed official url delete still removes the local url", a
 		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
 		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/toolhub/crawler/urls/12/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/crawler/urls/12/"]);
+	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
+});
+
+test("mount addtools: removing a local fallback url discards it in Evolved", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("discard failed"));
+	h.crawlerUrls.mockReturnValue([
+		{ url: "https://x.example/toolinfo.json", localId: 13, source: "local", syncStatus: "local_fallback" }
+	]);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([]);
+	document
+		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
+		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/crawler/urls/13/fallback/"]);
 	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
 });
 
@@ -1240,7 +1366,7 @@ test("mount annotations: signed-in submit publishes official annotations", async
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"PUT",
-		"/v1/toolhub/tools/my-tool/annotations/",
+		"/v1/write/tools/my-tool/annotations/",
 		{
 			audiences: ["editor", "admin"],
 			tasks: ["editing"],
@@ -1255,9 +1381,9 @@ test("mount annotations: signed-in submit publishes official annotations", async
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
 });
 
-test("mount annotations: rejected official write falls back locally", async () => {
+test("mount annotations: Toolhub rejection stores a local annotation fallback", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockRejectedValue(new Error("not allowed"));
+	h.officialWrite.mockResolvedValue(localFallbackResponse("not allowed"));
 	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool" }));
 	h.toolAnnosMap.mockReturnValue({});
 	const r = await tf.viewAnnotationsEdit("my-tool");
@@ -1266,7 +1392,7 @@ test("mount annotations: rejected official write falls back locally", async () =
 	setVal("an-aud", "editor");
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
 	await tick();
-	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/toolhub/tools/my-tool/annotations/"]);
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/annotations/"]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
 	assert.deepEqual(h.demoStoreSet.mock.calls[0][1]["my-tool"], {
 		audiences: ["editor"],
@@ -1276,12 +1402,48 @@ test("mount annotations: rejected official write falls back locally", async () =
 		source: "local",
 		syncStatus: "local_fallback",
 		lastError: "not allowed",
-		toolhubResponse: null,
+		toolhubResponse: { message: "not allowed" },
 		syncLabel: "Local fallback"
 	});
-	assert.deepEqual(h.logActivity.mock.calls[0], ["annotated", "my-tool", "My Tool"]);
+	assert.equal(h.logActivity.mock.calls.length, 0);
 	assert.equal(h.navigateTo.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("not allowed"));
+});
+
+test("mount annotations: sparse Toolhub fallback shows an unknown-error message", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({
+		result: "local_fallback",
+		syncStatus: "local_fallback",
+		local: { source: "local", syncStatus: "local_fallback" }
+	});
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool" }));
+	h.toolAnnosMap.mockReturnValue({});
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("an-aud", "editor");
+	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("Unknown Toolhub error"));
+});
+
+test("mount annotations: backend transport failure shows an error without local fallback", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("session expired"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool" }));
+	h.toolAnnosMap.mockReturnValue({});
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("an-aud", "editor");
+	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/annotations/"]);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
 });
 
 test("mount annotations: revert deletes the annotation and navigates", async () => {
@@ -1293,6 +1455,25 @@ test("mount annotations: revert deletes the annotation and navigates", async () 
 	document.querySelector("[data-an-revert]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
 	assert.deepEqual(h.demoStoreSet.mock.calls[0][1], {});
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
+});
+
+test("mount annotations: signed-in revert discards annotation fallback in Evolved", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("discard failed"));
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool" }));
+	h.toolAnnosMap.mockReturnValue({ "my-tool": {} });
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-an-revert]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"DELETE",
+		"/v1/write/tools/my-tool/fallback/",
+		{ kind: "annotations" }
+	]);
+	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
 });
 
