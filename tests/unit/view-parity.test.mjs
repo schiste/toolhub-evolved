@@ -56,6 +56,10 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	assert.equal(store.demoFeed.mock.calls[0][0], DEMO_KEYS.revisions);
 
 	assert.match(view.html, /<table class="recent-table">/);
+	assert.match(view.html, /<div class="recent-controls__filters">/);
+	assert.match(view.html, /<div class="recent-controls__sortbar">/);
+	assert.match(view.html, /<col class="recent-table__col recent-table__col--owner">/);
+	assert.match(view.html, /<col class="recent-table__col recent-table__col--updated-by">/);
 	assert.match(
 		view.html,
 		/<a class="recent-table__item" href="\/tools\/my-tool"><strong dir="auto">My Tool<\/strong>/
@@ -72,7 +76,10 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 		/<td data-label="Comment" class="recent-table__comment"><span dir="auto">Initial listing<\/span><\/td>/
 	);
 	assert.match(view.html, /<th scope="col"><a href="\/recent\?sort=owner">Tool owner<\/a><\/th>/);
-	assert.match(view.html, /<th scope="col" aria-sort="descending"><a href="\/recent\?dir=asc">Updated/);
+	assert.match(
+		view.html,
+		/<th scope="col" aria-sort="descending"><a href="\/recent\?dir=asc">Updated<span class="recent-table__sort recent-table__sort--desc" aria-hidden="true"><\/span>/
+	);
 	assert.doesNotMatch(view.html, /recent-summary|recent-stat__/);
 	assert.doesNotMatch(view.html, /feed__ic recent-row__ic/);
 });

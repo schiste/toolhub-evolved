@@ -250,7 +250,7 @@ function recentSortHeader(state, sort, label) {
 	const nextDir = active ? (state.dir === "asc" ? "desc" : "asc") : firstDir;
 	const aria = active ? ` aria-sort="${state.dir === "asc" ? "ascending" : "descending"}"` : "";
 	const marker = active
-		? `<span class="recent-table__sort" aria-hidden="true">${state.dir === "asc" ? "^" : "v"}</span>`
+		? `<span class="recent-table__sort recent-table__sort--${esc(state.dir)}" aria-hidden="true"></span>`
 		: "";
 	return `<th scope="col"${aria}><a href="${recentHref(state, { sort, dir: nextDir })}">${esc(label)}${marker}</a></th>`;
 }
@@ -324,21 +324,35 @@ export async function viewRecent() {
 				<p class="page__intro">${t("parity.recentIntroHybrid", "Live Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
 			</header>
 			<form class="recent-controls" id="recent-filter-form">
-				<label class="recent-control recent-control--wide"><span class="recent-control__label">${t("parity.searchRecent", "Search")}</span><input class="le__input" id="recent-q" type="search" value="${esc(state.q)}" placeholder="${t("parity.searchRecentPlaceholder", "Title, id, comment, owner...")}"></label>
-				<label class="sort recent-control"><span class="recent-control__label">${t("parity.type", "Type")}</span><select id="recent-show">${showOptions}</select></label>
-				<label class="sort recent-control"><span class="recent-control__label">${t("parity.reviewState", "Review state")}</span><select id="recent-status">${statusOptions}</select></label>
-				<label class="recent-control"><span class="recent-control__label">${t("parity.toolOwner", "Tool owner")}</span><input class="le__input" id="recent-owner" type="search" value="${esc(state.owner)}"></label>
-				<label class="recent-control"><span class="recent-control__label">${t("parity.lastUpdatedBy", "Last updated by")}</span><input class="le__input" id="recent-user" type="search" value="${esc(state.user)}"></label>
-				<label class="sort recent-control"><span class="recent-control__label">${t("parity.sortBy", "Sort by")}</span><select id="recent-sort">${sortOptions}</select></label>
-				<label class="sort recent-control"><span class="recent-control__label">${t("parity.direction", "Direction")}</span><select id="recent-dir">${dirOptions}</select></label>
-				<div class="recent-actions">
-					<button class="btn btn--primary" type="submit">${t("parity.applyFilters", "Apply")}</button>
-					<a class="btn btn--subtle" href="/recent">${t("parity.clearFilters", "Clear")}</a>
+				<div class="recent-controls__filters">
+					<label class="recent-control recent-control--wide"><span class="recent-control__label">${t("parity.searchRecent", "Search")}</span><input class="le__input" id="recent-q" type="search" value="${esc(state.q)}" placeholder="${t("parity.searchRecentPlaceholder", "Title, id, comment, owner...")}"></label>
+					<label class="recent-control"><span class="recent-control__label">${t("parity.type", "Type")}</span><select id="recent-show">${showOptions}</select></label>
+					<label class="recent-control"><span class="recent-control__label">${t("parity.reviewState", "Review state")}</span><select id="recent-status">${statusOptions}</select></label>
+					<label class="recent-control"><span class="recent-control__label">${t("parity.toolOwner", "Tool owner")}</span><input class="le__input" id="recent-owner" type="search" value="${esc(state.owner)}"></label>
+					<label class="recent-control"><span class="recent-control__label">${t("parity.lastUpdatedBy", "Last updated by")}</span><input class="le__input" id="recent-user" type="search" value="${esc(state.user)}"></label>
+				</div>
+				<div class="recent-controls__sortbar">
+					<label class="recent-control recent-control--sort"><span class="recent-control__label">${t("parity.sortBy", "Sort by")}</span><select id="recent-sort">${sortOptions}</select></label>
+					<label class="recent-control recent-control--dir"><span class="recent-control__label">${t("parity.direction", "Direction")}</span><select id="recent-dir">${dirOptions}</select></label>
+					<div class="recent-actions">
+						<button class="btn btn--primary" type="submit">${t("parity.applyFilters", "Apply")}</button>
+						<a class="btn btn--subtle" href="/recent">${t("parity.clearFilters", "Clear")}</a>
+					</div>
 				</div>
 			</form>
 			<div class="recent-table-wrap">
 				<table class="recent-table">
 					<caption class="skip-label">${t("parity.recentChangesTable", "Recent changes table")}</caption>
+					<colgroup>
+						<col class="recent-table__col recent-table__col--item">
+						<col class="recent-table__col recent-table__col--type">
+						<col class="recent-table__col recent-table__col--owner">
+						<col class="recent-table__col recent-table__col--updated-by">
+						<col class="recent-table__col recent-table__col--action">
+						<col class="recent-table__col recent-table__col--review">
+						<col class="recent-table__col recent-table__col--updated">
+						<col class="recent-table__col recent-table__col--comment">
+					</colgroup>
 					<thead><tr>${headers}</tr></thead>
 					<tbody>${rows || `<tr><td class="recent-empty" colspan="8">${t("parity.noRecentChanges", "No recent changes.")}</td></tr>`}</tbody>
 				</table>
