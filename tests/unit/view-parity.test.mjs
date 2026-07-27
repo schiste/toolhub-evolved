@@ -19,10 +19,18 @@ vi.mock("../../public_html/lib/core/store.js", async (importOriginal) => {
 
 // Clear call history (but keep the demoFeed pass-through impl) so each test inspects
 // only its own apiGet/demoFeed calls.
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+	vi.clearAllMocks();
+	localStorage.clear();
+	document.body.innerHTML = "";
+});
 
 const setSearch = (search) => window.history.replaceState({}, "", `/recent${search}`);
 const ISO = "2019-01-01T00:00:00Z";
+const tick = () =>
+	new Promise((resolve) => {
+		setTimeout(resolve, 0);
+	});
 
 /* ---- viewRecent -------------------------------------------------------- */
 
@@ -50,7 +58,7 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 
 	assert.equal(view.title, "Recent changes — Toolhub");
 	assert.deepEqual(api.apiGet.mock.calls[0], ["/recent/", { page_size: "30" }]);
-	assert.deepEqual(api.apiGet.mock.calls[1], ["/tools/my-tool/"]);
+	assert.equal(api.apiGet.mock.calls.length, 1);
 	// demoFeed merges under the revisions key.
 	const store = await import("../../public_html/lib/core/store.js");
 	assert.equal(store.demoFeed.mock.calls[0][0], DEMO_KEYS.revisions);
@@ -66,7 +74,10 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	);
 	assert.match(view.html, /<span class="recent-table__id" dir="auto">my-tool<\/span>/);
 	assert.match(view.html, /<span class="recent-chip recent-chip--tools">Tool<\/span>/);
-	assert.match(view.html, /<td data-label="Tool owner"><span dir="auto">Ada Maintainer<\/span><\/td>/);
+	assert.match(
+		view.html,
+		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span class="recent-table__muted">—<\/span><\/td>/
+	);
 	assert.match(view.html, /<td data-label="Last updated by"><span dir="auto">alice<\/span><\/td>/);
 	assert.match(view.html, /<td data-label="Action">Created<\/td>/);
 	assert.match(view.html, /<span class="recent-chip recent-chip--unknown">Review unknown<\/span>/);
@@ -82,6 +93,87 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	);
 	assert.doesNotMatch(view.html, /recent-summary|recent-stat__/);
 	assert.doesNotMatch(view.html, /feed__ic recent-row__ic/);
+
+	document.body.innerHTML = view.html;
+	view.mount?.();
+	await tick();
+	assert.deepEqual(api.apiGet.mock.calls[1], ["/tools/my-tool/"]);
+	assert.match(
+		document.body.innerHTML,
+		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span dir="auto">Ada Maintainer<\/span><\/td>/
+	);
+});
+
+test("viewRecent: cached owner enrichment renders synchronously and skips repeated detail fetches", async () => {
+	setSearch("");
+	api.apiGet.mockImplementation((path) => {
+		if (path === "/recent/") {
+			return Promise.resolve({
+				results: [
+					{
+						content_type: "tool",
+						content_id: "my-tool",
+						content_title: "My Tool",
+						timestamp: ISO
+					}
+				]
+			});
+		}
+		if (path === "/tools/my-tool/") return Promise.resolve({ author: [{ name: "Ada Maintainer" }] });
+		return Promise.reject(new Error(`unexpected ${path}`));
+	});
+	const first = await viewRecent();
+	document.body.innerHTML = first.html;
+	first.mount?.();
+	await tick();
+	assert.equal(api.apiGet.mock.calls.filter((call) => call[0] === "/tools/my-tool/").length, 1);
+
+	vi.clearAllMocks();
+	api.apiGet.mockImplementation((path) => {
+		if (path === "/recent/") {
+			return Promise.resolve({
+				results: [
+					{
+						content_type: "tool",
+						content_id: "my-tool",
+						content_title: "My Tool",
+						timestamp: ISO
+					}
+				]
+			});
+		}
+		return Promise.reject(new Error(`unexpected ${path}`));
+	});
+	const second = await viewRecent();
+	assert.match(
+		second.html,
+		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span dir="auto">Ada Maintainer<\/span><\/td>/
+	);
+	assert.deepEqual(api.apiGet.mock.calls, [["/recent/", { page_size: "30" }]]);
+});
+
+test("viewRecent: progressive owner enrichment dedupes repeated tools", async () => {
+	setSearch("");
+	api.apiGet.mockImplementation((path) => {
+		if (path === "/recent/") {
+			return Promise.resolve({
+				results: [
+					{ content_type: "tool", content_id: "same-tool", content_title: "One", timestamp: ISO },
+					{ content_type: "tool", content_id: "same-tool", content_title: "Two", timestamp: ISO }
+				]
+			});
+		}
+		if (path === "/tools/same-tool/") return Promise.resolve({ author: [{ name: "One Owner" }] });
+		return Promise.reject(new Error(`unexpected ${path}`));
+	});
+	const view = await viewRecent();
+	document.body.innerHTML = view.html;
+	view.mount?.();
+	await tick();
+
+	assert.equal(api.apiGet.mock.calls.filter((call) => call[0] === "/tools/same-tool/").length, 1);
+	assert.equal(document.querySelectorAll('[data-recent-owner-tool="same-tool"] span[dir="auto"]').length, 2);
+	assert.match(document.body.innerHTML, /One Owner/);
 });
 
 test("viewRecent: a list change uses content_id when title is absent and links via listHref", async () => {
@@ -243,8 +335,12 @@ test("viewRecent: text filters can narrow by owner, updater and free text", asyn
 		return Promise.reject(new Error(`unexpected ${path}`));
 	});
 	const view = await viewRecent();
-	assert.match(view.html, />Alpha</);
-	assert.doesNotMatch(view.html, />Beta</);
+	assert.doesNotMatch(view.html, />Alpha</);
+	document.body.innerHTML = view.html;
+	view.mount?.();
+	await tick();
+	assert.match(document.body.innerHTML, />Alpha</);
+	assert.doesNotMatch(document.body.innerHTML, />Beta</);
 	assert.match(view.html, /id="recent-owner" type="search" value="ada"/);
 	assert.match(view.html, /id="recent-user" type="search" value="alice"/);
 	assert.match(view.html, /id="recent-q" type="search" value="fixed"/);
@@ -310,7 +406,10 @@ test("viewRecent: an API failure yields the empty placeholder", async () => {
 	setSearch("");
 	api.apiGet.mockRejectedValue(new Error("down"));
 	const view = await viewRecent();
-	assert.match(view.html, /<tbody><tr><td class="recent-empty" colspan="8">No recent changes\.<\/td><\/tr><\/tbody>/);
+	assert.match(
+		view.html,
+		/<tbody data-recent-body><tr><td class="recent-empty" colspan="8">No recent changes\.<\/td><\/tr><\/tbody>/
+	);
 });
 
 test("viewRecent: a response with no results array also shows the placeholder", async () => {

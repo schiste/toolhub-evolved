@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt, t, timeTag } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
 import { listHref, navigateTo, toolHref } from "../lib/core/routing.js";
-import { DEMO_KEYS, demoFeed } from "../lib/core/store.js";
+import { DEMO_KEYS, demoFeed, recentOwnerCacheGet, recentOwnerCacheSet } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { icon } from "../lib/atoms/icon.js";
 import { metaItem } from "../lib/atoms/labels.js";
@@ -36,6 +36,8 @@ const RECENT_DIRECTIONS = [
 	{ value: "desc", label: t("parity.descending", "Descending") },
 	{ value: "asc", label: t("parity.ascending", "Ascending") }
 ];
+const RECENT_OWNER_FETCH_CONCURRENCY = 4;
+const recentOwnerInflight = new Map();
 /**
  * @param {{ content_type?: string }} r
  * @returns {string}
@@ -106,27 +108,67 @@ function ownerFromRecentRow(r) {
 	if (r.created_by && r.created_by.username) return String(r.created_by.username);
 	return "";
 }
+/** @param {any} r */
+function recentToolName(r) {
+	return r.content_type === "tool" && r.content_id ? String(r.content_id) : "";
+}
 /** @param {any[]} rows */
-async function enrichRecentOwners(rows) {
-	const names = [
-		...new Set(
-			rows
-				.filter((r) => r.content_type === "tool" && r.content_id && !ownerFromRecentRow(r))
-				.map((r) => String(r.content_id))
-		)
-	];
-	const entries = await Promise.all(
-		names.map((name) =>
-			apiGet(`/tools/${encodeURIComponent(name)}/`)
-				.then((tool) => /** @type {[string, string]} */ ([name, ownerFromToolRecord(tool)]))
-				.catch(() => /** @type {[string, string]} */ ([name, ""]))
-		)
-	);
-	const ownerByName = new Map(entries);
+function applyCachedRecentOwners(rows) {
 	return rows.map((r) => ({
 		...r,
-		_recentOwner: ownerFromRecentRow(r) || ownerByName.get(String(r.content_id)) || ""
+		_recentOwner:
+			ownerFromRecentRow(r) || (recentToolName(r) ? recentOwnerCacheGet(recentToolName(r)) : undefined) || ""
 	}));
+}
+/** @param {any[]} rows */
+function missingOwnerNames(rows) {
+	return [
+		...new Set(
+			rows
+				.filter(
+					(r) =>
+						recentToolName(r) &&
+						!ownerFromRecentRow(r) &&
+						recentOwnerCacheGet(recentToolName(r)) === undefined
+				)
+				.map((r) => recentToolName(r))
+		)
+	];
+}
+/** @param {string} name */
+function fetchRecentOwner(name) {
+	const cached = recentOwnerCacheGet(name);
+	if (cached !== undefined) return Promise.resolve(cached);
+	if (recentOwnerInflight.has(name)) return recentOwnerInflight.get(name);
+	const promise = apiGet(`/tools/${encodeURIComponent(name)}/`)
+		.then((tool) => ownerFromToolRecord(tool))
+		.catch(() => "")
+		.then((owner) => {
+			recentOwnerCacheSet(name, owner);
+			return owner;
+		})
+		.finally(() => {
+			recentOwnerInflight.delete(name);
+		});
+	recentOwnerInflight.set(name, promise);
+	return promise;
+}
+/**
+ * @param {string[]} names
+ * @param {(name: string, owner: string) => void} onOwner
+ */
+async function enrichRecentOwnersProgressively(names, onOwner) {
+	const queue = [...names];
+	const workerCount = Math.min(RECENT_OWNER_FETCH_CONCURRENCY, queue.length);
+	await Promise.all(
+		Array.from({ length: workerCount }, async () => {
+			while (queue.length > 0) {
+				const name = queue.shift();
+				if (!name) continue;
+				onOwner(name, await fetchRecentOwner(name));
+			}
+		})
+	);
 }
 /**
  * @param {Array<any>} rows
@@ -264,6 +306,67 @@ function recentComment(comment) {
 		? `<button class="recent-comment" type="button" aria-expanded="false"><span class="recent-comment__text"${dirAttrs(comment)}>${esc(comment)}</span></button>`
 		: `<span class="recent-table__muted">—</span>`;
 }
+/** @param {any[]} rows @param {{ show: string, status: string, sort: string, dir: string, q: string, owner: string, user: string }} state */
+function visibleRecentRows(rows, state) {
+	const byType = state.show === "all" ? rows : rows.filter((r) => recentFilterKey(r) === state.show);
+	const byStatus = state.status === "all" ? byType : byType.filter((r) => recentReviewState(r) === state.status);
+	return sortRecentRows(
+		byStatus.filter((r) => recentTextFiltersMatch(r, state)),
+		state.sort,
+		state.dir
+	);
+}
+/** @param {any} r */
+function recentRowHTML(r) {
+	const title = esc(recentTitle(r));
+	const who = recentUpdatedBy(r);
+	const type = String(r.content_type || t("parity.item", "item"));
+	const reviewState = recentReviewState(r);
+	const typeKey = recentFilterKey(r);
+	const toolName = recentToolName(r);
+	const contentId = r.content_id
+		? `<span class="recent-table__id"${dirAttrs(r.content_id)}>${esc(r.content_id)}</span>`
+		: "";
+	const link =
+		r.content_type === "tool" && r.content_id
+			? toolHref(r.content_id)
+			: r.content_type === "list" && r.content_id
+				? listHref(r.content_id)
+				: null;
+	const item = link
+		? `<a class="recent-table__item" href="${link}"><strong dir="auto">${title}</strong>${contentId}</a>`
+		: `<span class="recent-table__item"><strong dir="auto">${title}</strong>${contentId}</span>`;
+	const ownerCellAttr = toolName ? ` data-recent-owner-tool="${esc(toolName)}"` : "";
+	return `<tr>
+		<td data-label="${t("parity.itemTitle", "Item")}">${item}</td>
+		<td data-label="${t("parity.type", "Type")}"><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span></td>
+		<td data-label="${t("parity.toolOwner", "Tool owner")}"${ownerCellAttr}>${recentDash(ownerFromRecentRow(r))}</td>
+		<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}"><span${dirAttrs(who)}>${esc(who)}</span></td>
+		<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
+		<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
+		<td data-label="${t("parity.updatedAt", "Updated")}">${timeTag(r.timestamp)}</td>
+		<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentComment(r.comment)}</td>
+	</tr>`;
+}
+/** @param {any[]} rows @param {{ show: string, status: string, sort: string, dir: string, q: string, owner: string, user: string }} state */
+function recentRowsHTML(rows, state) {
+	return (
+		visibleRecentRows(rows, state)
+			.map((r) => recentRowHTML(r))
+			.join("") ||
+		`<tr><td class="recent-empty" colspan="8">${t("parity.noRecentChanges", "No recent changes.")}</td></tr>`
+	);
+}
+/** @param {HTMLElement} root @param {string} toolName @param {string} owner */
+function updateRecentOwnerCells(root, toolName, owner) {
+	for (const cell of $$("[data-recent-owner-tool]", root)) {
+		if (cell.getAttribute("data-recent-owner-tool") === toolName) cell.innerHTML = recentDash(owner);
+	}
+}
+/** @param {{ sort: string, q: string, owner: string }} state */
+function ownerSensitiveRecentState(state) {
+	return Boolean(state.owner || state.q || state.sort === "owner");
+}
 
 // Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
 export async function viewRecent() {
@@ -271,11 +374,7 @@ export async function viewRecent() {
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
 	// Local Evolved edits appear at the top of the live feed.
-	const merged = await enrichRecentOwners(demoFeed(DEMO_KEYS.revisions, data.results || []));
-	const byType = state.show === "all" ? merged : merged.filter((r) => recentFilterKey(r) === state.show);
-	const byStatus = state.status === "all" ? byType : byType.filter((r) => recentReviewState(r) === state.status);
-	const filtered = byStatus.filter((r) => recentTextFiltersMatch(r, state));
-	const sorted = sortRecentRows(filtered, state.sort, state.dir);
+	const merged = applyCachedRecentOwners(demoFeed(DEMO_KEYS.revisions, data.results || []));
 	const showOptions = recentSelectOptions(RECENT_FILTERS, state.show);
 	const statusOptions = recentSelectOptions(RECENT_STATUS_FILTERS, state.status);
 	const sortOptions = recentSelectOptions(RECENT_SORTS, state.sort);
@@ -290,37 +389,6 @@ export async function viewRecent() {
 		recentSortHeader(state, "updated", t("parity.updatedAt", "Updated")),
 		`<th scope="col">${t("parity.comment", "Comment")}</th>`
 	].join("");
-	const rows = sorted
-		.map((r) => {
-			const title = esc(recentTitle(r));
-			const who = recentUpdatedBy(r);
-			const type = String(r.content_type || t("parity.item", "item"));
-			const reviewState = recentReviewState(r);
-			const typeKey = recentFilterKey(r);
-			const contentId = r.content_id
-				? `<span class="recent-table__id"${dirAttrs(r.content_id)}>${esc(r.content_id)}</span>`
-				: "";
-			const link =
-				r.content_type === "tool" && r.content_id
-					? toolHref(r.content_id)
-					: r.content_type === "list" && r.content_id
-						? listHref(r.content_id)
-						: null;
-			const item = link
-				? `<a class="recent-table__item" href="${link}"><strong dir="auto">${title}</strong>${contentId}</a>`
-				: `<span class="recent-table__item"><strong dir="auto">${title}</strong>${contentId}</span>`;
-			return `<tr>
-				<td data-label="${t("parity.itemTitle", "Item")}">${item}</td>
-				<td data-label="${t("parity.type", "Type")}"><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span></td>
-				<td data-label="${t("parity.toolOwner", "Tool owner")}">${recentDash(ownerFromRecentRow(r))}</td>
-				<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}"><span${dirAttrs(who)}>${esc(who)}</span></td>
-				<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
-				<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
-				<td data-label="${t("parity.updatedAt", "Updated")}">${timeTag(r.timestamp)}</td>
-				<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentComment(r.comment)}</td>
-			</tr>`;
-		})
-		.join("");
 	return {
 		title: t("parity.recentChangesDocTitle", "Recent changes — Toolhub"),
 		html: `
@@ -360,7 +428,7 @@ export async function viewRecent() {
 						<col class="recent-table__col recent-table__col--comment">
 					</colgroup>
 					<thead><tr>${headers}</tr></thead>
-					<tbody>${rows || `<tr><td class="recent-empty" colspan="8">${t("parity.noRecentChanges", "No recent changes.")}</td></tr>`}</tbody>
+					<tbody data-recent-body>${recentRowsHTML(merged, state)}</tbody>
 				</table>
 			</div>
 		</div>`,
@@ -389,7 +457,24 @@ export async function viewRecent() {
 			}
 			const controls = $(".recent-controls");
 			if (controls) controls.setAttribute("data-enhanced", "true");
-			$(".recent-table")?.addEventListener("click", (event) => {
+			const table = $(".recent-table");
+			const tbody = $("[data-recent-body]");
+			const needsOwnerRerender = ownerSensitiveRecentState(state);
+			const rerenderOwnerSensitiveRows = () => {
+				if (tbody && tbody.isConnected) tbody.innerHTML = recentRowsHTML(merged, state);
+			};
+			const ownerNames = missingOwnerNames(merged);
+			if (table && ownerNames.length > 0) {
+				enrichRecentOwnersProgressively(ownerNames, (name, owner) => {
+					for (const row of merged) {
+						if (recentToolName(row) === name) row._recentOwner = owner;
+					}
+					if (!needsOwnerRerender) updateRecentOwnerCells(table, name, owner);
+				}).then(() => {
+					if (needsOwnerRerender) rerenderOwnerSensitiveRows();
+				});
+			}
+			table?.addEventListener("click", (event) => {
 				const toggle =
 					event.target instanceof Element
 						? /** @type {HTMLButtonElement | null} */ (event.target.closest(".recent-comment"))
