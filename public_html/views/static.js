@@ -144,11 +144,12 @@ export const STATIC = {
 		<h2>${t("static.rulesOfEngagement.whatsReal", "What's real")}</h2>
 		<p>The catalog itself is genuine: it is read live from
 		${ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org")} through a
-		read-only proxy. That means the tools, search and facets, tool detail pages, lists,
-		members, recent changes, crawler history, and audit logs you see are <strong>the
-		actual Toolhub data</strong>, refreshed every time you load a page. When you sign in
-		with Toolhub, supported writes are sent back to the official Toolhub API using your
-		OAuth grant.</p>
+		server-side cache/proxy. That means the tools, search and facets, tool detail
+		pages, lists, members, recent changes, crawler history, and audit logs you see are
+		<strong>the actual Toolhub data</strong>, served quickly from Evolved's shared
+		cache and refreshed from Toolhub according to endpoint-specific TTLs. When you sign
+		in with Toolhub, supported writes are sent back to the official Toolhub API using
+		your OAuth grant.</p>
 		<h2>${t("static.rulesOfEngagement.whatsEvolved", "What's Evolved-only")}</h2>
 		<p>Evolved additions are visible by default. Some have real official write paths
 		when you are signed in: favorites, lists, direct tool submissions, core edits

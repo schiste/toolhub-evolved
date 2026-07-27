@@ -1,23 +1,21 @@
 # Toolhub Evolved — Comprehensive Plan
 
-Last updated: 2026-06-22. Supersedes and merges the three review outputs:
+Last updated: 2026-07-27. Supersedes and merges the three review outputs:
 the feature-fix sweep, the i18n/a11y audit (detail kept in
 [`AUDIT-i18n-a11y.md`](AUDIT-i18n-a11y.md)), and the standalone-demo research.
 
 ## 0. North star and the two lanes
 
-**The interface is frontend-only.** We build and run no application backend. The
-only server-side code is the existing thin, read-only CORS shim
-(`proxy/app.py`) that forwards `GET /api/*` to `toolhub.wikimedia.org` — that is
-not a backend we add features to, it is the reason the browser can read live
-catalog data at all.
+**The interface is a Toolhub-canonical hybrid.** Evolved reads live Toolhub data
+through its backend cache/proxy, writes to official Toolhub first when the API
+supports the action, and stores only Evolved-specific overlays, fallback drafts,
+verification evidence, moderation state, and cache rows in its local database.
 
 Every piece of work therefore falls into exactly one of two lanes:
 
-- **Lane A — Shipping interface (default, no flag).** The real, polished
-  interface on **live read-only** Toolhub data. Everything here works with the
-  read-only API as it exists today: correctness, internationalization,
-  accessibility, performance, polish. No backend changes, ever.
+- **Lane A — Official Toolhub substrate.** The polished interface on **live**
+  Toolhub data. Everything here preserves Toolhub as canonical: correctness,
+  internationalization, accessibility, performance, and careful cache behavior.
 
 - **Lane B — Hybrid Evolved layer (default-on, real data plus labeled local
   overlays).** Features that require a backend capability beyond the official
@@ -31,20 +29,19 @@ or a number the official API doesn't return, it belongs in the hybrid Evolved
 layer and must stay clearly labeled — it never replaces the real Toolhub base
 data._
 
-Explicitly **out of scope** (the demo never grows a server): a real write/auth
-backend (FastAPI/SQLite/Django), real Wikimedia OAuth, a server-side crawler,
-and a real Elasticsearch index. These are recorded in §7 only as "if this is
-ever productionized," not as work for this plan.
+Explicitly **out of scope**: replacing official Toolhub as the canonical catalog,
+granting Toolhub admin meaning to Evolved-local roles, global author verification
+by display name, and broad public writes before moderation/abuse controls exist.
 
 ---
 
 ## 1. Baseline — what is already true today
 
 - **Live API data is already wired and stays the substrate everywhere.** The
-  vanilla-JS SPA reads **live read-only** data via the read proxy and uses clean
+  vanilla-JS SPA reads live data via the backend proxy/cache and uses clean
   History API routes; there is no bundled catalog and reads never move to
-  fixtures. (Architecture: `main.js`, `views/`, `lib/`, `index.html`, `styles/`,
-  `proxy/app.py`.)
+  production fixtures. (Architecture: `main.js`, `views/`, `lib/`, `index.html`,
+  `styles/`, `proxy/backend/`, `proxy/app.py`.)
 - The previous **experimental-toggle surface** has been removed. Evolved
   additions are now default-visible production features, with provenance and
   sync-status labels replacing the old opt-in switch.
@@ -55,7 +52,7 @@ ever productionized," not as work for this plan.
 
 ---
 
-## 2. Lane A — Shipping interface (frontend-only, no flag, live read-only data)
+## 2. Lane A — Shipping interface (live Toolhub data, no feature flag)
 
 ### 2.1 Correctness — DONE (baseline quality bar)
 
@@ -72,11 +69,11 @@ define the "no regressions" bar for the shipping interface:
 | Low  | Recent-change rows only deep-linked tools                                                                  | Added list-target routing                                                   |
 | Low  | Audit-log rows showed linkable targets as static text                                                      | Added tool/list target routing                                              |
 
-### 2.2 Internationalization (frontend-only)
+### 2.2 Internationalization
 
 The catalog data is multilingual but the chrome is English-only. Primitives are
 in; the remaining work makes the interface actually localizable. **All
-frontend-only — ships in Lane A.** Detail and per-finding locations in
+mostly frontend — ships in Lane A.** Detail and per-finding locations in
 [`AUDIT-i18n-a11y.md`](AUDIT-i18n-a11y.md).
 
 No-build architecture (already chosen): plain JSON catalogs + a tiny
@@ -95,11 +92,11 @@ Phased (from the audit):
 
 Effort: ~4–7 days across phases 1–5.
 
-### 2.3 Accessibility (frontend-only)
+### 2.3 Accessibility
 
 Foundations and the high-value fixes are in (modal isolation, status/`aria-busy`,
 `aria-current`, disclosure menu, decorative-icon hiding, RTL). Remaining
-deferred items, all frontend-only:
+deferred items:
 
 - Card grids exposed as lists (`<ul>`/`<li>` or list semantics) — 1.3.1.
 - Crawler table `<caption>` + `scope="col"` — 1.3.1.
@@ -110,7 +107,7 @@ deferred items, all frontend-only:
 Contrast is AA-clean today (one note: star glyphs are decorative; rating is in
 text). Effort: ~2–3 days.
 
-### 2.4 Polish & performance (optional, frontend-only)
+### 2.4 Polish & performance
 
 Response caching of read calls, prefetch on hover, skeleton states, image
 lazy-loading audit. Light, opportunistic.
@@ -123,60 +120,54 @@ Everything here now renders by default when relevant. These features still read
 the **live API** as the base and layer clearly labeled Evolved-local data on top
 through the backend overlay API — no synthetic production fixtures.
 
-### 3.1 The mechanism — overload live data with feature fixtures (build once, reuse)
+### 3.1 The mechanism — live Toolhub base + Evolved backend overlays
 
-Live reads are never replaced. Every experiment fetches the real record through
-`apiGet` and then **merges a feature-specific overlay on top at render time.**
+Live reads are never replaced. The browser fetches through the Evolved backend,
+which uses live Toolhub API responses as the base, applies endpoint-aware shared
+cache rules, and merges clearly labeled Evolved-local records where the feature
+requires data Toolhub does not expose.
+
 There are two overlay kinds:
 
-- **Synthetic-signal overlays — deterministic, no persistence.** A pure function
-  of the real record decorates it with a signal the API can't give us:
-  `synthViews(name)` (exists), and the same shape for thanks, health, usage, and
-  screenshots. Backed by a tiny bundled seed JSON (a **few** sample thanks / demo
-  lists / examples — decision §8.7) keyed by tool name for believable content;
-  computed/seeded offline, never a runtime data source. These need no store —
-  they are recomputed from the live record each render.
-- **User-action overlays — persisted in `localStorage`, merged onto the live
-  record.** A small **`demoOverlay`** module over **`localStorage`** (decision
-  §8.2; namespaced `thdemo:*`) holds only the _delta_ the user creates: a set of
-  favorited tool **names**, demo lists referencing real tool names, field-level
-  **edits layered onto a real tool**, annotation overrides, and net-new
-  submissions (a local record shaped like a real tool). At render time the
-  overlay is merged over the live read with provenance labels.
+- **Official-first user data.** Favorites, lists, tool writes, annotations, and
+  crawler URL registration validate locally, check Evolved permissions, attempt
+  the official Toolhub API when supported, then record sync metadata and
+  fallback/draft state in the local database when Toolhub rejects a write.
+- **Evolved-only data.** Health, thanks, media, local tool rows, crawler run
+  evidence, and per-tool author verification are stored in local backend tables,
+  protected by Evolved permissions, and labeled as Evolved data. Public
+  Evolved-owned data needs review/moderation before broad exposure.
 
 Supporting pieces:
 
-- **Merge helpers** — extend `normalizeTool()`/`normalizeList()` so a live record
-    - its overlay produce one object the existing cards/views render unchanged.
-      Favorited/edited state is read by merging the overlay against the live fetch,
-      not by querying a separate catalog.
-- **Write adapter** — `apiWrite`/`demoApi` (`post`/`put`/`delete`) used _only_ by
-  flagged features writes into `demoOverlay`; `apiGet` (live reads) is untouched.
-  A mode flag keeps the door open for a future real backend without reshaping
-  callers.
-- **Honest edges** — a submitted/edited tool's overlay shows on its detail page
-  and in "my …" views, but it is **not** in live `/api/search/tools/` results
-  (that's real and read-only); the UI says so rather than faking search.
-- **Labeling contract** — every Lane B feature renders an `exp-badge` and carries
-  `// EXPERIMENTAL — Needs: <backend capability> (Toolhub read-only API does not
-expose this)`. The UI must never imply a write touches production Toolhub.
+- **Merge helpers** — extend `normalizeTool()`/`normalizeList()` so a live
+  record plus its Evolved overlay produce one object the existing cards/views
+  render unchanged. Favorited/edited state is read by merging the overlay against
+  the live fetch, not by querying a separate catalog.
+- **Write adapter** — `serverWrite()` targets `/v1/write/*` and related overlay
+  endpoints. The backend owns the official-first lifecycle, fallback state,
+  structured activity, and retry/discard paths.
+- **Honest edges** — a submitted/edited tool only becomes canonical when Toolhub
+  accepts it. Rejected writes remain Evolved-local drafts/fallbacks with
+  visible sync status.
+- **Labeling contract** — every field or action that mixes provenance exposes
+  whether it is published to Toolhub, saved locally, saved locally after Toolhub
+  rejected it, pending review, retryable, or discardable.
 
-### 3.2 Features (each = a fixture-backed simulation behind the flag)
+### 3.2 Features
 
-Reframed from the standalone-demo write catalog; the real endpoints are kept in
-Appendix A as the contract each simulation imitates.
-
-| Feature                                                                              | What the user does (flag on)                                                                                                                                                                                                                                                  | Overlay on live data                                                                                        | Needs in production (why it's Lane B)                                     |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **Mock identity**                                                                    | Explicit "Sign in" identity picker (default _Ada Lovelace_) + "Log out"                                                                                                                                                                                                       | session delta in `demoOverlay`; real `/api/users/` data still backs Members                                 | Real Wikimedia OAuth + server session                                     |
-| **Favorites**                                                                        | Save/unsave on cards, quick-view, detail; `/favorites` list                                                                                                                                                                                                                   | favorited **names** in `demoOverlay`; tool data fetched live and merged                                     | `POST/DELETE /api/user/favorites/`                                        |
-| **Lists CRUD**                                                                       | `/my-lists`, `/lists/create`, `/lists/:id/edit`, delete; reorder tools                                                                                                                                                                                                        | demo lists reference real tool names; shown alongside live `/api/lists/`                                    | `POST/PUT/DELETE /api/lists/`                                             |
-| **Tool submit / edit**                                                               | `/tools/create`, `/tools/:name/edit` (name/title/desc/url + common fields) — editable on **any** tool (decision §8.4, demo-friendly), with core vs. community-annotation fields visually distinguished and an inline note that production limits core edits to `origin="api"` | edits = field overlay merged onto the **live** tool record; new tools = local record shaped like a real one | `POST /api/tools/`, `PUT /api/tools/{name}/` + permissions                |
-| **Annotations edit**                                                                 | `/tools/:name/edit-annotations` (audiences, tasks, QID, icon, …)                                                                                                                                                                                                              | annotation overrides merged over the live record's `annotations`; detail labels "community"                 | `PUT /api/tools/{name}/annotations/`                                      |
-| **Add / remove tools**                                                               | Register a URL; "paste toolinfo JSON" / "load sample" to simulate ingest                                                                                                                                                                                                      | local crawler-url + revision/audit deltas merged into the live feeds                                        | Server-side crawler (browser can't fetch arbitrary `toolinfo.json`, CORS) |
-| **Developer settings**                                                               | **Hidden** (decision §8.5) — route stays a brief "not part of this demo" note                                                                                                                                                                                                 | none                                                                                                        | Token/OAuth-app backend                                                   |
-| **History & feeds**                                                                  | Demo actions append revision/audit rows so `/recent`, `/audit-logs`, history reflect _your_ edits                                                                                                                                                                             | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds                           | Server write-side-effects                                                 |
-| **Already-synthetic** (popularity/`weeklyViews`, thanks, health, usage, screenshots) | unchanged; the original overload pattern                                                                                                                                                                                                                                      | deterministic per-tool signal computed from the live record (optional seed JSON)                            | Real usage/health/thanks data source                                      |
+| Feature                         | What the user does                                                                                             | Hybrid data contract                                                                                                      | Backend dependency                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Toolhub OAuth identity**      | Sign in with Toolhub and let Evolved identify the local user via `/api/user/`.                                 | Toolhub OAuth is the only sign-in; local users/roles derive from that identity.                                           | OAuth session + CSRF + `/v1/user/`                  |
+| **Favorites**                   | Save/unsave on cards, quick-view, detail; review `/favorites`.                                                 | Official Toolhub write first where available; local fallback remains private to the signed-in user.                       | `/v1/write/favorites/`                              |
+| **Lists CRUD**                  | `/my-lists`, `/lists/create`, `/lists/:id/edit`, delete; reorder tools.                                        | Official list writes first; local fallback records retain ownership, sync status, retry, and discard paths.               | `/v1/write/lists/`                                  |
+| **Tool submit / edit**          | `/tools/create`, `/tools/:name/edit` with provenance and sync-status controls.                                 | Official Toolhub is canonical; Evolved stores local drafts/fallbacks and create-time `toolinfo_url` enrichment evidence.  | `/v1/write/tools/` + crawler                        |
+| **Annotations edit**            | `/tools/:name/edit-annotations` for community-facing metadata.                                                 | Official annotation write first; rejected annotations remain Evolved-local overlays.                                      | `/v1/write/tools/:name/annotations/`                |
+| **Add / remove tools**          | Register a public `toolinfo.json` URL or paste toolinfo for Evolved-local ingestion.                           | Signed-in URL registration writes to Toolhub when permitted and also feeds the Evolved crawler/local evidence tables.     | crawler URLs + `/toolinfo.json` feed                |
+| **Developer settings**          | Manage official Toolhub developer links, local signed-toolinfo public keys, and signing payload helpers.       | OAuth apps/API tokens remain official Toolhub data; public keys and signed-toolinfo verification are Evolved-local.       | `/v1/author-keys/`, `/v1/toolinfo/signing-payload/` |
+| **My tools**                    | See official Toolhub tools associated with the signed-in user, grouped by verified and possible author claims. | Tool rows come from official Toolhub; verification claims are per-tool Evolved evidence, never global author permissions. | `/v1/me/tools/` + author-claim providers            |
+| **History & feeds**             | Browse `/recent` and see official Toolhub activity merged with Evolved-local write activity.                   | Official recent changes stay primary; local writes append structured activity with provenance.                            | `/v1/recent/` + shared API cache                    |
+| **Evolved-only public signals** | View health, thanks, media, screenshots, and similar data once reviewed/available.                             | Stored locally, permission-checked, moderated where public, and labeled as Evolved data.                                  | local overlay tables + moderation                   |
 
 ### 3.3 Route & chrome behavior
 
@@ -186,26 +177,22 @@ Appendix A as the contract each simulation imitates.
   `/lists/create`, `/lists/:id/edit`, `/tools/:name/edit`,
   `/tools/:name/edit-annotations`, `/add-or-remove-tools`) become **real hybrid
   views** backed by official-first writes and Evolved-local fallback storage.
-- `/developer-settings` stays **hidden/placeholder in both states** (decision §8.5).
 - The header **"Submit a tool"** button uses the in-app `/tools/create` hybrid
   flow.
 
-### 3.4 The mockup banner + "Rules of Engagement" page
+### 3.4 The site notice + "Rules of Engagement" page
 
-These make the live-vs-fixtures distinction impossible to miss whenever
-experiments are active.
+These make the live-vs-Evolved distinction clear without blocking normal use.
 
 **Site notice.** A persistent red notice is shown at the very top of every page
 by default, so the hybrid state is visible on in-app submit/edit/favorites pages.
 
-- Copy: _"⚠ Mockup — this is a prototype, not a working integration with the real
-  Toolhub. Experimental features are simulated and saved only in your browser."_
-  plus a link to **Rules of Engagement**.
-- Implementation: a `.mockup-banner` element visible by default; uses the brand
-  destructive (red) token for high contrast; `role="region"` with an accessible
-  label; no animation (reduced-motion safe). A small dismiss button stores
-  `toolhub-sitenotice-dismissed=1` in `localStorage` so future sessions keep it
-  hidden.
+- Copy: _"Evolved preview: live Toolhub data with Evolved additions."_ plus links
+  to **Feature status** and **Rules of Engagement**.
+- Implementation: a compact `.mockup-banner` element visible by default;
+  `role="region"` with an accessible label; no animation (reduced-motion safe).
+  A small dismiss button stores `toolhub-sitenotice-dismissed=1` in
+  `localStorage` so future sessions keep it hidden.
 
 **"Rules of Engagement" page** (`/rules-of-engagement`) — a Lane A prose page
 (frontend-only, always reachable), linked from the banner and the footer. It
@@ -215,10 +202,8 @@ explains the model in plain language:
 - **What's real** — the catalog, search/facets, tool detail, lists, members,
   recent changes, crawler history, audit logs: all **live, read-only** from
   `toolhub.wikimedia.org` through a read-only proxy.
-- **What's simulated** (experiments) — sign-in, favorites, list create/edit, tool
-  submit/edit, annotations, and synthetic signals (popularity, thanks, health,
-  usage, screenshots). These **overload the real records with fixtures/local
-  overlays**.
+- **What's Evolved-local** — fallback writes, local drafts, review queues,
+  Evolved-only signals, crawler evidence, and signed-toolinfo verification.
 - **Where your actions go** — official-first writes go to Toolhub when accepted;
   rejected or draft data is stored in Evolved-local backend tables with clear
   provenance.
@@ -227,10 +212,11 @@ explains the model in plain language:
 
 ---
 
-## 4. Frontend code shape (no backend)
+## 4. Frontend/backend code shape
 
 - Keep `apiGet(path, params)` for live reads — unchanged; it stays the only data
-  source for the base records.
+  source for the base records, now routed through backend cache/proxy paths where
+  needed for resilience.
 - Add backend overlay storage for user-action deltas and official-first write
   adapters; local storage remains a cache/test fallback, not production source
   of truth.
@@ -245,78 +231,86 @@ explains the model in plain language:
 
 ---
 
-## 5. Phases & effort (all frontend)
+## 5. Foundation Status
 
-| Phase | Lane | Work                                                                                                                                                                   | Effort  |
-| ----- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| P0    | —    | Lock this plan + the overlay contract (decisions §8 resolved below)                                                                                                    | 0.5 d   |
-| P1    | A    | i18n catalog + `t()` (audit phases 1–2) and the deferred a11y items                                                                                                    | 4–6 d   |
-| P2    | B    | **Toggle default-off + red mockup banner + `/rules-of-engagement` page**, then `demoOverlay` (`localStorage`) + the live-record merge step + mock identity + favorites | 3–4 d   |
-| P3    | B    | Lists CRUD (`my-lists`, create/edit/delete, reorder)                                                                                                                   | 2–3 d   |
-| P4    | B    | Tool submit/edit (editable on any tool, core/annotation labeled) + annotations edit + local revision/audit side-effects                                                | 3–4 d   |
-| P5    | B    | Add/remove-tools simulation (paste/sample JSON); keep dev-settings hidden                                                                                              | 1.5–2 d |
-| P6    | B    | Unify existing synthetic features under the same overload pattern; add the per-feature "Needs:" comments                                                               | 1–2 d   |
-| P7    | A    | i18n phases 3–5 (prose, localized fields, language switcher) + polish                                                                                                  | 3–5 d   |
+- **Shipped:** Toolhub OAuth sign-in, local user mapping, Evolved role/policy
+  entrypoint, official-first write lifecycle, local fallback records, shared
+  provenance fields, retry/discard controls, feature-status docs, and compact
+  dismissible site notice.
+- **Shipped:** Developer settings now link to official Toolhub OAuth/app/token
+  pages and expose Evolved-local signed-toolinfo public-key management.
+- **Shipped:** `/my-tools` resolves tools from the signed-in Toolhub username and
+  displays per-tool verification badges for Toolforge maintainer, Toolhub write
+  access, signed toolinfo, and unverified author-name matches.
+- **Shipped:** Tool creation accepts a create-only `toolinfo_url`; Evolved fetches
+  it immediately to fill missing fields and register crawler/signed-toolinfo
+  evidence, while official Toolhub remains canonical.
+- **Current follow-up work:** expand Evolved-only public signals beyond the
+  foundation tables, add moderation workflows per surface, and remove any
+  remaining non-production fixture paths before broad public writes.
 
-Total: **~3 weeks**, entirely frontend. Lanes A and B are independent — i18n/a11y
-can ship while Lane B is still in progress, and vice versa.
+The older frontend-only demo phases are superseded by
+`docs/HYBRID-FEATURE-PLAN.md`, `docs/PRODUCTION.md`, and `docs/RUNBOOK.md`.
 
 ---
 
-## 6. Risks (frontend-only framing)
+## 6. Risks
 
-- **State is per-browser.** No shared state between visitors — intended and
-  acceptable for a flagged demo; surface it in copy ("saved only in this
-  browser").
-- **Submitted/edited tools aren't in live search.** By design — shown only in
-  "my submissions"/overlay views, clearly labeled.
+- **Canonical-source confusion.** Toolhub remains authoritative for official
+  catalog records; Evolved-local fallback, verification, health, thanks, and
+  media data must stay visibly labeled.
+- **Authorship false positives.** Author display names are not unique. Only
+  per-tool Toolforge maintainer, Toolhub write-access, or signed-toolinfo
+  evidence may mark a claim verified.
+- **Fallback visibility.** Submitted/edited data may remain local when Toolhub
+  rejects it; the UI must keep retry/discard and sync-error states clear.
 - **Evolved-only signals must stay labeled.** Never let an Evolved-local value
   read as live Toolhub data.
-- **Fixture/seed staleness.** Show seed provenance/date where seed data backs a
-  feature.
-- **Crawler fidelity.** The browser can't fetch arbitrary `toolinfo.json` (CORS),
-  so ingestion is simulated via paste/sample — documented, not hidden.
+- **Crawler trust.** Browser CORS no longer blocks ingestion because the backend
+  fetches `toolinfo.json`; crawler inputs still require public-HTTPS validation,
+  owner checks, and signed-toolinfo verification where used.
 
 ---
 
-## 7. Out of scope (only if ever productionized)
+## 7. Out of scope / Deferred
 
-Recorded so the boundary is explicit; **not** work for this plan: a real
-write/auth backend (FastAPI/SQLite/Django), real Wikimedia OAuth (separate
-registered app + callback), a server-side crawler that fetches `toolinfo.json`,
-and a real Elasticsearch index for production-grade relevance. The Lane B write
-adapter is intentionally shaped like Toolhub's real endpoints (Appendix A) so
-that, if this day ever comes, callers don't change — only the adapter's target.
+- Replacing official Toolhub as the canonical catalog.
+- Treating Evolved-local roles as Toolhub admin rights.
+- Global author verification by display name.
+- Full production-grade search indexing independent of Toolhub.
+- Broad public Evolved-only writes before review, moderation, ownership checks,
+  and abuse controls are in place for that surface.
 
 ---
 
-## 8. Decisions — RESOLVED (2026-06-22)
+## 8. Decisions — Current
 
 1. **Evolved feature toggle → removed.** Hybrid Evolved features are
    default-visible; only the site notice dismissal persists in `localStorage`.
-2. **Storage → `localStorage`** for all demo-write overlays (`demoOverlay`).
-3. **"Submit a tool" with flag on → in-app form** (`/tools/create`), with the
-   red mockup banner present (§3.4). Flag off → keep the external production link.
-4. **Crawler-origin tools in the edit experiment → demo-friendly.** Editable on
-   any tool via overlay, with core vs. community-annotation fields visually
-   distinguished and an inline note that production limits core edits to
-   `origin="api"`. (Recommendation; flip to faithful/annotation-only on request.)
-5. **Developer settings → hidden.** The route keeps a brief "not part of this
-   demo" note in both states.
-6. **Synthetic features (thanks/health/popularity/screenshots) → keep as
-   fixtures**, unified under the overload pattern.
-7. **Seed scope → small.** A few sample thanks and a few demo lists/examples —
-   just enough to make the experiments believable.
+2. **Storage → backend database** for local overlays, provenance, crawler URLs,
+   author claims, public-key records, sync metadata, moderation state, and shared
+   anonymous Toolhub API cache.
+3. **"Submit a tool" → in-app official-first form** (`/tools/create`) with
+   optional create-time `toolinfo_url` enrichment.
+4. **Crawler-origin data → maintainer-owned.** The backend fetches registered
+   `toolinfo.json` URLs and records evidence; core official Toolhub writes still
+   follow Toolhub permissions and origin rules.
+5. **Developer settings → shipped.** The page exposes official Toolhub links and
+   Evolved-local signed-toolinfo key/payload tooling.
+6. **Fixtures/mock data → production cleanup target.** Any remaining fixture
+   paths are treated as test-only or pending removal, not production content.
+7. **Author verification → per tool only.** Verified evidence for one tool never
+   verifies the same author display name on another tool.
 
-Always-on labeling (from these decisions): the **red site notice** shows on every
-page by default, can be dismissed locally, and links to the **Rules of
-Engagement** page (§3.4) explaining live data vs. Evolved-local data.
+Always-on labeling (from these decisions): the compact site notice shows on
+every page by default, can be dismissed locally, and links to **Feature status**
+and **Rules of Engagement** explaining live Toolhub data vs. Evolved-local data.
 
 ---
 
 ## Appendix A — Toolhub endpoint/field reference (the contract Lane B imitates)
 
-Kept so each fixture-backed simulation matches real Toolhub shapes (researched
+Kept so each hybrid feature matches real Toolhub shapes (researched
 2026-06-22 against `/api/`, `/api/schema/`, the toolinfo `1.2.2` schema, and the
 source tree).
 
@@ -327,13 +321,14 @@ source tree).
 `GET /api/lists/{id}/`, `GET /api/recent/`, `GET /api/users/`,
 `GET /api/crawler/runs/`, `GET /api/auditlogs/`.
 
-**Write/auth endpoints each Lane B feature imitates (simulated, never called for real):**
-`GET /api/user/` (+ demo login/logout); `GET/POST /api/user/favorites/`,
-`DELETE /api/user/favorites/{tool_name}/`; `POST /api/tools/`,
-`PUT /api/tools/{name}/`; `GET/PUT /api/tools/{name}/annotations/`;
-`POST /api/lists/`, `PUT/DELETE /api/lists/{id}/`, `GET /api/lists/{id}/revisions/`;
-`GET/POST /api/crawler/urls/`, `DELETE /api/crawler/urls/{id}/`;
-`GET/POST/DELETE /api/user/authtoken/`.
+**Official-first and Evolved-local write/auth paths:** `GET /api/user/` through
+Toolhub OAuth-backed session identity; `/v1/write/favorites/`;
+`/v1/write/lists/`; `/v1/write/tools/`; `/v1/write/tools/{name}/`;
+`/v1/write/tools/{name}/annotations/`; `/v1/crawler/urls/`;
+`/v1/me/tools/`; `/v1/author-keys/`; `/v1/toolinfo/signing-payload/`.
+The backend decides whether the operation can be sent to official Toolhub,
+records sync metadata, and keeps any allowed fallback/draft data local to
+Evolved.
 
 **Tool shape:** core fields (`name`, `title`, `description`, `url`, `keywords`,
 `author`, `repository`, `deprecated`, `experimental`, `for_wikis`, `icon`,
