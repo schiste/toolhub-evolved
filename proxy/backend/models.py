@@ -90,6 +90,8 @@ class ToolList(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_toolhub_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    validation_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -134,6 +136,8 @@ class ToolOverlay(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_toolhub_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    validation_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_OPEN)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -177,6 +181,8 @@ class CrawlerUrl(Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_toolhub_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    validation_errors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_LOCAL_DRAFT)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

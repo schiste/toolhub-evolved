@@ -132,7 +132,10 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     with eng.begin() as conn:
         conn.exec_driver_sql("CREATE TABLE users (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE favorites (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE lists (client_id VARCHAR(64) PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tools (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE tool_overlays (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE crawler_urls (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_media (id INTEGER PRIMARY KEY)")
     db._upgrade_schema()
     user_columns = {col["name"] for col in inspect(eng).get_columns("users")}
@@ -141,6 +144,12 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     assert {"created_by_user_id", "source", "sync_status", "last_synced_at", "last_error"}.issubset(favorite_columns)
     tool_columns = {col["name"] for col in inspect(eng).get_columns("tools")}
     assert {"created_by_user_id", "review_status", "deleted_at"}.issubset(tool_columns)
+    list_columns = {col["name"] for col in inspect(eng).get_columns("lists")}
+    assert {"last_toolhub_response", "validation_errors"}.issubset(list_columns)
+    overlay_columns = {col["name"] for col in inspect(eng).get_columns("tool_overlays")}
+    assert {"last_toolhub_response", "validation_errors"}.issubset(overlay_columns)
+    crawler_columns = {col["name"] for col in inspect(eng).get_columns("crawler_urls")}
+    assert {"last_toolhub_response", "validation_errors"}.issubset(crawler_columns)
     media_columns = {col["name"] for col in inspect(eng).get_columns("tool_media")}
     assert {"created_by_user_id", "review_status", "sync_status", "deleted_at"}.issubset(media_columns)
 
@@ -357,6 +366,8 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
                     "officialId": "77",
                     "syncStatus": "official",
                     "lastError": "  stale cache  ",
+                    "toolhubResponse": {"id": 77},
+                    "validationErrors": [{"field": "title"}],
                 }
             ],
         ).status_code
@@ -372,6 +383,8 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
                     "added": "2026-07-26T11:00:00Z",
                     "id": "88",
                     "syncStatus": "official",
+                    "toolhubResponse": {"id": 88},
+                    "validationErrors": [{"field": "url"}],
                 }
             ],
         ).status_code
@@ -388,6 +401,8 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
                     "fieldStatuses": {"title": "accepted"},
                     "reviewStatus": "approved",
                     "lastError": "needs merge",
+                    "toolhubResponse": {"message": "bad"},
+                    "validationErrors": [{"field": "title"}],
                 }
             },
         ).status_code
@@ -416,12 +431,18 @@ def test_overlay_sync_metadata_roundtrip_and_public_crawler_records(client):
     assert data["lists"][0]["officialId"] == 77
     assert data["lists"][0]["lastSyncedAt"] == "2026-07-26T10:00:00Z"
     assert data["lists"][0]["lastError"] == "stale cache"
+    assert data["lists"][0]["toolhubResponse"] == {"id": 77}
+    assert data["lists"][0]["validationErrors"] == [{"field": "title"}]
     assert data["crawlerUrls"][0]["officialId"] == 88
     assert data["crawlerUrls"][0]["id"] == 88
     assert data["crawlerUrls"][0]["lastSyncedAt"] == "2026-07-26T11:00:00Z"
+    assert data["crawlerUrls"][0]["toolhubResponse"] == {"id": 88}
+    assert data["crawlerUrls"][0]["validationErrors"] == [{"field": "url"}]
     assert data["toolEdits"]["crawler-tool"]["baseRevision"] == "rev-1"
     assert data["toolEdits"]["crawler-tool"]["fieldStatuses"] == {"title": "accepted"}
     assert data["toolEdits"]["crawler-tool"]["reviewStatus"] == "open"
+    assert data["toolEdits"]["crawler-tool"]["toolhubResponse"] == {"message": "bad"}
+    assert data["toolEdits"]["crawler-tool"]["validationErrors"] == [{"field": "title"}]
     assert data["toolNew"]["crawler-tool"]["officialName"] == "crawler-tool-official"
     assert data["toolNew"]["crawler-tool"]["visibility"] == "public"
     assert data["toolNew"]["crawler-tool"]["reviewStatus"] == "approved"

@@ -174,6 +174,10 @@ def _with_common_meta(payload: dict, row: object, *, include_official_id: bool =
     if include_official_id and getattr(row, "official_crawler_url_id", None) is not None:
         out["officialId"] = row.official_crawler_url_id
         out["id"] = row.official_crawler_url_id
+    if getattr(row, "last_toolhub_response", None):
+        out["toolhubResponse"] = row.last_toolhub_response
+    if getattr(row, "validation_errors", None):
+        out["validationErrors"] = row.validation_errors
     return out
 
 
@@ -562,6 +566,8 @@ def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
             last_synced_at = _parse_optional_iso(_payload_value(item, "lastSyncedAt", "last_synced_at"))
             if sync_status == SYNC_OFFICIAL and last_synced_at is None:
                 last_synced_at = _parse_iso(item.get("modified"))
+            response = _payload_value(item, "toolhubResponse", "last_toolhub_response")
+            validation_errors = _payload_value(item, "validationErrors", "validation_errors")
             s.add(
                 ToolList(
                     client_id=str(item["id"])[:64],
@@ -580,6 +586,8 @@ def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
                     sync_status=sync_status,
                     last_synced_at=last_synced_at,
                     last_error=clean_error(_payload_value(item, "lastError", "last_error")),
+                    last_toolhub_response=response if isinstance(response, dict) else None,
+                    validation_errors=validation_errors if isinstance(validation_errors, list) else None,
                 )
             )
     return None
@@ -600,6 +608,8 @@ def _put_crawler_urls(uid: int, value: Any) -> Response | None:  # noqa: ANN401
             last_synced_at = _parse_optional_iso(_payload_value(u, "lastSyncedAt", "last_synced_at"))
             if sync_status == SYNC_OFFICIAL and last_synced_at is None:
                 last_synced_at = _parse_iso(u.get("added"))
+            response = _payload_value(u, "toolhubResponse", "last_toolhub_response")
+            validation_errors = _payload_value(u, "validationErrors", "validation_errors")
             s.add(
                 CrawlerUrl(
                     user_id=uid,
@@ -612,6 +622,8 @@ def _put_crawler_urls(uid: int, value: Any) -> Response | None:  # noqa: ANN401
                     last_checked_at=_parse_optional_iso(_payload_value(u, "lastCheckedAt", "last_checked_at")),
                     last_status=str(_payload_value(u, "lastStatus", "last_status") or "")[:64] or None,
                     last_error=clean_error(_payload_value(u, "lastError", "last_error")),
+                    last_toolhub_response=response if isinstance(response, dict) else None,
+                    validation_errors=validation_errors if isinstance(validation_errors, list) else None,
                     sync_status=sync_status,
                     last_synced_at=last_synced_at,
                 )
@@ -705,6 +717,8 @@ def _overlay_meta(
 ) -> dict[str, Any]:
     """Extract lifecycle metadata from a toolEdits/toolAnnos payload."""
     field_statuses = _payload_value(patch, "fieldStatuses", "field_statuses")
+    response = _payload_value(patch, "toolhubResponse", "last_toolhub_response")
+    validation_errors = _payload_value(patch, "validationErrors", "validation_errors")
     preserved_review = clean_review_status(existing_review_status, REVIEW_OPEN)
     return {
         "base_revision": str(_payload_value(patch, "baseRevision", "base_revision") or "")[:MAX_NAME] or None,
@@ -716,6 +730,8 @@ def _overlay_meta(
         ),
         "last_synced_at": _parse_optional_iso(_payload_value(patch, "lastSyncedAt", "last_synced_at")),
         "last_error": clean_error(_payload_value(patch, "lastError", "last_error")),
+        "last_toolhub_response": response if isinstance(response, dict) else None,
+        "validation_errors": validation_errors if isinstance(validation_errors, list) else None,
         "review_status": (
             clean_review_status(_payload_value(patch, "reviewStatus", "review_status"), preserved_review)
             if can_review
