@@ -19,7 +19,7 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 - **Footer & policy pages** — About, Help, Community, Privacy, Terms, Code of Conduct, API, Feeds.
 - **Help maintain Toolhub** (`/contribute`) — a hub linking source, tasks, translation and docs.
 - **Wikimedia brand** — Montserrat + Source Serif 4, the 2022 brand palette, all in `tokens.css`.
-- **Evolved feature toggle** — reveal the hybrid layer: official-first writes, local drafts/fallback overlays, and future Evolved-owned signals when they are backed by real data.
+- **Always-on Evolved layer** — official-first writes, local drafts/fallback overlays, and Evolved-owned signals when they are backed by real data.
 - **Accessible & responsive** — keyboard, focus management, AA contrast, no horizontal overflow at any width.
 
 ## Architecture

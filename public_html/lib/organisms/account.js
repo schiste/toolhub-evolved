@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "../core/dom.js";
 import { t } from "../core/i18n.js";
-import { USER, expOn, signedIn } from "../core/session.js";
+import { USER, signedIn } from "../core/session.js";
 import { oauthAvailable } from "../core/serversync.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
@@ -10,18 +10,8 @@ import { icon } from "../atoms/icon.js";
 export function renderAccount() {
 	const el = $("#account");
 	if (!el) return;
-	if (!expOn()) {
-		// Feature mode off: real Toolhub sign-in when the server offers it
-		// (signing in turns feature mode on), else the explainer page.
-		// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying the "outline" variant string falls back to the same default — equivalent. (The label/href strings are still asserted by the renderAccount tests.)
-		el.innerHTML = button(t("account.logIn", "Log in"), {
-			variant: "outline",
-			href: oauthAvailable() ? "/oauth/login" : "/login"
-		});
-		return;
-	}
 	if (!signedIn()) {
-		// Feature mode on but logged out -> real Toolhub sign-in only.
+		// Signed-out production: real Toolhub sign-in when configured.
 		el.innerHTML = oauthAvailable()
 			? button(t("account.signInWithToolhub", "Sign in with Toolhub"), { href: "/oauth/login" })
 			: button(t("account.logIn", "Log in"), { variant: "outline", href: "/login" });
@@ -62,20 +52,13 @@ export function toggleAcctMenu() {
 	}
 }
 
-// Header "Submit a tool": in-app create form when experimenting (decision §8.3),
-// else the real production link.
+// Header "Submit a tool": production uses the hybrid in-app create flow.
 export function syncSubmitButton() {
 	const b = $("#submit-tool");
 	if (!b) return;
-	if (expOn()) {
-		b.setAttribute("href", "/tools/create");
-		b.removeAttribute("target");
-		b.removeAttribute("rel");
-	} else {
-		b.setAttribute("href", "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create");
-		b.setAttribute("target", "_blank");
-		b.setAttribute("rel", "noopener nofollow");
-	}
+	b.setAttribute("href", "/tools/create");
+	b.removeAttribute("target");
+	b.removeAttribute("rel");
 }
 
 globalThis.renderAccount = renderAccount;

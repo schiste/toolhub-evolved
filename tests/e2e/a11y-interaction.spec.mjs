@@ -62,18 +62,12 @@ test.describe("accessibility interactions", () => {
 		await expect(btn).toHaveAttribute("aria-expanded", "false");
 	});
 
-	test("Escape closes the account menu when experiments are on", async ({ page }) => {
+	test("the signed-out account control remains keyboard reachable", async ({ page }) => {
 		await open(page);
-		await page.locator("#exp-toggle").click();
-		const btn = page.locator("#acct-btn");
-		await expect(btn).toBeVisible();
-		await btn.click();
-		const menu = page.locator("#acct-menu");
-		await expect(menu).not.toHaveAttribute("hidden", /.*/);
-		await expect(btn).toHaveAttribute("aria-expanded", "true");
-		await page.keyboard.press("Escape");
-		await expect(menu).toHaveAttribute("hidden", /.*/);
-		await expect(btn).toHaveAttribute("aria-expanded", "false");
+		const accountLink = page.locator("#account a").first();
+		await expect(accountLink).toBeVisible();
+		await accountLink.focus();
+		await expect(accountLink).toBeFocused();
 	});
 
 	test("quick-view traps focus and Escape restores it to the opener", async ({ page }) => {

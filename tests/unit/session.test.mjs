@@ -55,16 +55,12 @@ beforeEach(() => {
 	session.setAuthRender(() => {});
 });
 
-// Leave experimental mode off so this file's in-memory flag does not leak into
-// sibling test files that share the process under the Stryker test runner.
 afterAll(() => {
 	session.applyExp(false);
 });
 
-// Runs first, before any applyExp call, so it observes the module's initial
-// in-memory flag (let expActive = false) rather than a value set by a test.
-test("experimental mode is off by default", () => {
-	assert.equal(session.expOn(), false);
+test("Evolved feature mode is always on in production", () => {
+	assert.equal(session.expOn(), true);
 	assert.equal(session.signedIn(), false);
 });
 
@@ -75,32 +71,36 @@ test("exported identity constants are exact", () => {
 	assert.equal(session.USER.name, "");
 });
 
-test("expStored reads the persisted opt-in flag", () => {
-	assert.equal(session.expStored(), false); // missing key
+test("expStored ignores the legacy opt-in flag", () => {
+	assert.equal(session.expStored(), true);
 	localStorage.setItem("toolhub-exp", "on");
 	assert.equal(session.expStored(), true);
 	localStorage.setItem("toolhub-exp", "off");
-	assert.equal(session.expStored(), false);
-});
-
-test("setExpStored persists exactly 'on' or 'off'", () => {
-	session.setExpStored(true);
-	assert.equal(localStorage.getItem("toolhub-exp"), "on");
 	assert.equal(session.expStored(), true);
-	session.setExpStored(false);
-	assert.equal(localStorage.getItem("toolhub-exp"), "off");
-	assert.equal(session.expStored(), false);
 });
 
-test("applyExp coerces to boolean and expOn reflects it", () => {
+test("setExpStored clears the obsolete toggle flag", () => {
+	localStorage.setItem("toolhub-exp", "off");
+	session.setExpStored(true);
+	assert.equal(localStorage.getItem("toolhub-exp"), null);
+	assert.equal(session.expStored(), true);
+	localStorage.setItem("toolhub-exp", "on");
+	session.setExpStored(false);
+	assert.equal(localStorage.getItem("toolhub-exp"), null);
+	assert.equal(session.expStored(), true);
+});
+
+test("applyExp is a compatibility shim and cannot disable Evolved features", () => {
+	localStorage.setItem("toolhub-exp", "off");
 	session.applyExp(1);
 	assert.equal(session.expOn(), true);
+	assert.equal(localStorage.getItem("toolhub-exp"), null);
 	session.applyExp(0);
-	assert.equal(session.expOn(), false);
+	assert.equal(session.expOn(), true);
 	session.applyExp("x");
 	assert.equal(session.expOn(), true);
 	session.applyExp("");
-	assert.equal(session.expOn(), false);
+	assert.equal(session.expOn(), true);
 });
 
 test("signedIn requires an OAuth-backed server user", () => {

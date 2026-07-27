@@ -53,7 +53,8 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	const rules = S.viewStatic("rules-of-engagement").html;
 	assert.ok(rules.includes("supported writes are sent back to the official Toolhub API"));
 	assert.ok(rules.includes("What's Evolved-only"));
-	assert.ok(rules.includes('"Show Evolved features"'));
+	assert.ok(rules.includes("Evolved additions are visible by default"));
+	assert.ok(rules.includes("site notice can be dismissed"));
 	assert.ok(rules.includes("Toolhub remains the source of truth"));
 	assert.ok(!rules.includes("Nothing here is ever written back to Toolhub"));
 });

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt, t } from "../lib/core/i18n.js";
-import { expOn } from "../lib/core/session.js";
 import { apiGet, backendGetJson, localToolBase, normalizeTool } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
 import { attachEndorsements, completeness, rankFitsFirst } from "../lib/core/signals.js";
@@ -52,7 +51,6 @@ function activeClientStatuses(value) {
 function sortFromOfficialOrdering(ordering, fallback) {
 	if (ordering === "-modified_date") return "recent";
 	if (ordering === "name") return "name";
-	// Stryker disable next-line ConditionalExpression,EqualityOperator,StringLiteral: "relevance" is only ever in the allow-list when experiments are on, where it is also the default sort, so mapping -score→relevance is indistinguishable from the fallback through viewSearch — equivalent.
 	if (ordering === "-score") return "relevance";
 	return fallback;
 }
@@ -68,18 +66,17 @@ function renderStatusFacetGroup(selectedStatuses) {
 
 /**
  * Resolve the active sort + upstream ordering from the URL, clamped to the
- * experiment-gated allow-list (out-of-list requests fall back to the default).
+ * production allow-list (out-of-list requests fall back to the default).
  * @param {URLSearchParams} usp
- * @param {boolean} exp
  * @returns {{ sort: string, ordering: string, defaultSort: string }}
  */
-function resolveSort(usp, exp) {
-	const defaultSort = exp ? "relevance" : "recent";
+function resolveSort(usp) {
+	const defaultSort = "relevance";
 	const requestedSort = usp.get("sort") || sortFromOfficialOrdering(usp.get("ordering"), defaultSort);
 	// defaultSort is referenced (not re-typed) so the allow-list entry that equals the
 	// default cannot drift from it; removing the default from the list is a no-op since
 	// an out-of-list request already resolves to defaultSort.
-	const allowedSorts = exp ? [defaultSort, "recent", "name", "complete"] : [defaultSort, "name", "complete"];
+	const allowedSorts = [defaultSort, "recent", "name", "complete"];
 	const sort = allowedSorts.includes(requestedSort) ? requestedSort : defaultSort;
 	const ordering = sort === "name" ? "name" : sort === "recent" ? "-modified_date" : "";
 	return { sort, ordering, defaultSort };
@@ -116,8 +113,7 @@ export async function viewSearch() {
 	// Stryker disable next-line StringLiteral: when the page param is absent the fallback is parsed; "" and any sentinel both yield NaN (→ page 1) — equivalent.
 	const page = Math.max(1, Number.parseInt(usp.get("page") ?? "", 10) || 1);
 	const pageSize = activePageSize(usp.get("page_size"));
-	const exp = expOn();
-	const { sort, ordering, defaultSort } = resolveSort(usp, exp);
+	const { sort, ordering, defaultSort } = resolveSort(usp);
 	const clientStatuses = activeClientStatuses(usp.get("status"));
 
 	// Live API params: q, paging, ordering + every *__term facet filter from the URL.
@@ -178,9 +174,7 @@ export async function viewSearch() {
 			? ` <span class="browse__count-note">${t("search.filteredInBrowser", "filtered in your browser")}</span>`
 			: "";
 
-	const sortOpts = `${
-		exp ? `<option value="relevance">${t("search.mostRelevant", "Most relevant")}</option>` : ""
-	}<option value="recent">${t("search.recentlyUpdated", "Recently updated")}</option><option value="name">${t(
+	const sortOpts = `<option value="relevance">${t("search.mostRelevant", "Most relevant")}</option><option value="recent">${t("search.recentlyUpdated", "Recently updated")}</option><option value="name">${t(
 		"search.nameAZ",
 		"Name (A–Z)"
 	)}</option><option value="complete">${t("search.mostComplete", "Most complete")}</option>`;

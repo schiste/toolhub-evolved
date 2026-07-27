@@ -58,9 +58,7 @@ test("a tryHref item without a tryLabel falls back to the 'Try it' label", () =>
 		});
 		const { html } = experiments.viewExperiments();
 		assert.ok(
-			html.includes(
-				'<a class="exfeat__try" href="/probe" data-enable-evolved>Try it <span aria-hidden="true">→</span></a>'
-			),
+			html.includes('<a class="exfeat__try" href="/probe">Try it <span aria-hidden="true">→</span></a>'),
 			"missing tryLabel should render the 'Try it' fallback"
 		);
 		// And the &&-mutant guard: with a present label, that label (not "Try it") is shown.

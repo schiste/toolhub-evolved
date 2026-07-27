@@ -21,11 +21,7 @@ import * as router from "../../public_html/views/router.js";
 
 vi.mock("../../public_html/lib/core/session.js", async (o) => ({
 	...(await o()),
-	applyExp: vi.fn(),
-	expOn: vi.fn(),
-	expStored: vi.fn(),
-	setAuthRender: vi.fn(),
-	setExpStored: vi.fn()
+	setAuthRender: vi.fn()
 }));
 vi.mock("../../public_html/lib/core/api.js", async (o) => ({
 	...(await o()),
@@ -84,8 +80,11 @@ vi.mock("../../public_html/views/router.js", async (o) => ({ ...(await o()), ren
 
 const SHELL = `
 	<a class="skip" href="#view">Skip to content</a>
+	<div class="mockup-banner" data-sitenotice>
+		<span>notice</span>
+		<button type="button" data-dismiss-sitenotice>close</button>
+	</div>
 	<div id="theme-toggle"></div>
-	<button id="exp-toggle" aria-checked="false"></button>
 	<header id="account">
 		<button id="acct-btn">Account</button>
 		<div id="acct-menu">
@@ -104,7 +103,7 @@ const SHELL = `
 		<a href="/about" data-q="ignored">qlink</a>
 		<article data-tool="tool-x" tabindex="0"><span class="tcard__inner">x</span><a href="/incard">deep link</a></article>
 		<a href="/internal?x=1">internal</a>
-		<a href="/features" data-enable-evolved>feature try</a>
+		<a href="/features">feature try</a>
 		<a href="/api/tools/">api</a>
 		<a href="https://ext.example/">ext</a>
 		<a href="#frag">frag</a>
@@ -130,8 +129,6 @@ const $ = (s) => document.querySelector(s);
 
 beforeAll(async () => {
 	document.documentElement.setAttribute("data-theme", "dark");
-	session.expStored.mockReturnValue(true);
-	session.expOn.mockReturnValue(false);
 	window.matchMedia = vi.fn((q) => ({
 		matches: false,
 		media: q,
@@ -141,6 +138,7 @@ beforeAll(async () => {
 		removeEventListener: vi.fn()
 	}));
 	document.body.innerHTML = SHELL;
+	localStorage.clear();
 	// Direct (unsuffixed) import so Stryker's vitest runner associates this test file with main.js.
 	// Wrapped so an import-time throw (e.g. a selector literal mutated to "") becomes an asserted
 	// test failure rather than a skipped suite (which Stryker would treat as survived).
@@ -164,11 +162,7 @@ test("importing main with a complete shell raises no error (every selector liter
 test("importing main wires locale, theme, account, langpicker and the initial render", () => {
 	assert.equal(i18n.applyLocaleAttrs.mock.calls.length, 1);
 	assert.equal(theme.initTheme.mock.calls.length, 1);
-	// applyExp is seeded from the persisted flag (expStored() === true).
-	assert.deepEqual(session.applyExp.mock.calls[0], [true]);
-	// syncExpDom(expOn()===false): body gets exp-off and the toggle reflects aria-checked="false".
-	assert.equal(document.body.classList.contains("exp-off"), true);
-	assert.equal($("#exp-toggle").getAttribute("aria-checked"), "false");
+	assert.equal(document.documentElement.classList.contains("sitenotice-dismissed"), false);
 	assert.equal(account.renderAccount.mock.calls.length > 0, true);
 	assert.equal(account.syncSubmitButton.mock.calls.length > 0, true);
 	assert.equal(langpicker.renderLangPicker.mock.calls.length, 1);
@@ -462,20 +456,16 @@ test("a document click outside the language picker closes it", () => {
 	assert.equal(langpicker.closeLangMenu.mock.calls.length > 0, true);
 });
 
-/* ---- experimental toggle ---------------------------------------------- */
+/* ---- site notice ------------------------------------------------------- */
 
-test("the experimental toggle flips state, syncs the DOM and re-renders", () => {
+test("the site notice close button hides the notice and persists dismissal", () => {
 	vi.clearAllMocks();
-	session.expOn.mockReturnValue(false); // → on = !false = true
-	click($("#exp-toggle"));
-	assert.deepEqual(session.setExpStored.mock.calls[0], [true]);
-	assert.deepEqual(session.applyExp.mock.calls[0], [true]);
-	// syncExpDom(true): exp-off removed, toggle aria-checked "true".
-	assert.equal(document.body.classList.contains("exp-off"), false);
-	assert.equal($("#exp-toggle").getAttribute("aria-checked"), "true");
-	assert.equal(account.renderAccount.mock.calls.length, 1);
-	assert.equal(account.syncSubmitButton.mock.calls.length, 1);
-	assert.equal(router.render.mock.calls.length, 1);
+	localStorage.removeItem("toolhub-sitenotice-dismissed");
+	document.documentElement.classList.remove("sitenotice-dismissed");
+	click($("[data-dismiss-sitenotice]"));
+	assert.equal(localStorage.getItem("toolhub-sitenotice-dismissed"), "1");
+	assert.equal(document.documentElement.classList.contains("sitenotice-dismissed"), true);
+	assert.equal($("[data-sitenotice]").hasAttribute("hidden"), true);
 });
 
 /* ---- SPA link interception -------------------------------------------- */
@@ -511,17 +501,11 @@ test("SPA links: modified clicks (ctrl/meta/shift/alt or non-left button) are ig
 	}
 });
 
-test("SPA links: feature-status try links enable Evolved mode before routing", () => {
+test("SPA links: feature-status try links route without feature-mode side effects", () => {
 	vi.clearAllMocks();
-	session.expOn.mockReturnValue(false);
 	const ev = new window.MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
-	$("#view a[data-enable-evolved]").dispatchEvent(ev);
+	$('#view a[href="/features"]').dispatchEvent(ev);
 	assert.equal(ev.defaultPrevented, true);
-	assert.deepEqual(session.setExpStored.mock.calls[0], [true]);
-	assert.deepEqual(session.applyExp.mock.calls[0], [true]);
-	assert.equal($("#exp-toggle").getAttribute("aria-checked"), "true");
-	assert.equal(account.renderAccount.mock.calls.length, 1);
-	assert.equal(account.syncSubmitButton.mock.calls.length, 1);
 	assert.deepEqual(routing.navigateTo.mock.calls.at(-1), ["/features"]);
 });
 
@@ -552,7 +536,7 @@ test("handlers tolerate a null event.target (the e.target?. guards)", () => {
 		el.dispatchEvent(ev);
 	};
 	assert.doesNotThrow(() => fire($("#theme-toggle"), "click")); // 55
-	assert.doesNotThrow(() => fire($("#view"), "click")); // 77/84/97/103/104 + document 175/199/220
+	assert.doesNotThrow(() => fire($("#view"), "click")); // view + document click handlers
 	assert.doesNotThrow(() => fire($("#view"), "keydown", "Enter")); // 112
 	assert.doesNotThrow(() => fire($("#qv"), "click")); // 121/127
 	assert.doesNotThrow(() => fire($("#acct-btn"), "click")); // 146/151/157/162/169
@@ -582,7 +566,7 @@ test("with #view/#qv absent the listener wiring no-ops and the skip link tolerat
 });
 
 test("main imports without throwing when optional elements are absent", async () => {
-	// No skip / theme-toggle / exp-toggle / account / langpicker, and no matchMedia: every
+	// No skip / theme-toggle / account / langpicker, and no matchMedia: every
 	// `if (el)` / `if (window.matchMedia)` guard must take its false branch cleanly.
 	document.body.innerHTML = '<main id="view"></main><div id="qv"></div>';
 	const savedMM = window.matchMedia;

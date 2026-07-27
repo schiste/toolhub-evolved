@@ -18,6 +18,11 @@
 							window.matchMedia("(prefers-color-scheme: dark)").matches);
 					document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
 				} catch (e) {}
+				try {
+					if (localStorage.getItem("toolhub-sitenotice-dismissed") === "1") {
+						document.documentElement.classList.add("sitenotice-dismissed");
+					}
+				} catch (e) {}
 			})();
 		</script>
 		<!-- Typography uses the native Wikimedia/Codex system font stack (see styles/tokens.css):
@@ -48,15 +53,20 @@
 	<body>
 		<a class="skip" href="#view">Skip to content</a>
 
-		<!-- Feature-status banner: shown only while Evolved feature mode is on (CSS hides it
-	     when body.exp-off). Cannot be dismissed independently of the toggle. -->
-		<div class="mockup-banner" role="region" aria-label="Feature status notice">
+		<div class="mockup-banner" role="region" aria-label="Feature status notice" data-sitenotice>
 			<span class="mockup-banner__txt">
 				<span aria-hidden="true">⚠</span> Evolved preview — live Toolhub data with an Evolved overlay. Signed-in
 				supported writes go to Toolhub first; local drafts stay in Evolved.
 			</span>
 			<a class="mockup-banner__link" href="/experiments">Feature status</a>
 			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
+			<button class="mockup-banner__close" type="button" aria-label="Dismiss site notice" data-dismiss-sitenotice>
+				<svg class="icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
+					<path
+						d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"
+					/>
+				</svg>
+			</button>
 		</div>
 
 		<header class="nav">
@@ -119,23 +129,6 @@
 				</nav>
 			</div>
 		</header>
-
-		<!-- Evolved feature toggle (its own strip, below the header) -->
-		<section class="expbar" aria-label="Evolved feature controls">
-			<div class="container expbar__inner">
-				<button
-					class="exp-toggle"
-					id="exp-toggle"
-					type="button"
-					role="switch"
-					aria-checked="false"
-					title="Reveal Toolhub Evolved additions, including official-first writes, local drafts, and Evolved-owned data."
-				>
-					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-					<span class="exp-toggle__label">Show Evolved features</span>
-				</button>
-			</div>
-		</section>
 
 		<!-- The router renders the active view here -->
 		<main id="view" tabindex="-1" aria-live="polite" aria-busy="false"></main>

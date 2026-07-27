@@ -48,7 +48,7 @@ const S = {
 					<span class="browse__count" aria-live="polite">Showing 1-2 of 2 tools</span>
 					<span class="browse__controls">
 						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
-						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
+						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
 				<ul class="card-grid grid-tools" role="list"><li>
@@ -104,67 +104,11 @@ const S = {
 					<span class="browse__count" aria-live="polite">0 tools</span>
 					<span class="browse__controls">
 						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
-						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
+						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
 				<p class="empty">No tools match these filters.</p>
 				<nav class="pager" aria-label="Pagination"></nav>
-			</div>
-		</div>
-	</div>`,
-	exp_views: `
-	<div class="container page">
-		<h1 class="page__title">Browse tools</h1>
-		<div class="browse">
-			<aside class="facets" aria-label="Filters">
-				<form data-facet-q role="search">
-					<label for="facet-q" class="skip-label">Search within tools</label>
-					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="maps" />
-				</form>
-				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated"> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental"> <span>Experimental</span></label></div>
-				<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
-				<a class="btn btn--outline btn--md facets__reset" href="/search">Clear filters</a>
-			</aside>
-			<div class="browse__main">
-				<div class="browse__bar">
-					<span class="browse__count" aria-live="polite">Showing 13-14 of 50 tools for &ldquo;<span dir="auto">maps</span>&rdquo;</span>
-					<span class="browse__controls">
-						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
-						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="views">Popular this week</option><option value="complete">Most complete</option></select></label>
-					</span>
-				</div>
-				<ul class="card-grid grid-tools" role="list"><li>
-	<article class="tcard tcard--popular" data-tool="bravo">
-		
-		<div class="tcard__head">
-			<span class="rankbadge" aria-hidden="true">13</span><span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">B</span>
-			<div class="tcard__heading">
-				<button class="tcard__title" type="button" data-tool="bravo" aria-label="Quick look: Bravo" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Bravo</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
-			</div>
-		</div>
-		<p class="tcard__desc"></p>
-		<div class="tcard__tags"><span class="tag" data-q="maps" dir="auto">maps</span></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div>
-		<div class="tcard__foot"><span class="views experimental"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 17h16v2H1V1h2z"/><path d="M19 5v10H5v-1l4.5-5.5 3 3.5L18 5z"/></svg> 228 views</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when><button class="favbtn favbtn--sm" type="button" data-fav="bravo" aria-pressed="false" aria-label="Save to favorites"><span class="favbtn__ic" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg></span></button></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
-	</article></li><li>
-	<article class="tcard tcard--popular" data-tool="alpha">
-		
-		<div class="tcard__head">
-			<span class="rankbadge" aria-hidden="true">14</span><span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">A</span>
-			<div class="tcard__heading">
-				<button class="tcard__title" type="button" data-tool="alpha" aria-label="Quick look: Alpha" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Alpha</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
-			</div>
-		</div>
-		<p class="tcard__desc"></p>
-		<div class="tcard__tags"><span class="tag" data-q="maps" dir="auto">maps</span></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div>
-		<div class="tcard__foot"><span class="views experimental"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 17h16v2H1V1h2z"/><path d="M19 5v10H5v-1l4.5-5.5 3 3.5L18 5z"/></svg> 58 views</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when><button class="favbtn favbtn--sm" type="button" data-fav="alpha" aria-pressed="false" aria-label="Save to favorites"><span class="favbtn__ic" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg></span></button></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
-	</article></li></ul>
-				<nav class="pager" aria-label="Pagination"><button class="pager__btn" type="button"  data-page="1">‹ Prev</button><button class="pager__btn" type="button"  data-page="1">1</button><button class="pager__btn is-current" type="button"  data-page="2" aria-current="page">2</button><button class="pager__btn" type="button"  data-page="3">3</button><button class="pager__btn" type="button"  data-page="4">4</button><button class="pager__btn" type="button"  data-page="5">5</button><button class="pager__btn" type="button"  data-page="3">Next ›</button></nav>
 			</div>
 		</div>
 	</div>`,
@@ -186,7 +130,7 @@ const S = {
 					<span class="browse__count" aria-live="polite">Showing 2 on this page of 3 tools <span class="browse__count-note">filtered in your browser</span></span>
 					<span class="browse__controls">
 						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
-						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
+						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
 				<ul class="card-grid grid-tools" role="list"><li>
@@ -242,7 +186,7 @@ const S = {
 					<span class="browse__count" aria-live="polite">No visible tools on this page of 1 tool <span class="browse__count-note">filtered in your browser</span></span>
 					<span class="browse__controls">
 						<label class="sort"><span class="skip-label">Results per page</span><select id="page-size"><option value="12">12 per page</option><option value="24">24 per page</option><option value="48">48 per page</option></select></label>
-						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
+						<label class="sort"><span class="skip-label">Sort by</span><select id="sort"><option value="relevance">Most relevant</option><option value="recent">Recently updated</option><option value="name">Name (A–Z)</option><option value="complete">Most complete</option></select></label>
 					</span>
 				</div>
 				<p class="empty">No tools match these filters.</p>
@@ -297,7 +241,7 @@ beforeEach(() => {
 	setUrl("");
 });
 
-test("search default (exp off, no query, populated results)", async () => {
+test("search default (no query, populated results)", async () => {
 	setUrl("");
 	h.apiGet.mockResolvedValue({
 		results: [rawTool("alpha", { title: "Alpha", keywords: ["a"] }), rawTool("bravo", { title: "Bravo" })],
@@ -309,8 +253,7 @@ test("search default (exp off, no query, populated results)", async () => {
 	expect("default", r.html);
 });
 
-test("search exp on ignores removed popularity sort and renders normal cards", async () => {
-	applyExp(true);
+test("search ignores removed popularity sort and renders normal cards", async () => {
 	setUrl("q=maps&sort=views&page=2&page_size=12");
 	h.apiGet.mockResolvedValue({
 		results: [
@@ -384,8 +327,7 @@ test("search sort=complete orders by completeness with title tiebreak", async ()
 
 /* ---- sort resolution branches ---- */
 
-async function sortValueFor(qs, exp = false) {
-	applyExp(exp);
+async function sortValueFor(qs) {
 	setUrl(qs);
 	h.apiGet.mockResolvedValue({ results: [], count: 0, facets: {} });
 	const r = await search.viewSearch();
@@ -394,16 +336,15 @@ async function sortValueFor(qs, exp = false) {
 	return document.querySelector("#sort").value;
 }
 
-test("ordering=-modified_date maps to recent (exp on so it differs from the relevance default)", async () =>
-	assert.equal(await sortValueFor("ordering=-modified_date", true), "recent"));
+test("ordering=-modified_date maps to recent", async () =>
+	assert.equal(await sortValueFor("ordering=-modified_date"), "recent"));
 test("ordering=name maps to name", async () => assert.equal(await sortValueFor("ordering=name"), "name"));
-test("ordering=-score maps to relevance (exp on)", async () =>
-	assert.equal(await sortValueFor("ordering=-score", true), "relevance"));
-test("unknown ordering falls back to default recent (exp off)", async () =>
-	assert.equal(await sortValueFor("ordering=zzz"), "recent"));
-test("exp on default sort is relevance", async () => assert.equal(await sortValueFor("", true), "relevance"));
-test("disallowed sort (views, exp off) falls back to recent", async () =>
-	assert.equal(await sortValueFor("sort=views"), "recent"));
+test("ordering=-score maps to relevance", async () => assert.equal(await sortValueFor("ordering=-score"), "relevance"));
+test("unknown ordering falls back to default relevance", async () =>
+	assert.equal(await sortValueFor("ordering=zzz"), "relevance"));
+test("default sort is relevance", async () => assert.equal(await sortValueFor(""), "relevance"));
+test("disallowed sort (views) falls back to relevance", async () =>
+	assert.equal(await sortValueFor("sort=views"), "relevance"));
 test("page_size invalid falls back to default", async () => {
 	applyExp(false);
 	setUrl("page_size=999");
@@ -437,7 +378,7 @@ test("mount: sort change navigates with sort param", async () => {
 test("mount: default sort is omitted from the URL", async () => {
 	await mountSearch("");
 	const sortEl = document.querySelector("#sort");
-	sortEl.value = "recent"; // === defaultSort (exp off)
+	sortEl.value = "relevance";
 	sortEl.dispatchEvent(new Event("change", { bubbles: true }));
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/search"]);
 });
@@ -491,8 +432,7 @@ test("attachEndorsements is awaited (apiGet called once for results)", async () 
 
 /* ---- api param construction (mock captures the URLSearchParams) ---- */
 
-async function apiParamsFor(qs, exp = false) {
-	applyExp(exp);
+async function apiParamsFor(qs) {
 	setUrl(qs);
 	let captured;
 	h.apiGet.mockImplementation(async (path, params) => {
@@ -503,8 +443,8 @@ async function apiParamsFor(qs, exp = false) {
 	return captured;
 }
 
-test("api params: default (no query, exp off) → recent ordering", async () => {
-	assert.equal(await apiParamsFor(""), "page=1&page_size=24&ordering=-modified_date");
+test("api params: default (no query) → relevance default with no ordering", async () => {
+	assert.equal(await apiParamsFor(""), "page=1&page_size=24");
 });
 test("api params: q + sort=name + paging", async () => {
 	assert.equal(
@@ -515,20 +455,14 @@ test("api params: q + sort=name + paging", async () => {
 test("api params: sort=complete → no ordering param", async () => {
 	assert.equal(await apiParamsFor("sort=complete"), "page=1&page_size=24");
 });
-test("api params: exp on sort=recent → recent stays allowed (ordering kept)", async () => {
-	assert.equal(await apiParamsFor("sort=recent", true), "page=1&page_size=24&ordering=-modified_date");
+test("api params: sort=recent stays allowed (ordering kept)", async () => {
+	assert.equal(await apiParamsFor("sort=recent"), "page=1&page_size=24&ordering=-modified_date");
 });
-test("api params: exp off sort=name stays allowed (ordering=name)", async () => {
+test("api params: sort=name stays allowed (ordering=name)", async () => {
 	assert.equal(await apiParamsFor("sort=name"), "page=1&page_size=24&ordering=name");
 });
-test("api params: exp on sort=name stays allowed (ordering=name)", async () => {
-	assert.equal(await apiParamsFor("sort=name", true), "page=1&page_size=24&ordering=name");
-});
 test("api params: only *__term filters are forwarded (others dropped)", async () => {
-	assert.equal(
-		await apiParamsFor("audiences__term=editor&extra=x"),
-		"page=1&page_size=24&ordering=-modified_date&audiences__term=editor"
-	);
+	assert.equal(await apiParamsFor("audiences__term=editor&extra=x"), "page=1&page_size=24&audiences__term=editor");
 });
 
 test("selected *__term marks the matching facet checkbox checked", async () => {

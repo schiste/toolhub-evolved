@@ -150,10 +150,9 @@ export const STATIC = {
 		with Toolhub, supported writes are sent back to the official Toolhub API using your
 		OAuth grant.</p>
 		<h2>${t("static.rulesOfEngagement.whatsEvolved", "What's Evolved-only")}</h2>
-		<p>When you switch on <em>"Show Evolved features"</em>, the app turns on a
-		set of additions. Some have real official write paths when you are signed in:
-		favorites, lists, direct tool submissions, core edits where Toolhub permits them,
-		community annotations, and crawler URL registration.</p>
+		<p>Evolved additions are visible by default. Some have real official write paths
+		when you are signed in: favorites, lists, direct tool submissions, core edits
+		where Toolhub permits them, community annotations, and crawler URL registration.</p>
 		<p>Future Evolved-only signals such as popularity, thanks, health, usage, and
 		screenshots stay hidden until they have real backend data. They do not ship as
 		fixtures or generated values.</p>
@@ -164,8 +163,8 @@ export const STATIC = {
 			supports that.</li>
 			<li>Signed-out users can read live Toolhub data, but create/update/delete
 			actions require Toolhub sign-in.</li>
-			<li>Turning the toggle <strong>off</strong> strips every overlay and returns the
-			app to the honest, live, read-only experience.</li>
+			<li>The site notice can be dismissed with its close button; that only hides the
+			notice in this browser and does not change where data is stored.</li>
 		</ul>
 		<h2>${t("static.rulesOfEngagement.honestEdges", "The honest edges")}</h2>
 		<p>Because search is still based on Toolhub's live search API, a locally saved draft

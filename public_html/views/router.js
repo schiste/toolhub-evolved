@@ -223,7 +223,7 @@ const SPINNER_DELAY = 250;
 function commitView(viewEl, view, path) {
 	viewEl.innerHTML = view.html;
 	viewEl.setAttribute("aria-busy", "false");
-	document.body.classList.toggle("on-home", path === "/"); // expbar blends with the hero on home
+	document.body.classList.toggle("on-home", path === "/");
 	document.title = view.title || "Toolhub";
 	if (typeof view.mount === "function") view.mount();
 	setActiveNav();

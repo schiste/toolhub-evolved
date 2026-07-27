@@ -19,24 +19,17 @@ Every piece of work therefore falls into exactly one of two lanes:
   read-only API as it exists today: correctness, internationalization,
   accessibility, performance, polish. No backend changes, ever.
 
-- **Lane B — Experiments (behind the existing toggle, real data overloaded with
-  fixtures).** Every feature that would require a backend capability the
-  read-only API does not give us — any **write**, any **auth/session**, or any
-  **signal Toolhub doesn't expose** — lives behind the existing _"Show me
-  prospective features"_ toggle (`expOn()` / `body.exp-off` / `.experimental`).
-  Crucially, **Lane B does not introduce a parallel data source.** It keeps
-  reading the same live API as Lane A and **overloads those real records with a
-  feature-specific fixture layer** — exactly how `synthViews(name)` already
-  decorates a real tool with a synthetic view count. Each feature carries an
-  `exp-badge` and a one-line code comment naming the backend capability it would
-  need in production.
+- **Lane B — Hybrid Evolved layer (default-on, real data plus labeled local
+  overlays).** Features that require a backend capability beyond the official
+  read API — any **write**, any **auth/session**, or any **signal Toolhub
+  doesn't expose** — now live in the production Evolved layer. Crucially, this
+  layer does not replace Toolhub as the base data source: it keeps reading the
+  same live API and layers clearly labeled local Evolved records on top.
 
 **The rule that routes all future work:** _if a feature needs a write, a login,
-or a number the read-only API doesn't return, it stays in Lane B and is built as
-a fixture overlay on top of the real live data — it never replaces the real data
-and never blocks or complicates the shipping interface._ Turning the toggle off
-strips every overlay and returns the app to a 100% honest, live, read-only
-Toolhub experience.
+or a number the official API doesn't return, it belongs in the hybrid Evolved
+layer and must stay clearly labeled — it never replaces the real Toolhub base
+data._
 
 Explicitly **out of scope** (the demo never grows a server): a real write/auth
 backend (FastAPI/SQLite/Django), real Wikimedia OAuth, a server-side crawler,
@@ -52,13 +45,9 @@ ever productionized," not as work for this plan.
   History API routes; there is no bundled catalog and reads never move to
   fixtures. (Architecture: `main.js`, `views/`, `lib/`, `index.html`, `styles/`,
   `proxy/app.py`.)
-- The **experimental toggle already exists** and its synthetic features already
-  use the exact pattern this plan generalizes: a **real record overloaded with a
-  feature-specific fixture**. `synthViews(name)` decorates a real tool with a
-  deterministic view count; thanks, health, usage, and screenshots likewise
-  hang off real tools, each behind an `exp-badge` and a
-  `// EXPERIMENTAL — MISSING …` comment. **Lane B's mechanism is already in the
-  codebase** — every new experiment follows the same overload shape.
+- The previous **experimental toggle** has been removed. Evolved additions are
+  now default-visible production features, with provenance and sync-status labels
+  replacing the old opt-in switch.
 - **Lane A correctness is done** (feature-fix sweep, §2.1).
 - **Lane A i18n/a11y primitives have landed** (Intl formatters, `lang`/`dir`,
   `<time>`, `dir="auto"`, modal `inert`/focus-trap, `aria-busy`, `aria-current`,
@@ -76,8 +65,8 @@ define the "no regressions" bar for the shipping interface:
 | Sev  | Issue                                                                                                      | Fix                                                                         |
 | ---- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | High | `/api-docs` iframed a page sending `X-Frame-Options: DENY` (blank frame + console error)                   | Replaced iframe with doc links + live same-origin endpoint cards            |
-| Med  | "Popular this week" ranked in list order, not by `weeklyViews`                                             | Sort by `weeklyViews` before ranking                                        |
-| Med  | `/search?sort=views` linked but unsupported (blank select)                                                 | Added experimental `views` sort + in-page ranking + exp-off fallback        |
+| Med  | Obsolete popularity sort used synthetic `weeklyViews`                                                      | Removed from production UI until backed by real Evolved data                |
+| Med  | `/search?sort=views` linked but unsupported (blank select)                                                 | Stale requests now fall back to the production relevance sort               |
 | Med  | `normalizeTool` ignored annotation-fallback fields (hid real `tool_type`, `for_wikis`, icons, docs, links) | Core-then-annotation fallback                                               |
 | Low  | "joined **Updated yesterday**" awkward label                                                               | Split generic relative-time from update-specific `relTime` (now via `Intl`) |
 | Low  | Recent-change rows only deep-linked tools                                                                  | Added list-target routing                                                   |
@@ -128,13 +117,11 @@ lazy-loading audit. Light, opportunistic.
 
 ---
 
-## 3. Lane B — Experiments (behind the toggle, live data overloaded with fixtures)
+## 3. Lane B — Hybrid Evolved Layer (default-on, labeled local data)
 
-Everything here is gated by `expOn()`. With the toggle **off**, none of it
-renders and the app is a pure live read-only catalog. With it **on**, these
-features still read the **live API** and overload those real records with a
-feature-specific fixture layer (synthetic signals computed per record, and
-user-action deltas persisted in browser storage) — no server.
+Everything here now renders by default when relevant. These features still read
+the **live API** as the base and layer clearly labeled Evolved-local data on top
+through the backend overlay API — no synthetic production fixtures.
 
 ### 3.1 The mechanism — overload live data with feature fixtures (build once, reuse)
 
@@ -155,8 +142,7 @@ There are two overlay kinds:
   favorited tool **names**, demo lists referencing real tool names, field-level
   **edits layered onto a real tool**, annotation overrides, and net-new
   submissions (a local record shaped like a real tool). At render time the
-  overlay is merged over the live read; with the toggle off, the overlay is
-  ignored entirely. Ships with a **"Reset demo data"** action.
+  overlay is merged over the live read with provenance labels.
 
 Supporting pieces:
 
@@ -192,39 +178,34 @@ Appendix A as the contract each simulation imitates.
 | **History & feeds**                                                                  | Demo actions append revision/audit rows so `/recent`, `/audit-logs`, history reflect _your_ edits                                                                                                                                                                             | local rows merged on top of the **live** `/api/recent/` & `/api/auditlogs/` feeds                           | Server write-side-effects                                                 |
 | **Already-synthetic** (popularity/`weeklyViews`, thanks, health, usage, screenshots) | unchanged; the original overload pattern                                                                                                                                                                                                                                      | deterministic per-tool signal computed from the live record (optional seed JSON)                            | Real usage/health/thanks data source                                      |
 
-### 3.3 Route & chrome behavior under the flag
+### 3.3 Route & chrome behavior
 
-- **The toggle defaults OFF** (decision §8.1). On first visit the app is the pure
-  live read-only interface; the user opts into experiments via the existing
-  _"Show me prospective features"_ switch. The choice persists in `localStorage`.
+- **Evolved features are default-visible.** The legacy feature toggle has been
+  removed; users no longer need to opt in before using the hybrid flows.
 - The `signInPage()` stubs (`/login`, `/favorites`, `/my-lists`,
   `/lists/create`, `/lists/:id/edit`, `/tools/:name/edit`,
-  `/tools/:name/edit-annotations`, `/add-or-remove-tools`) become **real
-  flagged views when the toggle is on**, and **keep their current "prospective
-  feature" placeholder when off**.
+  `/tools/:name/edit-annotations`, `/add-or-remove-tools`) become **real hybrid
+  views** backed by official-first writes and Evolved-local fallback storage.
 - `/developer-settings` stays **hidden/placeholder in both states** (decision §8.5).
-- The header **"Submit a tool"** button: flag on → **in-app `/tools/create`**
-  (decision §8.3); flag off → keep the current link to the production create URL.
+- The header **"Submit a tool"** button uses the in-app `/tools/create` hybrid
+  flow.
 
 ### 3.4 The mockup banner + "Rules of Engagement" page
 
 These make the live-vs-fixtures distinction impossible to miss whenever
 experiments are active.
 
-**Red mockup banner.** While experimental mode is **on**, a persistent red banner
-is pinned to the very top of every page (above the header and the `expbar`
-toggle strip), shown site-wide — so it is always present on the in-app
-submit/edit/favorites pages, which only exist while the toggle is on.
+**Site notice.** A persistent red notice is shown at the very top of every page
+by default, so the hybrid state is visible on in-app submit/edit/favorites pages.
 
 - Copy: _"⚠ Mockup — this is a prototype, not a working integration with the real
   Toolhub. Experimental features are simulated and saved only in your browser."_
   plus a link to **Rules of Engagement**.
-- Implementation: a `.mockup-banner` element rendered/visible only when
-  `body:not(.exp-off)`; uses the brand destructive (red) token for high contrast;
-  `role="region"` with an accessible label; sticky; no animation (reduced-motion
-  safe). **Not dismissible** independently of the toggle — the way to remove it is
-  to turn experiments off. It is distinct from the `expbar` switch, which stays
-  visible in both states so users can flip experiments on/off.
+- Implementation: a `.mockup-banner` element visible by default; uses the brand
+  destructive (red) token for high contrast; `role="region"` with an accessible
+  label; no animation (reduced-motion safe). A small dismiss button stores
+  `toolhub-sitenotice-dismissed=1` in `localStorage` so future sessions keep it
+  hidden.
 
 **"Rules of Engagement" page** (`/rules-of-engagement`) — a Lane A prose page
 (frontend-only, always reachable), linked from the banner and the footer. It
@@ -238,9 +219,9 @@ explains the model in plain language:
   submit/edit, annotations, and synthetic signals (popularity, thanks, health,
   usage, screenshots). These **overload the real records with fixtures/local
   overlays**.
-- **Where your actions go** — stored only in this browser (`localStorage`),
-  per-browser, **never sent to Toolhub**; "Reset demo data" clears them; turning
-  the toggle off strips every overlay.
+- **Where your actions go** — official-first writes go to Toolhub when accepted;
+  rejected or draft data is stored in Evolved-local backend tables with clear
+  provenance.
 - **Honest edges** — a demo-created or demo-edited tool will not appear in live
   search, because search is real and read-only.
 
@@ -250,22 +231,17 @@ explains the model in plain language:
 
 - Keep `apiGet(path, params)` for live reads — unchanged; it stays the only data
   source for the base records.
-- Add `demoOverlay` (a thin `localStorage` wrapper for user-action deltas) and
-  `apiWrite`/`demoApi` (`post/put/delete`) used **only** inside `expOn()`
-  branches; writes land in `demoOverlay`, never on the network.
-- Default the toggle **off** (flip the current `EXP_KEY` default) and render the
-  `.mockup-banner` whenever `expOn()`; both the banner and the
-  `/rules-of-engagement` page are wired in the same change.
+- Add backend overlay storage for user-action deltas and official-first write
+  adapters; local storage remains a cache/test fallback, not production source
+  of truth.
+- Render the `.mockup-banner` by default; its dismiss button persists only the
+  site-notice preference in `localStorage`.
 - Add a thin **merge step**: after `normalizeTool()`/`normalizeList()` produce the
-  live object, when `expOn()` apply the matching overlay (favorite flag, field
-  edits, annotation overrides, synthetic signals) so the existing cards/views
-  render the decorated object unchanged. When the toggle is off, the merge is a
-  no-op and only live data shows.
-- Gate every Lane B view/control behind `expOn()`; rely on the existing
-  `body.exp-off` / `.experimental` hiding so toggling is instant and complete.
-- One golden rule in review: **no Lane B code path runs and no overlay is merged
-  when the toggle is off** — the app is then byte-for-byte the live read-only
-  interface.
+  live object, apply the matching Evolved overlay (favorite flag, field edits,
+  annotation overrides, real Evolved-owned signals) so existing cards/views
+  render the decorated object unchanged.
+- Gate no production view behind an Evolved feature toggle; use provenance labels
+  and sync-status copy instead.
 
 ---
 
@@ -294,8 +270,8 @@ can ship while Lane B is still in progress, and vice versa.
   browser").
 - **Submitted/edited tools aren't in live search.** By design — shown only in
   "my submissions"/overlay views, clearly labeled.
-- **Synthetic signals must stay labeled.** This is exactly what the toggle is
-  for; never let a Lane B value read as live Toolhub data.
+- **Evolved-only signals must stay labeled.** Never let an Evolved-local value
+  read as live Toolhub data.
 - **Fixture/seed staleness.** Show seed provenance/date where seed data backs a
   feature.
 - **Crawler fidelity.** The browser can't fetch arbitrary `toolinfo.json` (CORS),
@@ -316,8 +292,8 @@ that, if this day ever comes, callers don't change — only the adapter's target
 
 ## 8. Decisions — RESOLVED (2026-06-22)
 
-1. **Default toggle state → OFF.** First visit is the pure live read-only
-   interface; users opt into experiments. Choice persists in `localStorage`.
+1. **Evolved feature toggle → removed.** Hybrid Evolved features are
+   default-visible; only the site notice dismissal persists in `localStorage`.
 2. **Storage → `localStorage`** for all demo-write overlays (`demoOverlay`).
 3. **"Submit a tool" with flag on → in-app form** (`/tools/create`), with the
    red mockup banner present (§3.4). Flag off → keep the external production link.
@@ -332,9 +308,9 @@ that, if this day ever comes, callers don't change — only the adapter's target
 7. **Seed scope → small.** A few sample thanks and a few demo lists/examples —
    just enough to make the experiments believable.
 
-Always-on labeling (from these decisions): the **red mockup banner** shows on
-every page whenever experiments are on, and links to the **Rules of Engagement**
-page (§3.4) explaining live data vs. fixtures.
+Always-on labeling (from these decisions): the **red site notice** shows on every
+page by default, can be dismissed locally, and links to the **Rules of
+Engagement** page (§3.4) explaining live data vs. Evolved-local data.
 
 ---
 

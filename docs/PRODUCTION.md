@@ -141,13 +141,13 @@ Small, because the pivot was designed in:
   Toolhub"; Toolhub OAuth stores a server-side grant and `GET /v1/user/` drives
   the account menu. Logged-out users get the live read interface, with
   create/update/delete actions prompting Toolhub sign-in.
-- **The Evolved feature toggle documents the hybrid boundary.** Some additions
-  are real signed-in write paths through Toolhub OAuth; others are local drafts
-  or fallback overlays. The banner, feature-status page, and _Rules of
-  Engagement_ page explain what is live from Toolhub and what is stored in
-  Evolved. Signals and screenshots are shown only from real Evolved-owned
-  backend records (`tool_events`, `tool_thanks`, `tool_health_*`,
-  `tool_media`); there is no synthetic production fallback.
+- **The Evolved layer is part of the default production surface.** Some
+  additions are real signed-in write paths through Toolhub OAuth; others are
+  local drafts or fallback overlays. The dismissible site notice,
+  feature-status page, and _Rules of Engagement_ page explain what is live from
+  Toolhub and what is stored in Evolved. Signals and screenshots are shown only
+  from real Evolved-owned backend records (`tool_events`, `tool_thanks`,
+  `tool_health_*`, `tool_media`); there is no synthetic production fallback.
 - **Search UI** gains a provenance facet (Toolhub / registered here) driven by
   the federated search.
 

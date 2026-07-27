@@ -353,12 +353,12 @@ test("newToolBase builds a compact record with defaults or null for unknown name
 	assert.equal(api.newToolBase("absent"), null);
 });
 
-test("normalizeTool applies the demo overlay only when experimental mode is on", () => {
+test("normalizeTool applies the overlay even if legacy feature mode is disabled", () => {
 	demoStore.set(DEMO_KEYS.toolEdits, { OV: { description: "overlaid" } });
 	session.applyExp(false);
-	const off = api.normalizeTool({ name: "OV", description: "orig" });
-	assert.equal(off.edited, undefined);
-	assert.equal(off.description, "orig");
+	const compatOff = api.normalizeTool({ name: "OV", description: "orig" });
+	assert.equal(compatOff.edited, true);
+	assert.equal(compatOff.description, "overlaid");
 	session.applyExp(true);
 	const on = api.normalizeTool({ name: "OV", description: "orig" });
 	assert.equal(on.edited, true);

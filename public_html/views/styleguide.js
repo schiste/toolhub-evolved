@@ -211,19 +211,6 @@ function accountButtonExample() {
 	</div>`;
 }
 
-function experimentsToggleExample() {
-	return `<div class="sg-inline-list">
-		<button class="exp-toggle" type="button" role="switch" aria-checked="true">
-			<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-			<span class="exp-toggle__label">Prospective features on</span>
-		</button>
-		<button class="exp-toggle" type="button" role="switch" aria-checked="false">
-			<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-			<span class="exp-toggle__label">Prospective features off</span>
-		</button>
-	</div>`;
-}
-
 function quickViewCloseExample() {
 	return `<div class="sg-qv-close-frame">
 		<button class="qv__x" type="button" aria-label="Close quick view">${icon("close")}</button>
@@ -379,24 +366,12 @@ function footerExample() {
 
 function mockupBannerExample() {
 	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
-		<div class="mockup-banner" role="region" aria-label="Feature status notice">
+		<div class="mockup-banner" role="region" aria-label="Feature status notice" data-sitenotice>
 			<span class="mockup-banner__txt"><span aria-hidden="true">!</span> Evolved preview - live Toolhub data with an Evolved overlay. <span class="mock-tag">Hybrid</span></span>
 			<a class="mockup-banner__link" href="/experiments">Feature status</a>
 			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
+			<button class="mockup-banner__close" type="button" aria-label="Dismiss site notice">${icon("close")}</button>
 		</div>
-	</div>`;
-}
-
-function experimentsBarExample() {
-	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
-		<section class="expbar" aria-label="Evolved feature controls">
-			<div class="container expbar__inner">
-				<button class="exp-toggle" type="button" role="switch" aria-checked="false">
-					<span class="exp-toggle__track"><span class="exp-toggle__thumb"></span></span>
-					<span class="exp-toggle__label">Show Evolved features</span>
-				</button>
-			</div>
-		</section>
 	</div>`;
 }
 
@@ -732,7 +707,6 @@ function chromeSection() {
 			${example("Nav + brand", "app chrome", chromeNavExample(), { wide: true })}
 			${example("Footer", "app chrome", footerExample(), { wide: true })}
 			${example("Feature banner + status tag", "app chrome", mockupBannerExample(), { wide: true, compact: true })}
-			${example("Experiments bar", "app chrome", experimentsBarExample(), { wide: true, compact: true })}
 			${example("Full hero block", "app chrome / organism", fullHeroExample(), { wide: true })}
 		</div>`
 	);
@@ -813,7 +787,6 @@ function moleculesSection() {
 			${example("renderFacetGroup(group, facets, selected)", "molecules", renderFacetGroup(FIXTURE_FACET_GROUP, FIXTURE_FACETS, FIXTURE_SELECTED_FACETS), { wide: true })}
 			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="Pagination">${renderPager(2, 7)}</nav>`, { wide: true })}
 			${example(".acct__btn", "molecules", accountButtonExample())}
-			${example(".exp-toggle", "organisms", experimentsToggleExample(), { wide: true })}
 			${example(".qv__x", "organisms", quickViewCloseExample())}
 			${example("Annotation editor controls", "molecules", annotationEditorExample(), { wide: true })}
 			${example("List editor full row", "molecules", listEditorControlsExample(), { wide: true })}

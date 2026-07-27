@@ -160,7 +160,7 @@ export function viewExperiments() {
 					<li class="exfeat">
 						<div class="exfeat__head">
 							<h3 class="exfeat__name">${esc(it.name)}</h3>
-							${it.tryHref ? `<a class="exfeat__try" href="${esc(it.tryHref)}" data-enable-evolved>${esc(it.tryLabel || t("experiments.tryIt", "Try it"))} <span aria-hidden="true">→</span></a>` : ""}
+							${it.tryHref ? `<a class="exfeat__try" href="${esc(it.tryHref)}">${esc(it.tryLabel || t("experiments.tryIt", "Try it"))} <span aria-hidden="true">→</span></a>` : ""}
 						</div>
 						<p class="exfeat__what">${esc(it.what)}</p>
 						<dl class="exfeat__meta">
@@ -182,8 +182,7 @@ export function viewExperiments() {
 			<p class="page__intro">${t("experiments.introLead", "The {total} features below describe Toolhub Evolved's hybrid model:", { total: esc(String(total)) })}
 			<strong>${t("experiments.introLive", "live Toolhub data stays the base")}</strong>, ${t("experiments.introWrites", "supported signed-in writes publish to official Toolhub first, and")}
 			<strong>${t("experiments.introOverlay", "local overlays cover drafts, fallback data, and Evolved-owned data")}</strong>.
-			${t("experiments.introToggleLead", "Some UI is shown only when")}
-			<strong>${t("experiments.introToggle", "“Show Evolved features”")}</strong> ${t("experiments.introTail", "is on. For the live-vs-local model and where your data goes, see")}
+			${t("experiments.introTail", "These features are visible by default; for the live-vs-local model and where your data goes, see")}
 			<a href="/rules-of-engagement">${t("experiments.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 			${groups}
 		</div>`

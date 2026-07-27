@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { pickLocalized, t } from "./i18n.js";
-import { expOn, signedIn, USER } from "./session.js";
+import { signedIn, USER } from "./session.js";
 import { toolEditsMap, toolAnnosMap, toolNewMap } from "./store.js";
 
 /* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
@@ -350,7 +350,7 @@ export function normalizeTool(t) {
 		weeklyViews: 0,
 		status: statusOf({ deprecated, experimental })
 	};
-	if (expOn()) applyToolOverlay(o); // Lane B: edits/annotations overload the live record
+	applyToolOverlay(o);
 	INDEX[o.name] = o; // cache for quick-view
 	return o;
 }

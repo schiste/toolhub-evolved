@@ -273,7 +273,7 @@ export async function viewTool(name) {
 		linkOut(t("tool.translate", "Translate"), tool.translate)
 	].join("");
 
-	// REAL status — only the deprecated/experimental flags (shown even when exp off).
+	// Official Toolhub status flags stay visible alongside Evolved-local panels.
 	const realBadge = statusBadge(tool);
 	const membershipMap = await listMemberships();
 	tool.endorsement = endorsementOf(tool.name, membershipMap);

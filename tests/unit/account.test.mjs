@@ -8,7 +8,7 @@ import {
 	toggleAcctMenu
 } from "../../public_html/lib/organisms/account.js";
 import { esc } from "../../public_html/lib/core/dom.js";
-import { USER, applyExp, setAuth, setServerUser } from "../../public_html/lib/core/session.js";
+import { USER, setAuth, setServerUser } from "../../public_html/lib/core/session.js";
 import { avatar } from "../../public_html/lib/atoms/avatar.js";
 import { button } from "../../public_html/lib/atoms/button.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
@@ -34,27 +34,16 @@ beforeEach(() => {
 	document.body.innerHTML = "";
 	oauthOn = false;
 	setServerUser(null);
-	applyExp(true);
 	setAuth(true);
 });
 
 test("renderAccount no-ops when #account is absent", () => {
-	applyExp(true);
 	setAuth(true);
 	renderAccount();
 	assert.equal(document.body.innerHTML, "");
 });
 
-test("renderAccount shows Log in when experiments are off", () => {
-	applyExp(false);
-	document.body.innerHTML = `<div id="account"></div>`;
-	renderAccount();
-	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
-	htmlEqual(el.innerHTML, button("Log in", { variant: "outline", href: "/login" }));
-});
-
-test("renderAccount shows Log in when exp on but signed out and OAuth is unavailable", () => {
-	applyExp(true);
+test("renderAccount shows Log in when signed out and OAuth is unavailable", () => {
 	setAuth(false);
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
@@ -72,18 +61,16 @@ test("renderAccount shows the account menu when signed in", () => {
 	assert.equal(/** @type {HTMLElement} */ (el.querySelector("#acct-menu")).hidden, true);
 });
 
-test("renderAccount offers the real sign-in when OAuth is configured (exp off)", () => {
+test("renderAccount offers Toolhub sign-in when OAuth is configured", () => {
 	oauthOn = true;
-	applyExp(false);
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
-	htmlEqual(el.innerHTML, button("Log in", { variant: "outline", href: "/oauth/login" }));
+	htmlEqual(el.innerHTML, button("Sign in with Toolhub", { href: "/oauth/login" }));
 });
 
-test("renderAccount offers Toolhub sign-in ahead of the demo one when configured", () => {
+test("renderAccount keeps offering Toolhub sign-in after legacy auth calls", () => {
 	oauthOn = true;
-	applyExp(true);
 	setAuth(false);
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
@@ -185,24 +172,13 @@ test("toggleAcctMenu opens an empty menu without focusing anything", () => {
 	assert.equal(document.activeElement, before);
 });
 
-test("syncSubmitButton uses the in-app create form when experimenting", () => {
-	applyExp(true);
+test("syncSubmitButton uses the in-app hybrid create form", () => {
 	document.body.innerHTML = `<a id="submit-tool" href="#" target="_blank" rel="noopener nofollow"></a>`;
 	const b = /** @type {HTMLElement} */ (document.querySelector("#submit-tool"));
 	syncSubmitButton();
 	assert.equal(b.getAttribute("href"), "/tools/create");
 	assert.equal(b.hasAttribute("target"), false);
 	assert.equal(b.hasAttribute("rel"), false);
-});
-
-test("syncSubmitButton uses the production link when not experimenting", () => {
-	applyExp(false);
-	document.body.innerHTML = `<a id="submit-tool" href="#"></a>`;
-	const b = /** @type {HTMLElement} */ (document.querySelector("#submit-tool"));
-	syncSubmitButton();
-	assert.equal(b.getAttribute("href"), "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create");
-	assert.equal(b.getAttribute("target"), "_blank");
-	assert.equal(b.getAttribute("rel"), "noopener nofollow");
 });
 
 test("syncSubmitButton no-ops when the button is absent", () => {

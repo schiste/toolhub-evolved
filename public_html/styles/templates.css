@@ -299,9 +299,7 @@
 		.linkcard,
 		.home-results,
 		.recent,
-		.spinner,
-		.exp-toggle__track,
-		.exp-toggle__thumb
+		.spinner
 	) {
 		transition: none;
 		animation: none;

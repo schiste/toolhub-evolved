@@ -9,7 +9,7 @@ import {
 	setLocale,
 	setMessages
 } from "./lib/core/i18n.js";
-import { applyExp, expOn, expStored, setAuthRender, setExpStored } from "./lib/core/session.js";
+import { dismissSiteNotice, setAuthRender } from "./lib/core/session.js";
 import { initServerSync, officialWrite, officialWriteAvailable } from "./lib/core/serversync.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { listToolToggle, toggleFav } from "./lib/core/store.js";
@@ -22,20 +22,11 @@ import { closeQuickView, openQuickView, qvTrap } from "./lib/organisms/quickview
 import { render } from "./views/router.js";
 
 setAuthRender(() => {
-	syncExpDom(expOn()); // a real sign-in turns feature mode on — reflect it
 	renderAccount();
 	syncSubmitButton();
 	render();
 });
 applyLocaleAttrs();
-// Reflect experimental mode into the DOM (core holds the flag; the app owns the
-// CSS hook). CSS hides .experimental elements while body has .exp-off.
-/** @param {boolean} on */
-function syncExpDom(on) {
-	document.body.classList.toggle("exp-off", !on);
-	const btn = $("#exp-toggle");
-	if (btn) btn.setAttribute("aria-checked", String(on));
-}
 
 /** @param {string} name */
 function toggleFavorite(name) {
@@ -48,8 +39,17 @@ function toggleFavorite(name) {
 		});
 	}
 }
-applyExp(expStored());
-syncExpDom(expOn());
+const siteNotice = document.querySelector("[data-sitenotice]");
+const siteNoticeDismiss = document.querySelector("[data-dismiss-sitenotice]");
+if (siteNoticeDismiss) {
+	siteNoticeDismiss.addEventListener("click", () => {
+		try {
+			dismissSiteNotice();
+		} catch {}
+		document.documentElement.classList.add("sitenotice-dismissed");
+		siteNotice?.setAttribute("hidden", "");
+	});
+}
 
 /* Color theme: Light/Dark toggle. The active option reflects the RESOLVED theme
    (<html data-theme>), so it shows the right state even before an explicit choice
@@ -212,21 +212,6 @@ document.addEventListener("click", (e) => {
 	if (!e.target?.closest("#langpicker")) closeLangMenu();
 });
 
-/* Experimental toggle: persist, flip body state, re-render so JS-conditional
-   experimental logic (e.g. the sort options) updates too. */
-const expBtn = $("#exp-toggle");
-if (expBtn) {
-	expBtn.addEventListener("click", () => {
-		const on = !expOn();
-		setExpStored(on);
-		applyExp(on);
-		syncExpDom(on);
-		renderAccount(); // identity is experimental — reflect the new state
-		syncSubmitButton();
-		render();
-	});
-}
-
 /* Clean SPA links use the History API; direct loads are handled by the Flask fallback. */
 document.addEventListener("click", (e) => {
 	if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -238,13 +223,6 @@ document.addEventListener("click", (e) => {
 	// /api/ and /oauth/ are server routes (proxy reads; OAuth redirects) — never SPA-routed.
 	const serverRoute = url.pathname.startsWith("/api/") || url.pathname.startsWith("/oauth/");
 	if (url.origin !== location.origin || serverRoute) return;
-	if (a.hasAttribute("data-enable-evolved") && !expOn()) {
-		setExpStored(true);
-		applyExp(true);
-		syncExpDom(true);
-		renderAccount();
-		syncSubmitButton();
-	}
 	e.preventDefault();
 	navigateTo(url.pathname + url.search);
 });
