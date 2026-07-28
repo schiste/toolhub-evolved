@@ -174,6 +174,8 @@ def test_guard_and_fetch_helpers(monkeypatch):
     )
     with pytest.raises(ValueError, match="non-public"):
         toolinfo_sources._require_public_http("https://private.example/feed.json")
+    toolinfo_sources._require_public_http("https://hay.toolforge.org/toolinfo.json")
+    toolinfo_sources._require_public_http("https://tools-static.wmflabs.org/toolinfo-scraper/enwiki_userscripts.json")
     monkeypatch.setattr(
         toolinfo_sources.socket,
         "getaddrinfo",

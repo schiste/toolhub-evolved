@@ -21,6 +21,7 @@ TIMEOUT = (5, 60)
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_ITEMS_PER_SOURCE = 10000
 MAX_URL = 2000
+PUBLIC_INTERNAL_HOST_SUFFIXES = (".toolforge.org", ".wmflabs.org")
 SOURCE_STATUS_PENDING = "pending"
 SOURCE_STATUS_VALID = "valid"
 SOURCE_STATUS_INVALID = "invalid"
@@ -88,10 +89,15 @@ def source_label(source_kind: str) -> str:
     return SOURCE_LABELS.get(source_kind, SOURCE_LABELS[KIND_OTHER_FEED])
 
 
+def _is_public_ingress_host(host: str) -> bool:
+    """Return whether a public Wikimedia Cloud hostname may resolve internally."""
+    return host in {"toolforge.org", "wmflabs.org"} or host.endswith(PUBLIC_INTERNAL_HOST_SUFFIXES)
+
+
 def _require_public_http(url: str) -> None:
     """Reject non-public HTTP(S) crawler feeds before fetching them."""
     parsed = urlparse(url)
-    host = parsed.hostname
+    host = (parsed.hostname or "").lower()
     if parsed.scheme not in {"http", "https"} or not host:
         msg = f"{url}: only public http or https crawler URLs are indexed"
         raise ValueError(msg)
@@ -103,7 +109,7 @@ def _require_public_http(url: str) -> None:
         raise ValueError(msg) from exc
     for info in infos:
         addr = ipaddress.ip_address(info[4][0])
-        if not addr.is_global:
+        if not addr.is_global and not _is_public_ingress_host(host):
             msg = f"{url}: resolves to a non-public address - refused"
             raise ValueError(msg)
 
