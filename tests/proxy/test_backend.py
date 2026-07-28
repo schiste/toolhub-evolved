@@ -100,6 +100,18 @@ def client(app):
     return app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def _offline_toolforge_ldap(monkeypatch):
+    """Keep the suite off real Wikimedia LDAP.
+
+    ToolforgeMembershipProvider() dials ldap-ro.eqiad.wikimedia.org when ldap3 is
+    installed, so any my-tools test that did not inject a lookup was making a
+    live query and waiting out the connect timeout. Tests that care about
+    memberships override this with their own lookup.
+    """
+    monkeypatch.setattr(v1_api, "TOOLFORGE_MEMBERSHIP_PROVIDER", ToolforgeMembershipProvider(lookup=lambda _u: []))
+
+
 def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER):
     with db.session_scope() as s:
         user = User(wm_sub=wm_sub, username=username, role=role)
@@ -278,8 +290,8 @@ def test_toolforge_membership_provider_queries_ldap(monkeypatch):
     calls = {}
 
     class FakeServer:
-        def __init__(self, uri, *, connect_timeout):
-            calls["server"] = (uri, connect_timeout)
+        def __init__(self, uri, *, use_ssl, connect_timeout):
+            calls["server"] = (uri, use_ssl, connect_timeout)
 
     class FakeMemberOf:
         values = ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
@@ -303,7 +315,8 @@ def test_toolforge_membership_provider_queries_ldap(monkeypatch):
     monkeypatch.setattr(author_claims, "Connection", FakeConnection)
     monkeypatch.setattr(author_claims, "escape_filter_chars", lambda value: f"escaped:{value}")
     assert ToolforgeMembershipProvider().tool_names("Schiste") == ["toolhub-evolved"]
-    assert calls["server"] == (author_claims.TOOLFORGE_LDAP_URI, author_claims.TOOLFORGE_LDAP_TIMEOUT)
+    assert calls["server"] == (author_claims.TOOLFORGE_LDAP_URI, True, author_claims.TOOLFORGE_LDAP_TIMEOUT)
+    assert author_claims.TOOLFORGE_LDAP_URI.startswith("ldaps://")  # never cleartext 389
     assert calls["search"] == (
         author_claims.TOOLFORGE_LDAP_BASE_DN,
         "(uid=escaped:Schiste)",

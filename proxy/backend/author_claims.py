@@ -8,7 +8,6 @@ import binascii
 import hashlib
 import json
 import re
-import socket
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
@@ -56,12 +55,16 @@ except ImportError:  # pragma: no cover - tests inject the membership lookup.
     Server = None
     escape_filter_chars = None
 
-    class LDAPException(Exception):
+    class LDAPException(Exception):  # noqa: N818 — mirrors the ldap3 name it stands in for
         """Fallback exception type used when ldap3 is not installed."""
 
 
 TOOLFORGE_BASE_URL = "https://toolsadmin.wikimedia.org"
-TOOLFORGE_LDAP_URI = "ldap://ldap-ro.eqiad.wikimedia.org:389"
+# LDAPS, not cleartext 389: these memberships decide which Toolforge tools a
+# user is offered as authorship candidates, and the query itself names the user.
+# Over plain LDAP both the question and the answer are readable and rewritable
+# by anything on the path.
+TOOLFORGE_LDAP_URI = "ldaps://ldap-ro.eqiad.wikimedia.org:636"
 TOOLFORGE_LDAP_BASE_DN = "ou=people,dc=wikimedia,dc=org"
 TOOLFORGE_TIMEOUT = 5
 TOOLFORGE_LDAP_TIMEOUT = 5
@@ -605,13 +608,13 @@ class ToolforgeMembershipProvider:
             return []
         try:
             return toolforge_tool_names_from_member_dns(self.lookup(clean_username))
-        except (LDAPException, OSError, socket.timeout, TimeoutError, ValueError):
+        except (LDAPException, OSError, TimeoutError, ValueError):
             return []
 
     def _lookup_ldap(self, username: str) -> list[str]:
         if Connection is None or Server is None or escape_filter_chars is None:
             return []
-        server = Server(TOOLFORGE_LDAP_URI, connect_timeout=TOOLFORGE_LDAP_TIMEOUT)
+        server = Server(TOOLFORGE_LDAP_URI, use_ssl=True, connect_timeout=TOOLFORGE_LDAP_TIMEOUT)
         conn = Connection(server, receive_timeout=TOOLFORGE_LDAP_TIMEOUT, auto_bind=True)
         try:
             conn.search(

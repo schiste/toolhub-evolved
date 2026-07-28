@@ -359,9 +359,7 @@ def invalidate_recent_rows(rows: Iterable[dict[str, Any]]) -> int:
             list_ids.add(content_id)
     if not tool_names and not list_ids:
         return 0
-    return _delete_matching(
-        lambda url: _matches_tool_cache(url, tool_names) or _matches_list_cache(url, list_ids)
-    )
+    return _delete_matching(lambda url: _matches_tool_cache(url, tool_names) or _matches_list_cache(url, list_ids))
 
 
 def maybe_poll_recent_changes(fetch_recent: Callable[[], list[dict[str, Any]]]) -> int:
