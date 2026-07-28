@@ -33,7 +33,7 @@ def _static_root() -> Path:
     return _DIST_DIR if _DIST_DIR.is_dir() else _SOURCE_DIR
 
 
-UA = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
+UA = "toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
 
 # The proxy buffers the upstream body before relaying it; cap that buffer so a
 # (hypothetical) runaway upstream response can't exhaust the webservice's memory.

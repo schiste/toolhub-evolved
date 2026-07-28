@@ -22,7 +22,7 @@ REQUEST_TIMEOUT = 20
 TOKEN_REFRESH_SKEW_SECONDS = 60
 SCOPES = "read write"
 HTTP_NO_CONTENT = 204
-USER_AGENT = "toolhub-evolved/0.1 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
+USER_AGENT = "toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
 _CACHEABLE_MIN_STATUS = 200
 _CACHEABLE_MAX_STATUS = 300
 

@@ -357,7 +357,7 @@ function footerExample() {
 			</div>
 			<div class="footer__bottom">
 				<a class="footer__maintain" href="/contribute">${icon("tools")} Help maintain Toolhub</a>
-				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.1.0</a></span>
+				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a></span>
 				<span class="footer__note">Live Toolhub data · Evolved overlay</span>
 			</div>
 		</footer>
