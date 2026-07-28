@@ -181,11 +181,16 @@ def _fetch_upstream(
         elapsed_ms = (perf_counter() - started) * 1000
         api_cache.mark_failure(url, str(exc))
         if stale is not None:
-            return None, None, _cached_api_response(
-                stale, "stale", upstream=_UPSTREAM_TIMEOUT, upstream_dur_ms=elapsed_ms
+            return (
+                None,
+                None,
+                _cached_api_response(stale, "stale", upstream=_UPSTREAM_TIMEOUT, upstream_dur_ms=elapsed_ms),
             )
         return None, None, _unavailable_response(elapsed_ms)
-    setattr(upstream, "_toolhub_evolved_upstream_ms", (perf_counter() - started) * 1000)
+    # Stashed on the response so the relay helpers can report upstream time without
+    # threading it through every signature. Public name: a leading underscore would
+    # read as touching requests' internals.
+    upstream.toolhub_evolved_upstream_ms = (perf_counter() - started) * 1000
     return upstream, bytes(body), None
 
 
@@ -220,7 +225,7 @@ def _relay_upstream_response(
     cacheable = _CACHEABLE_MIN_STATUS <= upstream.status_code < _CACHEABLE_MAX_STATUS
     if upstream.status_code == _HTTP_NOT_MODIFIED and stale is not None:
         api_cache.refresh(url)
-        resp = _cached_api_response(
+        return _cached_api_response(
             api_cache.CachedResponse(
                 url=stale.url,
                 status=stale.status,
@@ -232,9 +237,8 @@ def _relay_upstream_response(
             ),
             "revalidated",
             upstream=upstream.status_code,
-            upstream_dur_ms=getattr(upstream, "_toolhub_evolved_upstream_ms", None),
+            upstream_dur_ms=getattr(upstream, "toolhub_evolved_upstream_ms", None),
         )
-        return resp
     # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
     # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
     if cacheable:
@@ -254,7 +258,7 @@ def _relay_upstream_response(
             stale,
             "stale",
             upstream=upstream.status_code,
-            upstream_dur_ms=getattr(upstream, "_toolhub_evolved_upstream_ms", None),
+            upstream_dur_ms=getattr(upstream, "toolhub_evolved_upstream_ms", None),
         )
     resp = Response(payload, status=upstream.status_code, content_type=content_type)
     resp.headers["Cache-Control"] = api_cache.cache_control(url) if cacheable else "no-store"
@@ -262,7 +266,7 @@ def _relay_upstream_response(
         resp,
         cache="miss",
         upstream=upstream.status_code,
-        upstream_dur_ms=getattr(upstream, "_toolhub_evolved_upstream_ms", None),
+        upstream_dur_ms=getattr(upstream, "toolhub_evolved_upstream_ms", None),
     )
 
 
@@ -332,10 +336,13 @@ def _escapes_api_prefix(path: str) -> bool:
     return any(part == ".." for part in path.split("/"))
 
 
-@app.route("/api/", defaults={"path": ""}, methods=_PROXY_METHODS)
-@app.route("/api/<path:path>", methods=_PROXY_METHODS)
-def api_proxy(path: str) -> Response:
-    """Read-only reverse proxy to the live Toolhub API (same-origin for the SPA)."""
+def _rejected_proxy_request(path: str) -> Response | None:
+    """Return the refusal for a proxied request that must not reach upstream.
+
+    Three separate contracts, checked before any upstream work: the proxy is
+    read-only, it never leaves the /api/ tree, and it is rate limited so it
+    cannot be used to amplify traffic at toolhub.wikimedia.org.
+    """
     if request.method != "GET":
         return Response('{"error":"read-only proxy"}', status=405, content_type="application/json")
     if _escapes_api_prefix(path):
@@ -345,6 +352,16 @@ def api_proxy(path: str) -> Response:
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["Retry-After"] = str(int(security.WRITE_WINDOW_SECONDS))
         return resp
+    return None
+
+
+@app.route("/api/", defaults={"path": ""}, methods=_PROXY_METHODS)
+@app.route("/api/<path:path>", methods=_PROXY_METHODS)
+def api_proxy(path: str) -> Response:
+    """Read-only reverse proxy to the live Toolhub API (same-origin for the SPA)."""
+    rejected = _rejected_proxy_request(path)
+    if rejected is not None:
+        return rejected
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
     cached = api_cache.get(url)
