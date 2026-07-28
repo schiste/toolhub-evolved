@@ -96,9 +96,15 @@ The app needs the proxy running (so `/api/*` resolves and CORS is avoided):
 ```sh
 cd proxy
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
+export TOOLHUB_INSECURE_COOKIES=1   # local dev over http: relax Secure cookies
 venv/bin/python app.py
 # → http://localhost:8000/   (serves the SPA and proxies /api to Toolhub)
 ```
+
+`TOOLHUB_INSECURE_COOKIES=1` marks the process as local development. Without it
+the app refuses to start unless `TOOLHUB_SECRET_KEY` is set, so a production
+deployment can never fall back to a per-process session key (see
+[docs/RUNBOOK.md](docs/RUNBOOK.md)).
 
 ## Deploy to Wikimedia Toolforge
 
