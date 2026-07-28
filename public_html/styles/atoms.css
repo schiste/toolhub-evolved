@@ -377,6 +377,12 @@ textarea.le__input {
 	margin-top: var(--space-1);
 }
 
+.le__input:disabled {
+	background: var(--color-surface-muted);
+	color: var(--color-text-muted);
+	cursor: not-allowed;
+}
+
 .le__check {
 	display: inline-flex;
 	align-items: center;

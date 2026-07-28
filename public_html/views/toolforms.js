@@ -216,6 +216,37 @@ function withFieldProvenance(html, label, meta) {
 }
 
 /**
+ * @param {Record<string, any>} tool
+ * @returns {string}
+ */
+function authorDisplayValue(tool) {
+	const authors = Array.isArray(tool.authors) ? tool.authors : [];
+	return [...new Set([...authors, tool.maintainer].filter(Boolean))].join(", ");
+}
+
+/**
+ * @param {Record<string, any>} tool
+ * @param {Record<string, any> | null} meta
+ * @returns {string}
+ */
+function crawlerAuthorField(tool, meta) {
+	const value = authorDisplayValue(tool) || t("toolforms.unknownMaintainer", "Unknown maintainer");
+	const label = t("toolforms.fieldAuthors", "Author(s)");
+	const hintId = "tf-authors-hint";
+	const developerSettingsLink = `<a href="/developer-settings">${esc(t("toolforms.developerSettings", "Developer settings"))}</a>`;
+	const myToolsLink = `<a href="/my-tools">${esc(t("toolforms.myTools", "My tools"))}</a>`;
+	const hint = t(
+		"toolforms.fieldAuthorsCrawlerHint",
+		"Author data for crawled tools comes from the maintainer's toolinfo.json and official Toolhub. Update the source toolinfo.json to change it; Evolved verification is managed in {developerSettings} and {myTools}.",
+		{ developerSettings: developerSettingsLink, myTools: myToolsLink }
+	);
+	const field = `<label class="le__label">${esc(label)}
+		 <span class="le__hint" id="${hintId}">${hint}</span>
+		<input class="le__input" id="tf-authors" type="text" value="${esc(value)}" disabled${dirAttrs(value)} aria-describedby="${hintId}" /></label>`;
+	return withFieldProvenance(field, t("toolforms.fieldAuthorsShort", "Author(s)"), meta);
+}
+
+/**
  * @param {Record<string, any>} cur
  * @param {string | null} name
  * @param {boolean} editing
@@ -565,7 +596,7 @@ export async function viewToolForm(name) {
 		<form data-tool-form novalidate>
 			<h2 class="le__h2">${t("toolforms.coreInformation", "Core information")}</h2>
 			${coreStatusPanel}
-			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code>${coreMeta ? fieldProvenance(t("toolforms.fieldNameShort", "Name"), coreMeta) : ""}</p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}
+			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code>${coreMeta ? fieldProvenance(t("toolforms.fieldNameShort", "Name"), coreMeta) : ""}</p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}${isCrawler ? `\n\t\t\t${crawlerAuthorField(cur, coreMeta)}` : ""}
 			${withFieldProvenance(fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") }), t("toolforms.fieldTitle", "Title"), coreMeta)}
 			${withFieldProvenance(fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it.")), t("toolforms.fieldDescription", "Description"), coreMeta)}
 			${withFieldProvenance(fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") }), t("toolforms.fieldUrl", "URL"), coreMeta)}

@@ -370,6 +370,9 @@ const S = {
 		<div class="sync-panel__actions"><button class="btn btn--danger btn--sm" type="button" data-tf-delete><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg> Discard local core fields</button></div>
 	</div>
 			<p class="le__ro">Name: <code>crawled</code><span class="sync-field" aria-label="Name provenance"><span class="sync-field__name">Name</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></p>
+			<div class="sync-field-wrap"><label class="le__label">Author(s)
+		 <span class="le__hint" id="tf-authors-hint">Author data for crawled tools comes from the maintainer's toolinfo.json and official Toolhub. Update the source toolinfo.json to change it; Evolved verification is managed in <a href="/developer-settings">Developer settings</a> and <a href="/my-tools">My tools</a>.</span>
+		<input class="le__input" id="tf-authors" type="text" value="Crawler Author" disabled dir="auto" aria-describedby="tf-authors-hint" /></label><span class="sync-field" aria-label="Author(s) provenance"><span class="sync-field__name">Author(s)</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
 			<div class="sync-field-wrap"><label class="le__label">Title <span class="le__req">*</span>
 		 <span class="le__hint" id="tf-title-hint">Short public name shown in search results and tool pages.</span>
 		<input class="le__input" id="tf-title" type="text" required aria-describedby="tf-title-hint tf-title-err" maxlength="300" value="Crawled"  /><span class="le__error" id="tf-title-err" hidden></span></label><span class="sync-field" aria-label="Title provenance"><span class="sync-field__name">Title</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></div>
@@ -483,8 +486,15 @@ test("viewToolForm edit (api origin, existing tool) → revert button, no crawle
 	expect("edit_api", r.html);
 });
 
-test("viewToolForm edit (crawler origin + new tool) → crawler note + delete button", async () => {
-	h.getTool.mockResolvedValue(toolFixture("crawled", { title: "Crawled", origin: "crawler" }));
+test("viewToolForm edit (crawler origin + new tool) → crawler note + author provenance + delete button", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("crawled", {
+			title: "Crawled",
+			origin: "crawler",
+			authors: ["Crawler Author"],
+			maintainer: "Crawler Author"
+		})
+	);
 	h.isNewTool.mockReturnValue(true);
 	const r = await tf.viewToolForm("crawled");
 	expect("edit_crawler_new", r.html);
