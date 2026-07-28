@@ -381,8 +381,8 @@ Automated owner-tool discovery is separate from crawler URL registration.
 `no_url` when the official record has no homepage to probe. The
 `toolinfo-discovery` job also walks official `/api/tools/` pages using the
 `toolinfo_discovery_meta` cursor, seeds discovery rows for all Toolhub tools it
-sees, and refreshes stale or pending rows every six hours with the same
-root-first, sitemap-after-404 policy. My tools shows `found`, `not_found`,
+sees, and refreshes up to 500 stale or pending rows every six hours with the
+same root-first, sitemap-after-404 policy. My tools shows `found`, `not_found`,
 `pending`, `error`, or `no_url` state to the owner. A `found` row is information
 and provenance only; official Toolhub crawler registration still happens through
 the existing signed-in write path.

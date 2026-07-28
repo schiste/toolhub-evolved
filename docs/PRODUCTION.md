@@ -293,8 +293,9 @@ via a documented one-liner.
 - `/v1/me/tools/` shows per-tool `toolinfo_discovery` state for owner-visible
   official Toolhub tools. The separate `toolinfo-discovery` Toolforge job walks
   official `/api/tools/` pages with a persistent cursor, seeds rows for every
-  Toolhub tool it sees, refreshes stale rows out of band, and My tools displays
-  found/missing/pending/error/no-URL state to the owner.
+  Toolhub tool it sees, refreshes up to 500 stale rows every six hours out of
+  band, and My tools displays found/missing/pending/error/no-URL state to the
+  owner.
 - Tool creation can also register a local crawler URL opportunistically through
   its create-only `toolinfo_url` field; that one-shot fetch is for immediate
   enrichment and evidence, while the scheduled job remains the refresh path.

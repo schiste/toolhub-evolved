@@ -13,7 +13,9 @@
 - name: toolinfo-discovery
   # Background discovery for official Toolhub tools: walk /api/tools/ pages,
   # check root /toolinfo.json first, then same-origin sitemap.xml entries.
-  command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/toolinfo_discovery.py
+  # Keep it off the request path, but scan a large enough window that the
+  # official catalog converges quickly across repeated runs.
+  command: /usr/bin/env TOOLINFO_DISCOVERY_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_discovery.py
   image: python3.13
   schedule: "37 */6 * * *"
   emails: onfailure
