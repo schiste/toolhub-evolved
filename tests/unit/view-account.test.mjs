@@ -180,7 +180,13 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 						verificationStatus: "verified",
 						isVerified: true
 					}
-				]
+				],
+				toolinfoDiscovery: {
+					status: "found",
+					method: "sitemap",
+					toolinfoUrl: "https://example.org/meta/toolinfo.json",
+					checkedAt: "2026-07-28T12:00:00Z"
+				}
 			}
 		],
 		possible: [
@@ -199,7 +205,8 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 						verificationStatus: "unverified",
 						isVerified: false
 					}
-				]
+				],
+				toolinfoDiscovery: { status: "pending" }
 			}
 		]
 	});
@@ -216,6 +223,10 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.ok(r.html.includes("Verified: Toolhub write access"));
 	assert.ok(r.html.includes("Verified: signed toolinfo"));
 	assert.ok(r.html.includes("Unverified author name"));
+	assert.ok(r.html.includes("toolinfo.json"));
+	assert.ok(r.html.includes("Found in sitemap"));
+	assert.ok(r.html.includes("https://example.org/meta/toolinfo.json"));
+	assert.ok(r.html.includes("Queued for discovery"));
 	assert.ok(r.html.includes("Official Toolhub data + Evolved verification"));
 	assert.ok(
 		r.html.includes(
@@ -224,6 +235,49 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	);
 	assert.ok(!r.html.includes("Possible match"));
 	assert.ok(r.html.includes("2 tools"));
+});
+
+test("viewMyTools renders all toolinfo discovery states", async () => {
+	h.backendGetJson.mockResolvedValue({
+		verified: [
+			{
+				tool: { name: "root-tool", title: "Root Tool", url: "https://root.example", author: [] },
+				claims: [],
+				toolinfoDiscovery: {
+					status: "found",
+					method: "root",
+					toolinfoUrl: "https://root.example/toolinfo.json"
+				}
+			}
+		],
+		possible: [
+			{
+				tool: { name: "missing-tool", title: "Missing Tool", url: "https://missing.example", author: [] },
+				claims: [],
+				toolinfoDiscovery: { status: "not_found", checkedAt: "2026-07-28T12:00:00Z" }
+			},
+			{
+				tool: { name: "error-tool", title: "Error Tool", url: "https://error.example", author: [] },
+				claims: [],
+				toolinfoDiscovery: { status: "error", lastError: "DNS failed" }
+			},
+			{
+				tool: { name: "no-url-tool", title: "No URL Tool", author: [] },
+				claims: [],
+				toolinfoDiscovery: {
+					status: "no_url",
+					lastError: "official Toolhub record has no URL to probe"
+				}
+			}
+		]
+	});
+	const r = await viewMyTools();
+	assert.ok(r.html.includes("Found at root"));
+	assert.ok(r.html.includes("toolinfo.json not found"));
+	assert.ok(r.html.includes("Check failed"));
+	assert.ok(r.html.includes("DNS failed"));
+	assert.ok(r.html.includes("No homepage URL"));
+	assert.ok(r.html.includes("official Toolhub record has no URL to probe"));
 });
 
 test("viewMyTools renders an empty state", async () => {

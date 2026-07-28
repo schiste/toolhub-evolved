@@ -64,8 +64,8 @@ It activates fully once configured:
    `TOOLHUB_EVOLVED_REVIEWER_USERS` and `TOOLHUB_EVOLVED_ADMIN_USERS` env vars
    can promote Toolhub-authenticated users into Evolved-only reviewer/operator
    roles without granting them any additional official Toolhub rights.
-2. Load the scheduled jobs (hourly crawler, minutely cache invalidator/prewarmer,
-   nightly backup):
+2. Load the scheduled jobs (hourly crawler, six-hourly Toolhub catalog
+   `toolinfo.json` discovery, minutely cache invalidator/prewarmer, nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
    Deploys also run one cache invalidation/prewarm pass before the webservice
    restart, so the first user after a deploy should hit warmed shared cache.

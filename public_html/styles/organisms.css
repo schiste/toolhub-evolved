@@ -867,6 +867,17 @@
 	flex-wrap: wrap;
 	gap: var(--space-1);
 }
+.account-tools__toolinfo {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--space-1);
+	font-size: var(--fs-caption);
+}
+.account-tools__toolinfo a {
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
 .panel__foot {
 	display: inline-block;
 	margin-top: var(--space-2);

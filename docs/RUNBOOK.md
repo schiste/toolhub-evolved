@@ -205,6 +205,8 @@ names are:
 | `activity`                                   | User-visible/admin-visible depending on event   | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.                         |
 | `crawler_urls`                               | Private until surfaced in local crawler UI/feed | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.                    |
 | `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                               |
+| `toolinfo_discovery`                         | Owner-facing Evolved cache                      | Per-tool automated root/sitemap `toolinfo.json` discovery state shown on My tools; seeded from official Toolhub listings and owner resolver candidates; not canonical. |
+| `toolinfo_discovery_meta`                    | Operational cursor state                        | Stores the official `/api/tools/` page cursor used by the automated discovery job; safe to reset to page 1 by clearing the row.                                        |
 | `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                     |
 | `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.              |
 | `tool_author_claims`                         | Public provenance label, private evidence cache | Per-tool author-name verification claims tied to a Toolhub username; use for Evolved provenance and "my tools" discovery, never as official Toolhub permission state.  |
@@ -322,9 +324,10 @@ if the webservice doesn't come back healthy.
 ## Scheduled jobs
 
 ```sh
-toolforge jobs load ~/repo/jobs.yaml   # crawler + api-cache-invalidator + db-backup
+toolforge jobs load ~/repo/jobs.yaml   # crawler + toolinfo-discovery + api-cache-invalidator + db-backup
 toolforge jobs list                    # status
 toolforge jobs logs crawler            # last crawl output
+toolforge jobs logs toolinfo-discovery # last discovery output
 toolforge jobs logs api-cache-invalidator
 ```
 
@@ -372,6 +375,17 @@ The Add/remove tools form may receive a homepage instead of a direct
 URL list as `toolinfo.json not found` and does not create a `crawler_urls` row;
 successful discovery continues through the normal official-first crawler URL
 write path.
+
+Automated owner-tool discovery is separate from crawler URL registration.
+`/v1/me/tools/` ensures owner-visible Toolhub tools have a discovery row, including
+`no_url` when the official record has no homepage to probe. The
+`toolinfo-discovery` job also walks official `/api/tools/` pages using the
+`toolinfo_discovery_meta` cursor, seeds discovery rows for all Toolhub tools it
+sees, and refreshes stale or pending rows every six hours with the same
+root-first, sitemap-after-404 policy. My tools shows `found`, `not_found`,
+`pending`, `error`, or `no_url` state to the owner. A `found` row is information
+and provenance only; official Toolhub crawler registration still happens through
+the existing signed-in write path.
 
 ## Backups & restore
 

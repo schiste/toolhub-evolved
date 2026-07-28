@@ -83,6 +83,7 @@ function resolvedTools(items, verified) {
 			const tool = normalizeTool(item.tool);
 			tool.authorVerified = verified;
 			tool.authorVerificationBadges = authorClaimBadges(item.claims, verified);
+			tool.toolinfoDiscovery = item.toolinfoDiscovery || { status: "pending" };
 			return tool;
 		})
 		.filter((tool) => tool !== null);
@@ -105,6 +106,43 @@ function toolVerificationBadges(tool) {
 		.join("")}</div>`;
 }
 
+/** @param {ToolinfoDiscovery | undefined} discovery */
+function toolinfoDiscoveryCell(discovery) {
+	const status = discovery?.status || "pending";
+	if (status === "found" && discovery?.toolinfoUrl) {
+		const method =
+			discovery.method === "sitemap"
+				? t("accountTools.toolinfoFoundSitemap", "Found in sitemap")
+				: t("accountTools.toolinfoFoundRoot", "Found at root");
+		return `<div class="account-tools__toolinfo">
+			<span class="sync-badge sync-badge--review-approved">${esc(method)}</span>
+			<a href="${safeUrl(discovery.toolinfoUrl)}" target="_blank" rel="noopener nofollow">${esc(discovery.toolinfoUrl)}</a>
+		</div>`;
+	}
+	if (status === "not_found") {
+		return `<div class="account-tools__toolinfo">
+			<span class="sync-badge sync-badge--sync-error">${t("accountTools.toolinfoNotFound", "toolinfo.json not found")}</span>
+			${discovery?.checkedAt ? `<span class="recent-table__muted">${timeTag(discovery.checkedAt)}</span>` : ""}
+		</div>`;
+	}
+	if (status === "error") {
+		const error = discovery?.lastError || t("accountTools.toolinfoCheckFailed", "Check failed");
+		return `<div class="account-tools__toolinfo">
+				<span class="sync-badge sync-badge--sync-error">${t("accountTools.toolinfoCheckFailed", "Check failed")}</span>
+				<span class="recent-table__muted">${esc(error)}</span>
+			</div>`;
+	}
+	if (status === "no_url") {
+		return `<div class="account-tools__toolinfo">
+				<span class="sync-badge sync-badge--review-pending">${t("accountTools.toolinfoNoUrl", "No homepage URL")}</span>
+				${discovery?.lastError ? `<span class="recent-table__muted">${esc(discovery.lastError)}</span>` : ""}
+			</div>`;
+	}
+	return `<div class="account-tools__toolinfo">
+			<span class="sync-badge sync-badge--review-pending">${t("accountTools.toolinfoPending", "Queued for discovery")}</span>
+		</div>`;
+}
+
 /** @param {Tool} tool */
 function toolRow(tool) {
 	const hasType = Boolean(tool.toolType);
@@ -121,6 +159,7 @@ function toolRow(tool) {
 		</td>
 		<td data-label="${t("accountTools.owner", "Owner")}"><span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></td>
 		<td data-label="${t("accountTools.verification", "Verification")}">${toolVerificationBadges(tool)}</td>
+		<td data-label="${t("accountTools.toolinfo", "toolinfo.json")}">${toolinfoDiscoveryCell(tool.toolinfoDiscovery)}</td>
 		<td data-label="${t("accountTools.type", "Type")}">${hasType ? esc(type) : `<span class="recent-table__muted">${esc(type)}</span>`}</td>
 		<td data-label="${t("accountTools.updated", "Updated")}">${when}</td>
 		<td data-label="${t("accountTools.actions", "Actions")}">
@@ -144,6 +183,7 @@ function toolsTable(tools) {
 				<th scope="col">${t("accountTools.tool", "Tool")}</th>
 				<th scope="col">${t("accountTools.owner", "Owner")}</th>
 				<th scope="col">${t("accountTools.verification", "Verification")}</th>
+				<th scope="col">${t("accountTools.toolinfo", "toolinfo.json")}</th>
 				<th scope="col">${t("accountTools.type", "Type")}</th>
 				<th scope="col">${t("accountTools.updated", "Updated")}</th>
 				<th scope="col">${t("accountTools.actions", "Actions")}</th>

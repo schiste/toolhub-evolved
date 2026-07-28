@@ -63,7 +63,10 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   Evolved evidence: public Toolsadmin maintainer pages, successful official
   Toolhub tool writes, or signed `toolinfo.json` records verified against active
   local public keys registered in Developer settings. Verification is per tool,
-  never global to an author display name or Toolhub username.
+  never global to an author display name or Toolhub username. The resolver also
+  reads `toolinfo_discovery` rows so owner accounts can see whether each
+  official tool exposes root/sitemap `toolinfo.json` without manually submitting
+  URLs; a Toolforge job walks official Toolhub tool-list pages to seed that cache.
 - **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
   the only sign-in path, while local `users.role` permission sets (`user`,
   `reviewer`, `admin`) gate Evolved-owned data/actions through
@@ -235,7 +238,8 @@ clean; the audit's remaining WCAG findings closed or explicitly waived.
   blueprints; config from env; keep `app.py` as entrypoint (Toolforge contract).
 - ToolsDB schema + Alembic: `users`, `sessions`, `favorites`, `lists`,
   `list_tools`, `tools` (locally registered), `tool_edits` (overlay on upstream
-  names), `annotations`, `revisions`, `audit_log`, `crawler_urls`, `crawler_runs`.
+  names), `annotations`, `revisions`, `audit_log`, `crawler_urls`, `crawler_runs`,
+  `toolinfo_discovery`, `toolinfo_discovery_meta`.
 - Toolhub OAuth 2.0: register the application, `/oauth/login|callback|logout`,
   use `GET /api/user/` to identify the user locally, store the grant server-side,
   session cookie (HttpOnly, Secure, SameSite=Lax), CSRF token for all writes.
@@ -286,6 +290,11 @@ via a documented one-liner.
   concrete same-origin `toolinfo.json` from the site root or `sitemap.xml`, and
   reports `toolinfo.json not found` without creating a crawler row when neither
   source works.
+- `/v1/me/tools/` shows per-tool `toolinfo_discovery` state for owner-visible
+  official Toolhub tools. The separate `toolinfo-discovery` Toolforge job walks
+  official `/api/tools/` pages with a persistent cursor, seeds rows for every
+  Toolhub tool it sees, refreshes stale rows out of band, and My tools displays
+  found/missing/pending/error/no-URL state to the owner.
 - Tool creation can also register a local crawler URL opportunistically through
   its create-only `toolinfo_url` field; that one-shot fetch is for immediate
   enrichment and evidence, while the scheduled job remains the refresh path.
@@ -339,9 +348,10 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
   live in shared ToolsDB, so warmed public reads can benefit every worker.
 - ToolsDB: default quotas suffice for launch; monitor size, request increase if
   the crawler grows the catalog.
-- Jobs framework: local toolinfo crawler, recent-change API cache invalidator
-  with hot-endpoint and recent-owner prewarming, and nightly backup jobs; all
-  defined in-repo (`jobs.yaml`) so the full production config is versioned.
+- Jobs framework: local toolinfo crawler, automated toolinfo discovery,
+  recent-change API cache invalidator with hot-endpoint and recent-owner
+  prewarming, and nightly backup jobs; all defined in-repo (`jobs.yaml`) so the
+  full production config is versioned.
 - Secrets (OAuth client secret, DB URL/credentials, session key): Toolforge
   envvars readable only by the tool, never in the repo; documented in the
   runbook.

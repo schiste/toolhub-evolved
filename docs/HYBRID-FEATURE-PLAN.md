@@ -23,26 +23,28 @@ The product model is deliberately hybrid:
 
 Implemented local tables in `proxy/backend/models.py`:
 
-| Table                | Purpose                                                | Toolhub equivalent                                                                     |
-| -------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `users`              | Local record of a Toolhub OAuth user and Evolved role. | Toolhub `/api/user/` identity is official; local role gates Evolved-only data/actions. |
-| `toolhub_tokens`     | Server-side official OAuth grant.                      | Toolhub owns authorization; Evolved stores grant secrets only server-side.             |
-| `favorites`          | Per-user local favorite cache/fallback.                | Toolhub has official favorites.                                                        |
-| `lists`              | Per-user local draft/fallback lists.                   | Toolhub has official lists.                                                            |
-| `tools`              | Net-new Evolved tool records, never upstream mirrors.  | Toolhub has official tools; Evolved-local rows feed `/toolinfo.json`.                  |
-| `tool_overlays`      | Evolved field patches for tool edits and annotations.  | Toolhub has official tool core fields and annotations.                                 |
-| `activity`           | Evolved revision/audit rows for local actions.         | Toolhub has official recent/audit/history feeds.                                       |
-| `crawler_urls`       | User-registered local crawler URLs.                    | Toolhub has official crawler URL registration.                                         |
-| `crawler_runs`       | Server crawler run outcomes.                           | Toolhub has official crawler runs for official URLs.                                   |
-| `tool_events`        | Privacy-limited Evolved interaction events.            | Toolhub does not expose Evolved-site usage events.                                     |
-| `tool_thanks`        | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
-| `tool_author_claims` | Per-tool author-name verification evidence.            | Toolhub exposes display author fields but not Evolved verification state.              |
-| `tool_author_keys`   | User-registered public keys for signed toolinfo proof. | Toolhub does not expose Evolved signed-toolinfo keys.                                  |
-| `tool_health_*`      | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
-| `tool_media`         | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
-| `api_cache`          | Anonymous official Toolhub API response cache.         | Performance cache only; Toolhub remains canonical.                                     |
-| `api_cache_meta`     | Shared cache coordination metadata.                    | Poll markers and throttles only; safe to clear.                                        |
-| `tool_owner_cache`   | Derived owner labels for `/recent` tool rows.          | Performance cache only; not canonical authorship or permission state.                  |
+| Table                     | Purpose                                                | Toolhub equivalent                                                                     |
+| ------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `users`                   | Local record of a Toolhub OAuth user and Evolved role. | Toolhub `/api/user/` identity is official; local role gates Evolved-only data/actions. |
+| `toolhub_tokens`          | Server-side official OAuth grant.                      | Toolhub owns authorization; Evolved stores grant secrets only server-side.             |
+| `favorites`               | Per-user local favorite cache/fallback.                | Toolhub has official favorites.                                                        |
+| `lists`                   | Per-user local draft/fallback lists.                   | Toolhub has official lists.                                                            |
+| `tools`                   | Net-new Evolved tool records, never upstream mirrors.  | Toolhub has official tools; Evolved-local rows feed `/toolinfo.json`.                  |
+| `tool_overlays`           | Evolved field patches for tool edits and annotations.  | Toolhub has official tool core fields and annotations.                                 |
+| `activity`                | Evolved revision/audit rows for local actions.         | Toolhub has official recent/audit/history feeds.                                       |
+| `crawler_urls`            | User-registered local crawler URLs.                    | Toolhub has official crawler URL registration.                                         |
+| `crawler_runs`            | Server crawler run outcomes.                           | Toolhub has official crawler runs for official URLs.                                   |
+| `toolinfo_discovery`      | Automated per-tool toolinfo.json discovery cache.      | Toolhub does not expose owner-facing root/sitemap toolinfo discovery state.            |
+| `toolinfo_discovery_meta` | Discovery job cursor state.                            | Toolhub does not expose Evolved's local crawl cursor.                                  |
+| `tool_events`             | Privacy-limited Evolved interaction events.            | Toolhub does not expose Evolved-site usage events.                                     |
+| `tool_thanks`             | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
+| `tool_author_claims`      | Per-tool author-name verification evidence.            | Toolhub exposes display author fields but not Evolved verification state.              |
+| `tool_author_keys`        | User-registered public keys for signed toolinfo proof. | Toolhub does not expose Evolved signed-toolinfo keys.                                  |
+| `tool_health_*`           | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
+| `tool_media`              | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
+| `api_cache`               | Anonymous official Toolhub API response cache.         | Performance cache only; Toolhub remains canonical.                                     |
+| `api_cache_meta`          | Shared cache coordination metadata.                    | Poll markers and throttles only; safe to clear.                                        |
+| `tool_owner_cache`        | Derived owner labels for `/recent` tool rows.          | Performance cache only; not canonical authorship or permission state.                  |
 
 Backend endpoints already implemented:
 
@@ -343,6 +345,10 @@ Make it fully real:
   `/toolinfo.json` first and same-origin `sitemap.xml` toolinfo entries only
   after a root `404`; store/register only the discovered concrete
   `toolinfo.json` URL.
+- Cache automated root/sitemap discovery for official Toolhub tools by walking
+  `/api/tools/` with a persistent cursor, while `/v1/me/tools/` also seeds rows
+  for immediately owner-visible matches. My tools can then show
+  found/missing/pending/error/no-URL state without manual URL entry.
 - Run the server-side crawler job on local URLs, validate toolinfo, and upsert
   `tools` records without mirroring official Toolhub tools.
 - Reuse the same hardened fetch path during tool creation when a user supplies a

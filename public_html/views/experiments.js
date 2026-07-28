@@ -175,9 +175,12 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.myToolsCurrent",
-					"Official Toolhub search provides candidates; Evolved verifies claims per tool with Toolforge maintainer, Toolhub write, signed toolinfo, or display-name evidence."
+					"Official Toolhub search provides candidates; Evolved verifies claims per tool and shows cached automated toolinfo.json discovery state seeded from the Toolhub catalog and owner-visible matches."
 				),
-				need: t("experiments.myToolsNeed", "Author-claim table, resolver endpoint, and verification providers"),
+				need: t(
+					"experiments.myToolsNeed",
+					"Author-claim table, resolver endpoint, verification providers, catalog-seeded discovery cache"
+				),
 				tryHref: "/my-tools",
 				tryLabel: t("experiments.myToolsTry", "My tools")
 			},

@@ -18,6 +18,16 @@ interface AuthorVerificationBadge {
 	className: string;
 }
 
+/** Cached automated discovery state for an owned Toolhub tool. */
+interface ToolinfoDiscovery {
+	status: string;
+	method?: string;
+	toolUrl?: string;
+	toolinfoUrl?: string;
+	checkedAt?: string;
+	lastError?: string;
+}
+
 /** The level/label pair statusOf() produces — a closed domain, not free strings. */
 type ToolStatus =
 	| { level: "green"; label: "Healthy" }
@@ -92,6 +102,7 @@ interface Tool {
 	authorVerified?: boolean;
 	authorVerificationLabel?: string;
 	authorVerificationBadges?: AuthorVerificationBadge[];
+	toolinfoDiscovery?: ToolinfoDiscovery;
 }
 
 /** A normalized curated-list record. */
