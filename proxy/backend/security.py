@@ -6,6 +6,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from functools import wraps
+from threading import Lock
 from typing import Any
 
 from flask import Response, g, jsonify, request, session
@@ -67,6 +68,11 @@ class RollingLimit:
     ceiling is N times the configured limit. That is accepted here — these
     limits exist to stop runaway clients and to keep the proxy from becoming an
     amplifier, not to enforce an exact quota.
+
+    Locked because the webservice serves requests on threads: `exceeded` is a
+    read-modify-write over shared state, so concurrent callers could otherwise
+    interleave between the length check and the append and slip past the limit.
+    The lock is uncontended in the normal case and held only for dict/deque work.
     """
 
     def __init__(self, limit: int, window: float = WRITE_WINDOW_SECONDS) -> None:
@@ -75,14 +81,16 @@ class RollingLimit:
         self.window = window
         self.times: dict[Any, deque[float]] = {}
         self.last_sweep = 0.0
+        self._lock = Lock()
 
     def clear(self) -> None:
         """Forget every tracked key."""
-        self.times.clear()
-        self.last_sweep = 0.0
+        with self._lock:
+            self.times.clear()
+            self.last_sweep = 0.0
 
     def _sweep(self, now: float) -> None:
-        """Drop keys whose whole window has expired.
+        """Drop keys whose whole window has expired. Caller holds the lock.
 
         Without this the table keeps one entry per key ever seen, for the life of
         the process — a slow leak that a stream of distinct users or addresses
@@ -98,14 +106,15 @@ class RollingLimit:
     def exceeded(self, key: Any) -> bool:  # noqa: ANN401 — int uid or str address
         """Record one hit for `key` and report whether it is over the limit."""
         now = time.monotonic()
-        self._sweep(now)
-        times = self.times.setdefault(key, deque())
-        while times and now - times[0] > self.window:
-            times.popleft()
-        if len(times) >= self.limit:
-            return True
-        times.append(now)
-        return False
+        with self._lock:
+            self._sweep(now)
+            times = self.times.setdefault(key, deque())
+            while times and now - times[0] > self.window:
+                times.popleft()
+            if len(times) >= self.limit:
+                return True
+            times.append(now)
+            return False
 
 
 _writes = RollingLimit(WRITE_LIMIT)
