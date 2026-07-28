@@ -20,7 +20,7 @@ import requests
 from flask import Flask, Response, request, send_from_directory
 
 import backend
-from backend import api_cache
+from backend import api_cache, security
 
 HERE = Path(__file__).resolve().parent
 _SOURCE_DIR = (HERE.parent / "public_html").resolve()
@@ -274,6 +274,11 @@ def api_proxy(path: str) -> Response:
         return Response('{"error":"read-only proxy"}', status=405, content_type="application/json")
     if _escapes_api_prefix(path):
         return Response('{"error":"invalid api path"}', status=400, content_type="application/json")
+    if security.read_rate_limited(request.remote_addr):
+        resp = Response('{"error":"rate limit exceeded"}', status=429, content_type="application/json")
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Retry-After"] = str(int(security.WRITE_WINDOW_SECONDS))
+        return resp
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
     api_cache.maybe_poll_recent_changes(_fetch_recent_change_rows)

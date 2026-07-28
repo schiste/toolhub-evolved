@@ -1672,10 +1672,10 @@ def test_rate_limit_prunes_stale_entries_for_active_user(client, monkeypatch):
     sign_in(client, uid)
     clock = {"t": 100.0}
     monkeypatch.setattr(security.time, "monotonic", lambda: clock["t"])
-    security._last_sweep = clock["t"]
-    security._write_times[uid] = deque([clock["t"] - security.WRITE_WINDOW_SECONDS - 1])
+    security._writes.last_sweep = clock["t"]
+    security._writes.times[uid] = deque([clock["t"] - security.WRITE_WINDOW_SECONDS - 1])
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
-    assert list(security._write_times[uid]) == [clock["t"]]
+    assert list(security._writes.times[uid]) == [clock["t"]]
 
 
 def test_rate_limit_table_evicts_idle_users(client, monkeypatch):
@@ -1684,12 +1684,12 @@ def test_rate_limit_table_evicts_idle_users(client, monkeypatch):
     clock = {"t": 100.0}
     monkeypatch.setattr(security.time, "monotonic", lambda: clock["t"])
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
-    security._write_times[999] = deque()  # an entry whose window already drained
-    assert uid in security._write_times
+    security._writes.times[999] = deque()  # an entry whose window already drained
+    assert uid in security._writes.times
     clock["t"] += security.WRITE_WINDOW_SECONDS + 1  # idle past the window → swept
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
-    assert 999 not in security._write_times
-    assert list(security._write_times) == [uid]  # only the active writer is retained
+    assert 999 not in security._writes.times
+    assert list(security._writes.times) == [uid]  # only the active writer is retained
 
 
 def test_sign_out_strands_session_cookies_issued_before_it(client, app):

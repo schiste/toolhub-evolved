@@ -15,8 +15,12 @@ from backend.models import User
 
 WRITE_LIMIT = 60  # writes per user…
 WRITE_WINDOW_SECONDS = 60.0  # …per rolling minute
-_write_times: dict[int, deque[float]] = {}
-_last_sweep = 0.0
+# Anonymous proxy reads, per client address per rolling minute. Every /api/ hit
+# that misses the cache becomes a request to toolhub.wikimedia.org, so an
+# unthrottled proxy is a traffic amplifier pointed at Wikimedia infrastructure
+# as much as it is our own availability problem. Generous enough that a real
+# page load (a handful of parallel calls, then mostly cache hits) never notices.
+READ_LIMIT = 120
 
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
@@ -56,39 +60,67 @@ def _reject(status: int, error: str) -> Response:
     return resp
 
 
-def clear_rate_limits() -> None:
-    """Reset the in-memory write counters (tests; harmless in prod restarts)."""
-    global _last_sweep  # noqa: PLW0603 — module-level counter state by design
-    _write_times.clear()
-    _last_sweep = 0.0
+class RollingLimit:
+    """Fixed-count-per-rolling-window limiter, keyed by user id or client address.
 
-
-def _sweep(now: float) -> None:
-    """Drop users whose whole window has expired.
-
-    Without this the table keeps one entry per user id that has ever written,
-    for the life of the process — a slow leak that a stream of distinct signed-in
-    users turns into unbounded growth. Sweeping is amortized to once per window
-    so the common path stays O(1) rather than O(users) per write.
+    In-memory and therefore per worker process: with N workers the effective
+    ceiling is N times the configured limit. That is accepted here — these
+    limits exist to stop runaway clients and to keep the proxy from becoming an
+    amplifier, not to enforce an exact quota.
     """
-    global _last_sweep  # noqa: PLW0603 — module-level counter state by design
-    if now - _last_sweep < WRITE_WINDOW_SECONDS:
-        return
-    _last_sweep = now
-    for uid in [u for u, times in _write_times.items() if not times or now - times[-1] > WRITE_WINDOW_SECONDS]:
-        del _write_times[uid]
+
+    def __init__(self, limit: int, window: float = WRITE_WINDOW_SECONDS) -> None:
+        """Create an empty limiter."""
+        self.limit = limit
+        self.window = window
+        self.times: dict[Any, deque[float]] = {}
+        self.last_sweep = 0.0
+
+    def clear(self) -> None:
+        """Forget every tracked key."""
+        self.times.clear()
+        self.last_sweep = 0.0
+
+    def _sweep(self, now: float) -> None:
+        """Drop keys whose whole window has expired.
+
+        Without this the table keeps one entry per key ever seen, for the life of
+        the process — a slow leak that a stream of distinct users or addresses
+        turns into unbounded growth. Amortized to once per window so the common
+        path stays O(1) rather than O(keys) per request.
+        """
+        if now - self.last_sweep < self.window:
+            return
+        self.last_sweep = now
+        for key in [k for k, times in self.times.items() if not times or now - times[-1] > self.window]:
+            del self.times[key]
+
+    def exceeded(self, key: Any) -> bool:  # noqa: ANN401 — int uid or str address
+        """Record one hit for `key` and report whether it is over the limit."""
+        now = time.monotonic()
+        self._sweep(now)
+        times = self.times.setdefault(key, deque())
+        while times and now - times[0] > self.window:
+            times.popleft()
+        if len(times) >= self.limit:
+            return True
+        times.append(now)
+        return False
 
 
-def _rate_limited(uid: int) -> bool:
-    now = time.monotonic()
-    _sweep(now)
-    times = _write_times.setdefault(uid, deque())
-    while times and now - times[0] > WRITE_WINDOW_SECONDS:
-        times.popleft()
-    if len(times) >= WRITE_LIMIT:
-        return True
-    times.append(now)
-    return False
+_writes = RollingLimit(WRITE_LIMIT)
+_reads = RollingLimit(READ_LIMIT)
+
+
+def clear_rate_limits() -> None:
+    """Reset the in-memory counters (tests; harmless in prod restarts)."""
+    _writes.clear()
+    _reads.clear()
+
+
+def read_rate_limited(client_addr: str | None) -> bool:
+    """Record one anonymous proxy read and report whether the caller is over the limit."""
+    return _reads.exceeded(client_addr or "unknown")
 
 
 def csrf_ok(token: str) -> bool:
@@ -127,7 +159,7 @@ def write_guard(fn: Callable[..., Any]) -> Callable[..., Any]:
             return _reject(HTTP_UNAUTHORIZED, "sign in required")
         if not csrf_ok(request.headers.get("X-CSRF-Token", "")):
             return _reject(HTTP_FORBIDDEN, "bad CSRF token")
-        if _rate_limited(uid):
+        if _writes.exceeded(uid):
             return _reject(HTTP_TOO_MANY, "rate limit exceeded")
         return fn(*args, **kwargs)
 

@@ -31,11 +31,13 @@ from backend.models import ApiCache  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _clear_cache(monkeypatch):
-    """The proxy's API cache is shared through the DB; isolate tests."""
+    """The proxy's API cache and read limiter are process-wide; isolate tests."""
     proxy_app.api_cache.clear()
+    proxy_app.security.clear_rate_limits()
     monkeypatch.setattr(proxy_app.api_cache, "maybe_poll_recent_changes", lambda *_args, **_kwargs: 0)
     yield
     proxy_app.api_cache.clear()
+    proxy_app.security.clear_rate_limits()
 
 
 @pytest.fixture
@@ -135,6 +137,19 @@ def test_parent_directory_segments_are_rejected(client, fake_get):
         assert resp.status_code == 400, path
         assert resp.get_json()["error"] == "invalid api path"
     assert captured["calls"] == 0, "no upstream request may be made for a rejected path"
+
+
+def test_anonymous_reads_are_rate_limited(client, fake_get, monkeypatch):
+    fake_get(FakeUpstream(200, b"{}"))
+    clock = {"t": 100.0}
+    monkeypatch.setattr(proxy_app.security.time, "monotonic", lambda: clock["t"])
+    for _ in range(proxy_app.security.READ_LIMIT):
+        assert client.get("/api/tools/x/").status_code == 200
+    resp = client.get("/api/tools/x/")
+    assert resp.status_code == 429
+    assert resp.headers["Retry-After"]
+    clock["t"] += proxy_app.security.WRITE_WINDOW_SECONDS + 1  # window rolls over
+    assert client.get("/api/tools/x/").status_code == 200
 
 
 def test_upstream_exception_returns_502(client, fake_get):
