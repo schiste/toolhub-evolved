@@ -13,9 +13,25 @@ KEEP=14
 mkdir -p "$DEST"
 STAMP="$(date -u +%Y%m%d-%H%M)"
 OUT="$DEST/$DB-$STAMP.sql.gz"
+TMP="$(mktemp "$DEST/$DB-$STAMP.XXXXXX.sql")"
+
+cleanup() {
+	rm -f "$TMP"
+}
+trap cleanup EXIT HUP INT TERM
+
+if command -v mariadb-dump >/dev/null 2>&1; then
+	DUMP_BIN="mariadb-dump"
+elif command -v mysqldump >/dev/null 2>&1; then
+	DUMP_BIN="mysqldump"
+else
+	echo "backup: mariadb-dump or mysqldump not found" >&2
+	exit 1
+fi
 
 # replica.my.cnf holds the tool's ToolsDB credentials (standard on Toolforge).
-mariadb-dump --defaults-file="$HOME/replica.my.cnf" -h "$HOST" "$DB" | gzip >"$OUT"
+"$DUMP_BIN" --defaults-file="$HOME/replica.my.cnf" -h "$HOST" "$DB" >"$TMP"
+gzip -c "$TMP" >"$OUT"
 echo "backup: wrote $OUT ($(du -h "$OUT" | cut -f1))"
 
 # Rotate: keep the newest $KEEP dumps.
