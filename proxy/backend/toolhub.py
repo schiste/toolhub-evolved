@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import requests
 from sqlalchemy import select
 
-from backend import api_cache, db
+from backend import api_cache, db, token_crypto
 from backend.models import ToolhubToken, utcnow
 
 DEFAULT_BASE_URL = "https://toolhub.wikimedia.org"
@@ -137,7 +137,7 @@ def _expires_at(token_payload: dict[str, object]) -> datetime | None:
 
 def save_grant(user_id: int, token_payload: dict[str, object]) -> None:
     """Store or replace the official Toolhub OAuth grant for a local user."""
-    access_token = str(token_payload["access_token"])
+    access_token = token_crypto.encrypt(str(token_payload["access_token"]))
     refresh = token_payload.get("refresh_token")
     with db.session_scope() as s:
         row = s.get(ToolhubToken, user_id)
@@ -146,7 +146,7 @@ def save_grant(user_id: int, token_payload: dict[str, object]) -> None:
             s.add(row)
         row.access_token = access_token
         if refresh:
-            row.refresh_token = str(refresh)
+            row.refresh_token = token_crypto.encrypt(str(refresh))
         row.token_type = str(token_payload.get("token_type") or "Bearer")
         row.scope = str(token_payload.get("scope") or SCOPES)
         row.expires_at = _expires_at(token_payload)
@@ -167,29 +167,62 @@ def _needs_refresh(row: ToolhubToken) -> bool:
     return row.expires_at <= utcnow() + timedelta(seconds=TOKEN_REFRESH_SKEW_SECONDS)
 
 
+def _open_grant(row: ToolhubToken) -> tuple[str, str | None]:
+    """Decrypt one stored grant, re-sealing it if it predates encryption.
+
+    Re-sealing here drains the plaintext tolerance in backend.token_crypto, so
+    the compatibility path removes itself as users make writes.
+    """
+    access = token_crypto.decrypt(row.access_token)
+    refresh = token_crypto.decrypt(row.refresh_token) if row.refresh_token else None
+    if not token_crypto.is_encrypted(row.access_token):
+        row.access_token = token_crypto.encrypt(access)
+        if refresh:
+            row.refresh_token = token_crypto.encrypt(refresh)
+    return access, refresh
+
+
 def _grant_for_user(user_id: int) -> ToolhubToken:
+    try:
+        return _load_grant(user_id)
+    except token_crypto.GrantDecryptionError as exc:
+        # The key rotated, or this row was written under a different one. There
+        # is nothing to recover, so fail closed: forget the unusable grant and
+        # ask for re-authorization rather than 500 on every future write. The
+        # delete needs its own transaction because session_scope() rolls back
+        # the one that raised.
+        revoke_local_grant(user_id)
+        msg = "Official Toolhub authorization must be renewed"
+        raise ToolhubAuthError(msg) from exc
+
+
+def _load_grant(user_id: int) -> ToolhubToken:
     with db.session_scope() as s:
         row = s.execute(select(ToolhubToken).where(ToolhubToken.user_id == user_id)).scalar_one_or_none()
         if row is None:
             msg = "Official Toolhub authorization is required"
             raise ToolhubAuthError(msg)
+        access, refresh = _open_grant(row)
         if _needs_refresh(row):
-            if not row.refresh_token:
+            if not refresh:
                 msg = "Official Toolhub authorization expired"
                 raise ToolhubAuthError(msg)
-            refreshed = refresh_grant(row.refresh_token)
-            row.access_token = str(refreshed["access_token"])
+            refreshed = refresh_grant(refresh)
+            access = str(refreshed["access_token"])
+            row.access_token = token_crypto.encrypt(access)
             if refreshed.get("refresh_token"):
-                row.refresh_token = str(refreshed["refresh_token"])
+                refresh = str(refreshed["refresh_token"])
+                row.refresh_token = token_crypto.encrypt(refresh)
             row.token_type = str(refreshed.get("token_type") or row.token_type or "Bearer")
             row.scope = str(refreshed.get("scope") or row.scope or SCOPES)
             row.expires_at = _expires_at(refreshed)
             row.updated_at = utcnow()
             s.flush()
+        # Detached copy carries plaintext: it is request-scoped and never persisted.
         return ToolhubToken(
             user_id=row.user_id,
-            access_token=row.access_token,
-            refresh_token=row.refresh_token,
+            access_token=access,
+            refresh_token=refresh,
             token_type=row.token_type,
             scope=row.scope,
             expires_at=row.expires_at,

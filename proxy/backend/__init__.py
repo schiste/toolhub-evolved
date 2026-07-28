@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flask import Flask
 
-from backend import db
+from backend import db, token_crypto
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
 
@@ -67,6 +67,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
         PERMANENT_SESSION_LIFETIME=timedelta(days=SESSION_DAYS),
         MAX_CONTENT_LENGTH=1024 * 1024,
     )
+    token_crypto.configure(app.secret_key)
     db.configure(url)
     db.init_schema()
     app.register_blueprint(oauth_bp)

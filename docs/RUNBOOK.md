@@ -23,6 +23,7 @@ them automatically.
 | `TOOLHUB_EVOLVED_ADMIN_USERS`    | no       | Comma-separated Toolhub numeric ids or usernames promoted to the Evolved-only `admin` role on login                                                                                                                       |
 | `TOOLHUB_API_BASE`               | no       | Toolhub base URL override for staging/tests; defaults to `https://toolhub.wikimedia.org`                                                                                                                                  |
 | `TOOLHUB_BACKUP_DIR`             | no       | Backup destination (default `~/backups`)                                                                                                                                                                                  |
+| `TOOLHUB_TOKEN_KEY`              | no       | Independent key for encrypting stored Toolhub OAuth grants; defaults to deriving one from `TOOLHUB_SECRET_KEY`                                                                                                            |
 | `TOOLHUB_INSECURE_COOKIES`       | no       | Set to `1` only for local http development — never in production                                                                                                                                                          |
 
 Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
@@ -30,6 +31,23 @@ Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
 vars, `/oauth/login` answers 503 and the site runs with live reads plus
 signed-out read-only mode. Without a stored per-user Toolhub grant, `/v1/write/*`
 write endpoints answer 401 with `reauth: true`.
+
+## Stored Toolhub grants (encryption at rest)
+
+`toolhub_tokens` holds official Toolhub bearer credentials, and on Toolforge it
+lives in shared ToolsDB and in every backup this runbook takes. Rows are
+therefore sealed with Fernet before they are written (`backend/token_crypto.py`).
+
+- The key is derived from `TOOLHUB_SECRET_KEY` via HKDF, so no extra
+  configuration is needed. Set `TOOLHUB_TOKEN_KEY` if you want to rotate the
+  session key without invalidating stored grants.
+- **Rotating the key forces re-authorization.** A grant that cannot be decrypted
+  is deleted and the user is sent back through `/oauth/login`; nothing else
+  breaks and no manual cleanup is needed.
+- Rows written before this change are plaintext. They are still read, and are
+  re-sealed in place the first time that user makes an official write. Once
+  `SELECT COUNT(*) FROM toolhub_tokens WHERE access_token NOT LIKE 'v1:%'`
+  returns 0, the compatibility path in `token_crypto.decrypt` can be dropped.
 
 ## Evolved-local roles and permissions
 

@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
-from backend import api_cache, authz, author_claims, db, security, sync, toolhub  # noqa: E402
+from backend import api_cache, authz, author_claims, db, security, sync, token_crypto, toolhub  # noqa: E402
 from backend.author_claims import (  # noqa: E402
     AuthorNameProvider,
     SignedToolinfoProvider,
@@ -2519,6 +2519,14 @@ class TextResp:
         raise ValueError("not json")
 
 
+def stored_grant(uid):
+    """Return the decrypted (access, refresh) pair persisted for one user."""
+    with db.session_scope() as s:
+        row = s.get(ToolhubToken, uid)
+        refresh = token_crypto.decrypt(row.refresh_token) if row.refresh_token else None
+        return token_crypto.decrypt(row.access_token), refresh
+
+
 def configure_oauth(monkeypatch):
     monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_ID", "cid")
     monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_SECRET", "csec")
@@ -2649,22 +2657,60 @@ def test_toolhub_refreshes_expired_grant(client, monkeypatch):
     assert (body, status) == ({"ok": True}, 200)
     assert calls[0][0] == "post"
     assert calls[1][3]["headers"]["Authorization"] == "Bearer new"
-    with db.session_scope() as s:
-        row = s.get(ToolhubToken, uid)
-        assert row.access_token == "new"
-        assert row.refresh_token == "rt2"
+    assert stored_grant(uid) == ("new", "rt2")
     toolhub.save_grant(uid, {"access_token": "third"})
-    with db.session_scope() as s:
-        row = s.get(ToolhubToken, uid)
-        assert row.access_token == "third"
-        assert row.refresh_token == "rt2"
+    assert stored_grant(uid) == ("third", "rt2")
     uid_no_rotate = add_user(wm_sub="refresh-no-rotate")
     toolhub.save_grant(uid_no_rotate, {"access_token": "old2", "refresh_token": "keep", "expires_in": -120})
     toolhub.api_request(uid_no_rotate, "POST", "/api/tools/", json={"name": "x"})
+    assert stored_grant(uid_no_rotate) == ("new-no-rotate", "keep")
+
+
+def test_stored_grants_are_encrypted_at_rest(client):
+    uid = add_user(wm_sub="sealed")
+    toolhub.save_grant(uid, {"access_token": "secret-access", "refresh_token": "secret-refresh"})
     with db.session_scope() as s:
-        row = s.get(ToolhubToken, uid_no_rotate)
-        assert row.access_token == "new-no-rotate"
-        assert row.refresh_token == "keep"
+        row = s.get(ToolhubToken, uid)
+        assert row.access_token.startswith(token_crypto.PREFIX)
+        assert "secret-access" not in row.access_token  # ciphertext, not an encoding
+        assert "secret-refresh" not in row.refresh_token
+    assert stored_grant(uid) == ("secret-access", "secret-refresh")
+
+
+def test_legacy_plaintext_grants_are_readable_and_resealed_on_read(client, monkeypatch):
+    uid = add_user(wm_sub="legacy")
+    with db.session_scope() as s:  # a row written before encryption existed
+        s.add(ToolhubToken(user_id=uid, access_token="plain-access", refresh_token="plain-refresh"))
+    monkeypatch.setattr(toolhub.requests, "request", lambda *_a, **kw: FakeResp({"ok": True}))
+    body, status = toolhub.api_request(uid, "POST", "/api/tools/", json={"name": "x"})
+    assert (body, status) == ({"ok": True}, 200)
+    with db.session_scope() as s:
+        assert s.get(ToolhubToken, uid).access_token.startswith(token_crypto.PREFIX)  # migrated in place
+    assert stored_grant(uid) == ("plain-access", "plain-refresh")
+
+
+def test_unreadable_grant_is_dropped_and_forces_reauth(client, monkeypatch):
+    uid = add_user(wm_sub="rotated")
+    toolhub.save_grant(uid, {"access_token": "a", "refresh_token": "r"})
+    token_crypto.configure("a-completely-different-session-secret")  # simulate key rotation
+    with pytest.raises(toolhub.ToolhubAuthError):
+        toolhub.api_request(uid, "POST", "/api/tools/", json={"name": "x"})
+    with db.session_scope() as s:
+        assert s.get(ToolhubToken, uid) is None  # fail closed: unreadable grant forgotten
+
+
+def test_token_crypto_requires_configuration(monkeypatch):
+    monkeypatch.setattr(token_crypto, "_fernet", None)
+    with pytest.raises(RuntimeError, match="configure"):
+        token_crypto.encrypt("x")
+
+
+def test_token_key_env_overrides_the_session_secret(monkeypatch):
+    monkeypatch.setenv("TOOLHUB_TOKEN_KEY", "independent-token-key")
+    token_crypto.configure("session-secret-a")
+    sealed = token_crypto.encrypt("grant")
+    token_crypto.configure("session-secret-b")  # session key rotated…
+    assert token_crypto.decrypt(sealed) == "grant"  # …grant survives
 
 
 def test_toolhub_expired_grant_without_refresh_requires_reauth(client):
