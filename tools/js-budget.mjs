@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Performance budget for the total app JS payload (raw ES modules served
+// Performance budget for production user-route JS payload (raw ES modules served
 // directly — there is no bundler, so bytes on disk ≈ bytes over the wire).
 //
 // This is a FIXED, generous ceiling — deliberately NOT a self-baselined ratchet
@@ -13,11 +13,12 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 const LIMIT = 550_000; // bytes (~2× the ~271 KB current payload)
+const EXCLUDED_ROUTE_DOCS = new Set(["public_html/views/_fixtures.js", "public_html/views/styleguide.js"]);
 
 // :(glob) magic so ** matches the top-level entry point too (see tools/checks.mjs).
 const files = execFileSync("git", ["ls-files", ":(glob)public_html/**/*.js"], { encoding: "utf8" })
 	.split("\n")
-	.filter(Boolean);
+	.filter((file) => file && !EXCLUDED_ROUTE_DOCS.has(file));
 const total = files.reduce((sum, file) => sum + readFileSync(file).length, 0);
 const kb = (n) => `${Math.round(n / 1000)} KB`;
 
