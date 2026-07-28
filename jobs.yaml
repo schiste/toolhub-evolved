@@ -10,6 +10,14 @@
   schedule: "17 * * * *"
   emails: onfailure
 
+- name: api-cache-invalidator
+  # Poll official Toolhub recent changes out of band and invalidate affected
+  # shared anonymous API cache rows, so user requests never pay that cost.
+  command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/cache_invalidation.py
+  image: python3.13
+  schedule: "* * * * *"
+  emails: onfailure
+
 - name: db-backup
   # Nightly ToolsDB dump with 14-day rotation (tools/backup-db.sh).
   # The mariadb image ships the client tools; check `toolforge jobs images`

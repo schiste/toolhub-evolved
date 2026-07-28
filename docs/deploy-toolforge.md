@@ -64,7 +64,8 @@ It activates fully once configured:
    `TOOLHUB_EVOLVED_REVIEWER_USERS` and `TOOLHUB_EVOLVED_ADMIN_USERS` env vars
    can promote Toolhub-authenticated users into Evolved-only reviewer/operator
    roles without granting them any additional official Toolhub rights.
-2. Load the scheduled jobs (hourly crawler, nightly backup):
+2. Load the scheduled jobs (hourly crawler, minutely cache invalidator,
+   nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
 
 Unconfigured, the site still runs — live read interface plus signed-out read-only

@@ -331,8 +331,9 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
   move it to Toolforge Redis when replicas > 1).
 - ToolsDB: default quotas suffice for launch; monitor size, request increase if
   the crawler grows the catalog.
-- Jobs framework: crawler + nightly backup jobs; both defined in-repo
-  (`jobs.yaml`) so the full production config is versioned.
+- Jobs framework: local toolinfo crawler, recent-change API cache invalidator,
+  and nightly backup jobs; all defined in-repo (`jobs.yaml`) so the full
+  production config is versioned.
 - Secrets (OAuth client secret, DB URL/credentials, session key): Toolforge
   envvars readable only by the tool, never in the repo; documented in the
   runbook.

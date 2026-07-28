@@ -302,9 +302,10 @@ if the webservice doesn't come back healthy.
 ## Scheduled jobs
 
 ```sh
-toolforge jobs load ~/repo/jobs.yaml   # crawler (hourly) + db-backup (nightly)
+toolforge jobs load ~/repo/jobs.yaml   # crawler + api-cache-invalidator + db-backup
 toolforge jobs list                    # status
 toolforge jobs logs crawler            # last crawl output
+toolforge jobs logs api-cache-invalidator
 ```
 
 The crawler exits non-zero (→ failure email) when any URL errored; per-run
@@ -316,6 +317,12 @@ owner has a matching active public key, then checks whether the tool name alread
 exists in official Toolhub. Official names are skipped so live Toolhub remains
 canonical; Evolved-local rows are upserted only for names that Toolhub returns as
 missing.
+
+The API cache invalidator runs every minute. It polls official Toolhub
+`/api/recent/?page_size=50`, records the latest seen marker in `api_cache_meta`,
+and deletes affected shared anonymous `/api/*` cache rows from `api_cache`.
+User-facing `/api/*` requests must not poll recent changes themselves; they serve
+fresh/stale cache immediately and refresh stale entries in the background.
 
 Tool creation can add `crawler_urls` rows too. When a signed-in user submits a
 tool with the optional create-only `toolinfo_url` field, `/v1/write/tools/`

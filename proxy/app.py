@@ -16,7 +16,6 @@ OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
-from typing import Any
 
 import requests
 from flask import Flask, Response, request, send_from_directory
@@ -48,8 +47,6 @@ _HTTP_NOT_MODIFIED = 304
 _CACHEABLE_MIN_STATUS = 200
 _CACHEABLE_MAX_STATUS = 300
 _TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
-_RECENT_INVALIDATION_URL = f"{UPSTREAM}/api/recent/?page_size=50"
-_RECENT_INVALIDATION_TIMEOUT = 10
 _CACHE_HEADER = "X-Toolhub-Evolved-Cache"
 _UPSTREAM_HEADER = "X-Toolhub-Evolved-Upstream"
 _UPSTREAM_TIMEOUT = "timeout"
@@ -73,29 +70,6 @@ def _with_proxy_diagnostics(resp: Response, *, cache: str, upstream: int | str) 
     resp.headers[_CACHE_HEADER] = cache
     resp.headers[_UPSTREAM_HEADER] = str(upstream)
     return resp
-
-
-def _fetch_recent_change_rows() -> list[dict[str, Any]]:
-    """Fetch Toolhub's newest recent rows for cache invalidation only."""
-    try:
-        upstream = _SESSION.get(
-            _RECENT_INVALIDATION_URL,
-            headers=_upstream_headers(),
-            timeout=_RECENT_INVALIDATION_TIMEOUT,
-            allow_redirects=False,
-        )
-    except requests.RequestException:
-        return []
-    if not upstream.ok:
-        return []
-    try:
-        payload = upstream.json()
-    except ValueError:
-        return []
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if not isinstance(results, list):
-        return []
-    return [row for row in results if isinstance(row, dict)]
 
 
 def _cached_api_response(hit: api_cache.CachedResponse, state: str) -> Response:
@@ -321,7 +295,6 @@ def api_proxy(path: str) -> Response:
         resp = _cached_api_response(stale, "stale")
         resp.headers[_UPSTREAM_HEADER] = _UPSTREAM_BACKGROUND
         return resp
-    api_cache.maybe_poll_recent_changes(_fetch_recent_change_rows)
     upstream, payload, early = _fetch_upstream(url, stale)
     if early is not None:
         return early

@@ -213,42 +213,6 @@ def test_success_is_relayed_and_cached(client, fake_get):
         assert row.body == b'{"ok":true}'
 
 
-def test_recent_invalidation_fetch_reads_toolhub_recent_rows(fake_get):
-    captured = fake_get(
-        FakeUpstream(
-            200,
-            json_payload={
-                "results": [
-                    {"id": 2, "content_type": "tool"},
-                    "not-a-row",
-                    {"id": 1, "content_type": "list"},
-                ]
-            },
-        )
-    )
-    assert proxy_app._fetch_recent_change_rows() == [
-        {"id": 2, "content_type": "tool"},
-        {"id": 1, "content_type": "list"},
-    ]
-    assert captured["url"] == "https://toolhub.wikimedia.org/api/recent/?page_size=50"
-    assert captured["kwargs"]["allow_redirects"] is False
-    assert captured["kwargs"]["timeout"] == 10
-
-
-def test_recent_invalidation_fetch_treats_failures_as_no_rows(fake_get):
-    fake_get(raises=proxy_app.requests.RequestException("timeout"))
-    assert proxy_app._fetch_recent_change_rows() == []
-
-    fake_get(FakeUpstream(503, json_payload={"results": [{"id": 1}]}))
-    assert proxy_app._fetch_recent_change_rows() == []
-
-    fake_get(FakeUpstream(200, json_payload=ValueError("bad json")))
-    assert proxy_app._fetch_recent_change_rows() == []
-
-    fake_get(FakeUpstream(200, json_payload={"results": "not-list"}))
-    assert proxy_app._fetch_recent_change_rows() == []
-
-
 def test_error_status_is_relayed_but_not_cached(client, fake_get):
     fake_get(FakeUpstream(503, b'{"error":"upstream"}'))
     resp = client.get("/api/tools/")
@@ -336,6 +300,19 @@ def test_error_response_is_not_cached(client, fake_get):
     client.get("/api/tools/")
     client.get("/api/tools/")
     assert captured["calls"] == 2, "a 5xx must not be cached — every call re-fetches"
+
+
+def test_cache_miss_does_not_poll_recent_changes_on_request_path(client, fake_get, monkeypatch):
+    captured = fake_get(FakeUpstream(200, b'{"ok":true}'))
+
+    def fail_if_polled(_fetch_recent):
+        raise AssertionError("recent-change polling belongs to the scheduled job")
+
+    monkeypatch.setattr(proxy_app.api_cache, "maybe_poll_recent_changes", fail_if_polled)
+    resp = client.get("/api/tools/no-cache-yet/")
+    assert resp.status_code == 200
+    assert captured["calls"] == 1
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
 
 
 def test_stale_cache_does_not_block_on_upstream_exception(client, fake_get, monkeypatch, scheduled_revalidations):
