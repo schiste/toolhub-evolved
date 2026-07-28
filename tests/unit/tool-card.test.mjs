@@ -112,6 +112,14 @@ test("toolCard favBtn omitted when signed out / exp off", () => {
 	setServerUser(null);
 });
 
+test("toolCard adds per-field lang attributes when the tool record exposes them", () => {
+	applyExp(true);
+	setServerUser(null);
+	const html = toolCard({ ...base, titleLanguage: "fr", descriptionLanguage: "fr" });
+	assert.ok(html.includes('dir="auto" lang="fr">My &lt;Tool&gt;</button>'));
+	assert.ok(html.includes('<p class="tcard__desc" dir="auto" lang="fr">A *great* tool</p>'));
+});
+
 test("CARD_TAG_LIMIT export value", () => {
 	assert.equal(CARD_TAG_LIMIT, 2);
 });

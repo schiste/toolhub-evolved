@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
+import { dirAttrs, esc, safeUrl, textAttrs } from "../lib/core/dom.js";
 import { backendGetJson, normalizeTool } from "../lib/core/api.js";
 import { countLabel, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
@@ -115,7 +115,7 @@ function toolRow(tool) {
 	return `<tr>
 		<td data-label="${t("accountTools.tool", "Tool")}">
 			<a class="account-records__title" href="${toolHref(tool.name)}">
-				<strong${dirAttrs(tool.title)}>${esc(tool.title)}</strong>
+				<strong${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</strong>
 				<span class="recent-table__id">${esc(tool.name)}</span>
 			</a>
 		</td>

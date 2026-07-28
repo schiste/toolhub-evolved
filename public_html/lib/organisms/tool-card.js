@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc } from "../core/dom.js";
+import { dirAttrs, esc, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
 import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
@@ -52,11 +52,11 @@ export function toolCard(tool, opts = {}) {
 		<div class="tcard__head">
 			${rank}${toolIcon(tool)}
 			<div class="tcard__heading">
-				<button class="tcard__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("toolCard.quickLook", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(tool.title)}>${esc(tool.title)}</button>
+				<button class="tcard__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("toolCard.quickLook", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</button>
 				<div class="tcard__maint">${t("toolCard.by", "by")} <span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></div>
 			</div>
 		</div>
-		<p class="tcard__desc"${dirAttrs(tool.description)}>${esc(tool.description)}</p>
+		<p class="tcard__desc"${textAttrs(tool.description, tool.descriptionLanguage)}>${esc(tool.description)}</p>
 		<div class="tcard__tags">${tags}</div>
 		<div class="tcard__signals">${signalLine}</div>
 		<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(tool.modified, "tcard__when")}${signedIn() ? favBtn(tool.name, { cls: "favbtn--sm" }) : ""}</span></div>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { pickLocalized, t } from "./i18n.js";
+import { localizedField, t } from "./i18n.js";
 import { markFrontendTiming, markFrontendTimingOnce } from "./diagnostics.js";
 import { signedIn, USER } from "./session.js";
 import {
@@ -578,6 +578,9 @@ function normalizeAuthorObj(a) {
 export function normalizeTool(t) {
 	const ann = t.annotations || {};
 	const ra = t.author;
+	const titleField = localizedField(t.title, t._language);
+	const descriptionField = localizedField(t.description, t._language);
+	const subtitleField = localizedField(pick(t.subtitle, ann.subtitle, null), t._language);
 	const authors = Array.isArray(ra)
 		? ra.map((a) => (a && a.name) || (typeof a === "string" ? a : null)).filter(Boolean)
 		: typeof ra === "string" && ra
@@ -595,8 +598,10 @@ export function normalizeTool(t) {
 	/** @type {Tool} */
 	const o = {
 		name: t.name,
-		title: pickLocalized(t.title) || t.name,
-		description: pickLocalized(t.description) || "",
+		title: titleField.value || t.name,
+		titleLanguage: titleField.value ? titleField.lang : null,
+		description: descriptionField.value || "",
+		descriptionLanguage: descriptionField.value ? descriptionField.lang : null,
 		url: pick(t.url, ann.url, ""),
 		icon: pick(t.icon, ann.icon, null),
 		keywords: t.keywords || [],
@@ -604,7 +609,8 @@ export function normalizeTool(t) {
 		authors,
 		authorObjs,
 		wikidata: pick(t.wikidata_qid, ann.wikidata_qid, null),
-		subtitle: pick(t.subtitle, ann.subtitle, null),
+		subtitle: subtitleField.value || null,
+		subtitleLanguage: subtitleField.value ? subtitleField.lang : null,
 		sponsor: pick(t.sponsor, ann.sponsor, []),
 		replacedBy: pick(t.replaced_by, ann.replaced_by, null),
 		toolType: pick(t.tool_type, ann.tool_type, null),

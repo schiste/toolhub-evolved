@@ -62,3 +62,24 @@ export function safeUrl(u) {
 export function dirAttrs(value) {
 	return value ? ' dir="auto"' : "";
 }
+/** @param {unknown} lang */
+export function cleanLangCode(lang) {
+	const raw = String(lang ?? "")
+		.trim()
+		.replaceAll("_", "-");
+	if (!raw || !/^(x-[a-z0-9-]+|[a-z]{2,3}(-[a-z0-9]+)*)$/i.test(raw)) return "";
+	try {
+		return Intl.getCanonicalLocales(raw)[0] || "";
+	} catch {
+		return raw.toLowerCase();
+	}
+}
+/** @param {unknown} lang */
+export function langAttr(lang) {
+	const clean = cleanLangCode(lang);
+	return clean ? ` lang="${esc(clean)}"` : "";
+}
+/** @param {unknown} value @param {unknown} lang */
+export function textAttrs(value, lang) {
+	return value ? `${dirAttrs(value)}${langAttr(lang)}` : "";
+}

@@ -28,7 +28,9 @@ type ToolStatus =
 interface Tool {
 	name: string;
 	title: string;
+	titleLanguage: string | null;
 	description: string;
+	descriptionLanguage: string | null;
 	url: string;
 	icon: string | null;
 	keywords: string[];
@@ -37,6 +39,7 @@ interface Tool {
 	authorObjs: AuthorObj[];
 	wikidata: string | null;
 	subtitle: string | null;
+	subtitleLanguage: string | null;
 	sponsor: string[];
 	replacedBy: string | null;
 	toolType: string | null;

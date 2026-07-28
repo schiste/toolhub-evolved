@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
 import {
 	ApiError,
@@ -436,7 +436,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 								.map((/** @type {Tool} */ t) => {
 									const inList = work.tools.includes(t.name);
 									return `<button class="le__result${inList ? " is-in" : ""}" type="button" data-add="${esc(t.name)}" ${inList ? "disabled" : ""}>
-						${inList ? icon("check") : icon("add")} <span${dirAttrs(t.title)}>${esc(t.title)}</span></button>`;
+						${inList ? icon("check") : icon("add")} <span${textAttrs(t.title, t.titleLanguage)}>${esc(t.title)}</span></button>`;
 								})
 								.join("")
 						: `<p class="le__empty">${t("lists.noMatches", "No matches.")}</p>`;

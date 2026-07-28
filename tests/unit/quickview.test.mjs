@@ -97,6 +97,12 @@ test("quickViewBody omits favBtn when signed out", () => {
 	qvCheck("signed out", base);
 });
 
+test("quickViewBody adds per-field lang attributes from the tool record", () => {
+	const html = quickViewBody({ ...base, titleLanguage: "fr", descriptionLanguage: "fr" });
+	assert.ok(html.includes('<h2 class="qv__title" id="qv-title" dir="auto" lang="fr">My &lt;Tool&gt;</h2>'));
+	assert.ok(html.includes('<div class="qv__desc" dir="auto" lang="fr">'));
+});
+
 test("QV_TAG_LIMIT export value", () => {
 	assert.equal(QV_TAG_LIMIT, 6);
 });

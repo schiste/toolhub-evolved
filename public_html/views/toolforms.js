@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $input, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
 import {
 	backendErrorMessage,
@@ -432,7 +432,7 @@ function renderDuplicateItem(tool) {
 		tool.maintainer || (tool.authors && tool.authors[0]) || t("toolforms.unknownMaintainer", "Unknown maintainer");
 	return `<li class="dupes__item">
 		<a href="${esc(toolHref(tool.name))}">
-			<span class="dupes__name"${dirAttrs(title)}>${esc(title)}</span>
+			<span class="dupes__name"${textAttrs(title, tool.titleLanguage)}>${esc(title)}</span>
 			<span class="dupes__meta">${t("toolforms.by", "by")} <span${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>
 		</a>
 	</li>`;
@@ -1047,7 +1047,7 @@ export async function viewAnnotationsEdit(name) {
 		<h1 class="page__title">${t("toolforms.editAnnotations", "Edit annotations")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 		<p class="page__intro">${t("toolforms.annoIntro", "Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 		<form data-anno-form>
-			<h2 class="le__h2">${t("toolforms.annoForTitle", "Community annotations for")} <span${dirAttrs(cur.title)}>${esc(cur.title)}</span></h2>
+			<h2 class="le__h2">${t("toolforms.annoForTitle", "Community annotations for")} <span${textAttrs(cur.title, cur.titleLanguage)}>${esc(cur.title)}</span></h2>
 			${annotationStatusPanel}
 			${withFieldProvenance(fInput(t("toolforms.fieldAudiences", "Audiences (comma-separated)"), "an-aud", toCsv(cur.audiences), { hint: t("toolforms.fieldAudiencesHint", "User groups this tool serves, such as editors, admins, researchers, or developers.") }), t("toolforms.fieldAudiencesShort", "Audiences"), annotationMeta)}
 			${withFieldProvenance(fInput(t("toolforms.fieldTasks", "Tasks (comma-separated)"), "an-tasks", toCsv(cur.tasks), { hint: t("toolforms.fieldTasksHint", "Workflows this tool supports, such as editing, patrolling, importing, or analysis.") }), t("toolforms.fieldTasksShort", "Tasks"), annotationMeta)}

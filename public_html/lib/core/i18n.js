@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc } from "./dom.js";
+import { cleanLangCode, esc } from "./dom.js";
 
 export const DEFAULT_LOCALE = "en";
 export const LOCALE_KEY = "toolhub-locale";
@@ -100,6 +100,29 @@ export function setLocale(locale) {
 	}
 }
 /**
+ * Resolve a localized API field and preserve the selected language when the API
+ * exposes one. Toolhub usually sends plain strings plus a record-level
+ * `_language`; future/mocked localized maps use their map key as the field
+ * language.
+ * @param {unknown} value
+ * @param {unknown} [fallbackLang]
+ * @returns {{ value: any, lang: string | null }}
+ */
+export function localizedField(value, fallbackLang) {
+	const fallback = cleanLangCode(fallbackLang) || null;
+	if (value && typeof value === "object" && !Array.isArray(value)) {
+		const map = /** @type {Record<string, unknown>} */ (value);
+		const keys = [LOCALE, LOCALE.split("-")[0], DEFAULT_LOCALE, ...Object.keys(map)];
+		for (const key of keys) {
+			if (Object.prototype.hasOwnProperty.call(map, key)) {
+				return { value: map[key], lang: cleanLangCode(key) || fallback };
+			}
+		}
+		return { value: "", lang: null };
+	}
+	return { value, lang: fallback };
+}
+/**
  * Localized-field resolver for API data (audit §2.2 item 2): Toolhub fields
  * are usually plain strings, but when a per-language object arrives, prefer
  * the active locale, then its base language, then English, then anything.
@@ -107,11 +130,7 @@ export function setLocale(locale) {
  * @returns {any}
  */
 export function pickLocalized(value) {
-	if (value && typeof value === "object" && !Array.isArray(value)) {
-		const map = /** @type {Record<string, unknown>} */ (value);
-		return map[LOCALE] ?? map[LOCALE.split("-")[0]] ?? map[DEFAULT_LOCALE] ?? Object.values(map)[0] ?? "";
-	}
-	return value;
+	return localizedField(value).value;
 }
 const numberFmt = new Intl.NumberFormat(LOCALE);
 const compactNumberFmt = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });

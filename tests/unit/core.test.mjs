@@ -61,6 +61,14 @@ test("DOM helpers escape, hash, and constrain URLs deterministically", () => {
 	assert.equal(dom.normalizeVcsUrl(undefined), "");
 	assert.equal(dom.dirAttrs("text"), ' dir="auto"');
 	assert.equal(dom.dirAttrs(""), "");
+	assert.equal(dom.cleanLangCode(" EN_us "), "en-US");
+	assert.equal(dom.cleanLangCode("x-private"), "x-private");
+	assert.equal(dom.cleanLangCode("not a language"), "");
+	assert.equal(dom.langAttr("fr"), ' lang="fr"');
+	assert.equal(dom.langAttr('" onclick="bad'), "");
+	assert.equal(dom.textAttrs("texte", "fr"), ' dir="auto" lang="fr"');
+	assert.equal(dom.textAttrs("texte", ""), ' dir="auto"');
+	assert.equal(dom.textAttrs("", "fr"), "");
 	assert.equal(dom.hash("toolhub"), dom.hash("toolhub"));
 	assert.notEqual(dom.hash("toolhub"), dom.hash("Toolhub"));
 });
@@ -113,7 +121,9 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 	});
 	assert.equal(normalized.name, "toolforge-admin");
 	assert.equal(normalized.title, "toolforge-admin");
+	assert.equal(normalized.titleLanguage, null);
 	assert.equal(normalized.description, "Admin interface");
+	assert.equal(normalized.descriptionLanguage, null);
 	assert.equal(normalized.url, "https://admin.toolforge.org/");
 	assert.equal(normalized.icon, "https://commons.example/icon.svg");
 	assert.deepEqual(normalized.authors, ["Bryan Davis"]);
@@ -125,6 +135,30 @@ test("normalizeTool maps live Toolhub schema into compact UI schema", () => {
 	assert.equal(normalized.userDocs, "https://wikitech.example/docs");
 	assert.equal(normalized.status.level, "green");
 	assert.equal(typeof normalized.weeklyViews, "number");
+});
+
+test("normalizeTool preserves Toolhub record language for rendered text fields", () => {
+	const plain = api.normalizeTool({
+		name: "outil",
+		title: "Outil",
+		description: "Description française",
+		subtitle: "Sous-titre",
+		_language: "fr"
+	});
+	assert.equal(plain.titleLanguage, "fr");
+	assert.equal(plain.descriptionLanguage, "fr");
+	assert.equal(plain.subtitleLanguage, "fr");
+
+	const mapped = api.normalizeTool({
+		name: "localized-map",
+		title: { fr: "Titre" },
+		description: { en: "English description", fr: "Description française" },
+		_language: "de"
+	});
+	assert.equal(mapped.title, "Titre");
+	assert.equal(mapped.titleLanguage, "fr");
+	assert.equal(mapped.description, "English description");
+	assert.equal(mapped.descriptionLanguage, "en");
 });
 
 test("normalizeTool derives status from the tool's own deprecated/experimental flags", () => {

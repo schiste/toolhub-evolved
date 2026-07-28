@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, dirAttrs, esc, safeUrl } from "../core/dom.js";
+import { $, $$, esc, safeUrl, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
 import { INDEX, getTool } from "../core/api.js";
 import { renderMarkdown } from "../core/markdown.js";
@@ -45,7 +45,7 @@ export function quickViewBody(tool) {
 	const glance = glanceChips(tool);
 	return `
 		<div class="qv__head">${toolIcon(tool, "lg")}
-			<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(tool.title)}>${esc(tool.title)}</h2>
+			<div class="qv__id"><h2 class="qv__title" id="qv-title"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</h2>
 			<div class="qv__by">${t("quickview.by", "by")} <span dir="auto">${authors}</span></div></div>
 		</div>
 		<div class="qv__status">
@@ -54,7 +54,7 @@ export function quickViewBody(tool) {
 			${fitChip(tool)}
 			${updatedTimeTag(tool.modified, "toolpage__when")}
 		</div>
-		<div class="qv__desc"${dirAttrs(tool.description)}>${renderMarkdown(tool.description) || `<em>${t("quickview.noDescription", "No description provided.")}</em>`}</div>
+		<div class="qv__desc"${textAttrs(tool.description, tool.descriptionLanguage)}>${renderMarkdown(tool.description) || `<em>${t("quickview.noDescription", "No description provided.")}</em>`}</div>
 		<div class="toolpage__glance">${glance}</div>
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">

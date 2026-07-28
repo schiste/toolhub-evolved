@@ -544,6 +544,31 @@ test("viewTool minimal (signed out, sparse fields, no related, no ego)", async (
 	assert.ok(!r.html.includes("Usage <span"));
 });
 
+test("viewTool renders per-field lang attributes from Toolhub language metadata", async () => {
+	h.nearestNeighbors.mockReturnValue([
+		{ tool: toolFixture("rel-fr", { title: "Voisin", titleLanguage: "fr" }), shared: [] }
+	]);
+	h.getSimilarityIndex.mockResolvedValue({
+		tools: [toolFixture("rel-fr", { title: "Voisin", titleLanguage: "fr" })]
+	});
+	h.getTool.mockResolvedValue(
+		toolFixture("outil", {
+			title: "Outil",
+			titleLanguage: "fr",
+			subtitle: "Sous-titre",
+			subtitleLanguage: "fr",
+			description: "Une description en français.",
+			descriptionLanguage: "fr"
+		})
+	);
+	const r = await tool.viewTool("outil");
+	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto" lang="fr">Outil</h1>'));
+	assert.ok(r.html.includes('<p class="toolpage__subtitle" dir="auto" lang="fr">Sous-titre</p>'));
+	assert.ok(r.html.includes('<div class="prose" dir="auto" lang="fr"><p>Une description en français.</p></div>'));
+	assert.ok(r.html.includes('class="related__title"'));
+	assert.ok(r.html.includes('dir="auto" lang="fr">Voisin</button>'));
+});
+
 test("viewTool full (signed in, rich fields, related + ego graph)", async () => {
 	applyExp(true);
 	setServerUser("Grace Hopper");

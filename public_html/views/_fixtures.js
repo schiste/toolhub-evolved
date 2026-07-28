@@ -4,8 +4,10 @@
 export const FIXTURE_TOOL = {
 	name: "styleguide-citation-helper",
 	title: "Citation Helper",
+	titleLanguage: null,
 	description:
 		"Suggests reliable source templates, checks missing citations, and helps editors add references without leaving the page.",
+	descriptionLanguage: null,
 	url: "https://example.org/tools/citation-helper",
 	icon: "https://commons.wikimedia.org/wiki/File:OOjs_UI_icon_code.svg",
 	keywords: ["citations", "references", "editing", "quality", "wikidata", "sources"],
@@ -16,6 +18,7 @@ export const FIXTURE_TOOL = {
 	authorObjs: [],
 	wikidata: null,
 	subtitle: null,
+	subtitleLanguage: null,
 	sponsor: [],
 	replacedBy: null,
 	toolType: "web app",

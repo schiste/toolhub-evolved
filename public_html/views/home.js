@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
+import { $, $$, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext, wikiMatches } from "../lib/core/signals.js";
@@ -168,7 +168,7 @@ function recentToolsHTML(recentTools) {
 			.map(
 				(t) => `
 		<li><a href="${toolHref(t.name)}">${avatar(t.title)}
-			<div><div class="recent__title"${dirAttrs(t.title)}>${esc(t.title)}</div>
+			<div><div class="recent__title"${textAttrs(t.title, t.titleLanguage)}>${esc(t.title)}</div>
 			<div class="recent__meta">${maintainerLabel} <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div></div>
 			${updatedTimeTag(t.modified, "recent__when")}</a></li>`
 			)

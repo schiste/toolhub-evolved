@@ -5,6 +5,7 @@ import {
 	AVAILABLE_LOCALES,
 	BOOT_MESSAGES,
 	LOCALE_KEY,
+	localizedField,
 	pickLocalized,
 	setLocale,
 	setMessages,
@@ -56,4 +57,12 @@ test("pickLocalized passes plain values through and resolves language maps", () 
 	assert.equal(pickLocalized({ en: "English", fr: "Français" }), "English"); // active locale is en
 	assert.equal(pickLocalized({ fr: "Français" }), "Français"); // any-value fallback
 	assert.equal(pickLocalized({}), "");
+});
+
+test("localizedField returns the chosen value and language metadata", () => {
+	assert.deepEqual(localizedField("plain", "fr"), { value: "plain", lang: "fr" });
+	assert.deepEqual(localizedField("plain", "bad language"), { value: "plain", lang: null });
+	assert.deepEqual(localizedField({ fr: "Français" }, "de"), { value: "Français", lang: "fr" });
+	assert.deepEqual(localizedField({ pt_br: "Português" }, "de"), { value: "Português", lang: "pt-BR" });
+	assert.deepEqual(localizedField({}, "fr"), { value: "", lang: null });
 });

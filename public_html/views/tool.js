@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
+import { dirAttrs, esc, safeUrl, textAttrs } from "../lib/core/dom.js";
 import { t, timeTag, updatedTimeTag } from "../lib/core/i18n.js";
 import {
 	INDEX,
@@ -56,7 +56,7 @@ function relatedToolRow(item) {
 			${avatar(tool.title)}
 			<div class="related__body">
 				<div class="related__titleline">
-					<button class="related__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("tool.quickLookAria", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(tool.title)}>${esc(tool.title)}</button>
+					<button class="related__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("tool.quickLookAria", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</button>
 					${deprecated}
 				</div>
 				<div class="related__maint">${t("tool.by", "by")} <span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></div>
@@ -394,8 +394,8 @@ export async function viewTool(name) {
 		<header class="toolpage__head">
 			${toolIcon(tool, "lg")}
 			<div class="toolpage__id">
-				<h1 class="toolpage__title"${dirAttrs(tool.title)}>${esc(tool.title)}</h1>
-				${tool.subtitle ? `<p class="toolpage__subtitle"${dirAttrs(tool.subtitle)}>${esc(tool.subtitle)}</p>` : ""}
+				<h1 class="toolpage__title"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</h1>
+				${tool.subtitle ? `<p class="toolpage__subtitle"${textAttrs(tool.subtitle, tool.subtitleLanguage)}>${esc(tool.subtitle)}</p>` : ""}
 				<div class="toolpage__by">${t("tool.by", "by")} ${authors}</div>
 				${sponsorLine(tool.sponsor)}
 				${replacementNote(tool)}
@@ -420,7 +420,7 @@ export async function viewTool(name) {
 
 		<div class="toolpage__grid">
 			<div class="toolpage__main">
-				<div class="prose"${dirAttrs(tool.description)}>${renderMarkdown(tool.description) || `<em>${t("tool.noDescription", "No description provided.")}</em>`}</div>
+				<div class="prose"${textAttrs(tool.description, tool.descriptionLanguage)}>${renderMarkdown(tool.description) || `<em>${t("tool.noDescription", "No description provided.")}</em>`}</div>
 				<div class="tcard__tags toolpage__tags">${tags}</div>
 
 				<h2 class="toolpage__h2">${t("tool.detailsTitle", "Details")}</h2>
