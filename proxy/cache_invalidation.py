@@ -14,7 +14,7 @@ from typing import Any
 import requests
 
 import cache_prewarm
-from backend import DEFAULT_DB_URL, api_cache, db
+from backend import DEFAULT_DB_URL, api_cache, db, recent_owners
 
 UPSTREAM = "https://toolhub.wikimedia.org"
 RECENT_INVALIDATION_URL = f"{UPSTREAM}/api/recent/?page_size=50"
@@ -56,7 +56,8 @@ def main() -> int:
     db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
     db.init_schema()
     removed = run_once()
-    sys.stdout.write(f"cache-invalidation: {removed} rows invalidated\n")
+    purged = recent_owners.purge_expired()
+    sys.stdout.write(f"cache-invalidation: {removed} rows invalidated, {purged} owner rows purged\n")
     sys.stdout.write(f"{cache_prewarm.run_once().log_line()}\n")
     return 0
 

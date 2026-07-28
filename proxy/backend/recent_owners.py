@@ -14,6 +14,10 @@ from backend.models import ToolOwnerCache, utcnow
 OWNER_FRESH_SECONDS = 24 * 60 * 60
 OWNER_STALE_SECONDS = 7 * 24 * 60 * 60
 OWNER_NEGATIVE_FRESH_SECONDS = 60 * 60
+# Unresolved names get a short total lifetime. They are the ones an attacker can
+# mint without limit, and there is nothing worth keeping in a row that says "no
+# owner found", so they must drain quickly rather than sit for the full week.
+OWNER_NEGATIVE_STALE_SECONDS = 60 * 60
 OWNER_MAX_NAMES = 50
 OWNER_ERROR_LIMIT = 2000
 # Live upstream fetches one resolve_owners() call may trigger. Cache hits are
@@ -96,13 +100,14 @@ def _cached_owner(tool_name: str) -> OwnerResult | None:
 def _store_owner(tool_name: str, owner: str, *, source: str = "toolhub_detail", error: str | None = None) -> None:
     now = utcnow()
     fresh_seconds = OWNER_FRESH_SECONDS if owner else OWNER_NEGATIVE_FRESH_SECONDS
+    stale_seconds = OWNER_STALE_SECONDS if owner else OWNER_NEGATIVE_STALE_SECONDS
     row = ToolOwnerCache(
         tool_name=tool_name,
         owner=owner[:255],
         source=source,
         fetched_at=now,
         expires_at=now + timedelta(seconds=fresh_seconds),
-        stale_until=now + timedelta(seconds=fresh_seconds + OWNER_STALE_SECONDS),
+        stale_until=now + timedelta(seconds=fresh_seconds + stale_seconds),
         last_error=error[:OWNER_ERROR_LIMIT] if error else None,
     )
     try:
@@ -135,6 +140,25 @@ def _fetch_owner(tool_name: str) -> OwnerResult:
             return cached
         _store_owner(tool_name, "", error=str(exc))
         return OwnerResult(tool_name, "", "toolhub_error", cached=False)
+
+
+def purge_expired() -> int:
+    """Delete owner rows whose stale window has passed.
+
+    Nothing else removes rows from this table: one is written per unique tool
+    name ever looked up, including names that resolved to nothing. Without a
+    sweep the table only grows, in a ToolsDB instance shared with every other
+    Toolforge tool. Called once a minute from the cache-invalidation job.
+    """
+    now = utcnow()
+    try:
+        with db.session_scope() as s:
+            rows = s.query(ToolOwnerCache).filter(ToolOwnerCache.stale_until <= now).all()
+            for row in rows:
+                s.delete(row)
+            return len(rows)
+    except SQLAlchemyError:
+        return 0
 
 
 def resolve_owners(tool_names: list[Any], *, fetch_budget: int | None = None) -> dict:

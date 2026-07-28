@@ -2685,6 +2685,34 @@ def test_recent_owner_resolver_fetches_once_then_uses_toolsdb_cache(client, monk
         assert row.source == "toolhub_detail"
 
 
+def test_owner_cache_purges_only_rows_past_their_stale_window(client):
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(ToolOwnerCache(tool_name="live", owner="Ada", fetched_at=now, expires_at=now, stale_until=now + timedelta(days=1)))
+        s.add(
+            ToolOwnerCache(
+                tool_name="dead", owner="", fetched_at=now, expires_at=now, stale_until=now - timedelta(days=1)
+            )
+        )
+    assert recent_owners.purge_expired() == 1
+    with db.session_scope() as s:
+        assert s.get(ToolOwnerCache, "live") is not None
+        assert s.get(ToolOwnerCache, "dead") is None
+    assert recent_owners.purge_expired() == 0  # idempotent
+
+
+def test_unresolved_owner_rows_expire_far_sooner_than_resolved_ones(client, monkeypatch):
+    monkeypatch.setattr(toolhub, "public_api_get", lambda path, **_k: {"name": path, "author": []})
+    client.get("/v1/recent/owners/?tool=nobody")  # resolves to no owner → negative entry
+    with db.session_scope() as s:
+        row = s.get(ToolOwnerCache, "nobody")
+        # Junk names are the ones an attacker can mint freely, so they must not
+        # occupy the table for the full positive-entry week.
+        assert (row.stale_until - row.fetched_at).total_seconds() <= (
+            recent_owners.OWNER_NEGATIVE_FRESH_SECONDS + recent_owners.OWNER_NEGATIVE_STALE_SECONDS
+        )
+
+
 def test_recent_owners_defers_names_past_the_fetch_budget(client, monkeypatch):
     calls = []
 
