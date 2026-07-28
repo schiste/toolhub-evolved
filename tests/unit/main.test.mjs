@@ -7,6 +7,7 @@ import { test, vi, beforeAll } from "vitest";
 // duplicated); the guard tests re-import with a missing element via a `?v=` query suffix
 // (a fresh module instance that still shares the singleton mocks) and assert it never throws.
 import * as session from "../../public_html/lib/core/session.js";
+import { FRONTEND_TIMINGS } from "../../public_html/lib/core/diagnostics.js";
 import * as i18n from "../../public_html/lib/core/i18n.js";
 import * as api from "../../public_html/lib/core/api.js";
 import * as theme from "../../public_html/lib/core/theme.js";
@@ -192,6 +193,18 @@ test("importing main wires locale, theme, account, langpicker and the initial re
 	assert.equal(router.render.mock.calls.length > 0, true);
 	// The OS-preference media query is observed.
 	assert.deepEqual(window.matchMedia.mock.calls.at(-1), ["(prefers-color-scheme: dark)"]);
+});
+
+test("importing main records frontend boot diagnostics", async () => {
+	await Promise.resolve();
+	const names = new Set(FRONTEND_TIMINGS.map((entry) => entry.name));
+	assert.ok(names.has("app-boot-start"));
+	assert.ok(names.has("labels-loaded"));
+	assert.ok(names.has("app-boot"));
+	assert.ok(
+		names.has("first-content-paint") || typeof globalThis.PerformanceObserver === "function",
+		"FCP is either recorded by fallback or delegated to PerformanceObserver"
+	);
 });
 
 test("API cache refresh events show a toast and repaint once fresh data arrives", () => {

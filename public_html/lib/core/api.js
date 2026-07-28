@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { pickLocalized, t } from "./i18n.js";
+import { markFrontendTiming, markFrontendTimingOnce } from "./diagnostics.js";
 import { signedIn, USER } from "./session.js";
 import {
 	publicApiCacheClear,
@@ -354,6 +355,11 @@ async function fetchJson(url, attempts = API_RETRIES) {
 		let res;
 		try {
 			res = await fetch(url, { headers: { Accept: "application/json" } });
+			markFrontendTimingOnce("first-api-response", {
+				url,
+				status: res.status,
+				cache: responseHeader(res, SERVER_CACHE_HEADER)
+			});
 		} catch (error) {
 			lastError = error; // network-layer failure → retry
 			if (attempt >= attempts) throw error;
@@ -381,9 +387,11 @@ function apiFetch(url, options = {}) {
 			apiCache.set(url, { data, ts });
 			persistApiCache();
 			if (serverStale) {
+				markFrontendTiming("stale-cache-served", { url, source: "server" });
 				emitApiCacheRefresh(url, "server-background");
 				if (!options.background) scheduleServerStaleFollowup(url);
 			} else if (options.background) {
+				markFrontendTiming("fresh-refresh-completed", { url, source: "background" });
 				emitApiCacheRefresh(url, "success");
 			}
 			return data;
@@ -411,7 +419,10 @@ export async function apiGet(path, params) {
 		const policy = apiCachePolicy(url);
 		const age = Date.now() - hit.ts;
 		if (age <= policy.freshMs + policy.staleIfErrorMs) {
-			if (age >= policy.freshMs) apiFetch(url, { background: true }).catch(() => {});
+			if (age >= policy.freshMs) {
+				markFrontendTiming("stale-cache-served", { url, source: "browser", ageMs: Math.round(age) });
+				apiFetch(url, { background: true }).catch(() => {});
+			}
 			return hit.data;
 		}
 		apiCache.delete(url);

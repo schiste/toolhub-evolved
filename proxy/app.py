@@ -16,9 +16,10 @@ OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
+from time import perf_counter
 
 import requests
-from flask import Flask, Response, request, send_from_directory
+from flask import Flask, Response, g, request, send_from_directory
 
 import backend
 from backend import api_cache, security
@@ -49,6 +50,7 @@ _CACHEABLE_MAX_STATUS = 300
 _TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
 _CACHE_HEADER = "X-Toolhub-Evolved-Cache"
 _UPSTREAM_HEADER = "X-Toolhub-Evolved-Upstream"
+_SERVER_TIMING_HEADER = "Server-Timing"
 _UPSTREAM_TIMEOUT = "timeout"
 _UPSTREAM_BACKGROUND = "background"
 
@@ -65,18 +67,60 @@ _BACKGROUND_REFRESHING: set[str] = set()
 _BACKGROUND_REFRESH_LOCK = Lock()
 
 
-def _with_proxy_diagnostics(resp: Response, *, cache: str, upstream: int | str) -> Response:
+def _server_timing_desc(value: int | str) -> str:
+    """Return a quoted Server-Timing desc value with unsafe characters removed."""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _timing_metric(name: str, *, desc: int | str | None = None, dur_ms: float | None = None) -> str:
+    """Build one Server-Timing metric value."""
+    metric = name
+    if dur_ms is not None:
+        metric += f";dur={max(dur_ms, 0):.1f}"
+    if desc is not None:
+        metric += f';desc="{_server_timing_desc(desc)}"'
+    return metric
+
+
+def _append_server_timing(resp: Response, *metrics: str) -> None:
+    """Append Server-Timing metrics without clobbering earlier instrumentation."""
+    values = [metric for metric in metrics if metric]
+    if not values:
+        return
+    existing = resp.headers.get(_SERVER_TIMING_HEADER)
+    resp.headers[_SERVER_TIMING_HEADER] = ", ".join([existing, *values] if existing else values)
+
+
+def _with_proxy_diagnostics(
+    resp: Response, *, cache: str, upstream: int | str, upstream_dur_ms: float | None = None
+) -> Response:
     """Attach cache/upstream diagnostics to one proxied Toolhub API response."""
     resp.headers[_CACHE_HEADER] = cache
     resp.headers[_UPSTREAM_HEADER] = str(upstream)
+    _append_server_timing(
+        resp,
+        _timing_metric("cache", desc=cache),
+        _timing_metric("upstream", desc=upstream, dur_ms=upstream_dur_ms),
+    )
     return resp
 
 
-def _cached_api_response(hit: api_cache.CachedResponse, state: str) -> Response:
+def _cached_api_response(
+    hit: api_cache.CachedResponse,
+    state: str,
+    *,
+    upstream: int | str | None = None,
+    upstream_dur_ms: float | None = None,
+) -> Response:
     """Build a proxy response from a detached cache hit."""
     resp = Response(hit.body, status=hit.status, content_type=hit.content_type)
     resp.headers["Cache-Control"] = api_cache.cache_control(hit.url, stale=hit.stale)
-    _with_proxy_diagnostics(resp, cache=state, upstream=hit.status)
+    _with_proxy_diagnostics(
+        resp,
+        cache=state,
+        upstream=hit.status if upstream is None else upstream,
+        upstream_dur_ms=upstream_dur_ms,
+    )
     if hit.stale:
         resp.headers["Warning"] = '110 - "Response is stale"'
     return resp
@@ -92,18 +136,18 @@ def _upstream_headers(stale: api_cache.CachedResponse | None = None) -> dict[str
     return headers
 
 
-def _oversize_response(upstream_status: int | str) -> Response:
+def _oversize_response(upstream_status: int | str, upstream_dur_ms: float | None = None) -> Response:
     """Return the fixed JSON error for an oversized upstream body."""
     resp = Response('{"error":"upstream response too large"}', status=502, content_type="application/json")
     resp.headers["Cache-Control"] = "no-store"
-    return _with_proxy_diagnostics(resp, cache="miss", upstream=upstream_status)
+    return _with_proxy_diagnostics(resp, cache="miss", upstream=upstream_status, upstream_dur_ms=upstream_dur_ms)
 
 
-def _unavailable_response() -> Response:
+def _unavailable_response(upstream_dur_ms: float | None = None) -> Response:
     """Return the fixed JSON error for an unavailable upstream."""
     resp = Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
     resp.headers["Cache-Control"] = "no-store"
-    return _with_proxy_diagnostics(resp, cache="miss", upstream=_UPSTREAM_TIMEOUT)
+    return _with_proxy_diagnostics(resp, cache="miss", upstream=_UPSTREAM_TIMEOUT, upstream_dur_ms=upstream_dur_ms)
 
 
 def _fetch_upstream(
@@ -111,6 +155,7 @@ def _fetch_upstream(
 ) -> tuple[requests.Response | None, bytes | None, Response | None]:
     """Fetch upstream under the proxy's no-redirect and response-size limits."""
     http = session or _SESSION
+    started = perf_counter()
     try:
         # allow_redirects=False: this is a fixed-target read-only proxy, so it must
         # never chase a 3xx the upstream returns (an upstream open redirect would
@@ -129,15 +174,18 @@ def _fetch_upstream(
         for chunk in upstream.iter_content(_CHUNK_BYTES):
             body.extend(chunk)
             if len(body) > _MAX_UPSTREAM_BYTES:
+                elapsed_ms = (perf_counter() - started) * 1000
                 upstream.close()
-                return None, None, _oversize_response(upstream.status_code)
+                return None, None, _oversize_response(upstream.status_code, elapsed_ms)
     except requests.RequestException as exc:
+        elapsed_ms = (perf_counter() - started) * 1000
         api_cache.mark_failure(url, str(exc))
         if stale is not None:
-            resp = _cached_api_response(stale, "stale")
-            resp.headers[_UPSTREAM_HEADER] = _UPSTREAM_TIMEOUT
-            return None, None, resp
-        return None, None, _unavailable_response()
+            return None, None, _cached_api_response(
+                stale, "stale", upstream=_UPSTREAM_TIMEOUT, upstream_dur_ms=elapsed_ms
+            )
+        return None, None, _unavailable_response(elapsed_ms)
+    setattr(upstream, "_toolhub_evolved_upstream_ms", (perf_counter() - started) * 1000)
     return upstream, bytes(body), None
 
 
@@ -164,22 +212,6 @@ def _schedule_background_revalidation(url: str, stale: api_cache.CachedResponse)
     _BACKGROUND_REFRESH.submit(_background_revalidate, url, stale)
 
 
-def _freshened_cached_response(stale: api_cache.CachedResponse) -> Response:
-    """Return a stale body as fresh after upstream replied 304."""
-    return _cached_api_response(
-        api_cache.CachedResponse(
-            url=stale.url,
-            status=stale.status,
-            content_type=stale.content_type,
-            body=stale.body,
-            stale=False,
-            etag=stale.etag,
-            last_modified=stale.last_modified,
-        ),
-        "revalidated",
-    )
-
-
 def _relay_upstream_response(
     url: str, upstream: requests.Response, payload: bytes, stale: api_cache.CachedResponse | None
 ) -> Response:
@@ -188,8 +220,20 @@ def _relay_upstream_response(
     cacheable = _CACHEABLE_MIN_STATUS <= upstream.status_code < _CACHEABLE_MAX_STATUS
     if upstream.status_code == _HTTP_NOT_MODIFIED and stale is not None:
         api_cache.refresh(url)
-        resp = _freshened_cached_response(stale)
-        resp.headers[_UPSTREAM_HEADER] = str(upstream.status_code)
+        resp = _cached_api_response(
+            api_cache.CachedResponse(
+                url=stale.url,
+                status=stale.status,
+                content_type=stale.content_type,
+                body=stale.body,
+                stale=False,
+                etag=stale.etag,
+                last_modified=stale.last_modified,
+            ),
+            "revalidated",
+            upstream=upstream.status_code,
+            upstream_dur_ms=getattr(upstream, "_toolhub_evolved_upstream_ms", None),
+        )
         return resp
     # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
     # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
@@ -206,12 +250,20 @@ def _relay_upstream_response(
         )
     elif stale is not None and upstream.status_code in _TRANSIENT_UPSTREAM_STATUSES:
         api_cache.mark_failure(url, f"HTTP {upstream.status_code}")
-        resp = _cached_api_response(stale, "stale")
-        resp.headers[_UPSTREAM_HEADER] = str(upstream.status_code)
-        return resp
+        return _cached_api_response(
+            stale,
+            "stale",
+            upstream=upstream.status_code,
+            upstream_dur_ms=getattr(upstream, "_toolhub_evolved_upstream_ms", None),
+        )
     resp = Response(payload, status=upstream.status_code, content_type=content_type)
     resp.headers["Cache-Control"] = api_cache.cache_control(url) if cacheable else "no-store"
-    return _with_proxy_diagnostics(resp, cache="miss", upstream=upstream.status_code)
+    return _with_proxy_diagnostics(
+        resp,
+        cache="miss",
+        upstream=upstream.status_code,
+        upstream_dur_ms=getattr(upstream, "_toolhub_evolved_upstream_ms", None),
+    )
 
 
 # CSP hash of the one inline theme script in index.html (kept inline so the theme
@@ -245,11 +297,20 @@ _SECURITY_HEADERS = {
 }
 
 
+@app.before_request
+def start_request_timing() -> None:
+    """Capture total Flask request duration for Server-Timing."""
+    g.toolhub_evolved_request_start = perf_counter()
+
+
 @app.after_request
 def set_security_headers(resp: Response) -> Response:
     """Apply baseline security headers (CSP, nosniff, HSTS, framing, …) to every response."""
     for header, value in _SECURITY_HEADERS.items():
         resp.headers.setdefault(header, value)
+    started = getattr(g, "toolhub_evolved_request_start", None)
+    if started is not None:
+        _append_server_timing(resp, _timing_metric("app", dur_ms=(perf_counter() - started) * 1000))
     return resp
 
 
@@ -292,9 +353,7 @@ def api_proxy(path: str) -> Response:
     stale = api_cache.get(url, allow_stale=True)
     if stale is not None:
         _schedule_background_revalidation(url, stale)
-        resp = _cached_api_response(stale, "stale")
-        resp.headers[_UPSTREAM_HEADER] = _UPSTREAM_BACKGROUND
-        return resp
+        return _cached_api_response(stale, "stale", upstream=_UPSTREAM_BACKGROUND)
     upstream, payload, early = _fetch_upstream(url, stale)
     if early is not None:
         return early

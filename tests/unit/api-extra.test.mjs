@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test, vi } from "vitest";
 import { installStorage } from "./_storage-setup.mjs";
 import * as api from "../../public_html/lib/core/api.js";
+import { FRONTEND_TIMINGS, resetFrontendTimingsForTests } from "../../public_html/lib/core/diagnostics.js";
 import * as session from "../../public_html/lib/core/session.js";
 import { demoStore, DEMO_KEYS, recentOwnerCacheGet, recentOwnerCacheSet } from "../../public_html/lib/core/store.js";
 
@@ -10,6 +11,7 @@ let originalFetch;
 beforeEach(() => {
 	installStorage();
 	api.clearApiCache();
+	resetFrontendTimingsForTests();
 	originalFetch = globalThis.fetch;
 	session.applyExp(false);
 	session.setServerUser(null);
@@ -17,6 +19,7 @@ beforeEach(() => {
 afterEach(() => {
 	globalThis.fetch = originalFetch;
 	api.clearApiCache();
+	resetFrontendTimingsForTests();
 	session.applyExp(false);
 	session.setServerUser(null);
 });
@@ -218,6 +221,14 @@ test("apiGet serves persisted public GET cache after hard refresh and refreshes 
 
 		await tick();
 		assert.ok(events.includes("success"));
+		assert.ok(
+			FRONTEND_TIMINGS.some((entry) => entry.name === "stale-cache-served" && entry.detail.source === "browser")
+		);
+		assert.ok(
+			FRONTEND_TIMINGS.some(
+				(entry) => entry.name === "fresh-refresh-completed" && entry.detail.url === "/api/recent/"
+			)
+		);
 		const refreshed = await hardRefreshApi.apiGet("/recent/");
 		assert.equal(refreshed.v, "new");
 		assert.equal(calls, 2);
@@ -246,10 +257,21 @@ test("apiGet treats server-stale cache as visible data and follows up for fresh 
 		const first = await api.apiGet("/server-stale/");
 		assert.equal(first.v, "old");
 		assert.deepEqual(events, ["server-background"]);
+		assert.ok(
+			FRONTEND_TIMINGS.some((entry) => entry.name === "first-api-response" && entry.detail.cache === "stale")
+		);
+		assert.ok(
+			FRONTEND_TIMINGS.some((entry) => entry.name === "stale-cache-served" && entry.detail.source === "server")
+		);
 
 		await vi.advanceTimersByTimeAsync(1200);
 		assert.deepEqual(events, ["server-background", "start", "success"]);
 		assert.equal(calls, 2);
+		assert.ok(
+			FRONTEND_TIMINGS.some(
+				(entry) => entry.name === "fresh-refresh-completed" && entry.detail.url === "/api/server-stale/"
+			)
+		);
 
 		const refreshed = await api.apiGet("/server-stale/");
 		assert.equal(refreshed.v, "new");

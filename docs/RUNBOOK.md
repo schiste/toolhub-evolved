@@ -175,6 +175,21 @@ debugging:
 - `X-Toolhub-Evolved-Upstream` records the represented Toolhub result, such as
   `200`, `304`, `503`, or `timeout`. Cached hits report the cached upstream
   status; stale fallbacks report the failed revalidation result.
+- `Server-Timing` carries machine-readable timings for browser DevTools:
+  `cache;desc="hit|miss|stale|revalidated"`, `upstream;desc="<status>";dur=<ms>`
+  when an upstream request was made, and `app;dur=<ms>` for total Flask request
+  handling.
+
+Frontend diagnostics are exposed in the browser Performance timeline and in
+`globalThis.__toolhubEvolvedTimings` for quick console inspection. Current timing
+names are:
+
+- `toolhub-evolved:app-boot-start` and `toolhub-evolved:app-boot`
+- `toolhub-evolved:labels-loaded`
+- `toolhub-evolved:first-content-paint`
+- `toolhub-evolved:first-api-response`
+- `toolhub-evolved:stale-cache-served`
+- `toolhub-evolved:fresh-refresh-completed`
 
 | Data                                         | Visibility                                      | Operational note                                                                                                                                                       |
 | -------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

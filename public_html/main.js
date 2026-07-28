@@ -2,6 +2,12 @@
 import { $ } from "./lib/core/dom.js";
 import { backendGetJson } from "./lib/core/api.js";
 import {
+	markAppBootStart,
+	markFrontendTimingOnce,
+	measureFrontendTiming,
+	observeFirstContentPaint
+} from "./lib/core/diagnostics.js";
+import {
 	appLocale,
 	applyLocaleAttrs,
 	AVAILABLE_LOCALES,
@@ -20,6 +26,10 @@ import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
+
+markAppBootStart();
+const observedFirstContentPaint = observeFirstContentPaint();
+const bootLocale = appLocale();
 
 function activateDeferredStyles() {
 	for (const preload of document.querySelectorAll('link[data-deferred-style][rel="preload"]')) {
@@ -72,6 +82,9 @@ setAuthRender(() => {
 	render();
 });
 applyLocaleAttrs();
+if (bootLocale === DEFAULT_LOCALE) {
+	markFrontendTimingOnce("labels-loaded", { locale: bootLocale, source: "fallback" });
+}
 
 /** @param {string} name */
 function toggleFavorite(name) {
@@ -348,23 +361,40 @@ document.addEventListener("click", (e) => {
 window.addEventListener("popstate", render);
 window.addEventListener("toolhub:navigate", render);
 normalizeLegacyHashRoute();
-render();
+Promise.resolve(render()).finally(() => {
+	if (!observedFirstContentPaint) {
+		markFrontendTimingOnce("first-content-paint", { source: "route-render-fallback" });
+	}
+	measureFrontendTiming("app-boot", { path: location.pathname });
+});
 // Non-English locale: fetch its catalog, install it, repaint the chrome.
 // (English needs no fetch — the t() fallbacks ARE the English catalog.)
-const bootLocale = appLocale();
 if (bootLocale !== DEFAULT_LOCALE) {
 	afterFirstPaint(() => {
 		backendGetJson(`/i18n/${encodeURIComponent(bootLocale)}.json`)
 			.then((catalog) => {
 				if (catalog) {
 					setMessages(catalog);
+					markFrontendTimingOnce("labels-loaded", { locale: bootLocale, source: "catalog" });
 					renderAccount();
 					syncSubmitButton();
 					render();
+				} else {
+					markFrontendTimingOnce("labels-loaded", {
+						locale: DEFAULT_LOCALE,
+						requestedLocale: bootLocale,
+						source: "fallback-unavailable"
+					});
 				}
 				return undefined;
 			})
-			.catch(() => undefined);
+			.catch(() => {
+				markFrontendTimingOnce("labels-loaded", {
+					locale: DEFAULT_LOCALE,
+					requestedLocale: bootLocale,
+					source: "fallback-after-error"
+				});
+			});
 	});
 }
 // Production sync: with a real Toolhub session the server overlay replaces

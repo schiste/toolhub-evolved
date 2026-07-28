@@ -206,6 +206,10 @@ def test_success_is_relayed_and_cached(client, fake_get):
     assert captured["kwargs"]["timeout"] == 20
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
     assert resp.headers["X-Toolhub-Evolved-Upstream"] == "200"
+    timing = resp.headers["Server-Timing"]
+    assert 'cache;desc="miss"' in timing
+    assert re.search(r'upstream;dur=\d+\.\d;desc="200"', timing)
+    assert re.search(r"app;dur=\d+\.\d", timing)
     with db.session_scope() as s:
         row = s.query(ApiCache).one()
         assert row.url == captured["url"]
@@ -254,6 +258,10 @@ def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
     assert second.headers["Cache-Control"] == "public, max-age=60, stale-if-error=86400"
     assert second.headers["X-Toolhub-Evolved-Cache"] == "hit"
     assert second.headers["X-Toolhub-Evolved-Upstream"] == "200"
+    timing = second.headers["Server-Timing"]
+    assert 'cache;desc="hit"' in timing
+    assert 'upstream;desc="200"' in timing
+    assert re.search(r"app;dur=\d+\.\d", timing)
 
 
 def test_cache_policy_uses_endpoint_specific_ttls():
@@ -289,6 +297,8 @@ def test_stale_cache_is_served_immediately_after_ttl(client, fake_get, monkeypat
     assert resp.data == b'{"v":1}'
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
     assert resp.headers["X-Toolhub-Evolved-Upstream"] == "background"
+    assert 'cache;desc="stale"' in resp.headers["Server-Timing"]
+    assert 'upstream;desc="background"' in resp.headers["Server-Timing"]
     assert "Response is stale" in resp.headers["Warning"]
     assert len(scheduled_revalidations) == 1
     assert scheduled_revalidations[0][0] == "https://toolhub.wikimedia.org/api/tools/"
