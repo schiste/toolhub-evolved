@@ -175,6 +175,11 @@ export const STATIC = {
 		<p>Future Evolved-only signals such as popularity, thanks, health, usage, and
 		screenshots stay hidden until they have real backend data. They do not ship as
 		fixtures or generated values.</p>
+		<h2>${t("static.rulesOfEngagement.verifiedClaims", "Verified author claims")}</h2>
+		<p>My tools and signed-toolinfo verification are Evolved-local evidence layers.
+		A verified claim is always <strong>per tool</strong>: being verified for one tool
+		does not verify the same display name everywhere, and Evolved reviewer/operator
+		roles never grant official Toolhub admin or write rights.</p>
 		<h2>${t("static.rulesOfEngagement.whereActionsGo", "Where your actions go")}</h2>
 		<ul>
 			<li>Signed-in supported writes go first to official Toolhub. If Toolhub rejects

@@ -34,6 +34,9 @@ test("index.html has critical shell CSS and defers full design-system CSS", () =
 	const deferredLinks = html.match(/rel="preload" href="\/styles\/[^"]+\.css" as="style" data-deferred-style/g) || [];
 	const noscriptStylesheets = html.match(/<link rel="stylesheet" href="\/styles\/[^"]+\.css" \/>/g) || [];
 	assert.match(headBeforeNoscript, /<style data-critical-css>/);
+	assert.match(headBeforeNoscript, /--container-wide:\s*1760px/);
+	assert.match(headBeforeNoscript, /\.footer__cols\s*{/);
+	assert.match(headBeforeNoscript, /\.footer__bottom\s*{/);
 	assert.equal(deferredLinks.length, 6);
 	assert.equal(noscriptStylesheets.length, 6);
 	assert.doesNotMatch(headBeforeNoscript, /rel="stylesheet" href="\/styles\//);

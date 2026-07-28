@@ -9,18 +9,21 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 	const actual = experiments.viewExperiments();
 	assert.equal(actual.title, EXPECTED_TITLE);
 	// Pin the computed feature total derived from the reduce() over every group.
-	assert.ok(actual.html.includes("The 13 features below describe Toolhub Evolved's hybrid model"));
+	assert.ok(actual.html.includes("The 16 features below describe Toolhub Evolved's hybrid model"));
 	assert.ok(actual.html.includes("live Toolhub data stays the base"));
 	assert.ok(actual.html.includes("local overlays cover drafts, fallback data, and Evolved-owned data"));
 	assert.ok(actual.html.includes("Current behavior"));
 	assert.ok(actual.html.includes("Production need"));
 	assert.ok(actual.html.includes("Toolhub sign-in"));
 	assert.ok(actual.html.includes("Official Toolhub OAuth plus an Evolved server session."));
+	assert.ok(actual.html.includes("Developer settings"));
+	assert.ok(actual.html.includes("My tools and author claims"));
 	assert.ok(actual.html.includes("Your contributions — official when possible, local when needed"));
 	assert.ok(
 		actual.html.includes("Official list create/edit/delete when permitted; local draft lists remain as fallback.")
 	);
 	assert.ok(actual.html.includes("Official annotation PUT first; rejected annotations remain local overlays."));
+	assert.ok(actual.html.includes("Forms show diffs before official-first writes"));
 	assert.ok(actual.html.includes("Public popularity ranking remains hidden"));
 	assert.ok(actual.html.includes("Signed-in users can thank a tool"));
 	assert.ok(actual.html.includes("approved Evolved media renders on tool pages"));
@@ -41,7 +44,7 @@ test("EXPERIMENTS is the three-group source array with the expected feature coun
 	);
 	assert.deepEqual(
 		experiments.EXPERIMENTS.map((g) => g.items.length),
-		[1, 7, 5]
+		[3, 8, 5]
 	);
 });
 

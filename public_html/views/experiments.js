@@ -13,6 +13,37 @@ export const EXPERIMENTS = [
 				what: t("experiments.signinWhat", "Sign in through Toolhub OAuth and sign out."),
 				current: t("experiments.signinCurrent", "Official Toolhub OAuth plus an Evolved server session."),
 				need: t("experiments.signinNeed", "An approved Toolhub OAuth application.")
+			},
+			{
+				name: t("experiments.developerSettingsName", "Developer settings"),
+				what: t(
+					"experiments.developerSettingsWhat",
+					"Open official Toolhub developer links and manage Evolved signed-toolinfo public keys."
+				),
+				current: t(
+					"experiments.developerSettingsCurrent",
+					"Official OAuth app/token tasks link back to Toolhub; Evolved stores local Ed25519 public keys and signing payload helpers."
+				),
+				need: t(
+					"experiments.developerSettingsNeed",
+					"Local author-key API plus official Toolhub developer settings"
+				),
+				tryHref: "/developer-settings",
+				tryLabel: t("experiments.developerSettingsTry", "Developer settings")
+			},
+			{
+				name: t("experiments.myToolsName", "My tools and author claims"),
+				what: t(
+					"experiments.myToolsWhat",
+					"See tools associated with your signed-in Toolhub identity, split into verified and possible matches."
+				),
+				current: t(
+					"experiments.myToolsCurrent",
+					"Official Toolhub search provides candidates; Evolved verifies claims per tool with Toolforge maintainer, Toolhub write, signed toolinfo, or display-name evidence."
+				),
+				need: t("experiments.myToolsNeed", "Author-claim table, resolver endpoint, and verification providers"),
+				tryHref: "/my-tools",
+				tryLabel: t("experiments.myToolsTry", "My tools")
 			}
 		]
 	},
@@ -69,6 +100,18 @@ export const EXPERIMENTS = [
 					"Official annotation PUT first; rejected annotations remain local overlays."
 				),
 				need: "PUT /api/tools/{name}/annotations/"
+			},
+			{
+				name: t("experiments.writeReviewName", "Review changes and delete"),
+				what: t(
+					"experiments.writeReviewWhat",
+					"Preview field-level changes before saving and delete tools/lists from the relevant detail or edit page."
+				),
+				current: t(
+					"experiments.writeReviewCurrent",
+					"Forms show diffs before official-first writes; supported deletes call Toolhub and report rejection details without losing local state."
+				),
+				need: t("experiments.writeReviewNeed", "Shared write lifecycle, field validation, and delete adapters")
 			},
 			{
 				name: t("experiments.crawlerName", "Add / remove tools (crawler)"),

@@ -58,15 +58,15 @@
 				--space-5: 34px;
 				--space-6: 56px;
 				--space-7: 72px;
-				--radius-sm: 2px;
+				--radius-sm: 0;
 				--border-base: 1px solid var(--color-border);
 				--border-muted: 1px solid var(--color-surface-muted);
 				--border-transparent: 1px solid transparent;
 				--border-heavy: 3px solid var(--color-border);
-				--container-wide: 1320px;
-				--btn-h-md: 36px;
+				--container-wide: 1760px;
+				--btn-h-md: 34px;
 				--ctl-h-sm: 28px;
-				--ctl-h-md: 36px;
+				--ctl-h-md: 34px;
 			}
 			:root[data-theme="dark"] {
 				--color-surface: #111418;
@@ -286,6 +286,51 @@
 				padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7));
 				max-width: var(--container-wide);
 				margin: 0 auto;
+			}
+			.footer__cols {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+				gap: var(--space-4) var(--space-5);
+			}
+			.footer__col {
+				display: flex;
+				flex-direction: column;
+				gap: var(--space-2);
+			}
+			.footer__col h2 {
+				margin: 0 0 var(--space-1);
+				color: var(--color-text-muted);
+				font-size: var(--fs-caption);
+				letter-spacing: 0.5px;
+				text-transform: uppercase;
+			}
+			.footer__col a {
+				color: var(--color-text-secondary);
+				font-size: var(--fs-caption);
+			}
+			.footer__bottom {
+				display: flex;
+				align-items: center;
+				gap: var(--space-3);
+				flex-wrap: wrap;
+				margin-top: var(--space-5);
+				padding-top: var(--space-4);
+				border-top: var(--border-muted);
+			}
+			.footer__legal,
+			.footer__note {
+				color: var(--color-text-muted);
+				font-size: var(--fs-caption);
+			}
+			.footer__note {
+				margin-inline-start: auto;
+			}
+			.footer__maintain {
+				display: inline-flex;
+				align-items: center;
+				gap: var(--space-1);
+				color: var(--color-progressive);
+				font-weight: 700;
 			}
 			@keyframes spin {
 				to {
