@@ -28,6 +28,7 @@ import {
 import { button, iconButton } from "../lib/atoms/button.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
+import { fieldChanges, mountChangeReview } from "../lib/molecules/change-review.js";
 import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
@@ -44,6 +45,35 @@ function officialListPayload(list) {
 		tools: list.tools,
 		comment: "Published from Toolhub Evolved"
 	};
+}
+
+/**
+ * @param {{ title?: string, description?: string, tools?: string[] }} source
+ * @param {{ title: string, description: string, tools: string[] }} work
+ * @returns {import("../lib/molecules/change-review.js").ChangeDescriptor[]}
+ */
+function listChangeDescriptors(source, work) {
+	return /** @type {import("../lib/molecules/change-review.js").ChangeDescriptor[]} */ ([
+		{
+			key: "title",
+			label: t("lists.title", "Title"),
+			before: source.title,
+			after: work.title
+		},
+		{
+			key: "description",
+			label: t("lists.description", "Description"),
+			before: source.description,
+			after: work.description
+		},
+		{
+			key: "tools",
+			label: t("lists.tools", "Tools"),
+			before: source.tools || [],
+			after: work.tools,
+			type: "ordered-list"
+		}
+	]);
 }
 
 function toolhubSignInRequiredMessage() {
@@ -376,6 +406,11 @@ function renderListEdit(src, { editing, officialEditing }) {
 		</form>
 	</div>`;
 	function mount() {
+		const form = /** @type {HTMLFormElement} */ ($("[data-le-form]"));
+		const changeReview = editing ? mountChangeReview(form) : null;
+		const resetChangeReview = () => changeReview?.reset();
+		form.addEventListener("input", resetChangeReview);
+		form.addEventListener("change", resetChangeReview);
 		const toolsEl = /** @type {HTMLElement} */ ($("[data-le-tools]")),
 			countEl = /** @type {HTMLElement} */ ($("[data-le-count]")),
 			resultsEl = /** @type {HTMLElement} */ ($("[data-le-results]"));
@@ -422,6 +457,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 				return;
 			}
 			renderTools();
+			resetChangeReview();
 		});
 		async function runSearch() {
 			const q = /** @type {HTMLInputElement} */ ($input("#le-q")).value.trim();
@@ -462,12 +498,13 @@ function renderListEdit(src, { editing, officialEditing }) {
 			if (!work.tools.includes(n)) {
 				work.tools.push(n);
 				renderTools();
+				resetChangeReview();
 				b.disabled = true;
 				b.classList.add("is-in");
 				/** @type {HTMLElement} */ (b.querySelector(".icon")).outerHTML = icon("check");
 			}
 		});
-		/** @type {HTMLElement} */ ($("[data-le-form]")).addEventListener("submit", async (e) => {
+		form.addEventListener("submit", async (e) => {
 			e.preventDefault();
 			const title = fieldValue("le-title");
 			if (!title) {
@@ -477,7 +514,22 @@ function renderListEdit(src, { editing, officialEditing }) {
 			work.title = title;
 			work.description = fieldValue("le-desc");
 			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
-			if (officialWriteAvailable()) {
+			const canOfficialWrite = officialWriteAvailable();
+			if (editing && canOfficialWrite) {
+				const changes = fieldChanges(listChangeDescriptors(src, work));
+				if (changes.length === 0) {
+					changeReview?.hide();
+					out.className = "at__result";
+					out.textContent = t("changeReview.noChanges", "No changes to save.");
+					return;
+				}
+				if (changeReview && !changeReview.shouldProceed(changes)) {
+					out.className = "at__result";
+					out.textContent = "";
+					return;
+				}
+			}
+			if (canOfficialWrite) {
 				out.className = "at__result";
 				out.textContent = t("lists.publishingToToolhub", "Publishing to official Toolhub…");
 				try {

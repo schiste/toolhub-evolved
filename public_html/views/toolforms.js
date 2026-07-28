@@ -43,6 +43,7 @@ import {
 	fieldValue,
 	setFieldError
 } from "../lib/atoms/form-fields.js";
+import { fieldChanges, mountChangeReview } from "../lib/molecules/change-review.js";
 import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -203,6 +204,77 @@ function readToolFormFields() {
 		experimental: checkedValue("tf-experimental"),
 		toolinfoUrl: fieldValue("tf-toolinfo-url") || null
 	};
+}
+
+/**
+ * @param {Tool} current
+ * @param {Record<string, any>} fields
+ * @returns {import("../lib/molecules/change-review.js").ChangeDescriptor[]}
+ */
+function toolCoreChangeDescriptors(current, fields) {
+	return /** @type {import("../lib/molecules/change-review.js").ChangeDescriptor[]} */ ([
+		{ key: "title", label: t("toolforms.fieldTitle", "Title"), before: current.title, after: fields.title },
+		{
+			key: "description",
+			label: t("toolforms.fieldDescription", "Description"),
+			before: current.description,
+			after: fields.description
+		},
+		{ key: "url", label: t("toolforms.fieldUrl", "URL"), before: current.url, after: fields.url },
+		{
+			key: "repository",
+			label: t("toolforms.fieldRepository", "Source code repository"),
+			before: current.repository,
+			after: fields.repository
+		},
+		{
+			key: "license",
+			label: t("toolforms.fieldLicenseShort", "License"),
+			before: current.license,
+			after: fields.license
+		},
+		{
+			key: "toolType",
+			label: t("toolforms.fieldToolType", "Tool type"),
+			before: current.toolType,
+			after: fields.toolType
+		},
+		{
+			key: "keywords",
+			label: t("toolforms.fieldKeywordsShort", "Keywords"),
+			before: current.keywords,
+			after: fields.keywords,
+			type: "set"
+		},
+		{
+			key: "forWikis",
+			label: t("toolforms.fieldWikisShort", "Works on wikis"),
+			before: current.forWikis,
+			after: fields.forWikis,
+			type: "set"
+		},
+		{
+			key: "uiLanguages",
+			label: t("toolforms.fieldLangsShort", "Interface languages"),
+			before: current.uiLanguages,
+			after: fields.uiLanguages,
+			type: "set"
+		},
+		{
+			key: "deprecated",
+			label: t("toolforms.fieldDeprecated", "Deprecated"),
+			before: current.deprecated,
+			after: fields.deprecated,
+			type: "boolean"
+		},
+		{
+			key: "experimental",
+			label: t("toolforms.experimentalBadge", "Experimental"),
+			before: current.experimental,
+			after: fields.experimental,
+			type: "boolean"
+		}
+	]);
 }
 
 /**
@@ -413,6 +485,42 @@ function officialAnnotationPayload(anno) {
 	return payload;
 }
 
+/**
+ * @param {Tool} current
+ * @param {{ audiences: string[], tasks: string[], toolType: string | null, icon: string | null }} anno
+ * @returns {import("../lib/molecules/change-review.js").ChangeDescriptor[]}
+ */
+function annotationChangeDescriptors(current, anno) {
+	return /** @type {import("../lib/molecules/change-review.js").ChangeDescriptor[]} */ ([
+		{
+			key: "audiences",
+			label: t("toolforms.fieldAudiencesShort", "Audiences"),
+			before: current.audiences,
+			after: anno.audiences,
+			type: "set"
+		},
+		{
+			key: "tasks",
+			label: t("toolforms.fieldTasksShort", "Tasks"),
+			before: current.tasks,
+			after: anno.tasks,
+			type: "set"
+		},
+		{
+			key: "toolType",
+			label: t("toolforms.fieldToolType", "Tool type"),
+			before: current.toolType,
+			after: anno.toolType
+		},
+		{
+			key: "icon",
+			label: t("toolforms.fieldIconShort", "Icon"),
+			before: current.icon,
+			after: anno.icon
+		}
+	]);
+}
+
 function toolhubSignInRequiredMessage() {
 	return t("toolforms.signInRequired", "Toolhub sign-in is required before saving changes.");
 }
@@ -529,6 +637,104 @@ function setupDuplicateSuggestions() {
 	if (typeEl) typeEl.addEventListener("change", update);
 }
 
+/**
+ * @param {HTMLFormElement} form
+ * @param {{ editing: boolean, name: string | null | undefined, current: Tool, changeReview: any }} options
+ */
+function setupToolCoreSubmit(form, { editing, name, current, changeReview }) {
+	form.addEventListener("submit", async (e) => {
+		e.preventDefault();
+		const title = fieldValue("tf-title");
+		const tname = editing ? /** @type {string} */ (name) : fieldValue("tf-name");
+		const invalidUrl = validateHttpField("tf-url", t("toolforms.errInvalidUrl", "Enter a valid http(s) URL."), {
+			required: true
+		});
+		const invalidRepo = validateHttpField(
+			"tf-repo",
+			t("toolforms.errInvalidRepoUrl", "Enter a valid http(s) repository URL.")
+		);
+		const invalidToolinfo = editing
+			? null
+			: validateHttpField(
+					"tf-toolinfo-url",
+					t("toolforms.errInvalidCreateToolinfoUrl", "Enter a valid https toolinfo URL."),
+					{ httpsOnly: true }
+				);
+		const invalidWikis = validateWikiTargets("tf-wikis");
+		if (!tname || !title) {
+			/** @type {HTMLElement} */ ($(editing ? "#tf-title" : "#tf-name")).focus();
+			return;
+		}
+		if (invalidUrl || invalidRepo || invalidToolinfo || invalidWikis) {
+			/** @type {HTMLElement} */ (invalidUrl || invalidRepo || invalidToolinfo || invalidWikis).focus();
+			return;
+		}
+		if (!editing && isNewTool(tname)) {
+			setFieldError(
+				"tf-name",
+				t("toolforms.errDuplicateName", "An Evolved-local tool with that name already exists.")
+			);
+			/** @type {HTMLElement} */ ($("#tf-name")).focus();
+			return;
+		}
+		const fields = readToolFormFields();
+		const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
+		const canOfficialWrite = officialWriteAvailable();
+		if (editing && canOfficialWrite) {
+			const changes = fieldChanges(toolCoreChangeDescriptors(current, fields));
+			if (changes.length === 0) {
+				changeReview?.hide();
+				out.className = "at__result";
+				out.textContent = t("changeReview.noChanges", "No changes to save.");
+				return;
+			}
+			if (changeReview && !changeReview.shouldProceed(changes)) {
+				out.className = "at__result";
+				out.textContent = "";
+				return;
+			}
+		}
+		if (canOfficialWrite) {
+			out.className = "at__result";
+			out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+			try {
+				const res = await officialWrite(
+					editing ? "PUT" : "POST",
+					editing ? `/v1/write/tools/${encodeURIComponent(tname)}/` : "/v1/write/tools/",
+					officialToolPayload(tname, fields, { includeName: !editing })
+				);
+				if (res?.result === SYNC_STATUS.localFallback) {
+					saveLocalToolDraft(tname, fields, editing, lifecycleMeta(res), { log: false });
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialWriteFailed",
+						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+						{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+					);
+					return;
+				}
+				clearLocalToolDraft(tname);
+				clearApiCache();
+				navigateTo(toolHref(tname));
+				return;
+			} catch (error) {
+				const msg = backendErrorMessage(error);
+				out.className = "at__result at__result--err";
+				out.textContent = t(
+					"toolforms.officialWriteFailedNoDraft",
+					"Official Toolhub did not accept the write: {msg}",
+					{
+						msg
+					}
+				);
+				return;
+			}
+		}
+		out.className = "at__result at__result--err";
+		out.textContent = toolhubSignInRequiredMessage();
+	});
+}
+
 // Create/edit a tool's CORE fields. With a Toolhub session this publishes to
 // official Toolhub first; a rejected write is kept as an Evolved-local draft.
 /** @param {string | null} name */
@@ -616,82 +822,12 @@ export async function viewToolForm(name) {
 		</form>
 	</div>`;
 	function mount() {
-		/** @type {HTMLElement} */ ($("[data-tool-form]")).addEventListener("submit", async (e) => {
-			e.preventDefault();
-			const title = fieldValue("tf-title");
-			const tname = editing ? name : fieldValue("tf-name");
-			const invalidUrl = validateHttpField("tf-url", t("toolforms.errInvalidUrl", "Enter a valid http(s) URL."), {
-				required: true
-			});
-			const invalidRepo = validateHttpField(
-				"tf-repo",
-				t("toolforms.errInvalidRepoUrl", "Enter a valid http(s) repository URL.")
-			);
-			const invalidToolinfo = editing
-				? null
-				: validateHttpField(
-						"tf-toolinfo-url",
-						t("toolforms.errInvalidCreateToolinfoUrl", "Enter a valid https toolinfo URL."),
-						{ httpsOnly: true }
-					);
-			const invalidWikis = validateWikiTargets("tf-wikis");
-			if (!tname || !title) {
-				/** @type {HTMLElement} */ ($(editing ? "#tf-title" : "#tf-name")).focus();
-				return;
-			}
-			if (invalidUrl || invalidRepo || invalidToolinfo || invalidWikis) {
-				/** @type {HTMLElement} */ (invalidUrl || invalidRepo || invalidToolinfo || invalidWikis).focus();
-				return;
-			}
-			if (!editing && isNewTool(tname)) {
-				setFieldError(
-					"tf-name",
-					t("toolforms.errDuplicateName", "An Evolved-local tool with that name already exists.")
-				);
-				/** @type {HTMLElement} */ ($("#tf-name")).focus();
-				return;
-			}
-			const fields = readToolFormFields();
-			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
-			if (officialWriteAvailable()) {
-				out.className = "at__result";
-				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
-				try {
-					const res = await officialWrite(
-						editing ? "PUT" : "POST",
-						editing ? `/v1/write/tools/${encodeURIComponent(tname)}/` : "/v1/write/tools/",
-						officialToolPayload(tname, fields, { includeName: !editing })
-					);
-					if (res?.result === SYNC_STATUS.localFallback) {
-						saveLocalToolDraft(tname, fields, editing, lifecycleMeta(res), { log: false });
-						out.className = "at__result at__result--err";
-						out.textContent = t(
-							"toolforms.officialWriteFailed",
-							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-							{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
-						);
-						return;
-					}
-					clearLocalToolDraft(tname);
-					clearApiCache();
-					navigateTo(toolHref(tname));
-					return;
-				} catch (error) {
-					const msg = backendErrorMessage(error);
-					out.className = "at__result at__result--err";
-					out.textContent = t(
-						"toolforms.officialWriteFailedNoDraft",
-						"Official Toolhub did not accept the write: {msg}",
-						{
-							msg
-						}
-					);
-					return;
-				}
-			}
-			out.className = "at__result at__result--err";
-			out.textContent = toolhubSignInRequiredMessage();
-		});
+		const form = /** @type {HTMLFormElement} */ ($("[data-tool-form]"));
+		const changeReview = editing ? mountChangeReview(form) : null;
+		const resetChangeReview = () => changeReview?.reset();
+		form.addEventListener("input", resetChangeReview);
+		form.addEventListener("change", resetChangeReview);
+		setupToolCoreSubmit(form, { editing, name, current: cur, changeReview });
 		setupToolCoreRetry(name);
 		const rev = $("[data-tf-revert]");
 		if (rev) {
@@ -1060,7 +1196,12 @@ export async function viewAnnotationsEdit(name) {
 		</form>
 	</div>`;
 	function mount() {
-		/** @type {HTMLElement} */ ($("[data-anno-form]")).addEventListener("submit", async (e) => {
+		const form = /** @type {HTMLFormElement} */ ($("[data-anno-form]"));
+		const changeReview = mountChangeReview(form);
+		const resetChangeReview = () => changeReview.reset();
+		form.addEventListener("input", resetChangeReview);
+		form.addEventListener("change", resetChangeReview);
+		form.addEventListener("submit", async (e) => {
 			e.preventDefault();
 			const anno = {
 				audiences: fromCsv(fieldValue("an-aud")),
@@ -1069,7 +1210,20 @@ export async function viewAnnotationsEdit(name) {
 				icon: fieldValue("an-icon") || null
 			};
 			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
-			if (officialWriteAvailable()) {
+			const canOfficialWrite = officialWriteAvailable();
+			if (canOfficialWrite) {
+				const changes = fieldChanges(annotationChangeDescriptors(cur, anno));
+				if (changes.length === 0) {
+					changeReview.hide();
+					out.className = "at__result";
+					out.textContent = t("changeReview.noChanges", "No changes to save.");
+					return;
+				}
+				if (!changeReview.shouldProceed(changes)) {
+					out.className = "at__result";
+					out.textContent = "";
+					return;
+				}
 				out.className = "at__result";
 				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
 				try {

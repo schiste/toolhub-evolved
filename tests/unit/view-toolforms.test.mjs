@@ -637,6 +637,11 @@ async function mountToolForm(name) {
 function setVal(id, v) {
 	document.querySelector(`#${id}`).value = v;
 }
+function confirmChangeReview() {
+	const confirm = document.querySelector("[data-change-review-confirm]");
+	assert.ok(confirm, "change review confirmation is visible");
+	confirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
 // advance past the 300ms debounce on fake timers and flush the async update
 async function flushDebounce() {
 	await vi.advanceTimersByTimeAsync(350);
@@ -801,6 +806,10 @@ test("mount edit: signed-in submit publishes official tool update", async () => 
 	setVal("tf-url", "https://x.example/updated");
 	setVal("tf-wikis", "en.wikipedia.org, *.wikisource.org");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Review changes before saving"));
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Renamed"));
+	confirmChangeReview();
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"PUT",
@@ -835,6 +844,9 @@ test("mount edit: Toolhub validation fallback stores a local edit draft with pro
 	setVal("tf-title", "Renamed");
 	setVal("tf-url", "https://x.example/updated");
 	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Renamed"));
+	confirmChangeReview();
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/"]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolEdits);
@@ -845,6 +857,18 @@ test("mount edit: Toolhub validation fallback stores a local edit draft with pro
 	assert.deepEqual(saved.toolhubResponse, { message: "validation failed" });
 	assert.equal(h.logActivity.mock.calls.length, 0);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("validation failed"));
+});
+
+test("mount edit: unchanged submit does not publish a no-op official tool update", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", url: "https://x.example", origin: "api" }));
+	h.isNewTool.mockReturnValue(false);
+	await mountToolForm("my-tool");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(document.querySelector("[data-official-result]").textContent, "No changes to save.");
+	assert.equal(document.querySelector("[data-change-review]").hidden, true);
 });
 
 test("mount edit of a NEW tool without Toolhub sign-in is blocked", async () => {
@@ -1628,6 +1652,9 @@ test("mount annotations: signed-in submit publishes official annotations", async
 	document.querySelector("#an-type").value = "bot";
 	setVal("an-icon", "https://commons.example/icon.png");
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Audiences"));
+	confirmChangeReview();
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"PUT",
@@ -1646,6 +1673,22 @@ test("mount annotations: signed-in submit publishes official annotations", async
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/tools/my-tool"]);
 });
 
+test("mount annotations: unchanged submit does not publish a no-op annotation update", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.getTool.mockResolvedValue(
+		toolFixture("my-tool", { title: "My Tool", audiences: ["editor"], tasks: ["editing"] })
+	);
+	h.toolAnnosMap.mockReturnValue({});
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(document.querySelector("[data-official-result]").textContent, "No changes to save.");
+	assert.equal(document.querySelector("[data-change-review]").hidden, true);
+});
+
 test("mount annotations: Toolhub rejection stores a local annotation fallback", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
 	h.officialWrite.mockResolvedValue(localFallbackResponse("not allowed"));
@@ -1656,6 +1699,9 @@ test("mount annotations: Toolhub rejection stores a local annotation fallback", 
 	r.mount();
 	setVal("an-aud", "editor");
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("editor"));
+	confirmChangeReview();
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/annotations/"]);
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
@@ -1689,6 +1735,7 @@ test("mount annotations: sparse Toolhub fallback shows an unknown-error message"
 	r.mount();
 	setVal("an-aud", "editor");
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	confirmChangeReview();
 	await tick();
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("Unknown Toolhub error"));
@@ -1704,6 +1751,7 @@ test("mount annotations: backend transport failure shows an error without local 
 	r.mount();
 	setVal("an-aud", "editor");
 	document.querySelector("[data-anno-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	confirmChangeReview();
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["PUT", "/v1/write/tools/my-tool/annotations/"]);
 	assert.equal(h.demoStoreSet.mock.calls.length, 0);

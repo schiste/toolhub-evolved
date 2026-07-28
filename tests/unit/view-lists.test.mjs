@@ -636,6 +636,12 @@ function mountEdit(id, src) {
 
 const tick = () => new Promise((res) => setTimeout(res, 0));
 
+function confirmChangeReview() {
+	const confirm = document.querySelector("[data-change-review-confirm]");
+	assert.ok(confirm, "change review confirmation is visible");
+	confirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+}
+
 test("mount edit: renders tool rows with count and move-button disabled states", () => {
 	mountEdit("demo-1", { id: "demo-1", title: "T", description: "", tools: ["alpha", "bravo", "charlie"] });
 	const count = document.querySelector("[data-le-count]");
@@ -933,6 +939,9 @@ test("mount official edit: rejected Toolhub write shows an error without creatin
 	r.mount();
 	document.querySelector("#le-title").value = "Official edited";
 	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Official edited"));
+	confirmChangeReview();
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], [
 		"PUT",
@@ -960,10 +969,37 @@ test("mount official edit: successful write without returned id stays on the cur
 	r.mount();
 	document.querySelector("#le-title").value = "Official edited";
 	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Official edited"));
+	confirmChangeReview();
 	await tick();
 	assert.equal(h.demoListSave.mock.calls.length, 0);
 	assert.equal(h.clearApiCache.mock.calls.length, 1);
 	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/7"]);
+});
+
+test("mount local edit: signed-in submit reviews changes before publishing a local list", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official", toolhub: { id: 42 } });
+	mountEdit("demo-1", { id: "demo-1", title: "Local", description: "", tools: ["alpha"] });
+	document.querySelector("#le-title").value = "Local edited";
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-change-review]").textContent.includes("Local edited"));
+	confirmChangeReview();
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0].slice(0, 2), ["POST", "/v1/write/lists/"]);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/lists/42"]);
+});
+
+test("mount edit: unchanged submit does not publish a no-op list update", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	mountEdit("demo-1", { id: "demo-1", title: "Local", description: "", tools: ["alpha"] });
+	document.querySelector("[data-le-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(document.querySelector("[data-official-result]").textContent, "No changes to save.");
+	assert.equal(document.querySelector("[data-change-review]").hidden, true);
 });
 
 test("mount edit: submit with empty title focuses title and does not save", () => {
