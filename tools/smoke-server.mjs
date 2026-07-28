@@ -44,7 +44,8 @@ const tools = [
 		license: "Apache-2.0",
 		repository: "https://gerrit.wikimedia.org/r/admin/repos/wikidata/query/gui",
 		modified_date: "2026-05-20T10:00:00Z",
-		origin: "crawler"
+		origin: "crawler",
+		experimental: true
 	},
 	{
 		name: "citation-needed",

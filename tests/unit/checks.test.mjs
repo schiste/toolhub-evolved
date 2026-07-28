@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { scanA11y, scanBalance, scanComments, scanFloating, scanTemplates, scanText } from "../../tools/checks.mjs";
+import {
+	scanA11y,
+	scanBalance,
+	scanComments,
+	scanCssDirection,
+	scanFloating,
+	scanTemplates,
+	scanText
+} from "../../tools/checks.mjs";
 
 test("scanText flags external _blank links without rel=noopener", () => {
 	const bad = `<a href="https://x.test" target="_blank">x</a>`;
@@ -174,4 +182,41 @@ test("scanBalance treats interpolations as opaque (fragments + dynamic tags don'
 test("scanBalance checks raw HTML files whole", () => {
 	assert.deepEqual(scanBalance("<main><p>hi</p></main>", "index.html"), []);
 	assert.match(scanBalance("<main><p>hi</main>", "index.html")[0].message, /unclosed <p>|<\/main> closes <p>/);
+});
+
+// ---- scanCssDirection (RTL logical CSS guard) -----------------------------
+test("scanCssDirection flags physical left/right properties and values", () => {
+	const css = `
+.a {
+	margin-left: 1rem;
+	border-right-color: red;
+	left: 0;
+	text-align: right;
+	float: left;
+}`;
+	const issues = scanCssDirection(css, "x.css");
+	assert.equal(issues.length, 5);
+	assert.match(issues[0].message, /margin-left/);
+	assert.match(issues[1].message, /border-right-color/);
+	assert.match(issues[2].message, /"left"/);
+	assert.match(issues[3].message, /text-align: right/);
+	assert.match(issues[4].message, /float: left/);
+	assert.equal(issues[0].line, 3);
+});
+
+test("scanCssDirection accepts logical CSS and ignores comments/custom properties", () => {
+	const css = `
+.ok {
+	/* margin-left: old value; */
+	--card-left-accent: 1;
+	margin-inline-start: 1rem;
+	border-inline-end-color: red;
+	inset-inline-end: 0;
+	text-align: start;
+	float: inline-end;
+}
+/* block
+   right: 0;
+*/`;
+	assert.deepEqual(scanCssDirection(css, "x.css"), []);
 });

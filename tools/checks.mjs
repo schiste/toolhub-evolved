@@ -451,17 +451,99 @@ export function scanText(text, file) {
 	return issues;
 }
 
+// ---- CSS directionality ---------------------------------------------------
+// RTL should mirror the UI without a duplicate stylesheet. Layout-affecting
+// CSS therefore needs logical properties/values (inline/block, start/end)
+// rather than physical left/right declarations.
+const CSS_DECLARATION = /^\s*([-\w]+)\s*:\s*([^;}{]+)(?:;|$)/;
+const PHYSICAL_DIRECTION_PROP = /(?:^|-)left(?:-|$)|(?:^|-)right(?:-|$)/;
+const PHYSICAL_DIRECTION_VALUE_PROPS = new Set(["clear", "float", "text-align"]);
+const PHYSICAL_DIRECTION_VALUE = /^\s*(?:left|right)\b/i;
+
+/**
+ * @param {string} line
+ * @param {{ inBlock: boolean }} state
+ * @returns {string}
+ */
+function stripCssCommentsFromLine(line, state) {
+	let out = "";
+	let index = 0;
+	while (index < line.length) {
+		if (state.inBlock) {
+			const end = line.indexOf("*/", index);
+			if (end === -1) return out;
+			state.inBlock = false;
+			index = end + 2;
+			continue;
+		}
+		const start = line.indexOf("/*", index);
+		if (start === -1) {
+			out += line.slice(index);
+			break;
+		}
+		out += line.slice(index, start);
+		const end = line.indexOf("*/", start + 2);
+		if (end === -1) {
+			state.inBlock = true;
+			break;
+		}
+		index = end + 2;
+	}
+	return out;
+}
+
+/**
+ * Flag physical left/right CSS declarations that should use logical
+ * inline/block properties or start/end values for RTL mirroring.
+ * @param {string} css
+ * @param {string} file
+ * @returns {{ file: string, line: number, message: string }[]}
+ */
+export function scanCssDirection(css, file) {
+	const issues = [];
+	const state = { inBlock: false };
+	const lines = css.split("\n");
+	for (let i = 0; i < lines.length; i += 1) {
+		const line = stripCssCommentsFromLine(lines[i], state);
+		const declaration = CSS_DECLARATION.exec(line);
+		if (!declaration) continue;
+		const property = declaration[1].toLowerCase();
+		if (property.startsWith("--")) continue;
+		if (PHYSICAL_DIRECTION_PROP.test(property)) {
+			issues.push({
+				file,
+				line: i + 1,
+				message: `physical CSS property "${property}" — use logical inline/block properties for RTL`
+			});
+			continue;
+		}
+		if (PHYSICAL_DIRECTION_VALUE_PROPS.has(property) && PHYSICAL_DIRECTION_VALUE.test(declaration[2])) {
+			issues.push({
+				file,
+				line: i + 1,
+				message: `physical CSS value "${property}: ${declaration[2].trim()}" — use start/end or logical equivalents`
+			});
+		}
+	}
+	return issues;
+}
+
 function main() {
 	// :(glob) magic makes ** match across path segments INCLUDING zero, so the
 	// top-level entry point (public_html/main.js) is covered — a plain
 	// "public_html/**/*.js" pathspec silently skips it.
-	const files = execFileSync("git", ["ls-files", "public_html/index.html", ":(glob)public_html/**/*.js"], {
-		encoding: "utf8"
-	})
+	const files = execFileSync(
+		"git",
+		["ls-files", "public_html/index.html", ":(glob)public_html/**/*.js", ":(glob)public_html/styles/**/*.css"],
+		{
+			encoding: "utf8"
+		}
+	)
 		.split("\n")
 		.filter((file) => file && existsSync(file));
 	const issues = files.flatMap((file) => {
 		const code = readFileSync(file, "utf8");
+		if (file.endsWith(".css")) return scanCssDirection(code, file);
 		const found = [...scanText(code, file), ...scanA11y(code, file), ...scanBalance(code, file)];
 		if (file.endsWith(".js")) {
 			found.push(...scanTemplates(code, file), ...scanComments(code, file), ...scanFloating(code, file));
@@ -473,7 +555,7 @@ function main() {
 		console.error(`checks: ${issues.length} issue(s)`);
 		process.exit(1);
 	}
-	console.log("checks: links, routes, HTML escaping/balance, a11y, dead code, and floating promises OK");
+	console.log("checks: links, routes, HTML escaping/balance, a11y, RTL CSS, dead code, and floating promises OK");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
