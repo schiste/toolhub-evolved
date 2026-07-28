@@ -34,6 +34,7 @@ const SG_TOOL_DEPRECATED = FIXTURE_TOOL_DEPRECATED;
 const SG_TOOL_EXPERIMENTAL = FIXTURE_TOOL_EXPERIMENTAL;
 const STYLEGUIDE_TOOLS = [SG_TOOL, SG_TOOL_DEPRECATED, SG_TOOL_EXPERIMENTAL];
 const STYLEGUIDE_ACCOUNT_NAME = "Amina Hassan";
+const STYLEGUIDE_STYLESHEET = "/styles/styleguide.css";
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 const STYLEGUIDE_GRAPH = {
@@ -982,7 +983,18 @@ function renderBarTokens(targetId, names, prop, rowClass, barClass, clampLayout)
 	});
 }
 
+function ensureStyleguideStyles() {
+	if (navigator.userAgent.includes("HappyDOM/")) return;
+	if (document.querySelector('link[data-route-style="styleguide"]')) return;
+	const link = document.createElement("link");
+	link.rel = "stylesheet";
+	link.href = STYLEGUIDE_STYLESHEET;
+	link.dataset.routeStyle = "styleguide";
+	document.head.append(link);
+}
+
 function mountStyleguide() {
+	ensureStyleguideStyles();
 	seedFixtureIndex();
 	const colorTokens = collectCustomPropertyNames("--color-", FALLBACK_TOKENS.colors);
 	const wmfTokens = collectCustomPropertyNames("--wmf-", FALLBACK_TOKENS.wmf);

@@ -11,7 +11,13 @@ import * as tool from "../../public_html/views/tool.js";
 import * as authors from "../../public_html/views/authors.js";
 import * as lists from "../../public_html/views/lists.js";
 import * as toolforms from "../../public_html/views/toolforms.js";
-import * as accountView from "../../public_html/views/account.js";
+import * as accountSettingsView from "../../public_html/views/account-settings.js";
+import * as developerSettingsView from "../../public_html/views/developer-settings.js";
+import * as myToolsView from "../../public_html/views/my-tools.js";
+import * as recentView from "../../public_html/views/recent.js";
+import * as membersView from "../../public_html/views/members.js";
+import * as crawlerView from "../../public_html/views/crawler.js";
+import * as auditView from "../../public_html/views/audit.js";
 import * as staticViews from "../../public_html/views/static.js";
 import * as styleguide from "../../public_html/views/styleguide.js";
 import * as session from "../../public_html/lib/core/session.js";
@@ -37,11 +43,13 @@ vi.mock("../../public_html/views/toolforms.js", () => ({
 	viewAddTools: vi.fn(() => ({ tag: "addtools" })),
 	viewAnnotationsEdit: vi.fn((n) => ({ tag: "annotations", n }))
 }));
-vi.mock("../../public_html/views/account.js", () => ({
-	viewAccountSettings: vi.fn(() => ({ tag: "account" })),
-	viewDeveloperSettings: vi.fn(() => ({ tag: "developer" })),
-	viewMyTools: vi.fn(() => ({ tag: "mytools" }))
+vi.mock("../../public_html/views/account-settings.js", () => ({
+	viewAccountSettings: vi.fn(() => ({ tag: "account" }))
 }));
+vi.mock("../../public_html/views/developer-settings.js", () => ({
+	viewDeveloperSettings: vi.fn(() => ({ tag: "developer" }))
+}));
+vi.mock("../../public_html/views/my-tools.js", () => ({ viewMyTools: vi.fn(() => ({ tag: "mytools" })) }));
 vi.mock("../../public_html/views/static.js", async (importOriginal) => {
 	const actual = await importOriginal();
 	return {
@@ -57,11 +65,12 @@ vi.mock("../../public_html/views/static.js", async (importOriginal) => {
 vi.mock("../../public_html/views/experiments.js", () => ({ viewExperiments: vi.fn(() => ({ tag: "experiments" })) }));
 vi.mock("../../public_html/views/graph.js", () => ({ viewGraph: vi.fn(() => ({ tag: "graph" })) }));
 vi.mock("../../public_html/views/styleguide.js", () => ({ viewStyleguide: vi.fn(() => ({ tag: "styleguide" })) }));
-vi.mock("../../public_html/views/parity.js", () => ({
+vi.mock("../../public_html/views/recent.js", () => ({ viewRecent: vi.fn(() => ({ tag: "recent" })) }));
+vi.mock("../../public_html/views/members.js", () => ({ viewMembers: vi.fn(() => ({ tag: "members" })) }));
+vi.mock("../../public_html/views/crawler.js", () => ({ viewCrawler: vi.fn(() => ({ tag: "crawler" })) }));
+vi.mock("../../public_html/views/audit.js", () => ({
 	viewAudit: vi.fn(() => ({ tag: "audit" })),
-	viewCrawler: vi.fn(() => ({ tag: "crawler" })),
-	viewMembers: vi.fn(() => ({ tag: "members" })),
-	viewRecent: vi.fn(() => ({ tag: "recent" }))
+	targetHref: vi.fn(() => null)
 }));
 vi.mock("../../public_html/lib/core/session.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -256,6 +265,10 @@ test("dispatch routes the ungated ROUTES entries to their views", async () => {
 	assert.deepEqual(await at("/experiments"), { tag: "experiments" });
 	assert.deepEqual(await at("/styleguide"), { tag: "styleguide" });
 	assert.equal(lists.viewLists.mock.calls.length, 2); // lists + published-lists
+	assert.equal(recentView.viewRecent.mock.calls.length, 1);
+	assert.equal(membersView.viewMembers.mock.calls.length, 1);
+	assert.equal(crawlerView.viewCrawler.mock.calls.length, 1);
+	assert.equal(auditView.viewAudit.mock.calls.length, 1);
 });
 
 test("dispatch ROUTES sign-in stubs use their exact copy", async () => {
@@ -318,9 +331,9 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	assert.deepEqual(await at("/developer-settings"), { tag: "developer" });
 	assert.deepEqual(await at("/my-tools"), { tag: "mytools" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
-	assert.equal(accountView.viewAccountSettings.mock.calls.length, 1);
-	assert.equal(accountView.viewDeveloperSettings.mock.calls.length, 1);
-	assert.equal(accountView.viewMyTools.mock.calls.length, 1);
+	assert.equal(accountSettingsView.viewAccountSettings.mock.calls.length, 1);
+	assert.equal(developerSettingsView.viewDeveloperSettings.mock.calls.length, 1);
+	assert.equal(myToolsView.viewMyTools.mock.calls.length, 1);
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */

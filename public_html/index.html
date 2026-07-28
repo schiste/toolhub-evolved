@@ -28,13 +28,302 @@
 		<!-- Typography uses the native Wikimedia/Codex system font stack (see styles/tokens.css):
 	     no web font is downloaded — fastest, privacy-respecting, and on-brand. -->
 
-		<link rel="stylesheet" href="/styles/tokens.css" />
-		<link rel="stylesheet" href="/styles/base.css" />
-		<link rel="stylesheet" href="/styles/atoms.css" />
-		<link rel="stylesheet" href="/styles/molecules.css" />
-		<link rel="stylesheet" href="/styles/organisms.css" />
-		<link rel="stylesheet" href="/styles/templates.css" />
-		<link rel="stylesheet" href="/styles/styleguide.css" />
+		<style data-critical-css>
+			:root {
+				--color-surface: #fff;
+				--color-surface-muted: #f4f5f7;
+				--color-row-hover: rgb(0 0 0 / 0.02);
+				--color-border: #d4d7db;
+				--color-border-hover: #b9c6e6;
+				--color-text: #1b1b1b;
+				--color-text-secondary: #54595d;
+				--color-text-muted: #5c6066;
+				--color-progressive: #0c57a8;
+				--color-progressive-hover: #09437f;
+				--color-progressive-subtle: #e7f0fa;
+				--color-interactive-subtle: #dbe7ff;
+				--font-sans:
+					system-ui, -apple-system, "Segoe UI", roboto, "Helvetica Neue", "Liberation Sans", arial, sans-serif;
+				--font-weight-bold: 700;
+				--fs-caption: 13px;
+				--fs-body: 16px;
+				--fs-subtitle: 21px;
+				--fs-title: 26px;
+				--space-0: 0;
+				--space-0-5: 2px;
+				--space-1: 4px;
+				--space-2: 8px;
+				--space-3: 13px;
+				--space-4: 21px;
+				--space-5: 34px;
+				--space-6: 56px;
+				--space-7: 72px;
+				--radius-sm: 2px;
+				--border-base: 1px solid var(--color-border);
+				--border-muted: 1px solid var(--color-surface-muted);
+				--border-transparent: 1px solid transparent;
+				--border-heavy: 3px solid var(--color-border);
+				--container-wide: 1320px;
+				--btn-h-md: 36px;
+				--ctl-h-sm: 28px;
+				--ctl-h-md: 36px;
+			}
+			:root[data-theme="dark"] {
+				--color-surface: #111418;
+				--color-surface-muted: #1d2422;
+				--color-row-hover: rgb(255 255 255 / 0.06);
+				--color-border: #3b443f;
+				--color-border-hover: #60789e;
+				--color-text: #f4f4f4;
+				--color-text-secondary: #c8ccd3;
+				--color-text-muted: #a8afb8;
+				--color-progressive: #7ab7f2;
+				--color-progressive-hover: #a7d0ff;
+				--color-progressive-subtle: #172d46;
+				--color-interactive-subtle: #2b527e;
+			}
+			:where(*, *::before, *::after) {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				color: var(--color-text);
+				background: var(--color-surface);
+				font-family: var(--font-sans);
+				font-size: var(--fs-body);
+				line-height: 1.5;
+			}
+			a {
+				color: var(--color-progressive);
+				text-decoration: none;
+			}
+			.icon {
+				width: 1em;
+				height: 1em;
+				display: inline-block;
+				vertical-align: -0.15em;
+				fill: currentColor;
+				flex: 0 0 auto;
+			}
+			.skip {
+				position: absolute;
+				inset-inline-start: var(--space-2);
+				top: -48px;
+				z-index: 100;
+				background: var(--color-surface);
+				color: var(--color-progressive);
+				padding: var(--space-2) var(--space-3);
+			}
+			.skip:focus {
+				top: var(--space-2);
+			}
+			.mockup-banner {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				justify-content: center;
+				gap: var(--space-0-5) var(--space-2);
+				border-bottom: var(--border-muted);
+				background: var(--color-surface-muted);
+				color: var(--color-text-secondary);
+				font-size: var(--fs-caption);
+				line-height: 1.25;
+				padding: var(--space-0-5) clamp(var(--space-2), 2vw, var(--space-3));
+				text-align: center;
+			}
+			.sitenotice-dismissed .mockup-banner,
+			.mockup-banner[hidden] {
+				display: none;
+			}
+			.mockup-banner__txt {
+				font-weight: 500;
+			}
+			.mockup-banner__link {
+				color: var(--color-progressive);
+				font-weight: 700;
+				text-decoration: underline;
+				white-space: nowrap;
+			}
+			.mockup-banner__close {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: var(--ctl-h-sm);
+				height: var(--ctl-h-sm);
+				padding: 0;
+				border: var(--border-transparent);
+				background: transparent;
+				color: var(--color-text-muted);
+				cursor: pointer;
+			}
+			.nav {
+				border-bottom: var(--border-base);
+				background: var(--color-surface);
+			}
+			.nav__inner {
+				max-width: var(--container-wide);
+				margin: 0 auto;
+				padding: var(--space-3) clamp(var(--space-4), 4vw, var(--space-7));
+				display: flex;
+				align-items: center;
+				gap: var(--space-3) var(--space-5);
+				flex-wrap: wrap;
+			}
+			.brand {
+				display: flex;
+				align-items: center;
+				gap: var(--space-2);
+				color: var(--color-text);
+			}
+			.brand__logo {
+				display: block;
+				width: 34px;
+				height: 34px;
+				flex: 0 0 auto;
+			}
+			.brand__name {
+				font-weight: var(--font-weight-bold);
+				font-size: var(--fs-subtitle);
+				line-height: 1;
+			}
+			.nav__links {
+				display: flex;
+				gap: var(--space-4);
+			}
+			.nav__links a {
+				color: var(--color-text-secondary);
+				font-weight: 500;
+			}
+			.nav__links a.is-active {
+				color: var(--color-progressive);
+				font-weight: var(--font-weight-bold);
+			}
+			.nav__actions {
+				margin-inline-start: auto;
+				display: flex;
+				align-items: center;
+				gap: var(--space-3);
+			}
+			.btn,
+			.icon-btn {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				gap: var(--space-2);
+				height: var(--btn-h-md);
+				border: var(--border-transparent);
+				color: var(--color-text-secondary);
+				font-size: var(--fs-caption);
+				font-weight: 600;
+				line-height: 1;
+				white-space: nowrap;
+				text-decoration: none;
+			}
+			.btn {
+				padding: 0 var(--space-4);
+			}
+			.icon-btn {
+				padding: 0 var(--space-2);
+			}
+			.btn--primary {
+				background: var(--color-progressive);
+				color: var(--color-surface);
+			}
+			.btn--outline {
+				background: var(--color-surface);
+				color: var(--color-progressive);
+				border-color: var(--color-progressive);
+			}
+			.theme-toggle {
+				display: inline-flex;
+				height: var(--ctl-h-md);
+				border: var(--border-base);
+				overflow: hidden;
+			}
+			.nav__mobile {
+				display: none;
+			}
+			.container {
+				width: 100%;
+				max-width: var(--container-wide);
+				margin: 0 auto;
+				padding: 0 clamp(var(--space-4), 4vw, var(--space-7));
+			}
+			.page {
+				padding-top: var(--space-5);
+				padding-bottom: var(--space-6);
+			}
+			.page__title {
+				font-size: var(--fs-title);
+				margin: 0 0 var(--space-2);
+			}
+			.route-loading {
+				display: flex;
+				align-items: center;
+				min-height: 12rem;
+				color: var(--color-text-secondary);
+				font-weight: 600;
+			}
+			.route-loading__panel {
+				display: inline-flex;
+				align-items: center;
+				gap: var(--space-3);
+				width: min(100%, 460px);
+				padding: var(--space-4);
+				border: var(--border-base);
+				background: var(--color-surface);
+			}
+			.spinner {
+				width: 34px;
+				height: 34px;
+				border-radius: 50%;
+				border: var(--border-heavy);
+				border-top-color: var(--color-progressive);
+				animation: spin 0.7s linear infinite;
+			}
+			.footer {
+				border-top: var(--border-base);
+				padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7));
+				max-width: var(--container-wide);
+				margin: 0 auto;
+			}
+			@keyframes spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+			@media (width <= 640px) {
+				.nav__links,
+				.icon-btn {
+					display: none;
+				}
+				.nav__actions {
+					gap: var(--space-2);
+				}
+				.nav__mobile {
+					display: flex;
+					flex: 1 0 100%;
+					gap: var(--space-2);
+					padding-top: var(--space-2);
+					border-top: var(--border-muted);
+					overflow-x: auto;
+				}
+			}
+		</style>
+		<link rel="preload" href="/styles/tokens.css" as="style" data-deferred-style />
+		<link rel="preload" href="/styles/base.css" as="style" data-deferred-style />
+		<link rel="preload" href="/styles/atoms.css" as="style" data-deferred-style />
+		<link rel="preload" href="/styles/molecules.css" as="style" data-deferred-style />
+		<link rel="preload" href="/styles/organisms.css" as="style" data-deferred-style />
+		<link rel="preload" href="/styles/templates.css" as="style" data-deferred-style />
+		<noscript>
+			<link rel="stylesheet" href="/styles/tokens.css" />
+			<link rel="stylesheet" href="/styles/base.css" />
+			<link rel="stylesheet" href="/styles/atoms.css" />
+			<link rel="stylesheet" href="/styles/molecules.css" />
+			<link rel="stylesheet" href="/styles/organisms.css" />
+			<link rel="stylesheet" href="/styles/templates.css" />
+		</noscript>
 
 		<!-- Keep the boot request burst small on Toolforge. Route modules are loaded
 		     by views/router.js only when the current page needs them. -->

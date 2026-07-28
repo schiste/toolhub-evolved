@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { test } from "vitest";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+function read(rel) {
+	return fs.readFileSync(path.join(ROOT, rel), "utf8");
+}
+
+test("router loads high-cost feature routes as their own chunks", () => {
+	const router = read("public_html/views/router.js");
+	for (const specifier of [
+		"./recent.js",
+		"./members.js",
+		"./crawler.js",
+		"./audit.js",
+		"./account-settings.js",
+		"./developer-settings.js",
+		"./my-tools.js"
+	]) {
+		assert.ok(router.includes(`loadRouteModule("${specifier}"`));
+	}
+	assert.doesNotMatch(router, /loadRouteModule\("\.\/parity\.js"/);
+	assert.doesNotMatch(router, /loadRouteModule\("\.\/account\.js"/);
+});
+
+test("index.html has critical shell CSS and defers full design-system CSS", () => {
+	const html = read("public_html/index.html");
+	const headBeforeNoscript = html.split("<noscript>")[0];
+	const deferredLinks = html.match(/rel="preload" href="\/styles\/[^"]+\.css" as="style" data-deferred-style/g) || [];
+	const noscriptStylesheets = html.match(/<link rel="stylesheet" href="\/styles\/[^"]+\.css" \/>/g) || [];
+	assert.match(headBeforeNoscript, /<style data-critical-css>/);
+	assert.equal(deferredLinks.length, 6);
+	assert.equal(noscriptStylesheets.length, 6);
+	assert.doesNotMatch(headBeforeNoscript, /rel="stylesheet" href="\/styles\//);
+	assert.doesNotMatch(headBeforeNoscript, /styleguide\.css/);
+	assert.doesNotMatch(headBeforeNoscript, /onload=/);
+});
+
+test("main.js activates deferred styles before the first route render", () => {
+	const main = read("public_html/main.js");
+	assert.match(main, /function activateDeferredStyles\(\)/);
+	assert.ok(main.indexOf("activateDeferredStyles();") < main.lastIndexOf("render();"));
+});
+
+test("styleguide CSS is owned by the styleguide route", () => {
+	const styleguide = read("public_html/views/styleguide.js");
+	assert.match(styleguide, /STYLEGUIDE_STYLESHEET = "\/styles\/styleguide\.css"/);
+	assert.match(styleguide, /data-route-style="styleguide"/);
+});

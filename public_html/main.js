@@ -21,6 +21,18 @@ import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
+function activateDeferredStyles() {
+	for (const preload of document.querySelectorAll('link[data-deferred-style][rel="preload"]')) {
+		if (!(preload instanceof HTMLLinkElement) || preload.dataset.loaded === "1") continue;
+		preload.dataset.loaded = "1";
+		const stylesheet = document.createElement("link");
+		stylesheet.rel = "stylesheet";
+		stylesheet.href = preload.href;
+		document.head.append(stylesheet);
+	}
+}
+activateDeferredStyles();
+
 /** @type {Promise<typeof import("./lib/organisms/quickview.js")> | null} */
 let quickViewModule = null;
 function loadQuickView() {

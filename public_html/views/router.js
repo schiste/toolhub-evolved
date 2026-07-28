@@ -34,8 +34,13 @@ const loadTool = () => loadRouteModule("./tool.js", () => import("./tool.js"));
 const loadAuthors = () => loadRouteModule("./authors.js", () => import("./authors.js"));
 const loadLists = () => loadRouteModule("./lists.js", () => import("./lists.js"));
 const loadToolForms = () => loadRouteModule("./toolforms.js", () => import("./toolforms.js"));
-const loadAccount = () => loadRouteModule("./account.js", () => import("./account.js"));
-const loadParity = () => loadRouteModule("./parity.js", () => import("./parity.js"));
+const loadAccountSettings = () => loadRouteModule("./account-settings.js", () => import("./account-settings.js"));
+const loadDeveloperSettings = () => loadRouteModule("./developer-settings.js", () => import("./developer-settings.js"));
+const loadMyTools = () => loadRouteModule("./my-tools.js", () => import("./my-tools.js"));
+const loadRecent = () => loadRouteModule("./recent.js", () => import("./recent.js"));
+const loadMembers = () => loadRouteModule("./members.js", () => import("./members.js"));
+const loadCrawler = () => loadRouteModule("./crawler.js", () => import("./crawler.js"));
+const loadAudit = () => loadRouteModule("./audit.js", () => import("./audit.js"));
 const loadGraph = () => loadRouteModule("./graph.js", () => import("./graph.js"));
 const loadExperiments = () => loadRouteModule("./experiments.js", () => import("./experiments.js"));
 const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./styleguide.js"));
@@ -84,19 +89,19 @@ export const ROUTES = {
 		),
 	account: () =>
 		requireSignIn(
-			() => loadAccount().then((m) => m.viewAccountSettings()),
+			() => loadAccountSettings().then((m) => m.viewAccountSettings()),
 			t("router.accountTitle", "Evolved data settings"),
 			t("router.accountLead", "Export or delete Evolved-local data for this Toolhub sign-in.")
 		),
 	"my-tools": () =>
 		requireSignIn(
-			() => loadAccount().then((m) => m.viewMyTools()),
+			() => loadMyTools().then((m) => m.viewMyTools()),
 			t("router.myToolsTitle", "My tools"),
 			t("router.myToolsLead", "View Toolhub tools maintained by this account.")
 		),
 	"developer-settings": () =>
 		requireSignIn(
-			() => loadAccount().then((m) => m.viewDeveloperSettings()),
+			() => loadDeveloperSettings().then((m) => m.viewDeveloperSettings()),
 			t("router.devSettingsTitle", "Developer settings"),
 			t("router.devSettingsLead", "Manage your API tokens and registered OAuth applications.")
 		),
@@ -105,10 +110,10 @@ export const ROUTES = {
 			t("router.signInTitle", "Sign in"),
 			t("router.signInLead", "Sign in to save favourites, build lists, and edit tool information.")
 		),
-	recent: () => loadParity().then((m) => m.viewRecent()),
-	members: () => loadParity().then((m) => m.viewMembers()),
-	"crawler-history": () => loadParity().then((m) => m.viewCrawler()),
-	"audit-logs": () => loadParity().then((m) => m.viewAudit()),
+	recent: () => loadRecent().then((m) => m.viewRecent()),
+	members: () => loadMembers().then((m) => m.viewMembers()),
+	"crawler-history": () => loadCrawler().then((m) => m.viewCrawler()),
+	"audit-logs": () => loadAudit().then((m) => m.viewAudit()),
 	"api-docs": viewApiDocs,
 	contribute: viewContribute,
 	experiments: () => loadExperiments().then((m) => m.viewExperiments()),
