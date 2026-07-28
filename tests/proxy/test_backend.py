@@ -3870,6 +3870,36 @@ def test_write_lifecycle_rejects_invalid_inputs(client, method, path, body):
     assert resp.status_code == 400
 
 
+def test_write_tool_create_invalid_toolinfo_url_reports_field_validation(client):
+    uid = add_user()
+    sign_in(client, uid)
+    resp = client.post(
+        "/v1/write/tools/",
+        json={**TOOL_WRITE_PAYLOAD, "toolinfo_url": "https://"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["lastError"] == "toolinfo URL must include a host."
+    assert data["validationErrors"] == [{"field": "toolinfo_url", "message": "toolinfo URL must include a host."}]
+
+
+def test_write_crawler_url_invalid_url_reports_field_validation(client):
+    uid = add_user()
+    sign_in(client, uid)
+    resp = client.post(
+        "/v1/write/crawler/urls/",
+        json={"url": "https://"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["lastError"] == "crawler URL must include a host."
+    assert data["validationErrors"] == [{"field": "url", "message": "crawler URL must include a host."}]
+
+
 def test_write_lifecycle_success_paths_for_deletes_annotations_and_crawler(client, monkeypatch):
     uid = add_user()
     sign_in(client, uid)

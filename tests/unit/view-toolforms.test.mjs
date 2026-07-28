@@ -87,6 +87,7 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 const tf = await import("../../public_html/views/toolforms.js");
 const { viewNotFound } = await import("../../public_html/views/static.js");
 const { DEMO_KEYS } = await import("../../public_html/lib/core/store.js");
+const { BackendError } = await import("../../public_html/lib/core/api.js");
 const tick = () => new Promise((res) => setTimeout(res, 0));
 
 function localFallbackResponse(lastError, local = {}) {
@@ -758,6 +759,29 @@ test("mount create: backend transport failure does not create a local draft", as
 	assert.ok(document.querySelector("[data-official-result]").textContent.includes("session expired"));
 });
 
+test("mount create: backend toolinfo URL validation is shown on the field", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(
+		new BackendError(400, "/v1/write/tools/", {
+			error: "toolinfo URL must include a host.",
+			validationErrors: [{ field: "toolinfo_url", message: "toolinfo URL must include a host." }]
+		})
+	);
+	await mountToolForm(null);
+	setVal("tf-name", "new-tool");
+	setVal("tf-title", "New Tool");
+	setVal("tf-url", "https://example.org");
+	setVal("tf-toolinfo-url", "https://example.org/toolinfo.json");
+	document.querySelector("[data-tool-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(document.activeElement, document.querySelector("#tf-toolinfo-url"));
+	assert.equal(document.querySelector("#tf-toolinfo-url-err").textContent, "toolinfo URL must include a host.");
+	assert.ok(
+		document.querySelector("[data-official-result]").textContent.includes("toolinfo URL must include a host.")
+	);
+	assert.equal(h.demoStoreSet.mock.calls.length, 0);
+});
+
 test("mount create: invalid toolinfo URL focuses create-time crawler field", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
 	await mountToolForm(null);
@@ -1313,6 +1337,26 @@ test("mount addtools: backend transport failure does not create a local URL", as
 	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
 	assert.equal(document.querySelector("#at-url").value, "https://added.example/toolinfo.json");
 	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("session expired"));
+});
+
+test("mount addtools: backend crawler URL validation is shown on the field", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(
+		new BackendError(400, "/v1/write/crawler/urls/", {
+			error: "crawler URL must include a host.",
+			validationErrors: [{ field: "url", message: "crawler URL must include a host." }]
+		})
+	);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("at-url", "https://added.example/toolinfo.json");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(document.activeElement, document.querySelector("#at-url"));
+	assert.equal(document.querySelector("#at-url-err").textContent, "crawler URL must include a host.");
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("crawler URL must include a host."));
 });
 
 test("mount addtools: retrying a local URL fallback publishes to Toolhub", async () => {

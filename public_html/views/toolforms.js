@@ -3,6 +3,7 @@ import { $, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
 import {
 	backendErrorMessage,
+	backendErrorBody,
 	backendGetJson,
 	clearApiCache,
 	getTool,
@@ -44,7 +45,13 @@ import {
 	setFieldError
 } from "../lib/atoms/form-fields.js";
 import { fieldChanges, mountChangeReview } from "../lib/molecules/change-review.js";
-import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
+import {
+	fieldProvenance,
+	syncBadge,
+	syncState,
+	syncStatusPanel,
+	validationErrorMessages
+} from "../lib/molecules/sync-status.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
@@ -127,6 +134,44 @@ function clearWikiErrorWhenValid(id) {
 		const bad = fromCsv(fieldValue(id)).find((value) => !isOfficialWikiTarget(value));
 		if (!bad) clearFieldError(id);
 	});
+}
+
+/**
+ * @param {unknown} error
+ * @param {string[]} fields
+ * @returns {string}
+ */
+function backendFieldError(error, fields) {
+	const body = backendErrorBody(error);
+	const validationErrors = body?.validationErrors;
+	if (!Array.isArray(validationErrors)) return "";
+	const wanted = new Set(fields);
+	for (const item of validationErrors) {
+		if (!item || typeof item !== "object") continue;
+		const record = /** @type {Record<string, any>} */ (item);
+		const field = String(record.field || record.name || "");
+		if (!wanted.has(field)) continue;
+		const messages = validationErrorMessages(item);
+		if (messages.length === 0) return "";
+		const prefix = `${field}: `;
+		return messages[0].startsWith(prefix) ? messages[0].slice(prefix.length) : messages[0];
+	}
+	return "";
+}
+
+/**
+ * @param {unknown} error
+ * @param {Record<string, string[]>} fieldMap
+ */
+function applyBackendFieldErrors(error, fieldMap) {
+	for (const [id, fields] of Object.entries(fieldMap)) {
+		const message = backendFieldError(error, fields);
+		if (!message) continue;
+		setFieldError(id, message);
+		const el = $(`#${id}`);
+		if (el) el.focus();
+		return;
+	}
 }
 
 /**
@@ -525,6 +570,20 @@ function toolhubSignInRequiredMessage() {
 	return t("toolforms.signInRequired", "Toolhub sign-in is required before saving changes.");
 }
 
+/**
+ * @param {HTMLElement} out
+ * @param {unknown} error
+ * @param {Record<string, string[]>} [fieldMap]
+ */
+function showOfficialWriteFailure(out, error, fieldMap) {
+	const msg = backendErrorMessage(error);
+	if (fieldMap) applyBackendFieldErrors(error, fieldMap);
+	out.className = "at__result at__result--err";
+	out.textContent = t("toolforms.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
+		msg
+	});
+}
+
 function duplicateRegion() {
 	return `<section class="dupes" data-dupes aria-labelledby="dupes-title" aria-live="polite" hidden>
 		<h3 class="dupes__title" id="dupes-title">${t("toolforms.dupesTitle", "Possible duplicates")}</h3>
@@ -718,15 +777,10 @@ function setupToolCoreSubmit(form, { editing, name, current, changeReview }) {
 				navigateTo(toolHref(tname));
 				return;
 			} catch (error) {
-				const msg = backendErrorMessage(error);
-				out.className = "at__result at__result--err";
-				out.textContent = t(
-					"toolforms.officialWriteFailedNoDraft",
-					"Official Toolhub did not accept the write: {msg}",
-					{
-						msg
-					}
-				);
+				showOfficialWriteFailure(out, error, {
+					"tf-toolinfo-url": ["toolinfo_url", "toolinfoUrl"],
+					"tf-url": ["url"]
+				});
 				return;
 			}
 		}
@@ -1034,15 +1088,7 @@ export function viewAddTools() {
 						out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
 					}
 				} catch (error) {
-					const msg = backendErrorMessage(error);
-					out.className = "at__result at__result--err";
-					out.textContent = t(
-						"toolforms.officialWriteFailedNoDraft",
-						"Official Toolhub did not accept the write: {msg}",
-						{
-							msg
-						}
-					);
+					showOfficialWriteFailure(out, error, { "at-url": ["url"] });
 					return;
 				}
 			} else {

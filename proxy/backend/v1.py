@@ -17,7 +17,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import quote, unquote, urlencode
+from urllib.parse import quote, unquote, urlencode, urlparse
 from uuid import uuid4
 
 from flask import Blueprint, Response, abort, jsonify, request, session
@@ -330,10 +330,44 @@ def _moderation_item(kind: str, row: object) -> dict:
     return {"kind": kind, "id": row.id, "data": payload_builders[kind](row)}
 
 
-def _bad(error: str) -> Response:
-    resp = jsonify({"error": error})
+def _bad(error: str, validation_errors: list | None = None) -> Response:
+    payload: dict[str, Any] = {"error": error}
+    if validation_errors:
+        payload["lastError"] = error
+        payload["validationErrors"] = validation_errors
+    resp = jsonify(payload)
     resp.status_code = HTTP_BAD_REQUEST
     return resp
+
+
+def _url_validation_message(value: Any, *, label: str, https_only: bool = True) -> str | None:  # noqa: ANN401
+    """Validate URL-shaped write inputs before they reach Toolhub or crawler code."""
+    message = None
+    if not isinstance(value, str) or not value.strip():
+        message = f"{label} is required."
+    else:
+        url = value.strip()
+        try:
+            parsed = urlparse(url)
+            host = parsed.hostname
+        except ValueError:
+            parsed = None
+            host = None
+            message = f"{label} is not a valid URL."
+        allowed = ("https",) if https_only else ("http", "https")
+        if message is None and len(url) > MAX_URL:
+            message = f"{label} must be {MAX_URL} characters or fewer."
+        elif message is None and any(char.isspace() for char in url):
+            message = f"{label} cannot contain spaces."
+        elif message is None and parsed is not None and parsed.scheme.lower() not in allowed:
+            message = f"{label} must use {'https' if https_only else 'http or https'}."
+        elif message is None and (parsed is None or not parsed.netloc or not host):
+            message = f"{label} must include a host."
+    return message
+
+
+def _url_validation_bad(field: str, message: str) -> Response:
+    return _bad(message, [{"field": field, "message": message}])
 
 
 def _deny(status: int, error: str) -> Response:
@@ -985,8 +1019,9 @@ def _create_toolinfo_url(payload: dict) -> tuple[str | None, Response | None]:
     if not isinstance(value, str) or not value.strip():
         return None, None
     url = value.strip()
-    if not url.startswith("https://") or len(url) > MAX_URL:
-        return None, _bad("toolinfo URL must be a public https URL")
+    error = _url_validation_message(url, label="toolinfo URL")
+    if error is not None:
+        return None, _url_validation_bad("toolinfo_url", error)
     return url, None
 
 
@@ -2028,9 +2063,11 @@ def write_crawler_url_add() -> Response:
     if err is not None:
         return err
     assert value is not None  # noqa: S101 - err covers non-dict bodies
-    url = value.get("url")
-    if not isinstance(url, str) or not url.startswith("https://") or len(url) > MAX_URL:
-        return _bad("crawler URL must be an https URL")
+    raw_url = value.get("url")
+    error = _url_validation_message(raw_url, label="crawler URL")
+    if error is not None:
+        return _url_validation_bad("url", error)
+    url = str(raw_url).strip()
     user = _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
     attempt, denied = _attempt_official_write(user, "POST", "/api/crawler/urls/", {"url": url})
     if denied is not None:
