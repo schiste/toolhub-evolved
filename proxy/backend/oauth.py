@@ -27,26 +27,37 @@ def configured() -> bool:
     return toolhub.configured()
 
 
-def _callback_url() -> str:
-    """Return the externally registered OAuth callback URL."""
+def _callback_url() -> str | None:
+    """Return the externally registered OAuth callback URL, or None if unknown.
+
+    url_for(_external=True) builds this from the request's Host header, and the
+    scheme from X-Forwarded-Proto — both attacker-controlled. Toolhub echoes the
+    redirect_uri it is given, so a poisoned Host on /oauth/login is a way to aim
+    the authorization code at another origin. In production the URL therefore
+    comes only from TOOLHUB_EVOLVED_BASE_URL; header derivation stays available
+    for local development, where there is no registered callback to protect.
+    """
     base = os.environ.get("TOOLHUB_EVOLVED_BASE_URL", "").rstrip("/")
     if base:
         return f"{base}/oauth/callback"
-    scheme = request.headers.get("X-Forwarded-Proto") or request.scheme
-    return url_for("oauth.oauth_callback", _external=True, _scheme=scheme)
+    if os.environ.get("TOOLHUB_INSECURE_COOKIES") == "1":
+        scheme = request.headers.get("X-Forwarded-Proto") or request.scheme
+        return url_for("oauth.oauth_callback", _external=True, _scheme=scheme)
+    return None
 
 
 @oauth_bp.route("/oauth/login")
 def oauth_login() -> Response:
     """Start the flow: remember a state nonce, send the browser to Toolhub."""
-    if not configured():
+    callback = _callback_url()
+    if not configured() or callback is None:
         resp = jsonify({"error": "Toolhub OAuth is not configured on this server"})
         resp.status_code = HTTP_UNAVAILABLE
         return resp
     state = secrets.token_urlsafe(16)
     session["oauth_state"] = state
-    session["oauth_redirect_uri"] = _callback_url()
-    return redirect(toolhub.authorize_url(state=state, redirect_uri=session["oauth_redirect_uri"]))
+    session["oauth_redirect_uri"] = callback
+    return redirect(toolhub.authorize_url(state=state, redirect_uri=callback))
 
 
 @oauth_bp.route("/oauth/callback")
@@ -54,7 +65,13 @@ def oauth_callback() -> Response:
     """Exchange the code, fetch the Toolhub user, sign into Evolved."""
     state = session.pop("oauth_state", None)
     redirect_uri = session.pop("oauth_redirect_uri", None) or _callback_url()
-    if not configured() or not state or request.args.get("state") != state or not request.args.get("code"):
+    if (
+        not configured()
+        or redirect_uri is None
+        or not state
+        or not secrets.compare_digest(str(request.args.get("state", "")), str(state))
+        or not request.args.get("code")
+    ):
         return redirect("/?login=error")
     try:
         token_payload = toolhub.exchange_code(code=request.args["code"], redirect_uri=redirect_uri)

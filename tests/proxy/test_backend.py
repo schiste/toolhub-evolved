@@ -2522,6 +2522,9 @@ class TextResp:
 def configure_oauth(monkeypatch):
     monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_ID", "cid")
     monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_SECRET", "csec")
+    # The callback URL is only derived from request headers in development, so
+    # tests that drive the flow have to say which of the two modes they are in.
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
 
 
 # ---- official Toolhub client helpers ---------------------------------------
@@ -3817,6 +3820,34 @@ def test_oauth_login_redirects(client, monkeypatch):
     assert "toolhub.wikimedia.org/o/authorize/" in resp.headers["Location"]
     assert "client_id=cid" in resp.headers["Location"]
     assert "scope=read+write" in resp.headers["Location"]
+
+
+def test_oauth_login_refuses_to_derive_the_callback_from_request_headers(client, monkeypatch):
+    configure_oauth(monkeypatch)
+    monkeypatch.delenv("TOOLHUB_EVOLVED_BASE_URL", raising=False)
+    monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
+    assert client.get("/oauth/login").status_code == 503  # no trusted callback → refuse to start the flow
+
+
+def test_oauth_login_ignores_a_poisoned_host_header(client, monkeypatch):
+    configure_oauth(monkeypatch)
+    monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
+    resp = client.get("/oauth/login", headers={"Host": "attacker.example", "X-Forwarded-Proto": "http"})
+    location = resp.headers["Location"]
+    assert "redirect_uri=https%3A%2F%2Fevolved.example%2Foauth%2Fcallback" in location
+    assert "attacker.example" not in location
+
+
+def test_oauth_callback_refuses_when_no_trusted_callback_is_configured(client, monkeypatch):
+    configure_oauth(monkeypatch)
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
+    client.get("/oauth/login")
+    with client.session_transaction() as sess:
+        state = sess["oauth_state"]
+        del sess["oauth_redirect_uri"]  # force the fallback path
+    monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
+    resp = client.get(f"/oauth/callback?code=c&state={state}")
+    assert resp.headers["Location"] == "/?login=error"
 
 
 def test_oauth_login_uses_configured_public_base_url(client, monkeypatch):
