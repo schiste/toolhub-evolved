@@ -227,6 +227,39 @@ test("apiGet serves persisted public GET cache after hard refresh and refreshes 
 	}
 });
 
+test("apiGet treats server-stale cache as visible data and follows up for fresh data", async () => {
+	vi.useFakeTimers();
+	const events = [];
+	const onRefresh = (e) => events.push(e.detail.state);
+	let calls = 0;
+	globalThis.fetch = async () => {
+		calls += 1;
+		const serverStale = calls === 1;
+		return {
+			ok: true,
+			headers: { get: (name) => (name === "X-Toolhub-Evolved-Cache" && serverStale ? "stale" : "hit") },
+			json: async () => ({ v: serverStale ? "old" : "new" })
+		};
+	};
+	document.addEventListener("toolhub:api-cache-refresh", onRefresh);
+	try {
+		const first = await api.apiGet("/server-stale/");
+		assert.equal(first.v, "old");
+		assert.deepEqual(events, ["server-background"]);
+
+		await vi.advanceTimersByTimeAsync(1200);
+		assert.deepEqual(events, ["server-background", "start", "success"]);
+		assert.equal(calls, 2);
+
+		const refreshed = await api.apiGet("/server-stale/");
+		assert.equal(refreshed.v, "new");
+		assert.equal(calls, 2);
+	} finally {
+		document.removeEventListener("toolhub:api-cache-refresh", onRefresh);
+		vi.useRealTimers();
+	}
+});
+
 test("apiGet discards cached data beyond the stale-if-error window", async () => {
 	let now = 8_000_000;
 	const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);

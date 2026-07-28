@@ -34,10 +34,14 @@ def _clear_cache(monkeypatch):
     """The proxy's API cache and read limiter are process-wide; isolate tests."""
     proxy_app.api_cache.clear()
     proxy_app.security.clear_rate_limits()
+    with proxy_app._BACKGROUND_REFRESH_LOCK:
+        proxy_app._BACKGROUND_REFRESHING.clear()
     monkeypatch.setattr(proxy_app.api_cache, "maybe_poll_recent_changes", lambda *_args, **_kwargs: 0)
     yield
     proxy_app.api_cache.clear()
     proxy_app.security.clear_rate_limits()
+    with proxy_app._BACKGROUND_REFRESH_LOCK:
+        proxy_app._BACKGROUND_REFRESHING.clear()
 
 
 @pytest.fixture
@@ -91,6 +95,34 @@ def fake_get(monkeypatch):
         return captured
 
     return install
+
+
+@pytest.fixture
+def fake_background_get(monkeypatch):
+    """Stub the background refresh session's `.get`; return captured args + call count."""
+    captured = {"calls": 0}
+
+    def install(response=None, *, raises=None):
+        def _get(url, **kwargs):
+            captured["calls"] += 1
+            captured["url"] = url
+            captured["kwargs"] = kwargs
+            if raises is not None:
+                raise raises
+            return response
+
+        monkeypatch.setattr(proxy_app._BACKGROUND_SESSION, "get", _get)
+        return captured
+
+    return install
+
+
+@pytest.fixture
+def scheduled_revalidations(monkeypatch):
+    """Capture background revalidation scheduling without running a thread."""
+    scheduled = []
+    monkeypatch.setattr(proxy_app, "_schedule_background_revalidation", lambda url, stale: scheduled.append((url, stale)))
+    return scheduled
 
 
 # ---- security headers ------------------------------------------------------
@@ -280,15 +312,23 @@ def test_detail_cache_stores_stale_if_error_after_fresh_window(client, fake_get,
         assert row.stale_until == clock["t"] + timedelta(seconds=900 + 86400)
 
 
-def test_cache_expires_after_ttl(client, fake_get, monkeypatch):
+def test_stale_cache_is_served_immediately_after_ttl(client, fake_get, monkeypatch, scheduled_revalidations):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
     client.get("/api/tools/")
     assert captured["calls"] == 1
     clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)  # past the fresh window
-    client.get("/api/tools/")
-    assert captured["calls"] == 2, "an expired entry must be re-fetched"
+    resp = client.get("/api/tools/")
+    assert captured["calls"] == 1, "stale cache must not wait for upstream"
+    assert resp.status_code == 200
+    assert resp.data == b'{"v":1}'
+    assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "background"
+    assert "Response is stale" in resp.headers["Warning"]
+    assert len(scheduled_revalidations) == 1
+    assert scheduled_revalidations[0][0] == "https://toolhub.wikimedia.org/api/tools/"
+    assert scheduled_revalidations[0][1].stale is True
 
 
 def test_error_response_is_not_cached(client, fake_get):
@@ -298,37 +338,43 @@ def test_error_response_is_not_cached(client, fake_get):
     assert captured["calls"] == 2, "a 5xx must not be cached — every call re-fetches"
 
 
-def test_stale_cache_is_served_on_transient_upstream_exception(client, fake_get, monkeypatch):
+def test_stale_cache_does_not_block_on_upstream_exception(client, fake_get, monkeypatch, scheduled_revalidations):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
     client.get("/api/tools/")
     clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+    calls_before_stale = captured["calls"]
 
-    fake_get(raises=proxy_app.requests.RequestException("timeout"))
+    stale_captured = fake_get(raises=proxy_app.requests.RequestException("timeout"))
     resp = client.get("/api/tools/")
-    assert captured["calls"] == 2
+    assert captured["calls"] == calls_before_stale
+    assert stale_captured["calls"] == calls_before_stale
     assert resp.status_code == 200
     assert resp.data == b'{"v":1}'
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
-    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "timeout"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "background"
     assert "Response is stale" in resp.headers["Warning"]
+    assert len(scheduled_revalidations) == 1
 
 
-def test_stale_cache_is_served_on_transient_upstream_status(client, fake_get, monkeypatch):
+def test_stale_cache_does_not_block_on_transient_upstream_status(client, fake_get, monkeypatch, scheduled_revalidations):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
     client.get("/api/tools/")
     clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+    calls_before_stale = captured["calls"]
 
-    fake_get(FakeUpstream(503, b'{"error":"upstream"}'))
+    stale_captured = fake_get(FakeUpstream(503, b'{"error":"upstream"}'))
     resp = client.get("/api/tools/")
-    assert captured["calls"] == 2
+    assert captured["calls"] == calls_before_stale
+    assert stale_captured["calls"] == calls_before_stale
     assert resp.status_code == 200
     assert resp.data == b'{"v":1}'
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "stale"
-    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "503"
+    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "background"
+    assert len(scheduled_revalidations) == 1
 
 
 def test_stale_cache_is_not_served_after_stale_window(client, fake_get, monkeypatch):
@@ -350,10 +396,28 @@ def test_proxy_raises_if_fetch_contract_is_broken(client, monkeypatch):
         client.get("/api/tools/")
 
 
-def test_stale_cache_revalidates_with_conditional_headers(client, fake_get, monkeypatch):
+def test_background_revalidation_updates_stale_cache(client, fake_get, fake_background_get, monkeypatch):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
-    captured = fake_get(
+    fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+    stale = proxy_app.api_cache.get("https://toolhub.wikimedia.org/api/tools/", allow_stale=True)
+    assert stale is not None
+
+    captured = fake_background_get(FakeUpstream(200, b'{"v":2}'))
+    proxy_app._background_revalidate("https://toolhub.wikimedia.org/api/tools/", stale)
+    refreshed = proxy_app.api_cache.get("https://toolhub.wikimedia.org/api/tools/")
+    assert captured["calls"] == 1
+    assert refreshed is not None
+    assert refreshed.body == b'{"v":2}'
+    assert refreshed.stale is False
+
+
+def test_background_revalidation_uses_conditional_headers_for_304(client, fake_get, fake_background_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    fake_get(
         FakeUpstream(
             200,
             b'{"v":1}',
@@ -362,16 +426,17 @@ def test_stale_cache_revalidates_with_conditional_headers(client, fake_get, monk
     )
     client.get("/api/tools/")
     clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+    stale = proxy_app.api_cache.get("https://toolhub.wikimedia.org/api/tools/", allow_stale=True)
+    assert stale is not None
 
-    fake_get(FakeUpstream(304, b""))
-    resp = client.get("/api/tools/")
-    assert captured["calls"] == 2
+    captured = fake_background_get(FakeUpstream(304, b""))
+    proxy_app._background_revalidate("https://toolhub.wikimedia.org/api/tools/", stale)
     assert captured["kwargs"]["headers"]["If-None-Match"] == '"abc"'
     assert captured["kwargs"]["headers"]["If-Modified-Since"] == "Mon, 01 Jan 2024 00:00:00 GMT"
-    assert resp.status_code == 200
-    assert resp.data == b'{"v":1}'
-    assert resp.headers["X-Toolhub-Evolved-Cache"] == "revalidated"
-    assert resp.headers["X-Toolhub-Evolved-Upstream"] == "304"
+    refreshed = proxy_app.api_cache.get("https://toolhub.wikimedia.org/api/tools/")
+    assert refreshed is not None
+    assert refreshed.body == b'{"v":1}'
+    assert refreshed.stale is False
 
 
 # ---- static files ----------------------------------------------------------

@@ -156,8 +156,13 @@ const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
 const API_STORAGE_MAX_ENTRIES = 48;
 const API_STORAGE_MAX_CHARS = 240000;
 const API_PERSISTENT_MAX_AGE_MS = API_CONFIG_TTL_MS + API_STALE_IF_ERROR_MS;
+const SERVER_CACHE_HEADER = "X-Toolhub-Evolved-Cache";
+const SERVER_STALE_CACHE = "stale";
+const SERVER_STALE_FOLLOWUP_MS = 1200;
 const apiCache = new Map(); // url -> { data, ts }
 const apiInflight = new Map(); // url -> Promise<data>
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const apiServerStaleFollowups = new Map();
 let apiCacheLoaded = false;
 const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
 const TOOL_AGGREGATE_PATHS = new Set(["/api/search/tools/", "/api/ui/home/"]);
@@ -279,6 +284,19 @@ function emitApiCacheRefresh(url, state, error) {
 	if (typeof document === "undefined" || typeof CustomEvent === "undefined") return;
 	document.dispatchEvent(new CustomEvent("toolhub:api-cache-refresh", { detail: { url, state, error } }));
 }
+/** @param {any} res @param {string} name */
+function responseHeader(res, name) {
+	return typeof res?.headers?.get === "function" ? res.headers.get(name) || "" : "";
+}
+/** @param {string} url */
+function scheduleServerStaleFollowup(url) {
+	if (apiServerStaleFollowups.has(url)) return;
+	const timer = setTimeout(() => {
+		apiServerStaleFollowups.delete(url);
+		apiFetch(url, { background: true }).catch(() => {});
+	}, SERVER_STALE_FOLLOWUP_MS);
+	apiServerStaleFollowups.set(url, timer);
+}
 function loadPersistentApiCache() {
 	if (apiCacheLoaded) return;
 	apiCacheLoaded = true;
@@ -328,7 +346,7 @@ export class ApiError extends Error {
 /**
  * @param {string} url
  * @param {number} [attempts]
- * @returns {Promise<any>}
+ * @returns {Promise<{ data: any, serverCache: string }>}
  */
 async function fetchJson(url, attempts = API_RETRIES) {
 	let lastError;
@@ -342,7 +360,7 @@ async function fetchJson(url, attempts = API_RETRIES) {
 			await sleep(200 * 2 ** (attempt - 1));
 			continue;
 		}
-		if (res.ok) return res.json();
+		if (res.ok) return { data: await res.json(), serverCache: responseHeader(res, SERVER_CACHE_HEADER) };
 		if (!RETRYABLE_STATUS.has(res.status) || attempt >= attempts) throw new ApiError(res.status, url);
 		await sleep(200 * 2 ** (attempt - 1));
 	}
@@ -356,10 +374,18 @@ function apiFetch(url, options = {}) {
 	if (apiInflight.has(url)) return apiInflight.get(url);
 	if (options.background) emitApiCacheRefresh(url, "start");
 	const p = fetchJson(url)
-		.then((data) => {
-			apiCache.set(url, { data, ts: Date.now() });
+		.then(({ data, serverCache }) => {
+			const serverStale = serverCache === SERVER_STALE_CACHE;
+			const policy = apiCachePolicy(url);
+			const ts = serverStale ? Date.now() - policy.freshMs : Date.now();
+			apiCache.set(url, { data, ts });
 			persistApiCache();
-			if (options.background) emitApiCacheRefresh(url, "success");
+			if (serverStale) {
+				emitApiCacheRefresh(url, "server-background");
+				if (!options.background) scheduleServerStaleFollowup(url);
+			} else if (options.background) {
+				emitApiCacheRefresh(url, "success");
+			}
 			return data;
 		})
 		.catch((error) => {
@@ -396,6 +422,8 @@ export async function apiGet(path, params) {
 export function clearApiCache() {
 	apiCache.clear();
 	apiInflight.clear();
+	for (const timer of apiServerStaleFollowups.values()) clearTimeout(timer);
+	apiServerStaleFollowups.clear();
 	apiCacheLoaded = false;
 	publicApiCacheClear();
 }

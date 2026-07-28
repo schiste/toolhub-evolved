@@ -169,6 +169,12 @@ document.addEventListener("toolhub:api-cache-refresh", (e) => {
 		showApiToast(t("api.refreshingLiveData", "Refreshing live Toolhub data…"));
 		return;
 	}
+	if (detail.state === "server-background") {
+		if (url) refreshingApiUrls.delete(url);
+		showApiToast(t("api.refreshingLiveData", "Refreshing live Toolhub data…"));
+		hideApiToastSoon(1800);
+		return;
+	}
 	if (url) refreshingApiUrls.delete(url);
 	if (refreshingApiUrls.size > 0) return;
 	if (detail.state === "success") {

@@ -13,7 +13,9 @@ and only GET. Official writes go through /v1/toolhub/* with a stored per-user
 OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import requests
@@ -51,6 +53,7 @@ _RECENT_INVALIDATION_TIMEOUT = 10
 _CACHE_HEADER = "X-Toolhub-Evolved-Cache"
 _UPSTREAM_HEADER = "X-Toolhub-Evolved-Upstream"
 _UPSTREAM_TIMEOUT = "timeout"
+_UPSTREAM_BACKGROUND = "background"
 
 app = Flask(__name__, static_folder=None)
 backend.register(app)
@@ -59,6 +62,10 @@ backend.register(app)
 # proxied call skips a fresh TCP + TLS handshake to toolhub.wikimedia.org
 # (~100-200ms saved per request — the SPA makes several per page).
 _SESSION = requests.Session()
+_BACKGROUND_SESSION = requests.Session()
+_BACKGROUND_REFRESH = ThreadPoolExecutor(max_workers=1, thread_name_prefix="api-cache-refresh")
+_BACKGROUND_REFRESHING: set[str] = set()
+_BACKGROUND_REFRESH_LOCK = Lock()
 
 
 def _with_proxy_diagnostics(resp: Response, *, cache: str, upstream: int | str) -> Response:
@@ -126,9 +133,10 @@ def _unavailable_response() -> Response:
 
 
 def _fetch_upstream(
-    url: str, stale: api_cache.CachedResponse | None
+    url: str, stale: api_cache.CachedResponse | None, *, session: requests.Session | None = None
 ) -> tuple[requests.Response | None, bytes | None, Response | None]:
     """Fetch upstream under the proxy's no-redirect and response-size limits."""
+    http = session or _SESSION
     try:
         # allow_redirects=False: this is a fixed-target read-only proxy, so it must
         # never chase a 3xx the upstream returns (an upstream open redirect would
@@ -136,7 +144,7 @@ def _fetch_upstream(
         # relayed through verbatim instead. stream=True so the body is read under
         # the size cap below rather than fully buffered by requests up front. The
         # pooled _SESSION reuses the TCP/TLS connection to the upstream.
-        upstream = _SESSION.get(
+        upstream = http.get(
             url,
             headers=_upstream_headers(stale),
             timeout=20,
@@ -157,6 +165,29 @@ def _fetch_upstream(
             return None, None, resp
         return None, None, _unavailable_response()
     return upstream, bytes(body), None
+
+
+def _background_revalidate(url: str, stale: api_cache.CachedResponse) -> None:
+    """Refresh one stale shared-cache row without holding up the user request."""
+    try:
+        upstream, payload, early = _fetch_upstream(url, stale, session=_BACKGROUND_SESSION)
+        if early is not None or upstream is None or payload is None:
+            return
+        _relay_upstream_response(url, upstream, payload, stale)
+    except Exception as exc:  # noqa: BLE001 - background refresh must never affect the served response.
+        api_cache.mark_failure(url, f"background refresh failed: {exc}")
+    finally:
+        with _BACKGROUND_REFRESH_LOCK:
+            _BACKGROUND_REFRESHING.discard(url)
+
+
+def _schedule_background_revalidation(url: str, stale: api_cache.CachedResponse) -> None:
+    """Queue at most one background refresh for a stale anonymous API response."""
+    with _BACKGROUND_REFRESH_LOCK:
+        if url in _BACKGROUND_REFRESHING:
+            return
+        _BACKGROUND_REFRESHING.add(url)
+    _BACKGROUND_REFRESH.submit(_background_revalidate, url, stale)
 
 
 def _freshened_cached_response(stale: api_cache.CachedResponse) -> Response:
@@ -281,11 +312,16 @@ def api_proxy(path: str) -> Response:
         return resp
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
-    api_cache.maybe_poll_recent_changes(_fetch_recent_change_rows)
     cached = api_cache.get(url)
     if cached is not None:
         return _cached_api_response(cached, "hit")
     stale = api_cache.get(url, allow_stale=True)
+    if stale is not None:
+        _schedule_background_revalidation(url, stale)
+        resp = _cached_api_response(stale, "stale")
+        resp.headers[_UPSTREAM_HEADER] = _UPSTREAM_BACKGROUND
+        return resp
+    api_cache.maybe_poll_recent_changes(_fetch_recent_change_rows)
     upstream, payload, early = _fetch_upstream(url, stale)
     if early is not None:
         return early

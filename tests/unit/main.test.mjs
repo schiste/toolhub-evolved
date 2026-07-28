@@ -216,6 +216,22 @@ test("API cache refresh events show a toast and repaint once fresh data arrives"
 	}
 });
 
+test("server-background cache refresh events show a brief refresh toast", () => {
+	vi.useFakeTimers();
+	try {
+		document.dispatchEvent(
+			new CustomEvent("toolhub:api-cache-refresh", {
+				detail: { url: "/api/recent/", state: "server-background" }
+			})
+		);
+		assert.equal($("#toast-region").textContent, "Refreshing live Toolhub data…");
+		vi.advanceTimersByTime(1800);
+		assert.equal($("#toast-region").textContent, "");
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 test("the initial theme toggle reflects the resolved <html data-theme>", () => {
 	const html = $("#theme-toggle").innerHTML;
 	// data-theme="dark" → the dark option is active, light is not.
