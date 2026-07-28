@@ -146,6 +146,9 @@ def csrf_ok(token: str) -> bool:
     return secrets.compare_digest(token, expected)
 
 
+GUARD_ATTR = "__toolhub_guard__"
+
+
 def login_required(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Require a signed-in session (401 otherwise)."""
 
@@ -155,6 +158,9 @@ def login_required(fn: Callable[..., Any]) -> Callable[..., Any]:
             return _reject(HTTP_UNAUTHORIZED, "sign in required")
         return fn(*args, **kwargs)
 
+    # Machine-readable so tests can assert every /v1 route is guarded or is on an
+    # explicit public allowlist. See test_every_v1_route_is_guarded_or_allowlisted.
+    setattr(wrapper, GUARD_ATTR, "login_required")
     return wrapper
 
 
@@ -172,4 +178,5 @@ def write_guard(fn: Callable[..., Any]) -> Callable[..., Any]:
             return _reject(HTTP_TOO_MANY, "rate limit exceeded")
         return fn(*args, **kwargs)
 
+    setattr(wrapper, GUARD_ATTR, "write_guard")
     return wrapper

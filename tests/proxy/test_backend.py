@@ -167,6 +167,56 @@ def test_register_allows_an_ephemeral_secret_only_in_development(monkeypatch):
     assert application.config["SESSION_COOKIE_SECURE"] is False
 
 
+# ---- route guard inventory -------------------------------------------------
+
+# Every /v1 route must carry @login_required or @write_guard, unless it is listed
+# here with the reason it may be reached anonymously. The value is the reason, so
+# adding a public endpoint is a deliberate edit somebody reviews rather than a
+# decorator quietly left off — which is exactly how /v1/recent/owners/ shipped as
+# an unauthenticated upstream amplifier.
+PUBLIC_V1_ROUTES = {
+    "/healthz": "liveness probe, no data",
+    "/v1/config/": "public feature flags for the signed-out SPA",
+    "/v1/user/": "reports authenticated:false when signed out",
+    "/v1/search/tools/": "public search over local records; local DB only",
+    "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
+    "/v1/tools/<name>/media/": "GET is public; the POST half calls write_guard inside _tool_media_post",
+    "/v1/recent/owners/": "public Recent enrichment; rate limited + per-request fetch budget",
+    "/toolinfo.json": "public feed the official Toolhub crawler ingests",
+}
+
+
+def _v1_rules(app):
+    return [rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("v1.")]
+
+
+def test_every_v1_route_is_guarded_or_allowlisted(app):
+    unguarded = sorted(
+        str(rule.rule)
+        for rule in _v1_rules(app)
+        if not hasattr(app.view_functions[rule.endpoint], security.GUARD_ATTR)
+        and str(rule.rule) not in PUBLIC_V1_ROUTES
+    )
+    assert unguarded == [], (
+        f"unguarded /v1 routes: {unguarded}. Add @login_required or @write_guard, "
+        "or add the route to PUBLIC_V1_ROUTES with the reason it is safe anonymously."
+    )
+
+
+def test_public_route_allowlist_has_no_stale_entries(app):
+    live = {str(rule.rule) for rule in _v1_rules(app)}
+    assert sorted(set(PUBLIC_V1_ROUTES) - live) == [], "allowlist names routes that no longer exist"
+    # A route that later gained a guard should leave the allowlist, or the list
+    # stops describing the real surface.
+    now_guarded = sorted(
+        path
+        for path in PUBLIC_V1_ROUTES
+        for rule in _v1_rules(app)
+        if str(rule.rule) == path and hasattr(app.view_functions[rule.endpoint], security.GUARD_ATTR)
+    )
+    assert now_guarded == [], f"these are guarded now and can leave PUBLIC_V1_ROUTES: {now_guarded}"
+
+
 # ---- db plumbing -----------------------------------------------------------
 
 
