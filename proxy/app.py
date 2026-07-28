@@ -254,12 +254,26 @@ def set_security_headers(resp: Response) -> Response:
 _PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 
 
+def _escapes_api_prefix(path: str) -> bool:
+    """Report whether a proxied path could climb out of the upstream /api/ prefix.
+
+    Flask decodes %2e and %2f before the view sees `path`, and `requests`
+    normalizes dot segments when it builds the request line. So `..%2f..%2fadmin`
+    arrives here as `../../admin` and would go out as a request for /admin. The
+    host is fixed by the UPSTREAM prefix, so this is not SSRF — but the proxy is
+    documented as read-only access to /api/, and this keeps that true.
+    """
+    return any(part == ".." for part in path.split("/"))
+
+
 @app.route("/api/", defaults={"path": ""}, methods=_PROXY_METHODS)
 @app.route("/api/<path:path>", methods=_PROXY_METHODS)
 def api_proxy(path: str) -> Response:
     """Read-only reverse proxy to the live Toolhub API (same-origin for the SPA)."""
     if request.method != "GET":
         return Response('{"error":"read-only proxy"}', status=405, content_type="application/json")
+    if _escapes_api_prefix(path):
+        return Response('{"error":"invalid api path"}', status=400, content_type="application/json")
     qs = request.query_string.decode()
     url = UPSTREAM + "/api/" + path + (("?" + qs) if qs else "")
     api_cache.maybe_poll_recent_changes(_fetch_recent_change_rows)

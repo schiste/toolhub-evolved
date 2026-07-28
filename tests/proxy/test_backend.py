@@ -2547,6 +2547,13 @@ class TextResp:
         raise ValueError("not json")
 
 
+def test_public_api_url_stays_inside_the_api_tree():
+    assert toolhub._public_api_url("/api/tools/").endswith("/api/tools/")
+    for path in ("/o/token/", "/api/../o/token/", "api/tools/../../o/token/"):
+        with pytest.raises(ValueError, match="anonymous reads"):
+            toolhub._public_api_url(path)
+
+
 def stored_grant(uid):
     """Return the decrypted (access, refresh) pair persisted for one user."""
     with db.session_scope() as s:

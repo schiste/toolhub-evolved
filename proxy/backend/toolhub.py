@@ -243,6 +243,11 @@ def _public_api_url(path: str, params: dict[str, object] | None = None) -> str:
     if normalized != "/api/" and not normalized.startswith("/api/"):
         msg = "anonymous reads are limited to Toolhub /api/"
         raise ValueError(msg)
+    # The prefix check alone is not enough: requests normalizes dot segments, so
+    # "/api/../o/token/" would satisfy it and then leave the /api/ tree.
+    if any(part == ".." for part in normalized.split("/")):
+        msg = "anonymous reads may not use parent-directory segments"
+        raise ValueError(msg)
     pairs = [(key, value) for key, value in (params or {}).items() if value is not None]
     query = urlencode(pairs, doseq=True)
     return f"{base_url()}{normalized}{('?' + query) if query else ''}"

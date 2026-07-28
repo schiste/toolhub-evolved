@@ -126,6 +126,17 @@ def test_non_get_is_rejected_read_only(client):
     assert resp.get_json()["error"] == "read-only proxy"
 
 
+def test_parent_directory_segments_are_rejected(client, fake_get):
+    captured = fake_get()
+    # Flask decodes %2f before routing, so this reaches the view as "../../o/token/"
+    # and would otherwise be normalized by requests into a fetch outside /api/.
+    for path in ("..%2f..%2fo%2ftoken%2f", "../admin/", "tools/../../admin/"):
+        resp = client.get(f"/api/{path}")
+        assert resp.status_code == 400, path
+        assert resp.get_json()["error"] == "invalid api path"
+    assert captured["calls"] == 0, "no upstream request may be made for a rejected path"
+
+
 def test_upstream_exception_returns_502(client, fake_get):
     fake_get(raises=proxy_app.requests.RequestException("boom"))
     resp = client.get("/api/tools/")
