@@ -3,7 +3,8 @@
 
 This job keeps recent-change polling out of user-facing /api/* requests. It
 polls official Toolhub's recent feed, stores the latest marker in ToolsDB via
-backend.api_cache, and invalidates only affected anonymous GET cache rows.
+backend.api_cache, invalidates only affected anonymous GET cache rows, then
+prewarms high-traffic rows so the next user request can hit shared cache.
 """
 
 import os
@@ -12,6 +13,7 @@ from typing import Any
 
 import requests
 
+import cache_prewarm
 from backend import DEFAULT_DB_URL, api_cache, db
 
 UPSTREAM = "https://toolhub.wikimedia.org"
@@ -50,11 +52,12 @@ def run_once(session: requests.Session | None = None) -> int:
 
 
 def main() -> int:
-    """Jobs-framework entrypoint: configure DB, poll recent changes, report."""
+    """Jobs-framework entrypoint: invalidate changed rows, then prewarm hot reads."""
     db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
     db.init_schema()
     removed = run_once()
     sys.stdout.write(f"cache-invalidation: {removed} rows invalidated\n")
+    sys.stdout.write(f"{cache_prewarm.run_once().log_line()}\n")
     return 0
 
 

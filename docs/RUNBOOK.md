@@ -320,9 +320,15 @@ missing.
 
 The API cache invalidator runs every minute. It polls official Toolhub
 `/api/recent/?page_size=50`, records the latest seen marker in `api_cache_meta`,
-and deletes affected shared anonymous `/api/*` cache rows from `api_cache`.
-User-facing `/api/*` requests must not poll recent changes themselves; they serve
-fresh/stale cache immediately and refresh stale entries in the background.
+deletes affected shared anonymous `/api/*` cache rows from `api_cache`, then
+prewarms hot anonymous reads: `/api/ui/home/`, recent changes, schema, list
+collections, and common `/api/search/tools/` queries. User-facing `/api/*`
+requests must not poll recent changes themselves; they serve fresh/stale cache
+immediately and refresh stale entries in the background.
+
+Common prewarmed search terms default to `wikidata,commons,toolforge,template,bot`.
+Override them with `TOOLHUB_CACHE_PREWARM_SEARCH_QUERIES` as a comma-separated
+Toolforge envvar when production traffic shows different common queries.
 
 Tool creation can add `crawler_urls` rows too. When a signed-in user submits a
 tool with the optional create-only `toolinfo_url` field, `/v1/write/tools/`

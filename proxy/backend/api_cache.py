@@ -220,6 +220,19 @@ def mark_failure(url: str, error: str) -> None:
         return
 
 
+def needs_refresh(url: str, *, refresh_ahead_seconds: int = 0) -> bool:
+    """Return true when a cache row is missing or close enough to expiry to refresh."""
+    now = utcnow()
+    try:
+        with db.session_scope() as s:
+            row = s.get(ApiCache, _key(url))
+            if row is None:
+                return True
+            return row.expires_at <= now + timedelta(seconds=max(0, refresh_ahead_seconds))
+    except SQLAlchemyError:
+        return True
+
+
 def _metadata_value(s: Session, key: str) -> str | None:
     """Return one cache metadata value."""
     row = s.get(ApiCacheMeta, key)

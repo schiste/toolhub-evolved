@@ -117,6 +117,13 @@ def test_run_once_invalidates_only_cache_rows_changed_since_last_marker(monkeypa
 def test_main_configures_db_runs_once_and_prints(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("TOOLHUB_DB_URL", f"sqlite:///{tmp_path}/cache.sqlite3")
     monkeypatch.setattr(cache_invalidation, "run_once", lambda: 7)
+    monkeypatch.setattr(
+        cache_invalidation.cache_prewarm,
+        "run_once",
+        lambda: cache_invalidation.cache_prewarm.PrewarmSummary(endpoints=3, warmed=2, skipped=1),
+    )
     assert cache_invalidation.main() == 0
-    assert "cache-invalidation: 7 rows invalidated" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "cache-invalidation: 7 rows invalidated" in out
+    assert "cache-prewarm: warmed=2 revalidated=0 skipped=1 failed=0 endpoints=3" in out
     assert os.environ["TOOLHUB_DB_URL"].endswith("cache.sqlite3")

@@ -11,8 +11,8 @@
   emails: onfailure
 
 - name: api-cache-invalidator
-  # Poll official Toolhub recent changes out of band and invalidate affected
-  # shared anonymous API cache rows, so user requests never pay that cost.
+  # Poll official Toolhub recent changes out of band, invalidate affected rows,
+  # then prewarm hot anonymous reads so user requests never pay that cost.
   command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/cache_invalidation.py
   image: python3.13
   schedule: "* * * * *"
