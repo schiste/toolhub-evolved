@@ -62,6 +62,7 @@ function markdownText(value) {
 		.replaceAll("“", '"')
 		.replaceAll("”", '"')
 		.replaceAll("’", "'")
+		.replaceAll("*", "\\*")
 		.replaceAll("|", "\\|")
 		.replaceAll(/\s+/g, " ")
 		.trim();

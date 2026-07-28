@@ -6,6 +6,127 @@ import { t } from "../lib/core/i18n.js";
 // Single source of truth for every Evolved feature and hybrid integration path.
 export const EXPERIMENTS = [
 	{
+		group: t("experiments.groupLiveReads", "Live Toolhub read surfaces"),
+		items: [
+			{
+				name: t("experiments.homeDiscoveryName", "Home and discovery"),
+				what: t(
+					"experiments.homeDiscoveryWhat",
+					"Land on a useful catalog overview with intent filters, featured lists, recent tools, and most-listed tools."
+				),
+				current: t(
+					"experiments.homeDiscoveryCurrent",
+					"Home sections read live Toolhub lists/search data and degrade each panel independently if one upstream call fails."
+				),
+				need: t(
+					"experiments.homeDiscoveryNeed",
+					"Live /api/lists/ and /api/search/tools/ reads through the shared proxy cache"
+				),
+				tryHref: "/",
+				tryLabel: t("experiments.homeDiscoveryTry", "Open home")
+			},
+			{
+				name: t("experiments.searchBrowseName", "Search and browse"),
+				what: t("experiments.searchBrowseWhat", "Search, facet, sort, paginate, and filter Toolhub tools."),
+				current: t(
+					"experiments.searchBrowseCurrent",
+					"Official Toolhub search remains primary; approved Evolved-local public tools appear only in a clearly labeled local strip."
+				),
+				need: t(
+					"experiments.searchBrowseNeed",
+					"GET /api/search/tools/ plus Evolved /v1/search/tools/ federation"
+				),
+				tryHref: "/search",
+				tryLabel: t("experiments.searchBrowseTry", "Browse tools")
+			},
+			{
+				name: t("experiments.toolDetailsName", "Tool detail and history"),
+				what: t(
+					"experiments.toolDetailsWhat",
+					"Inspect tool metadata, links, authors, revisions, related tools, completeness, and a local neighborhood map."
+				),
+				current: t(
+					"experiments.toolDetailsCurrent",
+					"Detail and revision data stay live from Toolhub; Evolved overlays add provenance, signals, media, and related-tool UI without replacing canonical records."
+				),
+				need: t(
+					"experiments.toolDetailsNeed",
+					"GET /api/tools/{name}/, revisions, local signal/media endpoints, and graph helpers"
+				)
+			},
+			{
+				name: t("experiments.listReadName", "Lists and collections"),
+				what: t("experiments.listReadWhat", "Browse published lists and inspect the tools inside a list."),
+				current: t(
+					"experiments.listReadCurrent",
+					"Official Toolhub lists are read live; signed-in local drafts and fallbacks are merged only where clearly labeled."
+				),
+				need: t(
+					"experiments.listReadNeed",
+					"GET /api/lists/ and /api/lists/{id}/ plus local list overlay merge"
+				),
+				tryHref: "/lists",
+				tryLabel: t("experiments.listReadTry", "Open lists")
+			},
+			{
+				name: t("experiments.recentTableName", "Recent changes table"),
+				what: t(
+					"experiments.recentTableWhat",
+					"Scan recent activity in a sortable/filterable table with owner, last-updated-by, action, review state, and expandable comments."
+				),
+				current: t(
+					"experiments.recentTableCurrent",
+					"Official /api/recent/ rows render first; Evolved-local activity rows are merged in, and tool owners are enriched progressively through a shared owner cache."
+				),
+				need: t("experiments.recentTableNeed", "GET /api/recent/, /v1/recent/owners/, and local activity rows"),
+				tryHref: "/recent",
+				tryLabel: t("experiments.recentTableTry", "Recent changes")
+			},
+			{
+				name: t("experiments.operationalViewsName", "Members, crawler history, and audit logs"),
+				what: t(
+					"experiments.operationalViewsWhat",
+					"Read Toolhub members, crawler run history, and catalog audit activity."
+				),
+				current: t(
+					"experiments.operationalViewsCurrent",
+					"These parity views read official Toolhub endpoints and merge Evolved activity only for local write history where relevant."
+				),
+				need: t("experiments.operationalViewsNeed", "GET /api/users/, /api/crawler/runs/, and /api/auditlogs/"),
+				tryHref: "/members",
+				tryLabel: t("experiments.operationalViewsTry", "Open members")
+			},
+			{
+				name: t("experiments.toolMapName", "Tool map and related tools"),
+				what: t(
+					"experiments.toolMapWhat",
+					"Explore similar tools visually and open quick views from graph nodes or related-tool rows."
+				),
+				current: t(
+					"experiments.toolMapCurrent",
+					"Graphs are derived from normalized live Toolhub metadata in the browser and never become a separate canonical dataset."
+				),
+				need: t("experiments.toolMapNeed", "Client-side similarity graph built from live search/list data"),
+				tryHref: "/graph",
+				tryLabel: t("experiments.toolMapTry", "Open map")
+			},
+			{
+				name: t("experiments.docsPagesName", "API, toolinfo, and project docs"),
+				what: t(
+					"experiments.docsPagesWhat",
+					"Read API links, toolinfo schema examples, jsondiff notes, contribution links, and project policy pages."
+				),
+				current: t(
+					"experiments.docsPagesCurrent",
+					"Static documentation pages are available in-app and link to official Toolhub/Wikimedia sources for canonical policies and schemas."
+				),
+				need: t("experiments.docsPagesNeed", "Static pages plus proxied GET /api/schema/ examples"),
+				tryHref: "/api-docs",
+				tryLabel: t("experiments.docsPagesTry", "API docs")
+			}
+		]
+	},
+	{
 		group: t("experiments.groupIdentity", "Identity & account"),
 		items: [
 			{
@@ -13,6 +134,21 @@ export const EXPERIMENTS = [
 				what: t("experiments.signinWhat", "Sign in through Toolhub OAuth and sign out."),
 				current: t("experiments.signinCurrent", "Official Toolhub OAuth plus an Evolved server session."),
 				need: t("experiments.signinNeed", "An approved Toolhub OAuth application.")
+			},
+			{
+				name: t("experiments.permissionsName", "Evolved roles and permissions"),
+				what: t(
+					"experiments.permissionsWhat",
+					"Use Toolhub identity for local permissions without implying official Toolhub admin rights."
+				),
+				current: t(
+					"experiments.permissionsCurrent",
+					"Local baseline, reviewer/moderator, and admin/operator roles flow through one backend can(user, action, resource) policy entrypoint."
+				),
+				need: t(
+					"experiments.permissionsNeed",
+					"Toolhub /api/user/ mapping, Evolved role env vars, and backend authz policy"
+				)
 			},
 			{
 				name: t("experiments.developerSettingsName", "Developer settings"),
@@ -44,6 +180,37 @@ export const EXPERIMENTS = [
 				need: t("experiments.myToolsNeed", "Author-claim table, resolver endpoint, and verification providers"),
 				tryHref: "/my-tools",
 				tryLabel: t("experiments.myToolsTry", "My tools")
+			},
+			{
+				name: t("experiments.accountDataName", "Evolved data settings"),
+				what: t(
+					"experiments.accountDataWhat",
+					"Export or delete the Evolved-local data tied to your Toolhub sign-in."
+				),
+				current: t(
+					"experiments.accountDataCurrent",
+					"Users can export local overlays, fallbacks, keys, claims, activity, and signals, or delete their local Evolved data without touching official Toolhub."
+				),
+				need: t("experiments.accountDataNeed", "GET /v1/user/export/ and DELETE /v1/user/evolved-data/"),
+				tryHref: "/account",
+				tryLabel: t("experiments.accountDataTry", "Evolved data settings")
+			},
+			{
+				name: t("experiments.transparencyName", "Hybrid transparency notice"),
+				what: t(
+					"experiments.transparencyWhat",
+					"Understand when data is live Toolhub data, Evolved-local data, or an official-first write fallback."
+				),
+				current: t(
+					"experiments.transparencyCurrent",
+					"A compact dismissible site notice links to Feature status and Rules of Engagement; dismissal is stored only in localStorage."
+				),
+				need: t(
+					"experiments.transparencyNeed",
+					"Default-visible site notice, field labels, and Rules of Engagement page"
+				),
+				tryHref: "/rules-of-engagement",
+				tryLabel: t("experiments.transparencyTry", "Rules")
 			}
 		]
 	},
@@ -112,6 +279,33 @@ export const EXPERIMENTS = [
 					"Forms show diffs before official-first writes; supported deletes call Toolhub and report rejection details without losing local state."
 				),
 				need: t("experiments.writeReviewNeed", "Shared write lifecycle, field validation, and delete adapters")
+			},
+			{
+				name: t("experiments.syncControlsName", "Provenance and sync controls"),
+				what: t(
+					"experiments.syncControlsWhat",
+					"See whether each local change is published to Toolhub, saved locally, rejected by Toolhub, pending review, retryable, or discardable."
+				),
+				current: t(
+					"experiments.syncControlsCurrent",
+					"Common badges, field-level provenance labels, validation-error lists, retry buttons, and discard buttons are shared across tool/list write flows."
+				),
+				need: t("experiments.syncControlsNeed", "Shared sync-status UI plus retry/discard backend endpoints")
+			},
+			{
+				name: t("experiments.toolinfoEnrichmentName", "Create-time toolinfo enrichment"),
+				what: t(
+					"experiments.toolinfoEnrichmentWhat",
+					"Fetch a submitted toolinfo.json during tool creation to fill available fields and store Evolved evidence."
+				),
+				current: t(
+					"experiments.toolinfoEnrichmentCurrent",
+					"The write pipeline can safely fetch a declared toolinfo URL once, merge missing optional fields, and record crawler evidence before fallback or official publish."
+				),
+				need: t(
+					"experiments.toolinfoEnrichmentNeed",
+					"Crawler-safe fetch validation, size limits, and local evidence metadata"
+				)
 			},
 			{
 				name: t("experiments.crawlerName", "Add / remove tools (crawler)"),
@@ -187,6 +381,115 @@ export const EXPERIMENTS = [
 					"Signed-in users can submit URL-based screenshots with license/source metadata; approved Evolved media renders on tool pages."
 				),
 				need: t("experiments.screenshotsNeed", "Durable upload/storage pipeline")
+			},
+			{
+				name: t("experiments.localPublicToolsName", "Public local tools and toolinfo feed"),
+				what: t(
+					"experiments.localPublicToolsWhat",
+					"Expose approved Evolved-local tool records to search and to Toolhub-compatible crawler ingestion."
+				),
+				current: t(
+					"experiments.localPublicToolsCurrent",
+					"Approved public local records appear in /v1/search/tools/ and the Evolved /toolinfo.json feed, always labeled as Evolved data."
+				),
+				need: t(
+					"experiments.localPublicToolsNeed",
+					"Moderated local tool records plus public toolinfo.json feed"
+				)
+			},
+			{
+				name: t("experiments.moderationName", "Moderation and review queue"),
+				what: t(
+					"experiments.moderationWhat",
+					"Review public Evolved-owned records before they appear as public Evolved data."
+				),
+				current: t(
+					"experiments.moderationCurrent",
+					"Reviewer/operator roles can list and update pending public local tools, health targets, media, and thanks through moderation endpoints."
+				),
+				need: t(
+					"experiments.moderationNeed",
+					"Evolved-only reviewer policy and /v1/moderation/public-data/ endpoints"
+				)
+			}
+		]
+	},
+	{
+		group: t("experiments.groupPerformance", "Performance, resilience, and platform"),
+		items: [
+			{
+				name: t("experiments.appShellName", "Immediate app shell"),
+				what: t(
+					"experiments.appShellWhat",
+					"Show the header, site notice, clean loading panel, and footer before live Toolhub data finishes loading."
+				),
+				current: t(
+					"experiments.appShellCurrent",
+					"Critical shell CSS is inline, route modules are lazy-loaded, and failed dynamic imports retry once instead of blanking the page."
+				),
+				need: t("experiments.appShellNeed", "Critical CSS, route splitting, and resilient router loading")
+			},
+			{
+				name: t("experiments.apiCacheName", "Shared Toolhub API cache"),
+				what: t("experiments.apiCacheWhat", "Make anonymous Toolhub reads fast and resilient for all users."),
+				current: t(
+					"experiments.apiCacheCurrent",
+					"Server-side ToolsDB cache stores anonymous GET /api/* responses with endpoint-specific TTLs, stale-if-error, ETag/Last-Modified, and browser stale-while-refresh support."
+				),
+				need: t(
+					"experiments.apiCacheNeed",
+					"api_cache table, proxy cache policy, and no caching for auth/session/write endpoints"
+				)
+			},
+			{
+				name: t("experiments.cacheJobsName", "Cache invalidation and prewarming"),
+				what: t(
+					"experiments.cacheJobsWhat",
+					"Keep hot Toolhub endpoints warm so the first user after deploy does not pay the cold-cache cost."
+				),
+				current: t(
+					"experiments.cacheJobsCurrent",
+					"Scheduled jobs poll official recent changes, invalidate affected tool/list/search caches, prewarm important endpoints, and warm recent owner rows."
+				),
+				need: t("experiments.cacheJobsNeed", "Toolforge jobs for cache_invalidation.py and cache_prewarm.py")
+			},
+			{
+				name: t("experiments.diagnosticsName", "Performance diagnostics"),
+				what: t(
+					"experiments.diagnosticsWhat",
+					"See whether responses came from cache, upstream, stale data, or background refresh."
+				),
+				current: t(
+					"experiments.diagnosticsCurrent",
+					"Responses include X-Toolhub-Evolved-Cache, X-Toolhub-Evolved-Upstream, and Server-Timing; the frontend records boot, labels, API, stale-cache, and refresh timings."
+				),
+				need: t("experiments.diagnosticsNeed", "Proxy diagnostic headers and frontend timing marks")
+			},
+			{
+				name: t("experiments.i18nA11yName", "Language, theme, and accessibility"),
+				what: t(
+					"experiments.i18nA11yWhat",
+					"Use the app with stable labels, per-field language attributes, RTL-safe CSS, keyboard-accessible navigation, and light/dark themes."
+				),
+				current: t(
+					"experiments.i18nA11yCurrent",
+					"A tiny English label fallback prevents labels.js failures from blanking the app, while tests cover RTL CSS, link routing, and accessible static markup."
+				),
+				need: t(
+					"experiments.i18nA11yNeed",
+					"Locale catalog, built-in fallbacks, theme bootstrap, and accessibility checks"
+				)
+			},
+			{
+				name: t("experiments.designSystemName", "Design system and styleguide"),
+				what: t("experiments.designSystemWhat", "Keep UI components consistent across Toolhub Evolved pages."),
+				current: t(
+					"experiments.designSystemCurrent",
+					"The in-app styleguide documents the current atoms, molecules, organisms, layout patterns, and color tokens used by production pages."
+				),
+				need: t("experiments.designSystemNeed", "Shared CSS/components plus /styleguide route"),
+				tryHref: "/styleguide",
+				tryLabel: t("experiments.designSystemTry", "Styleguide")
 			}
 		]
 	}

@@ -49,7 +49,7 @@ test("renderFeatureDocs emits a stable markdown table", () => {
 					name: "Screenshots",
 					what: "A preview image strip.",
 					current: "Hidden until a real backend data source exists.",
-					need: "Image storage",
+					need: "GET /api/* plus Image storage",
 					tryHref: "/features",
 					tryLabel: "Feature plan"
 				}
@@ -60,6 +60,6 @@ test("renderFeatureDocs emits a stable markdown table", () => {
 	assert.match(md, /Total listed features: 1/);
 	assert.match(
 		md,
-		/\| Group - Signals\s+\| Screenshots\s+\| A preview image strip\.\s+\| Hidden until a real backend data source exists\.\s+\| Image storage\s+\| \[Feature plan\]\(\/features\) \|/
+		/\| Group - Signals\s+\| Screenshots\s+\| A preview image strip\.\s+\| Hidden until a real backend data source exists\.\s+\| GET \/api\/\\\* plus Image storage\s+\| \[Feature plan\]\(\/features\) \|/
 	);
 });
