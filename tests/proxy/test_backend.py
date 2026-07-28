@@ -109,9 +109,13 @@ def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER):
 
 
 def sign_in(client, uid, csrf="tok"):
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        epoch = user.session_epoch or 0 if user is not None else 0
     with client.session_transaction() as sess:
         sess["uid"] = uid
         sess["csrf"] = csrf
+        sess["epoch"] = epoch  # sign-out bumps this; a stale cookie must not authenticate
 
 
 def put_overlay(client, key, value, csrf="tok"):
@@ -1632,8 +1636,8 @@ def test_put_requires_csrf(client):
 def test_put_rejects_csrf_when_session_holds_no_usable_token(client):
     uid = add_user()
     for stored in (None, "", 1234):  # absent, empty, and non-string all fail closed
+        sign_in(client, uid)
         with client.session_transaction() as sess:
-            sess["uid"] = uid
             sess["csrf"] = stored
         assert put_overlay(client, "favorites", [], csrf="tok").status_code == 403
 
@@ -1673,6 +1677,17 @@ def test_rate_limit_table_evicts_idle_users(client, monkeypatch):
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
     assert 999 not in security._write_times
     assert list(security._write_times) == [uid]  # only the active writer is retained
+
+
+def test_sign_out_strands_session_cookies_issued_before_it(client, app):
+    uid = add_user()
+    sign_in(client, uid)
+    assert put_overlay(client, "favorites", ["a"]).status_code == 200
+    stolen = app.test_client()  # a copy of the cookie taken while it was valid
+    sign_in(stolen, uid)
+    client.get("/oauth/logout")
+    assert put_overlay(stolen, "favorites", ["b"]).status_code == 401  # epoch bumped → stale
+    assert stolen.get("/v1/user/").get_json() == {"authenticated": False}
 
 
 def test_policy_denial_blocks_private_overlay_writes(client, monkeypatch):

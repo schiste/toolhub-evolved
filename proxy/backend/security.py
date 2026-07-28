@@ -8,7 +8,10 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from flask import Response, jsonify, request, session
+from flask import Response, g, jsonify, request, session
+
+from backend import db
+from backend.models import User
 
 WRITE_LIMIT = 60  # writes per user…
 WRITE_WINDOW_SECONDS = 60.0  # …per rolling minute
@@ -20,10 +23,31 @@ HTTP_FORBIDDEN = 403
 HTTP_TOO_MANY = 429
 
 
+def _session_epoch_current(uid: int) -> bool:
+    """Check the cookie's epoch against the user row, once per request.
+
+    Flask sessions are signed client-side cookies: the server keeps no record
+    of them, so "sign out" alone cannot stop a cookie that was copied earlier —
+    it stays valid for its full 30-day lifetime. Sign-out bumps users.session_epoch
+    instead, which strands every cookie issued before it. Cached on `g` so the
+    several current_user_id() calls in one request cost one lookup.
+    """
+    cached = g.get("_session_epoch_ok")
+    if cached is not None:
+        return bool(cached)
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        ok = user is not None and session.get("epoch") == user.session_epoch
+    g._session_epoch_ok = ok  # noqa: SLF001 — flask.g is the documented request-scoped namespace
+    return ok
+
+
 def current_user_id() -> int | None:
     """Return the signed-in user's id from the session cookie, else None."""
     uid = session.get("uid")
-    return uid if isinstance(uid, int) else None
+    if not isinstance(uid, int):
+        return None
+    return uid if _session_epoch_current(uid) else None
 
 
 def _reject(status: int, error: str) -> Response:

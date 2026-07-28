@@ -34,6 +34,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
     return {
         "users": {
             "role": "VARCHAR(32) NOT NULL DEFAULT 'user'",
+            "session_epoch": "INTEGER NOT NULL DEFAULT 0",
         },
         "toolhub_tokens": {
             "last_validated_at": "DATETIME NULL",

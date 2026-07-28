@@ -48,6 +48,10 @@ class User(Base):
     wm_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="user")
+    # Bumped on sign-out to invalidate every session cookie already issued to
+    # this user. Flask sessions are signed client-side cookies, so without a
+    # server-side counter a stolen cookie stays valid for its full lifetime.
+    session_epoch: Mapped[int] = mapped_column(Integer, default=0)
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

@@ -88,11 +88,12 @@ def oauth_callback() -> Response:
         else:
             user.username = username
             user.role = authz.role_for_login(toolhub_user_id, username, user.role)
-        uid = user.id
+        uid, epoch = user.id, user.session_epoch or 0
     toolhub.save_grant(uid, token_payload)
     session.clear()
     session.permanent = True
     session["uid"] = uid
+    session["epoch"] = epoch
     session["csrf"] = secrets.token_urlsafe(32)
     return redirect("/")
 
@@ -103,5 +104,10 @@ def oauth_logout() -> Response:
     uid = session.get("uid")
     if isinstance(uid, int):
         toolhub.revoke_local_grant(uid)
+        # Strand every cookie already issued to this user, not just this browser's.
+        with db.session_scope() as s:
+            user = s.get(User, uid)
+            if user is not None:
+                user.session_epoch = (user.session_epoch or 0) + 1
     session.clear()
     return redirect("/")
