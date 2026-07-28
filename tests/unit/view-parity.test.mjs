@@ -106,6 +106,35 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	);
 });
 
+test("viewRecent: a deferred owner is not written to the client cache", async () => {
+	setSearch("");
+	api.apiGet.mockImplementation((path) => {
+		if (path === "/recent/") {
+			return Promise.resolve({
+				results: [
+					{ content_type: "tool", content_id: "warm-tool", content_title: "Warm", timestamp: ISO },
+					{ content_type: "tool", content_id: "cold-tool", content_title: "Cold", timestamp: ISO }
+				]
+			});
+		}
+		return Promise.reject(new Error(`unexpected ${path}`));
+	});
+	// The server resolved one name and ran out of fetch budget on the other.
+	api.backendGetJson.mockResolvedValue({
+		owners: { "warm-tool": "Ada Maintainer", "cold-tool": "" },
+		meta: { "warm-tool": { source: "toolhub_detail" }, "cold-tool": { source: "deferred" } }
+	});
+	const view = await viewRecent();
+	document.body.innerHTML = view.html;
+	view.mount?.();
+	await tick();
+
+	const store = await import("../../public_html/lib/core/store.js");
+	assert.equal(store.recentOwnerCacheGet("warm-tool"), "Ada Maintainer");
+	// Undefined, not "": missingOwnerNames() must ask for this one again next load.
+	assert.equal(store.recentOwnerCacheGet("cold-tool"), undefined);
+});
+
 test("viewRecent: cached owner enrichment renders synchronously and skips repeated detail fetches", async () => {
 	setSearch("");
 	api.apiGet.mockImplementation((path) => {

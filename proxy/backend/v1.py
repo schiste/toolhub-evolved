@@ -23,7 +23,7 @@ from uuid import uuid4
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import api_cache, authz, db, recent_owners, toolhub
+from backend import api_cache, authz, db, recent_owners, security, toolhub
 from backend.author_claims import (
     SIGNATURE_META_KEY,
     AuthorNameProvider,
@@ -87,6 +87,7 @@ HTTP_NO_CONTENT = 204
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
 HTTP_CONFLICT = 409
+HTTP_TOO_MANY = 429
 UPSTREAM_KIND_INDEX = 1
 UPSTREAM_MIN_PARTS = 2
 UPSTREAM_OBJECT_INDEX = 2
@@ -3509,12 +3510,21 @@ def v1_search() -> Response:
 
 @v1_bp.route("/v1/recent/owners/")
 def v1_recent_owners() -> Response:
-    """Bulk-resolve Recent table owner labels through the shared ToolsDB cache."""
+    """Bulk-resolve Recent table owner labels through the shared ToolsDB cache.
+
+    Public and unauthenticated, but every cache miss costs an upstream Toolhub
+    request, so this is the one read endpoint that can amplify traffic. It is
+    rate limited per client like the /api/ proxy, and capped again by a
+    per-request fetch budget so a single allowed call cannot fan out into
+    OWNER_MAX_NAMES upstream requests.
+    """
+    if security.read_rate_limited(request.remote_addr):
+        return _deny(HTTP_TOO_MANY, "rate limit exceeded")
     names = request.args.getlist("tool")
     csv_names = request.args.get("tools", "")
     if csv_names:
         names.extend(csv_names.split(","))
-    return jsonify(recent_owners.resolve_owners(names))
+    return jsonify(recent_owners.resolve_owners(names, fetch_budget=recent_owners.OWNER_FETCH_BUDGET))
 
 
 @v1_bp.route("/toolinfo.json")

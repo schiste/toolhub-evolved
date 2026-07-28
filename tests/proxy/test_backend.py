@@ -2685,6 +2685,51 @@ def test_recent_owner_resolver_fetches_once_then_uses_toolsdb_cache(client, monk
         assert row.source == "toolhub_detail"
 
 
+def test_recent_owners_defers_names_past_the_fetch_budget(client, monkeypatch):
+    calls = []
+
+    def fake_public_api_get(path, **_kwargs):
+        calls.append(path)
+        return {"name": path, "author": [{"name": "Ada"}]}
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    cold = recent_owners.OWNER_FETCH_BUDGET + 6
+    names = "&".join(f"tool=cold-{i}" for i in range(cold))
+    data = client.get(f"/v1/recent/owners/?{names}").get_json()
+
+    assert len(calls) == recent_owners.OWNER_FETCH_BUDGET  # one request cannot fan out further
+    deferred = [n for n, m in data["meta"].items() if m["source"] == recent_owners.SOURCE_DEFERRED]
+    assert len(deferred) == cold - recent_owners.OWNER_FETCH_BUDGET
+    assert all(data["owners"][name] == "" for name in deferred)
+    with db.session_scope() as s:
+        # Deferred means unknown, not known-empty: nothing may be cached for them,
+        # or the next request would treat the blank as a resolved answer.
+        assert all(s.get(ToolOwnerCache, name) is None for name in deferred)
+
+
+def test_recent_owners_is_rate_limited(client, monkeypatch):
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: {"name": "t", "author": []})
+    clock = {"t": 100.0}
+    monkeypatch.setattr(security.time, "monotonic", lambda: clock["t"])
+    for _ in range(security.READ_LIMIT):
+        assert client.get("/v1/recent/owners/?tool=warm").status_code == 200
+    resp = client.get("/v1/recent/owners/?tool=warm")
+    assert resp.status_code == 429
+    assert resp.get_json()["error"] == "rate limit exceeded"
+    clock["t"] += security.WRITE_WINDOW_SECONDS + 1  # window rolls over
+    assert client.get("/v1/recent/owners/?tool=warm").status_code == 200
+
+
+def test_resolve_owners_without_a_budget_is_unlimited(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        toolhub, "public_api_get", lambda path, **_k: calls.append(path) or {"name": path, "author": []}
+    )
+    # The scheduled prewarm job is trusted and passes no budget.
+    recent_owners.resolve_owners([f"job-{i}" for i in range(recent_owners.OWNER_FETCH_BUDGET + 3)])
+    assert len(calls) == recent_owners.OWNER_FETCH_BUDGET + 3
+
+
 def test_recent_owner_resolver_returns_stale_owner_when_toolhub_fails(client, monkeypatch):
     with db.session_scope() as s:
         now = utcnow()
@@ -2724,7 +2769,9 @@ def test_recent_owner_resolver_cleans_bounds_and_negative_caches_failures(client
 
     assert data["count"] == recent_owners.OWNER_MAX_NAMES
     assert data["owners"]["tool-0"] == ""
-    assert len(calls) == recent_owners.OWNER_MAX_NAMES
+    # The name list is still bounded at OWNER_MAX_NAMES, but only the first
+    # OWNER_FETCH_BUDGET cold names may go upstream in one request.
+    assert len(calls) == recent_owners.OWNER_FETCH_BUDGET
     with db.session_scope() as s:
         row = s.get(ToolOwnerCache, "tool-0")
         assert row.owner == ""

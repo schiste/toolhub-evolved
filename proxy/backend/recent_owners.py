@@ -16,6 +16,13 @@ OWNER_STALE_SECONDS = 7 * 24 * 60 * 60
 OWNER_NEGATIVE_FRESH_SECONDS = 60 * 60
 OWNER_MAX_NAMES = 50
 OWNER_ERROR_LIMIT = 2000
+# Live upstream fetches one resolve_owners() call may trigger. Cache hits are
+# free; only cold names spend budget. The Recent page asks about tools that the
+# prewarm job already warmed, so it effectively never reaches this — but without
+# it a single anonymous request fans out into OWNER_MAX_NAMES requests at
+# toolhub.wikimedia.org. Callers pass None (the scheduled job) to opt out.
+OWNER_FETCH_BUDGET = 10
+SOURCE_DEFERRED = "deferred"
 
 
 @dataclass(frozen=True)
@@ -130,14 +137,29 @@ def _fetch_owner(tool_name: str) -> OwnerResult:
         return OwnerResult(tool_name, "", "toolhub_error", cached=False)
 
 
-def resolve_owners(tool_names: list[Any]) -> dict:
-    """Resolve owner labels for a bounded set of recent-change tool names."""
+def resolve_owners(tool_names: list[Any], *, fetch_budget: int | None = None) -> dict:
+    """Resolve owner labels for a bounded set of recent-change tool names.
+
+    `fetch_budget` caps how many names may be resolved by going upstream in one
+    call; None means unlimited. Names beyond the budget come back with an empty
+    owner and source SOURCE_DEFERRED, and are deliberately *not* written to the
+    owner cache — a deferred name is unknown, not known-empty, so callers must
+    be able to ask again.
+    """
     names = clean_tool_names(tool_names)
     owners: dict[str, str] = {}
     meta: dict[str, dict[str, Any]] = {}
+    remaining = fetch_budget
     for name in names:
         cached = _cached_owner(name)
-        result = cached if cached is not None and not cached.stale else _fetch_owner(name)
+        if cached is not None and not cached.stale:
+            result = cached
+        elif remaining is None or remaining > 0:
+            result = _fetch_owner(name)
+            if remaining is not None:
+                remaining -= 1
+        else:
+            result = OwnerResult(name, "", SOURCE_DEFERRED, cached=False)
         owners[name] = result.owner
         meta[name] = {"source": result.source, "cached": result.cached, "stale": result.stale}
     return {"count": len(names), "owners": owners, "meta": meta}

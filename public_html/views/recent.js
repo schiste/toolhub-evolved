@@ -131,9 +131,13 @@ async function enrichRecentOwnersProgressively(names, onOwner) {
 		const data = await backendGetJson(`/v1/recent/owners/?${params.toString()}`).catch(() => null);
 		const owners =
 			data && typeof data === "object" && data.owners && typeof data.owners === "object" ? data.owners : {};
+		const meta = data && typeof data === "object" && data.meta && typeof data.meta === "object" ? data.meta : {};
 		for (const name of batch) {
 			const owner = Object.hasOwn(owners, name) ? String(owners[name] || "") : "";
-			recentOwnerCacheSet(name, owner);
+			// A deferred name hit the server's per-request fetch budget: it is unknown,
+			// not known-ownerless. Caching "" here would make missingOwnerNames() skip
+			// it for the life of the client cache, so leave it out and ask again later.
+			if (meta[name]?.source !== "deferred") recentOwnerCacheSet(name, owner);
 			onOwner(name, owner);
 		}
 	}
