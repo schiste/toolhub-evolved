@@ -2,7 +2,7 @@
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { t, timeTag } from "../lib/core/i18n.js";
 import { apiGet, backendGetJson } from "../lib/core/api.js";
-import { navigateTo, listHref, toolHref } from "../lib/core/routing.js";
+import { authorHref, navigateTo, listHref, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, demoFeed, recentOwnerCacheGet, recentOwnerCacheSet } from "../lib/core/store.js";
 
 /* ---- Recent changes: data-driven read-only feed ------------------------ */
@@ -78,6 +78,11 @@ function recentActionLabel(r) {
 /** @param {{ user?: { username?: string } }} r */
 function recentUpdatedBy(r) {
 	return (r.user && r.user.username) || t("parity.system", "system");
+}
+/** @param {string} value */
+function recentIsCrawlerActor(value) {
+	const key = value.trim().toLocaleLowerCase();
+	return key === "toolhub" || key === "system";
 }
 /** @param {{ content_title?: string, content_id?: string }} r */
 function recentTitle(r) {
@@ -268,9 +273,12 @@ function recentSortHeader(state, sort, label) {
 		: "";
 	return `<th scope="col"${aria}><a href="${recentHref(state, { sort, dir: nextDir })}">${esc(label)}${marker}</a></th>`;
 }
-/** @param {string} value */
-function recentDash(value) {
-	return value ? `<span${dirAttrs(value)}>${esc(value)}</span>` : `<span class="recent-table__muted">—</span>`;
+/** @param {string | undefined | null} value @param {{ crawlerActors?: boolean }} [opts] */
+function recentPersonLink(value, opts = {}) {
+	const name = String(value || "").trim();
+	if (!name) return `<span class="recent-table__muted">—</span>`;
+	const href = opts.crawlerActors && recentIsCrawlerActor(name) ? "/crawler-history" : authorHref(name);
+	return `<a class="recent-table__person" href="${esc(href)}"${dirAttrs(name)}>${esc(name)}</a>`;
 }
 /** @param {string | undefined | null} comment */
 function recentComment(comment) {
@@ -310,13 +318,13 @@ function recentRowHTML(r) {
 		: `<span class="recent-table__item"><strong dir="auto">${title}</strong>${contentId}</span>`;
 	const ownerCellAttr = toolName ? ` data-recent-owner-tool="${esc(toolName)}"` : "";
 	return `<tr>
+		<td data-label="${t("parity.updatedAt", "Updated")}">${timeTag(r.timestamp)}</td>
 		<td data-label="${t("parity.itemTitle", "Item")}">${item}</td>
 		<td data-label="${t("parity.type", "Type")}"><span class="recent-chip recent-chip--${esc(typeKey)}">${esc(recentTypeLabel(type))}</span></td>
-		<td data-label="${t("parity.toolOwner", "Tool owner")}"${ownerCellAttr}>${recentDash(ownerFromRecentRow(r))}</td>
-		<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}"><span${dirAttrs(who)}>${esc(who)}</span></td>
+		<td data-label="${t("parity.toolOwner", "Tool owner")}"${ownerCellAttr}>${recentPersonLink(ownerFromRecentRow(r), { crawlerActors: true })}</td>
+		<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}">${recentPersonLink(who, { crawlerActors: true })}</td>
 		<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
 		<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
-		<td data-label="${t("parity.updatedAt", "Updated")}">${timeTag(r.timestamp)}</td>
 		<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentComment(r.comment)}</td>
 	</tr>`;
 }
@@ -332,7 +340,9 @@ function recentRowsHTML(rows, state) {
 /** @param {HTMLElement} root @param {string} toolName @param {string} owner */
 function updateRecentOwnerCells(root, toolName, owner) {
 	for (const cell of $$("[data-recent-owner-tool]", root)) {
-		if (cell.getAttribute("data-recent-owner-tool") === toolName) cell.innerHTML = recentDash(owner);
+		if (cell.getAttribute("data-recent-owner-tool") === toolName) {
+			cell.innerHTML = recentPersonLink(owner, { crawlerActors: true });
+		}
 	}
 }
 /** @param {{ sort: string, q: string, owner: string }} state */
@@ -352,13 +362,13 @@ export async function viewRecent() {
 	const sortOptions = recentSelectOptions(RECENT_SORTS, state.sort);
 	const dirOptions = recentSelectOptions(RECENT_DIRECTIONS, state.dir);
 	const headers = [
+		recentSortHeader(state, "updated", t("parity.updatedAt", "Updated")),
 		recentSortHeader(state, "title", t("parity.itemTitle", "Item")),
 		recentSortHeader(state, "type", t("parity.type", "Type")),
 		recentSortHeader(state, "owner", t("parity.toolOwner", "Tool owner")),
 		recentSortHeader(state, "updated_by", t("parity.lastUpdatedBy", "Last updated by")),
 		recentSortHeader(state, "action", t("parity.action", "Action")),
 		recentSortHeader(state, "review", t("parity.reviewState", "Review state")),
-		recentSortHeader(state, "updated", t("parity.updatedAt", "Updated")),
 		`<th scope="col">${t("parity.comment", "Comment")}</th>`
 	].join("");
 	return {
@@ -390,13 +400,13 @@ export async function viewRecent() {
 				<table class="recent-table">
 					<caption class="skip-label">${t("parity.recentChangesTable", "Recent changes table")}</caption>
 					<colgroup>
+						<col class="recent-table__col recent-table__col--updated">
 						<col class="recent-table__col recent-table__col--item">
 						<col class="recent-table__col recent-table__col--type">
 						<col class="recent-table__col recent-table__col--owner">
 						<col class="recent-table__col recent-table__col--updated-by">
 						<col class="recent-table__col recent-table__col--action">
 						<col class="recent-table__col recent-table__col--review">
-						<col class="recent-table__col recent-table__col--updated">
 						<col class="recent-table__col recent-table__col--comment">
 					</colgroup>
 					<thead><tr>${headers}</tr></thead>

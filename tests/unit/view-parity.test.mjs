@@ -67,6 +67,10 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	assert.match(view.html, /<table class="recent-table">/);
 	assert.match(view.html, /<div class="recent-controls__filters">/);
 	assert.match(view.html, /<div class="recent-controls__sortbar">/);
+	assert.match(
+		view.html,
+		/<col class="recent-table__col recent-table__col--updated">\s*<col class="recent-table__col recent-table__col--item">/
+	);
 	assert.match(view.html, /<col class="recent-table__col recent-table__col--owner">/);
 	assert.match(view.html, /<col class="recent-table__col recent-table__col--updated-by">/);
 	assert.match(
@@ -79,7 +83,10 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 		view.html,
 		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span class="recent-table__muted">—<\/span><\/td>/
 	);
-	assert.match(view.html, /<td data-label="Last updated by"><span dir="auto">alice<\/span><\/td>/);
+	assert.match(
+		view.html,
+		/<td data-label="Last updated by"><a class="recent-table__person" href="\/by\/alice" dir="auto">alice<\/a><\/td>/
+	);
 	assert.match(view.html, /<td data-label="Action">Created<\/td>/);
 	assert.match(view.html, /<span class="recent-chip recent-chip--unknown">Review unknown<\/span>/);
 	assert.match(view.html, /<td data-label="Updated"><time datetime="2019-01-01T00:00:00\.000Z"/);
@@ -102,7 +109,7 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	assert.equal(api.apiGet.mock.calls.filter((call) => call[0].startsWith("/tools/")).length, 0);
 	assert.match(
 		document.body.innerHTML,
-		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span dir="auto">Ada Maintainer<\/span><\/td>/
+		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><a class="recent-table__person" href="\/by\/Ada%20Maintainer" dir="auto">Ada Maintainer<\/a><\/td>/
 	);
 });
 
@@ -178,7 +185,7 @@ test("viewRecent: cached owner enrichment renders synchronously and skips repeat
 	const second = await viewRecent();
 	assert.match(
 		second.html,
-		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span dir="auto">Ada Maintainer<\/span><\/td>/
+		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><a class="recent-table__person" href="\/by\/Ada%20Maintainer" dir="auto">Ada Maintainer<\/a><\/td>/
 	);
 	assert.deepEqual(api.apiGet.mock.calls, [["/recent/", { page_size: "30" }]]);
 	assert.equal(api.backendGetJson.mock.calls.length, 0);
@@ -205,7 +212,7 @@ test("viewRecent: progressive owner enrichment dedupes repeated tools", async ()
 
 	assert.deepEqual(api.backendGetJson.mock.calls, [["/v1/recent/owners/?tool=same-tool"]]);
 	assert.equal(api.apiGet.mock.calls.filter((call) => call[0].startsWith("/tools/")).length, 0);
-	assert.equal(document.querySelectorAll('[data-recent-owner-tool="same-tool"] span[dir="auto"]').length, 2);
+	assert.equal(document.querySelectorAll('[data-recent-owner-tool="same-tool"] a.recent-table__person').length, 2);
 	assert.match(document.body.innerHTML, /One Owner/);
 });
 
@@ -217,7 +224,10 @@ test("viewRecent: a list change uses content_id when title is absent and links v
 	assert.match(view.html, /<span class="recent-table__id" dir="auto">42<\/span>/);
 	assert.match(view.html, /<span class="recent-chip recent-chip--lists">List<\/span>/);
 	// user:{} (present but no username) still falls back to "system".
-	assert.match(view.html, /<td data-label="Last updated by"><span dir="auto">system<\/span><\/td>/);
+	assert.match(
+		view.html,
+		/<td data-label="Last updated by"><a class="recent-table__person" href="\/crawler-history" dir="auto">system<\/a><\/td>/
+	);
 });
 
 test("viewRecent: untyped change renders static with dash/item/system defaults", async () => {
@@ -226,9 +236,37 @@ test("viewRecent: untyped change renders static with dash/item/system defaults",
 	const view = await viewRecent();
 	assert.match(view.html, /<span class="recent-table__item"><strong dir="auto">—<\/strong><\/span>/);
 	assert.match(view.html, /<span class="recent-chip recent-chip--other">Other<\/span>/);
-	assert.match(view.html, /<td data-label="Last updated by"><span dir="auto">system<\/span><\/td>/);
+	assert.match(
+		view.html,
+		/<td data-label="Last updated by"><a class="recent-table__person" href="\/crawler-history" dir="auto">system<\/a><\/td>/
+	);
 	assert.match(view.html, /<td data-label="Tool owner"><span class="recent-table__muted">—<\/span><\/td>/);
 	assert.doesNotMatch(view.html, /<a href="\/tools/);
+});
+
+test("viewRecent: Toolhub owner and updater link to crawler history", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{
+				content_type: "tool",
+				content_id: "crawler-tool",
+				content_title: "Crawler Tool",
+				owner: "Toolhub",
+				user: { username: "Toolhub" },
+				timestamp: ISO
+			}
+		]
+	});
+	const view = await viewRecent();
+	assert.match(
+		view.html,
+		/<td data-label="Tool owner" data-recent-owner-tool="crawler-tool"><a class="recent-table__person" href="\/crawler-history" dir="auto">Toolhub<\/a><\/td>/
+	);
+	assert.match(
+		view.html,
+		/<td data-label="Last updated by"><a class="recent-table__person" href="\/crawler-history" dir="auto">Toolhub<\/a><\/td>/
+	);
 });
 
 test("viewRecent: typed changes without an id never become links", async () => {
@@ -514,6 +552,10 @@ test("viewCrawler: renders meta from the first run and a row per run", async () 
 	assert.match(view.html, /<div class="meta__k">URLs crawled<\/div><div class="meta__v" dir="auto">10<\/div>/);
 	assert.match(view.html, /<div class="meta__k">Updated in last run<\/div><div class="meta__v" dir="auto">3<\/div>/);
 	assert.match(view.html, /<div class="meta__k">Last crawl<\/div><div class="meta__v" dir="auto"><time/);
+	assert.match(view.html, /<section class="crawler-graph" aria-labelledby="crawler-graph-title">/);
+	assert.match(view.html, /<polyline class="crawler-graph__line" points="/);
+	assert.match(view.html, /<rect class="crawler-graph__bar-updated"/);
+	assert.match(view.html, /<rect class="crawler-graph__bar-new"/);
 	// First data row.
 	assert.match(view.html, /<td>10<\/td>\s*<td>2<\/td><td>3<\/td><td>100<\/td>/);
 	// Second (empty) row → zeros.
@@ -526,6 +568,7 @@ test("viewCrawler: a response with no results array renders an empty table body"
 	// data.results undefined → the `|| []` fallback must stay empty (no phantom row).
 	api.apiGet.mockResolvedValue({});
 	const view = await viewCrawler();
+	assert.match(view.html, /<section class="crawler-graph crawler-graph--empty" aria-label="Crawler run graph">/);
 	assert.match(view.html, /<tbody><\/tbody>/);
 });
 
@@ -534,6 +577,7 @@ test("viewCrawler: no runs → dash meta, zero urls and an empty table body", as
 	const view = await viewCrawler();
 	assert.match(view.html, /<div class="meta__k">Last crawl<\/div><div class="meta__v" dir="auto">—<\/div>/);
 	assert.match(view.html, /<div class="meta__k">URLs crawled<\/div><div class="meta__v" dir="auto">0<\/div>/);
+	assert.match(view.html, /No crawler run data to graph yet\./);
 	assert.match(view.html, /<tbody><\/tbody>/);
 });
 

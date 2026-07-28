@@ -575,6 +575,34 @@ function activityFeedExample() {
 	</ul>`;
 }
 
+function crawlerGraphExample() {
+	return `<section class="crawler-graph" aria-labelledby="sg-crawler-graph-title">
+		<div class="crawler-graph__head">
+			<h2 class="crawler-graph__title" id="sg-crawler-graph-title">Run history</h2>
+			<div class="crawler-graph__legend" aria-hidden="true">
+				<span><i class="crawler-graph__key crawler-graph__key--total"></i>Total</span>
+				<span><i class="crawler-graph__key crawler-graph__key--updated"></i>Updated</span>
+				<span><i class="crawler-graph__key crawler-graph__key--new"></i>New</span>
+			</div>
+		</div>
+		<svg class="crawler-graph__svg" viewBox="0 0 820 260" role="img" aria-label="Crawler runs over time">
+			<line class="crawler-graph__axis" x1="46" y1="214" x2="774" y2="214"></line>
+			<line class="crawler-graph__axis" x1="46" y1="24" x2="46" y2="214"></line>
+			<rect class="crawler-graph__bar-updated" x="41" y="132" width="10" height="82"></rect>
+			<rect class="crawler-graph__bar-new" x="41" y="106" width="10" height="26"></rect>
+			<rect class="crawler-graph__bar-updated" x="769" y="118" width="10" height="96"></rect>
+			<rect class="crawler-graph__bar-new" x="769" y="88" width="10" height="30"></rect>
+			<polyline class="crawler-graph__line" points="46,62 410,48 774,32"></polyline>
+			<circle class="crawler-graph__point" cx="46" cy="62" r="3"></circle>
+			<circle class="crawler-graph__point" cx="410" cy="48" r="3"></circle>
+			<circle class="crawler-graph__point" cx="774" cy="32" r="3"></circle>
+			<text class="crawler-graph__label" x="46" y="242" text-anchor="start">Jun 22</text>
+			<text class="crawler-graph__label" x="774" y="242" text-anchor="end">Jun 24</text>
+			<text class="crawler-graph__label crawler-graph__label--total" x="50" y="36" text-anchor="start">2,474</text>
+		</svg>
+	</section>`;
+}
+
 function runsExample() {
 	return `<table class="runs">
 		<caption class="skip-label">Recent crawler runs, newest first</caption>
@@ -846,6 +874,7 @@ function activityParitySection() {
 		<div class="sg-examples sg-examples--organisms">
 			${example("member card grid", "parity views", memberGridExample(), { wide: true })}
 			${example("activity feed", "parity views", activityFeedExample(), { wide: true })}
+			${example("crawler run graph", "parity views", crawlerGraphExample(), { wide: true })}
 			${example("crawler runs table", "parity views", runsExample(), { wide: true })}
 		</div>`
 	);
