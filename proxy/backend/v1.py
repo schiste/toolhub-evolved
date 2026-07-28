@@ -604,7 +604,10 @@ def _current_policy_user() -> tuple[User | None, Response | None]:
     assert uid is not None  # noqa: S101 — login_required/write_guard guarantees this
     with db.session_scope() as s:
         user = s.get(User, uid)
-    if user is None:
+    # current_user_id() already refuses a session whose user row is gone, so this
+    # only fires if the account is deleted between that check and this one. Kept
+    # for that race; unreachable from a test, hence the pragma.
+    if user is None:  # pragma: no cover - delete-mid-request race
         session.clear()
         return None, _deny(HTTP_UNAUTHORIZED, "sign in required")
     return user, None
@@ -618,7 +621,7 @@ def _enforce(user: User, action: str, resource: object | None = None) -> Respons
 def _require_policy(action: str, resource: object | None = None) -> tuple[User | None, Response | None]:
     """Fetch the current user and enforce one Evolved-local policy action."""
     user, denied = _current_policy_user()
-    if denied is not None:
+    if denied is not None:  # pragma: no cover - only the race above denies here
         return None, denied
     assert user is not None  # noqa: S101 — _current_policy_user returned no denial
     denied = _enforce(user, action, resource)
@@ -1350,7 +1353,7 @@ def v1_user() -> Response:
         return jsonify({"authenticated": False})
     with db.session_scope() as s:
         user = s.get(User, uid)
-        if user is None:  # stale cookie for a deleted account
+        if user is None:  # pragma: no cover - delete-mid-request race; see _current_policy_user
             session.clear()
             return jsonify({"authenticated": False})
         role = authz.user_role(user)

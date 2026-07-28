@@ -4057,6 +4057,20 @@ def test_oauth_logout_without_session(client):
     assert resp.headers["Location"] == "/?logout=error"  # no session → no valid CSRF token
 
 
+def test_oauth_logout_tolerates_sessions_with_no_live_user(client):
+    # csrf_ok never touches the database, so both of these reach the bump path
+    # with nothing to bump: a session carrying a token but no uid, and one whose
+    # account was deleted after the cookie was issued.
+    with client.session_transaction() as sess:
+        sess["csrf"] = "tok"
+    assert client.post("/oauth/logout", data={"csrf": "tok"}).headers["Location"] == "/"
+    uid = add_user()
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.delete(s.get(User, uid))
+    assert client.post("/oauth/logout", data={"csrf": "tok"}).headers["Location"] == "/"
+
+
 def test_oauth_logout_rejects_get_and_bad_csrf(client):
     uid = add_user()
     sign_in(client, uid)
