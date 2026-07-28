@@ -239,7 +239,8 @@ clean; the audit's remaining WCAG findings closed or explicitly waived.
 - ToolsDB schema + Alembic: `users`, `sessions`, `favorites`, `lists`,
   `list_tools`, `tools` (locally registered), `tool_edits` (overlay on upstream
   names), `annotations`, `revisions`, `audit_log`, `crawler_urls`, `crawler_runs`,
-  `toolinfo_discovery`, `toolinfo_discovery_meta`.
+  `toolinfo_discovery`, `toolinfo_discovery_meta`, `toolinfo_sources`,
+  `toolinfo_source_items`.
 - Toolhub OAuth 2.0: register the application, `/oauth/login|callback|logout`,
   use `GET /api/user/` to identify the user locally, store the grant server-side,
   session cookie (HttpOnly, Secure, SameSite=Lax), CSRF token for all writes.
@@ -296,6 +297,11 @@ via a documented one-liner.
   Toolhub tool it sees, refreshes up to 500 stale rows every six hours out of
   band, and My tools displays found/missing/pending/error/no-URL state to the
   owner.
+- `toolinfo-source-index` mirrors official `/api/crawler/urls/`, fetches each
+  registered feed out of band, stores `toolinfo_sources` and
+  `toolinfo_source_items`, and lets My tools show the official crawler feed
+  that declared a tool. This is provenance evidence only; official Toolhub tool
+  records are still read live.
 - Tool creation can also register a local crawler URL opportunistically through
   its create-only `toolinfo_url` field; that one-shot fetch is for immediate
   enrichment and evidence, while the scheduled job remains the refresh path.
@@ -349,10 +355,10 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
   live in shared ToolsDB, so warmed public reads can benefit every worker.
 - ToolsDB: default quotas suffice for launch; monitor size, request increase if
   the crawler grows the catalog.
-- Jobs framework: local toolinfo crawler, automated toolinfo discovery,
-  recent-change API cache invalidator with hot-endpoint and recent-owner
-  prewarming, and nightly backup jobs; all defined in-repo (`jobs.yaml`) so the
-  full production config is versioned.
+- Jobs framework: local toolinfo crawler, official crawler source indexing,
+  automated root/sitemap toolinfo discovery, recent-change API cache invalidator
+  with hot-endpoint and recent-owner prewarming, and nightly backup jobs; all
+  defined in-repo (`jobs.yaml`) so the full production config is versioned.
 - Secrets (OAuth client secret, DB URL/credentials, session key): Toolforge
   envvars readable only by the tool, never in the repo; documented in the
   runbook.

@@ -186,6 +186,14 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 					method: "sitemap",
 					toolinfoUrl: "https://example.org/meta/toolinfo.json",
 					checkedAt: "2026-07-28T12:00:00Z"
+				},
+				toolinfoSource: {
+					toolName: "ada-tool",
+					sourceUrl: "https://toolsadmin.wikimedia.org/tools/toolinfo/v1.2/toolinfo.json",
+					sourceKind: "toolsadmin",
+					sourceLabel: "Toolsadmin feed",
+					lastFetchedAt: "2026-07-28T12:30:00Z",
+					itemCount: 2880
 				}
 			}
 		],
@@ -223,9 +231,11 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.ok(r.html.includes("Verified: Toolhub write access"));
 	assert.ok(r.html.includes("Verified: signed toolinfo"));
 	assert.ok(r.html.includes("Unverified author name"));
-	assert.ok(r.html.includes("toolinfo.json"));
-	assert.ok(r.html.includes("Found in sitemap"));
-	assert.ok(r.html.includes("https://example.org/meta/toolinfo.json"));
+	assert.ok(r.html.includes("Metadata source"));
+	assert.ok(r.html.includes("Official crawler source"));
+	assert.ok(r.html.includes("Toolsadmin feed"));
+	assert.ok(r.html.includes("2,880 tools"));
+	assert.ok(r.html.includes("Self-hosted check: found in sitemap"));
 	assert.ok(r.html.includes("Queued for discovery"));
 	assert.ok(r.html.includes("Official Toolhub data + Evolved verification"));
 	assert.ok(

@@ -20,6 +20,16 @@
   schedule: "37 */6 * * *"
   emails: onfailure
 
+- name: toolinfo-source-index
+  # Background source index for official Toolhub crawler URLs: mirror
+  # /api/crawler/urls/, fetch each registered feed, and map tool names back to
+  # the feed Toolhub crawls. This is canonical provenance evidence; root/sitemap
+  # discovery remains a secondary self-hosted metadata check.
+  command: /usr/bin/env TOOLINFO_SOURCE_INDEX_LIMIT=150 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_sources.py
+  image: python3.13
+  schedule: "11 */6 * * *"
+  emails: onfailure
+
 - name: api-cache-invalidator
   # Poll official Toolhub recent changes out of band, invalidate affected rows,
   # then prewarm hot anonymous reads so user requests never pay that cost.

@@ -20,8 +20,10 @@ from backend.sync import (
     REVIEW_OPEN,
     REVIEW_PENDING,
     SOURCE_LOCAL,
+    SOURCE_OFFICIAL,
     SYNC_EVOLVED_REAL,
     SYNC_LOCAL_DRAFT,
+    SYNC_OFFICIAL,
 )
 
 
@@ -282,6 +284,47 @@ class ToolinfoDiscoveryMeta(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolinfoSource(Base):
+    """Official Toolhub crawler URL indexed locally as source evidence."""
+
+    __tablename__ = "toolinfo_sources"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    official_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    url: Mapped[str] = mapped_column(String(2000), unique=True, index=True)
+    source_kind: Mapped[str] = mapped_column(String(64), default="registered_toolinfo")
+    created_by_username: Mapped[str] = mapped_column(String(255), default="")
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    valid: Mapped[bool] = mapped_column(Boolean, default=False)
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+
+
+class ToolinfoSourceItem(Base):
+    """One tool name observed in an official Toolhub crawler feed."""
+
+    __tablename__ = "toolinfo_source_items"
+    __table_args__ = (UniqueConstraint("tool_name", "source_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("toolinfo_sources.id"), index=True)
+    source_url: Mapped[str] = mapped_column(String(2000))
+    title: Mapped[str] = mapped_column(String(255), default="")
+    tool_url: Mapped[str] = mapped_column(String(2000), default="")
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
 
 
 class ToolEvent(Base):

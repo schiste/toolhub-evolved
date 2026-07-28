@@ -23,7 +23,7 @@ from uuid import uuid4
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import api_cache, authz, db, recent_owners, security, toolhub, toolinfo_discovery
+from backend import api_cache, authz, db, recent_owners, security, toolhub, toolinfo_discovery, toolinfo_sources
 from backend.author_claims import (
     SIGNATURE_META_KEY,
     AuthorNameProvider,
@@ -555,6 +555,7 @@ def _resolver_item(
     entry: dict,
     claims_by_tool: dict[str, list[dict]],
     discoveries_by_tool: dict[str, dict] | None = None,
+    sources_by_tool: dict[str, dict] | None = None,
 ) -> dict:
     """Attach only this tool's provider claims to one candidate Toolhub tool."""
     claims = list(claims_by_tool.get(_string_key(tool_name), []))
@@ -565,6 +566,7 @@ def _resolver_item(
         "evidenceUrl": entry.get("evidenceUrl"),
         "claims": claims,
         "toolinfoDiscovery": (discoveries_by_tool or {}).get(tool_name, toolinfo_discovery.discovery_payload(None)),
+        "toolinfoSource": (sources_by_tool or {}).get(tool_name),
     }
 
 
@@ -572,11 +574,12 @@ def _resolver_groups(
     candidates: dict[str, dict],
     claims_by_tool: dict[str, list[dict]],
     discoveries_by_tool: dict[str, dict] | None = None,
+    sources_by_tool: dict[str, dict] | None = None,
 ) -> dict:
     """Split candidate tools into verified and possible groups."""
     groups: dict[str, list[dict]] = {"verified": [], "possible": []}
     for tool_name, entry in candidates.items():
-        item = _resolver_item(tool_name, entry, claims_by_tool, discoveries_by_tool)
+        item = _resolver_item(tool_name, entry, claims_by_tool, discoveries_by_tool, sources_by_tool)
         key = "verified" if any(claim.get("isVerified") for claim in item["claims"]) else "possible"
         groups[key].append(item)
     return groups
@@ -1582,7 +1585,8 @@ def v1_me_tools() -> Response:
     claim_payloads = _record_candidate_provider_claims(user, candidates)
     claims_by_tool = _claims_by_tool(claim_payloads)
     discoveries_by_tool = toolinfo_discovery.ensure_pending_for_candidates(candidates)
-    groups = _resolver_groups(candidates, claims_by_tool, discoveries_by_tool)
+    sources_by_tool = toolinfo_sources.sources_for_tools(list(candidates))
+    groups = _resolver_groups(candidates, claims_by_tool, discoveries_by_tool, sources_by_tool)
 
     return jsonify(
         {
@@ -1590,6 +1594,7 @@ def v1_me_tools() -> Response:
             "searchTerms": search_terms,
             "toolforgeToolNames": toolforge_tool_names,
             "toolinfoDiscovery": discoveries_by_tool,
+            "toolinfoSources": sources_by_tool,
             "counts": {"verified": len(groups["verified"]), "possible": len(groups["possible"])},
             "verified": groups["verified"],
             "possible": groups["possible"],

@@ -28,6 +28,28 @@ interface ToolinfoDiscovery {
 	lastError?: string;
 }
 
+/** Indexed source feed from the official Toolhub crawler registry. */
+interface ToolinfoSource {
+	toolName: string;
+	title?: string;
+	toolUrl?: string;
+	sourceUrl: string;
+	sourceId?: number;
+	officialId?: number | null;
+	sourceKind: string;
+	sourceLabel: string;
+	createdBy?: string;
+	createdDate?: string;
+	lastSeenAt?: string;
+	lastFetchedAt?: string;
+	status?: string;
+	valid?: boolean;
+	itemCount?: number;
+	lastError?: string;
+	source?: string;
+	syncStatus?: string;
+}
+
 /** The level/label pair statusOf() produces — a closed domain, not free strings. */
 type ToolStatus =
 	| { level: "green"; label: "Healthy" }
@@ -103,6 +125,7 @@ interface Tool {
 	authorVerificationLabel?: string;
 	authorVerificationBadges?: AuthorVerificationBadge[];
 	toolinfoDiscovery?: ToolinfoDiscovery;
+	toolinfoSource?: ToolinfoSource;
 }
 
 /** A normalized curated-list record. */

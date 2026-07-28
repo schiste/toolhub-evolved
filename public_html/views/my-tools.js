@@ -75,8 +75,8 @@ function authorClaimBadges(claims, verified) {
 	];
 }
 
-/** @param {any[]} items @param {boolean} verified */
-function resolvedTools(items, verified) {
+/** @param {any[]} items @param {boolean} verified @param {Record<string, ToolinfoSource>} [sourcesByTool] */
+function resolvedTools(items, verified, sourcesByTool = {}) {
 	return (Array.isArray(items) ? items : [])
 		.map((item) => {
 			if (!item || !item.tool) return null;
@@ -84,6 +84,7 @@ function resolvedTools(items, verified) {
 			tool.authorVerified = verified;
 			tool.authorVerificationBadges = authorClaimBadges(item.claims, verified);
 			tool.toolinfoDiscovery = item.toolinfoDiscovery || { status: "pending" };
+			tool.toolinfoSource = item.toolinfoSource || sourcesByTool[tool.name];
 			return tool;
 		})
 		.filter((tool) => tool !== null);
@@ -143,6 +144,44 @@ function toolinfoDiscoveryCell(discovery) {
 		</div>`;
 }
 
+/** @param {ToolinfoDiscovery | undefined} discovery */
+function selfHostedDiscoveryLine(discovery) {
+	const status = discovery?.status || "pending";
+	if (status === "found" && discovery?.toolinfoUrl) {
+		const method =
+			discovery.method === "sitemap"
+				? t("accountTools.selfHostedFoundSitemap", "Self-hosted check: found in sitemap")
+				: t("accountTools.selfHostedFoundRoot", "Self-hosted check: found at root");
+		return `<span class="recent-table__muted">${esc(method)}</span>`;
+	}
+	if (status === "not_found") {
+		return `<span class="recent-table__muted">${t("accountTools.selfHostedNotFound", "Self-hosted check: toolinfo.json not found")}</span>`;
+	}
+	if (status === "error") {
+		return `<span class="recent-table__muted">${esc(discovery?.lastError || t("accountTools.selfHostedFailed", "Self-hosted check failed"))}</span>`;
+	}
+	if (status === "no_url") {
+		return `<span class="recent-table__muted">${t("accountTools.selfHostedNoUrl", "Self-hosted check: no homepage URL")}</span>`;
+	}
+	return `<span class="recent-table__muted">${t("accountTools.selfHostedPending", "Self-hosted check queued")}</span>`;
+}
+
+/** @param {ToolinfoSource | undefined} source @param {ToolinfoDiscovery | undefined} discovery */
+function toolinfoEvidenceCell(source, discovery) {
+	if (!source?.sourceUrl) return toolinfoDiscoveryCell(discovery);
+	const fetched = source.lastFetchedAt ? ` · ${timeTag(source.lastFetchedAt)}` : "";
+	const count =
+		typeof source.itemCount === "number" && source.itemCount > 0
+			? ` · ${countLabel(source.itemCount, t("accountTools.sourceToolOne", "tool"), t("accountTools.sourceToolOther", "tools"))}`
+			: "";
+	return `<div class="account-tools__toolinfo">
+		<span class="sync-badge sync-badge--official">${t("accountTools.officialCrawlerSource", "Official crawler source")}</span>
+		<a href="${safeUrl(source.sourceUrl)}" target="_blank" rel="noopener nofollow">${esc(source.sourceLabel || t("accountTools.sourceUnknown", "Official crawler feed"))}</a>
+		<span class="recent-table__muted">${t("accountTools.sourceDetails", "Source")} ${esc(source.sourceKind || "official")}${count}${fetched}</span>
+		${selfHostedDiscoveryLine(discovery)}
+	</div>`;
+}
+
 /** @param {Tool} tool */
 function toolRow(tool) {
 	const hasType = Boolean(tool.toolType);
@@ -159,7 +198,7 @@ function toolRow(tool) {
 		</td>
 		<td data-label="${t("accountTools.owner", "Owner")}"><span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></td>
 		<td data-label="${t("accountTools.verification", "Verification")}">${toolVerificationBadges(tool)}</td>
-		<td data-label="${t("accountTools.toolinfo", "toolinfo.json")}">${toolinfoDiscoveryCell(tool.toolinfoDiscovery)}</td>
+		<td data-label="${t("accountTools.metadataSource", "Metadata source")}">${toolinfoEvidenceCell(tool.toolinfoSource, tool.toolinfoDiscovery)}</td>
 		<td data-label="${t("accountTools.type", "Type")}">${hasType ? esc(type) : `<span class="recent-table__muted">${esc(type)}</span>`}</td>
 		<td data-label="${t("accountTools.updated", "Updated")}">${when}</td>
 		<td data-label="${t("accountTools.actions", "Actions")}">
@@ -183,7 +222,7 @@ function toolsTable(tools) {
 				<th scope="col">${t("accountTools.tool", "Tool")}</th>
 				<th scope="col">${t("accountTools.owner", "Owner")}</th>
 				<th scope="col">${t("accountTools.verification", "Verification")}</th>
-				<th scope="col">${t("accountTools.toolinfo", "toolinfo.json")}</th>
+				<th scope="col">${t("accountTools.metadataSource", "Metadata source")}</th>
 				<th scope="col">${t("accountTools.type", "Type")}</th>
 				<th scope="col">${t("accountTools.updated", "Updated")}</th>
 				<th scope="col">${t("accountTools.actions", "Actions")}</th>
@@ -196,7 +235,11 @@ function toolsTable(tools) {
 async function myTools() {
 	const data = await backendGetJson("/v1/me/tools/");
 	if (!data) throw new Error("resolver unavailable");
-	return [...resolvedTools(data.verified, true), ...resolvedTools(data.possible, false)];
+	const sourcesByTool = data.toolinfoSources && typeof data.toolinfoSources === "object" ? data.toolinfoSources : {};
+	return [
+		...resolvedTools(data.verified, true, sourcesByTool),
+		...resolvedTools(data.possible, false, sourcesByTool)
+	];
 }
 
 export async function viewMyTools() {

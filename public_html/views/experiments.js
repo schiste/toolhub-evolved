@@ -175,11 +175,11 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.myToolsCurrent",
-					"Official Toolhub search provides candidates; Evolved verifies claims per tool and shows cached automated toolinfo.json discovery state seeded from the Toolhub catalog and owner-visible matches."
+					"Official Toolhub search provides candidates; Evolved verifies claims per tool, shows indexed official crawler feed sources, and keeps root/sitemap discovery as a secondary self-hosted metadata signal."
 				),
 				need: t(
 					"experiments.myToolsNeed",
-					"Author-claim table, resolver endpoint, verification providers, catalog-seeded discovery cache"
+					"Author-claim table, resolver endpoint, verification providers, official crawler source index, and discovery cache"
 				),
 				tryHref: "/my-tools",
 				tryLabel: t("experiments.myToolsTry", "My tools")
@@ -318,11 +318,11 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.crawlerCurrent",
-					"Evolved discovers root/sitemap toolinfo.json URLs before official-first Toolhub registration; pasted JSON ingestion remains local."
+					"Evolved discovers root/sitemap toolinfo.json URLs before official-first Toolhub registration, and a scheduled source index maps official crawler feeds back to tools."
 				),
 				need: t(
 					"experiments.crawlerNeed",
-					"Toolhub crawler permissions, safe toolinfo discovery, and local fallback storage"
+					"Toolhub crawler permissions, official crawler source index, safe toolinfo discovery, and local fallback storage"
 				),
 				tryHref: "/add-or-remove-tools",
 				tryLabel: t("experiments.crawlerTry", "Add or remove tools")

@@ -46,6 +46,8 @@ from backend.models import (
     ToolHealthTarget,
     ToolinfoDiscovery,
     ToolinfoDiscoveryMeta,
+    ToolinfoSource,
+    ToolinfoSourceItem,
     ToolList,
     ToolMedia,
     ToolOwnerCache,
@@ -338,6 +340,40 @@ def test_init_schema_creates_toolinfo_discovery_table():
     }.issubset(cols)
     meta_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoDiscoveryMeta.__tablename__)}
     assert {"key", "value", "updated_at"}.issubset(meta_cols)
+    source_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoSource.__tablename__)}
+    assert {
+        "id",
+        "official_id",
+        "url",
+        "source_kind",
+        "created_by_username",
+        "created_by_user_id",
+        "created_date",
+        "last_seen_at",
+        "last_fetched_at",
+        "status",
+        "status_code",
+        "valid",
+        "item_count",
+        "last_error",
+        "last_run_id",
+        "source",
+        "sync_status",
+    }.issubset(source_cols)
+    item_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoSourceItem.__tablename__)}
+    assert {
+        "id",
+        "tool_name",
+        "source_id",
+        "source_url",
+        "title",
+        "tool_url",
+        "payload",
+        "last_seen_at",
+        "last_error",
+        "source",
+        "sync_status",
+    }.issubset(item_cols)
 
 
 def test_toolforge_membership_provider_extracts_tool_names_from_member_dns():
@@ -1406,6 +1442,26 @@ def test_me_tools_returns_possible_display_author_matches(client, monkeypatch):
 def test_me_tools_records_pending_toolinfo_discovery_for_owned_candidates(client, monkeypatch):
     uid = add_user(username="Ada Lovelace")
     sign_in(client, uid)
+    with db.session_scope() as s:
+        source = ToolinfoSource(
+            official_id=7,
+            url="https://toolsadmin.wikimedia.org/tools/toolinfo/v1.2/toolinfo.json",
+            source_kind="toolsadmin",
+            status="valid",
+            valid=True,
+            item_count=2880,
+        )
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolinfoSourceItem(
+                tool_name="ada-tool",
+                source_id=source.id,
+                source_url=source.url,
+                title="Ada Tool",
+                tool_url="https://ada.example/tool",
+            )
+        )
 
     def fake_public_api_get(path, *, params=None):
         assert path == "/api/search/tools/"
@@ -1427,6 +1483,8 @@ def test_me_tools_records_pending_toolinfo_discovery_for_owned_candidates(client
     assert discovery["toolName"] == "ada-tool"
     assert discovery["toolUrl"] == "https://ada.example/tool"
     assert data["toolinfoDiscovery"]["ada-tool"]["status"] == "pending"
+    assert data["possible"][0]["toolinfoSource"]["sourceLabel"] == "Toolsadmin feed"
+    assert data["toolinfoSources"]["ada-tool"]["sourceUrl"] == source.url
     with db.session_scope() as s:
         row = s.query(ToolinfoDiscovery).one()
         assert row.tool_name == "ada-tool"

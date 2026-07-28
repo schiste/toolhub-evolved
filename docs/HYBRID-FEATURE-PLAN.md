@@ -36,6 +36,8 @@ Implemented local tables in `proxy/backend/models.py`:
 | `crawler_runs`            | Server crawler run outcomes.                           | Toolhub has official crawler runs for official URLs.                                   |
 | `toolinfo_discovery`      | Automated per-tool toolinfo.json discovery cache.      | Toolhub does not expose owner-facing root/sitemap toolinfo discovery state.            |
 | `toolinfo_discovery_meta` | Discovery job cursor state.                            | Toolhub does not expose Evolved's local crawl cursor.                                  |
+| `toolinfo_sources`        | Official crawler URL source evidence cache.            | Mirrors Toolhub `/api/crawler/urls/` registrations for provenance only.                |
+| `toolinfo_source_items`   | Per-tool official feed source mapping.                 | Toolhub crawls this data but does not expose feed source per tool.                     |
 | `tool_events`             | Privacy-limited Evolved interaction events.            | Toolhub does not expose Evolved-site usage events.                                     |
 | `tool_thanks`             | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
 | `tool_author_claims`      | Per-tool author-name verification evidence.            | Toolhub exposes display author fields but not Evolved verification state.              |
@@ -60,6 +62,7 @@ Backend endpoints already implemented:
   the canonical create to official Toolhub first
 - `GET /v1/me/tools/` resolver for signed-in users, combining official Toolhub
   author search with Evolved-local `tool_author_claims` verification signals
+  and indexed official crawler source evidence
 - `GET|POST /v1/author-keys/`, `DELETE /v1/author-keys/<key_id>/`, and
   `POST /v1/toolinfo/signing-payload/` for signed-toolinfo public-key
   registration and canonical signing payload generation
@@ -349,6 +352,10 @@ Make it fully real:
   `/api/tools/` with a persistent cursor, while `/v1/me/tools/` also seeds rows
   for immediately owner-visible matches. My tools can then show
   found/missing/pending/error/no-URL state without manual URL entry.
+- Mirror official `/api/crawler/urls/`, fetch each registered feed out of band,
+  and store `toolinfo_sources`/`toolinfo_source_items` so My tools can show the
+  official feed that declared a tool (Toolsadmin, user-script aggregate, wiki
+  raw feed, GitHub raw JSON, self-hosted toolinfo, or other registered feed).
 - Run the server-side crawler job on local URLs, validate toolinfo, and upsert
   `tools` records without mirroring official Toolhub tools.
 - Reuse the same hardened fetch path during tool creation when a user supplies a

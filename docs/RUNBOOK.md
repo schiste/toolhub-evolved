@@ -207,6 +207,8 @@ names are:
 | `crawler_runs`                               | Operational/user-visible history                | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                               |
 | `toolinfo_discovery`                         | Owner-facing Evolved cache                      | Per-tool automated root/sitemap `toolinfo.json` discovery state shown on My tools; seeded from official Toolhub listings and owner resolver candidates; not canonical. |
 | `toolinfo_discovery_meta`                    | Operational cursor state                        | Stores the official `/api/tools/` page cursor used by the automated discovery job; safe to reset to page 1 by clearing the row.                                        |
+| `toolinfo_sources`                           | Official crawler source evidence cache          | Mirrors official `/api/crawler/urls/` registrations and fetch status; safe to rebuild, not a canonical copy of tool records.                                           |
+| `toolinfo_source_items`                      | Per-tool official feed source evidence          | Maps tool names to the official crawler feed item that declared them; stores compact feed payload evidence for My tools and future provenance features.                |
 | `tool_events`                                | Aggregate-only user-visible metrics             | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                     |
 | `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.              |
 | `tool_author_claims`                         | Public provenance label, private evidence cache | Per-tool author-name verification claims tied to a Toolhub username; use for Evolved provenance and "my tools" discovery, never as official Toolhub permission state.  |
@@ -324,10 +326,11 @@ if the webservice doesn't come back healthy.
 ## Scheduled jobs
 
 ```sh
-toolforge jobs load ~/repo/jobs.yaml   # crawler + toolinfo-discovery + api-cache-invalidator + db-backup
-toolforge jobs list                    # status
-toolforge jobs logs crawler            # last crawl output
-toolforge jobs logs toolinfo-discovery # last discovery output
+toolforge jobs load ~/repo/jobs.yaml       # crawler + source/discovery indexers + cache + backup
+toolforge jobs list                        # status
+toolforge jobs logs crawler                # last local crawl output
+toolforge jobs logs toolinfo-discovery     # last root/sitemap discovery output
+toolforge jobs logs toolinfo-source-index  # last official crawler source index output
 toolforge jobs logs api-cache-invalidator
 ```
 
@@ -386,6 +389,16 @@ same root-first, sitemap-after-404 policy. My tools shows `found`, `not_found`,
 `pending`, `error`, or `no_url` state to the owner. A `found` row is information
 and provenance only; official Toolhub crawler registration still happens through
 the existing signed-in write path.
+
+Official crawler source indexing is the stronger automated provenance signal.
+The `toolinfo-source-index` job mirrors public official `/api/crawler/urls/`,
+fetches each registered JSON feed, validates items with the same minimum
+Toolhub crawler fields (`name`, `title`, `description`, `url`), and writes
+`toolinfo_sources` plus `toolinfo_source_items`. My tools uses that index to
+show whether a tool came from Toolsadmin, a user-script aggregate, a wiki raw
+feed, GitHub raw JSON, a self-hosted `toolinfo.json`, or another official
+crawler feed. Root/sitemap discovery remains a secondary signal about whether a
+tool's own homepage also exposes metadata.
 
 ## Backups & restore
 
