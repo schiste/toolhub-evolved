@@ -116,6 +116,12 @@ test("viewApiDocs lists sorted proxy endpoints from the API root", async () => {
 	assert.ok(view.html.includes("current.yaml"));
 	assert.ok(view.html.includes("&quot;_schema&quot;: &quot;/toolinfo/1.2.2&quot;"));
 	assert.ok(view.html.includes("OpenAPI schema for code generation"));
+	assert.ok(view.html.includes("Revision diffs and JSON Patch operations"));
+	assert.ok(view.html.includes("<code>jsondiff</code> operations"));
+	assert.ok(view.html.includes("<code>application/json-patch+json</code> operations"));
+	assert.ok(view.html.includes("GET /api/tools/{name}/revisions/{id}/diff/{other_id}/"));
+	assert.ok(view.html.includes("&quot;op&quot;: &quot;replace&quot;"));
+	assert.ok(view.html.includes("&quot;path&quot;: &quot;/keywords/1&quot;"));
 	assert.ok(view.html.indexOf("<code>GET /api/lists/</code>") < view.html.indexOf("<code>GET /api/search/</code>"));
 	assert.ok(view.html.indexOf("<code>GET /api/search/</code>") < view.html.indexOf("<code>GET /api/tools/</code>"));
 });

@@ -24,6 +24,18 @@ export function prosePage(title, bodyHtml) {
 	};
 }
 const EXTERNAL_REL = "noopener nofollow";
+const REVISION_DIFF_EXAMPLE_JSON = JSON.stringify(
+	{
+		original: { id: 122689, content_type: "tool", content_id: "mm_wdfist" },
+		operations: [
+			{ op: "replace", path: "/description", value: "Updated description" },
+			{ op: "remove", path: "/keywords/1" }
+		],
+		result: { id: 122683, content_type: "tool", content_id: "mm_wdfist" }
+	},
+	null,
+	2
+);
 /** @param {string} url @param {string} label */
 export const ext = (url, label) =>
 	`<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
@@ -298,10 +310,33 @@ export async function viewApiDocs() {
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.readOnlyBoundary", "Read-only boundary")}</h2>
 			<p class="page__intro">The public proxy exposes anonymous live Toolhub <code>GET</code> responses for browsing and examples. Authenticated writes never go through that proxy; they use Evolved's CSRF-protected backend bridge so official OAuth tokens stay server-side.</p>
+			<h2 class="contribute__h2">${t("static.apiDocs.revisionDiffHeading", "Revision diffs and JSON Patch operations")}</h2>
+			<div class="prose">
+				<p>Tool and list history endpoints expose revision rows, and their <code>diff</code>
+				subresources return what older tickets may call <code>jsondiff</code> operations.
+				In the live Toolhub OpenAPI schema these are standard RFC 6902
+				<code>application/json-patch+json</code> operations.</p>
+				<ul>
+					<li><code>GET /api/tools/{name}/revisions/</code> lists tool revisions.</li>
+					<li><code>GET /api/tools/{name}/revisions/{id}/diff/{other_id}/</code> compares two tool revisions.</li>
+					<li><code>GET /api/lists/{id}/revisions/{revision_id}/diff/{other_id}/</code> does the same for lists.</li>
+				</ul>
+				<p>A diff response contains <code>original</code>, <code>operations</code>, and
+				<code>result</code>. Apply the operations to <code>original</code> to obtain
+				<code>result</code>; the URL order decides the direction of the comparison.</p>
+				<pre tabindex="0" aria-label="${t("static.apiDocs.revisionDiffExampleLabel", "Revision diff JSON Patch example")}"><code>${esc(REVISION_DIFF_EXAMPLE_JSON)}</code></pre>
+				<p>Each operation has an <code>op</code> such as <code>add</code>,
+				<code>remove</code>, <code>replace</code>, <code>move</code>, <code>copy</code>,
+				or <code>test</code>. The <code>path</code> field is a JSON Pointer inside the
+				versioned document; <code>value</code> appears for add, replace, and test, while
+				<code>from</code> appears for move and copy. These objects describe historical
+				differences; they are not the payload format for creating or editing tools.</p>
+			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.endpointExamples", "Small endpoint examples")}</h2>
 			<ul class="page__intro">
 				<li><strong>${t("static.apiDocs.exampleSearchTools", "Search tools")}</strong><br><code>GET /api/search/tools/?q=wikidata&amp;page_size=5</code></li>
 				<li><strong>${t("static.apiDocs.exampleReadOneTool", "Read one tool")}</strong><br><code>GET /api/tools/{name}/</code></li>
+				<li><strong>${t("static.apiDocs.exampleToolRevisionDiff", "Tool revision diff")}</strong><br><code>GET /api/tools/{name}/revisions/{id}/diff/{other_id}/</code></li>
 				<li><strong>${t("static.apiDocs.exampleFeaturedLists", "Featured lists")}</strong><br><code>GET /api/lists/?featured=true&amp;page_size=6</code></li>
 				<li><strong>${t("static.apiDocs.exampleRecentChanges", "Recent changes")}</strong><br><code>GET /api/recent/?page_size=10</code></li>
 				<li><strong>${t("static.apiDocs.exampleCrawlerRuns", "Crawler runs")}</strong><br><code>GET /api/crawler/runs/?page_size=5</code></li>
