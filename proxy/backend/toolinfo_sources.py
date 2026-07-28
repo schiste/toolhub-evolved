@@ -5,7 +5,7 @@ import ipaddress
 import json
 import socket
 from datetime import UTC, datetime
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from sqlalchemy import delete, select
@@ -21,7 +21,8 @@ TIMEOUT = (5, 60)
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_ITEMS_PER_SOURCE = 10000
 MAX_URL = 2000
-PUBLIC_INTERNAL_HOST_SUFFIXES = (".toolforge.org", ".wmflabs.org")
+MAX_REDIRECTS = 5
+PUBLIC_INTERNAL_HOST_SUFFIXES = (".toolforge.org", ".wmcloud.org", ".wmflabs.org")
 SOURCE_STATUS_PENDING = "pending"
 SOURCE_STATUS_VALID = "valid"
 SOURCE_STATUS_INVALID = "invalid"
@@ -116,26 +117,34 @@ def _require_public_http(url: str) -> None:
 
 def fetch_toolinfo_feed_once(url: str, session: requests.Session | None = None) -> object:
     """Fetch one official crawler feed with SSRF guards and a hard size cap."""
-    _require_public_http(url)
     active_session = session or requests.Session()
-    with active_session.get(
-        url,
-        headers={"User-Agent": UA, "Accept": "application/json"},
-        timeout=TIMEOUT,
-        stream=True,
-        allow_redirects=False,
-    ) as resp:
-        if resp.is_redirect or resp.is_permanent_redirect:
-            msg = f"{url}: redirects are not followed - index the final URL"
-            raise ValueError(msg)
-        resp.raise_for_status()
-        body = bytearray()
-        for chunk in resp.iter_content(64 * 1024):
-            body.extend(chunk)
-            if len(body) > MAX_BODY_BYTES:
-                msg = f"{url}: response larger than {MAX_BODY_BYTES} bytes"
-                raise ValueError(msg)
-    return json.loads(bytes(body).decode("utf-8"))
+    current_url = url
+    for _redirect in range(MAX_REDIRECTS + 1):
+        _require_public_http(current_url)
+        with active_session.get(
+            current_url,
+            headers={"User-Agent": UA, "Accept": "application/json"},
+            timeout=TIMEOUT,
+            stream=True,
+            allow_redirects=False,
+        ) as resp:
+            if resp.is_redirect or resp.is_permanent_redirect:
+                location = resp.headers.get("Location") or resp.headers.get("location") or ""
+                if not location:
+                    msg = f"{current_url}: redirect missing Location header"
+                    raise ValueError(msg)
+                current_url = urljoin(current_url, location)
+                continue
+            resp.raise_for_status()
+            body = bytearray()
+            for chunk in resp.iter_content(64 * 1024):
+                body.extend(chunk)
+                if len(body) > MAX_BODY_BYTES:
+                    msg = f"{current_url}: response larger than {MAX_BODY_BYTES} bytes"
+                    raise ValueError(msg)
+            return json.loads(bytes(body).decode("utf-8"))
+    msg = f"{url}: too many redirects"
+    raise ValueError(msg)
 
 
 def _registered_rows_from_payload(payload: object) -> tuple[list[dict], bool]:

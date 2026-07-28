@@ -399,9 +399,10 @@ show whether a tool came from Toolsadmin, a user-script aggregate, a wiki raw
 feed, GitHub raw JSON, a self-hosted `toolinfo.json`, or another official
 crawler feed. Root/sitemap discovery remains a secondary signal about whether a
 tool's own homepage also exposes metadata. Unlike user-submitted local crawler
-URLs, the source indexer allows public `*.toolforge.org` and `*.wmflabs.org`
-ingress hosts even when they resolve to internal service IPs from Toolforge;
-arbitrary private hosts are still refused.
+URLs, the source indexer allows public `*.toolforge.org`, `*.wmcloud.org`, and
+`*.wmflabs.org` ingress hosts even when they resolve to internal service IPs
+from Toolforge, and it follows redirects only after validating each hop.
+Arbitrary private hosts are still refused.
 
 ## Backups & restore
 

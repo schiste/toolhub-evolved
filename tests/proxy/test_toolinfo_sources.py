@@ -29,9 +29,10 @@ def http_error(status):
 
 
 class FakeResp:
-    def __init__(self, body=b"{}", status=200):
+    def __init__(self, body=b"{}", status=200, headers=None):
         self._body = body
         self.status_code = status
+        self.headers = headers or {}
         self.is_redirect = 300 <= status < 400
         self.is_permanent_redirect = status in (301, 308)
 
@@ -175,6 +176,7 @@ def test_guard_and_fetch_helpers(monkeypatch):
     with pytest.raises(ValueError, match="non-public"):
         toolinfo_sources._require_public_http("https://private.example/feed.json")
     toolinfo_sources._require_public_http("https://hay.toolforge.org/toolinfo.json")
+    toolinfo_sources._require_public_http("https://ia-upload.wmcloud.org/toolinfo.json")
     toolinfo_sources._require_public_http("https://tools-static.wmflabs.org/toolinfo-scraper/enwiki_userscripts.json")
     monkeypatch.setattr(
         toolinfo_sources.socket,
@@ -188,8 +190,22 @@ def test_guard_and_fetch_helpers(monkeypatch):
     assert session.calls[0][1]["allow_redirects"] is False
     monkeypatch.setattr(toolinfo_sources.requests, "Session", lambda: FakeSession([FakeResp(b"[]")]))
     assert toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json") == []
-    with pytest.raises(ValueError, match="redirects"):
+    with pytest.raises(ValueError, match="Location"):
         toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json", FakeSession([FakeResp(status=302)]))
+    redirect_session = FakeSession(
+        [
+            FakeResp(status=302, headers={"Location": "/final.json"}),
+            FakeResp(b'[{"name":"next","title":"Next","description":"d","url":"https://next.example"}]'),
+        ]
+    )
+    assert toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json", redirect_session)[0]["name"] == "next"
+    assert redirect_session.calls[1][0] == "https://public.example/final.json"
+    monkeypatch.setattr(toolinfo_sources, "MAX_REDIRECTS", 0)
+    with pytest.raises(ValueError, match="too many redirects"):
+        toolinfo_sources.fetch_toolinfo_feed_once(
+            "https://public.example/feed.json",
+            FakeSession([FakeResp(status=302, headers={"Location": "/loop.json"})]),
+        )
     monkeypatch.setattr(toolinfo_sources, "MAX_BODY_BYTES", 1)
     with pytest.raises(ValueError, match="larger than"):
         toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json", FakeSession([FakeResp(b"{}")]))
