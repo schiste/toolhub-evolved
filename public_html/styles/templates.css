@@ -89,11 +89,21 @@
 .route-loading {
 	display: flex;
 	align-items: center;
-	justify-content: center;
+	justify-content: flex-start;
 	gap: var(--space-3);
-	min-height: 42vh;
+	min-height: 12rem;
 	color: var(--color-text-secondary);
 	font-weight: 600;
+}
+
+.route-loading__panel {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-3);
+	width: min(100%, 460px);
+	padding: var(--space-4);
+	border: var(--border-base);
+	background: var(--color-surface);
 }
 
 .route-loading__label {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "vitest";
 import {
 	AVAILABLE_LOCALES,
+	BOOT_MESSAGES,
 	LOCALE_KEY,
 	pickLocalized,
 	setLocale,
@@ -17,6 +18,12 @@ afterEach(() => {
 
 test("t returns the English fallback when no catalog is installed", () => {
 	assert.equal(t("x.hello", "Hello"), "Hello");
+});
+
+test("t has tiny boot-critical English fallbacks when a caller has no catalog fallback", () => {
+	assert.equal(BOOT_MESSAGES["router.loadingToolhubData"], "Loading Toolhub data");
+	assert.equal(t("router.loadingToolhubData"), "Loading Toolhub data");
+	assert.equal(t("x.unknown"), "x.unknown");
 });
 
 test("t prefers the installed catalog and fills params after lookup", () => {

@@ -2,6 +2,7 @@
 import { esc } from "./dom.js";
 
 export const DEFAULT_LOCALE = "en";
+export const LOCALE_KEY = "toolhub-locale";
 export const RTL_LANGS = new Set([
 	"ar",
 	"arc",
@@ -19,10 +20,40 @@ export const RTL_LANGS = new Set([
 	"ur",
 	"yi"
 ]);
-export const LOCALE_KEY = "toolhub-locale";
+
+/** @type {Readonly<Record<string, string>>} */
+export const BOOT_MESSAGES = Object.freeze({
+	"api.liveDataUpdated": "Live Toolhub data updated.",
+	"api.refreshFailed": "Showing saved Toolhub data; refresh failed.",
+	"api.refreshingLiveData": "Refreshing live Toolhub data...",
+	"router.backToHome": "Back to home",
+	"router.loadErrorTitle": "Couldn't load live data",
+	"router.loadingToolhubData": "Loading Toolhub data"
+});
+
+function storedLocale() {
+	try {
+		return globalThis.localStorage?.getItem(LOCALE_KEY) || "";
+	} catch {
+		return "";
+	}
+}
+
+/** @param {unknown} locale */
+function cleanLocale(locale) {
+	const normalized = String(locale || DEFAULT_LOCALE)
+		.trim()
+		.replaceAll("_", "-");
+	if (!normalized) return DEFAULT_LOCALE;
+	try {
+		return Intl.getCanonicalLocales(normalized)[0] || DEFAULT_LOCALE;
+	} catch {
+		return DEFAULT_LOCALE;
+	}
+}
+
 export function appLocale() {
-	const stored = localStorage.getItem(LOCALE_KEY);
-	return (stored || DEFAULT_LOCALE).replaceAll("_", "-");
+	return cleanLocale(storedLocale() || DEFAULT_LOCALE);
 }
 export const LOCALE = appLocale();
 
@@ -44,11 +75,13 @@ export function setMessages(catalog) {
  * catalog extractor collects); `params` fill `{name}` placeholders after
  * lookup, so translations control word order.
  * @param {string} key
- * @param {string} fallback
+ * @param {string} [fallback]
  * @param {Record<string, string | number>} [params]
  */
 export function t(key, fallback, params) {
-	let out = Object.prototype.hasOwnProperty.call(messages, key) ? String(messages[key]) : fallback;
+	let out = Object.prototype.hasOwnProperty.call(messages, key)
+		? String(messages[key])
+		: (fallback ?? BOOT_MESSAGES[key] ?? key);
 	if (params) {
 		for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
 	}
@@ -60,7 +93,11 @@ export function t(key, fallback, params) {
  * @param {string} locale
  */
 export function setLocale(locale) {
-	localStorage.setItem(LOCALE_KEY, String(locale));
+	try {
+		globalThis.localStorage?.setItem(LOCALE_KEY, String(locale));
+	} catch {
+		// Locale persistence is progressive enhancement; the shell must still boot.
+	}
 }
 /**
  * Localized-field resolver for API data (audit §2.2 item 2): Toolhub fields

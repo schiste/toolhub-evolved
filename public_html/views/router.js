@@ -228,8 +228,10 @@ export let lastPath = null;
 export let navSeq = 0;
 /** @param {string} [_path] */
 export const loadingHTML = (_path) => `<div class="container page route-loading" role="status" aria-live="polite">
-	<span class="spinner" aria-hidden="true"></span>
-	<span class="route-loading__label">${t("router.loadingToolhubData", "Loading Toolhub data")}</span>
+	<div class="route-loading__panel">
+		<span class="spinner" aria-hidden="true"></span>
+		<span class="route-loading__label">${t("router.loadingToolhubData", "Loading Toolhub data")}</span>
+	</div>
 </div>`;
 /** @param {unknown} e */
 export const errorHTML = (
@@ -268,6 +270,8 @@ export async function render() {
 	const viewEl = /** @type {HTMLElement} */ ($("#view"));
 	/** @type {ReturnType<typeof setTimeout> | null} */
 	let spinnerTimer = null;
+	document.body.classList.toggle("on-home", path === "/");
+	setActiveNav();
 	if (path !== lastPath) {
 		viewEl.setAttribute("aria-busy", "true"); // announce busy immediately (a11y)
 		if (lastPath === null) {

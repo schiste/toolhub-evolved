@@ -42,6 +42,17 @@ function openQuickViewFor(name) {
 		.then((m) => m.openQuickView(name))
 		.catch(() => undefined);
 }
+/** @param {() => void} task */
+function afterFirstPaint(task) {
+	const run = () => {
+		setTimeout(task, 0);
+	};
+	if (typeof window.requestAnimationFrame === "function") {
+		window.requestAnimationFrame(run);
+	} else {
+		run();
+	}
+}
 
 setAuthRender(() => {
 	renderAccount();
@@ -324,19 +335,23 @@ render();
 // (English needs no fetch — the t() fallbacks ARE the English catalog.)
 const bootLocale = appLocale();
 if (bootLocale !== DEFAULT_LOCALE) {
-	backendGetJson(`/i18n/${encodeURIComponent(bootLocale)}.json`)
-		.then((catalog) => {
-			if (catalog) {
-				setMessages(catalog);
-				renderAccount();
-				syncSubmitButton();
-				render();
-			}
-			return undefined;
-		})
-		.catch(() => undefined);
+	afterFirstPaint(() => {
+		backendGetJson(`/i18n/${encodeURIComponent(bootLocale)}.json`)
+			.then((catalog) => {
+				if (catalog) {
+					setMessages(catalog);
+					renderAccount();
+					syncSubmitButton();
+					render();
+				}
+				return undefined;
+			})
+			.catch(() => undefined);
+	});
 }
 // Production sync: with a real Toolhub session the server overlay replaces
 // the browser-local one and mutations write through (lib/core/serversync.js).
 // Kicked off after first paint; a re-render follows via the auth-render hook.
-initServerSync().catch(() => false);
+afterFirstPaint(() => {
+	initServerSync().catch(() => false);
+});

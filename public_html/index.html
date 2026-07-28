@@ -124,8 +124,15 @@
 			</div>
 		</header>
 
-		<!-- The router renders the active view here -->
-		<main id="view" tabindex="-1" aria-live="polite" aria-busy="false"></main>
+		<!-- The router replaces this boot placeholder with the active view. -->
+		<main id="view" tabindex="-1" aria-live="polite" aria-busy="true">
+			<div class="container page route-loading" role="status" aria-live="polite">
+				<div class="route-loading__panel">
+					<span class="spinner" aria-hidden="true"></span>
+					<span class="route-loading__label">Loading Toolhub data</span>
+				</div>
+			</div>
+		</main>
 
 		<footer class="footer">
 			<div class="footer__cols">

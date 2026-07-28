@@ -130,6 +130,15 @@ const settleDynamicImports = async () => {
 	if (typeof vi.dynamicImportSettled === "function") await vi.dynamicImportSettled();
 	await Promise.resolve();
 };
+const settleBootTasks = async () => {
+	await new Promise((resolve) => {
+		setTimeout(resolve, 0);
+	});
+	await new Promise((resolve) => {
+		setTimeout(resolve, 0);
+	});
+	await Promise.resolve();
+};
 const loadQuickViewForTest = async () => {
 	click($("#view .tcard__inner"));
 	await settleDynamicImports();
@@ -146,6 +155,10 @@ beforeAll(async () => {
 		}),
 		removeEventListener: vi.fn()
 	}));
+	window.requestAnimationFrame = vi.fn((cb) => {
+		setTimeout(() => cb(0), 0);
+		return 1;
+	});
 	document.body.innerHTML = SHELL;
 	localStorage.clear();
 	// Direct (unsuffixed) import so Stryker's vitest runner associates this test file with main.js.
@@ -640,7 +653,9 @@ test("main boot fetches and installs a stored non-English message catalog", asyn
 	document.body.innerHTML = SHELL;
 	try {
 		await import("../../public_html/main.js?v=frboot");
-		await Promise.resolve();
+		assert.equal(router.render.mock.calls.length > 0, true);
+		assert.equal(api.backendGetJson.mock.calls.length, 0);
+		await settleBootTasks();
 		assert.deepEqual(api.backendGetJson.mock.calls[0], ["/i18n/fr.json"]);
 		assert.deepEqual(i18n.setMessages.mock.calls[0], [{ "app.title": "Catalogue" }]);
 		assert.equal(account.renderAccount.mock.calls.length > 0, true);
@@ -659,7 +674,7 @@ test("main boot ignores a failed stored-locale catalog fetch", async () => {
 	document.body.innerHTML = SHELL;
 	try {
 		await import("../../public_html/main.js?v=frboot-fail");
-		await Promise.resolve();
+		await settleBootTasks();
 		assert.deepEqual(api.backendGetJson.mock.calls[0], ["/i18n/fr.json"]);
 		assert.equal(i18n.setMessages.mock.calls.length, 0);
 	} finally {
@@ -675,7 +690,7 @@ test("main boot skips message install when a stored-locale catalog is empty", as
 	document.body.innerHTML = SHELL;
 	try {
 		await import("../../public_html/main.js?v=frboot-empty");
-		await Promise.resolve();
+		await settleBootTasks();
 		assert.deepEqual(api.backendGetJson.mock.calls[0], ["/i18n/fr.json"]);
 		assert.equal(i18n.setMessages.mock.calls.length, 0);
 	} finally {
@@ -690,7 +705,8 @@ test("main boot tolerates server-sync initialization failure", async () => {
 	document.body.innerHTML = SHELL;
 	try {
 		await import("../../public_html/main.js?v=syncfail");
-		await Promise.resolve();
+		assert.equal(serversync.initServerSync.mock.calls.length, 0);
+		await settleBootTasks();
 		assert.equal(serversync.initServerSync.mock.calls.length, 1);
 		assert.equal(router.render.mock.calls.length > 0, true);
 	} finally {

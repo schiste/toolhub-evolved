@@ -29,6 +29,8 @@ test("appLocale reads storage, defaults to en, and normalizes underscores", () =
 	assert.equal(i18n.appLocale(), "he");
 	localStorage.setItem("toolhub-locale", "pt_BR");
 	assert.equal(i18n.appLocale(), "pt-BR");
+	localStorage.setItem("toolhub-locale", "not a locale");
+	assert.equal(i18n.appLocale(), "en");
 	localStorage.removeItem("toolhub-locale");
 });
 
