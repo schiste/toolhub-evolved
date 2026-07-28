@@ -10,6 +10,14 @@
   schedule: "17 * * * *"
   emails: onfailure
 
+- name: toolinfo-discovery
+  # Background discovery for official Toolhub tools: walk /api/tools/ pages,
+  # check root /toolinfo.json first, then same-origin sitemap.xml entries.
+  command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/toolinfo_discovery.py
+  image: python3.13
+  schedule: "37 */6 * * *"
+  emails: onfailure
+
 - name: api-cache-invalidator
   # Poll official Toolhub recent changes out of band, invalidate affected rows,
   # then prewarm hot anonymous reads so user requests never pay that cost.

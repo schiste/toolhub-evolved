@@ -17,14 +17,13 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
+from urllib.parse import quote, unquote, urlencode, urlparse
 from uuid import uuid4
 
-from defusedxml import ElementTree
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import api_cache, authz, db, recent_owners, security, toolhub
+from backend import api_cache, authz, db, recent_owners, security, toolhub, toolinfo_discovery
 from backend.author_claims import (
     SIGNATURE_META_KEY,
     AuthorNameProvider,
@@ -146,7 +145,6 @@ TOOLINFO_CREATE_MAX_ITEMS = 200
 TOOLINFO_CREATE_OPT_FIELDS = ("repository", "license", "toolType")
 TOOLINFO_CREATE_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")
 TOOLINFO_CREATE_BOOL_FIELDS = ("deprecated", "experimental")
-TOOLINFO_DISCOVERY_MAX_LOCS = 200
 
 
 def _iso(dt: datetime | None) -> str:
@@ -552,7 +550,12 @@ def _candidate_tools_for_toolforge_memberships(username: str) -> tuple[dict[str,
     return candidates, errors, toolforge_names
 
 
-def _resolver_item(tool_name: str, entry: dict, claims_by_tool: dict[str, list[dict]]) -> dict:
+def _resolver_item(
+    tool_name: str,
+    entry: dict,
+    claims_by_tool: dict[str, list[dict]],
+    discoveries_by_tool: dict[str, dict] | None = None,
+) -> dict:
     """Attach only this tool's provider claims to one candidate Toolhub tool."""
     claims = list(claims_by_tool.get(_string_key(tool_name), []))
     return {
@@ -561,14 +564,19 @@ def _resolver_item(tool_name: str, entry: dict, claims_by_tool: dict[str, list[d
         "searchTerms": entry["searchTerms"],
         "evidenceUrl": entry.get("evidenceUrl"),
         "claims": claims,
+        "toolinfoDiscovery": (discoveries_by_tool or {}).get(tool_name, toolinfo_discovery.discovery_payload(None)),
     }
 
 
-def _resolver_groups(candidates: dict[str, dict], claims_by_tool: dict[str, list[dict]]) -> dict:
+def _resolver_groups(
+    candidates: dict[str, dict],
+    claims_by_tool: dict[str, list[dict]],
+    discoveries_by_tool: dict[str, dict] | None = None,
+) -> dict:
     """Split candidate tools into verified and possible groups."""
     groups: dict[str, list[dict]] = {"verified": [], "possible": []}
     for tool_name, entry in candidates.items():
-        item = _resolver_item(tool_name, entry, claims_by_tool)
+        item = _resolver_item(tool_name, entry, claims_by_tool, discoveries_by_tool)
         key = "verified" if any(claim.get("isVerified") for claim in item["claims"]) else "possible"
         groups[key].append(item)
     return groups
@@ -1032,171 +1040,6 @@ def _fetch_toolinfo_json_once(url: str) -> object:
     import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
 
     return crawl._fetch_json(toolhub.requests.Session(), url)  # noqa: SLF001 - shared internal crawler primitive.
-
-
-def _fetch_sitemap_xml_once(url: str) -> str:
-    """Fetch one sitemap XML document with the same public-HTTPS guard as crawler fetches."""
-    import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
-
-    crawl._require_public_https(url)  # noqa: SLF001 - shared internal crawler primitive.
-    resp = toolhub.requests.Session().get(
-        url,
-        headers={"User-Agent": crawl.UA},
-        timeout=crawl.TIMEOUT,
-        allow_redirects=False,
-    )
-    if resp.is_redirect or resp.is_permanent_redirect:
-        msg = f"{url}: redirects are not followed — register the final URL"
-        raise ValueError(msg)
-    resp.raise_for_status()
-    body = resp.content
-    if len(body) > crawl.MAX_BODY_BYTES:
-        msg = f"{url}: response larger than {crawl.MAX_BODY_BYTES} bytes"
-        raise ValueError(msg)
-    return body.decode("utf-8")
-
-
-def _exception_status(exc: BaseException) -> int | None:
-    """Extract an HTTP status code from requests exceptions when available."""
-    response = getattr(exc, "response", None)
-    status_code = getattr(response, "status_code", None)
-    return status_code if isinstance(status_code, int) else None
-
-
-def _discovery_origin(raw_url: str) -> str:
-    parsed = urlparse(raw_url)
-    return f"{parsed.scheme.lower()}://{parsed.netloc}"
-
-
-def _root_toolinfo_url(raw_url: str) -> str:
-    parsed = urlparse(raw_url)
-    path = parsed.path.rstrip("/")
-    if path.endswith("toolinfo.json"):
-        return raw_url
-    return f"{_discovery_origin(raw_url)}/toolinfo.json"
-
-
-def _sitemap_url(raw_url: str) -> str:
-    return f"{_discovery_origin(raw_url)}/sitemap.xml"
-
-
-def _toolinfo_names(data: object) -> list[str]:
-    """Return compact tool names found in a toolinfo object or array."""
-    if isinstance(data, dict):
-        items = [data]
-    elif isinstance(data, list):
-        items = data[:TOOLINFO_CREATE_MAX_ITEMS]
-    else:
-        return []
-    return _dedupe_strings(
-        [name for item in items if isinstance(item, dict) and (name := _clean_name(item.get("name")))]
-    )
-
-
-def _sitemap_toolinfo_urls(xml_text: str, *, sitemap_url: str, origin: str) -> list[str]:
-    """Return same-origin toolinfo.json URLs advertised by a sitemap."""
-    try:
-        root = ElementTree.fromstring(xml_text)
-    except ElementTree.ParseError:
-        return []
-    origin_parsed = urlparse(origin)
-    urls: list[str] = []
-    for node in root.iter():
-        if node.tag.rsplit("}", 1)[-1] != "loc" or not node.text:
-            continue
-        candidate = urljoin(sitemap_url, node.text.strip())
-        parsed = urlparse(candidate)
-        if parsed.scheme != "https" or parsed.netloc != origin_parsed.netloc:
-            continue
-        if not parsed.path.rstrip("/").endswith("toolinfo.json"):
-            continue
-        if len(candidate) > MAX_URL:
-            continue
-        urls.append(candidate)
-        if len(urls) >= TOOLINFO_DISCOVERY_MAX_LOCS:
-            break
-    return _dedupe_strings(urls)
-
-
-def _discovery_attempt(url: str, method: str, attempts: list[dict]) -> tuple[object | None, bool]:
-    """Try one toolinfo URL, recording a normalized discovery attempt."""
-    try:
-        data = _fetch_toolinfo_json_once(url)
-    except (toolhub.requests.RequestException, ValueError) as exc:
-        status = _exception_status(exc)
-        attempts.append({"url": url, "method": method, "ok": False, "status": status, "error": clean_error(str(exc))})
-        return None, status == HTTP_NOT_FOUND
-    attempts.append({"url": url, "method": method, "ok": True})
-    return data, False
-
-
-def _toolinfo_discovery_payload(raw_url: str) -> dict:
-    """Discover a toolinfo.json URL by probing origin root, then origin sitemap.xml after a 404."""
-    url = raw_url.strip()
-    root_url = _root_toolinfo_url(url)
-    attempts: list[dict] = []
-    data, root_not_found = _discovery_attempt(root_url, "root", attempts)
-    if data is not None:
-        return {
-            "ok": True,
-            "status": "found",
-            "method": "root",
-            "inputUrl": url,
-            "toolinfoUrl": root_url,
-            "toolNames": _toolinfo_names(data),
-            "attempts": attempts,
-        }
-    if not root_not_found:
-        return {
-            "ok": False,
-            "status": "error",
-            "inputUrl": url,
-            "attempts": attempts,
-            "lastError": attempts[-1].get("error") or "toolinfo.json could not be fetched",
-        }
-
-    sitemap_url = _sitemap_url(url)
-    try:
-        sitemap_xml = _fetch_sitemap_xml_once(sitemap_url)
-        attempts.append({"url": sitemap_url, "method": "sitemap", "ok": True})
-    except (toolhub.requests.RequestException, ValueError) as exc:
-        attempts.append(
-            {
-                "url": sitemap_url,
-                "method": "sitemap",
-                "ok": False,
-                "status": _exception_status(exc),
-                "error": clean_error(str(exc)),
-            }
-        )
-        return {
-            "ok": False,
-            "status": "not_found",
-            "inputUrl": url,
-            "attempts": attempts,
-            "lastError": "toolinfo.json not found at root and sitemap.xml could not be used",
-        }
-
-    for candidate in _sitemap_toolinfo_urls(sitemap_xml, sitemap_url=sitemap_url, origin=_discovery_origin(url)):
-        data, _not_found = _discovery_attempt(candidate, "sitemap-toolinfo", attempts)
-        if data is None:
-            continue
-        return {
-            "ok": True,
-            "status": "found",
-            "method": "sitemap",
-            "inputUrl": url,
-            "toolinfoUrl": candidate,
-            "toolNames": _toolinfo_names(data),
-            "attempts": attempts,
-        }
-    return {
-        "ok": False,
-        "status": "not_found",
-        "inputUrl": url,
-        "attempts": attempts,
-        "lastError": "toolinfo.json not found at root or in sitemap.xml",
-    }
 
 
 def _normalize_toolinfo_item(item: dict) -> dict | None:
@@ -1738,13 +1581,15 @@ def v1_me_tools() -> Response:
 
     claim_payloads = _record_candidate_provider_claims(user, candidates)
     claims_by_tool = _claims_by_tool(claim_payloads)
-    groups = _resolver_groups(candidates, claims_by_tool)
+    discoveries_by_tool = toolinfo_discovery.ensure_pending_for_candidates(candidates)
+    groups = _resolver_groups(candidates, claims_by_tool, discoveries_by_tool)
 
     return jsonify(
         {
             "username": user.username,
             "searchTerms": search_terms,
             "toolforgeToolNames": toolforge_tool_names,
+            "toolinfoDiscovery": discoveries_by_tool,
             "counts": {"verified": len(groups["verified"]), "possible": len(groups["possible"])},
             "verified": groups["verified"],
             "possible": groups["possible"],
@@ -2291,7 +2136,7 @@ def discover_toolinfo_url() -> Response:
     if error is not None:
         return _url_validation_bad("url", error)
     _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    return jsonify(_toolinfo_discovery_payload(str(raw_url)))
+    return jsonify(toolinfo_discovery.discover_toolinfo_url(str(raw_url)))
 
 
 @v1_bp.route("/v1/write/crawler/urls/<int:url_id>/", methods=["DELETE"])

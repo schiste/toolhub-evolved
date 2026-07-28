@@ -255,6 +255,35 @@ class CrawlerRun(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 
 
+class ToolinfoDiscovery(Base):
+    """Cached discovery state for an official Toolhub tool's toolinfo.json."""
+
+    __tablename__ = "toolinfo_discovery"
+    __table_args__ = (UniqueConstraint("tool_name"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    tool_url: Mapped[str] = mapped_column(String(2000), default="")
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    method: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    toolinfo_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    tool_names: Mapped[list] = mapped_column(JSON, default=list)
+    attempts: Mapped[list] = mapped_column(JSON, default=list)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+
+
+class ToolinfoDiscoveryMeta(Base):
+    """Small persistent state for the automated toolinfo discovery job."""
+
+    __tablename__ = "toolinfo_discovery_meta"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class ToolEvent(Base):
     """Privacy-limited interaction event used for Evolved aggregate metrics."""
 

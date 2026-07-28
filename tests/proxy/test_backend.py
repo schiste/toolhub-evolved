@@ -44,6 +44,8 @@ from backend.models import (
     ToolAuthorClaim,
     ToolAuthorKey,
     ToolHealthTarget,
+    ToolinfoDiscovery,
+    ToolinfoDiscoveryMeta,
     ToolList,
     ToolMedia,
     ToolOwnerCache,
@@ -291,6 +293,7 @@ def test_init_schema_creates_tool_author_claim_tables():
         "revoked_at",
         "last_used_at",
     }.issubset(key_cols)
+
     with db.session_scope() as s:
         claim = ToolAuthorClaim(tool_name="toolforge-example", author_name="Display Name", toolhub_username="owner")
         key = ToolAuthorKey(toolhub_username="owner", key_id="k1", public_key="pk")
@@ -312,6 +315,29 @@ def test_init_schema_creates_tool_author_claim_tables():
                     verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
                 )
             )
+
+
+def test_init_schema_creates_toolinfo_discovery_table():
+    db.configure("sqlite://")
+    db.init_schema()
+    cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoDiscovery.__tablename__)}
+    assert {
+        "id",
+        "tool_name",
+        "tool_url",
+        "status",
+        "method",
+        "toolinfo_url",
+        "tool_names",
+        "attempts",
+        "checked_at",
+        "expires_at",
+        "last_error",
+        "source",
+        "sync_status",
+    }.issubset(cols)
+    meta_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoDiscoveryMeta.__tablename__)}
+    assert {"key", "value", "updated_at"}.issubset(meta_cols)
 
 
 def test_toolforge_membership_provider_extracts_tool_names_from_member_dns():
@@ -1374,6 +1400,38 @@ def test_me_tools_returns_possible_display_author_matches(client, monkeypatch):
     assert item["claims"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
     assert item["claims"][0]["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
     assert item["claims"][0]["isVerified"] is False
+    assert item["toolinfoDiscovery"]["status"] == "no_url"
+
+
+def test_me_tools_records_pending_toolinfo_discovery_for_owned_candidates(client, monkeypatch):
+    uid = add_user(username="Ada Lovelace")
+    sign_in(client, uid)
+
+    def fake_public_api_get(path, *, params=None):
+        assert path == "/api/search/tools/"
+        return {
+            "results": [
+                {
+                    "name": "ada-tool",
+                    "title": "Ada Tool",
+                    "url": "https://ada.example/tool",
+                    "author": "Ada Lovelace",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    data = client.get("/v1/me/tools/").get_json()
+    discovery = data["possible"][0]["toolinfoDiscovery"]
+    assert discovery["status"] == "pending"
+    assert discovery["toolName"] == "ada-tool"
+    assert discovery["toolUrl"] == "https://ada.example/tool"
+    assert data["toolinfoDiscovery"]["ada-tool"]["status"] == "pending"
+    with db.session_scope() as s:
+        row = s.query(ToolinfoDiscovery).one()
+        assert row.tool_name == "ada-tool"
+        assert row.tool_url == "https://ada.example/tool"
+        assert row.status == "pending"
 
 
 def test_me_tools_uses_local_author_claims_as_verified_search_terms(client, monkeypatch):
