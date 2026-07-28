@@ -585,11 +585,12 @@ const S = {
 			<figure class="sg-example sg-example--wide">
 		<div class="sg-example__demo"><div class="sg-control-stack">
 		<form class="le__add">
-			<input class="le__input" type="url" aria-label="Tool info URL" placeholder="https://example.org/toolinfo.json" />
+			<input class="le__input" type="url" aria-label="Tool homepage or toolinfo.json URL" placeholder="https://example.org/" />
 			<button class="btn btn--outline btn--md" type="submit">Register</button>
 		</form>
 		<ul class="at__urls">
 			<li><code class="at__url">https://example.org/toolinfo.json</code> <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li>
+			<li class="at__url-row at__url-row--not-found"><code class="at__url">https://missing.example/app</code> <span class="sync-badge sync-badge--sync-error">toolinfo.json not found</span><span class="at__url-error">Checked root and sitemap.xml</span></li>
 		</ul>
 		<textarea class="le__input at__json" rows="4" aria-label="Tool info JSON" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
 		<p class="at__result at__result--ok">1 added, 2 updated</p>

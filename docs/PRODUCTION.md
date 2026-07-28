@@ -115,7 +115,11 @@ over unchanged, one level up:
   to official `/api/*`, and records sync/fallback metadata. Tool creation may
   include a create-only `toolinfo_url`; Evolved fetches it once with the crawler
   safety rules to fill missing optional fields and capture local evidence before
-  sending the official Toolhub create.
+  sending the official Toolhub create. Add/remove tools can accept a tool
+  homepage too: `/v1/crawler/toolinfo-discovery/` first probes the origin root
+  `/toolinfo.json`, then uses same-origin HTTPS `sitemap.xml` entries only after
+  the root probe returns `404`, and registers only the discovered concrete
+  `toolinfo.json` URL.
 - **Evolved keeps the additional layer.** Drafts/fallbacks, local overlays,
   local activity rows, and any feature Toolhub does not expose live in our
   database and sync into the browser's localStorage cache.
@@ -278,6 +282,10 @@ via a documented one-liner.
 
 - `/v1/write/crawler/urls/` CRUD (auth required) + `Add or remove tools` page
   writes official Toolhub crawler URL registrations when permitted.
+- `/v1/crawler/toolinfo-discovery/` accepts a homepage, safely discovers a
+  concrete same-origin `toolinfo.json` from the site root or `sitemap.xml`, and
+  reports `toolinfo.json not found` without creating a crawler row when neither
+  source works.
 - Tool creation can also register a local crawler URL opportunistically through
   its create-only `toolinfo_url` field; that one-shot fetch is for immediate
   enrichment and evidence, while the scheduled job remains the refresh path.

@@ -294,7 +294,7 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 	await at("/add-or-remove-tools");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Add or remove tools",
-		"Register a toolinfo.json URL to be crawled, or create a tool record directly."
+		"Paste a tool homepage or toolinfo.json URL for crawler registration, or create a tool record directly."
 	]);
 
 	vi.clearAllMocks();

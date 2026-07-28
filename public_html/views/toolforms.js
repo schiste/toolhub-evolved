@@ -11,7 +11,7 @@ import {
 	newToolBase
 } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
-import { officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
+import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { normStr } from "../lib/core/util.js";
 import {
@@ -82,6 +82,15 @@ function validateHttpField(id, msg, opts = {}) {
 		return $(`#${id}`);
 	}
 	return null;
+}
+
+/** @param {string} value */
+function looksLikeToolinfoUrl(value) {
+	try {
+		return new URL(value).pathname.replace(/\/+$/, "").endsWith("/toolinfo.json");
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -958,60 +967,153 @@ export async function viewToolForm(name) {
 	};
 }
 
+/** @param {Array<{ inputUrl: string, message: string, attempts?: Array<{ url?: string }> }>} discoveryMisses */
+function addToolDiscoveryRows(discoveryMisses) {
+	return discoveryMisses
+		.map((miss) => {
+			const checked = (miss.attempts || [])
+				.map((attempt) => attempt.url)
+				.filter(Boolean)
+				.join(", ");
+			const suffix = checked ? ` ${t("toolforms.discoveryChecked", "Checked: {urls}", { urls: checked })}` : "";
+			return `<li class="at__url-row at__url-row--not-found"><code class="at__url">${esc(miss.inputUrl)}</code> <span class="sync-badge sync-badge--sync-error">${t("toolforms.toolinfoNotFound", "toolinfo.json not found")}</span><span class="at__url-error">${esc(miss.message)}${esc(suffix)}</span></li>`;
+		})
+		.join("");
+}
+
+/** @param {Array<{ inputUrl: string, message: string, attempts?: Array<{ url?: string }> }>} discoveryMisses */
+function addToolUrlRows(discoveryMisses) {
+	const registered = crawlerUrls()
+		.map(
+			(
+				/** @type {{ url: string, id?: number, officialId?: number, syncStatus?: string, syncLabel?: string, lastError?: string }} */ x
+			) => {
+				const officialId = x.officialId ?? x.id;
+				const localId = /** @type {{ localId?: number }} */ (x).localId;
+				const state = syncState(x);
+				const retryButton =
+					state.retryAvailable && localId && officialWriteAvailable()
+						? button(t("toolforms.retryUrl", "Retry"), {
+								size: "sm",
+								icon: "upload",
+								attrs: `data-url-retry="${localId}" data-url-retry-url="${esc(x.url)}"`
+							})
+						: "";
+				return `<li><code class="at__url">${esc(x.url)}</code> ${syncBadge(x)}${state.retryAvailable ? ` <span class="sync-badge sync-badge--retry">${t("syncStatus.retryAvailable", "Retry available")}</span>` : ""}${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${retryButton} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}${localId ? ` data-url-local-id="${localId}"` : ""}` })}</li>`;
+			}
+		)
+		.join("");
+	const misses = addToolDiscoveryRows(discoveryMisses);
+	return registered || misses
+		? `${registered}${misses}`
+		: `<li class="le__empty">${t("toolforms.noUrls", "No URLs registered.")}</li>`;
+}
+
+function addToolSubGrid() {
+	const cards = /** @type {Tool[]} */ (Object.keys(toolNewMap()).map((n) => newToolBase(n)));
+	return cards.length > 0
+		? grid("grid-tools", cards, (/** @type {Tool} */ t) => toolCard(t))
+		: `<p class="empty">${t("toolforms.noToolsYet", "No tools yet. Submit one above, or ingest toolinfo.")}</p>`;
+}
+
+/** @param {Array<Record<string, any>>} runs */
+function addToolCrawlerRunRows(runs) {
+	if (runs.length === 0) {
+		return `<p class="empty">${t("toolforms.noCrawlerRuns", "No local crawler runs recorded yet.")}</p>`;
+	}
+	return `<ol class="feed feed--compact">${runs
+		.map((run) => {
+			const status = run.ok ? t("toolforms.crawlerRunOk", "OK") : t("toolforms.crawlerRunErrors", "Errors");
+			const errors = Array.isArray(run.errors) && run.errors.length > 0 ? ` · ${esc(run.errors[0])}` : "";
+			return `<li><span>${status} · ${t(
+				"toolforms.crawlerRunCounts",
+				"{urls} URLs, {added} added, {updated} updated",
+				{
+					urls: String(run.urlsCount || 0),
+					added: String(run.added || 0),
+					updated: String(run.updated || 0)
+				}
+			)}${errors}</span><span class="feed__when">${esc(run.endedAt || run.startedAt || "")}</span></li>`;
+		})
+		.join("")}</ol>`;
+}
+
+/** @param {string} url @param {HTMLElement} out */
+async function addToolRegisterCrawlerUrl(url, out) {
+	out.className = "at__result";
+	out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
+	try {
+		const res = await officialWrite("POST", "/v1/write/crawler/urls/", { url });
+		const local = res?.local || {};
+		const officialId =
+			local.officialId ??
+			(res?.result === SYNC_STATUS.official && typeof res?.toolhub?.id === "number" ? res.toolhub.id : undefined);
+		const meta = lifecycleMeta(res);
+		if (typeof local.localId === "number") meta.localId = local.localId;
+		crawlerUrlAdd(local.url || url, officialId, meta);
+		if (res?.result === SYNC_STATUS.localFallback) {
+			out.className = "at__result at__result--err";
+			out.textContent = t(
+				"toolforms.officialWriteFailed",
+				"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+				{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+			);
+		} else {
+			out.className = "at__result at__result--ok";
+			out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
+		}
+		return true;
+	} catch (error) {
+		showOfficialWriteFailure(out, error, { "at-url": ["url"] });
+		return false;
+	}
+}
+
+/**
+ * @param {string} url
+ * @param {HTMLElement} out
+ * @param {Array<{ inputUrl: string, message: string, attempts?: Array<{ url?: string }> }>} discoveryMisses
+ * @param {() => void} renderUrlList
+ */
+async function addToolDiscoverToolinfoUrl(url, out, discoveryMisses, renderUrlList) {
+	if (looksLikeToolinfoUrl(url)) return url;
+	out.className = "at__result";
+	out.textContent = t("toolforms.discoveringToolinfo", "Looking for toolinfo.json…");
+	try {
+		const res = await serverWrite("POST", "/v1/crawler/toolinfo-discovery/", { url });
+		if (res?.ok && res.toolinfoUrl) {
+			out.textContent =
+				res.method === "sitemap"
+					? t(
+							"toolforms.toolinfoFoundInSitemap",
+							"Found toolinfo.json in sitemap.xml. Publishing to official Toolhub…"
+						)
+					: t(
+							"toolforms.toolinfoFoundAtRoot",
+							"Found toolinfo.json at the site root. Publishing to official Toolhub…"
+						);
+			return String(res.toolinfoUrl);
+		}
+		const message = res?.lastError || t("toolforms.toolinfoDiscoveryFailed", "toolinfo.json could not be found.");
+		discoveryMisses.unshift({
+			inputUrl: url,
+			message,
+			attempts: Array.isArray(res?.attempts) ? res.attempts : []
+		});
+		renderUrlList();
+		out.className = "at__result at__result--err";
+		out.textContent = message;
+		return null;
+	} catch (error) {
+		showOfficialWriteFailure(out, error, { "at-url": ["url"] });
+		return null;
+	}
+}
+
 // Add/remove tools: official crawler URL registration plus local toolinfo ingest.
 export function viewAddTools() {
-	function urlRows() {
-		const u = crawlerUrls();
-		return u.length > 0
-			? u
-					.map(
-						(
-							/** @type {{ url: string, id?: number, officialId?: number, syncStatus?: string, syncLabel?: string, lastError?: string }} */ x
-						) => {
-							const officialId = x.officialId ?? x.id;
-							const localId = /** @type {{ localId?: number }} */ (x).localId;
-							const state = syncState(x);
-							const retryButton =
-								state.retryAvailable && localId && officialWriteAvailable()
-									? button(t("toolforms.retryUrl", "Retry"), {
-											size: "sm",
-											icon: "upload",
-											attrs: `data-url-retry="${localId}" data-url-retry-url="${esc(x.url)}"`
-										})
-									: "";
-							return `<li><code class="at__url">${esc(x.url)}</code> ${syncBadge(x)}${state.retryAvailable ? ` <span class="sync-badge sync-badge--retry">${t("syncStatus.retryAvailable", "Retry available")}</span>` : ""}${x.lastError ? ` <span class="at__url-error">${esc(x.lastError)}</span>` : ""} ${retryButton} ${iconButton("close", t("toolforms.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm", attrs: `data-url-rm="${esc(x.url)}"${officialId ? ` data-url-id="${officialId}"` : ""}${localId ? ` data-url-local-id="${localId}"` : ""}` })}</li>`;
-						}
-					)
-					.join("")
-			: `<li class="le__empty">${t("toolforms.noUrls", "No URLs registered.")}</li>`;
-	}
-	function subGrid() {
-		const cards = /** @type {Tool[]} */ (Object.keys(toolNewMap()).map((n) => newToolBase(n)));
-		return cards.length > 0
-			? grid("grid-tools", cards, (/** @type {Tool} */ t) => toolCard(t))
-			: `<p class="empty">${t("toolforms.noToolsYet", "No tools yet. Submit one above, or ingest toolinfo.")}</p>`;
-	}
-	/** @param {Array<Record<string, any>>} runs */
-	function crawlerRunRows(runs) {
-		if (runs.length === 0) {
-			return `<p class="empty">${t("toolforms.noCrawlerRuns", "No local crawler runs recorded yet.")}</p>`;
-		}
-		return `<ol class="feed feed--compact">${runs
-			.map((run) => {
-				const status = run.ok ? t("toolforms.crawlerRunOk", "OK") : t("toolforms.crawlerRunErrors", "Errors");
-				const errors = Array.isArray(run.errors) && run.errors.length > 0 ? ` · ${esc(run.errors[0])}` : "";
-				return `<li><span>${status} · ${t(
-					"toolforms.crawlerRunCounts",
-					"{urls} URLs, {added} added, {updated} updated",
-					{
-						urls: String(run.urlsCount || 0),
-						added: String(run.added || 0),
-						updated: String(run.updated || 0)
-					}
-				)}${errors}</span><span class="feed__when">${esc(run.endedAt || run.startedAt || "")}</span></li>`;
-			})
-			.join("")}</ol>`;
-	}
+	/** @type {Array<{ inputUrl: string, message: string, attempts?: Array<{ url?: string }> }>} */
+	const discoveryMisses = [];
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const registerBtn = button(t("toolforms.register", "Register"), { variant: "outline", type: "submit" });
 	const html = `
@@ -1019,14 +1121,14 @@ export function viewAddTools() {
 		<div class="section-head"><h1 class="page__title">${t("toolforms.addOrRemoveTools", "Add or remove tools")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 			${button(t("toolforms.submitATool", "Submit a tool"), { variant: "primary", href: "/tools/create", icon: "add" })}</div>
 		<p class="page__intro">${t("toolforms.ingestIntroLead", "Register a")} <code>toolinfo.json</code> ${t("toolforms.ingestIntroTail", "URL, or paste toolinfo to add records.")}
-		${t("toolforms.introEverything", "Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
+		${t("toolforms.introEverything", "Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>. ${t("toolforms.discoveryIntro", "You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.")}</p>
 
-		<h2 class="le__h2">${t("toolforms.registerUrlTitle", "Register a toolinfo.json URL")}</h2>
+		<h2 class="le__h2">${t("toolforms.findOrRegisterToolinfoTitle", "Find or register toolinfo.json")}</h2>
 		<form class="le__add" data-url-form novalidate>
-			${fInput(t("toolforms.fieldToolinfoUrl", "toolinfo.json URL"), "at-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: t("toolforms.fieldToolinfoUrlHint", "Full public URL the crawler should re-read, usually ending in toolinfo.json.") })}
+			${fInput(t("toolforms.fieldToolOrToolinfoUrl", "Tool homepage or toolinfo.json URL"), "at-url", "", { type: "url", ph: "https://example.org/", hint: t("toolforms.fieldToolOrToolinfoUrlHint", "Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.") })}
 			${registerBtn}
 		</form>
-		<ul class="at__urls" data-url-list>${urlRows()}</ul>
+		<ul class="at__urls" data-url-list>${addToolUrlRows(discoveryMisses)}</ul>
 
 		<h2 class="le__h2">${t("toolforms.ingestToolinfoTitle", "Ingest toolinfo")}</h2>
 		${fArea(t("toolforms.fieldToolinfoJson", "Toolinfo JSON"), "at-json", "", t("toolforms.fieldToolinfoJsonHint", "Paste one tool object or an array; successful entries appear below in Your tools."), { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
@@ -1036,15 +1138,18 @@ export function viewAddTools() {
 		<p class="at__result" data-ingest-result aria-live="polite"></p>
 
 		<h2 class="le__h2">${t("toolforms.yourToolsTitle", "Your tools")} <span class="le__count" data-sub-count></span></h2>
-		<div data-sub-grid>${subGrid()}</div>
+		<div data-sub-grid>${addToolSubGrid()}</div>
 		<h2 class="le__h2">${t("toolforms.localCrawlerRunsTitle", "Local crawler runs")}</h2>
-		<div data-crawler-runs>${crawlerRunRows([])}</div>
+		<div data-crawler-runs>${addToolCrawlerRunRows([])}</div>
 	</div>`;
 	function mount() {
+		const renderUrlList = () => {
+			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = addToolUrlRows(discoveryMisses);
+		};
 		backendGetJson("/v1/crawler/runs/")
 			.then((data) => {
 				const box = $("[data-crawler-runs]");
-				if (box) box.innerHTML = crawlerRunRows(Array.isArray(data?.results) ? data.results : []);
+				if (box) box.innerHTML = addToolCrawlerRunRows(Array.isArray(data?.results) ? data.results : []);
 				return undefined;
 			})
 			.catch(() => undefined);
@@ -1062,43 +1167,17 @@ export function viewAddTools() {
 			}
 			if (!u) return;
 			const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
-			if (officialWriteAvailable()) {
-				out.className = "at__result";
-				out.textContent = t("toolforms.publishingToToolhub", "Publishing to official Toolhub…");
-				try {
-					const res = await officialWrite("POST", "/v1/write/crawler/urls/", { url: u });
-					const local = res?.local || {};
-					const officialId =
-						local.officialId ??
-						(res?.result === SYNC_STATUS.official && typeof res?.toolhub?.id === "number"
-							? res.toolhub.id
-							: undefined);
-					const meta = lifecycleMeta(res);
-					if (typeof local.localId === "number") meta.localId = local.localId;
-					crawlerUrlAdd(local.url || u, officialId, meta);
-					if (res?.result === SYNC_STATUS.localFallback) {
-						out.className = "at__result at__result--err";
-						out.textContent = t(
-							"toolforms.officialWriteFailed",
-							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-							{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
-						);
-					} else {
-						out.className = "at__result at__result--ok";
-						out.textContent = t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
-					}
-				} catch (error) {
-					showOfficialWriteFailure(out, error, { "at-url": ["url"] });
-					return;
-				}
-			} else {
+			if (!officialWriteAvailable()) {
 				out.className = "at__result at__result--err";
 				out.textContent = toolhubSignInRequiredMessage();
 				return;
 			}
+			const toolinfoUrl = await addToolDiscoverToolinfoUrl(u, out, discoveryMisses, renderUrlList);
+			if (!toolinfoUrl) return;
+			if (!(await addToolRegisterCrawlerUrl(toolinfoUrl, out))) return;
 			/** @type {HTMLInputElement} */ ($input("#at-url")).value = "";
 			clearFieldError("at-url");
-			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
+			renderUrlList();
 		});
 		/** @type {HTMLElement} */ ($("[data-url-list]")).addEventListener("click", async (e) => {
 			const retry = /** @type {EventTarget} */ (e.target).closest("[data-url-retry]");
@@ -1141,7 +1220,7 @@ export function viewAddTools() {
 									}
 								)
 							: t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
-					/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
+					renderUrlList();
 				} catch (error) {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
@@ -1166,7 +1245,7 @@ export function viewAddTools() {
 				officialWrite("DELETE", `/v1/write/crawler/urls/${localId}/fallback/`).catch(() => undefined);
 			}
 			crawlerUrlDelete(/** @type {string} */ (b.getAttribute("data-url-rm")));
-			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = urlRows();
+			renderUrlList();
 		});
 		/** @type {HTMLElement} */ ($("[data-ingest]")).addEventListener("click", () => {
 			const res = ingestToolinfo(/** @type {HTMLInputElement} */ ($input("#at-json")).value.trim());
@@ -1184,7 +1263,7 @@ export function viewAddTools() {
 			out.textContent =
 				(parts.join(", ") || t("toolforms.nothingIngested", "Nothing ingested")) +
 				(errors.length > 0 ? ` · ${errors.join("; ")}` : "");
-			/** @type {HTMLElement} */ ($("[data-sub-grid]")).innerHTML = subGrid();
+			/** @type {HTMLElement} */ ($("[data-sub-grid]")).innerHTML = addToolSubGrid();
 			const c = $("[data-sub-count]");
 			// Stryker disable next-line ConditionalExpression: the [data-sub-count] element is always present in this view, so the guard is always true — defensive.
 			if (c) {

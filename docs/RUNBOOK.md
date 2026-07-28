@@ -364,6 +364,15 @@ and stores the URL locally for future scheduled refreshes. A failed create-time
 fetch does not block an otherwise valid official Toolhub create; it records a
 `sync_error` row so the scheduler and crawler history can surface or retry it.
 
+The Add/remove tools form may receive a homepage instead of a direct
+`toolinfo.json` URL. `/v1/crawler/toolinfo-discovery/` checks the origin root
+`/toolinfo.json` first. Only when that returns `404` does it fetch the origin
+`/sitemap.xml`, scan same-origin HTTPS `<loc>` entries ending in
+`toolinfo.json`, and test those candidates. A discovery miss is visible in the
+URL list as `toolinfo.json not found` and does not create a `crawler_urls` row;
+successful discovery continues through the normal official-first crawler URL
+write path.
+
 ## Backups & restore
 
 Nightly `mariadb-dump` to `~/backups`, 14 dumps kept (`tools/backup-db.sh`).

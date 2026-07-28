@@ -641,6 +641,9 @@ li.le__empty {
 	border: var(--border-muted);
 	border-radius: var(--radius-sm);
 }
+.at__url-row--not-found {
+	background: var(--color-destructive-subtle);
+}
 .at__url {
 	flex: 1;
 	min-width: 0;

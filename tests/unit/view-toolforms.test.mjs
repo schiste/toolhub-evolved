@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
 	navigateTo: vi.fn(),
 	officialWrite: vi.fn(),
 	officialWriteAvailable: vi.fn(),
+	serverWrite: vi.fn(),
 	getSimilarityIndex: vi.fn(),
 	nearestNeighbors: vi.fn(),
 	crawlerUrls: vi.fn(),
@@ -46,7 +47,8 @@ vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 });
 vi.mock("../../public_html/lib/core/serversync.js", () => ({
 	officialWrite: h.officialWrite,
-	officialWriteAvailable: h.officialWriteAvailable
+	officialWriteAvailable: h.officialWriteAvailable,
+	serverWrite: h.serverWrite
 }));
 vi.mock("../../public_html/lib/core/similarity.js", async (orig) => {
 	const actual = await orig();
@@ -113,13 +115,13 @@ const S = {
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records.
-		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
 
-		<h2 class="le__h2">Register a toolinfo.json URL</h2>
+		<h2 class="le__h2">Find or register toolinfo.json</h2>
 		<form class="le__add" data-url-form novalidate>
-			<label class="le__label">toolinfo.json URL
-		 <span class="le__hint" id="at-url-hint">Full public URL the crawler should re-read, usually ending in toolinfo.json.</span>
-		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/toolinfo.json" /><span class="le__error" id="at-url-err" hidden></span></label>
+			<label class="le__label">Tool homepage or toolinfo.json URL
+		 <span class="le__hint" id="at-url-hint">Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.</span>
+		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/" /><span class="le__error" id="at-url-err" hidden></span></label>
 			<button class="btn btn--outline btn--md" type="submit">Register</button>
 		</form>
 		<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
@@ -157,13 +159,13 @@ const S = {
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
 		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records.
-		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
 
-		<h2 class="le__h2">Register a toolinfo.json URL</h2>
+		<h2 class="le__h2">Find or register toolinfo.json</h2>
 		<form class="le__add" data-url-form novalidate>
-			<label class="le__label">toolinfo.json URL
-		 <span class="le__hint" id="at-url-hint">Full public URL the crawler should re-read, usually ending in toolinfo.json.</span>
-		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/toolinfo.json" /><span class="le__error" id="at-url-err" hidden></span></label>
+			<label class="le__label">Tool homepage or toolinfo.json URL
+		 <span class="le__hint" id="at-url-hint">Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.</span>
+		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/" /><span class="le__error" id="at-url-err" hidden></span></label>
 			<button class="btn btn--outline btn--md" type="submit">Register</button>
 		</form>
 		<ul class="at__urls" data-url-list><li class="le__empty">No URLs registered.</li></ul>
@@ -451,6 +453,7 @@ beforeEach(() => {
 	h.toolAnnosMap.mockReturnValue({});
 	h.backendGetJson.mockResolvedValue({ results: [] });
 	h.officialWrite.mockResolvedValue({ ok: true });
+	h.serverWrite.mockResolvedValue({ ok: true, method: "root", toolinfoUrl: "https://added.example/toolinfo.json" });
 	h.officialWriteAvailable.mockReturnValue(false);
 });
 
@@ -1249,12 +1252,97 @@ test("mount addtools: signed-in URL registration stores the official crawler id"
 		"/v1/write/crawler/urls/",
 		{ url: "https://added.example/toolinfo.json" }
 	]);
+	assert.equal(h.serverWrite.mock.calls.length, 0);
 	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
 		"https://added.example/toolinfo.json",
 		9,
 		{ source: "official", syncStatus: "official" }
 	]);
 	assert.equal(document.querySelector("[data-ingest-result]").textContent, "Registered with official Toolhub.");
+});
+
+test("mount addtools: homepage URL discovers root toolinfo before registration", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.serverWrite.mockResolvedValue({
+		ok: true,
+		method: "root",
+		toolinfoUrl: "https://added.example/toolinfo.json",
+		toolNames: ["added-tool"]
+	});
+	h.officialWrite.mockResolvedValue({
+		result: "official",
+		syncStatus: "official",
+		toolhub: { id: 9 }
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([{ url: "https://added.example/toolinfo.json", id: 9 }]);
+	setVal("at-url", "https://added.example/");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.serverWrite.mock.calls[0], [
+		"POST",
+		"/v1/crawler/toolinfo-discovery/",
+		{ url: "https://added.example/" }
+	]);
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/write/crawler/urls/",
+		{ url: "https://added.example/toolinfo.json" }
+	]);
+	assert.deepEqual(h.crawlerUrlAdd.mock.calls[0], [
+		"https://added.example/toolinfo.json",
+		9,
+		{ source: "official", syncStatus: "official" }
+	]);
+});
+
+test("mount addtools: sitemap discovery registers the sitemap toolinfo URL", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.serverWrite.mockResolvedValue({
+		ok: true,
+		method: "sitemap",
+		toolinfoUrl: "https://added.example/meta/toolinfo.json"
+	});
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official", toolhub: {} });
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("at-url", "https://added.example/app");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], [
+		"POST",
+		"/v1/write/crawler/urls/",
+		{ url: "https://added.example/meta/toolinfo.json" }
+	]);
+	assert.equal(document.querySelector("#at-url").value, "");
+});
+
+test("mount addtools: discovery miss renders a not-found row and does not register", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.serverWrite.mockResolvedValue({
+		ok: false,
+		status: "not_found",
+		lastError: "toolinfo.json not found at root or in sitemap.xml",
+		attempts: [{ url: "https://missing.example/toolinfo.json" }, { url: "https://missing.example/sitemap.xml" }]
+	});
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	setVal("at-url", "https://missing.example/app");
+	document.querySelector("[data-url-form]").dispatchEvent(new Event("submit", { cancelable: true }));
+	await tick();
+	assert.equal(h.officialWrite.mock.calls.length, 0);
+	assert.equal(h.crawlerUrlAdd.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-url-list]").textContent.includes("toolinfo.json not found"));
+	assert.ok(document.querySelector("[data-url-list]").textContent.includes("https://missing.example/toolinfo.json"));
+	assert.ok(document.querySelector("[data-url-list]").textContent.includes("https://missing.example/sitemap.xml"));
+	assert.equal(
+		document.querySelector("[data-ingest-result]").textContent,
+		"toolinfo.json not found at root or in sitemap.xml"
+	);
 });
 
 test("mount addtools: signed-in URL registration without an id is kept as official", async () => {

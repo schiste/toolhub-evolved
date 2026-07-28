@@ -339,6 +339,10 @@ Make it fully real:
 - Store official crawler URL id after successful Toolhub registration.
 - Keep Evolved-local crawler URLs for sources that cannot be registered
   officially or are intentionally local.
+- Let Add/remove tools accept a homepage by discovering the origin
+  `/toolinfo.json` first and same-origin `sitemap.xml` toolinfo entries only
+  after a root `404`; store/register only the discovered concrete
+  `toolinfo.json` URL.
 - Run the server-side crawler job on local URLs, validate toolinfo, and upsert
   `tools` records without mirroring official Toolhub tools.
 - Reuse the same hardened fetch path during tool creation when a user supplies a

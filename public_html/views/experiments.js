@@ -309,12 +309,18 @@ export const EXPERIMENTS = [
 			},
 			{
 				name: t("experiments.crawlerName", "Add / remove tools (crawler)"),
-				what: t("experiments.crawlerWhat", "Register a toolinfo.json URL, or paste toolinfo to ingest tools."),
+				what: t(
+					"experiments.crawlerWhat",
+					"Paste a tool homepage or direct toolinfo.json URL, or paste toolinfo to ingest tools."
+				),
 				current: t(
 					"experiments.crawlerCurrent",
-					"Signed-in URL registrations write to Toolhub; pasted JSON ingestion remains local to Evolved."
+					"Evolved discovers root/sitemap toolinfo.json URLs before official-first Toolhub registration; pasted JSON ingestion remains local."
 				),
-				need: t("experiments.crawlerNeed", "Toolhub crawler permissions and local fallback storage"),
+				need: t(
+					"experiments.crawlerNeed",
+					"Toolhub crawler permissions, safe toolinfo discovery, and local fallback storage"
+				),
 				tryHref: "/add-or-remove-tools",
 				tryLabel: t("experiments.crawlerTry", "Add or remove tools")
 			},

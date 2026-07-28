@@ -541,11 +541,12 @@ function annotationEditorExample() {
 	const registerBtn = button("Register", { variant: "outline", type: "submit" });
 	return `<div class="sg-control-stack">
 		<form class="le__add">
-			<input class="le__input" type="url" aria-label="Tool info URL" placeholder="https://example.org/toolinfo.json" />
+			<input class="le__input" type="url" aria-label="Tool homepage or toolinfo.json URL" placeholder="https://example.org/" />
 			${registerBtn}
 		</form>
 		<ul class="at__urls">
 			<li><code class="at__url">https://example.org/toolinfo.json</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm" })}</li>
+			<li class="at__url-row at__url-row--not-found"><code class="at__url">https://missing.example/app</code> <span class="sync-badge sync-badge--sync-error">toolinfo.json not found</span><span class="at__url-error">Checked root and sitemap.xml</span></li>
 		</ul>
 		<textarea class="le__input at__json" rows="4" aria-label="Tool info JSON" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
 		<p class="at__result at__result--ok">1 added, 2 updated</p>

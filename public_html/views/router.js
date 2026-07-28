@@ -85,7 +85,10 @@ export const ROUTES = {
 		requireSignIn(
 			() => loadToolForms().then((m) => m.viewAddTools()),
 			t("router.addToolsTitle", "Add or remove tools"),
-			t("router.addToolsLead", "Register a toolinfo.json URL to be crawled, or create a tool record directly.")
+			t(
+				"router.addToolsLead",
+				"Paste a tool homepage or toolinfo.json URL for crawler registration, or create a tool record directly."
+			)
 		),
 	account: () =>
 		requireSignIn(
