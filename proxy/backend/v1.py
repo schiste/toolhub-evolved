@@ -3328,7 +3328,12 @@ def _tool_media_post(clean_name: str) -> Response:
 
 @v1_bp.route("/v1/tools/<name>/media/", methods=["GET", "POST"])
 def v1_tool_media(name: str) -> Response:
-    """List approved media, or submit URL-based media metadata for moderation."""
+    """List approved media, or submit URL-based media metadata for moderation.
+
+    No @write_guard here because GET is public: the POST half applies the guard
+    itself inside _tool_media_post. An audit that reads decorators alone will
+    score this route as an unauthenticated write, so check there before believing it.
+    """
     clean_name = _clean_name(name)
     if clean_name is None:
         return _bad("tool name is required")
