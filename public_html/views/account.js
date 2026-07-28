@@ -167,9 +167,10 @@ function authorClaimBadge(claim) {
 /**
  * @param {any[]} claims
  * @param {boolean} verified
+ * @returns {AuthorVerificationBadge[]}
  */
 function authorClaimBadges(claims, verified) {
-	const badges = [];
+	const badges = /** @type {AuthorVerificationBadge[]} */ ([]);
 	const seen = new Set();
 	for (const claim of Array.isArray(claims) ? claims : []) {
 		const badge = authorClaimBadge(claim);
@@ -195,7 +196,7 @@ function resolvedTools(items, verified) {
 			tool.authorVerificationBadges = authorClaimBadges(item.claims, verified);
 			return tool;
 		})
-		.filter(Boolean);
+		.filter((tool) => tool !== null);
 }
 
 /** @param {Tool} tool */
@@ -404,6 +405,7 @@ export function viewDeveloperSettings() {
 }
 
 export async function viewMyTools() {
+	/** @type {Tool[]} */
 	let tools = [];
 	let error = null;
 	try {

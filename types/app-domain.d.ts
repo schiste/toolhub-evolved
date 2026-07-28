@@ -12,6 +12,12 @@ interface AuthorObj {
 	developerUsername: string | null;
 }
 
+/** A local Evolved verification badge for a per-tool author claim. */
+interface AuthorVerificationBadge {
+	label: string;
+	className: string;
+}
+
 /** The level/label pair statusOf() produces — a closed domain, not free strings. */
 type ToolStatus =
 	| { level: "green"; label: "Healthy" }
@@ -80,6 +86,9 @@ interface Tool {
 	annotationValidationErrors?: unknown[];
 	annotationReviewStatus?: string;
 	annotationLastSyncedAt?: string;
+	authorVerified?: boolean;
+	authorVerificationLabel?: string;
+	authorVerificationBadges?: AuthorVerificationBadge[];
 }
 
 /** A normalized curated-list record. */
