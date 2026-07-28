@@ -305,6 +305,72 @@ def test_stale_cache_is_served_immediately_after_ttl(client, fake_get, monkeypat
     assert scheduled_revalidations[0][1].stale is True
 
 
+def test_background_revalidation_is_scheduled_once_and_refreshes_the_row(client, fake_get, fake_background_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+
+    ran = []
+    monkeypatch.setattr(proxy_app._BACKGROUND_REFRESH, "submit", lambda fn, *a: ran.append((fn, a)))
+    client.get("/api/tools/")
+    client.get("/api/tools/")  # already in flight → not queued twice
+    assert len(ran) == 1
+
+    background = fake_background_get(FakeUpstream(200, b'{"v":2}'))
+    ran[0][0](*ran[0][1])  # run what the pool would have run
+    assert background["calls"] == 1
+    assert proxy_app._BACKGROUND_REFRESHING == set(), "in-flight marker must be cleared"
+    assert client.get("/api/tools/").data == b'{"v":2}'
+
+
+def test_background_revalidation_swallows_failures(client, fake_get, fake_background_get, monkeypatch):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+    stale = proxy_app.api_cache.get("https://toolhub.wikimedia.org/api/tools/", allow_stale=True)
+
+    # An unreachable upstream returns early; anything else is caught. Either way the
+    # served response must be unaffected and the in-flight marker released.
+    fake_background_get(raises=proxy_app.requests.RequestException("boom"))
+    proxy_app._background_revalidate("https://toolhub.wikimedia.org/api/tools/", stale)
+    monkeypatch.setattr(proxy_app, "_fetch_upstream", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("kaboom")))
+    proxy_app._background_revalidate("https://toolhub.wikimedia.org/api/tools/", stale)
+    assert proxy_app._BACKGROUND_REFRESHING == set()
+    assert client.get("/api/tools/").data == b'{"v":1}'
+
+
+def test_background_revalidation_keeps_the_stale_row_on_a_transient_upstream_status(
+    client, fake_get, fake_background_get, monkeypatch
+):
+    clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
+    fake_get(FakeUpstream(200, b'{"v":1}'))
+    client.get("/api/tools/")
+    clock["t"] += timedelta(seconds=proxy_app.api_cache.FRESH_SECONDS + 1)
+    stale = proxy_app.api_cache.get("https://toolhub.wikimedia.org/api/tools/", allow_stale=True)
+
+    # Serving stale happens in the request path now, so the relay only sees a
+    # non-None stale row during a background refresh. A 503 there must not
+    # overwrite the good body we are still serving.
+    fake_background_get(FakeUpstream(503, b'{"error":"down"}'))
+    proxy_app._background_revalidate("https://toolhub.wikimedia.org/api/tools/", stale)
+    assert client.get("/api/tools/").data == b'{"v":1}'
+
+
+def test_server_timing_helpers_handle_empty_and_untimed_requests(client):
+    resp = proxy_app.Response("{}")
+    proxy_app._append_server_timing(resp)  # nothing to add → header untouched
+    assert "Server-Timing" not in resp.headers
+    # A response built outside the request lifecycle has no recorded start time.
+    with proxy_app.app.test_request_context("/"):
+        out = proxy_app.set_security_headers(proxy_app.Response("{}"))
+    assert "app;dur=" not in out.headers.get("Server-Timing", "")
+
+
 def test_error_response_is_not_cached(client, fake_get):
     captured = fake_get(FakeUpstream(503, b'{"error":"x"}'))
     client.get("/api/tools/")

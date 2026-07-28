@@ -465,6 +465,64 @@ def test_api_cache_database_failures_do_not_break_callers(app, monkeypatch):
     assert api_cache.maybe_poll_recent_changes(lambda: []) == 0
 
 
+def test_api_cache_needs_refresh_assumes_stale_when_the_database_is_down(app, monkeypatch):
+    @contextmanager
+    def broken_session_scope():
+        raise SQLAlchemyError("db down")
+        yield
+
+    monkeypatch.setattr(api_cache.db, "session_scope", broken_session_scope)
+    # Fail towards refetching rather than serving something we cannot verify.
+    assert api_cache.needs_refresh("https://toolhub.wikimedia.org/api/tools/my-tool/") is True
+
+
+def test_owner_label_extraction_handles_every_shape_toolhub_returns():
+    assert recent_owners.owner_from_tool_record("not-a-dict") == ""
+    assert recent_owners.owner_from_tool_record({"author": [{"bio": "no usable key"}, {"name": "Ada"}]}) == "Ada"
+    assert recent_owners.owner_from_tool_record({"author": [{"developer_username": "dev"}]}) == "dev"
+    assert recent_owners.owner_from_tool_record({"author": ["", "  ", "Grace"]}) == "Grace"
+    assert recent_owners.owner_from_tool_record({"author": [None, {"created": 1}], "created_by": {"username": "Bo"}}) == "Bo"
+    assert recent_owners.owner_from_tool_record({"author": []}) == ""
+
+
+def test_owner_cache_database_failures_do_not_break_the_recent_page(app, monkeypatch):
+    @contextmanager
+    def broken_session_scope():
+        raise SQLAlchemyError("db down")
+        yield
+
+    monkeypatch.setattr(recent_owners.db, "session_scope", broken_session_scope)
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: {"name": "t", "author": [{"name": "Ada"}]})
+    # Every path degrades to "no cache" rather than raising into the request.
+    assert recent_owners._cached_owner("t") is None
+    recent_owners._store_owner("t", "Ada")
+    recent_owners._mark_failure("t", "boom")
+    assert recent_owners.purge_expired() == 0
+    assert recent_owners.resolve_owners(["t"])["owners"] == {"t": "Ada"}
+
+
+def test_fully_expired_owner_row_is_treated_as_a_miss(client):
+    now = utcnow()
+    with db.session_scope() as s:
+        # Past both windows but not yet swept by purge_expired().
+        s.add(
+            ToolOwnerCache(
+                tool_name="ancient",
+                owner="Stale Ada",
+                fetched_at=now - timedelta(days=30),
+                expires_at=now - timedelta(days=29),
+                stale_until=now - timedelta(days=1),
+            )
+        )
+    assert recent_owners._cached_owner("ancient") is None  # too old to serve, even as stale
+
+
+def test_mark_failure_ignores_a_tool_with_no_cached_row(client):
+    recent_owners._mark_failure("never-cached", "boom")  # no row → nothing to annotate
+    with db.session_scope() as s:
+        assert s.get(ToolOwnerCache, "never-cached") is None
+
+
 def test_api_cache_recent_poll_keeps_removed_count_when_marker_write_fails(app, monkeypatch):
     clock = {"t": utcnow()}
     monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
