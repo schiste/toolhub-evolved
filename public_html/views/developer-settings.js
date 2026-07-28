@@ -4,6 +4,12 @@ import { backendErrorMessage, backendGetJson } from "../lib/core/api.js";
 import { t } from "../lib/core/i18n.js";
 import { USER } from "../lib/core/session.js";
 import { serverWrite } from "../lib/core/serversync.js";
+import {
+	TOOLINFO_DATA_MODEL_URL,
+	TOOLINFO_EXAMPLE_JSON,
+	TOOLINFO_SCHEMA_URL,
+	TOOLINFO_SCHEMA_VERSION
+} from "../lib/core/toolinfo-docs.js";
 import { button } from "../lib/atoms/button.js";
 import { fArea, fInput } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -142,6 +148,7 @@ export function viewDeveloperSettings() {
 			<h2 class="panel__title" id="developer-pages-title">${t("developerSettings.pagesTitle", "Developer pages")}</h2>
 			<div class="linkgrid account-data__links">
 				${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools and Evolved authorship verification for this account."), "/my-tools", true)}
+				${linkCard(icon("code"), t("developerSettings.toolinfoSchema", "toolinfo schema"), t("developerSettings.toolinfoSchemaDesc", "Open the schema, field reference, and a minimal toolinfo.json example."), "/api-docs", true)}
 				${linkCard(icon("code"), t("developerSettings.myApps", "My apps"), t("developerSettings.myAppsDesc", "Open OAuth client applications registered on official Toolhub by this account."), officialMyAppsUrl())}
 				${linkCard(icon("key"), t("developerSettings.apiToken", "API token"), t("developerSettings.apiTokenDesc", "Create or retrieve your official Toolhub API token on Toolhub."), TOOLHUB_API_TOKEN_URL)}
 				${linkCard(icon("check"), t("developerSettings.authorizedApps", "Authorized apps"), t("developerSettings.authorizedAppsDesc", "Review applications you have authorized on official Toolhub."), TOOLHUB_AUTHORIZED_APPS_URL)}
@@ -151,6 +158,13 @@ export function viewDeveloperSettings() {
 		<section class="panel account-data__section account-keys" aria-labelledby="developer-signed-toolinfo-title">
 			<h2 class="panel__title" id="developer-signed-toolinfo-title">${t("developerSettings.signedToolinfoTitle", "Signed toolinfo authorship")}</h2>
 			<p class="signin-note">${t("developerSettings.signedToolinfoNote", "Register Ed25519 public keys for Evolved-only signed toolinfo verification. Private keys stay outside Evolved.")}</p>
+			<div class="prose account-keys__schema-note">
+				<h3>${t("developerSettings.toolinfoSchemaHeading", "toolinfo.json reference")}</h3>
+				<p>${t("developerSettings.toolinfoSchemaBodyBefore", "Toolhub validates crawler input against")} <code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>. ${t("developerSettings.toolinfoSchemaBodyAfter", "Start with the required fields, add _schema for the version marker, then build a signing payload from the exact object you publish.")}</p>
+				<pre tabindex="0" aria-label="${t("developerSettings.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
+				<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoSchema", "Open official schema source")} ${icon("external")}</a><br>
+				<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>
+			</div>
 			<div class="account-keys__layout">
 				<form class="account-keys__form" data-author-key-form novalidate>
 					${fInput(t("developerSettings.keyId", "Key id"), "author-key-id", "", { req: true, ph: "release-2026", hint: t("developerSettings.keyIdHint", "Stable id used in the toolinfo signature metadata."), max: 128 })}

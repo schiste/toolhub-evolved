@@ -111,6 +111,11 @@ test("viewApiDocs lists sorted proxy endpoints from the API root", async () => {
 	assert.ok(view.html.includes("Evolved reads the live catalog through a same-origin proxy"));
 	assert.ok(view.html.includes("<code>/v1/write/*</code> official-first lifecycle"));
 	assert.ok(view.html.includes("official OAuth tokens stay server-side"));
+	assert.ok(view.html.includes("toolinfo JSON Schema"));
+	assert.ok(view.html.includes("toolinfo.json schema"));
+	assert.ok(view.html.includes("current.yaml"));
+	assert.ok(view.html.includes("&quot;_schema&quot;: &quot;/toolinfo/1.2.2&quot;"));
+	assert.ok(view.html.includes("OpenAPI schema for code generation"));
 	assert.ok(view.html.indexOf("<code>GET /api/lists/</code>") < view.html.indexOf("<code>GET /api/search/</code>"));
 	assert.ok(view.html.indexOf("<code>GET /api/search/</code>") < view.html.indexOf("<code>GET /api/tools/</code>"));
 });

@@ -48,9 +48,14 @@ test("viewDeveloperSettings renders the Toolhub developer hub and profile links"
 	assert.equal(r.title, "Developer settings - Toolhub");
 	assert.ok(r.html.includes("Official Toolhub developer settings"));
 	assert.ok(r.html.includes("Signed toolinfo authorship"));
+	assert.ok(r.html.includes("toolinfo schema"));
+	assert.ok(r.html.includes("toolinfo.json reference"));
+	assert.ok(r.html.includes("&quot;_schema&quot;: &quot;/toolinfo/1.2.2&quot;"));
+	assert.ok(r.html.includes("current.yaml"));
 	assert.ok(r.html.includes("Register key"));
 	assert.ok(r.html.includes("Build payload"));
 	assert.ok(r.html.includes('href="/my-tools"'));
+	assert.ok(r.html.includes('href="/api-docs"'));
 	assert.ok(r.html.includes("Review official Toolhub tools and Evolved authorship verification"));
 	assert.ok(r.html.includes("My apps"));
 	assert.ok(

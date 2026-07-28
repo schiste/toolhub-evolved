@@ -777,6 +777,12 @@
 	gap: var(--space-4);
 	align-items: start;
 }
+.account-keys__schema-note {
+	margin-top: var(--space-3);
+}
+.account-keys__schema-note pre {
+	max-height: 320px;
+}
 .account-keys__form,
 .account-keys__signer,
 .account-keys__payloads {

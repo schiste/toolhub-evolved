@@ -3563,7 +3563,7 @@ def toolinfo_feed() -> Response:
             "license": rec.get("license") or None,
             "tool_type": rec.get("toolType") or None,
             "for_wikis": wikis if isinstance(wikis, list) else [],
-            "$schema": "/toolinfo/1.2.2",
+            "_schema": "/toolinfo/1.2.2",
         }
 
     feed = [entry(name, rec) for name, rec in merged.items() if str(rec.get("url") or "").startswith("https://")]

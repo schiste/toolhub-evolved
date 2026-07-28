@@ -2,6 +2,12 @@
 import { esc, safeUrl } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
+import {
+	TOOLINFO_DATA_MODEL_URL,
+	TOOLINFO_EXAMPLE_JSON,
+	TOOLINFO_SCHEMA_URL,
+	TOOLINFO_SCHEMA_VERSION
+} from "../lib/core/toolinfo-docs.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 
@@ -242,7 +248,7 @@ export function viewContribute() {
 		<div class="linkgrid">
 			${linkCard(icon("language"), t("static.contribute.translate", "Translate Toolhub"), t("static.contribute.translateDesc", "Localise the interface into your language on translatewiki.net."), "https://translatewiki.net/wiki/Translating:Toolhub")}
 			${linkCard(icon("code"), t("static.contribute.apiGuide", "Developer API guide"), t("static.contribute.apiGuideDesc", "Inspect live endpoints, schema links, and integration examples."), "/api-docs", true)}
-			${linkCard(icon("code"), t("static.contribute.toolinfoStandard", "The toolinfo standard"), t("static.contribute.toolinfoStandardDesc", "Learn the schema that describes a tool, and the API."), "https://toolhub.wikimedia.org/api-docs")}
+			${linkCard(icon("code"), t("static.contribute.toolinfoStandard", "The toolinfo standard"), t("static.contribute.toolinfoStandardDesc", "Learn the schema that describes a tool, and the API."), "/api-docs", true)}
 			${linkCard(icon("edit"), t("static.contribute.improveListing", "Add or improve a tool listing"), t("static.contribute.improveListingDesc", "List your own tool, or enrich an existing record."), "/help", true)}
 		</div>
 	</div>`;
@@ -271,9 +277,18 @@ export async function viewApiDocs() {
 				${linkCard(icon("code"), t("static.apiDocs.interactiveDocs", "Interactive API docs"), t("static.apiDocs.interactiveDocsDesc", "Open the canonical Toolhub API documentation."), "https://toolhub.wikimedia.org/api-docs")}
 				${proxyCard(icon("code"), t("static.apiDocs.openApiSchema", "OpenAPI schema"), t("static.apiDocs.openApiSchemaDesc", "Machine-readable schema served at GET /api/schema/."), "/api/schema/")}
 				${proxyCard(icon("tools"), t("static.apiDocs.codegenInput", "Code generation input"), t("static.apiDocs.codegenInputDesc", "Use /api/schema/ with OpenAPI Generator, Swagger Codegen, or your language's SDK tooling."), "/api/schema/")}
+				${linkCard(icon("code"), t("static.apiDocs.toolinfoSchema", "toolinfo JSON Schema"), t("static.apiDocs.toolinfoSchemaDesc", "Open the official 1.2.2 schema source used for crawled toolinfo.json files."), TOOLINFO_SCHEMA_URL)}
+				${linkCard(icon("tools"), t("static.apiDocs.toolinfoFieldReference", "Toolinfo field reference"), t("static.apiDocs.toolinfoFieldReferenceDesc", "Read the field meanings, core versus annotation boundary, and controlled values."), TOOLINFO_DATA_MODEL_URL)}
 				${proxyCard(icon("globe"), t("static.apiDocs.apiRoot", "API root"), t("static.apiDocs.apiRootDesc", "Browse the proxied endpoint index used by this prototype."), "/api/")}
 			</div>
-			<h2 class="contribute__h2">${t("static.apiDocs.schemaHeading", "Schema for code generation")}</h2>
+			<h2 class="contribute__h2">${t("static.apiDocs.toolinfoSchemaHeading", "toolinfo.json schema")}</h2>
+			<div class="prose">
+				<p>${t("static.apiDocs.toolinfoSchemaBodyBefore", "Toolhub validates registered")} <code>toolinfo.json</code> ${t("static.apiDocs.toolinfoSchemaBodyAfter", "files against schema version {version}. Required fields are name, title, description, and url; use _schema to identify the toolinfo schema version when you publish a file.", { version: TOOLINFO_SCHEMA_VERSION })}</p>
+				<pre tabindex="0" aria-label="${t("static.apiDocs.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
+				<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="${EXTERNAL_REL}">${t("static.apiDocs.openToolinfoSchemaSource", "Open official schema source")} ${icon("external")}</a><br>
+				<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="${EXTERNAL_REL}">${t("static.apiDocs.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>
+			</div>
+			<h2 class="contribute__h2">${t("static.apiDocs.schemaHeading", "OpenAPI schema for code generation")}</h2>
 			<div class="prose">
 				<p><code>GET /api/schema/</code> returns Toolhub's OpenAPI document. Use the live
 				<code>https://toolhub.wikimedia.org/api/schema/</code> URL when generating a

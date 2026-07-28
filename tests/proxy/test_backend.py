@@ -2282,6 +2282,7 @@ def test_search_and_toolinfo_feed(client):
     assert len(feed) == 1  # beta has no https url → excluded
     assert feed[0]["name"] == "toolhub-evolved-alpha"
     assert feed[0]["keywords"] == "cite"
+    assert feed[0]["_schema"] == "/toolinfo/1.2.2"
 
 
 def test_real_evolved_signals_and_media(client):
