@@ -38,10 +38,14 @@ vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
 	return { ...actual, navigateTo: h.navigateTo };
 });
-vi.mock("../../public_html/lib/core/serversync.js", () => ({
-	officialWrite: h.officialWrite,
-	officialWriteAvailable: h.officialWriteAvailable
-}));
+vi.mock("../../public_html/lib/core/serversync.js", async (orig) => {
+	const actual = await orig();
+	return {
+		...actual,
+		officialWrite: h.officialWrite,
+		officialWriteAvailable: h.officialWriteAvailable
+	};
+});
 vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 	const actual = await orig();
 	return {

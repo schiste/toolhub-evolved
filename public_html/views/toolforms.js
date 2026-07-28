@@ -11,7 +11,12 @@ import {
 	newToolBase
 } from "../lib/core/api.js";
 import { navigateTo, toolHref } from "../lib/core/routing.js";
-import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
+import {
+	lifecycleMeta as baseLifecycleMeta,
+	officialWrite,
+	officialWriteAvailable,
+	serverWrite
+} from "../lib/core/serversync.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { normStr } from "../lib/core/util.js";
 import {
@@ -44,7 +49,7 @@ import {
 	fieldValue,
 	setFieldError
 } from "../lib/atoms/form-fields.js";
-import { fieldChanges, mountChangeReview } from "../lib/molecules/change-review.js";
+import { mountChangeReview, shouldProceedWithFieldChanges } from "../lib/molecules/change-review.js";
 import {
 	fieldProvenance,
 	syncBadge,
@@ -213,31 +218,11 @@ function officialToolPayload(name, fields, { includeName = true } = {}) {
 	return payload;
 }
 
-/**
- * @param {any} res
- * @returns {Record<string, any>}
- */
+const TOOL_LIFECYCLE_KEYS = ["officialName", "visibility", "reviewStatus"];
+
+/** @param {any} res */
 function lifecycleMeta(res) {
-	const local = res && typeof res.local === "object" ? res.local : {};
-	const syncStatus =
-		local.syncStatus ||
-		res?.syncStatus ||
-		(res?.result === SYNC_STATUS.official ? SYNC_STATUS.official : SYNC_STATUS.localFallback);
-	/** @type {Record<string, any>} */
-	const meta = {
-		source: local.source || (syncStatus === SYNC_STATUS.official ? SOURCE.official : SOURCE.local),
-		syncStatus,
-		lastSyncedAt: local.lastSyncedAt || res?.lastSyncedAt,
-		lastError: local.lastError || res?.lastError,
-		toolhubResponse: local.toolhubResponse || res?.toolhubResponse,
-		validationErrors: local.validationErrors || res?.validationErrors,
-		officialId: local.officialId,
-		officialName: local.officialName,
-		visibility: local.visibility,
-		reviewStatus: local.reviewStatus
-	};
-	for (const key of Object.keys(meta)) if (meta[key] === undefined) delete meta[key];
-	return meta;
+	return baseLifecycleMeta(res, TOOL_LIFECYCLE_KEYS);
 }
 
 /**
@@ -437,6 +422,32 @@ function saveLocalAnnotationDraft(name, anno, meta = {}) {
 	demoStore.set(DEMO_KEYS.toolAnnos, m);
 }
 
+/** @returns {{ audiences: string[], tasks: string[], toolType: string | null, icon: string | null }} */
+function readAnnotationFormFields() {
+	return {
+		audiences: fromCsv(fieldValue("an-aud")),
+		tasks: fromCsv(fieldValue("an-tasks")),
+		toolType: fieldValue("an-type") || null,
+		icon: fieldValue("an-icon") || null
+	};
+}
+
+/**
+ * @param {string} name
+ * @param {{ audiences: string[], tasks: string[], toolType: string | null, icon: string | null }} anno
+ * @param {any} res
+ * @param {HTMLElement} out
+ */
+function saveAnnotationFallbackResult(name, anno, res, out) {
+	saveLocalAnnotationDraft(name, anno, lifecycleMeta(res));
+	out.className = "at__result at__result--err";
+	out.textContent = t(
+		"toolforms.officialWriteFailed",
+		"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
+		{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+	);
+}
+
 /** @param {string} name */
 function clearLocalAnnotationDraft(name) {
 	const m = toolAnnosMap();
@@ -494,19 +505,7 @@ function setupAnnotationRetry(name) {
 				kind: "annotations"
 			});
 			if (res?.result === SYNC_STATUS.localFallback) {
-				const anno = {
-					audiences: fromCsv(fieldValue("an-aud")),
-					tasks: fromCsv(fieldValue("an-tasks")),
-					toolType: fieldValue("an-type") || null,
-					icon: fieldValue("an-icon") || null
-				};
-				saveLocalAnnotationDraft(name, anno, lifecycleMeta(res));
-				out.className = "at__result at__result--err";
-				out.textContent = t(
-					"toolforms.officialWriteFailed",
-					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-					{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
-				);
+				saveAnnotationFallbackResult(name, readAnnotationFormFields(), res, out);
 				return;
 			}
 			clearLocalAnnotationDraft(name);
@@ -748,19 +747,12 @@ function setupToolCoreSubmit(form, { editing, name, current, changeReview }) {
 		const fields = readToolFormFields();
 		const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
 		const canOfficialWrite = officialWriteAvailable();
-		if (editing && canOfficialWrite) {
-			const changes = fieldChanges(toolCoreChangeDescriptors(current, fields));
-			if (changes.length === 0) {
-				changeReview?.hide();
-				out.className = "at__result";
-				out.textContent = t("changeReview.noChanges", "No changes to save.");
-				return;
-			}
-			if (changeReview && !changeReview.shouldProceed(changes)) {
-				out.className = "at__result";
-				out.textContent = "";
-				return;
-			}
+		if (
+			editing &&
+			canOfficialWrite &&
+			!shouldProceedWithFieldChanges(changeReview, toolCoreChangeDescriptors(current, fields), out)
+		) {
+			return;
 		}
 		if (canOfficialWrite) {
 			out.className = "at__result";
@@ -1328,25 +1320,11 @@ export async function viewAnnotationsEdit(name) {
 		form.addEventListener("change", resetChangeReview);
 		form.addEventListener("submit", async (e) => {
 			e.preventDefault();
-			const anno = {
-				audiences: fromCsv(fieldValue("an-aud")),
-				tasks: fromCsv(fieldValue("an-tasks")),
-				toolType: fieldValue("an-type") || null,
-				icon: fieldValue("an-icon") || null
-			};
+			const anno = readAnnotationFormFields();
 			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
 			const canOfficialWrite = officialWriteAvailable();
 			if (canOfficialWrite) {
-				const changes = fieldChanges(annotationChangeDescriptors(cur, anno));
-				if (changes.length === 0) {
-					changeReview.hide();
-					out.className = "at__result";
-					out.textContent = t("changeReview.noChanges", "No changes to save.");
-					return;
-				}
-				if (!changeReview.shouldProceed(changes)) {
-					out.className = "at__result";
-					out.textContent = "";
+				if (!shouldProceedWithFieldChanges(changeReview, annotationChangeDescriptors(cur, anno), out)) {
 					return;
 				}
 				out.className = "at__result";
@@ -1358,13 +1336,7 @@ export async function viewAnnotationsEdit(name) {
 						officialAnnotationPayload(anno)
 					);
 					if (res?.result === SYNC_STATUS.localFallback) {
-						saveLocalAnnotationDraft(name, anno, lifecycleMeta(res));
-						out.className = "at__result at__result--err";
-						out.textContent = t(
-							"toolforms.officialWriteFailed",
-							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-							{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
-						);
+						saveAnnotationFallbackResult(name, anno, res, out);
 						return;
 					}
 					clearLocalAnnotationDraft(name);

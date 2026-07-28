@@ -12,7 +12,7 @@ import {
 } from "../lib/core/api.js";
 import { attachEndorsements, rankFitsFirst } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
-import { officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
+import { lifecycleMeta, officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
 import { listHref, navigateTo } from "../lib/core/routing.js";
 import {
 	demoListDelete,
@@ -22,13 +22,12 @@ import {
 	demoLists,
 	favNames,
 	isDemoListId,
-	SOURCE,
 	SYNC_STATUS
 } from "../lib/core/store.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
-import { fieldChanges, mountChangeReview } from "../lib/molecules/change-review.js";
+import { mountChangeReview, shouldProceedWithFieldChanges } from "../lib/molecules/change-review.js";
 import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
@@ -78,30 +77,6 @@ function listChangeDescriptors(source, work) {
 
 function toolhubSignInRequiredMessage() {
 	return t("lists.signInRequired", "Toolhub sign-in is required before saving lists.");
-}
-
-/**
- * @param {any} res
- * @returns {Record<string, any>}
- */
-function lifecycleMeta(res) {
-	const local = res && typeof res.local === "object" ? res.local : {};
-	const syncStatus =
-		local.syncStatus ||
-		res?.syncStatus ||
-		(res?.result === SYNC_STATUS.official ? SYNC_STATUS.official : SYNC_STATUS.localFallback);
-	/** @type {Record<string, any>} */
-	const meta = {
-		source: local.source || (syncStatus === SYNC_STATUS.official ? SOURCE.official : SOURCE.local),
-		syncStatus,
-		lastSyncedAt: local.lastSyncedAt || res?.lastSyncedAt,
-		lastError: local.lastError || res?.lastError,
-		toolhubResponse: local.toolhubResponse || res?.toolhubResponse,
-		validationErrors: local.validationErrors || res?.validationErrors,
-		officialId: local.officialId
-	};
-	for (const key of Object.keys(meta)) if (meta[key] === undefined) delete meta[key];
-	return meta;
 }
 
 /** @param {{ id: string, title: string, description: string, tools: string[] }} work */
@@ -515,19 +490,12 @@ function renderListEdit(src, { editing, officialEditing }) {
 			work.description = fieldValue("le-desc");
 			const out = /** @type {HTMLElement} */ ($("[data-official-result]"));
 			const canOfficialWrite = officialWriteAvailable();
-			if (editing && canOfficialWrite) {
-				const changes = fieldChanges(listChangeDescriptors(src, work));
-				if (changes.length === 0) {
-					changeReview?.hide();
-					out.className = "at__result";
-					out.textContent = t("changeReview.noChanges", "No changes to save.");
-					return;
-				}
-				if (changeReview && !changeReview.shouldProceed(changes)) {
-					out.className = "at__result";
-					out.textContent = "";
-					return;
-				}
+			if (
+				editing &&
+				canOfficialWrite &&
+				!shouldProceedWithFieldChanges(changeReview, listChangeDescriptors(src, work), out)
+			) {
+				return;
 			}
 			if (canOfficialWrite) {
 				out.className = "at__result";

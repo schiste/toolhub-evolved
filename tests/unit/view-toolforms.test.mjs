@@ -45,11 +45,15 @@ vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
 	return { ...actual, navigateTo: h.navigateTo };
 });
-vi.mock("../../public_html/lib/core/serversync.js", () => ({
-	officialWrite: h.officialWrite,
-	officialWriteAvailable: h.officialWriteAvailable,
-	serverWrite: h.serverWrite
-}));
+vi.mock("../../public_html/lib/core/serversync.js", async (orig) => {
+	const actual = await orig();
+	return {
+		...actual,
+		officialWrite: h.officialWrite,
+		officialWriteAvailable: h.officialWriteAvailable,
+		serverWrite: h.serverWrite
+	};
+});
 vi.mock("../../public_html/lib/core/similarity.js", async (orig) => {
 	const actual = await orig();
 	return { ...actual, getSimilarityIndex: h.getSimilarityIndex, nearestNeighbors: h.nearestNeighbors };

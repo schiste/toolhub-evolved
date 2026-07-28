@@ -105,6 +105,27 @@ export function fieldChanges(descriptors) {
 	return /** @type {FieldChange[]} */ (descriptors.map((descriptor) => fieldChange(descriptor)).filter(Boolean));
 }
 
+/**
+ * @param {{ hide: () => void, shouldProceed: (changes: FieldChange[]) => boolean } | null | undefined} changeReview
+ * @param {ChangeDescriptor[]} descriptors
+ * @param {HTMLElement} out
+ */
+export function shouldProceedWithFieldChanges(changeReview, descriptors, out) {
+	const changes = fieldChanges(descriptors);
+	if (changes.length === 0) {
+		changeReview?.hide();
+		out.className = "at__result";
+		out.textContent = t("changeReview.noChanges", "No changes to save.");
+		return false;
+	}
+	if (changeReview && !changeReview.shouldProceed(changes)) {
+		out.className = "at__result";
+		out.textContent = "";
+		return false;
+	}
+	return true;
+}
+
 /** @param {FieldChange[]} changes */
 export function changeSignature(changes) {
 	return JSON.stringify(

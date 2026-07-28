@@ -7,7 +7,7 @@
    configured so the UI can offer the real sign-in. */
 import { backendGetJson, backendPutJson, backendWriteJson, invalidateApiCacheForOfficialWrite } from "./api.js";
 import { setServerUser } from "./session.js";
-import { DEMO_KEYS, demoStore, setStoreSync, withSyncMuted } from "./store.js";
+import { DEMO_KEYS, SOURCE, SYNC_STATUS, demoStore, setStoreSync, withSyncMuted } from "./store.js";
 
 let csrf = "";
 let oauthReady = false;
@@ -52,6 +52,33 @@ export function officialWrite(method, path, body) {
 		invalidateApiCacheForOfficialWrite(method, path, body, data);
 		return data;
 	});
+}
+
+/**
+ * Normalize the local metadata block returned by official-first write endpoints.
+ * @param {any} res
+ * @param {string[]} [extraLocalKeys]
+ * @returns {Record<string, any>}
+ */
+export function lifecycleMeta(res, extraLocalKeys = []) {
+	const local = res?.local && typeof res.local === "object" && !Array.isArray(res.local) ? res.local : {};
+	const syncStatus =
+		local.syncStatus ||
+		res?.syncStatus ||
+		(res?.result === SYNC_STATUS.official ? SYNC_STATUS.official : SYNC_STATUS.localFallback);
+	/** @type {Record<string, any>} */
+	const meta = {
+		source: local.source || (syncStatus === SYNC_STATUS.official ? SOURCE.official : SOURCE.local),
+		syncStatus,
+		lastSyncedAt: local.lastSyncedAt || res?.lastSyncedAt,
+		lastError: local.lastError || res?.lastError,
+		toolhubResponse: local.toolhubResponse || res?.toolhubResponse,
+		validationErrors: local.validationErrors || res?.validationErrors,
+		officialId: local.officialId
+	};
+	for (const key of extraLocalKeys) meta[key] = local[key];
+	for (const key of Object.keys(meta)) if (meta[key] === undefined) delete meta[key];
+	return meta;
 }
 
 /**
