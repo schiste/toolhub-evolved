@@ -17,6 +17,7 @@ import {
 	DEMO_KEYS,
 	SOURCE,
 	SYNC_STATUS,
+	clearLocalToolDraft,
 	crawlerUrlAdd,
 	crawlerUrlDelete,
 	crawlerUrls,
@@ -266,16 +267,6 @@ function saveLocalToolDraft(name, fields, editing, meta = {}, options = {}) {
 	m[name] = stamped;
 	demoStore.set(DEMO_KEYS.toolNew, m);
 	if (options.log !== false) logActivity(editing ? "edited" : "created", name, fields.title);
-}
-
-/** @param {string} name */
-function clearLocalToolDraft(name) {
-	const edits = toolEditsMap();
-	delete edits[name];
-	demoStore.set(DEMO_KEYS.toolEdits, edits);
-	const created = toolNewMap();
-	delete created[name];
-	demoStore.set(DEMO_KEYS.toolNew, created);
 }
 
 /**

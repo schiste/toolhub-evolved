@@ -59,6 +59,14 @@ vi.mock("../../public_html/lib/core/store.js", async (orig) => {
 		crawlerUrls: h.crawlerUrls,
 		crawlerUrlAdd: h.crawlerUrlAdd,
 		crawlerUrlDelete: h.crawlerUrlDelete,
+		clearLocalToolDraft: (name) => {
+			const edits = h.toolEditsMap();
+			delete edits[name];
+			h.demoStoreSet(actual.DEMO_KEYS.toolEdits, edits);
+			const created = h.toolNewMap();
+			delete created[name];
+			h.demoStoreSet(actual.DEMO_KEYS.toolNew, created);
+		},
 		ingestToolinfo: h.ingestToolinfo,
 		logActivity: h.logActivity,
 		toolEditsMap: h.toolEditsMap,

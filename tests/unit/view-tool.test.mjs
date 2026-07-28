@@ -12,7 +12,12 @@ const h = vi.hoisted(() => ({
 	isNewTool: vi.fn(),
 	apiGet: vi.fn(),
 	backendGetJson: vi.fn(),
+	clearApiCache: vi.fn(),
 	serverWrite: vi.fn(),
+	officialWrite: vi.fn(),
+	officialWriteAvailable: vi.fn(),
+	navigateTo: vi.fn(),
+	clearLocalToolDraft: vi.fn(),
 	egoGraph: vi.fn(),
 	listMemberships: vi.fn(),
 	getSimilarityIndex: vi.fn(),
@@ -29,12 +34,22 @@ vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 		getTool: h.getTool,
 		isNewTool: h.isNewTool,
 		apiGet: h.apiGet,
-		backendGetJson: h.backendGetJson
+		backendGetJson: h.backendGetJson,
+		clearApiCache: h.clearApiCache
 	};
 });
 vi.mock("../../public_html/lib/core/serversync.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, serverWrite: h.serverWrite };
+	return {
+		...actual,
+		serverWrite: h.serverWrite,
+		officialWrite: h.officialWrite,
+		officialWriteAvailable: h.officialWriteAvailable
+	};
+});
+vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
+	const actual = await orig();
+	return { ...actual, navigateTo: h.navigateTo };
 });
 vi.mock("../../public_html/lib/core/graph.js", async (orig) => {
 	const actual = await orig();
@@ -50,7 +65,7 @@ vi.mock("../../public_html/lib/core/similarity.js", async (orig) => {
 });
 vi.mock("../../public_html/lib/core/store.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, demoRevisionsFor: h.demoRevisionsFor };
+	return { ...actual, clearLocalToolDraft: h.clearLocalToolDraft, demoRevisionsFor: h.demoRevisionsFor };
 });
 vi.mock("../../public_html/lib/organisms/force-graph.js", async (orig) => {
 	const actual = await orig();
@@ -499,6 +514,8 @@ beforeEach(() => {
 	h.egoGraph.mockResolvedValue({ nodes: [], edges: [] });
 	h.demoRevisionsFor.mockReturnValue([]);
 	h.apiGet.mockResolvedValue({ results: [] });
+	h.officialWrite.mockResolvedValue({ result: "official", syncStatus: "official" });
+	h.officialWriteAvailable.mockReturnValue(false);
 	h.backendGetJson.mockImplementation((path) =>
 		Promise.resolve(path.includes("/media/") ? { results: [] } : { thanks: {}, usage30d: {}, health: {} })
 	);
@@ -713,6 +730,48 @@ test("viewTool reports thanks and media write failures", async () => {
 	await tick();
 	assert.equal(document.querySelector("[data-media-result]").className, "at__result at__result--err");
 	assert.equal(document.querySelector("[data-media-result]").textContent, "Could not submit screenshot.");
+});
+
+test("viewTool signed-in detail delete publishes official Toolhub delete", async () => {
+	setServerUser("Grace Hopper");
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.getTool.mockResolvedValue(toolFixture("delete-me", { title: "Delete Me", origin: "api" }));
+	const r = await tool.viewTool("delete-me");
+	assert.ok(r.html.includes("data-tool-delete"), "delete action is rendered on the detail page");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-tool-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/delete-me/"]);
+	assert.deepEqual(h.clearLocalToolDraft.mock.calls[0], ["delete-me"]);
+	assert.equal(h.clearApiCache.mock.calls.length, 1);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/add-or-remove-tools"]);
+});
+
+test("viewTool signed-in detail delete reports official failure and stays put", async () => {
+	setServerUser("Grace Hopper");
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("permission denied"));
+	h.getTool.mockResolvedValue(toolFixture("delete-fail", { title: "Delete Fail", origin: "api" }));
+	const r = await tool.viewTool("delete-fail");
+	document.body.innerHTML = r.html;
+	r.mount();
+	document.querySelector("[data-tool-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/delete-fail/"]);
+	assert.equal(h.clearLocalToolDraft.mock.calls.length, 0);
+	assert.equal(h.clearApiCache.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-tool-delete-result]").textContent.includes("permission denied"));
+});
+
+test("viewTool does not render official delete for local-only tool records", async () => {
+	setServerUser("Grace Hopper");
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.isNewTool.mockReturnValue(true);
+	h.getTool.mockResolvedValue(toolFixture("local-only", { title: "Local Only" }));
+	const r = await tool.viewTool("local-only");
+	assert.ok(!r.html.includes("data-tool-delete"), "local-only tools use the edit-form discard path");
 });
 
 test("viewTool deprecated with replacement as URL", async () => {

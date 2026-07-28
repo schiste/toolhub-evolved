@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { t, timeTag, updatedTimeTag } from "../lib/core/i18n.js";
-import { INDEX, apiGet, backendGetJson, getTool, isNewTool } from "../lib/core/api.js";
+import {
+	INDEX,
+	apiGet,
+	backendErrorMessage,
+	backendGetJson,
+	clearApiCache,
+	getTool,
+	isNewTool
+} from "../lib/core/api.js";
 import { egoGraph } from "../lib/core/graph.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
-import { serverWrite } from "../lib/core/serversync.js";
+import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
 import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
-import { demoRevisionsFor } from "../lib/core/store.js";
+import { clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
-import { authorHref, toolHref } from "../lib/core/routing.js";
+import { authorHref, navigateTo, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import {
 	completenessList,
@@ -315,6 +323,25 @@ export async function viewTool(name) {
 
 	// Official Toolhub status flags stay visible alongside Evolved-local panels.
 	const realBadge = statusBadge(tool);
+	const canDeleteOfficialTool = signedIn() && officialWriteAvailable() && !isNewTool(tool.name);
+	const managementLinks = signedIn()
+		? [
+				`<a href="${toolHref(tool.name)}/edit">${t("tool.editTool", "Edit tool")}</a>`,
+				`<a href="${toolHref(tool.name)}/edit-annotations">${t("tool.editAnnotations", "Edit annotations")}</a>`,
+				canDeleteOfficialTool
+					? button(t("tool.deleteOfficialTool", "Delete official tool"), {
+							variant: "danger",
+							size: "sm",
+							attrs: "data-tool-delete"
+						})
+					: ""
+			]
+				.filter(Boolean)
+				.join(" ")
+		: `<a href="${toolHref(tool.name)}/edit">${t("tool.suggestAnEdit", "Suggest an edit")}</a>`;
+	const deleteResult = canDeleteOfficialTool
+		? `<p class="at__result" data-tool-delete-result aria-live="polite"></p>`
+		: "";
 	const membershipMap = await listMemberships();
 	tool.endorsement = endorsementOf(tool.name, membershipMap);
 
@@ -416,12 +443,9 @@ export async function viewTool(name) {
 					<div class="toolpage__actions">${actions || `<span class="meta__v">${t("tool.noLinksProvided", "No links provided")}</span>`}</div>
 					<div class="toolpage__sub">
 						<a href="${toolHref(tool.name)}/history">${t("tool.viewHistory", "View history")}</a>
-						${
-							signedIn()
-								? `<a href="${toolHref(tool.name)}/edit">${t("tool.editTool", "Edit tool")}</a> <a href="${toolHref(tool.name)}/edit-annotations">${t("tool.editAnnotations", "Edit annotations")}</a>`
-								: `<a href="${toolHref(tool.name)}/edit">${t("tool.suggestAnEdit", "Suggest an edit")}</a>`
-						}
+						${managementLinks}
 					</div>
+					${deleteResult}
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">${t("tool.maintainersTitle", "Maintainers")}</h2>
@@ -441,6 +465,30 @@ export async function viewTool(name) {
 		if (signedIn()) {
 			serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/events/`, { eventType: "view" }).catch(() => {});
 		}
+		document.querySelector("[data-tool-delete]")?.addEventListener("click", async () => {
+			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-tool-delete-result]"));
+			if (out) {
+				out.className = "at__result";
+				out.textContent = t("tool.publishingToToolhub", "Publishing to official Toolhub…");
+			}
+			try {
+				await officialWrite("DELETE", `/v1/write/tools/${encodeURIComponent(name)}/`);
+				clearLocalToolDraft(name);
+				clearApiCache();
+				navigateTo("/add-or-remove-tools");
+			} catch (error) {
+				if (out) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"tool.officialDeleteFailed",
+						"Official Toolhub did not delete the tool: {msg}",
+						{
+							msg: backendErrorMessage(error)
+						}
+					);
+				}
+			}
+		});
 		document.querySelector("[data-thanks]")?.addEventListener("click", async (event) => {
 			const btn = /** @type {HTMLElement} */ (event.currentTarget);
 			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-signals-result]"));

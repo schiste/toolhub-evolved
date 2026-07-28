@@ -372,6 +372,15 @@ export function demoFeed(key, live) {
 export const toolEditsMap = () => storeMap(DEMO_KEYS.toolEdits);
 export const toolAnnosMap = () => storeMap(DEMO_KEYS.toolAnnos);
 export const toolNewMap = () => storeMap(DEMO_KEYS.toolNew);
+/** @param {string} name */
+export function clearLocalToolDraft(name) {
+	const edits = toolEditsMap();
+	delete edits[name];
+	demoStore.set(DEMO_KEYS.toolEdits, edits);
+	const created = toolNewMap();
+	delete created[name];
+	demoStore.set(DEMO_KEYS.toolNew, created);
+}
 // Append local revision + audit-log rows so feeds/history reflect Evolved edits.
 /**
  * @param {string} action
