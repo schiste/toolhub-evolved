@@ -144,8 +144,8 @@ function toolinfoDiscoveryCell(discovery) {
 		</div>`;
 }
 
-/** @param {ToolinfoDiscovery | undefined} discovery */
-function selfHostedDiscoveryLine(discovery) {
+/** @param {ToolinfoDiscovery | undefined} discovery @param {{ hideFailures?: boolean }} [options] */
+function selfHostedDiscoveryLine(discovery, options = {}) {
 	const status = discovery?.status || "pending";
 	if (status === "found" && discovery?.toolinfoUrl) {
 		const method =
@@ -154,6 +154,7 @@ function selfHostedDiscoveryLine(discovery) {
 				: t("accountTools.selfHostedFoundRoot", "Self-hosted check: found at root");
 		return `<span class="recent-table__muted">${esc(method)}</span>`;
 	}
+	if (options.hideFailures) return "";
 	if (status === "not_found") {
 		return `<span class="recent-table__muted">${t("accountTools.selfHostedNotFound", "Self-hosted check: toolinfo.json not found")}</span>`;
 	}
@@ -178,7 +179,7 @@ function toolinfoEvidenceCell(source, discovery) {
 		<span class="sync-badge sync-badge--official">${t("accountTools.officialCrawlerSource", "Official crawler source")}</span>
 		<a href="${safeUrl(source.sourceUrl)}" target="_blank" rel="noopener nofollow">${esc(source.sourceLabel || t("accountTools.sourceUnknown", "Official crawler feed"))}</a>
 		<span class="recent-table__muted">${t("accountTools.sourceDetails", "Source")} ${esc(source.sourceKind || "official")}${count}${fetched}</span>
-		${selfHostedDiscoveryLine(discovery)}
+		${selfHostedDiscoveryLine(discovery, { hideFailures: true })}
 	</div>`;
 }
 

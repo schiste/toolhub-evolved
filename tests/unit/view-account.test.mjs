@@ -247,6 +247,46 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.ok(r.html.includes("2 tools"));
 });
 
+test("viewMyTools does not show self-hosted failures when official crawler source exists", async () => {
+	h.backendGetJson.mockResolvedValue({
+		verified: [
+			{
+				tool: {
+					name: "toolforge-toolhub-evolved",
+					title: "Toolhub Evolved",
+					url: "https://toolhub-evolved.toolforge.org/",
+					author: [{ name: "Christophe" }]
+				},
+				claims: [
+					{
+						verificationMethod: "toolforge_maintainer",
+						verificationStatus: "verified",
+						isVerified: true
+					}
+				],
+				toolinfoDiscovery: { status: "error", lastError: "DNS failed" },
+				toolinfoSource: {
+					toolName: "toolforge-toolhub-evolved",
+					sourceUrl: "https://toolsadmin.wikimedia.org/tools/toolinfo/v1.2/toolinfo.json",
+					sourceKind: "toolsadmin",
+					sourceLabel: "Toolsadmin feed",
+					itemCount: 2880
+				}
+			}
+		],
+		possible: []
+	});
+
+	const r = await viewMyTools();
+
+	assert.ok(r.html.includes("Toolhub Evolved"));
+	assert.ok(r.html.includes("Verified: Toolforge maintainer"));
+	assert.ok(r.html.includes("Official crawler source"));
+	assert.ok(r.html.includes("Toolsadmin feed"));
+	assert.ok(!r.html.includes("Check failed"));
+	assert.ok(!r.html.includes("DNS failed"));
+});
+
 test("viewMyTools renders all toolinfo discovery states", async () => {
 	h.backendGetJson.mockResolvedValue({
 		verified: [
