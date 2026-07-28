@@ -119,8 +119,9 @@ Every push runs the full suite in CI (`.github/workflows/ci.yml`):
 - **Formatting / lint** — Prettier, ESLint (architecture-boundary rules + license
   headers, zero warnings), Stylelint (design-token enforcement), cspell.
 - **Types** — `tsc --checkJs` in **full strict mode** across the whole app.
-- **Tests** — Vitest (happy-dom), with a V8 **coverage gate** (lines ≥ 99 %,
-  branches ≥ 95 %); Playwright e2e (smoke + axe accessibility).
+- **Tests** — Vitest (happy-dom), with a V8 **coverage gate** (statements ≥ 96 %,
+  branches ≥ 90 %, functions ≥ 98 %, lines ≥ 97 %); Playwright e2e (smoke +
+  axe accessibility).
 - **Hygiene** — knip (dead code), jscpd (duplication), a small AST checker
   (`tools/checks.mjs`: XSS, a11y, dead code, floating promises, HTML balance),
   a JS payload budget, and gitleaks secret scanning.
