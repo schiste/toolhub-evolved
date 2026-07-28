@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
-from backend import api_cache, authz, author_claims, db, security, sync, token_crypto, toolhub  # noqa: E402
+from backend import api_cache, authz, author_claims, db, recent_owners, security, sync, token_crypto, toolhub  # noqa: E402
 from backend.author_claims import (  # noqa: E402
     AuthorNameProvider,
     SignedToolinfoProvider,
@@ -46,6 +46,7 @@ from backend.models import (
     ToolHealthTarget,
     ToolList,
     ToolMedia,
+    ToolOwnerCache,
     ToolThanks,
     ToolhubToken,
     ToolOverlay,
@@ -2660,6 +2661,83 @@ def test_toolhub_public_api_get_raises_upstream_error(client, monkeypatch):
         toolhub.public_api_get("/api/search/tools/")
     assert exc.value.status_code == 503
     assert exc.value.payload == {"message": "bad"}
+
+
+def test_recent_owner_resolver_fetches_once_then_uses_toolsdb_cache(client, monkeypatch):
+    calls = []
+
+    def fake_public_api_get(path, **_kwargs):
+        calls.append(path)
+        return {"name": "my-tool", "author": [{"name": "Ada Maintainer"}]}
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    first = client.get("/v1/recent/owners/?tool=my-tool&tool=my-tool").get_json()
+    second = client.get("/v1/recent/owners/?tools=my-tool").get_json()
+
+    assert first["owners"] == {"my-tool": "Ada Maintainer"}
+    assert first["meta"]["my-tool"]["cached"] is False
+    assert second["owners"] == {"my-tool": "Ada Maintainer"}
+    assert second["meta"]["my-tool"]["cached"] is True
+    assert calls == ["/api/tools/my-tool/"]
+    with db.session_scope() as s:
+        row = s.get(ToolOwnerCache, "my-tool")
+        assert row.owner == "Ada Maintainer"
+        assert row.source == "toolhub_detail"
+
+
+def test_recent_owner_resolver_returns_stale_owner_when_toolhub_fails(client, monkeypatch):
+    with db.session_scope() as s:
+        now = utcnow()
+        s.add(
+            ToolOwnerCache(
+                tool_name="stale-tool",
+                owner="Cached Owner",
+                fetched_at=now - timedelta(days=2),
+                expires_at=now - timedelta(seconds=1),
+                stale_until=now + timedelta(days=1),
+            )
+        )
+
+    def failing_public_api_get(_path, **_kwargs):
+        raise toolhub.ToolhubAPIError(503, {"message": "down"})
+
+    monkeypatch.setattr(toolhub, "public_api_get", failing_public_api_get)
+    data = client.get("/v1/recent/owners/?tool=stale-tool").get_json()
+
+    assert data["owners"] == {"stale-tool": "Cached Owner"}
+    assert data["meta"]["stale-tool"]["cached"] is True
+    assert data["meta"]["stale-tool"]["stale"] is True
+    with db.session_scope() as s:
+        assert "Toolhub API returned 503" in s.get(ToolOwnerCache, "stale-tool").last_error
+
+
+def test_recent_owner_resolver_cleans_bounds_and_negative_caches_failures(client, monkeypatch):
+    calls = []
+
+    def failing_public_api_get(path, **_kwargs):
+        calls.append(path)
+        raise toolhub.ToolhubAPIError(404, {"message": "missing"})
+
+    monkeypatch.setattr(toolhub, "public_api_get", failing_public_api_get)
+    names = "&".join(f"tool=tool-{i}" for i in range(recent_owners.OWNER_MAX_NAMES + 5))
+    data = client.get(f"/v1/recent/owners/?tool=&tool=tool-0&{names}").get_json()
+
+    assert data["count"] == recent_owners.OWNER_MAX_NAMES
+    assert data["owners"]["tool-0"] == ""
+    assert len(calls) == recent_owners.OWNER_MAX_NAMES
+    with db.session_scope() as s:
+        row = s.get(ToolOwnerCache, "tool-0")
+        assert row.owner == ""
+        assert row.last_error
+        assert row.expires_at > utcnow()
+
+
+def test_recent_owner_record_parser_prefers_author_display_name():
+    assert recent_owners.owner_from_tool_record({"author": [{"name": "Display", "developer_username": "dev"}]}) == "Display"
+    assert recent_owners.owner_from_tool_record({"author": [{"developer_username": "dev"}]}) == "dev"
+    assert recent_owners.owner_from_tool_record({"author": "Plain Author"}) == "Plain Author"
+    assert recent_owners.owner_from_tool_record({"created_by": {"username": "creator"}}) == "creator"
+    assert recent_owners.owner_from_tool_record({}) == ""
 
 
 def test_toolhub_refreshes_expired_grant(client, monkeypatch):

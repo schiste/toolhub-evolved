@@ -10,7 +10,7 @@ import { DEMO_KEYS } from "../../public_html/lib/core/store.js";
 
 vi.mock("../../public_html/lib/core/api.js", async (importOriginal) => {
 	const actual = await importOriginal();
-	return { ...actual, apiGet: vi.fn() };
+	return { ...actual, apiGet: vi.fn(), backendGetJson: vi.fn() };
 });
 vi.mock("../../public_html/lib/core/store.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -21,6 +21,7 @@ vi.mock("../../public_html/lib/core/store.js", async (importOriginal) => {
 // only its own apiGet/demoFeed calls.
 beforeEach(() => {
 	vi.clearAllMocks();
+	api.backendGetJson.mockReset();
 	localStorage.clear();
 	document.body.innerHTML = "";
 });
@@ -51,9 +52,9 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 				]
 			});
 		}
-		if (path === "/tools/my-tool/") return Promise.resolve({ author: [{ name: "Ada Maintainer" }] });
 		return Promise.reject(new Error(`unexpected ${path}`));
 	});
+	api.backendGetJson.mockResolvedValue({ owners: { "my-tool": "Ada Maintainer" } });
 	const view = await viewRecent();
 
 	assert.equal(view.title, "Recent changes — Toolhub");
@@ -97,7 +98,8 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	document.body.innerHTML = view.html;
 	view.mount?.();
 	await tick();
-	assert.deepEqual(api.apiGet.mock.calls[1], ["/tools/my-tool/"]);
+	assert.deepEqual(api.backendGetJson.mock.calls[0], ["/v1/recent/owners/?tool=my-tool"]);
+	assert.equal(api.apiGet.mock.calls.filter((call) => call[0].startsWith("/tools/")).length, 0);
 	assert.match(
 		document.body.innerHTML,
 		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span dir="auto">Ada Maintainer<\/span><\/td>/
@@ -119,14 +121,14 @@ test("viewRecent: cached owner enrichment renders synchronously and skips repeat
 				]
 			});
 		}
-		if (path === "/tools/my-tool/") return Promise.resolve({ author: [{ name: "Ada Maintainer" }] });
 		return Promise.reject(new Error(`unexpected ${path}`));
 	});
+	api.backendGetJson.mockResolvedValue({ owners: { "my-tool": "Ada Maintainer" } });
 	const first = await viewRecent();
 	document.body.innerHTML = first.html;
 	first.mount?.();
 	await tick();
-	assert.equal(api.apiGet.mock.calls.filter((call) => call[0] === "/tools/my-tool/").length, 1);
+	assert.equal(api.backendGetJson.mock.calls.length, 1);
 
 	vi.clearAllMocks();
 	api.apiGet.mockImplementation((path) => {
@@ -150,6 +152,7 @@ test("viewRecent: cached owner enrichment renders synchronously and skips repeat
 		/<td data-label="Tool owner" data-recent-owner-tool="my-tool"><span dir="auto">Ada Maintainer<\/span><\/td>/
 	);
 	assert.deepEqual(api.apiGet.mock.calls, [["/recent/", { page_size: "30" }]]);
+	assert.equal(api.backendGetJson.mock.calls.length, 0);
 });
 
 test("viewRecent: progressive owner enrichment dedupes repeated tools", async () => {
@@ -163,15 +166,16 @@ test("viewRecent: progressive owner enrichment dedupes repeated tools", async ()
 				]
 			});
 		}
-		if (path === "/tools/same-tool/") return Promise.resolve({ author: [{ name: "One Owner" }] });
 		return Promise.reject(new Error(`unexpected ${path}`));
 	});
+	api.backendGetJson.mockResolvedValue({ owners: { "same-tool": "One Owner" } });
 	const view = await viewRecent();
 	document.body.innerHTML = view.html;
 	view.mount?.();
 	await tick();
 
-	assert.equal(api.apiGet.mock.calls.filter((call) => call[0] === "/tools/same-tool/").length, 1);
+	assert.deepEqual(api.backendGetJson.mock.calls, [["/v1/recent/owners/?tool=same-tool"]]);
+	assert.equal(api.apiGet.mock.calls.filter((call) => call[0].startsWith("/tools/")).length, 0);
 	assert.equal(document.querySelectorAll('[data-recent-owner-tool="same-tool"] span[dir="auto"]').length, 2);
 	assert.match(document.body.innerHTML, /One Owner/);
 });
@@ -330,15 +334,16 @@ test("viewRecent: text filters can narrow by owner, updater and free text", asyn
 				]
 			});
 		}
-		if (path === "/tools/alpha/") return Promise.resolve({ author: [{ name: "Ada Maintainer" }] });
-		if (path === "/tools/beta/") return Promise.resolve({ author: [{ name: "Bob Maintainer" }] });
 		return Promise.reject(new Error(`unexpected ${path}`));
 	});
+	api.backendGetJson.mockResolvedValue({ owners: { alpha: "Ada Maintainer", beta: "Bob Maintainer" } });
 	const view = await viewRecent();
 	assert.doesNotMatch(view.html, />Alpha</);
 	document.body.innerHTML = view.html;
 	view.mount?.();
 	await tick();
+	assert.equal(api.apiGet.mock.calls.filter((call) => call[0].startsWith("/tools/")).length, 0);
+	assert.deepEqual(api.backendGetJson.mock.calls, [["/v1/recent/owners/?tool=alpha&tool=beta"]]);
 	assert.match(document.body.innerHTML, />Alpha</);
 	assert.doesNotMatch(document.body.innerHTML, />Beta</);
 	assert.match(view.html, /id="recent-owner" type="search" value="ada"/);

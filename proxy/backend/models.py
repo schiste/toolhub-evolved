@@ -96,6 +96,19 @@ class ApiCacheMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ToolOwnerCache(Base):
+    """Derived owner label cache for recent-change tool rows."""
+
+    __tablename__ = "tool_owner_cache"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(255), default="")
+    source: Mapped[str] = mapped_column(String(64), default="toolhub_detail")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Favorite(Base):
     """One favorited tool name for one user."""
 

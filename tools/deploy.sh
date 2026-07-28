@@ -29,6 +29,8 @@ if [ -x "$VENV_PY" ]; then
 	echo "Building minified dist/ ..."
 	"$VENV_PY" -m pip install -q rjsmin==1.2.5 rcssmin==1.2.2 >/dev/null 2>&1 || true
 	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  minify skipped — serving raw source"
+	echo "Prewarming shared API cache ..."
+	"$VENV_PY" "$REPO_DIR/proxy/cache_invalidation.py"
 else
 	echo "Webservice venv not found; serving raw source (dist/ not built)."
 fi

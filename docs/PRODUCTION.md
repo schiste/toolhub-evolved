@@ -327,13 +327,13 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
 ## 4. Toolforge specifics & quotas
 
 - Webservice: existing `python3.13` webservice; consider `webservice --replicas`
-  if latency under load demands it (the TTL cache is per-worker — acceptable, or
-  move it to Toolforge Redis when replicas > 1).
+  if latency under load demands it. Anonymous API and recent-owner cache rows
+  live in shared ToolsDB, so warmed public reads can benefit every worker.
 - ToolsDB: default quotas suffice for launch; monitor size, request increase if
   the crawler grows the catalog.
 - Jobs framework: local toolinfo crawler, recent-change API cache invalidator
-  with hot-endpoint prewarming, and nightly backup jobs; all defined in-repo
-  (`jobs.yaml`) so the full production config is versioned.
+  with hot-endpoint and recent-owner prewarming, and nightly backup jobs; all
+  defined in-repo (`jobs.yaml`) so the full production config is versioned.
 - Secrets (OAuth client secret, DB URL/credentials, session key): Toolforge
   envvars readable only by the tool, never in the repo; documented in the
   runbook.

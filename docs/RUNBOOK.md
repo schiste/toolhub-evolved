@@ -146,12 +146,13 @@ Anonymous API cache TTLs:
 | `/api/schema/` and controlled vocab/config | 24h       | 24h after freshness   |
 | Other anonymous `/api/*` GETs              | 1min      | 24h after freshness   |
 
-Shared cache invalidation:
+Shared cache invalidation and prewarming:
 
-- Every proxied anonymous `GET /api/*` may trigger a throttled
-  `GET /api/recent/?page_size=50` poll. `api_cache_meta` stores the last poll
-  time and latest seen recent-row timestamp/id so all workers share the same
-  invalidation state.
+- User-facing proxied anonymous `GET /api/*` requests do not poll Toolhub recent
+  changes. The scheduled `api-cache-invalidator` job runs every minute and owns
+  the `GET /api/recent/?page_size=50` poll. `api_cache_meta` stores the last
+  poll time and latest seen recent-row timestamp/id so all workers share the
+  same invalidation state.
 - On new recent rows with `content_type = tool`, Evolved invalidates cached
   `/api/tools/<name>/` reads, tool sub-resources such as revisions, `/api/recent/`,
   `/api/search/tools/`, and `/api/ui/home/`.
@@ -161,6 +162,9 @@ Shared cache invalidation:
   `/v1/toolhub/*` bridge invalidates the affected shared cache paths immediately.
   Rejected writes that become local fallback records do not invalidate official
   Toolhub cache rows.
+- After invalidation, the same job prewarms hot anonymous reads and derives
+  recent-page owner labels into `tool_owner_cache`, so the first visitor after a
+  scheduled run or deploy is not responsible for the cold cache fill.
 
 Anonymous `/api/*` responses include cache diagnostics for operators and browser
 debugging:
@@ -176,6 +180,7 @@ debugging:
 | -------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api_cache`                                  | Anonymous public Toolhub API payload cache      | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                             |
 | `api_cache_meta`                             | Anonymous cache coordination state              | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.              |
+| `tool_owner_cache`                           | Anonymous public derived owner cache            | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                         |
 | `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                     |
 | `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                              |
 | `favorites`                                  | Private per user                                | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                                 |
@@ -318,13 +323,19 @@ exists in official Toolhub. Official names are skipped so live Toolhub remains
 canonical; Evolved-local rows are upserted only for names that Toolhub returns as
 missing.
 
-The API cache invalidator runs every minute. It polls official Toolhub
+The API cache invalidator/prewarmer runs every minute. It polls official Toolhub
 `/api/recent/?page_size=50`, records the latest seen marker in `api_cache_meta`,
 deletes affected shared anonymous `/api/*` cache rows from `api_cache`, then
 prewarms hot anonymous reads: `/api/ui/home/`, recent changes, schema, list
 collections, and common `/api/search/tools/` queries. User-facing `/api/*`
 requests must not poll recent changes themselves; they serve fresh/stale cache
 immediately and refresh stale entries in the background.
+
+The same pass reads the warmed `/api/recent/?page_size=30` payload and resolves
+the visible tool owners into `tool_owner_cache`. `/recent` renders the recent
+rows from `/api/recent/` first, then calls `GET /v1/recent/owners/` in bulk to
+fill owner cells after the table is visible. The browser must not issue a burst
+of `/api/tools/<name>/` detail requests for owner enrichment.
 
 Common prewarmed search terms default to `wikidata,commons,toolforge,template,bot`.
 Override them with `TOOLHUB_CACHE_PREWARM_SEARCH_QUERIES` as a comma-separated

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scheduled shared API cache prewarming for high-traffic Toolhub reads."""
 
+import json
 import os
 import sys
 from collections.abc import Iterable
@@ -9,7 +10,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from backend import DEFAULT_DB_URL, api_cache, db
+from backend import DEFAULT_DB_URL, api_cache, db, recent_owners
 
 DEFAULT_UPSTREAM = "https://toolhub.wikimedia.org"
 UA = "toolhub-evolved-cache-prewarm/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -41,6 +42,8 @@ class PrewarmSummary:
     revalidated: int = 0
     skipped: int = 0
     failed: int = 0
+    owners: int = 0
+    owner_cached: int = 0
 
     def observe(self, result: str) -> None:
         """Record one endpoint prewarm result."""
@@ -59,7 +62,8 @@ class PrewarmSummary:
         return (
             "cache-prewarm: "
             f"warmed={self.warmed} revalidated={self.revalidated} "
-            f"skipped={self.skipped} failed={self.failed} endpoints={self.endpoints}"
+            f"skipped={self.skipped} failed={self.failed} endpoints={self.endpoints} "
+            f"owners={self.owners} owner_cached={self.owner_cached}"
         )
 
 
@@ -182,6 +186,39 @@ def prewarm_endpoint(endpoint: HotEndpoint, *, session: requests.Session | None 
     return "failed"
 
 
+def _recent_rows_from_cache() -> list[dict[str, object]]:
+    """Read the warmed recent feed from shared cache for owner prewarming."""
+    url = url_for_endpoint(HotEndpoint("/api/recent/", (("page_size", "30"),)))
+    cached = api_cache.get(url) or api_cache.get(url, allow_stale=True)
+    if cached is None:
+        return []
+    try:
+        payload = json.loads(cached.body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return []
+    results = payload.get("results") if isinstance(payload, dict) else None
+    return [row for row in results if isinstance(row, dict)] if isinstance(results, list) else []
+
+
+def _recent_tool_names(rows: list[dict[str, object]]) -> list[str]:
+    """Return unique tool names from the current recent feed."""
+    return recent_owners.clean_tool_names(
+        [row.get("content_id") for row in rows if row.get("content_type") == "tool"],
+        limit=recent_owners.OWNER_MAX_NAMES,
+    )
+
+
+def prewarm_recent_owners() -> tuple[int, int]:
+    """Prewarm owner-by-tool rows for tools currently visible on /recent."""
+    names = _recent_tool_names(_recent_rows_from_cache())
+    if not names:
+        return 0, 0
+    payload = recent_owners.resolve_owners(names)
+    meta = payload.get("meta") if isinstance(payload, dict) else {}
+    cached = sum(1 for item in meta.values() if isinstance(item, dict) and item.get("cached"))
+    return len(names), cached
+
+
 def run_once(
     session: requests.Session | None = None, *, endpoints: Iterable[HotEndpoint] | None = None
 ) -> PrewarmSummary:
@@ -189,6 +226,7 @@ def run_once(
     summary = PrewarmSummary()
     for endpoint in endpoints or hot_endpoints():
         summary.observe(prewarm_endpoint(endpoint, session=session))
+    summary.owners, summary.owner_cached = prewarm_recent_owners()
     return summary
 
 

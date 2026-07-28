@@ -40,6 +40,9 @@ Implemented local tables in `proxy/backend/models.py`:
 | `tool_author_keys`   | User-registered public keys for signed toolinfo proof. | Toolhub does not expose Evolved signed-toolinfo keys.                                  |
 | `tool_health_*`      | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
 | `tool_media`         | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
+| `api_cache`          | Anonymous official Toolhub API response cache.         | Performance cache only; Toolhub remains canonical.                                     |
+| `api_cache_meta`     | Shared cache coordination metadata.                    | Poll markers and throttles only; safe to clear.                                        |
+| `tool_owner_cache`   | Derived owner labels for `/recent` tool rows.          | Performance cache only; not canonical authorship or permission state.                  |
 
 Backend endpoints already implemented:
 
@@ -59,6 +62,8 @@ Backend endpoints already implemented:
   `POST /v1/toolinfo/signing-payload/` for signed-toolinfo public-key
   registration and canonical signing payload generation
 - `GET /v1/search/tools/` for Evolved-local tools
+- `GET /v1/recent/owners/` for bulk owner-by-tool enrichment on `/recent`,
+  backed by the shared `tool_owner_cache`
 - `GET /v1/tools/<name>/signals/`, `POST /v1/tools/<name>/events/`,
   `POST|DELETE /v1/tools/<name>/thanks/`
 - `PUT /v1/tools/<name>/health-target/`

@@ -23,7 +23,7 @@ from uuid import uuid4
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import api_cache, authz, db, toolhub
+from backend import api_cache, authz, db, recent_owners, toolhub
 from backend.author_claims import (
     SIGNATURE_META_KEY,
     AuthorNameProvider,
@@ -3505,6 +3505,16 @@ def v1_search() -> Response:
 
     results = [{"name": name, **rec} for name, rec in merged.items() if matches(name, rec)]
     return jsonify({"count": len(results), "results": results})
+
+
+@v1_bp.route("/v1/recent/owners/")
+def v1_recent_owners() -> Response:
+    """Bulk-resolve Recent table owner labels through the shared ToolsDB cache."""
+    names = request.args.getlist("tool")
+    csv_names = request.args.get("tools", "")
+    if csv_names:
+        names.extend(csv_names.split(","))
+    return jsonify(recent_owners.resolve_owners(names))
 
 
 @v1_bp.route("/toolinfo.json")

@@ -67,6 +67,8 @@ It activates fully once configured:
 2. Load the scheduled jobs (hourly crawler, minutely cache invalidator/prewarmer,
    nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
+   Deploys also run one cache invalidation/prewarm pass before the webservice
+   restart, so the first user after a deploy should hit warmed shared cache.
 
 Unconfigured, the site still runs — live read interface plus signed-out read-only
 mode, with `/oauth/login` answering 503 and official write endpoints returning

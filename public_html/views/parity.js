@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt, t, timeTag } from "../lib/core/i18n.js";
-import { apiGet } from "../lib/core/api.js";
+import { apiGet, backendGetJson } from "../lib/core/api.js";
 import { listHref, navigateTo, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, demoFeed, recentOwnerCacheGet, recentOwnerCacheSet } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
@@ -36,8 +36,7 @@ const RECENT_DIRECTIONS = [
 	{ value: "desc", label: t("parity.descending", "Descending") },
 	{ value: "asc", label: t("parity.ascending", "Ascending") }
 ];
-const RECENT_OWNER_FETCH_CONCURRENCY = 4;
-const recentOwnerInflight = new Map();
+const RECENT_OWNER_FETCH_BATCH = 30;
 /**
  * @param {{ content_type?: string }} r
  * @returns {string}
@@ -87,18 +86,6 @@ function recentUpdatedBy(r) {
 function recentTitle(r) {
 	return String(r.content_title || r.content_id || "—");
 }
-/** @param {any} raw */
-function ownerFromToolRecord(raw) {
-	const author = raw && raw.author;
-	if (Array.isArray(author)) {
-		const first = author.find((a) => (a && typeof a === "object" ? a.name : a));
-		if (first && typeof first === "object" && first.name) return String(first.name);
-		if (first) return String(first);
-	}
-	if (typeof author === "string" && author) return author;
-	if (raw && raw.created_by && raw.created_by.username) return String(raw.created_by.username);
-	return "";
-}
 /** @param {any} r */
 function ownerFromRecentRow(r) {
 	if (r._recentOwner) return String(r._recentOwner);
@@ -135,40 +122,24 @@ function missingOwnerNames(rows) {
 		)
 	];
 }
-/** @param {string} name */
-function fetchRecentOwner(name) {
-	const cached = recentOwnerCacheGet(name);
-	if (cached !== undefined) return Promise.resolve(cached);
-	if (recentOwnerInflight.has(name)) return recentOwnerInflight.get(name);
-	const promise = apiGet(`/tools/${encodeURIComponent(name)}/`)
-		.then((tool) => ownerFromToolRecord(tool))
-		.catch(() => "")
-		.then((owner) => {
-			recentOwnerCacheSet(name, owner);
-			return owner;
-		})
-		.finally(() => {
-			recentOwnerInflight.delete(name);
-		});
-	recentOwnerInflight.set(name, promise);
-	return promise;
-}
 /**
  * @param {string[]} names
  * @param {(name: string, owner: string) => void} onOwner
  */
 async function enrichRecentOwnersProgressively(names, onOwner) {
-	const queue = [...names];
-	const workerCount = Math.min(RECENT_OWNER_FETCH_CONCURRENCY, queue.length);
-	await Promise.all(
-		Array.from({ length: workerCount }, async () => {
-			while (queue.length > 0) {
-				const name = queue.shift();
-				if (!name) continue;
-				onOwner(name, await fetchRecentOwner(name));
-			}
-		})
-	);
+	for (let i = 0; i < names.length; i += RECENT_OWNER_FETCH_BATCH) {
+		const batch = names.slice(i, i + RECENT_OWNER_FETCH_BATCH);
+		const params = new URLSearchParams();
+		for (const name of batch) params.append("tool", name);
+		const data = await backendGetJson(`/v1/recent/owners/?${params.toString()}`).catch(() => null);
+		const owners =
+			data && typeof data === "object" && data.owners && typeof data.owners === "object" ? data.owners : {};
+		for (const name of batch) {
+			const owner = Object.hasOwn(owners, name) ? String(owners[name] || "") : "";
+			recentOwnerCacheSet(name, owner);
+			onOwner(name, owner);
+		}
+	}
 }
 /**
  * @param {Array<any>} rows

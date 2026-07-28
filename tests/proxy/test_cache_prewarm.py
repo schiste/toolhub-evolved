@@ -126,6 +126,34 @@ def test_run_once_records_transient_failures_without_caching_error():
     assert api_cache.get(url, allow_stale=True) is None
 
 
+def test_run_once_prewarms_recent_owner_cache_from_warmed_recent_feed(monkeypatch):
+    calls = []
+
+    def fake_resolve(names):
+        calls.append(names)
+        return {
+            "owners": {"alpha": "Ada", "bravo": "Grace"},
+            "meta": {"alpha": {"cached": False}, "bravo": {"cached": True}},
+        }
+
+    monkeypatch.setattr(cache_prewarm.recent_owners, "resolve_owners", fake_resolve)
+    endpoint = cache_prewarm.HotEndpoint("/api/recent/", (("page_size", "30"),))
+    session = FakePrewarmSession(
+        [
+            FakePrewarmResponse(
+                body=b'{"results":[{"content_type":"tool","content_id":"alpha"},{"content_type":"list","content_id":"77"},{"content_type":"tool","content_id":"bravo"},{"content_type":"tool","content_id":"alpha"}]}'
+            )
+        ]
+    )
+
+    summary = cache_prewarm.run_once(session, endpoints=[endpoint])
+
+    assert summary.warmed == 1
+    assert summary.owners == 2
+    assert summary.owner_cached == 1
+    assert calls == [["alpha", "bravo"]]
+
+
 def test_main_configures_db_runs_once_and_prints(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("TOOLHUB_DB_URL", f"sqlite:///{tmp_path}/cache.sqlite3")
     monkeypatch.setattr(
@@ -134,5 +162,8 @@ def test_main_configures_db_runs_once_and_prints(monkeypatch, capsys, tmp_path):
         lambda: cache_prewarm.PrewarmSummary(endpoints=2, warmed=1, revalidated=1),
     )
     assert cache_prewarm.main() == 0
-    assert "cache-prewarm: warmed=1 revalidated=1 skipped=0 failed=0 endpoints=2" in capsys.readouterr().out
+    assert (
+        "cache-prewarm: warmed=1 revalidated=1 skipped=0 failed=0 endpoints=2 owners=0 owner_cached=0"
+        in capsys.readouterr().out
+    )
     assert os.environ["TOOLHUB_DB_URL"].endswith("cache.sqlite3")

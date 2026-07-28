@@ -125,5 +125,5 @@ def test_main_configures_db_runs_once_and_prints(monkeypatch, capsys, tmp_path):
     assert cache_invalidation.main() == 0
     out = capsys.readouterr().out
     assert "cache-invalidation: 7 rows invalidated" in out
-    assert "cache-prewarm: warmed=2 revalidated=0 skipped=1 failed=0 endpoints=3" in out
+    assert "cache-prewarm: warmed=2 revalidated=0 skipped=1 failed=0 endpoints=3 owners=0 owner_cached=0" in out
     assert os.environ["TOOLHUB_DB_URL"].endswith("cache.sqlite3")
