@@ -4315,6 +4315,73 @@ def test_oauth_callback_success_and_relogin(client, monkeypatch):
         assert s.query(User).count() == 1
 
 
+def test_oauth_callback_succeeds_in_production_style_config(client, monkeypatch):
+    # Every other OAuth test sets TOOLHUB_INSECURE_COOKIES, which routes _callback_url()
+    # down the development branch. Production takes the TOOLHUB_EVOLVED_BASE_URL branch,
+    # and that path was never driven through a full login -> callback round trip.
+    monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("TOOLHUB_OAUTH_CLIENT_SECRET", "csec")
+    monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://toolhub-evolved.toolforge.org")
+    monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
+    sent = {}
+
+    def fake_post(_url, **kwargs):
+        sent["redirect_uri"] = kwargs["data"]["redirect_uri"]
+        return FakeResp({"access_token": "at", "refresh_token": "rt", "expires_in": 3600})
+
+    monkeypatch.setattr(toolhub.requests, "post", fake_post)
+    monkeypatch.setattr(
+        toolhub.requests,
+        "request",
+        lambda *a, **k: FakeResp({"id": 7, "username": "Ada", "is_authenticated": True}),
+    )
+    resp = client.get("/oauth/login")
+    assert resp.status_code == 302, "login must not 503 when the base URL is configured"
+    with client.session_transaction() as sess:
+        state = sess["oauth_state"]
+    landed = client.get(f"/oauth/callback?code=c&state={state}").headers["Location"]
+    assert sent["redirect_uri"] == "https://toolhub-evolved.toolforge.org/oauth/callback"
+    assert landed == "/", f"production config landed on {landed}"
+    assert client.get("/v1/user/").get_json()["authenticated"] is True
+
+
+def test_oauth_callback_logs_a_distinguishable_reason_for_each_failure(client, monkeypatch, caplog):
+    configure_oauth(monkeypatch)
+
+    def attempt(**kwargs):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger="backend.oauth"):
+            resp = kwargs.pop("call")()
+        assert resp.headers["Location"] == "/?login=error"  # user-facing message stays vague
+        return caplog.text
+
+    # A stale/forged state must not look the same in the log as a broken OAuth app.
+    state = start_login(client)
+    assert "state mismatch" in attempt(call=lambda: client.get("/oauth/callback?code=c&state=wrong"))
+    start_login(client)
+    assert "without a stored state or a code" in attempt(call=lambda: client.get(f"/oauth/callback?state={state}"))
+
+    # Toolhub naming the cause is the whole point: invalid_client vs invalid_grant is
+    # the difference between a bad secret and a stale code.
+    def failing_post(*_a, **_k):
+        resp = FakeResp({"error": "invalid_client"}, status=401)
+        raise toolhub.requests.HTTPError(response=resp)
+
+    monkeypatch.setattr(toolhub.requests, "post", failing_post)
+    state = start_login(client)
+    text = attempt(call=lambda: client.get(f"/oauth/callback?code=c&state={state}"))
+    assert "token endpoint returned HTTP 401" in text
+    assert "invalid_client" in text, "Toolhub's own error body must reach the log"
+
+    monkeypatch.setattr(
+        toolhub.requests, "post", lambda *_a, **_k: (_ for _ in ()).throw(toolhub.requests.ConnectionError("down"))
+    )
+    state = start_login(client)
+    assert "ConnectionError during the exchange" in attempt(
+        call=lambda: client.get(f"/oauth/callback?code=c&state={state}")
+    )
+
+
 def test_oauth_callback_promotes_configured_evolved_role(client, monkeypatch):
     configure_oauth(monkeypatch)
     monkeypatch.setenv(authz.ADMIN_USERS_ENV, "7")

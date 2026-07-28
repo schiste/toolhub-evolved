@@ -7,6 +7,7 @@ grant gives Evolved both identity (GET /api/user/) and the authorization needed
 to perform official Toolhub writes on the user's behalf.
 """
 
+import logging
 import os
 import secrets
 
@@ -20,6 +21,22 @@ from backend.models import User
 oauth_bp = Blueprint("oauth", __name__)
 
 HTTP_UNAVAILABLE = 503
+_log = logging.getLogger(__name__)
+
+
+def _login_failed(reason: str, detail: object = None) -> Response:
+    """Log why a sign-in attempt failed, then send the user to the generic error page.
+
+    The user-facing outcome stays deliberately vague — a sign-in page should not
+    explain which half of the handshake broke. But swallowing the reason entirely
+    makes a broken OAuth app indistinguishable from a stale nonce, which is exactly
+    the position this endpoint was in: every failure looked identical from outside.
+    Toolhub's own error body (invalid_client, invalid_grant, redirect_uri_mismatch)
+    is the thing that identifies the fault, so it goes to the log. Codes and tokens
+    are never included.
+    """
+    _log.warning("oauth sign-in failed: %s%s", reason, f" — {detail}" if detail is not None else "")
+    return redirect("/?login=error")
 
 
 def configured() -> bool:
@@ -60,25 +77,41 @@ def oauth_login() -> Response:
     return redirect(toolhub.authorize_url(state=state, redirect_uri=callback))
 
 
+def _callback_preconditions(state: object, redirect_uri: str | None) -> Response | None:
+    """Return the refusal for a callback that must not reach the token exchange."""
+    if not configured():
+        return _login_failed("Toolhub OAuth is not configured")
+    if redirect_uri is None:
+        return _login_failed("no trusted callback URL (set TOOLHUB_EVOLVED_BASE_URL)")
+    if not state or not request.args.get("code"):
+        return _login_failed("callback arrived without a stored state or a code")
+    if not secrets.compare_digest(str(request.args.get("state", "")), str(state)):
+        return _login_failed("state mismatch (stale tab, or the session was replaced mid-flow)")
+    return None
+
+
 @oauth_bp.route("/oauth/callback")
 def oauth_callback() -> Response:
     """Exchange the code, fetch the Toolhub user, sign into Evolved."""
     state = session.pop("oauth_state", None)
     redirect_uri = session.pop("oauth_redirect_uri", None) or _callback_url()
-    if (
-        not configured()
-        or redirect_uri is None
-        or not state
-        or not secrets.compare_digest(str(request.args.get("state", "")), str(state))
-        or not request.args.get("code")
-    ):
-        return redirect("/?login=error")
+    rejected = _callback_preconditions(state, redirect_uri)
+    if rejected is not None:
+        return rejected
     try:
         token_payload = toolhub.exchange_code(code=request.args["code"], redirect_uri=redirect_uri)
         profile = toolhub.current_user(str(token_payload["access_token"]))
         toolhub_user_id, username = str(profile["id"]), str(profile["username"])
-    except (requests.RequestException, toolhub.ToolhubAPIError, toolhub.ToolhubAuthError, KeyError, ValueError):
-        return redirect("/?login=error")
+    except toolhub.ToolhubAPIError as exc:
+        return _login_failed(f"Toolhub rejected the exchange (HTTP {exc.status_code})", exc.payload)
+    except requests.HTTPError as exc:
+        # exchange_code raises this via raise_for_status; the body names the cause,
+        # e.g. invalid_client (bad secret) or redirect_uri_mismatch (wrong registration).
+        body = exc.response.text[:500] if exc.response is not None else None
+        status = exc.response.status_code if exc.response is not None else "?"
+        return _login_failed(f"token endpoint returned HTTP {status}", body)
+    except (requests.RequestException, toolhub.ToolhubAuthError, KeyError, ValueError) as exc:
+        return _login_failed(f"{type(exc).__name__} during the exchange", exc)
     with db.session_scope() as s:
         user = s.execute(select(User).where(User.wm_sub == toolhub_user_id)).scalar_one_or_none()
         if user is None:
