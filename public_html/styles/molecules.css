@@ -714,6 +714,12 @@ li.le__empty {
 	border-top: var(--border-muted);
 	margin: var(--space-2) var(--space-0);
 }
+
+/* The sign-out control is a POST form, not a link. `display: contents` keeps its
+   button laid out as a direct child of the menu so it matches the other items. */
+.acct__logout-form {
+	display: contents;
+}
 .acct__logout {
 	color: var(--color-destructive);
 }

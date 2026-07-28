@@ -40,7 +40,7 @@ test("viewAccountSettings renders export, delete, and OAuth controls", () => {
 	assert.ok(r.html.includes("Generate export"));
 	assert.ok(r.html.includes("Delete Evolved-local data"));
 	assert.ok(r.html.includes('href="/oauth/login"'));
-	assert.ok(r.html.includes('href="/oauth/logout"'));
+	assert.ok(r.html.includes('method="post" action="/oauth/logout"'));
 });
 
 test("viewDeveloperSettings renders the Toolhub developer hub and profile links", () => {

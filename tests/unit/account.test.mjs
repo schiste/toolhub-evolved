@@ -16,7 +16,11 @@ import { icon } from "../../public_html/lib/atoms/icon.js";
 // The account UI asks serversync whether real (OAuth) sign-in is configured;
 // stub it with a switchable flag so both renders are testable.
 let oauthOn = false;
-vi.mock("../../public_html/lib/core/serversync.js", () => ({ oauthAvailable: () => oauthOn }));
+const csrf = "";
+vi.mock("../../public_html/lib/core/serversync.js", () => ({
+	oauthAvailable: () => oauthOn,
+	csrfToken: () => csrf
+}));
 
 function htmlEqual(actual, expected, msg) {
 	const a = document.createElement("div");
@@ -27,7 +31,7 @@ function htmlEqual(actual, expected, msg) {
 }
 
 function menuOracle() {
-	return `\n\t\t<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">\n\t\t\t${avatar(USER.name, "avatar--sm")}\n\t\t\t<span class="acct__name">${esc(USER.name)}</span>\n\t\t\t${icon("chevronDown", "acct__caret")}\n\t\t</button>\n\t\t<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>\n\t\t\t<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong></div>\n\t\t\t<a href="/my-lists">${icon("list")} Your lists</a>\n\t\t\t<a href="/my-tools">${icon("tools")} My tools</a>\n\t\t\t<a href="/favorites">${icon("star")} Favorites</a>\n\t\t\t<a href="/add-or-remove-tools">${icon("tools")} Add or remove tools</a>\n\t\t\t<a href="/developer-settings">${icon("key")} Developer settings</a>\n\t\t\t<a href="/account">${icon("tools")} Evolved data settings</a>\n\t\t\t<hr />\n\t\t\t<a class="acct__logout" href="/oauth/logout">${icon("logout")} Log out</a>\n\t\t</div>`;
+	return `\n\t\t<button class="acct__btn" id="acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu">\n\t\t\t${avatar(USER.name, "avatar--sm")}\n\t\t\t<span class="acct__name">${esc(USER.name)}</span>\n\t\t\t${icon("chevronDown", "acct__caret")}\n\t\t</button>\n\t\t<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>\n\t\t\t<div class="acct__head">Signed in as <strong>${esc(USER.name)}</strong></div>\n\t\t\t<a href="/my-lists">${icon("list")} Your lists</a>\n\t\t\t<a href="/my-tools">${icon("tools")} My tools</a>\n\t\t\t<a href="/favorites">${icon("star")} Favorites</a>\n\t\t\t<a href="/add-or-remove-tools">${icon("tools")} Add or remove tools</a>\n\t\t\t<a href="/developer-settings">${icon("key")} Developer settings</a>\n\t\t\t<a href="/account">${icon("tools")} Evolved data settings</a>\n\t\t\t<hr />\n\t\t\t<form class="acct__logout-form" method="post" action="/oauth/logout">\n\t\t\t<input type="hidden" name="csrf" value="" />\n\t\t\t<button class="acct__logout" type="submit">${icon("logout")} Log out</button>\n\t\t</form>\n\t\t</div>`;
 }
 
 beforeEach(() => {
@@ -86,7 +90,8 @@ test("renderAccount renders a real session: no demo tag, no reset, server logout
 	htmlEqual(el.innerHTML, menuOracle());
 	assert.equal(el.querySelector(".mock-tag"), null);
 	assert.equal(el.querySelector("[data-reset]"), null);
-	assert.ok(el.querySelector('a[href="/oauth/logout"]'));
+	assert.ok(el.querySelector('form[method="post"][action="/oauth/logout"] button[type="submit"]'));
+	assert.equal(el.querySelector('a[href="/oauth/logout"]'), null); // sign-out must not be a GET link
 	assert.ok(el.textContent.includes("Grace Hopper"));
 });
 

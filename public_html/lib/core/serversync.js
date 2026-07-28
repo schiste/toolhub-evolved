@@ -23,6 +23,11 @@ export function officialWriteAvailable() {
 	return Boolean(csrf);
 }
 
+/** Session CSRF token, for the sign-out form (every other write sends it as a header). */
+export function csrfToken() {
+	return csrf;
+}
+
 /**
  * Perform a CSRF-protected backend write that may call official Toolhub.
  * @param {string} method

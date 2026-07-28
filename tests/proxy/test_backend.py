@@ -1685,7 +1685,7 @@ def test_sign_out_strands_session_cookies_issued_before_it(client, app):
     assert put_overlay(client, "favorites", ["a"]).status_code == 200
     stolen = app.test_client()  # a copy of the cookie taken while it was valid
     sign_in(stolen, uid)
-    client.get("/oauth/logout")
+    client.post("/oauth/logout", data={"csrf": "tok"})
     assert put_overlay(stolen, "favorites", ["b"]).status_code == 401  # epoch bumped → stale
     assert stolen.get("/v1/user/").get_json() == {"authenticated": False}
 
@@ -4025,7 +4025,7 @@ def test_oauth_logout(client):
     uid = add_user()
     toolhub.save_grant(uid, {"access_token": "at"})
     sign_in(client, uid)
-    resp = client.post("/oauth/logout")
+    resp = client.post("/oauth/logout", data={"csrf": "tok"})
     assert resp.headers["Location"] == "/"
     assert client.get("/v1/user/").get_json() == {"authenticated": False}
     with db.session_scope() as s:
@@ -4033,5 +4033,14 @@ def test_oauth_logout(client):
 
 
 def test_oauth_logout_without_session(client):
-    resp = client.get("/oauth/logout")
-    assert resp.headers["Location"] == "/"
+    resp = client.post("/oauth/logout")
+    assert resp.headers["Location"] == "/?logout=error"  # no session → no valid CSRF token
+
+
+def test_oauth_logout_rejects_get_and_bad_csrf(client):
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.get("/oauth/logout").status_code == 405  # not reachable from <img>/<a>
+    resp = client.post("/oauth/logout", data={"csrf": "wrong"})
+    assert resp.headers["Location"] == "/?logout=error"
+    assert client.get("/v1/user/").get_json()["authenticated"] is True  # still signed in

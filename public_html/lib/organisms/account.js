@@ -2,10 +2,25 @@
 import { $, esc } from "../core/dom.js";
 import { t } from "../core/i18n.js";
 import { USER, signedIn } from "../core/session.js";
-import { oauthAvailable } from "../core/serversync.js";
+import { csrfToken, oauthAvailable } from "../core/serversync.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
+
+/**
+ * Wrap a submit control in the sign-out POST form.
+ *
+ * Signing out changes server state — it revokes the stored Toolhub grant and
+ * bumps the session epoch — so it must not be a GET link that any third-party
+ * page could trigger with an embedded image request.
+ * @param {string} submitControl pre-built HTML for the submit button
+ */
+export function logoutForm(submitControl) {
+	return `<form class="acct__logout-form" method="post" action="/oauth/logout">
+			<input type="hidden" name="csrf" value="${esc(csrfToken())}" />
+			${submitControl}
+		</form>`;
+}
 
 export function renderAccount() {
 	const el = $("#account");
@@ -32,7 +47,7 @@ export function renderAccount() {
 			<a href="/developer-settings">${icon("key")} ${t("account.developerSettings", "Developer settings")}</a>
 			<a href="/account">${icon("tools")} ${t("account.dataSettings", "Evolved data settings")}</a>
 			<hr />
-			<a class="acct__logout" href="/oauth/logout">${icon("logout")} ${t("account.logOut", "Log out")}</a>
+			${logoutForm(`<button class="acct__logout" type="submit">${icon("logout")} ${t("account.logOut", "Log out")}</button>`)}
 		</div>`;
 }
 export function closeAcctMenu() {

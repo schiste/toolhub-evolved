@@ -9,6 +9,7 @@ import { demoStore } from "../lib/core/store.js";
 import { button } from "../lib/atoms/button.js";
 import { fArea, fInput } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
+import { logoutForm } from "../lib/organisms/account.js";
 import { linkCard } from "./static.js";
 
 const TOOLHUB_BASE = "https://toolhub.wikimedia.org";
@@ -456,7 +457,7 @@ export function viewAccountSettings() {
 			<h2 class="panel__title" id="account-oauth-title">${t("accountData.oauthTitle", "Toolhub connection")}</h2>
 			<div class="toolpage__actions">
 				${button(t("accountData.reconnect", "Reconnect Toolhub OAuth"), { variant: "outline", href: "/oauth/login" })}
-				${button(t("accountData.logout", "Log out"), { variant: "outline", href: "/oauth/logout" })}
+				${logoutForm(button(t("accountData.logout", "Log out"), { variant: "outline", type: "submit" }))}
 			</div>
 		</section>
 		<p class="at__result" data-account-result aria-live="polite"></p>

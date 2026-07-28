@@ -14,7 +14,7 @@ import requests
 from flask import Blueprint, Response, jsonify, redirect, request, session, url_for
 from sqlalchemy import select
 
-from backend import authz, db, toolhub
+from backend import authz, db, security, toolhub
 from backend.models import User
 
 oauth_bp = Blueprint("oauth", __name__)
@@ -98,9 +98,19 @@ def oauth_callback() -> Response:
     return redirect("/")
 
 
-@oauth_bp.route("/oauth/logout", methods=["POST", "GET"])
+@oauth_bp.route("/oauth/logout", methods=["POST"])
 def oauth_logout() -> Response:
-    """Drop the server session and return to the (read-only) home page."""
+    """Drop the server session and return to the (read-only) home page.
+
+    POST-only: as a GET this was reachable from any third-party page through an
+    <img> tag or a plain link, so anyone could sign the user out — and now that
+    sign-out bumps the session epoch, that would also strand their other
+    sessions. POST plus SameSite=Lax stops the browser attaching the cookie to a
+    cross-site submission at all, and the CSRF token is checked so this endpoint
+    is guarded like every other write.
+    """
+    if not security.csrf_ok(request.form.get("csrf", "")):
+        return redirect("/?logout=error")
     uid = session.get("uid")
     if isinstance(uid, int):
         toolhub.revoke_local_grant(uid)

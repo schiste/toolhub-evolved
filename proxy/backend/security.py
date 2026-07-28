@@ -91,7 +91,7 @@ def _rate_limited(uid: int) -> bool:
     return False
 
 
-def _csrf_ok(token: str) -> bool:
+def csrf_ok(token: str) -> bool:
     """Compare the submitted CSRF token to the session's in constant time.
 
     `==` on the token leaks how many leading characters matched through timing.
@@ -125,7 +125,7 @@ def write_guard(fn: Callable[..., Any]) -> Callable[..., Any]:
         uid = current_user_id()
         if uid is None:
             return _reject(HTTP_UNAUTHORIZED, "sign in required")
-        if not _csrf_ok(request.headers.get("X-CSRF-Token", "")):
+        if not csrf_ok(request.headers.get("X-CSRF-Token", "")):
             return _reject(HTTP_FORBIDDEN, "bad CSRF token")
         if _rate_limited(uid):
             return _reject(HTTP_TOO_MANY, "rate limit exceeded")
