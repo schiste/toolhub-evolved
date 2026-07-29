@@ -78,7 +78,7 @@ export function accountWorkbenchNav(active) {
 /** @param {AccountWorkbenchOptions} opts */
 export function accountWorkbenchPage(opts) {
 	const actions = opts.actions ? `<div class="account-workbench__actions">${opts.actions}</div>` : "";
-	const heroSide = actions ? `\n\t\t\t<div class="account-workbench__hero-side">${actions}</div>` : "";
+	const toolbar = actions ? `\n\t\t<div class="account-workbench__toolbar">${actions}</div>` : "";
 	const cls = opts.className ? ` ${opts.className}` : "";
 	const user = accountName();
 	const intro = opts.introHtml || esc(opts.intro);
@@ -91,9 +91,9 @@ export function accountWorkbenchPage(opts) {
 					<h1 class="page__title">${esc(opts.title)}</h1>
 					<p class="page__intro">${intro}</p>
 				</div>
-			</div>${heroSide}
+			</div>
 		</header>
-		${accountWorkbenchNav(opts.active)}
+		${accountWorkbenchNav(opts.active)}${toolbar}
 		<div class="account-workbench__body">${opts.body}</div>
 	</div>`;
 }
@@ -124,7 +124,7 @@ export function accountSection(opts) {
 			<div class="account-workbench__section-actions">${opts.actions}</div>`
 		: "";
 	return `<section class="panel account-data__section account-workbench__section${cls}" aria-labelledby="${esc(opts.id)}">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="${esc(opts.id)}">${esc(opts.title)}</h2>
 				${opts.intro ? `<p class="signin-note">${esc(opts.intro)}</p>` : ""}

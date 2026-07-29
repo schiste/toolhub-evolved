@@ -1003,13 +1003,6 @@
 .account-workbench__hero .page__intro {
 	margin-inline: var(--space-0);
 }
-.account-workbench__hero-side {
-	display: flex;
-	flex-direction: column;
-	align-items: flex-end;
-	gap: var(--space-3);
-	min-width: min(100%, 260px);
-}
 .account-workbench__actions,
 .account-workbench__section-actions,
 .account-empty__actions {
@@ -1088,22 +1081,18 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+.account-workbench__toolbar {
+	display: flex;
+	justify-content: flex-end;
+	margin: calc(-1 * var(--space-4)) var(--space-0) var(--space-4);
+}
 .account-workbench__content-section {
 	margin-top: var(--space-5);
 }
-.account-workbench__content-head,
-.account-workbench__section-head {
+.account-workbench__content-head {
 	align-items: flex-start;
 }
 .account-workbench__content-head .panel__title {
-	margin-bottom: var(--space-1);
-}
-.account-workbench__section-head {
-	display: flex;
-	justify-content: space-between;
-	gap: var(--space-3);
-}
-.account-workbench__section-head .panel__title {
 	margin-bottom: var(--space-1);
 }
 .account-empty {

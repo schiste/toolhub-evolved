@@ -214,16 +214,9 @@
 	.account-workbench__hero {
 		grid-template-columns: 1fr;
 	}
-	.account-workbench__hero-side {
-		align-items: flex-start;
-		min-width: 0;
-	}
 	.account-workbench__actions,
 	.account-workbench__section-actions {
 		justify-content: flex-start;
-	}
-	.account-workbench__section-head {
-		flex-direction: column;
 	}
 	.account-keys__layout {
 		grid-template-columns: 1fr;
@@ -395,6 +388,10 @@
 		overflow: hidden;
 		clip-path: inset(50%);
 		white-space: nowrap;
+	}
+	.account-workbench__toolbar {
+		justify-content: flex-start;
+		margin-block-start: calc(-1 * var(--space-3));
 	}
 }
 

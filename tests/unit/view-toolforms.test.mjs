@@ -115,7 +115,7 @@ function localFallbackResponse(lastError, local = {}) {
 
 const S = {
 	addtools: `<div class="container page at"><section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-url-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-url-title">Find or register toolinfo.json</h2>
 				<p class="signin-note">Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source.</p>
@@ -130,7 +130,7 @@ const S = {
 				<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-json-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-json-title">Ingest toolinfo</h2>
 				<p class="signin-note">Paste one tool object or an array. Successful records stay in Evolved until they are submitted or matched with official Toolhub data.</p>
@@ -144,7 +144,7 @@ const S = {
 				<p class="at__result" data-ingest-result aria-live="polite"></p>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-submissions-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-submissions-title">Your tools</h2>
 				<p class="signin-note">Local submissions and pasted toolinfo records attached to this account workspace.</p>
@@ -168,7 +168,7 @@ const S = {
 	</article></li></ul></div>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-runs-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-runs-title">Local crawler runs</h2>
 				<p class="signin-note">Recent local discovery attempts for pasted or registered toolinfo sources.</p>
@@ -177,7 +177,7 @@ const S = {
 		<div data-crawler-runs><p class="empty">No local crawler runs recorded yet.</p></div>
 	</section></div>`,
 	addtools_empty: `<div class="container page at"><section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-url-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-url-title">Find or register toolinfo.json</h2>
 				<p class="signin-note">Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source.</p>
@@ -192,7 +192,7 @@ const S = {
 				<ul class="at__urls" data-url-list><li class="le__empty">No URLs registered.</li></ul>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-json-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-json-title">Ingest toolinfo</h2>
 				<p class="signin-note">Paste one tool object or an array. Successful records stay in Evolved until they are submitted or matched with official Toolhub data.</p>
@@ -206,7 +206,7 @@ const S = {
 				<p class="at__result" data-ingest-result aria-live="polite"></p>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-submissions-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-submissions-title">Your tools</h2>
 				<p class="signin-note">Local submissions and pasted toolinfo records attached to this account workspace.</p>
@@ -216,7 +216,7 @@ const S = {
 				<div data-sub-grid><p class="empty">No tools yet. Submit one above, or ingest toolinfo.</p></div>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-runs-title">
-		<div class="account-workbench__section-head">
+		<div>
 			<div>
 				<h2 class="panel__title" id="add-toolinfo-runs-title">Local crawler runs</h2>
 				<p class="signin-note">Recent local discovery attempts for pasted or registered toolinfo sources.</p>

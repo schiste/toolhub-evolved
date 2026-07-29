@@ -396,7 +396,6 @@ const S = {
 					<p class="page__intro">Lists you create or edit in Evolved, including drafts and local fallbacks.</p>
 				</div>
 			</div>
-			<div class="account-workbench__hero-side"><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
 		</header>
 		<nav class="account-workbench__nav" aria-label="Account pages">
 		<a class="account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
@@ -426,6 +425,7 @@ const S = {
 				</span>
 			</a>
 	</nav>
+		<div class="account-workbench__toolbar"><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
 		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
 		<div class="section-head account-workbench__content-head">
 			<div>
@@ -453,7 +453,6 @@ const S = {
 					<p class="page__intro">Lists you create or edit in Evolved, including drafts and local fallbacks.</p>
 				</div>
 			</div>
-			<div class="account-workbench__hero-side"><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
 		</header>
 		<nav class="account-workbench__nav" aria-label="Account pages">
 		<a class="account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
@@ -483,6 +482,7 @@ const S = {
 				</span>
 			</a>
 	</nav>
+		<div class="account-workbench__toolbar"><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
 		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
 		<div class="section-head account-workbench__content-head">
 			<div>
