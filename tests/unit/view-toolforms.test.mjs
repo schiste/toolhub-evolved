@@ -618,6 +618,15 @@ test("viewAnnotationsEdit without annotation → no revert", async () => {
 	expect("anno_norevert", r.html);
 });
 
+test("viewAnnotationsEdit surfaces invalid icon provenance", async () => {
+	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", icon: "https://exa mple.org/icon.png" }));
+	h.toolAnnosMap.mockReturnValue({});
+	const r = await tf.viewAnnotationsEdit("my-tool");
+	assert.ok(r.html.includes('aria-label="Icon provenance"'));
+	assert.ok(r.html.includes("Generated avatar fallback"));
+	assert.ok(r.html.includes("not a supported image URL"));
+});
+
 test("viewAnnotationsEdit annotated fallback without status defaults to saved locally", async () => {
 	h.getTool.mockResolvedValue(toolFixture("my-tool", { title: "My Tool", annotated: true }));
 	h.toolAnnosMap.mockReturnValue({});

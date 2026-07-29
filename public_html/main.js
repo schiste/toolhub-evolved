@@ -28,6 +28,7 @@ import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
 import { initCommandPalette, syncCommandPaletteChrome } from "./lib/organisms/command-palette.js";
+import { initIconFallbacks } from "./lib/organisms/icon-fallbacks.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
@@ -152,6 +153,7 @@ if (siteNoticeDismiss) {
    (<html data-theme>), so it shows the right state even before an explicit choice
    is made (System is the implicit default only while nothing is stored). */
 initTheme();
+initIconFallbacks();
 // "System" is a default picker, not a toggle option: it is the implicit default used
 // while nothing is stored in localStorage (theme.js then follows the OS preference).
 // The toggle therefore exposes only Light and Dark.

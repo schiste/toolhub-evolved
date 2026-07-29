@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { esc, hash, safeUrl } from "../core/dom.js";
+import { esc, hash, isHttpUrl, safeHttpUrl } from "../core/dom.js";
 
 export const AVATAR_COLORS = [
 	"var(--wmf-blue-aaa)",
@@ -13,15 +13,26 @@ export const AVATAR_COLORS = [
 	"var(--color-favorite)",
 	"var(--color-progressive-hover)"
 ];
+const ICON_META_CACHE = new Map();
 /**
  * @param {string | null | undefined} title
  * @param {string} [cls]
  * @returns {string}
  */
 export function avatar(title, cls) {
+	return avatarMarkup(title, cls);
+}
+
+/**
+ * @param {string | null | undefined} title
+ * @param {string | undefined} cls
+ * @param {string} [attrs]
+ * @returns {string}
+ */
+function avatarMarkup(title, cls, attrs = "") {
 	const ch = (title || "?").trim().charAt(0).toUpperCase();
 	const color = AVATAR_COLORS[hash(title || "?") % AVATAR_COLORS.length];
-	return `<span class="avatar ${cls || ""}" style="background:${color}" aria-hidden="true">${esc(ch)}</span>`;
+	return `<span class="avatar ${cls || ""}" style="background:${color}"${attrs} aria-hidden="true">${esc(ch)}</span>`;
 }
 // Commons "File:Foo.svg" page URL → a rendered thumbnail URL.
 /**
@@ -52,15 +63,42 @@ function isCommonsFilePageUrl(url) {
 function isDirectImageUrl(url) {
 	// Stryker disable next-line StringLiteral: the `|| ""` fallback only fires for a falsy url; the sentinel is not an http(s) URL, so it fails the ^https? guard below exactly like "" does (and commonsThumb still keys off the original t.icon) — equivalent.
 	const s = String(url || "").trim();
-	if (!/^https?:\/\//i.test(s)) return false;
+	if (!isHttpUrl(s)) return false;
 	if (/special:filepath/i.test(s) || /upload\.wikimedia\.org/i.test(s)) return true;
-	const withoutQuery = s.split(/[#?]/, 1)[0];
 	if (isCommonsFilePageUrl(s)) return false;
-	try {
-		return /\.(png|jpe?g|gif|svg|webp)$/i.test(new URL(s).pathname);
-	} catch {
-		return /\.(png|jpe?g|gif|svg|webp)$/i.test(withoutQuery);
+	return /\.(png|jpe?g|gif|svg|webp)$/i.test(new URL(s).pathname);
+}
+/** @param {Tool} t @param {string | undefined} variant */
+function iconCacheKey(t, variant) {
+	return `${variant === "lg" ? "lg" : ""}\u0000${String(t.name || "")}\u0000${String(t.title || "")}\u0000${String(t.icon ?? "").trim()}`;
+}
+/**
+ * @param {Tool} t
+ * @param {string} [variant]
+ * @returns {{ state: "direct" | "commons" | "generated" | "invalid", src: string, raw: string, title: string, px: number, variant: string }}
+ */
+export function iconMeta(t, variant) {
+	const key = iconCacheKey(t, variant);
+	const cached = ICON_META_CACHE.get(key);
+	if (cached) return cached;
+	const px = variant === "lg" ? 72 : 48;
+	const raw = String(t.icon ?? "").trim();
+	const title = String(t.title || t.name || "");
+	let state = /** @type {"direct" | "commons" | "generated" | "invalid"} */ (raw ? "invalid" : "generated");
+	let src = "";
+	if (raw) {
+		const direct = isDirectImageUrl(raw) ? raw : "";
+		const commons = direct ? "" : commonsThumb(raw, px * 2) || "";
+		src = safeHttpUrl(direct || commons);
+		if (src) state = direct ? "direct" : "commons";
 	}
+	const meta = Object.freeze({ state, src, raw, title, px, variant: variant === "lg" ? "lg" : "" });
+	ICON_META_CACHE.set(key, meta);
+	return meta;
+}
+/** @param {{ state: string, raw: string, title: string }} meta */
+function iconDataAttrs(meta) {
+	return ` data-icon-state="${esc(meta.state)}" data-icon-source="${esc(meta.raw)}" data-icon-fallback="${esc(meta.title)}"`;
 }
 // Tool icon: real Commons image if the tool has one, else a letter avatar.
 /**
@@ -69,12 +107,23 @@ function isDirectImageUrl(url) {
  * @returns {string}
  */
 export function toolIcon(t, variant) {
-	const px = variant === "lg" ? 72 : 48;
+	const meta = iconMeta(t, variant);
 	const cls = `avatar${variant === "lg" ? " avatar--lg" : ""}`;
-	const direct = isDirectImageUrl(t.icon) ? t.icon : null;
-	const src = safeUrl(direct || commonsThumb(t.icon, px * 2));
-	if (src) {
-		return `<img class="${cls} avatar--img" src="${src}" alt="" width="${px}" height="${px}" loading="lazy" />`;
+	if (meta.src) {
+		return `<img class="${cls} avatar--img" src="${meta.src}" alt="" width="${meta.px}" height="${meta.px}" loading="lazy"${iconDataAttrs(meta)} />`;
 	}
-	return avatar(t.title, variant === "lg" ? "avatar--lg" : "");
+	return avatar(meta.title, variant === "lg" ? "avatar--lg" : "");
+}
+
+/**
+ * @param {string | null | undefined} title
+ * @param {string} [variant]
+ * @param {string} [source]
+ */
+export function iconFallbackAvatar(title, variant, source = "") {
+	return avatarMarkup(
+		title,
+		variant === "lg" ? "avatar--lg" : "",
+		` data-icon-state="unavailable"${source ? ` data-icon-source="${esc(source)}"` : ""}`
+	);
 }

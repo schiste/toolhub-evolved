@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { avatar, AVATAR_COLORS, commonsThumb, toolIcon } from "../../public_html/lib/atoms/avatar.js";
+import { avatar, AVATAR_COLORS, commonsThumb, iconMeta, toolIcon } from "../../public_html/lib/atoms/avatar.js";
+import { initIconFallbacks } from "../../public_html/lib/organisms/icon-fallbacks.js";
 
 // Frozen color list (hardcoded, not derived from source) — kills every color string literal.
 const COLORS = [
@@ -24,6 +25,10 @@ test("AVATAR_COLORS is the exact ordered palette", () => {
 // One input per hash-residue 0..9, so each palette index is selected exactly once.
 // (Verified via hash(s) % AVATAR_COLORS.length.)
 const RESIDUE_INPUT = ["k5", "k6", "k7", "k8", "k9", "k0", "k1", "k2", "k3", "k4"];
+
+function iconImg(src, { px = 48, cls = "avatar", state = "direct", raw = src, fallback = "T" } = {}) {
+	return `<img class="${cls} avatar--img" src="${src}" alt="" width="${px}" height="${px}" loading="lazy" data-icon-state="${state}" data-icon-source="${raw}" data-icon-fallback="${fallback}" />`;
+}
 
 test("avatar() selects the palette color by hash(title) % length and uppercases first char", () => {
 	for (let i = 0; i < 10; i++) {
@@ -96,35 +101,37 @@ test("commonsThumb() returns null when there is no File: segment", () => {
 test("toolIcon() renders a direct upload.wikimedia.org image at 48px", () => {
 	assert.equal(
 		toolIcon({ icon: "https://upload.wikimedia.org/a/b.png", title: "T" }),
-		'<img class="avatar avatar--img" src="https://upload.wikimedia.org/a/b.png" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("https://upload.wikimedia.org/a/b.png")
 	);
 });
 
 test("toolIcon() renders a direct image detected by URL pathname extension", () => {
-	assert.equal(
-		toolIcon({ icon: "https://x.org/pic.PNG", title: "T" }),
-		'<img class="avatar avatar--img" src="https://x.org/pic.PNG" alt="" width="48" height="48" loading="lazy" />'
-	);
+	assert.equal(toolIcon({ icon: "https://x.org/pic.PNG", title: "T" }), iconImg("https://x.org/pic.PNG"));
 });
 
 test("toolIcon() renders a direct Special:FilePath image", () => {
 	assert.equal(
 		toolIcon({ icon: "https://commons.wikimedia.org/wiki/Special:FilePath/Foo.svg", title: "T" }),
-		'<img class="avatar avatar--img" src="https://commons.wikimedia.org/wiki/Special:FilePath/Foo.svg" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("https://commons.wikimedia.org/wiki/Special:FilePath/Foo.svg")
 	);
 });
 
-test("toolIcon() detects image via the catch-path regex when new URL throws", () => {
+test("toolIcon() rejects malformed direct image URLs", () => {
 	assert.equal(
 		toolIcon({ icon: "https://exa mple.org/a.png", title: "T" }),
-		'<img class="avatar avatar--img" src="https://exa mple.org/a.png" alt="" width="48" height="48" loading="lazy" />'
+		'<span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">T</span>'
 	);
 });
 
 test("toolIcon() turns a Commons File: page into a thumbnail (lg => 72px, width*2=144)", () => {
 	assert.equal(
 		toolIcon({ icon: "https://commons.wikimedia.org/wiki/File:Foo.svg", title: "T" }, "lg"),
-		'<img class="avatar avatar--lg avatar--img" src="https://commons.wikimedia.org/wiki/Special:FilePath/Foo.svg?width=144" alt="" width="72" height="72" loading="lazy" />'
+		iconImg("https://commons.wikimedia.org/wiki/Special:FilePath/Foo.svg?width=144", {
+			px: 72,
+			cls: "avatar avatar--lg",
+			state: "commons",
+			raw: "https://commons.wikimedia.org/wiki/File:Foo.svg"
+		})
 	);
 });
 
@@ -153,7 +160,7 @@ test("toolIcon() trims surrounding whitespace before the http check", () => {
 	// Without .trim() the leading spaces would fail the ^https? test => avatar.
 	assert.equal(
 		toolIcon({ icon: "  https://upload.wikimedia.org/a.png  ", title: "T" }),
-		'<img class="avatar avatar--img" src="https://upload.wikimedia.org/a.png" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("https://upload.wikimedia.org/a.png")
 	);
 });
 
@@ -162,7 +169,10 @@ test("toolIcon() non-http file: page falls through to a Commons thumbnail (not d
 	// commonsThumb() fallback runs and yields a usable image.
 	assert.equal(
 		toolIcon({ icon: "file:Foo.png", title: "T" }),
-		'<img class="avatar avatar--img" src="https://commons.wikimedia.org/wiki/Special:FilePath/Foo.png?width=96" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("https://commons.wikimedia.org/wiki/Special:FilePath/Foo.png?width=96", {
+			state: "commons",
+			raw: "file:Foo.png"
+		})
 	);
 });
 
@@ -172,14 +182,17 @@ test("toolIcon() ^-anchored http test: 'http' mid-string does not count as direc
 	// the Commons-thumb fallback renders instead. (Avoids new URL() parsing quirks.)
 	assert.equal(
 		toolIcon({ icon: "x-http://upload.wikimedia.org/File:Pic.png", title: "T" }),
-		'<img class="avatar avatar--img" src="https://commons.wikimedia.org/wiki/Special:FilePath/Pic.png?width=96" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("https://commons.wikimedia.org/wiki/Special:FilePath/Pic.png?width=96", {
+			state: "commons",
+			raw: "x-http://upload.wikimedia.org/File:Pic.png"
+		})
 	);
 });
 
 test("toolIcon() accepts a plain http:// (not https) direct image", () => {
 	assert.equal(
 		toolIcon({ icon: "http://upload.wikimedia.org/a.png", title: "T" }),
-		'<img class="avatar avatar--img" src="http://upload.wikimedia.org/a.png" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("http://upload.wikimedia.org/a.png")
 	);
 });
 
@@ -188,7 +201,7 @@ test("toolIcon() special:filepath without an extension is still a direct image",
 	// early `return true` (no commonsThumb fallback would match this URL).
 	assert.equal(
 		toolIcon({ icon: "https://commons.wikimedia.org/wiki/Special:FilePath/SomeFile", title: "T" }),
-		'<img class="avatar avatar--img" src="https://commons.wikimedia.org/wiki/Special:FilePath/SomeFile" alt="" width="48" height="48" loading="lazy" />'
+		iconImg("https://commons.wikimedia.org/wiki/Special:FilePath/SomeFile")
 	);
 });
 
@@ -201,16 +214,13 @@ test("toolIcon() extension must be anchored at end of pathname (try path)", () =
 });
 
 test("toolIcon() matches a .jpg via the optional 'e' in jpe?g (try path)", () => {
-	assert.equal(
-		toolIcon({ icon: "https://x.org/a.jpg", title: "T" }),
-		'<img class="avatar avatar--img" src="https://x.org/a.jpg" alt="" width="48" height="48" loading="lazy" />'
-	);
+	assert.equal(toolIcon({ icon: "https://x.org/a.jpg", title: "T" }), iconImg("https://x.org/a.jpg"));
 });
 
-test("toolIcon() matches a .jpg via the catch-path regex when new URL throws", () => {
+test("toolIcon() rejects malformed .jpg image URLs", () => {
 	assert.equal(
 		toolIcon({ icon: "https://exa mple.org/a.jpg", title: "T" }),
-		'<img class="avatar avatar--img" src="https://exa mple.org/a.jpg" alt="" width="48" height="48" loading="lazy" />'
+		'<span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">T</span>'
 	);
 });
 
@@ -231,4 +241,35 @@ test("commonsThumb() decodes percent-encoding in the file name", () => {
 		commonsThumb("https://commons.wikimedia.org/wiki/File:Foo%20bar.svg", 96),
 		"https://commons.wikimedia.org/wiki/Special:FilePath/Foo%20bar.svg?width=96"
 	);
+});
+
+test("iconMeta() caches normalized direct, Commons, generated, and invalid states", () => {
+	const direct = iconMeta({ name: "t", title: "T", icon: "https://x.org/a.png" });
+	assert.equal(direct, iconMeta({ name: "t", title: "T", icon: "https://x.org/a.png" }));
+	assert.equal(direct.state, "direct");
+	assert.equal(direct.src, "https://x.org/a.png");
+
+	const commons = iconMeta({ name: "t", title: "T", icon: "https://commons.wikimedia.org/wiki/File:Foo%20bar.svg" });
+	assert.equal(commons.state, "commons");
+	assert.equal(commons.src, "https://commons.wikimedia.org/wiki/Special:FilePath/Foo%20bar.svg?width=96");
+
+	const generated = iconMeta({ name: "t", title: "T", icon: null });
+	assert.equal(generated.state, "generated");
+	assert.equal(generated.src, "");
+
+	const invalid = iconMeta({ name: "t", title: "T", icon: "https://exa mple.org/a.png" });
+	assert.equal(invalid.state, "invalid");
+	assert.equal(invalid.src, "");
+});
+
+test("initIconFallbacks() replaces a broken avatar image with a generated fallback", () => {
+	document.body.innerHTML = toolIcon({ name: "zeta", title: "Zeta", icon: "https://x.org/a.png" });
+	initIconFallbacks(document);
+	const img = document.querySelector("img");
+	img.dispatchEvent(new Event("error", { bubbles: true }));
+	const fallback = document.querySelector(".avatar");
+	assert.equal(document.querySelector("img"), null);
+	assert.equal(fallback.textContent, "Z");
+	assert.equal(fallback.getAttribute("data-icon-state"), "unavailable");
+	assert.equal(fallback.getAttribute("data-icon-source"), "https://x.org/a.png");
 });

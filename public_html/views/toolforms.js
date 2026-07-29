@@ -37,6 +37,7 @@ import {
 	toolEditsMap,
 	toolNewMap
 } from "../lib/core/store.js";
+import { iconMeta } from "../lib/atoms/avatar.js";
 import { button, iconButton } from "../lib/atoms/button.js";
 import {
 	TOOL_TYPES,
@@ -418,6 +419,29 @@ function readAnnotationFormFields() {
 		toolType: fieldValue("an-type") || null,
 		icon: fieldValue("an-icon") || null
 	};
+}
+
+/** @param {Tool} tool */
+function iconProvenanceDiagnostic(tool) {
+	const meta = iconMeta(tool);
+	if (!meta.raw) return "";
+	const isInvalid = meta.state === "invalid";
+	const label =
+		meta.state === "commons"
+			? t("toolforms.iconSourceCommons", "Commons image")
+			: meta.state === "direct"
+				? t("toolforms.iconSourceDirect", "Direct image URL")
+				: t("toolforms.iconSourceInvalid", "Generated avatar fallback");
+	const detail =
+		meta.state === "commons"
+			? t("toolforms.iconSourceCommonsDetail", "Evolved normalized the supplied Commons file value.")
+			: meta.state === "direct"
+				? t("toolforms.iconSourceDirectDetail", "Evolved will load the supplied image URL.")
+				: t(
+						"toolforms.iconSourceInvalidDetail",
+						"The supplied icon value is not a supported image URL; Evolved will show a generated avatar."
+					);
+	return `<div class="sync-field sync-field--icon" aria-label="${esc(t("toolforms.iconProvenance", "Icon provenance"))}"><span class="sync-badge sync-badge--${isInvalid ? "sync-error" : "official"}">${esc(label)}</span><span class="recent-table__muted">${esc(detail)}</span></div>`;
 }
 
 /**
@@ -1274,6 +1298,7 @@ export async function viewAnnotationsEdit(name) {
 			}
 		: { syncStatus: SYNC_STATUS.official };
 	const annotationState = syncState(annotationMeta);
+	const iconDiagnostic = iconProvenanceDiagnostic(cur);
 	const annotationStatusPanel = syncStatusPanel(annotationMeta, {
 		title: t("toolforms.annotationWriteStatus", "Annotation write status"),
 		retryAttrs: annotationState.retryAvailable && officialWriteAvailable() ? "data-an-retry" : "",
@@ -1293,7 +1318,7 @@ export async function viewAnnotationsEdit(name) {
 			${withFieldProvenance(fInput(t("toolforms.fieldTasks", "Tasks (comma-separated)"), "an-tasks", toCsv(cur.tasks), { hint: t("toolforms.fieldTasksHint", "Workflows this tool supports, such as editing, patrolling, importing, or analysis.") }), t("toolforms.fieldTasksShort", "Tasks"), annotationMeta)}
 			${withFieldProvenance(fSelect(t("toolforms.fieldToolType", "Tool type"), "an-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldAnnoToolTypeHint", "Community classification used for discovery when core metadata is sparse.") }), t("toolforms.fieldToolType", "Tool type"), annotationMeta)}
 			${withFieldProvenance(fInput(t("toolforms.fieldIcon", "Icon (Commons File: URL)"), "an-icon", cur.icon, { type: "url", hint: t("toolforms.fieldIconHint", "Optional Commons-hosted image URL for visual identification.") }), t("toolforms.fieldIconShort", "Icon"), annotationMeta)}
-			<div class="le__actions">
+${iconDiagnostic ? `\t\t\t${iconDiagnostic}\n` : ""}\t\t\t<div class="le__actions">
 				${button(t("toolforms.saveAnnotations", "Save annotations"), { variant: "primary", type: "submit" })}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
