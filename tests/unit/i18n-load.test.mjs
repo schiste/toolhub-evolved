@@ -53,6 +53,21 @@ test("plural binds to the loaded locale's CLDR categories (ru few/many)", async 
 	localStorage.removeItem("toolhub-locale");
 });
 
+test("pseudolocale transforms chrome fallbacks without transforming params", async () => {
+	const i18n = await loadI18n("en-x-pseudo");
+	assert.equal(i18n.LOCALE, i18n.PSEUDO_LOCALE);
+	assert.equal(i18n.localeDir(i18n.LOCALE), "ltr");
+	assert.equal(i18n.t("x.greet", "Hello {name}", { name: "Ada" }), "[Ħḗļļǿ Ada~~]");
+	assert.equal(i18n.t("x.unknown"), "x.unknown");
+	localStorage.removeItem("toolhub-locale");
+});
+
+test("pseudolocale transforms boot messages without fetching a catalog", async () => {
+	const i18n = await loadI18n("en-x-pseudo");
+	assert.equal(i18n.t("router.loadingToolhubData"), "[Ŀǿåḓīƞĝ Ţǿǿļħûƀ ḓåŧå~~~~~~]");
+	localStorage.removeItem("toolhub-locale");
+});
+
 test("number + RTL formatting follow the loaded non-en locale", async () => {
 	const ru = await loadI18n("ru");
 	// ru groups thousands with a space, not the en comma — proves the formatter is

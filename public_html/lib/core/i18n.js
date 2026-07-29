@@ -3,6 +3,7 @@ import { cleanLangCode, esc } from "./dom.js";
 
 export const DEFAULT_LOCALE = "en";
 export const LOCALE_KEY = "toolhub-locale";
+export const PSEUDO_LOCALE = "en-x-pseudo";
 export const RTL_LANGS = new Set([
 	"ar",
 	"arc",
@@ -62,11 +63,103 @@ export const LOCALE = appLocale();
    source doubles as the fallback, and `i18n/en.json` is generated from the
    sources (npm run i18n:extract) so translatewiki-style catalogs always match.
    Non-English catalogs are fetched at boot (main.js) and installed here. */
-/** Locales a catalog ships for (the switcher offers the rest as "not yet"). */
-export const AVAILABLE_LOCALES = ["en"];
+/** Locales available to the switcher. `en-x-pseudo` is generated at runtime for QA. */
+export const AVAILABLE_LOCALES = ["en", PSEUDO_LOCALE];
 /** @type {Record<string, string>} */
 let messages = {};
 const ELEMENT_PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)}/g;
+const MESSAGE_PLACEHOLDER = /\{[A-Za-z][A-Za-z0-9]*}/g;
+const PSEUDO_MAP = Object.freeze(
+	/** @type {Record<string, string>} */ ({
+		A: "Å",
+		B: "Ɓ",
+		C: "Ç",
+		D: "Ḓ",
+		E: "Ḗ",
+		F: "Ƒ",
+		G: "Ĝ",
+		H: "Ħ",
+		I: "Ī",
+		J: "Ĵ",
+		K: "Ķ",
+		L: "Ŀ",
+		M: "Ḿ",
+		N: "Ƞ",
+		O: "Ö",
+		P: "Ƥ",
+		Q: "Ǭ",
+		R: "Ř",
+		S: "Ş",
+		T: "Ţ",
+		U: "Û",
+		V: "Ṽ",
+		W: "Ŵ",
+		X: "Ẋ",
+		Y: "Ẏ",
+		Z: "Ż",
+		a: "å",
+		b: "ƀ",
+		c: "ç",
+		d: "ḓ",
+		e: "ḗ",
+		f: "ƒ",
+		g: "ĝ",
+		h: "ħ",
+		i: "ī",
+		j: "ĵ",
+		k: "ķ",
+		l: "ļ",
+		m: "ḿ",
+		n: "ƞ",
+		o: "ǿ",
+		p: "ƥ",
+		q: "զ",
+		r: "ř",
+		s: "ş",
+		t: "ŧ",
+		u: "û",
+		v: "ṽ",
+		w: "ŵ",
+		x: "ẋ",
+		y: "ẏ",
+		z: "ž"
+	})
+);
+
+/**
+ * @param {unknown} locale
+ * @returns {boolean}
+ */
+export function isPseudoLocale(locale = LOCALE) {
+	return cleanLocale(locale) === PSEUDO_LOCALE;
+}
+
+/** @param {string} segment */
+function pseudoSegment(segment) {
+	return segment.replaceAll(/[A-Za-z]/g, (char) => PSEUDO_MAP[char] || char);
+}
+
+/**
+ * Expand and accent a source message while leaving `{placeholders}` intact.
+ * @param {unknown} text
+ */
+export function pseudoLocalize(text) {
+	const source = String(text ?? "");
+	if (!source) return "";
+	let out = "";
+	let lastIndex = 0;
+	for (const match of source.matchAll(MESSAGE_PLACEHOLDER)) {
+		const index = match.index ?? 0;
+		out += pseudoSegment(source.slice(lastIndex, index));
+		out += match[0];
+		lastIndex = index + match[0].length;
+	}
+	out += pseudoSegment(source.slice(lastIndex));
+	const transformable = source.replaceAll(MESSAGE_PLACEHOLDER, "").trim();
+	const expansion = transformable ? "~".repeat(Math.max(1, Math.ceil(transformable.length * 0.3))) : "";
+	return `[${out}${expansion}]`;
+}
+
 /** @param {unknown} catalog */
 export function setMessages(catalog) {
 	messages = catalog && typeof catalog === "object" ? /** @type {Record<string, string>} */ (catalog) : {};
@@ -78,9 +171,10 @@ export function setMessages(catalog) {
  * @param {Record<string, string | number> | undefined} params
  */
 function lookupMessage(key, fallback, params) {
-	let out = Object.prototype.hasOwnProperty.call(messages, key)
-		? String(messages[key])
-		: (fallback ?? BOOT_MESSAGES[key] ?? key);
+	const hasCatalogMessage = Object.prototype.hasOwnProperty.call(messages, key);
+	const hasBootMessage = Object.prototype.hasOwnProperty.call(BOOT_MESSAGES, key);
+	let out = hasCatalogMessage ? String(messages[key]) : (fallback ?? BOOT_MESSAGES[key] ?? key);
+	if (isPseudoLocale() && (hasCatalogMessage || hasBootMessage || fallback !== undefined)) out = pseudoLocalize(out);
 	if (params) {
 		for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
 	}

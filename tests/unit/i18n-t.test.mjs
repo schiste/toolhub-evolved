@@ -7,6 +7,7 @@ import {
 	LOCALE_KEY,
 	localizedField,
 	pickLocalized,
+	pseudoLocalize,
 	setLocale,
 	setMessages,
 	t,
@@ -27,6 +28,12 @@ test("t has tiny boot-critical English fallbacks when a caller has no catalog fa
 	assert.equal(BOOT_MESSAGES["router.loadingToolhubData"], "Loading Toolhub data");
 	assert.equal(t("router.loadingToolhubData"), "Loading Toolhub data");
 	assert.equal(t("x.unknown"), "x.unknown");
+});
+
+test("pseudoLocalize accents, brackets, expands, and preserves placeholders", () => {
+	assert.equal(pseudoLocalize("Open {count} tools"), "[Öƥḗƞ {count} ŧǿǿļş~~~~]");
+	assert.equal(pseudoLocalize("{name}"), "[{name}]");
+	assert.equal(pseudoLocalize(""), "");
 });
 
 test("t prefers the installed catalog and fills params after lookup", () => {
@@ -83,6 +90,7 @@ test("setLocale persists the choice under the locale key", () => {
 
 test("English always ships as an available locale", () => {
 	assert.ok(AVAILABLE_LOCALES.includes("en"));
+	assert.ok(AVAILABLE_LOCALES.includes("en-x-pseudo"));
 });
 
 test("pickLocalized passes plain values through and resolves language maps", () => {

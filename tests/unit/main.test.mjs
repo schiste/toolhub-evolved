@@ -760,6 +760,21 @@ test("main boot skips message install when a stored-locale catalog is empty", as
 	}
 });
 
+test("main boot treats the pseudolocale as generated fallback text", async () => {
+	vi.clearAllMocks();
+	localStorage.setItem(i18n.LOCALE_KEY, "en-x-pseudo");
+	document.body.innerHTML = SHELL;
+	try {
+		await import("../../public_html/main.js?v=pseudoboot");
+		await settleBootTasks();
+		assert.equal(api.backendGetJson.mock.calls.length, 0);
+		assert.equal(i18n.setMessages.mock.calls.length, 0);
+	} finally {
+		localStorage.removeItem(i18n.LOCALE_KEY);
+		document.body.innerHTML = SHELL;
+	}
+});
+
 test("main boot tolerates server-sync initialization failure", async () => {
 	vi.clearAllMocks();
 	serversync.initServerSync.mockRejectedValueOnce(new Error("session down"));

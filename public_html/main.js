@@ -12,6 +12,7 @@ import {
 	applyLocaleAttrs,
 	AVAILABLE_LOCALES,
 	DEFAULT_LOCALE,
+	isPseudoLocale,
 	setLocale,
 	setMessages,
 	t,
@@ -120,7 +121,7 @@ setAuthRender(() => {
 	render();
 });
 applyLocaleAttrs();
-if (bootLocale === DEFAULT_LOCALE) {
+if (bootLocale === DEFAULT_LOCALE || isPseudoLocale(bootLocale)) {
 	markFrontendTimingOnce("labels-loaded", { locale: bootLocale, source: "fallback" });
 }
 
@@ -358,8 +359,8 @@ renderAccount();
 syncSubmitButton();
 initCommandPalette({ beforeOpen: closeQuickViewIfLoaded });
 
-/* Language picker: open/close the dropdown; picking a language shows the
-   "not available yet" popin instead of switching locale (prototype is EN only). */
+/* Language picker: open/close the dropdown; picking an available language
+   reloads into it, while future translatewiki languages show a not-yet note. */
 renderLangPicker();
 const langEl = document.querySelector("#langpicker");
 if (langEl) {
@@ -413,7 +414,7 @@ Promise.resolve(render()).finally(() => {
 });
 // Non-English locale: fetch its catalog, install it, repaint the chrome.
 // (English needs no fetch — the t() fallbacks ARE the English catalog.)
-if (bootLocale !== DEFAULT_LOCALE) {
+if (bootLocale !== DEFAULT_LOCALE && !isPseudoLocale(bootLocale)) {
 	afterFirstPaint(() => {
 		backendGetJson(`/i18n/${encodeURIComponent(bootLocale)}.json`)
 			.then((catalog) => {

@@ -3,10 +3,10 @@ import { $, esc } from "../core/dom.js";
 import { appLocale, localeDir, t } from "../core/i18n.js";
 import { icon } from "../atoms/icon.js";
 
-// The active UI locale. Locales with a shipped catalog (AVAILABLE_LOCALES in
-// core/i18n.js) really switch — main.js persists the choice and reloads; the
-// rest show the honest "not available yet" note (see selectionNote). A locale
-// change reloads the page, so binding at module load is safe.
+// The active UI locale. Locales in AVAILABLE_LOCALES (core/i18n.js) really
+// switch; the rest show the honest "not available yet" note (see
+// selectionNote). A locale change reloads the page, so binding at module load
+// is safe.
 const ACTIVE = appLocale();
 
 // A representative slice of the languages Toolhub is translated into on
@@ -15,6 +15,7 @@ const ACTIVE = appLocale();
 // illustrative, not exhaustive (translatewiki carries 300+).
 const LANGUAGES = [
 	["en", "English", "English"],
+	["en-x-pseudo", "[Ƥşḗŭḓǿ]", "Pseudolocalization"],
 	["fr", "Français", "French"],
 	["de", "Deutsch", "German"],
 	["es", "Español", "Spanish"],
@@ -55,7 +56,7 @@ function activeEntry() {
 export function selectionNote(englishName) {
 	return t(
 		"langpicker.selectionNote",
-		"{name} isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype is English only for now.",
+		"{name} isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.",
 		{ name: `<strong>${esc(englishName)}</strong>` }
 	);
 }

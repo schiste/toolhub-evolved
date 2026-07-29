@@ -17,6 +17,7 @@ import { icon } from "../../public_html/lib/atoms/icon.js";
 const ACTIVE = "en";
 const LANGUAGES = [
 	["en", "English", "English"],
+	["en-x-pseudo", "[Ƥşḗŭḓǿ]", "Pseudolocalization"],
 	["fr", "Français", "French"],
 	["de", "Deutsch", "German"],
 	["es", "Español", "Spanish"],
@@ -78,18 +79,18 @@ beforeEach(() => {
 test("selectionNote exact copy for a named language", () => {
 	assert.equal(
 		selectionNote("French"),
-		`<strong>French</strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype is English only for now.`
+		`<strong>French</strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.`
 	);
 });
 
 test("selectionNote escapes the name and handles null", () => {
 	assert.equal(
 		selectionNote("<b> & 'x'"),
-		`<strong>&lt;b&gt; &amp; &#39;x&#39;</strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype is English only for now.`
+		`<strong>&lt;b&gt; &amp; &#39;x&#39;</strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.`
 	);
 	assert.equal(
 		selectionNote(null),
-		`<strong></strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype is English only for now.`
+		`<strong></strong> isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.`
 	);
 });
 

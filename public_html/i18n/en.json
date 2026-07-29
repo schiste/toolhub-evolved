@@ -496,7 +496,7 @@
 	"labels.wikiOne": "wiki",
 	"labels.wikiOther": "wikis",
 	"langpicker.chooseALanguage": "Choose a language",
-	"langpicker.selectionNote": "{name} isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype is English only for now.",
+	"langpicker.selectionNote": "{name} isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.",
 	"listCard.linkLabel": "{title} list, {count}",
 	"listCard.toolOne": "tool",
 	"listCard.toolOther": "tools",

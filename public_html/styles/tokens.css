@@ -85,9 +85,17 @@
 	--color-warning-subtle: var(--wmf-orange-light);
 	--color-warning-text: #8a4b08; /* derived: dark orange, AA on warning-subtle */
 
-	/* ---- Typography — native Wikimedia/Codex system stacks; no web font loaded --- */
-	--font-sans: system-ui, -apple-system, "Segoe UI", roboto, "Helvetica Neue", "Liberation Sans", arial, sans-serif;
-	--font-serif: "Linux Libertine", georgia, "Times New Roman", times, serif;
+	/* ---- Typography — native Wikimedia/Codex system stacks; no web font loaded ---
+	   Target-script QA keeps explicit system fallbacks here for Arabic, Hebrew,
+	   CJK, and Indic scripts on macOS, Windows, and common Linux desktops. */
+	--font-sans:
+		system-ui, -apple-system, "Segoe UI", roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", "Geeza Pro",
+		"Arial Hebrew", "Nirmala UI", "Kohinoor Devanagari", "Noto Sans Devanagari", "Noto Sans Bengali",
+		"Noto Sans Tamil", "Noto Sans Thai", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo",
+		"Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", "Malgun Gothic", "Noto Sans CJK JP", arial,
+		sans-serif;
+	--font-serif: "Linux Libertine", georgia, "Times New Roman", "Noto Serif", "Noto Serif CJK JP", times, serif;
+	--font-mono: ui-monospace, sfmono-regular, menlo, consolas, "Liberation Mono", monospace;
 	--font-weight-bold: 700;
 
 	/* ---- Type scale -------------------------------------------------------- */
