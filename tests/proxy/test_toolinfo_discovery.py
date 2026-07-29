@@ -249,6 +249,22 @@ def test_toolinfo_discovery_validates_url_and_session(client):
     )
 
 
+def test_http_cloud_urls_are_upgraded_when_deriving_candidates():
+    # Toolhub records some Cloud tools as http://; those hosts serve https, so the
+    # candidate is built as https rather than the fetch policy learning to accept http.
+    assert toolinfo_discovery._root_toolinfo_url("http://tools.wmflabs.org") == "https://tools.wmflabs.org/toolinfo.json"
+    assert toolinfo_discovery._sitemap_url("http://magnustools.toolforge.org") == (
+        "https://magnustools.toolforge.org/sitemap.xml"
+    )
+    # An http URL that already points at a toolinfo.json is upgraded in place,
+    # rather than being handed back verbatim and then refused.
+    assert toolinfo_discovery._root_toolinfo_url("http://tools.wmflabs.org/x/toolinfo.json") == (
+        "https://tools.wmflabs.org/x/toolinfo.json"
+    )
+    # Non-Cloud hosts keep their scheme: upgrading those would be a guess.
+    assert toolinfo_discovery._root_toolinfo_url("http://example.org") == "http://example.org/toolinfo.json"
+
+
 def discovery_guard(url):
     """Apply discovery's fetch policy to one URL (the guard now lives in backend.outbound)."""
     return outbound.require_allowed(

@@ -3,7 +3,7 @@
 
 import json
 from datetime import datetime, timedelta
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse, urlunparse
 
 import requests
 from defusedxml import ElementTree
@@ -64,14 +64,30 @@ def _exception_status(exc: BaseException) -> int | None:
     return status_code if isinstance(status_code, int) else None
 
 
-def _origin(raw_url: str) -> str:
+def _https_upgraded(raw_url: str) -> str:
+    """Return `raw_url` with http upgraded to https on Wikimedia Cloud hosts.
+
+    Toolhub records some Cloud tools with http:// URLs, but those hosts serve
+    https — the plain-http entry is stale metadata, not a real endpoint. Building
+    the candidate as https fixes those without teaching the fetch policy to accept
+    http, which would weaken the DNS-rebinding guarantee for every user-registered
+    URL in order to fix a URL-construction problem.
+    """
     parsed = urlparse(raw_url)
+    if parsed.scheme.lower() != "http" or not outbound.is_split_horizon_public_host((parsed.hostname or "").lower()):
+        return raw_url
+    return urlunparse(parsed._replace(scheme="https"))
+
+
+def _origin(raw_url: str) -> str:
+    parsed = urlparse(_https_upgraded(raw_url))
     return f"{parsed.scheme.lower()}://{parsed.netloc}"
 
 
 def _root_toolinfo_url(raw_url: str) -> str:
-    parsed = urlparse(raw_url)
-    return raw_url if parsed.path.rstrip("/").endswith("toolinfo.json") else f"{_origin(raw_url)}/toolinfo.json"
+    url = _https_upgraded(raw_url)
+    parsed = urlparse(url)
+    return url if parsed.path.rstrip("/").endswith("toolinfo.json") else f"{_origin(url)}/toolinfo.json"
 
 
 def _sitemap_url(raw_url: str) -> str:

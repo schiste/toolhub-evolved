@@ -20,7 +20,6 @@ exemption stays deliberate.
 
 import ipaddress
 import socket
-from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
@@ -28,17 +27,33 @@ import requests
 
 CHUNK_BYTES = 64 * 1024
 
-# Wikimedia Cloud hostnames are public names that resolve to internal addresses
-# from inside the cluster, so a blanket is_global check would refuse legitimate
-# Toolforge feeds. Suffixes keep their leading dot on purpose: without it,
-# "eviltoolforge.org" would satisfy endswith("toolforge.org").
-WIKIMEDIA_INGRESS_HOSTS = frozenset({"toolforge.org", "wmflabs.org"})
-WIKIMEDIA_INGRESS_SUFFIXES = (".toolforge.org", ".wmcloud.org", ".wmflabs.org")
+# Names that are genuinely reachable from the public internet but resolve to
+# private addresses from inside the cluster, because Cloud VPS runs split-horizon
+# DNS. Exempting them is a correction, not a relaxation: is_global is a proxy for
+# "is this publicly reachable", and inside the cluster that proxy returns the
+# wrong answer for hosts anyone on the internet can already fetch.
+#
+# wmcloud.org is the public HTTPS-proxy/floating-IP domain (it replaced the
+# deprecated wmflabs.org); toolforge.org serves tools publicly by definition.
+#
+# The internal domain is wikimedia.cloud — instance FQDNs of the form
+# <instance>.<project>.eqiad1.wikimedia.cloud, reachable only via a bastion.
+# It must never appear here, and a test asserts that it does not.
+#
+# Suffixes keep their leading dot on purpose: without it, "eviltoolforge.org"
+# would satisfy endswith("toolforge.org").
+SPLIT_HORIZON_HOSTS = frozenset({"toolforge.org", "wmflabs.org"})
+SPLIT_HORIZON_SUFFIXES = (".toolforge.org", ".wmcloud.org", ".wmflabs.org")
 
 
-def is_wikimedia_ingress_host(host: str) -> bool:
-    """Report whether a public Wikimedia Cloud hostname may resolve internally."""
-    return host in WIKIMEDIA_INGRESS_HOSTS or host.endswith(WIKIMEDIA_INGRESS_SUFFIXES)
+def is_split_horizon_public_host(host: str) -> bool:
+    """Report whether a host is public despite resolving privately in-cluster.
+
+    Applied to every policy rather than opted into per caller: every fetcher here
+    runs in the same cluster behind the same resolver, so this is a property of
+    where the code is deployed, not of what any one caller is allowed to reach.
+    """
+    return host in SPLIT_HORIZON_HOSTS or host.endswith(SPLIT_HORIZON_SUFFIXES)
 
 
 @dataclass(frozen=True)
@@ -66,7 +81,6 @@ class FetchPolicy:
     follow_redirects: bool
     max_redirects: int
     timeout: int | tuple[int, int]
-    allow_internal_host: Callable[[str], bool] | None = None
 
 
 # User-registered toolinfo URLs: anyone can point these anywhere, so they get the
@@ -84,17 +98,15 @@ STRICT_PUBLIC = FetchPolicy(
 )
 
 # Feeds mirrored from Toolhub's own crawler registry. Looser on purpose: these
-# URLs are curated upstream rather than arbitrary, they legitimately include
-# plain-HTTP and Wikimedia Cloud ingress hosts, and real feeds are larger. The
-# relaxation is bounded by re-validating every redirect hop, so following a
-# redirect can never reach somewhere the first URL could not.
+# URLs are curated upstream rather than arbitrary, some are still plain HTTP, and
+# real feeds are larger. Following redirects is bounded by re-validating every
+# hop, so a redirect can never reach somewhere the first URL could not.
 WIKIMEDIA_FEED = FetchPolicy(
     schemes=frozenset({"http", "https"}),
     max_body_bytes=8 * 1024 * 1024,
     follow_redirects=True,
     max_redirects=5,
     timeout=(5, 60),
-    allow_internal_host=is_wikimedia_ingress_host,
 )
 
 
@@ -115,7 +127,7 @@ def require_allowed(url: str, policy: FetchPolicy, *, scheme_error: str) -> None
     except OSError as exc:
         msg = f"{url}: cannot resolve host ({exc})"
         raise ValueError(msg) from exc
-    if policy.allow_internal_host is not None and policy.allow_internal_host(host):
+    if is_split_horizon_public_host(host):
         return
     for info in infos:
         if not ipaddress.ip_address(info[4][0]).is_global:
