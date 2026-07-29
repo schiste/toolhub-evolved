@@ -96,6 +96,11 @@
 	font-weight: 600;
 }
 
+.route-loading--auth {
+	flex-direction: column;
+	align-items: flex-start;
+}
+
 .route-loading__panel {
 	display: inline-flex;
 	align-items: center;

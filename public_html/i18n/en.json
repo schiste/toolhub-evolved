@@ -575,6 +575,7 @@
 	"router.liveSite": "live site",
 	"router.loadErrorBody": "The Toolhub API didn't respond ({msg}).",
 	"router.loadErrorTitle": "Couldn't load live data",
+	"router.loadingToolhubAccount": "Loading your Toolhub account",
 	"router.loadingToolhubData": "Loading Toolhub data",
 	"router.myListsLead": "See and manage the lists you've created.",
 	"router.myListsTitle": "Your lists",

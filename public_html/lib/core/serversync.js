@@ -95,6 +95,7 @@ export async function initServerSync() {
 	try {
 		me = await backendGetJson("/v1/user/");
 	} catch {
+		setServerUser(null);
 		return false; // backend unreachable -> read-only write features
 	}
 	if (!me || !me.authenticated) {

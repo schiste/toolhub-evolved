@@ -35,8 +35,12 @@ export const AUTH_KEY = "toolhub-auth";
    server-side instead of only in this browser. */
 /** @type {string | null} */
 let serverUser = null;
+let serverSessionChecked = false;
 export function serverUserName() {
 	return serverUser;
+}
+export function serverSessionResolved() {
+	return serverSessionChecked;
 }
 
 // Signed-in state is production-only: a real Toolhub OAuth-backed server
@@ -57,6 +61,7 @@ export function setAuth(_on) {
 }
 /** @param {string | null} name */
 export function setServerUser(name) {
+	serverSessionChecked = true;
 	serverUser = name;
 	if (name) {
 		USER.name = name;

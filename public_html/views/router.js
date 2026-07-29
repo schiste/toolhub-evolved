@@ -2,7 +2,7 @@
 import { $, $$, esc } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 import { parseRoute } from "../lib/core/routing.js";
-import { signedIn } from "../lib/core/session.js";
+import { serverSessionResolved, signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
 
@@ -55,12 +55,31 @@ export function setSignInFallback(fn) {
 	signInFallback = fn;
 }
 /**
+ * @param {string} title
+ * @param {string} [lead]
+ * @returns {View}
+ */
+export function authLoadingPage(title, lead) {
+	return {
+		title: `${title} - Toolhub`,
+		html: `<div class="container page route-loading route-loading--auth" role="status" aria-live="polite">
+			<h1 class="page__title">${esc(title)}</h1>
+			${lead ? `<p class="page__intro">${esc(lead)}</p>` : ""}
+			<div class="route-loading__panel">
+				<span class="spinner" aria-hidden="true"></span>
+				<span class="route-loading__label">${t("router.loadingToolhubAccount", "Loading your Toolhub account")}</span>
+			</div>
+		</div>`
+	};
+}
+/**
  * @param {() => ViewResult} viewFn
  * @param {string} title
  * @param {string} [lead]
  * @returns {ViewResult}
  */
 export function requireSignIn(viewFn, title, lead) {
+	if (!serverSessionResolved()) return authLoadingPage(title, lead);
 	return signedIn() ? viewFn() : /** @type {(title: string, lead?: string) => View} */ (signInFallback)(title, lead);
 }
 setSignInFallback(signInPage);

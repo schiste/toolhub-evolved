@@ -74,7 +74,7 @@ vi.mock("../../public_html/views/audit.js", () => ({
 }));
 vi.mock("../../public_html/lib/core/session.js", async (importOriginal) => {
 	const actual = await importOriginal();
-	return { ...actual, signedIn: vi.fn() };
+	return { ...actual, serverSessionResolved: vi.fn(() => true), signedIn: vi.fn() };
 });
 vi.mock("../../public_html/lib/core/store.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -87,6 +87,7 @@ const at = (path) => {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	session.serverSessionResolved.mockReturnValue(true);
 	session.signedIn.mockReturnValue(false);
 });
 
@@ -320,6 +321,19 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 		"My tools",
 		"View Toolhub tools maintained by this account."
 	]);
+});
+
+test("dispatch gated ROUTES entries: unresolved auth → account loading page", async () => {
+	session.serverSessionResolved.mockReturnValue(false);
+	session.signedIn.mockReturnValue(false);
+
+	const view = await at("/my-tools");
+
+	assert.equal(view.title, "My tools - Toolhub");
+	assert.ok(view.html.includes("My tools"));
+	assert.ok(view.html.includes("Loading your Toolhub account"));
+	assert.equal(staticViews.signInPage.mock.calls.length, 0);
+	assert.equal(myToolsView.viewMyTools.mock.calls.length, 0);
 });
 
 test("dispatch gated ROUTES entries: signed-in → their real views", async () => {
