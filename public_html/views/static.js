@@ -2,6 +2,7 @@
 import { esc, safeUrl } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
+import { mountApiExplorer, renderApiExplorer } from "../lib/organisms/api-explorer.js";
 import {
 	TOOLINFO_DATA_MODEL_URL,
 	TOOLINFO_EXAMPLE_JSON,
@@ -298,6 +299,7 @@ export async function viewApiDocs() {
 				${linkCard(icon("tools"), t("static.apiDocs.toolinfoFieldReference", "Toolinfo field reference"), t("static.apiDocs.toolinfoFieldReferenceDesc", "Read the field meanings, core versus annotation boundary, and controlled values."), TOOLINFO_DATA_MODEL_URL)}
 				${proxyCard(icon("globe"), t("static.apiDocs.apiRoot", "API root"), t("static.apiDocs.apiRootDesc", "Browse the proxied endpoint index used by this prototype."), "/api/")}
 			</div>
+			${renderApiExplorer()}
 			<h2 class="contribute__h2">${t("static.apiDocs.toolinfoSchemaHeading", "toolinfo.json schema")}</h2>
 			<div class="prose">
 				<p>${t("static.apiDocs.toolinfoSchemaBodyBefore", "Toolhub validates registered")} <code>toolinfo.json</code> ${t("static.apiDocs.toolinfoSchemaBodyAfter", "files against schema version {version}. Required fields are name, title, description, and url; use _schema to identify the toolinfo schema version when you publish a file.", { version: TOOLINFO_SCHEMA_VERSION })}</p>
@@ -349,7 +351,8 @@ export async function viewApiDocs() {
 			</ul>
 			<h2 class="contribute__h2">${t("static.apiDocs.liveProxyEndpoints", "Live proxy endpoints")}</h2>
 			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The live endpoint index is unavailable.")}</p>`}</div>
-		</div>`
+		</div>`,
+		mount: mountApiExplorer
 	};
 }
 /* ---- Sign-in-required stubs (auth/write features) ---------------------- */

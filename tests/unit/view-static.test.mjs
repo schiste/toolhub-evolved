@@ -113,6 +113,11 @@ test("viewApiDocs lists sorted proxy endpoints from the API root", async () => {
 	assert.ok(view.html.includes("Evolved reads the live catalog through a same-origin proxy"));
 	assert.ok(view.html.includes("<code>/v1/write/*</code> official-first lifecycle"));
 	assert.ok(view.html.includes("official OAuth tokens stay server-side"));
+	assert.equal(typeof view.mount, "function");
+	assert.ok(view.html.includes("data-api-explorer"));
+	assert.ok(view.html.includes('data-api-endpoint="search-tools"'));
+	assert.ok(view.html.includes("/api/crawler/urls/"));
+	assert.ok(view.html.includes("Try read-only endpoints"));
 	assert.ok(view.html.includes("toolinfo JSON Schema"));
 	assert.ok(view.html.includes("toolinfo.json schema"));
 	assert.ok(view.html.includes("current.yaml"));
@@ -133,5 +138,6 @@ test("viewApiDocs shows the unavailable placeholder when the root cannot be read
 	const view = await S.viewApiDocs();
 	assert.equal(view.title, "API documentation — Toolhub");
 	assert.ok(view.html.includes("The live endpoint index is unavailable."));
+	assert.ok(view.html.includes("data-api-explorer"));
 	assert.ok(view.html.includes("Authenticated writes never go through that proxy"));
 });

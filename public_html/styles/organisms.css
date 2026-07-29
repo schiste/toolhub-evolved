@@ -64,6 +64,182 @@
 	margin: var(--space-0);
 }
 
+/* API explorer. */
+.api-explorer {
+	margin: var(--space-5) var(--space-0);
+}
+.api-explorer__section-head {
+	align-items: flex-start;
+	gap: var(--space-4);
+}
+.api-explorer__section-head .page__intro {
+	max-width: 860px;
+	margin-bottom: var(--space-0);
+}
+.api-explorer__layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
+	gap: var(--space-4);
+	align-items: start;
+}
+.api-explorer__endpoints {
+	display: grid;
+	gap: var(--space-3);
+	min-width: 0;
+}
+.api-endpoint {
+	display: grid;
+	gap: var(--space-3);
+	min-width: 0;
+	padding: var(--space-4);
+	border: var(--border-base);
+	border-radius: var(--radius-md);
+	background: var(--color-surface);
+}
+.api-endpoint__head {
+	display: grid;
+	gap: var(--space-2);
+	min-width: 0;
+}
+.api-endpoint__title {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	margin: var(--space-0);
+	font-size: var(--fs-body-large);
+	line-height: 1.25;
+}
+.api-method {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 3.2em;
+	padding: var(--space-1) var(--space-2);
+	background: var(--color-success-subtle);
+	color: var(--color-success);
+	border: var(--border-base);
+	font-family: var(--font-mono);
+	font-size: var(--fs-micro);
+	font-weight: 700;
+	line-height: 1;
+}
+.api-endpoint__path {
+	display: block;
+	min-width: 0;
+	padding: var(--space-2);
+	background: var(--color-surface-muted);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-code);
+	overflow-wrap: anywhere;
+}
+.api-endpoint__desc {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+}
+.api-endpoint__fields {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+	gap: var(--space-3);
+}
+.api-endpoint__field {
+	min-width: 0;
+}
+.api-endpoint__field .le__input {
+	width: 100%;
+	margin-top: var(--space-1);
+}
+.api-endpoint__actions,
+.api-example__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	flex-wrap: wrap;
+}
+.api-endpoint__actions a {
+	font-size: var(--fs-caption);
+	font-weight: 600;
+}
+.api-endpoint__examples {
+	display: grid;
+	gap: var(--space-2);
+	min-width: 0;
+}
+.api-example {
+	display: grid;
+	gap: var(--space-2);
+	min-width: 0;
+	padding-top: var(--space-2);
+	border-top: var(--border-muted);
+}
+.api-example__head strong {
+	font-size: var(--fs-caption);
+}
+.api-example__copy {
+	flex: 0 0 auto;
+}
+.api-example__code,
+.api-result__body {
+	margin: var(--space-0);
+	padding: var(--space-3);
+	border: var(--border-base);
+	background: var(--color-surface-muted);
+	color: var(--color-text);
+	font-size: var(--fs-code);
+	line-height: 1.55;
+	overflow: auto;
+	overflow-wrap: normal;
+	white-space: pre;
+}
+.api-result {
+	position: sticky;
+	top: var(--space-3);
+	display: grid;
+	gap: var(--space-3);
+	min-width: 0;
+	padding: var(--space-4);
+	border: var(--border-base);
+	border-radius: var(--radius-md);
+	background: var(--color-surface);
+}
+.api-result__title {
+	margin: var(--space-0);
+	font-size: var(--fs-body-large);
+}
+.api-result__status {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-weight: 600;
+}
+.api-result__status--error {
+	color: var(--color-destructive);
+}
+.api-result__meta {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-0);
+}
+.api-result__meta div {
+	display: grid;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.api-result__meta dt {
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	font-weight: 700;
+	text-transform: uppercase;
+}
+.api-result__meta dd {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	overflow-wrap: anywhere;
+}
+.api-result__body {
+	max-height: min(52vh, 520px);
+}
+
 /* Nav. */
 .nav {
 	border-bottom: var(--border-base);
@@ -1714,6 +1890,12 @@ html[dir="rtl"] .recent-table {
 }
 
 @media (width <= 1100px) {
+	.api-explorer__layout {
+		grid-template-columns: 1fr;
+	}
+	.api-result {
+		position: static;
+	}
 	.recent-controls__filters {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -1726,6 +1908,14 @@ html[dir="rtl"] .recent-table {
 }
 
 @media (width <= 640px) {
+	.api-explorer__section-head,
+	.api-endpoint__actions {
+		align-items: stretch;
+	}
+	.api-explorer__section-head > a,
+	.api-endpoint__actions .btn {
+		width: 100%;
+	}
 	.command-trigger__label,
 	.command-trigger__shortcut {
 		display: none;
