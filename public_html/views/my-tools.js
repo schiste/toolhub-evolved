@@ -286,7 +286,6 @@ export async function viewMyTools() {
 				username: USER.name
 			}
 		),
-		actions: submitButton,
 		className: "account-records account-tools at",
 		body: `${accountSection({
 			id: "my-tools-heading",

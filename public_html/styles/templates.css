@@ -371,9 +371,10 @@
 		font-size: var(--fs-body);
 	}
 	.account-workbench__nav {
-		grid-template-columns: repeat(5, minmax(0, 1fr));
+		display: flex;
 	}
 	.account-workbench__nav-item {
+		grid-template-columns: auto;
 		gap: var(--space-1);
 		min-height: var(--ctl-h-md);
 		padding-inline: var(--space-1);
@@ -391,7 +392,6 @@
 	}
 	.account-workbench__toolbar {
 		justify-content: flex-start;
-		margin-block-start: calc(-1 * var(--space-3));
 	}
 }
 
