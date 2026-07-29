@@ -66,10 +66,27 @@ export const LOCALE = appLocale();
 export const AVAILABLE_LOCALES = ["en"];
 /** @type {Record<string, string>} */
 let messages = {};
+const ELEMENT_PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)}/g;
 /** @param {unknown} catalog */
 export function setMessages(catalog) {
 	messages = catalog && typeof catalog === "object" ? /** @type {Record<string, string>} */ (catalog) : {};
 }
+
+/**
+ * @param {string} key
+ * @param {string | undefined} fallback
+ * @param {Record<string, string | number> | undefined} params
+ */
+function lookupMessage(key, fallback, params) {
+	let out = Object.prototype.hasOwnProperty.call(messages, key)
+		? String(messages[key])
+		: (fallback ?? BOOT_MESSAGES[key] ?? key);
+	if (params) {
+		for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
+	}
+	return out;
+}
+
 /**
  * Translate a chrome string. `fallback` is the English source (also what the
  * catalog extractor collects); `params` fill `{name}` placeholders after
@@ -79,13 +96,39 @@ export function setMessages(catalog) {
  * @param {Record<string, string | number>} [params]
  */
 export function t(key, fallback, params) {
-	let out = Object.prototype.hasOwnProperty.call(messages, key)
-		? String(messages[key])
-		: (fallback ?? BOOT_MESSAGES[key] ?? key);
-	if (params) {
-		for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
+	return lookupMessage(key, fallback, params);
+}
+
+/**
+ * Translate a message whose source entry is extracted from structured markup
+ * such as `data-i18n` in the static shell.
+ * @param {string} key
+ * @param {string} fallback
+ * @param {Record<string, string | number>} [params]
+ */
+export function tData(key, fallback, params) {
+	return lookupMessage(key, fallback, params);
+}
+
+/**
+ * Translate compact UI text with caller-owned inline markup. Translated text
+ * and params are escaped; only `elements` values are inserted as trusted HTML.
+ * @param {string} key
+ * @param {string} fallback
+ * @param {Record<string, string>} elements trusted HTML snippets keyed by `{name}`
+ * @param {Record<string, string | number>} [params]
+ */
+export function tWithElements(key, fallback, elements, params) {
+	const message = lookupMessage(key, fallback, params);
+	let out = "";
+	let lastIndex = 0;
+	for (const match of message.matchAll(ELEMENT_PLACEHOLDER)) {
+		const index = match.index ?? 0;
+		out += esc(message.slice(lastIndex, index));
+		out += Object.hasOwn(elements, match[1]) ? elements[match[1]] : esc(match[0]);
+		lastIndex = index + match[0].length;
 	}
-	return out;
+	return out + esc(message.slice(lastIndex));
 }
 /**
  * Persist a locale choice; the app reloads so every `Intl` formatter and the

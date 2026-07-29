@@ -9,7 +9,9 @@ import {
 	pickLocalized,
 	setLocale,
 	setMessages,
-	t
+	t,
+	tData,
+	tWithElements
 } from "../../public_html/lib/core/i18n.js";
 
 afterEach(() => {
@@ -32,6 +34,39 @@ test("t prefers the installed catalog and fills params after lookup", () => {
 	assert.equal(t("x.greet", "Hello {name} ({name})", { name: "Ada" }), "Bonjour Ada (Ada)");
 	// params also apply to the fallback path
 	assert.equal(t("x.missing", "{n} tools", { n: 3 }), "3 tools");
+});
+
+test("tData resolves markup-extracted shell messages", () => {
+	assert.equal(tData("shell.skipToContent", "Skip to content"), "Skip to content");
+	setMessages({ "shell.skipToContent": "Aller au contenu" });
+	assert.equal(tData("shell.skipToContent", "Skip to content"), "Aller au contenu");
+});
+
+test("tWithElements escapes text and inserts caller-owned element placeholders", () => {
+	assert.equal(
+		tWithElements(
+			"x.inlineCode",
+			"Add {toolinfo} for {name}.",
+			{ toolinfo: "<code>toolinfo.json</code>" },
+			{
+				name: "Ada & Co"
+			}
+		),
+		"Add <code>toolinfo.json</code> for Ada &amp; Co."
+	);
+	setMessages({ "x.inlineCode": "{name}: add {toolinfo}." });
+	assert.equal(
+		tWithElements(
+			"x.inlineCode",
+			"Add {toolinfo} for {name}.",
+			{ toolinfo: "<code>toolinfo.json</code>" },
+			{
+				name: "Ada & Co"
+			}
+		),
+		"Ada &amp; Co: add <code>toolinfo.json</code>."
+	);
+	assert.equal(tWithElements("x.unknown", "Keep {missing}.", {}), "Keep {missing}.");
 });
 
 test("setMessages ignores non-object catalogs", () => {
