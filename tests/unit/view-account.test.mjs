@@ -228,23 +228,44 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.ok(r.html.includes("web app"));
 	assert.ok(r.html.includes("https://example.org/ada"));
 	assert.ok(r.html.includes("Verified: Toolforge maintainer"));
-	assert.ok(r.html.includes("Verified: Toolhub write access"));
-	assert.ok(r.html.includes("Verified: signed toolinfo"));
+	assert.ok(!r.html.includes("Verified: Toolhub write access"));
+	assert.ok(!r.html.includes("Verified: signed toolinfo"));
 	assert.ok(r.html.includes("Unverified author name"));
 	assert.ok(r.html.includes("Metadata source"));
 	assert.ok(r.html.includes("Official crawler source"));
 	assert.ok(r.html.includes("Toolsadmin feed"));
+	assert.ok(!r.html.includes(">Toolsadmin feed</a>"));
 	assert.ok(r.html.includes("2,880 tools"));
 	assert.ok(r.html.includes("Self-hosted check: found in sitemap"));
 	assert.ok(r.html.includes("Queued for discovery"));
 	assert.ok(!r.html.includes("Official Toolhub data + Evolved verification"));
-	assert.ok(
-		r.html.includes(
-			"Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere."
-		)
-	);
+	assert.ok(!r.html.includes("Toolhub authorship"));
+	assert.ok(!r.html.includes("Verification is per tool"));
 	assert.ok(!r.html.includes("Possible match"));
 	assert.ok(r.html.includes("Find or register toolinfo.json"));
+});
+
+test("viewMyTools prefers verified rows when the same tool appears in possible matches", async () => {
+	h.backendGetJson.mockResolvedValue({
+		verified: [
+			{
+				tool: { name: "shared-tool", title: "Shared Tool", url: "https://shared.example", author: [] },
+				claims: [{ verificationMethod: "toolhub_write_access", verificationStatus: "verified" }]
+			}
+		],
+		possible: [
+			{
+				tool: { name: "shared-tool", title: "Shared Tool", url: "https://shared.example", author: [] },
+				claims: [{ verificationMethod: "author_display_name", verificationStatus: "unverified" }]
+			}
+		]
+	});
+
+	const r = await viewMyTools();
+
+	assert.equal((r.html.match(/Shared Tool/g) || []).length, 1);
+	assert.ok(r.html.includes("Verified: Toolhub write access"));
+	assert.ok(!r.html.includes("Unverified author name"));
 });
 
 test("viewMyTools does not show self-hosted failures when official crawler source exists", async () => {
@@ -283,6 +304,7 @@ test("viewMyTools does not show self-hosted failures when official crawler sourc
 	assert.ok(r.html.includes("Verified: Toolforge maintainer"));
 	assert.ok(r.html.includes("Official crawler source"));
 	assert.ok(r.html.includes("Toolsadmin feed"));
+	assert.ok(!r.html.includes(">Toolsadmin feed</a>"));
 	assert.ok(!r.html.includes("Check failed"));
 	assert.ok(!r.html.includes("DNS failed"));
 });
@@ -333,7 +355,8 @@ test("viewMyTools labels invalid crawler evidence URLs", async () => {
 
 	assert.ok(!r.html.includes('href="https://exa mple.org/toolinfo.json"'));
 	assert.ok(!r.html.includes('href="javascript:alert(1)"'));
-	assert.ok(r.html.includes('aria-label="Toolsadmin feed: invalid URL"'));
+	assert.ok(!r.html.includes('aria-label="Toolsadmin feed: invalid URL"'));
+	assert.ok(r.html.includes('aria-label="Toolsadmin feed: toolsadmin"'));
 	assert.ok(r.html.includes('aria-label="toolinfo.json URL: invalid URL"'));
 	assert.ok(r.html.includes('data-url-state="invalid"'));
 });

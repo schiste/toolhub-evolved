@@ -1019,8 +1019,8 @@
 	justify-content: flex-end;
 }
 .account-workbench__nav {
-	display: flex;
-	flex-wrap: wrap;
+	display: grid;
+	grid-template-columns: repeat(5, minmax(0, 1fr));
 	gap: var(--space-0);
 	margin: var(--space-1) var(--space-0) var(--space-5);
 	border: var(--border-base);
@@ -1030,7 +1030,6 @@
 	display: flex;
 	gap: var(--space-2);
 	align-items: center;
-	flex: 1 1 160px;
 	min-width: 0;
 	padding: var(--space-3);
 	border-inline-end: var(--border-muted);
@@ -1044,13 +1043,15 @@
 	background: var(--color-surface-muted);
 	text-decoration: none;
 }
+.account-workbench__nav-item.is-active,
+.account-workbench__nav-item.is-active:hover,
+.account-workbench__nav-item.is-active:focus-visible {
+	background: var(--color-progressive);
+	color: var(--wmf-white);
+}
 .account-workbench__nav-item:focus-visible {
 	outline: 2px solid var(--color-progressive);
 	outline-offset: -2px;
-}
-.account-workbench__nav-item.is-active {
-	background: var(--color-progressive);
-	color: var(--color-surface);
 }
 .account-workbench__nav-icon {
 	display: inline-flex;
@@ -1066,8 +1067,11 @@
 	min-width: 0;
 }
 .account-workbench__nav-label {
+	overflow: hidden;
 	font-weight: 700;
 	line-height: 1.25;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .account-workbench__content-section {
 	margin-top: var(--space-5);
@@ -1196,6 +1200,9 @@
 .account-records__table th,
 .account-records__table td {
 	padding: var(--space-3) var(--space-2);
+	font-size: var(--fs-body);
+	font-family: var(--font-sans);
+	line-height: var(--lh-body);
 	text-align: start;
 	vertical-align: top;
 	border-bottom: var(--border-muted);
@@ -1207,6 +1214,11 @@
 }
 .account-records__table td {
 	overflow-wrap: anywhere;
+}
+.account-records__table td :where(a, span, time, code) {
+	font-size: inherit;
+	font-family: inherit;
+	line-height: inherit;
 }
 .account-records__title {
 	display: inline-flex;
@@ -1233,11 +1245,13 @@
 	flex-direction: column;
 	align-items: flex-start;
 	gap: var(--space-1);
-	font-size: var(--fs-caption);
 }
 .account-tools__toolinfo a {
 	max-width: 100%;
 	overflow-wrap: anywhere;
+}
+.account-tools__source-badge {
+	cursor: help;
 }
 .panel__foot {
 	display: inline-block;
@@ -1940,6 +1954,12 @@ html[dir="rtl"] .recent-table {
 .recent-table__muted {
 	color: var(--color-text-muted);
 	font-size: var(--fs-caption);
+}
+
+.account-records__table .recent-table__id,
+.account-records__table .recent-table__muted,
+.account-records__table .account-records__actions {
+	font-size: inherit;
 }
 
 .recent-table__comment {

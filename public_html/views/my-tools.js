@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { backendGetJson, normalizeTool } from "../lib/core/api.js";
-import { countLabel, t, timeTag } from "../lib/core/i18n.js";
+import { countLabel, relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
@@ -17,19 +17,20 @@ const AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME = "author_display_name";
 /** @param {any} claim */
 function authorClaimBadge(claim) {
 	const method = claim?.verificationMethod || "";
-	if (claim?.isVerified && method === AUTHOR_CLAIM_TOOLFORGE_MAINTAINER) {
+	const isVerified = Boolean(claim?.isVerified || claim?.verificationStatus === "verified");
+	if (isVerified && method === AUTHOR_CLAIM_TOOLFORGE_MAINTAINER) {
 		return {
 			label: t("accountTools.verifiedToolforgeMaintainer", "Verified: Toolforge maintainer"),
 			className: "review-approved"
 		};
 	}
-	if (claim?.isVerified && method === AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS) {
+	if (isVerified && method === AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS) {
 		return {
 			label: t("accountTools.verifiedToolhubWriteAccess", "Verified: Toolhub write access"),
 			className: "review-approved"
 		};
 	}
-	if (claim?.isVerified && method === AUTHOR_CLAIM_SIGNED_TOOLINFO) {
+	if (isVerified && method === AUTHOR_CLAIM_SIGNED_TOOLINFO) {
 		return {
 			label: t("accountTools.verifiedSignedToolinfo", "Verified: signed toolinfo"),
 			className: "review-approved"
@@ -47,23 +48,19 @@ function authorClaimBadge(claim) {
 /**
  * @param {any[]} claims
  * @param {boolean} verified
- * @returns {AuthorVerificationBadge[]}
+ * @returns {AuthorVerificationBadge}
  */
-function authorClaimBadges(claims, verified) {
-	const badges = /** @type {AuthorVerificationBadge[]} */ ([]);
-	const seen = new Set();
+function strongestAuthorClaimBadge(claims, verified) {
 	for (const claim of Array.isArray(claims) ? claims : []) {
 		const badge = authorClaimBadge(claim);
-		if (!badge || seen.has(badge.label)) continue;
-		badges.push(badge);
-		seen.add(badge.label);
+		if (badge?.className === "review-approved") return badge;
 	}
-	if (badges.length > 0) return badges;
-	return [
-		verified
-			? { label: t("accountTools.verified", "Verified"), className: "review-approved" }
-			: { label: t("accountTools.unverifiedAuthorName", "Unverified author name"), className: "review-pending" }
-	];
+	if (verified) return { label: t("accountTools.verified", "Verified"), className: "review-approved" };
+	for (const claim of Array.isArray(claims) ? claims : []) {
+		const badge = authorClaimBadge(claim);
+		if (badge) return badge;
+	}
+	return { label: t("accountTools.unverifiedAuthorName", "Unverified author name"), className: "review-pending" };
 }
 
 /** @param {any[]} items @param {boolean} verified @param {Record<string, ToolinfoSource>} [sourcesByTool] */
@@ -73,7 +70,7 @@ function resolvedTools(items, verified, sourcesByTool = {}) {
 			if (!item || !item.tool) return null;
 			const tool = normalizeTool(item.tool);
 			tool.authorVerified = verified;
-			tool.authorVerificationBadges = authorClaimBadges(item.claims, verified);
+			tool.authorVerificationBadges = [strongestAuthorClaimBadge(item.claims, verified)];
 			tool.toolinfoDiscovery = item.toolinfoDiscovery || { status: "pending" };
 			tool.toolinfoSource = item.toolinfoSource || sourcesByTool[tool.name];
 			return tool;
@@ -162,17 +159,24 @@ function selfHostedDiscoveryLine(discovery, options = {}) {
 /** @param {ToolinfoSource | undefined} source @param {ToolinfoDiscovery | undefined} discovery */
 function toolinfoEvidenceCell(source, discovery) {
 	if (!source?.sourceUrl) return toolinfoDiscoveryCell(discovery);
-	const fetched = source.lastFetchedAt ? ` · ${timeTag(source.lastFetchedAt)}` : "";
+	const fetchedTime = relativeTime(source.lastFetchedAt);
+	const fetched = fetchedTime ? t("accountTools.sourceFetched", "fetched {time}", { time: fetchedTime }) : "";
 	const count =
 		typeof source.itemCount === "number" && source.itemCount > 0
-			? ` · ${countLabel(source.itemCount, t("accountTools.sourceToolOne", "tool"), t("accountTools.sourceToolOther", "tools"))}`
+			? countLabel(
+					source.itemCount,
+					t("accountTools.sourceToolOne", "tool"),
+					t("accountTools.sourceToolOther", "tools")
+				)
 			: "";
 	const sourceLabel = source.sourceLabel || t("accountTools.sourceUnknown", "Official crawler feed");
-	const sourceUrl = safeHttpUrl(source.sourceUrl);
+	const sourceDetails = [source.sourceKind || "official", count, fetched].filter(Boolean).join(" · ");
+	const tooltip = t("accountTools.sourceTooltip", "{label}: {details}", {
+		label: sourceLabel,
+		details: sourceDetails || t("accountTools.sourceOfficial", "official")
+	});
 	return `<div class="account-tools__toolinfo">
-		<span class="sync-badge sync-badge--official">${t("accountTools.officialCrawlerSource", "Official crawler source")}</span>
-		${sourceUrl ? `<a href="${sourceUrl}" target="_blank" rel="noopener nofollow">${esc(sourceLabel)}</a>` : invalidUrlNotice(sourceLabel, source.sourceUrl)}
-		<span class="recent-table__muted">${t("accountTools.sourceDetails", "Source")} ${esc(source.sourceKind || "official")}${count}${fetched}</span>
+		<span class="sync-badge sync-badge--official account-tools__source-badge" title="${esc(tooltip)}" aria-label="${esc(tooltip)}">${t("accountTools.officialCrawlerSource", "Official crawler source")}</span>
 		${selfHostedDiscoveryLine(discovery, { hideFailures: true })}
 	</div>`;
 }
@@ -236,10 +240,17 @@ async function myTools() {
 	const data = await backendGetJson("/v1/me/tools/");
 	if (!data) throw new Error("resolver unavailable");
 	const sourcesByTool = data.toolinfoSources && typeof data.toolinfoSources === "object" ? data.toolinfoSources : {};
-	return [
-		...resolvedTools(data.verified, true, sourcesByTool),
-		...resolvedTools(data.possible, false, sourcesByTool)
-	];
+	const tools = /** @type {Tool[]} */ ([]);
+	const seen = new Set();
+	for (const tool of resolvedTools(data.verified, true, sourcesByTool)) {
+		tools.push(tool);
+		seen.add(tool.name);
+	}
+	for (const tool of resolvedTools(data.possible, false, sourcesByTool)) {
+		if (seen.has(tool.name)) continue;
+		tools.push(tool);
+	}
+	return tools;
 }
 
 export async function viewMyTools() {
@@ -279,11 +290,7 @@ export async function viewMyTools() {
 		className: "account-records account-tools at",
 		body: `${accountSection({
 			id: "my-tools-heading",
-			title: t("accountTools.authorshipHeading", "Toolhub authorship"),
-			intro: t(
-				"accountTools.verificationPolicy",
-				"Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere."
-			),
+			title: t("accountTools.authorshipHeading", "Tools"),
 			body: content
 		})}
 		${registration.html}`

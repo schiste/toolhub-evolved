@@ -377,8 +377,10 @@
 		height: var(--avatar-md);
 		font-size: var(--fs-body);
 	}
+	.account-workbench__nav {
+		grid-template-columns: 1fr;
+	}
 	.account-workbench__nav-item {
-		flex-basis: 100%;
 		border-inline-end: 0;
 		border-bottom: var(--border-muted);
 	}
