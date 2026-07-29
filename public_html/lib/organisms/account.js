@@ -6,6 +6,7 @@ import { csrfToken, oauthAvailable } from "../core/serversync.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
+import { ACCOUNT_NAV_ITEMS } from "./account-workbench.js";
 
 /**
  * Wrap a submit control in the sign-out POST form.
@@ -50,12 +51,7 @@ export function renderAccount() {
 		</button>
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">${t("account.signedInAs", "Signed in as")} <strong>${esc(USER.name)}</strong></div>
-			<a href="/my-lists">${icon("list")} ${t("account.yourLists", "Your lists")}</a>
-			<a href="/my-tools">${icon("tools")} ${t("account.myTools", "My tools")}</a>
-			<a href="/favorites">${icon("star")} ${t("account.favorites", "Favorites")}</a>
-			<a href="/add-or-remove-tools">${icon("tools")} ${t("account.addOrRemoveTools", "Add or remove tools")}</a>
-			<a href="/developer-settings">${icon("key")} ${t("account.developerSettings", "Developer settings")}</a>
-			<a href="/account">${icon("tools")} ${t("account.dataSettings", "Evolved data settings")}</a>
+			${ACCOUNT_NAV_ITEMS.map((item) => `<a href="${esc(item.href)}">${icon(item.iconName)} ${esc(item.label())}</a>`).join("")}
 			<hr />
 			${logoutForm(`<button class="acct__logout" type="submit">${icon("logout")} ${t("account.logOut", "Log out")}</button>`)}
 		</div>`;

@@ -182,20 +182,7 @@ export function viewDeveloperSettings() {
 			"developerSettings.intro",
 			"Manage Toolhub developer features connected to this sign-in. OAuth applications and API tokens remain official Toolhub data."
 		),
-		source: t("developerSettings.source", "Official Toolhub + Evolved signatures"),
 		actions: toolhubActions,
-		metrics: [
-			{
-				value: t("developerSettings.officialMetricValue", "Official"),
-				label: t("developerSettings.officialMetric", "OAuth and API"),
-				detail: t("developerSettings.officialMetricDetail", "Managed by Toolhub")
-			},
-			{
-				value: t("developerSettings.signatureMetricValue", "Ed25519"),
-				label: t("developerSettings.signatureMetric", "Authorship keys"),
-				detail: t("developerSettings.signatureMetricDetail", "Evolved verification")
-			}
-		],
 		body: `
 			${accountSection({
 				id: "developer-toolhub-title",

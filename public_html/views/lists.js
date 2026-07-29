@@ -284,15 +284,7 @@ export function viewMyLists() {
 			"lists.yourListsIntroClean",
 			"Lists you create or edit in Evolved, including drafts and local fallbacks."
 		),
-		source: t("lists.evolvedOverlaySource", "Evolved workspace"),
 		actions: createButton,
-		metrics: [
-			{
-				value: countLabel(cards.length, t("lists.listOne", "list"), t("lists.listOther", "lists")),
-				label: t("lists.savedListsMetric", "Saved lists"),
-				detail: t("lists.savedListsMetricDetail", "Drafts and fallbacks")
-			}
-		],
 		body
 	});
 	return { title: t("lists.yourListsDocTitle", "Your lists — Toolhub"), html };
@@ -324,14 +316,6 @@ export async function viewFavorites() {
 			active: "favorites",
 			title: t("lists.favorites", "Favorites"),
 			intro: t("lists.favoritesIntroClean", "Tools you saved for quick return, comparison, or later curation."),
-			source: t("lists.evolvedFavoritesSource", "Saved through Evolved"),
-			metrics: [
-				{
-					value: countLabel(tools.length, t("lists.toolOne", "tool"), t("lists.toolOther", "tools")),
-					label: t("lists.savedToolsMetric", "Saved tools"),
-					detail: t("lists.savedToolsMetricDetail", "Available from this account")
-				}
-			],
 			body: `<section class="account-workbench__content-section" aria-labelledby="favorites-heading">
 				<div class="section-head account-workbench__content-head">
 					<div>

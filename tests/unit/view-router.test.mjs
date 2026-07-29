@@ -292,14 +292,6 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(false);
-	await at("/add-or-remove-tools");
-	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
-		"Add or remove tools",
-		"Paste a tool homepage or toolinfo.json URL for crawler registration, or create a tool record directly."
-	]);
-
-	vi.clearAllMocks();
-	session.signedIn.mockReturnValue(false);
 	await at("/account");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Evolved data settings",
@@ -330,7 +322,6 @@ test("dispatch gated routes: unresolved auth → account loading page", async ()
 	const routes = [
 		["/my-lists", "Your lists"],
 		["/favorites", "Favorites"],
-		["/add-or-remove-tools", "Add or remove tools"],
 		["/account", "Evolved data settings"],
 		["/developer-settings", "Developer settings"],
 		["/my-tools", "My tools"],
@@ -355,7 +346,10 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	session.signedIn.mockReturnValue(true);
 	assert.deepEqual(await at("/my-lists"), { tag: "mylists" });
 	assert.deepEqual(await at("/favorites"), { tag: "favorites" });
-	assert.deepEqual(await at("/add-or-remove-tools"), { tag: "addtools" });
+	const redirect = await at("/add-or-remove-tools");
+	assert.equal(redirect.title, "Redirecting - Toolhub");
+	assert.match(redirect.html, /account-records__table skeleton-table/);
+	redirect.mount();
 	assert.deepEqual(await at("/account"), { tag: "account" });
 	assert.deepEqual(await at("/developer-settings"), { tag: "developer" });
 	assert.deepEqual(await at("/my-tools"), { tag: "mytools" });
@@ -363,6 +357,7 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	assert.equal(accountSettingsView.viewAccountSettings.mock.calls.length, 1);
 	assert.equal(developerSettingsView.viewDeveloperSettings.mock.calls.length, 1);
 	assert.equal(myToolsView.viewMyTools.mock.calls.length, 1);
+	assert.deepEqual(window.location.pathname, "/my-tools");
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */

@@ -341,8 +341,8 @@ function footerExample() {
 				</nav>
 				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.maintainLabel", "Maintain"))}">
 					<h2>${t("styleguide.footer.maintain", "Maintain")}</h2>
-					<a href="/add-or-remove-tools">${t("styleguide.footer.addRemoveTools", "Add or remove tools")}</a>
 					<a href="/my-lists">${t("styleguide.footer.yourLists", "Your lists")}</a>
+					<a href="/my-tools">${t("styleguide.footer.myTools", "My tools")}</a>
 					<a href="/favorites">${t("styleguide.footer.favorites", "Favorites")}</a>
 					<a href="/contribute">${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub")}</a>
 				</nav>

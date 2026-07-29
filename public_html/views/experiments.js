@@ -168,18 +168,18 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.developerSettingsTry", "Developer settings")
 			},
 			{
-				name: t("experiments.myToolsName", "My tools and author claims"),
+				name: t("experiments.myToolsName", "My tools workspace"),
 				what: t(
 					"experiments.myToolsWhat",
-					"See tools associated with your signed-in Toolhub identity, split into verified and possible matches."
+					"Review tools associated with your signed-in Toolhub identity and register toolinfo sources from one place."
 				),
 				current: t(
 					"experiments.myToolsCurrent",
-					"Official Toolhub search provides candidates; Evolved verifies claims per tool, shows indexed official crawler feed sources, and keeps root/sitemap discovery as a secondary self-hosted metadata signal."
+					"Official Toolhub search provides tool candidates; Evolved adds per-tool evidence, indexed crawler feed sources, and root/sitemap discovery for toolinfo registration."
 				),
 				need: t(
 					"experiments.myToolsNeed",
-					"Author-claim table, resolver endpoint, verification providers, official crawler source index, and discovery cache"
+					"Author-claim table, resolver endpoint, verification providers, official crawler source index, registration workflow, and discovery cache"
 				),
 				tryHref: "/my-tools",
 				tryLabel: t("experiments.myToolsTry", "My tools")
@@ -311,21 +311,21 @@ export const EXPERIMENTS = [
 				)
 			},
 			{
-				name: t("experiments.crawlerName", "Add / remove tools (crawler)"),
+				name: t("experiments.crawlerName", "Toolinfo registration"),
 				what: t(
 					"experiments.crawlerWhat",
 					"Paste a tool homepage or direct toolinfo.json URL, or paste toolinfo to ingest tools."
 				),
 				current: t(
 					"experiments.crawlerCurrent",
-					"Evolved discovers root/sitemap toolinfo.json URLs before official-first Toolhub registration, and a scheduled source index maps official crawler feeds back to tools."
+					"My tools discovers root/sitemap toolinfo.json URLs before official-first Toolhub registration, and a scheduled source index maps official crawler feeds back to tools."
 				),
 				need: t(
 					"experiments.crawlerNeed",
 					"Toolhub crawler permissions, official crawler source index, safe toolinfo discovery, and local fallback storage"
 				),
-				tryHref: "/add-or-remove-tools",
-				tryLabel: t("experiments.crawlerTry", "Add or remove tools")
+				tryHref: "/my-tools",
+				tryLabel: t("experiments.crawlerTry", "My tools")
 			},
 			{
 				name: t("experiments.feedsName", "Activity feeds"),

@@ -476,7 +476,7 @@ export async function viewTool(name) {
 				await officialWrite("DELETE", `/v1/write/tools/${encodeURIComponent(name)}/`);
 				clearLocalToolDraft(name);
 				clearApiCache();
-				navigateTo("/add-or-remove-tools");
+				navigateTo("/my-tools");
 			} catch (error) {
 				if (out) {
 					out.className = "at__result at__result--err";

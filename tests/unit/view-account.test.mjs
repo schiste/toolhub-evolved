@@ -237,14 +237,14 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.ok(r.html.includes("2,880 tools"));
 	assert.ok(r.html.includes("Self-hosted check: found in sitemap"));
 	assert.ok(r.html.includes("Queued for discovery"));
-	assert.ok(r.html.includes("Official Toolhub data + Evolved verification"));
+	assert.ok(!r.html.includes("Official Toolhub data + Evolved verification"));
 	assert.ok(
 		r.html.includes(
 			"Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere."
 		)
 	);
 	assert.ok(!r.html.includes("Possible match"));
-	assert.ok(r.html.includes("2 tools"));
+	assert.ok(r.html.includes("Find or register toolinfo.json"));
 });
 
 test("viewMyTools does not show self-hosted failures when official crawler source exists", async () => {

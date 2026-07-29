@@ -286,7 +286,7 @@ via a documented one-liner.
 
 ### P4 — Crawler (~1.5 weeks)
 
-- `/v1/write/crawler/urls/` CRUD (auth required) + `Add or remove tools` page
+- `/v1/write/crawler/urls/` CRUD (auth required) + `My tools` registration workspace
   writes official Toolhub crawler URL registrations when permitted.
 - `/v1/crawler/toolinfo-discovery/` accepts a homepage, safely discovers a
   concrete same-origin `toolinfo.json` from the site root or `sitemap.xml`, and

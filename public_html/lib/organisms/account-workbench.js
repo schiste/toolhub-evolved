@@ -5,57 +5,38 @@ import { USER } from "../core/session.js";
 import { avatar } from "../atoms/avatar.js";
 import { icon } from "../atoms/icon.js";
 
-const ACCOUNT_NAV_ITEMS = [
-	{
-		key: "favorites",
-		href: "/favorites",
-		iconName: "star",
-		label: () => t("accountWorkbench.navFavorites", "Favorites"),
-		description: () => t("accountWorkbench.navFavoritesDesc", "Saved tools")
-	},
+export const ACCOUNT_NAV_ITEMS = [
 	{
 		key: "lists",
 		href: "/my-lists",
 		iconName: "list",
-		label: () => t("accountWorkbench.navLists", "Your lists"),
-		description: () => t("accountWorkbench.navListsDesc", "Drafts and collections")
+		label: () => t("account.yourLists", "Your lists")
 	},
 	{
 		key: "tools",
 		href: "/my-tools",
 		iconName: "tools",
-		label: () => t("accountWorkbench.navTools", "My tools"),
-		description: () => t("accountWorkbench.navToolsDesc", "Authorship and metadata")
+		label: () => t("account.myTools", "My tools")
 	},
 	{
-		key: "register",
-		href: "/add-or-remove-tools",
-		iconName: "add",
-		label: () => t("accountWorkbench.navRegister", "Register tools"),
-		description: () => t("accountWorkbench.navRegisterDesc", "Crawler URLs and submissions")
+		key: "favorites",
+		href: "/favorites",
+		iconName: "star",
+		label: () => t("account.favorites", "Favorites")
 	},
 	{
 		key: "developer",
 		href: "/developer-settings",
 		iconName: "key",
-		label: () => t("accountWorkbench.navDeveloper", "Developer"),
-		description: () => t("accountWorkbench.navDeveloperDesc", "API and signatures")
+		label: () => t("account.developerSettings", "Developer settings")
 	},
 	{
 		key: "data",
 		href: "/account",
 		iconName: "reset",
-		label: () => t("accountWorkbench.navData", "Data settings"),
-		description: () => t("accountWorkbench.navDataDesc", "Export and deletion")
+		label: () => t("account.dataSettings", "Evolved data settings")
 	}
 ];
-
-/**
- * @typedef {object} AccountMetric
- * @property {string} value
- * @property {string} label
- * @property {string} [detail]
- */
 
 /**
  * @typedef {object} AccountWorkbenchOptions
@@ -63,9 +44,7 @@ const ACCOUNT_NAV_ITEMS = [
  * @property {string} title
  * @property {string} intro
  * @property {string} [introHtml]
- * @property {string} [source]
  * @property {string} [actions]
- * @property {AccountMetric[]} [metrics]
  * @property {string} body
  * @property {string} [className]
  */
@@ -83,33 +62,16 @@ export function accountWorkbenchNav(active) {
 				<span class="account-workbench__nav-icon" aria-hidden="true">${icon(item.iconName)}</span>
 				<span class="account-workbench__nav-copy">
 					<span class="account-workbench__nav-label">${esc(item.label())}</span>
-					<span class="account-workbench__nav-desc">${esc(item.description())}</span>
 				</span>
 			</a>`;
 		}).join("")}
 	</nav>`;
 }
 
-/** @param {AccountMetric[]} metrics */
-function accountMetrics(metrics) {
-	if (metrics.length === 0) return "";
-	return `<dl class="account-metrics">
-		${metrics
-			.map(
-				(metric) => `<div class="account-metrics__item">
-					<dt>${esc(metric.label)}</dt>
-					<dd>${esc(metric.value)}</dd>
-					${metric.detail ? `<span>${esc(metric.detail)}</span>` : ""}
-				</div>`
-			)
-			.join("")}
-	</dl>`;
-}
-
 /** @param {AccountWorkbenchOptions} opts */
 export function accountWorkbenchPage(opts) {
-	const source = opts.source ? `<span class="account-workbench__source">${esc(opts.source)}</span>` : "";
 	const actions = opts.actions ? `<div class="account-workbench__actions">${opts.actions}</div>` : "";
+	const heroSide = actions ? `\n\t\t\t<div class="account-workbench__hero-side">${actions}</div>` : "";
 	const cls = opts.className ? ` ${opts.className}` : "";
 	const user = accountName();
 	const intro = opts.introHtml || esc(opts.intro);
@@ -122,10 +84,8 @@ export function accountWorkbenchPage(opts) {
 					<h1 class="page__title">${esc(opts.title)}</h1>
 					<p class="page__intro">${intro}</p>
 				</div>
-			</div>
-			${source || actions ? `<div class="account-workbench__hero-side">${source}${actions}</div>` : ""}
+			</div>${heroSide}
 		</header>
-		${accountMetrics(opts.metrics || [])}
 		${accountWorkbenchNav(opts.active)}
 		<div class="account-workbench__body">${opts.body}</div>
 	</div>`;

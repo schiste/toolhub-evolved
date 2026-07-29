@@ -20,19 +20,6 @@ export function viewAccountSettings() {
 			"accountData.intro",
 			"Export or delete the local Evolved data attached to this Toolhub sign-in. Official Toolhub records, lists, favorites, and crawler registrations are not deleted here."
 		),
-		source: t("accountData.source", "Evolved-local data"),
-		metrics: [
-			{
-				value: t("accountData.exportMetricValue", "JSON"),
-				label: t("accountData.exportMetric", "Export format"),
-				detail: t("accountData.exportMetricDetail", "Portable account snapshot")
-			},
-			{
-				value: t("accountData.deleteMetricValue", "Local only"),
-				label: t("accountData.deleteMetric", "Deletion scope"),
-				detail: t("accountData.deleteMetricDetail", "Official Toolhub records stay intact")
-			}
-		],
 		body: `
 			${accountSection({
 				id: "account-export-title",

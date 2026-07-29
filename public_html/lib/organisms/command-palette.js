@@ -86,20 +86,15 @@ function actions() {
 			keywords: ["tools", "search", "browse", "catalog"]
 		},
 		{
-			id: "submit",
-			title: t("commandPalette.submitTool", "Submit a tool"),
-			description: t("commandPalette.submitToolDesc", "Create or register tool metadata."),
-			href: "/add-or-remove-tools",
-			iconName: "add",
-			keywords: ["submit", "create", "register", "toolinfo"]
-		},
-		{
 			id: "my-tools",
 			title: t("commandPalette.myTools", "My tools"),
-			description: t("commandPalette.myToolsDesc", "Review tools maintained by this account."),
+			description: t(
+				"commandPalette.myToolsDesc",
+				"Review maintained tools, register toolinfo, and manage local submissions."
+			),
 			href: "/my-tools",
 			iconName: "tools",
-			keywords: ["maintainer", "owned", "account"]
+			keywords: ["maintainer", "owned", "account", "submit", "create", "register", "toolinfo"]
 		},
 		{
 			id: "favorites",

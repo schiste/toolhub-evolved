@@ -108,13 +108,13 @@ const S = {
 					<a href="/members">Members</a>
 					<a href="/recent">Recent changes</a>
 				</nav>
-				<nav class="footer__col" aria-label="Maintain">
-					<h2>Maintain</h2>
-					<a href="/add-or-remove-tools">Add or remove tools</a>
-					<a href="/my-lists">Your lists</a>
-					<a href="/favorites">Favorites</a>
-					<a href="/contribute">Help maintain Toolhub</a>
-				</nav>
+					<nav class="footer__col" aria-label="Maintain">
+						<h2>Maintain</h2>
+						<a href="/my-lists">Your lists</a>
+						<a href="/my-tools">My tools</a>
+						<a href="/favorites">Favorites</a>
+						<a href="/contribute">Help maintain Toolhub</a>
+					</nav>
 				<nav class="footer__col" aria-label="Project">
 					<h2>Project</h2>
 					<a href="/api-docs">API explorer</a>

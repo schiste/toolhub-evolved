@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, esc } from "../lib/core/dom.js";
 import { t, tWithElements } from "../lib/core/i18n.js";
-import { parseRoute } from "../lib/core/routing.js";
+import { navigateTo, parseRoute } from "../lib/core/routing.js";
 import { serverSessionResolved, signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
 import { routeSkeletonHTML } from "../lib/molecules/skeleton.js";
@@ -101,15 +101,7 @@ export const ROUTES = {
 			t("router.favoritesTitle", "Favorites"),
 			t("router.favoritesLead", "Your saved tools, all in one place.")
 		),
-	"add-or-remove-tools": () =>
-		requireSignIn(
-			() => loadToolForms().then((m) => m.viewAddTools()),
-			t("router.addToolsTitle", "Add or remove tools"),
-			t(
-				"router.addToolsLead",
-				"Paste a tool homepage or toolinfo.json URL for crawler registration, or create a tool record directly."
-			)
-		),
+	"add-or-remove-tools": () => redirectTo("/my-tools"),
 	account: () =>
 		requireSignIn(
 			() => loadAccountSettings().then((m) => m.viewAccountSettings()),
@@ -261,8 +253,16 @@ export const loadingHTML = (path) =>
 	<div class="route-loading__panel">
 		<span class="spinner" aria-hidden="true"></span>
 		<span class="route-loading__label">${t("router.loadingToolhubData", "Loading Toolhub data")}</span>
-	</div>
-</div>`;
+		</div>
+	</div>`;
+/** @param {string} href */
+function redirectTo(href) {
+	return {
+		title: t("router.redirectingTitle", "Redirecting - Toolhub"),
+		html: loadingHTML(href),
+		mount: () => navigateTo(href, { replace: true })
+	};
+}
 /** @param {unknown} e */
 export const errorHTML = (
 	e

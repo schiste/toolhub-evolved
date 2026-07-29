@@ -59,8 +59,6 @@
 	--border-muted: var(--border-width-base) solid var(--color-surface-muted);
 	--border-transparent: var(--border-width-base) solid transparent;
 	--border-heavy: var(--border-width-heavy) solid var(--color-border);
-	--border-heavy-transparent: var(--border-width-heavy) solid transparent;
-	--border-progressive-heavy: var(--border-width-heavy) solid var(--color-progressive);
 	--border-progressive-strong: var(--border-width-strong) solid var(--color-progressive);
 	--border-pattern: var(--border-width-base) solid var(--color-surface-pattern);
 	--border-dashed: var(--border-width-base) dashed var(--color-border);

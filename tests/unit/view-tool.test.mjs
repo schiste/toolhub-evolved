@@ -795,7 +795,7 @@ test("viewTool signed-in detail delete publishes official Toolhub delete", async
 	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/tools/delete-me/"]);
 	assert.deepEqual(h.clearLocalToolDraft.mock.calls[0], ["delete-me"]);
 	assert.equal(h.clearApiCache.mock.calls.length, 1);
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/add-or-remove-tools"]);
+	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/my-tools"]);
 });
 
 test("viewTool signed-in detail delete reports official failure and stays put", async () => {

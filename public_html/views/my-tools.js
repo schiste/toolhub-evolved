@@ -6,24 +6,13 @@ import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
-import { accountEmptyState, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
+import { accountEmptyState, accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
+import { toolRegistrationWorkspace } from "./toolforms.js";
 
-const TOOLHUB_BASE = "https://toolhub.wikimedia.org";
-const TOOLHUB_DEVELOPER_SETTINGS_URL = `${TOOLHUB_BASE}/developer-settings`;
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
 const AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS = "toolhub_write_access";
 const AUTHOR_CLAIM_SIGNED_TOOLINFO = "signed_toolinfo";
 const AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME = "author_display_name";
-
-/** @param {string} href @param {string} label */
-function externalButton(href, label) {
-	return button(label, {
-		variant: "outline",
-		href,
-		icon: "external",
-		attrs: 'target="_blank" rel="noopener nofollow"'
-	});
-}
 
 /** @param {any} claim */
 function authorClaimBadge(claim) {
@@ -253,16 +242,6 @@ async function myTools() {
 	];
 }
 
-/** @param {Tool[]} tools */
-function verifiedToolCount(tools) {
-	return tools.filter((tool) => tool.authorVerified).length;
-}
-
-/** @param {Tool[]} tools */
-function unverifiedToolCount(tools) {
-	return tools.filter((tool) => !tool.authorVerified).length;
-}
-
 export async function viewMyTools() {
 	/** @type {Tool[]} */
 	let tools = [];
@@ -272,64 +251,42 @@ export async function viewMyTools() {
 	} catch (e) {
 		error = e;
 	}
-	const count = countLabel(tools.length, t("accountTools.toolOne", "tool"), t("accountTools.toolOther", "tools"));
-	const verifiedCount = countLabel(
-		verifiedToolCount(tools),
-		t("accountTools.verifiedToolOne", "tool"),
-		t("accountTools.verifiedToolOther", "tools")
-	);
-	const attentionCount = countLabel(
-		unverifiedToolCount(tools),
-		t("accountTools.attentionToolOne", "tool"),
-		t("accountTools.attentionToolOther", "tools")
-	);
-	const manageButton = externalButton(
-		TOOLHUB_DEVELOPER_SETTINGS_URL,
-		t("accountTools.manageOnToolhub", "Manage on Toolhub")
-	);
+	const registration = toolRegistrationWorkspace();
+	const submitButton = button(t("accountTools.submitTool", "Submit a tool"), {
+		variant: "primary",
+		href: "/tools/create",
+		icon: "add"
+	});
 	const content = error
 		? accountEmptyState({
 				iconName: "tools",
 				title: t("accountTools.loadFailedTitle", "Tools could not be loaded"),
 				body: t("accountTools.loadFailed", "Unable to load your Toolhub tools right now."),
-				action: manageButton
+				action: submitButton
 			})
-		: toolsTable(tools, manageButton);
+		: toolsTable(tools, submitButton);
 	const html = accountWorkbenchPage({
 		active: "tools",
 		title: t("accountTools.title", "My tools"),
-		intro: t("accountTools.intro", "Official Toolhub tools where {username} is listed as author or maintainer.", {
-			username: USER.name
-		}),
-		source: t("accountTools.source", "Official Toolhub data + Evolved verification"),
-		actions: manageButton,
-		className: "account-records account-tools",
-		metrics: [
+		intro: t(
+			"accountTools.intro",
+			"Review Toolhub tools where {username} is listed as author or maintainer, register toolinfo sources, and manage local submissions.",
 			{
-				value: count,
-				label: t("accountTools.totalMetric", "Matched tools"),
-				detail: t("accountTools.totalMetricDetail", "Official Toolhub records")
-			},
-			{
-				value: verifiedCount,
-				label: t("accountTools.verifiedMetric", "Verified"),
-				detail: t("accountTools.verifiedMetricDetail", "Authorship evidence accepted")
-			},
-			{
-				value: attentionCount,
-				label: t("accountTools.attentionMetric", "Needs review"),
-				detail: t("accountTools.attentionMetricDetail", "Name-only or pending evidence")
+				username: USER.name
 			}
-		],
-		body: `<section class="account-workbench__content-section" aria-labelledby="my-tools-heading">
-			<div class="section-head account-records__head account-workbench__content-head">
-				<div>
-					<h2 class="panel__title" id="my-tools-heading">${t("accountTools.authorshipHeading", "Toolhub authorship")}</h2>
-					<p class="signin-note">${t("accountTools.verificationPolicy", "Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere.")}</p>
-				</div>
-			</div>
-			${content}
-		</section>`
+		),
+		actions: submitButton,
+		className: "account-records account-tools at",
+		body: `${accountSection({
+			id: "my-tools-heading",
+			title: t("accountTools.authorshipHeading", "Toolhub authorship"),
+			intro: t(
+				"accountTools.verificationPolicy",
+				"Verification is per tool: a verified author claim on one tool does not verify the same author name everywhere."
+			),
+			body: content
+		})}
+		${registration.html}`
 	});
-	return { title: t("accountTools.docTitle", "My tools - Toolhub"), html };
+	return { title: t("accountTools.docTitle", "My tools - Toolhub"), html, mount: registration.mount };
 }

@@ -89,8 +89,8 @@ const SHELL = `
 	</div>
 	<div id="theme-toggle"></div>
 	<nav id="nav-links"><a href="/search">S</a><a href="/lists">L</a><a href="/graph">M</a><a href="/recent">R</a></nav>
-	<nav id="nav-mobile"><a href="/search">S</a><a href="/lists">L</a><a href="/graph">M</a><a href="/recent">R</a></nav>
-	<a id="submit-tool" href="/add-or-remove-tools"><span class="submit-tool__label"></span></a>
+		<nav id="nav-mobile"><a href="/search">S</a><a href="/lists">L</a><a href="/graph">M</a><a href="/recent">R</a></nav>
+		<a id="submit-tool" href="/my-tools"><span class="submit-tool__label"></span></a>
 	<button id="command-palette-trigger" type="button" aria-controls="command-palette" aria-expanded="false">
 		<span class="command-trigger__label"></span><kbd data-command-shortcut></kbd>
 	</button>
@@ -137,7 +137,7 @@ const SHELL = `
 	</aside>
 	<footer>
 		<nav data-footer-section="discover"><h2></h2><a href="/search"></a><a href="/lists"></a><a href="/graph"></a><a href="/members"></a><a href="/recent"></a></nav>
-		<nav data-footer-section="maintain"><h2></h2><a href="/add-or-remove-tools"></a><a href="/my-lists"></a><a href="/my-tools"></a><a href="/favorites"></a><a href="/developer-settings"></a><a href="/contribute"></a></nav>
+			<nav data-footer-section="maintain"><h2></h2><a href="/my-lists"></a><a href="/my-tools"></a><a href="/favorites"></a><a href="/developer-settings"></a><a href="/contribute"></a></nav>
 		<nav data-footer-section="project"><h2></h2><a href="/api-docs" data-i18n="shell.footer.apiExplorer">API explorer</a><a href="/styleguide"></a><a href="/crawler-history"></a><a href="/audit-logs"></a><a href="https://meta.wikimedia.org/wiki/Toolhub"></a><a href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main"></a><a href="https://phabricator.wikimedia.org/tag/toolhub/"></a></nav>
 		<nav data-footer-section="about"><h2></h2><a href="/about"></a><a href="/help"></a><a href="/community"></a><a href="/privacy"></a><a href="/terms"></a><a href="/code-of-conduct"></a><a href="/rss"></a><a href="/rules-of-engagement"></a></nav>
 		<a class="footer__maintain"><svg></svg><span class="footer__maintain-label"></span></a>

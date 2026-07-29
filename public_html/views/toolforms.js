@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc, isHttpUrl, textAttrs } from "../lib/core/dom.js";
-import { countLabel, t, tWithElements } from "../lib/core/i18n.js";
+import { countLabel, t } from "../lib/core/i18n.js";
 import {
 	backendErrorMessage,
 	backendErrorBody,
@@ -58,7 +58,7 @@ import {
 	syncStatusPanel,
 	validationErrorMessages
 } from "../lib/molecules/sync-status.js";
-import { accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
+import { accountSection } from "../lib/organisms/account-workbench.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
@@ -863,7 +863,7 @@ export async function viewToolForm(name) {
 			`;
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${editing ? toolHref(name) : "/add-or-remove-tools"}">${t("toolforms.back", "← Back")}</a>
+		<a class="back" href="${editing ? toolHref(name) : "/my-tools"}">${t("toolforms.back", "← Back")}</a>
 		<h1 class="page__title">${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 		<p class="page__intro">${t("toolforms.introSaved", "Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.
 		${isCrawler ? t("toolforms.crawlerOwnedNote", "Core fields of crawler-imported tools are owned by the maintainer's toolinfo.json; only origin=api tools are core-editable in official Toolhub.") : ""}</p>
@@ -930,7 +930,7 @@ export async function viewToolForm(name) {
 				const m = toolNewMap();
 				delete m[/** @type {string} */ (name)];
 				demoStore.set(DEMO_KEYS.toolNew, m);
-				navigateTo("/add-or-remove-tools");
+				navigateTo("/my-tools");
 			});
 		}
 		const officialDel = $("[data-tf-official-delete]");
@@ -946,7 +946,7 @@ export async function viewToolForm(name) {
 					);
 					clearLocalToolDraft(/** @type {string} */ (name));
 					clearApiCache();
-					navigateTo("/add-or-remove-tools");
+					navigateTo("/my-tools");
 				} catch (error) {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
@@ -1115,64 +1115,26 @@ async function addToolDiscoverToolinfoUrl(url, out, discoveryMisses, renderUrlLi
 	}
 }
 
-// Add/remove tools: official crawler URL registration plus local toolinfo ingest.
-export function viewAddTools() {
+// Tool registration workspace: official crawler URL registration plus local toolinfo ingest.
+export function toolRegistrationWorkspace() {
 	/** @type {Array<{ inputUrl: string, message: string, attempts?: Array<{ url?: string }> }>} */
 	const discoveryMisses = [];
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const registerBtn = button(t("toolforms.register", "Register"), { variant: "outline", type: "submit" });
-	const submitButton = button(t("toolforms.submitATool", "Submit a tool"), {
-		variant: "primary",
-		href: "/tools/create",
-		icon: "add"
-	});
-	const urlCount = crawlerUrls().length;
 	const localToolCount = Object.keys(toolNewMap()).length;
-	const introHtml = tWithElements(
-		"toolforms.ingestIntro",
-		"Register a {toolinfo} URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see {rulesOfEngagement}. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.",
-		{
-			toolinfo: "<code>toolinfo.json</code>",
-			rulesOfEngagement: `<a href="/rules-of-engagement">${esc(t("toolforms.rulesOfEngagement", "Rules of Engagement"))}</a>`
-		}
-	);
-	const html = accountWorkbenchPage({
-		active: "register",
-		title: t("toolforms.addOrRemoveTools", "Add or remove tools"),
+	const html = `${accountSection({
+		id: "add-toolinfo-url-title",
+		title: t("toolforms.findOrRegisterToolinfoTitle", "Find or register toolinfo.json"),
 		intro: t(
-			"toolforms.ingestIntroPlain",
-			"Register crawler URLs, ingest toolinfo, and review local submissions from one account workspace."
+			"toolforms.registerToolinfoNote",
+			"Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source."
 		),
-		introHtml,
-		source: t("toolforms.registrationSource", "Official crawler URLs + Evolved ingest"),
-		actions: submitButton,
-		className: "at",
-		metrics: [
-			{
-				value: countLabel(urlCount, t("toolforms.urlOne", "URL"), t("toolforms.urlOther", "URLs")),
-				label: t("toolforms.registeredUrlsMetric", "Registered URLs"),
-				detail: t("toolforms.registeredUrlsMetricDetail", "Crawler sources")
-			},
-			{
-				value: countLabel(localToolCount, t("toolforms.toolOne", "tool"), t("toolforms.toolOther", "tools")),
-				label: t("toolforms.localToolsMetric", "Local tools"),
-				detail: t("toolforms.localToolsMetricDetail", "Pasted toolinfo records")
-			}
-		],
-		body: `
-			${accountSection({
-				id: "add-toolinfo-url-title",
-				title: t("toolforms.findOrRegisterToolinfoTitle", "Find or register toolinfo.json"),
-				intro: t(
-					"toolforms.registerToolinfoNote",
-					"Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source."
-				),
-				body: `<form class="le__add" data-url-form novalidate>
+		body: `<form class="le__add" data-url-form novalidate>
 					${fInput(t("toolforms.fieldToolOrToolinfoUrl", "Tool homepage or toolinfo.json URL"), "at-url", "", { type: "url", ph: "https://example.org/", hint: t("toolforms.fieldToolOrToolinfoUrlHint", "Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.") })}
 					${registerBtn}
 				</form>
 				<ul class="at__urls" data-url-list>${addToolUrlRows(discoveryMisses)}</ul>`
-			})}
+	})}
 			${accountSection({
 				id: "add-toolinfo-json-title",
 				title: t("toolforms.ingestToolinfoTitle", "Ingest toolinfo"),
@@ -1204,8 +1166,7 @@ export function viewAddTools() {
 					"Recent local discovery attempts for pasted or registered toolinfo sources."
 				),
 				body: `<div data-crawler-runs>${addToolCrawlerRunRows([])}</div>`
-			})}`
-	});
+			})}`;
 	function mount() {
 		const renderUrlList = () => {
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = addToolUrlRows(discoveryMisses);
@@ -1340,7 +1301,16 @@ export function viewAddTools() {
 		});
 		clearHttpErrorWhenValid("at-url");
 	}
-	return { title: t("toolforms.addOrRemoveToolsDocTitle", "Add or remove tools — Toolhub"), html, mount };
+	return { html, mount };
+}
+
+export function viewAddTools() {
+	const workspace = toolRegistrationWorkspace();
+	return {
+		title: t("accountTools.docTitle", "My tools - Toolhub"),
+		html: `<div class="container page at">${workspace.html}</div>`,
+		mount: workspace.mount
+	};
 }
 
 // Edit a tool's COMMUNITY ANNOTATIONS. With a Toolhub session this writes
