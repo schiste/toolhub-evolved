@@ -58,6 +58,8 @@ test("routeSkeletonHTML chooses route-specific loading shapes", () => {
 	assert.match(routeSkeletonHTML("/recent"), /route-loading--table/);
 	assert.match(routeSkeletonHTML("/recent"), /class="recent-table skeleton-table"/);
 	assert.match(routeSkeletonHTML("/my-tools"), /class="account-records__table skeleton-table"/);
+	assert.match(routeSkeletonHTML("/preferences"), /Loading preferences/);
+	assert.match(routeSkeletonHTML("/preferences"), /class="account-records__table skeleton-table"/);
 	assert.match(routeSkeletonHTML("/crawler-history"), /class="runs skeleton-table"/);
 	assert.match(routeSkeletonHTML("/audit-logs"), /Loading audit logs/);
 	assert.match(routeSkeletonHTML("/lists"), /skeleton-grid--list/);

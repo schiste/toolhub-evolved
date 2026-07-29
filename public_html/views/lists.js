@@ -252,31 +252,22 @@ export function viewMyLists() {
 		href: "/lists/create",
 		icon: "add"
 	});
-	const body = `<section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
-		<div class="section-head account-workbench__content-head">
-			<div>
-				<h2 class="panel__title" id="my-lists-heading">${t("lists.listWorkspace", "List workspace")}</h2>
-				<p class="signin-note">${t("lists.yourListsNote", "Drafts, fallbacks, and local list records attached to this Toolhub sign-in.")}</p>
-			</div>
-		</div>
-		${
-			cards.length > 0
-				? grid("grid-lists", cards, listCard)
-				: accountEmptyState({
-						iconName: "list",
-						title: t("lists.noListsYetTitle", "No lists yet"),
-						body: t(
-							"lists.noListsYetBody",
-							"Create a list to group useful tools for a task, team, or wiki workflow."
-						),
-						action: button(t("lists.createFirstList", "Create your first list"), {
-							variant: "primary",
-							href: "/lists/create",
-							icon: "add"
-						})
+	const body =
+		cards.length > 0
+			? grid("grid-lists", cards, listCard)
+			: accountEmptyState({
+					iconName: "list",
+					title: t("lists.noListsYetTitle", "No lists yet"),
+					body: t(
+						"lists.noListsYetBody",
+						"Create a list to group useful tools for a task, team, or wiki workflow."
+					),
+					action: button(t("lists.createFirstList", "Create your first list"), {
+						variant: "primary",
+						href: "/lists/create",
+						icon: "add"
 					})
-		}
-	</section>`;
+				});
 	const html = accountWorkbenchPage({
 		active: "lists",
 		title: t("lists.yourLists", "Your lists"),
@@ -316,15 +307,7 @@ export async function viewFavorites() {
 			active: "favorites",
 			title: t("lists.favorites", "Favorites"),
 			intro: t("lists.favoritesIntroClean", "Tools you saved for quick return, comparison, or later curation."),
-			body: `<section class="account-workbench__content-section" aria-labelledby="favorites-heading">
-				<div class="section-head account-workbench__content-head">
-					<div>
-						<h2 class="panel__title" id="favorites-heading">${t("lists.savedToolShelf", "Saved tool shelf")}</h2>
-						<p class="signin-note">${t("lists.favoritesNote", "Favorites stay close to your account workspace so they are easy to compare with lists and maintained tools.")}</p>
-					</div>
-				</div>
-				${body}
-			</section>`
+			body
 		})
 	};
 }

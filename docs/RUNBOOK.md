@@ -92,6 +92,12 @@ remains the permission authority and may reject the request.
    local user using `GET /api/user/`, and `/v1/config/` should report
    `"oauth": true` and `"officialWrites": true`.
 
+For local browser testing without a Toolhub OAuth application, set
+`TOOLHUB_INSECURE_COOKIES=1` and `TOOLHUB_DEV_LOGIN=1`, then visit
+`/oauth/dev-login?next=/my-tools` on `localhost` or `127.0.0.1`. This creates an
+Evolved-only session and deliberately does not store a Toolhub OAuth grant, so
+`/v1/user/` reports `"officialWrites": false`.
+
 ## Database (ToolsDB)
 
 - Create once: `sql tools` then `CREATE DATABASE sXXXX__toolhub_evolved;`

@@ -11,6 +11,8 @@ import { DEMO_KEYS, SOURCE, SYNC_STATUS, demoStore, setStoreSync, withSyncMuted 
 
 let csrf = "";
 let oauthReady = false;
+let devLoginReady = false;
+let officialWriteReady = false;
 // Pushes are serialized on one chain so overlay writes reach the server in
 // mutation order (each key's PUT replaces that key's server copy wholesale).
 let chain = Promise.resolve();
@@ -19,8 +21,12 @@ export function oauthAvailable() {
 	return oauthReady;
 }
 
+export function devLoginAvailable() {
+	return devLoginReady;
+}
+
 export function officialWriteAvailable() {
-	return Boolean(csrf);
+	return officialWriteReady;
 }
 
 /** Session CSRF token, for the sign-out form (every other write sends it as a header). */
@@ -48,6 +54,9 @@ export function serverWrite(method, path, body) {
  * @returns {Promise<any>}
  */
 export function officialWrite(method, path, body) {
+	if (!officialWriteReady) {
+		throw new Error(csrf ? "Toolhub OAuth grant is required" : "Toolhub sign-in is required");
+	}
 	return serverWrite(method, path, body).then((data) => {
 		invalidateApiCacheForOfficialWrite(method, path, body, data);
 		return data;
@@ -95,23 +104,33 @@ export async function initServerSync() {
 	try {
 		me = await backendGetJson("/v1/user/");
 	} catch {
+		csrf = "";
+		oauthReady = false;
+		devLoginReady = false;
+		officialWriteReady = false;
 		setServerUser(null);
 		return false; // backend unreachable -> read-only write features
 	}
 	if (!me || !me.authenticated) {
+		csrf = "";
+		officialWriteReady = false;
 		// Logged out: learn whether real sign-in is configured, then let the
 		// account UI re-render with (or without) the Toolhub OAuth button.
 		try {
 			const cfg = await backendGetJson("/v1/config/");
 			oauthReady = Boolean(cfg && cfg.oauth);
+			devLoginReady = Boolean(cfg && cfg.devLogin);
 		} catch {
 			oauthReady = false;
+			devLoginReady = false;
 		}
 		setServerUser(null);
 		return false;
 	}
 	csrf = String(me.csrf || "");
 	oauthReady = true;
+	devLoginReady = false;
+	officialWriteReady = me.officialWrites === false ? false : Boolean(csrf);
 	let overlay;
 	try {
 		overlay = await backendGetJson("/v1/overlay/");

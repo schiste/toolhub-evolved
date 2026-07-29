@@ -2,7 +2,6 @@
 import { $, $input, esc } from "../lib/core/dom.js";
 import { backendErrorMessage, backendGetJson } from "../lib/core/api.js";
 import { t, tWithElements } from "../lib/core/i18n.js";
-import { USER } from "../lib/core/session.js";
 import { serverWrite } from "../lib/core/serversync.js";
 import {
 	TOOLINFO_DATA_MODEL_URL,
@@ -14,12 +13,9 @@ import { button } from "../lib/atoms/button.js";
 import { fArea, fInput } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
 import { accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
-import { linkCard } from "./static.js";
 
 const TOOLHUB_BASE = "https://toolhub.wikimedia.org";
 const TOOLHUB_DEVELOPER_SETTINGS_URL = `${TOOLHUB_BASE}/developer-settings`;
-const TOOLHUB_API_TOKEN_URL = `${TOOLHUB_BASE}/api/user/authtoken/`;
-const TOOLHUB_AUTHORIZED_APPS_URL = `${TOOLHUB_BASE}/api/oauth/authorized/`;
 
 /** @param {string} label @param {string} id @param {number} rows */
 function outputArea(label, id, rows) {
@@ -35,13 +31,6 @@ function externalButton(href, label) {
 		icon: "external",
 		attrs: 'target="_blank" rel="noopener nofollow"'
 	});
-}
-
-function officialMyAppsUrl() {
-	const username = encodeURIComponent(USER.name || "");
-	return username
-		? `${TOOLHUB_BASE}/api/oauth/applications/?user__username=${username}`
-		: TOOLHUB_DEVELOPER_SETTINGS_URL;
 }
 
 /** @param {unknown} value */
@@ -135,17 +124,10 @@ export function viewDeveloperSettings() {
 		TOOLHUB_DEVELOPER_SETTINGS_URL,
 		t("developerSettings.openToolhub", "Open Toolhub developer settings")
 	)}
-	${button(t("developerSettings.reconnect", "Reconnect Toolhub OAuth"), {
-		variant: "outline",
-		href: "/oauth/login"
-	})}`;
-	const developerLinks = `<div class="linkgrid account-data__links">
-		${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools and Evolved authorship verification for this account."), "/my-tools", true)}
-		${linkCard(icon("code"), t("developerSettings.toolinfoSchema", "API explorer and toolinfo schema"), t("developerSettings.toolinfoSchemaDesc", "Run read-only endpoints, inspect the schema, and copy integration examples."), "/api-docs", true)}
-		${linkCard(icon("code"), t("developerSettings.myApps", "My apps"), t("developerSettings.myAppsDesc", "Open OAuth client applications registered on official Toolhub by this account."), officialMyAppsUrl())}
-		${linkCard(icon("key"), t("developerSettings.apiToken", "API token"), t("developerSettings.apiTokenDesc", "Create or retrieve your official Toolhub API token on Toolhub."), TOOLHUB_API_TOKEN_URL)}
-		${linkCard(icon("check"), t("developerSettings.authorizedApps", "Authorized apps"), t("developerSettings.authorizedAppsDesc", "Review applications you have authorized on official Toolhub."), TOOLHUB_AUTHORIZED_APPS_URL)}
-	</div>`;
+		${button(t("developerSettings.reconnect", "Reconnect Toolhub OAuth"), {
+			variant: "outline",
+			href: "/oauth/login"
+		})}`;
 	const signedToolinfoBody = `<div class="prose account-keys__schema-note">
 		<h3>${t("developerSettings.toolinfoSchemaHeading", "toolinfo.json reference")}</h3>
 		<p>${tWithElements("developerSettings.toolinfoSchemaBody", "Toolhub validates crawler input against {version}. Start with the required fields, add _schema for the version marker, then build a signing payload from the exact object you publish.", { version: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
@@ -180,24 +162,10 @@ export function viewDeveloperSettings() {
 		title: t("developerSettings.title", "Developer settings"),
 		intro: t(
 			"developerSettings.intro",
-			"Manage Toolhub developer features connected to this sign-in. OAuth applications and API tokens remain official Toolhub data."
+			"Manage Evolved developer features connected to this sign-in. Official Toolhub developer tasks open on Toolhub."
 		),
 		actions: toolhubActions,
 		body: `
-			${accountSection({
-				id: "developer-toolhub-title",
-				title: t("developerSettings.toolhubTitle", "Official Toolhub developer settings"),
-				intro: t(
-					"developerSettings.toolhubNote",
-					"Toolhub remains the source of truth for OAuth applications, authorized applications, and API tokens. Evolved lists what it can read through the public API and sends sensitive management tasks back to Toolhub."
-				),
-				body: ""
-			})}
-			${accountSection({
-				id: "developer-pages-title",
-				title: t("developerSettings.pagesTitle", "Developer pages"),
-				body: developerLinks
-			})}
 			${accountSection({
 				id: "developer-signed-toolinfo-title",
 				title: t("developerSettings.signedToolinfoTitle", "Signed toolinfo authorship"),

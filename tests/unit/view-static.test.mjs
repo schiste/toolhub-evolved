@@ -3,10 +3,16 @@ import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
 import * as S from "../../public_html/views/static.js";
 import * as api from "../../public_html/lib/core/api.js";
+import * as serversync from "../../public_html/lib/core/serversync.js";
 
 vi.mock("../../public_html/lib/core/api.js", async (importOriginal) => {
 	const actual = await importOriginal();
 	return { ...actual, apiGet: vi.fn() };
+});
+
+vi.mock("../../public_html/lib/core/serversync.js", async (importOriginal) => {
+	const actual = await importOriginal();
+	return { ...actual, devLoginAvailable: vi.fn(() => false) };
 });
 
 beforeEach(() => vi.clearAllMocks());
@@ -97,6 +103,15 @@ test("signInPage renders the Toolhub OAuth sign-in stub", () => {
 	assert.ok(view.html.includes('href="/oauth/login"'));
 	assert.ok(view.html.includes("Sign in with Toolhub"));
 	assert.ok(view.html.includes("Official writes still follow Toolhub's permissions"));
+});
+
+test("signInPage renders the local dev sign-in stub when available", () => {
+	serversync.devLoginAvailable.mockReturnValue(true);
+	window.history.replaceState({}, "", "/preferences?x=1");
+	const view = S.signInPage("Preferences", "Lead");
+	assert.ok(view.html.includes("Evolved-only test session"));
+	assert.ok(view.html.includes('href="/oauth/dev-login?next=%2Fpreferences%3Fx%3D1"'));
+	assert.ok(view.html.includes("Use local dev sign-in"));
 });
 
 test("viewNotFound renders the 404 page", () => {

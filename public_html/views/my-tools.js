@@ -5,7 +5,7 @@ import { countLabel, relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
-import { accountEmptyState, accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
+import { accountEmptyState, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { toolRegistrationWorkspace } from "./toolforms.js";
 
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
@@ -289,12 +289,7 @@ export async function viewMyTools() {
 			}
 		),
 		className: "account-records account-tools at",
-		body: `${accountSection({
-			id: "my-tools-heading",
-			title: t("accountTools.authorshipHeading", "Tools"),
-			body: content
-		})}
-		${registration.html}`
+		body: `${content}${registration.html}`
 	});
 	return { title: t("accountTools.docTitle", "My tools - Toolhub"), html, mount: registration.mount };
 }

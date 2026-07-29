@@ -5,7 +5,7 @@ import { useSmokeServer } from "./harness.mjs";
 test.describe("Account workbench layout", () => {
 	const smoke = useSmokeServer();
 
-	test("keeps My tools tabs aligned and retired submit UI absent", async ({ page }) => {
+	async function mockSignedIn(page) {
 		await page.route("**/v1/user/", (route) =>
 			route.fulfill({
 				contentType: "application/json; charset=utf-8",
@@ -15,6 +15,10 @@ test.describe("Account workbench layout", () => {
 		await page.route("**/v1/overlay/", (route) =>
 			route.fulfill({ contentType: "application/json; charset=utf-8", json: {} })
 		);
+	}
+
+	test("keeps My tools tabs aligned and retired submit UI absent", async ({ page }) => {
+		await mockSignedIn(page);
 		await page.route("**/v1/crawler/runs/", (route) =>
 			route.fulfill({ contentType: "application/json; charset=utf-8", json: { count: 0, results: [] } })
 		);
@@ -70,6 +74,10 @@ test.describe("Account workbench layout", () => {
 		await expect(page.locator("#submit-tool")).toHaveCount(0);
 		await expect(page.locator(".account-workbench__toolbar")).toHaveCount(0);
 		await expect(page.locator(".account-workbench__section-head")).toHaveCount(0);
+		await expect(page.locator("#my-tools-heading")).toHaveCount(0);
+		await expect(
+			page.locator('.account-workbench__body > .account-workbench__section[aria-labelledby="my-tools-heading"]')
+		).toHaveCount(0);
 		await expect(page.getByText("Toolhub authorship")).toHaveCount(0);
 		await expect(page.getByText("Official Toolhub data + Evolved verification")).toHaveCount(0);
 		await expect(page.getByText("toolsadmin feed")).toHaveCount(0);
@@ -86,13 +94,19 @@ test.describe("Account workbench layout", () => {
 		expect(tabBoxes.every((box) => Math.abs(box.top - firstTab.top) <= 1)).toBe(true);
 		expect(tabBoxes.every((box) => Math.abs(box.height - firstTab.height) <= 1)).toBe(true);
 		await expect(page.locator(".account-workbench__nav .is-active")).toHaveCSS("color", "rgb(12, 87, 168)");
+		await expect(page.locator(".account-workbench__nav .is-active")).toHaveCSS(
+			"background-color",
+			"rgb(231, 240, 250)"
+		);
 		await expect
 			.poll(() =>
-				page
-					.locator(".account-workbench__nav .is-active")
-					.evaluate((item) => getComputedStyle(item, "::after").backgroundColor)
+				page.locator(".account-workbench__nav .is-active").evaluate((item) => {
+					const after = getComputedStyle(item, "::after");
+					return { backgroundColor: after.backgroundColor, bottom: after.bottom, height: after.height };
+				})
 			)
-			.toBe("rgb(12, 87, 168)");
+			.toEqual({ backgroundColor: "rgb(12, 87, 168)", bottom: "0px", height: "3px" });
+		await expect(page.locator('.account-workbench__nav a[href="/preferences"]')).toHaveText(/Preferences/);
 
 		await expect(page.locator(".account-records__table")).toBeVisible();
 		await expect(page.getByText("Unverified author name")).toHaveCount(0);
@@ -111,5 +125,18 @@ test.describe("Account workbench layout", () => {
 				.filter(Boolean)
 		);
 		expect(badgeOverflow).toEqual([]);
+	});
+
+	test("keeps collection tabs free of duplicate section headings", async ({ page }) => {
+		await mockSignedIn(page);
+		await page.setViewportSize({ width: 1365, height: 768 });
+
+		for (const routePath of ["/my-lists", "/favorites"]) {
+			await page.goto(new URL(routePath, smoke.url).href);
+			await expect(page.locator("#my-lists-heading")).toHaveCount(0);
+			await expect(page.locator("#favorites-heading")).toHaveCount(0);
+			await expect(page.locator(".account-workbench__body > .account-workbench__content-section")).toHaveCount(0);
+			await expect(page.locator(".account-workbench__nav [aria-current='page']")).toBeVisible();
+		}
 	});
 });

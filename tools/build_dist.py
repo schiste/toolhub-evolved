@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # ruff: noqa: INP001 - standalone deploy script, not an importable package
-"""Build a minified `dist/` mirror of `public_html/` for production serving.
+"""Build a production `dist/` mirror of `public_html/` for serving.
 
 The project is deliberately no-build and served raw in development, but the
-Toolforge webservice has no Node toolchain — so we minify with the pure-Python
-rjsmin/rcssmin (conservative comment + whitespace stripping, no name mangling,
-string/regex/template-literal safe). `proxy/app.py` serves `dist/` when it
-exists and falls back to `public_html/` otherwise, so local dev is unaffected.
+Toolforge webservice has no Node toolchain. CSS is minified with pure-Python
+rcssmin, while JS stays unminified because Python JS minifiers are not reliable
+for this app's modern template-literal rendering. `proxy/app.py` serves `dist/`
+when it exists and falls back to `public_html/` otherwise, so local dev is
+unaffected unless a previous build is present.
 
 Run from anywhere: `python tools/build_dist.py`.
 """
@@ -30,6 +31,12 @@ _JS_IMPORT_RE = re.compile(
 )
 
 
+def _source_fingerprint() -> str:
+    """Return a local fingerprint for source changes not yet represented by git."""
+    latest = max((path.stat().st_mtime_ns for path in SRC.rglob("*") if path.is_file()), default=0)
+    return f"{latest:x}"
+
+
 def _asset_version() -> str:
     """Return a stable build id for cache-busting deployed static assets."""
     if os.environ.get("TOOLHUB_ASSET_VERSION"):
@@ -44,11 +51,18 @@ def _asset_version() -> str:
             timeout=5,
         ).stdout.strip()
         if rev:
-            return rev
+            dirty = subprocess.run(
+                ["git", "status", "--porcelain", "--", "public_html"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+            return f"{rev}-{_source_fingerprint()}" if dirty else rev
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
-    latest = max((path.stat().st_mtime_ns for path in SRC.rglob("*") if path.is_file()), default=0)
-    return hex(latest)[2:]
+    return _source_fingerprint()
 
 
 def _append_version(url: str, version: str) -> str:
@@ -80,9 +94,13 @@ def _version_js_imports(text: str, version: str) -> str:
 
 
 def _minify_js(text: str) -> str:
-    import rjsmin
+    """Return JavaScript unchanged.
 
-    return rjsmin.jsmin(text)
+    rjsmin rewrites leading spaces inside some template-literal interpolation
+    strings, which can merge HTML class names at runtime. Keep JS source intact;
+    the app's JS payload budget is enforced separately on public_html/.
+    """
+    return text
 
 
 def _minify_css(text: str) -> str:
@@ -92,7 +110,7 @@ def _minify_css(text: str) -> str:
 
 
 def build() -> tuple[int, int]:
-    """Mirror SRC into DIST, minifying .js/.css and copying everything else.
+    """Mirror SRC into DIST, preserving JS, minifying CSS, and copying everything else.
 
     Builds into a temp dir and swaps it in atomically, so an interrupted build
     never leaves a partial dist/ for the proxy to serve.
@@ -131,4 +149,7 @@ def build() -> tuple[int, int]:
 if __name__ == "__main__":
     raw_bytes, mini_bytes = build()
     pct = 0 if raw_bytes == 0 else round((raw_bytes - mini_bytes) * 100 / raw_bytes)
-    sys.stdout.write(f"Built {DIST} — JS/CSS {raw_bytes} -> {mini_bytes} bytes ({pct}% smaller, pre-gzip)\n")
+    sys.stdout.write(
+        f"Built {DIST} — JS preserved, CSS minified; JS/CSS {raw_bytes} -> {mini_bytes} bytes "
+        f"({pct}% smaller, pre-gzip)\n"
+    )

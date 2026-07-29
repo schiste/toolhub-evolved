@@ -2,6 +2,7 @@
 import { esc, safeUrl } from "../lib/core/dom.js";
 import { t, tWithElements } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
+import { devLoginAvailable } from "../lib/core/serversync.js";
 import { mountApiExplorer, renderApiExplorer } from "../lib/organisms/api-explorer.js";
 import {
 	TOOLINFO_DATA_MODEL_URL,
@@ -296,14 +297,30 @@ export async function viewApiDocs() {
  * @returns {{ title: string, html: string }}
  */
 export function signInPage(title, lead) {
+	const nextPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+	const devLogin = devLoginAvailable();
+	const signInHref = devLogin ? `/oauth/dev-login?next=${encodeURIComponent(nextPath)}` : "/oauth/login";
+	const signInIcon = devLogin ? "system" : "external";
+	const signInLabel = devLogin
+		? t("static.signIn.devLoginButton", "Use local dev sign-in")
+		: t("static.signIn.continueButton", "Sign in with Toolhub");
+	const signInNote = devLogin
+		? t(
+				"static.signIn.devLoginNote",
+				"Local dev sign-in creates an Evolved-only test session. Official Toolhub writes stay unavailable."
+			)
+		: t(
+				"static.signIn.oauthNote",
+				"Toolhub Evolved signs you in with official Toolhub OAuth, then uses Toolhub's user API to identify you locally."
+			);
 	return {
 		title: t("static.pageTitle", "{title} — Toolhub", { title }),
 		html: `
 		<div class="container page"><article class="prose prose--page">
 			<h1>${esc(title)}</h1>
 			<p>${lead}</p>
-			<p>${t("static.signIn.oauthNote", "Toolhub Evolved signs you in with official Toolhub OAuth, then uses Toolhub's user API to identify you locally.")}</p>
-			<p>${button(t("static.signIn.continueButton", "Sign in with Toolhub"), { variant: "primary", href: "/oauth/login", icon: "external" })}</p>
+			<p>${signInNote}</p>
+			<p>${button(signInLabel, { variant: "primary", href: signInHref, icon: signInIcon })}</p>
 			<p class="signin-note">${t("static.signIn.readOnlyNote", "Official writes still follow Toolhub's permissions. Evolved keeps supported rejected writes locally as drafts or overlays so you can revise them.")}</p>
 		</article></div>`
 	};

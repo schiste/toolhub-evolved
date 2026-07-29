@@ -449,7 +449,7 @@
 .tab-bar__item::after {
 	position: absolute;
 	inset-inline: var(--space-2);
-	inset-block-end: calc(-1 * var(--border-width-base));
+	inset-block-end: 0;
 	height: var(--border-width-heavy);
 	background: transparent;
 	content: "";
@@ -464,6 +464,7 @@
 .tab-bar__item.is-active,
 .tab-bar__item.is-active:hover,
 .tab-bar__item.is-active:focus-visible {
+	background: var(--color-progressive-subtle);
 	color: var(--color-progressive);
 	font-weight: 700;
 }

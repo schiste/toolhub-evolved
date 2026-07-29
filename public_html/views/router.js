@@ -102,11 +102,12 @@ export const ROUTES = {
 			t("router.favoritesLead", "Your saved tools, all in one place.")
 		),
 	"add-or-remove-tools": () => redirectTo("/my-tools"),
-	account: () =>
+	account: () => redirectTo("/preferences"),
+	preferences: () =>
 		requireSignIn(
 			() => loadAccountSettings().then((m) => m.viewAccountSettings()),
-			t("router.accountTitle", "Evolved data settings"),
-			t("router.accountLead", "Export or delete Evolved-local data for this Toolhub sign-in.")
+			t("router.preferencesTitle", "Preferences"),
+			t("router.preferencesLead", "Manage Evolved-specific preferences and local account data.")
 		),
 	"my-tools": () =>
 		requireSignIn(
@@ -118,7 +119,7 @@ export const ROUTES = {
 		requireSignIn(
 			() => loadDeveloperSettings().then((m) => m.viewDeveloperSettings()),
 			t("router.devSettingsTitle", "Developer settings"),
-			t("router.devSettingsLead", "Manage your API tokens and registered OAuth applications.")
+			t("router.devSettingsLead", "Manage Evolved developer features for this Toolhub sign-in.")
 		),
 	login: () =>
 		signInPage(

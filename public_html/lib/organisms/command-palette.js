@@ -155,10 +155,21 @@ function actions() {
 		{
 			id: "developer",
 			title: t("commandPalette.developerSettings", "Developer settings"),
-			description: t("commandPalette.developerSettingsDesc", "Manage API tokens and OAuth applications."),
+			description: t("commandPalette.developerSettingsDesc", "Manage Evolved developer features."),
 			href: "/developer-settings",
 			iconName: "key",
-			keywords: ["api", "tokens", "oauth", "settings"]
+			keywords: ["developer", "toolinfo", "signing", "keys", "settings"]
+		},
+		{
+			id: "preferences",
+			title: t("commandPalette.preferences", "Preferences"),
+			description: t(
+				"commandPalette.preferencesDesc",
+				"Manage Evolved-specific settings and local account data."
+			),
+			href: "/preferences",
+			iconName: "system",
+			keywords: ["account", "settings", "preferences", "export", "delete", "data"]
 		},
 		{
 			id: "styleguide",

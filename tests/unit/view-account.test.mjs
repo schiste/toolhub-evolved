@@ -36,34 +36,33 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("viewAccountSettings renders export, delete, and OAuth controls", () => {
 	const r = viewAccountSettings();
-	assert.equal(r.title, "Evolved data settings - Toolhub");
+	assert.equal(r.title, "Preferences - Toolhub");
+	assert.ok(!r.html.includes("Evolved preferences"));
+	assert.ok(!r.html.includes("Configurable Evolved-only settings will appear here as they become available."));
 	assert.ok(r.html.includes("Generate export"));
 	assert.ok(r.html.includes("Delete Evolved-local data"));
 	assert.ok(r.html.includes('href="/oauth/login"'));
 	assert.ok(r.html.includes('method="post" action="/oauth/logout"'));
 });
 
-test("viewDeveloperSettings renders the Toolhub developer hub and profile links", () => {
+test("viewDeveloperSettings renders signed-toolinfo settings without the removed developer page directory", () => {
 	const r = viewDeveloperSettings();
 	assert.equal(r.title, "Developer settings - Toolhub");
-	assert.ok(r.html.includes("Official Toolhub developer settings"));
+	assert.ok(!r.html.includes("Official Toolhub developer settings"));
+	assert.ok(!r.html.includes("Developer pages"));
 	assert.ok(r.html.includes("Signed toolinfo authorship"));
-	assert.ok(r.html.includes("toolinfo schema"));
 	assert.ok(r.html.includes("toolinfo.json reference"));
 	assert.ok(r.html.includes("&quot;_schema&quot;: &quot;/toolinfo/1.2.2&quot;"));
 	assert.ok(r.html.includes("current.yaml"));
 	assert.ok(r.html.includes("Register key"));
 	assert.ok(r.html.includes("Build payload"));
-	assert.ok(r.html.includes('href="/my-tools"'));
-	assert.ok(r.html.includes('href="/api-docs"'));
-	assert.ok(r.html.includes("Review official Toolhub tools and Evolved authorship verification"));
-	assert.ok(r.html.includes("My apps"));
-	assert.ok(
-		r.html.includes('href="https://toolhub.wikimedia.org/api/oauth/applications/?user__username=Ada%20Lovelace"')
-	);
+	assert.ok(!r.html.includes("account-data__links"));
+	assert.ok(!r.html.includes('href="/api-docs"'));
+	assert.ok(!r.html.includes("Review official Toolhub tools and Evolved authorship verification"));
+	assert.ok(!r.html.includes("My apps"));
 	assert.ok(!r.html.includes('href="/my-apps"'));
-	assert.ok(r.html.includes("API token"));
-	assert.ok(r.html.includes("Authorized apps"));
+	assert.ok(!r.html.includes("API token"));
+	assert.ok(!r.html.includes("Authorized apps"));
 	assert.ok(r.html.includes('href="https://toolhub.wikimedia.org/developer-settings"'));
 });
 

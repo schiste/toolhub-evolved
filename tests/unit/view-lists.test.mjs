@@ -277,21 +277,14 @@ const S = {
 				<span class="tab-bar__copy account-workbench__nav-copy">
 					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
-				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/preferences">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18 2a1 1 0 011 1v10a1 1 0 01-1 1h-5v2h2a1 1 0 010 2H6a1 1 0 010-2h2v-2H2a1 1 0 01-1-1V3a1 1 0 011-1zm-1 2H3v8h14z"/></svg></span>
 				<span class="tab-bar__copy account-workbench__nav-copy">
-					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
+					<span class="tab-bar__label account-workbench__nav-label">Preferences</span>
 				</span>
 			</a>
 	</nav>
-		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="favorites-heading">
-				<div class="section-head account-workbench__content-head">
-					<div>
-						<h2 class="panel__title" id="favorites-heading">Saved tool shelf</h2>
-						<p class="signin-note">Favorites stay close to your account workspace so they are easy to compare with lists and maintained tools.</p>
-					</div>
-				</div>
-				<ul class="card-grid grid-tools" role="list"><li>
+		<div class="account-workbench__body"><ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
 		
 		<div class="tcard__head">
@@ -305,8 +298,7 @@ const S = {
 		<div class="tcard__tags"></div>
 		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
-	</article></li></ul>
-			</section></div>
+	</article></li></ul></div>
 	</div>`,
 	favorites_empty: `<div class="container page account-data account-workbench">
 		<header class="account-workbench__hero">
@@ -340,29 +332,21 @@ const S = {
 				<span class="tab-bar__copy account-workbench__nav-copy">
 					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
-				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/preferences">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18 2a1 1 0 011 1v10a1 1 0 01-1 1h-5v2h2a1 1 0 010 2H6a1 1 0 010-2h2v-2H2a1 1 0 01-1-1V3a1 1 0 011-1zm-1 2H3v8h14z"/></svg></span>
 				<span class="tab-bar__copy account-workbench__nav-copy">
-					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
+					<span class="tab-bar__label account-workbench__nav-label">Preferences</span>
 				</span>
 			</a>
 	</nav>
-		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="favorites-heading">
-				<div class="section-head account-workbench__content-head">
-					<div>
-						<h2 class="panel__title" id="favorites-heading">Saved tool shelf</h2>
-						<p class="signin-note">Favorites stay close to your account workspace so they are easy to compare with lists and maintained tools.</p>
-					</div>
-				</div>
-				<div class="account-empty">
+		<div class="account-workbench__body"><div class="account-empty">
 		<span class="account-empty__icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg></span>
 		<div class="account-empty__copy">
 			<h2>No favorites yet</h2>
 			<p>Save tools from any card or tool page and they will appear here.</p>
 			<div class="account-empty__actions"><a class="btn btn--primary btn--md" href="/search"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg> Browse tools</a></div>
 		</div>
-	</div>
-			</section></div>
+	</div></div>
 	</div>`,
 	le_results: `<button class="le__result is-in" type="button" data-add="a" disabled="">
 						<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"></path></svg> <span dir="auto">A</span></button><button class="le__result" type="button" data-add="c">
@@ -418,30 +402,22 @@ const S = {
 				<span class="tab-bar__copy account-workbench__nav-copy">
 					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
-				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/preferences">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18 2a1 1 0 011 1v10a1 1 0 01-1 1h-5v2h2a1 1 0 010 2H6a1 1 0 010-2h2v-2H2a1 1 0 01-1-1V3a1 1 0 011-1zm-1 2H3v8h14z"/></svg></span>
 				<span class="tab-bar__copy account-workbench__nav-copy">
-					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
+					<span class="tab-bar__label account-workbench__nav-label">Preferences</span>
 				</span>
 			</a>
 	</nav>
 		<div class="account-workbench__toolbar"><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
-		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
-		<div class="section-head account-workbench__content-head">
-			<div>
-				<h2 class="panel__title" id="my-lists-heading">List workspace</h2>
-				<p class="signin-note">Drafts, fallbacks, and local list records attached to this Toolhub sign-in.</p>
-			</div>
-		</div>
-		<ul class="card-grid grid-lists" role="list"><li>
+		<div class="account-workbench__body"><ul class="card-grid grid-lists" role="list"><li>
 	<a class="lcard" href="/lists/demo-1" aria-label="Mine list, 2 tools">
 		<span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">M</span>
 		<div class="lcard__body">
 			<div class="lcard__title" dir="auto">Mine <span class="lcard__count">2 tools</span> <span class="sync-badge sync-badge--local-draft">Saved locally</span></div>
 			<div class="lcard__desc" dir="auto">d</div>
 		</div>
-	</a></li></ul>
-	</section></div>
+	</a></li></ul></div>
 	</div>`,
 	mylists_empty: `<div class="container page account-data account-workbench">
 		<header class="account-workbench__hero">
@@ -475,30 +451,22 @@ const S = {
 				<span class="tab-bar__copy account-workbench__nav-copy">
 					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
-				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/preferences">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18 2a1 1 0 011 1v10a1 1 0 01-1 1h-5v2h2a1 1 0 010 2H6a1 1 0 010-2h2v-2H2a1 1 0 01-1-1V3a1 1 0 011-1zm-1 2H3v8h14z"/></svg></span>
 				<span class="tab-bar__copy account-workbench__nav-copy">
-					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
+					<span class="tab-bar__label account-workbench__nav-label">Preferences</span>
 				</span>
 			</a>
 	</nav>
 		<div class="account-workbench__toolbar"><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
-		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
-		<div class="section-head account-workbench__content-head">
-			<div>
-				<h2 class="panel__title" id="my-lists-heading">List workspace</h2>
-				<p class="signin-note">Drafts, fallbacks, and local list records attached to this Toolhub sign-in.</p>
-			</div>
-		</div>
-		<div class="account-empty">
+		<div class="account-workbench__body"><div class="account-empty">
 		<span class="account-empty__icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
 		<div class="account-empty__copy">
 			<h2>No lists yet</h2>
 			<p>Create a list to group useful tools for a task, team, or wiki workflow.</p>
 			<div class="account-empty__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create your first list</a></div>
 		</div>
-	</div>
-	</section></div>
+	</div></div>
 	</div>`,
 	overview_empty: `
 	<div class="container page">

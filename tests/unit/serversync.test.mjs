@@ -43,6 +43,8 @@ test("backend unreachable → demo mode, no server user", async () => {
 	mockFetch({}); // every fetch throws
 	assert.equal(await serversync.initServerSync(), false);
 	assert.equal(serversync.oauthAvailable(), false);
+	assert.equal(serversync.devLoginAvailable(), false);
+	assert.equal(serversync.officialWriteAvailable(), false);
 	assert.equal(session.serverUserName(), null);
 });
 
@@ -54,10 +56,12 @@ test("logged out: learns oauth availability from /v1/config/", async () => {
 	});
 	mockFetch({
 		"/v1/user/": { ok: false, json: {} },
-		"/v1/config/": { json: { oauth: true } }
+		"/v1/config/": { json: { oauth: true, devLogin: true } }
 	});
 	assert.equal(await serversync.initServerSync(), false);
 	assert.equal(serversync.oauthAvailable(), true);
+	assert.equal(serversync.devLoginAvailable(), true);
+	assert.equal(serversync.officialWriteAvailable(), false);
 	assert.equal(session.serverUserName(), null);
 	assert.equal(rendered, 1); // the account UI was told to re-render
 });
@@ -67,6 +71,8 @@ test("logged out with config unavailable → oauth treated as unconfigured", asy
 	mockFetch({ "/v1/user/": { json: { authenticated: false } } }); // /v1/config/ throws
 	assert.equal(await serversync.initServerSync(), false);
 	assert.equal(serversync.oauthAvailable(), false);
+	assert.equal(serversync.devLoginAvailable(), false);
+	assert.equal(serversync.officialWriteAvailable(), false);
 });
 
 test("authenticated but overlay pull fails → still shows the real session", async () => {
@@ -76,6 +82,17 @@ test("authenticated but overlay pull fails → still shows the real session", as
 	assert.equal(session.serverUserName(), "Ada");
 	assert.equal(serversync.oauthAvailable(), true);
 	assert.equal(serversync.officialWriteAvailable(), true);
+});
+
+test("authenticated local dev session disables official Toolhub writes", async () => {
+	const { serversync, session } = await load();
+	mockFetch({ "/v1/user/": { json: { authenticated: true, username: "Dev", csrf: "c", officialWrites: false } } });
+	assert.equal(await serversync.initServerSync(), true);
+	assert.equal(session.serverUserName(), "Dev");
+	assert.equal(serversync.oauthAvailable(), true);
+	assert.equal(serversync.devLoginAvailable(), false);
+	assert.equal(serversync.officialWriteAvailable(), false);
+	assert.throws(() => serversync.officialWrite("POST", "/v1/write/tools/", { name: "x" }), /OAuth grant/);
 });
 
 test("authenticated: pulls the overlay, activates identity + write-through", async () => {

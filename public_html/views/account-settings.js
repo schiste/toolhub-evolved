@@ -14,11 +14,11 @@ function exportTextarea(value = "") {
 
 export function viewAccountSettings() {
 	const html = accountWorkbenchPage({
-		active: "data",
-		title: t("accountData.title", "Evolved data settings"),
+		active: "preferences",
+		title: t("accountData.title", "Preferences"),
 		intro: t(
 			"accountData.intro",
-			"Export or delete the local Evolved data attached to this Toolhub sign-in. Official Toolhub records, lists, favorites, and crawler registrations are not deleted here."
+			"Manage Evolved-specific preferences and local account data attached to this Toolhub sign-in."
 		),
 		body: `
 			${accountSection({
@@ -95,5 +95,5 @@ export function viewAccountSettings() {
 			}
 		});
 	}
-	return { title: t("accountData.docTitle", "Evolved data settings - Toolhub"), html, mount };
+	return { title: t("accountData.docTitle", "Preferences - Toolhub"), html, mount };
 }

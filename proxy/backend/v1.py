@@ -50,6 +50,7 @@ from backend.models import (
     ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
+    ToolhubToken,
     ToolList,
     ToolMedia,
     ToolOverlay,
@@ -59,6 +60,7 @@ from backend.models import (
     utcnow,
 )
 from backend.oauth import configured as oauth_configured
+from backend.oauth import dev_login_available
 from backend.security import current_user_id, login_required, write_guard
 from backend.sync import (
     REVIEW_APPROVED,
@@ -1406,11 +1408,13 @@ def v1_user() -> Response:
             session.clear()
             return jsonify({"authenticated": False})
         role = authz.user_role(user)
+        official_writes = s.get(ToolhubToken, uid) is not None
         return jsonify(
             {
                 "authenticated": True,
                 "username": user.username,
                 "csrf": session.get("csrf", ""),
+                "officialWrites": official_writes,
                 "evolvedRole": role,
                 "evolvedRoleLabel": authz.role_label(role),
                 "evolvedPermissions": authz.role_permissions(role),
@@ -1606,7 +1610,8 @@ def v1_me_tools() -> Response:
 @v1_bp.route("/v1/config/")
 def v1_config() -> Response:
     """Report which production capabilities are configured (no secrets)."""
-    return jsonify({"oauth": oauth_configured(), "officialWrites": oauth_configured()})
+    oauth = oauth_configured()
+    return jsonify({"oauth": oauth, "officialWrites": oauth, "devLogin": dev_login_available()})
 
 
 @v1_bp.route("/v1/toolhub/tools/", methods=["POST"])

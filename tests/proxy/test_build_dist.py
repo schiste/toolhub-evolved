@@ -3,11 +3,45 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools import build_dist  # noqa: E402
+
+
+def test_asset_version_uses_git_rev_for_clean_static_tree(monkeypatch):
+    def fake_run(args, **_kwargs):
+        if args[:3] == ["git", "rev-parse", "--short=12"]:
+            return SimpleNamespace(stdout="abc123\n")
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return SimpleNamespace(stdout="")
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.delenv("TOOLHUB_ASSET_VERSION", raising=False)
+    monkeypatch.setattr(build_dist.subprocess, "run", fake_run)
+
+    assert build_dist._asset_version() == "abc123"
+
+
+def test_asset_version_changes_for_uncommitted_static_tree(monkeypatch, tmp_path):
+    src = tmp_path / "public_html"
+    src.mkdir()
+    (src / "main.js").write_text("export const ok = true;\n", encoding="utf-8")
+
+    def fake_run(args, **_kwargs):
+        if args[:3] == ["git", "rev-parse", "--short=12"]:
+            return SimpleNamespace(stdout="abc123\n")
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return SimpleNamespace(stdout=" M public_html/main.js\n")
+        raise AssertionError(f"unexpected command: {args}")
+
+    monkeypatch.delenv("TOOLHUB_ASSET_VERSION", raising=False)
+    monkeypatch.setattr(build_dist, "SRC", src)
+    monkeypatch.setattr(build_dist.subprocess, "run", fake_run)
+
+    assert build_dist._asset_version().startswith("abc123-")
 
 
 def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
@@ -50,3 +84,8 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     main = (dist / "main.js").read_text(encoding="utf-8")
     assert 'from "./lib/core/dom.js?v=abc123"' in main
     assert 'import("./views/graph.js?v=abc123")' in main
+
+
+def test_js_build_preserves_template_literal_class_spacing():
+    source = 'const html = `<a class="${base}${current ? " is-active" : ""}" href="/x">x</a>`;\n'
+    assert build_dist._minify_js(source) == source

@@ -21,6 +21,10 @@ from backend.models import User
 oauth_bp = Blueprint("oauth", __name__)
 
 HTTP_UNAVAILABLE = 503
+HTTP_NOT_FOUND = 404
+DEV_LOGIN_ENV = "TOOLHUB_DEV_LOGIN"
+DEV_LOGIN_USERNAME_ENV = "TOOLHUB_DEV_USERNAME"
+DEV_LOGIN_USER_ID_ENV = "TOOLHUB_DEV_USER_ID"
 _log = logging.getLogger(__name__)
 
 
@@ -42,6 +46,78 @@ def _login_failed(reason: str, detail: object = None) -> Response:
 def configured() -> bool:
     """Report whether the official Toolhub OAuth client is configured."""
     return toolhub.configured()
+
+
+def _loopback_request() -> bool:
+    """Return whether the current request is clearly local development."""
+    host = request.host.lower()
+    if host.startswith("["):
+        host = host[1:].split("]", 1)[0]
+    elif host.count(":") == 1:
+        host = host.rsplit(":", 1)[0]
+    return host in {"localhost", "127.0.0.1", "::1"}
+
+
+def dev_login_available() -> bool:
+    """Report whether local-only development sign-in is available for this request."""
+    return (
+        os.environ.get("TOOLHUB_INSECURE_COOKIES") == "1"
+        and os.environ.get(DEV_LOGIN_ENV) == "1"
+        and _loopback_request()
+    )
+
+
+def _safe_next() -> str:
+    """Keep local dev-login redirects same-origin and inside the SPA."""
+    value = str(request.args.get("next") or "/my-tools")
+    if not value.startswith("/") or value.startswith(("//", "/oauth/")):
+        return "/my-tools"
+    return value
+
+
+def _clean_dev_identity() -> tuple[str, str]:
+    """Resolve the local dev identity without trusting oversized query values."""
+    username = str(request.args.get("username") or os.environ.get(DEV_LOGIN_USERNAME_ENV) or "Local developer").strip()
+    username = username[:255] or "Local developer"
+    toolhub_user_id = str(request.args.get("user_id") or os.environ.get(DEV_LOGIN_USER_ID_ENV) or "local-dev").strip()
+    toolhub_user_id = toolhub_user_id[:64] or "local-dev"
+    return toolhub_user_id, username
+
+
+def _set_session(uid: int, epoch: int) -> None:
+    """Issue the Evolved session cookie used by OAuth and local dev sign-in."""
+    session.clear()
+    session.permanent = True
+    session["uid"] = uid
+    session["epoch"] = epoch
+    session["csrf"] = secrets.token_urlsafe(32)
+
+
+@oauth_bp.route("/oauth/dev-login")
+def oauth_dev_login() -> Response:
+    """Create a local-only Evolved session for testing signed-in pages."""
+    if not dev_login_available():
+        resp = jsonify({"error": "local development sign-in is not enabled"})
+        resp.status_code = HTTP_NOT_FOUND
+        return resp
+    toolhub_user_id, username = _clean_dev_identity()
+    with db.session_scope() as s:
+        user = s.execute(select(User).where(User.wm_sub == toolhub_user_id)).scalar_one_or_none()
+        if user is None:
+            user = User(
+                wm_sub=toolhub_user_id,
+                username=username,
+                role=authz.role_for_login(toolhub_user_id, username),
+            )
+            s.add(user)
+            s.flush()
+        else:
+            user.username = username
+            user.role = authz.role_for_login(toolhub_user_id, username, user.role)
+        uid, epoch = user.id, user.session_epoch or 0
+    toolhub.revoke_local_grant(uid)
+    _set_session(uid, epoch)
+    return redirect(_safe_next())
 
 
 def _callback_url() -> str | None:
@@ -123,11 +199,7 @@ def oauth_callback() -> Response:
             user.role = authz.role_for_login(toolhub_user_id, username, user.role)
         uid, epoch = user.id, user.session_epoch or 0
     toolhub.save_grant(uid, token_payload)
-    session.clear()
-    session.permanent = True
-    session["uid"] = uid
-    session["epoch"] = epoch
-    session["csrf"] = secrets.token_urlsafe(32)
+    _set_session(uid, epoch)
     return redirect("/")
 
 

@@ -4295,9 +4295,46 @@ def test_write_lifecycle_local_permission_denials_after_official_rejection(clien
 def test_v1_config_reports_oauth(client, monkeypatch):
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_SECRET", raising=False)
-    assert client.get("/v1/config/").get_json() == {"oauth": False, "officialWrites": False}
+    monkeypatch.delenv("TOOLHUB_DEV_LOGIN", raising=False)
+    assert client.get("/v1/config/").get_json() == {"oauth": False, "officialWrites": False, "devLogin": False}
     configure_oauth(monkeypatch)
-    assert client.get("/v1/config/").get_json() == {"oauth": True, "officialWrites": True}
+    assert client.get("/v1/config/").get_json() == {"oauth": True, "officialWrites": True, "devLogin": False}
+
+
+def test_dev_login_creates_local_session_without_toolhub_grant(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
+    monkeypatch.setenv("TOOLHUB_DEV_LOGIN", "1")
+    resp = client.get("/oauth/dev-login?username=Schiste&next=/my-tools")
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/my-tools"
+    me = client.get("/v1/user/").get_json()
+    assert me["authenticated"] is True
+    assert me["username"] == "Schiste"
+    assert me["officialWrites"] is False
+    assert me["csrf"]
+    with db.session_scope() as s:
+        user = s.execute(select(User).where(User.wm_sub == "local-dev")).scalar_one()
+        assert user.username == "Schiste"
+        assert s.query(ToolhubToken).count() == 0
+
+
+def test_dev_login_is_hidden_unless_explicitly_local(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
+    monkeypatch.delenv("TOOLHUB_DEV_LOGIN", raising=False)
+    assert client.get("/oauth/dev-login").status_code == 404
+    monkeypatch.setenv("TOOLHUB_DEV_LOGIN", "1")
+    assert client.get("/v1/config/", headers={"Host": "toolhub-evolved.toolforge.org"}).get_json()["devLogin"] is False
+    assert client.get("/oauth/dev-login", headers={"Host": "toolhub-evolved.toolforge.org"}).status_code == 404
+
+
+def test_dev_login_sanitizes_redirects_and_identity(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
+    monkeypatch.setenv("TOOLHUB_DEV_LOGIN", "1")
+    monkeypatch.setenv("TOOLHUB_DEV_USERNAME", "Env Dev")
+    monkeypatch.setenv("TOOLHUB_DEV_USER_ID", "env-dev")
+    resp = client.get("/oauth/dev-login?next=https://attacker.example/&username=")
+    assert resp.headers["Location"] == "/my-tools"
+    assert client.get("/v1/user/").get_json()["username"] == "Env Dev"
 
 
 def test_oauth_login_unconfigured(client, monkeypatch):

@@ -32,10 +32,10 @@ export const ACCOUNT_NAV_ITEMS = [
 		label: () => t("account.developerSettings", "Developer settings")
 	},
 	{
-		key: "data",
-		href: "/account",
-		iconName: "reset",
-		label: () => t("account.dataSettings", "Evolved data settings")
+		key: "preferences",
+		href: "/preferences",
+		iconName: "system",
+		label: () => t("account.preferences", "Preferences")
 	}
 ];
 

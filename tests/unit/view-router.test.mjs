@@ -287,10 +287,10 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 
 	vi.clearAllMocks();
 	session.signedIn.mockReturnValue(false);
-	await at("/account");
+	await at("/preferences");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
-		"Evolved data settings",
-		"Export or delete Evolved-local data for this Toolhub sign-in."
+		"Preferences",
+		"Manage Evolved-specific preferences and local account data."
 	]);
 
 	vi.clearAllMocks();
@@ -298,7 +298,7 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 	await at("/developer-settings");
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
 		"Developer settings",
-		"Manage your API tokens and registered OAuth applications."
+		"Manage Evolved developer features for this Toolhub sign-in."
 	]);
 
 	vi.clearAllMocks();
@@ -317,7 +317,7 @@ test("dispatch gated routes: unresolved auth → account loading page", async ()
 	const routes = [
 		["/my-lists", "Your lists"],
 		["/favorites", "Favorites"],
-		["/account", "Evolved data settings"],
+		["/preferences", "Preferences"],
 		["/developer-settings", "Developer settings"],
 		["/my-tools", "My tools"],
 		["/tools/example/edit", "Edit tool"],
@@ -344,7 +344,7 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	assert.equal(redirect.title, "Redirecting - Toolhub");
 	assert.match(redirect.html, /account-records__table skeleton-table/);
 	redirect.mount();
-	assert.deepEqual(await at("/account"), { tag: "account" });
+	assert.deepEqual(await at("/preferences"), { tag: "account" });
 	assert.deepEqual(await at("/developer-settings"), { tag: "developer" });
 	assert.deepEqual(await at("/my-tools"), { tag: "mytools" });
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
@@ -352,6 +352,14 @@ test("dispatch gated ROUTES entries: signed-in → their real views", async () =
 	assert.equal(developerSettingsView.viewDeveloperSettings.mock.calls.length, 1);
 	assert.equal(myToolsView.viewMyTools.mock.calls.length, 1);
 	assert.deepEqual(window.location.pathname, "/my-tools");
+});
+
+test("dispatch /account redirects to Preferences", async () => {
+	const redirect = await at("/account");
+	assert.equal(redirect.title, "Redirecting - Toolhub");
+	assert.match(redirect.html, /account-records__table skeleton-table/);
+	redirect.mount();
+	assert.deepEqual(window.location.pathname, "/preferences");
 });
 
 /* ---- dispatch: STATIC + fallback -------------------------------------- */

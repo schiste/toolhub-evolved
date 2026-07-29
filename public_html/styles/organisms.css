@@ -1019,15 +1019,6 @@
 	justify-content: flex-end;
 	margin: var(--space-3) var(--space-0) var(--space-4);
 }
-.account-workbench__content-section {
-	margin-top: var(--space-5);
-}
-.account-workbench__content-head {
-	align-items: flex-start;
-}
-.account-workbench__content-head .panel__title {
-	margin-bottom: var(--space-1);
-}
 .account-empty {
 	display: flex;
 	gap: var(--space-4);

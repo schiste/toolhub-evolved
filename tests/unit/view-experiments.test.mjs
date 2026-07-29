@@ -23,7 +23,7 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 	assert.ok(actual.html.includes("Evolved roles and permissions"));
 	assert.ok(actual.html.includes("Developer settings"));
 	assert.ok(actual.html.includes("My tools workspace"));
-	assert.ok(actual.html.includes("Evolved data settings"));
+	assert.ok(actual.html.includes("Preferences"));
 	assert.ok(actual.html.includes("Your contributions — official when possible, local when needed"));
 	assert.ok(
 		actual.html.includes("Official list create/edit/delete when permitted; local draft lists remain as fallback.")

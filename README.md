@@ -108,6 +108,18 @@ the app refuses to start unless `TOOLHUB_SECRET_KEY` is set, so a production
 deployment can never fall back to a per-process session key (see
 [docs/RUNBOOK.md](docs/RUNBOOK.md)).
 
+To test signed-in Evolved pages without a real Toolhub OAuth application, enable
+the loopback-only development sign-in before starting Flask:
+
+```sh
+export TOOLHUB_DEV_LOGIN=1
+export TOOLHUB_DEV_USERNAME=Schiste   # optional display name
+```
+
+Then open `/oauth/dev-login?next=/my-tools` on `localhost` or `127.0.0.1`. This
+creates only an Evolved-local session; official Toolhub writes remain disabled
+until you sign in through real Toolhub OAuth.
+
 ## Deploy to Wikimedia Toolforge
 
 See **[docs/deploy-toolforge.md](docs/deploy-toolforge.md)**. In short: create a tool,

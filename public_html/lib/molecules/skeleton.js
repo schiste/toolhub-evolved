@@ -236,10 +236,14 @@ function routeSkeleton(path = "") {
 			body: listOverviewSkeleton()
 		};
 	}
-	if (seg[0] === "my-tools") {
+	if (["my-tools", "preferences"].includes(seg[0])) {
+		const label =
+			seg[0] === "preferences"
+				? t("router.loadingPreferences", "Loading preferences")
+				: t("router.loadingMyTools", "Loading your tools");
 		return {
 			modifier: "table",
-			label: t("router.loadingMyTools", "Loading your tools"),
+			label,
 			body: `${pageHeadSkeleton()}${tableSkeleton({
 				columns: ACCOUNT_TABLE_COLUMNS,
 				wrapClass: "account-records__table-wrap",

@@ -2,7 +2,7 @@
 import { $, esc } from "../core/dom.js";
 import { t } from "../core/i18n.js";
 import { USER, serverSessionResolved, signedIn } from "../core/session.js";
-import { csrfToken, oauthAvailable } from "../core/serversync.js";
+import { csrfToken, devLoginAvailable, oauthAvailable } from "../core/serversync.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
@@ -35,12 +35,17 @@ export function renderAccount() {
 	}
 	if (!signedIn()) {
 		// Signed-out production: real Toolhub sign-in when configured.
-		el.innerHTML = oauthAvailable()
-			? button(t("account.signInWithToolhub", "Sign in with Toolhub"), {
+		el.innerHTML = devLoginAvailable()
+			? button(t("account.devLogin", "Local dev sign-in"), {
 					variant: "outline",
-					href: "/oauth/login"
+					href: "/oauth/dev-login"
 				})
-			: button(t("account.logIn", "Log in"), { variant: "outline", href: "/login" });
+			: oauthAvailable()
+				? button(t("account.signInWithToolhub", "Sign in with Toolhub"), {
+						variant: "outline",
+						href: "/oauth/login"
+					})
+				: button(t("account.logIn", "Log in"), { variant: "outline", href: "/login" });
 		return;
 	}
 	el.innerHTML = `

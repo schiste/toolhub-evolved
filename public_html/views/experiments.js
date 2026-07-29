@@ -185,18 +185,18 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.myToolsTry", "My tools")
 			},
 			{
-				name: t("experiments.accountDataName", "Evolved data settings"),
+				name: t("experiments.accountDataName", "Preferences"),
 				what: t(
 					"experiments.accountDataWhat",
-					"Export or delete the Evolved-local data tied to your Toolhub sign-in."
+					"Manage Evolved-specific preferences and local data tied to your Toolhub sign-in."
 				),
 				current: t(
 					"experiments.accountDataCurrent",
-					"Users can export local overlays, fallbacks, keys, claims, activity, and signals, or delete their local Evolved data without touching official Toolhub."
+					"Users can export local overlays, fallbacks, keys, claims, activity, and signals, delete local Evolved data without touching official Toolhub, and get a home for future Evolved-only settings."
 				),
 				need: t("experiments.accountDataNeed", "GET /v1/user/export/ and DELETE /v1/user/evolved-data/"),
-				tryHref: "/account",
-				tryLabel: t("experiments.accountDataTry", "Evolved data settings")
+				tryHref: "/preferences",
+				tryLabel: t("experiments.accountDataTry", "Preferences")
 			},
 			{
 				name: t("experiments.transparencyName", "Hybrid transparency notice"),
