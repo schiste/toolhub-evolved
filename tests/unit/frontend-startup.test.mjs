@@ -11,6 +11,11 @@ function read(rel) {
 	return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
+function criticalCss(html) {
+	const match = html.match(/<style data-critical-css>([\s\S]*?)<\/style>/);
+	return match ? match[1] : "";
+}
+
 test("router loads high-cost feature routes as their own chunks", () => {
 	const router = read("public_html/views/router.js");
 	for (const specifier of [
@@ -42,6 +47,21 @@ test("index.html has critical shell CSS and defers full design-system CSS", () =
 	assert.doesNotMatch(headBeforeNoscript, /rel="stylesheet" href="\/styles\//);
 	assert.doesNotMatch(headBeforeNoscript, /styleguide\.css/);
 	assert.doesNotMatch(headBeforeNoscript, /onload=/);
+});
+
+test("critical shell CSS hides deferred dialogs and stabilizes account chrome", () => {
+	const html = read("public_html/index.html");
+	const css = criticalCss(html);
+	assert.match(css, /\.hidden\s*{\s*display:\s*none;\s*}/);
+	assert.match(css, /\.acct__btn,/);
+	assert.match(css, /\.acct__btn \.avatar\s*{/);
+	assert.match(css, /\.lang__btn/);
+	assert.match(css, /\.theme-toggle__opt\s*{/);
+	assert.match(
+		html,
+		/<div class="acct" id="account">\s*<span class="acct__loading" role="status" aria-live="polite">/
+	);
+	assert.ok(html.indexOf("<style data-critical-css>") < html.indexOf('<div class="command-palette hidden"'));
 });
 
 test("main.js activates deferred styles before the first route render", () => {
