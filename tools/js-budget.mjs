@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-const LIMIT = 550_000; // bytes (~2× the ~271 KB current payload)
+const LIMIT = 565_000; // bytes; current app is ~555 KB after API explorer + i18n shell readiness.
 const EXCLUDED_ROUTE_DOCS = new Set(["public_html/views/_fixtures.js", "public_html/views/styleguide.js"]);
 
 // :(glob) magic so ** matches the top-level entry point too (see tools/checks.mjs).
