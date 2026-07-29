@@ -18,6 +18,7 @@
 		"features:docs:check": "node tools/feature-docs.mjs --check",
 		"budget": "node tools/js-budget.mjs",
 		"i18n:extract": "node tools/i18n-extract.mjs",
+		"i18n:check": "node tools/i18n-extract.mjs --check",
 		"test:unit": "vitest run",
 		"coverage": "vitest run --coverage",
 		"test:e2e": "playwright test",

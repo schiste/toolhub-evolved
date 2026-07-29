@@ -126,7 +126,7 @@ Every push runs the full suite in CI (`.github/workflows/ci.yml`):
   axe accessibility).
 - **Hygiene** — knip (dead code), jscpd (duplication), a small AST checker
   (`tools/checks.mjs`: XSS, a11y, dead code, floating promises, HTML balance),
-  a JS payload budget, and gitleaks secret scanning.
+  `npm run i18n:check`, a JS payload budget, and gitleaks secret scanning.
 - **Proxy** — ruff (`select = ALL`, incl. flake8-bandit security), pip-audit,
   and a pytest asserting the CSP + security headers.
 
