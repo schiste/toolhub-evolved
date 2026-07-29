@@ -323,15 +323,30 @@ test("dispatch gated ROUTES entries: signed-out → sign-in copy", async () => {
 	]);
 });
 
-test("dispatch gated ROUTES entries: unresolved auth → account loading page", async () => {
+test("dispatch gated routes: unresolved auth → account loading page", async () => {
 	session.serverSessionResolved.mockReturnValue(false);
 	session.signedIn.mockReturnValue(false);
 
-	const view = await at("/my-tools");
+	const routes = [
+		["/my-lists", "Your lists"],
+		["/favorites", "Favorites"],
+		["/add-or-remove-tools", "Add or remove tools"],
+		["/account", "Evolved data settings"],
+		["/developer-settings", "Developer settings"],
+		["/my-tools", "My tools"],
+		["/tools/create", "Submit a tool"],
+		["/tools/example/edit", "Edit tool"],
+		["/tools/example/edit-annotations", "Edit annotations"],
+		["/lists/create", "Create a list"],
+		["/lists/example/edit", "Edit list"]
+	];
 
-	assert.equal(view.title, "My tools - Toolhub");
-	assert.ok(view.html.includes("My tools"));
-	assert.ok(view.html.includes("Loading your Toolhub account"));
+	for (const [path, title] of routes) {
+		const view = await at(path);
+		assert.equal(view.title, `${title} - Toolhub`);
+		assert.ok(view.html.includes(title), path);
+		assert.ok(view.html.includes("Loading your Toolhub account"), path);
+	}
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 	assert.equal(myToolsView.viewMyTools.mock.calls.length, 0);
 });

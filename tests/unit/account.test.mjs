@@ -8,7 +8,7 @@ import {
 	toggleAcctMenu
 } from "../../public_html/lib/organisms/account.js";
 import { esc } from "../../public_html/lib/core/dom.js";
-import { USER, setAuth, setServerUser } from "../../public_html/lib/core/session.js";
+import { USER, setAuth, setServerSessionPending, setServerUser } from "../../public_html/lib/core/session.js";
 import { avatar } from "../../public_html/lib/atoms/avatar.js";
 import { button } from "../../public_html/lib/atoms/button.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
@@ -45,6 +45,19 @@ test("renderAccount no-ops when #account is absent", () => {
 	setAuth(true);
 	renderAccount();
 	assert.equal(document.body.innerHTML, "");
+});
+
+test("renderAccount shows account loading while Toolhub session is unresolved", () => {
+	oauthOn = true;
+	setServerSessionPending();
+	document.body.innerHTML = `<div id="account"></div>`;
+	renderAccount();
+	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
+	assert.ok(el.querySelector(".acct__loading"));
+	assert.ok(el.querySelector(".acct__spinner"));
+	assert.ok(el.textContent.includes("Account"));
+	assert.equal(el.querySelector('a[href="/oauth/login"]'), null);
+	assert.equal(el.querySelector('a[href="/login"]'), null);
 });
 
 test("renderAccount shows Log in when signed out and OAuth is unavailable", () => {

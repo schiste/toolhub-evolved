@@ -131,8 +131,7 @@ a:hover {
 :where(.prose, .qv__desc) h6 {
 	font-size: var(--fs-body);
 }
-.prose a,
-.qv__desc a {
+:where(.prose, .qv__desc) :where(a:not(.btn)) {
 	color: var(--color-progressive);
 	text-decoration: underline;
 }

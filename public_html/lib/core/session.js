@@ -54,6 +54,12 @@ let authRender = () => {};
 export function setAuthRender(fn) {
 	authRender = typeof fn === "function" ? /** @type {() => void} */ (fn) : () => {};
 }
+export function setServerSessionPending() {
+	serverSessionChecked = false;
+	serverUser = null;
+	USER.name = "";
+	authRender();
+}
 /** @param {boolean} _on */
 export function setAuth(_on) {
 	localStorage.removeItem(AUTH_KEY);

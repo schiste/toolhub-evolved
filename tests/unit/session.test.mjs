@@ -53,9 +53,11 @@ beforeEach(() => {
 		writable: true
 	});
 	session.setAuthRender(() => {});
+	session.setServerSessionPending();
 });
 
 afterAll(() => {
+	session.setServerSessionPending();
 	session.applyExp(false);
 });
 
@@ -121,6 +123,17 @@ test("signedIn requires an OAuth-backed server user", () => {
 	assert.equal(session.signedIn(), false);
 	session.setServerUser("Grace Hopper");
 	assert.equal(session.signedIn(), true);
+});
+
+test("server session pending state is distinct from resolved signed-out", () => {
+	session.setServerUser(null);
+	assert.equal(session.serverSessionResolved(), true);
+	assert.equal(session.signedIn(), false);
+	session.setServerSessionPending();
+	assert.equal(session.serverSessionResolved(), false);
+	assert.equal(session.serverUserName(), null);
+	assert.equal(session.USER.name, "");
+	assert.equal(session.signedIn(), false);
 });
 
 test("setAuth is a compatibility shim that clears legacy markers and refreshes", () => {
