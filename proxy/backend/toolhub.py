@@ -168,17 +168,9 @@ def _needs_refresh(row: ToolhubToken) -> bool:
 
 
 def _open_grant(row: ToolhubToken) -> tuple[str, str | None]:
-    """Decrypt one stored grant, re-sealing it if it predates encryption.
-
-    Re-sealing here drains the plaintext tolerance in backend.token_crypto, so
-    the compatibility path removes itself as users make writes.
-    """
+    """Decrypt one stored grant."""
     access = token_crypto.decrypt(row.access_token)
     refresh = token_crypto.decrypt(row.refresh_token) if row.refresh_token else None
-    if not token_crypto.is_encrypted(row.access_token):
-        row.access_token = token_crypto.encrypt(access)
-        if refresh:
-            row.refresh_token = token_crypto.encrypt(refresh)
     return access, refresh
 
 

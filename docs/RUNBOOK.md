@@ -44,10 +44,11 @@ therefore sealed with Fernet before they are written (`backend/token_crypto.py`)
 - **Rotating the key forces re-authorization.** A grant that cannot be decrypted
   is deleted and the user is sent back through `/oauth/login`; nothing else
   breaks and no manual cleanup is needed.
-- Rows written before this change are plaintext. They are still read, and are
-  re-sealed in place the first time that user makes an official write. Once
+- Every stored grant is sealed; the pre-encryption rows were migrated and the
+  plaintext compatibility path has been removed. An unsealed value now fails
+  closed like any other unreadable one. To confirm the invariant still holds:
   `SELECT COUNT(*) FROM toolhub_tokens WHERE access_token NOT LIKE 'v1:%'`
-  returns 0, the compatibility path in `token_crypto.decrypt` can be dropped.
+  should return 0.
 
 ## Evolved-local roles and permissions
 

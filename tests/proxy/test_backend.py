@@ -3090,16 +3090,18 @@ def test_stored_grants_are_encrypted_at_rest(client):
     assert stored_grant(uid) == ("secret-access", "secret-refresh")
 
 
-def test_legacy_plaintext_grants_are_readable_and_resealed_on_read(client, monkeypatch):
-    uid = add_user(wm_sub="legacy")
-    with db.session_scope() as s:  # a row written before encryption existed
+def test_an_unsealed_grant_is_rejected_rather_than_trusted(client, monkeypatch):
+    # The pre-encryption plaintext tolerance is gone now that production is fully
+    # migrated. An unsealed value must fail closed like any other unreadable one:
+    # if a row ever loses its prefix, it is not a token we should be sending.
+    uid = add_user(wm_sub="unsealed")
+    with db.session_scope() as s:
         s.add(ToolhubToken(user_id=uid, access_token="plain-access", refresh_token="plain-refresh"))
     monkeypatch.setattr(toolhub.requests, "request", lambda *_a, **kw: FakeResp({"ok": True}))
-    body, status = toolhub.api_request(uid, "POST", "/api/tools/", json={"name": "x"})
-    assert (body, status) == ({"ok": True}, 200)
+    with pytest.raises(toolhub.ToolhubAuthError):
+        toolhub.api_request(uid, "POST", "/api/tools/", json={"name": "x"})
     with db.session_scope() as s:
-        assert s.get(ToolhubToken, uid).access_token.startswith(token_crypto.PREFIX)  # migrated in place
-    assert stored_grant(uid) == ("plain-access", "plain-refresh")
+        assert s.get(ToolhubToken, uid) is None  # dropped; the user re-authorizes
 
 
 def test_unreadable_grant_is_dropped_and_forces_reauth(client, monkeypatch):
@@ -3129,7 +3131,9 @@ def test_token_key_env_overrides_the_session_secret(monkeypatch):
 def test_toolhub_expired_grant_without_refresh_requires_reauth(client):
     uid = add_user(wm_sub="expired")
     with db.session_scope() as s:
-        s.add(ToolhubToken(user_id=uid, access_token="old", expires_at=utcnow()))
+        # Sealed, so the read succeeds and we actually reach the expiry check —
+        # an unsealed value would fail closed earlier and pass for the wrong reason.
+        s.add(ToolhubToken(user_id=uid, access_token=token_crypto.encrypt("old"), expires_at=utcnow()))
     with pytest.raises(toolhub.ToolhubAuthError):
         toolhub.api_request(uid, "POST", "/api/tools/", json={"name": "x"})
     toolhub.revoke_local_grant(uid + 1)  # no-op for missing row

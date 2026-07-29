@@ -61,21 +61,14 @@ def encrypt(value: str) -> str:
     return PREFIX + _cipher().encrypt(value.encode("utf-8")).decode("ascii")
 
 
-def is_encrypted(stored: str) -> bool:
-    """Report whether a stored value has already been sealed."""
-    return stored.startswith(PREFIX)
-
-
 def decrypt(stored: str) -> str:
     """Open one stored token.
 
-    Values without the version prefix are rows written before encryption
-    existed. They are returned as-is so the first deploy after this change keeps
-    working; `backend.toolhub` re-seals them on read, so the tolerance drains
-    itself and can be removed once no plaintext rows remain.
+    Every stored grant is sealed. The pre-encryption plaintext tolerance that
+    shipped alongside this module is gone: the rows it existed for were migrated,
+    and an unsealed value now fails closed like any other unreadable one, so a
+    row that somehow lost its prefix cannot be silently trusted as a live token.
     """
-    if not is_encrypted(stored):
-        return stored
     try:
         return _cipher().decrypt(stored.removeprefix(PREFIX).encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError) as exc:
