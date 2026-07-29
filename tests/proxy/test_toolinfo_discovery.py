@@ -2,6 +2,7 @@
 """Tests for crawler toolinfo.json discovery."""
 
 import sys
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -13,7 +14,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
-from backend import authz, db, security, toolhub, toolinfo_discovery  # noqa: E402
+from backend import authz, db, outbound, security, toolhub, toolinfo_discovery  # noqa: E402
 from backend.author_claims import ToolforgeMembershipProvider  # noqa: E402
 from backend.models import ToolAuthorClaim, ToolinfoDiscovery, ToolinfoDiscoveryMeta, User, utcnow  # noqa: E402
 
@@ -248,30 +249,37 @@ def test_toolinfo_discovery_validates_url_and_session(client):
     )
 
 
+def discovery_guard(url):
+    """Apply discovery's fetch policy to one URL (the guard now lives in backend.outbound)."""
+    return outbound.require_allowed(
+        url, outbound.STRICT_PUBLIC, scheme_error="only public https URLs are discovered"
+    )
+
+
 def test_discovery_guard_and_fetch_helpers(monkeypatch):
     with pytest.raises(ValueError, match="only public https"):
-        toolinfo_discovery._require_public_https("http://example.org/toolinfo.json")
+        discovery_guard("http://example.org/toolinfo.json")
 
-    monkeypatch.setattr(toolinfo_discovery.socket, "getaddrinfo", lambda *a, **k: (_ for _ in ()).throw(OSError("nx")))
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", lambda *a, **k: (_ for _ in ()).throw(OSError("nx")))
     with pytest.raises(ValueError, match="cannot resolve"):
-        toolinfo_discovery._require_public_https("https://missing.example/toolinfo.json")
+        discovery_guard("https://missing.example/toolinfo.json")
 
     monkeypatch.setattr(
-        toolinfo_discovery.socket,
+        outbound.socket,
         "getaddrinfo",
         lambda *a, **k: [(0, 0, 0, "", ("127.0.0.1", 443))],
     )
     with pytest.raises(ValueError, match="non-public"):
-        toolinfo_discovery._require_public_https("https://private.example/toolinfo.json")
+        discovery_guard("https://private.example/toolinfo.json")
 
     monkeypatch.setattr(
-        toolinfo_discovery.socket,
+        outbound.socket,
         "getaddrinfo",
         lambda *a, **k: [(0, 0, 0, "", ("93.184.216.34", 443))],
     )
-    toolinfo_discovery._require_public_https("https://public.example/toolinfo.json")
+    discovery_guard("https://public.example/toolinfo.json")
 
-    monkeypatch.setattr(toolinfo_discovery, "_require_public_https", lambda _url: None)
+    monkeypatch.setattr(outbound, "require_allowed", lambda *_a, **_k: None)
     session = FakeSession(FakeResp(b'{"name":"ok"}'))
     assert toolinfo_discovery.fetch_toolinfo_json_once("https://public.example/toolinfo.json", session) == {"name": "ok"}
     assert session.calls[0][1]["allow_redirects"] is False
@@ -279,7 +287,7 @@ def test_discovery_guard_and_fetch_helpers(monkeypatch):
 
     with pytest.raises(ValueError, match="redirects"):
         toolinfo_discovery.fetch_toolinfo_json_once("https://public.example/toolinfo.json", FakeSession(FakeResp(status=302)))
-    monkeypatch.setattr(toolinfo_discovery, "MAX_BODY_BYTES", 1)
+    monkeypatch.setattr(outbound, "STRICT_PUBLIC", replace(outbound.STRICT_PUBLIC, max_body_bytes=1))
     with pytest.raises(ValueError, match="larger than"):
         toolinfo_discovery.fetch_toolinfo_json_once(
             "https://public.example/toolinfo.json",

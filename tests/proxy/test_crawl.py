@@ -3,6 +3,7 @@
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import crawl  # noqa: E402
-from backend import db  # noqa: E402
+from backend import db, outbound  # noqa: E402
 from backend.models import CrawlerRun, CrawlerUrl, ToolAuthorClaim, ToolAuthorKey, ToolRecord, User, utcnow  # noqa: E402
 from backend.sync import AUTHOR_CLAIM_SIGNED_TOOLINFO, AUTHOR_CLAIM_VERIFIED  # noqa: E402
 
@@ -75,7 +76,7 @@ class FakeSession:
 def run_with(monkeypatch, session, *, public=True):
     monkeypatch.setattr(crawl.requests, "Session", lambda: session)
     if public:  # tests must not depend on real DNS; the guard has its own tests
-        monkeypatch.setattr(crawl, "_require_public_https", lambda url: None)
+        monkeypatch.setattr(outbound, "require_allowed", lambda *_a, **_k: None)
     return crawl.run_crawl()
 
 
@@ -140,7 +141,7 @@ def test_crawl_fetch_failure_and_size_cap(monkeypatch):
     add_url()
     run = run_with(monkeypatch, FakeSession(raises="feed"))
     assert run.ok is False
-    monkeypatch.setattr(crawl, "MAX_BODY_BYTES", 4)
+    monkeypatch.setattr(outbound, "STRICT_PUBLIC", replace(outbound.STRICT_PUBLIC, max_body_bytes=4))
     run = run_with(monkeypatch, FakeSession(feed_body=b"[1,2,3,4,5]"))
     assert "larger than" in run.errors[0]
 
@@ -175,30 +176,35 @@ def test_main_exit_codes(monkeypatch, capsys, tmp_path):
     assert crawl.main() == 1
 
 
+def guard(url):
+    """Apply the crawler's fetch policy to one URL (the guard now lives in backend.outbound)."""
+    return outbound.require_allowed(url, outbound.STRICT_PUBLIC, scheme_error="only https toolinfo URLs are crawled")
+
+
 def test_require_public_https_guard(monkeypatch):
     with pytest.raises(ValueError, match="only https"):
-        crawl._require_public_https("http://example.org/toolinfo.json")
-    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("127.0.0.1", 443))])
+        guard("http://example.org/toolinfo.json")
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("127.0.0.1", 443))])
     with pytest.raises(ValueError, match="non-public"):
-        crawl._require_public_https("https://sneaky.example/toolinfo.json")
-    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("10.0.0.7", 443))])
+        guard("https://sneaky.example/toolinfo.json")
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("10.0.0.7", 443))])
     with pytest.raises(ValueError, match="non-public"):
-        crawl._require_public_https("https://internal.example/toolinfo.json")
+        guard("https://internal.example/toolinfo.json")
 
     def nxdomain(*a, **k):
         raise OSError("nxdomain")
 
-    monkeypatch.setattr(crawl.socket, "getaddrinfo", nxdomain)
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", nxdomain)
     with pytest.raises(ValueError, match="cannot resolve"):
-        crawl._require_public_https("https://nope.example/toolinfo.json")
-    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("93.184.216.34", 443))])
-    crawl._require_public_https("https://ok.example/toolinfo.json")  # public → no raise
+        guard("https://nope.example/toolinfo.json")
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("93.184.216.34", 443))])
+    guard("https://ok.example/toolinfo.json")  # public → no raise
 
 
 def test_crawl_refuses_redirects_and_private_hosts(monkeypatch):
     add_url()
     # Real guard first (a later run_with(public=True) no-ops it for the rest of the test).
-    monkeypatch.setattr(crawl.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("192.168.1.10", 443))])
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("192.168.1.10", 443))])
     run = run_with(monkeypatch, FakeSession(), public=False)  # private resolution → refused
     assert "non-public" in run.errors[0]
     run = run_with(monkeypatch, FakeSession(feed_status=302))

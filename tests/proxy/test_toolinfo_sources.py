@@ -3,6 +3,7 @@
 
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import toolinfo_sources as toolinfo_sources_job  # noqa: E402
-from backend import db, toolhub, toolinfo_sources  # noqa: E402
+from backend import db, outbound, toolhub, toolinfo_sources  # noqa: E402
 from backend.models import ToolinfoSource, ToolinfoSourceItem  # noqa: E402
 from backend.sync import SOURCE_OFFICIAL, SYNC_ERROR, SYNC_OFFICIAL  # noqa: E402
 
@@ -162,29 +163,36 @@ def test_sync_registered_sources_upserts_and_preserves_fetch_errors(monkeypatch)
         assert wiki_source.created_date is None
 
 
+def feed_guard(url):
+    """Apply the feed fetch policy to one URL (the guard now lives in backend.outbound)."""
+    return outbound.require_allowed(
+        url, outbound.WIKIMEDIA_FEED, scheme_error="only public http or https crawler URLs are indexed"
+    )
+
+
 def test_guard_and_fetch_helpers(monkeypatch):
     with pytest.raises(ValueError, match="only public"):
-        toolinfo_sources._require_public_http("ftp://example.org/feed.json")
-    monkeypatch.setattr(toolinfo_sources.socket, "getaddrinfo", lambda *a, **k: (_ for _ in ()).throw(OSError("nx")))
+        feed_guard("ftp://example.org/feed.json")
+    monkeypatch.setattr(outbound.socket, "getaddrinfo", lambda *a, **k: (_ for _ in ()).throw(OSError("nx")))
     with pytest.raises(ValueError, match="cannot resolve"):
-        toolinfo_sources._require_public_http("https://missing.example/feed.json")
+        feed_guard("https://missing.example/feed.json")
     monkeypatch.setattr(
-        toolinfo_sources.socket,
+        outbound.socket,
         "getaddrinfo",
         lambda *a, **k: [(0, 0, 0, "", ("127.0.0.1", 443))],
     )
     with pytest.raises(ValueError, match="non-public"):
-        toolinfo_sources._require_public_http("https://private.example/feed.json")
-    toolinfo_sources._require_public_http("https://hay.toolforge.org/toolinfo.json")
-    toolinfo_sources._require_public_http("https://ia-upload.wmcloud.org/toolinfo.json")
-    toolinfo_sources._require_public_http("https://tools-static.wmflabs.org/toolinfo-scraper/enwiki_userscripts.json")
+        feed_guard("https://private.example/feed.json")
+    feed_guard("https://hay.toolforge.org/toolinfo.json")
+    feed_guard("https://ia-upload.wmcloud.org/toolinfo.json")
+    feed_guard("https://tools-static.wmflabs.org/toolinfo-scraper/enwiki_userscripts.json")
     monkeypatch.setattr(
-        toolinfo_sources.socket,
+        outbound.socket,
         "getaddrinfo",
         lambda *a, **k: [(0, 0, 0, "", ("93.184.216.34", 80))],
     )
-    toolinfo_sources._require_public_http("http://public.example/feed.json")
-    monkeypatch.setattr(toolinfo_sources, "_require_public_http", lambda _url: None)
+    feed_guard("http://public.example/feed.json")
+    monkeypatch.setattr(outbound, "require_allowed", lambda *_a, **_k: None)
     session = FakeSession([FakeResp(b'{"name":"ok","title":"Ok","description":"d","url":"https://ok.example"}')])
     assert toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json", session)["name"] == "ok"
     assert session.calls[0][1]["allow_redirects"] is False
@@ -200,13 +208,13 @@ def test_guard_and_fetch_helpers(monkeypatch):
     )
     assert toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json", redirect_session)[0]["name"] == "next"
     assert redirect_session.calls[1][0] == "https://public.example/final.json"
-    monkeypatch.setattr(toolinfo_sources, "MAX_REDIRECTS", 0)
+    monkeypatch.setattr(outbound, "WIKIMEDIA_FEED", replace(outbound.WIKIMEDIA_FEED, max_redirects=0))
     with pytest.raises(ValueError, match="too many redirects"):
         toolinfo_sources.fetch_toolinfo_feed_once(
             "https://public.example/feed.json",
             FakeSession([FakeResp(status=302, headers={"Location": "/loop.json"})]),
         )
-    monkeypatch.setattr(toolinfo_sources, "MAX_BODY_BYTES", 1)
+    monkeypatch.setattr(outbound, "WIKIMEDIA_FEED", replace(outbound.WIKIMEDIA_FEED, max_body_bytes=1))
     with pytest.raises(ValueError, match="larger than"):
         toolinfo_sources.fetch_toolinfo_feed_once("https://public.example/feed.json", FakeSession([FakeResp(b"{}")]))
 

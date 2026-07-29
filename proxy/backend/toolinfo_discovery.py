@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Automated discovery of toolinfo.json locations for official Toolhub tools."""
 
-import ipaddress
 import json
-import socket
 from datetime import datetime, timedelta
 from urllib.parse import quote, urljoin, urlparse
 
@@ -12,17 +10,17 @@ from defusedxml import ElementTree
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend import db, toolhub
+from backend import db, outbound, toolhub
 from backend.author_claims import dedupe_strings
 from backend.models import ToolAuthorClaim, ToolinfoDiscovery, ToolinfoDiscoveryMeta, utcnow
 from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, clean_error
 
 UA = "toolhub-evolved-toolinfo-discovery/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
-TIMEOUT = 20
-MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_URL = 2000
 MAX_ITEMS_PER_TOOLINFO = 200
 MAX_SITEMAP_LOCS = 200
+_JSON_CALLER = outbound.Caller(UA, "application/json", "only public https URLs are discovered")
+_XML_CALLER = outbound.Caller(UA, "application/xml,text/xml", "only public https URLs are discovered")
 HTTP_NOT_FOUND = 404
 STATUS_PENDING = "pending"
 STATUS_FOUND = "found"
@@ -36,46 +34,15 @@ TOOLHUB_LIST_PAGE_SIZE = 100
 TOOLHUB_LIST_CURSOR_KEY = "toolhub_tools_page"
 
 
-def _require_public_https(url: str) -> None:
-    """Reject non-https URLs and hosts that resolve to non-public addresses."""
-    parsed = urlparse(url)
-    host = parsed.hostname
-    if parsed.scheme != "https" or not host:
-        msg = f"{url}: only public https URLs are discovered"
-        raise ValueError(msg)
-    try:
-        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        msg = f"{url}: cannot resolve host ({exc})"
-        raise ValueError(msg) from exc
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0])
-        if not addr.is_global:
-            msg = f"{url}: resolves to a non-public address - refused"
-            raise ValueError(msg)
-
-
 def _fetch_body(session: requests.Session, url: str, *, accept: str) -> bytes:
-    """Fetch a public HTTPS document with redirects disabled and a hard size cap."""
-    _require_public_https(url)
-    with session.get(
-        url,
-        headers={"User-Agent": UA, "Accept": accept},
-        timeout=TIMEOUT,
-        stream=True,
-        allow_redirects=False,
-    ) as resp:
-        if resp.is_redirect or resp.is_permanent_redirect:
-            msg = f"{url}: redirects are not followed - use the final URL"
-            raise ValueError(msg)
-        resp.raise_for_status()
-        body = bytearray()
-        for chunk in resp.iter_content(64 * 1024):
-            body.extend(chunk)
-            if len(body) > MAX_BODY_BYTES:
-                msg = f"{url}: response larger than {MAX_BODY_BYTES} bytes"
-                raise ValueError(msg)
-    return bytes(body)
+    """Fetch a discovered document under the strict public-fetch policy.
+
+    Discovery walks URLs derived from tool metadata, so the target is not ours to
+    trust: https only, non-public addresses refused, redirects refused, body
+    capped. See backend.outbound for why each of those is there.
+    """
+    caller = _XML_CALLER if "xml" in accept else _JSON_CALLER
+    return outbound.fetch_bounded(session, url, policy=outbound.STRICT_PUBLIC, caller=caller)
 
 
 def fetch_toolinfo_json_once(url: str, session: requests.Session | None = None) -> object:

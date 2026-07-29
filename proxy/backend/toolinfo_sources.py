@@ -1,28 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Index official Toolhub crawler sources into the local evidence database."""
 
-import ipaddress
 import json
-import socket
 from datetime import UTC, datetime
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from backend import db, toolhub
+from backend import db, outbound, toolhub
 from backend.author_claims import dedupe_strings
 from backend.models import ToolinfoSource, ToolinfoSourceItem, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_ERROR, SYNC_OFFICIAL, clean_error, clean_int
 
 UA = "toolhub-evolved-source-indexer/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
-TIMEOUT = (5, 60)
-MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_ITEMS_PER_SOURCE = 10000
 MAX_URL = 2000
-MAX_REDIRECTS = 5
-PUBLIC_INTERNAL_HOST_SUFFIXES = (".toolforge.org", ".wmcloud.org", ".wmflabs.org")
+_CALLER = outbound.Caller(UA, "application/json", "only public http or https crawler URLs are indexed")
 SOURCE_STATUS_PENDING = "pending"
 SOURCE_STATUS_VALID = "valid"
 SOURCE_STATUS_INVALID = "invalid"
@@ -90,61 +85,18 @@ def source_label(source_kind: str) -> str:
     return SOURCE_LABELS.get(source_kind, SOURCE_LABELS[KIND_OTHER_FEED])
 
 
-def _is_public_ingress_host(host: str) -> bool:
-    """Return whether a public Wikimedia Cloud hostname may resolve internally."""
-    return host in {"toolforge.org", "wmflabs.org"} or host.endswith(PUBLIC_INTERNAL_HOST_SUFFIXES)
-
-
-def _require_public_http(url: str) -> None:
-    """Reject non-public HTTP(S) crawler feeds before fetching them."""
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme not in {"http", "https"} or not host:
-        msg = f"{url}: only public http or https crawler URLs are indexed"
-        raise ValueError(msg)
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        msg = f"{url}: cannot resolve host ({exc})"
-        raise ValueError(msg) from exc
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0])
-        if not addr.is_global and not _is_public_ingress_host(host):
-            msg = f"{url}: resolves to a non-public address - refused"
-            raise ValueError(msg)
-
-
 def fetch_toolinfo_feed_once(url: str, session: requests.Session | None = None) -> object:
-    """Fetch one official crawler feed with SSRF guards and a hard size cap."""
+    """Fetch one official crawler feed under the Wikimedia-feed policy.
+
+    Looser than the strict policy on purpose — these URLs mirror Toolhub's own
+    registry, legitimately include plain HTTP and Wikimedia Cloud ingress hosts
+    that resolve internally, and carry larger bodies. backend.outbound re-checks
+    every redirect hop, so following one cannot reach anywhere the first URL
+    could not.
+    """
     active_session = session or requests.Session()
-    current_url = url
-    for _redirect in range(MAX_REDIRECTS + 1):
-        _require_public_http(current_url)
-        with active_session.get(
-            current_url,
-            headers={"User-Agent": UA, "Accept": "application/json"},
-            timeout=TIMEOUT,
-            stream=True,
-            allow_redirects=False,
-        ) as resp:
-            if resp.is_redirect or resp.is_permanent_redirect:
-                location = resp.headers.get("Location") or resp.headers.get("location") or ""
-                if not location:
-                    msg = f"{current_url}: redirect missing Location header"
-                    raise ValueError(msg)
-                current_url = urljoin(current_url, location)
-                continue
-            resp.raise_for_status()
-            body = bytearray()
-            for chunk in resp.iter_content(64 * 1024):
-                body.extend(chunk)
-                if len(body) > MAX_BODY_BYTES:
-                    msg = f"{current_url}: response larger than {MAX_BODY_BYTES} bytes"
-                    raise ValueError(msg)
-            return json.loads(bytes(body).decode("utf-8"))
-    msg = f"{url}: too many redirects"
-    raise ValueError(msg)
+    body = outbound.fetch_bounded(active_session, url, policy=outbound.WIKIMEDIA_FEED, caller=_CALLER)
+    return json.loads(body.decode("utf-8"))
 
 
 def _registered_rows_from_payload(payload: object) -> tuple[list[dict], bool]:

@@ -9,73 +9,40 @@ skipped: the live API stays that record's source of truth — we never store a
 shadow copy of upstream data.
 """
 
-import ipaddress
 import json
 import os
-import socket
 import sys
-from urllib.parse import urlparse
 
 import requests
 from sqlalchemy import select
 
-from backend import DEFAULT_DB_URL, db
+from backend import DEFAULT_DB_URL, db, outbound
 from backend.author_claims import SignedToolinfoProvider
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, User, utcnow
 from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
 UA = "toolhub-evolved-crawler/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
-TIMEOUT = 20
-MAX_BODY_BYTES = 2 * 1024 * 1024
+TIMEOUT = 20  # exists_upstream only; registered-URL fetches use outbound.STRICT_PUBLIC
 MAX_ITEMS_PER_URL = 200
+_CALLER = outbound.Caller(
+    user_agent=UA,
+    accept="application/json",
+    scheme_error="only https toolinfo URLs are crawled",
+)
 HTTP_NOT_FOUND = 404
 SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
 
 
-def _require_public_https(url: str) -> None:
-    """Reject non-https URLs and hosts that resolve to non-public addresses.
-
-    Registered URLs are user-supplied, so the scheduled job must never be
-    turned into an SSRF probe of the Toolforge network: loopback, private,
-    link-local, reserved and multicast destinations are all refused, and
-    redirects are never followed (below) so a public host can't bounce the
-    fetch somewhere internal. (Resolution happens just before the fetch; a
-    DNS-rebinding TOCTOU window remains, which is why the job also only ever
-    speaks HTTPS — an internal service would still need a valid certificate.)
-    """
-    parsed = urlparse(url)
-    host = parsed.hostname
-    if parsed.scheme != "https" or not host:
-        msg = f"{url}: only https toolinfo URLs are crawled"
-        raise ValueError(msg)
-    try:
-        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        msg = f"{url}: cannot resolve host ({exc})"
-        raise ValueError(msg) from exc
-    for info in infos:
-        addr = ipaddress.ip_address(info[4][0])
-        if not addr.is_global:
-            msg = f"{url}: resolves to a non-public address — refused"
-            raise ValueError(msg)
-
-
 def _fetch_json(session: requests.Session, url: str) -> object:
-    """GET a toolinfo URL with SSRF guards and a hard size cap; raises on failure."""
-    _require_public_https(url)
-    with session.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT, stream=True, allow_redirects=False) as resp:
-        if resp.is_redirect or resp.is_permanent_redirect:
-            msg = f"{url}: redirects are not followed — register the final URL"
-            raise ValueError(msg)
-        resp.raise_for_status()
-        body = bytearray()
-        for chunk in resp.iter_content(64 * 1024):
-            body.extend(chunk)
-            if len(body) > MAX_BODY_BYTES:
-                msg = f"{url}: response larger than {MAX_BODY_BYTES} bytes"
-                raise ValueError(msg)
-    return json.loads(bytes(body).decode("utf-8"))
+    """GET a registered toolinfo URL under the strict public-fetch policy.
+
+    Registered URLs are user-supplied, so this must never become an SSRF probe of
+    the Toolforge network. The guarantees — https only, non-public addresses
+    refused, redirects refused, body capped — live in backend.outbound.
+    """
+    body = outbound.fetch_bounded(session, url, policy=outbound.STRICT_PUBLIC, caller=_CALLER)
+    return json.loads(body.decode("utf-8"))
 
 
 def exists_upstream(session: requests.Session, name: str) -> bool:
