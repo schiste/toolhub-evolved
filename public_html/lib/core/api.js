@@ -430,6 +430,17 @@ export async function apiGet(path, params) {
 	}
 	return apiFetch(url);
 }
+/**
+ * Fetch a same-origin Toolhub API URL and expose the raw Response. This keeps
+ * network ownership in core while letting developer tools inspect status and
+ * headers that apiGet intentionally abstracts away.
+ *
+ * @param {string} url
+ * @returns {Promise<Response>}
+ */
+export function apiGetResponse(url) {
+	return fetch(url, { headers: { Accept: "application/json" } });
+}
 export function clearApiCache() {
 	apiCache.clear();
 	apiInflight.clear();

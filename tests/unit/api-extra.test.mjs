@@ -152,6 +152,24 @@ test("fetchJson sends the JSON Accept header to the proxied /api URL", async () 
 	assert.equal(seenUrl, "/api/hdr-noparams/");
 });
 
+test("apiGetResponse exposes raw API responses with the JSON Accept header", async () => {
+	let seenUrl, seenOpts;
+	globalThis.fetch = async (url, opts) => {
+		seenUrl = url;
+		seenOpts = opts;
+		return new Response('{"ok":true}', {
+			status: 202,
+			headers: { "content-type": "application/json", "x-toolhub-evolved-cache": "hit" }
+		});
+	};
+	const raw = await api.apiGetResponse("/api/schema/");
+	assert.equal(seenUrl, "/api/schema/");
+	assert.deepEqual(seenOpts, { headers: { Accept: "application/json" } });
+	assert.equal(raw.status, 202);
+	assert.equal(raw.headers.get("x-toolhub-evolved-cache"), "hit");
+	assert.deepEqual(await raw.json(), { ok: true });
+});
+
 // ----------------------------------------------------------------- SWR cache
 test("apiCachePolicy classifies endpoint volatility", () => {
 	assert.deepEqual(api.apiCachePolicy("/api/recent/"), { freshMs: 30000, staleIfErrorMs: 86400000 });
