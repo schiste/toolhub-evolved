@@ -396,6 +396,14 @@
 				.nav__actions {
 					gap: var(--space-2);
 				}
+				#submit-tool {
+					width: var(--btn-h-md);
+					padding: var(--space-0);
+					overflow: hidden;
+				}
+				.submit-tool__label {
+					display: none;
+				}
 				.nav__mobile {
 					display: flex;
 					flex: 1 0 100%;
@@ -492,6 +500,7 @@
 						href="https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create"
 						target="_blank"
 						rel="noopener nofollow"
+						aria-label="Submit a tool"
 						><svg
 							class="icon"
 							viewBox="0 0 20 20"
@@ -502,7 +511,7 @@
 						>
 							<path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z" />
 						</svg>
-						Submit a tool</a
+						<span class="submit-tool__label">Submit a tool</span></a
 					>
 					<!-- Account control (logged-in fixture / dropdown) rendered by main.js -->
 					<div class="acct" id="account"></div>

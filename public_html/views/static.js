@@ -288,7 +288,7 @@ export async function viewApiDocs() {
 	return {
 		title: t("static.apiDocs.title", "API documentation — Toolhub"),
 		html: `
-		<div class="container page">
+		<div class="container page api-docs-page">
 			<h1 class="page__title">${t("static.apiDocs.heading", "API documentation")}</h1>
 			<p class="page__intro">Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own <code>/v1/write/*</code> official-first lifecycle after Toolhub OAuth sign-in.</p>
 			<div class="linkgrid">

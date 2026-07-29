@@ -71,6 +71,7 @@
 .api-explorer__section-head {
 	align-items: flex-start;
 	gap: var(--space-4);
+	flex-wrap: wrap;
 }
 .api-explorer__section-head .page__intro {
 	max-width: 860px;
@@ -180,6 +181,8 @@
 }
 .api-example__code,
 .api-result__body {
+	box-sizing: border-box;
+	max-width: 100%;
 	margin: var(--space-0);
 	padding: var(--space-3);
 	border: var(--border-base);
@@ -190,6 +193,12 @@
 	overflow: auto;
 	overflow-wrap: normal;
 	white-space: pre;
+}
+.api-example__code code,
+.api-result__body code {
+	display: block;
+	width: max-content;
+	min-width: 100%;
 }
 .api-result {
 	position: sticky;
@@ -238,6 +247,10 @@
 }
 .api-result__body {
 	max-height: min(52vh, 520px);
+}
+.api-docs-page :where(.prose, .page__intro) code {
+	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 /* Nav. */
@@ -1911,6 +1924,7 @@ html[dir="rtl"] .recent-table {
 	.api-explorer__section-head,
 	.api-endpoint__actions {
 		align-items: stretch;
+		flex-direction: column;
 	}
 	.api-explorer__section-head > a,
 	.api-endpoint__actions .btn {
