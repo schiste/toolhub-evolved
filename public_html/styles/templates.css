@@ -339,11 +339,6 @@
 	.qv__x {
 		transition-property: background, border-color, color, opacity;
 	}
-
-	.tcard__hint {
-		transform: none;
-		transition-property: opacity;
-	}
 }
 
 /* Respect users who ask for less motion. Keep this last so it wins. */
@@ -365,7 +360,6 @@
 		.intent__go,
 		.qv__x,
 		.tcard,
-		.tcard__hint,
 		.lcard,
 		.linkcard,
 		.home-results,

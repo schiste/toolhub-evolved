@@ -8,7 +8,6 @@ import { completeness } from "../../public_html/lib/core/signals.js";
 import { applyExp, setServerUser, signedIn } from "../../public_html/lib/core/session.js";
 import { toolIcon } from "../../public_html/lib/atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../../public_html/lib/atoms/badges.js";
-import { icon } from "../../public_html/lib/atoms/icon.js";
 import { wikiShort } from "../../public_html/lib/atoms/labels.js";
 import { favBtn } from "../../public_html/lib/molecules/favbtn.js";
 
@@ -44,7 +43,7 @@ function oracle(t, opts = {}) {
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	const endorsement = t.endorsement;
 	const signalLine = endorsementChip(endorsement && endorsement.count) + completenessMeter(complete) + fitChip(t);
-	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t${flag}\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t<div class="tcard__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t\t<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(t.modified, "tcard__when")}${signedIn() ? favBtn(t.name, { cls: "favbtn--sm" }) : ""}</span></div>\n\t\t${icon("search", "tcard__hint")}\n\t</article>`;
+	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t${flag}\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t<div class="tcard__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t\t<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(t.modified, "tcard__when")}${signedIn() ? favBtn(t.name, { cls: "favbtn--sm" }) : ""}</span></div>\n\t</article>`;
 }
 
 const base = {

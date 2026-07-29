@@ -768,7 +768,6 @@ const S = {
 		<div class="tcard__tags"><span class="tag" data-q="citations" dir="auto">citations</span><span class="tag" data-q="references" dir="auto">references</span><span class="tag tag--more">+4</span></div>
 		<div class="tcard__signals"><span class="signal signal--complete" title="Listing 9 of 9 fields complete"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Well documented</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">web app · All wikis</span><span class="tcard__footr"><u|2026-05-12T14:30:00Z|tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></div>
 		<figcaption class="sg-example__caption"><code>toolCard(tool)</code><span>organisms</span></figcaption>
 	</figure>
@@ -787,7 +786,6 @@ const S = {
 		<div class="tcard__tags"><span class="tag" data-q="citations" dir="auto">citations</span><span class="tag" data-q="references" dir="auto">references</span><span class="tag tag--more">+4</span></div>
 		<div class="tcard__signals"><span class="signal signal--complete" title="Listing 9 of 9 fields complete"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Well documented</span></div>
 		<div class="tcard__foot"><span class="views experimental"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 17h16v2H1V1h2z"/><path d="M19 5v10H5v-1l4.5-5.5 3 3.5L18 5z"/></svg> 1.8K views</span><span class="tcard__footr"><u|2026-05-12T14:30:00Z|tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></div>
 		<figcaption class="sg-example__caption"><code>toolCard(tool, { popular: true, rank: 1 })</code><span>organisms</span></figcaption>
 	</figure>
@@ -806,7 +804,6 @@ const S = {
 		<div class="tcard__tags"><span class="tag" data-q="citations" dir="auto">citations</span><span class="tag" data-q="references" dir="auto">references</span><span class="tag tag--more">+4</span></div>
 		<div class="tcard__signals"><span class="signal signal--complete" title="Listing 9 of 9 fields complete"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Well documented</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">web app · All wikis</span><span class="tcard__footr"><u|2025-11-04T09:15:00Z|tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></div>
 		<figcaption class="sg-example__caption"><code>toolCard(deprecatedTool)</code><span>organisms</span></figcaption>
 	</figure>
@@ -848,7 +845,6 @@ const S = {
 		<div class="tcard__tags"><span class="tag" data-q="citations" dir="auto">citations</span><span class="tag" data-q="references" dir="auto">references</span><span class="tag tag--more">+4</span></div>
 		<div class="tcard__signals"><span class="signal signal--complete" title="Listing 9 of 9 fields complete"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Well documented</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">web app · All wikis</span><span class="tcard__footr"><u|2026-05-12T14:30:00Z|tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></li><li>
 	<article class="tcard tcard--popular tcard--complete" data-tool="styleguide-experimental-citation-helper">
 		<span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>
@@ -863,7 +859,6 @@ const S = {
 		<div class="tcard__tags"><span class="tag" data-q="citations" dir="auto">citations</span><span class="tag" data-q="references" dir="auto">references</span><span class="tag tag--more">+4</span></div>
 		<div class="tcard__signals"><span class="signal signal--complete" title="Listing 9 of 9 fields complete"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Well documented</span></div>
 		<div class="tcard__foot"><span class="views experimental"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 17h16v2H1V1h2z"/><path d="M19 5v10H5v-1l4.5-5.5 3 3.5L18 5z"/></svg> 612 views</span><span class="tcard__footr"><u|2026-06-01T16:45:00Z|tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></li><li>
 	<article class="tcard tcard--complete" data-tool="styleguide-deprecated-citation-helper">
 		<span class="tcard__flag status status--red"><span class="dot dot--red"></span>Deprecated</span>
@@ -878,7 +873,6 @@ const S = {
 		<div class="tcard__tags"><span class="tag" data-q="citations" dir="auto">citations</span><span class="tag" data-q="references" dir="auto">references</span><span class="tag tag--more">+4</span></div>
 		<div class="tcard__signals"><span class="signal signal--complete" title="Listing 9 of 9 fields complete"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Well documented</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">web app · All wikis</span><span class="tcard__footr"><u|2025-11-04T09:15:00Z|tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></li></ul></div>
 		<figcaption class="sg-example__caption"><code>grid(className, items, render)</code><span>organisms</span></figcaption>
 	</figure>

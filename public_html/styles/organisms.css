@@ -893,32 +893,6 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.tcard__hint {
-	position: absolute;
-	inset-inline-start: 48px;
-	top: 48px;
-	width: var(--space-4);
-	height: var(--space-4);
-	border-radius: 50%;
-	background: var(--color-progressive);
-	color: var(--color-surface);
-	font-size: var(--fs-micro);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	box-shadow: var(--shadow-popover);
-	opacity: 0;
-	transform: scale(0.7);
-	transition:
-		opacity 0.15s ease,
-		transform 0.15s ease;
-	pointer-events: none;
-}
-.tcard:hover .tcard__hint,
-.tcard:focus-visible .tcard__hint {
-	opacity: 1;
-	transform: scale(1);
-}
 
 /* Lists + steps. */
 .lcard {

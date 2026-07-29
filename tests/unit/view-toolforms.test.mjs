@@ -152,7 +152,6 @@ const S = {
 		<div class="tcard__tags"></div>
 		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u||tcard__when></span></div>
-		<svg class="icon tcard__hint" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg>
 	</article></li></ul></div>
 		<h2 class="le__h2">Local crawler runs</h2>
 		<div data-crawler-runs><p class="empty">No local crawler runs recorded yet.</p></div>
