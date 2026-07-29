@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
 	metaItem,
+	invalidUrlNotice,
 	linkOut,
 	wikiLabel,
 	langLabel,
@@ -63,8 +64,23 @@ test("linkOut() normalizes an scp-style git url before linking", () => {
 test("linkOut() renders a bad-link span for an unusable url", () => {
 	assert.equal(
 		linkOut("Repo", "not a url"),
-		'<span class="linkout-bad">Repo: <span dir="auto">not a url</span></span>'
+		'<span class="linkout-bad" role="note" aria-label="Repo: invalid URL" data-url-state="invalid"><span class="linkout-bad__label">Repo</span><span class="linkout-bad__state">Invalid URL</span><span class="linkout-bad__url" dir="auto">not a url</span></span>'
 	);
+});
+
+test("linkOut() labels malformed http-like values instead of linking them", () => {
+	assert.equal(
+		linkOut("Issues", "https://exa mple.org/issues"),
+		'<span class="linkout-bad" role="note" aria-label="Issues: invalid URL" data-url-state="invalid"><span class="linkout-bad__label">Issues</span><span class="linkout-bad__state">Invalid URL</span><span class="linkout-bad__url" dir="auto">https://exa mple.org/issues</span></span>'
+	);
+});
+
+test("invalidUrlNotice() escapes label and raw URL text", () => {
+	assert.equal(
+		invalidUrlNotice("<Repo>", "javascript:alert('<x>')"),
+		'<span class="linkout-bad" role="note" aria-label="&lt;Repo&gt;: invalid URL" data-url-state="invalid"><span class="linkout-bad__label">&lt;Repo&gt;</span><span class="linkout-bad__state">Invalid URL</span><span class="linkout-bad__url" dir="auto">javascript:alert(&#39;&lt;x&gt;&#39;)</span></span>'
+	);
+	assert.equal(invalidUrlNotice("Repo", ""), "");
 });
 
 // ---- wikiLabel ----------------------------------------------------------------

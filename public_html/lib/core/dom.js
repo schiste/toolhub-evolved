@@ -58,6 +58,20 @@ export function safeUrl(u) {
 	const s = String(u ?? "").trim();
 	return /^https?:\/\//i.test(s) ? esc(s) : "";
 }
+/** @param {unknown} u */
+export function isHttpUrl(u) {
+	try {
+		const parsed = new URL(String(u ?? "").trim());
+		return parsed.protocol === "http:" || parsed.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+/** @param {unknown} u */
+export function safeHttpUrl(u) {
+	const s = String(u ?? "").trim();
+	return isHttpUrl(s) ? esc(s) : "";
+}
 /** @param {unknown} value */
 export function dirAttrs(value) {
 	return value ? ' dir="auto"' : "";

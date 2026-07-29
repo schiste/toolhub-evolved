@@ -1425,6 +1425,17 @@
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
+.linkout-bad__label {
+	font-weight: 600;
+	color: var(--color-text-secondary);
+}
+.linkout-bad__state {
+	font-weight: 700;
+	color: var(--color-destructive);
+}
+.linkout-bad__url {
+	font-family: var(--font-mono);
+}
 .toolpage__cta {
 	display: flex;
 	flex-direction: column;

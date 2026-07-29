@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, safeUrl, textAttrs } from "../lib/core/dom.js";
+import { dirAttrs, esc, safeHttpUrl, safeUrl, textAttrs } from "../lib/core/dom.js";
 import { t, timeTag, updatedTimeTag } from "../lib/core/i18n.js";
 import {
 	INDEX,
@@ -308,6 +308,7 @@ export async function viewTool(name) {
 	const { provTags, syncPanels } = toolSyncUi(tool, name);
 	const tags = keywordTags(tool, { empty: "—" });
 	const authors = authorInlineList(tool);
+	const openToolUrl = safeHttpUrl(tool.url);
 
 	// REAL links — render only the ones present on the record.
 	const actions = [
@@ -411,7 +412,7 @@ export async function viewTool(name) {
 				</div>
 			</div>
 			<div class="toolpage__cta">
-				${tool.url ? button(t("tool.openTool", "Open tool"), { variant: "primary", size: "lg", href: safeUrl(tool.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
+				${openToolUrl ? button(t("tool.openTool", "Open tool"), { variant: "primary", size: "lg", href: openToolUrl, icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
 				${signedIn() ? favBtn(tool.name, { label: true, cls: "favbtn--btn favbtn--lg" }) : ""}
 				<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
 				${signedIn() ? saveToListControl(tool.name) : ""}

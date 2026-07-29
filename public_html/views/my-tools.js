@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, safeUrl, textAttrs } from "../lib/core/dom.js";
+import { dirAttrs, esc, safeHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { backendGetJson, normalizeTool } from "../lib/core/api.js";
 import { countLabel, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
+import { invalidUrlNotice } from "../lib/atoms/labels.js";
 
 const TOOLHUB_BASE = "https://toolhub.wikimedia.org";
 const TOOLHUB_DEVELOPER_SETTINGS_URL = `${TOOLHUB_BASE}/developer-settings`;
@@ -115,9 +116,10 @@ function toolinfoDiscoveryCell(discovery) {
 			discovery.method === "sitemap"
 				? t("accountTools.toolinfoFoundSitemap", "Found in sitemap")
 				: t("accountTools.toolinfoFoundRoot", "Found at root");
+		const url = safeHttpUrl(discovery.toolinfoUrl);
 		return `<div class="account-tools__toolinfo">
 			<span class="sync-badge sync-badge--review-approved">${esc(method)}</span>
-			<a href="${safeUrl(discovery.toolinfoUrl)}" target="_blank" rel="noopener nofollow">${esc(discovery.toolinfoUrl)}</a>
+			${url ? `<a href="${url}" target="_blank" rel="noopener nofollow">${esc(discovery.toolinfoUrl)}</a>` : invalidUrlNotice(t("accountTools.toolinfoUrlLabel", "toolinfo.json URL"), discovery.toolinfoUrl)}
 		</div>`;
 	}
 	if (status === "not_found") {
@@ -175,9 +177,11 @@ function toolinfoEvidenceCell(source, discovery) {
 		typeof source.itemCount === "number" && source.itemCount > 0
 			? ` · ${countLabel(source.itemCount, t("accountTools.sourceToolOne", "tool"), t("accountTools.sourceToolOther", "tools"))}`
 			: "";
+	const sourceLabel = source.sourceLabel || t("accountTools.sourceUnknown", "Official crawler feed");
+	const sourceUrl = safeHttpUrl(source.sourceUrl);
 	return `<div class="account-tools__toolinfo">
 		<span class="sync-badge sync-badge--official">${t("accountTools.officialCrawlerSource", "Official crawler source")}</span>
-		<a href="${safeUrl(source.sourceUrl)}" target="_blank" rel="noopener nofollow">${esc(source.sourceLabel || t("accountTools.sourceUnknown", "Official crawler feed"))}</a>
+		${sourceUrl ? `<a href="${sourceUrl}" target="_blank" rel="noopener nofollow">${esc(sourceLabel)}</a>` : invalidUrlNotice(sourceLabel, source.sourceUrl)}
 		<span class="recent-table__muted">${t("accountTools.sourceDetails", "Source")} ${esc(source.sourceKind || "official")}${count}${fetched}</span>
 		${selfHostedDiscoveryLine(discovery, { hideFailures: true })}
 	</div>`;
@@ -189,7 +193,7 @@ function toolRow(tool) {
 	const type = tool.toolType || t("accountTools.noType", "No type");
 	const when =
 		timeTag(tool.modified) || `<span class="recent-table__muted">${t("accountTools.notUpdated", "Unknown")}</span>`;
-	const toolUrl = safeUrl(tool.url);
+	const toolUrl = safeHttpUrl(tool.url);
 	return `<tr>
 		<td data-label="${t("accountTools.tool", "Tool")}">
 			<a class="account-records__title" href="${toolHref(tool.name)}">

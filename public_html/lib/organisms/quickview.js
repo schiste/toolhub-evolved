@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, esc, safeUrl, textAttrs } from "../core/dom.js";
+import { $, $$, esc, safeHttpUrl, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
 import { INDEX, getTool } from "../core/api.js";
 import { renderMarkdown } from "../core/markdown.js";
@@ -34,6 +34,7 @@ export function quickViewBody(tool) {
 	const tags = keywordTags(tool, { limit: QV_TAG_LIMIT });
 	// `endorsement` is attached at runtime by signals.js but isn't on the ambient Tool.
 	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (tool).endorsement;
+	const openToolUrl = safeHttpUrl(tool.url);
 	const realBadge = [
 		tool.deprecated &&
 			`<span class="status status--red"><span class="dot dot--red"></span>${t("quickview.deprecated", "Deprecated")}</span>`,
@@ -58,7 +59,7 @@ export function quickViewBody(tool) {
 		<div class="toolpage__glance">${glance}</div>
 		<div class="tcard__tags qv__tags">${tags}</div>
 		<div class="qv__actions">
-			${tool.url ? button(t("quickview.openTool", "Open tool"), { variant: "primary", href: safeUrl(tool.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
+			${openToolUrl ? button(t("quickview.openTool", "Open tool"), { variant: "primary", href: openToolUrl, icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}
 			${
 				// Stryker disable next-line StringLiteral: button() applies `opts.variant || "outline"`, so emptying this "outline" variant string falls back to the same default — equivalent. (The label/href are still asserted.) Comments/newlines inside ${} do not affect the rendered string.
 				button(t("quickview.viewFullPage", "View full page"), { variant: "outline", href: toolHref(tool.name) })

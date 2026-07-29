@@ -70,6 +70,17 @@ test("safeUrl only allows http(s) and escapes the result", () => {
 	assert.equal(dom.safeUrl(null), "");
 });
 
+test("safeHttpUrl validates the URL shape before escaping it", () => {
+	assert.equal(dom.isHttpUrl("https://x.example/path"), true);
+	assert.equal(dom.isHttpUrl("http://x.example"), true);
+	assert.equal(dom.isHttpUrl("ftp://x.example"), false);
+	assert.equal(dom.isHttpUrl("https://exa mple.org"), false);
+	assert.equal(dom.isHttpUrl("/relative"), false);
+	assert.equal(dom.safeHttpUrl(" https://x.example/?a=<b> "), "https://x.example/?a=&lt;b&gt;");
+	assert.equal(dom.safeHttpUrl("https://exa mple.org"), "");
+	assert.equal(dom.safeHttpUrl(null), "");
+});
+
 test("dirAttrs emits dir=auto only for truthy values", () => {
 	assert.equal(dom.dirAttrs("text"), ' dir="auto"');
 	assert.equal(dom.dirAttrs(1), ' dir="auto"');

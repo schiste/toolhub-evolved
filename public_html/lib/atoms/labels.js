@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, normalizeVcsUrl, safeUrl } from "../core/dom.js";
+import { dirAttrs, esc, normalizeVcsUrl, safeHttpUrl } from "../core/dom.js";
 import { countLabel, t } from "../core/i18n.js";
 import { button } from "./button.js";
 
@@ -14,10 +14,21 @@ export function metaItem(k, v) {
  * @param {string} label
  * @param {string | null | undefined} url
  */
+export function invalidUrlNotice(label, url) {
+	const raw = String(url ?? "").trim();
+	if (!raw) return "";
+	const aria = t("labels.invalidUrlAria", "{label}: invalid URL", { label });
+	const state = t("labels.invalidUrl", "Invalid URL");
+	return `<span class="linkout-bad" role="note" aria-label="${esc(aria)}" data-url-state="invalid"><span class="linkout-bad__label">${esc(label)}</span><span class="linkout-bad__state">${esc(state)}</span><span class="linkout-bad__url"${dirAttrs(raw)}>${esc(raw)}</span></span>`;
+}
+/**
+ * @param {string} label
+ * @param {string | null | undefined} url
+ */
 export function linkOut(label, url) {
 	const raw = String(url ?? "").trim();
 	if (!raw) return "";
-	const u = safeUrl(normalizeVcsUrl(raw));
+	const u = safeHttpUrl(normalizeVcsUrl(raw));
 	if (u) {
 		return button(label, {
 			// Stryker disable next-line StringLiteral: button()'s variantClass("") falls back to the same "btn--outline" as variantClass("outline"), so "outline" → "" is not observable — equivalent.
@@ -27,7 +38,7 @@ export function linkOut(label, url) {
 			attrs: 'target="_blank" rel="noopener nofollow"'
 		});
 	}
-	return `<span class="linkout-bad">${esc(label)}: <span${dirAttrs(raw)}>${esc(raw)}</span></span>`;
+	return invalidUrlNotice(label, raw);
 }
 /** @param {string[] | null | undefined} a @returns {string} */
 export const wikiLabel = (a) =>

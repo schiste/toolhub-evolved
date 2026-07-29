@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
+import { $, $input, dirAttrs, esc, isHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t, tWithElements } from "../lib/core/i18n.js";
 import {
 	backendErrorMessage,
@@ -60,18 +60,6 @@ import {
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
-
-/** @param {string} value */
-function isHttpUrl(value) {
-	let u;
-	try {
-		// Stryker disable next-line StringLiteral,MethodExpression: callers pass already-trimmed field values; an empty string and any sentinel both fail `new URL`, and the redundant .trim() has nothing to strip — equivalent.
-		u = new URL(String(value || "").trim());
-	} catch {
-		return false;
-	}
-	return u.protocol === "http:" || u.protocol === "https:";
-}
 
 /**
  * @param {string} id

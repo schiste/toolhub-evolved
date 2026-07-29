@@ -20,7 +20,7 @@ import {
 	setPageInert
 } from "../../public_html/lib/organisms/quickview.js";
 import { INDEX, getTool } from "../../public_html/lib/core/api.js";
-import { dirAttrs, esc, safeUrl } from "../../public_html/lib/core/dom.js";
+import { dirAttrs, esc, safeHttpUrl } from "../../public_html/lib/core/dom.js";
 import { updatedTimeTag } from "../../public_html/lib/core/i18n.js";
 import { renderMarkdown } from "../../public_html/lib/core/markdown.js";
 import { applyExp, setServerUser, signedIn } from "../../public_html/lib/core/session.js";
@@ -38,6 +38,7 @@ function qvOracle(t) {
 	const authors = (t.authors || []).map((author) => esc(author)).join(", ") || esc(t.maintainer);
 	const tags = keywordTags(t, { limit: TAG_LIMIT });
 	const endorsement = t.endorsement;
+	const openToolUrl = safeHttpUrl(t.url);
 	const realBadge = [
 		t.deprecated && '<span class="status status--red"><span class="dot dot--red"></span>Deprecated</span>',
 		t.experimental && '<span class="status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>'
@@ -45,7 +46,7 @@ function qvOracle(t) {
 		.filter(Boolean)
 		.join("");
 	const glance = glanceChips(t);
-	return `\n\t\t<div class="qv__head">${toolIcon(t, "lg")}\n\t\t\t<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(t.title)}>${esc(t.title)}</h2>\n\t\t\t<div class="qv__by">by <span dir="auto">${authors}</span></div></div>\n\t\t</div>\n\t\t<div class="qv__status">\n\t\t\t${realBadge}\n\t\t\t${endorsementChip(endorsement && endorsement.count)}\n\t\t\t${fitChip(t)}\n\t\t\t${updatedTimeTag(t.modified, "toolpage__when")}\n\t\t</div>\n\t\t<div class="qv__desc"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>\n\t\t<div class="toolpage__glance">${glance}</div>\n\t\t<div class="tcard__tags qv__tags">${tags}</div>\n\t\t<div class="qv__actions">\n\t\t\t${t.url ? button("Open tool", { variant: "primary", href: safeUrl(t.url), icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}\n\t\t\t${button("View full page", { variant: "outline", href: toolHref(t.name) })}\n\t\t\t${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}\n\t\t</div>`;
+	return `\n\t\t<div class="qv__head">${toolIcon(t, "lg")}\n\t\t\t<div class="qv__id"><h2 class="qv__title" id="qv-title"${dirAttrs(t.title)}>${esc(t.title)}</h2>\n\t\t\t<div class="qv__by">by <span dir="auto">${authors}</span></div></div>\n\t\t</div>\n\t\t<div class="qv__status">\n\t\t\t${realBadge}\n\t\t\t${endorsementChip(endorsement && endorsement.count)}\n\t\t\t${fitChip(t)}\n\t\t\t${updatedTimeTag(t.modified, "toolpage__when")}\n\t\t</div>\n\t\t<div class="qv__desc"${dirAttrs(t.description)}>${renderMarkdown(t.description) || "<em>No description provided.</em>"}</div>\n\t\t<div class="toolpage__glance">${glance}</div>\n\t\t<div class="tcard__tags qv__tags">${tags}</div>\n\t\t<div class="qv__actions">\n\t\t\t${openToolUrl ? button("Open tool", { variant: "primary", href: openToolUrl, icon: "external", attrs: 'target="_blank" rel="noopener nofollow"' }) : ""}\n\t\t\t${button("View full page", { variant: "outline", href: toolHref(t.name) })}\n\t\t\t${signedIn() ? favBtn(t.name, { label: true, cls: "favbtn--btn" }) : ""}\n\t\t</div>`;
 }
 
 const base = {
@@ -83,6 +84,7 @@ test("quickViewBody exact HTML across content branches", () => {
 	qvCheck("endorsement attached", { ...base, endorsement: { count: 7 } });
 	qvCheck("empty description -> fallback em", { ...base, description: "" });
 	qvCheck("no url -> no Open tool button", { ...base, url: "" });
+	qvCheck("invalid url -> no Open tool button", { ...base, url: "https://exa mple.org/tool" });
 	// >6 keywords pins the { limit: QV_TAG_LIMIT } object (dropping it shows all keywords).
 	qvCheck("many keywords are capped at the tag limit", {
 		...base,

@@ -287,6 +287,57 @@ test("viewMyTools does not show self-hosted failures when official crawler sourc
 	assert.ok(!r.html.includes("DNS failed"));
 });
 
+test("viewMyTools labels invalid crawler evidence URLs", async () => {
+	h.backendGetJson.mockResolvedValue({
+		verified: [
+			{
+				tool: {
+					name: "bad-source",
+					title: "Bad Source",
+					url: "https://tool.example",
+					author: []
+				},
+				claims: [],
+				toolinfoDiscovery: {
+					status: "found",
+					method: "root",
+					toolinfoUrl: "https://exa mple.org/toolinfo.json"
+				},
+				toolinfoSource: {
+					toolName: "bad-source",
+					sourceUrl: "javascript:alert(1)",
+					sourceKind: "toolsadmin",
+					sourceLabel: "Toolsadmin feed"
+				}
+			}
+		],
+		possible: [
+			{
+				tool: {
+					name: "bad-discovery",
+					title: "Bad Discovery",
+					url: "https://tool2.example",
+					author: []
+				},
+				claims: [],
+				toolinfoDiscovery: {
+					status: "found",
+					method: "root",
+					toolinfoUrl: "https://exa mple.org/toolinfo.json"
+				}
+			}
+		]
+	});
+
+	const r = await viewMyTools();
+
+	assert.ok(!r.html.includes('href="https://exa mple.org/toolinfo.json"'));
+	assert.ok(!r.html.includes('href="javascript:alert(1)"'));
+	assert.ok(r.html.includes('aria-label="Toolsadmin feed: invalid URL"'));
+	assert.ok(r.html.includes('aria-label="toolinfo.json URL: invalid URL"'));
+	assert.ok(r.html.includes('data-url-state="invalid"'));
+});
+
 test("viewMyTools renders all toolinfo discovery states", async () => {
 	h.backendGetJson.mockResolvedValue({
 		verified: [

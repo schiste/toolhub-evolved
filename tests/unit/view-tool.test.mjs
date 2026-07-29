@@ -624,6 +624,31 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.ok(!r.html.includes("Usage <span"));
 });
 
+test("viewTool labels invalid source and issue metadata instead of linking it", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("badlinks", {
+			title: "Bad Links",
+			url: "https://example.org/tool",
+			repository: "https://exa mple.org/repo",
+			bugtracker: "javascript:alert(1)"
+		})
+	);
+	const r = await tool.viewTool("badlinks");
+	assert.ok(r.html.includes('href="https://example.org/tool"'));
+	assert.ok(!r.html.includes('href="https://exa mple.org/repo"'));
+	assert.ok(!r.html.includes('href="javascript:alert(1)"'));
+	assert.ok(
+		r.html.includes(
+			'<span class="linkout-bad" role="note" aria-label="Source code: invalid URL" data-url-state="invalid">'
+		)
+	);
+	assert.ok(
+		r.html.includes(
+			'<span class="linkout-bad" role="note" aria-label="Report a bug: invalid URL" data-url-state="invalid">'
+		)
+	);
+});
+
 test("viewTool deprecated with replacement (string name) + field provenance labels", async () => {
 	applyExp(true);
 	setServerUser("Grace Hopper");
