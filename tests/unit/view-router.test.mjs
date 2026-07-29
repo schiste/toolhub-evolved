@@ -142,17 +142,12 @@ test("dispatch /by/<name> → viewAuthor with the decoded name", async () => {
 
 /* ---- dispatch: tools --------------------------------------------------- */
 
-test("dispatch /tools/create gates behind sign-in", async () => {
-	await at("/tools/create"); // signedIn=false
-	assert.deepEqual(staticViews.signInPage.mock.calls[0], [
-		"Submit a tool",
-		"Create a new tool record — title, description, URL and more."
-	]);
+test("dispatch /tools/create redirects to My tools", async () => {
+	const redirect = await at("/tools/create");
+	assert.equal(redirect.title, "Redirecting - Toolhub");
+	assert.match(redirect.html, /account-records__table skeleton-table/);
 	assert.equal(toolforms.viewToolForm.mock.calls.length, 0);
-
-	session.signedIn.mockReturnValue(true);
-	await at("/tools/create");
-	assert.deepEqual(toolforms.viewToolForm.mock.calls[0], [null]);
+	redirect.mount?.();
 });
 
 test("dispatch /tools/<name> → viewTool with decoded name", async () => {
@@ -325,7 +320,6 @@ test("dispatch gated routes: unresolved auth → account loading page", async ()
 		["/account", "Evolved data settings"],
 		["/developer-settings", "Developer settings"],
 		["/my-tools", "My tools"],
-		["/tools/create", "Submit a tool"],
 		["/tools/example/edit", "Edit tool"],
 		["/tools/example/edit-annotations", "Edit annotations"],
 		["/lists/create", "Create a list"],

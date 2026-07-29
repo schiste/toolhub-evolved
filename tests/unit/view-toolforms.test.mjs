@@ -285,7 +285,7 @@ const S = {
 	create: `
 	<div class="container page le">
 		<a class="back" href="/my-tools">← Back</a>
-		<h1 class="page__title">Submit a tool <span class="exp-badge">Experimental</span></h1>
+		<h1 class="page__title">Register a tool <span class="exp-badge">Experimental</span></h1>
 		<p class="page__intro">Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>.
 		</p>
 		<form data-tool-form novalidate>
@@ -329,7 +329,7 @@ const S = {
 		<input class="le__input" id="tf-langs" type="text" aria-describedby="tf-langs-hint tf-langs-err" maxlength="300" value="" placeholder="en, fr, de" /><span class="le__error" id="tf-langs-err" hidden></span></label>
 			<div class="le__checks"><label class="le__check"><input type="checkbox" id="tf-deprecated" /> Deprecated</label><label class="le__check"><input type="checkbox" id="tf-experimental" /> Experimental</label></div>
 			<div class="le__actions">
-				<button class="btn btn--primary btn--md" type="submit">Submit tool</button>
+				<button class="btn btn--primary btn--md" type="submit">Register tool</button>
 				
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
@@ -506,7 +506,7 @@ afterEach(() => {
 
 test("viewToolForm create", async () => {
 	const r = await tf.viewToolForm(null);
-	assert.equal(r.title, "Submit a tool — Toolhub");
+	assert.equal(r.title, "Register a tool — Toolhub");
 	expect("create", r.html);
 });
 
@@ -2062,7 +2062,7 @@ test("mount annotations: signed-in revert discards annotation fallback in Evolve
 
 test("viewToolForm(undefined) is treated as create", async () => {
 	const r = await tf.viewToolForm(undefined);
-	assert.equal(r.title, "Submit a tool — Toolhub");
+	assert.equal(r.title, "Register a tool — Toolhub");
 	assert.equal(h.getTool.mock.calls.length, 0, "create does not fetch a tool");
 });
 

@@ -243,15 +243,18 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.listsTry", "Your lists")
 			},
 			{
-				name: t("experiments.submitName", "Submit a tool"),
-				what: t("experiments.submitWhat", "Add a brand-new tool record."),
-				current: t(
-					"experiments.submitCurrent",
-					"Official POST /api/tools/ first; rejected submissions become local Evolved drafts."
+				name: t("experiments.toolRegistrationName", "Tool registration workspace"),
+				what: t(
+					"experiments.toolRegistrationWhat",
+					"Register toolinfo sources and manage local tool records from My tools."
 				),
-				need: "POST /api/tools/",
-				tryHref: "/tools/create",
-				tryLabel: t("experiments.submitName", "Submit a tool")
+				current: t(
+					"experiments.toolRegistrationCurrent",
+					"Toolinfo discovery and official crawler registration now live inside the My tools workspace."
+				),
+				need: "POST /v1/crawler/toolinfo-discovery/ and official crawler source registration",
+				tryHref: "/my-tools",
+				tryLabel: t("experiments.myToolsTry", "My tools")
 			},
 			{
 				name: t("experiments.editToolName", "Edit a tool"),

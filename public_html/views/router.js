@@ -137,11 +137,7 @@ export const ROUTES = {
 /** Tool sub-routes (/tools/:name and its create/edit/history variants). @param {string[]} seg */
 function dispatchToolRoute(seg) {
 	if (seg[1] === "create") {
-		return requireSignIn(
-			() => loadToolForms().then((m) => m.viewToolForm(null)),
-			t("router.submitToolTitle", "Submit a tool"),
-			t("router.submitToolLead", "Create a new tool record — title, description, URL and more.")
-		);
+		return redirectTo("/my-tools");
 	}
 	const nm = decodeURIComponent(seg[1]);
 	if (seg[2] === "edit") {

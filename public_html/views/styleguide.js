@@ -304,7 +304,6 @@ function forceGraphExample() {
 }
 
 function chromeNavExample() {
-	const submitAttrs = 'target="_blank" rel="noopener nofollow"';
 	return `<div class="sg-chrome-frame">
 		<header class="nav">
 			<div class="nav__inner">
@@ -320,7 +319,6 @@ function chromeNavExample() {
 				</nav>
 				<div class="nav__actions">
 					<a class="icon-btn" href="/search">${icon("search")} ${t("styleguide.search", "Search")}</a>
-					${button(t("styleguide.submitTool", "Submit a tool"), { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: submitAttrs })}
 					${accountButtonExample()}
 				</div>
 			</div>
@@ -487,7 +485,7 @@ function recentListExample() {
 function panelVariantsExample() {
 	// prettier-ignore
 	// Stryker disable next-line StringLiteral: explicit default variant "outline" — equivalent to omitting it.
-	const submitBtn = button(t("styleguide.submitTool", "Submit a tool"), { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" });
+	const myToolsBtn = button(t("styleguide.myTools", "My tools"), { variant: "outline", href: "/my-tools" });
 	return `<div class="sg-panel-pair">
 		<div class="panel">
 			<h3 class="panel__title">${t("styleguide.recentlyUpdated", "Recently updated")}</h3>
@@ -498,7 +496,7 @@ function panelVariantsExample() {
 			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
 			<h3>${t("styleguide.ctaTitle", "Built a tool for Wikimedia?")}</h3>
 			<p>${tWithElements("styleguide.ctaBody", "Add a {toolinfo} to your repository so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>
-			${submitBtn}
+			${myToolsBtn}
 		</div>
 	</div>`;
 }

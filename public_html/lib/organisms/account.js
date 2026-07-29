@@ -75,13 +75,11 @@ export function toggleAcctMenu() {
 	}
 }
 
-// Header "Submit a tool": production uses the hybrid in-app create flow.
+// Remove the retired header create affordance if stale shell HTML is present.
 export function syncSubmitButton() {
 	const b = $("#submit-tool");
 	if (!b) return;
-	b.setAttribute("href", "/tools/create");
-	b.removeAttribute("target");
-	b.removeAttribute("rel");
+	b.remove();
 }
 
 globalThis.renderAccount = renderAccount;

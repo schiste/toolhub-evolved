@@ -256,31 +256,31 @@ const S = {
 				</div>
 			</div>
 		</header>
-		<nav class="account-workbench__nav" aria-label="Account pages">
-		<a class="account-workbench__nav-item" href="/my-lists">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Your lists</span>
+		<nav class="tab-bar account-workbench__nav" aria-label="Account pages">
+		<a class="tab-bar__item account-workbench__nav-item" href="/my-lists">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Your lists</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/my-tools">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">My tools</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/my-tools">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">My tools</span>
 				</span>
-			</a><a class="account-workbench__nav-item is-active" href="/favorites" aria-current="page">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Favorites</span>
+			</a><a class="tab-bar__item account-workbench__nav-item is-active" href="/favorites" aria-current="page">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Favorites</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/developer-settings">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Developer settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/developer-settings">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/account">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Evolved data settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
 				</span>
 			</a>
 	</nav>
@@ -319,31 +319,31 @@ const S = {
 				</div>
 			</div>
 		</header>
-		<nav class="account-workbench__nav" aria-label="Account pages">
-		<a class="account-workbench__nav-item" href="/my-lists">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Your lists</span>
+		<nav class="tab-bar account-workbench__nav" aria-label="Account pages">
+		<a class="tab-bar__item account-workbench__nav-item" href="/my-lists">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Your lists</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/my-tools">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">My tools</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/my-tools">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">My tools</span>
 				</span>
-			</a><a class="account-workbench__nav-item is-active" href="/favorites" aria-current="page">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Favorites</span>
+			</a><a class="tab-bar__item account-workbench__nav-item is-active" href="/favorites" aria-current="page">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Favorites</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/developer-settings">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Developer settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/developer-settings">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/account">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Evolved data settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
 				</span>
 			</a>
 	</nav>
@@ -397,31 +397,31 @@ const S = {
 				</div>
 			</div>
 		</header>
-		<nav class="account-workbench__nav" aria-label="Account pages">
-		<a class="account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Your lists</span>
+		<nav class="tab-bar account-workbench__nav" aria-label="Account pages">
+		<a class="tab-bar__item account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Your lists</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/my-tools">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">My tools</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/my-tools">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">My tools</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/favorites">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Favorites</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/favorites">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Favorites</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/developer-settings">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Developer settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/developer-settings">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/account">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Evolved data settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
 				</span>
 			</a>
 	</nav>
@@ -454,31 +454,31 @@ const S = {
 				</div>
 			</div>
 		</header>
-		<nav class="account-workbench__nav" aria-label="Account pages">
-		<a class="account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Your lists</span>
+		<nav class="tab-bar account-workbench__nav" aria-label="Account pages">
+		<a class="tab-bar__item account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Your lists</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/my-tools">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">My tools</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/my-tools">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">My tools</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/favorites">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Favorites</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/favorites">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Favorites</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/developer-settings">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Developer settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/developer-settings">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Developer settings</span>
 				</span>
-			</a><a class="account-workbench__nav-item" href="/account">
-				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">Evolved data settings</span>
+			</a><a class="tab-bar__item account-workbench__nav-item" href="/account">
+				<span class="tab-bar__icon account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="tab-bar__copy account-workbench__nav-copy">
+					<span class="tab-bar__label account-workbench__nav-label">Evolved data settings</span>
 				</span>
 			</a>
 	</nav>

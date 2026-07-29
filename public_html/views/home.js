@@ -290,11 +290,10 @@ export async function viewHome() {
 	const intentTerm = initialState.term;
 	const intentWiki = initialState.wiki;
 
-	const submitToolBtn = button(t("home.submitATool", "Submit a tool"), {
+	const myToolsBtn = button(t("home.myTools", "My tools"), {
 		// Stryker disable next-line StringLiteral: `button()` defaults `variant` to "outline", so mutating this explicit "outline" to "" produces identical markup — equivalent.
 		variant: "outline",
-		href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create",
-		attrs: 'target="_blank" rel="noopener nofollow"'
+		href: "/my-tools"
 	});
 
 	const html = `
@@ -326,7 +325,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">${t("home.recentlyUpdated", "Recently updated")}</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${tWithElements("home.ctaBody", "Add a {toolinfo} to your repository, or register it here, so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>${submitToolBtn}</div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${tWithElements("home.ctaBody", "Add a {toolinfo} to your repository, or register it from My tools so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>${myToolsBtn}</div>
 		</aside>
 	</div>`;
 	return {

@@ -4,7 +4,6 @@ import { backendGetJson, normalizeTool } from "../lib/core/api.js";
 import { countLabel, relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
-import { button } from "../lib/atoms/button.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
 import { accountEmptyState, accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { toolRegistrationWorkspace } from "./toolforms.js";
@@ -222,6 +221,15 @@ function toolsTable(tools, actions = "") {
 	return `<div class="account-records__table-wrap">
 		<table class="account-records__table">
 			<caption class="skip-label">${t("accountTools.tableCaption", "My tools")}</caption>
+			<colgroup>
+				<col class="account-records__col--tool" />
+				<col class="account-records__col--owner" />
+				<col class="account-records__col--verification" />
+				<col class="account-records__col--source" />
+				<col class="account-records__col--type" />
+				<col class="account-records__col--updated" />
+				<col class="account-records__col--actions" />
+			</colgroup>
 			<thead><tr>
 				<th scope="col">${t("accountTools.tool", "Tool")}</th>
 				<th scope="col">${t("accountTools.owner", "Owner")}</th>
@@ -263,19 +271,13 @@ export async function viewMyTools() {
 		error = e;
 	}
 	const registration = toolRegistrationWorkspace();
-	const submitButton = button(t("accountTools.submitTool", "Submit a tool"), {
-		variant: "primary",
-		href: "/tools/create",
-		icon: "add"
-	});
 	const content = error
 		? accountEmptyState({
 				iconName: "tools",
 				title: t("accountTools.loadFailedTitle", "Tools could not be loaded"),
-				body: t("accountTools.loadFailed", "Unable to load your Toolhub tools right now."),
-				action: submitButton
+				body: t("accountTools.loadFailed", "Unable to load your Toolhub tools right now.")
 			})
-		: toolsTable(tools, submitButton);
+		: toolsTable(tools);
 	const html = accountWorkbenchPage({
 		active: "tools",
 		title: t("accountTools.title", "My tools"),

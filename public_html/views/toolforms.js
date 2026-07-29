@@ -864,7 +864,7 @@ export async function viewToolForm(name) {
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/my-tools"}">${t("toolforms.back", "← Back")}</a>
-		<h1 class="page__title">${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
+		<h1 class="page__title">${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Register a tool")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 		<p class="page__intro">${t("toolforms.introSaved", "Signed-in changes are published to official Toolhub when permitted; otherwise they are saved locally in Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.
 		${isCrawler ? t("toolforms.crawlerOwnedNote", "Core fields of crawler-imported tools are owned by the maintainer's toolinfo.json; only origin=api tools are core-editable in official Toolhub.") : ""}</p>
 		<form data-tool-form novalidate>
@@ -883,7 +883,7 @@ export async function viewToolForm(name) {
 			${withFieldProvenance(fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page after saving.") }), t("toolforms.fieldLangsShort", "Interface languages"), coreMeta)}
 			<div class="le__checks">${fCheck(t("toolforms.fieldDeprecated", "Deprecated"), "tf-deprecated", cur.deprecated)}${fCheck(t("toolforms.experimentalBadge", "Experimental"), "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
-				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Submit tool"), { variant: "primary", type: "submit" })}
+				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Register tool"), { variant: "primary", type: "submit" })}
 				${existingOfficialTool && officialWriteAvailable() ? button(t("toolforms.deleteOfficialTool", "Delete official tool"), { variant: "danger", cls: "le__delete", attrs: "data-tf-official-delete" }) : ""}
 			</div>
 			<p class="at__result" data-official-result aria-live="polite"></p>
@@ -966,7 +966,7 @@ export async function viewToolForm(name) {
 		if (!editing) setupDuplicateSuggestions();
 	}
 	return {
-		title: `${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Submit a tool")} — Toolhub`,
+		title: `${editing ? t("toolforms.editTool", "Edit tool") : t("toolforms.submitATool", "Register a tool")} — Toolhub`,
 		html,
 		mount
 	};

@@ -83,7 +83,6 @@ const S = {
 				</nav>
 				<div class="nav__actions">
 					<a class="icon-btn" href="/search"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg> Search</a>
-					<a class="btn btn--primary btn--md" href="https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" target="_blank" rel="noopener nofollow"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a>
 					<div class="acct">
 		<button class="acct__btn" id="sg-acct-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="sg-acct-menu">
 			<span class="avatar avatar--sm" style="background:var(--wmf-blue-aaa)" aria-hidden="true">A</span>
@@ -701,7 +700,7 @@ const S = {
 			<div class="cta__icon" aria-hidden="true"><svg class="icon icon--lg" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13 20H7v-2h6zM10 0c1.938 0 3.58.556 4.745 1.644C15.918 2.738 16.5 4.27 16.5 6c0 2.22-1.15 3.732-2.04 4.727-.644.72-.96 1.633-.96 2.662V16h-7v-2.611c0-1.029-.317-1.942-.96-2.662C4.65 9.732 3.5 8.22 3.5 6c0-1.627.593-3.145 1.743-4.255C6.395.634 8.032 0 10 0"/></svg></div>
 			<h3>Built a tool for Wikimedia?</h3>
 			<p>Add a <code>toolinfo.json</code> to your repository so other Wikimedians can find it.</p>
-			<a class="btn btn--outline btn--md" href="https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" rel="nofollow">Submit a tool</a>
+			<a class="btn btn--outline btn--md" href="/my-tools">My tools</a>
 		</div>
 	</div></div>
 		<figcaption class="sg-example__caption"><code>panel + panel--cta</code><span>organisms</span></figcaption>

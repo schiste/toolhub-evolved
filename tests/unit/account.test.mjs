@@ -190,13 +190,10 @@ test("toggleAcctMenu opens an empty menu without focusing anything", () => {
 	assert.equal(document.activeElement, before);
 });
 
-test("syncSubmitButton uses the in-app hybrid create form", () => {
+test("syncSubmitButton removes the retired header create control", () => {
 	document.body.innerHTML = `<a id="submit-tool" href="#" target="_blank" rel="noopener nofollow"></a>`;
-	const b = /** @type {HTMLElement} */ (document.querySelector("#submit-tool"));
 	syncSubmitButton();
-	assert.equal(b.getAttribute("href"), "/tools/create");
-	assert.equal(b.hasAttribute("target"), false);
-	assert.equal(b.hasAttribute("rel"), false);
+	assert.equal(document.querySelector("#submit-tool"), null);
 });
 
 test("syncSubmitButton no-ops when the button is absent", () => {
