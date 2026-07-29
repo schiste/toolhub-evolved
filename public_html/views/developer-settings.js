@@ -148,7 +148,7 @@ export function viewDeveloperSettings() {
 			<h2 class="panel__title" id="developer-pages-title">${t("developerSettings.pagesTitle", "Developer pages")}</h2>
 			<div class="linkgrid account-data__links">
 				${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools and Evolved authorship verification for this account."), "/my-tools", true)}
-				${linkCard(icon("code"), t("developerSettings.toolinfoSchema", "toolinfo schema"), t("developerSettings.toolinfoSchemaDesc", "Open the schema, field reference, and a minimal toolinfo.json example."), "/api-docs", true)}
+				${linkCard(icon("code"), t("developerSettings.toolinfoSchema", "API explorer and toolinfo schema"), t("developerSettings.toolinfoSchemaDesc", "Run read-only endpoints, inspect the schema, and copy integration examples."), "/api-docs", true)}
 				${linkCard(icon("code"), t("developerSettings.myApps", "My apps"), t("developerSettings.myAppsDesc", "Open OAuth client applications registered on official Toolhub by this account."), officialMyAppsUrl())}
 				${linkCard(icon("key"), t("developerSettings.apiToken", "API token"), t("developerSettings.apiTokenDesc", "Create or retrieve your official Toolhub API token on Toolhub."), TOOLHUB_API_TOKEN_URL)}
 				${linkCard(icon("check"), t("developerSettings.authorizedApps", "Authorized apps"), t("developerSettings.authorizedAppsDesc", "Review applications you have authorized on official Toolhub."), TOOLHUB_AUTHORIZED_APPS_URL)}

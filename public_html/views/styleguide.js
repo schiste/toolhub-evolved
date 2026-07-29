@@ -344,7 +344,7 @@ function footerExample() {
 				</nav>
 				<nav class="footer__col" aria-label="Project">
 					<h2>Project</h2>
-					<a href="/api-docs">API docs</a>
+					<a href="/api-docs">API explorer</a>
 					<a href="/styleguide">Design system</a>
 					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">Report an issue ${icon("external")}</a>
 				</nav>
@@ -508,8 +508,8 @@ function linkCardsExample() {
 		</a>
 		<a class="linkcard" href="/api-docs">
 			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
-			<span class="linkcard__body"><span class="linkcard__title">API documentation</span>
-			<span class="linkcard__desc">Inspect live read-only endpoints.</span></span>
+			<span class="linkcard__body"><span class="linkcard__title">API explorer</span>
+			<span class="linkcard__desc">Run live read-only endpoints.</span></span>
 		</a>
 	</div>`;
 }

@@ -18,6 +18,7 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 - **Discovery-first home** — search, persona shortcuts, featured tools, curated lists.
 - **Faceted browse** (`/search`) — live Elasticsearch facets (tool type, keywords, audience, language, license, wiki), sort, paginate, shareable URLs.
 - **Full tool pages** (`/tools/:name`) — real metadata (wikis, languages, license, links) + related tools, real revision history.
+- **API explorer** (`/api-docs`) — curated read-only endpoint forms, formatted JSON responses, and copyable `curl`/`fetch` examples.
 - **Footer & policy pages** — About, Help, Community, Privacy, Terms, Code of Conduct, API, Feeds.
 - **Help maintain Toolhub** (`/contribute`) — a hub linking source, tasks, translation and docs.
 - **Wikimedia brand** — Montserrat + Source Serif 4, the 2022 brand palette, all in `tokens.css`.

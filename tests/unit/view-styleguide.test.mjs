@@ -117,7 +117,7 @@ const S = {
 				</nav>
 				<nav class="footer__col" aria-label="Project">
 					<h2>Project</h2>
-					<a href="/api-docs">API docs</a>
+					<a href="/api-docs">API explorer</a>
 					<a href="/styleguide">Design system</a>
 					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">Report an issue <svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a>
 				</nav>
@@ -715,8 +715,8 @@ const S = {
 		</a>
 		<a class="linkcard" href="/api-docs">
 			<span class="linkcard__icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8.5 3H6a1 1 0 00-1 1v2.488c0 1.19-.525 2.273-1.371 3.012A4 4 0 015 12.512V16a1 1 0 001 1h2.5v2H6a3 3 0 01-3-3v-3.488a2 2 0 00-1.648-1.969L1 10.484V8.516l.352-.059A2 2 0 003 6.488V4a3 3 0 013-3h2.5zM14 1a3 3 0 013 3v2.488a2 2 0 001.648 1.969l.352.059v1.968l-.352.059A2 2 0 0017 12.512V16a3 3 0 01-3 3h-2.5v-2H14a1 1 0 001-1v-3.488c0-1.19.525-2.273 1.371-3.012A4 4 0 0115 6.488V4a1 1 0 00-1-1h-2.5V1z"/></svg></span>
-			<span class="linkcard__body"><span class="linkcard__title">API documentation</span>
-			<span class="linkcard__desc">Inspect live read-only endpoints.</span></span>
+			<span class="linkcard__body"><span class="linkcard__title">API explorer</span>
+			<span class="linkcard__desc">Run live read-only endpoints.</span></span>
 		</a>
 	</div></div>
 		<figcaption class="sg-example__caption"><code>linkgrid + linkcard</code><span>molecules</span></figcaption>

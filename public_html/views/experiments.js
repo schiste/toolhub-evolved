@@ -111,18 +111,18 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.toolMapTry", "Open map")
 			},
 			{
-				name: t("experiments.docsPagesName", "API, toolinfo, and project docs"),
+				name: t("experiments.docsPagesName", "API explorer, toolinfo, and project docs"),
 				what: t(
 					"experiments.docsPagesWhat",
-					"Read API links, toolinfo schema examples, jsondiff notes, contribution links, and project policy pages."
+					"Run curated read-only API requests, inspect responses, copy examples, and read toolinfo/project documentation."
 				),
 				current: t(
 					"experiments.docsPagesCurrent",
-					"Static documentation pages are available in-app and link to official Toolhub/Wikimedia sources for canonical policies and schemas."
+					"The /api-docs page includes same-origin endpoint forms, formatted JSON output, schema links, and official Toolhub/Wikimedia documentation links."
 				),
-				need: t("experiments.docsPagesNeed", "Static pages plus proxied GET /api/schema/ examples"),
+				need: t("experiments.docsPagesNeed", "Curated GET /api/... explorer plus static documentation pages"),
 				tryHref: "/api-docs",
-				tryLabel: t("experiments.docsPagesTry", "API docs")
+				tryLabel: t("experiments.docsPagesTry", "API explorer")
 			}
 		]
 	},

@@ -148,7 +148,7 @@ export const STATIC = {
 		own tools on top of the catalog.</p>
 		<ul>
 			<li>Browse the interactive documentation at ${ext("https://toolhub.wikimedia.org/api-docs", "toolhub.wikimedia.org/api-docs")}.</li>
-			<li>Use this prototype's ${`<a href="/api-docs">${t("static.api.apiDocsPage", "API documentation page")}</a>`} for read-only examples and schema pointers.</li>
+			<li>Use this prototype's ${`<a href="/api-docs">${t("static.api.apiDocsPage", "API explorer")}</a>`} for read-only examples, response inspection, and schema pointers.</li>
 			<li>The OpenAPI schema and endpoints live under ${ext("https://toolhub.wikimedia.org/api/", "/api/")}.</li>
 			<li>Read access is anonymous; creating or editing records uses your Wikimedia
 			OAuth identity. For example, <code>POST /api/tools/</code> adds a tool.</li>
@@ -265,7 +265,7 @@ export function viewContribute() {
 		<h2 class="contribute__h2">Translate &amp; document</h2>
 		<div class="linkgrid">
 			${linkCard(icon("language"), t("static.contribute.translate", "Translate Toolhub"), t("static.contribute.translateDesc", "Localise the interface into your language on translatewiki.net."), "https://translatewiki.net/wiki/Translating:Toolhub")}
-			${linkCard(icon("code"), t("static.contribute.apiGuide", "Developer API guide"), t("static.contribute.apiGuideDesc", "Inspect live endpoints, schema links, and integration examples."), "/api-docs", true)}
+			${linkCard(icon("code"), t("static.contribute.apiGuide", "API explorer"), t("static.contribute.apiGuideDesc", "Run live read-only endpoints, inspect responses, and copy integration examples."), "/api-docs", true)}
 			${linkCard(icon("code"), t("static.contribute.toolinfoStandard", "The toolinfo standard"), t("static.contribute.toolinfoStandardDesc", "Learn the schema that describes a tool, and the API."), "/api-docs", true)}
 			${linkCard(icon("edit"), t("static.contribute.improveListing", "Add or improve a tool listing"), t("static.contribute.improveListingDesc", "List your own tool, or enrich an existing record."), "/help", true)}
 		</div>

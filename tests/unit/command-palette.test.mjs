@@ -103,6 +103,8 @@ test("commandItems prepends a search action and filters route actions", () => {
 		api.some((item) => item.href === "/api-docs"),
 		true
 	);
+	assert.ok(api.some((item) => item.title === "API explorer"));
+	assert.ok(commandItems("curl").some((item) => item.href === "/api-docs"));
 	assert.equal(
 		api.some((item) => item.href === "/favorites"),
 		false

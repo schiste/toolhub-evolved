@@ -75,7 +75,7 @@ test("viewContribute renders the contribution hub", () => {
 	assert.equal(view.title, "Help maintain Toolhub");
 	assert.ok(view.html.includes("#toolhub Phabricator board"));
 	assert.ok(view.html.includes("Source code (Gerrit)"));
-	assert.ok(view.html.includes("Developer API guide"));
+	assert.ok(view.html.includes("API explorer"));
 });
 
 test("linkCard handles internal, external and unsafe URLs", () => {

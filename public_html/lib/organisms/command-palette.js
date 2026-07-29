@@ -151,11 +151,11 @@ function actions() {
 		},
 		{
 			id: "api",
-			title: t("commandPalette.apiDocs", "API docs"),
-			description: t("commandPalette.apiDocsDesc", "Open endpoint examples and schema links."),
+			title: t("commandPalette.apiDocs", "API explorer"),
+			description: t("commandPalette.apiDocsDesc", "Run read-only endpoints and copy API examples."),
 			href: "/api-docs",
 			iconName: "code",
-			keywords: ["api", "schema", "openapi", "docs"]
+			keywords: ["api", "schema", "openapi", "docs", "explorer", "curl", "fetch"]
 		},
 		{
 			id: "developer",
