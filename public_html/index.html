@@ -204,6 +204,31 @@
 				align-items: center;
 				gap: var(--space-3);
 			}
+			.command-trigger {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				gap: var(--space-2);
+				height: var(--btn-h-md);
+				padding: var(--space-0) var(--space-2);
+				border: var(--border-transparent);
+				background: transparent;
+				color: var(--color-text-secondary);
+				font: inherit;
+				font-size: var(--fs-caption);
+				font-weight: 600;
+				line-height: 1;
+				white-space: nowrap;
+				cursor: pointer;
+			}
+			.command-trigger__shortcut {
+				padding: var(--space-0-5) var(--space-1);
+				border: var(--border-base);
+				background: var(--color-surface-muted);
+				color: var(--color-text-muted);
+				font-size: 11px;
+				line-height: 1;
+			}
 			.btn,
 			.icon-btn {
 				display: inline-flex;
@@ -364,6 +389,10 @@
 				.icon-btn {
 					display: none;
 				}
+				.command-trigger__label,
+				.command-trigger__shortcut {
+					display: none;
+				}
 				.nav__actions {
 					gap: var(--space-2);
 				}
@@ -401,6 +430,7 @@
 		<link rel="modulepreload" href="/lib/core/store.js" />
 		<link rel="modulepreload" href="/lib/core/routing.js" />
 		<link rel="modulepreload" href="/lib/core/api.js" />
+		<link rel="modulepreload" href="/lib/molecules/skeleton.js" />
 		<link rel="modulepreload" href="/views/router.js" />
 	</head>
 	<body>
@@ -432,8 +462,16 @@
 					<a href="/recent">Recent</a>
 				</nav>
 				<div class="nav__actions">
-					<a class="icon-btn" href="/search" aria-label="Search tools"
-						><svg
+					<button
+						class="command-trigger"
+						id="command-palette-trigger"
+						type="button"
+						aria-haspopup="dialog"
+						aria-controls="command-palette"
+						aria-expanded="false"
+						aria-label="Search tools and actions"
+					>
+						<svg
 							class="icon"
 							viewBox="0 0 20 20"
 							width="20"
@@ -445,8 +483,9 @@
 								d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"
 							/>
 						</svg>
-						Search</a
-					>
+						<span class="command-trigger__label">Search</span>
+						<kbd class="command-trigger__shortcut" data-command-shortcut>Ctrl K</kbd>
+					</button>
 					<a
 						class="btn btn--primary"
 						id="submit-tool"
@@ -575,6 +614,61 @@
 					</svg>
 				</button>
 				<div id="qv-body"></div>
+			</div>
+		</div>
+
+		<!-- Global command palette -->
+		<div class="command-palette hidden" id="command-palette" aria-hidden="true">
+			<div
+				class="command-palette__box"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="command-title"
+				aria-describedby="command-help"
+			>
+				<button
+					class="qv__x command-palette__close"
+					type="button"
+					data-command-close
+					aria-label="Close command palette"
+				>
+					<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
+						<path
+							d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"
+						/>
+					</svg>
+				</button>
+				<h2 class="command-palette__title" id="command-title">Search Toolhub</h2>
+				<p class="command-palette__help" id="command-help">
+					Type a tool name or action, then use arrow keys and Enter.
+				</p>
+				<label class="skip-label" for="command-input">Search tools and actions</label>
+				<div class="command-palette__search">
+					<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
+						<path
+							d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"
+						/>
+					</svg>
+					<input
+						id="command-input"
+						type="search"
+						role="combobox"
+						aria-autocomplete="list"
+						aria-controls="command-list"
+						aria-expanded="true"
+						aria-activedescendant=""
+						autocomplete="off"
+						spellcheck="false"
+						placeholder="Search tools or actions..."
+					/>
+				</div>
+				<div class="skip-label" id="command-status" aria-live="polite" aria-atomic="true"></div>
+				<ul
+					class="command-palette__list"
+					id="command-list"
+					role="listbox"
+					aria-label="Command palette results"
+				></ul>
 			</div>
 		</div>
 

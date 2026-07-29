@@ -115,6 +115,40 @@
 	font-size: var(--fs-body);
 }
 
+.route-loading--skeleton {
+	display: block;
+	min-height: 28rem;
+	font-weight: 400;
+}
+
+.route-loading--skeleton .route-loading__label {
+	display: block;
+	margin-bottom: var(--space-4);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-body);
+	font-weight: 600;
+}
+
+.route-loading__body {
+	display: grid;
+	gap: var(--space-4);
+	min-width: 0;
+}
+
+.route-loading__body
+	> :where(
+		.browse,
+		.card-grid,
+		.section-head,
+		.skeleton,
+		.skeleton-page__head,
+		.skeleton-table-wrap,
+		.toolpage__head,
+		.toolpage__grid
+	) {
+	min-width: 0;
+}
+
 .spinner {
 	width: 34px;
 	height: 34px;

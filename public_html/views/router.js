@@ -4,6 +4,7 @@ import { t } from "../lib/core/i18n.js";
 import { parseRoute } from "../lib/core/routing.js";
 import { serverSessionResolved, signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
+import { routeSkeletonHTML } from "../lib/molecules/skeleton.js";
 import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
 
 // Route modules are loaded on demand so first paint does not require every page's
@@ -253,8 +254,10 @@ export function setActiveNav() {
 /** @type {string | null} */
 export let lastPath = null;
 export let navSeq = 0;
-/** @param {string} [_path] */
-export const loadingHTML = (_path) => `<div class="container page route-loading" role="status" aria-live="polite">
+/** @param {string} [path] */
+export const loadingHTML = (path) =>
+	routeSkeletonHTML(path) ||
+	`<div class="container page route-loading" role="status" aria-live="polite">
 	<div class="route-loading__panel">
 		<span class="spinner" aria-hidden="true"></span>
 		<span class="route-loading__label">${t("router.loadingToolhubData", "Loading Toolhub data")}</span>

@@ -24,6 +24,7 @@ import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
+import { initCommandPalette } from "./lib/organisms/command-palette.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
@@ -313,6 +314,7 @@ document.addEventListener("click", (e) => {
 });
 renderAccount();
 syncSubmitButton();
+initCommandPalette({ beforeOpen: closeQuickViewIfLoaded });
 
 /* Language picker: open/close the dropdown; picking a language shows the
    "not available yet" popin instead of switching locale (prototype is EN only). */

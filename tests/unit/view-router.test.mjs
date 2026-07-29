@@ -483,11 +483,17 @@ test("setActiveNav does not match a look-alike prefix and only marks the first m
 
 /* ---- render / commitView / errorHTML / loadingHTML -------------------- */
 
-test("loadingHTML and errorHTML render the exact fixed markup", () => {
+test("loadingHTML renders route skeletons with a spinner fallback", () => {
 	assert.match(router.loadingHTML(), /Loading Toolhub data/);
 	assert.match(router.loadingHTML(), /class="spinner"/);
-	assert.doesNotMatch(router.loadingHTML("/"), /skel|skeleton-grid|hero--loading|route-loading--home/);
-	assert.doesNotMatch(router.loadingHTML("/recent"), /route-loading--table/);
+	assert.doesNotMatch(router.loadingHTML("/"), /skeleton-grid|hero--loading|route-loading--home/);
+	assert.match(router.loadingHTML("/search"), /route-loading--search/);
+	assert.match(router.loadingHTML("/search"), /skeleton-grid--tool/);
+	assert.match(router.loadingHTML("/tools/example"), /route-loading--tool/);
+	assert.match(router.loadingHTML("/recent"), /route-loading--table/);
+	assert.match(router.loadingHTML("/my-tools"), /account-records__table skeleton-table/);
+	assert.match(router.loadingHTML("/crawler-history"), /runs skeleton-table/);
+	assert.match(router.loadingHTML("/audit-logs"), /Loading audit logs/);
 	assert.equal(
 		router.errorHTML(new Error("oops")),
 		'<div class="container page errorpage"><h1>Couldn\'t load live data</h1>\n\t<p class="prose">The Toolhub API didn\'t respond (oops).</p>\n\t<a class="btn btn--primary btn--md" href="/">Back to home</a></div>'
@@ -596,7 +602,7 @@ test("render: a slow navigation to a new path swaps in the spinner after the del
 
 		await settleDynamicImports({ fakeTimers: true });
 		vi.advanceTimersByTime(250);
-		assert.equal(viewEl.innerHTML, router.loadingHTML());
+		assert.equal(viewEl.innerHTML, router.loadingHTML("/search"));
 
 		d.resolve({ title: "Search — Toolhub", html: "<div><h1>S</h1></div>" });
 		await p;

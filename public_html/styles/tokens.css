@@ -43,6 +43,8 @@
 	--color-surface: var(--wmf-white);
 	--color-surface-muted: #f4f5f7; /* derived: faint neutral fill */
 	--color-row-hover: rgb(0 0 0 / 0.02); /* derived: table row hover */
+	--color-skeleton-base: var(--color-surface-muted);
+	--color-skeleton-sheen: rgb(255 255 255 / 0.72);
 	--color-overlay-modal: rgb(16 20 30 / 0.55);
 	--color-badge-neutral: rgb(0 0 0 / 0.12);
 
@@ -195,6 +197,8 @@
 	--color-surface-muted: #1d2422;
 	--color-surface-pattern: #2c332f;
 	--color-row-hover: rgb(255 255 255 / 0.06);
+	--color-skeleton-base: var(--color-surface-muted);
+	--color-skeleton-sheen: rgb(255 255 255 / 0.08);
 	--color-overlay-modal: rgb(0 0 0 / 0.72);
 	--color-badge-neutral: rgb(255 255 255 / 0.16);
 
