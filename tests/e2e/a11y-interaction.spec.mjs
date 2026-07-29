@@ -79,7 +79,7 @@ test.describe("accessibility interactions", () => {
 		await expect(qv).not.toHaveClass(/hidden/);
 		await expect(qv).toHaveAttribute("aria-hidden", "false");
 		// Focus starts inside the dialog and stays trapped across several Tabs.
-		await expect(page.locator(".qv__x")).toBeFocused();
+		await expect(qv.locator("[data-qv-close]")).toBeFocused();
 		for (let i = 0; i < 6; i += 1) {
 			await page.keyboard.press("Tab");
 			expect(await page.evaluate(() => document.querySelector("#qv").contains(document.activeElement))).toBe(

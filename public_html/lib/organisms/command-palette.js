@@ -233,6 +233,15 @@ function status() {
 	return $(`#${STATUS_ID}`);
 }
 
+export function syncCommandPaletteChrome() {
+	const shortcut = shortcutLabel();
+	$("[data-command-shortcut]")?.replaceChildren(shortcut);
+	$("[aria-controls='command-palette']")?.setAttribute(
+		"aria-label",
+		t("commandPalette.openWithShortcut", "Search tools and actions ({shortcut})", { shortcut })
+	);
+}
+
 /** @param {boolean} on */
 function setPageInert(on) {
 	$$("body > *").forEach((el) => {
@@ -397,12 +406,7 @@ export function initCommandPalette(options = {}) {
 	const field = input();
 	const root = palette();
 	if (!root || !field) return;
-	const shortcut = shortcutLabel();
-	$("[data-command-shortcut]")?.replaceChildren(shortcut);
-	trigger?.setAttribute(
-		"aria-label",
-		t("commandPalette.openWithShortcut", "Search tools and actions ({shortcut})", { shortcut })
-	);
+	syncCommandPaletteChrome();
 	trigger?.addEventListener("click", () => openCommandPalette());
 	field.addEventListener("input", () => {
 		activeIndex = 0;

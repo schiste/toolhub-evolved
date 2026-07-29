@@ -82,10 +82,27 @@ vi.mock("../../public_html/views/router.js", async (o) => ({ ...(await o()), ren
 const SHELL = `
 	<a class="skip" href="#view">Skip to content</a>
 	<div class="mockup-banner" data-sitenotice>
-		<span>notice</span>
+		<span class="mockup-banner__txt" data-i18n="shell.previewBanner">Evolved preview: live Toolhub data with Evolved additions.</span>
+		<a class="mockup-banner__link" href="/experiments">status</a>
+		<a class="mockup-banner__link" href="/rules-of-engagement">rules</a>
 		<button type="button" data-dismiss-sitenotice>close</button>
 	</div>
 	<div id="theme-toggle"></div>
+	<nav id="nav-links"><a href="/search">S</a><a href="/lists">L</a><a href="/graph">M</a><a href="/recent">R</a></nav>
+	<nav id="nav-mobile"><a href="/search">S</a><a href="/lists">L</a><a href="/graph">M</a><a href="/recent">R</a></nav>
+	<a id="submit-tool" href="/add-or-remove-tools"><span class="submit-tool__label"></span></a>
+	<button id="command-palette-trigger" type="button" aria-controls="command-palette" aria-expanded="false">
+		<span class="command-trigger__label"></span><kbd data-command-shortcut></kbd>
+	</button>
+	<div class="command-palette hidden" id="command-palette" aria-hidden="true">
+		<button type="button" data-command-close>close</button>
+		<h2 id="command-title" data-i18n="commandPalette.title">Search Toolhub</h2>
+		<p id="command-help">help</p>
+		<label for="command-input">field</label>
+		<input id="command-input" aria-controls="command-list" aria-activedescendant="" placeholder="Search tools or actions..." data-i18n-placeholder="commandPalette.inputPlaceholder" />
+		<div id="command-status" aria-live="polite"></div>
+		<ul id="command-list" role="listbox"></ul>
+	</div>
 	<header id="account">
 		<button id="acct-btn">Account</button>
 		<div id="acct-menu">
@@ -111,12 +128,22 @@ const SHELL = `
 		<a href="/dl" download>dl</a>
 		<a href="/tab" target="_blank">tab</a>
 		<span class="bare">no link</span>
+		<div class="route-loading__label">loading</div>
 	</main>
 	<aside id="qv">
 		<button data-fav="tool-b">qvfav</button>
 		<button data-qv-close>close</button>
 		<div class="qv-body">body</div>
-	</aside>`;
+	</aside>
+	<footer>
+		<nav data-footer-section="discover"><h2></h2><a href="/search"></a><a href="/lists"></a><a href="/graph"></a><a href="/members"></a><a href="/recent"></a></nav>
+		<nav data-footer-section="maintain"><h2></h2><a href="/add-or-remove-tools"></a><a href="/my-lists"></a><a href="/my-tools"></a><a href="/favorites"></a><a href="/developer-settings"></a><a href="/contribute"></a></nav>
+		<nav data-footer-section="project"><h2></h2><a href="/api-docs" data-i18n="shell.footer.apiExplorer">API explorer</a><a href="/styleguide"></a><a href="/crawler-history"></a><a href="/audit-logs"></a><a href="https://meta.wikimedia.org/wiki/Toolhub"></a><a href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main"></a><a href="https://phabricator.wikimedia.org/tag/toolhub/"></a></nav>
+		<nav data-footer-section="about"><h2></h2><a href="/about"></a><a href="/help"></a><a href="/community"></a><a href="/privacy"></a><a href="/terms"></a><a href="/code-of-conduct"></a><a href="/rss"></a><a href="/rules-of-engagement"></a></nav>
+		<a class="footer__maintain"><svg></svg><span class="footer__maintain-label"></span></a>
+		<span class="footer__legal"></span>
+		<span class="footer__note"></span>
+	</footer>`;
 
 let mqlChange = null; // captured matchMedia "change" listener
 let authRenderCb = null; // captured setAuthRender callback
@@ -186,6 +213,11 @@ test("importing main wires locale, theme, account, langpicker and the initial re
 	assert.equal(i18n.applyLocaleAttrs.mock.calls.length, 1);
 	assert.equal(theme.initTheme.mock.calls.length, 1);
 	assert.equal(document.documentElement.classList.contains("sitenotice-dismissed"), false);
+	assert.equal($(".mockup-banner__txt").textContent, "Evolved preview: live Toolhub data with Evolved additions.");
+	assert.equal($('[data-footer-section="project"] a[href="/api-docs"]').textContent, "API explorer");
+	assert.equal($("#command-title").textContent, "Search Toolhub");
+	assert.equal($("#command-input").getAttribute("placeholder"), "Search tools or actions...");
+	assert.equal($(".footer__legal").textContent, "Catalog content under CC0 · Toolhub Evolved v0.2.0");
 	assert.equal(account.renderAccount.mock.calls.length > 0, true);
 	assert.equal(account.syncSubmitButton.mock.calls.length > 0, true);
 	assert.equal(langpicker.renderLangPicker.mock.calls.length, 1);

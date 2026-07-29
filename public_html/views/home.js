@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
-import { countLabel, t, updatedTimeTag } from "../lib/core/i18n.js";
+import { countLabel, t, tWithElements, updatedTimeTag } from "../lib/core/i18n.js";
 import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
 import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext, wikiMatches } from "../lib/core/signals.js";
 import { listHref, navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
@@ -326,7 +326,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">${t("home.recentlyUpdated", "Recently updated")}</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${t("home.ctaBodyBefore", "Add a ")}<code>toolinfo.json</code>${t("home.ctaBodyAfter", " to your repository, or register it here, so other Wikimedians can find it.")}</p>${submitToolBtn}</div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${tWithElements("home.ctaBody", "Add a {toolinfo} to your repository, or register it here, so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>${submitToolBtn}</div>
 		</aside>
 	</div>`;
 	return {

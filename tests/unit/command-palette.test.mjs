@@ -9,7 +9,8 @@ import {
 	isEditableTarget,
 	isPaletteShortcut,
 	openCommandPalette,
-	shortcutLabel
+	shortcutLabel,
+	syncCommandPaletteChrome
 } from "../../public_html/lib/organisms/command-palette.js";
 
 vi.mock("../../public_html/lib/core/routing.js", async (importOriginal) => ({
@@ -20,13 +21,14 @@ vi.mock("../../public_html/lib/core/routing.js", async (importOriginal) => ({
 const SHELL = `
 	<button id="outside" type="button">Outside</button>
 	<button id="command-palette-trigger" type="button" aria-controls="command-palette" aria-expanded="false">
-		Search <kbd data-command-shortcut></kbd>
+		<span class="command-trigger__label">Search</span> <kbd data-command-shortcut></kbd>
 	</button>
 	<main id="view"><a href="/search">Search</a></main>
 	<div class="command-palette hidden" id="command-palette" aria-hidden="true">
-		<div class="command-palette__box" role="dialog" aria-modal="true" aria-labelledby="command-title">
+		<div class="command-palette__box" role="dialog" aria-modal="true" aria-labelledby="command-title" aria-describedby="command-help">
 			<button type="button" data-command-close aria-label="Close command palette">Close</button>
 			<h2 id="command-title">Search Toolhub</h2>
+			<p id="command-help">Type a tool name or action, then use arrow keys and Enter.</p>
 			<label for="command-input">Search tools and actions</label>
 			<input id="command-input" role="combobox" aria-controls="command-list" aria-activedescendant="" />
 			<div id="command-status" aria-live="polite"></div>
@@ -61,6 +63,13 @@ test("shortcutLabel uses Mac and Windows/Linux conventions", () => {
 	assert.equal(shortcutLabel("iPad"), "⌘ K");
 	assert.equal(shortcutLabel("Win32"), "Ctrl K");
 	assert.equal(shortcutLabel("Linux x86_64"), "Ctrl K");
+});
+
+test("syncCommandPaletteChrome updates the platform shortcut and trigger name", () => {
+	syncCommandPaletteChrome();
+	assert.equal($(".command-trigger__label").textContent, "Search");
+	assert.match($("#command-palette-trigger").getAttribute("aria-label"), /Search tools and actions/);
+	assert.ok($("[data-command-shortcut]").textContent.trim().length > 0);
 });
 
 test("editable targets are protected from global shortcuts", () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc, safeUrl } from "../lib/core/dom.js";
-import { t } from "../lib/core/i18n.js";
+import { t, tWithElements } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
 import { mountApiExplorer, renderApiExplorer } from "../lib/organisms/api-explorer.js";
 import {
@@ -302,7 +302,7 @@ export async function viewApiDocs() {
 			${renderApiExplorer()}
 			<h2 class="contribute__h2">${t("static.apiDocs.toolinfoSchemaHeading", "toolinfo.json schema")}</h2>
 			<div class="prose">
-				<p>${t("static.apiDocs.toolinfoSchemaBodyBefore", "Toolhub validates registered")} <code>toolinfo.json</code> ${t("static.apiDocs.toolinfoSchemaBodyAfter", "files against schema version {version}. Required fields are name, title, description, and url; use _schema to identify the toolinfo schema version when you publish a file.", { version: TOOLINFO_SCHEMA_VERSION })}</p>
+				<p>${tWithElements("static.apiDocs.toolinfoSchemaBody", "Toolhub validates registered {toolinfo} files against schema version {version}. Required fields are name, title, description, and url; use _schema to identify the toolinfo schema version when you publish a file.", { toolinfo: "<code>toolinfo.json</code>", version: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
 				<pre tabindex="0" aria-label="${t("static.apiDocs.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
 				<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="${EXTERNAL_REL}">${t("static.apiDocs.openToolinfoSchemaSource", "Open official schema source")} ${icon("external")}</a><br>
 				<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="${EXTERNAL_REL}">${t("static.apiDocs.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>

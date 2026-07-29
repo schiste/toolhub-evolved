@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $ } from "./lib/core/dom.js";
+import { $, esc } from "./lib/core/dom.js";
 import { backendGetJson } from "./lib/core/api.js";
 import {
 	markAppBootStart,
@@ -14,7 +14,9 @@ import {
 	DEFAULT_LOCALE,
 	setLocale,
 	setMessages,
-	t
+	t,
+	tData,
+	tWithElements
 } from "./lib/core/i18n.js";
 import { dismissSiteNotice, setAuthRender } from "./lib/core/session.js";
 import { initServerSync, officialWrite, officialWriteAvailable } from "./lib/core/serversync.js";
@@ -24,7 +26,7 @@ import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
-import { initCommandPalette } from "./lib/organisms/command-palette.js";
+import { initCommandPalette, syncCommandPaletteChrome } from "./lib/organisms/command-palette.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
@@ -77,6 +79,41 @@ function afterFirstPaint(task) {
 	}
 }
 
+const SHELL_I18N_ATTRS = [
+	["aria-label", "data-i18n-aria-label"],
+	["placeholder", "data-i18n-placeholder"],
+	["title", "data-i18n-title"]
+];
+
+/** @param {string} selector @param {string} html */
+function setShellHtml(selector, html) {
+	const node = $(selector);
+	if (node) node.innerHTML = html;
+}
+
+function localizeShell() {
+	for (const node of document.querySelectorAll("[data-i18n]")) {
+		const key = node.getAttribute("data-i18n") || "";
+		node.textContent = tData(key, node.getAttribute("data-i18n-fallback") || node.textContent?.trim() || "");
+	}
+	for (const [target, keyAttr] of SHELL_I18N_ATTRS) {
+		for (const node of document.querySelectorAll(`[${keyAttr}]`)) {
+			const key = node.getAttribute(keyAttr) || "";
+			node.setAttribute(target, tData(key, node.getAttribute(target) || ""));
+		}
+	}
+	setShellHtml(
+		".footer__legal",
+		tWithElements("shell.footer.legal", "Catalog content under {license} · {version}", {
+			license:
+				'<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>',
+			version:
+				'<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>'
+		})
+	);
+	syncCommandPaletteChrome();
+}
+
 setAuthRender(() => {
 	renderAccount();
 	syncSubmitButton();
@@ -117,20 +154,25 @@ initTheme();
 // "System" is a default picker, not a toggle option: it is the implicit default used
 // while nothing is stored in localStorage (theme.js then follows the OS preference).
 // The toggle therefore exposes only Light and Dark.
-const THEME_OPTS = [
-	["light", "Light theme", "sun"],
-	["dark", "Dark theme", "moon"]
-];
+function themeOptions() {
+	return [
+		["light", t("theme.light", "Light theme"), "sun"],
+		["dark", t("theme.dark", "Dark theme"), "moon"]
+	];
+}
 function renderThemeToggle() {
 	const el = $("#theme-toggle");
 	if (!el) return;
 	const active = document.documentElement.getAttribute("data-theme");
-	el.innerHTML = THEME_OPTS.map(
-		([val, label, ic]) =>
-			`<button type="button" class="theme-toggle__opt${val === active ? " is-active" : ""}" role="radio" aria-checked="${val === active}" data-theme-choice="${val}" title="${label}" aria-label="${label}">${icon(ic)}</button>`
-	).join("");
+	el.innerHTML = themeOptions()
+		.map(
+			([val, label, ic]) =>
+				`<button type="button" class="theme-toggle__opt${val === active ? " is-active" : ""}" role="radio" aria-checked="${val === active}" data-theme-choice="${esc(val)}" title="${esc(label)}" aria-label="${esc(label)}">${icon(ic)}</button>`
+		)
+		.join("");
 }
 renderThemeToggle();
+localizeShell();
 const themeToggle = $("#theme-toggle");
 if (themeToggle) {
 	themeToggle.addEventListener("click", (e) => {
@@ -378,6 +420,8 @@ if (bootLocale !== DEFAULT_LOCALE) {
 				if (catalog) {
 					setMessages(catalog);
 					markFrontendTimingOnce("labels-loaded", { locale: bootLocale, source: "catalog" });
+					renderThemeToggle();
+					localizeShell();
 					renderAccount();
 					syncSubmitButton();
 					render();

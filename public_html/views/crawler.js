@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { fmt, t, timeTag } from "../lib/core/i18n.js";
+import { fmt, t, tWithElements, timeTag } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
 import { esc } from "../lib/core/dom.js";
 import { metaItem } from "../lib/atoms/labels.js";
@@ -131,7 +131,7 @@ export async function viewCrawler() {
 		html: `
 		<div class="container page">
 			<h1 class="page__title">${t("parity.crawlerHistory", "Crawler history")}</h1>
-			<p class="page__intro">${t("parity.crawlerIntroBefore", "Toolhub re-reads every registered")} <code>toolinfo.json</code> ${t("parity.crawlerIntroAfter", "URL roughly hourly and updates the catalog with any changes.")}</p>
+			<p class="page__intro">${tWithElements("parity.crawlerIntro", "Toolhub re-reads every registered {toolinfo} URL roughly hourly and updates the catalog with any changes.", { toolinfo: "<code>toolinfo.json</code>" })}</p>
 			<div class="detail__meta">
 				${metaItem(t("parity.lastCrawl", "Last crawl"), timeTag(last.start_date))}
 				${metaItem(t("parity.urlsCrawled", "URLs crawled"), fmt(last.crawled_urls || 0))}

@@ -442,13 +442,31 @@
 		<link rel="modulepreload" href="/views/router.js" />
 	</head>
 	<body>
-		<a class="skip" href="#view">Skip to content</a>
+		<!-- English shell copy below is the no-JS/first-paint fallback. main.js owns
+		     the catalog-backed shell localization pass for active app chrome. -->
+		<a class="skip" href="#view" data-i18n="shell.skipToContent">Skip to content</a>
 
-		<div class="mockup-banner" role="region" aria-label="Feature status notice" data-sitenotice>
-			<span class="mockup-banner__txt"> Evolved preview: live Toolhub data with Evolved additions. </span>
-			<a class="mockup-banner__link" href="/experiments">Feature status</a>
-			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
-			<button class="mockup-banner__close" type="button" aria-label="Dismiss site notice" data-dismiss-sitenotice>
+		<div
+			class="mockup-banner"
+			role="region"
+			aria-label="Feature status notice"
+			data-i18n-aria-label="shell.featureStatusNotice"
+			data-sitenotice
+		>
+			<span class="mockup-banner__txt" data-i18n="shell.previewBanner">
+				Evolved preview: live Toolhub data with Evolved additions.
+			</span>
+			<a class="mockup-banner__link" href="/experiments" data-i18n="shell.featureStatus">Feature status</a>
+			<a class="mockup-banner__link" href="/rules-of-engagement" data-i18n="shell.rulesOfEngagement"
+				>Rules of Engagement</a
+			>
+			<button
+				class="mockup-banner__close"
+				type="button"
+				aria-label="Dismiss site notice"
+				data-i18n-aria-label="shell.dismissSiteNotice"
+				data-dismiss-sitenotice
+			>
 				<svg class="icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
 					<path
 						d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"
@@ -463,11 +481,16 @@
 					<img class="brand__logo" src="/img/toolhub-logo.svg?v=2" alt="" width="34" height="34" />
 					<span class="brand__name">Toolhub</span>
 				</a>
-				<nav class="nav__links" id="nav-links" aria-label="Primary">
-					<a href="/search">Tools</a>
-					<a href="/lists">Lists</a>
-					<a href="/graph">Map</a>
-					<a href="/recent">Recent</a>
+				<nav
+					class="nav__links"
+					id="nav-links"
+					aria-label="Primary"
+					data-i18n-aria-label="shell.primaryNavigation"
+				>
+					<a href="/search" data-i18n="shell.nav.tools">Tools</a>
+					<a href="/lists" data-i18n="shell.nav.lists">Lists</a>
+					<a href="/graph" data-i18n="shell.nav.map">Map</a>
+					<a href="/recent" data-i18n="shell.nav.recent">Recent</a>
 				</nav>
 				<div class="nav__actions">
 					<button
@@ -491,7 +514,7 @@
 								d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"
 							/>
 						</svg>
-						<span class="command-trigger__label">Search</span>
+						<span class="command-trigger__label" data-i18n="commandPalette.triggerLabel">Search</span>
 						<kbd class="command-trigger__shortcut" data-command-shortcut>Ctrl K</kbd>
 					</button>
 					<a
@@ -501,6 +524,7 @@
 						target="_blank"
 						rel="noopener nofollow"
 						aria-label="Submit a tool"
+						data-i18n-aria-label="shell.submitTool"
 						><svg
 							class="icon"
 							viewBox="0 0 20 20"
@@ -511,19 +535,30 @@
 						>
 							<path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z" />
 						</svg>
-						<span class="submit-tool__label">Submit a tool</span></a
+						<span class="submit-tool__label" data-i18n="shell.submitTool">Submit a tool</span></a
 					>
 					<!-- Account control (logged-in fixture / dropdown) rendered by main.js -->
 					<div class="acct" id="account"></div>
 					<!-- Language picker (button + dropdown) rendered by main.js -->
 					<div class="lang" id="langpicker"></div>
-					<div class="theme-toggle" id="theme-toggle" role="radiogroup" aria-label="Color theme"></div>
+					<div
+						class="theme-toggle"
+						id="theme-toggle"
+						role="radiogroup"
+						aria-label="Color theme"
+						data-i18n-aria-label="shell.colorTheme"
+					></div>
 				</div>
-				<nav class="nav__mobile" id="nav-mobile" aria-label="Primary mobile">
-					<a href="/search">Tools</a>
-					<a href="/lists">Lists</a>
-					<a href="/graph">Map</a>
-					<a href="/recent">Recent</a>
+				<nav
+					class="nav__mobile"
+					id="nav-mobile"
+					aria-label="Primary mobile"
+					data-i18n-aria-label="shell.primaryMobileNavigation"
+				>
+					<a href="/search" data-i18n="shell.nav.tools">Tools</a>
+					<a href="/lists" data-i18n="shell.nav.lists">Lists</a>
+					<a href="/graph" data-i18n="shell.nav.map">Map</a>
+					<a href="/recent" data-i18n="shell.nav.recent">Recent</a>
 				</nav>
 			</div>
 		</header>
@@ -533,59 +568,88 @@
 			<div class="container page route-loading" role="status" aria-live="polite">
 				<div class="route-loading__panel">
 					<span class="spinner" aria-hidden="true"></span>
-					<span class="route-loading__label">Loading Toolhub data</span>
+					<span class="route-loading__label" data-i18n="router.loadingToolhubData">Loading Toolhub data</span>
 				</div>
 			</div>
 		</main>
 
 		<footer class="footer">
 			<div class="footer__cols">
-				<nav class="footer__col" aria-label="Discover">
-					<h2>Discover</h2>
-					<a href="/search">Browse tools</a>
-					<a href="/lists">Lists</a>
-					<a href="/graph">Map</a>
-					<a href="/members">Members</a>
-					<a href="/recent">Recent changes</a>
+				<nav
+					class="footer__col"
+					aria-label="Discover"
+					data-i18n-aria-label="shell.footer.discover"
+					data-footer-section="discover"
+				>
+					<h2 data-i18n="shell.footer.discover">Discover</h2>
+					<a href="/search" data-i18n="shell.footer.browseTools">Browse tools</a>
+					<a href="/lists" data-i18n="shell.footer.lists">Lists</a>
+					<a href="/graph" data-i18n="shell.footer.map">Map</a>
+					<a href="/members" data-i18n="shell.footer.members">Members</a>
+					<a href="/recent" data-i18n="shell.footer.recentChanges">Recent changes</a>
 				</nav>
-				<nav class="footer__col" aria-label="Maintain">
-					<h2>Maintain</h2>
-					<a href="/add-or-remove-tools">Add or remove tools</a>
-					<a href="/my-lists">Your lists</a>
-					<a href="/my-tools">My tools</a>
-					<a href="/favorites">Favorites</a>
-					<a href="/developer-settings">Developer settings</a>
-					<a href="/contribute">Help maintain Toolhub</a>
+				<nav
+					class="footer__col"
+					aria-label="Maintain"
+					data-i18n-aria-label="shell.footer.maintain"
+					data-footer-section="maintain"
+				>
+					<h2 data-i18n="shell.footer.maintain">Maintain</h2>
+					<a href="/add-or-remove-tools" data-i18n="shell.footer.addOrRemoveTools">Add or remove tools</a>
+					<a href="/my-lists" data-i18n="shell.footer.yourLists">Your lists</a>
+					<a href="/my-tools" data-i18n="shell.footer.myTools">My tools</a>
+					<a href="/favorites" data-i18n="shell.footer.favorites">Favorites</a>
+					<a href="/developer-settings" data-i18n="shell.footer.developerSettings">Developer settings</a>
+					<a href="/contribute" data-i18n="shell.footer.helpMaintainToolhub">Help maintain Toolhub</a>
 				</nav>
-				<nav class="footer__col" aria-label="Project">
-					<h2>Project</h2>
-					<a href="/api-docs">API explorer</a>
-					<a href="/styleguide">Design system</a>
-					<a href="/crawler-history">Crawler history</a>
-					<a href="/audit-logs">Audit logs</a>
-					<a href="https://meta.wikimedia.org/wiki/Toolhub" target="_blank" rel="noopener nofollow"
+				<nav
+					class="footer__col"
+					aria-label="Project"
+					data-i18n-aria-label="shell.footer.project"
+					data-footer-section="project"
+				>
+					<h2 data-i18n="shell.footer.project">Project</h2>
+					<a href="/api-docs" data-i18n="shell.footer.apiExplorer">API explorer</a>
+					<a href="/styleguide" data-i18n="shell.footer.designSystem">Design system</a>
+					<a href="/crawler-history" data-i18n="shell.footer.crawlerHistory">Crawler history</a>
+					<a href="/audit-logs" data-i18n="shell.footer.auditLogs">Audit logs</a>
+					<a
+						href="https://meta.wikimedia.org/wiki/Toolhub"
+						target="_blank"
+						rel="noopener nofollow"
+						data-i18n="shell.footer.documentation"
 						>Documentation</a
 					>
 					<a
 						href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main"
 						target="_blank"
 						rel="noopener nofollow"
+						data-i18n="shell.footer.sourceCode"
 						>Source code</a
 					>
-					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow"
+					<a
+						href="https://phabricator.wikimedia.org/tag/toolhub/"
+						target="_blank"
+						rel="noopener nofollow"
+						data-i18n="shell.footer.reportIssue"
 						>Report an issue</a
 					>
 				</nav>
-				<nav class="footer__col" aria-label="About">
-					<h2>About</h2>
-					<a href="/about">About Toolhub</a>
-					<a href="/help">Help</a>
-					<a href="/community">Community</a>
-					<a href="/privacy">Privacy policy</a>
-					<a href="/terms">Terms of Use</a>
-					<a href="/code-of-conduct">Code of Conduct</a>
-					<a href="/rss">Feeds (RSS)</a>
-					<a href="/rules-of-engagement">Rules of Engagement</a>
+				<nav
+					class="footer__col"
+					aria-label="About"
+					data-i18n-aria-label="shell.footer.about"
+					data-footer-section="about"
+				>
+					<h2 data-i18n="shell.footer.about">About</h2>
+					<a href="/about" data-i18n="shell.footer.aboutToolhub">About Toolhub</a>
+					<a href="/help" data-i18n="shell.footer.help">Help</a>
+					<a href="/community" data-i18n="shell.footer.community">Community</a>
+					<a href="/privacy" data-i18n="shell.footer.privacyPolicy">Privacy policy</a>
+					<a href="/terms" data-i18n="shell.footer.termsOfUse">Terms of Use</a>
+					<a href="/code-of-conduct" data-i18n="shell.footer.codeOfConduct">Code of Conduct</a>
+					<a href="/rss" data-i18n="shell.footer.feedsRss">Feeds (RSS)</a>
+					<a href="/rules-of-engagement" data-i18n="shell.footer.rulesOfEngagement">Rules of Engagement</a>
 				</nav>
 			</div>
 			<div class="footer__bottom">
@@ -596,7 +660,9 @@
 							d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"
 						/>
 					</svg>
-					Help maintain Toolhub</a
+					<span class="footer__maintain-label" data-i18n="shell.footer.helpMaintainToolhub"
+						>Help maintain Toolhub</span
+					></a
 				>
 				<span class="footer__legal">
 					Catalog content under
@@ -608,14 +674,20 @@
 						>Toolhub Evolved v0.2.0</a
 					>
 				</span>
-				<span class="footer__note">Live Toolhub data · Evolved overlay</span>
+				<span class="footer__note" data-i18n="shell.footer.note">Live Toolhub data · Evolved overlay</span>
 			</div>
 		</footer>
 
 		<!-- Quick-view (peek) modal -->
 		<div class="qv hidden" id="qv" aria-hidden="true">
 			<div class="qv__box" role="dialog" aria-modal="true" aria-labelledby="qv-title">
-				<button class="qv__x" type="button" data-qv-close aria-label="Close quick view">
+				<button
+					class="qv__x"
+					type="button"
+					data-qv-close
+					aria-label="Close quick view"
+					data-i18n-aria-label="shell.closeQuickView"
+				>
 					<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
 						<path
 							d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"
@@ -640,6 +712,7 @@
 					type="button"
 					data-command-close
 					aria-label="Close command palette"
+					data-i18n-aria-label="commandPalette.close"
 				>
 					<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
 						<path
@@ -647,11 +720,15 @@
 						/>
 					</svg>
 				</button>
-				<h2 class="command-palette__title" id="command-title">Search Toolhub</h2>
-				<p class="command-palette__help" id="command-help">
+				<h2 class="command-palette__title" id="command-title" data-i18n="commandPalette.title">
+					Search Toolhub
+				</h2>
+				<p class="command-palette__help" id="command-help" data-i18n="commandPalette.help">
 					Type a tool name or action, then use arrow keys and Enter.
 				</p>
-				<label class="skip-label" for="command-input">Search tools and actions</label>
+				<label class="skip-label" for="command-input" data-i18n="commandPalette.inputLabel"
+					>Search tools and actions</label
+				>
 				<div class="command-palette__search">
 					<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
 						<path
@@ -669,6 +746,7 @@
 						autocomplete="off"
 						spellcheck="false"
 						placeholder="Search tools or actions..."
+						data-i18n-placeholder="commandPalette.inputPlaceholder"
 					/>
 				</div>
 				<div class="skip-label" id="command-status" aria-live="polite" aria-atomic="true"></div>
@@ -677,6 +755,7 @@
 					id="command-list"
 					role="listbox"
 					aria-label="Command palette results"
+					data-i18n-aria-label="commandPalette.results"
 				></ul>
 			</div>
 		</div>
