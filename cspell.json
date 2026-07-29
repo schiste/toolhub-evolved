@@ -118,6 +118,7 @@
 		"pymysql",
 		"pytest",
 		"quasis",
+		"quickstatements",
 		"quickview",
 		"rankbadge",
 		"rcssmin",
