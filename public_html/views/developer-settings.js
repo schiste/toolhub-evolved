@@ -13,6 +13,7 @@ import {
 import { button } from "../lib/atoms/button.js";
 import { fArea, fInput } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
+import { accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { linkCard } from "./static.js";
 
 const TOOLHUB_BASE = "https://toolhub.wikimedia.org";
@@ -130,65 +131,97 @@ function renderAuthorKeys(keys) {
 }
 
 export function viewDeveloperSettings() {
-	const html = `
-	<div class="container page account-data">
-		<h1 class="page__title">${t("developerSettings.title", "Developer settings")}</h1>
-		<p class="page__intro">${t("developerSettings.intro", "Manage Toolhub developer features connected to this sign-in. OAuth applications and API tokens remain official Toolhub data.")}</p>
-
-		<section class="panel account-data__section" aria-labelledby="developer-toolhub-title">
-			<h2 class="panel__title" id="developer-toolhub-title">${t("developerSettings.toolhubTitle", "Official Toolhub developer settings")}</h2>
-			<p class="signin-note">${t("developerSettings.toolhubNote", "Toolhub remains the source of truth for OAuth applications, authorized applications, and API tokens. Evolved lists what it can read through the public API and sends sensitive management tasks back to Toolhub.")}</p>
-			<div class="toolpage__actions">
-				${externalButton(TOOLHUB_DEVELOPER_SETTINGS_URL, t("developerSettings.openToolhub", "Open Toolhub developer settings"))}
-				${button(t("developerSettings.reconnect", "Reconnect Toolhub OAuth"), { variant: "outline", href: "/oauth/login" })}
-			</div>
-		</section>
-
-		<section class="panel account-data__section" aria-labelledby="developer-pages-title">
-			<h2 class="panel__title" id="developer-pages-title">${t("developerSettings.pagesTitle", "Developer pages")}</h2>
-			<div class="linkgrid account-data__links">
-				${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools and Evolved authorship verification for this account."), "/my-tools", true)}
-				${linkCard(icon("code"), t("developerSettings.toolinfoSchema", "API explorer and toolinfo schema"), t("developerSettings.toolinfoSchemaDesc", "Run read-only endpoints, inspect the schema, and copy integration examples."), "/api-docs", true)}
-				${linkCard(icon("code"), t("developerSettings.myApps", "My apps"), t("developerSettings.myAppsDesc", "Open OAuth client applications registered on official Toolhub by this account."), officialMyAppsUrl())}
-				${linkCard(icon("key"), t("developerSettings.apiToken", "API token"), t("developerSettings.apiTokenDesc", "Create or retrieve your official Toolhub API token on Toolhub."), TOOLHUB_API_TOKEN_URL)}
-				${linkCard(icon("check"), t("developerSettings.authorizedApps", "Authorized apps"), t("developerSettings.authorizedAppsDesc", "Review applications you have authorized on official Toolhub."), TOOLHUB_AUTHORIZED_APPS_URL)}
-			</div>
-		</section>
-
-		<section class="panel account-data__section account-keys" aria-labelledby="developer-signed-toolinfo-title">
-			<h2 class="panel__title" id="developer-signed-toolinfo-title">${t("developerSettings.signedToolinfoTitle", "Signed toolinfo authorship")}</h2>
-			<p class="signin-note">${t("developerSettings.signedToolinfoNote", "Register Ed25519 public keys for Evolved-only signed toolinfo verification. Private keys stay outside Evolved.")}</p>
-			<div class="prose account-keys__schema-note">
-				<h3>${t("developerSettings.toolinfoSchemaHeading", "toolinfo.json reference")}</h3>
-				<p>${tWithElements("developerSettings.toolinfoSchemaBody", "Toolhub validates crawler input against {version}. Start with the required fields, add _schema for the version marker, then build a signing payload from the exact object you publish.", { version: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
-				<pre tabindex="0" aria-label="${t("developerSettings.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
-				<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoSchema", "Open official schema source")} ${icon("external")}</a><br>
-				<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>
-			</div>
-			<div class="account-keys__layout">
-				<form class="account-keys__form" data-author-key-form novalidate>
-					${fInput(t("developerSettings.keyId", "Key id"), "author-key-id", "", { req: true, ph: "release-2026", hint: t("developerSettings.keyIdHint", "Stable id used in the toolinfo signature metadata."), max: 128 })}
-					${fArea(t("developerSettings.publicKey", "Ed25519 public key"), "author-public-key", "", t("developerSettings.publicKeyHint", "PEM public key or base64 raw 32-byte Ed25519 public key."), { rows: 4, max: false })}
-					<div class="account-keys__actions">${button(t("developerSettings.registerKey", "Register key"), { variant: "primary", type: "submit" })}</div>
-				</form>
-				<div class="account-keys__list" data-author-keys-list>${t("developerSettings.keysLoading", "Loading keys...")}</div>
-			</div>
-			<form class="account-keys__signer" data-signing-form novalidate>
-				<label class="le__label">${t("developerSettings.signingKey", "Signing key")}
-					<select class="le__input" id="signature-key" data-sign-key></select>
-				</label>
-				${fArea(t("developerSettings.toolinfoItem", "Toolinfo item"), "signature-toolinfo", "", t("developerSettings.toolinfoItemHint", "Use the exact toolinfo object the crawler will read."), { rows: 8, max: false })}
-				<div class="account-keys__actions">${button(t("developerSettings.buildPayload", "Build payload"), { variant: "outline", type: "submit" })}</div>
-			</form>
-			<div class="account-keys__payloads" data-signature-output hidden>
-				${outputArea(t("developerSettings.canonicalPayload", "Canonical payload"), "signature-canonical", 6)}
-				${outputArea(t("developerSettings.canonicalPayloadBase64", "Canonical payload, base64"), "signature-canonical-base64", 2)}
-				${outputArea(t("developerSettings.signatureMetadata", "Signature metadata"), "signature-metadata", 5)}
-				${outputArea(t("developerSettings.signedToolinfoPreview", "Signed toolinfo preview"), "signature-preview", 8)}
-			</div>
-			<p class="at__result" data-developer-result aria-live="polite"></p>
-		</section>
+	const toolhubActions = `${externalButton(
+		TOOLHUB_DEVELOPER_SETTINGS_URL,
+		t("developerSettings.openToolhub", "Open Toolhub developer settings")
+	)}
+	${button(t("developerSettings.reconnect", "Reconnect Toolhub OAuth"), {
+		variant: "outline",
+		href: "/oauth/login"
+	})}`;
+	const developerLinks = `<div class="linkgrid account-data__links">
+		${linkCard(icon("tools"), t("developerSettings.myTools", "My tools"), t("developerSettings.myToolsDesc", "Review official Toolhub tools and Evolved authorship verification for this account."), "/my-tools", true)}
+		${linkCard(icon("code"), t("developerSettings.toolinfoSchema", "API explorer and toolinfo schema"), t("developerSettings.toolinfoSchemaDesc", "Run read-only endpoints, inspect the schema, and copy integration examples."), "/api-docs", true)}
+		${linkCard(icon("code"), t("developerSettings.myApps", "My apps"), t("developerSettings.myAppsDesc", "Open OAuth client applications registered on official Toolhub by this account."), officialMyAppsUrl())}
+		${linkCard(icon("key"), t("developerSettings.apiToken", "API token"), t("developerSettings.apiTokenDesc", "Create or retrieve your official Toolhub API token on Toolhub."), TOOLHUB_API_TOKEN_URL)}
+		${linkCard(icon("check"), t("developerSettings.authorizedApps", "Authorized apps"), t("developerSettings.authorizedAppsDesc", "Review applications you have authorized on official Toolhub."), TOOLHUB_AUTHORIZED_APPS_URL)}
 	</div>`;
+	const signedToolinfoBody = `<div class="prose account-keys__schema-note">
+		<h3>${t("developerSettings.toolinfoSchemaHeading", "toolinfo.json reference")}</h3>
+		<p>${tWithElements("developerSettings.toolinfoSchemaBody", "Toolhub validates crawler input against {version}. Start with the required fields, add _schema for the version marker, then build a signing payload from the exact object you publish.", { version: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
+		<pre tabindex="0" aria-label="${t("developerSettings.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
+		<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoSchema", "Open official schema source")} ${icon("external")}</a><br>
+		<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>
+	</div>
+	<div class="account-keys__layout">
+		<form class="account-keys__form" data-author-key-form novalidate>
+			${fInput(t("developerSettings.keyId", "Key id"), "author-key-id", "", { req: true, ph: "release-2026", hint: t("developerSettings.keyIdHint", "Stable id used in the toolinfo signature metadata."), max: 128 })}
+			${fArea(t("developerSettings.publicKey", "Ed25519 public key"), "author-public-key", "", t("developerSettings.publicKeyHint", "PEM public key or base64 raw 32-byte Ed25519 public key."), { rows: 4, max: false })}
+			<div class="account-keys__actions">${button(t("developerSettings.registerKey", "Register key"), { variant: "primary", type: "submit" })}</div>
+		</form>
+		<div class="account-keys__list" data-author-keys-list>${t("developerSettings.keysLoading", "Loading keys...")}</div>
+	</div>
+	<form class="account-keys__signer" data-signing-form novalidate>
+		<label class="le__label">${t("developerSettings.signingKey", "Signing key")}
+			<select class="le__input" id="signature-key" data-sign-key></select>
+		</label>
+		${fArea(t("developerSettings.toolinfoItem", "Toolinfo item"), "signature-toolinfo", "", t("developerSettings.toolinfoItemHint", "Use the exact toolinfo object the crawler will read."), { rows: 8, max: false })}
+		<div class="account-keys__actions">${button(t("developerSettings.buildPayload", "Build payload"), { variant: "outline", type: "submit" })}</div>
+	</form>
+	<div class="account-keys__payloads" data-signature-output hidden>
+		${outputArea(t("developerSettings.canonicalPayload", "Canonical payload"), "signature-canonical", 6)}
+		${outputArea(t("developerSettings.canonicalPayloadBase64", "Canonical payload, base64"), "signature-canonical-base64", 2)}
+		${outputArea(t("developerSettings.signatureMetadata", "Signature metadata"), "signature-metadata", 5)}
+		${outputArea(t("developerSettings.signedToolinfoPreview", "Signed toolinfo preview"), "signature-preview", 8)}
+	</div>
+	<p class="at__result" data-developer-result aria-live="polite"></p>`;
+	const html = accountWorkbenchPage({
+		active: "developer",
+		title: t("developerSettings.title", "Developer settings"),
+		intro: t(
+			"developerSettings.intro",
+			"Manage Toolhub developer features connected to this sign-in. OAuth applications and API tokens remain official Toolhub data."
+		),
+		source: t("developerSettings.source", "Official Toolhub + Evolved signatures"),
+		actions: toolhubActions,
+		metrics: [
+			{
+				value: t("developerSettings.officialMetricValue", "Official"),
+				label: t("developerSettings.officialMetric", "OAuth and API"),
+				detail: t("developerSettings.officialMetricDetail", "Managed by Toolhub")
+			},
+			{
+				value: t("developerSettings.signatureMetricValue", "Ed25519"),
+				label: t("developerSettings.signatureMetric", "Authorship keys"),
+				detail: t("developerSettings.signatureMetricDetail", "Evolved verification")
+			}
+		],
+		body: `
+			${accountSection({
+				id: "developer-toolhub-title",
+				title: t("developerSettings.toolhubTitle", "Official Toolhub developer settings"),
+				intro: t(
+					"developerSettings.toolhubNote",
+					"Toolhub remains the source of truth for OAuth applications, authorized applications, and API tokens. Evolved lists what it can read through the public API and sends sensitive management tasks back to Toolhub."
+				),
+				body: ""
+			})}
+			${accountSection({
+				id: "developer-pages-title",
+				title: t("developerSettings.pagesTitle", "Developer pages"),
+				body: developerLinks
+			})}
+			${accountSection({
+				id: "developer-signed-toolinfo-title",
+				title: t("developerSettings.signedToolinfoTitle", "Signed toolinfo authorship"),
+				intro: t(
+					"developerSettings.signedToolinfoNote",
+					"Register Ed25519 public keys for Evolved-only signed toolinfo verification. Private keys stay outside Evolved."
+				),
+				body: signedToolinfoBody,
+				className: "account-keys"
+			})}`
+	});
 	function mount() {
 		async function loadKeys() {
 			const data = await backendGetJson("/v1/author-keys/");

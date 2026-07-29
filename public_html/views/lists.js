@@ -29,6 +29,7 @@ import { fArea, fInput, fieldValue } from "../lib/atoms/form-fields.js";
 import { icon } from "../lib/atoms/icon.js";
 import { mountChangeReview, shouldProceedWithFieldChanges } from "../lib/molecules/change-review.js";
 import { fieldProvenance, syncBadge, syncState, syncStatusPanel } from "../lib/molecules/sync-status.js";
+import { accountEmptyState, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard, listCardData } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -246,14 +247,54 @@ export async function viewList(id) {
 // Evolved-local list drafts/fallbacks for the signed-in user.
 export function viewMyLists() {
 	const cards = demoLists().map((/** @type {any} */ list) => listCardData(list));
-	const html = `
-	<div class="container page">
-		<div class="section-head"><h1 class="page__title">${t("lists.yourLists", "Your lists")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
-			${button(t("lists.createAList", "Create a list"), { variant: "primary", href: "/lists/create", icon: "add" })}</div>
-		<p class="page__intro">${t("lists.yourListsIntro", "Lists saved in Evolved as drafts, fallbacks, or local records — see")}
-		<a href="/rules-of-engagement">${t("lists.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
-		${cards.length > 0 ? grid("grid-lists", cards, listCard) : `<p class="empty">${t("lists.noListsYet", "No lists yet.")} <a href="/lists/create">${t("lists.createFirstList", "Create your first list")}</a>.</p>`}
-	</div>`;
+	const createButton = button(t("lists.createAList", "Create a list"), {
+		variant: "primary",
+		href: "/lists/create",
+		icon: "add"
+	});
+	const body = `<section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
+		<div class="section-head account-workbench__content-head">
+			<div>
+				<h2 class="panel__title" id="my-lists-heading">${t("lists.listWorkspace", "List workspace")}</h2>
+				<p class="signin-note">${t("lists.yourListsNote", "Drafts, fallbacks, and local list records attached to this Toolhub sign-in.")}</p>
+			</div>
+		</div>
+		${
+			cards.length > 0
+				? grid("grid-lists", cards, listCard)
+				: accountEmptyState({
+						iconName: "list",
+						title: t("lists.noListsYetTitle", "No lists yet"),
+						body: t(
+							"lists.noListsYetBody",
+							"Create a list to group useful tools for a task, team, or wiki workflow."
+						),
+						action: button(t("lists.createFirstList", "Create your first list"), {
+							variant: "primary",
+							href: "/lists/create",
+							icon: "add"
+						})
+					})
+		}
+	</section>`;
+	const html = accountWorkbenchPage({
+		active: "lists",
+		title: t("lists.yourLists", "Your lists"),
+		intro: t(
+			"lists.yourListsIntroClean",
+			"Lists you create or edit in Evolved, including drafts and local fallbacks."
+		),
+		source: t("lists.evolvedOverlaySource", "Evolved workspace"),
+		actions: createButton,
+		metrics: [
+			{
+				value: countLabel(cards.length, t("lists.listOne", "list"), t("lists.listOther", "lists")),
+				label: t("lists.savedListsMetric", "Saved lists"),
+				detail: t("lists.savedListsMetricDetail", "Drafts and fallbacks")
+			}
+		],
+		body
+	});
 	return { title: t("lists.yourListsDocTitle", "Your lists — Toolhub"), html };
 }
 // EXPERIMENTAL — favorites view. Tools are read by name (local-first via getTool); the
@@ -264,16 +305,43 @@ export async function viewFavorites() {
 	const body =
 		tools.length > 0
 			? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t))
-			: `<p class="empty">${t("lists.noFavoritesYet", "No favorites yet. Tap the")} ${icon("starOutline")}<span class="skip-label">${t("lists.star", "star")}</span> ${t("lists.favoritesHint", "on any tool card or page to save it here.")}</p>`;
+			: accountEmptyState({
+					iconName: "starOutline",
+					title: t("lists.noFavoritesYetTitle", "No favorites yet"),
+					body: t(
+						"lists.noFavoritesYetBody",
+						"Save tools from any card or tool page and they will appear here."
+					),
+					action: button(t("lists.browseTools", "Browse tools"), {
+						variant: "primary",
+						href: "/search",
+						icon: "search"
+					})
+				});
 	return {
 		title: t("lists.favoritesDocTitle", "Favorites — Toolhub"),
-		html: `
-		<div class="container page">
-			<h1 class="page__title">${t("lists.favorites", "Favorites")} <span class="exp-badge">${t("lists.experimental", "Experimental")}</span></h1>
-			<p class="page__intro">${t("lists.favoritesIntro", "Tools you've saved. Stored only in this browser — see")}
-			<a href="/rules-of-engagement">${t("lists.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
-			${body}
-		</div>`
+		html: accountWorkbenchPage({
+			active: "favorites",
+			title: t("lists.favorites", "Favorites"),
+			intro: t("lists.favoritesIntroClean", "Tools you saved for quick return, comparison, or later curation."),
+			source: t("lists.evolvedFavoritesSource", "Saved through Evolved"),
+			metrics: [
+				{
+					value: countLabel(tools.length, t("lists.toolOne", "tool"), t("lists.toolOther", "tools")),
+					label: t("lists.savedToolsMetric", "Saved tools"),
+					detail: t("lists.savedToolsMetricDetail", "Available from this account")
+				}
+			],
+			body: `<section class="account-workbench__content-section" aria-labelledby="favorites-heading">
+				<div class="section-head account-workbench__content-head">
+					<div>
+						<h2 class="panel__title" id="favorites-heading">${t("lists.savedToolShelf", "Saved tool shelf")}</h2>
+						<p class="signin-note">${t("lists.favoritesNote", "Favorites stay close to your account workspace so they are easy to compare with lists and maintained tools.")}</p>
+					</div>
+				</div>
+				${body}
+			</section>`
+		})
 	};
 }
 // Create/edit a list. Official lists write to Toolhub; Evolved draft lists keep

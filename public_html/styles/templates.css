@@ -211,6 +211,23 @@
 	.toolpage__cta .btn {
 		flex: 1;
 	}
+	.account-workbench__hero {
+		grid-template-columns: 1fr;
+	}
+	.account-workbench__hero-side {
+		align-items: flex-start;
+		min-width: 0;
+	}
+	.account-workbench__actions,
+	.account-workbench__section-actions {
+		justify-content: flex-start;
+	}
+	.account-workbench__section-head {
+		flex-direction: column;
+	}
+	.account-keys__layout {
+		grid-template-columns: 1fr;
+	}
 }
 
 @media (width <= 1000px) {
@@ -227,9 +244,25 @@
 		display: none;
 	}
 	.nav__actions {
+		flex: 1 1 100%;
+		justify-content: flex-end;
 		gap: var(--space-2);
+		margin-inline-start: var(--space-0);
+		min-width: 0;
+	}
+	.command-trigger {
+		flex: 0 0 var(--btn-h-md);
+		width: var(--btn-h-md);
+		padding: var(--space-0);
+	}
+	.command-trigger__label,
+	.command-trigger__shortcut,
+	.lang__current,
+	.lang__caret {
+		display: none;
 	}
 	#submit-tool {
+		flex: 0 0 var(--btn-h-md);
 		width: var(--btn-h-md);
 		padding: var(--space-0);
 		overflow: hidden;
@@ -239,6 +272,27 @@
 	}
 	.icon-btn {
 		display: none;
+	}
+	.acct {
+		min-width: 0;
+	}
+	.acct__btn {
+		max-width: min(46vw, 180px);
+		min-width: 0;
+	}
+	.acct__name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.lang__btn {
+		justify-content: center;
+		width: var(--btn-h-md);
+		padding: var(--space-0);
+	}
+	.theme-toggle {
+		flex: 0 0 auto;
 	}
 	.nav__mobile {
 		display: flex;
@@ -311,6 +365,27 @@
 	.intent__go {
 		margin-block-start: var(--space-2);
 		margin-inline-start: var(--space-0);
+	}
+	.account-workbench__identity,
+	.account-empty {
+		gap: var(--space-3);
+	}
+	.account-workbench__avatar,
+	.account-empty__icon {
+		flex-basis: var(--avatar-md);
+		width: var(--avatar-md);
+		height: var(--avatar-md);
+		font-size: var(--fs-body);
+	}
+	.account-workbench__nav {
+		grid-template-columns: 1fr;
+	}
+	.account-workbench__nav-item {
+		border-inline-end: 0;
+		border-bottom: var(--border-muted);
+	}
+	.account-workbench__nav-item.is-active {
+		border-bottom: var(--border-progressive-heavy);
 	}
 }
 

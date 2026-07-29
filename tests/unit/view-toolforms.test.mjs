@@ -114,31 +114,107 @@ function localFallbackResponse(lastError, local = {}) {
 }
 
 const S = {
-	addtools: `
-	<div class="container page at">
-		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
-
-		<h2 class="le__h2">Find or register toolinfo.json</h2>
+	addtools: `<div class="container page account-data account-workbench at">
+		<header class="account-workbench__hero">
+			<div class="account-workbench__identity">
+				<span class="avatar avatar--lg account-workbench__avatar" style="background:var(--color-progressive)" aria-hidden="true">T</span>
+				<div class="account-workbench__copy">
+					<p class="account-workbench__eyebrow">Signed in as <span dir="auto">Toolhub account</span></p>
+					<h1 class="page__title">Add or remove tools</h1>
+					<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
+				</div>
+			</div>
+			<div class="account-workbench__hero-side"><span class="account-workbench__source">Official crawler URLs + Evolved ingest</span><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div></div>
+		</header>
+		<dl class="account-metrics">
+		<div class="account-metrics__item">
+					<dt>Registered URLs</dt>
+					<dd>2 URLs</dd>
+					<span>Crawler sources</span>
+				</div><div class="account-metrics__item">
+					<dt>Local tools</dt>
+					<dd>1 tool</dd>
+					<span>Pasted toolinfo records</span>
+				</div>
+	</dl>
+		<nav class="account-workbench__nav" aria-label="Account pages">
+		<a class="account-workbench__nav-item" href="/favorites">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Favorites</span>
+					<span class="account-workbench__nav-desc">Saved tools</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-lists">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Your lists</span>
+					<span class="account-workbench__nav-desc">Drafts and collections</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">My tools</span>
+					<span class="account-workbench__nav-desc">Authorship and metadata</span>
+				</span>
+			</a><a class="account-workbench__nav-item is-active" href="/add-or-remove-tools" aria-current="page">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Register tools</span>
+					<span class="account-workbench__nav-desc">Crawler URLs and submissions</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/developer-settings">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Developer</span>
+					<span class="account-workbench__nav-desc">API and signatures</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/account">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Data settings</span>
+					<span class="account-workbench__nav-desc">Export and deletion</span>
+				</span>
+			</a>
+	</nav>
+		<div class="account-workbench__body">
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-url-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-url-title">Find or register toolinfo.json</h2>
+				<p class="signin-note">Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source.</p>
+			</div>
+		</div>
 		<form class="le__add" data-url-form novalidate>
-			<label class="le__label">Tool homepage or toolinfo.json URL
+					<label class="le__label">Tool homepage or toolinfo.json URL
 		 <span class="le__hint" id="at-url-hint">Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.</span>
 		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/" /><span class="le__error" id="at-url-err" hidden></span></label>
-			<button class="btn btn--outline btn--md" type="submit">Register</button>
-		</form>
-		<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
-
-		<h2 class="le__h2">Ingest toolinfo</h2>
+					<button class="btn btn--outline btn--md" type="submit">Register</button>
+				</form>
+				<ul class="at__urls" data-url-list><li><code class="at__url">https://a.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://a.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li><li><code class="at__url">https://b.example/toolinfo.json</code> <span class="sync-badge sync-badge--local-draft">Saved locally</span>  <button class="btn btn--icon btn--sm at__rm" aria-label="Remove URL" type="button" data-url-rm="https://b.example/toolinfo.json"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"/></svg></button></li></ul>
+	</section>
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-json-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-json-title">Ingest toolinfo</h2>
+				<p class="signin-note">Paste one tool object or an array. Successful records stay in Evolved until they are submitted or matched with official Toolhub data.</p>
+			</div>
+		</div>
 		<label class="le__label">Toolinfo JSON <span class="le__hint" id="at-json-hint">Paste one tool object or an array; successful entries appear below in Your tools.</span>
 		<textarea class="le__input at__json" id="at-json" rows="10" aria-describedby="at-json-hint" placeholder="{ &quot;name&quot;: &quot;my-tool&quot;, &quot;title&quot;: &quot;My Tool&quot;, &quot;description&quot;: &quot;…&quot;, &quot;url&quot;: &quot;https://…&quot; }"></textarea></label>
-		<div class="le__actions">
-			<button class="btn btn--primary btn--md" type="button" data-ingest>Ingest</button>
+				<div class="le__actions">
+					<button class="btn btn--primary btn--md" type="button" data-ingest>Ingest</button>
+				</div>
+				<p class="at__result" data-ingest-result aria-live="polite"></p>
+	</section>
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-submissions-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-submissions-title">Your tools</h2>
+				<p class="signin-note">Local submissions and pasted toolinfo records attached to this account workspace.</p>
+			</div>
 		</div>
-		<p class="at__result" data-ingest-result aria-live="polite"></p>
-
-		<h2 class="le__h2">Your tools <span class="le__count" data-sub-count></span></h2>
-		<div data-sub-grid><ul class="card-grid grid-tools" role="list"><li>
+		<p class="le__count" data-sub-count>1 tool</p>
+				<div data-sub-grid><ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="sub-1">
 		
 		<div class="tcard__head">
@@ -153,36 +229,128 @@ const S = {
 		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u||tcard__when></span></div>
 	</article></li></ul></div>
-		<h2 class="le__h2">Local crawler runs</h2>
+	</section>
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-runs-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-runs-title">Local crawler runs</h2>
+				<p class="signin-note">Recent local discovery attempts for pasted or registered toolinfo sources.</p>
+			</div>
+		</div>
 		<div data-crawler-runs><p class="empty">No local crawler runs recorded yet.</p></div>
+	</section></div>
 	</div>`,
-	addtools_empty: `
-	<div class="container page at">
-		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
-
-		<h2 class="le__h2">Find or register toolinfo.json</h2>
+	addtools_empty: `<div class="container page account-data account-workbench at">
+		<header class="account-workbench__hero">
+			<div class="account-workbench__identity">
+				<span class="avatar avatar--lg account-workbench__avatar" style="background:var(--color-progressive)" aria-hidden="true">T</span>
+				<div class="account-workbench__copy">
+					<p class="account-workbench__eyebrow">Signed in as <span dir="auto">Toolhub account</span></p>
+					<h1 class="page__title">Add or remove tools</h1>
+					<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
+				</div>
+			</div>
+			<div class="account-workbench__hero-side"><span class="account-workbench__source">Official crawler URLs + Evolved ingest</span><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div></div>
+		</header>
+		<dl class="account-metrics">
+		<div class="account-metrics__item">
+					<dt>Registered URLs</dt>
+					<dd>0 URLs</dd>
+					<span>Crawler sources</span>
+				</div><div class="account-metrics__item">
+					<dt>Local tools</dt>
+					<dd>0 tools</dd>
+					<span>Pasted toolinfo records</span>
+				</div>
+	</dl>
+		<nav class="account-workbench__nav" aria-label="Account pages">
+		<a class="account-workbench__nav-item" href="/favorites">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Favorites</span>
+					<span class="account-workbench__nav-desc">Saved tools</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-lists">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Your lists</span>
+					<span class="account-workbench__nav-desc">Drafts and collections</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">My tools</span>
+					<span class="account-workbench__nav-desc">Authorship and metadata</span>
+				</span>
+			</a><a class="account-workbench__nav-item is-active" href="/add-or-remove-tools" aria-current="page">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Register tools</span>
+					<span class="account-workbench__nav-desc">Crawler URLs and submissions</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/developer-settings">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Developer</span>
+					<span class="account-workbench__nav-desc">API and signatures</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/account">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Data settings</span>
+					<span class="account-workbench__nav-desc">Export and deletion</span>
+				</span>
+			</a>
+	</nav>
+		<div class="account-workbench__body">
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-url-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-url-title">Find or register toolinfo.json</h2>
+				<p class="signin-note">Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source.</p>
+			</div>
+		</div>
 		<form class="le__add" data-url-form novalidate>
-			<label class="le__label">Tool homepage or toolinfo.json URL
+					<label class="le__label">Tool homepage or toolinfo.json URL
 		 <span class="le__hint" id="at-url-hint">Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.</span>
 		<input class="le__input" id="at-url" type="url" aria-describedby="at-url-hint at-url-err" maxlength="300" value="" placeholder="https://example.org/" /><span class="le__error" id="at-url-err" hidden></span></label>
-			<button class="btn btn--outline btn--md" type="submit">Register</button>
-		</form>
-		<ul class="at__urls" data-url-list><li class="le__empty">No URLs registered.</li></ul>
-
-		<h2 class="le__h2">Ingest toolinfo</h2>
+					<button class="btn btn--outline btn--md" type="submit">Register</button>
+				</form>
+				<ul class="at__urls" data-url-list><li class="le__empty">No URLs registered.</li></ul>
+	</section>
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-json-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-json-title">Ingest toolinfo</h2>
+				<p class="signin-note">Paste one tool object or an array. Successful records stay in Evolved until they are submitted or matched with official Toolhub data.</p>
+			</div>
+		</div>
 		<label class="le__label">Toolinfo JSON <span class="le__hint" id="at-json-hint">Paste one tool object or an array; successful entries appear below in Your tools.</span>
 		<textarea class="le__input at__json" id="at-json" rows="10" aria-describedby="at-json-hint" placeholder="{ &quot;name&quot;: &quot;my-tool&quot;, &quot;title&quot;: &quot;My Tool&quot;, &quot;description&quot;: &quot;…&quot;, &quot;url&quot;: &quot;https://…&quot; }"></textarea></label>
-		<div class="le__actions">
-			<button class="btn btn--primary btn--md" type="button" data-ingest>Ingest</button>
+				<div class="le__actions">
+					<button class="btn btn--primary btn--md" type="button" data-ingest>Ingest</button>
+				</div>
+				<p class="at__result" data-ingest-result aria-live="polite"></p>
+	</section>
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-submissions-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-submissions-title">Your tools</h2>
+				<p class="signin-note">Local submissions and pasted toolinfo records attached to this account workspace.</p>
+			</div>
 		</div>
-		<p class="at__result" data-ingest-result aria-live="polite"></p>
-
-		<h2 class="le__h2">Your tools <span class="le__count" data-sub-count></span></h2>
-		<div data-sub-grid><p class="empty">No tools yet. Submit one above, or ingest toolinfo.</p></div>
-		<h2 class="le__h2">Local crawler runs</h2>
+		<p class="le__count" data-sub-count>0 tools</p>
+				<div data-sub-grid><p class="empty">No tools yet. Submit one above, or ingest toolinfo.</p></div>
+	</section>
+			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-runs-title">
+		<div class="account-workbench__section-head">
+			<div>
+				<h2 class="panel__title" id="add-toolinfo-runs-title">Local crawler runs</h2>
+				<p class="signin-note">Recent local discovery attempts for pasted or registered toolinfo sources.</p>
+			</div>
+		</div>
 		<div data-crawler-runs><p class="empty">No local crawler runs recorded yet.</p></div>
+	</section></div>
 	</div>`,
 	anno: `
 	<div class="container page le">

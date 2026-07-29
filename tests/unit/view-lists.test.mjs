@@ -245,12 +245,72 @@ const S = {
 			<p class="at__result" data-official-result aria-live="polite"></p>
 		</form>
 	</div>`,
-	favorites: `
-		<div class="container page">
-			<h1 class="page__title">Favorites <span class="exp-badge">Experimental</span></h1>
-			<p class="page__intro">Tools you've saved. Stored only in this browser — see
-			<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
-			<ul class="card-grid grid-tools" role="list"><li>
+	favorites: `<div class="container page account-data account-workbench">
+		<header class="account-workbench__hero">
+			<div class="account-workbench__identity">
+				<span class="avatar avatar--lg account-workbench__avatar" style="background:var(--color-progressive)" aria-hidden="true">T</span>
+				<div class="account-workbench__copy">
+					<p class="account-workbench__eyebrow">Signed in as <span dir="auto">Toolhub account</span></p>
+					<h1 class="page__title">Favorites</h1>
+					<p class="page__intro">Tools you saved for quick return, comparison, or later curation.</p>
+				</div>
+			</div>
+			<div class="account-workbench__hero-side"><span class="account-workbench__source">Saved through Evolved</span></div>
+		</header>
+		<dl class="account-metrics">
+		<div class="account-metrics__item">
+					<dt>Saved tools</dt>
+					<dd>1 tool</dd>
+					<span>Available from this account</span>
+				</div>
+	</dl>
+		<nav class="account-workbench__nav" aria-label="Account pages">
+		<a class="account-workbench__nav-item is-active" href="/favorites" aria-current="page">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Favorites</span>
+					<span class="account-workbench__nav-desc">Saved tools</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-lists">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Your lists</span>
+					<span class="account-workbench__nav-desc">Drafts and collections</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">My tools</span>
+					<span class="account-workbench__nav-desc">Authorship and metadata</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/add-or-remove-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Register tools</span>
+					<span class="account-workbench__nav-desc">Crawler URLs and submissions</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/developer-settings">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Developer</span>
+					<span class="account-workbench__nav-desc">API and signatures</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/account">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Data settings</span>
+					<span class="account-workbench__nav-desc">Export and deletion</span>
+				</span>
+			</a>
+	</nav>
+		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="favorites-heading">
+				<div class="section-head account-workbench__content-head">
+					<div>
+						<h2 class="panel__title" id="favorites-heading">Saved tool shelf</h2>
+						<p class="signin-note">Favorites stay close to your account workspace so they are easy to compare with lists and maintained tools.</p>
+					</div>
+				</div>
+				<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
 		
 		<div class="tcard__head">
@@ -265,14 +325,83 @@ const S = {
 		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
-		</div>`,
-	favorites_empty: `
-		<div class="container page">
-			<h1 class="page__title">Favorites <span class="exp-badge">Experimental</span></h1>
-			<p class="page__intro">Tools you've saved. Stored only in this browser — see
-			<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
-			<p class="empty">No favorites yet. Tap the <svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg><span class="skip-label">star</span> on any tool card or page to save it here.</p>
-		</div>`,
+			</section></div>
+	</div>`,
+	favorites_empty: `<div class="container page account-data account-workbench">
+		<header class="account-workbench__hero">
+			<div class="account-workbench__identity">
+				<span class="avatar avatar--lg account-workbench__avatar" style="background:var(--color-progressive)" aria-hidden="true">T</span>
+				<div class="account-workbench__copy">
+					<p class="account-workbench__eyebrow">Signed in as <span dir="auto">Toolhub account</span></p>
+					<h1 class="page__title">Favorites</h1>
+					<p class="page__intro">Tools you saved for quick return, comparison, or later curation.</p>
+				</div>
+			</div>
+			<div class="account-workbench__hero-side"><span class="account-workbench__source">Saved through Evolved</span></div>
+		</header>
+		<dl class="account-metrics">
+		<div class="account-metrics__item">
+					<dt>Saved tools</dt>
+					<dd>0 tools</dd>
+					<span>Available from this account</span>
+				</div>
+	</dl>
+		<nav class="account-workbench__nav" aria-label="Account pages">
+		<a class="account-workbench__nav-item is-active" href="/favorites" aria-current="page">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Favorites</span>
+					<span class="account-workbench__nav-desc">Saved tools</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-lists">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Your lists</span>
+					<span class="account-workbench__nav-desc">Drafts and collections</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">My tools</span>
+					<span class="account-workbench__nav-desc">Authorship and metadata</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/add-or-remove-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Register tools</span>
+					<span class="account-workbench__nav-desc">Crawler URLs and submissions</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/developer-settings">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Developer</span>
+					<span class="account-workbench__nav-desc">API and signatures</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/account">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Data settings</span>
+					<span class="account-workbench__nav-desc">Export and deletion</span>
+				</span>
+			</a>
+	</nav>
+		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="favorites-heading">
+				<div class="section-head account-workbench__content-head">
+					<div>
+						<h2 class="panel__title" id="favorites-heading">Saved tool shelf</h2>
+						<p class="signin-note">Favorites stay close to your account workspace so they are easy to compare with lists and maintained tools.</p>
+					</div>
+				</div>
+				<div class="account-empty">
+		<span class="account-empty__icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg></span>
+		<div class="account-empty__copy">
+			<h2>No favorites yet</h2>
+			<p>Save tools from any card or tool page and they will appear here.</p>
+			<div class="account-empty__actions"><a class="btn btn--primary btn--md" href="/search"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 1a7 7 0 015.605 11.191l5.102 5.102-1.414 1.414-5.102-5.102A7 7 0 118 1m0 2a5 5 0 100 10A5 5 0 008 3"/></svg> Browse tools</a></div>
+		</div>
+	</div>
+			</section></div>
+	</div>`,
 	le_results: `<button class="le__result is-in" type="button" data-add="a" disabled="">
 						<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"></path></svg> <span dir="auto">A</span></button><button class="le__result" type="button" data-add="c">
 						<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"></path></svg> <span dir="auto">C</span></button>`,
@@ -295,12 +424,71 @@ const S = {
 						<button class="btn btn--icon btn--sm" aria-label="Move down" type="button" disabled="" data-move="down"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 13 2.5 5.5 3.91 4.09 10 10.17l6.09-6.08L17.5 5.5z"></path></svg></button>
 						<button class="btn btn--icon btn--danger btn--sm" aria-label="Remove from list" type="button" data-rm=""><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"></path></svg></button>
 					</span></li>`,
-	mylists: `
-	<div class="container page">
-		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div>
-		<p class="page__intro">Lists saved in Evolved as drafts, fallbacks, or local records — see
-		<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
+	mylists: `<div class="container page account-data account-workbench">
+		<header class="account-workbench__hero">
+			<div class="account-workbench__identity">
+				<span class="avatar avatar--lg account-workbench__avatar" style="background:var(--color-progressive)" aria-hidden="true">T</span>
+				<div class="account-workbench__copy">
+					<p class="account-workbench__eyebrow">Signed in as <span dir="auto">Toolhub account</span></p>
+					<h1 class="page__title">Your lists</h1>
+					<p class="page__intro">Lists you create or edit in Evolved, including drafts and local fallbacks.</p>
+				</div>
+			</div>
+			<div class="account-workbench__hero-side"><span class="account-workbench__source">Evolved workspace</span><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
+		</header>
+		<dl class="account-metrics">
+		<div class="account-metrics__item">
+					<dt>Saved lists</dt>
+					<dd>1 list</dd>
+					<span>Drafts and fallbacks</span>
+				</div>
+	</dl>
+		<nav class="account-workbench__nav" aria-label="Account pages">
+		<a class="account-workbench__nav-item" href="/favorites">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Favorites</span>
+					<span class="account-workbench__nav-desc">Saved tools</span>
+				</span>
+			</a><a class="account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Your lists</span>
+					<span class="account-workbench__nav-desc">Drafts and collections</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">My tools</span>
+					<span class="account-workbench__nav-desc">Authorship and metadata</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/add-or-remove-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Register tools</span>
+					<span class="account-workbench__nav-desc">Crawler URLs and submissions</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/developer-settings">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Developer</span>
+					<span class="account-workbench__nav-desc">API and signatures</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/account">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Data settings</span>
+					<span class="account-workbench__nav-desc">Export and deletion</span>
+				</span>
+			</a>
+	</nav>
+		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
+		<div class="section-head account-workbench__content-head">
+			<div>
+				<h2 class="panel__title" id="my-lists-heading">List workspace</h2>
+				<p class="signin-note">Drafts, fallbacks, and local list records attached to this Toolhub sign-in.</p>
+			</div>
+		</div>
 		<ul class="card-grid grid-lists" role="list"><li>
 	<a class="lcard" href="/lists/demo-1" aria-label="Mine list, 2 tools">
 		<span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">M</span>
@@ -309,14 +497,82 @@ const S = {
 			<div class="lcard__desc" dir="auto">d</div>
 		</div>
 	</a></li></ul>
+	</section></div>
 	</div>`,
-	mylists_empty: `
-	<div class="container page">
-		<div class="section-head"><h1 class="page__title">Your lists <span class="exp-badge">Experimental</span></h1>
-			<a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div>
-		<p class="page__intro">Lists saved in Evolved as drafts, fallbacks, or local records — see
-		<a href="/rules-of-engagement">Rules of Engagement</a>.</p>
-		<p class="empty">No lists yet. <a href="/lists/create">Create your first list</a>.</p>
+	mylists_empty: `<div class="container page account-data account-workbench">
+		<header class="account-workbench__hero">
+			<div class="account-workbench__identity">
+				<span class="avatar avatar--lg account-workbench__avatar" style="background:var(--color-progressive)" aria-hidden="true">T</span>
+				<div class="account-workbench__copy">
+					<p class="account-workbench__eyebrow">Signed in as <span dir="auto">Toolhub account</span></p>
+					<h1 class="page__title">Your lists</h1>
+					<p class="page__intro">Lists you create or edit in Evolved, including drafts and local fallbacks.</p>
+				</div>
+			</div>
+			<div class="account-workbench__hero-side"><span class="account-workbench__source">Evolved workspace</span><div class="account-workbench__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create a list</a></div></div>
+		</header>
+		<dl class="account-metrics">
+		<div class="account-metrics__item">
+					<dt>Saved lists</dt>
+					<dd>0 lists</dd>
+					<span>Drafts and fallbacks</span>
+				</div>
+	</dl>
+		<nav class="account-workbench__nav" aria-label="Account pages">
+		<a class="account-workbench__nav-item" href="/favorites">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Zm-4.013 2H4.456l3.459 2.643-1.289 4.17L10 13.027l3.373 2.577-1.288-4.17 3.459-2.642h-4.275L10 4.687z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Favorites</span>
+					<span class="account-workbench__nav-desc">Saved tools</span>
+				</span>
+			</a><a class="account-workbench__nav-item is-active" href="/my-lists" aria-current="page">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Your lists</span>
+					<span class="account-workbench__nav-desc">Drafts and collections</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/my-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">My tools</span>
+					<span class="account-workbench__nav-desc">Authorship and metadata</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/add-or-remove-tools">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Register tools</span>
+					<span class="account-workbench__nav-desc">Crawler URLs and submissions</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/developer-settings">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M13.75 6a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M13.706 1.5C17.128 1.5 20 4.133 20 7.5s-2.872 6-6.294 6c-.65 0-1.28-.095-1.873-.27q-.007-.004-.016-.006L9.855 15H9v2H7v1.5H1l-1-1v-2.435L7.446 8.13a6 6 0 01-.034-.631c0-3.367 2.872-6 6.294-6Zm0 2c-2.426 0-4.294 1.844-4.294 4q0 .407.083.79l.12.555L2 15.935v.565h3V15h2v-2h2.086l2.3-2.081.584.24a4.5 4.5 0 001.736.341c2.426 0 4.294-1.844 4.294-4s-1.868-4-4.294-4"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Developer</span>
+					<span class="account-workbench__nav-desc">API and signatures</span>
+				</span>
+			</a><a class="account-workbench__nav-item" href="/account">
+				<span class="account-workbench__nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg></span>
+				<span class="account-workbench__nav-copy">
+					<span class="account-workbench__nav-label">Data settings</span>
+					<span class="account-workbench__nav-desc">Export and deletion</span>
+				</span>
+			</a>
+	</nav>
+		<div class="account-workbench__body"><section class="account-workbench__content-section" aria-labelledby="my-lists-heading">
+		<div class="section-head account-workbench__content-head">
+			<div>
+				<h2 class="panel__title" id="my-lists-heading">List workspace</h2>
+				<p class="signin-note">Drafts, fallbacks, and local list records attached to this Toolhub sign-in.</p>
+			</div>
+		</div>
+		<div class="account-empty">
+		<span class="account-empty__icon" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg></span>
+		<div class="account-empty__copy">
+			<h2>No lists yet</h2>
+			<p>Create a list to group useful tools for a task, team, or wiki workflow.</p>
+			<div class="account-empty__actions"><a class="btn btn--primary btn--md" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Create your first list</a></div>
+		</div>
+	</div>
+	</section></div>
 	</div>`,
 	overview_empty: `
 	<div class="container page">

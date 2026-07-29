@@ -6,38 +6,69 @@ import { serverWrite } from "../lib/core/serversync.js";
 import { demoStore } from "../lib/core/store.js";
 import { button } from "../lib/atoms/button.js";
 import { logoutForm } from "../lib/organisms/account.js";
+import { accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 
 function exportTextarea(value = "") {
 	return `<textarea class="le__input account-data__export" data-export-json rows="12" aria-label="${t("accountData.exportJson", "Evolved data export JSON")}" readonly>${esc(value)}</textarea>`;
 }
 
 export function viewAccountSettings() {
-	const html = `
-	<div class="container page account-data">
-		<h1 class="page__title">${t("accountData.title", "Evolved data settings")}</h1>
-		<p class="page__intro">${t("accountData.intro", "Export or delete the local Evolved data attached to this Toolhub sign-in. Official Toolhub records, lists, favorites, and crawler registrations are not deleted here.")}</p>
-
-		<section class="panel account-data__section" aria-labelledby="account-export-title">
-			<h2 class="panel__title" id="account-export-title">${t("accountData.exportTitle", "Export Evolved data")}</h2>
-			<div class="le__actions">${button(t("accountData.exportButton", "Generate export"), { variant: "outline", attrs: "data-export" })}</div>
-			<div data-export-box>${exportTextarea()}</div>
-		</section>
-
-		<section class="panel account-data__section" aria-labelledby="account-delete-title">
-			<h2 class="panel__title" id="account-delete-title">${t("accountData.deleteTitle", "Delete Evolved-local data")}</h2>
-			<p class="signin-note">${t("accountData.deleteNote", "This removes local drafts, fallbacks, overlays, local favorites cache, crawler URLs, and local activity rows stored by Toolhub Evolved.")}</p>
-			<div class="le__actions">${button(t("accountData.deleteButton", "Delete Evolved-local data"), { variant: "danger", attrs: "data-delete-evolved" })}</div>
-		</section>
-
-		<section class="panel account-data__section" aria-labelledby="account-oauth-title">
-			<h2 class="panel__title" id="account-oauth-title">${t("accountData.oauthTitle", "Toolhub connection")}</h2>
-			<div class="toolpage__actions">
-				${button(t("accountData.reconnect", "Reconnect Toolhub OAuth"), { variant: "outline", href: "/oauth/login" })}
-				${logoutForm(button(t("accountData.logout", "Log out"), { variant: "outline", type: "submit" }))}
-			</div>
-		</section>
-		<p class="at__result" data-account-result aria-live="polite"></p>
-	</div>`;
+	const html = accountWorkbenchPage({
+		active: "data",
+		title: t("accountData.title", "Evolved data settings"),
+		intro: t(
+			"accountData.intro",
+			"Export or delete the local Evolved data attached to this Toolhub sign-in. Official Toolhub records, lists, favorites, and crawler registrations are not deleted here."
+		),
+		source: t("accountData.source", "Evolved-local data"),
+		metrics: [
+			{
+				value: t("accountData.exportMetricValue", "JSON"),
+				label: t("accountData.exportMetric", "Export format"),
+				detail: t("accountData.exportMetricDetail", "Portable account snapshot")
+			},
+			{
+				value: t("accountData.deleteMetricValue", "Local only"),
+				label: t("accountData.deleteMetric", "Deletion scope"),
+				detail: t("accountData.deleteMetricDetail", "Official Toolhub records stay intact")
+			}
+		],
+		body: `
+			${accountSection({
+				id: "account-export-title",
+				title: t("accountData.exportTitle", "Export Evolved data"),
+				actions: button(t("accountData.exportButton", "Generate export"), {
+					variant: "outline",
+					attrs: "data-export"
+				}),
+				body: `<div data-export-box>${exportTextarea()}</div>`
+			})}
+			${accountSection({
+				id: "account-delete-title",
+				title: t("accountData.deleteTitle", "Delete Evolved-local data"),
+				intro: t(
+					"accountData.deleteNote",
+					"This removes local drafts, fallbacks, overlays, local favorites cache, crawler URLs, and local activity rows stored by Toolhub Evolved."
+				),
+				actions: button(t("accountData.deleteButton", "Delete Evolved-local data"), {
+					variant: "danger",
+					attrs: "data-delete-evolved"
+				}),
+				body: ""
+			})}
+			${accountSection({
+				id: "account-oauth-title",
+				title: t("accountData.oauthTitle", "Toolhub connection"),
+				body: `<div class="toolpage__actions">
+					${button(t("accountData.reconnect", "Reconnect Toolhub OAuth"), {
+						variant: "outline",
+						href: "/oauth/login"
+					})}
+					${logoutForm(button(t("accountData.logout", "Log out"), { variant: "outline", type: "submit" }))}
+				</div>`
+			})}
+			<p class="at__result" data-account-result aria-live="polite"></p>`
+	});
 	function mount() {
 		const out = /** @type {HTMLElement} */ ($("[data-account-result]"));
 		$("[data-export]")?.addEventListener("click", async () => {

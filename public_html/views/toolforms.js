@@ -58,6 +58,7 @@ import {
 	syncStatusPanel,
 	validationErrorMessages
 } from "../lib/molecules/sync-status.js";
+import { accountSection, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { viewNotFound } from "./static.js";
@@ -1120,31 +1121,91 @@ export function viewAddTools() {
 	const discoveryMisses = [];
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const registerBtn = button(t("toolforms.register", "Register"), { variant: "outline", type: "submit" });
-	const html = `
-	<div class="container page at">
-		<div class="section-head"><h1 class="page__title">${t("toolforms.addOrRemoveTools", "Add or remove tools")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
-			${button(t("toolforms.submitATool", "Submit a tool"), { variant: "primary", href: "/tools/create", icon: "add" })}</div>
-		<p class="page__intro">${tWithElements("toolforms.ingestIntro", "Register a {toolinfo} URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see {rulesOfEngagement}. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.", { toolinfo: "<code>toolinfo.json</code>", rulesOfEngagement: `<a href="/rules-of-engagement">${esc(t("toolforms.rulesOfEngagement", "Rules of Engagement"))}</a>` })}</p>
-
-		<h2 class="le__h2">${t("toolforms.findOrRegisterToolinfoTitle", "Find or register toolinfo.json")}</h2>
-		<form class="le__add" data-url-form novalidate>
-			${fInput(t("toolforms.fieldToolOrToolinfoUrl", "Tool homepage or toolinfo.json URL"), "at-url", "", { type: "url", ph: "https://example.org/", hint: t("toolforms.fieldToolOrToolinfoUrlHint", "Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.") })}
-			${registerBtn}
-		</form>
-		<ul class="at__urls" data-url-list>${addToolUrlRows(discoveryMisses)}</ul>
-
-		<h2 class="le__h2">${t("toolforms.ingestToolinfoTitle", "Ingest toolinfo")}</h2>
-		${fArea(t("toolforms.fieldToolinfoJson", "Toolinfo JSON"), "at-json", "", t("toolforms.fieldToolinfoJsonHint", "Paste one tool object or an array; successful entries appear below in Your tools."), { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
-		<div class="le__actions">
-			${button(t("toolforms.ingest", "Ingest"), { variant: "primary", attrs: "data-ingest" })}
-		</div>
-		<p class="at__result" data-ingest-result aria-live="polite"></p>
-
-		<h2 class="le__h2">${t("toolforms.yourToolsTitle", "Your tools")} <span class="le__count" data-sub-count></span></h2>
-		<div data-sub-grid>${addToolSubGrid()}</div>
-		<h2 class="le__h2">${t("toolforms.localCrawlerRunsTitle", "Local crawler runs")}</h2>
-		<div data-crawler-runs>${addToolCrawlerRunRows([])}</div>
-	</div>`;
+	const submitButton = button(t("toolforms.submitATool", "Submit a tool"), {
+		variant: "primary",
+		href: "/tools/create",
+		icon: "add"
+	});
+	const urlCount = crawlerUrls().length;
+	const localToolCount = Object.keys(toolNewMap()).length;
+	const introHtml = tWithElements(
+		"toolforms.ingestIntro",
+		"Register a {toolinfo} URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see {rulesOfEngagement}. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.",
+		{
+			toolinfo: "<code>toolinfo.json</code>",
+			rulesOfEngagement: `<a href="/rules-of-engagement">${esc(t("toolforms.rulesOfEngagement", "Rules of Engagement"))}</a>`
+		}
+	);
+	const html = accountWorkbenchPage({
+		active: "register",
+		title: t("toolforms.addOrRemoveTools", "Add or remove tools"),
+		intro: t(
+			"toolforms.ingestIntroPlain",
+			"Register crawler URLs, ingest toolinfo, and review local submissions from one account workspace."
+		),
+		introHtml,
+		source: t("toolforms.registrationSource", "Official crawler URLs + Evolved ingest"),
+		actions: submitButton,
+		className: "at",
+		metrics: [
+			{
+				value: countLabel(urlCount, t("toolforms.urlOne", "URL"), t("toolforms.urlOther", "URLs")),
+				label: t("toolforms.registeredUrlsMetric", "Registered URLs"),
+				detail: t("toolforms.registeredUrlsMetricDetail", "Crawler sources")
+			},
+			{
+				value: countLabel(localToolCount, t("toolforms.toolOne", "tool"), t("toolforms.toolOther", "tools")),
+				label: t("toolforms.localToolsMetric", "Local tools"),
+				detail: t("toolforms.localToolsMetricDetail", "Pasted toolinfo records")
+			}
+		],
+		body: `
+			${accountSection({
+				id: "add-toolinfo-url-title",
+				title: t("toolforms.findOrRegisterToolinfoTitle", "Find or register toolinfo.json"),
+				intro: t(
+					"toolforms.registerToolinfoNote",
+					"Paste a tool homepage or direct toolinfo.json URL. Evolved checks common discovery paths before registering the crawler source."
+				),
+				body: `<form class="le__add" data-url-form novalidate>
+					${fInput(t("toolforms.fieldToolOrToolinfoUrl", "Tool homepage or toolinfo.json URL"), "at-url", "", { type: "url", ph: "https://example.org/", hint: t("toolforms.fieldToolOrToolinfoUrlHint", "Paste the tool homepage or a direct toolinfo.json URL. Evolved tries /toolinfo.json first, then sitemap.xml.") })}
+					${registerBtn}
+				</form>
+				<ul class="at__urls" data-url-list>${addToolUrlRows(discoveryMisses)}</ul>`
+			})}
+			${accountSection({
+				id: "add-toolinfo-json-title",
+				title: t("toolforms.ingestToolinfoTitle", "Ingest toolinfo"),
+				intro: t(
+					"toolforms.ingestToolinfoNote",
+					"Paste one tool object or an array. Successful records stay in Evolved until they are submitted or matched with official Toolhub data."
+				),
+				body: `${fArea(t("toolforms.fieldToolinfoJson", "Toolinfo JSON"), "at-json", "", t("toolforms.fieldToolinfoJsonHint", "Paste one tool object or an array; successful entries appear below in Your tools."), { rows: 10, max: false, cls: "at__json", ph: '{ "name": "my-tool", "title": "My Tool", "description": "…", "url": "https://…" }' })}
+				<div class="le__actions">
+					${button(t("toolforms.ingest", "Ingest"), { variant: "primary", attrs: "data-ingest" })}
+				</div>
+				<p class="at__result" data-ingest-result aria-live="polite"></p>`
+			})}
+			${accountSection({
+				id: "add-toolinfo-submissions-title",
+				title: t("toolforms.yourToolsTitle", "Your tools"),
+				intro: t(
+					"toolforms.yourToolsNote",
+					"Local submissions and pasted toolinfo records attached to this account workspace."
+				),
+				body: `<p class="le__count" data-sub-count>${countLabel(localToolCount, t("toolforms.toolOne", "tool"), t("toolforms.toolOther", "tools"))}</p>
+				<div data-sub-grid>${addToolSubGrid()}</div>`
+			})}
+			${accountSection({
+				id: "add-toolinfo-runs-title",
+				title: t("toolforms.localCrawlerRunsTitle", "Local crawler runs"),
+				intro: t(
+					"toolforms.localCrawlerRunsNote",
+					"Recent local discovery attempts for pasted or registered toolinfo sources."
+				),
+				body: `<div data-crawler-runs>${addToolCrawlerRunRows([])}</div>`
+			})}`
+	});
 	function mount() {
 		const renderUrlList = () => {
 			/** @type {HTMLElement} */ ($("[data-url-list]")).innerHTML = addToolUrlRows(discoveryMisses);
