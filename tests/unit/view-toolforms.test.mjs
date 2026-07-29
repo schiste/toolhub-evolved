@@ -118,8 +118,7 @@ const S = {
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records.
-		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
+		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
 
 		<h2 class="le__h2">Find or register toolinfo.json</h2>
 		<form class="le__add" data-url-form novalidate>
@@ -162,8 +161,7 @@ const S = {
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">Add or remove tools <span class="exp-badge">Experimental</span></h1>
 			<a class="btn btn--primary btn--md" href="/tools/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> Submit a tool</a></div>
-		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records.
-		Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
+		<p class="page__intro">Register a <code>toolinfo.json</code> URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see <a href="/rules-of-engagement">Rules of Engagement</a>. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.</p>
 
 		<h2 class="le__h2">Find or register toolinfo.json</h2>
 		<form class="le__add" data-url-form novalidate>

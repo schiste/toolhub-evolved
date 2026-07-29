@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, esc } from "../lib/core/dom.js";
-import { t } from "../lib/core/i18n.js";
+import { t, tWithElements } from "../lib/core/i18n.js";
 import { parseRoute } from "../lib/core/routing.js";
 import { serverSessionResolved, signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
@@ -194,7 +194,7 @@ function dispatchListRoute(seg) {
 	if (seg[2] === "history") {
 		return prosePage(
 			t("router.listHistoryTitle", "List history"),
-			`<p>Revision history for this list is available on the <a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${t("router.liveSite", "live site")}</a>.</p>`
+			`<p>${tWithElements("router.listHistoryBody", "Revision history for this list is available on the {liveSite}.", { liveSite: `<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${esc(t("router.liveSite", "live site"))}</a>` })}</p>`
 		);
 	}
 	return loadLists().then((m) => m.viewList(decodeURIComponent(seg[1])));

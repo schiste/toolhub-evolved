@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
-import { countLabel, t } from "../lib/core/i18n.js";
+import { countLabel, t, tWithElements } from "../lib/core/i18n.js";
 import {
 	backendErrorMessage,
 	backendErrorBody,
@@ -1112,8 +1112,7 @@ export function viewAddTools() {
 	<div class="container page at">
 		<div class="section-head"><h1 class="page__title">${t("toolforms.addOrRemoveTools", "Add or remove tools")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 			${button(t("toolforms.submitATool", "Submit a tool"), { variant: "primary", href: "/tools/create", icon: "add" })}</div>
-		<p class="page__intro">${t("toolforms.ingestIntroLead", "Register a")} <code>toolinfo.json</code> ${t("toolforms.ingestIntroTail", "URL, or paste toolinfo to add records.")}
-		${t("toolforms.introEverything", "Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>. ${t("toolforms.discoveryIntro", "You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.")}</p>
+		<p class="page__intro">${tWithElements("toolforms.ingestIntro", "Register a {toolinfo} URL, or paste toolinfo to add records. Signed-in URL registrations go to official Toolhub; pasted toolinfo stays local to Evolved — see {rulesOfEngagement}. You can also paste a tool homepage; Evolved checks the site root first, then sitemap.xml.", { toolinfo: "<code>toolinfo.json</code>", rulesOfEngagement: `<a href="/rules-of-engagement">${esc(t("toolforms.rulesOfEngagement", "Rules of Engagement"))}</a>` })}</p>
 
 		<h2 class="le__h2">${t("toolforms.findOrRegisterToolinfoTitle", "Find or register toolinfo.json")}</h2>
 		<form class="le__add" data-url-form novalidate>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc } from "../lib/core/dom.js";
 import { INDEX } from "../lib/core/api.js";
+import { t, tWithElements } from "../lib/core/i18n.js";
 import { DEMO_KEYS, withDemoFixture } from "../lib/core/store.js";
 import { completeness } from "../lib/core/signals.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
@@ -162,42 +163,44 @@ function withStyleguideDemoState(render) {
 function fitChipExample() {
 	// fitChip(tool) for a context-fitting tool returns exactly this markup; the
 	// styleguide just shows the chip, so render it directly (no context juggling).
-	return `<span class="signal signal--fit">${icon("check")} Fits you</span>`;
+	return `<span class="signal signal--fit">${icon("check")} ${t("styleguide.fitChip", "Fits you")}</span>`;
 }
 
 function listingCompletenessExample() {
 	const complete = completeness(SG_TOOL);
 	return `<div class="panel">
-		<h3 class="panel__title">Listing completeness</h3>
+		<h3 class="panel__title">${t("styleguide.listingCompleteness", "Listing completeness")}</h3>
 		${completenessMeter(complete)}
 		${completenessList(complete)}
 	</div>`;
 }
 
 function fitControlExample() {
+	const buildSearchLabel = t("styleguide.intentSearchLabel", "Build a tool search");
 	return `<form class="intent">
-		<div class="intent__sentence" aria-label="Build a tool search">
-			<span class="intent__copy">I want to see tools</span>
-			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>made for</span></button></span>
-			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>editors</span></button></span>
-			<span class="intent__copy">on</span>
+		<div class="intent__sentence" aria-label="${esc(buildSearchLabel)}">
+			<span class="intent__copy">${t("styleguide.intentPrefix", "I want to see tools")}</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>${t("styleguide.intentMadeFor", "made for")}</span></button></span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>${t("styleguide.intentEditors", "editors")}</span></button></span>
+			<span class="intent__copy">${t("styleguide.intentOn", "on")}</span>
 			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>Wikidata</span></button></span>
-			<button class="intent__go" type="submit">See tools</button>
-			<button class="intent__clear" type="button">clear</button>
+			<button class="intent__go" type="submit">${t("styleguide.intentSubmit", "See tools")}</button>
+			<button class="intent__clear" type="button">${t("styleguide.intentClear", "clear")}</button>
 		</div>
 	</form>`;
 }
 
 function fullHeroIntentExample() {
+	const buildSearchLabel = t("styleguide.intentSearchLabel", "Build a tool search");
 	return `<form class="intent">
-		<div class="intent__sentence" aria-label="Build a tool search">
-			<span class="intent__copy">I want to see tools</span>
-			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>made for</span></button></span>
-			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>anyone</span></button></span>
-			<span class="intent__copy">on</span>
-			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>any project</span></button></span>
-			<button class="intent__go" type="submit">See tools</button>
-			<button class="intent__clear" type="button" disabled>clear</button>
+		<div class="intent__sentence" aria-label="${esc(buildSearchLabel)}">
+			<span class="intent__copy">${t("styleguide.intentPrefix", "I want to see tools")}</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>${t("styleguide.intentMadeFor", "made for")}</span></button></span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>${t("styleguide.intentAnyone", "anyone")}</span></button></span>
+			<span class="intent__copy">${t("styleguide.intentOn", "on")}</span>
+			<span class="intent__choice"><button class="intent__word" type="button" aria-haspopup="menu" aria-expanded="false"><span>${t("styleguide.intentAnyProject", "any project")}</span></button></span>
+			<button class="intent__go" type="submit">${t("styleguide.intentSubmit", "See tools")}</button>
+			<button class="intent__clear" type="button" disabled>${t("styleguide.intentClear", "clear")}</button>
 		</div>
 	</form>`;
 }
@@ -214,48 +217,48 @@ function accountButtonExample() {
 
 function quickViewCloseExample() {
 	return `<div class="sg-qv-close-frame">
-		<button class="qv__x" type="button" aria-label="Close quick view">${icon("close")}</button>
+		<button class="qv__x" type="button" aria-label="${esc(t("styleguide.closeQuickViewLabel", "Close quick view"))}">${icon("close")}</button>
 	</div>`;
 }
 
 function listEditorControlsExample() {
 	// Stryker disable next-line StringLiteral,ObjectLiteral: explicit default variant "outline" — equivalent to omitting it.
-	const addBtn = button("Add", { variant: "outline" });
+	const addBtn = button(t("styleguide.listEditor.add", "Add"), { variant: "outline" });
 	return `<div class="sg-control-stack">
-		<h2 class="le__h2">Tools <span class="le__count">2 tools</span></h2>
-		<p class="le__ro">Name: <code>commons-upload-helper</code></p>
+		<h2 class="le__h2">${t("styleguide.listEditor.tools", "Tools")} <span class="le__count">${t("styleguide.listEditor.twoTools", "2 tools")}</span></h2>
+		<p class="le__ro">${tWithElements("styleguide.listEditor.name", "Name: {name}", { name: "<code>commons-upload-helper</code>" })}</p>
 		<div class="le__add">
-			<input class="le__input" type="search" aria-label="Search tools to add" placeholder="Search tools to add..." autocomplete="off" />
+			<input class="le__input" type="search" aria-label="${esc(t("styleguide.listEditor.searchToolsToAdd", "Search tools to add"))}" placeholder="${esc(t("styleguide.listEditor.searchToolsToAddPlaceholder", "Search tools to add..."))}" autocomplete="off" />
 			${addBtn}
 		</div>
 		<div class="le__results">
 			<button class="le__result" type="button">${icon("add")} <span>Wiki Loves Monuments map</span></button>
 			<button class="le__result is-in" type="button" disabled>${icon("check")} <span>Commons Pattypan</span></button>
 		</div>
-		<p class="le__searching">Searching...</p>
+		<p class="le__searching">${t("styleguide.listEditor.searching", "Searching...")}</p>
 		<ol class="le__tools">
 			<li data-tn="citation-helper"><span class="le__tn"${dirAttrs("citation-helper")}>citation-helper</span>
 				<span class="le__rowact">
-					${iconButton("chevronUp", "Move up", { size: "sm", attrs: 'data-move="up"' })}
-					${iconButton("chevronDown", "Move down", { size: "sm", attrs: 'data-move="down"' })}
-					${iconButton("close", "Remove from list", { size: "sm", variant: "danger", attrs: "data-rm" })}
+					${iconButton("chevronUp", t("styleguide.listEditor.moveUp", "Move up"), { size: "sm", attrs: 'data-move="up"' })}
+					${iconButton("chevronDown", t("styleguide.listEditor.moveDown", "Move down"), { size: "sm", attrs: 'data-move="down"' })}
+					${iconButton("close", t("styleguide.listEditor.removeFromList", "Remove from list"), { size: "sm", variant: "danger", attrs: "data-rm" })}
 				</span>
 			</li>
-			<li class="le__empty">No more tools in this list.</li>
+			<li class="le__empty">${t("styleguide.listEditor.empty", "No more tools in this list.")}</li>
 		</ol>
 		<div class="le__actions">
-			${button("Save list", { variant: "primary" })}
-			${button("Delete list", { variant: "danger", cls: "le__delete" })}
+			${button(t("styleguide.listEditor.saveList", "Save list"), { variant: "primary" })}
+			${button(t("styleguide.listEditor.deleteList", "Delete list"), { variant: "danger", cls: "le__delete" })}
 		</div>
 	</div>`;
 }
 
 function navIconButtonExample() {
-	return `<a class="icon-btn" href="/search">${icon("search")} Search</a>`;
+	return `<a class="icon-btn" href="/search">${icon("search")} ${t("styleguide.search", "Search")}</a>`;
 }
 
 function relatedToolsExample() {
-	const t = {
+	const relatedTool = {
 		name: "osm-commons-map",
 		title: "OpenStreetMap Commons Map",
 		maintainer: "Maps team"
@@ -265,14 +268,14 @@ function relatedToolsExample() {
 		.join("");
 	return `<div class="sg-related-frame">
 		<section class="related" aria-labelledby="sg-related-title">
-			<div class="section-head"><h2 id="sg-related-title">Related tools</h2></div>
-			<p class="related__subtitle">Overlapping function and scope, by shared metadata.</p>
+			<div class="section-head"><h2 id="sg-related-title">${t("styleguide.relatedTools", "Related tools")}</h2></div>
+			<p class="related__subtitle">${t("styleguide.relatedToolsSubtitle", "Overlapping function and scope, by shared metadata.")}</p>
 			<div class="related__list">
-				<article class="related__item" data-tool="${esc(t.name)}">
-					${avatar(t.title)}
+				<article class="related__item" data-tool="${esc(relatedTool.name)}">
+					${avatar(relatedTool.title)}
 					<div class="related__body">
-						<button class="related__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>
-						<div class="related__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>
+						<button class="related__title" type="button" data-tool="${esc(relatedTool.name)}" aria-label="${esc(t("styleguide.quickLookTool", "Quick look: {title}", { title: relatedTool.title }))}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(relatedTool.title)}>${esc(relatedTool.title)}</button>
+						<div class="related__maint">${tWithElements("styleguide.byMaintainer", "by {maintainer}", { maintainer: `<span${dirAttrs(relatedTool.maintainer)}>${esc(relatedTool.maintainer)}</span>` })}</div>
 						<div class="related__chips">${chips}</div>
 					</div>
 				</article>
@@ -292,15 +295,16 @@ function forceGraphExample() {
 	return `<div class="sg-force-graph-frame">
 		<div class="graph graph--sg">
 			<div id="sg-force-graph" class="graph__canvas"></div>
-			<div class="graph__legend" aria-label="Example graph legend">
+			<div class="graph__legend" aria-label="${esc(t("styleguide.exampleGraphLegendLabel", "Example graph legend"))}">
 				${legend}
-				<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">Fits you</span></span>
+				<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">${t("styleguide.fitChip", "Fits you")}</span></span>
 			</div>
 		</div>
 	</div>`;
 }
 
 function chromeNavExample() {
+	const submitAttrs = 'target="_blank" rel="noopener nofollow"';
 	return `<div class="sg-chrome-frame">
 		<header class="nav">
 			<div class="nav__inner">
@@ -308,15 +312,15 @@ function chromeNavExample() {
 					<img class="brand__logo" src="img/toolhub-logo.svg?v=2" alt="" width="34" height="34" />
 					<span class="brand__name">Toolhub</span>
 				</a>
-				<nav class="nav__links" aria-label="Primary">
-					<a href="/search">Tools</a>
-					<a href="/lists">Lists</a>
-					<a href="/graph">Map</a>
-					<a href="/recent">Recent</a>
+				<nav class="nav__links" aria-label="${esc(t("styleguide.primaryNavigationLabel", "Primary"))}">
+					<a href="/search">${t("styleguide.nav.tools", "Tools")}</a>
+					<a href="/lists">${t("styleguide.nav.lists", "Lists")}</a>
+					<a href="/graph">${t("styleguide.nav.map", "Map")}</a>
+					<a href="/recent">${t("styleguide.nav.recent", "Recent")}</a>
 				</nav>
 				<div class="nav__actions">
-					<a class="icon-btn" href="/search">${icon("search")} Search</a>
-					${button("Submit a tool", { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: 'target="_blank" rel="noopener nofollow"' })}
+					<a class="icon-btn" href="/search">${icon("search")} ${t("styleguide.search", "Search")}</a>
+					${button(t("styleguide.submitTool", "Submit a tool"), { variant: "primary", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create", icon: "add", attrs: submitAttrs })}
 					${accountButtonExample()}
 				</div>
 			</div>
@@ -328,38 +332,38 @@ function footerExample() {
 	return `<div class="sg-chrome-frame">
 		<footer class="footer">
 			<div class="footer__cols">
-				<nav class="footer__col" aria-label="Discover">
-					<h2>Discover</h2>
-					<a href="/search">Browse tools</a>
-					<a href="/lists">Lists</a>
-					<a href="/members">Members</a>
-					<a href="/recent">Recent changes</a>
+				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.discoverLabel", "Discover"))}">
+					<h2>${t("styleguide.footer.discover", "Discover")}</h2>
+					<a href="/search">${t("styleguide.footer.browseTools", "Browse tools")}</a>
+					<a href="/lists">${t("styleguide.nav.lists", "Lists")}</a>
+					<a href="/members">${t("styleguide.footer.members", "Members")}</a>
+					<a href="/recent">${t("styleguide.footer.recentChanges", "Recent changes")}</a>
 				</nav>
-				<nav class="footer__col" aria-label="Maintain">
-					<h2>Maintain</h2>
-					<a href="/add-or-remove-tools">Add or remove tools</a>
-					<a href="/my-lists">Your lists</a>
-					<a href="/favorites">Favorites</a>
-					<a href="/contribute">Help maintain Toolhub</a>
+				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.maintainLabel", "Maintain"))}">
+					<h2>${t("styleguide.footer.maintain", "Maintain")}</h2>
+					<a href="/add-or-remove-tools">${t("styleguide.footer.addRemoveTools", "Add or remove tools")}</a>
+					<a href="/my-lists">${t("styleguide.footer.yourLists", "Your lists")}</a>
+					<a href="/favorites">${t("styleguide.footer.favorites", "Favorites")}</a>
+					<a href="/contribute">${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub")}</a>
 				</nav>
-				<nav class="footer__col" aria-label="Project">
-					<h2>Project</h2>
-					<a href="/api-docs">API explorer</a>
-					<a href="/styleguide">Design system</a>
-					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">Report an issue ${icon("external")}</a>
+				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.projectLabel", "Project"))}">
+					<h2>${t("styleguide.footer.project", "Project")}</h2>
+					<a href="/api-docs">${t("styleguide.apiExplorer", "API explorer")}</a>
+					<a href="/styleguide">${t("styleguide.designSystem", "Design system")}</a>
+					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">${t("styleguide.footer.reportIssue", "Report an issue")} ${icon("external")}</a>
 				</nav>
-				<nav class="footer__col" aria-label="About">
-					<h2>About</h2>
-					<a href="/about">About Toolhub</a>
-					<a href="/help">Help</a>
-					<a href="/privacy">Privacy policy</a>
-					<a href="/rules-of-engagement">Rules of Engagement</a>
+				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.aboutLabel", "About"))}">
+					<h2>${t("styleguide.footer.about", "About")}</h2>
+					<a href="/about">${t("styleguide.aboutToolhub", "About Toolhub")}</a>
+					<a href="/help">${t("styleguide.help", "Help")}</a>
+					<a href="/privacy">${t("styleguide.footer.privacyPolicy", "Privacy policy")}</a>
+					<a href="/rules-of-engagement">${t("styleguide.rulesOfEngagement", "Rules of Engagement")}</a>
 				</nav>
 			</div>
 			<div class="footer__bottom">
-				<a class="footer__maintain" href="/contribute">${icon("tools")} Help maintain Toolhub</a>
-				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a></span>
-				<span class="footer__note">Live Toolhub data · Evolved overlay</span>
+				<a class="footer__maintain" href="/contribute">${icon("tools")} ${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub")}</a>
+				<span class="footer__legal">${tWithElements("styleguide.footer.legal", "Catalog content under {license} · {version}", { license: '<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>', version: '<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>' })}</span>
+				<span class="footer__note">${t("styleguide.footer.note", "Live Toolhub data · Evolved overlay")}</span>
 			</div>
 		</footer>
 	</div>`;
@@ -367,11 +371,11 @@ function footerExample() {
 
 function mockupBannerExample() {
 	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
-		<div class="mockup-banner" role="region" aria-label="Feature status notice" data-sitenotice>
-			<span class="mockup-banner__txt">Evolved preview: live Toolhub data with Evolved additions. <span class="mock-tag">Hybrid</span></span>
-			<a class="mockup-banner__link" href="/experiments">Feature status</a>
-			<a class="mockup-banner__link" href="/rules-of-engagement">Rules of Engagement</a>
-			<button class="mockup-banner__close" type="button" aria-label="Dismiss site notice">${icon("close")}</button>
+		<div class="mockup-banner" role="region" aria-label="${esc(t("styleguide.featureStatusNoticeLabel", "Feature status notice"))}" data-sitenotice>
+			<span class="mockup-banner__txt">${t("styleguide.banner.previewText", "Evolved preview: live Toolhub data with Evolved additions.")} <span class="mock-tag">${t("styleguide.banner.hybrid", "Hybrid")}</span></span>
+			<a class="mockup-banner__link" href="/experiments">${t("styleguide.banner.featureStatus", "Feature status")}</a>
+			<a class="mockup-banner__link" href="/rules-of-engagement">${t("styleguide.rulesOfEngagement", "Rules of Engagement")}</a>
+			<button class="mockup-banner__close" type="button" aria-label="${esc(t("styleguide.dismissSiteNoticeLabel", "Dismiss site notice"))}">${icon("close")}</button>
 		</div>
 	</div>`;
 }
@@ -379,15 +383,15 @@ function mockupBannerExample() {
 function fullHeroExample() {
 	return `<div class="sg-hero-frame">
 		<section class="hero">
-			<h1 class="hero__title">The community catalog of Wikimedia tools</h1>
+			<h1 class="hero__title">${t("styleguide.heroTitle", "The community catalog of Wikimedia tools")}</h1>
 			<div class="hero__explore">
 				${fullHeroIntentExample()}
 			</div>
-			<div class="hero__or" aria-hidden="true">or</div>
+			<div class="hero__or" aria-hidden="true">${t("styleguide.or", "or")}</div>
 			<form class="search" role="search">
-				<label for="sg-home-q" class="skip-label">Search tools</label>
-				<input id="sg-home-q" class="search__input" type="search" aria-label="Search tools" placeholder="Search 2,474 tools..." autocomplete="off" />
-				${button("Search", { variant: "primary", type: "submit", cls: "search__btn" })}
+				<label for="sg-home-q" class="skip-label">${t("styleguide.searchTools", "Search tools")}</label>
+				<input id="sg-home-q" class="search__input" type="search" aria-label="${esc(t("styleguide.searchTools", "Search tools"))}" placeholder="${esc(t("styleguide.searchToolsPlaceholder", "Search 2,474 tools..."))}" autocomplete="off" />
+				${button(t("styleguide.search", "Search"), { variant: "primary", type: "submit", cls: "search__btn" })}
 			</form>
 		</section>
 	</div>`;
@@ -395,75 +399,75 @@ function fullHeroExample() {
 
 function pageHeaderExample() {
 	return `<div class="page sg-page-demo">
-		<h1 class="page__title">Browse tools</h1>
-		<p class="page__intro">Search, filter, and compare tools maintained by the Wikimedia community.</p>
-		<div class="section-head"><h2>Featured tools</h2><a class="link" href="/search">View all</a></div>
+		<h1 class="page__title">${t("styleguide.browseTools", "Browse tools")}</h1>
+		<p class="page__intro">${t("styleguide.pageHeaderIntro", "Search, filter, and compare tools maintained by the Wikimedia community.")}</p>
+		<div class="section-head"><h2>${t("styleguide.featuredTools", "Featured tools")}</h2><a class="link" href="/search">${t("styleguide.viewAll", "View all")}</a></div>
 	</div>`;
 }
 
 function layoutExample() {
 	return `<div class="layout sg-layout-demo">
 		<div class="layout__main">
-			<div class="section-head"><h2>Main content</h2><a class="link" href="/search">View all</a></div>
-			<div class="sg-schematic">Cards, search results, or detail content</div>
+			<div class="section-head"><h2>${t("styleguide.mainContent", "Main content")}</h2><a class="link" href="/search">${t("styleguide.viewAll", "View all")}</a></div>
+			<div class="sg-schematic">${t("styleguide.layoutSchematic", "Cards, search results, or detail content")}</div>
 		</div>
 		<aside class="layout__side">
-			<div class="panel"><h3 class="panel__title">Sidebar</h3><p class="sg-note">Panels and supporting navigation.</p></div>
+			<div class="panel"><h3 class="panel__title">${t("styleguide.sidebar", "Sidebar")}</h3><p class="sg-note">${t("styleguide.sidebarNote", "Panels and supporting navigation.")}</p></div>
 		</aside>
 	</div>`;
 }
 
 function backAndLinkExample() {
 	return `<div class="sg-control-stack">
-		<a class="back" href="/search">← Back to tools</a>
-		<a class="link" href="/lists">View all lists</a>
+		<a class="back" href="/search">${t("styleguide.backToTools", "← Back to tools")}</a>
+		<a class="link" href="/lists">${t("styleguide.viewAllLists", "View all lists")}</a>
 	</div>`;
 }
 
 function emptyStateExample() {
-	return `<p class="empty">No tools match these filters.</p>`;
+	return `<p class="empty">${t("styleguide.emptyState", "No tools match these filters.")}</p>`;
 }
 
 function loadingExample() {
 	return `<div class="loading sg-loading-demo" role="status" aria-live="polite">
-		<span class="spinner" aria-hidden="true"></span><span class="skip-label">Loading</span>
+		<span class="spinner" aria-hidden="true"></span><span class="skip-label">${t("styleguide.loading", "Loading")}</span>
 	</div>`;
 }
 
 function errorPageExample() {
 	return `<div class="errorpage sg-error-demo">
-		<h1>Couldn't load live data</h1>
-		<p class="prose">The Toolhub API didn't respond. Try again from the browse page.</p>
-		${button("Go to the home page", { variant: "primary", href: "/" })}
+		<h1>${t("styleguide.loadErrorTitle", "Couldn't load live data")}</h1>
+		<p class="prose">${t("styleguide.loadErrorBody", "The Toolhub API didn't respond. Try again from the browse page.")}</p>
+		${button(t("styleguide.homeButton", "Go to the home page"), { variant: "primary", href: "/" })}
 	</div>`;
 }
 
 function proseExample() {
 	return `<article class="prose prose--page">
-		<h1>About Toolhub</h1>
-		<p>Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.</p>
-		<p><a href="/contribute">Help maintain Toolhub</a> by improving listings or reporting gaps.</p>
+		<h1>${t("styleguide.aboutToolhub", "About Toolhub")}</h1>
+		<p>${t("styleguide.proseBody", "Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.")}</p>
+		<p>${tWithElements("styleguide.proseContribute", "{contribute} by improving listings or reporting gaps.", { contribute: `<a href="/contribute">${esc(t("styleguide.helpMaintainToolhub", "Help maintain Toolhub"))}</a>` })}</p>
 	</article>`;
 }
 
 function signInNoteExample() {
-	return `<p class="signin-note">Official writes follow Toolhub permissions; Evolved keeps supported rejected writes locally as drafts or overlays.</p>`;
+	return `<p class="signin-note">${t("styleguide.signInNote", "Official writes follow Toolhub permissions; Evolved keeps supported rejected writes locally as drafts or overlays.")}</p>`;
 }
 
 function metaExample() {
 	return `<div class="detail__meta">
-		${metaItem("License", SG_TOOL.license)}
-		${metaItem("Wikis", wikiLabel(SG_TOOL.forWikis))}
-		${metaItem("Maintainer", SG_TOOL.maintainer)}
-		${metaItem("Tool type", SG_TOOL.toolType)}
+		${metaItem(t("styleguide.meta.license", "License"), SG_TOOL.license)}
+		${metaItem(t("styleguide.meta.wikis", "Wikis"), wikiLabel(SG_TOOL.forWikis))}
+		${metaItem(t("styleguide.meta.maintainer", "Maintainer"), SG_TOOL.maintainer)}
+		${metaItem(t("styleguide.meta.toolType", "Tool type"), SG_TOOL.toolType)}
 	</div>`;
 }
 
 function sortControlExample() {
-	return `<label class="sort"><span class="skip-label">Sort by</span><select>
-		<option>Most relevant</option>
-		<option>Recently updated</option>
-		<option>Name</option>
+	return `<label class="sort"><span class="skip-label">${t("styleguide.sortBy", "Sort by")}</span><select>
+		<option>${t("styleguide.sortMostRelevant", "Most relevant")}</option>
+		<option>${t("styleguide.sortRecentlyUpdated", "Recently updated")}</option>
+		<option>${t("styleguide.sortName", "Name")}</option>
 	</select></label>`;
 }
 
@@ -471,29 +475,29 @@ function recentListExample() {
 	return `<ul class="recent">
 		<li><a href="/tools/citation-helper">${avatar("Citation Helper")}
 			<div><div class="recent__title">Citation Helper</div>
-			<div class="recent__meta">Maintainer: <span>Editing team</span></div></div>
-			<time class="recent__when" datetime="2026-06-23">${icon("history")} yesterday</time></a></li>
+			<div class="recent__meta">${t("styleguide.meta.maintainer", "Maintainer")}: <span>Editing team</span></div></div>
+			<time class="recent__when" datetime="2026-06-23">${icon("history")} ${t("styleguide.timeYesterday", "yesterday")}</time></a></li>
 		<li><a href="/tools/commons-upload">${avatar("Commons Upload")}
 			<div><div class="recent__title">Commons Upload</div>
-			<div class="recent__meta">Maintainer: <span>Commons volunteers</span></div></div>
-			<time class="recent__when" datetime="2026-06-21">${icon("history")} 3 days ago</time></a></li>
+			<div class="recent__meta">${t("styleguide.meta.maintainer", "Maintainer")}: <span>Commons volunteers</span></div></div>
+			<time class="recent__when" datetime="2026-06-21">${icon("history")} ${t("styleguide.timeThreeDaysAgo", "3 days ago")}</time></a></li>
 	</ul>`;
 }
 
 function panelVariantsExample() {
 	// prettier-ignore
 	// Stryker disable next-line StringLiteral: explicit default variant "outline" — equivalent to omitting it.
-	const submitBtn = button("Submit a tool", { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" });
+	const submitBtn = button(t("styleguide.submitTool", "Submit a tool"), { variant: "outline", href: "https://toolhub.wikimedia.org/add-or-remove-tools?tab=tool-create" });
 	return `<div class="sg-panel-pair">
 		<div class="panel">
-			<h3 class="panel__title">Recently updated</h3>
-			<p class="sg-note">Borderless sidebar block with a ruled title.</p>
-			<a class="panel__foot" href="/recent">View recent changes</a>
+			<h3 class="panel__title">${t("styleguide.recentlyUpdated", "Recently updated")}</h3>
+			<p class="sg-note">${t("styleguide.panelNote", "Borderless sidebar block with a ruled title.")}</p>
+			<a class="panel__foot" href="/recent">${t("styleguide.viewRecentChanges", "View recent changes")}</a>
 		</div>
 		<div class="panel panel--cta">
 			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
-			<h3>Built a tool for Wikimedia?</h3>
-			<p>Add a <code>toolinfo.json</code> to your repository so other Wikimedians can find it.</p>
+			<h3>${t("styleguide.ctaTitle", "Built a tool for Wikimedia?")}</h3>
+			<p>${tWithElements("styleguide.ctaBody", "Add a {toolinfo} to your repository so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>
 			${submitBtn}
 		</div>
 	</div>`;
@@ -503,13 +507,13 @@ function linkCardsExample() {
 	return `<div class="linkgrid">
 		<a class="linkcard" href="/contribute">
 			<span class="linkcard__icon" aria-hidden="true">${icon("report")}</span>
-			<span class="linkcard__body"><span class="linkcard__title">Report a bug</span>
-			<span class="linkcard__desc">Open a task on the Toolhub board.</span></span>
+			<span class="linkcard__body"><span class="linkcard__title">${t("styleguide.reportBug", "Report a bug")}</span>
+			<span class="linkcard__desc">${t("styleguide.reportBugDesc", "Open a task on the Toolhub board.")}</span></span>
 		</a>
 		<a class="linkcard" href="/api-docs">
 			<span class="linkcard__icon" aria-hidden="true">${icon("code")}</span>
-			<span class="linkcard__body"><span class="linkcard__title">API explorer</span>
-			<span class="linkcard__desc">Run live read-only endpoints.</span></span>
+			<span class="linkcard__body"><span class="linkcard__title">${t("styleguide.apiExplorer", "API explorer")}</span>
+			<span class="linkcard__desc">${t("styleguide.apiExplorerDesc", "Run live read-only endpoints.")}</span></span>
 		</a>
 	</div>`;
 }
@@ -517,14 +521,14 @@ function linkCardsExample() {
 function browseBarExample() {
 	return `<div class="browse sg-browse-demo">
 		<aside class="facets">
-			<input class="facets__search" type="search" aria-label="Search filters" placeholder="Search filters" />
+			<input class="facets__search" type="search" aria-label="${esc(t("styleguide.searchFilters", "Search filters"))}" placeholder="${esc(t("styleguide.searchFilters", "Search filters"))}" />
 		</aside>
 		<div class="browse__main">
 			<div class="browse__bar">
-				<span class="browse__count" aria-live="polite">142 tools for "Commons"</span>
+				<span class="browse__count" aria-live="polite">${t("styleguide.browseCount", '142 tools for "Commons"')}</span>
 				${sortControlExample()}
 			</div>
-			<p class="empty">Results render below this control row.</p>
+			<p class="empty">${t("styleguide.resultsRenderBelow", "Results render below this control row.")}</p>
 		</div>
 	</div>`;
 }
@@ -538,19 +542,19 @@ function maintainerListExample() {
 
 function annotationEditorExample() {
 	// Stryker disable next-line StringLiteral: explicit default variant "outline" — equivalent to omitting it.
-	const registerBtn = button("Register", { variant: "outline", type: "submit" });
+	const registerBtn = button(t("styleguide.annotation.register", "Register"), { variant: "outline", type: "submit" });
 	return `<div class="sg-control-stack">
 		<form class="le__add">
-			<input class="le__input" type="url" aria-label="Tool homepage or toolinfo.json URL" placeholder="https://example.org/" />
+			<input class="le__input" type="url" aria-label="${esc(t("styleguide.annotation.urlLabel", "Tool homepage or toolinfo.json URL"))}" placeholder="https://example.org/" />
 			${registerBtn}
 		</form>
 		<ul class="at__urls">
-			<li><code class="at__url">https://example.org/toolinfo.json</code> ${iconButton("close", "Remove URL", { size: "sm", cls: "at__rm" })}</li>
-			<li class="at__url-row at__url-row--not-found"><code class="at__url">https://missing.example/app</code> <span class="sync-badge sync-badge--sync-error">toolinfo.json not found</span><span class="at__url-error">Checked root and sitemap.xml</span></li>
+			<li><code class="at__url">https://example.org/toolinfo.json</code> ${iconButton("close", t("styleguide.annotation.removeUrl", "Remove URL"), { size: "sm", cls: "at__rm" })}</li>
+			<li class="at__url-row at__url-row--not-found"><code class="at__url">https://missing.example/app</code> <span class="sync-badge sync-badge--sync-error">${t("styleguide.annotation.notFound", "toolinfo.json not found")}</span><span class="at__url-error">${t("styleguide.annotation.checkedRoot", "Checked root and sitemap.xml")}</span></li>
 		</ul>
-		<textarea class="le__input at__json" rows="4" aria-label="Tool info JSON" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
-		<p class="at__result at__result--ok">1 added, 2 updated</p>
-		<p class="at__result at__result--err">Invalid JSON: expected a tool object.</p>
+		<textarea class="le__input at__json" rows="4" aria-label="${esc(t("styleguide.annotation.toolInfoJsonLabel", "Tool info JSON"))}" placeholder='{ "name": "my-tool", "title": "My Tool" }'></textarea>
+		<p class="at__result at__result--ok">${t("styleguide.annotation.okResult", "1 added, 2 updated")}</p>
+		<p class="at__result at__result--err">${t("styleguide.annotation.errorResult", "Invalid JSON: expected a tool object.")}</p>
 	</div>`;
 }
 
@@ -558,35 +562,35 @@ function memberGridExample() {
 	return `<div class="mgrid">
 		<div class="mcard">${avatar("Amina Hassan")}<div class="mcard__b">
 			<div class="mcard__n">Amina Hassan</div>
-			<div class="mcard__c">Maintainer · joined 2024</div></div></div>
+			<div class="mcard__c">${t("styleguide.memberMaintainerJoined", "Maintainer · joined 2024")}</div></div></div>
 		<div class="mcard">${avatar("Jonas Klein")}<div class="mcard__b">
 			<div class="mcard__n">Jonas Klein</div>
-			<div class="mcard__c">Member · joined 2023</div></div></div>
+			<div class="mcard__c">${t("styleguide.memberJoined", "Member · joined 2023")}</div></div></div>
 	</div>`;
 }
 
 function activityFeedExample() {
 	return `<ul class="feed">
 		<li><a href="/tools/citation-helper">${icon("edit", "feed__ic")}
-			<span class="feed__main"><strong>Citation Helper</strong> <span class="feed__sub">tool · Amina Hassan</span></span>
-			<time class="feed__when" datetime="2026-06-24">5 minutes ago</time></a></li>
+			<span class="feed__main"><strong>Citation Helper</strong> <span class="feed__sub">${t("styleguide.activityToolBy", "tool · Amina Hassan")}</span></span>
+			<time class="feed__when" datetime="2026-06-24">${t("styleguide.timeFiveMinutesAgo", "5 minutes ago")}</time></a></li>
 		<li><div class="feed__static">${icon("edit", "feed__ic")}
-			<span class="feed__main"><span>System</span> <em>changed</em> <span>list "Commons workflows"</span></span>
-			<time class="feed__when" datetime="2026-06-23">yesterday</time></div></li>
+			<span class="feed__main"><span>${t("styleguide.activitySystem", "System")}</span> <em>${t("styleguide.activityChanged", "changed")}</em> <span>${t("styleguide.activityListName", 'list "Commons workflows"')}</span></span>
+			<time class="feed__when" datetime="2026-06-23">${t("styleguide.timeYesterday", "yesterday")}</time></div></li>
 	</ul>`;
 }
 
 function crawlerGraphExample() {
 	return `<section class="crawler-graph" aria-labelledby="sg-crawler-graph-title">
 		<div class="crawler-graph__head">
-			<h2 class="crawler-graph__title" id="sg-crawler-graph-title">Run history</h2>
+			<h2 class="crawler-graph__title" id="sg-crawler-graph-title">${t("styleguide.crawler.runHistory", "Run history")}</h2>
 			<div class="crawler-graph__legend" aria-hidden="true">
-				<span><i class="crawler-graph__key crawler-graph__key--total"></i>Total</span>
-				<span><i class="crawler-graph__key crawler-graph__key--updated"></i>Updated</span>
-				<span><i class="crawler-graph__key crawler-graph__key--new"></i>New</span>
+				<span><i class="crawler-graph__key crawler-graph__key--total"></i>${t("styleguide.crawler.total", "Total")}</span>
+				<span><i class="crawler-graph__key crawler-graph__key--updated"></i>${t("styleguide.crawler.updated", "Updated")}</span>
+				<span><i class="crawler-graph__key crawler-graph__key--new"></i>${t("styleguide.crawler.new", "New")}</span>
 			</div>
 		</div>
-		<svg class="crawler-graph__svg" viewBox="0 0 820 260" role="img" aria-label="Crawler runs over time">
+		<svg class="crawler-graph__svg" viewBox="0 0 820 260" role="img" aria-label="${esc(t("styleguide.crawler.runsOverTimeLabel", "Crawler runs over time"))}">
 			<line class="crawler-graph__axis" x1="46" y1="214" x2="774" y2="214"></line>
 			<line class="crawler-graph__axis" x1="46" y1="24" x2="46" y2="214"></line>
 			<rect class="crawler-graph__bar-updated" x="41" y="132" width="10" height="82"></rect>
@@ -606,8 +610,8 @@ function crawlerGraphExample() {
 
 function runsExample() {
 	return `<table class="runs">
-		<caption class="skip-label">Recent crawler runs, newest first</caption>
-		<thead><tr><th scope="col">Run</th><th scope="col">URLs</th><th scope="col">New</th><th scope="col">Updated</th><th scope="col">Total</th></tr></thead>
+		<caption class="skip-label">${t("styleguide.crawler.recentRunsCaption", "Recent crawler runs, newest first")}</caption>
+		<thead><tr><th scope="col">${t("styleguide.crawler.run", "Run")}</th><th scope="col">${t("styleguide.crawler.urls", "URLs")}</th><th scope="col">${t("styleguide.crawler.new", "New")}</th><th scope="col">${t("styleguide.crawler.updated", "Updated")}</th><th scope="col">${t("styleguide.crawler.total", "Total")}</th></tr></thead>
 		<tbody>
 			<tr><td><time datetime="2026-06-24">Jun 24, 2026</time></td><td>1,284</td><td>12</td><td>48</td><td>2,474</td></tr>
 			<tr><td><time datetime="2026-06-23">Jun 23, 2026</time></td><td>1,280</td><td>7</td><td>35</td><td>2,462</td></tr>
@@ -616,16 +620,43 @@ function runsExample() {
 }
 
 /**
+ * @param {string} id
  * @param {string} title
  * @param {string} body
  */
-function section(title, body) {
-	// Stryker disable next-line Regex: all section titles use single spaces, so `\s+` and `\s` collapse them identically — equivalent.
-	const id = `sg-${esc(title.toLowerCase().replaceAll(/\s+/g, "-"))}`;
+function section(id, title, body) {
 	return `<section class="sg-section" aria-labelledby="${id}">
 		<h2 class="sg-section__title" id="${id}">${esc(title)}</h2>
 		${body}
 	</section>`;
+}
+
+/** @param {string} layer */
+function layerLabel(layer) {
+	switch (layer) {
+		case "app chrome":
+			return t("styleguide.layer.appChrome", "app chrome");
+		case "app chrome / organism":
+			return t("styleguide.layer.appChromeOrganism", "app chrome / organism");
+		case "atoms":
+			return t("styleguide.layer.atoms", "atoms");
+		case "atoms / molecules":
+			return t("styleguide.layer.atomsMolecules", "atoms / molecules");
+		case "atoms / shared control foundation":
+			return t("styleguide.layer.atomsSharedControl", "atoms / shared control foundation");
+		case "atoms / editable phrase":
+			return t("styleguide.layer.atomsEditablePhrase", "atoms / editable phrase");
+		case "molecules":
+			return t("styleguide.layer.molecules", "molecules");
+		case "organisms":
+			return t("styleguide.layer.organisms", "organisms");
+		case "parity views":
+			return t("styleguide.layer.parityViews", "parity views");
+		case "templates":
+			return t("styleguide.layer.templates", "templates");
+		default:
+			return layer;
+	}
 }
 
 /**
@@ -635,45 +666,47 @@ function section(title, body) {
  * @param {{ wide?: boolean, compact?: boolean }} [opts]
  */
 function example(name, layer, html, opts = {}) {
-	const shown = html || '<span class="sg-empty">No visual markup in this state.</span>';
+	const shown =
+		html || `<span class="sg-empty">${t("styleguide.noVisualMarkup", "No visual markup in this state.")}</span>`;
 	return `<figure class="sg-example${opts.wide ? " sg-example--wide" : ""}${opts.compact ? " sg-example--compact" : ""}">
 		<div class="sg-example__demo">${shown}</div>
-		<figcaption class="sg-example__caption"><code>${esc(name)}</code><span>${esc(layer)}</span></figcaption>
+		<figcaption class="sg-example__caption"><code>${esc(name)}</code><span>${esc(layerLabel(layer))}</span></figcaption>
 	</figure>`;
 }
 
 function tokenSection() {
 	return section(
-		"Tokens",
+		"sg-tokens",
+		t("styleguide.section.tokens", "Tokens"),
 		`
 		<div class="sg-token-block">
-			<h3 class="sg-token-block__title">Semantic colors</h3>
+			<h3 class="sg-token-block__title">${t("styleguide.tokens.semanticColors", "Semantic colors")}</h3>
 			<div class="sg-token-grid sg-token-grid--colors" id="sg-color-tokens" aria-live="polite"></div>
 		</div>
 		<div class="sg-token-block">
-			<h3 class="sg-token-block__title">Raw Wikimedia palette</h3>
+			<h3 class="sg-token-block__title">${t("styleguide.tokens.rawWikimediaPalette", "Raw Wikimedia palette")}</h3>
 			<div class="sg-token-grid sg-token-grid--colors" id="sg-wmf-tokens" aria-live="polite"></div>
 		</div>
 		<div class="sg-token-block">
-			<h3 class="sg-token-block__title">Type scale</h3>
+			<h3 class="sg-token-block__title">${t("styleguide.tokens.typeScale", "Type scale")}</h3>
 			<div class="sg-token-stack" id="sg-type-tokens" aria-live="polite"></div>
 		</div>
 		<div class="sg-token-split">
 			<div class="sg-token-block">
-				<h3 class="sg-token-block__title">Radii</h3>
+				<h3 class="sg-token-block__title">${t("styleguide.tokens.radii", "Radii")}</h3>
 				<div class="sg-token-grid" id="sg-radius-tokens" aria-live="polite"></div>
 			</div>
 			<div class="sg-token-block">
-				<h3 class="sg-token-block__title">Shadows</h3>
+				<h3 class="sg-token-block__title">${t("styleguide.tokens.shadows", "Shadows")}</h3>
 				<div class="sg-token-grid" id="sg-shadow-tokens" aria-live="polite"></div>
 			</div>
 		</div>
 		<div class="sg-token-block">
-			<h3 class="sg-token-block__title">Spacing</h3>
+			<h3 class="sg-token-block__title">${t("styleguide.tokens.spacing", "Spacing")}</h3>
 			<div class="sg-token-stack" id="sg-space-tokens" aria-live="polite"></div>
 		</div>
 		<div class="sg-token-block">
-			<h3 class="sg-token-block__title">Layout</h3>
+			<h3 class="sg-token-block__title">${t("styleguide.tokens.layout", "Layout")}</h3>
 			<div class="sg-token-stack" id="sg-layout-tokens" aria-live="polite"></div>
 		</div>`
 	);
@@ -683,40 +716,42 @@ function buttonsSection() {
 	// These demonstrate the default variant/size explicitly; button() defaults
 	// variant→"outline" and size→"md", so mutating those exact values is a no-op.
 	// Stryker disable next-line StringLiteral,ObjectLiteral: explicit default variant — equivalent to omitting it.
-	const outlineBtn = button("Outline", { variant: "outline" });
+	const outlineBtn = button(t("styleguide.button.outline", "Outline"), { variant: "outline" });
 	// Stryker disable next-line StringLiteral: explicit default size "md" — equivalent to omitting it.
-	const mediumBtn = button("Medium", { variant: "primary", size: "md" });
+	const mediumBtn = button(t("styleguide.button.medium", "Medium"), { variant: "primary", size: "md" });
 	// Stryker disable next-line StringLiteral: explicit default variant — equivalent to omitting it.
-	const editBtn = button("Edit", { variant: "outline", icon: "edit" });
+	const editBtn = button(t("styleguide.button.edit", "Edit"), { variant: "outline", icon: "edit" });
 	// Stryker disable next-line StringLiteral: explicit default variant — equivalent to omitting it.
-	const browseBtn = button("Browse", { variant: "outline", href: "/search" });
+	const browseBtn = button(t("styleguide.button.browse", "Browse"), { variant: "outline", href: "/search" });
 	return section(
-		"Buttons",
+		"sg-buttons",
+		t("styleguide.section.buttons", "Buttons"),
 		`
 		<div class="sg-examples sg-examples--buttons">
-			${example("button('Primary', { variant: 'primary' })", "atoms", button("Primary", { variant: "primary" }))}
+			${example("button('Primary', { variant: 'primary' })", "atoms", button(t("styleguide.button.primary", "Primary"), { variant: "primary" }))}
 			${example("button('Outline', { variant: 'outline' })", "atoms", outlineBtn)}
-			${example("button('Subtle', { variant: 'subtle' })", "atoms", button("Subtle", { variant: "subtle" }))}
-			${example("button('Danger', { variant: 'danger' })", "atoms", button("Danger", { variant: "danger" }))}
-			${example("button('Small', { variant: 'primary', size: 'sm' })", "atoms", button("Small", { variant: "primary", size: "sm" }))}
+			${example("button('Subtle', { variant: 'subtle' })", "atoms", button(t("styleguide.button.subtle", "Subtle"), { variant: "subtle" }))}
+			${example("button('Danger', { variant: 'danger' })", "atoms", button(t("styleguide.button.danger", "Danger"), { variant: "danger" }))}
+			${example("button('Small', { variant: 'primary', size: 'sm' })", "atoms", button(t("styleguide.button.small", "Small"), { variant: "primary", size: "sm" }))}
 			${example("button('Medium', { variant: 'primary', size: 'md' })", "atoms", mediumBtn)}
-			${example("button('Large', { variant: 'primary', size: 'lg' })", "atoms", button("Large", { variant: "primary", size: "lg" }))}
-			${example("button('Add tool', { variant: 'primary', icon: 'add' })", "atoms", button("Add tool", { variant: "primary", icon: "add" }))}
+			${example("button('Large', { variant: 'primary', size: 'lg' })", "atoms", button(t("styleguide.button.large", "Large"), { variant: "primary", size: "lg" }))}
+			${example("button('Add tool', { variant: 'primary', icon: 'add' })", "atoms", button(t("styleguide.button.addTool", "Add tool"), { variant: "primary", icon: "add" }))}
 			${example("button('Edit', { variant: 'outline', icon: 'edit' })", "atoms", editBtn)}
 			${example("button('Browse', { variant: 'outline', href: '/search' })", "atoms", browseBtn)}
-			${example("button('Disabled', { variant: 'primary', disabled: true })", "atoms", button("Disabled", { variant: "primary", disabled: true }))}
-			${example("iconButton('chevronUp', 'Move up', { size: 'sm' })", "atoms", iconButton("chevronUp", "Move up", { size: "sm" }))}
-			${example("iconButton('chevronDown', 'Move down', { size: 'sm' })", "atoms", iconButton("chevronDown", "Move down", { size: "sm" }))}
-			${example("iconButton('close', 'Close', { size: 'sm' })", "atoms", iconButton("close", "Close", { size: "sm" }))}
-			${example("iconButton('close', 'Remove', { size: 'sm', variant: 'danger' })", "atoms", iconButton("close", "Remove", { size: "sm", variant: "danger" }))}
-			${example("iconButton('search', 'Search')", "atoms", iconButton("search", "Search"))}
+			${example("button('Disabled', { variant: 'primary', disabled: true })", "atoms", button(t("styleguide.button.disabled", "Disabled"), { variant: "primary", disabled: true }))}
+			${example("iconButton('chevronUp', 'Move up', { size: 'sm' })", "atoms", iconButton("chevronUp", t("styleguide.listEditor.moveUp", "Move up"), { size: "sm" }))}
+			${example("iconButton('chevronDown', 'Move down', { size: 'sm' })", "atoms", iconButton("chevronDown", t("styleguide.listEditor.moveDown", "Move down"), { size: "sm" }))}
+			${example("iconButton('close', 'Close', { size: 'sm' })", "atoms", iconButton("close", t("styleguide.button.close", "Close"), { size: "sm" }))}
+			${example("iconButton('close', 'Remove', { size: 'sm', variant: 'danger' })", "atoms", iconButton("close", t("styleguide.button.remove", "Remove"), { size: "sm", variant: "danger" }))}
+			${example("iconButton('search', 'Search')", "atoms", iconButton("search", t("styleguide.search", "Search")))}
 		</div>`
 	);
 }
 
 function iconsSection() {
 	return section(
-		"Icons",
+		"sg-icons",
+		t("styleguide.section.icons", "Icons"),
 		`
 		<div class="sg-token-grid">
 			${ICON_NAMES.map(
@@ -731,42 +766,44 @@ function iconsSection() {
 
 function chromeSection() {
 	return section(
-		"Chrome",
+		"sg-chrome",
+		t("styleguide.section.chrome", "Chrome"),
 		`
 		<div class="sg-examples sg-examples--organisms">
-			${example("Nav + brand", "app chrome", chromeNavExample(), { wide: true })}
-			${example("Footer", "app chrome", footerExample(), { wide: true })}
-			${example("Feature banner + status tag", "app chrome", mockupBannerExample(), { wide: true, compact: true })}
-			${example("Full hero block", "app chrome / organism", fullHeroExample(), { wide: true })}
+			${example(t("styleguide.example.navBrand", "Nav + brand"), t("styleguide.layer.appChrome", "app chrome"), chromeNavExample(), { wide: true })}
+			${example(t("styleguide.example.footer", "Footer"), t("styleguide.layer.appChrome", "app chrome"), footerExample(), { wide: true })}
+			${example(t("styleguide.example.featureBanner", "Feature banner + status tag"), t("styleguide.layer.appChrome", "app chrome"), mockupBannerExample(), { wide: true, compact: true })}
+			${example(t("styleguide.example.fullHero", "Full hero block"), t("styleguide.layer.appChromeOrganism", "app chrome / organism"), fullHeroExample(), { wide: true })}
 		</div>`
 	);
 }
 
 function layoutStatesSection() {
 	return section(
-		"Layout & states",
+		"sg-layout-states",
+		t("styleguide.section.layoutStates", "Layout & states"),
 		`
 		<div class="sg-examples sg-examples--organisms">
-			${example("Page header + section head", "templates", pageHeaderExample(), { wide: true })}
-			${example("Two-column layout", "templates", layoutExample(), { wide: true })}
-			${example("Back link + text link", "templates", backAndLinkExample())}
-			${example("Empty state", "templates", emptyStateExample())}
-			${example("Loading spinner", "templates", loadingExample())}
-			${example("Error page", "templates", errorPageExample(), { wide: true })}
-			${example("Prose page", "templates", proseExample(), { wide: true })}
-			${example("Sign-in note", "molecules", signInNoteExample(), { wide: true })}
+			${example(t("styleguide.example.pageHeader", "Page header + section head"), t("styleguide.layer.templates", "templates"), pageHeaderExample(), { wide: true })}
+			${example(t("styleguide.example.twoColumnLayout", "Two-column layout"), t("styleguide.layer.templates", "templates"), layoutExample(), { wide: true })}
+			${example(t("styleguide.example.backLink", "Back link + text link"), t("styleguide.layer.templates", "templates"), backAndLinkExample())}
+			${example(t("styleguide.example.emptyState", "Empty state"), t("styleguide.layer.templates", "templates"), emptyStateExample())}
+			${example(t("styleguide.example.loadingSpinner", "Loading spinner"), t("styleguide.layer.templates", "templates"), loadingExample())}
+			${example(t("styleguide.example.errorPage", "Error page"), t("styleguide.layer.templates", "templates"), errorPageExample(), { wide: true })}
+			${example(t("styleguide.example.prosePage", "Prose page"), t("styleguide.layer.templates", "templates"), proseExample(), { wide: true })}
+			${example(t("styleguide.example.signInNote", "Sign-in note"), t("styleguide.layer.molecules", "molecules"), signInNoteExample(), { wide: true })}
 		</div>`
 	);
 }
 
 function formControlsGroup() {
 	return `<div class="sg-group">
-		<h3 class="sg-group__title">Form controls</h3>
-		<p class="sg-group__note">Standalone search, facet, list-editor, and intent-builder controls now share one control foundation.</p>
+		<h3 class="sg-group__title">${t("styleguide.formControls", "Form controls")}</h3>
+		<p class="sg-group__note">${t("styleguide.formControlsNote", "Standalone search, facet, list-editor, and intent-builder controls now share one control foundation.")}</p>
 		<div class="sg-examples sg-examples--controls">
-			${example("input.search__input", "atoms / shared control foundation", '<input class="search__input" id="sg-search-input" type="search" aria-label="Search tools" placeholder="Search tools..." autocomplete="off" />')}
-			${example("input.facets__search", "atoms / shared control foundation", '<input class="facets__search" id="sg-facet-search" type="search" aria-label="Search tools" placeholder="Search tools..." autocomplete="off" />')}
-			${example("input.le__input", "atoms / shared control foundation", '<input class="le__input" id="sg-list-editor-input" type="text" aria-label="List title" placeholder="List title" />')}
+			${example("input.search__input", "atoms / shared control foundation", `<input class="search__input" id="sg-search-input" type="search" aria-label="${esc(t("styleguide.searchTools", "Search tools"))}" placeholder="${esc(t("styleguide.searchToolsPlaceholderCompact", "Search tools..."))}" autocomplete="off" />`)}
+			${example("input.facets__search", "atoms / shared control foundation", `<input class="facets__search" id="sg-facet-search" type="search" aria-label="${esc(t("styleguide.searchTools", "Search tools"))}" placeholder="${esc(t("styleguide.searchToolsPlaceholderCompact", "Search tools..."))}" autocomplete="off" />`)}
+			${example("input.le__input", "atoms / shared control foundation", `<input class="le__input" id="sg-list-editor-input" type="text" aria-label="${esc(t("styleguide.listTitle", "List title"))}" placeholder="${esc(t("styleguide.listTitle", "List title"))}" />`)}
 			${example("button.intent__word", "atoms / editable phrase", '<button class="intent__word" type="button">Wikidata</button>')}
 		</div>
 	</div>`;
@@ -774,7 +811,8 @@ function formControlsGroup() {
 
 function atomsSection() {
 	return section(
-		"Atoms",
+		"sg-atoms",
+		t("styleguide.section.atoms", "Atoms"),
 		`
 		<div class="sg-examples">
 			${example("avatar(title)", "atoms", avatar("Citation Helper"))}
@@ -792,54 +830,56 @@ function atomsSection() {
 				"fInput / fArea / fCheck / fSelect",
 				"atoms",
 				`<div class="sg-form">
-				${fInput("Tool title", "sg-tool-title", SG_TOOL.title, { req: true })}
-				${fArea("Description", "sg-tool-description", SG_TOOL.description, "Shown in search results and detail pages.")}
-				<div class="le__checks">${fCheck("Experimental", "sg-tool-experimental", true)}${fCheck("Deprecated", "sg-tool-deprecated", false)}</div>
-				${fSelect("Tool type", "sg-tool-type", SG_TOOL.toolType, TOOL_TYPES)}
+				${fInput(t("styleguide.form.toolTitle", "Tool title"), "sg-tool-title", SG_TOOL.title, { req: true })}
+				${fArea(t("styleguide.form.description", "Description"), "sg-tool-description", SG_TOOL.description, t("styleguide.form.descriptionHelp", "Shown in search results and detail pages."))}
+				<div class="le__checks">${fCheck(t("styleguide.form.experimental", "Experimental"), "sg-tool-experimental", true)}${fCheck(t("styleguide.form.deprecated", "Deprecated"), "sg-tool-deprecated", false)}</div>
+				${fSelect(t("styleguide.meta.toolType", "Tool type"), "sg-tool-type", SG_TOOL.toolType, TOOL_TYPES)}
 			</div>`,
 				{ wide: true }
 			)}
 			${formControlsGroup()}
-			${example("metaItem(key, value)", "atoms", `<div class="detail__meta">${metaItem("License", SG_TOOL.license)}${metaItem("Wikis", wikiLabel(SG_TOOL.forWikis))}</div>`, { wide: true })}
-			${example("linkOut(label, url)", "atoms", linkOut("Repository", SG_TOOL.repository))}
+			${example("metaItem(key, value)", "atoms", `<div class="detail__meta">${metaItem(t("styleguide.meta.license", "License"), SG_TOOL.license)}${metaItem(t("styleguide.meta.wikis", "Wikis"), wikiLabel(SG_TOOL.forWikis))}</div>`, { wide: true })}
+			${example("linkOut(label, url)", "atoms", linkOut(t("styleguide.repository", "Repository"), SG_TOOL.repository))}
 		</div>`
 	);
 }
 
 function moleculesSection() {
 	return section(
-		"Molecules",
+		"sg-molecules",
+		t("styleguide.section.molecules", "Molecules"),
 		`
 		<div class="sg-examples">
 			${example("favBtn(name)", "molecules", favBtn(SG_TOOL.name, { label: true }))}
 			${example("favBtn(savedName)", "molecules", favBtn(SG_TOOL_DEPRECATED.name, { label: true }))}
 			${example("saveToListControl(name)", "molecules", saveToListControl(SG_TOOL.name), { wide: true })}
 			${example("renderFacetGroup(group, facets, selected)", "molecules", renderFacetGroup(FIXTURE_FACET_GROUP, FIXTURE_FACETS, FIXTURE_SELECTED_FACETS), { wide: true })}
-			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="Pagination">${renderPager(2, 7)}</nav>`, { wide: true })}
+			${example("renderPager(2, 7)", "molecules", `<nav class="pager" aria-label="${esc(t("styleguide.paginationLabel", "Pagination"))}">${renderPager(2, 7)}</nav>`, { wide: true })}
 			${example(".acct__btn", "molecules", accountButtonExample())}
 			${example(".qv__x", "organisms", quickViewCloseExample())}
-			${example("Annotation editor controls", "molecules", annotationEditorExample(), { wide: true })}
-			${example("List editor full row", "molecules", listEditorControlsExample(), { wide: true })}
+			${example(t("styleguide.example.annotationEditorControls", "Annotation editor controls"), t("styleguide.layer.molecules", "molecules"), annotationEditorExample(), { wide: true })}
+			${example(t("styleguide.example.listEditorFullRow", "List editor full row"), t("styleguide.layer.molecules", "molecules"), listEditorControlsExample(), { wide: true })}
 			${example(".icon-btn", "organisms", navIconButtonExample())}
-			${example(".persona navigation chip", "molecules", `<div class="sg-inline-list"><a class="persona" href="/search?q=editors">${icon("edit")} Editors</a><a class="persona" href="/search?q=developers">${icon("code")} Developers</a><a class="persona" href="/search?q=readers">${icon("book")} Readers</a></div>`, { wide: true })}
-			${example(".intent sentence builder", "molecules", fitControlExample(), { wide: true })}
+			${example(t("styleguide.example.personaNavigationChip", ".persona navigation chip"), t("styleguide.layer.molecules", "molecules"), `<div class="sg-inline-list"><a class="persona" href="/search?q=editors">${icon("edit")} ${t("styleguide.persona.editors", "Editors")}</a><a class="persona" href="/search?q=developers">${icon("code")} ${t("styleguide.persona.developers", "Developers")}</a><a class="persona" href="/search?q=readers">${icon("book")} ${t("styleguide.persona.readers", "Readers")}</a></div>`, { wide: true })}
+			${example(t("styleguide.example.intentSentenceBuilder", ".intent sentence builder"), t("styleguide.layer.molecules", "molecules"), fitControlExample(), { wide: true })}
 		</div>`
 	);
 }
 
 function contentComponentsSection() {
 	return section(
-		"Content components",
+		"sg-content-components",
+		t("styleguide.section.contentComponents", "Content components"),
 		`
 		<div class="sg-examples sg-examples--organisms">
-			${example(".detail__meta / .meta__k / .meta__v", "atoms / molecules", metaExample(), { wide: true })}
-			${example("sort control", "molecules", sortControlExample())}
-			${example("exp-badge", "atoms", `<span class="exp-badge">Experimental</span>`)}
-			${example("recent list", "organisms", recentListExample(), { wide: true })}
-			${example("panel + panel--cta", "organisms", panelVariantsExample(), { wide: true })}
-			${example("linkgrid + linkcard", "molecules", linkCardsExample(), { wide: true })}
-			${example("browse bar", "organisms", browseBarExample(), { wide: true })}
-			${example("maintainer list", "organisms", maintainerListExample())}
+			${example(t("styleguide.example.detailMeta", ".detail__meta / .meta__k / .meta__v"), t("styleguide.layer.atomsMolecules", "atoms / molecules"), metaExample(), { wide: true })}
+			${example(t("styleguide.example.sortControl", "sort control"), t("styleguide.layer.molecules", "molecules"), sortControlExample())}
+			${example("exp-badge", "atoms", `<span class="exp-badge">${t("styleguide.form.experimental", "Experimental")}</span>`)}
+			${example(t("styleguide.example.recentList", "recent list"), t("styleguide.layer.organisms", "organisms"), recentListExample(), { wide: true })}
+			${example(t("styleguide.example.panelCta", "panel + panel--cta"), t("styleguide.layer.organisms", "organisms"), panelVariantsExample(), { wide: true })}
+			${example(t("styleguide.example.linkgrid", "linkgrid + linkcard"), t("styleguide.layer.molecules", "molecules"), linkCardsExample(), { wide: true })}
+			${example(t("styleguide.example.browseBar", "browse bar"), t("styleguide.layer.organisms", "organisms"), browseBarExample(), { wide: true })}
+			${example(t("styleguide.example.maintainerList", "maintainer list"), t("styleguide.layer.organisms", "organisms"), maintainerListExample())}
 		</div>`
 	);
 }
@@ -851,32 +891,34 @@ function organismsSection() {
 		(/** @type {Tool} */ tool, /** @type {number} */ i) => toolCard(tool, i === 1 ? { popular: true, rank: 2 } : {})
 	);
 	return section(
-		"Organisms",
+		"sg-organisms",
+		t("styleguide.section.organisms", "Organisms"),
 		`
 		<div class="sg-examples sg-examples--organisms">
 			${example("toolCard(tool)", "organisms", toolCard(SG_TOOL))}
 			${example("toolCard(tool, { popular: true, rank: 1 })", "organisms", toolCard(SG_TOOL, { popular: true, rank: 1 }))}
 			${example("toolCard(deprecatedTool)", "organisms", toolCard(SG_TOOL_DEPRECATED))}
 			${example("listCard(list)", "organisms", listCard(FIXTURE_LIST))}
-			${example("panel (sidebar)", "organisms", `<div class="panel"><h3 class="panel__title">Browse by need</h3><p class="sg-note">Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.</p></div>`)}
-			${example("Listing completeness", "organisms", listingCompletenessExample())}
+			${example(t("styleguide.example.panelSidebar", "panel (sidebar)"), t("styleguide.layer.organisms", "organisms"), `<div class="panel"><h3 class="panel__title">${t("styleguide.browseByNeed", "Browse by need")}</h3><p class="sg-note">${t("styleguide.panelSidebarNote", "Borderless sidebar block: a rule under the title and content flush below, matching the main-content section heads.")}</p></div>`)}
+			${example(t("styleguide.listingCompleteness", "Listing completeness"), t("styleguide.layer.organisms", "organisms"), listingCompletenessExample())}
 			${example("grid(className, items, render)", "organisms", gridHtml, { wide: true })}
 			${example("quickViewBody(tool)", "organisms", `<div class="sg-quickview">${quickViewBody(SG_TOOL)}</div>`, { wide: true })}
-			${example("Related tools (similarity)", "organisms", relatedToolsExample(), { wide: true })}
-			${example("Similarity graph (canvas)", "organisms", forceGraphExample(), { wide: true })}
+			${example(t("styleguide.example.relatedToolsSimilarity", "Related tools (similarity)"), t("styleguide.layer.organisms", "organisms"), relatedToolsExample(), { wide: true })}
+			${example(t("styleguide.example.similarityGraph", "Similarity graph (canvas)"), t("styleguide.layer.organisms", "organisms"), forceGraphExample(), { wide: true })}
 		</div>`
 	);
 }
 
 function activityParitySection() {
 	return section(
-		"Activity & parity",
+		"sg-activity-parity",
+		t("styleguide.section.activityParity", "Activity & parity"),
 		`
 		<div class="sg-examples sg-examples--organisms">
-			${example("member card grid", "parity views", memberGridExample(), { wide: true })}
-			${example("activity feed", "parity views", activityFeedExample(), { wide: true })}
-			${example("crawler run graph", "parity views", crawlerGraphExample(), { wide: true })}
-			${example("crawler runs table", "parity views", runsExample(), { wide: true })}
+			${example(t("styleguide.example.memberCardGrid", "member card grid"), t("styleguide.layer.parityViews", "parity views"), memberGridExample(), { wide: true })}
+			${example(t("styleguide.example.activityFeed", "activity feed"), t("styleguide.layer.parityViews", "parity views"), activityFeedExample(), { wide: true })}
+			${example(t("styleguide.example.crawlerRunGraph", "crawler run graph"), t("styleguide.layer.parityViews", "parity views"), crawlerGraphExample(), { wide: true })}
+			${example(t("styleguide.example.crawlerRunsTable", "crawler runs table"), t("styleguide.layer.parityViews", "parity views"), runsExample(), { wide: true })}
 		</div>`
 	);
 }
@@ -1106,8 +1148,8 @@ export function viewStyleguide() {
 	const html = withStyleguideDemoState(
 		() => `
 		<div class="container page sg-page">
-			<h1 class="page__title">Design system</h1>
-			<p class="page__intro">A living reference for Toolhub tokens and component functions, rendered from the same modules used by the application.</p>
+			<h1 class="page__title">${t("styleguide.designSystem", "Design system")}</h1>
+			<p class="page__intro">${t("styleguide.intro", "A living reference for Toolhub tokens and component functions, rendered from the same modules used by the application.")}</p>
 			${tokenSection()}
 			${chromeSection()}
 			${layoutStatesSection()}
@@ -1120,5 +1162,5 @@ export function viewStyleguide() {
 			${activityParitySection()}
 		</div>`
 	);
-	return { title: "Design system — Toolhub", html, mount: mountStyleguide };
+	return { title: t("styleguide.title", "Design system — Toolhub"), html, mount: mountStyleguide };
 }

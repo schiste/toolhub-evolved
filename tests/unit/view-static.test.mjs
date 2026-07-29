@@ -52,7 +52,7 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(S.viewStatic("privacy").html.includes("server-side OAuth grant"));
 	const rules = S.viewStatic("rules-of-engagement").html;
 	assert.ok(rules.includes("supported writes are sent back to the official Toolhub API"));
-	assert.ok(rules.includes("served quickly from Evolved's shared"));
+	assert.ok(rules.includes("served quickly from Evolved&#39;s shared"));
 	assert.ok(rules.includes("endpoint-specific TTLs"));
 	assert.ok(rules.includes("What's Evolved-only"));
 	assert.ok(rules.includes("Evolved additions are visible by default"));
