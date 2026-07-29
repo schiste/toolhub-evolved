@@ -223,8 +223,9 @@ Estimates assume a solo maintainer; phases after P0 can overlap where noted.
 Exactly `PLAN.md` §2.2–2.3, unchanged in content, promoted to blocker status:
 
 - i18n phases 1–5: `i18n/en.json` + `t()` for shell/nav/cards, then detail/list
-  pages, per-locale prose fragments, localized API-field selection, language
-  switcher + pseudolocalization + RTL smoke test.
+  pages, source-message cleanup for translatewiki readiness, per-locale prose
+  fragments, localized API-field selection, translatewiki catalog import/export,
+  language switcher + pseudolocalization + RTL smoke test.
 - Deferred a11y items: card grids as lists, crawler table `<caption>`/`scope`,
   card-as-link + separate quick-view button, disambiguated duplicate link
   destinations, per-field `lang`.

@@ -71,6 +71,7 @@ tools/
   deploy.sh         ·  Toolforge update helper
 TOKENS.md           ·  design-token reference + contribution rules
 docs/
+  I18N.md              ·  source-message rules and translatewiki readiness notes
   FEATURES.md          ·  generated feature listing from public_html/views/experiments.js
   HYBRID-FEATURE-PLAN.md · feature-by-feature backend realization plan
   PLAN.md              ·  the comprehensive roadmap (ship lane + experiments lane)

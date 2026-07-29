@@ -64,14 +64,15 @@ Keep it vanilla and dependency-free:
 
 3. Do not concatenate translated fragments. Whole sentences should be messages with params. API data stays data and gets `dir="auto"` plus `lang` when known.
 
-4. Use Toolhub/translatewiki-compatible keys from the start. English remains the source catalog; translated JSON can be generated or copied in later.
+4. Use Toolhub/translatewiki-compatible keys from the start. English remains the source catalog; translated JSON can be generated or copied in later. Passing `npm run i18n:extract` means the English source catalog is current; it does not mean non-English translations ship.
 
 5. Migration path:
     - Phase 1: move shell/nav/footer/account/search/card strings to `en.json`.
+    - Phase 1.5: make source messages translatewiki-ready and clean existing hardcoded/fragmented UI copy (#117, #119).
     - Phase 2: move detail, quick-view, list, and parity pages.
-    - Phase 3: move static prose pages to locale files.
+    - Phase 3: move static prose pages to locale files (#88).
     - Phase 4: implement localized field selection for Toolhub API data.
-    - Phase 5: add a language switcher, pseudolocalization, and an RTL smoke page in local QA.
+    - Phase 5: wire translatewiki catalog import/export and language switching (#118, #86), then add pseudolocalization and an RTL smoke page in local QA (#92).
 
 ## Accessibility
 
