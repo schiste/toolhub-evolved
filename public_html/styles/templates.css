@@ -378,11 +378,23 @@
 		font-size: var(--fs-body);
 	}
 	.account-workbench__nav {
-		grid-template-columns: 1fr;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
 	}
 	.account-workbench__nav-item {
-		border-inline-end: 0;
-		border-bottom: var(--border-muted);
+		gap: var(--space-1);
+		min-height: var(--ctl-h-md);
+		padding-inline: var(--space-1);
+		font-size: var(--fs-caption);
+	}
+	.account-workbench__nav-copy {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: var(--space-0);
+		margin: calc(-1 * var(--space-px));
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 }
 

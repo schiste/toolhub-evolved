@@ -4,6 +4,7 @@ import { t } from "../core/i18n.js";
 import { USER } from "../core/session.js";
 import { avatar } from "../atoms/avatar.js";
 import { icon } from "../atoms/icon.js";
+import { tabBar } from "../molecules/tab-bar.js";
 
 export const ACCOUNT_NAV_ITEMS = [
 	{
@@ -55,17 +56,23 @@ function accountName() {
 
 /** @param {string} active */
 export function accountWorkbenchNav(active) {
-	return `<nav class="account-workbench__nav" aria-label="${esc(t("accountWorkbench.navLabel", "Account pages"))}">
-		${ACCOUNT_NAV_ITEMS.map((item) => {
-			const current = item.key === active;
-			return `<a class="account-workbench__nav-item${current ? " is-active" : ""}" href="${esc(item.href)}"${current ? ' aria-current="page"' : ""}>
-				<span class="account-workbench__nav-icon" aria-hidden="true">${icon(item.iconName)}</span>
-				<span class="account-workbench__nav-copy">
-					<span class="account-workbench__nav-label">${esc(item.label())}</span>
-				</span>
-			</a>`;
-		}).join("")}
-	</nav>`;
+	return tabBar({
+		active,
+		ariaLabel: t("accountWorkbench.navLabel", "Account pages"),
+		classes: {
+			nav: "account-workbench__nav",
+			item: "account-workbench__nav-item",
+			icon: "account-workbench__nav-icon",
+			copy: "account-workbench__nav-copy",
+			label: "account-workbench__nav-label"
+		},
+		items: ACCOUNT_NAV_ITEMS.map((item) => ({
+			key: item.key,
+			href: item.href,
+			iconName: item.iconName,
+			label: item.label()
+		}))
+	});
 }
 
 /** @param {AccountWorkbenchOptions} opts */
