@@ -94,14 +94,55 @@ function calculationText(summary) {
 	);
 }
 
+/** @param {any} dimension */
+function dimensionTooltipLine(dimension) {
+	const label = String(dimension?.label || dimension?.key || "");
+	const score = scoreText(dimension?.score);
+	const weight = num(dimension?.weight);
+	const confidence = num(dimension?.confidence);
+	const parts = [
+		t("toolHealth.scoreValue", "score {score}", { score }),
+		weight === null ? "" : t("toolHealth.weightValue", "weight {weight}", { weight: String(weight) }),
+		confidence === null
+			? ""
+			: t("toolHealth.confidenceValue", "confidence {confidence}", {
+					confidence: `${Math.round(confidence * 100)}%`
+				}),
+		dimension?.status ? String(dimension.status) : ""
+	].filter(Boolean);
+	return `${label}: ${parts.join(" · ")}`;
+}
+
+/** @param {any} summary */
+function healthScoreTooltip(summary) {
+	const health = summary?.health || {};
+	const score = scoreText(health.score);
+	const grade = gradeLabel(health.grade);
+	const dimensions = Array.isArray(health.dimensions) ? health.dimensions : [];
+	const lines = [
+		t("toolHealth.scoreTitle", "Local Evolved health score"),
+		t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade }),
+		calculationText(summary)
+	];
+	if (dimensions.length > 0) {
+		lines.push(t("toolHealth.includedDimensions", "Included dimensions:"));
+		for (const item of dimensions) lines.push(`- ${dimensionTooltipLine(item)}`);
+	} else {
+		lines.push(t("toolHealth.noDimensions", "No local dimensions are available yet."));
+	}
+	return lines.join("\n");
+}
+
 /** @param {any} summary */
 export function healthScoreChip(summary) {
 	if (!summary?.health) return "";
 	const score = scoreText(summary.health.score);
 	const grade = gradeLabel(summary.health.grade);
 	const tone = toneForGrade(summary.health.grade);
-	return `<span class="health-score health-score--${esc(tone)}" title="${esc(t("toolHealth.scoreTitle", "Local Evolved health score"))}">
+	const tooltip = healthScoreTooltip(summary);
+	return `<span class="health-score health-score--${esc(tone)}" title="${esc(tooltip)}" aria-label="${esc(tooltip)}" tabindex="0">
 		${icon("analyze")} <span>${t("toolHealth.healthScore", "Health {score}", { score })}</span><span class="health-score__grade">${esc(grade)}</span>
+		<span class="health-score__tooltip" aria-hidden="true">${esc(tooltip)}</span>
 	</span>`;
 }
 

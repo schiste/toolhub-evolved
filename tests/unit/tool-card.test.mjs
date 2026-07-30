@@ -145,6 +145,11 @@ test("toolCard renders attached health score and maintainer disclosure", () => {
 		}
 	});
 	assert.ok(html.includes("Health 82"));
+	assert.ok(html.includes('tabindex="0"'));
+	assert.ok(html.includes("Local Evolved health score"));
+	assert.ok(html.includes("Included dimensions:"));
+	assert.ok(html.includes("- Maintainer status: score 84 · weight 1.25 · confidence 85% · maintained"));
+	assert.ok(html.includes('class="health-score__tooltip" aria-hidden="true"'));
 	assert.ok(html.includes('<details class="health-popover'));
 	assert.ok(html.includes("Maintained"));
 	assert.ok(html.includes("Calculation: weighted average across 1 of 1 dimensions"));
