@@ -162,6 +162,18 @@ function listDetailSkeleton() {
 	${cardGridSkeleton("tool", 4)}`;
 }
 
+function styleguideSkeleton() {
+	return `${pageHeadSkeleton()}
+	<div class="skeleton-styleguide">
+		<div class="sg-token-grid skeleton-grid" aria-hidden="true">
+			${repeat(12, () => `<div class="sg-token skeleton-card">${skeletonBlock("skeleton--avatar")}${skeletonLine("skeleton--w-md")}</div>`)}
+		</div>
+		<div class="sg-examples skeleton-styleguide__examples">
+			${repeat(9, () => `<div class="sg-example skeleton-card">${skeletonLine("skeleton--w-lg")}${skeletonLine("skeleton--w-md")}${skeletonBlock("skeleton--control")}</div>`)}
+		</div>
+	</div>`;
+}
+
 function toolDetailSkeleton() {
 	return `<div class="toolpage__head skeleton-toolpage__head">
 		${skeletonBlock("skeleton--avatar skeleton--avatar-lg")}
@@ -278,6 +290,13 @@ function routeSkeleton(path = "") {
 			modifier: "table",
 			label: t("router.loadingAuditLogs", "Loading audit logs"),
 			body: `${pageHeadSkeleton()}${tableSkeleton({ columns: AUDIT_TABLE_COLUMNS })}`
+		};
+	}
+	if (seg[0] === "styleguide") {
+		return {
+			modifier: "styleguide",
+			label: t("router.loadingStyleguide", "Loading design system"),
+			body: styleguideSkeleton()
 		};
 	}
 	return null;

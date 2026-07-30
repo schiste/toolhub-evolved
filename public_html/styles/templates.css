@@ -121,6 +121,22 @@
 	font-weight: 400;
 }
 
+.route-loading--styleguide {
+	min-height: 96rem;
+}
+
+.skeleton-styleguide {
+	display: grid;
+	gap: var(--space-6);
+	min-width: 0;
+}
+
+.skeleton-styleguide__examples {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+	gap: var(--space-4);
+}
+
 .route-loading--skeleton .route-loading__label {
 	display: block;
 	margin-bottom: var(--space-4);

@@ -964,26 +964,34 @@ function collectCustomPropertyNames(prefix, fallback) {
 }
 
 /**
- * @param {string} name
+ * @param {string[]} names
  * @param {string} cssProp
+ * @returns {Map<string, string>}
  */
-function resolveToken(name, cssProp) {
-	const probe = document.createElement("span");
-	// Stryker disable next-line StringLiteral: these styles only hide the off-screen measurement probe; they do not affect the computed value of the custom property being read — equivalent.
-	probe.style.position = "absolute";
-	// Stryker disable next-line StringLiteral: probe-hiding style only — does not affect the measured value — equivalent.
-	probe.style.display = "block";
-	// Stryker disable next-line StringLiteral: probe-hiding style only — does not affect the measured value — equivalent.
-	probe.style.visibility = "hidden";
-	// Stryker disable next-line StringLiteral: probe-hiding style only — does not affect the measured value — equivalent.
-	probe.style.pointerEvents = "none";
-	// Stryker disable next-line StringLiteral: under happy-dom getComputedStyle does not resolve var() regardless of this assignment, so the rendered token value is unaffected in tests — equivalent in this environment.
-	/** @type {any} */ (probe.style)[cssProp] = `var(${name})`;
-	document.body.appendChild(probe);
-	const value = /** @type {any} */ (getComputedStyle(probe))[cssProp];
-	probe.remove();
-	// Stryker disable next-line MethodExpression: the fallback only runs when the probe value is empty, where getPropertyValue() is also empty — trimming "" is a no-op — equivalent.
-	return value || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function resolveTokenValues(names, cssProp) {
+	const rootStyles = getComputedStyle(document.documentElement);
+	const host = document.createElement("span");
+	host.style.position = "absolute";
+	host.style.display = "block";
+	host.style.visibility = "hidden";
+	host.style.pointerEvents = "none";
+	host.style.contain = "layout style";
+	/** @type {Array<{ name: string, probe: HTMLElement }>} */
+	const probes = names.map((name) => {
+		const probe = document.createElement("span");
+		probe.style.display = "block";
+		/** @type {any} */ (probe.style)[cssProp] = `var(${name})`;
+		host.appendChild(probe);
+		return { name, probe };
+	});
+	document.body.appendChild(host);
+	const values = new Map();
+	for (const { name, probe } of probes) {
+		const resolved = /** @type {any} */ (getComputedStyle(probe))[cssProp];
+		values.set(name, resolved || rootStyles.getPropertyValue(name).trim());
+	}
+	host.remove();
+	return values;
 }
 
 // Shared token-gallery renderer: resolve each token's live value and lay out the
@@ -998,7 +1006,8 @@ function resolveToken(name, cssProp) {
 function renderTokenTarget(targetId, names, prop, rowHtml) {
 	const target = document.querySelector(`#${targetId}`);
 	if (!target) return;
-	target.innerHTML = names.map((name) => rowHtml(name, resolveToken(name, prop))).join("");
+	const values = resolveTokenValues(names, prop);
+	target.innerHTML = names.map((name) => rowHtml(name, values.get(name) || "")).join("");
 }
 
 // Swatch family: a styled preview box + meta (colours, radii, shadows).
