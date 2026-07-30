@@ -19,6 +19,7 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 - **Faceted browse** (`/search`) — live Elasticsearch facets (tool type, keywords, audience, language, license, wiki), sort, paginate, shareable URLs.
 - **Full tool pages** (`/tools/:name`) — real metadata (wikis, languages, license, links) + related tools, real revision history.
 - **API explorer** (`/api-docs`) — curated read-only endpoint forms, formatted JSON responses, and copyable `curl`/`fetch` examples.
+- **Source code analysis** (`/my-tools`) — maintainer-submitted source bundles produce redacted, evidence-backed project/API/access/dependency/OAuth suggestions.
 - **Footer & policy pages** — About, Help, Community, Privacy, Terms, Code of Conduct, API, Feeds.
 - **Help maintain Toolhub** (`/contribute`) — a hub linking source, tasks, translation and docs.
 - **Wikimedia brand** — Montserrat + Source Serif 4, the 2022 brand palette, all in `tokens.css`.
@@ -54,6 +55,19 @@ localStorage acts as a synchronous cache of the server overlay: it is pulled fro
 backend lifecycle through `/v1/write/*`; when Toolhub rejects a supported
 draftable write, Evolved stores a local fallback with Toolhub validation details
 so the user's work is not lost.
+
+Maintainers can also run deterministic source-code analysis from `/my-tools` or
+from the CLI:
+
+```sh
+PYTHONPATH=proxy python proxy/analyze_source.py path/to/tool --tool-name my-tool
+```
+
+The analyzer reads local text source files, extracts Wikimedia projects, API
+usage, access rights, external dependencies, lockfile evidence, OAuth scopes,
+technology, repository context, and review warnings, then emits deterministic
+assessment scores with evidence-backed recommendations. Raw source files are not
+stored.
 
 ## Repository layout
 

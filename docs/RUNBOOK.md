@@ -220,6 +220,9 @@ names are:
 | `tool_thanks`                                | Public aggregate, private user relation         | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.              |
 | `tool_author_claims`                         | Public provenance label, private evidence cache | Per-tool author-name verification claims tied to a Toolhub username; use for Evolved provenance and "my tools" discovery, never as official Toolhub permission state.  |
 | `tool_author_keys`                           | Public-key registry for signed toolinfo claims  | Stores Evolved-registered public keys only; never store private keys, and ignore revoked keys during signed-toolinfo verification.                                     |
+| `tool_maintainer_edges`                      | Public summary, private evidence cache          | Rebuildable per-tool maintainer projection from official Toolhub metadata and Evolved claims; public API omits raw evidence payloads and never grants permissions.     |
+| `maintainer_activity_rollups`                | Public activity bucket, private source rows     | Rebuildable Evolved-local activity summary keyed by namespaced maintainer id; source activity rows stay governed by their original table's privacy/delete rules.       |
+| `source_analysis_reports`                    | Private per user                                | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.    |
 | `tool_health_targets` / `tool_health_checks` | Public checked status after approval            | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health. |
 | `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                         |
 
@@ -258,6 +261,19 @@ Developer settings exposes the public-key lifecycle for signed toolinfo:
 `POST /v1/toolinfo/signing-payload/` returns the canonical JSON and placeholder
 signature metadata for the exact toolinfo object a maintainer wants to publish.
 Evolved never stores or receives private keys.
+
+Source analysis is an owner-facing maintainer aid, not a permission oracle.
+`POST /v1/source-analysis/` accepts bounded text source files plus optional
+repository context JSON, analyzes them without executing code, and stores only
+the report: projects, APIs, access rights, external dependencies, lockfile
+evidence, OAuth scopes, technology, repository context, deterministic
+assessment scores, warnings, and evidence excerpts. Evidence is line-limited and
+credential-looking assignments are redacted. `GET /v1/source-analysis/` and
+`GET /v1/source-analysis/<id>/` are private reads for the report owner;
+`POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
+`approved`, or `rejected`. The same analyzer is available for local checkouts
+through `PYTHONPATH=proxy python proxy/analyze_source.py`; the CLI can add local
+Git metadata without network access.
 
 Before adding a new Evolved-only table, document the owner, purpose,
 visibility, retention/deletion behavior, export behavior, Toolhub handoff path,

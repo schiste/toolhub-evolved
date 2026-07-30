@@ -42,6 +42,7 @@ Implemented local tables in `proxy/backend/models.py`:
 | `tool_thanks`             | Authenticated thanks on Evolved.                       | Toolhub does not expose thanks.                                                        |
 | `tool_author_claims`      | Per-tool author-name verification evidence.            | Toolhub exposes display author fields but not Evolved verification state.              |
 | `tool_author_keys`        | User-registered public keys for signed toolinfo proof. | Toolhub does not expose Evolved signed-toolinfo keys.                                  |
+| `source_analysis_reports` | Redacted source-code metadata analysis reports.        | Toolhub does not infer access/project metadata from maintainer source code.            |
 | `tool_health_*`           | Evolved health targets and observations.               | Toolhub does not expose tool health checks.                                            |
 | `tool_media`              | URL-based screenshot/media metadata for review.        | Toolhub does not expose screenshots.                                                   |
 | `api_cache`               | Anonymous official Toolhub API response cache.         | Performance cache only; Toolhub remains canonical.                                     |
@@ -66,6 +67,9 @@ Backend endpoints already implemented:
 - `GET|POST /v1/author-keys/`, `DELETE /v1/author-keys/<key_id>/`, and
   `POST /v1/toolinfo/signing-payload/` for signed-toolinfo public-key
   registration and canonical signing payload generation
+- `GET|POST /v1/source-analysis/`, `GET /v1/source-analysis/<id>/`, and
+  `POST /v1/source-analysis/<id>/review/` for owner-private source-code
+  metadata suggestions and maintainer review
 - `GET /v1/search/tools/` for Evolved-local tools
 - `GET /v1/recent/owners/` for bulk owner-by-tool enrichment on `/recent`,
   backed by the shared `tool_owner_cache`

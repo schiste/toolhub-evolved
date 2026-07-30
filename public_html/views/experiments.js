@@ -171,15 +171,49 @@ export const EXPERIMENTS = [
 				name: t("experiments.myToolsName", "My tools workspace"),
 				what: t(
 					"experiments.myToolsWhat",
-					"Review tools associated with your signed-in Toolhub identity and register toolinfo sources from one place."
+					"Review tools associated with your signed-in Toolhub identity, register toolinfo sources, and analyze source metadata from one place."
 				),
 				current: t(
 					"experiments.myToolsCurrent",
-					"Official Toolhub search provides tool candidates; Evolved adds per-tool evidence, indexed crawler feed sources, and root/sitemap discovery for toolinfo registration."
+					"Official Toolhub search provides tool candidates; Evolved adds per-tool evidence, indexed crawler feed sources, root/sitemap discovery, and source-analysis reports."
 				),
 				need: t(
 					"experiments.myToolsNeed",
-					"Author-claim table, resolver endpoint, verification providers, official crawler source index, registration workflow, and discovery cache"
+					"Author-claim table, resolver endpoint, verification providers, official crawler source index, registration workflow, source-analysis reports, and discovery cache"
+				),
+				tryHref: "/my-tools",
+				tryLabel: t("experiments.myToolsTry", "My tools")
+			},
+			{
+				name: t("experiments.maintainerSummaryName", "Maintainer summary and activity"),
+				what: t(
+					"experiments.maintainerSummaryWhat",
+					"Distinguish tools with active maintainers from tools whose source and maintainers both appear stale."
+				),
+				current: t(
+					"experiments.maintainerSummaryCurrent",
+					"Evolved derives public-safe maintainer summaries from official Toolhub metadata, verified per-tool claims, and local activity rollups without creating a canonical maintainer database."
+				),
+				need: t(
+					"experiments.maintainerSummaryNeed",
+					"`tool_maintainer_edges`, `maintainer_activity_rollups`, and public GET /v1/maintainers/tools/{name}/"
+				),
+				tryHref: "/api-docs",
+				tryLabel: t("experiments.docsPagesTry", "API explorer")
+			},
+			{
+				name: t("experiments.sourceAnalysisName", "Source code analysis"),
+				what: t(
+					"experiments.sourceAnalysisWhat",
+					"Extract project, API, access-right, dependency, repository-context, OAuth-scope, technology, assessment, and warning signals from maintainer-submitted source bundles."
+				),
+				current: t(
+					"experiments.sourceAnalysisCurrent",
+					"My tools accepts selected source files, repository context JSON, or a JSON file bundle, stores redacted evidence reports, and returns toolinfo plus Evolved dependency and assessment metadata suggestions for maintainer review."
+				),
+				need: t(
+					"experiments.sourceAnalysisNeed",
+					"Deterministic analyzer, manifest and lockfile dependency extractors, repository context builder, source_analysis_reports table, private /v1/source-analysis/ endpoints, CLI, and account-workbench UI"
 				),
 				tryHref: "/my-tools",
 				tryLabel: t("experiments.myToolsTry", "My tools")

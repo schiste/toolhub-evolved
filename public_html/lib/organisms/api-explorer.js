@@ -32,6 +32,7 @@ const SAFE_RESPONSE_HEADERS = [
  * @property {string} title
  * @property {string} description
  * @property {string} pathTemplate
+ * @property {"toolhub" | "same-origin"} [origin]
  * @property {ApiExplorerField[]} fields
  */
 /**
@@ -84,6 +85,26 @@ export const API_EXPLORER_ENDPOINTS = /** @type {ApiExplorerEndpoint[]} */ ([
 		title: t("apiExplorer.toolDetail", "Tool detail"),
 		description: t("apiExplorer.toolDetailDesc", "Read one canonical Toolhub tool record by stable name."),
 		pathTemplate: "/api/tools/{name}/",
+		fields: [
+			{
+				name: "name",
+				label: t("apiExplorer.toolName", "Tool name"),
+				kind: "path",
+				defaultValue: "quickstatements",
+				placeholder: "quickstatements",
+				required: true
+			}
+		]
+	},
+	{
+		id: "tool-maintainers",
+		title: t("apiExplorer.toolMaintainers", "Maintainer summary"),
+		description: t(
+			"apiExplorer.toolMaintainersDesc",
+			"Read Evolved's public-safe derived maintainer summary for one tool."
+		),
+		pathTemplate: "/v1/maintainers/tools/{name}/",
+		origin: "same-origin",
 		fields: [
 			{
 				name: "name",
@@ -185,8 +206,9 @@ function fieldValue(field, values) {
 	return String(values[field.name] ?? field.defaultValue ?? "").trim();
 }
 
-/** @param {string} path */
-function canonicalUrl(path) {
+/** @param {string} path @param {ApiExplorerEndpoint} endpoint */
+function canonicalUrl(path, endpoint) {
+	if (endpoint.origin === "same-origin") return path;
 	return `${TOOLHUB_API_BASE}${path.replace(/^\/api/, "")}`;
 }
 
@@ -216,7 +238,7 @@ export function buildExplorerRequest(endpoint, values = {}) {
 	}
 	const qs = params.toString();
 	const fullPath = `${path}${qs ? `?${qs}` : ""}`;
-	const canonical = canonicalUrl(fullPath);
+	const canonical = canonicalUrl(fullPath, endpoint);
 	return {
 		method: "GET",
 		path: fullPath,
