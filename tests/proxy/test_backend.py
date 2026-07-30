@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from flask import Flask
 from sqlalchemy import inspect, select
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1802,6 +1803,13 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
         "maintainer-status",
         "runtime-health",
     }
+
+
+def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():
+    compiled = str(v1_api._latest_public_health_core_statement("ada-tool").compile(dialect=mysql.dialect()))
+
+    assert "NULLS LAST" not in compiled.upper()
+    assert "source_analysis_reports.reviewed_at IS NULL" in compiled
 
 
 def test_maintainer_rollup_refresh_distinguishes_empty_and_full_scope():

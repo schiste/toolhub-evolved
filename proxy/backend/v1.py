@@ -22,6 +22,7 @@ from uuid import uuid4
 
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy.sql import Select
 
 from backend import (
     api_cache,
@@ -563,21 +564,26 @@ def _summary_dimension(  # noqa: PLR0913 - explicit fields keep scoring dimensio
     }
 
 
+def _latest_public_health_core_statement(tool_name: str) -> Select[tuple[SourceAnalysisReport]]:
+    return (
+        select(SourceAnalysisReport)
+        .where(
+            SourceAnalysisReport.tool_name == tool_name,
+            SourceAnalysisReport.review_status == REVIEW_APPROVED,
+        )
+        .order_by(
+            SourceAnalysisReport.reviewed_at.is_(None),
+            SourceAnalysisReport.reviewed_at.desc(),
+            SourceAnalysisReport.created_at.desc(),
+            SourceAnalysisReport.id.desc(),
+        )
+        .limit(1)
+    )
+
+
 def _latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None:  # noqa: ANN401 - SQLAlchemy session
     row = (
-        s.execute(
-            select(SourceAnalysisReport)
-            .where(
-                SourceAnalysisReport.tool_name == tool_name,
-                SourceAnalysisReport.review_status == REVIEW_APPROVED,
-            )
-            .order_by(
-                SourceAnalysisReport.reviewed_at.desc().nullslast(),
-                SourceAnalysisReport.created_at.desc(),
-                SourceAnalysisReport.id.desc(),
-            )
-            .limit(1)
-        )
+        s.execute(_latest_public_health_core_statement(tool_name))
         .scalars()
         .first()
     )
