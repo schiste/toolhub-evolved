@@ -171,6 +171,39 @@ a:hover {
 	background: transparent;
 	border-radius: 0;
 }
+.prose__table-wrap {
+	overflow-x: auto;
+	margin: var(--space-0) var(--space-0) var(--space-prose-md);
+}
+.prose table {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: var(--font-sans);
+	font-size: var(--fs-small);
+	line-height: var(--lh-body);
+}
+.prose caption {
+	padding: var(--space-0) var(--space-0) var(--space-2);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	font-weight: var(--font-weight-bold);
+	text-align: start;
+}
+.prose th,
+.prose td {
+	padding: var(--space-2);
+	text-align: start;
+	vertical-align: top;
+	border-bottom: var(--border-muted);
+}
+.prose th {
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-weight: var(--font-weight-bold);
+}
+.prose td {
+	overflow-wrap: anywhere;
+}
 .prose--page h1 {
 	font-size: var(--fs-title);
 	margin: var(--space-0) var(--space-0) var(--space-prose-sm);

@@ -43,6 +43,553 @@ export const ext = (url, label) =>
 	`<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
 /** @param {string} value */
 const code = (value) => `<code>${esc(value)}</code>`;
+/** @param {string} value */
+const blockCode = (value) => `<pre><code>${esc(value)}</code></pre>`;
+/**
+ * @param {string} caption
+ * @param {string[]} headers
+ * @param {string[][]} rows
+ */
+const proseTable = (caption, headers, rows) => `<div class="prose__table-wrap"><table>
+	<caption>${esc(caption)}</caption>
+	<thead><tr>${headers.map((header) => `<th scope="col">${esc(header)}</th>`).join("")}</tr></thead>
+	<tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody>
+</table></div>`;
+
+function healthPublicFormula() {
+	return blockCode(`included = [dimension for dimension in health.dimensions
+            if dimension.includedInScore and dimension.score is not None]
+
+public_score = round(
+    sum(dimension.score * dimension.weight for dimension in included)
+    / sum(dimension.weight for dimension in included)
+)`);
+}
+
+function healthSourceFormula() {
+	return blockCode(`component_dimension_score = round(
+    sum(component.score for component in included_components)
+    / len(included_components)
+)
+
+source_health_score = round(
+    sum(dimension.score * dimension.weight for dimension in included_dimensions)
+    / sum(dimension.weight for dimension in included_dimensions)
+)`);
+}
+
+function healthWorkedExample() {
+	return blockCode(`source-health:      88 * 1.50 = 132.00
+maintainer-status: 100 * 1.25 = 125.00
+
+public_score = round((132.00 + 125.00) / (1.50 + 1.25))
+public_score = round(93.45)
+public_score = 93`);
+}
+
+function healthPublicDimensionsTable() {
+	return proseTable(
+		t("static.healthScore.publicDimensionsCaption", "Public health dimensions"),
+		[
+			t("static.healthScore.dimensionHeader", "Dimension"),
+			t("static.healthScore.weightHeader", "Weight"),
+			t("static.healthScore.includedHeader", "Included when"),
+			t("static.healthScore.sourceHeader", "Score source")
+		],
+		[
+			[
+				code("source-health"),
+				code("1.5"),
+				esc(
+					t(
+						"static.healthScore.sourceHealthIncluded",
+						"The latest approved source-analysis report has a numeric healthCore score."
+					)
+				),
+				tWithElements(
+					"static.healthScore.sourceHealthSource",
+					"Uses {field} from the latest approved {report} report.",
+					{
+						field: code("healthCore.score"),
+						report: code("SourceAnalysisReport")
+					}
+				)
+			],
+			[
+				code("maintainer-status"),
+				code("1.25"),
+				esc(
+					t(
+						"static.healthScore.maintainerStatusIncluded",
+						"At least one maintainer edge exists and bestConfidence is numeric."
+					)
+				),
+				tWithElements(
+					"static.healthScore.maintainerStatusSource",
+					"Starts from {bestConfidence}, then applies the activity and verification adjustments below.",
+					{
+						bestConfidence: code("bestConfidence")
+					}
+				)
+			],
+			[
+				code("runtime-health"),
+				code("1.0"),
+				esc(
+					t(
+						"static.healthScore.runtimeHealthIncluded",
+						"An enabled, approved Evolved health target exists and its latest status maps to a numeric score."
+					)
+				),
+				tWithElements(
+					"static.healthScore.runtimeHealthSource",
+					"Uses the stored {lastStatus} for the approved health-check target.",
+					{
+						lastStatus: code("last_status")
+					}
+				)
+			]
+		]
+	);
+}
+
+function healthRuntimeScoresTable() {
+	return proseTable(
+		t("static.healthScore.runtimeScoresCaption", "Runtime health status mapping"),
+		[t("static.healthScore.statusHeader", "Status"), t("static.healthScore.scoreHeader", "Score")],
+		[
+			[code("healthy"), code("95")],
+			[code("ok"), code("90")],
+			[code("degraded"), code("55")],
+			[code("down"), code("15")],
+			[code("error"), code("20")]
+		]
+	);
+}
+
+function healthMaintainerFormulaTable() {
+	return proseTable(
+		t("static.healthScore.maintainerFormulaCaption", "Public maintainer-status score"),
+		[t("static.healthScore.stepHeader", "Step"), t("static.healthScore.ruleHeader", "Rule")],
+		[
+			[
+				esc(t("static.healthScore.maintainerBaseStep", "Base")),
+				tWithElements(
+					"static.healthScore.maintainerBaseRule",
+					"Start with {bestConfidence}, the highest public maintainer edge confidence for the tool.",
+					{
+						bestConfidence: code("bestConfidence")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.maintainerActivityStep", "Activity adjustment")),
+				tWithElements(
+					"static.healthScore.maintainerActivityRule",
+					"{active}: +5; {quiet}: -5; {stale}: -25; {dormant}: -40; {unknown}: 0.",
+					{
+						active: code("active"),
+						quiet: code("quiet"),
+						stale: code("stale"),
+						dormant: code("dormant"),
+						unknown: code("unknown")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.maintainerVerificationStep", "Verification adjustment")),
+				tWithElements(
+					"static.healthScore.maintainerVerificationRule",
+					"If {verifiedMaintainers} is greater than 0, add 5 points.",
+					{
+						verifiedMaintainers: code("counts.verifiedMaintainers")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.maintainerEmptyStep", "Empty maintainer set")),
+				tWithElements(
+					"static.healthScore.maintainerEmptyRule",
+					"If {maintainers} is 0, the dimension has no score and is excluded.",
+					{
+						maintainers: code("counts.maintainers")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.maintainerClampStep", "Clamp")),
+				tWithElements("static.healthScore.maintainerClampRule", "The final value is clamped to {range}.", {
+					range: code("0..100")
+				})
+			]
+		]
+	);
+}
+
+function healthSourceDimensionsTable() {
+	return proseTable(
+		t("static.healthScore.sourceDimensionsCaption", "Source-analysis health dimensions"),
+		[
+			t("static.healthScore.dimensionHeader", "Dimension"),
+			t("static.healthScore.weightHeader", "Weight"),
+			t("static.healthScore.componentsHeader", "Component scores")
+		],
+		[
+			[
+				code("tool-health"),
+				code("1.25"),
+				tWithElements("static.healthScore.toolHealthComponents", "{operationalReadiness}", {
+					operationalReadiness: code("operational-readiness")
+				})
+			],
+			[
+				code("source-maintenance"),
+				code("1.0"),
+				tWithElements("static.healthScore.sourceMaintenanceComponents", "{maintenanceActivity}", {
+					maintenanceActivity: code("maintenance-activity")
+				})
+			],
+			[
+				code("maintainer-activity"),
+				code("1.2"),
+				tWithElements(
+					"static.healthScore.sourceMaintainerActivityComponents",
+					"Computed directly from trusted {maintainerActivity} context; excluded when the status is {unknown}.",
+					{
+						maintainerActivity: code("maintainerActivity"),
+						unknown: code("unknown")
+					}
+				)
+			],
+			[
+				code("maintainability"),
+				code("1.0"),
+				tWithElements(
+					"static.healthScore.maintainabilityComponents",
+					"Mean of {maintenanceReadiness} and {dependencyHealth}.",
+					{
+						maintenanceReadiness: code("maintenance-readiness"),
+						dependencyHealth: code("dependency-health")
+					}
+				)
+			],
+			[
+				code("safety"),
+				code("1.15"),
+				tWithElements(
+					"static.healthScore.safetyComponents",
+					"Mean of {securityReview} and {permissionClarity}.",
+					{
+						securityReview: code("security-review"),
+						permissionClarity: code("permission-clarity")
+					}
+				)
+			],
+			[
+				code("metadata-quality"),
+				code("0.65"),
+				tWithElements("static.healthScore.metadataQualityComponents", "{metadataCompleteness}", {
+					metadataCompleteness: code("metadata-completeness")
+				})
+			],
+			[
+				code("accessibility"),
+				code("0.6"),
+				tWithElements(
+					"static.healthScore.accessibilityComponents",
+					"{frontendAccessibility}; not applicable when no web-facing frontend technology is detected.",
+					{
+						frontendAccessibility: code("frontend-accessibility")
+					}
+				)
+			]
+		]
+	);
+}
+
+function healthComponentRulesTable() {
+	return proseTable(
+		t("static.healthScore.componentRulesCaption", "Component point rules"),
+		[
+			t("static.healthScore.componentHeader", "Component"),
+			t("static.healthScore.startHeader", "Starts at"),
+			t("static.healthScore.adjustmentsHeader", "Adjustments before clamping")
+		],
+		[
+			[
+				code("metadata-completeness"),
+				code("20"),
+				esc(
+					t(
+						"static.healthScore.metadataCompletenessRules",
+						"+15 each for publishable projects, APIs, technology, and dependencies; +10 for README documentation; +10 for license documentation."
+					)
+				)
+			],
+			[
+				code("permission-clarity"),
+				code("55"),
+				esc(
+					t(
+						"static.healthScore.permissionClarityRules",
+						"If no publishable access evidence exists, keep 55. If write-capable access exists, set 65, then +15 for authentication, -25 without authentication, +10 for inferred OAuth scopes, and -20 for administrator access. If only read-oriented access exists, set 90. Declared OAuth scopes add +5; inferred scopes missing from declarations subtract 15."
+					)
+				)
+			],
+			[
+				code("dependency-health"),
+				code("40"),
+				esc(
+					t(
+						"static.healthScore.dependencyHealthRules",
+						"+20 for a dependency manifest; +15 for publishable dependency findings, otherwise -20; +15 for a lockfile or locked dependency evidence; -10 when dependencies are inferred only from imports and no manifest exists."
+					)
+				)
+			],
+			[
+				code("security-review"),
+				code("85"),
+				tWithElements(
+					"static.healthScore.securityReviewRules",
+					"Warnings subtract points: {credential}: -35, {administrator}: -20, {writeWithoutAuth}: -20. Authentication evidence adds +5; security documentation adds +5.",
+					{
+						credential: code("credential-like-source"),
+						administrator: code("administrator-actions"),
+						writeWithoutAuth: code("write-without-auth-signal")
+					}
+				)
+			],
+			[
+				code("maintenance-readiness"),
+				code("25"),
+				esc(
+					t(
+						"static.healthScore.maintenanceReadinessRules",
+						"+20 for README; +10 for license; +15 for tests; +15 for CI; +10 for changelog, contributing, security, or owners documentation; +10 for repository metadata."
+					)
+				)
+			],
+			[
+				code("maintenance-activity"),
+				code("50"),
+				tWithElements(
+					"static.healthScore.maintenanceActivityRules",
+					"Repository status from last commit age: {active} <= 90 days adds 30, {quiet} <= 365 days adds 10, {stale} <= 730 days subtracts 20, {dormant} > 730 days subtracts 35. Contributor count >= 2 adds 10; contributor count = 1 subtracts 10; commit count < 5 subtracts 10.",
+					{
+						active: code("active"),
+						quiet: code("quiet"),
+						stale: code("stale"),
+						dormant: code("dormant")
+					}
+				)
+			],
+			[
+				code("operational-readiness"),
+				code("35"),
+				esc(
+					t(
+						"static.healthScore.operationalReadinessRules",
+						"+20 for runtime or deployment configuration; +20 when Toolforge context is detected; +15 for a health-check signal or declared health URL; +10 for CI."
+					)
+				)
+			],
+			[
+				code("frontend-accessibility"),
+				code("45"),
+				esc(
+					t(
+						"static.healthScore.frontendAccessibilityRules",
+						"Only created for JavaScript, TypeScript, React, Vue, or MediaWiki gadget tools. +20 for accessibility markup or tests; +20 for an axe dependency; +10 for tests."
+					)
+				)
+			],
+			[
+				code("maintainer-activity"),
+				esc(t("static.healthScore.statusMapStart", "status map")),
+				tWithElements(
+					"static.healthScore.sourceMaintainerActivityRules",
+					"{active}: 85, {quiet}: 70, {stale}: 40, {dormant}: 20, {unknown}: no score. Active maintainer count >= 2 adds 10; active maintainer count = 0 subtracts 15; maintainer count >= 2 adds 5; maintainer count = 0 subtracts 25; recent activity count > 0 adds 5.",
+					{
+						active: code("active"),
+						quiet: code("quiet"),
+						stale: code("stale"),
+						dormant: code("dormant"),
+						unknown: code("unknown")
+					}
+				)
+			]
+		]
+	);
+}
+
+function healthThresholdsTable() {
+	return proseTable(
+		t("static.healthScore.thresholdsCaption", "Shared thresholds and filters"),
+		[t("static.healthScore.nameHeader", "Name"), t("static.healthScore.valueHeader", "Value")],
+		[
+			[
+				esc(t("static.healthScore.publishableFindingName", "Publishable source finding")),
+				tWithElements(
+					"static.healthScore.publishableFindingValue",
+					"{confidence} >= 0.55 and {sourceWeight} >= 0.55.",
+					{
+						confidence: code("confidence"),
+						sourceWeight: code("maxSourceWeight")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.repositoryStatusName", "Repository and maintainer activity status")),
+				tWithElements(
+					"static.healthScore.repositoryStatusValue",
+					"{active}: age <= 90 days; {quiet}: age <= 365 days; {stale}: age <= 730 days; {dormant}: age > 730 days; {unknown}: no age.",
+					{
+						active: code("active"),
+						quiet: code("quiet"),
+						stale: code("stale"),
+						dormant: code("dormant"),
+						unknown: code("unknown")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.gradeName", "Grade")),
+				tWithElements(
+					"static.healthScore.gradeValue",
+					"{strong} >= 85; {good} >= 70; {needsAttention} >= 50; {highRisk} < 50; {unknown} when no score exists.",
+					{
+						strong: code("strong"),
+						good: code("good"),
+						needsAttention: code("needs-attention"),
+						highRisk: code("high-risk"),
+						unknown: code("unknown")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.publicStatusName", "Public status")),
+				tWithElements(
+					"static.healthScore.publicStatusValue",
+					"{healthy} >= 85; {watch} >= 50; {atRisk} < 50; {unknown} when no score exists.",
+					{
+						healthy: code("healthy"),
+						watch: code("watch"),
+						atRisk: code("at-risk"),
+						unknown: code("unknown")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.roundingName", "Rounding")),
+				tWithElements(
+					"static.healthScore.roundingValue",
+					"The backend uses Python {round}; exact .5 ties follow Python's nearest-even behavior.",
+					{
+						round: code("round()")
+					}
+				)
+			],
+			[
+				esc(t("static.healthScore.clampName", "Score bounds")),
+				tWithElements(
+					"static.healthScore.clampValue",
+					"Each component and dimension score is clamped to {range}.",
+					{
+						range: code("0..100")
+					}
+				)
+			]
+		]
+	);
+}
+
+function healthSourceWeightsTable() {
+	return proseTable(
+		t("static.healthScore.sourceWeightsCaption", "Source class weights used by publishable finding filters"),
+		[t("static.healthScore.sourceClassHeader", "Source class"), t("static.healthScore.weightHeader", "Weight")],
+		[
+			[code("runtime"), code("1.0")],
+			[code("manifest"), code("1.0")],
+			[code("frontend"), code("0.95")],
+			[code("lockfile"), code("0.95")],
+			[code("config"), code("0.85")],
+			[code("docs"), code("0.75")],
+			[code("ci"), code("0.75")],
+			[code("unknown"), code("0.55")],
+			[code("test"), code("0.35")],
+			[code("example"), code("0.25")],
+			[code("analysis-tooling"), code("0.15")],
+			[code("fixture"), code("0.15")]
+		]
+	);
+}
+
+function viewHealthScoreStaticPage() {
+	return {
+		title: t("static.healthScore.title", "Health score system"),
+		body: `
+		<p>${t("static.healthScore.intro", "This page is the reproducibility spec for Evolved health scores. A user should be able to take the public summary JSON for a tool, apply the formulas below, and arrive at the same score shown in the interface.")}</p>
+		<blockquote>${tWithElements("static.healthScore.summaryEndpoint", "Use {endpoint} to inspect the public calculation payload. The visible tooltip on each health score exposes the same dimensions.", { endpoint: code("/v1/tools/summaries/?name=TOOL_NAME") })}</blockquote>
+		<h2>${t("static.healthScore.publicScoreTitle", "1. Public score")}</h2>
+		<p>${tWithElements(
+			"static.healthScore.publicScoreBody",
+			"The public score is calculated from {healthDimensions}. Only dimensions where {included} is true and {score} is numeric are used in the numerator and denominator.",
+			{
+				healthDimensions: code("health.dimensions"),
+				included: code("includedInScore"),
+				score: code("score")
+			}
+		)}</p>
+		${healthPublicFormula()}
+		${healthPublicDimensionsTable()}
+		${healthRuntimeScoresTable()}
+		${healthMaintainerFormulaTable()}
+		<h2>${t("static.healthScore.sourceScoreTitle", "2. Source-health score")}</h2>
+		<p>${tWithElements(
+			"static.healthScore.sourceScoreBody",
+			"{sourceHealth} is itself a weighted score from the latest approved deterministic source-analysis report. Component dimensions with more than one component first take the rounded mean of their component scores.",
+			{
+				sourceHealth: code("source-health")
+			}
+		)}</p>
+		${healthSourceFormula()}
+		${healthSourceDimensionsTable()}
+		<h2>${t("static.healthScore.componentRulesTitle", "3. Component point rules")}</h2>
+		<p>${t("static.healthScore.componentRulesBody", "The source analyzer starts each component from a fixed base value, applies the deterministic adjustments below, then clamps the result to the 0 to 100 range.")}</p>
+		${healthComponentRulesTable()}
+		<h2>${t("static.healthScore.filtersTitle", "4. Filters, thresholds, and rounding")}</h2>
+		<p>${t("static.healthScore.filtersBody", "Source findings only affect scoring when they pass the publishable evidence filter. This prevents weak examples, fixtures, and low-confidence strings from counting the same as runtime or manifest evidence.")}</p>
+		${healthThresholdsTable()}
+		${healthSourceWeightsTable()}
+		<h2>${t("static.healthScore.variablesTitle", "5. Variables used")}</h2>
+		<ul>
+			<li>${tWithElements("static.healthScore.catalogVariablesItem", "Cached official Toolhub catalog data supplies tool identity and maintainer metadata such as {name}, authors, maintainers, tool type, repository URL, documentation URLs, keywords, license, deprecation state, and listing modified timestamp.", { name: code("tool.name") })}</li>
+			<li>${t("static.healthScore.maintainerVariablesItem", "Evolved maintainer indexing supplies maintainer count, verified maintainer count, active maintainer count, evidence edge count, best confidence, last maintainer activity age, recent activity count, active tool count, and verified tool count.")}</li>
+			<li>${t("static.healthScore.sourceVariablesItem", "Source analysis supplies detected Wikimedia projects, API actions, OAuth scopes, access-right classes, credential warnings, dependencies, lockfiles, manifests, CI evidence, tests, docs, frontend accessibility evidence, source file classes, and suggested toolinfo metadata.")}</li>
+			<li>${t("static.healthScore.repositoryVariablesItem", "Trusted repository context supplies repository URL, provider, branch, default branch, last commit timestamp, commit id, commit count, contributor count, tag, dirty state, and analysis timestamp.")}</li>
+			<li>${t("static.healthScore.runtimeVariablesItem", "Evolved runtime checks supply target URL, latest status, last checked timestamp, and last stored error when an approved health target exists.")}</li>
+		</ul>
+		<h2>${t("static.healthScore.exampleTitle", "6. Worked example")}</h2>
+		<p>${t("static.healthScore.exampleBody", "If a tool has source-health 88 and maintainer-status 100, with no included runtime-health dimension, the public score is reproduced as follows.")}</p>
+		${healthWorkedExample()}
+		<h2>${t("static.healthScore.notUsedTitle", "7. What is not used")}</h2>
+		<ul>
+			<li>${t("static.healthScore.noPopularityItem", "Popularity, page views, thanks, subjective ratings, and manual editorial preference are not part of the score.")}</li>
+			<li>${t("static.healthScore.noLiveCallsItem", "Page load does not call GitHub, Gerrit, Toolforge, package registries, or a live tool endpoint to calculate a score. It reads stored Evolved summaries.")}</li>
+			<li>${t("static.healthScore.noSecretsItem", "Raw source files and secrets are not stored in the public summary. The analyzer stores bounded, redacted findings and evidence excerpts.")}</li>
+			<li>${t("static.healthScore.noLlmItem", "No large language model output is used to calculate the score.")}</li>
+		</ul>
+		<h2>${t("static.healthScore.codeReferenceTitle", "8. Code references")}</h2>
+		<p>${tWithElements(
+			"static.healthScore.codeReferenceBody",
+			"The public score is assembled in {publicFile}. Source-analysis health core and component scoring are implemented in {sourceFile}.",
+			{
+				publicFile: code("proxy/backend/v1.py"),
+				sourceFile: code("proxy/backend/source_analyzer.py")
+			}
+		)}</p>`
+	};
+}
 // Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
 // Canonical policies link out to their authoritative source (as the real site does).
 export const STATIC = {
@@ -147,48 +694,7 @@ export const STATIC = {
 		<p>${t("static.rulesOfEngagement.honestEdgesBody", "Because search is still based on Toolhub's live search API, a locally saved draft may not appear in live search until it has been accepted by official Toolhub. We label local overlays rather than presenting them as canonical Toolhub data.")}</p>
 		<blockquote>${t("static.rulesOfEngagement.summary", "In short: Toolhub remains the source of truth for catalog data; Evolved publishes through Toolhub when signed in and keeps local overlay data for drafts, fallback, and features Toolhub does not expose.")}</blockquote>`
 	}),
-	"health-score": () => ({
-		title: t("static.healthScore.title", "Health score system"),
-		body: `
-		<p>${t("static.healthScore.intro", "Tool health is an Evolved-local transparency signal. It is deterministic: the displayed score is calculated from stored facts and approved analysis reports, not from generated judgement or live third-party calls during page render.")}</p>
-		<blockquote>${t("static.healthScore.notCanonical", "Toolhub remains the source of truth for catalog metadata. Health scores are an Evolved overlay that explains maintenance and operational signals around a tool.")}</blockquote>
-		<h2>${t("static.healthScore.formulaTitle", "Formula")}</h2>
-		<p>${tWithElements("static.healthScore.formulaBody", "The public score is a weighted average: {formula}. Dimensions without a numeric score, or dimensions marked as excluded, are shown for context but are not included in the numerator or denominator.", { formula: code("round(sum(score × weight) / sum(weight))") })}</p>
-		<h2>${t("static.healthScore.publicDimensionsTitle", "Public dimensions")}</h2>
-		<ul>
-			<li>${tWithElements("static.healthScore.sourceHealthItem", "{sourceHealth}: derived from the latest approved deterministic source-analysis report for the tool. It can include repository activity, maintainability, dependency reproducibility, security and permission clarity, metadata quality, and frontend accessibility evidence.", { sourceHealth: code("source-health") })}</li>
-			<li>${tWithElements("static.healthScore.maintainerStatusItem", "{maintainerStatus}: derived from Evolved maintainer evidence, verified author claims, Toolhub catalog maintainer metadata, and local maintainer activity rollups.", { maintainerStatus: code("maintainer-status") })}</li>
-			<li>${tWithElements("static.healthScore.runtimeHealthItem", "{runtimeHealth}: derived from an approved Evolved health target when one exists, such as the latest stored result for a configured health-check URL.", { runtimeHealth: code("runtime-health") })}</li>
-		</ul>
-		<h2>${t("static.healthScore.variablesTitle", "Variables fetched or stored")}</h2>
-		<ul>
-			<li>${tWithElements("static.healthScore.catalogVariablesItem", "From cached official Toolhub catalog data: {name}, title, description, authors, maintainers, tool type, URLs, repository URL, issue tracker, documentation links, keywords, audiences, tasks, languages, license, deprecation state, and the Toolhub listing modified timestamp.", { name: code("tool.name") })}</li>
-			<li>${t("static.healthScore.maintainerVariablesItem", "From Evolved maintainer indexing: verified claim count, maintainer count, active maintainer count, evidence edge count, best confidence, last maintainer activity age, recent activity count, active tool count, and verified tool count.")}</li>
-			<li>${t("static.healthScore.sourceVariablesItem", "From source analysis: detected Wikimedia projects, API actions, OAuth scopes, access-rights classes, credentials warnings, dependencies, lockfiles, manifests, CI evidence, tests, docs, frontend accessibility evidence, source file classes, and suggested toolinfo metadata.")}</li>
-			<li>${t("static.healthScore.repositoryVariablesItem", "From deterministic repository context when supplied by the CLI or trusted automation: repository URL, provider, branch, default branch, last commit timestamp, commit id, commit count, contributor count, tag, dirty state, and analysis timestamp.")}</li>
-			<li>${t("static.healthScore.runtimeVariablesItem", "From Evolved runtime checks when configured: target URL, latest status, last checked timestamp, and last stored error.")}</li>
-		</ul>
-		<h2>${t("static.healthScore.sourceAnalyzerTitle", "Source analyzer subdimensions")}</h2>
-		<ul>
-			<li>${tWithElements("static.healthScore.toolHealthSubItem", "{toolHealth}: runtime, deployment, and health-check readiness evidence.", { toolHealth: code("tool-health") })}</li>
-			<li>${tWithElements("static.healthScore.sourceMaintenanceSubItem", "{sourceMaintenance}: repository activity and source history freshness.", { sourceMaintenance: code("source-maintenance") })}</li>
-			<li>${tWithElements("static.healthScore.maintainabilitySubItem", "{maintainability}: documentation, tests, CI, and dependency reproducibility.", { maintainability: code("maintainability") })}</li>
-			<li>${tWithElements("static.healthScore.safetySubItem", "{safety}: credential, elevated-rights, and permission clarity signals.", { safety: code("safety") })}</li>
-			<li>${tWithElements("static.healthScore.metadataQualitySubItem", "{metadataQuality}: completeness of derived Toolhub metadata.", { metadataQuality: code("metadata-quality") })}</li>
-			<li>${tWithElements("static.healthScore.accessibilitySubItem", "{accessibility}: accessibility evidence for web-facing tools.", { accessibility: code("accessibility") })}</li>
-			<li>${tWithElements("static.healthScore.maintainerActivitySubItem", "{maintainerActivity}: source-analysis maintainer activity context when supplied; excluded when no maintainer activity context exists.", { maintainerActivity: code("maintainer-activity") })}</li>
-		</ul>
-		<h2>${t("static.healthScore.visibilityTitle", "Visibility and refresh model")}</h2>
-		<p>${t("static.healthScore.visibilityBody", "The tool page reads health data from Evolved's local summary endpoint. Page load does not call GitHub, Gerrit, Toolforge, or package registries to calculate a score. New source or repository facts appear after a maintainer or trusted automation submits a source-analysis report and that report is approved.")}</p>
-		<h2>${t("static.healthScore.notUsedTitle", "What is not used")}</h2>
-		<ul>
-			<li>${t("static.healthScore.noPopularityItem", "Popularity, page views, thanks, and subjective ratings are not part of the health score.")}</li>
-			<li>${t("static.healthScore.noSecretsItem", "Raw source files and secrets are not stored in the public summary. The analyzer stores bounded, redacted findings and evidence excerpts.")}</li>
-			<li>${t("static.healthScore.noLlmItem", "No large language model output is used to calculate the score.")}</li>
-		</ul>
-		<h2>${t("static.healthScore.interpretTitle", "How to interpret it")}</h2>
-		<p>${t("static.healthScore.interpretBody", "A high score means Evolved has positive, recent, and reproducible signals. A low or unknown score should be read as a prompt to inspect the evidence, not as a judgement on maintainers. A quiet tool with an active verified maintainer is different from a quiet tool with no known maintainer activity, and the score is designed to preserve that distinction.")}</p>`
-	}),
+	"health-score": viewHealthScoreStaticPage,
 	rss: () => ({
 		title: t("static.rss.title", "Feeds"),
 		body: `
