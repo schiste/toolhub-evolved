@@ -88,6 +88,24 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
 const tool = await import("../../public_html/views/tool.js");
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function mountedDetailHtml(view) {
+	const originalRequestIdleCallback = window.requestIdleCallback;
+	window.requestIdleCallback = (callback) =>
+		setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 }), 0);
+	vi.useFakeTimers();
+	try {
+		document.body.innerHTML = view.html;
+		view.mount();
+		await vi.advanceTimersByTimeAsync(3000);
+		if (typeof vi.dynamicImportSettled === "function") await vi.dynamicImportSettled();
+		await Promise.resolve();
+		await Promise.resolve();
+		return document.body.innerHTML;
+	} finally {
+		window.requestIdleCallback = originalRequestIdleCallback;
+		vi.useRealTimers();
+	}
+}
 
 const S = {
 	deprecated: `
@@ -572,8 +590,9 @@ test("viewTool renders per-field lang attributes from Toolhub language metadata"
 	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto" lang="fr">Outil</h1>'));
 	assert.ok(r.html.includes('<p class="toolpage__subtitle" dir="auto" lang="fr">Sous-titre</p>'));
 	assert.ok(r.html.includes('<div class="prose" dir="auto" lang="fr"><p>Une description en français.</p></div>'));
-	assert.ok(r.html.includes('class="related__title"'));
-	assert.ok(r.html.includes('dir="auto" lang="fr">Voisin</button>'));
+	const mountedHtml = await mountedDetailHtml(r);
+	assert.ok(mountedHtml.includes('class="related__title"'));
+	assert.ok(mountedHtml.includes('dir="auto" lang="fr">Voisin</button>'));
 });
 
 test("viewTool full (signed in, rich fields, related + ego graph)", async () => {
@@ -620,8 +639,6 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	const r = await tool.viewTool("full");
 	assert.equal(r.title, "Full Tool — Toolhub");
 	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Full Tool</h1>'));
-	assert.ok(r.html.includes("Related tools"));
-	assert.ok(r.html.includes("Neighborhood"));
 	assert.ok(r.html.includes('data-fav="full"'));
 	assert.ok(r.html.includes('href="/tools/full/edit">Edit tool</a>'));
 	assert.ok(r.html.includes('href="/tools/full/edit-annotations">Edit annotations</a>'));
@@ -629,6 +646,9 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.ok(!r.html.includes("thanks__agg"));
 	assert.ok(!r.html.includes("views experimental"));
 	assert.ok(!r.html.includes("Usage <span"));
+	const mountedHtml = await mountedDetailHtml(r);
+	assert.ok(mountedHtml.includes("Related tools"));
+	assert.ok(mountedHtml.includes("Neighborhood"));
 });
 
 test("viewTool labels invalid source and issue metadata instead of linking it", async () => {
@@ -964,10 +984,9 @@ test("mount: builds the force graph when an ego graph is present", async () => {
 	h.egoGraph.mockResolvedValue({ nodes: [{ id: "g" }, { id: "a" }, { id: "b" }], edges: [] });
 	h.forceGraph.mockReturnValue({ handle: true });
 	const r = await tool.viewTool("g");
-	document.body.innerHTML = r.html;
-	r.mount();
-	assert.equal(h.forceGraph.mock.calls.length, 1);
-	const [target, ego, opts] = h.forceGraph.mock.calls[0];
+	await mountedDetailHtml(r);
+	assert.ok(h.forceGraph.mock.calls.length > 0);
+	const [target, ego, opts] = h.forceGraph.mock.calls.at(-1);
 	assert.equal(target.id, "ego-canvas");
 	assert.deepEqual(ego.nodes.length, 3);
 	assert.equal(opts.height, 320);

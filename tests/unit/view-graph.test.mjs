@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test, vi, beforeEach } from "vitest";
-// globalGraph (network), communityColors/forceGraph (canvas), openQuickView and hasContext
+// backend graph payload (network), communityColors/forceGraph (canvas), openQuickView and hasContext
 // are all mocked so the legend HTML + mount() wiring are exercised deterministically. esc stays real.
 import { viewGraph } from "../../public_html/views/graph.js";
-import * as graphCore from "../../public_html/lib/core/graph.js";
+import * as api from "../../public_html/lib/core/api.js";
 import * as forceGraphMod from "../../public_html/lib/organisms/force-graph.js";
 import * as quickview from "../../public_html/lib/organisms/quickview.js";
 import * as signals from "../../public_html/lib/core/signals.js";
 
-vi.mock("../../public_html/lib/core/graph.js", async (importOriginal) => {
+vi.mock("../../public_html/lib/core/api.js", async (importOriginal) => {
 	const actual = await importOriginal();
-	return { ...actual, globalGraph: vi.fn() };
+	return { ...actual, backendGetJson: vi.fn() };
 });
 vi.mock("../../public_html/lib/organisms/force-graph.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -40,7 +40,7 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 			{ id: 2, label: "Beta", size: 3 }
 		]
 	};
-	graphCore.globalGraph.mockResolvedValue(g);
+	api.backendGetJson.mockResolvedValue(g);
 	// Map keyed so Alpha (id 1) resolves on the first branch (get(id)) and Beta (id 2) only
 	// on the second branch (get(String(id))) — exercising both sides of the `||`.
 	forceGraphMod.communityColors.mockReturnValue(
@@ -98,10 +98,10 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 });
 
 test("viewGraph: an empty map shows the empty state, no truncated note, and no 'Fits you'", async () => {
-	graphCore.globalGraph.mockResolvedValue({ nodes: [], truncated: false, communityMeta: [] });
 	forceGraphMod.communityColors.mockReturnValue(new Map([["other", "#ccc"]]));
 	signals.hasContext.mockReturnValue(false);
 
+	api.backendGetJson.mockResolvedValue({ nodes: [], truncated: false, communityMeta: [] });
 	const view = await viewGraph();
 	assert.match(view.html, /<p class="empty">No richly documented tools are available for the map right now\.<\/p>/);
 	assert.doesNotMatch(view.html, /graph__note/);
@@ -119,7 +119,7 @@ test("viewGraph: an empty map shows the empty state, no truncated note, and no '
 });
 
 test("viewGraph: mount() does nothing when the canvas element is absent", async () => {
-	graphCore.globalGraph.mockResolvedValue({ nodes: [{ id: "a" }], truncated: false, communityMeta: [] });
+	api.backendGetJson.mockResolvedValue({ nodes: [{ id: "a" }], truncated: false, communityMeta: [] });
 	forceGraphMod.communityColors.mockReturnValue(new Map([["other", "#ccc"]]));
 	signals.hasContext.mockReturnValue(false);
 
@@ -132,7 +132,7 @@ test("viewGraph: mount() does nothing when the canvas element is absent", async 
 test("viewGraph: a missing communityMeta yields only the 'Other' legend entry", async () => {
 	// communityMeta is undefined → the `|| []` guard must produce no per-community items;
 	// an injected non-empty fallback array would render a phantom "(undefined)" entry.
-	graphCore.globalGraph.mockResolvedValue({ nodes: [{ id: "a" }], truncated: false });
+	api.backendGetJson.mockResolvedValue({ nodes: [{ id: "a" }], truncated: false });
 	forceGraphMod.communityColors.mockReturnValue(new Map([["other", "#ccc"]]));
 	signals.hasContext.mockReturnValue(false);
 

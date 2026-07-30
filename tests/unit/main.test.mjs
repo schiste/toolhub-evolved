@@ -321,12 +321,18 @@ test("the initial theme toggle reflects the resolved <html data-theme>", () => {
 	assert.match(html, /<\/button><button type="button"/);
 });
 
-test("setAuthRender callback re-renders the account and the route", () => {
+test("setAuthRender callback re-renders the account and protected routes", () => {
 	vi.clearAllMocks();
 	assert.equal(typeof authRenderCb, "function");
-	authRenderCb();
-	assert.equal(account.renderAccount.mock.calls.length, 1);
-	assert.equal(router.render.mock.calls.length, 1);
+	const previousPath = window.location.pathname + window.location.search;
+	try {
+		window.history.replaceState({}, "", "/my-tools");
+		authRenderCb();
+		assert.equal(account.renderAccount.mock.calls.length, 1);
+		assert.equal(router.render.mock.calls.length, 1);
+	} finally {
+		window.history.replaceState({}, "", previousPath || "/");
+	}
 });
 
 /* ---- theme toggle ------------------------------------------------------ */
