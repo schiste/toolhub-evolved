@@ -30,6 +30,7 @@ FIXED_TARGET_FETCHERS = {
     ("backend/toolhub.py", "public_api_get"): "official Toolhub API via base_url()",
     ("backend/toolhub.py", "request_with_token"): "official Toolhub API via base_url()",
     ("backend/author_claims.py", "_fetch"): "TOOLFORGE_BASE_URL constant (Toolsadmin)",
+    ("analyze_source.py", "_git_output"): "bounded local Git subprocess; no HTTP URL is fetched",
 }
 
 # The shared implementation is itself allowed to call requests directly.

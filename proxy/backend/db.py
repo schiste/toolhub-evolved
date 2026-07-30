@@ -128,6 +128,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "last_synced_at": "DATETIME NULL",
             "last_error": f"{text_col} NULL",
         },
+        "source_analysis_reports": {
+            "created_by_user_id": "INTEGER NULL",
+            "review_notes": f"{text_col} NULL",
+            "reviewed_at": "DATETIME NULL",
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
+            "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+        },
         "tool_health_targets": {
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",

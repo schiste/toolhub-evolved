@@ -23,7 +23,18 @@ from uuid import uuid4
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
 
-from backend import api_cache, authz, db, recent_owners, security, toolhub, toolinfo_discovery, toolinfo_sources
+from backend import (
+    api_cache,
+    authz,
+    db,
+    maintainer_index,
+    recent_owners,
+    security,
+    source_analyzer,
+    toolhub,
+    toolinfo_discovery,
+    toolinfo_sources,
+)
 from backend.author_claims import (
     SIGNATURE_META_KEY,
     AuthorNameProvider,
@@ -46,12 +57,15 @@ from backend.models import (
     CrawlerRun,
     CrawlerUrl,
     Favorite,
+    MaintainerActivityRollup,
+    SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
     ToolhubToken,
     ToolList,
+    ToolMaintainerEdge,
     ToolMedia,
     ToolOverlay,
     ToolRecord,
@@ -147,6 +161,10 @@ TOOLINFO_CREATE_MAX_ITEMS = 200
 TOOLINFO_CREATE_OPT_FIELDS = ("repository", "license", "toolType")
 TOOLINFO_CREATE_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")
 TOOLINFO_CREATE_BOOL_FIELDS = ("deprecated", "experimental")
+SOURCE_ANALYSIS_REVIEW_STATUSES = {REVIEW_OPEN, REVIEW_APPROVED, REVIEW_REJECTED}
+SOURCE_ANALYSIS_DEFAULT_LIMIT = 20
+SOURCE_ANALYSIS_MAX_LIMIT = 50
+SOURCE_ANALYSIS_NOT_FOUND = "source analysis report not found"
 
 
 def _iso(dt: datetime | None) -> str:
@@ -411,6 +429,78 @@ def _author_key_payload(row: ToolAuthorKey) -> dict:
     }
 
 
+def _source_analysis_payload(row: SourceAnalysisReport) -> dict:
+    """Serialize one source-analysis report without raw submitted source."""
+    report = row.report if isinstance(row.report, dict) else {}
+    return {
+        "id": row.id,
+        "toolName": row.tool_name or "",
+        "sourceLabel": row.source_label or "",
+        "reviewStatus": clean_review_status(row.review_status, REVIEW_OPEN),
+        "reviewNotes": row.review_notes or "",
+        "createdAt": _iso(row.created_at),
+        "reviewedAt": _iso(row.reviewed_at),
+        "source": row.source or SOURCE_LOCAL,
+        "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
+        "syncLabel": _sync_label(row.sync_status or SYNC_EVOLVED_REAL),
+        "report": report,
+    }
+
+
+def _maintainer_context_from_summary(summary: dict) -> dict:
+    """Translate the maintainer-index API shape into source-analyzer context."""
+    counts = summary.get("counts") if isinstance(summary.get("counts"), dict) else {}
+    maintainers = summary.get("maintainers") if isinstance(summary.get("maintainers"), list) else []
+    maintainer_count = clean_int(counts.get("maintainers"))
+    if not maintainer_count and not maintainers:
+        return {}
+    ages: list[int] = []
+    recent_activity_count = 0
+    for row in maintainers:
+        activity = row.get("activity") if isinstance(row, dict) else {}
+        if not isinstance(activity, dict):
+            continue
+        age = clean_int(activity.get("lastActivityAgeDays"))
+        if age is not None:
+            ages.append(max(0, age))
+        recent_activity_count += clean_int(activity.get("recentActivityCount")) or 0
+    context: dict[str, Any] = {
+        "maintainerCount": maintainer_count or len(maintainers),
+        "activeMaintainerCount": clean_int(counts.get("activeMaintainers")) or 0,
+        "recentActivityCount": recent_activity_count,
+        "source": "evolved-maintainer-index",
+        "analyzedAt": _iso(utcnow()),
+    }
+    if ages:
+        context["lastActivityAgeDays"] = min(ages)
+    return context
+
+
+def _source_repository_context(tool_name: str | None, repository_context: object) -> object:
+    """Add Evolved maintainer context to source analysis when no caller context exists."""
+    if tool_name is None or (repository_context is not None and not isinstance(repository_context, dict)):
+        return repository_context
+    if isinstance(repository_context, dict) and isinstance(repository_context.get("maintainers"), dict):
+        if repository_context["maintainers"]:
+            return repository_context
+    with db.session_scope() as s:
+        maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
+        keys = [
+            row[0]
+            for row in s.execute(
+                select(ToolMaintainerEdge.maintainer_key).where(ToolMaintainerEdge.tool_name == tool_name).distinct()
+            ).all()
+        ]
+        maintainer_index.refresh_activity_rollups(s, maintainer_keys=keys)
+        summary = maintainer_index.public_tool_summary(s, tool_name)
+    maintainer_context = _maintainer_context_from_summary(summary)
+    if not maintainer_context:
+        return repository_context
+    merged = dict(repository_context or {})
+    merged["maintainers"] = maintainer_context
+    return merged
+
+
 def _clean_author_key_id(value: Any) -> str | None:  # noqa: ANN401 - untrusted JSON
     """Return a valid author-key id for signed toolinfo metadata."""
     text_value = str(value or "").strip()
@@ -623,6 +713,7 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
         rows = list(
             s.execute(select(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)).scalars()
         )
+        maintainer_index.sync_author_claim_edges(s, usernames=[user.username])
         return [_claim_payload(row) for row in rows]
 
 
@@ -644,6 +735,7 @@ def _record_successful_toolhub_write(
                 request_payload=request_payload,
                 response_payload=response_payload,
             )
+            maintainer_index.sync_author_claim_edges(s, usernames=[user.username])
     except Exception:  # noqa: BLE001 - provider evidence must never break a successful official write.
         return
 
@@ -1545,6 +1637,138 @@ def v1_toolinfo_signing_payload() -> Response:
     )
 
 
+@v1_bp.route("/v1/source-analysis/")
+@login_required
+def v1_source_analysis_list() -> Response:
+    """List source-analysis reports owned by the signed-in user."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — login_required guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    limit = min(
+        max(clean_int(request.args.get("limit")) or SOURCE_ANALYSIS_DEFAULT_LIMIT, 1),
+        SOURCE_ANALYSIS_MAX_LIMIT,
+    )
+    tool_name = _clean_name(request.args.get("tool", ""))
+    stmt = select(SourceAnalysisReport).where(SourceAnalysisReport.user_id == uid)
+    if tool_name is not None:
+        stmt = stmt.where(SourceAnalysisReport.tool_name == tool_name)
+    with db.session_scope() as s:
+        reports = list(
+            s.execute(
+                stmt.order_by(SourceAnalysisReport.created_at.desc(), SourceAnalysisReport.id.desc()).limit(limit)
+            )
+            .scalars()
+            .all()
+        )
+    return jsonify({"count": len(reports), "results": [_source_analysis_payload(row) for row in reports]})
+
+
+@v1_bp.route("/v1/source-analysis/", methods=["POST"])
+@write_guard
+def v1_source_analysis_create() -> Response:
+    """Analyze submitted source files and store the derived report."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = _json_object_body()
+    if bad is not None:
+        return bad
+    assert body is not None  # noqa: S101 — _json_object_body returned no error
+    tool_name = _clean_name(_payload_value(body, "toolName", "tool_name"))
+    source_label = str(_payload_value(body, "sourceLabel", "source_label") or "").strip()[:MAX_NAME]
+    repository_context = _source_repository_context(
+        tool_name,
+        _payload_value(body, "repositoryContext", "repository_context"),
+    )
+    try:
+        report = source_analyzer.analyze_source_files(
+            _payload_value(body, "files"),
+            tool_name=tool_name,
+            source_label=source_label,
+            repository_context=repository_context,
+        )
+    except source_analyzer.SourceAnalysisError as exc:
+        return _bad(str(exc))
+    with db.session_scope() as s:
+        row = SourceAnalysisReport(
+            user_id=uid,
+            created_by_user_id=uid,
+            tool_name=tool_name,
+            source_label=source_label,
+            report=report,
+            review_status=REVIEW_OPEN,
+            source=SOURCE_LOCAL,
+            sync_status=SYNC_EVOLVED_REAL,
+        )
+        s.add(row)
+        s.flush()
+        payload = _source_analysis_payload(row)
+        _emit_structured_activity(
+            s,
+            user,
+            action="source-analysis-created",
+            object_type="source_analysis",
+            object_key=str(row.id),
+            official_status=SYNC_EVOLVED_REAL,
+            payload={"toolName": tool_name, "sourceLabel": source_label},
+            title=tool_name or source_label or f"Source analysis #{row.id}",
+        )
+    resp = jsonify({"ok": True, "sourceAnalysis": payload})
+    resp.status_code = 201
+    return resp
+
+
+@v1_bp.route("/v1/source-analysis/<int:report_id>/")
+@login_required
+def v1_source_analysis_detail(report_id: int) -> Response:
+    """Return one source-analysis report owned by the signed-in user."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — login_required guarantees this
+    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    with db.session_scope() as s:
+        row = s.get(SourceAnalysisReport, report_id)
+        if row is None or row.user_id != uid:
+            return _deny(HTTP_NOT_FOUND, SOURCE_ANALYSIS_NOT_FOUND)
+        payload = _source_analysis_payload(row)
+    return jsonify({"sourceAnalysis": payload})
+
+
+@v1_bp.route("/v1/source-analysis/<int:report_id>/review/", methods=["POST"])
+@write_guard
+def v1_source_analysis_review(report_id: int) -> Response:
+    """Mark one source-analysis report as open, approved, or rejected."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = _json_object_body()
+    if bad is not None:
+        return bad
+    assert body is not None  # noqa: S101 — _json_object_body returned no error
+    review_status = str(_payload_value(body, "reviewStatus", "review_status") or "").strip()
+    if review_status not in SOURCE_ANALYSIS_REVIEW_STATUSES:
+        return _bad("reviewStatus must be open, approved, or rejected")
+    review_notes = clean_error(_payload_value(body, "reviewNotes", "review_notes"))
+    with db.session_scope() as s:
+        row = s.get(SourceAnalysisReport, report_id)
+        if row is None or row.user_id != uid:
+            return _deny(HTTP_NOT_FOUND, SOURCE_ANALYSIS_NOT_FOUND)
+        row.review_status = review_status
+        row.review_notes = review_notes
+        row.reviewed_at = None if review_status == REVIEW_OPEN else utcnow()
+        payload = _source_analysis_payload(row)
+        _emit_structured_activity(
+            s,
+            user,
+            action=f"source-analysis-{review_status}",
+            object_type="source_analysis",
+            object_key=str(row.id),
+            official_status=SYNC_EVOLVED_REAL,
+            payload={"toolName": row.tool_name, "reviewStatus": review_status},
+            title=row.tool_name or row.source_label or f"Source analysis #{row.id}",
+        )
+    return jsonify({"ok": True, "sourceAnalysis": payload})
+
+
 @v1_bp.route("/v1/me/tools/")
 @login_required
 def v1_me_tools() -> Response:
@@ -1605,6 +1829,29 @@ def v1_me_tools() -> Response:
             "errors": errors,
         }
     )
+
+
+@v1_bp.route("/v1/maintainers/tools/<name>/")
+def v1_tool_maintainers(name: str) -> Response:
+    """Return a public-safe derived maintainer summary for one tool."""
+    if security.read_rate_limited(request.remote_addr):
+        return _deny(HTTP_TOO_MANY, "rate limit exceeded")
+    clean_name = _clean_name(name)
+    if clean_name is None:
+        return _bad("tool name is required")
+    errors: list[str] = []
+    with db.session_scope() as s:
+        try:
+            tool = toolhub.public_api_get(f"/api/tools/{quote(clean_name, safe='')}/")
+            if isinstance(tool, dict):
+                maintainer_index.replace_toolhub_metadata_edges(s, clean_name, tool)
+        except Exception as exc:  # noqa: BLE001 - cached/local maintainer summaries should remain readable.
+            errors.append(clean_error(str(exc)) or "official Toolhub is unavailable")
+        maintainer_index.sync_author_claim_edges(s, tool_names=[clean_name])
+        summary = maintainer_index.public_tool_summary(s, clean_name)
+    if errors:
+        summary["errors"] = errors
+    return jsonify(summary)
 
 
 @v1_bp.route("/v1/config/")
@@ -3112,6 +3359,30 @@ def v1_user_export() -> Response:
                 .order_by(ToolAuthorKey.created_at, ToolAuthorKey.id)
             ).scalars()
         ]
+        source_analysis_reports = [
+            _source_analysis_payload(row)
+            for row in s.execute(
+                select(SourceAnalysisReport)
+                .where(SourceAnalysisReport.user_id == uid)
+                .order_by(SourceAnalysisReport.created_at, SourceAnalysisReport.id)
+            ).scalars()
+        ]
+        maintainer_edges = [
+            maintainer_index.public_edge_payload(row)
+            | {
+                "toolName": row.tool_name,
+                "authorName": row.author_name,
+                "checkedAt": _iso(row.checked_at),
+                "expiresAt": _iso(row.expires_at),
+            }
+            for row in s.execute(
+                select(ToolMaintainerEdge)
+                .where(ToolMaintainerEdge.toolhub_username == username)
+                .order_by(ToolMaintainerEdge.tool_name, ToolMaintainerEdge.method)
+            ).scalars()
+        ]
+        maintainer_key = maintainer_index.maintainer_key(toolhub_username=username)
+        maintainer_activity = maintainer_index.activity_payload(s.get(MaintainerActivityRollup, maintainer_key))
     return jsonify(
         {
             "exportedAt": _iso(utcnow()),
@@ -3119,6 +3390,9 @@ def v1_user_export() -> Response:
             "overlay": _assemble_overlay(uid),
             "authorClaims": author_claims,
             "authorKeys": author_keys,
+            "maintainerActivity": maintainer_activity,
+            "maintainerEdges": maintainer_edges,
+            "sourceAnalysisReports": source_analysis_reports,
         }
     )
 
@@ -3142,6 +3416,7 @@ def v1_user_delete_evolved_data() -> Response:
             "toolEvents": ToolEvent,
             "thanks": ToolThanks,
             "media": ToolMedia,
+            "sourceAnalysisReports": SourceAnalysisReport,
         }.items():
             count = s.execute(select(func.count()).select_from(model).where(model.user_id == uid)).scalar_one()
             deleted[key] = int(count)
@@ -3161,6 +3436,21 @@ def v1_user_delete_evolved_data() -> Response:
         ).scalar_one()
         deleted["authorKeys"] = int(author_key_count)
         s.execute(delete(ToolAuthorKey).where(ToolAuthorKey.toolhub_username == user.username))
+        maintainer_edge_count = s.execute(
+            select(func.count())
+            .select_from(ToolMaintainerEdge)
+            .where(ToolMaintainerEdge.toolhub_username == user.username)
+        ).scalar_one()
+        deleted["maintainerEdges"] = int(maintainer_edge_count)
+        s.execute(delete(ToolMaintainerEdge).where(ToolMaintainerEdge.toolhub_username == user.username))
+        maintainer_key = maintainer_index.maintainer_key(toolhub_username=user.username)
+        maintainer_activity_count = s.execute(
+            select(func.count())
+            .select_from(MaintainerActivityRollup)
+            .where(MaintainerActivityRollup.maintainer_key == maintainer_key)
+        ).scalar_one()
+        deleted["maintainerActivity"] = int(maintainer_activity_count)
+        s.execute(delete(MaintainerActivityRollup).where(MaintainerActivityRollup.maintainer_key == maintainer_key))
     return jsonify({"ok": True, "deleted": deleted})
 
 

@@ -397,6 +397,65 @@ class ToolAuthorKey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ToolMaintainerEdge(Base):
+    """Derived per-tool maintainer edge with provenance and confidence."""
+
+    __tablename__ = "tool_maintainer_edges"
+    __table_args__ = (UniqueConstraint("tool_name", "maintainer_key", "source", "method"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    maintainer_key: Mapped[str] = mapped_column(String(255), index=True)
+    maintainer_display_name: Mapped[str] = mapped_column(String(255), default="")
+    toolhub_username: Mapped[str] = mapped_column(String(255), default="", index=True)
+    author_name: Mapped[str] = mapped_column(String(255), default="")
+    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
+    method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
+    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MaintainerActivityRollup(Base):
+    """Derived local activity rollup for one maintainer identity."""
+
+    __tablename__ = "maintainer_activity_rollups"
+    maintainer_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    maintainer_display_name: Mapped[str] = mapped_column(String(255), default="")
+    toolhub_username: Mapped[str] = mapped_column(String(255), default="", index=True)
+    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
+    maintainer_count_hint: Mapped[int] = mapped_column(Integer, default=1)
+    active_tool_count: Mapped[int] = mapped_column(Integer, default=0)
+    verified_tool_count: Mapped[int] = mapped_column(Integer, default=0)
+    recent_activity_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    activity_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    stale_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SourceAnalysisReport(Base):
+    """Derived source-code metadata suggestions owned by one signed-in user."""
+
+    __tablename__ = "source_analysis_reports"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
+    tool_name: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    source_label: Mapped[str] = mapped_column(String(255), default="")
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_OPEN)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+
+
 class ToolHealthTarget(Base):
     """A URL Evolved may check to report health for one tool."""
 

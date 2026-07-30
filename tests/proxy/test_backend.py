@@ -24,40 +24,54 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
-from backend import api_cache, authz, author_claims, db, recent_owners, security, sync, token_crypto, toolhub  # noqa: E402
+from backend import (  # noqa: E402
+    api_cache,
+    author_claims,
+    authz,
+    db,
+    maintainer_index,
+    recent_owners,
+    security,
+    sync,
+    token_crypto,
+    toolhub,
+)
 from backend.author_claims import (  # noqa: E402
     AuthorNameProvider,
     SignedToolinfoProvider,
-    ToolforgeMembershipProvider,
     ToolforgeMaintainerProvider,
+    ToolforgeMembershipProvider,
     ToolhubWriteProvider,
     toolforge_tool_names_from_member_dns,
 )
-from backend.models import (
+from backend.models import (  # noqa: E402
     ActivityRow,
     ApiCache,
     ApiCacheMeta,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
-    ToolEvent,
+    MaintainerActivityRollup,
+    SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
+    ToolEvent,
     ToolHealthTarget,
+    ToolhubToken,
     ToolinfoDiscovery,
     ToolinfoDiscoveryMeta,
     ToolinfoSource,
     ToolinfoSourceItem,
     ToolList,
+    ToolMaintainerEdge,
     ToolMedia,
-    ToolOwnerCache,
-    ToolThanks,
-    ToolhubToken,
     ToolOverlay,
+    ToolOwnerCache,
     ToolRecord,
+    ToolThanks,
     User,
     utcnow,
-)  # noqa: E402
+)
 from backend.v1 import (  # noqa: E402
     FEED_KEEP_CAP,
     _invalidate_official_api_cache,
@@ -184,6 +198,9 @@ PUBLIC_V1_ROUTES = {
     "/v1/user/": "reports authenticated:false when signed out",
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
+    "/v1/maintainers/tools/<name>/": (
+        "public derived maintainer summary; evidence is redacted and reads are rate limited"
+    ),
     "/v1/tools/<name>/media/": "GET is public; the POST half calls write_guard inside _tool_media_post",
     "/v1/recent/owners/": "public Recent enrichment; rate limited + per-request fetch budget",
     "/toolinfo.json": "public feed the official Toolhub crawler ingests",
@@ -319,6 +336,57 @@ def test_init_schema_creates_tool_author_claim_tables():
             )
 
 
+def test_init_schema_creates_maintainer_projection_tables():
+    db.configure("sqlite://")
+    db.init_schema()
+    edge_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolMaintainerEdge.__tablename__)}
+    assert {
+        "id",
+        "tool_name",
+        "maintainer_key",
+        "maintainer_display_name",
+        "toolhub_username",
+        "author_name",
+        "source",
+        "method",
+        "verification_status",
+        "confidence",
+        "evidence_url",
+        "evidence_payload",
+        "first_seen_at",
+        "checked_at",
+        "expires_at",
+        "last_error",
+    }.issubset(edge_cols)
+    rollup_cols = {col["name"] for col in inspect(db.engine()).get_columns(MaintainerActivityRollup.__tablename__)}
+    assert {
+        "maintainer_key",
+        "maintainer_display_name",
+        "toolhub_username",
+        "source",
+        "maintainer_count_hint",
+        "active_tool_count",
+        "verified_tool_count",
+        "recent_activity_count",
+        "last_activity_at",
+        "activity_status",
+        "computed_at",
+        "stale_at",
+    }.issubset(rollup_cols)
+
+    with db.session_scope() as s:
+        edge = ToolMaintainerEdge(tool_name="ada-tool", maintainer_key="toolhub:ada", maintainer_display_name="Ada")
+        rollup = MaintainerActivityRollup(maintainer_key="toolhub:ada", maintainer_display_name="Ada")
+        s.add(edge)
+        s.add(rollup)
+        s.flush()
+        assert edge.source == sync.SOURCE_LOCAL
+        assert edge.verification_status == sync.AUTHOR_CLAIM_UNVERIFIED
+        assert edge.confidence == 0
+        assert rollup.activity_status == "unknown"
+        assert rollup.active_tool_count == 0
+
+
 def test_init_schema_creates_toolinfo_discovery_table():
     db.configure("sqlite://")
     db.init_schema()
@@ -376,6 +444,37 @@ def test_init_schema_creates_toolinfo_discovery_table():
     }.issubset(item_cols)
 
 
+def test_init_schema_creates_source_analysis_report_table():
+    db.configure("sqlite://")
+    db.init_schema()
+    cols = {col["name"] for col in inspect(db.engine()).get_columns(SourceAnalysisReport.__tablename__)}
+    assert {
+        "id",
+        "user_id",
+        "created_by_user_id",
+        "tool_name",
+        "source_label",
+        "report",
+        "review_status",
+        "review_notes",
+        "created_at",
+        "reviewed_at",
+        "source",
+        "sync_status",
+    }.issubset(cols)
+
+    with db.session_scope() as s:
+        user = User(wm_sub="source-user", username="SourceUser")
+        s.add(user)
+        s.flush()
+        row = SourceAnalysisReport(user_id=user.id, created_by_user_id=user.id, report={"summary": {}})
+        s.add(row)
+        s.flush()
+        assert row.review_status == sync.REVIEW_OPEN
+        assert row.source == sync.SOURCE_LOCAL
+        assert row.sync_status == sync.SYNC_EVOLVED_REAL
+
+
 def test_toolforge_membership_provider_extracts_tool_names_from_member_dns():
     dns = [
         "cn=project-tools,ou=groups,dc=wikimedia,dc=org",
@@ -390,9 +489,10 @@ def test_toolforge_membership_provider_extracts_tool_names_from_member_dns():
 
 def test_toolforge_membership_provider_handles_empty_missing_and_failing_ldap(monkeypatch):
     assert ToolforgeMembershipProvider(lookup=lambda _username: []).tool_names("") == []
-    assert ToolforgeMembershipProvider(lookup=lambda _username: (_ for _ in ()).throw(ValueError("bad"))).tool_names(
-        "Ada"
-    ) == []
+    assert (
+        ToolforgeMembershipProvider(lookup=lambda _username: (_ for _ in ()).throw(ValueError("bad"))).tool_names("Ada")
+        == []
+    )
     monkeypatch.setattr(author_claims, "Connection", None)
     monkeypatch.setattr(author_claims, "Server", None)
     monkeypatch.setattr(author_claims, "escape_filter_chars", None)
@@ -593,7 +693,10 @@ def test_owner_label_extraction_handles_every_shape_toolhub_returns():
     assert recent_owners.owner_from_tool_record({"author": [{"bio": "no usable key"}, {"name": "Ada"}]}) == "Ada"
     assert recent_owners.owner_from_tool_record({"author": [{"developer_username": "dev"}]}) == "dev"
     assert recent_owners.owner_from_tool_record({"author": ["", "  ", "Grace"]}) == "Grace"
-    assert recent_owners.owner_from_tool_record({"author": [None, {"created": 1}], "created_by": {"username": "Bo"}}) == "Bo"
+    assert (
+        recent_owners.owner_from_tool_record({"author": [None, {"created": 1}], "created_by": {"username": "Bo"}})
+        == "Bo"
+    )
     assert recent_owners.owner_from_tool_record({"author": []}) == ""
 
 
@@ -904,9 +1007,9 @@ def test_toolforge_maintainer_provider_retries_failed_claims(client):
 def test_author_claim_provider_parsers_cover_malformed_public_shapes():
     assert author_claims.parse_toolsadmin_maintainers(TOOLSADMIN_MAINTAINERS_TABLE_HTML) == ["Schiste"]
     assert author_claims.parse_toolsadmin_maintainers(
-        '<table><tr><td>Not a maintainer</td></tr></table>'
+        "<table><tr><td>Not a maintainer</td></tr></table>"
         "<table><caption>Other</caption><tbody><tr><td>Also not</td></tr></tbody></table>"
-        '<table><caption>Maintainers</caption><tbody><tr><td>'
+        "<table><caption>Maintainers</caption><tbody><tr><td>"
         '<a href="/profile/ada/">Ada Lovelace</a></td></tr></tbody></table>'
     ) == ["Ada Lovelace"]
     assert author_claims.parse_toolsadmin_maintainers('<a href="/profile/blank/"> </a>') == []
@@ -1391,6 +1494,275 @@ def test_toolinfo_signing_payload_rejects_missing_or_revoked_key(client):
         ).status_code
         == 400
     )
+
+
+def test_source_analysis_requires_login_and_csrf(client):
+    assert client.get("/v1/source-analysis/").status_code == 401
+    assert client.get("/v1/source-analysis/1/").status_code == 401
+    uid = add_user()
+    sign_in(client, uid)
+    assert client.post("/v1/source-analysis/", json={"files": []}).status_code == 403
+    assert client.post("/v1/source-analysis/1/review/", json={"reviewStatus": "approved"}).status_code == 403
+
+
+def test_source_analysis_lifecycle_stores_redacted_reports(client):
+    uid = add_user()
+    sign_in(client, uid)
+    invalid_body = client.post("/v1/source-analysis/", data="not json", headers={"X-CSRF-Token": "tok"})
+    assert invalid_body.status_code == 400
+    invalid_files = client.post(
+        "/v1/source-analysis/",
+        json={"files": [{"path": "image.png", "content": "ignored"}]},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert invalid_files.status_code == 400
+    invalid_context = client.post(
+        "/v1/source-analysis/",
+        json={"files": [{"path": "src/app.js", "content": "const api = new mw.Api();"}], "repositoryContext": []},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert invalid_context.status_code == 400
+
+    resp = client.post(
+        "/v1/source-analysis/",
+        json={
+            "toolName": "sample-tool",
+            "sourceLabel": "local checkout",
+            "repositoryContext": {
+                "repository": {"url": "https://github.com/example/tool", "branch": "main"},
+                "declared": {"oauthScopes": ["editpage"]},
+            },
+            "files": [
+                {
+                    "path": "src/app.js",
+                    "content": "\n".join(
+                        [
+                            "const api = new mw.Api();",
+                            "api.postWithToken('csrf', { action: 'edit', title: 'Sandbox' });",
+                            "const client_secret = 'secret-value-123';",
+                        ]
+                    ),
+                }
+            ],
+        },
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()["sourceAnalysis"]
+    report_id = data["id"]
+    assert data["toolName"] == "sample-tool"
+    assert data["sourceLabel"] == "local checkout"
+    assert data["reviewStatus"] == sync.REVIEW_OPEN
+    assert data["syncStatus"] == sync.SYNC_EVOLVED_REAL
+    assert data["report"]["summary"]["filesAnalyzed"] == 1
+    assert data["report"]["repositoryContext"]["repository"]["url"] == "https://github.com/example/tool"
+    assert data["report"]["summary"]["assessmentCount"] >= 6
+    assert "secret-value-123" not in dumps(data)
+    assert "credential-like-source" in {item["value"] for item in data["report"]["warnings"]}
+
+    listed = client.get("/v1/source-analysis/?tool=sample-tool&limit=2").get_json()
+    assert listed["count"] == 1
+    assert listed["results"][0]["id"] == report_id
+    detail = client.get(f"/v1/source-analysis/{report_id}/").get_json()
+    assert detail["sourceAnalysis"]["id"] == report_id
+
+    invalid_review_body = client.post(
+        f"/v1/source-analysis/{report_id}/review/",
+        data="not json",
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert invalid_review_body.status_code == 400
+    invalid_review = client.post(
+        f"/v1/source-analysis/{report_id}/review/",
+        json={"reviewStatus": "accepted"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert invalid_review.status_code == 400
+    reviewed = client.post(
+        f"/v1/source-analysis/{report_id}/review/",
+        json={"reviewStatus": sync.REVIEW_APPROVED, "reviewNotes": "Matches the code."},
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["sourceAnalysis"]
+    assert reviewed["reviewStatus"] == sync.REVIEW_APPROVED
+    assert reviewed["reviewNotes"] == "Matches the code."
+    assert reviewed["reviewedAt"].endswith("Z")
+
+    reopened = client.post(
+        f"/v1/source-analysis/{report_id}/review/",
+        json={"reviewStatus": sync.REVIEW_OPEN},
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["sourceAnalysis"]
+    assert reopened["reviewedAt"] == ""
+
+
+def test_source_analysis_reports_are_private_exportable_and_deletable(client):
+    first_uid = add_user(username="Ada", wm_sub="1")
+    second_uid = add_user(username="Grace", wm_sub="2")
+    with db.session_scope() as s:
+        s.add(
+            SourceAnalysisReport(
+                user_id=first_uid,
+                created_by_user_id=first_uid,
+                tool_name="ada-tool",
+                source_label="repo",
+                report={"summary": {"filesAnalyzed": 1}},
+            )
+        )
+        s.add(
+            SourceAnalysisReport(
+                user_id=second_uid,
+                created_by_user_id=second_uid,
+                tool_name="grace-tool",
+                report={"summary": {"filesAnalyzed": 1}},
+            )
+        )
+    sign_in(client, first_uid)
+    private_list = client.get("/v1/source-analysis/").get_json()
+    assert private_list["count"] == 1
+    report_id = private_list["results"][0]["id"]
+    assert client.get("/v1/source-analysis/999/").status_code == 404
+    assert (
+        client.post(
+            "/v1/source-analysis/999/review/", json={"reviewStatus": "approved"}, headers={"X-CSRF-Token": "tok"}
+        ).status_code
+        == 404
+    )
+
+    exported = client.get("/v1/user/export/").get_json()
+    assert exported["sourceAnalysisReports"][0]["id"] == report_id
+    deleted = client.delete("/v1/user/evolved-data/", headers={"X-CSRF-Token": "tok"}).get_json()
+    assert deleted["deleted"]["sourceAnalysisReports"] == 1
+    assert client.get("/v1/source-analysis/").get_json()["count"] == 0
+
+    sign_in(client, second_uid)
+    assert client.get("/v1/source-analysis/").get_json()["count"] == 1
+
+
+def test_maintainer_index_builds_public_safe_summary_from_claims():
+    db.configure("sqlite://")
+    db.init_schema()
+    with db.session_scope() as s:
+        user = User(wm_sub="maintainer-1", username="Ada", registered_at=utcnow() - timedelta(days=12))
+        s.add(user)
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada Lovelace",
+                toolhub_username="Ada",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                evidence_url="https://toolsadmin.wikimedia.org/tools/id/ada-tool",
+                evidence_payload={"rawMaintainerPage": "private evidence"},
+            )
+        )
+        s.flush()
+
+        edges = maintainer_index.sync_author_claim_edges(s, usernames=["Ada"])
+        summary = maintainer_index.public_tool_summary(s, "ada-tool")
+
+        assert len(edges) == 1
+        assert summary["status"] == "verified"
+        assert summary["counts"]["maintainers"] == 1
+        assert summary["counts"]["verifiedMaintainers"] == 1
+        assert summary["counts"]["activeMaintainers"] == 1
+        assert summary["bestConfidence"] == 95
+        assert summary["maintainers"][0]["activity"]["status"] == "active"
+        assert "private evidence" not in dumps(summary)
+
+
+def test_maintainer_rollup_refresh_distinguishes_empty_and_full_scope():
+    db.configure("sqlite://")
+    db.init_schema()
+    with db.session_scope() as s:
+        s.add(User(wm_sub="maintainer-empty", username="Ada"))
+        assert maintainer_index.refresh_activity_rollups(s, maintainer_keys=[]) == []
+        assert s.query(MaintainerActivityRollup).count() == 0
+
+        rollups = maintainer_index.refresh_activity_rollups(s)
+        assert len(rollups) == 1
+        assert s.query(MaintainerActivityRollup).count() == 1
+
+
+def test_public_tool_maintainers_endpoint_merges_official_metadata_and_evolved_claims(client, monkeypatch):
+    with db.session_scope() as s:
+        s.add(User(wm_sub="maintainer-2", username="Ada", registered_at=utcnow() - timedelta(days=5)))
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada Lovelace",
+                toolhub_username="Ada",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
+                evidence_payload={"signature": "private signature payload"},
+            )
+        )
+
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda path: {
+            "name": "ada-tool",
+            "author": [{"name": "Ada Lovelace", "developer_username": "Ada", "wiki_username": "AdaWiki"}],
+            "created_by": {"username": "Ada"},
+            "modified_by": {"username": "Grace"},
+        }
+        if path == "/api/tools/ada-tool/"
+        else pytest.fail(f"unexpected path {path}"),
+    )
+
+    resp = client.get("/v1/maintainers/tools/ada-tool/")
+    data = resp.get_json()
+    assert resp.status_code == 200
+    assert data["toolName"] == "ada-tool"
+    assert data["status"] == "verified"
+    assert data["counts"]["verifiedMaintainers"] == 1
+    assert data["counts"]["evidenceEdges"] == 4
+    assert data["publicDataPolicy"]["canonical"] is False
+    assert "private signature payload" not in dumps(data)
+    ada = next(item for item in data["maintainers"] if item["toolhubUsername"] == "Ada")
+    assert set(ada["methods"]) == {
+        sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
+        maintainer_index.METHOD_TOOLHUB_ACTOR,
+        maintainer_index.METHOD_TOOLHUB_AUTHOR,
+    }
+
+
+def test_public_tool_maintainers_endpoint_is_rate_limited(client, monkeypatch):
+    monkeypatch.setattr(security, "read_rate_limited", lambda _remote_addr: True)
+    resp = client.get("/v1/maintainers/tools/ada-tool/")
+    assert resp.status_code == 429
+    assert resp.get_json()["error"] == "rate limit exceeded"
+
+
+def test_source_analysis_uses_evolved_maintainer_context_for_named_tools(client):
+    uid = add_user(username="Ada")
+    sign_in(client, uid)
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada Lovelace",
+                toolhub_username="Ada",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+            )
+        )
+
+    resp = client.post(
+        "/v1/source-analysis/",
+        json={
+            "toolName": "ada-tool",
+            "files": [{"path": "README.md", "content": "Tool docs for en.wikipedia.org."}],
+        },
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert resp.status_code == 201
+    report = resp.get_json()["sourceAnalysis"]["report"]
+    context = report["repositoryContext"]
+    assert context["maintainers"]["source"] == "evolved-maintainer-index"
+    assert context["maintainers"]["maintainerCount"] == 1
+    assert context["maintainerActivity"]["status"] == "active"
+    assert report["summary"]["maintainerStatus"] == "active"
 
 
 def test_me_tools_requires_login(client):
@@ -2913,7 +3285,11 @@ def test_recent_owner_resolver_fetches_once_then_uses_toolsdb_cache(client, monk
 def test_owner_cache_purges_only_rows_past_their_stale_window(client):
     now = utcnow()
     with db.session_scope() as s:
-        s.add(ToolOwnerCache(tool_name="live", owner="Ada", fetched_at=now, expires_at=now, stale_until=now + timedelta(days=1)))
+        s.add(
+            ToolOwnerCache(
+                tool_name="live", owner="Ada", fetched_at=now, expires_at=now, stale_until=now + timedelta(days=1)
+            )
+        )
         s.add(
             ToolOwnerCache(
                 tool_name="dead", owner="", fetched_at=now, expires_at=now, stale_until=now - timedelta(days=1)
@@ -3033,7 +3409,10 @@ def test_recent_owner_resolver_cleans_bounds_and_negative_caches_failures(client
 
 
 def test_recent_owner_record_parser_prefers_author_display_name():
-    assert recent_owners.owner_from_tool_record({"author": [{"name": "Display", "developer_username": "dev"}]}) == "Display"
+    assert (
+        recent_owners.owner_from_tool_record({"author": [{"name": "Display", "developer_username": "dev"}]})
+        == "Display"
+    )
     assert recent_owners.owner_from_tool_record({"author": [{"developer_username": "dev"}]}) == "dev"
     assert recent_owners.owner_from_tool_record({"author": "Plain Author"}) == "Plain Author"
     assert recent_owners.owner_from_tool_record({"created_by": {"username": "creator"}}) == "creator"
@@ -4316,6 +4695,36 @@ def test_dev_login_creates_local_session_without_toolhub_grant(client, monkeypat
         user = s.execute(select(User).where(User.wm_sub == "local-dev")).scalar_one()
         assert user.username == "Schiste"
         assert s.query(ToolhubToken).count() == 0
+
+
+def test_dev_login_accepts_loopback_hosts_and_updates_existing_user(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_INSECURE_COOKIES", "1")
+    monkeypatch.setenv("TOOLHUB_DEV_LOGIN", "1")
+    uid = add_user(username="Old Dev", wm_sub="local-dev")
+    toolhub.save_grant(uid, {"access_token": "stale"})
+
+    resp = client.get(
+        "/oauth/dev-login?username=New%20Dev&next=/favorites",
+        base_url="http://127.0.0.1:8000",
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/favorites"
+    assert client.get("/v1/user/", base_url="http://127.0.0.1:8000").get_json()["username"] == "New Dev"
+    with db.session_scope() as s:
+        user = s.execute(select(User).where(User.wm_sub == "local-dev")).scalar_one()
+        assert user.username == "New Dev"
+        assert s.query(ToolhubToken).count() == 0
+
+    resp = client.get(
+        "/oauth/dev-login?username=Ipv6%20Dev&user_id=ipv6-dev",
+        base_url="http://[::1]:8000",
+    )
+
+    assert resp.status_code == 302
+    with db.session_scope() as s:
+        user = s.execute(select(User).where(User.wm_sub == "ipv6-dev")).scalar_one()
+        assert user.username == "Ipv6 Dev"
 
 
 def test_dev_login_is_hidden_unless_explicitly_local(client, monkeypatch):
