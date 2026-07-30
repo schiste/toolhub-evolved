@@ -85,6 +85,12 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(health.includes("Variables used"));
 	assert.ok(health.includes("No large language model output is used"));
 	assert.ok(health.includes("last commit timestamp"));
+	const rss = S.viewStatic("rss").html;
+	assert.ok(rss.includes("/feeds/recent.xml"));
+	assert.ok(rss.includes("/feeds/tools/recently-updated.xml"));
+	assert.ok(rss.includes("/feeds/lists.xml"));
+	assert.ok(rss.includes("/feeds/tools/TOOL_NAME/revisions.xml"));
+	assert.ok(rss.includes("RSS 2.0 XML"));
 });
 
 test("viewStatic falls back to the not-found page for an unknown slug", () => {

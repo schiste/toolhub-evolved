@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from datetime import timedelta
 from json import dumps
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 from flask import Flask
@@ -207,6 +208,11 @@ PUBLIC_V1_ROUTES = {
     ),
     "/v1/tools/<name>/media/": "GET is public; the POST half calls write_guard inside _tool_media_post",
     "/v1/recent/owners/": "public Recent enrichment; rate limited + per-request fetch budget",
+    "/feeds/recent.xml": "public RSS feed generated from official recent changes",
+    "/feeds/tools/recently-updated.xml": "public RSS feed generated from official Toolhub search",
+    "/feeds/lists.xml": "public RSS feed generated from official Toolhub lists",
+    "/feeds/tools/<path:name>/revisions.xml": "public RSS feed generated from official tool revisions",
+    "/feeds/lists/<list_id>/revisions.xml": "public RSS feed generated from official list revisions",
     "/toolinfo.json": "public feed the official Toolhub crawler ingests",
 }
 
@@ -240,6 +246,96 @@ def test_public_route_allowlist_has_no_stale_entries(app):
         if str(rule.rule) == path and hasattr(app.view_functions[rule.endpoint], security.GUARD_ATTR)
     )
     assert now_guarded == [], f"these are guarded now and can leave PUBLIC_V1_ROUTES: {now_guarded}"
+
+
+# ---- public RSS feeds ------------------------------------------------------
+
+
+def test_recent_rss_feed_uses_official_recent_changes(client, monkeypatch):
+    calls = []
+    monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
+
+    def fake_public_api_get(path, *, params=None):
+        calls.append((path, params))
+        return {
+            "results": [
+                {
+                    "id": 7,
+                    "timestamp": "2026-07-30T12:00:00Z",
+                    "content_type": "tool",
+                    "content_id": "abc-tool",
+                    "content_title": "A & B tool",
+                    "parent_id": 5,
+                    "user": {"username": "Ada"},
+                    "comment": "Fixed <metadata>",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    resp = client.get("/feeds/recent.xml")
+
+    assert resp.status_code == 200
+    assert resp.content_type == "application/rss+xml; charset=utf-8"
+    text = resp.get_data(as_text=True)
+    assert "Toolhub recent changes" in text
+    assert "A &amp; B tool" in text
+    assert "Fixed &lt;metadata&gt;" in text
+    assert "https://evolved.example/tools/abc-tool" in text
+    assert calls == [("/api/recent/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE})]
+    root = ET.fromstring(text)
+    assert root.tag == "rss"
+    assert root.find("./channel/item/guid").text == "toolhub-recent:7"
+
+
+def test_catalog_rss_feeds_call_matching_official_endpoints(client, monkeypatch):
+    calls = []
+    monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
+
+    def fake_public_api_get(path, *, params=None):
+        calls.append((path, params))
+        if path == "/api/search/tools/":
+            return {
+                "results": [
+                    {
+                        "name": "maps-tool",
+                        "title": {"en": "Maps tool"},
+                        "description": {"en": "Map helper"},
+                        "modified_date": "2026-07-29T10:00:00Z",
+                    }
+                ]
+            }
+        if path == "/api/lists/":
+            return {"results": [{"id": 42, "title": "Starter list", "description": "For new editors"}]}
+        if path == "/api/tools/Foo%2FBar/revisions/":
+            return {"results": [{"id": 9, "timestamp": "2026-07-28T10:00:00Z", "user": {"username": "Grace"}}]}
+        if path == "/api/lists/42/revisions/":
+            return {"results": [{"id": 8, "timestamp": "2026-07-27T10:00:00Z", "comment": "List update"}]}
+        return {"results": []}
+
+    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+
+    assert "Maps tool" in client.get("/feeds/tools/recently-updated.xml").get_data(as_text=True)
+    assert "Starter list" in client.get("/feeds/lists.xml").get_data(as_text=True)
+    assert "Toolhub revisions: Foo/Bar" in client.get("/feeds/tools/Foo%2FBar/revisions.xml").get_data(as_text=True)
+    assert "Toolhub list revisions: 42" in client.get("/feeds/lists/42/revisions.xml").get_data(as_text=True)
+    assert calls == [
+        ("/api/search/tools/", {"ordering": "-modified_date", "page_size": v1_api.RSS_FEED_PAGE_SIZE}),
+        ("/api/lists/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE}),
+        ("/api/tools/Foo%2FBar/revisions/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE}),
+        ("/api/lists/42/revisions/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE}),
+    ]
+
+
+def test_rss_feed_reports_upstream_failure(client, monkeypatch):
+    def failing_public_api_get(*_args, **_kwargs):
+        raise RuntimeError("upstream down")
+
+    monkeypatch.setattr(toolhub, "public_api_get", failing_public_api_get)
+    resp = client.get("/feeds/recent.xml")
+
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == "feed upstream unavailable"
 
 
 # ---- db plumbing -----------------------------------------------------------

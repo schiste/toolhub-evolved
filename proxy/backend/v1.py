@@ -14,11 +14,14 @@ auditlogs) are append-only, idempotent by client id.
 
 import base64
 import json
+import os
 import re
 from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 from typing import Any
 from urllib.parse import quote, unquote, urlencode, urlparse
 from uuid import uuid4
+from xml.sax.saxutils import escape as xml_escape
 
 from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
@@ -105,6 +108,7 @@ HTTP_NO_CONTENT = 204
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
 HTTP_CONFLICT = 409
+HTTP_BAD_GATEWAY = 502
 HTTP_TOO_MANY = 429
 UPSTREAM_KIND_INDEX = 1
 UPSTREAM_MIN_PARTS = 2
@@ -114,6 +118,8 @@ MAX_ITEMS = 500  # per overlay key per user
 MAX_NAME = 255
 FEED_READ_CAP = 100
 FEED_KEEP_CAP = 500
+RSS_FEED_PAGE_SIZE = 30
+RSS_CONTENT_TYPE = "application/rss+xml; charset=utf-8"
 ME_TOOLS_SEARCH_PAGE_SIZE = 100
 ME_TOOLS_MAX_SEARCH_TERMS = 20
 AUTHOR_KEY_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -214,6 +220,253 @@ def _clean_name(value: str) -> str | None:
 
 def _is_http_url(value: Any) -> bool:  # noqa: ANN401
     return isinstance(value, str) and value.startswith(("http://", "https://")) and len(value) <= MAX_URL
+
+
+def _public_base_url() -> str:
+    configured = os.environ.get("TOOLHUB_EVOLVED_BASE_URL", "").rstrip("/")
+    return configured or request.url_root.rstrip("/")
+
+
+def _site_url(path: str) -> str:
+    return f"{_public_base_url()}{path if path.startswith('/') else '/' + path}"
+
+
+def _feed_text(value: Any, fallback: str = "") -> str:  # noqa: ANN401 - Toolhub payloads are heterogeneous JSON
+    if isinstance(value, dict):
+        for key in ("en", "mul"):
+            candidate = value.get(key)
+            if candidate:
+                return str(candidate)
+        for candidate in value.values():
+            if candidate:
+                return str(candidate)
+        return fallback
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if item) or fallback
+    text_value = str(value or "").strip()
+    return text_value or fallback
+
+
+def _rss_date(value: Any) -> str:  # noqa: ANN401 - accepts ISO strings and datetime values
+    dt = value if isinstance(value, datetime) else _parse_optional_iso(value)
+    if dt is None:
+        dt = utcnow()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    else:
+        dt = dt.astimezone(UTC)
+    return format_datetime(dt, True)
+
+
+def _rss_item(title: str, link: str, description: str, published: Any, guid: str) -> dict[str, str]:  # noqa: ANN401
+    return {
+        "title": title,
+        "link": link,
+        "description": description,
+        "pubDate": _rss_date(published),
+        "guid": guid,
+    }
+
+
+def _rss_xml(title: str, description: str, link: str, items: list[dict[str, str]]) -> str:
+    item_xml = "\n".join(
+        f"""		<item>
+			<title>{xml_escape(item["title"])}</title>
+			<link>{xml_escape(item["link"])}</link>
+			<guid isPermaLink="false">{xml_escape(item["guid"])}</guid>
+			<pubDate>{xml_escape(item["pubDate"])}</pubDate>
+			<description>{xml_escape(item["description"])}</description>
+		</item>"""
+        for item in items
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+	<channel>
+		<title>{xml_escape(title)}</title>
+		<link>{xml_escape(link)}</link>
+		<description>{xml_escape(description)}</description>
+		<language>en</language>
+		<lastBuildDate>{xml_escape(_rss_date(utcnow()))}</lastBuildDate>
+{item_xml}
+	</channel>
+</rss>
+"""
+
+
+def _rss_response(title: str, description: str, link_path: str, items: list[dict[str, str]]) -> Response:
+    resp = Response(_rss_xml(title, description, _site_url(link_path), items), content_type=RSS_CONTENT_TYPE)
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    return resp
+
+
+def _feed_payload(path: str, params: dict[str, object] | None = None) -> list[dict[str, Any]]:
+    payload = toolhub.public_api_get(path, params=params)
+    if not isinstance(payload, dict):
+        return []
+    rows = payload.get("results")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _upstream_feed_error(exc: Exception) -> Response:
+    resp = jsonify({"error": "feed upstream unavailable", "detail": clean_error(str(exc))})
+    resp.status_code = HTTP_BAD_GATEWAY
+    return resp
+
+
+def _recent_feed_item(row: dict[str, Any]) -> dict[str, str]:
+    content_type = _feed_text(row.get("content_type"), "item")
+    content_id = _feed_text(row.get("content_id"))
+    title = _feed_text(row.get("content_title"), content_id or "Toolhub item")
+    action = "Updated" if row.get("parent_id") else "Created"
+    username = _feed_text(row.get("user", {}).get("username") if isinstance(row.get("user"), dict) else "", "system")
+    comment = _feed_text(row.get("comment"))
+    path = (
+        f"/tools/{quote(content_id, safe='')}"
+        if content_type == "tool" and content_id
+        else f"/lists/{quote(content_id, safe='')}"
+        if content_type == "list" and content_id
+        else "/recent"
+    )
+    detail = f"{action} by {username}."
+    if comment:
+        detail = f"{detail} {comment}"
+    guid = f"toolhub-recent:{row.get('id') or row.get('timestamp') or content_type + ':' + content_id}"
+    return _rss_item(f"{action} {content_type}: {title}", _site_url(path), detail, row.get("timestamp"), guid)
+
+
+def _tool_feed_item(row: dict[str, Any]) -> dict[str, str]:
+    name = _feed_text(row.get("name"))
+    title = _feed_text(row.get("title"), name or "Toolhub tool")
+    description = _feed_text(row.get("description"), f"Toolhub tool {name or title}.")
+    modified = row.get("modified_date") or row.get("modified")
+    link = _site_url(f"/tools/{quote(name, safe='')}") if name else _site_url("/search")
+    guid = f"toolhub-tool:{name or title}"
+    return _rss_item(title, link, description, modified, guid)
+
+
+def _list_feed_item(row: dict[str, Any]) -> dict[str, str]:
+    list_id = _feed_text(row.get("id"))
+    title = _feed_text(row.get("title"), f"Toolhub list {list_id}")
+    description = _feed_text(row.get("description"), f"Toolhub list {title}.")
+    modified = row.get("modified_date") or row.get("modified") or row.get("created_date") or row.get("created")
+    link = _site_url(f"/lists/{quote(list_id, safe='')}") if list_id else _site_url("/lists")
+    return _rss_item(title, link, description, modified, f"toolhub-list:{list_id or title}")
+
+
+def _revision_feed_item(row: dict[str, Any], *, label: str, history_path: str, kind: str) -> dict[str, str]:
+    revision_id = _feed_text(row.get("id"), _feed_text(row.get("timestamp"), "revision"))
+    username = _feed_text(row.get("user", {}).get("username") if isinstance(row.get("user"), dict) else "", "system")
+    comment = _feed_text(row.get("comment"))
+    description = f"Revision by {username}."
+    if comment:
+        description = f"{description} {comment}"
+    return _rss_item(
+        f"Revision {revision_id}: {label}",
+        _site_url(history_path),
+        description,
+        row.get("timestamp"),
+        f"toolhub-{kind}-revision:{label}:{revision_id}",
+    )
+
+
+@v1_bp.route("/feeds/recent.xml")
+def feed_recent() -> Response:
+    """RSS feed for official Toolhub recent changes."""
+    try:
+        rows = _feed_payload("/api/recent/", {"page_size": RSS_FEED_PAGE_SIZE})
+    except Exception as exc:  # noqa: BLE001 - feed readers need a clear 502 payload.
+        return _upstream_feed_error(exc)
+    return _rss_response(
+        "Toolhub recent changes",
+        "Recent official Toolhub catalog activity.",
+        "/recent",
+        [_recent_feed_item(row) for row in rows],
+    )
+
+
+@v1_bp.route("/feeds/tools/recently-updated.xml")
+def feed_recently_updated_tools() -> Response:
+    """RSS feed for recently updated tools."""
+    try:
+        rows = _feed_payload(
+            "/api/search/tools/",
+            {"ordering": "-modified_date", "page_size": RSS_FEED_PAGE_SIZE},
+        )
+    except Exception as exc:  # noqa: BLE001 - feed readers need a clear 502 payload.
+        return _upstream_feed_error(exc)
+    return _rss_response(
+        "Toolhub recently updated tools",
+        "Tools ordered by the official Toolhub modified date.",
+        "/search?sort=recent",
+        [_tool_feed_item(row) for row in rows],
+    )
+
+
+@v1_bp.route("/feeds/lists.xml")
+def feed_lists() -> Response:
+    """RSS feed for public Toolhub lists."""
+    try:
+        rows = _feed_payload("/api/lists/", {"page_size": RSS_FEED_PAGE_SIZE})
+    except Exception as exc:  # noqa: BLE001 - feed readers need a clear 502 payload.
+        return _upstream_feed_error(exc)
+    return _rss_response(
+        "Toolhub lists",
+        "Recently visible public Toolhub lists.",
+        "/lists",
+        [_list_feed_item(row) for row in rows],
+    )
+
+
+@v1_bp.route("/feeds/tools/<path:name>/revisions.xml")
+def feed_tool_revisions(name: str) -> Response:
+    """RSS feed for one tool's official revision history."""
+    clean_name = _clean_name(unquote(name))
+    if clean_name is None:
+        return _bad("tool name is required")
+    try:
+        rows = _feed_payload(f"/api/tools/{quote(clean_name, safe='')}/revisions/", {"page_size": RSS_FEED_PAGE_SIZE})
+    except Exception as exc:  # noqa: BLE001 - feed readers need a clear 502 payload.
+        return _upstream_feed_error(exc)
+    return _rss_response(
+        f"Toolhub revisions: {clean_name}",
+        f"Official Toolhub revision history for {clean_name}.",
+        f"/tools/{quote(clean_name, safe='')}/history",
+        [
+            _revision_feed_item(
+                row,
+                label=clean_name,
+                history_path=f"/tools/{quote(clean_name, safe='')}/history",
+                kind="tool",
+            )
+            for row in rows
+        ],
+    )
+
+
+@v1_bp.route("/feeds/lists/<list_id>/revisions.xml")
+def feed_list_revisions(list_id: str) -> Response:
+    """RSS feed for one list's official revision history."""
+    clean_id = str(list_id or "").strip()[:MAX_NAME]
+    if not clean_id:
+        return _bad("list id is required")
+    try:
+        rows = _feed_payload(f"/api/lists/{quote(clean_id, safe='')}/revisions/", {"page_size": RSS_FEED_PAGE_SIZE})
+    except Exception as exc:  # noqa: BLE001 - feed readers need a clear 502 payload.
+        return _upstream_feed_error(exc)
+    return _rss_response(
+        f"Toolhub list revisions: {clean_id}",
+        f"Official Toolhub revision history for list {clean_id}.",
+        f"/lists/{quote(clean_id, safe='')}/history",
+        [
+            _revision_feed_item(
+                row,
+                label=clean_id,
+                history_path=f"/lists/{quote(clean_id, safe='')}/history",
+                kind="list",
+            )
+            for row in rows
+        ],
+    )
 
 
 def _media_payload(row: ToolMedia) -> dict:

@@ -55,6 +55,17 @@ const proseTable = (caption, headers, rows) => `<div class="prose__table-wrap"><
 	<thead><tr>${headers.map((header) => `<th scope="col">${esc(header)}</th>`).join("")}</tr></thead>
 	<tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody>
 </table></div>`;
+/**
+ * @param {string} href
+ * @param {string} title
+ * @param {string} description
+ * @param {string} iconName
+ */
+const rssFeedItem = (href, title, description, iconName) => `<li><a href="${esc(href)}">
+	${icon(iconName, "feed__ic")}
+	<span class="feed__main"><strong>${esc(title)}</strong><span class="feed__sub">${esc(description)}</span></span>
+	<span class="feed__when">${esc(t("static.rss.rssFormat", "RSS"))}</span>
+</a></li>`;
 
 function healthPublicFormula() {
 	return blockCode(`included = [dimension for dimension in health.dimensions
@@ -698,8 +709,29 @@ export const STATIC = {
 	rss: () => ({
 		title: t("static.rss.title", "Feeds"),
 		body: `
-		<p>${t("static.rss.intro", "Follow changes to the catalog without checking back. Toolhub publishes Atom/RSS\n\t\tfeeds for activity such as recently added and recently updated tools, and for the\n\t\thistory of individual tools and lists.")}</p>
-		<p>${tWithElements("static.rss.browseBody", 'Browse the latest additions on the {liveSite}, or sort the {browsePage} by "Recently updated".', { liveSite: ext("https://toolhub.wikimedia.org/", t("static.rss.liveSite", "live site")), browsePage: `<a href="/search?sort=recent">${esc(t("static.rss.browsePage", "Browse page"))}</a>` })}</p>`
+		<p>${t("static.rss.intro", "Subscribe to Toolhub activity without opening the app. These feeds are public RSS 2.0 XML generated server-side from Toolhub's official read APIs through Evolved's shared cache.")}</p>
+		<h2>${t("static.rss.catalogFeedsTitle", "Catalog feeds")}</h2>
+		<ul class="feed">
+			${rssFeedItem("/feeds/recent.xml", t("static.rss.recentFeedTitle", "Recent changes"), t("static.rss.recentFeedDesc", "Official Toolhub catalog activity across tools and lists."), "history")}
+			${rssFeedItem("/feeds/tools/recently-updated.xml", t("static.rss.recentToolsFeedTitle", "Recently updated tools"), t("static.rss.recentToolsFeedDesc", "Tools ordered by the official Toolhub modified date."), "tools")}
+			${rssFeedItem("/feeds/lists.xml", t("static.rss.listsFeedTitle", "Lists"), t("static.rss.listsFeedDesc", "Public Toolhub lists from the official lists endpoint."), "list")}
+		</ul>
+		<h2>${t("static.rss.historyFeedsTitle", "History feeds")}</h2>
+		<p>${t("static.rss.historyFeedsIntro", "Tool and list revision feeds are available by URL pattern. Replace the identifier with the encoded Toolhub tool name or list id.")}</p>
+		<ul>
+			<li>${tWithElements("static.rss.toolHistoryPattern", "Tool revisions: {pattern}", { pattern: code("/feeds/tools/TOOL_NAME/revisions.xml") })}</li>
+			<li>${tWithElements("static.rss.listHistoryPattern", "List revisions: {pattern}", { pattern: code("/feeds/lists/LIST_ID/revisions.xml") })}</li>
+		</ul>
+		<h2>${t("static.rss.relatedPagesTitle", "Related pages")}</h2>
+		<p>${tWithElements(
+			"static.rss.relatedPagesBody",
+			"Browse the same data in the app on {recentPage}, {toolsPage}, or {listsPage}.",
+			{
+				recentPage: `<a href="/recent">${esc(t("static.rss.recentPage", "Recent changes"))}</a>`,
+				toolsPage: `<a href="/search?sort=recent">${esc(t("static.rss.recentToolsPage", "recently updated tools"))}</a>`,
+				listsPage: `<a href="/lists">${esc(t("static.rss.listsPage", "lists"))}</a>`
+			}
+		)}</p>`
 	})
 };
 /** @param {string} slug */
