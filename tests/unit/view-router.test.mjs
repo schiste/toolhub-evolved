@@ -523,15 +523,21 @@ test("render: first load shows the spinner, then commits, sets on-home and focus
 	const focusSpy = vi.spyOn(HTMLElement.prototype, "focus"); // calls through, records args
 	const navBefore = router.navSeq;
 	let routeStartEvents = 0;
+	let routeEndEvents = 0;
 	const onRouteStart = () => {
 		routeStartEvents += 1;
 	};
+	const onRouteEnd = () => {
+		routeEndEvents += 1;
+	};
 	document.addEventListener("toolhub:route-render-start", onRouteStart);
+	document.addEventListener("toolhub:route-render-end", onRouteEnd);
 
 	try {
 		const p = router.render();
 		const viewEl = document.querySelector("#view");
 		assert.equal(routeStartEvents, 1);
+		assert.equal(routeEndEvents, 0);
 		// lastPath === null → loadingHTML swapped in immediately.
 		assert.equal(viewEl.innerHTML, router.loadingHTML());
 		assert.equal(viewEl.getAttribute("aria-busy"), "true");
@@ -546,6 +552,7 @@ test("render: first load shows the spinner, then commits, sets on-home and focus
 		assert.equal(document.body.classList.contains("on-home"), true);
 		assert.equal(document.title, "Home — Toolhub");
 		assert.equal(mount.mock.calls.length, 1);
+		assert.equal(routeEndEvents, 1);
 		assert.equal(router.lastPath, "/");
 		assert.equal(router.navSeq, navBefore + 1); // ++navSeq (kills the -- mutant)
 		// Focus moved to the view's <h1>, and the page scrolled to the top.
@@ -556,6 +563,7 @@ test("render: first load shows the spinner, then commits, sets on-home and focus
 		assert.deepEqual(focusSpy.mock.calls.at(-1), [{ preventScroll: true }]);
 	} finally {
 		document.removeEventListener("toolhub:route-render-start", onRouteStart);
+		document.removeEventListener("toolhub:route-render-end", onRouteEnd);
 		scrollSpy.mockRestore();
 		focusSpy.mockRestore();
 	}

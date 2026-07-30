@@ -195,6 +195,7 @@ const refreshingApiUrls = new Set();
 let apiToastTimer = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let apiRefreshRenderTimer = null;
+let pendingApiRefreshRender = false;
 function toastRegion() {
 	let region = $("#toast-region");
 	if (region) return region;
@@ -226,6 +227,10 @@ function hideApiToastSoon(ms = 2400) {
 	}, ms);
 }
 function scheduleApiRefreshRender() {
+	if ($("#view")?.getAttribute("aria-busy") === "true") {
+		pendingApiRefreshRender = true;
+		return;
+	}
 	if (apiRefreshRenderTimer) clearTimeout(apiRefreshRenderTimer);
 	apiRefreshRenderTimer = setTimeout(() => {
 		apiRefreshRenderTimer = null;
@@ -258,6 +263,11 @@ document.addEventListener("toolhub:api-cache-refresh", (e) => {
 	}
 });
 document.addEventListener("toolhub:evolved-summaries-refresh", () => {
+	scheduleApiRefreshRender();
+});
+document.addEventListener("toolhub:route-render-end", () => {
+	if (!pendingApiRefreshRender) return;
+	pendingApiRefreshRender = false;
 	scheduleApiRefreshRender();
 });
 

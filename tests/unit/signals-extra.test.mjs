@@ -126,6 +126,37 @@ test("attachEndorsements decorates each tool with its endorsement", async () => 
 	assert.equal(out[2].endorsement.count, 0);
 });
 
+test("attachEvolvedSummaries can wait for fresh local summaries without emitting a rerender", async () => {
+	const events = [];
+	const onRefresh = (event) => events.push(event.detail);
+	document.addEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	globalThis.fetch = async (url) => ({
+		ok: true,
+		json: async () =>
+			String(url).includes("/v1/tools/summaries/")
+				? {
+						results: {
+							"fresh-summary-tool": {
+								health: { score: 91, grade: "strong" },
+								maintainerDimension: { status: "maintained" }
+							}
+						}
+					}
+				: LISTS
+	});
+	try {
+		const tools = [{ name: "fresh-summary-tool" }];
+		const out = await signals.attachEvolvedSummaries(tools, { waitForFresh: true });
+
+		assert.equal(out, tools);
+		assert.equal(tools[0].evolvedSummary.health.score, 91);
+		assert.equal(tools[0].evolvedSummary.maintainerDimension.status, "maintained");
+		assert.deepEqual(events, []);
+	} finally {
+		document.removeEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	}
+});
+
 test("getUserContext reads/parses the context key and survives bad JSON", () => {
 	assert.deepEqual(signals.getUserContext(), {});
 	localStorage.setItem("toolhub-context", JSON.stringify({ wiki: "en.wikipedia.org", role: "editor" }));

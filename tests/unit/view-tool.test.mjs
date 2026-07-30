@@ -723,6 +723,50 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 	assert.ok(document.querySelector("[data-media-result]").textContent.includes("submitted for review"));
 });
 
+test("viewTool includes eager local health and maintainer summaries", async () => {
+	h.getTool.mockResolvedValue(toolFixture("score-tool", { title: "Score Tool" }));
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(
+			path.includes("/v1/tools/summaries/")
+				? {
+						results: {
+							"score-tool": {
+								health: {
+									score: 100,
+									grade: "strong",
+									dimensions: [
+										{
+											key: "maintainer-status",
+											label: "Maintainer status",
+											score: 100,
+											weight: 1.25,
+											confidence: 0.85,
+											status: "maintained",
+											summary: "Derived from deterministic maintainer signals.",
+											includedInScore: true
+										}
+									],
+									calculation: { dimensionCount: 1, includedDimensionCount: 1, includedWeight: 1.25 }
+								},
+								maintainer: {
+									counts: { maintainers: 3, verifiedMaintainers: 1, activeMaintainers: 1 }
+								},
+								maintainerDimension: { status: "maintained", bestConfidence: 95 }
+							}
+						}
+					}
+				: path.includes("/media/")
+					? { results: [] }
+					: { thanks: {}, usage30d: {}, health: {} }
+		)
+	);
+	const r = await tool.viewTool("score-tool");
+
+	assert.ok(r.html.includes("Health 100"));
+	assert.ok(r.html.includes("Maintained"));
+	assert.ok(r.html.includes("Calculation: weighted average across 1 of 1 dimensions"));
+});
+
 test("viewTool keeps rendering when Evolved signal and media reads fail", async () => {
 	h.getTool.mockResolvedValue(toolFixture("overlay-down", { title: "Overlay Down" }));
 	h.backendGetJson.mockRejectedValue(new Error("overlay down"));

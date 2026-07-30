@@ -149,8 +149,8 @@ export async function attachEndorsements(tools) {
 const EVOLVED_SUMMARY_TTL_MS = 5 * 60 * 1000;
 /** @type {Map<string, { summary: any, ts: number }>} */
 const evolvedSummaryCache = new Map();
-/** @type {Set<string>} */
-const evolvedSummaryInflight = new Set();
+/** @type {Map<string, Promise<void>>} */
+const evolvedSummaryInflight = new Map();
 
 /** @param {string[]} names */
 function emitEvolvedSummaryRefresh(names) {
@@ -158,13 +158,26 @@ function emitEvolvedSummaryRefresh(names) {
 	document.dispatchEvent(new CustomEvent("toolhub:evolved-summaries-refresh", { detail: { names } }));
 }
 
-/** @param {string[]} names */
-function refreshEvolvedSummaries(names) {
-	const batch = names.filter((name) => name && !evolvedSummaryInflight.has(name)).slice(0, 50);
-	if (batch.length === 0) return;
-	for (const name of batch) evolvedSummaryInflight.add(name);
+/**
+ * @param {string[]} names
+ * @param {{ emit?: boolean }} [opts]
+ * @returns {Promise<void>}
+ */
+function refreshEvolvedSummaries(names, opts = {}) {
+	/** @type {Array<Promise<void>>} */
+	const pending = [];
+	/** @type {string[]} */
+	const batch = [];
+	for (const name of names) {
+		if (!name) continue;
+		const inflight = evolvedSummaryInflight.get(name);
+		if (inflight) pending.push(inflight);
+		else batch.push(name);
+		if (batch.length >= 50) break;
+	}
+	if (batch.length === 0) return Promise.allSettled(pending).then(() => undefined);
 	const params = new URLSearchParams({ names: batch.join(",") });
-	backendGetJson(`/v1/tools/summaries/?${params.toString()}`)
+	const request = backendGetJson(`/v1/tools/summaries/?${params.toString()}`)
 		.then((data) => {
 			const results = data && typeof data.results === "object" ? data.results : {};
 			const updated = [];
@@ -174,14 +187,19 @@ function refreshEvolvedSummaries(names) {
 				evolvedSummaryCache.set(name, { summary, ts: Date.now() });
 				updated.push(name);
 			}
-			if (updated.length > 0) emitEvolvedSummaryRefresh(updated);
+			if (opts.emit !== false && updated.length > 0) emitEvolvedSummaryRefresh(updated);
 		})
 		.catch(() => {
 			// Health summaries are additive; cards remain valid without them.
 		})
 		.finally(() => {
-			for (const name of batch) evolvedSummaryInflight.delete(name);
+			for (const name of batch) {
+				if (evolvedSummaryInflight.get(name) === request) evolvedSummaryInflight.delete(name);
+			}
 		});
+	for (const name of batch) evolvedSummaryInflight.set(name, request);
+	pending.push(request);
+	return Promise.allSettled(pending).then(() => undefined);
 }
 
 /**
@@ -189,9 +207,10 @@ function refreshEvolvedSummaries(names) {
  * The endpoint reads only Evolved's local database, so this never blocks on
  * official Toolhub after the canonical/summary cache has been populated.
  * @param {Tool[]} tools
+ * @param {{ waitForFresh?: boolean }} [opts]
  * @returns {Promise<Tool[]>}
  */
-export async function attachEvolvedSummaries(tools) {
+export async function attachEvolvedSummaries(tools, opts = {}) {
 	const names = [...new Set((tools || []).map((tool) => tool && tool.name).filter(Boolean))].slice(0, 50);
 	if (names.length === 0) return tools;
 	const now = Date.now();
@@ -201,6 +220,14 @@ export async function attachEvolvedSummaries(tools) {
 		if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
 		if (!cached || now - cached.ts > EVOLVED_SUMMARY_TTL_MS) stale.push(tool.name);
 	}
-	refreshEvolvedSummaries(stale);
+	if (opts.waitForFresh) {
+		await refreshEvolvedSummaries(stale, { emit: false });
+		for (const tool of tools) {
+			const cached = evolvedSummaryCache.get(tool.name);
+			if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
+		}
+	} else {
+		refreshEvolvedSummaries(stale);
+	}
 	return tools;
 }

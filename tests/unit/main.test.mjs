@@ -262,6 +262,29 @@ test("API cache refresh events show a toast and repaint once fresh data arrives"
 	}
 });
 
+test("API cache refresh waits for a busy route to finish before repainting", () => {
+	vi.useFakeTimers();
+	try {
+		vi.clearAllMocks();
+		const viewEl = $("#view");
+		viewEl.setAttribute("aria-busy", "true");
+
+		document.dispatchEvent(
+			new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/tools/example/", state: "success" } })
+		);
+		vi.advanceTimersByTime(150);
+		assert.equal(router.render.mock.calls.length, 0);
+
+		viewEl.setAttribute("aria-busy", "false");
+		document.dispatchEvent(new Event("toolhub:route-render-end"));
+		vi.advanceTimersByTime(150);
+		assert.equal(router.render.mock.calls.length, 1);
+	} finally {
+		$("#view")?.removeAttribute("aria-busy");
+		vi.useRealTimers();
+	}
+});
+
 test("server-background cache refresh events show a brief refresh toast", () => {
 	vi.useFakeTimers();
 	try {

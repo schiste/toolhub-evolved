@@ -289,6 +289,7 @@ function commitView(viewEl, view, path) {
 		h1.focus({ preventScroll: true });
 		lastPath = path;
 	}
+	document.dispatchEvent(new Event("toolhub:route-render-end"));
 }
 export async function render() {
 	document.dispatchEvent(new Event("toolhub:route-render-start"));

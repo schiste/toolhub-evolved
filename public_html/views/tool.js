@@ -298,7 +298,7 @@ export async function viewTool(name) {
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/signals/`).catch(() => null),
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
 	]);
-	await attachEvolvedSummaries([tool]);
+	await attachEvolvedSummaries([tool], { waitForFresh: true });
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
 	const mediaRows = Array.isArray(evolvedMedia?.results) ? evolvedMedia.results : [];
 	const { provTags, syncPanels } = toolSyncUi(tool, name);
