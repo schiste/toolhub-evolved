@@ -147,6 +147,48 @@ export const STATIC = {
 		<p>${t("static.rulesOfEngagement.honestEdgesBody", "Because search is still based on Toolhub's live search API, a locally saved draft may not appear in live search until it has been accepted by official Toolhub. We label local overlays rather than presenting them as canonical Toolhub data.")}</p>
 		<blockquote>${t("static.rulesOfEngagement.summary", "In short: Toolhub remains the source of truth for catalog data; Evolved publishes through Toolhub when signed in and keeps local overlay data for drafts, fallback, and features Toolhub does not expose.")}</blockquote>`
 	}),
+	"health-score": () => ({
+		title: t("static.healthScore.title", "Health score system"),
+		body: `
+		<p>${t("static.healthScore.intro", "Tool health is an Evolved-local transparency signal. It is deterministic: the displayed score is calculated from stored facts and approved analysis reports, not from generated judgement or live third-party calls during page render.")}</p>
+		<blockquote>${t("static.healthScore.notCanonical", "Toolhub remains the source of truth for catalog metadata. Health scores are an Evolved overlay that explains maintenance and operational signals around a tool.")}</blockquote>
+		<h2>${t("static.healthScore.formulaTitle", "Formula")}</h2>
+		<p>${tWithElements("static.healthScore.formulaBody", "The public score is a weighted average: {formula}. Dimensions without a numeric score, or dimensions marked as excluded, are shown for context but are not included in the numerator or denominator.", { formula: code("round(sum(score × weight) / sum(weight))") })}</p>
+		<h2>${t("static.healthScore.publicDimensionsTitle", "Public dimensions")}</h2>
+		<ul>
+			<li>${tWithElements("static.healthScore.sourceHealthItem", "{sourceHealth}: derived from the latest approved deterministic source-analysis report for the tool. It can include repository activity, maintainability, dependency reproducibility, security and permission clarity, metadata quality, and frontend accessibility evidence.", { sourceHealth: code("source-health") })}</li>
+			<li>${tWithElements("static.healthScore.maintainerStatusItem", "{maintainerStatus}: derived from Evolved maintainer evidence, verified author claims, Toolhub catalog maintainer metadata, and local maintainer activity rollups.", { maintainerStatus: code("maintainer-status") })}</li>
+			<li>${tWithElements("static.healthScore.runtimeHealthItem", "{runtimeHealth}: derived from an approved Evolved health target when one exists, such as the latest stored result for a configured health-check URL.", { runtimeHealth: code("runtime-health") })}</li>
+		</ul>
+		<h2>${t("static.healthScore.variablesTitle", "Variables fetched or stored")}</h2>
+		<ul>
+			<li>${tWithElements("static.healthScore.catalogVariablesItem", "From cached official Toolhub catalog data: {name}, title, description, authors, maintainers, tool type, URLs, repository URL, issue tracker, documentation links, keywords, audiences, tasks, languages, license, deprecation state, and the Toolhub listing modified timestamp.", { name: code("tool.name") })}</li>
+			<li>${t("static.healthScore.maintainerVariablesItem", "From Evolved maintainer indexing: verified claim count, maintainer count, active maintainer count, evidence edge count, best confidence, last maintainer activity age, recent activity count, active tool count, and verified tool count.")}</li>
+			<li>${t("static.healthScore.sourceVariablesItem", "From source analysis: detected Wikimedia projects, API actions, OAuth scopes, access-rights classes, credentials warnings, dependencies, lockfiles, manifests, CI evidence, tests, docs, frontend accessibility evidence, source file classes, and suggested toolinfo metadata.")}</li>
+			<li>${t("static.healthScore.repositoryVariablesItem", "From deterministic repository context when supplied by the CLI or trusted automation: repository URL, provider, branch, default branch, last commit timestamp, commit id, commit count, contributor count, tag, dirty state, and analysis timestamp.")}</li>
+			<li>${t("static.healthScore.runtimeVariablesItem", "From Evolved runtime checks when configured: target URL, latest status, last checked timestamp, and last stored error.")}</li>
+		</ul>
+		<h2>${t("static.healthScore.sourceAnalyzerTitle", "Source analyzer subdimensions")}</h2>
+		<ul>
+			<li>${tWithElements("static.healthScore.toolHealthSubItem", "{toolHealth}: runtime, deployment, and health-check readiness evidence.", { toolHealth: code("tool-health") })}</li>
+			<li>${tWithElements("static.healthScore.sourceMaintenanceSubItem", "{sourceMaintenance}: repository activity and source history freshness.", { sourceMaintenance: code("source-maintenance") })}</li>
+			<li>${tWithElements("static.healthScore.maintainabilitySubItem", "{maintainability}: documentation, tests, CI, and dependency reproducibility.", { maintainability: code("maintainability") })}</li>
+			<li>${tWithElements("static.healthScore.safetySubItem", "{safety}: credential, elevated-rights, and permission clarity signals.", { safety: code("safety") })}</li>
+			<li>${tWithElements("static.healthScore.metadataQualitySubItem", "{metadataQuality}: completeness of derived Toolhub metadata.", { metadataQuality: code("metadata-quality") })}</li>
+			<li>${tWithElements("static.healthScore.accessibilitySubItem", "{accessibility}: accessibility evidence for web-facing tools.", { accessibility: code("accessibility") })}</li>
+			<li>${tWithElements("static.healthScore.maintainerActivitySubItem", "{maintainerActivity}: source-analysis maintainer activity context when supplied; excluded when no maintainer activity context exists.", { maintainerActivity: code("maintainer-activity") })}</li>
+		</ul>
+		<h2>${t("static.healthScore.visibilityTitle", "Visibility and refresh model")}</h2>
+		<p>${t("static.healthScore.visibilityBody", "The tool page reads health data from Evolved's local summary endpoint. Page load does not call GitHub, Gerrit, Toolforge, or package registries to calculate a score. New source or repository facts appear after a maintainer or trusted automation submits a source-analysis report and that report is approved.")}</p>
+		<h2>${t("static.healthScore.notUsedTitle", "What is not used")}</h2>
+		<ul>
+			<li>${t("static.healthScore.noPopularityItem", "Popularity, page views, thanks, and subjective ratings are not part of the health score.")}</li>
+			<li>${t("static.healthScore.noSecretsItem", "Raw source files and secrets are not stored in the public summary. The analyzer stores bounded, redacted findings and evidence excerpts.")}</li>
+			<li>${t("static.healthScore.noLlmItem", "No large language model output is used to calculate the score.")}</li>
+		</ul>
+		<h2>${t("static.healthScore.interpretTitle", "How to interpret it")}</h2>
+		<p>${t("static.healthScore.interpretBody", "A high score means Evolved has positive, recent, and reproducible signals. A low or unknown score should be read as a prompt to inspect the evidence, not as a judgement on maintainers. A quiet tool with an active verified maintainer is different from a quiet tool with no known maintainer activity, and the score is designed to preserve that distinction.")}</p>`
+	}),
 	rss: () => ({
 		title: t("static.rss.title", "Feeds"),
 		body: `

@@ -782,6 +782,8 @@ test("viewTool includes eager local health and maintainer summaries", async () =
 	assert.ok(r.html.includes("Repository updated recently"));
 	assert.ok(r.html.includes("Last known repository commit: 0123456789abcdef"));
 	assert.ok(r.html.includes("Calculation: weighted average across 1 of 1 dimensions"));
+	assert.ok(r.html.includes("100 × 1.25 = 125 weighted points."));
+	assert.ok(r.html.includes("125 weighted points ÷ 1.25 total weight = 100; rounded to 100."));
 });
 
 test("viewTool does not block first render on slow secondary discovery", async () => {

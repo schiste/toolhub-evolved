@@ -26,6 +26,7 @@ const STATIC_TITLES = {
 	"code-of-conduct": "Code of Conduct — Toolhub",
 	api: "API — Toolhub",
 	"rules-of-engagement": "Rules of Engagement — Toolhub",
+	"health-score": "Health score system — Toolhub",
 	rss: "Feeds — Toolhub"
 };
 
@@ -47,7 +48,7 @@ test("ext renders safe external links and rejects unsafe URLs", () => {
 
 test("viewStatic exposes every static page with current hybrid Toolhub/Evolved copy", () => {
 	const slugs = Object.keys(STATIC_TITLES);
-	assert.equal(slugs.length, 9);
+	assert.equal(slugs.length, 10);
 	assert.deepEqual(Object.keys(S.STATIC), slugs);
 	for (const slug of slugs) {
 		assert.equal(S.viewStatic(slug).title, STATIC_TITLES[slug]);
@@ -67,6 +68,11 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(rules.includes("site notice can be dismissed"));
 	assert.ok(rules.includes("Toolhub remains the source of truth"));
 	assert.ok(!rules.includes("Nothing here is ever written back to Toolhub"));
+	const health = S.viewStatic("health-score").html;
+	assert.ok(health.includes("round(sum(score × weight) / sum(weight))"));
+	assert.ok(health.includes("Variables fetched or stored"));
+	assert.ok(health.includes("No large language model output is used"));
+	assert.ok(health.includes("last commit timestamp"));
 });
 
 test("viewStatic falls back to the not-found page for an unknown slug", () => {

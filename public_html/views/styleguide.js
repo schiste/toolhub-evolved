@@ -347,6 +347,7 @@ function footerExample() {
 				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.projectLabel", "Project"))}">
 					<h2>${t("styleguide.footer.project", "Project")}</h2>
 					<a href="/api-docs">${t("styleguide.apiExplorer", "API explorer")}</a>
+					<a href="/health-score">${t("styleguide.footer.healthScoreSystem", "Health score system")}</a>
 					<a href="/styleguide">${t("styleguide.designSystem", "Design system")}</a>
 					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">${t("styleguide.footer.reportIssue", "Report an issue")} ${icon("external")}</a>
 				</nav>

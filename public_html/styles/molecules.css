@@ -82,6 +82,11 @@
 	list-style: none;
 }
 
+.health-score {
+	cursor: pointer;
+	list-style: none;
+}
+
 .health-score .icon,
 .health-chip .icon {
 	width: 1em;
@@ -94,47 +99,10 @@
 	opacity: 0.82;
 }
 
-.health-score {
-	position: relative;
-}
-
 .health-score:focus-visible {
 	outline: 2px solid var(--color-progressive);
 	outline-offset: 1px;
 	box-shadow: none;
-}
-
-.health-score__tooltip {
-	position: absolute;
-	z-index: 70;
-	inset-block-start: calc(100% + var(--space-1));
-	inset-inline-start: 0;
-	box-sizing: border-box;
-	width: min(360px, calc(100vw - var(--space-4)));
-	padding: var(--space-2) var(--space-3);
-	border: var(--border-base);
-	background: var(--color-surface);
-	color: var(--color-text);
-	box-shadow: var(--shadow-popover);
-	font-size: var(--fs-small);
-	font-weight: 500;
-	line-height: var(--lh-body);
-	white-space: pre-line;
-	visibility: hidden;
-	opacity: 0;
-	pointer-events: none;
-	transform: translateY(-2px);
-	transition:
-		opacity var(--transition-fast),
-		transform var(--transition-fast),
-		visibility var(--transition-fast);
-}
-
-.health-score:hover .health-score__tooltip,
-.health-score:focus-visible .health-score__tooltip {
-	visibility: visible;
-	opacity: 1;
-	transform: translateY(0);
 }
 
 .health-score--good,
@@ -170,6 +138,7 @@
 	display: inline-block;
 }
 
+.health-score::-webkit-details-marker,
 .health-chip::-webkit-details-marker {
 	display: none;
 }
@@ -181,6 +150,10 @@
 }
 
 .health-popover[open] .health-chip {
+	border-block-end-color: currentColor;
+}
+
+.health-popover[open] .health-score {
 	border-block-end-color: currentColor;
 }
 
@@ -201,6 +174,10 @@
 
 .tcard .health-popover__panel {
 	inset-inline: auto 0;
+}
+
+.health-popover--score .health-popover__panel {
+	width: min(560px, calc(100vw - var(--space-4)));
 }
 
 .health-popover__head {
@@ -277,6 +254,111 @@
 .health-popover__formula {
 	margin: var(--space-3) var(--space-0) var(--space-0);
 	line-height: 1.35;
+}
+
+.health-score__formula,
+.health-score__equation,
+.health-score__learn,
+.health-score__section > p {
+	color: var(--color-text-muted);
+	font-size: var(--fs-fine);
+	line-height: 1.35;
+}
+
+.health-score__formula {
+	margin: var(--space-3) var(--space-0) var(--space-1);
+}
+
+.health-score__equation {
+	margin: var(--space-0) var(--space-0) var(--space-3);
+	font-weight: 700;
+	color: var(--color-text);
+}
+
+.health-score__rows {
+	list-style: none;
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-0);
+	padding: var(--space-0);
+}
+
+.health-score__row {
+	display: grid;
+	gap: var(--space-2);
+	padding: var(--space-2);
+	border: var(--border-muted);
+	background: var(--color-surface);
+}
+
+.health-score__row--excluded {
+	background: var(--color-surface-muted);
+}
+
+.health-score__row-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-2);
+}
+
+.health-score__row-head strong {
+	font-size: var(--fs-caption);
+}
+
+.health-score__row-head span,
+.health-score__row p,
+.health-score__row em {
+	color: var(--color-text-muted);
+	font-size: var(--fs-fine);
+	font-style: normal;
+	line-height: 1.35;
+}
+
+.health-score__row p {
+	margin: var(--space-0);
+}
+
+.health-score__metrics {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: var(--space-2);
+	margin: var(--space-0);
+}
+
+.health-score__metrics dt {
+	margin: var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	font-weight: 600;
+}
+
+.health-score__metrics dd {
+	margin: var(--space-0);
+	font-size: var(--fs-caption);
+	font-weight: 700;
+}
+
+.health-score__section {
+	display: grid;
+	gap: var(--space-2);
+	margin-top: var(--space-4);
+	padding-top: var(--space-3);
+	border-top: var(--border-muted);
+}
+
+.health-score__section h3 {
+	margin: var(--space-0);
+	font-size: var(--fs-caption);
+}
+
+.health-score__section > p,
+.health-score__learn {
+	margin: var(--space-0);
+}
+
+.health-score__learn {
+	padding-top: var(--space-3);
 }
 
 /* Save-to-a-list menu. */

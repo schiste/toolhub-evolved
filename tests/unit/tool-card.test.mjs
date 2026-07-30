@@ -124,7 +124,7 @@ test("toolCard renders attached health score and maintainer disclosure", () => {
 		...base,
 		evolvedSummary: {
 			health: {
-				score: 82,
+				score: 84,
 				grade: "good",
 				dimensions: [
 					{
@@ -144,12 +144,14 @@ test("toolCard renders attached health score and maintainer disclosure", () => {
 			maintainerDimension: { status: "maintained", bestConfidence: 84 }
 		}
 	});
-	assert.ok(html.includes("Health 82"));
-	assert.ok(html.includes('tabindex="0"'));
+	assert.ok(html.includes("Health 84"));
+	assert.ok(html.includes("<details"));
 	assert.ok(html.includes("Local Evolved health score"));
 	assert.ok(html.includes("Included dimensions:"));
 	assert.ok(html.includes("- Maintainer status: score 84 · weight 1.25 · confidence 85% · maintained"));
-	assert.ok(html.includes('class="health-score__tooltip" aria-hidden="true"'));
+	assert.ok(html.includes("84 × 1.25 = 105 weighted points."));
+	assert.ok(html.includes("105 weighted points ÷ 1.25 total weight = 84; rounded to 84."));
+	assert.ok(html.includes("How the health score system works"));
 	assert.ok(html.includes('<details class="health-popover'));
 	assert.ok(html.includes("Maintained"));
 	assert.ok(html.includes("Calculation: weighted average across 1 of 1 dimensions"));

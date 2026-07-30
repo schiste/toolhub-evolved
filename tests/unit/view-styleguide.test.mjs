@@ -117,6 +117,7 @@ const S = {
 				<nav class="footer__col" aria-label="Project">
 					<h2>Project</h2>
 					<a href="/api-docs">API explorer</a>
+					<a href="/health-score">Health score system</a>
 					<a href="/styleguide">Design system</a>
 					<a href="https://phabricator.wikimedia.org/tag/toolhub/" target="_blank" rel="noopener nofollow">Report an issue <svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a>
 				</nav>
