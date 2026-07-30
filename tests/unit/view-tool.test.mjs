@@ -767,6 +767,21 @@ test("viewTool includes eager local health and maintainer summaries", async () =
 	assert.ok(r.html.includes("Calculation: weighted average across 1 of 1 dimensions"));
 });
 
+test("viewTool does not block first render on slow secondary discovery", async () => {
+	h.getTool.mockResolvedValue(toolFixture("fast-core", { title: "Fast Core" }));
+	h.listMemberships.mockReturnValue(new Promise(() => {}));
+	h.getSimilarityIndex.mockReturnValue(new Promise(() => {}));
+	h.egoGraph.mockReturnValue(new Promise(() => {}));
+
+	const started = Date.now();
+	const r = await tool.viewTool("fast-core");
+
+	assert.ok(Date.now() - started < 1200);
+	assert.ok(r.html.includes("Fast Core"));
+	assert.ok(!r.html.includes("related-title"));
+	assert.ok(!r.html.includes("neighborhood-title"));
+});
+
 test("viewTool keeps rendering when Evolved signal and media reads fail", async () => {
 	h.getTool.mockResolvedValue(toolFixture("overlay-down", { title: "Overlay Down" }));
 	h.backendGetJson.mockRejectedValue(new Error("overlay down"));

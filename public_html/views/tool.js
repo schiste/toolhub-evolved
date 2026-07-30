@@ -34,6 +34,7 @@ import { prosePage, viewNotFound } from "./static.js";
 
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
+const DETAIL_DISCOVERY_TIMEOUT_MS = 350;
 
 /** @typedef {{ name: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
 
@@ -57,6 +58,27 @@ function relatedToolRow(item) {
 				${chips ? `<div class="related__chips">${chips}</div>` : ""}
 			</div>
 		</article>`;
+}
+
+/**
+ * Keep the detail page fast: secondary discovery sections should render only
+ * when their cached data resolves quickly.
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {T} fallback
+ * @returns {Promise<T>}
+ */
+function detailDiscovery(promise, fallback) {
+	/** @type {ReturnType<typeof setTimeout> | null} */
+	let timer = null;
+	return Promise.race([
+		promise.catch(() => fallback),
+		new Promise((resolve) => {
+			timer = setTimeout(() => resolve(fallback), DETAIL_DISCOVERY_TIMEOUT_MS);
+		})
+	]).finally(() => {
+		if (timer) clearTimeout(timer);
+	});
 }
 
 /** @param {string} name */
@@ -339,17 +361,20 @@ export async function viewTool(name) {
 	const deleteResult = canDeleteOfficialTool
 		? `<p class="at__result" data-tool-delete-result aria-live="polite"></p>`
 		: "";
-	const membershipMap = await listMemberships();
+	const membershipPromise = detailDiscovery(listMemberships(), new Map());
+	const relatedPromise = detailDiscovery(
+		getSimilarityIndex().then((simIndex) => nearestNeighbors(tool, simIndex, 6)),
+		[]
+	);
+	const egoPromise = detailDiscovery(
+		egoGraph(name, 10).then((graph) =>
+			// Stryker disable next-line ArrayDeclaration: egoGraph always returns a `nodes` array; the `|| []` fallback is never taken, and the sentinel array's length (1) is still < 3 — equivalent.
+			(graph.nodes || []).length >= 3 ? graph : null
+		),
+		null
+	);
+	const [membershipMap, related, ego] = await Promise.all([membershipPromise, relatedPromise, egoPromise]);
 	tool.endorsement = endorsementOf(tool.name, membershipMap);
-
-	/** @type {Array<{ tool: Tool, shared?: string[] }>} */
-	let related = [];
-	try {
-		const simIndex = await getSimilarityIndex();
-		related = nearestNeighbors(tool, simIndex, 6);
-	} catch {
-		// keep the initial empty list
-	}
 	const relatedHtml =
 		related.length > 0
 			? `<section class="related" aria-labelledby="related-title">
@@ -358,15 +383,6 @@ export async function viewTool(name) {
 				<div class="related__list">${related.map((item) => relatedToolRow(item)).join("")}</div>
 			</section>`
 			: "";
-	/** @type {{ nodes: GraphNode[], edges: GraphEdge[] } | null} */
-	let ego = null;
-	try {
-		const graph = await egoGraph(name, 10);
-		// Stryker disable next-line ArrayDeclaration: egoGraph always returns a `nodes` array; the `|| []` fallback is never taken, and the sentinel array's length (1) is still < 3 — equivalent.
-		if ((graph.nodes || []).length >= 3) ego = graph;
-	} catch {
-		// keep ego null
-	}
 	const neighborhoodHtml = ego
 		? `<section class="neighborhood" aria-labelledby="neighborhood-title">
 				<div class="section-head"><h2 id="neighborhood-title">${t("tool.neighborhoodTitle", "Neighborhood")}</h2></div>
