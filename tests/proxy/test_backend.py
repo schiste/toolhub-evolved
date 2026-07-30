@@ -48,6 +48,7 @@ from backend.models import (  # noqa: E402
     ActivityRow,
     ApiCache,
     ApiCacheMeta,
+    CanonicalToolCache,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
@@ -196,8 +197,10 @@ PUBLIC_V1_ROUTES = {
     "/healthz": "liveness probe, no data",
     "/v1/config/": "public feature flags for the signed-out SPA",
     "/v1/user/": "reports authenticated:false when signed out",
+    "/v1/canonical/tools/": "public canonical Toolhub cache; local DB only and already-public catalog data",
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
+    "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/maintainers/tools/<name>/": (
         "public derived maintainer summary; evidence is redacted and reads are rate limited"
     ),
@@ -1709,6 +1712,96 @@ def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
         assert summary["bestConfidence"] == 95
         assert summary["maintainers"][0]["toolhubUsername"] == "Schiste"
         assert summary["maintainers"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_VERIFIED
+
+
+def test_canonical_tools_endpoint_reads_local_cache_only(client):
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="cached-tool",
+                record={"name": "cached-tool", "title": "Cached Tool", "description": "Stored canonical data"},
+                source_url="https://toolhub.wikimedia.org/api/tools/cached-tool/",
+                fetched_at=now,
+                expires_at=now + timedelta(minutes=15),
+                stale_until=now + timedelta(days=1),
+            )
+        )
+
+    by_name = client.get("/v1/canonical/tools/?name=cached-tool").get_json()
+    search = client.get("/v1/canonical/tools/?q=stored").get_json()
+
+    assert by_name["count"] == 1
+    assert by_name["results"][0]["record"]["title"] == "Cached Tool"
+    assert by_name["cachePolicy"]["upstream"] is False
+    assert search["count"] == 1
+    assert search["results"][0]["toolName"] == "cached-tool"
+
+
+def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(client):
+    db.configure("sqlite://")
+    db.init_schema()
+    now = utcnow()
+    with db.session_scope() as s:
+        user = User(wm_sub="maintainer-summary", username="Ada", registered_at=now - timedelta(days=2))
+        s.add(user)
+        s.flush()
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada Lovelace",
+                toolhub_username="Ada",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                checked_at=now,
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        s.add(
+            SourceAnalysisReport(
+                user_id=user.id,
+                created_by_user_id=user.id,
+                tool_name="ada-tool",
+                review_status=sync.REVIEW_APPROVED,
+                reviewed_at=now,
+                report={
+                    "healthCore": {
+                        "score": 80,
+                        "grade": "good",
+                        "confidence": 0.75,
+                        "sourceMaintenanceStatus": "quiet",
+                        "maintainerActivityStatus": "active",
+                        "stewardshipStatus": "source-stale-maintainer-active",
+                        "dimensions": [{"key": "tool-health", "score": 80}],
+                    }
+                },
+            )
+        )
+        s.add(
+            ToolHealthTarget(
+                tool_name="ada-tool",
+                target_url="https://ada.example/healthz",
+                created_by_user_id=user.id,
+                review_status=sync.REVIEW_APPROVED,
+                enabled=True,
+                last_status="healthy",
+                last_checked_at=now,
+            )
+        )
+
+    data = client.get("/v1/tools/summaries/?name=ada-tool").get_json()
+    summary = data["results"]["ada-tool"]
+
+    assert data["cachePolicy"]["upstream"] is False
+    assert summary["maintainer"]["status"] == "verified"
+    assert summary["maintainerDimension"]["status"] == "maintained"
+    assert summary["health"]["score"] >= 80
+    assert summary["health"]["calculation"]["formula"] == "weighted_average(included dimension scores)"
+    assert {item["key"] for item in summary["health"]["dimensions"]} == {
+        "source-health",
+        "maintainer-status",
+        "runtime-health",
+    }
 
 
 def test_maintainer_rollup_refresh_distinguishes_empty_and_full_scope():

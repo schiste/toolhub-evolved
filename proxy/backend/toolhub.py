@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import requests
 from sqlalchemy import select
 
-from backend import api_cache, db, token_crypto
+from backend import api_cache, canonical_tools, db, token_crypto
 from backend.models import ToolhubToken, utcnow
 
 DEFAULT_BASE_URL = "https://toolhub.wikimedia.org"
@@ -274,6 +274,7 @@ def public_api_get(path: str, *, params: dict[str, object] | None = None) -> obj
                 last_modified=resp.headers.get("last-modified"),
             ),
         )
+        canonical_tools.ingest_payload(url, body)
     return payload
 
 

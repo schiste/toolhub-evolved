@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""SQLAlchemy models — the site's complementary records.
+"""SQLAlchemy models for Evolved-owned data and bounded public caches.
 
-Nothing in here mirrors upstream Toolhub catalog data (docs/PRODUCTION.md §0):
-rows are user accounts and the deltas users create on this site. Overlay rows
-(edits/annotations) and net-new tool records are keyed by tool name and carry
-the contributing user, so the assembled overlay can be rebuilt per key in the
-exact shapes the SPA's localStorage cache uses.
+Most rows are complementary records: user accounts, local deltas, verification
+claims, and activity. `CanonicalToolCache` is the deliberate exception: it is a
+structured public cache of official Toolhub tool records, used for fast fallback
+reads while live Toolhub data is stale or unavailable.
 """
 
 from datetime import UTC, datetime
@@ -96,6 +95,21 @@ class ApiCacheMeta(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class CanonicalToolCache(Base):
+    """Structured local cache of canonical official Toolhub tool records."""
+
+    __tablename__ = "canonical_tool_cache"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    record: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_url: Mapped[str] = mapped_column(String(2000), default="")
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ToolOwnerCache(Base):

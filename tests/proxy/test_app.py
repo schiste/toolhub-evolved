@@ -26,7 +26,7 @@ os.environ.setdefault("TOOLHUB_SECRET_KEY", "test-secret")
 
 import app as proxy_app  # noqa: E402  (path injected above)
 from backend import db  # noqa: E402
-from backend.models import ApiCache  # noqa: E402
+from backend.models import ApiCache, CanonicalToolCache  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -215,6 +215,34 @@ def test_success_is_relayed_and_cached(client, fake_get):
         assert row.url == captured["url"]
         assert row.status == 200
         assert row.body == b'{"ok":true}'
+
+
+def test_successful_tool_payload_populates_canonical_tool_cache(client, fake_get):
+    body = b'{"results":[{"name":"toolforge-demo","title":"Demo","description":"Cached canonical tool"}]}'
+    fake_get(FakeUpstream(200, body))
+
+    resp = client.get("/api/search/tools/?q=demo")
+
+    assert resp.status_code == 200
+    with db.session_scope() as s:
+        row = s.get(CanonicalToolCache, "toolforge-demo")
+        assert row is not None
+        assert row.record["title"] == "Demo"
+        assert row.source_url == "https://toolhub.wikimedia.org/api/search/tools/?q=demo"
+
+
+def test_successful_list_detail_payload_populates_canonical_tool_cache(client, fake_get):
+    body = b'{"id":"L1","tools":[{"name":"listed-tool","title":"Listed","description":"From a list"}]}'
+    fake_get(FakeUpstream(200, body))
+
+    resp = client.get("/api/lists/L1/")
+
+    assert resp.status_code == 200
+    with db.session_scope() as s:
+        row = s.get(CanonicalToolCache, "listed-tool")
+        assert row is not None
+        assert row.record["title"] == "Listed"
+        assert row.source_url == "https://toolhub.wikimedia.org/api/lists/L1/"
 
 
 def test_error_status_is_relayed_but_not_cached(client, fake_get):

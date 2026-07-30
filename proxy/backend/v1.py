@@ -26,6 +26,7 @@ from sqlalchemy import delete, func, or_, select, text
 from backend import (
     api_cache,
     authz,
+    canonical_tools,
     db,
     maintainer_index,
     recent_owners,
@@ -165,6 +166,12 @@ SOURCE_ANALYSIS_REVIEW_STATUSES = {REVIEW_OPEN, REVIEW_APPROVED, REVIEW_REJECTED
 SOURCE_ANALYSIS_DEFAULT_LIMIT = 20
 SOURCE_ANALYSIS_MAX_LIMIT = 50
 SOURCE_ANALYSIS_NOT_FOUND = "source analysis report not found"
+TOOL_SUMMARY_MAX_NAMES = 50
+TOOL_SUMMARY_DEFAULT_LIMIT = 24
+HEALTH_GRADE_STRONG = 85
+HEALTH_GRADE_GOOD = 70
+HEALTH_GRADE_ATTENTION = 50
+RUNTIME_HEALTH_SCORES = {"healthy": 95, "ok": 90, "degraded": 55, "down": 15, "error": 20}
 
 
 def _iso(dt: datetime | None) -> str:
@@ -480,9 +487,12 @@ def _source_repository_context(tool_name: str | None, repository_context: object
     """Add Evolved maintainer context to source analysis when no caller context exists."""
     if tool_name is None or (repository_context is not None and not isinstance(repository_context, dict)):
         return repository_context
-    if isinstance(repository_context, dict) and isinstance(repository_context.get("maintainers"), dict):
-        if repository_context["maintainers"]:
-            return repository_context
+    if (
+        isinstance(repository_context, dict)
+        and isinstance(repository_context.get("maintainers"), dict)
+        and repository_context["maintainers"]
+    ):
+        return repository_context
     with db.session_scope() as s:
         maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
         keys = [
@@ -499,6 +509,264 @@ def _source_repository_context(tool_name: str | None, repository_context: object
     merged = dict(repository_context or {})
     merged["maintainers"] = maintainer_context
     return merged
+
+
+def _score_grade(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score >= HEALTH_GRADE_STRONG:
+        return "strong"
+    if score >= HEALTH_GRADE_GOOD:
+        return "good"
+    if score >= HEALTH_GRADE_ATTENTION:
+        return "needs-attention"
+    return "high-risk"
+
+
+def _health_status(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score >= HEALTH_GRADE_STRONG:
+        return "healthy"
+    if score >= HEALTH_GRADE_ATTENTION:
+        return "watch"
+    return "at-risk"
+
+
+def _bounded_score(value: int) -> int:
+    return max(0, min(100, value))
+
+
+def _summary_dimension(  # noqa: PLR0913 - explicit fields keep scoring dimensions auditable.
+    key: str,
+    label: str,
+    score: int | None,
+    weight: float,
+    status: str,
+    summary: str,
+    *,
+    confidence: float = 0.5,
+    source: str = SOURCE_LOCAL,
+) -> dict[str, Any]:
+    bounded = _bounded_score(score) if score is not None else None
+    return {
+        "key": key,
+        "label": label,
+        "score": bounded,
+        "grade": _score_grade(bounded),
+        "weight": weight,
+        "status": status or _score_grade(bounded),
+        "summary": summary,
+        "confidence": round(max(0.1, min(0.99, confidence)), 2),
+        "source": source,
+        "includedInScore": bounded is not None,
+    }
+
+
+def _latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None:  # noqa: ANN401 - SQLAlchemy session
+    row = (
+        s.execute(
+            select(SourceAnalysisReport)
+            .where(
+                SourceAnalysisReport.tool_name == tool_name,
+                SourceAnalysisReport.review_status == REVIEW_APPROVED,
+            )
+            .order_by(
+                SourceAnalysisReport.reviewed_at.desc().nullslast(),
+                SourceAnalysisReport.created_at.desc(),
+                SourceAnalysisReport.id.desc(),
+            )
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    report = row.report if row is not None and isinstance(row.report, dict) else {}
+    health_core = report.get("healthCore") if isinstance(report.get("healthCore"), dict) else None
+    if not health_core:
+        return None
+    return {
+        "score": clean_int(health_core.get("score")),
+        "grade": str(health_core.get("grade") or "unknown"),
+        "confidence": float(health_core.get("confidence") or 0),
+        "sourceMaintenanceStatus": str(health_core.get("sourceMaintenanceStatus") or "unknown"),
+        "maintainerActivityStatus": str(health_core.get("maintainerActivityStatus") or "unknown"),
+        "stewardshipStatus": str(health_core.get("stewardshipStatus") or "needs-context"),
+        "dimensions": health_core.get("dimensions") if isinstance(health_core.get("dimensions"), list) else [],
+        "createdAt": _iso(row.created_at),
+        "reviewedAt": _iso(row.reviewed_at),
+        "source": SOURCE_LOCAL,
+        "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
+    }
+
+
+def _health_target_dimension(health: ToolHealthTarget | None) -> dict[str, Any] | None:
+    if health is None:
+        return None
+    status = str(health.last_status or "unknown")
+    score = RUNTIME_HEALTH_SCORES.get(status)
+    return _summary_dimension(
+        "runtime-health",
+        "Runtime health",
+        score,
+        1.0,
+        status,
+        "Latest approved Evolved health target result.",
+        confidence=0.9 if score is not None else 0.35,
+        source=SOURCE_LOCAL,
+    ) | {
+        "checkedAt": _iso(health.last_checked_at),
+        "targetUrl": health.target_url,
+        "lastError": health.last_error or "",
+    }
+
+
+def _maintainer_activity_label(activity_status: str, summary_status: str) -> str:
+    if activity_status in {"active", "quiet"} and summary_status in {"verified", "probable"}:
+        return "maintained"
+    if activity_status in {"active", "quiet"}:
+        return "active-maintainer"
+    if activity_status in {"stale", "dormant"}:
+        return "maintainer-stale"
+    if summary_status in {"verified", "probable"}:
+        return "verified-maintainer"
+    return "unknown"
+
+
+def _maintainer_dimension(summary: dict[str, Any]) -> dict[str, Any]:
+    counts = summary.get("counts") if isinstance(summary.get("counts"), dict) else {}
+    maintainers = summary.get("maintainers") if isinstance(summary.get("maintainers"), list) else []
+    best = maintainers[0] if maintainers and isinstance(maintainers[0], dict) else {}
+    activity = best.get("activity") if isinstance(best.get("activity"), dict) else {}
+    summary_status = str(summary.get("status") or "unknown")
+    activity_status = str(activity.get("status") or "unknown")
+    score = clean_int(summary.get("bestConfidence"))
+    if score is not None:
+        if activity_status == "active":
+            score += 5
+        elif activity_status == "quiet":
+            score -= 5
+        elif activity_status == "stale":
+            score -= 25
+        elif activity_status == "dormant":
+            score -= 40
+        if clean_int(counts.get("verifiedMaintainers")):
+            score += 5
+        if not clean_int(counts.get("maintainers")):
+            score = None
+    label = _maintainer_activity_label(activity_status, summary_status)
+    return _summary_dimension(
+        "maintainer-status",
+        "Maintainer status",
+        _bounded_score(score) if score is not None else None,
+        1.25,
+        label,
+        "Derived from Evolved maintainer evidence confidence and local maintainer activity.",
+        confidence=0.85 if maintainers else 0.2,
+        source=SOURCE_LOCAL,
+    ) | {
+        "summaryStatus": summary_status,
+        "activityStatus": activity_status,
+        "bestConfidence": clean_int(summary.get("bestConfidence")) or 0,
+        "counts": counts,
+    }
+
+
+def _health_summary_from_dimensions(
+    tool_name: str,
+    dimensions: list[dict[str, Any]],
+    *,
+    source_health: dict[str, Any] | None,
+) -> dict[str, Any]:
+    included = [item for item in dimensions if item.get("includedInScore") and item.get("score") is not None]
+    weight = sum(float(item.get("weight") or 0) for item in included)
+    score = (
+        round(sum(float(item["score"]) * float(item.get("weight") or 0) for item in included) / weight)
+        if weight
+        else None
+    )
+    return {
+        "toolName": tool_name,
+        "score": score,
+        "grade": _score_grade(score),
+        "status": _health_status(score),
+        "confidence": (
+            round(weight / sum(float(item.get("weight") or 0) for item in dimensions), 2) if dimensions else 0
+        ),
+        "dimensions": dimensions,
+        "sourceHealth": source_health,
+        "calculation": {
+            "formula": "weighted_average(included dimension scores)",
+            "includedWeight": round(weight, 2),
+            "dimensionCount": len(dimensions),
+            "includedDimensionCount": len(included),
+        },
+        "source": SOURCE_LOCAL,
+        "syncStatus": SYNC_EVOLVED_REAL,
+    }
+
+
+def _tool_names_from_request() -> list[str]:
+    names = request.args.getlist("name")
+    names.extend(str(request.args.get("names") or "").split(","))
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        clean = _clean_name(name)
+        if clean and clean not in seen:
+            seen.add(clean)
+            out.append(clean)
+    return out[:TOOL_SUMMARY_MAX_NAMES]
+
+
+def _local_tool_summary(s: Any, tool_name: str) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session
+    maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
+    keys = [
+        row[0]
+        for row in s.execute(
+            select(ToolMaintainerEdge.maintainer_key).where(ToolMaintainerEdge.tool_name == tool_name).distinct()
+        ).all()
+    ]
+    maintainer_index.refresh_activity_rollups(s, maintainer_keys=keys)
+    maintainer_summary = maintainer_index.public_tool_summary(s, tool_name)
+    source_health = _latest_public_health_core(s, tool_name)
+    dimensions: list[dict[str, Any]] = []
+    if source_health:
+        dimensions.append(
+            _summary_dimension(
+                "source-health",
+                "Source health",
+                clean_int(source_health.get("score")),
+                1.5,
+                str(source_health.get("stewardshipStatus") or source_health.get("grade") or "unknown"),
+                "Latest approved deterministic source-analysis health core.",
+                confidence=float(source_health.get("confidence") or 0.1),
+                source=SOURCE_LOCAL,
+            )
+        )
+    dimensions.append(_maintainer_dimension(maintainer_summary))
+    health = (
+        s.execute(
+            select(ToolHealthTarget)
+            .where(ToolHealthTarget.tool_name == tool_name, ToolHealthTarget.enabled.is_(True))
+            .where(ToolHealthTarget.deleted_at.is_(None), ToolHealthTarget.review_status == REVIEW_APPROVED)
+            .order_by(ToolHealthTarget.last_checked_at.desc(), ToolHealthTarget.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    health_dimension = _health_target_dimension(health)
+    if health_dimension is not None:
+        dimensions.append(health_dimension)
+    return {
+        "toolName": tool_name,
+        "health": _health_summary_from_dimensions(tool_name, dimensions, source_health=source_health),
+        "maintainer": maintainer_summary,
+        "maintainerDimension": dimensions[0 if not source_health else 1],
+        "source": SOURCE_LOCAL,
+        "syncStatus": SYNC_EVOLVED_REAL,
+    }
 
 
 def _clean_author_key_id(value: Any) -> str | None:  # noqa: ANN401 - untrusted JSON
@@ -3452,6 +3720,55 @@ def v1_user_delete_evolved_data() -> Response:
         deleted["maintainerActivity"] = int(maintainer_activity_count)
         s.execute(delete(MaintainerActivityRollup).where(MaintainerActivityRollup.maintainer_key == maintainer_key))
     return jsonify({"ok": True, "deleted": deleted})
+
+
+@v1_bp.route("/v1/canonical/tools/")
+def v1_canonical_tools() -> Response:
+    """Return locally cached canonical official Toolhub tool records."""
+    names = _tool_names_from_request()
+    q = str(request.args.get("q") or "").strip()
+    limit = min(max(clean_int(request.args.get("limit")) or TOOL_SUMMARY_DEFAULT_LIMIT, 1), TOOL_SUMMARY_MAX_NAMES)
+    if names:
+        rows_by_name = canonical_tools.tools_by_name(names)
+        results = [rows_by_name[name] for name in names if name in rows_by_name]
+    else:
+        results = canonical_tools.search(q, limit=limit)
+    return jsonify(
+        {
+            "count": len(results),
+            "results": results,
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
+            "cachePolicy": {
+                "canonical": True,
+                "upstream": False,
+                "summary": "Local structured cache populated from prior official Toolhub API reads.",
+            },
+        }
+    )
+
+
+@v1_bp.route("/v1/tools/summaries/")
+def v1_tool_summaries() -> Response:
+    """Return local Evolved health and maintainer summaries for visible tools."""
+    names = _tool_names_from_request()
+    if not names:
+        return jsonify({"count": 0, "results": {}, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL})
+    with db.session_scope() as s:
+        results = {name: _local_tool_summary(s, name) for name in names}
+    return jsonify(
+        {
+            "count": len(results),
+            "results": results,
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
+            "cachePolicy": {
+                "canonical": False,
+                "upstream": False,
+                "summary": "Local Evolved summaries only; this endpoint does not fetch official Toolhub.",
+            },
+        }
+    )
 
 
 @v1_bp.route("/v1/tools/<name>/signals/")

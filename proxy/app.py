@@ -22,7 +22,7 @@ import requests
 from flask import Flask, Response, g, request, send_from_directory
 
 import backend
-from backend import api_cache, security
+from backend import api_cache, canonical_tools, security
 
 HERE = Path(__file__).resolve().parent
 _SOURCE_DIR = (HERE.parent / "public_html").resolve()
@@ -252,6 +252,7 @@ def _relay_upstream_response(
                 last_modified=upstream.headers.get("last-modified"),
             ),
         )
+        canonical_tools.ingest_payload(url, payload)
     elif stale is not None and upstream.status_code in _TRANSIENT_UPSTREAM_STATUSES:
         api_cache.mark_failure(url, f"HTTP {upstream.status_code}")
         return _cached_api_response(
