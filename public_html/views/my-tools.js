@@ -6,6 +6,7 @@ import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
 import { accountEmptyState, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
+import { sourceAnalysisWorkspace } from "../lib/organisms/source-analysis.js";
 import { toolRegistrationWorkspace } from "./toolforms.js";
 
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
@@ -271,6 +272,7 @@ export async function viewMyTools() {
 		error = e;
 	}
 	const registration = toolRegistrationWorkspace();
+	const sourceAnalysis = sourceAnalysisWorkspace();
 	const content = error
 		? accountEmptyState({
 				iconName: "tools",
@@ -289,7 +291,14 @@ export async function viewMyTools() {
 			}
 		),
 		className: "account-records account-tools at",
-		body: `${content}${registration.html}`
+		body: `${content}${registration.html}${sourceAnalysis.html}`
 	});
-	return { title: t("accountTools.docTitle", "My tools - Toolhub"), html, mount: registration.mount };
+	return {
+		title: t("accountTools.docTitle", "My tools - Toolhub"),
+		html,
+		mount() {
+			registration.mount();
+			sourceAnalysis.mount();
+		}
+	};
 }

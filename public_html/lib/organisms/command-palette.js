@@ -90,11 +90,11 @@ function actions() {
 			title: t("commandPalette.myTools", "My tools"),
 			description: t(
 				"commandPalette.myToolsDesc",
-				"Review maintained tools, register toolinfo, and manage local submissions."
+				"Review maintained tools, register toolinfo, analyze source code, and manage local submissions."
 			),
 			href: "/my-tools",
 			iconName: "tools",
-			keywords: ["maintainer", "owned", "account", "submit", "create", "register", "toolinfo"]
+			keywords: ["maintainer", "owned", "account", "submit", "create", "register", "toolinfo", "source", "scopes"]
 		},
 		{
 			id: "favorites",
