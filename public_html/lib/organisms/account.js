@@ -3,10 +3,10 @@ import { $, esc } from "../core/dom.js";
 import { t } from "../core/i18n.js";
 import { USER, serverSessionResolved, signedIn } from "../core/session.js";
 import { csrfToken, devLoginAvailable, oauthAvailable } from "../core/serversync.js";
+import { ACCOUNT_NAV_ITEMS } from "../core/account-nav.js";
 import { avatar } from "../atoms/avatar.js";
 import { button } from "../atoms/button.js";
 import { icon } from "../atoms/icon.js";
-import { ACCOUNT_NAV_ITEMS } from "./account-workbench.js";
 
 /**
  * Wrap a submit control in the sign-out POST form.
