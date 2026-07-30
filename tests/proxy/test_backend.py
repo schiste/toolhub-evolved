@@ -1670,6 +1670,47 @@ def test_maintainer_index_builds_public_safe_summary_from_claims():
         assert "private evidence" not in dumps(summary)
 
 
+def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
+    db.configure("sqlite://")
+    db.init_schema()
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(User(wm_sub="maintainer-duplicate", username="Schiste", registered_at=now - timedelta(days=3)))
+        s.add_all(
+            [
+                ToolAuthorClaim(
+                    tool_name="toolforge-toolhub-evolved",
+                    author_name="Christophe",
+                    toolhub_username="schiste",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    checked_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(days=1),
+                ),
+                ToolAuthorClaim(
+                    tool_name="toolforge-toolhub-evolved",
+                    author_name="Schiste",
+                    toolhub_username="Schiste",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    checked_at=now,
+                    expires_at=now + timedelta(days=1),
+                ),
+            ]
+        )
+        s.flush()
+
+        edges = maintainer_index.sync_author_claim_edges(s, tool_names=["toolforge-toolhub-evolved"])
+        summary = maintainer_index.public_tool_summary(s, "toolforge-toolhub-evolved")
+
+        assert len(edges) == 1
+        assert summary["status"] == "verified"
+        assert summary["counts"]["verifiedMaintainers"] == 1
+        assert summary["bestConfidence"] == 95
+        assert summary["maintainers"][0]["toolhubUsername"] == "Schiste"
+        assert summary["maintainers"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_VERIFIED
+
+
 def test_maintainer_rollup_refresh_distinguishes_empty_and_full_scope():
     db.configure("sqlite://")
     db.init_schema()

@@ -8,7 +8,7 @@ local Evolved activity into auditable summaries that can feed health scoring.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
@@ -100,6 +100,34 @@ def _claim_confidence(row: ToolAuthorClaim) -> int:
     method = clean_author_claim_method(row.verification_method)
     status = _claim_status(row)
     return round(CLAIM_CONFIDENCE.get(method, 20) * STATUS_MULTIPLIER.get(status, 0.5))
+
+
+def _claim_edge_identity(row: ToolAuthorClaim) -> tuple[str, str, str, str]:
+    """Return the public maintainer edge identity a claim writes to."""
+    username = clean_text(row.toolhub_username)
+    author_name = clean_text(row.author_name)
+    return (
+        clean_text(row.tool_name),
+        maintainer_key(toolhub_username=username, display_name=author_name),
+        SOURCE_AUTHOR_CLAIM,
+        clean_author_claim_method(row.verification_method),
+    )
+
+
+def _claim_rank(row: ToolAuthorClaim) -> tuple[int, datetime]:
+    """Return a deterministic freshness-aware rank for duplicate public edges."""
+    return (_claim_confidence(row), row.checked_at or datetime.min)
+
+
+def _best_claim_rows(rows: list[ToolAuthorClaim]) -> list[ToolAuthorClaim]:
+    """Collapse raw claims to the strongest claim for each public edge identity."""
+    best: dict[tuple[str, str, str, str], ToolAuthorClaim] = {}
+    for row in rows:
+        identity = _claim_edge_identity(row)
+        current = best.get(identity)
+        if current is None or _claim_rank(row) > _claim_rank(current):
+            best[identity] = row
+    return [best[key] for key in sorted(best)]
 
 
 def _edge_status(confidences: list[int]) -> str:
@@ -208,7 +236,7 @@ def sync_author_claim_edges(
         query = query.where(ToolAuthorClaim.tool_name.in_(tool_names))
     if usernames:
         query = query.where(ToolAuthorClaim.toolhub_username.in_(usernames))
-    rows = list(s.execute(query).scalars())
+    rows = _best_claim_rows(list(s.execute(query).scalars()))
     edges = [upsert_edge_from_claim(s, row) for row in rows]
     refresh_activity_rollups(s, maintainer_keys=[edge.maintainer_key for edge in edges])
     return edges
