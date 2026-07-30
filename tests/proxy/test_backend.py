@@ -1774,7 +1774,16 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
                         "maintainerActivityStatus": "active",
                         "stewardshipStatus": "source-stale-maintainer-active",
                         "dimensions": [{"key": "tool-health", "score": 80}],
-                    }
+                    },
+                    "repositoryContext": {
+                        "repository": {
+                            "url": "https://github.com/example/ada-tool",
+                            "branch": "main",
+                            "commitSha": "0123456789abcdef",
+                            "lastCommitAt": "2026-07-29T12:00:00Z",
+                            "commitCount": 42,
+                        }
+                    },
                 },
             )
         )
@@ -1798,6 +1807,13 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
     assert summary["maintainerDimension"]["status"] == "maintained"
     assert summary["health"]["score"] >= 80
     assert summary["health"]["calculation"]["formula"] == "weighted_average(included dimension scores)"
+    assert summary["health"]["sourceHealth"]["repository"] == {
+        "url": "https://github.com/example/ada-tool",
+        "branch": "main",
+        "commitSha": "0123456789abcdef",
+        "lastCommitAt": "2026-07-29T12:00:00Z",
+        "commitCount": 42,
+    }
     assert {item["key"] for item in summary["health"]["dimensions"]} == {
         "source-health",
         "maintainer-status",

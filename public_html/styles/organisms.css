@@ -1726,6 +1726,10 @@
 	color: var(--color-text-muted);
 	font-size: var(--fs-caption);
 }
+.toolpage__freshness .toolpage__when {
+	color: inherit;
+	font: inherit;
+}
 .toolpage__grid {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) 300px;

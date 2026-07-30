@@ -80,6 +80,7 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 	return {
 		...actual,
 		updatedTimeTag: (iso, cls) => `<u|${iso ?? ""}|${cls ?? ""}>`,
+		relativeTime: () => "recently",
 		timeTag: (iso, cls, text) => `<t|${iso ?? ""}|${cls ?? ""}|${text ?? ""}>`
 	};
 });
@@ -106,7 +107,9 @@ const S = {
 					<span class="status status--green"><span class="dot dot--green"></span>Healthy</span>
 					
 					
-					<u|2026-01-01T00:00:00Z|toolpage__when>
+					<span class="signal toolpage__freshness"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 1a9 9 0 011 17.945V16.93A7.001 7.001 0 0010 3a7 7 0 00-4 12.743V13h2.001L8 18l-1 1H2v-2l2.346-.001A8.97 8.97 0 011 10a9 9 0 019-9"/><path d="M11 10h3.5v2H9V6h2z"/></svg>
+		<time class="toolpage__when" datetime="2026-01-01T00:00:00.000Z" title="Toolhub catalog listing last modified: 2026-01-01T00:00:00.000Z" aria-label="Toolhub catalog listing last modified: 2026-01-01T00:00:00.000Z">Toolhub listing updated recently</time>
+	</span>
 					<span class="signal">Maintained</span>
 					<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
 					<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
@@ -212,7 +215,9 @@ const S = {
 					
 					<span class="signal" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 1 list</span>
 					
-					<u|2026-01-01T00:00:00Z|toolpage__when>
+					<span class="signal toolpage__freshness"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 1a9 9 0 011 17.945V16.93A7.001 7.001 0 0010 3a7 7 0 00-4 12.743V13h2.001L8 18l-1 1H2v-2l2.346-.001A8.97 8.97 0 011 10a9 9 0 019-9"/><path d="M11 10h3.5v2H9V6h2z"/></svg>
+		<time class="toolpage__when" datetime="2026-01-01T00:00:00.000Z" title="Toolhub catalog listing last modified: 2026-01-01T00:00:00.000Z" aria-label="Toolhub catalog listing last modified: 2026-01-01T00:00:00.000Z">Toolhub listing updated recently</time>
+	</span>
 					<span class="signal">Maintained</span>
 					<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
 					<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
@@ -360,7 +365,9 @@ const S = {
 					
 					
 					
-					<u|2026-01-01T00:00:00Z|toolpage__when>
+					<span class="signal toolpage__freshness"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 1a9 9 0 011 17.945V16.93A7.001 7.001 0 0010 3a7 7 0 00-4 12.743V13h2.001L8 18l-1 1H2v-2l2.346-.001A8.97 8.97 0 011 10a9 9 0 019-9"/><path d="M11 10h3.5v2H9V6h2z"/></svg>
+		<time class="toolpage__when" datetime="2026-01-01T00:00:00.000Z" title="Toolhub catalog listing last modified: 2026-01-01T00:00:00.000Z" aria-label="Toolhub catalog listing last modified: 2026-01-01T00:00:00.000Z">Toolhub listing updated recently</time>
+	</span>
 					<span class="signal">Maintained</span>
 					<!-- EXPERIMENTAL — operational health. Needs: an uptime/health-check service. -->
 					<span class="status status--green experimental"><span class="dot dot--green"></span>Healthy</span>
@@ -734,6 +741,13 @@ test("viewTool includes eager local health and maintainer summaries", async () =
 								health: {
 									score: 100,
 									grade: "strong",
+									sourceHealth: {
+										repository: {
+											branch: "main",
+											commitSha: "0123456789abcdef",
+											lastCommitAt: "2026-07-29T12:00:00Z"
+										}
+									},
 									dimensions: [
 										{
 											key: "maintainer-status",
@@ -764,6 +778,9 @@ test("viewTool includes eager local health and maintainer summaries", async () =
 
 	assert.ok(r.html.includes("Health 100"));
 	assert.ok(r.html.includes("Maintained"));
+	assert.ok(r.html.includes("Toolhub listing updated recently"));
+	assert.ok(r.html.includes("Repository updated recently"));
+	assert.ok(r.html.includes("Last known repository commit: 0123456789abcdef"));
 	assert.ok(r.html.includes("Calculation: weighted average across 1 of 1 dimensions"));
 });
 

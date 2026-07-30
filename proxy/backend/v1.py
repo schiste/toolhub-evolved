@@ -581,6 +581,33 @@ def _latest_public_health_core_statement(tool_name: str) -> Select[tuple[SourceA
     )
 
 
+def _source_repository_summary(report: dict[str, Any]) -> dict[str, Any] | None:
+    context = report.get("repositoryContext") if isinstance(report.get("repositoryContext"), dict) else {}
+    repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
+    if not repository:
+        return None
+
+    summary: dict[str, Any] = {}
+    for key in (
+        "url",
+        "branch",
+        "defaultBranch",
+        "commitSha",
+        "lastCommitAt",
+        "analyzedAt",
+        "provider",
+        "tag",
+    ):
+        value = repository.get(key)
+        if value is not None and str(value).strip():
+            summary[key] = str(value).strip()
+    for key in ("commitCount", "contributorCount", "lastCommitAgeDays"):
+        value = clean_int(repository.get(key))
+        if value is not None:
+            summary[key] = value
+    return summary or None
+
+
 def _latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None:  # noqa: ANN401 - SQLAlchemy session
     row = (
         s.execute(_latest_public_health_core_statement(tool_name))
@@ -599,6 +626,7 @@ def _latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None:
         "maintainerActivityStatus": str(health_core.get("maintainerActivityStatus") or "unknown"),
         "stewardshipStatus": str(health_core.get("stewardshipStatus") or "needs-context"),
         "dimensions": health_core.get("dimensions") if isinstance(health_core.get("dimensions"), list) else [],
+        "repository": _source_repository_summary(report),
         "createdAt": _iso(row.created_at),
         "reviewedAt": _iso(row.reviewed_at),
         "source": SOURCE_LOCAL,

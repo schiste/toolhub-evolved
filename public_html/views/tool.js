@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeHttpUrl, safeUrl, textAttrs } from "../lib/core/dom.js";
-import { t, timeTag, updatedTimeTag } from "../lib/core/i18n.js";
+import { relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import {
 	INDEX,
 	apiGet,
@@ -79,6 +79,62 @@ function detailDiscovery(promise, fallback) {
 	]).finally(() => {
 		if (timer) clearTimeout(timer);
 	});
+}
+
+/**
+ * @param {string | null | undefined} iso
+ * @param {string} label
+ * @param {string} title
+ * @param {string} iconName
+ */
+function freshnessSignal(iso, label, title, iconName) {
+	if (!iso) return "";
+	const date = new Date(iso);
+	const rel = relativeTime(iso);
+	if (Number.isNaN(date.getTime()) || !rel) return "";
+	return `<span class="signal toolpage__freshness">${icon(iconName)}
+		<time class="toolpage__when" datetime="${esc(date.toISOString())}" title="${esc(title)}" aria-label="${esc(title)}">${esc(label)}</time>
+	</span>`;
+}
+
+/** @param {Tool} tool */
+function catalogUpdatedSignal(tool) {
+	const rel = relativeTime(tool.modified);
+	if (!rel) return "";
+	const date = new Date(tool.modified || "");
+	const iso = Number.isNaN(date.getTime()) ? "" : date.toISOString();
+	return freshnessSignal(
+		tool.modified,
+		t("tool.toolhubListingUpdated", "Toolhub listing updated {rel}", { rel }),
+		t("tool.toolhubListingUpdatedTooltip", "Toolhub catalog listing last modified: {date}", {
+			date: iso || String(tool.modified || "")
+		}),
+		"history"
+	);
+}
+
+/** @param {any} evolvedSummary */
+function repositoryUpdatedSignal(evolvedSummary) {
+	const repository = evolvedSummary?.health?.sourceHealth?.repository;
+	if (!repository || typeof repository !== "object") return "";
+	const lastCommitAt = String(repository.lastCommitAt || "").trim();
+	const commitSha = String(repository.commitSha || "").trim();
+	const rel = relativeTime(lastCommitAt);
+	const date = new Date(lastCommitAt);
+	if (!rel || Number.isNaN(date.getTime())) return "";
+	const tooltipLines = [
+		commitSha
+			? t("tool.repositoryLastCommit", "Last known repository commit: {commit}", { commit: commitSha })
+			: t("tool.repositoryLastCommitUnknown", "Last known repository commit id unavailable."),
+		repository.branch ? t("tool.repositoryBranch", "Branch: {branch}", { branch: String(repository.branch) }) : "",
+		t("tool.repositoryUpdatedAt", "Repository updated at: {date}", { date: date.toISOString() })
+	].filter(Boolean);
+	return freshnessSignal(
+		lastCommitAt,
+		t("tool.repositoryUpdated", "Repository updated {rel}", { rel }),
+		tooltipLines.join("\n"),
+		"code"
+	);
 }
 
 /** @param {string} name */
@@ -421,7 +477,8 @@ export async function viewTool(name) {
 					${maintainerDisclosure(evolvedSummary)}
 					${endorsementChip(endorsementCount)}
 					${fitChip(tool)}
-					${updatedTimeTag(tool.modified, "toolpage__when")}
+					${catalogUpdatedSignal(tool)}
+					${repositoryUpdatedSignal(evolvedSummary)}
 				</div>
 			</div>
 			<div class="toolpage__cta">
