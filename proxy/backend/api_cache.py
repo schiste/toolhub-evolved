@@ -19,6 +19,7 @@ from backend.models import ApiCache, ApiCacheMeta, utcnow
 RECENT_FRESH_SECONDS = 30
 SEARCH_FRESH_SECONDS = 2 * 60
 DETAIL_FRESH_SECONDS = 15 * 60
+CRAWLER_FRESH_SECONDS = 6 * 60 * 60
 CONFIG_FRESH_SECONDS = 24 * 60 * 60
 DEFAULT_FRESH_SECONDS = 60
 STALE_IF_ERROR_SECONDS = 24 * 60 * 60
@@ -48,6 +49,7 @@ _RECENT_LATEST_MARKER_KEY = "recent_latest_marker"
 _TOOL_AGGREGATE_PATHS = {"/api/search/tools/", "/api/ui/home/"}
 _LIST_COLLECTION_PATH = "/api/lists/"
 _RECENT_COLLECTION_PATH = "/api/recent/"
+_CRAWLER_RUNS_PATH = "/api/crawler/runs/"
 _LIST_AND_RECENT_PATHS = {_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH}
 
 
@@ -116,6 +118,8 @@ def policy_for_url(url: str) -> CachePolicy:
         return CachePolicy(RECENT_FRESH_SECONDS)
     if path == "/api/search/tools/":
         return CachePolicy(SEARCH_FRESH_SECONDS)
+    if path == _CRAWLER_RUNS_PATH:
+        return CachePolicy(CRAWLER_FRESH_SECONDS)
     if _is_detail_path(path):
         return CachePolicy(DETAIL_FRESH_SECONDS)
     if path in _CONFIG_PATHS:

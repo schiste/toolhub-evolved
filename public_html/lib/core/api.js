@@ -151,6 +151,7 @@ export const API_BASE = "/api";
 const API_RECENT_TTL_MS = 30 * 1000;
 const API_SEARCH_TTL_MS = 2 * 60 * 1000;
 const API_DETAIL_TTL_MS = 15 * 60 * 1000;
+const API_CRAWLER_TTL_MS = 6 * 60 * 60 * 1000;
 const API_CONFIG_TTL_MS = 24 * 60 * 60 * 1000;
 const API_DEFAULT_TTL_MS = 60 * 1000;
 const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
@@ -169,6 +170,7 @@ const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
 const TOOL_AGGREGATE_PATHS = new Set(["/api/search/tools/", "/api/ui/home/"]);
 const LIST_COLLECTION_PATH = "/api/lists/";
 const RECENT_COLLECTION_PATH = "/api/recent/";
+const CRAWLER_RUNS_PATH = "/api/crawler/runs/";
 const CONFIG_PATHS = new Set([
 	"/api/",
 	"/api/schema/",
@@ -276,6 +278,7 @@ export function apiCachePolicy(url) {
 	const path = apiPath(url);
 	if (path === "/api/recent/") return { freshMs: API_RECENT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	if (path === "/api/search/tools/") return { freshMs: API_SEARCH_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	if (path === CRAWLER_RUNS_PATH) return { freshMs: API_CRAWLER_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	if (isDetailPath(path)) return { freshMs: API_DETAIL_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	if (CONFIG_PATHS.has(path)) return { freshMs: API_CONFIG_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	return { freshMs: API_DEFAULT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };

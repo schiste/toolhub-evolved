@@ -85,6 +85,7 @@ def hot_endpoints() -> tuple[HotEndpoint, ...]:
     endpoints = [
         HotEndpoint("/api/ui/home/"),
         HotEndpoint("/api/recent/", (("page_size", "30"),)),
+        HotEndpoint("/api/crawler/runs/", (("page_size", "12"),)),
         HotEndpoint("/api/schema/"),
         HotEndpoint("/api/lists/", (("page_size", "30"),)),
         HotEndpoint("/api/lists/", (("featured", "true"), ("page_size", "6"))),

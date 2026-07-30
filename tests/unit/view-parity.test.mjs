@@ -33,6 +33,14 @@ const tick = () =>
 		setTimeout(resolve, 0);
 	});
 
+async function mountedHtml(view) {
+	document.body.innerHTML = view.html;
+	view.mount?.();
+	await tick();
+	await tick();
+	return document.body.innerHTML;
+}
+
 /* ---- viewRecent -------------------------------------------------------- */
 
 test("viewRecent: a tool change renders as a table row with owner and updater columns", async () => {
@@ -547,38 +555,43 @@ test("viewCrawler: renders meta from the first run and a row per run", async () 
 	});
 	const view = await viewCrawler();
 	assert.equal(view.title, "Crawler history — Toolhub");
+	assert.equal(api.apiGet.mock.calls.length, 0);
+	assert.match(view.html, /data-crawler-history-content aria-live="polite" aria-busy="true"/);
+	const html = await mountedHtml(view);
 	assert.deepEqual(api.apiGet.mock.calls[0], ["/crawler/runs/", { page_size: "12" }]);
 	// Header meta uses runs[0].
-	assert.match(view.html, /<div class="meta__k">URLs crawled<\/div><div class="meta__v" dir="auto">10<\/div>/);
-	assert.match(view.html, /<div class="meta__k">Updated in last run<\/div><div class="meta__v" dir="auto">3<\/div>/);
-	assert.match(view.html, /<div class="meta__k">Last crawl<\/div><div class="meta__v" dir="auto"><time/);
-	assert.match(view.html, /<section class="crawler-graph" aria-labelledby="crawler-graph-title">/);
-	assert.match(view.html, /<polyline class="crawler-graph__line" points="/);
-	assert.match(view.html, /<rect class="crawler-graph__bar-updated"/);
-	assert.match(view.html, /<rect class="crawler-graph__bar-new"/);
+	assert.match(html, /<div class="meta__k">URLs crawled<\/div><div class="meta__v" dir="auto">10<\/div>/);
+	assert.match(html, /<div class="meta__k">Updated in last run<\/div><div class="meta__v" dir="auto">3<\/div>/);
+	assert.match(html, /<div class="meta__k">Last crawl<\/div><div class="meta__v" dir="auto"><time/);
+	assert.match(html, /<section class="crawler-graph" aria-labelledby="crawler-graph-title">/);
+	assert.match(html, /<polyline class="crawler-graph__line" points="/);
+	assert.match(html, /<rect class="crawler-graph__bar-updated"/);
+	assert.match(html, /<rect class="crawler-graph__bar-new"/);
 	// First data row.
-	assert.match(view.html, /<td>10<\/td>\s*<td>2<\/td><td>3<\/td><td>100<\/td>/);
+	assert.match(html, /<td>10<\/td>\s*<td>2<\/td><td>3<\/td><td>100<\/td>/);
 	// Second (empty) row → zeros.
-	assert.match(view.html, /<td>0<\/td>\s*(?:<td>0<\/td>){3}/);
+	assert.match(html, /<td>0<\/td>\s*(?:<td>0<\/td>){3}/);
 	// Two rows joined with "" → first row's </tr> meets the second row (kills the .join("")).
-	assert.match(view.html, /<\/tr>\s*<tr>/);
+	assert.match(html, /<\/tr>\s*<tr>/);
 });
 
-test("viewCrawler: a response with no results array renders an empty table body", async () => {
+test("viewCrawler: a response with no results array renders an empty state", async () => {
 	// data.results undefined → the `|| []` fallback must stay empty (no phantom row).
 	api.apiGet.mockResolvedValue({});
 	const view = await viewCrawler();
-	assert.match(view.html, /<section class="crawler-graph crawler-graph--empty" aria-label="Crawler run graph">/);
-	assert.match(view.html, /<tbody><\/tbody>/);
+	const html = await mountedHtml(view);
+	assert.match(html, /<section class="crawler-graph crawler-graph--empty" aria-label="Crawler run graph">/);
+	assert.match(html, /No crawler runs are available right now\./);
 });
 
-test("viewCrawler: no runs → dash meta, zero urls and an empty table body", async () => {
+test("viewCrawler: no runs → dash meta, zero urls and an empty state", async () => {
 	api.apiGet.mockRejectedValue(new Error("x"));
 	const view = await viewCrawler();
-	assert.match(view.html, /<div class="meta__k">Last crawl<\/div><div class="meta__v" dir="auto">—<\/div>/);
-	assert.match(view.html, /<div class="meta__k">URLs crawled<\/div><div class="meta__v" dir="auto">0<\/div>/);
-	assert.match(view.html, /No crawler run data to graph yet\./);
-	assert.match(view.html, /<tbody><\/tbody>/);
+	const html = await mountedHtml(view);
+	assert.match(html, /<div class="meta__k">Last crawl<\/div><div class="meta__v" dir="auto">—<\/div>/);
+	assert.match(html, /<div class="meta__k">URLs crawled<\/div><div class="meta__v" dir="auto">0<\/div>/);
+	assert.match(html, /No crawler run data to graph yet\./);
+	assert.match(html, /No crawler runs are available right now\./);
 });
 
 /* ---- targetHref -------------------------------------------------------- */
