@@ -1,15 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc, safeUrl } from "../lib/core/dom.js";
 import { t, tWithElements } from "../lib/core/i18n.js";
-import { apiGet } from "../lib/core/api.js";
 import { devLoginAvailable } from "../lib/core/serversync.js";
-import { mountApiExplorer, renderApiExplorer } from "../lib/organisms/api-explorer.js";
-import {
-	TOOLINFO_DATA_MODEL_URL,
-	TOOLINFO_EXAMPLE_JSON,
-	TOOLINFO_SCHEMA_URL,
-	TOOLINFO_SCHEMA_VERSION
-} from "../lib/core/toolinfo-docs.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 
@@ -823,6 +815,15 @@ export function viewContribute() {
 }
 // API docs — the live docs cannot be framed, so link out and list same-origin endpoints.
 export async function viewApiDocs() {
+	const [
+		{ apiGet },
+		{ mountApiExplorer, renderApiExplorer },
+		{ TOOLINFO_DATA_MODEL_URL, TOOLINFO_EXAMPLE_JSON, TOOLINFO_SCHEMA_URL, TOOLINFO_SCHEMA_VERSION }
+	] = await Promise.all([
+		import("../lib/core/api.js"),
+		import("../lib/organisms/api-explorer.js"),
+		import("../lib/core/toolinfo-docs.js")
+	]);
 	const root = await apiGet("/").catch(() => ({}));
 	const endpoints = Object.keys(root).sort();
 	const endpointCards = endpoints
@@ -888,7 +889,7 @@ export async function viewApiDocs() {
 			<h2 class="contribute__h2">${t("static.apiDocs.liveProxyEndpoints", "Live proxy endpoints")}</h2>
 			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The live endpoint index is unavailable.")}</p>`}</div>
 		</div>`,
-		mount: mountApiExplorer
+		mount: () => mountApiExplorer()
 	};
 }
 /* ---- Sign-in-required stubs (auth/write features) ---------------------- */
