@@ -93,6 +93,30 @@ test("backendWriteJson handles empty writes, invalid JSON bodies, and backend er
 	);
 });
 
+test("backendGetJson dedupes public local search without caching private v1 reads", async () => {
+	let calls = 0;
+	globalThis.fetch = async (url) => {
+		calls += 1;
+		return { ok: true, json: async () => ({ url: String(url), calls }) };
+	};
+
+	const path = "/v1/search/tools/?q=cite";
+	const [first, second] = await Promise.all([api.backendGetJson(path), api.backendGetJson(path)]);
+	assert.equal(calls, 1);
+	assert.equal(first.calls, 1);
+	assert.equal(second.calls, 1);
+	const cached = await api.backendGetJson(path);
+	assert.equal(cached.calls, 1);
+	assert.equal(calls, 1);
+
+	const otherSearch = await api.backendGetJson("/v1/search/tools/?q=map");
+	const privateFirst = await api.backendGetJson("/v1/user/export/");
+	const privateSecond = await api.backendGetJson("/v1/user/export/");
+	assert.equal(otherSearch.calls, 2);
+	assert.equal(privateFirst.calls, 3);
+	assert.equal(privateSecond.calls, 4);
+});
+
 // ----------------------------------------------------------------- fetchJson retries
 test("apiGet retries network errors with exact backoff and rethrows after the cap", async () => {
 	const sleeps = [];

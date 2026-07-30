@@ -163,6 +163,9 @@ const SERVER_STALE_CACHE = "stale";
 const SERVER_STALE_FOLLOWUP_MS = 1200;
 const apiCache = new Map(); // url -> { data, ts }
 const apiInflight = new Map(); // url -> Promise<data>
+const BACKEND_SEARCH_TTL_MS = 5 * 1000;
+const backendGetCache = new Map(); // path -> { data, ts }
+const backendGetInflight = new Map(); // path -> Promise<data>
 /** @type {Map<string, ReturnType<typeof setTimeout>>} */
 const apiServerStaleFollowups = new Map();
 let apiCacheLoaded = false;
@@ -447,6 +450,8 @@ export function apiGetResponse(url) {
 export function clearApiCache() {
 	apiCache.clear();
 	apiInflight.clear();
+	backendGetCache.clear();
+	backendGetInflight.clear();
 	for (const timer of apiServerStaleFollowups.values()) clearTimeout(timer);
 	apiServerStaleFollowups.clear();
 	apiCacheLoaded = false;
@@ -748,11 +753,35 @@ export function backendErrorBody(error) {
 }
 /**
  * @param {string} path
+ * @returns {number}
+ */
+function backendGetFreshMs(path) {
+	const url = new URL(path, location.origin);
+	return url.pathname === "/v1/search/tools/" ? BACKEND_SEARCH_TTL_MS : 0;
+}
+/**
+ * @param {string} path
  * @returns {Promise<any>} parsed JSON, or null on any non-2xx status
  */
 export async function backendGetJson(path) {
-	const res = await fetch(path, { headers: { Accept: "application/json" } });
-	return res.ok ? res.json() : null;
+	const freshMs = backendGetFreshMs(path);
+	if (freshMs > 0) {
+		const cached = backendGetCache.get(path);
+		if (cached && Date.now() - cached.ts < freshMs) return cached.data;
+		const inflight = backendGetInflight.get(path);
+		if (inflight) return inflight;
+	}
+	const request = fetch(path, { headers: { Accept: "application/json" } })
+		.then((res) => (res.ok ? res.json() : null))
+		.then((data) => {
+			if (freshMs > 0) backendGetCache.set(path, { data, ts: Date.now() });
+			return data;
+		})
+		.finally(() => {
+			backendGetInflight.delete(path);
+		});
+	if (freshMs > 0) backendGetInflight.set(path, request);
+	return request;
 }
 /**
  * @param {string} method
