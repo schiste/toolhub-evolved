@@ -10,11 +10,9 @@ import {
 	getTool,
 	isNewTool
 } from "../lib/core/api.js";
-import { egoGraph } from "../lib/core/graph.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
 import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
 import { attachEvolvedSummaries, completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
-import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
 import { clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
@@ -28,13 +26,10 @@ import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { healthScoreChip, maintainerDisclosure } from "../lib/molecules/tool-health-summary.js";
-import { forceGraph } from "../lib/organisms/force-graph.js";
-import { openQuickView } from "../lib/organisms/quickview.js";
 import { prosePage, viewNotFound } from "./static.js";
 
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
-const DETAIL_DISCOVERY_TIMEOUT_MS = 350;
 
 /** @typedef {{ name: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
 
@@ -57,28 +52,54 @@ function relatedToolRow(item) {
 				<div class="related__maint">${t("tool.by", "by")} <span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></div>
 				${chips ? `<div class="related__chips">${chips}</div>` : ""}
 			</div>
-		</article>`;
+	</article>`;
 }
 
 /**
- * Keep the detail page fast: secondary discovery sections should render only
- * when their cached data resolves quickly.
- * @template T
- * @param {Promise<T>} promise
- * @param {T} fallback
- * @returns {Promise<T>}
+ * @param {Array<{ tool: Tool, shared?: string[] }>} related
  */
-function detailDiscovery(promise, fallback) {
-	/** @type {ReturnType<typeof setTimeout> | null} */
-	let timer = null;
-	return Promise.race([
-		promise.catch(() => fallback),
-		new Promise((resolve) => {
-			timer = setTimeout(() => resolve(fallback), DETAIL_DISCOVERY_TIMEOUT_MS);
-		})
-	]).finally(() => {
-		if (timer) clearTimeout(timer);
-	});
+function relatedToolsSection(related) {
+	return related.length > 0
+		? `<section class="related" aria-labelledby="related-title">
+			<div class="section-head"><h2 id="related-title">${t("tool.relatedTitle", "Related tools")}</h2></div>
+			<p class="related__subtitle">${t("tool.relatedSubtitle", "Overlapping function and scope, by shared metadata.")}</p>
+			<div class="related__list">${related.map((item) => relatedToolRow(item)).join("")}</div>
+		</section>`
+		: "";
+}
+
+/** @param {any | null} ego */
+function neighborhoodSection(ego) {
+	return ego
+		? `<section class="neighborhood" aria-labelledby="neighborhood-title">
+			<div class="section-head"><h2 id="neighborhood-title">${t("tool.neighborhoodTitle", "Neighborhood")}</h2></div>
+			<div class="graph graph--ego"><div id="ego-canvas"></div></div>
+			<p class="graph__caption">${t("tool.neighborhoodCaption", "This tool and its nearest neighbors by metadata. Click a node to peek.")}</p>
+		</section>`
+		: "";
+}
+
+/**
+ * @param {() => void} task
+ * @param {number} [delayMs]
+ */
+function afterDetailPrimaryPaint(task, delayMs = 0) {
+	const runTask = () => {
+		if (delayMs > 0) setTimeout(task, delayMs);
+		else task();
+	};
+	const scheduleIdle = () => {
+		if ("requestIdleCallback" in window) {
+			/** @type {any} */ (window).requestIdleCallback(runTask, { timeout: 1500 + delayMs });
+		} else {
+			setTimeout(runTask, 600);
+		}
+	};
+	if (typeof window.requestAnimationFrame === "function") {
+		window.requestAnimationFrame(() => setTimeout(scheduleIdle, 0));
+	} else {
+		scheduleIdle();
+	}
 }
 
 /**
@@ -372,6 +393,7 @@ export async function viewTool(name) {
 			await getTool(name)
 		);
 	if (!tool) return viewToolNotFound(name);
+	const resolvedTool = tool;
 	const [evolvedSignals, evolvedMedia] = await Promise.all([
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/signals/`).catch(() => null),
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
@@ -417,36 +439,6 @@ export async function viewTool(name) {
 	const deleteResult = canDeleteOfficialTool
 		? `<p class="at__result" data-tool-delete-result aria-live="polite"></p>`
 		: "";
-	const membershipPromise = detailDiscovery(listMemberships(), new Map());
-	const relatedPromise = detailDiscovery(
-		getSimilarityIndex().then((simIndex) => nearestNeighbors(tool, simIndex, 6)),
-		[]
-	);
-	const egoPromise = detailDiscovery(
-		egoGraph(name, 10).then((graph) =>
-			// Stryker disable next-line ArrayDeclaration: egoGraph always returns a `nodes` array; the `|| []` fallback is never taken, and the sentinel array's length (1) is still < 3 — equivalent.
-			(graph.nodes || []).length >= 3 ? graph : null
-		),
-		null
-	);
-	const [membershipMap, related, ego] = await Promise.all([membershipPromise, relatedPromise, egoPromise]);
-	tool.endorsement = endorsementOf(tool.name, membershipMap);
-	const relatedHtml =
-		related.length > 0
-			? `<section class="related" aria-labelledby="related-title">
-				<div class="section-head"><h2 id="related-title">${t("tool.relatedTitle", "Related tools")}</h2></div>
-				<p class="related__subtitle">${t("tool.relatedSubtitle", "Overlapping function and scope, by shared metadata.")}</p>
-				<div class="related__list">${related.map((item) => relatedToolRow(item)).join("")}</div>
-			</section>`
-			: "";
-	const neighborhoodHtml = ego
-		? `<section class="neighborhood" aria-labelledby="neighborhood-title">
-				<div class="section-head"><h2 id="neighborhood-title">${t("tool.neighborhoodTitle", "Neighborhood")}</h2></div>
-				<div class="graph graph--ego"><div id="ego-canvas"></div></div>
-				<p class="graph__caption">${t("tool.neighborhoodCaption", "This tool and its nearest neighbors by metadata. Click a node to peek.")}</p>
-			</section>`
-		: "";
-
 	// At-a-glance chips (real metadata).
 	const glance = glanceChips(tool);
 
@@ -454,8 +446,6 @@ export async function viewTool(name) {
 		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`)
 		.join("");
 	const complete = completeness(tool);
-	// Stryker disable next-line OptionalChaining: `tool.endorsement` is always assigned above via endorsementOf(), so optional vs plain access is equivalent.
-	const endorsementCount = tool.endorsement?.count;
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const html = `
 	<div class="container page">
@@ -475,7 +465,7 @@ export async function viewTool(name) {
 					${realBadge}
 					${healthScoreChip(evolvedSummary)}
 					${maintainerDisclosure(evolvedSummary)}
-					${endorsementChip(endorsementCount)}
+					<span data-tool-endorsement-slot></span>
 					${fitChip(tool)}
 					${catalogUpdatedSignal(tool)}
 					${repositoryUpdatedSignal(evolvedSummary)}
@@ -504,8 +494,8 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
 
-				${relatedHtml}
-				${neighborhoodHtml}
+				<div data-related-tools-slot></div>
+				<div data-neighborhood-slot></div>
 			</div>
 
 			<aside class="toolpage__side">
@@ -533,9 +523,47 @@ export async function viewTool(name) {
 		</div>
 	</div>`;
 	function mount() {
+		const mountedPath = window.location.pathname;
+		const stillCurrentTool = () => window.location.pathname === mountedPath;
 		if (signedIn()) {
 			serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/events/`, { eventType: "view" }).catch(() => {});
 		}
+		afterDetailPrimaryPaint(() => {
+			Promise.all([
+				listMemberships().catch(() => new Map()),
+				import("../lib/core/similarity.js")
+					.then(({ getSimilarityIndex, nearestNeighbors }) =>
+						getSimilarityIndex().then((simIndex) => nearestNeighbors(resolvedTool, simIndex, 6))
+					)
+					.catch(() => []),
+				import("../lib/core/graph.js")
+					.then(({ egoGraph }) =>
+						egoGraph(name, 10).then((graph) =>
+							// Stryker disable next-line ArrayDeclaration: egoGraph always returns a `nodes` array; the `|| []` fallback is never taken, and the sentinel array's length (1) is still < 3 — equivalent.
+							(graph.nodes || []).length >= 3 ? graph : null
+						)
+					)
+					.catch(() => null)
+			]).then(([membershipMap, related, ego]) => {
+				if (!stillCurrentTool()) return;
+				const endorsement = endorsementOf(resolvedTool.name, membershipMap);
+				/** @type {any} */ (resolvedTool).endorsement = endorsement;
+				const endorsementSlot = document.querySelector("[data-tool-endorsement-slot]");
+				if (endorsementSlot) endorsementSlot.innerHTML = endorsementChip(endorsement.count);
+				const relatedSlot = document.querySelector("[data-related-tools-slot]");
+				if (relatedSlot) relatedSlot.innerHTML = relatedToolsSection(related || []);
+				const neighborhoodSlot = document.querySelector("[data-neighborhood-slot]");
+				if (neighborhoodSlot) neighborhoodSlot.innerHTML = neighborhoodSection(ego);
+				const target = /** @type {HTMLElement | null} */ (document.querySelector("#ego-canvas"));
+				if (!target || !ego) return;
+				Promise.all([import("../lib/organisms/force-graph.js"), import("../lib/organisms/quickview.js")])
+					.then(([{ forceGraph }, { openQuickView }]) => {
+						if (!stillCurrentTool() || !target.isConnected) return;
+						target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
+					})
+					.catch(() => undefined);
+			});
+		}, 2200);
 		document.querySelector("[data-tool-delete]")?.addEventListener("click", async () => {
 			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-tool-delete-result]"));
 			if (out) {
@@ -608,10 +636,6 @@ export async function viewTool(name) {
 				}
 			}
 		});
-		const target = /** @type {HTMLElement | null} */ (document.querySelector("#ego-canvas"));
-		// Stryker disable next-line LogicalOperator: #ego-canvas is rendered exactly when `ego` is set, so `target` and `ego` are both present or both absent — `&&` vs `||` is indistinguishable here.
-		if (!target || !ego) return;
-		target.forceGraphHandle = forceGraph(target, ego, { onSelect: openQuickView, height: 320 });
 	}
 	return { title: t("tool.docTitle", "{title} — Toolhub", { title: tool.title }), html, mount };
 }
