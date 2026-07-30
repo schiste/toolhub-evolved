@@ -112,7 +112,7 @@ const S = {
 						<a href="/my-lists">Your lists</a>
 						<a href="/my-tools">My tools</a>
 						<a href="/favorites">Favorites</a>
-						<a href="/contribute">Help maintain Toolhub</a>
+						<a href="/contribute">Help maintain Toolhub Evolved</a>
 					</nav>
 				<nav class="footer__col" aria-label="Project">
 					<h2>Project</h2>
@@ -130,7 +130,7 @@ const S = {
 				</nav>
 			</div>
 			<div class="footer__bottom">
-				<a class="footer__maintain" href="/contribute"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg> Help maintain Toolhub</a>
+				<a class="footer__maintain" href="/contribute"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3"/><path d="M11.74 3.218a7 7 0 011.822.757l2.095-1.046 1.414 1.414-1.047 2.094c.334.562.591 1.174.757 1.823L19 9v2l-2.219.74a7 7 0 01-.757 1.822l1.047 2.095-1.414 1.414-2.095-1.047a7 7 0 01-1.823.757L11 19H9l-.74-2.219a7 7 0 01-1.823-.757l-2.094 1.047-1.414-1.414 1.046-2.095a7 7 0 01-.757-1.823L1 11V9l2.218-.74a7 7 0 01.757-1.823L2.929 4.343l1.414-1.414 2.094 1.046a7 7 0 011.823-.757L9 1h2zM10 5a5 5 0 100 10 5 5 0 000-10"/></svg> Help maintain Toolhub Evolved</a>
 				<span class="footer__legal">Catalog content under <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a> · <a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a></span>
 				<span class="footer__note">Live Toolhub data · Evolved overlay</span>
 			</div>
@@ -231,7 +231,7 @@ const S = {
 		<div class="sg-example__demo"><article class="prose prose--page">
 		<h1>About Toolhub</h1>
 		<p>Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.</p>
-		<p><a href="/contribute">Help maintain Toolhub</a> by improving listings or reporting gaps.</p>
+		<p><a href="/contribute">Help maintain Toolhub Evolved</a> by improving listings or reporting gaps.</p>
 	</article></div>
 		<figcaption class="sg-example__caption"><code>Prose page</code><span>templates</span></figcaption>
 	</figure>

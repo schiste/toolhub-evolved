@@ -56,7 +56,17 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(S.viewStatic("about").html.includes("Sign in with Toolhub"));
 	assert.ok(S.viewStatic("about").html.includes("keeps Evolved-only additions in its local overlay database"));
 	assert.ok(S.viewStatic("help").html.includes("publish permitted edits"));
+	assert.ok(S.viewStatic("community").html.includes("Toolhub Evolved is an experimental companion interface"));
+	assert.ok(S.viewStatic("community").html.includes("Toolhub Evolved issues"));
+	assert.ok(S.viewStatic("community").html.includes("Official Toolhub channels"));
 	assert.ok(S.viewStatic("privacy").html.includes("server-side OAuth grant"));
+	assert.ok(
+		S.viewStatic("privacy").html.includes("not operated, endorsed, or maintained by the Wikimedia Foundation")
+	);
+	assert.ok(S.viewStatic("terms").html.includes("not a Wikimedia Foundation-operated service"));
+	assert.ok(S.viewStatic("terms").html.includes("Using this beta"));
+	assert.ok(S.viewStatic("code-of-conduct").html.includes("not an official Wikimedia Foundation venue"));
+	assert.ok(S.viewStatic("code-of-conduct").html.includes("accessibility, localization, privacy"));
 	const rules = S.viewStatic("rules-of-engagement").html;
 	assert.ok(rules.includes("supported writes are sent back to the official Toolhub API"));
 	assert.ok(rules.includes("served quickly from Evolved&#39;s shared"));
@@ -102,9 +112,10 @@ test("viewStatic falls back to the not-found page for an unknown slug", () => {
 
 test("viewContribute renders the contribution hub", () => {
 	const view = S.viewContribute();
-	assert.equal(view.title, "Help maintain Toolhub");
-	assert.ok(view.html.includes("#toolhub Phabricator board"));
-	assert.ok(view.html.includes("Source code (Gerrit)"));
+	assert.equal(view.title, "Help maintain Toolhub Evolved");
+	assert.ok(view.html.includes("Report a beta issue"));
+	assert.ok(view.html.includes("Toolhub Evolved source"));
+	assert.ok(view.html.includes("Official Toolhub Phabricator"));
 	assert.ok(view.html.includes("API explorer"));
 });
 

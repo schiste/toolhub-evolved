@@ -614,7 +614,7 @@ export const STATIC = {
 		<h2>${t("static.about.coreVsAnnotations", "Core information vs. annotations")}</h2>
 		<p>${t("static.about.coreVsAnnotationsBody", "Each tool has authoritative core information, editable only by its owner or administrators, plus community annotations that any logged-in Wikimedian can enrich. When both are set for a field, Toolhub shows the core value, balancing maintainer control with community contribution.")}</p>
 		<p>${t("static.about.cc0", "Structured data is released under CC0; attribution via links back is\n\t\tencouraged but not required. Sign in with Toolhub — no separate Evolved account\n\t\tor password is needed.")}</p>
-		<p>${tWithElements("static.about.helpBuildBody", "Want to help build Toolhub itself? See {contribute}.", { contribute: `<a href="/contribute">${esc(t("static.helpMaintainToolhub", "Help maintain Toolhub"))}</a>` })}</p>
+		<p>${tWithElements("static.about.helpBuildBody", "Want to help improve this beta or coordinate with upstream Toolhub? See {contribute}.", { contribute: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>
 		<blockquote>${t("static.about.prototypeNote", "This is a companion interface for Toolhub: it reads live catalog data from the public API, publishes official writes through Toolhub OAuth when you sign in, and keeps Evolved-only additions in its local overlay database.")}</blockquote>`
 	}),
 	help: () => ({
@@ -636,42 +636,63 @@ export const STATIC = {
 	community: () => ({
 		title: t("static.community.title", "Community"),
 		body: `
-		<p>${t("static.community.intro", "Toolhub is developed in the open under Wikimedia Cloud Services. Everyone is\n\t\twelcome to take part — reporting bugs, suggesting tools, translating, or writing\n\t\tcode.")}</p>
-		<h2>${t("static.community.whereConversationHappens", "Where the conversation happens")}</h2>
+		<p>${t("static.community.intro", "Toolhub Evolved is an experimental companion interface for the Toolhub catalog. It is run as an individual beta project on Toolforge, built in the open, and designed to stay compatible with the Wikimedia Toolhub ecosystem rather than replace it.")}</p>
+		<h2>${t("static.community.evolvedChannels", "Evolved project channels")}</h2>
 		<ul>
-			<li>${tWithElements("static.community.talkItem", "Discuss the project on {talk} (Meta-Wiki).", { talk: ext("https://meta.wikimedia.org/wiki/Talk:Toolhub", "Talk:Toolhub") })}</li>
-			<li>${tWithElements("static.community.phabricatorItem", "File and track work on the {phabricator}.", { phabricator: ext("https://phabricator.wikimedia.org/tag/toolhub/", t("static.community.phabricatorBoard", "#toolhub Phabricator board")) })}</li>
-			<li>${tWithElements("static.community.translateItem", "Help translate the interface on {translatewiki}.", { translatewiki: ext("https://translatewiki.net/wiki/Translating:Toolhub", "translatewiki.net") })}</li>
+			<li>${tWithElements("static.community.evolvedIssuesItem", "Use {issues} for Evolved-specific bugs, interface feedback, and feature proposals.", { issues: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")) })}</li>
+			<li>${tWithElements("static.community.evolvedSourceItem", "Read the prototype source in {source}; changes should preserve the design system, accessibility expectations, deterministic scoring, and i18n-ready message boundaries.", { source: ext("https://github.com/schiste/toolhub-evolved", t("static.community.evolvedSource", "the Toolhub Evolved repository")) })}</li>
+			<li>${tWithElements("static.community.evolvedFeedsItem", "Follow local activity through {feeds} and the in-app feature status page.", { feeds: `<a href="/rss">${esc(t("static.community.feeds", "RSS feeds"))}</a>` })}</li>
 		</ul>
-		<p>${tWithElements("static.community.contributeBody", "Looking to contribute code or report an issue? Start at {contribute}.", { contribute: `<a href="/contribute">${esc(t("static.helpMaintainToolhub", "Help maintain Toolhub"))}</a>` })}</p>`
+		<h2>${t("static.community.upstreamChannels", "Official Toolhub channels")}</h2>
+		<p>${t("static.community.upstreamIntro", "For official Toolhub policy, production catalog behavior, or upstream bugs that are not specific to this beta interface, use Wikimedia's canonical Toolhub channels.")}</p>
+		<ul>
+			<li>${tWithElements("static.community.talkItem", "Discuss official Toolhub on {talk} (Meta-Wiki).", { talk: ext("https://meta.wikimedia.org/wiki/Talk:Toolhub", "Talk:Toolhub") })}</li>
+			<li>${tWithElements("static.community.phabricatorItem", "File official Toolhub work on the {phabricator}.", { phabricator: ext("https://phabricator.wikimedia.org/tag/toolhub/", t("static.community.phabricatorBoard", "#toolhub Phabricator board")) })}</li>
+			<li>${tWithElements("static.community.translateItem", "Translate the official Toolhub interface on {translatewiki}. Evolved keeps strings i18n-ready, but full translatewiki integration is intentionally later.", { translatewiki: ext("https://translatewiki.net/wiki/Translating:Toolhub", "translatewiki.net") })}</li>
+		</ul>
+		<p>${tWithElements("static.community.contributeBody", "For practical next steps on this beta, start at {contribute}.", { contribute: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>`
 	}),
 	privacy: () => ({
 		title: t("static.privacy.title", "Privacy policy"),
 		body: `
-		<p>${tWithElements("static.privacy.intro", "Toolhub is operated by the Wikimedia Foundation and is governed by the {privacyPolicy}.", { privacyPolicy: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyLink", "Wikimedia Foundation Privacy Policy")) })}</p>
-		<h2>${t("static.privacy.inPractice", "What this means in practice")}</h2>
+		<p>${tWithElements("static.privacy.betaDisclaimer", "Toolhub Evolved is an individual-run beta on Toolforge. It is not operated, endorsed, or maintained by the Wikimedia Foundation. The project tries to stay aligned with the {privacyPolicy}, and official Toolhub/Wikimedia interactions remain governed by Wikimedia's authoritative policy.", { privacyPolicy: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyLink", "Wikimedia Foundation Privacy Policy")) })}</p>
+		<h2>${t("static.privacy.localDataTitle", "What this beta handles locally")}</h2>
 		<ul>
-			<li>${t("static.privacy.oauthItem", "You sign in with Toolhub using OAuth; Toolhub Evolved stores a local session and a server-side OAuth grant, never your password.")}</li>
-			<li>${t("static.privacy.officialWritesItem", "Official writes are sent to Toolhub's API and follow Toolhub's attribution, permission, and validation rules.")}</li>
-			<li>${t("static.privacy.evolvedDraftsItem", "Evolved-only drafts and fallback data live in this site's local database and browser cache so your work is not lost when official Toolhub rejects a write.")}</li>
+			<li>${t("static.privacy.oauthItem", "If you sign in, the beta uses official Toolhub OAuth and stores a local session plus a server-side OAuth grant. It never asks for or stores your Wikimedia password.")}</li>
+			<li>${t("static.privacy.evolvedDraftsItem", "Evolved-only drafts, fallback writes, signed-toolinfo public keys, local author claims, activity rows, preferences, and health/source-analysis review data may be stored in this site's local database.")}</li>
+			<li>${t("static.privacy.browserCacheItem", "The browser may cache live catalog responses, local UI state, theme/language choices, dismissed notices, and local fallback data so pages can load quickly and recover after failed writes.")}</li>
+			<li>${t("static.privacy.officialWritesItem", "When an action is sent to official Toolhub, Toolhub's own API receives the request and applies Toolhub attribution, permissions, validation, logging, and retention rules.")}</li>
 		</ul>
-		<p>${tWithElements("static.privacy.readFullPolicy", "Please read the full {privacyPolicy} for the authoritative details.", { privacyPolicy: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyShort", "Privacy Policy")) })}</p>`
+		<h2>${t("static.privacy.boundariesTitle", "Boundaries")}</h2>
+		<p>${t("static.privacy.boundariesBody", "Do not paste secrets, private credentials, or non-public personal data into Evolved-only forms. Source-analysis and tool metadata features are intended for public tool information.")}</p>
+		<p>${tWithElements("static.privacy.readFullPolicy", "For Wikimedia account, Toolhub, and Wikimedia project data, read the full {privacyPolicy}.", { privacyPolicy: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyShort", "Privacy Policy")) })}</p>`
 	}),
 	terms: () => ({
 		title: t("static.terms.title", "Terms of Use"),
 		body: `
-		<p>${tWithElements("static.terms.intro", "Use of Toolhub is subject to the {termsOfUse}.", { termsOfUse: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.termsLink", "Wikimedia Foundation Terms of Use")) })}</p>
-		<p>${tWithElements("static.terms.contributionTerms", "By contributing, you agree that your edits are public and that structured catalog data is made available under CC0. Tools listed here are owned and operated by their respective maintainers; Toolhub catalogs them but does not host or endorse them. See the full {termsOfUse} for details.", { termsOfUse: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.title", "Terms of Use")) })}</p>`
+		<p>${tWithElements("static.terms.betaDisclaimer", "Toolhub Evolved is an individual-run beta on Toolforge, not a Wikimedia Foundation-operated service. It aims to behave consistently with the {termsOfUse}, but the Wikimedia Foundation Terms of Use are the authoritative terms for official Toolhub, Wikimedia accounts, and Wikimedia project activity.", { termsOfUse: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.termsLink", "Wikimedia Foundation Terms of Use")) })}</p>
+		<h2>${t("static.terms.betaUseTitle", "Using this beta")}</h2>
+		<ul>
+			<li>${t("static.terms.experimentalItem", "The interface is experimental and may change, fail, or remove Evolved-only data while features are being developed.")}</li>
+			<li>${t("static.terms.noSecretsItem", "Do not submit secrets, private credentials, or confidential data. Tool metadata, source-analysis input, and community annotations should describe public tools.")}</li>
+			<li>${t("static.terms.officialActionsItem", "Actions that publish to official Toolhub are still subject to Toolhub permissions, audit history, validation, and Wikimedia account rules.")}</li>
+		</ul>
+		<h2>${t("static.terms.contentTitle", "Content and responsibility")}</h2>
+		<p>${tWithElements("static.terms.contributionTerms", "Structured Toolhub catalog data is made available under CC0. Evolved source code is published separately in {source}. Tools listed here are owned and operated by their respective maintainers; this beta catalogs and enriches metadata but does not host or endorse the tools.", { source: ext("https://github.com/schiste/toolhub-evolved", t("static.terms.evolvedSource", "the Toolhub Evolved repository")) })}</p>
+		<p>${tWithElements("static.terms.readFullTerms", "For authoritative Wikimedia legal terms, read the full {termsOfUse}.", { termsOfUse: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.title", "Terms of Use")) })}</p>`
 	}),
 	"code-of-conduct": () => ({
 		title: t("static.codeOfConduct.title", "Code of Conduct"),
 		body: `
-		<p>${tWithElements("static.codeOfConduct.intro", "Toolhub follows the {codeOfConduct}, which applies to MediaWiki.org, Phabricator, Gerrit, mailing lists, chat, and events.", { codeOfConduct: ext("https://www.mediawiki.org/wiki/Code_of_Conduct", t("static.codeOfConduct.cocLink", "Code of Conduct for Wikimedia technical spaces")) })}</p>
-		<blockquote>${t("static.codeOfConduct.quote", "Technical skills and community status make no difference to the right\n\t\tto be respected and the obligation to respect others.")}</blockquote>
+		<p>${tWithElements("static.codeOfConduct.intro", "Toolhub Evolved expects participation to follow the spirit of the {codeOfConduct}. This beta is not an official Wikimedia Foundation venue, but it is built for Wikimedia contributors and should stay compatible with Wikimedia technical-space norms.", { codeOfConduct: ext("https://www.mediawiki.org/wiki/Code_of_Conduct", t("static.codeOfConduct.cocLink", "Code of Conduct for Wikimedia technical spaces")) })}</p>
 		<h2>${t("static.codeOfConduct.expectedBehaviour", "Expected behaviour")}</h2>
-		<p>${t("static.codeOfConduct.expected", "Be welcoming and helpful, especially to newcomers. Harassment and other\n\t\tinappropriate behaviour are unacceptable in all public and private Wikimedia\n\t\ttechnical spaces.")}</p>
+		<ul>
+			<li>${t("static.codeOfConduct.expectedGoodFaithItem", "Assume good faith, be specific in feedback, and separate critique of the interface from critique of contributors.")}</li>
+			<li>${t("static.codeOfConduct.expectedA11yItem", "Treat accessibility, localization, privacy, and newcomer usability as core project quality concerns.")}</li>
+			<li>${t("static.codeOfConduct.expectedNoHarassmentItem", "Harassment, personal attacks, discriminatory language, and pressure to expose private information are not acceptable.")}</li>
+		</ul>
 		<h2>${t("static.codeOfConduct.reporting", "Reporting")}</h2>
-		<p>${tWithElements("static.codeOfConduct.reportingBody", "Ask the person to stop and point them to the Code of Conduct; at events, notify organisers; or report directly to the Code of Conduct Committee at {techConduct}. For threats of harm, contact local authorities first, then {emergency}.", { techConduct: code("techconduct@wikimedia.org"), emergency: code("emergency@wikimedia.org") })}</p>`
+		<p>${tWithElements("static.codeOfConduct.reportingBody", "For Evolved-specific project conduct in the GitHub repository, use {issues} when public reporting is appropriate. For Wikimedia technical spaces, follow the official reporting paths in the Code of Conduct. For threats of harm, contact local authorities first, then {emergency}.", { issues: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")), emergency: code("emergency@wikimedia.org") })}</p>`
 	}),
 	api: () => ({
 		title: t("static.api.title", "API"),
@@ -740,7 +761,7 @@ export function viewStatic(slug) {
 	return p ? prosePage(p.title, p.body) : viewNotFound();
 }
 
-/* ---- Help maintain Toolhub: the contribution hub ----------------------- */
+/* ---- Help maintain Toolhub Evolved: the contribution hub ---------------- */
 /**
  * @param {string} iconHtml
  * @param {string} title
@@ -772,33 +793,33 @@ function proxyCard(iconHtml, title, desc, href) {
 export function viewContribute() {
 	const html = `
 	<div class="container page">
-		<h1 class="page__title">${t("static.helpMaintainToolhub", "Help maintain Toolhub")}</h1>
-		<p class="page__intro">${t("static.contribute.intro", "Toolhub is free and open source, built by the community\n\t\tunder Wikimedia Cloud Services. Here is everything you need to report a problem,\n\t\ttranslate, or contribute code — pick a starting point.")}</p>
+		<h1 class="page__title">${t("static.contribute.title", "Help maintain Toolhub Evolved")}</h1>
+		<p class="page__intro">${t("static.contribute.intro", "Toolhub Evolved is a public beta for exploring Toolhub interface, discovery, maintainer, health-score, and developer-workflow improvements. Contributions should improve this prototype while respecting Toolhub as the upstream source of truth.")}</p>
 
-		<h2 class="contribute__h2">${t("static.contribute.reportTrackWork", "Report & track work")}</h2>
+		<h2 class="contribute__h2">${t("static.contribute.evolvedWork", "Improve Toolhub Evolved")}</h2>
 		<div class="linkgrid">
-			${linkCard(icon("report"), t("static.contribute.reportBug", "Report a bug or request a feature"), t("static.contribute.reportBugDesc", "Open a task on the #toolhub Phabricator board."), "https://phabricator.wikimedia.org/tag/toolhub/")}
-			${linkCard(icon("check"), t("static.contribute.firstTask", "Find a good first task"), t("static.contribute.firstTaskDesc", "Browse open work and pick something to start with."), "https://phabricator.wikimedia.org/tag/toolhub/")}
-			${linkCard(icon("discuss"), t("static.contribute.discuss", "Discuss the project"), t("static.contribute.discussDesc", "Share ideas and feedback on the Toolhub talk page."), "https://meta.wikimedia.org/wiki/Talk:Toolhub")}
+			${linkCard(icon("report"), t("static.contribute.reportBug", "Report a beta issue"), t("static.contribute.reportBugDesc", "Open a Toolhub Evolved GitHub issue for UI bugs, data-display gaps, or broken beta behavior."), "https://github.com/schiste/toolhub-evolved/issues")}
+			${linkCard(icon("check"), t("static.contribute.firstTask", "Find scoped work"), t("static.contribute.firstTaskDesc", "Browse open Evolved issues and prefer small, testable changes tied to one page or workflow."), "https://github.com/schiste/toolhub-evolved/issues")}
+			${linkCard(icon("tools"), t("static.contribute.featureStatus", "Feature status"), t("static.contribute.featureStatusDesc", "Check which Evolved features are live, local-only, upstream-backed, or intentionally deferred."), "/experiments", true)}
 		</div>
 
 		<h2 class="contribute__h2">${t("static.contribute.writeCode", "Write code")}</h2>
 		<div class="linkgrid">
-			${linkCard(icon("code"), t("static.contribute.sourceCode", "Source code (Gerrit)"), t("static.contribute.sourceCodeDesc", "The canonical repository where changes are reviewed."), "https://gerrit.wikimedia.org/r/admin/repos/wikimedia/toolhub")}
-			${linkCard(icon("code"), t("static.contribute.githubMirror", "GitHub mirror"), t("static.contribute.githubMirrorDesc", "Read-only mirror for browsing the code and history."), "https://github.com/wikimedia/toolhub")}
-			${linkCard(icon("tools"), t("static.contribute.devEnv", "Set up a dev environment"), t("static.contribute.devEnvDesc", "The CONTRIBUTING guide: run the whole stack with Docker."), "https://github.com/wikimedia/toolhub/blob/main/docs/CONTRIBUTING.rst")}
-			${linkCard(icon("key"), t("static.contribute.devAccess", "Get developer access"), t("static.contribute.devAccessDesc", "Create a Wikimedia developer account and configure Gerrit."), "https://www.mediawiki.org/wiki/Developer_access")}
+			${linkCard(icon("code"), t("static.contribute.sourceCode", "Toolhub Evolved source"), t("static.contribute.sourceCodeDesc", "Browse the beta source, deployment notes, tests, and recent commits."), "https://github.com/schiste/toolhub-evolved")}
+			${linkCard(icon("tools"), t("static.contribute.designSystem", "Design system"), t("static.contribute.designSystemDesc", "Use the shared tokens, atoms, molecules, organisms, and templates before adding bespoke UI."), "/styleguide", true)}
+			${linkCard(icon("code"), t("static.contribute.apiGuide", "API explorer"), t("static.contribute.apiGuideDesc", "Run live read-only endpoints, inspect responses, and copy integration examples."), "/api-docs", true)}
+			${linkCard(icon("check"), t("static.contribute.healthScore", "Health score system"), t("static.contribute.healthScoreDesc", "Understand the deterministic scoring inputs before changing public health signals."), "/health-score", true)}
 		</div>
 
-		<h2 class="contribute__h2">${t("static.contribute.translateDocument", "Translate & document")}</h2>
+		<h2 class="contribute__h2">${t("static.contribute.upstreamCoordination", "Coordinate with upstream Toolhub")}</h2>
 		<div class="linkgrid">
-			${linkCard(icon("language"), t("static.contribute.translate", "Translate Toolhub"), t("static.contribute.translateDesc", "Localise the interface into your language on translatewiki.net."), "https://translatewiki.net/wiki/Translating:Toolhub")}
-			${linkCard(icon("code"), t("static.contribute.apiGuide", "API explorer"), t("static.contribute.apiGuideDesc", "Run live read-only endpoints, inspect responses, and copy integration examples."), "/api-docs", true)}
-			${linkCard(icon("code"), t("static.contribute.toolinfoStandard", "The toolinfo standard"), t("static.contribute.toolinfoStandardDesc", "Learn the schema that describes a tool, and the API."), "/api-docs", true)}
-			${linkCard(icon("edit"), t("static.contribute.improveListing", "Add or improve a tool listing"), t("static.contribute.improveListingDesc", "List your own tool, or enrich an existing record."), "/help", true)}
+			${linkCard(icon("discuss"), t("static.contribute.officialDiscussion", "Official Toolhub discussion"), t("static.contribute.officialDiscussionDesc", "Use Meta-Wiki when the question is about Toolhub policy, upstream product direction, or the canonical catalog."), "https://meta.wikimedia.org/wiki/Talk:Toolhub")}
+			${linkCard(icon("report"), t("static.contribute.officialPhabricator", "Official Toolhub Phabricator"), t("static.contribute.officialPhabricatorDesc", "File upstream Toolhub production issues that are not specific to this Evolved beta interface."), "https://phabricator.wikimedia.org/tag/toolhub/")}
+			${linkCard(icon("code"), t("static.contribute.upstreamSource", "Official Toolhub source"), t("static.contribute.upstreamSourceDesc", "Reference the upstream Toolhub implementation when Evolved behavior must stay compatible."), "https://gerrit.wikimedia.org/r/admin/repos/wikimedia/toolhub")}
+			${linkCard(icon("language"), t("static.contribute.translate", "Translation readiness"), t("static.contribute.translateDesc", "Keep Evolved strings i18n-ready now; full translatewiki integration is a later project phase."), "/rules-of-engagement", true)}
 		</div>
 	</div>`;
-	return { title: t("static.helpMaintainToolhub", "Help maintain Toolhub"), html };
+	return { title: t("static.contribute.title", "Help maintain Toolhub Evolved"), html };
 }
 // API docs — the live docs cannot be framed, so link out and list same-origin endpoints.
 export async function viewApiDocs() {

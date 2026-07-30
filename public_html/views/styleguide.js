@@ -342,7 +342,7 @@ function footerExample() {
 					<a href="/my-lists">${t("styleguide.footer.yourLists", "Your lists")}</a>
 					<a href="/my-tools">${t("styleguide.footer.myTools", "My tools")}</a>
 					<a href="/favorites">${t("styleguide.footer.favorites", "Favorites")}</a>
-					<a href="/contribute">${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub")}</a>
+					<a href="/contribute">${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved")}</a>
 				</nav>
 				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.projectLabel", "Project"))}">
 					<h2>${t("styleguide.footer.project", "Project")}</h2>
@@ -360,7 +360,7 @@ function footerExample() {
 				</nav>
 			</div>
 			<div class="footer__bottom">
-				<a class="footer__maintain" href="/contribute">${icon("tools")} ${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub")}</a>
+				<a class="footer__maintain" href="/contribute">${icon("tools")} ${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved")}</a>
 				<span class="footer__legal">${tWithElements("styleguide.footer.legal", "Catalog content under {license} · {version}", { license: '<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>', version: '<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>' })}</span>
 				<span class="footer__note">${t("styleguide.footer.note", "Live Toolhub data · Evolved overlay")}</span>
 			</div>
@@ -445,7 +445,7 @@ function proseExample() {
 	return `<article class="prose prose--page">
 		<h1>${t("styleguide.aboutToolhub", "About Toolhub")}</h1>
 		<p>${t("styleguide.proseBody", "Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.")}</p>
-		<p>${tWithElements("styleguide.proseContribute", "{contribute} by improving listings or reporting gaps.", { contribute: `<a href="/contribute">${esc(t("styleguide.helpMaintainToolhub", "Help maintain Toolhub"))}</a>` })}</p>
+		<p>${tWithElements("styleguide.proseContribute", "{contribute} by improving listings or reporting gaps.", { contribute: `<a href="/contribute">${esc(t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved"))}</a>` })}</p>
 	</article>`;
 }
 
