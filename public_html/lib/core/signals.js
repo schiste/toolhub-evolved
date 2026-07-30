@@ -2,7 +2,7 @@
 // Real, honest trust signals derived from live Toolhub data — no simulation.
 // Listing completeness, curated-list endorsement, freshness, and fit-to-your-context.
 // Serves tool users (evaluate/trust) and maintainers (improve-your-listing).
-import { hasValue, paginate } from "./api.js";
+import { backendGetJson, hasValue, paginate } from "./api.js";
 import { memoizeAsync } from "./util.js";
 
 /* ---- Listing completeness --------------------------------------------------
@@ -143,5 +143,64 @@ export async function attachEndorsements(tools) {
 	const lm = await listMemberships();
 	// `endorsement` is a view-attached extra not declared on the Tool interface.
 	for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, lm);
+	return tools;
+}
+
+const EVOLVED_SUMMARY_TTL_MS = 5 * 60 * 1000;
+/** @type {Map<string, { summary: any, ts: number }>} */
+const evolvedSummaryCache = new Map();
+/** @type {Set<string>} */
+const evolvedSummaryInflight = new Set();
+
+/** @param {string[]} names */
+function emitEvolvedSummaryRefresh(names) {
+	if (typeof document === "undefined" || typeof CustomEvent === "undefined") return;
+	document.dispatchEvent(new CustomEvent("toolhub:evolved-summaries-refresh", { detail: { names } }));
+}
+
+/** @param {string[]} names */
+function refreshEvolvedSummaries(names) {
+	const batch = names.filter((name) => name && !evolvedSummaryInflight.has(name)).slice(0, 50);
+	if (batch.length === 0) return;
+	for (const name of batch) evolvedSummaryInflight.add(name);
+	const params = new URLSearchParams({ names: batch.join(",") });
+	backendGetJson(`/v1/tools/summaries/?${params.toString()}`)
+		.then((data) => {
+			const results = data && typeof data.results === "object" ? data.results : {};
+			const updated = [];
+			for (const name of batch) {
+				const summary = results[name];
+				if (!summary) continue;
+				evolvedSummaryCache.set(name, { summary, ts: Date.now() });
+				updated.push(name);
+			}
+			if (updated.length > 0) emitEvolvedSummaryRefresh(updated);
+		})
+		.catch(() => {
+			// Health summaries are additive; cards remain valid without them.
+		})
+		.finally(() => {
+			for (const name of batch) evolvedSummaryInflight.delete(name);
+		});
+}
+
+/**
+ * Attach local Evolved health/maintainer summaries for visible tool cards.
+ * The endpoint reads only Evolved's local database, so this never blocks on
+ * official Toolhub after the canonical/summary cache has been populated.
+ * @param {Tool[]} tools
+ * @returns {Promise<Tool[]>}
+ */
+export async function attachEvolvedSummaries(tools) {
+	const names = [...new Set((tools || []).map((tool) => tool && tool.name).filter(Boolean))].slice(0, 50);
+	if (names.length === 0) return tools;
+	const now = Date.now();
+	const stale = [];
+	for (const tool of tools) {
+		const cached = evolvedSummaryCache.get(tool.name);
+		if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
+		if (!cached || now - cached.ts > EVOLVED_SUMMARY_TTL_MS) stale.push(tool.name);
+	}
+	refreshEvolvedSummaries(stale);
 	return tools;
 }

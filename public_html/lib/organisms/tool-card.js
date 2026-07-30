@@ -7,6 +7,7 @@ import { toolIcon } from "../atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../atoms/badges.js";
 import { wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
+import { healthScoreChip, maintainerDisclosure } from "../molecules/tool-health-summary.js";
 
 export const CARD_TAG_LIMIT = 2;
 const QUICK_VIEW_BUTTON_STYLE =
@@ -43,7 +44,13 @@ export function toolCard(tool, opts = {}) {
 	// `endorsement` (an {count,lists} object) is attached at runtime by signals.js but
 	// isn't on the ambient Tool type — narrow via a structural cast.
 	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (tool).endorsement;
-	const signalLine = endorsementChip(endorsement && endorsement.count) + completenessMeter(complete) + fitChip(tool);
+	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
+	const signalLine =
+		healthScoreChip(evolvedSummary) +
+		maintainerDisclosure(evolvedSummary, { compact: true }) +
+		endorsementChip(endorsement && endorsement.count) +
+		completenessMeter(complete) +
+		fitChip(tool);
 	// The title button opens the quick-view.
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(tool.name)}">

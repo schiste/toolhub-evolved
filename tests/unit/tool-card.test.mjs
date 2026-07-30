@@ -119,6 +119,37 @@ test("toolCard adds per-field lang attributes when the tool record exposes them"
 	assert.ok(html.includes('<p class="tcard__desc" dir="auto" lang="fr">A *great* tool</p>'));
 });
 
+test("toolCard renders attached health score and maintainer disclosure", () => {
+	const html = toolCard({
+		...base,
+		evolvedSummary: {
+			health: {
+				score: 82,
+				grade: "good",
+				dimensions: [
+					{
+						key: "maintainer-status",
+						label: "Maintainer status",
+						score: 84,
+						weight: 1.25,
+						confidence: 0.85,
+						status: "maintained",
+						summary: "Derived from deterministic maintainer signals.",
+						includedInScore: true
+					}
+				],
+				calculation: { dimensionCount: 1, includedDimensionCount: 1, includedWeight: 1.25 }
+			},
+			maintainer: { counts: { maintainers: 2, verifiedMaintainers: 1, activeMaintainers: 1 } },
+			maintainerDimension: { status: "maintained", bestConfidence: 84 }
+		}
+	});
+	assert.ok(html.includes("Health 82"));
+	assert.ok(html.includes('<details class="health-popover'));
+	assert.ok(html.includes("Maintained"));
+	assert.ok(html.includes("Calculation: weighted average across 1 of 1 dimensions"));
+});
+
 test("CARD_TAG_LIMIT export value", () => {
 	assert.equal(CARD_TAG_LIMIT, 2);
 });

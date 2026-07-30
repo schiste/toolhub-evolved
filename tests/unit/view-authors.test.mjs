@@ -8,6 +8,12 @@ import { viewAuthor } from "../../public_html/views/authors.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
 import * as authorIndex from "../../public_html/lib/core/author-index.js";
 
+const h = vi.hoisted(() => ({ backendGetJson: vi.fn(() => Promise.resolve({ results: {} })) }));
+
+vi.mock("../../public_html/lib/core/api.js", async (importOriginal) => {
+	const actual = await importOriginal();
+	return { ...actual, backendGetJson: h.backendGetJson };
+});
 vi.mock("../../public_html/lib/core/author-index.js", async (importOriginal) => {
 	const actual = await importOriginal();
 	return { ...actual, toolsByAuthor: vi.fn() };

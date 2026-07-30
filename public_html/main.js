@@ -257,6 +257,9 @@ document.addEventListener("toolhub:api-cache-refresh", (e) => {
 		hideApiToastSoon(3600);
 	}
 });
+document.addEventListener("toolhub:evolved-summaries-refresh", () => {
+	scheduleApiRefreshRender();
+});
 
 /* Skip link focuses the view without hijacking the route. */
 const skip = $(".skip");
@@ -297,6 +300,7 @@ $("#view")?.addEventListener("click", (e) => {
 		navigateTo(`/search?q=${encodeURIComponent(/** @type {string} */ (q.getAttribute("data-q")))}`);
 		return;
 	}
+	if (e.target?.closest(".health-popover")) return;
 	if (e.target?.closest("a[href]")) return; // real links route natively
 	const card = e.target?.closest("[data-tool]");
 	if (card) {
@@ -306,6 +310,7 @@ $("#view")?.addEventListener("click", (e) => {
 // Keyboard: Enter/Space on a focused tool card opens the quick-view.
 $("#view")?.addEventListener("keydown", (e) => {
 	if (e.key !== "Enter" && e.key !== " ") return;
+	if (e.target?.closest(".health-popover")) return;
 	const card = e.target?.closest("[data-tool]");
 	if (card && e.target === card) {
 		e.preventDefault();

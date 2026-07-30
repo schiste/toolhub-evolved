@@ -13,27 +13,21 @@ import {
 import { egoGraph } from "../lib/core/graph.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
 import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
-import { completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
+import { attachEvolvedSummaries, completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
 import { signedIn } from "../lib/core/session.js";
 import { clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
 import { authorHref, navigateTo, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
-import {
-	completenessList,
-	completenessMeter,
-	endorsementChip,
-	fitChip,
-	freshnessNote,
-	statusBadge
-} from "../lib/atoms/badges.js";
+import { completenessList, completenessMeter, endorsementChip, fitChip, statusBadge } from "../lib/atoms/badges.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
 import { glanceChips, keywordTags, langLabel, linkOut, metaItem, wikiLabel } from "../lib/atoms/labels.js";
 import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
+import { healthScoreChip, maintainerDisclosure } from "../lib/molecules/tool-health-summary.js";
 import { forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 import { prosePage, viewNotFound } from "./static.js";
@@ -304,6 +298,8 @@ export async function viewTool(name) {
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/signals/`).catch(() => null),
 		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
 	]);
+	await attachEvolvedSummaries([tool]);
+	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
 	const mediaRows = Array.isArray(evolvedMedia?.results) ? evolvedMedia.results : [];
 	const { provTags, syncPanels } = toolSyncUi(tool, name);
 	const tags = keywordTags(tool, { empty: "—" });
@@ -405,10 +401,11 @@ export async function viewTool(name) {
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
+					${healthScoreChip(evolvedSummary)}
+					${maintainerDisclosure(evolvedSummary)}
 					${endorsementChip(endorsementCount)}
 					${fitChip(tool)}
 					${updatedTimeTag(tool.modified, "toolpage__when")}
-					${freshnessNote(tool)}
 				</div>
 			</div>
 			<div class="toolpage__cta">

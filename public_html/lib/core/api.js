@@ -664,6 +664,8 @@ export async function getTool(name) {
 		if (error instanceof ApiError && error.status === 404) {
 			return signedIn() && isNewTool(name) ? newToolBase(name) : null;
 		}
+		const fallback = await cachedCanonicalTools({ names: [name], limit: 1 }).catch(() => []);
+		if (fallback[0]) return fallback[0];
 		throw error;
 	}
 }
@@ -676,6 +678,22 @@ export async function getToolsByName(names) {
 		(names || []).map((name) => getTool(name).catch(() => null))
 	);
 	return tools.filter(Boolean);
+}
+/**
+ * Read structured canonical Toolhub records from Evolved's local database.
+ * This is intentionally same-origin `/v1` data, not an upstream `/api` call.
+ * @param {{ names?: string[], q?: string, limit?: number }} [options]
+ * @returns {Promise<Tool[]>}
+ */
+export async function cachedCanonicalTools(options = {}) {
+	const params = new URLSearchParams();
+	const names = (options.names || []).filter(Boolean);
+	if (names.length > 0) params.set("names", names.join(","));
+	if (options.q) params.set("q", options.q);
+	params.set("limit", String(options.limit || names.length || 24));
+	const data = await backendGetJson(`/v1/canonical/tools/?${params.toString()}`);
+	const rows = Array.isArray(data?.results) ? data.results : [];
+	return rows.map((/** @type {any} */ row) => (row && row.record ? normalizeTool(row.record) : null)).filter(Boolean);
 }
 /**
  * @param {any} l

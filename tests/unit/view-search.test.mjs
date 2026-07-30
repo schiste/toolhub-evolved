@@ -7,11 +7,23 @@ const SCRATCH =
 	"/private/tmp/claude-501/-Users-christophehenner-Downloads-Wikimedia-striker-toolhub-demo/bad07c6e-1967-4490-8d44-3fe4ee515e59/scratchpad";
 const BAKE = process.env.BAKE === "1";
 
-const h = vi.hoisted(() => ({ apiGet: vi.fn(), paginate: vi.fn(), navigateTo: vi.fn(), backendGetJson: vi.fn() }));
+const h = vi.hoisted(() => ({
+	apiGet: vi.fn(),
+	paginate: vi.fn(),
+	navigateTo: vi.fn(),
+	backendGetJson: vi.fn(),
+	cachedCanonicalTools: vi.fn()
+}));
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, apiGet: h.apiGet, paginate: h.paginate, backendGetJson: h.backendGetJson };
+	return {
+		...actual,
+		apiGet: h.apiGet,
+		paginate: h.paginate,
+		backendGetJson: h.backendGetJson,
+		cachedCanonicalTools: h.cachedCanonicalTools
+	};
 });
 vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
@@ -214,6 +226,23 @@ function rawTool(name, o = {}) {
 	};
 }
 
+function cachedTool(name, o = {}) {
+	return {
+		name,
+		title: o.title ?? name,
+		description: o.description ?? "",
+		keywords: o.keywords ?? [],
+		maintainer: o.maintainer ?? "Cached maintainer",
+		forWikis: o.forWikis ?? [],
+		toolType: o.toolType ?? null,
+		modified: o.modified ?? "2026-01-01T00:00:00Z",
+		deprecated: o.deprecated ?? false,
+		experimental: o.experimental ?? false,
+		weeklyViews: 0,
+		...o
+	};
+}
+
 const FACETS = {
 	_filter_tool_type: {
 		tool_type: { meta: { param: "tool_type" }, buckets: [{ key: "web app", doc_count: 12 }] }
@@ -232,8 +261,10 @@ beforeEach(() => {
 	h.paginate.mockReset();
 	h.navigateTo.mockReset();
 	h.backendGetJson.mockReset();
+	h.cachedCanonicalTools.mockReset();
 	h.paginate.mockResolvedValue([]);
 	h.backendGetJson.mockRejectedValue(new Error("backend offline")); // default: no local strip
+	h.cachedCanonicalTools.mockResolvedValue([]);
 	setUrl("");
 });
 
@@ -294,6 +325,16 @@ test("search empty results, no facets (response is {} → exercises `data.result
 	h.apiGet.mockResolvedValue({});
 	const r = await search.viewSearch();
 	expect("empty", r.html);
+});
+
+test("search falls back to cached canonical tools when live Toolhub search fails", async () => {
+	setUrl("q=cite");
+	h.apiGet.mockRejectedValue(new Error("down"));
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
+	const r = await search.viewSearch();
+	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 24 }]);
+	assert.ok(r.html.includes("showing saved Toolhub data"));
+	assert.ok(r.html.includes('data-tool="cached-cite"'));
 });
 
 test("search sort=complete orders by completeness with title tiebreak", async () => {
@@ -574,7 +615,7 @@ test("local strip: matching registered tools render above live results, deduped"
 		]
 	});
 	const r = await search.viewSearch();
-	assert.deepEqual(h.backendGetJson.mock.calls.at(-1), ["/v1/search/tools/?q=cite"]);
+	assert.ok(h.backendGetJson.mock.calls.some((call) => call[0] === "/v1/search/tools/?q=cite"));
 	assert.ok(r.html.includes("Registered on this site"), "strip heading renders");
 	assert.ok(r.html.includes('data-tool="local-cite"'), "local tool card renders");
 	// the live "alpha" card renders exactly once (strip deduped it)

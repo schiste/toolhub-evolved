@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t, tWithElements, updatedTimeTag } from "../lib/core/i18n.js";
-import { apiGet, normalizeList, normalizeTool } from "../lib/core/api.js";
-import { attachEndorsements, getUserContext, rankFitsFirst, setUserContext, wikiMatches } from "../lib/core/signals.js";
+import { apiGet, cachedCanonicalTools, normalizeList, normalizeTool } from "../lib/core/api.js";
+import {
+	attachEndorsements,
+	attachEvolvedSummaries,
+	getUserContext,
+	rankFitsFirst,
+	setUserContext,
+	wikiMatches
+} from "../lib/core/signals.js";
 import { listHref, navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
@@ -46,7 +53,7 @@ const INTENT_AXES = {
 };
 
 /** @typedef {{ axis: string, term: string, wiki: string }} IntentState */
-/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[] }} HomeModel */
+/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], cacheFallback?: boolean }} HomeModel */
 /** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
 
 function intentAxisItems() {
@@ -204,7 +211,11 @@ function renderHomeMain(model, state) {
 		: model.lists[0] && model.lists[0].id
 			? listHref(model.lists[0].id)
 			: "/lists";
-	return `
+	const fallbackNote = model.cacheFallback
+		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing saved Toolhub data while live data refreshes.")}</p>
+		`
+		: "";
+	return `${fallbackNote}
 		<div class="section-head"><h2>${t("home.featuredTools", "Featured tools")}</h2><a class="link" href="${featuredHref}">${t("home.viewAll", "View all")}</a></div>
 		${toolsGridHTML(model.featuredRanked.slice(0, 8), t("home.noToolsMatch", "No tools match this sentence."))}
 		<div class="section-head"><h2>${t("home.mostListed", "Most listed")}</h2><a class="link" href="${filtered ? searchHrefForState(state) : "/lists"}">${filtered ? t("home.viewAll", "View all") : t("home.viewLists", "View lists")}</a></div>
@@ -246,13 +257,17 @@ async function homeSectionsModel(state) {
 				).catch(onFail)
 			: Promise.resolve(null)
 	]);
+	const fallbackTools = failures > 0 ? await cachedCanonicalTools({ limit: filtered ? 24 : 18 }).catch(() => []) : [];
 	/** @type {ToolList[]} */
 	let lists = (flists.results || []).map((/** @type {any} */ list) => normalizeList(list));
 	/** @type {Tool[]} */
 	let featured;
 	if (filtered) {
 		featured = (filteredToolsData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
-		await attachEndorsements(featured);
+		if (featured.length === 0 && fallbackTools.length > 0) {
+			featured = fallbackTools.filter((tool) => toolMatchesIntent(tool, state));
+		}
+		await Promise.all([attachEndorsements(featured), attachEvolvedSummaries(featured)]);
 		const matchingNames = new Set(featured.map((t) => t.name));
 		lists = lists.filter((l) =>
 			// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
@@ -261,9 +276,12 @@ async function homeSectionsModel(state) {
 	} else {
 		// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
 		featured = dedupeTools(lists.flatMap((l) => l.tools || []));
-		await attachEndorsements(featured);
+		if (featured.length === 0 && fallbackTools.length > 0) featured = fallbackTools.slice(0, 8);
+		await Promise.all([attachEndorsements(featured), attachEvolvedSummaries(featured)]);
 	}
-	const recentTools = (recent.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
+	let recentTools = (recent.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
+	if (recentTools.length === 0 && fallbackTools.length > 0) recentTools = fallbackTools.slice(0, 5);
+	await attachEvolvedSummaries(recentTools);
 	// Something failed AND nothing loaded → this is an outage, not an empty
 	// catalog. Rethrow so viewHome's caller (the router) shows the error page;
 	// the interactive refreshHome path catches this and shows its own notice.
@@ -275,7 +293,8 @@ async function homeSectionsModel(state) {
 		lists,
 		featuredRanked: rankFitsFirst(featured),
 		mostListedRanked: rankFitsFirst(mostListed),
-		recentTools
+		recentTools,
+		cacheFallback: failures > 0 && fallbackTools.length > 0
 	};
 }
 

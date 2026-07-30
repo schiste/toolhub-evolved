@@ -9,6 +9,7 @@ const BAKE = process.env.BAKE === "1";
 
 const h = vi.hoisted(() => ({
 	apiGet: vi.fn(),
+	backendGetJson: vi.fn(),
 	clearApiCache: vi.fn(),
 	getToolsByName: vi.fn(),
 	paginate: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	return {
 		...actual,
 		apiGet: h.apiGet,
+		backendGetJson: h.backendGetJson,
 		clearApiCache: h.clearApiCache,
 		getToolsByName: h.getToolsByName,
 		paginate: h.paginate
@@ -555,6 +557,7 @@ beforeEach(() => {
 	setServerUser(null);
 	document.body.innerHTML = "";
 	for (const fn of Object.values(h)) fn.mockReset();
+	h.backendGetJson.mockResolvedValue({ results: {} });
 	h.paginate.mockResolvedValue([]);
 	h.demoLists.mockReturnValue([]);
 	h.favNames.mockReturnValue([]);

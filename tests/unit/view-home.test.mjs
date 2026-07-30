@@ -9,6 +9,8 @@ const BAKE = process.env.BAKE === "1";
 
 const h = vi.hoisted(() => ({
 	apiGet: vi.fn(),
+	backendGetJson: vi.fn(),
+	cachedCanonicalTools: vi.fn(),
 	getTool: vi.fn(),
 	getToolsByName: vi.fn(),
 	paginate: vi.fn(),
@@ -17,7 +19,15 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, apiGet: h.apiGet, getTool: h.getTool, getToolsByName: h.getToolsByName, paginate: h.paginate };
+	return {
+		...actual,
+		apiGet: h.apiGet,
+		backendGetJson: h.backendGetJson,
+		cachedCanonicalTools: h.cachedCanonicalTools,
+		getTool: h.getTool,
+		getToolsByName: h.getToolsByName,
+		paginate: h.paginate
+	};
 });
 vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
 	const actual = await orig();
@@ -423,6 +433,25 @@ function rawTool(name, o = {}) {
 	};
 }
 
+function cachedTool(name, o = {}) {
+	return {
+		name,
+		title: o.title ?? name,
+		description: o.description ?? "",
+		keywords: o.keywords ?? [],
+		maintainer: o.maintainer ?? "Cached maintainer",
+		audiences: o.audiences ?? [],
+		tasks: o.tasks ?? [],
+		forWikis: o.forWikis ?? [],
+		toolType: o.toolType ?? null,
+		modified: o.modified ?? "2026-01-01T00:00:00Z",
+		deprecated: o.deprecated ?? false,
+		experimental: o.experimental ?? false,
+		weeklyViews: 0,
+		...o
+	};
+}
+
 // Membership map (shared/memoized across tests via listMemberships): distinct
 // endorsement counts bravo=3, charlie=2, alpha=1 so the sort order is observable.
 const MEMBERSHIP_LISTS = [
@@ -436,6 +465,10 @@ beforeEach(() => {
 	applyExp(false);
 	document.body.innerHTML = "";
 	h.apiGet.mockReset();
+	h.backendGetJson.mockReset();
+	h.backendGetJson.mockResolvedValue({ results: {} });
+	h.cachedCanonicalTools.mockReset();
+	h.cachedCanonicalTools.mockResolvedValue([]);
 	h.paginate.mockReset();
 	h.navigateTo.mockReset();
 	h.paginate.mockImplementation(async (path) => (path === "/lists/" ? MEMBERSHIP_LISTS : []));
@@ -796,6 +829,14 @@ test("total outage (every source rejects) surfaces an error, not an empty catalo
 	// homeSectionsModel counts the failures and, with nothing loaded, rethrows so
 	// the router shows the error page instead of "No tools match this sentence".
 	await assert.rejects(() => home.viewHome(), /live catalog unavailable/);
+});
+
+test("total outage with canonical cache renders saved tools", async () => {
+	h.apiGet.mockRejectedValue(new Error("down"));
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-home", { title: "Cached Home" })]);
+	const r = await home.viewHome();
+	assert.ok(r.html.includes("Showing saved Toolhub data while live data refreshes."));
+	assert.ok(r.html.includes('data-tool="cached-home"'));
 });
 
 test("partial outage but a list loaded → renders, no error (lists.length keeps it alive)", async () => {

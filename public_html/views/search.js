@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { countLabel, fmt, t } from "../lib/core/i18n.js";
-import { apiGet, backendGetJson, localToolBase, normalizeTool } from "../lib/core/api.js";
+import { apiGet, backendGetJson, cachedCanonicalTools, localToolBase, normalizeTool } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
-import { attachEndorsements, completeness, rankFitsFirst } from "../lib/core/signals.js";
+import { attachEndorsements, attachEvolvedSummaries, completeness, rankFitsFirst } from "../lib/core/signals.js";
 import { button } from "../lib/atoms/button.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { renderPager } from "../lib/molecules/pager.js";
@@ -130,12 +130,36 @@ export async function viewSearch() {
 		}
 	}
 
-	const data = await apiGet("/search/tools/", /** @type {Record<string, string>} */ (/** @type {unknown} */ (api)));
+	const loaded = await (async () => {
+		try {
+			const liveData = await apiGet(
+				"/search/tools/",
+				/** @type {Record<string, string>} */ (/** @type {unknown} */ (api))
+			);
+			return {
+				data: liveData,
+				results: (liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool)),
+				canonicalFallback: false
+			};
+		} catch (error) {
+			const cached = await cachedCanonicalTools({ q, limit: page * pageSize }).catch(() => []);
+			const offset = (page - 1) * pageSize;
+			const cachedResults = cached.slice(offset, offset + pageSize);
+			if (cachedResults.length === 0) throw error;
+			return {
+				data: { count: cached.length, facets: {} },
+				results: cachedResults,
+				canonicalFallback: true
+			};
+		}
+	})();
+	const data = loaded.data;
 	/** @type {Tool[]} */
-	let results = (data.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
+	let results = loaded.results;
+	const { canonicalFallback } = loaded;
 	// Federated strip (page 1 only — the strip is additive, never paginated).
 	const local = page === 1 ? await localResults(q, results) : [];
-	await attachEndorsements(results);
+	await Promise.all([attachEndorsements(results), attachEvolvedSummaries(results), attachEvolvedSummaries(local)]);
 	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
 	if (clientStatuses.size > 0) {
 		results = results.filter((t) => CLIENT_STATUS_FILTERS.some((s) => clientStatuses.has(s.value) && s.match(t)));
@@ -169,10 +193,11 @@ export async function viewSearch() {
 						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
 					})
 				: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")));
-	const countNoteHTML =
-		clientStatuses.size > 0
-			? ` <span class="browse__count-note">${t("search.filteredInBrowser", "filtered in your browser")}</span>`
-			: "";
+	const countNotes = [
+		clientStatuses.size > 0 ? t("search.filteredInBrowser", "filtered in your browser") : "",
+		canonicalFallback ? t("search.cachedCanonicalData", "showing saved Toolhub data") : ""
+	].filter(Boolean);
+	const countNoteHTML = countNotes.map((note) => ` <span class="browse__count-note">${esc(note)}</span>`).join("");
 
 	const sortOpts = `<option value="relevance">${t("search.mostRelevant", "Most relevant")}</option><option value="recent">${t("search.recentlyUpdated", "Recently updated")}</option><option value="name">${t(
 		"search.nameAZ",
