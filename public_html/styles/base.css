@@ -236,6 +236,11 @@ summary:focus-visible,
 	display: none;
 }
 
+#view {
+	min-height: max(28rem, calc(100vh - 6rem));
+	min-height: max(28rem, calc(100svh - 6rem));
+}
+
 .empty {
 	color: var(--color-text-secondary);
 	padding: var(--space-4) var(--space-0);

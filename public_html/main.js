@@ -19,7 +19,7 @@ import {
 	tData,
 	tWithElements
 } from "./lib/core/i18n.js";
-import { dismissSiteNotice, setAuthRender } from "./lib/core/session.js";
+import { dismissSiteNotice, setAuthRender, signedIn } from "./lib/core/session.js";
 import { initServerSync, officialWrite, officialWriteAvailable } from "./lib/core/serversync.js";
 import { initTheme, setThemeChoice } from "./lib/core/theme.js";
 import { listToolToggle, toggleFav } from "./lib/core/store.js";
@@ -116,10 +116,33 @@ function localizeShell() {
 	syncCommandPaletteChrome();
 }
 
+let lastKnownSignedIn = signedIn();
+function routeNeedsAuthResolution(path = window.location.pathname) {
+	if (path === "/login" || path === "/user/login" || path === "/account" || path === "/add-or-remove-tools") {
+		return true;
+	}
+	if (
+		path === "/my-lists" ||
+		path === "/favorites" ||
+		path === "/preferences" ||
+		path === "/my-tools" ||
+		path === "/developer-settings"
+	) {
+		return true;
+	}
+	if (path === "/lists/create") return true;
+	if (path.startsWith("/lists/") && path.endsWith("/edit")) return true;
+	if (path.startsWith("/tools/") && (path.endsWith("/edit") || path.endsWith("/edit-annotations"))) return true;
+	return false;
+}
+
 setAuthRender(() => {
+	const wasSignedIn = lastKnownSignedIn;
+	const isSignedInNow = signedIn();
+	lastKnownSignedIn = isSignedInNow;
 	renderAccount();
 	syncSubmitButton();
-	render();
+	if (wasSignedIn !== isSignedInNow || routeNeedsAuthResolution()) render();
 });
 applyLocaleAttrs();
 if (bootLocale === DEFAULT_LOCALE || isPseudoLocale(bootLocale)) {

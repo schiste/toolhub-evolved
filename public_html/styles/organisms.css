@@ -348,6 +348,7 @@
 .theme-toggle {
 	display: inline-flex;
 	height: var(--ctl-h-md);
+	min-width: calc(var(--ctl-h-md) + var(--ctl-h-md) + 2px);
 	border: var(--border-base);
 	border-radius: var(--radius-sm);
 	overflow: hidden;

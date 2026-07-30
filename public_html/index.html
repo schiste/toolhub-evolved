@@ -132,6 +132,10 @@
 			.hidden {
 				display: none;
 			}
+			#view {
+				min-height: max(28rem, calc(100vh - 6rem));
+				min-height: max(28rem, calc(100svh - 6rem));
+			}
 			.mockup-banner {
 				display: flex;
 				flex-wrap: wrap;
@@ -278,7 +282,12 @@
 				position: relative;
 				display: inline-flex;
 				align-items: center;
+				justify-content: flex-end;
+				min-width: 112px;
 				min-height: var(--btn-h-md);
+			}
+			.lang {
+				min-width: 112px;
 			}
 			.acct__loading,
 			.acct__btn,
@@ -339,6 +348,7 @@
 			.theme-toggle {
 				display: inline-flex;
 				height: var(--ctl-h-md);
+				min-width: calc(var(--ctl-h-md) + var(--ctl-h-md) + 2px);
 				border: var(--border-base);
 				overflow: hidden;
 			}
@@ -484,6 +494,9 @@
 				}
 				.acct {
 					min-width: 0;
+				}
+				.lang {
+					min-width: var(--btn-h-md);
 				}
 				.acct__btn {
 					max-width: min(46vw, 180px);

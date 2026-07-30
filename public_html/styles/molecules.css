@@ -1365,6 +1365,11 @@ li.le__empty {
 /* Account dropdown. */
 .acct {
 	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	min-width: 112px;
+	min-height: var(--btn-h-md);
 }
 .acct__loading {
 	display: inline-flex;
@@ -1490,6 +1495,7 @@ li.le__empty {
 /* Language picker. Mirrors the account dropdown pattern. */
 .lang {
 	position: relative;
+	min-width: 112px;
 }
 .lang__btn {
 	display: flex;

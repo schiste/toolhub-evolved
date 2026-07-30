@@ -260,6 +260,9 @@
 	.acct {
 		min-width: 0;
 	}
+	.lang {
+		min-width: var(--btn-h-md);
+	}
 	.acct__btn {
 		max-width: min(46vw, 180px);
 		min-width: 0;
