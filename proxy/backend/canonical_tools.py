@@ -21,6 +21,7 @@ MAX_QUERY_NAMES = 50
 MAX_SEARCH_RESULTS = 50
 MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
+MAX_RECORD_RESULTS = 1000
 
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - untrusted official API JSON
@@ -176,3 +177,17 @@ def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS) -> list[dict[str
             ).casefold()
         ]
     return [_payload(row) for row in rows[:capped]]
+
+
+def records(*, limit: int = MAX_RECORD_RESULTS) -> list[dict[str, Any]]:
+    """Return recent canonical records for deterministic derived indexes."""
+    capped = max(1, min(MAX_RECORD_RESULTS, int(limit or MAX_RECORD_RESULTS)))
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(CanonicalToolCache)
+                .order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
+                .limit(capped)
+            ).scalars()
+        )
+    return [_payload(row) for row in rows]

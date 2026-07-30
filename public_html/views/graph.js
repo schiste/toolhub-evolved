@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../lib/core/dom.js";
-import { globalGraph } from "../lib/core/graph.js";
+import { backendGetJson } from "../lib/core/api.js";
 import { t } from "../lib/core/i18n.js";
 import { hasContext } from "../lib/core/signals.js";
 import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
@@ -28,7 +28,7 @@ function communityLegend(communityMeta) {
 }
 
 export async function viewGraph() {
-	const g = await globalGraph();
+	const g = (await backendGetJson("/v1/graph/")) || { nodes: [], edges: [], communityMeta: [], truncated: 0 };
 	const truncatedNote = g.truncated
 		? `<p class="graph__note">${t("graph.truncatedNote", "Showing the {count} best-documented tools.", { count: esc(g.nodes.length) })}</p>`
 		: "";

@@ -32,6 +32,7 @@ from backend import (
     authz,
     canonical_tools,
     db,
+    graph_payload,
     maintainer_index,
     recent_owners,
     security,
@@ -4033,6 +4034,12 @@ def v1_canonical_tools() -> Response:
             },
         }
     )
+
+
+@v1_bp.route("/v1/graph/")
+def v1_graph() -> Response:
+    """Return the cached global tool similarity graph derived from local data."""
+    return jsonify(graph_payload.payload())
 
 
 @v1_bp.route("/v1/tools/summaries/")
