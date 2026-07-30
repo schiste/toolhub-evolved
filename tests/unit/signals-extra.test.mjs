@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, test } from "vitest";
+import { afterEach, beforeEach, test, vi } from "vitest";
 import { installStorage } from "./_storage-setup.mjs";
 import * as signals from "../../public_html/lib/core/signals.js";
 
@@ -154,6 +154,36 @@ test("attachEvolvedSummaries can wait for fresh local summaries without emitting
 		assert.deepEqual(events, []);
 	} finally {
 		document.removeEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	}
+});
+
+test("attachEvolvedSummaries defers additive summaries until idle time", async () => {
+	const originalRequestIdleCallback = globalThis.requestIdleCallback;
+	globalThis.requestIdleCallback = undefined;
+	vi.useFakeTimers();
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return {
+			ok: true,
+			json: async () => ({ results: { "idle-summary-tool": { health: { score: 73, grade: "good" } } } })
+		};
+	};
+	try {
+		const tools = [{ name: "idle-summary-tool" }];
+		const out = await signals.attachEvolvedSummaries(tools);
+		assert.equal(out, tools);
+		assert.deepEqual(calls, []);
+
+		await vi.advanceTimersByTimeAsync(699);
+		assert.deepEqual(calls, []);
+		await vi.advanceTimersByTimeAsync(1);
+		await Promise.resolve();
+
+		assert.deepEqual(calls, ["/v1/tools/summaries/?names=idle-summary-tool"]);
+	} finally {
+		globalThis.requestIdleCallback = originalRequestIdleCallback;
+		vi.useRealTimers();
 	}
 });
 

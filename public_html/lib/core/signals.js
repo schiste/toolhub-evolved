@@ -147,10 +147,16 @@ export async function attachEndorsements(tools) {
 }
 
 const EVOLVED_SUMMARY_TTL_MS = 5 * 60 * 1000;
+const EVOLVED_SUMMARY_BATCH_SIZE = 24;
+const EVOLVED_SUMMARY_IDLE_TIMEOUT_MS = 2200;
+const EVOLVED_SUMMARY_IDLE_FALLBACK_MS = 700;
 /** @type {Map<string, { summary: any, ts: number }>} */
 const evolvedSummaryCache = new Map();
 /** @type {Map<string, Promise<void>>} */
 const evolvedSummaryInflight = new Map();
+/** @type {Set<string>} */
+const evolvedSummaryPending = new Set();
+let evolvedSummaryScheduled = false;
 
 /** @param {string[]} names */
 function emitEvolvedSummaryRefresh(names) {
@@ -173,7 +179,7 @@ function refreshEvolvedSummaries(names, opts = {}) {
 		const inflight = evolvedSummaryInflight.get(name);
 		if (inflight) pending.push(inflight);
 		else batch.push(name);
-		if (batch.length >= 50) break;
+		if (batch.length >= EVOLVED_SUMMARY_BATCH_SIZE) break;
 	}
 	if (batch.length === 0) return Promise.allSettled(pending).then(() => undefined);
 	const params = new URLSearchParams({ names: batch.join(",") });
@@ -202,12 +208,40 @@ function refreshEvolvedSummaries(names, opts = {}) {
 	return Promise.allSettled(pending).then(() => undefined);
 }
 
+/** @param {() => void} callback */
+function scheduleIdle(callback) {
+	if (typeof requestIdleCallback === "function") {
+		requestIdleCallback(callback, { timeout: EVOLVED_SUMMARY_IDLE_TIMEOUT_MS });
+	} else {
+		setTimeout(callback, EVOLVED_SUMMARY_IDLE_FALLBACK_MS);
+	}
+}
+
+function drainScheduledEvolvedSummaries() {
+	evolvedSummaryScheduled = false;
+	const batch = [...evolvedSummaryPending].slice(0, EVOLVED_SUMMARY_BATCH_SIZE);
+	for (const name of batch) evolvedSummaryPending.delete(name);
+	refreshEvolvedSummaries(batch).finally(() => {
+		if (evolvedSummaryPending.size > 0) scheduleEvolvedSummaryRefresh([]);
+	});
+}
+
+/** @param {string[]} names */
+function scheduleEvolvedSummaryRefresh(names) {
+	for (const name of names) {
+		if (name) evolvedSummaryPending.add(name);
+	}
+	if (evolvedSummaryScheduled || evolvedSummaryPending.size === 0) return;
+	evolvedSummaryScheduled = true;
+	scheduleIdle(drainScheduledEvolvedSummaries);
+}
+
 /**
  * Attach local Evolved health/maintainer summaries for visible tool cards.
  * The endpoint reads only Evolved's local database, so this never blocks on
  * official Toolhub after the canonical/summary cache has been populated.
  * @param {Tool[]} tools
- * @param {{ waitForFresh?: boolean }} [opts]
+ * @param {{ waitForFresh?: boolean, defer?: boolean }} [opts]
  * @returns {Promise<Tool[]>}
  */
 export async function attachEvolvedSummaries(tools, opts = {}) {
@@ -226,8 +260,10 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 			const cached = evolvedSummaryCache.get(tool.name);
 			if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
 		}
-	} else {
+	} else if (opts.defer === false) {
 		refreshEvolvedSummaries(stale);
+	} else {
+		scheduleEvolvedSummaryRefresh(stale);
 	}
 	return tools;
 }
