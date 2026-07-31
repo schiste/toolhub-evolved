@@ -12,7 +12,7 @@ import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFoun
 // where one transient 503 would otherwise blank the native ES-module app.
 // render() already awaits dispatch(), so a returned Promise<View> just works.
 
-/** @typedef {{ title: string, html: string, mount?: () => void }} View */
+/** @typedef {{ title: string, html: string, mount?: () => void, styles?: string[] }} View */
 /** @typedef {View | Promise<View>} ViewResult */
 /** @template T @typedef {Promise<T>} ModuleResult */
 
@@ -45,6 +45,94 @@ const loadAudit = () => loadRouteModule("./audit.js", () => import("./audit.js")
 const loadGraph = () => loadRouteModule("./graph.js", () => import("./graph.js"));
 const loadExperiments = () => loadRouteModule("./experiments.js", () => import("./experiments.js"));
 const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./styleguide.js"));
+
+/** @type {Map<string, Promise<void>>} */
+const routeStyleLoads = new Map();
+
+/**
+ * @param {string} href
+ * @returns {string}
+ */
+function routeStyleKey(href) {
+	return (
+		href
+			.split("/")
+			.pop()
+			?.replace(/\.css(?:\?.*)?$/, "")
+			.replaceAll(/[^a-z0-9_-]+/gi, "-") || "route"
+	);
+}
+
+/**
+ * @param {string} href
+ * @returns {HTMLLinkElement | null}
+ */
+function findRouteStyle(href) {
+	return (
+		[...document.querySelectorAll('link[rel="stylesheet"][href], link[data-route-style][href]')].find(
+			(link) => link.getAttribute("href") === href
+		) || null
+	);
+}
+
+/**
+ * @param {HTMLLinkElement} link
+ * @returns {boolean}
+ */
+function styleLoaded(link) {
+	try {
+		return Boolean(link.sheet);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * @param {string} href
+ * @returns {Promise<void>}
+ */
+function loadRouteStyle(href) {
+	const loaded = findRouteStyle(href);
+	if (loaded && styleLoaded(loaded)) return Promise.resolve();
+	if (routeStyleLoads.has(href)) return /** @type {Promise<void>} */ (routeStyleLoads.get(href));
+
+	const link = loaded || document.createElement("link");
+	if (!loaded) {
+		link.rel = "stylesheet";
+		link.href = href;
+		link.dataset.routeStyle = routeStyleKey(href);
+	}
+
+	const promise = new Promise((resolve) => {
+		let settled = false;
+		/** @type {ReturnType<typeof setTimeout> | null} */
+		let timer = null;
+		const done = () => {
+			if (settled) return;
+			settled = true;
+			if (timer) window.clearTimeout(timer);
+			link.removeEventListener("load", done);
+			link.removeEventListener("error", done);
+			resolve();
+		};
+		timer = window.setTimeout(done, 2000);
+		link.addEventListener("load", done);
+		link.addEventListener("error", done);
+		if (!loaded) document.head.append(link);
+		if (styleLoaded(link)) done();
+	});
+	routeStyleLoads.set(href, promise);
+	return promise;
+}
+
+/**
+ * @param {View} view
+ * @returns {Promise<void>}
+ */
+function loadViewStyles(view) {
+	if (!view.styles?.length) return Promise.resolve();
+	return Promise.all(view.styles.map((href) => loadRouteStyle(href))).then(() => {});
+}
 
 /** @type {((title: string, lead?: string) => View) | null} */
 let signInFallback = null;
@@ -320,6 +408,8 @@ export async function render() {
 	}
 	// Stryker disable next-line ConditionalExpression: when spinnerTimer is null the guard is skipped; forcing it true only runs clearTimeout(null), a documented no-op, so behaviour is identical.
 	if (spinnerTimer) clearTimeout(spinnerTimer); // resolved (or superseded) before the delay
+	if (seq !== navSeq) return; // a newer navigation superseded this one
+	await loadViewStyles(view);
 	if (seq !== navSeq) return; // a newer navigation superseded this one
 	commitView(viewEl, view, path);
 }

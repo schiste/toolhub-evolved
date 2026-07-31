@@ -1182,5 +1182,10 @@ export function viewStyleguide() {
 			${activityParitySection()}
 		</div>`
 	);
-	return { title: t("styleguide.title", "Design system — Toolhub"), html, mount: mountStyleguide };
+	return {
+		title: t("styleguide.title", "Design system — Toolhub"),
+		html,
+		mount: mountStyleguide,
+		styles: [STYLEGUIDE_STYLESHEET]
+	};
 }

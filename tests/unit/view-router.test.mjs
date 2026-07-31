@@ -655,6 +655,29 @@ test("render: a superseded navigation neither flashes its spinner nor commits", 
 	}
 });
 
+test("render: waits for declared route styles before committing the view", async () => {
+	document.body.innerHTML = '<main id="view" aria-busy="false"></main>';
+	window.history.replaceState({}, "", "/api-docs");
+	staticViews.viewApiDocs.mockReturnValue({
+		title: "API docs — Toolhub",
+		html: "<div><h1>API docs</h1></div>",
+		styles: ["data:text/css,.route-test{}"]
+	});
+	const viewEl = document.querySelector("#view");
+
+	const p = router.render();
+	await Promise.resolve();
+	const link = document.querySelector("link[data-route-style]");
+
+	assert.ok(link);
+	assert.equal(link.getAttribute("href"), "data:text/css,.route-test{}");
+	assert.doesNotMatch(viewEl.innerHTML, /API docs/);
+
+	link.dispatchEvent(new Event("load"));
+	await p;
+	assert.match(viewEl.innerHTML, /API docs/);
+});
+
 test("render: a dispatch failure commits the error page", async () => {
 	document.body.innerHTML = '<main id="view" aria-busy="false"></main>';
 	window.history.replaceState({}, "", "/styleguide");

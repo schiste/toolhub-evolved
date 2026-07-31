@@ -73,5 +73,6 @@ test("main.js activates deferred styles before the first route render", () => {
 test("styleguide CSS is owned by the styleguide route", () => {
 	const styleguide = read("public_html/views/styleguide.js");
 	assert.match(styleguide, /STYLEGUIDE_STYLESHEET = "\/styles\/styleguide\.css"/);
+	assert.match(styleguide, /styles:\s*\[STYLEGUIDE_STYLESHEET\]/);
 	assert.match(styleguide, /data-route-style="styleguide"/);
 });
