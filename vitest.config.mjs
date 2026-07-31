@@ -10,6 +10,10 @@ export default defineConfig({
 		environment: "happy-dom",
 		include: ["tests/unit/**/*.test.mjs"],
 		setupFiles: ["./tests/unit/_storage-setup.mjs"],
+		// Unit files share happy-dom/browser globals and partial module mocks.
+		// Keep files serial so deferred view mounts are not affected by another
+		// file mutating window/history/timers at the same time.
+		fileParallelism: false,
 		coverage: {
 			provider: "v8",
 			include: ["public_html/**/*.js"],

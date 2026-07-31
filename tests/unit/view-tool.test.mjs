@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
 	clearLocalToolDraft: vi.fn(),
 	egoGraph: vi.fn(),
 	listMemberships: vi.fn(),
+	attachEvolvedSummaries: vi.fn(),
 	getSimilarityIndex: vi.fn(),
 	nearestNeighbors: vi.fn(),
 	demoRevisionsFor: vi.fn(),
@@ -57,7 +58,7 @@ vi.mock("../../public_html/lib/core/graph.js", async (orig) => {
 });
 vi.mock("../../public_html/lib/core/signals.js", async (orig) => {
 	const actual = await orig();
-	return { ...actual, listMemberships: h.listMemberships };
+	return { ...actual, attachEvolvedSummaries: h.attachEvolvedSummaries, listMemberships: h.listMemberships };
 });
 vi.mock("../../public_html/lib/core/similarity.js", async (orig) => {
 	const actual = await orig();
@@ -530,10 +531,12 @@ beforeEach(() => {
 	localStorage.clear();
 	applyExp(false);
 	setServerUser(null);
+	window.history.replaceState({}, "", "/tools/test-tool");
 	document.body.innerHTML = "";
 	for (const fn of Object.values(h)) fn.mockReset();
 	h.isNewTool.mockReturnValue(false);
 	h.listMemberships.mockResolvedValue(new Map());
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => tools);
 	h.nearestNeighbors.mockReturnValue([]);
 	h.getSimilarityIndex.mockResolvedValue({ tools: [], byName: new Map(), vectors: new Map() });
 	h.egoGraph.mockResolvedValue({ nodes: [], edges: [] });
@@ -752,48 +755,39 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 
 test("viewTool includes eager local health and maintainer summaries", async () => {
 	h.getTool.mockResolvedValue(toolFixture("score-tool", { title: "Score Tool" }));
-	h.backendGetJson.mockImplementation((path) =>
-		Promise.resolve(
-			path.includes("/v1/tools/summaries/")
-				? {
-						results: {
-							"score-tool": {
-								health: {
-									score: 100,
-									grade: "strong",
-									sourceHealth: {
-										repository: {
-											branch: "main",
-											commitSha: "0123456789abcdef",
-											lastCommitAt: "2026-07-29T12:00:00Z"
-										}
-									},
-									dimensions: [
-										{
-											key: "maintainer-status",
-											label: "Maintainer status",
-											score: 100,
-											weight: 1.25,
-											confidence: 0.85,
-											status: "maintained",
-											summary: "Derived from deterministic maintainer signals.",
-											includedInScore: true
-										}
-									],
-									calculation: { dimensionCount: 1, includedDimensionCount: 1, includedWeight: 1.25 }
-								},
-								maintainer: {
-									counts: { maintainers: 3, verifiedMaintainers: 1, activeMaintainers: 1 }
-								},
-								maintainerDimension: { status: "maintained", bestConfidence: 95 }
-							}
-						}
+	h.attachEvolvedSummaries.mockImplementation(async (tools) => {
+		tools[0].evolvedSummary = {
+			health: {
+				score: 100,
+				grade: "strong",
+				sourceHealth: {
+					repository: {
+						branch: "main",
+						commitSha: "0123456789abcdef",
+						lastCommitAt: "2026-07-29T12:00:00Z"
 					}
-				: path.includes("/media/")
-					? { results: [] }
-					: { thanks: {}, usage30d: {}, health: {} }
-		)
-	);
+				},
+				dimensions: [
+					{
+						key: "maintainer-status",
+						label: "Maintainer status",
+						score: 100,
+						weight: 1.25,
+						confidence: 0.85,
+						status: "maintained",
+						summary: "Derived from deterministic maintainer signals.",
+						includedInScore: true
+					}
+				],
+				calculation: { dimensionCount: 1, includedDimensionCount: 1, includedWeight: 1.25 }
+			},
+			maintainer: {
+				counts: { maintainers: 3, verifiedMaintainers: 1, activeMaintainers: 1 }
+			},
+			maintainerDimension: { status: "maintained", bestConfidence: 95 }
+		};
+		return tools;
+	});
 	const r = await tool.viewTool("score-tool");
 
 	assert.ok(r.html.includes("Health 100"));
