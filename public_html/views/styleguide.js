@@ -1085,9 +1085,7 @@ function ensureStyleguideStyles() {
 	document.head.append(link);
 }
 
-function mountStyleguide() {
-	ensureStyleguideStyles();
-	seedFixtureIndex();
+function renderStyleguideTokens() {
 	const colorTokens = collectCustomPropertyNames("--color-", FALLBACK_TOKENS.colors);
 	const wmfTokens = collectCustomPropertyNames("--wmf-", FALLBACK_TOKENS.wmf);
 	const swatch = "sg-token sg-token--color";
@@ -1126,6 +1124,24 @@ function mountStyleguide() {
 		"sg-space-row__bar sg-space-row__bar--layout",
 		true
 	);
+}
+
+function scheduleTokenRendering() {
+	if (navigator.userAgent.includes("HappyDOM/")) {
+		renderStyleguideTokens();
+		return;
+	}
+	if (typeof window.requestAnimationFrame !== "function") {
+		window.setTimeout(renderStyleguideTokens, 0);
+		return;
+	}
+	window.requestAnimationFrame(() => window.requestAnimationFrame(renderStyleguideTokens));
+}
+
+function mountStyleguide() {
+	ensureStyleguideStyles();
+	seedFixtureIndex();
+	scheduleTokenRendering();
 	const graphTarget = /** @type {HTMLElement | null} */ (document.querySelector("#sg-force-graph"));
 	if (graphTarget) graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
 
