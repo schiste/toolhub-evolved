@@ -564,6 +564,9 @@ test("viewTool minimal (signed out, sparse fields, no related, no ego)", async (
 	const r = await tool.viewTool("minimal");
 	assert.equal(r.title, "Minimal Tool — Toolhub");
 	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Minimal Tool</h1>'));
+	assert.ok(r.html.includes('<h2 class="panel__title">Actions</h2>'));
+	assert.ok(r.html.includes('href="/tools/minimal/history"'));
+	assert.ok(r.html.includes('href="/tools/minimal/edit"'));
 	assert.ok(r.html.includes("Suggest an edit"));
 	assert.ok(!r.html.includes("Save to favorites"));
 	assert.ok(!r.html.includes("shotstrip"));
@@ -643,8 +646,10 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.equal(r.title, "Full Tool — Toolhub");
 	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Full Tool</h1>'));
 	assert.ok(r.html.includes('data-fav="full"'));
-	assert.ok(r.html.includes('href="/tools/full/edit">Edit tool</a>'));
-	assert.ok(r.html.includes('href="/tools/full/edit-annotations">Edit annotations</a>'));
+	assert.ok(r.html.includes('href="/tools/full/edit"'));
+	assert.ok(r.html.includes('href="/tools/full/edit-annotations"'));
+	assert.ok(r.html.includes('class="toolpage__owner-actions"'));
+	assert.ok(r.html.includes("Maintainer actions"));
 	assert.ok(!r.html.includes("shotstrip"));
 	assert.ok(!r.html.includes("thanks__agg"));
 	assert.ok(!r.html.includes("views experimental"));

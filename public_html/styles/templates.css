@@ -214,13 +214,17 @@
 	.toolpage__grid {
 		grid-template-columns: 1fr;
 	}
+	.toolpage__side {
+		position: static;
+	}
 }
 
 @media (width <= 720px) {
 	.toolpage__head {
-		flex-wrap: wrap;
+		grid-template-columns: auto minmax(0, 1fr);
 	}
 	.toolpage__cta {
+		grid-column: 1 / -1;
 		flex-direction: row;
 		width: 100%;
 	}
@@ -236,6 +240,17 @@
 	}
 	.account-keys__layout {
 		grid-template-columns: 1fr;
+	}
+}
+
+@media (width > 720px) and (width <= 980px) {
+	.toolpage__head {
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+	.toolpage__cta {
+		grid-column: 1 / -1;
+		flex-direction: row;
+		width: 100%;
 	}
 }
 

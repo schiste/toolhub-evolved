@@ -414,6 +414,42 @@ function toolSyncUi(tool, name) {
 	return { provTags, syncPanels };
 }
 
+/**
+ * @param {Tool} tool
+ * @param {boolean} canDeleteOfficialTool
+ */
+function toolManagementActions(tool, canDeleteOfficialTool) {
+	const historyAction = button(t("tool.viewHistory", "View history"), {
+		variant: "subtle",
+		size: "sm",
+		href: `${toolHref(tool.name)}/history`,
+		icon: "history"
+	});
+	const managementLinks = signedIn()
+		? `<div class="toolpage__owner-actions" aria-label="${esc(t("tool.ownerActions", "Maintainer actions"))}">
+			<span class="toolpage__owner-label">${t("tool.ownerActions", "Maintainer actions")}</span>
+			${button(t("tool.editTool", "Edit tool"), { variant: "outline", size: "sm", href: `${toolHref(tool.name)}/edit`, icon: "edit" })}
+			${button(t("tool.editAnnotations", "Edit annotations"), { variant: "outline", size: "sm", href: `${toolHref(tool.name)}/edit-annotations`, icon: "tag" })}
+			${
+				canDeleteOfficialTool
+					? button(t("tool.deleteOfficialTool", "Delete official tool"), {
+							variant: "danger",
+							size: "sm",
+							icon: "reset",
+							attrs: "data-tool-delete"
+						})
+					: ""
+			}
+		</div>`
+		: button(t("tool.suggestAnEdit", "Suggest an edit"), {
+				variant: "outline",
+				size: "sm",
+				href: `${toolHref(tool.name)}/edit`,
+				icon: "edit"
+			});
+	return { historyAction, managementLinks };
+}
+
 /** @param {string} name */
 export async function viewTool(name) {
 	const tool =
@@ -449,21 +485,7 @@ export async function viewTool(name) {
 	// Official Toolhub status flags stay visible alongside Evolved-local panels.
 	const realBadge = statusBadge(tool);
 	const canDeleteOfficialTool = signedIn() && officialWriteAvailable() && !isNewTool(tool.name);
-	const managementLinks = signedIn()
-		? [
-				`<a href="${toolHref(tool.name)}/edit">${t("tool.editTool", "Edit tool")}</a>`,
-				`<a href="${toolHref(tool.name)}/edit-annotations">${t("tool.editAnnotations", "Edit annotations")}</a>`,
-				canDeleteOfficialTool
-					? button(t("tool.deleteOfficialTool", "Delete official tool"), {
-							variant: "danger",
-							size: "sm",
-							attrs: "data-tool-delete"
-						})
-					: ""
-			]
-				.filter(Boolean)
-				.join(" ")
-		: `<a href="${toolHref(tool.name)}/edit">${t("tool.suggestAnEdit", "Suggest an edit")}</a>`;
+	const { historyAction, managementLinks } = toolManagementActions(tool, canDeleteOfficialTool);
 	const deleteResult = canDeleteOfficialTool
 		? `<p class="at__result" data-tool-delete-result aria-live="polite"></p>`
 		: "";
@@ -524,16 +546,16 @@ export async function viewTool(name) {
 				<div data-neighborhood-slot></div>
 			</div>
 
-			<aside class="toolpage__side">
-				<div class="panel">
-					<h2 class="panel__title">${t("tool.getStarted", "Get started")}</h2>
-					<div class="toolpage__actions">${actions || `<span class="meta__v">${t("tool.noLinksProvided", "No links provided")}</span>`}</div>
-					<div class="toolpage__sub">
-						<a href="${toolHref(tool.name)}/history">${t("tool.viewHistory", "View history")}</a>
-						${managementLinks}
+				<aside class="toolpage__side">
+					<div class="panel">
+						<h2 class="panel__title">${t("tool.actionsTitle", "Actions")}</h2>
+						<div class="toolpage__actions">${actions || `<span class="meta__v">${t("tool.noLinksProvided", "No links provided")}</span>`}</div>
+						<div class="toolpage__sub">
+							${historyAction}
+							${managementLinks}
+						</div>
+						${deleteResult}
 					</div>
-					${deleteResult}
-				</div>
 				<div class="panel">
 					<h2 class="panel__title">${t("tool.maintainersTitle", "Maintainers")}</h2>
 					<ul class="maint-list">${maintList}</ul>

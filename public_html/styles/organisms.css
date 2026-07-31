@@ -1723,10 +1723,14 @@
 
 /* Tool detail page. */
 .toolpage__head {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) minmax(220px, 260px);
 	gap: var(--space-4);
 	align-items: flex-start;
-	margin: var(--space-2) var(--space-0) var(--space-4);
+	margin: var(--space-2) var(--space-0) var(--space-5);
+	padding: var(--space-4) var(--space-0);
+	border-block: var(--border-base);
+	background: var(--color-surface-muted);
 }
 .toolpage__head .avatar {
 	width: var(--avatar-lg);
@@ -1735,7 +1739,6 @@
 	border-radius: var(--radius-md);
 }
 .toolpage__id {
-	flex: 1;
 	min-width: 0;
 }
 .toolpage__title {
@@ -1799,9 +1802,9 @@
 .toolpage__row {
 	display: flex;
 	align-items: center;
-	gap: var(--space-3);
+	gap: var(--space-2);
 	flex-wrap: wrap;
-	margin-top: var(--space-3);
+	margin-top: var(--space-2);
 }
 .toolpage__when {
 	color: var(--color-text-muted);
@@ -1815,10 +1818,21 @@
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) 300px;
 	gap: var(--space-5);
+	align-items: start;
+}
+.toolpage__main,
+.toolpage__side {
+	min-width: 0;
+}
+.toolpage__side {
+	position: sticky;
+	top: var(--space-3);
 }
 .toolpage__h2 {
 	font-size: var(--fs-subtitle);
-	margin: var(--space-4) var(--space-0) var(--space-2);
+	margin: var(--space-5) var(--space-0) var(--space-3);
+	padding-bottom: var(--space-2);
+	border-bottom: var(--border-base);
 }
 .toolpage__tags {
 	margin: var(--space-3) var(--space-0);
@@ -1826,11 +1840,12 @@
 .toolpage__actions {
 	display: flex;
 	flex-direction: column;
-	gap: var(--space-2);
+	gap: var(--space-1-5);
 }
 .toolpage__actions .btn {
 	width: 100%;
-	text-align: center;
+	justify-content: flex-start;
+	text-align: start;
 }
 .toolpage__signal-list {
 	display: flex;
@@ -1895,15 +1910,36 @@
 	gap: var(--space-2);
 	flex: 0 0 auto;
 }
+.toolpage__cta > :where(.btn, .favbtn, .savemenu),
+.toolpage__cta .savemenu > summary {
+	box-sizing: border-box;
+	width: 100%;
+	justify-content: center;
+}
 .toolpage__sub {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: var(--space-3);
+	display: grid;
+	gap: var(--space-2);
 	margin-top: var(--space-3);
 	padding-top: var(--space-3);
 	border-top: var(--border-muted);
-	font-size: var(--fs-caption);
+}
+.toolpage__sub > .btn {
+	width: 100%;
+	justify-content: flex-start;
+	text-align: start;
+}
+.toolpage__owner-actions {
+	display: grid;
+	gap: var(--space-2);
+	padding-top: var(--space-2);
+	border-top: var(--border-muted);
+}
+.toolpage__owner-label {
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 
 .related {
