@@ -56,6 +56,8 @@ from backend.models import (  # noqa: E402
     CrawlerUrl,
     Favorite,
     MaintainerActivityRollup,
+    Person,
+    PersonIdentifier,
     SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
@@ -71,6 +73,7 @@ from backend.models import (  # noqa: E402
     ToolMedia,
     ToolOverlay,
     ToolOwnerCache,
+    ToolPersonRelationship,
     ToolRecord,
     ToolSummaryCache,
     ToolThanks,
@@ -208,6 +211,9 @@ PUBLIC_V1_ROUTES = {
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/maintainers/tools/<name>/": (
         "public derived maintainer summary; evidence is redacted and reads are rate limited"
+    ),
+    "/v1/people/tools/<name>/": (
+        "public normalized people and typed tool relationships; evidence is redacted and reads are rate limited"
     ),
     "/v1/tools/<name>/media/": "GET is public; the POST half calls write_guard inside _tool_media_post",
     "/v1/recent/owners/": "public Recent enrichment; rate limited + per-request fetch budget",
@@ -466,6 +472,7 @@ def test_init_schema_creates_maintainer_projection_tables():
         "maintainer_key",
         "maintainer_display_name",
         "toolhub_username",
+        "wiki_username",
         "author_name",
         "source",
         "method",
@@ -505,6 +512,49 @@ def test_init_schema_creates_maintainer_projection_tables():
         assert edge.confidence == 0
         assert rollup.activity_status == "unknown"
         assert rollup.active_tool_count == 0
+
+
+def test_people_graph_deduplicates_stable_identity_and_keeps_roles_separate():
+    db.configure("sqlite://")
+    db.init_schema()
+    with db.session_scope() as s:
+        s.add_all(
+            [
+                ToolMaintainerEdge(
+                    tool_name="ada-tool",
+                    maintainer_key="toolhub:ada",
+                    maintainer_display_name="Ada Lovelace",
+                    toolhub_username="Ada",
+                    source="toolhub_author_metadata",
+                    method="toolhub_author_metadata",
+                    confidence=45,
+                ),
+                ToolMaintainerEdge(
+                    tool_name="ada-tool",
+                    maintainer_key="toolhub:ada",
+                    maintainer_display_name="Ada",
+                    toolhub_username="Ada",
+                    source="evolved_author_claim",
+                    method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=95,
+                ),
+            ]
+        )
+        s.flush()
+        from backend import people_index
+
+        relationships = people_index.sync_tool_people(s, "ada-tool")
+        summary = people_index.public_people_summary(s, "ada-tool")
+
+        assert len(relationships) == 2
+        assert s.query(Person).count() == 1
+        assert s.query(PersonIdentifier).count() == 1
+        assert s.query(ToolPersonRelationship).count() == 2
+        assert summary["counts"][sync.PERSON_REL_AUTHOR] == 1
+        assert summary["counts"][sync.PERSON_REL_MAINTAINER] == 1
+        assert summary["people"][0]["identityQuality"] == "stable"
+        assert summary["people"][0]["identifiers"] == [{"namespace": "toolhub", "value": "Ada"}]
 
 
 def test_init_schema_creates_toolinfo_discovery_table():
@@ -2129,12 +2179,25 @@ def test_public_tool_maintainers_endpoint_merges_official_metadata_and_evolved_c
     assert data["counts"]["evidenceEdges"] == 4
     assert data["publicDataPolicy"]["canonical"] is False
     assert "private signature payload" not in dumps(data)
+    assert data["relationshipCounts"][sync.PERSON_REL_AUTHOR] == 1
+    assert data["relationshipCounts"][sync.PERSON_REL_MAINTAINER] == 1
+    ada_person = next(item for item in data["people"] if item["id"] == "toolhub:ada")
+    assert {item["namespace"] for item in ada_person["identifiers"]} == {"toolhub", "wiki"}
+    assert {relationship["type"] for relationship in ada_person["relationships"]} == {
+        sync.PERSON_REL_AUTHOR,
+        sync.PERSON_REL_MAINTAINER,
+        sync.PERSON_REL_RECORD_OWNER,
+    }
     ada = next(item for item in data["maintainers"] if item["toolhubUsername"] == "Ada")
     assert set(ada["methods"]) == {
         sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
         maintainer_index.METHOD_TOOLHUB_ACTOR,
         maintainer_index.METHOD_TOOLHUB_AUTHOR,
     }
+
+    people_resp = client.get("/v1/people/tools/ada-tool/")
+    assert people_resp.status_code == 200
+    assert people_resp.get_json()["people"] == data["people"]
 
 
 def test_public_tool_maintainers_endpoint_is_rate_limited(client, monkeypatch):

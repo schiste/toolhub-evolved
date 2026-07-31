@@ -459,6 +459,7 @@ class ToolMaintainerEdge(Base):
     maintainer_key: Mapped[str] = mapped_column(String(255), index=True)
     maintainer_display_name: Mapped[str] = mapped_column(String(255), default="")
     toolhub_username: Mapped[str] = mapped_column(String(255), default="", index=True)
+    wiki_username: Mapped[str] = mapped_column(String(255), default="", index=True)
     author_name: Mapped[str] = mapped_column(String(255), default="")
     source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
     method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
@@ -488,6 +489,51 @@ class MaintainerActivityRollup(Base):
     activity_status: Mapped[str] = mapped_column(String(32), default="unknown")
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     stale_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Person(Base):
+    """A deduplicated person identity shared across tool relationships."""
+
+    __tablename__ = "people"
+    canonical_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    identity_quality: Mapped[str] = mapped_column(String(32), default="display_name")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PersonIdentifier(Base):
+    """A stable external identifier attached to one person."""
+
+    __tablename__ = "person_identifiers"
+    __table_args__ = (UniqueConstraint("namespace", "normalized_value"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
+    namespace: Mapped[str] = mapped_column(String(32))
+    value: Mapped[str] = mapped_column(String(255))
+    normalized_value: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolPersonRelationship(Base):
+    """Evidence-backed role relationship between one tool and one person."""
+
+    __tablename__ = "tool_person_relationships"
+    __table_args__ = (UniqueConstraint("tool_name", "person_id", "relationship_type", "source", "method"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
+    relationship_type: Mapped[str] = mapped_column(String(32), index=True)
+    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
+    method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
+    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class SourceAnalysisReport(Base):

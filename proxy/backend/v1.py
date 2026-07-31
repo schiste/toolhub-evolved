@@ -2420,6 +2420,12 @@ def v1_tool_maintainers(name: str) -> Response:
     return jsonify(summary)
 
 
+@v1_bp.route("/v1/people/tools/<name>/")
+def v1_tool_people(name: str) -> Response:
+    """Return the normalized people/relationship view for one tool."""
+    return v1_tool_maintainers(name)
+
+
 @v1_bp.route("/v1/config/")
 def v1_config() -> Response:
     """Report which production capabilities are configured (no secrets)."""

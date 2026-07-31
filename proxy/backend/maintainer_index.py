@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
 
+from backend import people_index
 from backend.author_claims import dedupe_strings
 from backend.models import (
     ActivityRow,
@@ -161,6 +162,7 @@ def _upsert_edge(  # noqa: PLR0913 - maintainer edges intentionally carry explic
     key: str,
     display_name: str,
     toolhub_username: str = "",
+    wiki_username: str = "",
     author_name: str = "",
     source: str,
     method: str,
@@ -193,6 +195,7 @@ def _upsert_edge(  # noqa: PLR0913 - maintainer edges intentionally carry explic
         s.add(row)
     row.maintainer_display_name = display_name
     row.toolhub_username = toolhub_username
+    row.wiki_username = wiki_username
     row.author_name = author_name
     row.verification_status = verification_status
     row.confidence = max(0, min(100, confidence))
@@ -240,6 +243,10 @@ def sync_author_claim_edges(
     rows = _best_claim_rows(list(s.execute(query).scalars()))
     edges = [upsert_edge_from_claim(s, row) for row in rows]
     refresh_activity_rollups(s, maintainer_keys=[edge.maintainer_key for edge in edges])
+    affected_tools = {clean_text(name) for name in (tool_names or []) if clean_text(name)}
+    affected_tools.update(edge.tool_name for edge in edges)
+    for name in sorted(affected_tools):
+        people_index.sync_tool_people(s, name)
     return edges
 
 
@@ -293,6 +300,7 @@ def replace_toolhub_metadata_edges(s: Session, tool_name: str, tool: dict) -> li
                 ),
                 display_name=row["display"],
                 toolhub_username=row["toolhub"],
+                wiki_username=row["wiki"],
                 author_name=row["display"],
                 source=source,
                 method=row["method"],
@@ -399,6 +407,7 @@ def public_edge_payload(edge: ToolMaintainerEdge, activity: MaintainerActivityRo
     return {
         "displayName": edge.maintainer_display_name,
         "toolhubUsername": edge.toolhub_username,
+        "wikiUsername": edge.wiki_username,
         "verificationStatus": edge.verification_status,
         "confidence": edge.confidence,
         "source": edge.source,
@@ -453,6 +462,7 @@ def public_tool_summary(s: Session, tool_name: str) -> dict:
         if payload["activity"].get("status") in {"active", "quiet"}:
             active_count += 1
     confidences = [edge.confidence for edge in edges]
+    people_summary = people_index.public_people_summary(s, clean_tool_name)
     return {
         "toolName": clean_tool_name,
         "status": _edge_status(confidences),
@@ -471,4 +481,8 @@ def public_tool_summary(s: Session, tool_name: str) -> dict:
         },
         "source": SOURCE_OFFICIAL if any(edge.source.startswith("toolhub") for edge in edges) else SOURCE_LOCAL,
         "syncStatus": SYNC_EVOLVED_REAL,
+        "people": people_summary["people"],
+        "relationshipCounts": people_summary["counts"],
+        "relationshipCount": people_summary["relationshipCount"],
+        "identityPolicy": people_summary["identityPolicy"],
     }

@@ -224,6 +224,8 @@ names are:
 | `tool_author_keys`                           | Public-key registry for signed toolinfo claims  | Stores Evolved-registered public keys only; never store private keys, and ignore revoked keys during signed-toolinfo verification.                                     |
 | `tool_maintainer_edges`                      | Public summary, private evidence cache          | Rebuildable per-tool maintainer projection from official Toolhub metadata and Evolved claims; public API omits raw evidence payloads and never grants permissions.     |
 | `maintainer_activity_rollups`                | Public activity bucket, private source rows     | Rebuildable Evolved-local activity summary keyed by namespaced maintainer id; source activity rows stay governed by their original table's privacy/delete rules.       |
+| `people` / `person_identifiers`              | Public identity projection                      | Deduplicated people keyed by stable Toolhub identifiers where available; display-name-only rows are heuristic and not canonical accounts.                              |
+| `tool_person_relationships`                  | Public typed relationship projection            | Rebuildable per-tool author, maintainer, record-owner, or catalog-actor relationships with confidence and provenance; raw evidence stays private.                      |
 | `source_analysis_reports`                    | Private per user                                | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.    |
 | `tool_health_targets` / `tool_health_checks` | Public checked status after approval            | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health. |
 | `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                         |
@@ -249,6 +251,17 @@ claims without affecting the write response if evidence recording fails. Crawler
 ingestion records `signed_toolinfo` claims before upstream-name de-dupe, so
 official Toolhub data remains canonical while Evolved can still retain signed
 authorship evidence.
+
+The normalized people view is available from `GET /v1/people/tools/<name>/` and
+is also included in the existing maintainer summary response as `people`. One
+person may have several relationships to the same tool: `author` means the
+canonical Toolhub author field listed the person; `maintainer` means Evolved
+has operational evidence such as Toolforge membership or signed toolinfo;
+`record_owner` means evidence concerns authority over the official Toolhub
+record; and `catalog_actor` is an observed catalog activity actor. These roles
+are intentionally not interchangeable. Toolhub usernames are deduplicated
+case-insensitively; a display-name fallback is marked `identityQuality:
+display_name` and may be reconciled later when a stable identifier is found.
 
 Signed toolinfo metadata is read from `x_toolhub_evolved_signature` or
 `x-toolhub-evolved-signature`. The signed bytes are the canonical JSON toolinfo

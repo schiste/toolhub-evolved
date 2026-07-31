@@ -135,6 +135,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
         },
+        "tool_maintainer_edges": {
+            "wiki_username": "VARCHAR(255) NOT NULL DEFAULT ''",
+        },
         "tool_health_targets": {
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
