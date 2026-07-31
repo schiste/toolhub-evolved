@@ -31,7 +31,8 @@
   emails: onfailure
 
 - name: catalog-sync
-  # Paged official catalog mirror: five 100-record pages every 15 minutes,
+  # Initial backfill: five 100-record pages every 15 minutes. After the first
+  # cycle, consume recent tool changes and reconcile one page every 12 hours,
   # with a three-second minimum between upstream requests.
   command: /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
   image: python3.13

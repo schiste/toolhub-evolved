@@ -44,7 +44,7 @@ def test_run_upserts_pages_tracks_cursor_and_paces_requests(monkeypatch):
 
     summary = catalog_sync.run(pages_per_run=3, min_interval_seconds=3, sleep_fn=sleeps.append)
 
-    assert summary == {"pages": 3, "records": 3, "next_page": 4, "completed": False}
+    assert summary == {"phase": "backfill", "pages": 3, "records": 3, "next_page": 4, "completed": False}
     assert calls == [(1, 100), (2, 100), (3, 100)]
     assert sleeps == [3, 3]
     with db.session_scope() as s:
@@ -68,6 +68,72 @@ def test_run_wraps_cursor_after_last_page(monkeypatch):
         assert state is not None
         assert state.cycles_completed == 1
         assert state.last_completed_at is not None
+
+
+def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                recent_latest_marker=catalog_sync._marker({"id": 1, "timestamp": "old"}),
+            )
+        )
+
+    monkeypatch.setattr(
+        catalog_sync,
+        "recent_page",
+        lambda: [
+            {"id": 2, "timestamp": "new", "content_type": "tool", "content_id": "changed-tool"},
+            {"id": 1, "timestamp": "old", "content_type": "tool", "content_id": "old-tool"},
+        ],
+    )
+    monkeypatch.setattr(
+        catalog_sync,
+        "listing_page",
+        lambda _page, _page_size: ([{"name": "reconcile-tool", "title": "Reconcile"}], True),
+    )
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda path, **_kwargs: {"name": "changed-tool", "title": "Changed"}
+        if path.endswith("/changed-tool/")
+        else pytest.fail(path),
+    )
+    sleeps = []
+
+    summary = catalog_sync.run(min_interval_seconds=3, sleep_fn=sleeps.append)
+
+    assert summary["phase"] == "steady"
+    assert summary["recent_tools"] == 1
+    assert summary["recent_errors"] == 0
+    assert summary["reconcile_pages"] == 1
+    assert summary["reconcile_records"] == 1
+    assert sleeps == []
+    with db.session_scope() as s:
+        assert s.get(CanonicalToolCache, "changed-tool") is not None
+        assert s.get(CanonicalToolCache, "reconcile-tool") is not None
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state is not None
+        assert state.recent_pending_tools == []
+        assert state.reconcile_next_page == 2
+
+
+def test_steady_state_defers_reconciliation_until_interval(monkeypatch):
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                reconcile_last_at=catalog_sync.utcnow(),
+            )
+        )
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda: [])
+    monkeypatch.setattr(catalog_sync, "listing_page", lambda *_args: pytest.fail("reconcile is not due"))
+
+    summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert summary["reconcile_pages"] == 0
 
 
 def test_run_preserves_cursor_and_records_error(monkeypatch):

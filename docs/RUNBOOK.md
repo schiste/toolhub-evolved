@@ -429,15 +429,22 @@ URLs, the source indexer allows public `*.toolforge.org`, `*.wmcloud.org`, and
 from Toolforge, and it follows redirects only after validating each hop.
 Arbitrary private hosts are still refused.
 
-The `catalog-sync` job is the complete official catalog mirror. It walks
-`/api/tools/` with a resumable page cursor and upserts each official record into
-`canonical_tool_cache`, so repository analysis and local derived summaries do
-not depend on which catalog pages users happened to visit. It runs every 15
-minutes, fetches at most five pages of 100 records, and waits at least three
-seconds between requests. That is a maximum of 20 catalog requests per hour;
-the `tool_catalog_sync_state` row records the next page, completed cycles,
-success/error state, and timestamps. A failed page is retried from the same
-cursor on the next run rather than advancing past it.
+The `catalog-sync` job is the complete official catalog mirror. During the
+initial backfill it walks `/api/tools/` with a resumable page cursor and upserts
+each official record into `canonical_tool_cache`, so repository analysis and
+local derived summaries do not depend on which catalog pages users happened to
+visit. It runs every 15 minutes, fetches at most five pages of 100 records, and
+waits at least three seconds between requests. A failed page is retried from
+the same cursor on the next run rather than advancing past it.
+
+After the first complete catalog cycle, the job stops repeated full ingestion.
+Each run checks the newest `/api/recent/` page, fetches changed tool details
+individually, and keeps failed detail names in a retry queue. It also reconciles
+one `/api/tools/` page every 12 hours. This spreads a full safety reconciliation
+over roughly a month for a catalog of several thousand tools while keeping
+normal incremental traffic small. The `tool_catalog_sync_state` row records the
+backfill and reconciliation cursors, recent marker, retry queue, completed
+cycles, success/error state, and timestamps.
 
 The `repository-analysis` job is the deterministic source-analysis layer. It
 selects canonical Toolhub records with an HTTPS repository URL, checks the
