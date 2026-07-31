@@ -536,6 +536,48 @@ class ToolPersonRelationship(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class PersonReconciliationRun(Base):
+    """Audited deterministic identity reconciliation run."""
+
+    __tablename__ = "person_reconciliation_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mode: Mapped[str] = mapped_column(String(16), default="dry-run")
+    status: Mapped[str] = mapped_column(String(32), default="running")
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PersonReconciliationMapping(Base):
+    """One proposed or applied canonical-person mapping."""
+
+    __tablename__ = "person_reconciliation_mappings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("person_reconciliation_runs.id"), index=True)
+    source_person_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    target_person_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    source_key: Mapped[str] = mapped_column(String(255), default="")
+    target_key: Mapped[str] = mapped_column(String(255), default="")
+    decision: Mapped[str] = mapped_column(String(32), default="candidate")
+    reason: Mapped[str] = mapped_column(String(128), default="")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PersonReconciliationConflict(Base):
+    """An ambiguity intentionally left unresolved by reconciliation."""
+
+    __tablename__ = "person_reconciliation_conflicts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("person_reconciliation_runs.id"), index=True)
+    person_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    conflict_type: Mapped[str] = mapped_column(String(64), default="")
+    value: Mapped[str] = mapped_column(String(255), default="")
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class SourceAnalysisReport(Base):
     """Derived source-code metadata suggestions owned by one signed-in user."""
 

@@ -71,11 +71,39 @@ def _stable_identifiers(edge: ToolMaintainerEdge) -> list[tuple[str, str]]:
     return identifiers
 
 
-def _find_person(s: Session, edge: ToolMaintainerEdge) -> Person | None:
+def _identifier_priority(namespace: str) -> tuple[int, str]:
+    return ({"toolhub": 0, "wiki": 1}.get(namespace, 9), namespace)
+
+
+def _person_candidates(s: Session, edge: ToolMaintainerEdge) -> list[Person]:
+    candidates: dict[int, Person] = {}
     key = _clean(edge.maintainer_key)
-    row = s.execute(select(Person).where(Person.canonical_key == key)).scalar_one_or_none()
-    if row is not None:
-        return row
+    if key:
+        row = s.execute(select(Person).where(Person.canonical_key == key)).scalar_one_or_none()
+        if row is not None:
+            candidates[row.id] = row
+    for namespace, value in _stable_identifiers(edge):
+        identifier = s.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.namespace == namespace,
+                PersonIdentifier.normalized_value == _normalized(value),
+            )
+        ).scalar_one_or_none()
+        if identifier is None:
+            continue
+        row = s.get(Person, identifier.person_id)
+        if row is not None:
+            candidates[row.id] = row
+    return sorted(
+        candidates.values(),
+        key=lambda row: (_identifier_priority(row.canonical_key.split(":", 1)[0])[0], row.id),
+    )
+
+
+def _find_person(s: Session, edge: ToolMaintainerEdge) -> Person | None:
+    candidates = _person_candidates(s, edge)
+    if candidates:
+        return candidates[0]
     display = _clean(edge.maintainer_display_name or edge.author_name)
     if not display:
         return None
