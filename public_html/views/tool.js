@@ -211,6 +211,34 @@ function authorInlineList(t) {
 		.join('<span class="toolpage__sep">, </span>');
 }
 
+/** @param {any} evolvedSummary */
+function maintainerPeople(evolvedSummary) {
+	const people = evolvedSummary?.maintainer?.people;
+	if (!Array.isArray(people)) return null;
+	return people
+		.filter(
+			(person) =>
+				Array.isArray(person.relationships) &&
+				person.relationships.some((relationship) => relationship.type === "maintainer")
+		)
+		.map((person) => ({
+			name: person.displayName || t("tool.unknownMaintainer", "Unknown"),
+			profile: { wikiUsername: person.identifiers?.find((item) => item.namespace === "wiki")?.value }
+		}));
+}
+
+/** @param {Tool} tool @param {any} evolvedSummary */
+function maintainerListMarkup(tool, evolvedSummary) {
+	const entries = maintainerPeople(evolvedSummary) || authorEntries(tool);
+	const list = entries
+		.map((entry) => `<li>${avatar(entry.name)}<span class="maint-list__name">${authorLink(entry)}</span></li>`)
+		.join("");
+	return (
+		list ||
+		`<li class="maint-list__empty">${t("tool.noMaintainerRelationship", "No maintainer relationship has been verified for this tool yet.")}</li>`
+	);
+}
+
 /** @param {string | null} qid */
 function wikidataChip(qid) {
 	const id = String(qid || "").trim();
@@ -442,9 +470,7 @@ export async function viewTool(name) {
 	// At-a-glance chips (real metadata).
 	const glance = glanceChips(tool);
 
-	const maintList = authorEntries(tool)
-		.map((a) => `<li>${avatar(a.name)}<span class="maint-list__name">${authorLink(a)}</span></li>`)
-		.join("");
+	const maintList = maintainerListMarkup(tool, evolvedSummary);
 	const complete = completeness(tool);
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const html = `

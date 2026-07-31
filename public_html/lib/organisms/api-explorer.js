@@ -117,6 +117,26 @@ export const API_EXPLORER_ENDPOINTS = /** @type {ApiExplorerEndpoint[]} */ ([
 		]
 	},
 	{
+		id: "tool-people",
+		title: t("apiExplorer.toolPeople", "People and relationships"),
+		description: t(
+			"apiExplorer.toolPeopleDesc",
+			"Read deduplicated people and typed author, maintainer, and record-owner relationships for one tool."
+		),
+		pathTemplate: "/v1/people/tools/{name}/",
+		origin: "same-origin",
+		fields: [
+			{
+				name: "name",
+				label: t("apiExplorer.toolName", "Tool name"),
+				kind: "path",
+				defaultValue: "quickstatements",
+				placeholder: "quickstatements",
+				required: true
+			}
+		]
+	},
+	{
 		id: "tool-revisions",
 		title: t("apiExplorer.toolRevisions", "Tool revisions"),
 		description: t("apiExplorer.toolRevisionsDesc", "List recent revisions for one tool."),

@@ -41,6 +41,7 @@ test("endpoint definitions cover the curated anonymous read surface", () => {
 			"/api/search/tools/",
 			"/api/tools/{name}/",
 			"/v1/maintainers/tools/{name}/",
+			"/v1/people/tools/{name}/",
 			"/api/tools/{name}/revisions/",
 			"/api/lists/",
 			"/api/recent/",
