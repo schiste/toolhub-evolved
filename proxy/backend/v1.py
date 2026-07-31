@@ -34,6 +34,7 @@ from backend import (
     canonical_tools,
     db,
     graph_payload,
+    github_issues,
     maintainer_index,
     recent_owners,
     security,
@@ -71,6 +72,7 @@ from backend.models import (
     ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
+    IssueReport,
     ToolhubToken,
     ToolList,
     ToolMaintainerEdge,
@@ -2430,7 +2432,68 @@ def v1_tool_people(name: str) -> Response:
 def v1_config() -> Response:
     """Report which production capabilities are configured (no secrets)."""
     oauth = oauth_configured()
-    return jsonify({"oauth": oauth, "officialWrites": oauth, "devLogin": dev_login_available()})
+    return jsonify(
+        {
+            "oauth": oauth,
+            "officialWrites": oauth,
+            "devLogin": dev_login_available(),
+            "issueReports": github_issues.configured(),
+        }
+    )
+
+
+@v1_bp.route("/v1/issue-reports/", methods=["POST"])
+@write_guard
+def v1_issue_report() -> Response:
+    """Publish an explicitly approved, authenticated report to GitHub."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — write_guard guarantees this
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or payload.get("approved") is not True:
+        return _bad("explicit issue approval is required")
+    client_id = str(payload.get("clientId") or "").strip()
+    title = str(payload.get("title") or "").strip()
+    description = str(payload.get("description") or "").strip()
+    context = payload.get("context")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{12,64}", client_id):
+        return _bad("invalid issue report id")
+    if not title or len(title) > github_issues.MAX_TITLE:
+        return _bad("issue title must be between 1 and 200 characters")
+    if not description or len(description) > github_issues.MAX_DESCRIPTION:
+        return _bad("issue description is required and must be at most 12000 characters")
+    if not isinstance(context, dict):
+        return _bad("issue context must be an object")
+    try:
+        context_size = len(json.dumps(context, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return _bad("issue context is not valid JSON")
+    if context_size > github_issues.MAX_CONTEXT_CHARS:
+        return _bad("issue context is too large")
+    with db.session_scope() as s:
+        existing = s.get(IssueReport, client_id)
+        if existing is not None:
+            if existing.user_id != uid:
+                return _deny(HTTP_CONFLICT, "issue report id already belongs to another user")
+            return jsonify({"number": existing.issue_number, "url": existing.issue_url, "repository": existing.repository})
+        user = s.get(User, uid)
+        if user is None:
+            return _deny(HTTP_UNAUTHORIZED, "signed-in user not found")
+        body = github_issues.render_body(description, context, user.username)
+        try:
+            published = github_issues.publish_issue(title, body)
+        except github_issues.IssuePublishError as exc:
+            return _deny(HTTP_BAD_GATEWAY, str(exc))
+        s.add(
+            IssueReport(
+                client_id=client_id,
+                user_id=uid,
+                title=title,
+                repository=published["repository"],
+                issue_number=published["number"],
+                issue_url=published["url"],
+            )
+        )
+    return jsonify(published), 201
 
 
 @v1_bp.route("/v1/toolhub/tools/", methods=["POST"])

@@ -248,6 +248,21 @@ export const EXPERIMENTS = [
 				),
 				tryHref: "/rules-of-engagement",
 				tryLabel: t("experiments.transparencyTry", "Rules")
+			},
+			{
+				name: t("experiments.issueReportingName", "Authenticated issue reporting"),
+				what: t(
+					"experiments.issueReportingWhat",
+					"Open a prefilled report drawer, review page diagnostics, add details, and publish an approved issue to GitHub."
+				),
+				current: t(
+					"experiments.issueReportingCurrent",
+					"Signed-in users get a right-side pushed drawer with route-scoped console context, an editable review step, server-side publishing, and an issue-number receipt."
+				),
+				need: t(
+					"experiments.issueReportingNeed",
+					"Authenticated /v1/issue-reports/ write endpoint, server-only GitHub token, bounded diagnostics collector, and issue idempotency ledger"
+				)
 			}
 		]
 	},

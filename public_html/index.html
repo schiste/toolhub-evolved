@@ -728,9 +728,19 @@
 						href="https://github.com/schiste/toolhub-evolved/issues"
 						target="_blank"
 						rel="noopener nofollow"
+						data-issue-external
 						data-i18n="shell.footer.reportIssue"
 						>Report an issue</a
 					>
+					<button
+						class="footer__issue-trigger"
+						type="button"
+						data-issue-trigger
+						hidden
+						data-i18n="shell.footer.reportIssue"
+					>
+						Report an issue
+					</button>
 				</nav>
 				<nav
 					class="footer__col"
@@ -774,6 +784,38 @@
 				<span class="footer__note" data-i18n="shell.footer.note">Live Toolhub data · Evolved overlay</span>
 			</div>
 		</footer>
+
+		<aside class="issue-drawer hidden" id="issue-drawer" aria-hidden="true" aria-labelledby="issue-drawer-title">
+			<div class="issue-drawer__panel" role="dialog" aria-labelledby="issue-drawer-title">
+				<header class="issue-drawer__head">
+					<div>
+						<p class="issue-drawer__eyebrow" data-i18n="issueReport.eyebrow">Authenticated report</p>
+						<h2 id="issue-drawer-title" data-i18n="issueReport.title">Report an issue</h2>
+					</div>
+					<button
+						class="issue-drawer__close"
+						type="button"
+						data-issue-close
+						aria-label="Close issue report"
+						data-i18n-aria-label="issueReport.closeDrawer"
+					>
+						<svg
+							class="icon"
+							viewBox="0 0 20 20"
+							width="20"
+							height="20"
+							aria-hidden="true"
+							focusable="false"
+						>
+							<path
+								d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414L10 8.586l5.293-5.293z"
+							/>
+						</svg>
+					</button>
+				</header>
+				<div id="issue-drawer-body"></div>
+			</div>
+		</aside>
 
 		<!-- Quick-view (peek) modal -->
 		<div class="qv hidden" id="qv" aria-hidden="true">

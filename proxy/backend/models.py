@@ -163,6 +163,19 @@ class ToolSummaryCache(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class IssueReport(Base):
+    """Idempotency ledger for issues published from the authenticated drawer."""
+
+    __tablename__ = "issue_reports"
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    repository: Mapped[str] = mapped_column(String(255))
+    issue_number: Mapped[int] = mapped_column(Integer)
+    issue_url: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Favorite(Base):
     """One favorited tool name for one user."""
 

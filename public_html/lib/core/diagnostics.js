@@ -7,6 +7,14 @@ export const APP_BOOT_START = `${PREFIX}:app-boot-start`;
 export const FRONTEND_TIMINGS = [];
 
 const markedOnce = new Set();
+const PAGE_LOG_LIMIT = 80;
+/** @type {Array<{level: string, message: string, at: number}>} */
+const PAGE_LOGS = [];
+/** @type {Array<{kind: string, message: string, at: number}>} */
+const PAGE_ERRORS = [];
+let pageStartedAt = Date.now();
+let pagePath = typeof location === "object" ? location.pathname : "/";
+let consoleCaptureReady = false;
 
 function perf() {
 	return typeof globalThis.performance === "object" ? globalThis.performance : null;
@@ -108,6 +116,119 @@ export function measureFrontendTiming(name, detail = {}, startMark = APP_BOOT_ST
 
 export function markAppBootStart() {
 	return markFrontendTimingOnce("app-boot-start", { path: location.pathname }, 0);
+}
+
+/** @param {unknown} value @param {number} [depth] */
+function diagnosticValue(value, depth = 0) {
+	if (value instanceof Error) return redact(`${value.name}: ${value.message}\n${value.stack || ""}`);
+	if (value === null || value === undefined) return String(value);
+	if (typeof value === "string") return redact(value).slice(0, 4000);
+	if (typeof value === "number" || typeof value === "boolean") return String(value);
+	if (depth >= 2) {
+		return "[object]";
+	}
+	if (Array.isArray(value)) {
+		return `[${value
+			.slice(0, 10)
+			.map((item) => diagnosticValue(item, depth + 1))
+			.join(", ")}]`;
+	}
+	if (typeof value === "object") {
+		try {
+			return redact(
+				JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? String(item) : item))
+			).slice(0, 4000);
+		} catch {
+			return "[unserializable object]";
+		}
+	}
+	return redact(String(value)).slice(0, 4000);
+}
+
+/** @param {string} value */
+function redact(value) {
+	return value.replaceAll(
+		/(authorization|cookie|token|secret|password|csrf)(\s*[:=]\s*)[^\s,;]+/gi,
+		"$1$2[redacted]"
+	);
+}
+
+/** @param {string} level @param {unknown[]} args */
+function recordConsole(level, args) {
+	PAGE_LOGS.push({
+		level,
+		message: args
+			.map((value) => diagnosticValue(value))
+			.join(" ")
+			.slice(0, 6000),
+		at: Date.now()
+	});
+	if (PAGE_LOGS.length > PAGE_LOG_LIMIT) PAGE_LOGS.splice(0, PAGE_LOGS.length - PAGE_LOG_LIMIT);
+}
+
+/**
+ * Install a bounded console/error buffer. It keeps only the current route's
+ * entries when the report drawer asks for context; original console behavior is preserved.
+ */
+export function initPageDiagnostics() {
+	if (consoleCaptureReady) return;
+	consoleCaptureReady = true;
+	/* eslint-disable no-console -- diagnostics must preserve and wrap native console methods. */
+	for (const level of ["debug", "info", "warn", "error"]) {
+		const original = console[level];
+		if (typeof original !== "function") continue;
+		console[level] = (...args) => {
+			recordConsole(level, args);
+			original.apply(console, args);
+		};
+	}
+	/* eslint-enable no-console */
+	if (typeof window === "object") {
+		window.addEventListener("error", (event) => {
+			PAGE_ERRORS.push({
+				kind: "error",
+				message: redact(event.message || "Unknown window error").slice(0, 4000),
+				at: Date.now()
+			});
+		});
+		window.addEventListener("unhandledrejection", (event) => {
+			PAGE_ERRORS.push({ kind: "unhandledrejection", message: diagnosticValue(event.reason), at: Date.now() });
+		});
+	}
+}
+
+/** @param {string} [path] */
+export function markPageDiagnostics(path = typeof location === "object" ? location.pathname : "/") {
+	pageStartedAt = Date.now();
+	pagePath = path;
+}
+
+export function pageDiagnostics() {
+	const recent = (items) => items.filter((item) => item.at >= pageStartedAt);
+	const navigation = perf()?.getEntriesByType?.("navigation")?.[0];
+	return {
+		url: typeof location === "object" ? location.href : pagePath,
+		path: pagePath,
+		title: typeof document === "object" ? document.title : "",
+		locale: typeof document === "object" ? document.documentElement.lang : "",
+		userAgent: typeof navigator === "object" ? navigator.userAgent : "",
+		platform: typeof navigator === "object" ? navigator.platform : "",
+		viewport:
+			typeof window === "object"
+				? { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio }
+				: {},
+		console: recent(PAGE_LOGS),
+		errors: recent(PAGE_ERRORS),
+		timings: FRONTEND_TIMINGS.slice(-30),
+		navigation: navigation
+			? {
+					type: navigation.type,
+					responseEnd: navigation.responseEnd,
+					domContentLoaded: navigation.domContentLoadedEventEnd,
+					load: navigation.loadEventEnd
+				}
+			: null
+	};
 }
 
 export function observeFirstContentPaint() {

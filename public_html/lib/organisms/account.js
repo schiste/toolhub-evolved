@@ -57,6 +57,7 @@ export function renderAccount() {
 		<div class="acct__menu" id="acct-menu" aria-labelledby="acct-btn" hidden>
 			<div class="acct__head">${t("account.signedInAs", "Signed in as")} <strong>${esc(USER.name)}</strong></div>
 			${ACCOUNT_NAV_ITEMS.map((item) => `<a href="${esc(item.href)}">${icon(item.iconName)} ${esc(item.label())}</a>`).join("")}
+			<button type="button" data-issue-trigger>${icon("report")} ${t("issueReport.title", "Report an issue")}</button>
 			<hr />
 			${logoutForm(`<button class="acct__logout" type="submit">${icon("logout")} ${t("account.logOut", "Log out")}</button>`)}
 		</div>`;

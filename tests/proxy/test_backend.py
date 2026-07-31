@@ -31,6 +31,7 @@ from backend import (  # noqa: E402
     author_claims,
     authz,
     db,
+    github_issues,
     maintainer_index,
     recent_owners,
     security,
@@ -55,6 +56,7 @@ from backend.models import (  # noqa: E402
     CrawlerRun,
     CrawlerUrl,
     Favorite,
+    IssueReport,
     MaintainerActivityRollup,
     Person,
     PersonIdentifier,
@@ -5148,9 +5150,51 @@ def test_v1_config_reports_oauth(client, monkeypatch):
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("TOOLHUB_DEV_LOGIN", raising=False)
-    assert client.get("/v1/config/").get_json() == {"oauth": False, "officialWrites": False, "devLogin": False}
+    monkeypatch.delenv("TOOLHUB_GITHUB_TOKEN", raising=False)
+    assert client.get("/v1/config/").get_json() == {"oauth": False, "officialWrites": False, "devLogin": False, "issueReports": False}
     configure_oauth(monkeypatch)
-    assert client.get("/v1/config/").get_json() == {"oauth": True, "officialWrites": True, "devLogin": False}
+    assert client.get("/v1/config/").get_json() == {"oauth": True, "officialWrites": True, "devLogin": False, "issueReports": False}
+
+
+def test_issue_report_requires_approval(client):
+    uid = add_user("Reporter")
+    sign_in(client, uid)
+    response = client.post(
+        "/v1/issue-reports/",
+        json={"clientId": "report12345678", "title": "A report", "description": "Details", "context": {}},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "explicit issue approval is required"
+
+
+def test_issue_report_publishes_once_and_is_idempotent(client, monkeypatch):
+    uid = add_user("Reporter")
+    sign_in(client, uid)
+    monkeypatch.setenv("TOOLHUB_GITHUB_TOKEN", "server-only")
+    calls = []
+
+    def publish(title, body):
+        calls.append((title, body))
+        return {"number": 123, "url": "https://github.com/schiste/toolhub-evolved/issues/123", "repository": "schiste/toolhub-evolved"}
+
+    monkeypatch.setattr(github_issues, "publish_issue", publish)
+    payload = {
+        "approved": True,
+        "clientId": "report12345678",
+        "title": "A report",
+        "description": "Details",
+        "context": {"path": "/tools/example", "console": []},
+    }
+    first = client.post("/v1/issue-reports/", json=payload, headers={"X-CSRF-Token": "tok"})
+    second = client.post("/v1/issue-reports/", json=payload, headers={"X-CSRF-Token": "tok"})
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert first.get_json() == second.get_json()
+    assert len(calls) == 1
+    assert "## Context" in calls[0][1]
+    with db.session_scope() as s:
+        assert s.get(IssueReport, "report12345678").issue_number == 123
 
 
 def test_dev_login_creates_local_session_without_toolhub_grant(client, monkeypatch):

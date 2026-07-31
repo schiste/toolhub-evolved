@@ -24,6 +24,9 @@ them automatically.
 | `TOOLHUB_API_BASE`               | no       | Toolhub base URL override for staging/tests; defaults to `https://toolhub.wikimedia.org`                                                                                                                                  |
 | `TOOLHUB_BACKUP_DIR`             | no       | Backup destination (default `~/backups`)                                                                                                                                                                                  |
 | `TOOLHUB_TOKEN_KEY`              | no       | Independent key for encrypting stored Toolhub OAuth grants; defaults to deriving one from `TOOLHUB_SECRET_KEY`                                                                                                            |
+| `TOOLHUB_GITHUB_TOKEN`           | no       | Server-only token with permission to create issues in the configured Evolved repository; enables authenticated in-app issue reporting                                                                                     |
+| `TOOLHUB_GITHUB_REPOSITORY`      | no       | GitHub `owner/repository` target for in-app issue reports (default `schiste/toolhub-evolved`)                                                                                                                             |
+| `TOOLHUB_GITHUB_ISSUE_LABELS`    | no       | Optional comma-separated labels applied by the server to published reports                                                                                                                                                |
 | `TOOLHUB_INSECURE_COOKIES`       | no       | Set to `1` only for local http development — never in production                                                                                                                                                          |
 
 Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
@@ -31,6 +34,13 @@ Without `TOOLHUB_DB_URL` the backend falls back to a repo-local SQLite file
 vars, `/oauth/login` answers 503 and the site runs with live reads plus
 signed-out read-only mode. Without a stored per-user Toolhub grant, `/v1/write/*`
 write endpoints answer 401 with `reauth: true`.
+
+Authenticated issue reporting is disabled unless `TOOLHUB_GITHUB_TOKEN` is set.
+The token is never sent to the browser. A signed-in user must review and
+explicitly approve the drawer contents before the CSRF-protected
+`POST /v1/issue-reports/` endpoint publishes a public GitHub issue. The
+endpoint accepts bounded route diagnostics only, and the `issue_reports` table
+deduplicates retries by client report id.
 
 ## Stored Toolhub grants (encryption at rest)
 

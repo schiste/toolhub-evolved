@@ -3,6 +3,8 @@ import { $, esc } from "./lib/core/dom.js";
 import { backendGetJson } from "./lib/core/api.js";
 import {
 	markAppBootStart,
+	initPageDiagnostics,
+	markPageDiagnostics,
 	markFrontendTimingOnce,
 	measureFrontendTiming,
 	observeFirstContentPaint
@@ -29,10 +31,12 @@ import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
 import { initCommandPalette, syncCommandPaletteChrome } from "./lib/organisms/command-palette.js";
 import { initIconFallbacks } from "./lib/organisms/icon-fallbacks.js";
+import { clearIssueContext, initIssueDrawer, syncIssueReportTrigger } from "./lib/organisms/issue-drawer.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
 markAppBootStart();
+initPageDiagnostics();
 const observedFirstContentPaint = observeFirstContentPaint();
 const bootLocale = appLocale();
 
@@ -141,6 +145,7 @@ setAuthRender(() => {
 	const isSignedInNow = signedIn();
 	lastKnownSignedIn = isSignedInNow;
 	renderAccount();
+	syncIssueReportTrigger();
 	syncSubmitButton();
 	if (wasSignedIn !== isSignedInNow || routeNeedsAuthResolution()) render();
 });
@@ -177,6 +182,7 @@ if (siteNoticeDismiss) {
    is made (System is the implicit default only while nothing is stored). */
 initTheme();
 initIconFallbacks();
+initIssueDrawer();
 // "System" is a default picker, not a toggle option: it is the implicit default used
 // while nothing is stored in localStorage (theme.js then follows the OS preference).
 // The toggle therefore exposes only Light and Dark.
@@ -365,6 +371,8 @@ $("#qv")?.addEventListener("click", (e) => {
 	}
 });
 document.addEventListener("toolhub:route-render-start", () => {
+	markPageDiagnostics(`${location.pathname}${location.search}`);
+	clearIssueContext();
 	closeAcctMenu();
 	closeQuickViewIfLoaded();
 });

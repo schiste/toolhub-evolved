@@ -11,6 +11,10 @@ const ICON_HTML = {
 		'<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 13 2.5 5.5 3.91 4.09 10 10.17l6.09-6.08L17.5 5.5z"/></svg>',
 	chevronUp:
 		'<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m10 7 7.5 7.5-1.41 1.41L10 9.83l-6.09 6.08L2.5 14.5z"/></svg>',
+	chevronLeft:
+		'<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m12.5 17.5-7.5-7.5 7.5-7.5 1.41 1.41L7.83 10l6.08 6.09z"/></svg>',
+	chevronRight:
+		'<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m7.5 2.5 7.5 7.5-7.5 7.5-1.41-1.41L12.17 10 6.09 3.91z"/></svg>',
 	popular:
 		'<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 17h16v2H1V1h2z"/><path d="M19 5v10H5v-1l4.5-5.5 3 3.5L18 5z"/></svg>',
 	analyze:
@@ -60,6 +64,8 @@ const ICON_NAMES_EXPECTED = [
 	"search",
 	"chevronDown",
 	"chevronUp",
+	"chevronLeft",
+	"chevronRight",
 	"popular",
 	"analyze",
 	"star",

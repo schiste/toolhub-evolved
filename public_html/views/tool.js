@@ -26,6 +26,7 @@ import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { healthScoreChip, maintainerDisclosure } from "../lib/molecules/tool-health-summary.js";
+import { setIssueContext } from "../lib/organisms/issue-drawer.js";
 import { prosePage, viewNotFound } from "./static.js";
 
 const QUICK_VIEW_BUTTON_STYLE =
@@ -468,6 +469,18 @@ export async function viewTool(name) {
 	]);
 	await attachEvolvedSummaries([tool], { waitForFresh: true });
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
+	setIssueContext(() => ({
+		kind: "tool",
+		name: tool.name,
+		title: tool.title,
+		url: safeHttpUrl(tool.url),
+		repository: safeHttpUrl(tool.repository),
+		maintainer: tool.maintainer,
+		modified: tool.modified,
+		deprecated: Boolean(tool.deprecated),
+		experimental: Boolean(tool.experimental),
+		health: evolvedSummary?.health?.score ?? null
+	}));
 	const mediaRows = Array.isArray(evolvedMedia?.results) ? evolvedMedia.results : [];
 	const { provTags, syncPanels } = toolSyncUi(tool, name);
 	const tags = keywordTags(tool, { empty: "—" });
