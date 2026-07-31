@@ -26,7 +26,7 @@ os.environ.setdefault("TOOLHUB_SECRET_KEY", "test-secret")
 
 import app as proxy_app  # noqa: E402  (path injected above)
 from backend import db  # noqa: E402
-from backend.models import ApiCache, CanonicalToolCache  # noqa: E402
+from backend.models import ApiCache, CanonicalToolCache, PersonReconciliationQueue  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -229,6 +229,9 @@ def test_successful_tool_payload_populates_canonical_tool_cache(client, fake_get
         assert row is not None
         assert row.record["title"] == "Demo"
         assert row.source_url == "https://toolhub.wikimedia.org/api/search/tools/?q=demo"
+        queue = s.get(PersonReconciliationQueue, "toolforge-demo")
+        assert queue is not None
+        assert queue.reason == "canonical_fetch"
 
 
 def test_successful_list_detail_payload_populates_canonical_tool_cache(client, fake_get):

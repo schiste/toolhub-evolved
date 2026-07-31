@@ -578,6 +578,19 @@ class PersonReconciliationConflict(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class PersonReconciliationQueue(Base):
+    """Deduplicated tool work awaiting incremental people reconciliation."""
+
+    __tablename__ = "person_reconciliation_queue"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    reason: Mapped[str] = mapped_column(String(64), default="data_ingestion")
+    enqueued_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class SourceAnalysisReport(Base):
     """Derived source-code metadata suggestions owned by one signed-in user."""
 

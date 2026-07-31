@@ -13,7 +13,16 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import crawl  # noqa: E402
 from backend import db, outbound  # noqa: E402
-from backend.models import CrawlerRun, CrawlerUrl, ToolAuthorClaim, ToolAuthorKey, ToolRecord, User, utcnow  # noqa: E402
+from backend.models import (  # noqa: E402
+    CrawlerRun,
+    CrawlerUrl,
+    PersonReconciliationQueue,
+    ToolAuthorClaim,
+    ToolAuthorKey,
+    ToolRecord,
+    User,
+    utcnow,
+)
 from backend.sync import AUTHOR_CLAIM_SIGNED_TOOLINFO, AUTHOR_CLAIM_VERIFIED  # noqa: E402
 
 
@@ -135,6 +144,9 @@ def test_crawl_records_signed_toolinfo_claim_even_when_upstream_exists(monkeypat
         assert claim.verification_status == AUTHOR_CLAIM_VERIFIED
         assert claim.verification_method == AUTHOR_CLAIM_SIGNED_TOOLINFO
         assert claim.evidence_url == "https://example.org/toolinfo.json"
+        queue = s.get(PersonReconciliationQueue, "fresh-tool")
+        assert queue is not None
+        assert queue.reason == "toolinfo_ingestion"
 
 
 def test_crawl_fetch_failure_and_size_cap(monkeypatch):

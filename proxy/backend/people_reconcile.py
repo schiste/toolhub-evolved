@@ -3,17 +3,19 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 
-from backend import maintainer_index, people_index
+from backend import db, maintainer_index, people_index
 from backend.models import (
     CanonicalToolCache,
     Person,
     PersonIdentifier,
     PersonReconciliationConflict,
     PersonReconciliationMapping,
+    PersonReconciliationQueue,
     PersonReconciliationRun,
     ToolAuthorClaim,
     ToolMaintainerEdge,
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
 
 MODE_DRY_RUN = "dry-run"
 MODE_APPLY = "apply"
+DEFAULT_QUEUE_LIMIT = 100
 RUN_COMPLETED = "completed"
 RUN_FAILED = "failed"
 STABLE_NAMESPACES = ("toolhub", "wiki")
@@ -34,6 +37,78 @@ NAMESPACE_PRIORITY = {namespace: index for index, namespace in enumerate(STABLE_
 
 class PersonReconciliationError(ValueError):
     """Invalid reconciliation mode or unsafe reconciliation input."""
+
+
+def enqueue_tool_names(tool_names: list[str] | set[str], *, reason: str = "data_ingestion") -> int:
+    """Queue changed tools after their write transaction has committed.
+
+    The separate transaction is deliberate: canonical cache writes also happen
+    on anonymous API requests, and queue bookkeeping must not participate in
+    their upstream/cache transaction.
+    """
+    names = sorted({_clean(name) for name in tool_names if _clean(name)})
+    if not names:
+        return 0
+    now = utcnow()
+    with db.session_scope() as s:
+        for name in names:
+            row = s.get(PersonReconciliationQueue, name)
+            if row is None:
+                s.add(PersonReconciliationQueue(tool_name=name, reason=_clean(reason, 64), enqueued_at=now))
+                continue
+            row.reason = _clean(reason, 64) or row.reason
+            row.enqueued_at = now
+            row.next_attempt_at = None
+            row.last_error = None
+    return len(names)
+
+
+def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
+    """Reconcile a bounded batch of changed tools without a global scan."""
+    capped = max(1, min(DEFAULT_QUEUE_LIMIT, int(limit or DEFAULT_QUEUE_LIMIT)))
+    now = utcnow()
+    with db.session_scope() as s:
+        names = [
+            row[0]
+            for row in s.execute(
+                select(PersonReconciliationQueue.tool_name)
+                .where(
+                    or_(
+                        PersonReconciliationQueue.next_attempt_at.is_(None),
+                        PersonReconciliationQueue.next_attempt_at <= now,
+                    )
+                )
+                .order_by(PersonReconciliationQueue.enqueued_at, PersonReconciliationQueue.tool_name)
+                .limit(capped)
+            ).all()
+        ]
+
+    processed = 0
+    failed = 0
+    for name in names:
+        try:
+            with db.session_scope() as s:
+                row = s.get(PersonReconciliationQueue, name)
+                if row is None:
+                    continue
+                cache = s.get(CanonicalToolCache, name)
+                if cache is not None and isinstance(cache.record, dict):
+                    maintainer_index.replace_toolhub_metadata_edges(s, name, cache.record)
+                maintainer_index.sync_author_claim_edges(s, tool_names=[name])
+                row.last_processed_at = utcnow()
+                row.attempts = 0
+                row.next_attempt_at = None
+                row.last_error = None
+            processed += 1
+        except Exception as exc:  # noqa: BLE001 - persist retry state before continuing the batch
+            failed += 1
+            with db.session_scope() as s:
+                row = s.get(PersonReconciliationQueue, name)
+                if row is not None:
+                    row.attempts += 1
+                    row.next_attempt_at = utcnow() + timedelta(minutes=min(60, 2 ** min(row.attempts, 6)))
+                    row.last_error = _clean(str(exc), 2000)
+    return {"claimed": len(names), "processed": processed, "failed": failed}
 
 
 class _UnionFind:

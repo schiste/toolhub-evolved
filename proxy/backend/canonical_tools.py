@@ -114,9 +114,14 @@ def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bo
         with db.session_scope() as s:
             for row in rows:
                 s.merge(row)
-        return len(rows)
     except SQLAlchemyError:
         return 0
+    # Queue only after the canonical transaction succeeds. Processing is
+    # asynchronous so anonymous API requests do not wait on derived indexes.
+    from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid backend startup cycles.
+
+    enqueue_tool_names([row.tool_name for row in rows], reason="canonical_fetch")
+    return len(rows)
 
 
 def _payload(row: CanonicalToolCache) -> dict[str, Any]:

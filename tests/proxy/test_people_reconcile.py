@@ -14,6 +14,7 @@ from backend.models import (  # noqa: E402
     PersonIdentifier,
     PersonReconciliationConflict,
     PersonReconciliationMapping,
+    PersonReconciliationQueue,
     ToolMaintainerEdge,
     ToolPersonRelationship,
     utcnow,
@@ -94,3 +95,30 @@ def test_cache_author_identifiers_are_materialized_and_display_names_do_not_merg
         assert s.query(PersonReconciliationConflict).count() == 1
         assert s.query(ToolPersonRelationship).count() == 1
         assert s.query(Person).filter(Person.canonical_key == "toolhub:bob").one()
+
+
+def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
+    _configure()
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="queued-tool",
+                record={
+                    "name": "queued-tool",
+                    "author": [{"name": "Queue User", "developer_username": "queue-user"}],
+                },
+                expires_at=utcnow(),
+                stale_until=utcnow(),
+            )
+        )
+
+    assert people_reconcile.enqueue_tool_names(["queued-tool", "queued-tool"], reason="canonical_fetch") == 1
+    summary = people_reconcile.process_queue(limit=1)
+
+    assert summary == {"claimed": 1, "processed": 1, "failed": 0}
+    with db.session_scope() as s:
+        queue = s.get(PersonReconciliationQueue, "queued-tool")
+        assert queue is not None
+        assert queue.last_processed_at is not None
+        assert queue.attempts == 0
+        assert s.query(ToolPersonRelationship).filter_by(tool_name="queued-tool").count() == 1

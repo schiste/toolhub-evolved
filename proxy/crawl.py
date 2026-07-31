@@ -89,6 +89,7 @@ def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source 
     counts: dict[str, int],
     errors: list[str],
 ) -> None:
+    affected_names: set[str] = set()
     with db.session_scope() as s:
         owner = s.get(User, owner_id)
         for item in items[:MAX_ITEMS_PER_URL]:
@@ -99,6 +100,7 @@ def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source 
             name = str(item["name"])
             if owner is not None:
                 SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=item, evidence_url=toolinfo_url)
+                affected_names.add(name)
             if exists_upstream(session, name):
                 errors.append(f"{name}: exists upstream on Toolhub — skipped (live API is source of truth)")
                 continue
@@ -131,6 +133,10 @@ def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source 
                     existing.created_by_user_id = owner_id
                 existing.last_error = None
                 counts["updated"] += 1
+    if affected_names:
+        from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid crawler startup cycles.
+
+        enqueue_tool_names(affected_names, reason="toolinfo_ingestion")
 
 
 def run_crawl() -> CrawlerRun:
