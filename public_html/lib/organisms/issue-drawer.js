@@ -4,7 +4,7 @@ import { backendErrorMessage } from "../core/api.js";
 import { pageDiagnostics } from "../core/diagnostics.js";
 import { t } from "../core/i18n.js";
 import { signedIn } from "../core/session.js";
-import { serverWrite } from "../core/serversync.js";
+import { oauthAvailable, serverWrite } from "../core/serversync.js";
 import { icon } from "../atoms/icon.js";
 
 /** @type {(() => Record<string, any>) | null} */
@@ -89,6 +89,16 @@ function formHTML(
 	</form>`;
 }
 
+function loginHTML() {
+	const loginHref = oauthAvailable() ? "/oauth/login" : "/login";
+	return `<div class="issue-drawer__login">
+		<div class="issue-drawer__login-icon" aria-hidden="true">${icon("lifeBuoy")}</div>
+		<h3>${t("issueReport.loginTitle", "Sign in to report an issue")}</h3>
+		<p>${t("issueReport.loginBody", "Sign in with Wikimedia OAuth so we can associate your report with a verified account and publish it after your review.")}</p>
+		<a class="btn btn--primary" href="${loginHref}">${icon("language")} ${t("issueReport.loginAction", "Sign in with Wikimedia OAuth")}</a>
+	</div>`;
+}
+
 function reviewHTML(report) {
 	return `<div class="issue-drawer__review">
 		<p class="issue-drawer__intro">${t("issueReport.reviewIntro", "Check the public issue before it is sent to GitHub.")}</p>
@@ -125,8 +135,17 @@ function showForm() {
 	focusFirst();
 }
 
+function showContent() {
+	if (signedIn()) {
+		showForm();
+		return;
+	}
+	const target = body();
+	if (target) target.innerHTML = loginHTML();
+	focusFirst();
+}
+
 function open() {
-	if (!signedIn()) return;
 	const root = drawer();
 	if (!root) return;
 	lastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
@@ -134,7 +153,7 @@ function open() {
 	root.classList.remove("hidden");
 	root.setAttribute("aria-hidden", "false");
 	document.body.classList.add("issue-drawer-open");
-	showForm();
+	showContent();
 }
 
 function close() {
@@ -179,7 +198,9 @@ async function publish() {
 export function syncIssueReportTrigger() {
 	const triggers = document.querySelectorAll("[data-issue-trigger]");
 	const external = $("[data-issue-external]");
-	for (const trigger of triggers) trigger.hidden = !signedIn();
+	for (const trigger of triggers) {
+		trigger.hidden = !trigger.hasAttribute("data-issue-trigger-public") && !signedIn();
+	}
 	if (external) external.hidden = signedIn();
 }
 
@@ -187,6 +208,8 @@ export function initIssueDrawer() {
 	const root = drawer();
 	if (!root || root.dataset.ready === "1") return;
 	root.dataset.ready = "1";
+	const fabIcon = $(".issue-report-fab__icon", root.parentElement || document);
+	if (fabIcon) fabIcon.innerHTML = icon("lifeBuoy");
 	document.addEventListener("click", (event) => {
 		const target = /** @type {HTMLElement | null} */ (event.target);
 		if (target?.closest("[data-issue-trigger]")) {

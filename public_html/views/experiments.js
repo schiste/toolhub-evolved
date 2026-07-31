@@ -257,7 +257,7 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.issueReportingCurrent",
-					"Signed-in users get a right-side pushed drawer with route-scoped console context, an editable review step, server-side publishing, and an issue-number receipt."
+					"All visitors can open a right-side pushed support drawer; signed-in users get route-scoped diagnostics, an editable review step, server-side publishing, and an issue-number receipt."
 				),
 				need: t(
 					"experiments.issueReportingNeed",

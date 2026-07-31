@@ -2800,6 +2800,72 @@ html[dir="rtl"] .recent-table {
 	display: none;
 }
 
+.issue-report-fab {
+	position: fixed;
+	inset-inline-end: var(--space-4);
+	inset-block-end: var(--space-4);
+	z-index: 75;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--btn-h-lg);
+	height: var(--btn-h-lg);
+	padding: var(--space-0);
+	border: var(--border-base);
+	border-radius: 50%;
+	background: var(--color-progressive);
+	box-shadow: var(--shadow);
+	color: var(--wmf-white);
+	cursor: pointer;
+	transition:
+		background-color 0.15s ease,
+		box-shadow 0.15s ease,
+		opacity 0.15s ease;
+}
+.issue-report-fab:hover {
+	background: var(--color-progressive-hover);
+	box-shadow: var(--shadow-hover);
+}
+.issue-report-fab:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 3px;
+}
+.issue-report-fab .icon {
+	width: var(--btn-h-md);
+	height: var(--btn-h-md);
+}
+body.issue-drawer-open .issue-report-fab {
+	opacity: 0;
+	pointer-events: none;
+}
+.issue-drawer__login {
+	display: grid;
+	justify-items: start;
+	gap: var(--space-3);
+	padding-block: var(--space-5);
+}
+.issue-drawer__login h3,
+.issue-drawer__login p {
+	margin: var(--space-0);
+}
+.issue-drawer__login p {
+	color: var(--color-text-secondary);
+}
+.issue-drawer__login-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--btn-h-lg);
+	height: var(--btn-h-lg);
+	border-radius: 50%;
+	background: var(--color-progressive-subtle);
+	color: var(--color-progressive);
+}
+.issue-drawer__login-icon .icon {
+	width: var(--btn-h-md);
+	height: var(--btn-h-md);
+}
+
 .issue-drawer {
 	position: fixed;
 	inset-block: 0;
