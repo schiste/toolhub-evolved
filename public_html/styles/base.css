@@ -98,13 +98,9 @@ a:hover {
 	max-width: 72ch;
 }
 
-/* Reference pages keep narrative copy readable while allowing data tables to use the shell. */
+/* Reference pages use the full shell for narrative, formulas, and data tables. */
 .prose--wide {
 	max-width: none;
-}
-
-.prose--wide > :where(p, ul, ol, blockquote, pre) {
-	max-width: 78ch;
 }
 
 :where(.prose, .qv__desc) > :first-child {
