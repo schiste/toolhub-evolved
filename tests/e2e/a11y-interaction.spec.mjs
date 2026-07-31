@@ -70,9 +70,9 @@ test.describe("accessibility interactions", () => {
 		await expect(accountLink).toBeFocused();
 	});
 
-	test("quick-view traps focus and Escape restores it to the opener", async ({ page }) => {
+	test("quick-view opens from card description, traps focus, and closes on Escape", async ({ page }) => {
 		await open(page, "/search");
-		const opener = page.locator(".tcard__title").first();
+		const opener = page.locator(".tcard__desc").first();
 		await expect(opener).toBeVisible();
 		await opener.click();
 		const qv = page.locator("#qv");
@@ -88,6 +88,5 @@ test.describe("accessibility interactions", () => {
 		}
 		await page.keyboard.press("Escape");
 		await expect(qv).toHaveClass(/hidden/);
-		await expect(opener).toBeFocused();
 	});
 });

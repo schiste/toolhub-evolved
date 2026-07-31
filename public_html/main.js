@@ -305,7 +305,7 @@ if (skip) {
 	});
 }
 
-/* Keyword chips inside tool cards filter search; card body clicks open peek. */
+/* Card controls route normally; the remaining card surface opens the quick view. */
 $("#view")?.addEventListener("click", (e) => {
 	const fav = e.target?.closest("[data-fav]");
 	if (fav) {

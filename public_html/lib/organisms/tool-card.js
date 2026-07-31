@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
+import { authorHref, toolHref } from "../core/routing.js";
 import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
@@ -11,8 +12,6 @@ import { favBtn } from "../molecules/favbtn.js";
 import { healthScoreChip } from "../molecules/tool-health-summary.js";
 
 export const CARD_TAG_LIMIT = 2;
-const QUICK_VIEW_BUTTON_STYLE =
-	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
 /** @param {any} summary */
 function hasConfirmedMaintainer(summary) {
@@ -29,10 +28,14 @@ function hasConfirmedMaintainer(summary) {
 function maintainerByline(tool, evolvedSummary) {
 	const confirmed = hasConfirmedMaintainer(evolvedSummary);
 	const maintainer = tool.maintainer || t("toolCard.unknownMaintainer", "Unknown");
+	const hasOwner = Boolean(tool.maintainer) && maintainer !== t("toolCard.unknownMaintainer", "Unknown");
 	const label = confirmed
 		? t("toolCard.maintainerConfirmed", "{name}, confirmed maintainer", { name: maintainer })
 		: t("toolCard.maintainerUnconfirmed", "{name}, maintainer not confirmed yet", { name: maintainer });
-	return `<div class="tcard__maint">${t("toolCard.by", "by")} <span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</span></div>`;
+	const owner = hasOwner
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</a>`
+		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
+	return `<div class="tcard__maint">${t("toolCard.by", "by")} ${owner}</div>`;
 }
 
 /** @param {any} summary */
@@ -67,7 +70,10 @@ export function toolCard(tool, opts = {}) {
 	const tags =
 		allk
 			.slice(0, CARD_TAG_LIMIT)
-			.map((k) => `<span class="tag" data-q="${esc(k)}"${dirAttrs(k)}>${esc(k)}</span>`)
+			.map(
+				(k) =>
+					`<a class="tag" href="/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`
+			)
 			.join("") +
 		(allk.length > CARD_TAG_LIMIT ? `<span class="tag tag--more">+${allk.length - CARD_TAG_LIMIT}</span>` : "");
 	const rank = opts.rank ? `<span class="rankbadge" aria-hidden="true">${opts.rank}</span>` : "";
@@ -96,14 +102,13 @@ export function toolCard(tool, opts = {}) {
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
 	const favorite = signedIn() ? favBtn(tool.name, { cls: "favbtn--sm favbtn--bare" }) : "";
 	const topRight = `${flag}${updatedTimeTag(tool.modified, "tcard__when")}${favorite}`;
-	// The title button opens the quick-view.
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}${healthCornerClass(evolvedSummary)}" data-tool="${esc(tool.name)}">
 		<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>
 		<div class="tcard__head">
 			${rank}${toolIcon(tool)}
 			<div class="tcard__heading">
-				<button class="tcard__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("toolCard.quickLook", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</button>
+				<a class="tcard__title" href="${esc(toolHref(tool.name))}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</a>
 				${maintainerByline(tool, evolvedSummary)}
 			</div>
 		</div>

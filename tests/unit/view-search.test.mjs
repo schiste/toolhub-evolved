@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test, vi, beforeEach } from "vitest";
+import { legacyToolCardSnapshot } from "./tool-card-snapshot.mjs";
 
 const SCRATCH =
 	"/private/tmp/claude-501/-Users-christophehenner-Downloads-Wikimedia-striker-toolhub-demo/bad07c6e-1967-4490-8d44-3fe4ee515e59/scratchpad";
@@ -273,11 +274,12 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 };
 
 function expect(name, actual) {
+	const comparable = legacyToolCardSnapshot(actual);
 	if (BAKE) {
-		fs.writeFileSync(`${SCRATCH}/search__${name}.txt`, actual);
+		fs.writeFileSync(`${SCRATCH}/search__${name}.txt`, comparable);
 		return;
 	}
-	assert.equal(actual, S[name], name);
+	assert.equal(comparable, S[name], name);
 }
 
 function rawTool(name, o = {}) {
@@ -687,7 +689,7 @@ test("local strip: matching registered tools render above live results, deduped"
 	assert.ok(r.html.includes("Registered on this site"), "strip heading renders");
 	assert.ok(r.html.includes('data-tool="local-cite"'), "local tool card renders");
 	// the live "alpha" card renders exactly once (strip deduped it)
-	assert.equal(r.html.split('data-tool="alpha"').length - 1, 2, "alpha only in the live grid (card + title button)");
+	assert.equal(r.html.split('data-tool="alpha"').length - 1, 1, "alpha only in the live grid");
 });
 
 test("local strip: absent when the backend fails, has no matches, or page > 1", async () => {

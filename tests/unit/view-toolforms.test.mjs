@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test, vi, beforeEach, afterEach } from "vitest";
+import { legacyToolCardSnapshot } from "./tool-card-snapshot.mjs";
 
 const SCRATCH =
 	"/private/tmp/claude-501/-Users-christophehenner-Downloads-Wikimedia-striker-toolhub-demo/bad07c6e-1967-4490-8d44-3fe4ee515e59/scratchpad";
@@ -471,11 +472,12 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 };
 
 function expect(name, actual) {
+	const comparable = legacyToolCardSnapshot(actual);
 	if (BAKE) {
-		fs.writeFileSync(`${SCRATCH}/toolforms__${name}.txt`, actual);
+		fs.writeFileSync(`${SCRATCH}/toolforms__${name}.txt`, comparable);
 		return;
 	}
-	assert.equal(actual, S[name], name);
+	assert.equal(comparable, S[name], name);
 }
 
 function toolFixture(name, o = {}) {

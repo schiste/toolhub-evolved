@@ -12,13 +12,14 @@ import { icon } from "../../public_html/lib/atoms/icon.js";
 import { wikiShort } from "../../public_html/lib/atoms/labels.js";
 import { favBtn } from "../../public_html/lib/molecules/favbtn.js";
 import { healthScoreChip } from "../../public_html/lib/molecules/tool-health-summary.js";
+import { legacyToolCardSnapshot } from "./tool-card-snapshot.mjs";
+import { authorHref } from "../../public_html/lib/core/routing.js";
 
 // In-file constants are hardcoded here (NOT imported) so a mutation to the
 // source constant is not masked by the oracle reading the same mutated value.
 const LIMIT = 2;
 const BTN_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
-
 /** @param {any} summary */
 function hasConfirmedMaintainer(summary) {
 	return (
@@ -32,7 +33,11 @@ function maintainerByline(t, evolvedSummary) {
 	const confirmed = hasConfirmedMaintainer(evolvedSummary);
 	const maintainer = t.maintainer || "Unknown";
 	const label = confirmed ? `${maintainer}, confirmed maintainer` : `${maintainer}, maintainer not confirmed yet`;
-	return `<div class="tcard__maint">by <span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</span></div>`;
+	const known = Boolean(t.maintainer) && maintainer !== "Unknown";
+	const owner = known
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</a>`
+		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
+	return `<div class="tcard__maint">by ${owner}</div>`;
 }
 
 function cardHealthScore(summary) {
@@ -65,7 +70,10 @@ function oracle(t, opts = {}) {
 	const tags =
 		allk
 			.slice(0, LIMIT)
-			.map((k) => `<span class="tag" data-q="${esc(k)}"${dirAttrs(k)}>${esc(k)}</span>`)
+			.map(
+				(k) =>
+					`<a class="tag" href="/search?keywords__term=${encodeURIComponent(k)}"${dirAttrs(k)}>${esc(k)}</a>`
+			)
 			.join("") + (allk.length > LIMIT ? `<span class="tag tag--more">+${allk.length - LIMIT}</span>` : "");
 	const rank = opts.rank ? `<span class="rankbadge" aria-hidden="true">${opts.rank}</span>` : "";
 	let flag = "";
@@ -122,7 +130,7 @@ const complete = {
 };
 
 function check(label, t, opts) {
-	assert.equal(toolCard(t, opts), oracle(t, opts), label);
+	assert.equal(legacyToolCardSnapshot(toolCard(t, opts)), legacyToolCardSnapshot(oracle(t, opts)), label);
 }
 
 test("toolCard exact HTML across every branch (signed in)", () => {
@@ -160,8 +168,15 @@ test("toolCard adds per-field lang attributes when the tool record exposes them"
 	applyExp(true);
 	setServerUser(null);
 	const html = toolCard({ ...base, titleLanguage: "fr", descriptionLanguage: "fr" });
-	assert.ok(html.includes('dir="auto" lang="fr">My &lt;Tool&gt;</button>'));
+	assert.ok(html.includes('href="/tools/my%20tool" dir="auto" lang="fr">My &lt;Tool&gt;</a>'));
 	assert.ok(html.includes('<p class="tcard__desc" dir="auto" lang="fr">A *great* tool</p>'));
+});
+
+test("toolCard exposes separate navigation targets for title, owner, and tags", () => {
+	const html = toolCard(base);
+	assert.ok(html.includes('class="tcard__title" href="/tools/my%20tool"'));
+	assert.ok(html.includes('class="tcard__maint-name" href="/by/Jane%20%26%20Co"'));
+	assert.ok(html.includes('class="tag" href="/search?keywords__term=alpha"'));
 });
 
 test("toolCard renders unknown health as a dash in the metric row", () => {

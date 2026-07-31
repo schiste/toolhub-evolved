@@ -1466,7 +1466,6 @@
 	"toolCard.healthUnknown": "Health score unknown",
 	"toolCard.maintainerConfirmed": "{name}, confirmed maintainer",
 	"toolCard.maintainerUnconfirmed": "{name}, maintainer not confirmed yet",
-	"toolCard.quickLook": "Quick look: {title}",
 	"toolCard.unknownMaintainer": "Unknown",
 	"toolforms.annoForTitle": "Community annotations for",
 	"toolforms.annoIntro": "Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see",
