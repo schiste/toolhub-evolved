@@ -49,6 +49,15 @@
   timeout: 900
   emails: onfailure
 
+- name: people-reconcile
+  # Rebuild the deterministic people graph and typed relationships. The first
+  # run can be inspected safely with `proxy/people_reconcile.py` without --apply.
+  command: /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
+  image: python3.13
+  schedule: "23 */6 * * *"
+  timeout: 600
+  emails: onfailure
+
 - name: api-cache-invalidator
   # Poll official Toolhub recent changes out of band, invalidate affected rows,
   # then prewarm hot anonymous reads so user requests never pay that cost.

@@ -226,6 +226,9 @@ names are:
 | `maintainer_activity_rollups`                | Public activity bucket, private source rows     | Rebuildable Evolved-local activity summary keyed by namespaced maintainer id; source activity rows stay governed by their original table's privacy/delete rules.       |
 | `people` / `person_identifiers`              | Public identity projection                      | Deduplicated people keyed by stable Toolhub identifiers where available; display-name-only rows are heuristic and not canonical accounts.                              |
 | `tool_person_relationships`                  | Public typed relationship projection            | Rebuildable per-tool author, maintainer, record-owner, or catalog-actor relationships with confidence and provenance; raw evidence stays private.                      |
+| `person_reconciliation_runs`                 | Operational audit                               | One dry-run or apply pass with deterministic counts, completion status, and error state.                                                                               |
+| `person_reconciliation_mappings`             | Operational audit                               | Source/target person mappings and reasons for every retained or merged identity considered by a run.                                                                   |
+| `person_reconciliation_conflicts`            | Operational review                              | Ambiguities deliberately left unresolved, especially display-name collisions; never used as automatic merge evidence.                                                  |
 | `source_analysis_reports`                    | Private per user                                | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.    |
 | `tool_health_targets` / `tool_health_checks` | Public checked status after approval            | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health. |
 | `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                         |
@@ -262,6 +265,15 @@ record; and `catalog_actor` is an observed catalog activity actor. These roles
 are intentionally not interchangeable. Toolhub usernames are deduplicated
 case-insensitively; a display-name fallback is marked `identityQuality:
 display_name` and may be reconciled later when a stable identifier is found.
+
+Historical reconciliation is deterministic and rerunnable. Run
+`python proxy/people_reconcile.py` for a database-backed dry-run, inspect the
+recorded mappings and conflicts, then run it with `--apply` to materialize
+canonical-cache metadata edges, merge only stable identifiers linked by the
+same evidence edge, and rebuild all typed relationships. The scheduled
+`people-reconcile` job uses `--apply` after the initial catalog cache exists;
+display-name-only candidates remain separate and are reported rather than
+silently merged.
 
 Signed toolinfo metadata is read from `x_toolhub_evolved_signature` or
 `x-toolhub-evolved-signature`. The signed bytes are the canonical JSON toolinfo
