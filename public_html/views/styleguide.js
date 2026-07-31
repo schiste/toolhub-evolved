@@ -1126,24 +1126,34 @@ function renderStyleguideTokens() {
 	);
 }
 
-function scheduleTokenRendering() {
+function scheduleAfterInitialFrame(callback) {
 	if (navigator.userAgent.includes("HappyDOM/")) {
-		renderStyleguideTokens();
+		callback();
 		return;
 	}
 	if (typeof window.requestAnimationFrame !== "function") {
-		window.setTimeout(renderStyleguideTokens, 0);
+		window.setTimeout(callback, 0);
 		return;
 	}
-	window.requestAnimationFrame(() => window.requestAnimationFrame(renderStyleguideTokens));
+	window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+}
+
+function mountExampleGraph() {
+	const graphTarget = /** @type {HTMLElement | null} */ (document.querySelector("#sg-force-graph"));
+	if (graphTarget?.isConnected) {
+		graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
+	}
+}
+
+function scheduleTokenRendering() {
+	scheduleAfterInitialFrame(renderStyleguideTokens);
 }
 
 function mountStyleguide() {
 	ensureStyleguideStyles();
 	seedFixtureIndex();
 	scheduleTokenRendering();
-	const graphTarget = /** @type {HTMLElement | null} */ (document.querySelector("#sg-force-graph"));
-	if (graphTarget) graphTarget.forceGraphHandle = forceGraph(graphTarget, STYLEGUIDE_GRAPH, { height: 220 });
+	scheduleAfterInitialFrame(mountExampleGraph);
 
 	const page = document.querySelector(".sg-page");
 	if (!page) return;
