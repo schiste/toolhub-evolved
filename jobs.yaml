@@ -58,6 +58,15 @@
   timeout: 600
   emails: onfailure
 
+- name: people-reconcile-incremental
+  # Process canonical and newly ingested tool changes shortly after their
+  # write transaction. The six-hour full pass remains the global backstop.
+  command: /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
+  image: python3.13
+  schedule: "* * * * *"
+  timeout: 120
+  emails: onfailure
+
 - name: api-cache-invalidator
   # Poll official Toolhub recent changes out of band, invalidate affected rows,
   # then prewarm hot anonymous reads so user requests never pay that cost.

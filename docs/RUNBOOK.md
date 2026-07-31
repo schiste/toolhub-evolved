@@ -229,6 +229,7 @@ names are:
 | `person_reconciliation_runs`                 | Operational audit                               | One dry-run or apply pass with deterministic counts, completion status, and error state.                                                                               |
 | `person_reconciliation_mappings`             | Operational audit                               | Source/target person mappings and reasons for every retained or merged identity considered by a run.                                                                   |
 | `person_reconciliation_conflicts`            | Operational review                              | Ambiguities deliberately left unresolved, especially display-name collisions; never used as automatic merge evidence.                                                  |
+| `person_reconciliation_queue`                | Operational work queue                          | Deduplicated changed-tool names waiting for bounded incremental edge and relationship reconciliation, with retry state.                                                |
 | `source_analysis_reports`                    | Private per user                                | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.    |
 | `tool_health_targets` / `tool_health_checks` | Public checked status after approval            | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health. |
 | `tool_media`                                 | Public only after approval                      | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                         |
@@ -274,6 +275,14 @@ same evidence edge, and rebuild all typed relationships. The scheduled
 `people-reconcile` job uses `--apply` after the initial catalog cache exists;
 display-name-only candidates remain separate and are reported rather than
 silently merged.
+
+Canonical Toolhub fetches and local Toolinfo ingestion enqueue affected tool
+names in `person_reconciliation_queue` after their write transaction commits.
+The `people-reconcile-incremental` job drains up to 100 queued tools each
+minute, refreshing only those tools' metadata and claim edges. This keeps the
+request path asynchronous while making new or changed data visible to the
+people index promptly. The six-hour historical job remains necessary because
+cross-tool stable-identifier merges and old conflicts require a global scan.
 
 Signed toolinfo metadata is read from `x_toolhub_evolved_signature` or
 `x-toolhub-evolved-signature`. The signed bytes are the canonical JSON toolinfo
