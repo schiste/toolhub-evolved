@@ -18,7 +18,7 @@ const LISTS_KEY = "thdemo:lists";
 const wrap = (items) =>
 	'<details class="savemenu">' +
 	"\n\t\t" +
-	`<summary class="btn btn--outline">${icon("bookmark")} Save to a list</summary>` +
+	`<summary class="btn btn--outline btn--lg">${icon("bookmark")} Save to a list</summary>` +
 	"\n\t\t" +
 	`<div class="savemenu__pop">${items}<a class="savemenu__new" href="/lists/create">${icon("add")} New list…</a></div>` +
 	"\n\t" +

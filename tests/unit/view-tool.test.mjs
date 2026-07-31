@@ -141,7 +141,7 @@ const S = {
 				<button class="favbtn favbtn--btn favbtn--lg" type="button" data-fav="dep" aria-pressed="false" aria-label="Save to favorites"><span class="favbtn__ic" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg></span><span class="favbtn__t">Save</span></button>
 				<!-- EXPERIMENTAL — Save to a list. Needs: POST/PUT /api/lists/ (Lane B). -->
 				<details class="savemenu">
-		<summary class="btn btn--outline"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m13 18-1.707.707L8 15.414l-3.293 3.293L3 18V5h10z"/><path d="M17 15h-2V3H6V1h11z"/></svg> Save to a list</summary>
+		<summary class="btn btn--outline btn--lg"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m13 18-1.707.707L8 15.414l-3.293 3.293L3 18V5h10z"/><path d="M17 15h-2V3H6V1h11z"/></svg> Save to a list</summary>
 		<div class="savemenu__pop"><p class="savemenu__empty">No lists yet.</p><a class="savemenu__new" href="/lists/create"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M11.005 9H16v2h-4.995v5.005h-2V11H4V9h5.005V4.005h2z"/></svg> New list…</a></div>
 	</details>
 			</div>
@@ -648,7 +648,8 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.ok(r.html.includes('data-fav="full"'));
 	assert.ok(r.html.includes('href="/tools/full/edit"'));
 	assert.ok(r.html.includes('href="/tools/full/edit-annotations"'));
-	assert.ok(r.html.includes('class="toolpage__owner-actions"'));
+	assert.ok(r.html.includes('class="toolpage__management"'));
+	assert.equal((r.html.match(/Open tool<\/a>/g) || []).length, 1);
 	assert.ok(r.html.includes("Maintainer actions"));
 	assert.ok(!r.html.includes("shotstrip"));
 	assert.ok(!r.html.includes("thanks__agg"));

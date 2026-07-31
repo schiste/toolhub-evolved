@@ -20,7 +20,7 @@ export function saveToListControl(name) {
 			)
 			.join("") || `<p class="savemenu__empty">${t("savemenu.noListsYet", "No lists yet.")}</p>`;
 	return `<details class="savemenu">
-		<summary class="btn btn--outline">${icon("bookmark")} ${t("savemenu.saveToAList", "Save to a list")}</summary>
+		<summary class="btn btn--outline btn--lg">${icon("bookmark")} ${t("savemenu.saveToAList", "Save to a list")}</summary>
 		<div class="savemenu__pop">${items}<a class="savemenu__new" href="/lists/create">${icon("add")} ${t("savemenu.newList", "New list…")}</a></div>
 	</details>`;
 }

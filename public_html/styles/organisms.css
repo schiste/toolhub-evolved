@@ -1842,8 +1842,11 @@
 	flex-direction: column;
 	gap: var(--space-1-5);
 }
-.toolpage__actions .btn {
+.toolpage__actions .btn,
+.toolpage__management .btn {
 	width: 100%;
+	height: var(--btn-h-md);
+	min-height: var(--btn-h-md);
 	justify-content: flex-start;
 	text-align: start;
 }
@@ -1917,22 +1920,14 @@
 	justify-content: center;
 }
 .toolpage__sub {
-	display: grid;
-	gap: var(--space-2);
 	margin-top: var(--space-3);
 	padding-top: var(--space-3);
 	border-top: var(--border-muted);
 }
-.toolpage__sub > .btn {
-	width: 100%;
-	justify-content: flex-start;
-	text-align: start;
-}
-.toolpage__owner-actions {
+
+.toolpage__management {
 	display: grid;
 	gap: var(--space-2);
-	padding-top: var(--space-2);
-	border-top: var(--border-muted);
 }
 .toolpage__owner-label {
 	color: var(--color-text-muted);
