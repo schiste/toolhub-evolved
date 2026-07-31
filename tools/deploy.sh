@@ -66,4 +66,12 @@ if [ "$ready" -ne 1 ]; then
 	exit 1
 fi
 
+echo "Prewarming derived Evolved endpoints ..."
+if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/graph/"; then
+	echo "  graph prewarm skipped" >&2
+fi
+if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/tools/summaries/?names=toolforge-toolhub-evolved"; then
+	echo "  tool summary prewarm skipped" >&2
+fi
+
 echo "Done. $BASE_URL/"
