@@ -69,8 +69,9 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(S.viewStatic("code-of-conduct").html.includes("accessibility, localization, privacy"));
 	const rules = S.viewStatic("rules-of-engagement").html;
 	assert.ok(rules.includes("supported writes are sent back to the official Toolhub API"));
-	assert.ok(rules.includes("served quickly from Evolved&#39;s shared"));
-	assert.ok(rules.includes("endpoint-specific TTLs"));
+	assert.ok(rules.includes("server-side canonical cache of official tool records"));
+	assert.ok(rules.includes("every 15 minutes"));
+	assert.ok(rules.includes("one catalog page is reconciled every 12 hours"));
 	assert.ok(rules.includes("What's Evolved-only"));
 	assert.ok(rules.includes("Evolved additions are visible by default"));
 	assert.ok(rules.includes("Verified author claims"));

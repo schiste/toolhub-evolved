@@ -26,18 +26,17 @@ features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
 - **Launch blocker: Lane A i18n/a11y must be finished first** (`PLAN.md`
   §2.2–2.3). Nothing user-facing launches before the interface is localizable
   and the deferred accessibility items are closed.
-- **Data architecture (updated 2026-07-27): live Toolhub + local overlay.**
-  All Toolhub catalog data is read **live from the Toolhub API** — it is never
-  mirrored, synced, or copied into our database as canonical catalog state. A
-  short-lived `api_cache` table may store anonymous `GET /api/*` response bodies
-  only as a shared performance cache with expiry/stale metadata; the browser may
-  also keep a bounded localStorage copy of anonymous `/api/*` payloads so hard
-  refreshes can render stale public data while a live refresh runs. Official
-  writes are sent to Toolhub's API with the user's stored Toolhub OAuth grant. The
-  **project-specific database complements** Toolhub: local users mapped to
-  Toolhub identities, stored OAuth grants, sessions, drafts/fallback overlays,
-  Evolved-only state, API cache rows, and revision/audit rows for local actions.
-  If a record exists upstream, the API is its source of truth.
+- **Data architecture (updated 2026-07-31): live Toolhub + local overlay.**
+  User-facing Toolhub catalog reads remain live through the Toolhub API and the
+  read proxy. Evolved also maintains a rebuildable `canonical_tool_cache` mirror
+  for background enrichment and resilience; it is not authoritative and never
+  replaces live Toolhub reads or official write decisions. The `catalog-sync` job
+  performs a paced initial backfill, then consumes recent tool changes and
+  reconciles one catalog page every 12 hours. A short-lived `api_cache` table
+  stores anonymous `GET /api/*` response bodies as a shared performance cache;
+  the browser may also keep a bounded localStorage copy for stale-while-refresh.
+  Official writes are sent to Toolhub's API with the user's stored OAuth grant.
+  If a record exists upstream, Toolhub remains the source of truth.
 
 The demonstrator was deliberately built for this pivot: the write adapter
 (`apiWrite`/`demoApi`) is shaped like Toolhub's real endpoints (`PLAN.md`

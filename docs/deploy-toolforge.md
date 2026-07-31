@@ -98,9 +98,11 @@ webservice restart            # or: sh ~/repo/tools/deploy.sh
   `/api/auditlogs/`, `/api/crawler/runs/`, `/api/ui/home/`.
 - **Pagination:** upstream `next`/`previous` are absolute `toolhub.wikimedia.org`
   URLs; the SPA paginates with `?page=` through the proxy instead of following them.
-- **No bundled catalog.** The SPA reads everything live through the proxy; there is
-  no snapshot to fall back to. If the API is unreachable, views show a clear
-  "Couldn't load live data" message rather than stale data.
+- **No bundled catalog.** The SPA does not ship a catalog snapshot in `dist/`.
+  User-facing reads remain live through the proxy, while the server-side
+  `canonical_tool_cache` supports background enrichment and resilience. If the
+  API is unreachable, views show a clear "Couldn't load live data" message
+  rather than presenting the local enrichment cache as canonical.
 - **Fonts & privacy.** Typography uses the native Wikimedia/Codex system font stack
   (`styles/tokens.css`); no web font is downloaded, so the app makes no third-party
   font requests at all.

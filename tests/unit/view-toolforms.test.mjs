@@ -152,7 +152,7 @@ const S = {
 		</div>
 		<p class="le__count" data-sub-count>1 tool</p>
 				<div data-sub-grid><ul class="card-grid grid-tools" role="list"><li>
-	<article class="tcard" data-tool="sub-1">
+	<article class="tcard tcard--health-unknown" data-tool="sub-1">
 		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u||tcard__when></span></div>
 		<div class="tcard__head">
 			<span class="avatar " style="background:var(--color-favorite)" aria-hidden="true">S</span>
