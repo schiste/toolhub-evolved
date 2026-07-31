@@ -314,7 +314,6 @@ function chromeNavExample() {
 				<nav class="nav__links" aria-label="${esc(t("styleguide.primaryNavigationLabel", "Primary"))}">
 					<a href="/search">${t("styleguide.nav.tools", "Tools")}</a>
 					<a href="/lists">${t("styleguide.nav.lists", "Lists")}</a>
-					<a href="/graph">${t("styleguide.nav.map", "Map")}</a>
 					<a href="/recent">${t("styleguide.nav.recent", "Recent")}</a>
 				</nav>
 				<div class="nav__actions">
