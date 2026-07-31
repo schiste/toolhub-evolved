@@ -27,6 +27,7 @@ const STATIC_TITLES = {
 	api: "API — Toolhub",
 	"rules-of-engagement": "Rules of Engagement — Toolhub",
 	"health-score": "Health score system — Toolhub",
+	feeds: "Feeds — Toolhub",
 	rss: "Feeds — Toolhub"
 };
 
@@ -49,7 +50,7 @@ test("ext renders safe external links and rejects unsafe URLs", () => {
 
 test("viewStatic exposes every static page with current hybrid Toolhub/Evolved copy", () => {
 	const slugs = Object.keys(STATIC_TITLES);
-	assert.equal(slugs.length, 10);
+	assert.equal(slugs.length, 11);
 	assert.deepEqual(Object.keys(S.STATIC), slugs);
 	for (const slug of slugs) {
 		assert.equal(S.viewStatic(slug).title, STATIC_TITLES[slug]);
@@ -98,12 +99,13 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(health.includes("Variables used"));
 	assert.ok(health.includes("No large language model output is used"));
 	assert.ok(health.includes("last commit timestamp"));
-	const rss = S.viewStatic("rss").html;
-	assert.ok(rss.includes("/feeds/recent.xml"));
-	assert.ok(rss.includes("/feeds/tools/recently-updated.xml"));
-	assert.ok(rss.includes("/feeds/lists.xml"));
-	assert.ok(rss.includes("/feeds/tools/TOOL_NAME/revisions.xml"));
-	assert.ok(rss.includes("RSS 2.0 XML"));
+	const feeds = S.viewStatic("feeds").html;
+	assert.equal(S.viewStatic("rss").html, feeds);
+	assert.ok(feeds.includes("/feeds/recent.xml"));
+	assert.ok(feeds.includes("/feeds/tools/recently-updated.xml"));
+	assert.ok(feeds.includes("/feeds/lists.xml"));
+	assert.ok(feeds.includes("/feeds/tools/TOOL_NAME/revisions.xml"));
+	assert.ok(feeds.includes("RSS 2.0 XML"));
 });
 
 test("viewStatic falls back to the not-found page for an unknown slug", () => {

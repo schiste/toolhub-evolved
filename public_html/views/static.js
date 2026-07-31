@@ -597,6 +597,34 @@ function viewHealthScoreStaticPage() {
 }
 // Faithful summaries of real Toolhub / Wikimedia content, rendered in our style.
 // Canonical policies link out to their authoritative source (as the real site does).
+const rssPage = () => ({
+	title: t("static.rss.title", "Feeds"),
+	body: `
+		<p>${t("static.rss.intro", "Subscribe to Toolhub activity without opening the app. These feeds are public RSS 2.0 XML generated server-side from Toolhub's official read APIs through Evolved's shared cache.")}</p>
+		<h2>${t("static.rss.catalogFeedsTitle", "Catalog feeds")}</h2>
+		<ul class="feed">
+			${rssFeedItem("/feeds/recent.xml", t("static.rss.recentFeedTitle", "Recent changes"), t("static.rss.recentFeedDesc", "Official Toolhub catalog activity across tools and lists."), "history")}
+			${rssFeedItem("/feeds/tools/recently-updated.xml", t("static.rss.recentToolsFeedTitle", "Recently updated tools"), t("static.rss.recentToolsFeedDesc", "Tools ordered by the official Toolhub modified date."), "tools")}
+			${rssFeedItem("/feeds/lists.xml", t("static.rss.listsFeedTitle", "Lists"), t("static.rss.listsFeedDesc", "Public Toolhub lists from the official lists endpoint."), "list")}
+		</ul>
+		<h2>${t("static.rss.historyFeedsTitle", "History feeds")}</h2>
+		<p>${t("static.rss.historyFeedsIntro", "Tool and list revision feeds are available by URL pattern. Replace the identifier with the encoded Toolhub tool name or list id.")}</p>
+		<ul>
+			<li>${tWithElements("static.rss.toolHistoryPattern", "Tool revisions: {pattern}", { pattern: code("/feeds/tools/TOOL_NAME/revisions.xml") })}</li>
+			<li>${tWithElements("static.rss.listHistoryPattern", "List revisions: {pattern}", { pattern: code("/feeds/lists/LIST_ID/revisions.xml") })}</li>
+		</ul>
+		<h2>${t("static.rss.relatedPagesTitle", "Related pages")}</h2>
+		<p>${tWithElements(
+			"static.rss.relatedPagesBody",
+			"Browse the same data in the app on {recentPage}, {toolsPage}, or {listsPage}.",
+			{
+				recentPage: `<a href="/recent">${esc(t("static.rss.recentPage", "Recent changes"))}</a>`,
+				toolsPage: `<a href="/search?sort=recent">${esc(t("static.rss.recentToolsPage", "recently updated tools"))}</a>`,
+				listsPage: `<a href="/lists">${esc(t("static.rss.listsPage", "lists"))}</a>`
+			}
+		)}</p>`
+});
+
 export const STATIC = {
 	about: () => ({
 		title: t("static.about.title", "About Toolhub"),
@@ -635,7 +663,7 @@ export const STATIC = {
 		<ul>
 			<li>${tWithElements("static.community.evolvedIssuesItem", "Use {issues} for Evolved-specific bugs, interface feedback, and feature proposals.", { issues: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")) })}</li>
 			<li>${tWithElements("static.community.evolvedSourceItem", "Read the prototype source in {source}; changes should preserve the design system, accessibility expectations, deterministic scoring, and i18n-ready message boundaries.", { source: ext("https://github.com/schiste/toolhub-evolved", t("static.community.evolvedSource", "the Toolhub Evolved repository")) })}</li>
-			<li>${tWithElements("static.community.evolvedFeedsItem", "Follow local activity through {feeds} and the in-app feature status page.", { feeds: `<a href="/rss">${esc(t("static.community.feeds", "RSS feeds"))}</a>` })}</li>
+			<li>${tWithElements("static.community.evolvedFeedsItem", "Follow local activity through {feeds} and the in-app feature status page.", { feeds: `<a href="/feeds">${esc(t("static.community.feeds", "RSS feeds"))}</a>` })}</li>
 		</ul>
 		<h2>${t("static.community.upstreamChannels", "Official Toolhub channels")}</h2>
 		<p>${t("static.community.upstreamIntro", "For official Toolhub policy, production catalog behavior, or upstream bugs that are not specific to this beta interface, use Wikimedia's canonical Toolhub channels.")}</p>
@@ -729,33 +757,8 @@ export const STATIC = {
 		<blockquote>${t("static.rulesOfEngagement.summary", "In short: Toolhub remains the source of truth for catalog data; Evolved publishes through Toolhub when signed in and keeps local overlay data for drafts, fallback, and features Toolhub does not expose.")}</blockquote>`
 	}),
 	"health-score": viewHealthScoreStaticPage,
-	rss: () => ({
-		title: t("static.rss.title", "Feeds"),
-		body: `
-		<p>${t("static.rss.intro", "Subscribe to Toolhub activity without opening the app. These feeds are public RSS 2.0 XML generated server-side from Toolhub's official read APIs through Evolved's shared cache.")}</p>
-		<h2>${t("static.rss.catalogFeedsTitle", "Catalog feeds")}</h2>
-		<ul class="feed">
-			${rssFeedItem("/feeds/recent.xml", t("static.rss.recentFeedTitle", "Recent changes"), t("static.rss.recentFeedDesc", "Official Toolhub catalog activity across tools and lists."), "history")}
-			${rssFeedItem("/feeds/tools/recently-updated.xml", t("static.rss.recentToolsFeedTitle", "Recently updated tools"), t("static.rss.recentToolsFeedDesc", "Tools ordered by the official Toolhub modified date."), "tools")}
-			${rssFeedItem("/feeds/lists.xml", t("static.rss.listsFeedTitle", "Lists"), t("static.rss.listsFeedDesc", "Public Toolhub lists from the official lists endpoint."), "list")}
-		</ul>
-		<h2>${t("static.rss.historyFeedsTitle", "History feeds")}</h2>
-		<p>${t("static.rss.historyFeedsIntro", "Tool and list revision feeds are available by URL pattern. Replace the identifier with the encoded Toolhub tool name or list id.")}</p>
-		<ul>
-			<li>${tWithElements("static.rss.toolHistoryPattern", "Tool revisions: {pattern}", { pattern: code("/feeds/tools/TOOL_NAME/revisions.xml") })}</li>
-			<li>${tWithElements("static.rss.listHistoryPattern", "List revisions: {pattern}", { pattern: code("/feeds/lists/LIST_ID/revisions.xml") })}</li>
-		</ul>
-		<h2>${t("static.rss.relatedPagesTitle", "Related pages")}</h2>
-		<p>${tWithElements(
-			"static.rss.relatedPagesBody",
-			"Browse the same data in the app on {recentPage}, {toolsPage}, or {listsPage}.",
-			{
-				recentPage: `<a href="/recent">${esc(t("static.rss.recentPage", "Recent changes"))}</a>`,
-				toolsPage: `<a href="/search?sort=recent">${esc(t("static.rss.recentToolsPage", "recently updated tools"))}</a>`,
-				listsPage: `<a href="/lists">${esc(t("static.rss.listsPage", "lists"))}</a>`
-			}
-		)}</p>`
-	})
+	feeds: rssPage,
+	rss: rssPage
 };
 /** @param {string} slug */
 export function viewStatic(slug) {

@@ -140,7 +140,7 @@ const SHELL = `
 		<nav data-footer-section="discover"><h2></h2><a href="/search"></a><a href="/lists"></a><a href="/graph"></a><a href="/members"></a><a href="/recent"></a></nav>
 			<nav data-footer-section="maintain"><h2></h2><a href="/my-lists"></a><a href="/my-tools"></a><a href="/favorites"></a><a href="/developer-settings"></a><a href="/preferences"></a><a href="/contribute"></a></nav>
 		<nav data-footer-section="project"><h2></h2><a href="/api-docs" data-i18n="shell.footer.apiExplorer">API explorer</a><a href="/health-score" data-i18n="shell.footer.healthScoreSystem">Health score system</a><a href="/styleguide"></a><a href="/crawler-history"></a><a href="/audit-logs"></a><a href="https://meta.wikimedia.org/wiki/Toolhub"></a><a href="https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main"></a><a href="https://phabricator.wikimedia.org/tag/toolhub/"></a></nav>
-		<nav data-footer-section="about"><h2></h2><a href="/about"></a><a href="/help"></a><a href="/community"></a><a href="/privacy"></a><a href="/terms"></a><a href="/code-of-conduct"></a><a href="/rss"></a><a href="/rules-of-engagement"></a></nav>
+		<nav data-footer-section="about"><h2></h2><a href="/about"></a><a href="/help"></a><a href="/community"></a><a href="/privacy"></a><a href="/terms"></a><a href="/code-of-conduct"></a><a href="/feeds"></a><a href="/rules-of-engagement"></a></nav>
 		<a class="footer__maintain"><svg></svg><span class="footer__maintain-label"></span></a>
 		<span class="footer__legal"></span>
 		<span class="footer__note"></span>

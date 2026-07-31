@@ -2481,6 +2481,9 @@ html[dir="rtl"] .recent-table {
 	flex: 0 0 auto;
 }
 .feed__main {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-0-5);
 	min-width: 0;
 }
 .feed__sub {
