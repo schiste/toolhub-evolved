@@ -118,7 +118,7 @@
 
 .health-score--compact .health-score__grade,
 .health-chip--compact .health-chip__label {
-	max-width: 9ch;
+	max-width: 13ch;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
@@ -127,6 +127,12 @@
 	outline: 2px solid var(--color-progressive);
 	outline-offset: 1px;
 	box-shadow: none;
+}
+
+.health-score--legendary {
+	background: var(--color-progressive-subtle);
+	border-color: var(--color-progressive);
+	color: var(--color-progressive);
 }
 
 .health-score--good,
@@ -713,10 +719,17 @@
 }
 
 .sync-badge--official,
+.sync-badge--great,
 .sync-badge--review-approved {
 	background: var(--color-success-subtle);
 	border-color: var(--color-success);
 	color: var(--color-success);
+}
+
+.sync-badge--legendary {
+	background: var(--color-progressive-subtle);
+	border-color: var(--color-progressive);
+	color: var(--color-progressive);
 }
 
 .sync-badge--local-draft,
@@ -739,6 +752,12 @@
 	background: var(--color-destructive-subtle);
 	border-color: var(--color-destructive);
 	color: var(--color-destructive);
+}
+
+.sync-badge--unknown {
+	background: var(--color-surface-muted);
+	border-color: var(--color-border);
+	color: var(--color-text-muted);
 }
 
 /* Route-backed tab navigation. */

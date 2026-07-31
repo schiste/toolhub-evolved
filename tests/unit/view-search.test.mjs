@@ -93,7 +93,7 @@ Done: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
 		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
@@ -124,7 +124,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul>
 				<nav class="pager" aria-label="Pagination"></nav>
 			</div>
@@ -207,7 +207,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li><li>
 	<article class="tcard" data-tool="exp">
 		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span><u|2026-01-01T00:00:00Z|tcard__when></span></div>
@@ -238,7 +238,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul>
 				<nav class="pager" aria-label="Pagination"></nav>
 			</div>

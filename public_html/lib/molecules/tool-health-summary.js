@@ -12,27 +12,28 @@ function num(value) {
 /** @param {unknown} value */
 function gradeLabel(value) {
 	const grade = String(value || "");
-	if (grade === "strong") return t("toolHealth.gradeStrong", "Strong");
-	if (grade === "good") return t("toolHealth.gradeGood", "Good");
+	if (grade === "strong") return t("toolHealth.gradeStrong", "Legendary");
+	if (grade === "good") return t("toolHealth.gradeGood", "Great");
 	if (grade === "needs-attention") return t("toolHealth.gradeAttention", "Needs attention");
 	if (grade === "unknown") return t("toolHealth.gradeUnknown", "Unknown");
-	return t("toolHealth.gradeRisk", "High risk");
+	return t("toolHealth.gradeRisk", "Unmaintained");
 }
 
 /** @param {unknown} value */
 function shortGradeLabel(value) {
 	const grade = String(value || "");
-	if (grade === "strong") return t("toolHealth.gradeStrongShort", "Strong");
-	if (grade === "good") return t("toolHealth.gradeGoodShort", "Good");
-	if (grade === "needs-attention") return t("toolHealth.gradeWatchShort", "Watch");
+	if (grade === "strong") return t("toolHealth.gradeStrongShort", "Legendary");
+	if (grade === "good") return t("toolHealth.gradeGoodShort", "Great");
+	if (grade === "needs-attention") return t("toolHealth.gradeWatchShort", "Needs attention");
 	if (grade === "unknown") return t("toolHealth.gradeUnknownShort", "Unknown");
-	return t("toolHealth.gradeRiskShort", "Risk");
+	return t("toolHealth.gradeRiskShort", "Unmaintained");
 }
 
 /** @param {unknown} grade */
 function toneForGrade(grade) {
 	const value = String(grade || "");
-	if (value === "strong" || value === "good") return "good";
+	if (value === "strong") return "legendary";
+	if (value === "good") return "good";
 	if (value === "needs-attention") return "watch";
 	if (value === "unknown") return "unknown";
 	return "risk";

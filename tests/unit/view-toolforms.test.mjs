@@ -181,7 +181,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul></div>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-runs-title">

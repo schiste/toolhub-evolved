@@ -778,15 +778,10 @@
 	text-decoration: none;
 }
 .tcard--complete {
-	background-image:
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete));
+	--tcard-corner-color: var(--tcard-corner-color-complete);
+	--tcard-corner-color-hover: var(--tcard-corner-color-complete);
+	--tcard-corner-color-focus: var(--tcard-corner-color-complete);
+
 	background-size:
 		var(--tcard-corner-length-complete) var(--tcard-corner-width-complete),
 		var(--tcard-corner-width-complete) var(--tcard-corner-length-complete),
@@ -797,17 +792,30 @@
 		var(--tcard-corner-length-complete) var(--tcard-corner-width-complete),
 		var(--tcard-corner-width-complete) var(--tcard-corner-length-complete);
 }
-.tcard--complete:hover,
-.tcard--complete:focus-visible {
-	background-image:
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
-		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete));
+.tcard--health-legendary {
+	--tcard-corner-color: var(--color-progressive);
+	--tcard-corner-color-hover: var(--color-progressive-hover);
+	--tcard-corner-color-focus: var(--color-progressive-hover);
+}
+.tcard--health-great {
+	--tcard-corner-color: var(--color-success);
+	--tcard-corner-color-hover: var(--color-success);
+	--tcard-corner-color-focus: var(--color-success);
+}
+.tcard--health-needs-attention {
+	--tcard-corner-color: var(--color-warning-text);
+	--tcard-corner-color-hover: var(--color-warning-text);
+	--tcard-corner-color-focus: var(--color-warning-text);
+}
+.tcard--health-unmaintained {
+	--tcard-corner-color: var(--color-destructive);
+	--tcard-corner-color-hover: var(--color-destructive);
+	--tcard-corner-color-focus: var(--color-destructive);
+}
+.tcard--health-unknown {
+	--tcard-corner-color: var(--color-border);
+	--tcard-corner-color-hover: var(--color-border-hover);
+	--tcard-corner-color-focus: var(--color-progressive);
 }
 .tcard__topline {
 	display: flex;
@@ -938,6 +946,17 @@
 }
 .tcard__signal-row--metrics .signal:first-child {
 	margin-inline-end: auto;
+}
+.tcard__health-dash {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2ch;
+	min-height: var(--ctl-h-sm);
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	font-weight: 700;
+	line-height: 1;
 }
 .tcard__when {
 	white-space: nowrap;

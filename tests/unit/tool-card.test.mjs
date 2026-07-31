@@ -35,6 +35,25 @@ function maintainerByline(t, evolvedSummary) {
 	return `<div class="tcard__maint">by <span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</span></div>`;
 }
 
+function cardHealthScore(summary) {
+	const score = Number(summary?.health?.score);
+	const unknown = !summary?.health || String(summary.health.grade || "") === "unknown" || !Number.isFinite(score);
+	if (unknown) {
+		return '<span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span>';
+	}
+	return healthScoreChip(summary, { compact: true });
+}
+
+/** @param {any} summary */
+function healthCornerClass(summary) {
+	const grade = String(summary?.health?.grade || "unknown");
+	if (grade === "strong") return " tcard--health-legendary";
+	if (grade === "good") return " tcard--health-great";
+	if (grade === "needs-attention") return " tcard--health-needs-attention";
+	if (grade === "unknown" || !Number.isFinite(Number(summary?.health?.score))) return " tcard--health-unknown";
+	return " tcard--health-unmaintained";
+}
+
 /**
  * Pristine oracle: re-derives the exact HTML toolCard() must produce, composing
  * the same (un-mutated) helpers. Any source mutation diverges from this.
@@ -61,14 +80,15 @@ function oracle(t, opts = {}) {
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	const endorsement = t.endorsement;
 	const evolvedSummary = t.evolvedSummary;
-	const trustLine = fitChip(t) + healthScoreChip(evolvedSummary, { compact: true });
+	const trustLine = fitChip(t);
 	const metricLine =
 		completenessMeter(complete, { details: true, numeric: true }) +
+		cardHealthScore(evolvedSummary) +
 		endorsementChip(endorsement && endorsement.count, { compact: true });
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
 	const favorite = signedIn() ? favBtn(t.name, { cls: "favbtn--sm favbtn--bare" }) : "";
 	const topRight = `${flag}${updatedTimeTag(t.modified, "tcard__when")}${favorite}`;
-	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t${maintainerByline(t, evolvedSummary)}\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t</article>`;
+	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}${healthCornerClass(evolvedSummary)}" data-tool="${esc(t.name)}">\n\t\t<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t${maintainerByline(t, evolvedSummary)}\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t</article>`;
 }
 
 const base = {
@@ -144,6 +164,17 @@ test("toolCard adds per-field lang attributes when the tool record exposes them"
 	assert.ok(html.includes('<p class="tcard__desc" dir="auto" lang="fr">A *great* tool</p>'));
 });
 
+test("toolCard renders unknown health as a dash in the metric row", () => {
+	const html = toolCard(base);
+	assert.ok(
+		html.includes(
+			'<span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span>'
+		)
+	);
+	assert.ok(html.includes('class="tcard tcard--health-unknown"'));
+	assert.ok(!html.includes("health-score--unknown"));
+});
+
 test("toolCard renders attached health score and confirmed maintainer byline", () => {
 	const html = toolCard({
 		...base,
@@ -170,8 +201,9 @@ test("toolCard renders attached health score and confirmed maintainer byline", (
 		}
 	});
 	assert.ok(html.includes("Health 84"));
+	assert.ok(html.includes('class="tcard tcard--health-great"'));
 	assert.ok(html.includes("health-score--compact"));
-	assert.ok(html.includes('>84</span><span class="health-score__grade">Good</span>'));
+	assert.ok(html.includes('>84</span><span class="health-score__grade">Great</span>'));
 	assert.ok(html.includes("<details"));
 	assert.ok(html.includes("Local Evolved health score"));
 	assert.ok(html.includes("Included dimensions:"));

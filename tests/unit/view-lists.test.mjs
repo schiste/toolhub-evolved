@@ -128,7 +128,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
 		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u|2026-01-01T00:00:00Z|tcard__when><button class="favbtn favbtn--sm favbtn--bare" type="button" data-fav="bravo" aria-pressed="false" aria-label="Save to favorites"><span class="favbtn__ic" aria-hidden="true"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M12.744 6.793H18.5l.607 1.795-4.7 3.589 1.802 5.828-1.563 1.09L10 15.545l-4.646 3.55-1.563-1.09 1.8-5.828-4.698-3.59.607-1.794h5.756l1.789-5.788h1.91l1.79 5.788Z"/></svg></span></button></span></div>
@@ -159,7 +159,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul>
 	</div>`,
 	detail_demo_emptytools: `
@@ -204,7 +204,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul>
 	</div>`,
 	detail_live: `
@@ -242,7 +242,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
 		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
@@ -273,7 +273,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul>
 	</div>`,
 	edit_create: `
@@ -401,7 +401,7 @@ Missing: Keywords
 Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
-Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="tcard__health-dash" title="Health score unknown" aria-label="Health score unknown">—</span></div></div>
 	</article></li></ul></div>
 	</div>`,
 	favorites_empty: `<div class="container page account-data account-workbench">

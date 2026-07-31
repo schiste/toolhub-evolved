@@ -35,6 +35,27 @@ function maintainerByline(tool, evolvedSummary) {
 	return `<div class="tcard__maint">${t("toolCard.by", "by")} <span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</span></div>`;
 }
 
+/** @param {any} summary */
+function cardHealthScore(summary) {
+	const score = Number(summary?.health?.score);
+	const unknown = !summary?.health || String(summary.health.grade || "") === "unknown" || !Number.isFinite(score);
+	if (unknown) {
+		const label = t("toolCard.healthUnknown", "Health score unknown");
+		return `<span class="tcard__health-dash" title="${esc(label)}" aria-label="${esc(label)}">—</span>`;
+	}
+	return healthScoreChip(summary, { compact: true });
+}
+
+/** @param {any} summary */
+function healthCornerClass(summary) {
+	const grade = String(summary?.health?.grade || "unknown");
+	if (grade === "strong") return " tcard--health-legendary";
+	if (grade === "good") return " tcard--health-great";
+	if (grade === "needs-attention") return " tcard--health-needs-attention";
+	if (grade === "unknown" || !Number.isFinite(Number(summary?.health?.score))) return " tcard--health-unknown";
+	return " tcard--health-unmaintained";
+}
+
 /**
  * @param {Tool} tool
  * @param {{ rank?: number; popular?: boolean }} [opts]
@@ -67,16 +88,17 @@ export function toolCard(tool, opts = {}) {
 	// isn't on the ambient Tool type — narrow via a structural cast.
 	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (tool).endorsement;
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
-	const trustLine = fitChip(tool) + healthScoreChip(evolvedSummary, { compact: true });
+	const trustLine = fitChip(tool);
 	const metricLine =
 		completenessMeter(complete, { details: true, numeric: true }) +
+		cardHealthScore(evolvedSummary) +
 		endorsementChip(endorsement && endorsement.count, { compact: true });
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
 	const favorite = signedIn() ? favBtn(tool.name, { cls: "favbtn--sm favbtn--bare" }) : "";
 	const topRight = `${flag}${updatedTimeTag(tool.modified, "tcard__when")}${favorite}`;
 	// The title button opens the quick-view.
 	return `
-	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(tool.name)}">
+	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}${healthCornerClass(evolvedSummary)}" data-tool="${esc(tool.name)}">
 		<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>
 		<div class="tcard__head">
 			${rank}${toolIcon(tool)}

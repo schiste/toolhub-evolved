@@ -225,21 +225,21 @@ function reviewBadge(status) {
 /** @param {unknown} value */
 function gradeLabel(value) {
 	const grade = String(value || "");
-	if (grade === "strong") return t("sourceAnalysis.gradeStrong", "Strong");
-	if (grade === "good") return t("sourceAnalysis.gradeGood", "Good");
+	if (grade === "strong") return t("sourceAnalysis.gradeStrong", "Legendary");
+	if (grade === "good") return t("sourceAnalysis.gradeGood", "Great");
 	if (grade === "needs-attention") return t("sourceAnalysis.gradeAttention", "Needs attention");
 	if (grade === "unknown") return t("sourceAnalysis.gradeUnknown", "Unknown");
 	if (grade === "not-applicable") return t("sourceAnalysis.gradeNotApplicable", "Not applicable");
-	return t("sourceAnalysis.gradeRisk", "High risk");
+	return t("sourceAnalysis.gradeRisk", "Unmaintained");
 }
 
 /** @param {unknown} value */
 function gradeClass(value) {
 	const grade = String(value || "");
-	if (grade === "strong") return "review-approved";
-	if (grade === "good") return "official";
+	if (grade === "strong") return "legendary";
+	if (grade === "good") return "great";
 	if (grade === "needs-attention") return "review-pending";
-	if (grade === "unknown" || grade === "not-applicable") return "local-draft";
+	if (grade === "unknown" || grade === "not-applicable") return "unknown";
 	return "sync-error";
 }
 
