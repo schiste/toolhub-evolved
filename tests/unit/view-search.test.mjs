@@ -65,7 +65,7 @@ const S = {
 				</div>
 				<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="alpha">
-		
+		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 		<div class="tcard__head">
 			<span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">A</span>
 			<div class="tcard__heading">
@@ -94,10 +94,9 @@ Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
 Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div></div>
-		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
-		
+		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 		<div class="tcard__head">
 			<span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">B</span>
 			<div class="tcard__heading">
@@ -126,7 +125,6 @@ Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
 Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
-		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 				<nav class="pager" aria-label="Pagination"></nav>
 			</div>
@@ -181,7 +179,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 				</div>
 				<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="dep">
-		<span class="tcard__flag status status--red"><span class="dot dot--red"></span>Deprecated</span>
+		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><span class="tcard__flag status status--red"><span class="dot dot--red"></span>Deprecated</span><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 		<div class="tcard__head">
 			<span class="avatar " style="background:var(--wmf-green-aaa)" aria-hidden="true">D</span>
 			<div class="tcard__heading">
@@ -210,10 +208,9 @@ Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
 Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
-		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="exp">
-		<span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>
+		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 		<div class="tcard__head">
 			<span class="avatar " style="background:var(--wmf-green-aaa)" aria-hidden="true">E</span>
 			<div class="tcard__heading">
@@ -242,7 +239,6 @@ Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
 Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
-		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 				<nav class="pager" aria-label="Pagination"></nav>
 			</div>

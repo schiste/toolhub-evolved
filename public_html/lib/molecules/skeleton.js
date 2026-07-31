@@ -43,6 +43,10 @@ export function skeletonBlock(className = "") {
  */
 export function toolCardSkeleton() {
 	return `<article class="tcard skeleton-card skeleton-card--tool">
+		<div class="tcard__topline">
+			${skeletonLine("skeleton--w-md")}
+			${skeletonBlock("skeleton--icon")}
+		</div>
 		<div class="tcard__head">
 			${skeletonBlock("skeleton--avatar")}
 			<div class="tcard__heading skeleton-card__heading">
@@ -57,10 +61,6 @@ export function toolCardSkeleton() {
 		</div>
 		<div class="tcard__signals skeleton-card__signals">
 			${repeat(2, () => skeletonLine("skeleton--badge"))}
-		</div>
-		<div class="tcard__foot">
-			${skeletonLine("skeleton--w-md")}
-			${skeletonBlock("skeleton--icon")}
 		</div>
 	</article>`;
 }

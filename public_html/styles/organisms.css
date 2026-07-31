@@ -809,6 +809,31 @@
 		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete)),
 		linear-gradient(var(--tcard-corner-color-complete), var(--tcard-corner-color-complete));
 }
+.tcard__topline {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-2);
+	min-width: 0;
+	margin-bottom: var(--space-2);
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	line-height: 1.1;
+}
+.tcard__topmeta {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: var(--space-1);
+	min-width: 0;
+	margin-inline-start: auto;
+	white-space: nowrap;
+}
+.tcard__topline .status {
+	gap: var(--space-1);
+	padding: var(--space-0) var(--space-1);
+	line-height: 1.1;
+}
 .tcard__head {
 	display: flex;
 	gap: var(--space-3);
@@ -884,35 +909,18 @@
 .tcard__signal-row--metrics .signal:first-child {
 	margin-inline-end: auto;
 }
-.tcard__foot {
-	margin-top: var(--space-0);
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--space-2);
-	font-size: var(--fs-caption);
-	color: var(--color-text-muted);
-	padding-top: var(--space-3);
-	border-top: var(--border-muted);
-}
-.tcard__footr {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--space-2);
-}
 .tcard__when {
 	white-space: nowrap;
 }
 
 /* Tool card polish: keep after the base card rules. */
 .tcard__flag {
-	position: absolute;
-	top: var(--space-3);
-	inset-inline-end: var(--space-3);
+	flex: 0 0 auto;
 }
 .tcard__meta {
+	min-width: 0;
 	color: var(--color-text-muted);
-	font-size: var(--fs-caption);
+	font-size: inherit;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;

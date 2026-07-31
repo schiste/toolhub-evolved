@@ -39,7 +39,7 @@ function oracle(t, opts = {}) {
 		flag = `<span class="tcard__flag status status--yellow"><span class="dot dot--yellow"></span>Experimental</span>`;
 	}
 	const meta = [t.toolType && esc(t.toolType), esc(wikiShort(t.forWikis))].filter(Boolean).join(" · ");
-	const footLeft = `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
+	const topLeft = `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
 	const complete = completeness(t);
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	const endorsement = t.endorsement;
@@ -52,7 +52,9 @@ function oracle(t, opts = {}) {
 		completenessMeter(complete, { details: true, numeric: true }) +
 		endorsementChip(endorsement && endorsement.count, { compact: true });
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
-	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t${flag}\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t<div class="tcard__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t\t<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(t.modified, "tcard__when")}${signedIn() ? favBtn(t.name, { cls: "favbtn--sm" }) : ""}</span></div>\n\t</article>`;
+	const favorite = signedIn() ? favBtn(t.name, { cls: "favbtn--sm favbtn--bare" }) : "";
+	const topRight = `${flag}${updatedTimeTag(t.modified, "tcard__when")}${favorite}`;
+	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t<div class="tcard__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t</article>`;
 }
 
 const base = {

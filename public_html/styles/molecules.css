@@ -51,6 +51,16 @@
 	border-radius: var(--radius-sm);
 	flex: 0 0 auto;
 }
+.favbtn--bare,
+.favbtn--bare.is-on {
+	background: transparent;
+	border-color: transparent;
+}
+.favbtn--bare:hover,
+.favbtn--bare:focus-visible {
+	background: var(--color-surface-muted);
+	border-color: transparent;
+}
 .favbtn--btn {
 	height: var(--btn-h-md);
 	padding: var(--space-0) var(--space-4);

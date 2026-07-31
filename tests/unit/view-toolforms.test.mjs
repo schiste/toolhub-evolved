@@ -153,7 +153,7 @@ const S = {
 		<p class="le__count" data-sub-count>1 tool</p>
 				<div data-sub-grid><ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard" data-tool="sub-1">
-		
+		<div class="tcard__topline"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__topmeta"><u||tcard__when></span></div>
 		<div class="tcard__head">
 			<span class="avatar " style="background:var(--color-favorite)" aria-hidden="true">S</span>
 			<div class="tcard__heading">
@@ -182,7 +182,6 @@ Missing: Audience or task tagged
 Missing: Documentation
 Missing: Icon
 Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
-		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u||tcard__when></span></div>
 	</article></li></ul></div>
 	</section>
 			<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-runs-title">

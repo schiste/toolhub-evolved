@@ -38,7 +38,7 @@ export function toolCard(tool, opts = {}) {
 	}
 	// (1,2,4) Calm footer-left: real tool type + "works on" facet (no colour noise).
 	const meta = [tool.toolType && esc(tool.toolType), esc(wikiShort(tool.forWikis))].filter(Boolean).join(" · ");
-	const footLeft = `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
+	const topLeft = `<span class="tcard__meta"${dirAttrs(meta)}>${meta}</span>`;
 	const complete = completeness(tool);
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	// `endorsement` (an {count,lists} object) is attached at runtime by signals.js but
@@ -53,10 +53,12 @@ export function toolCard(tool, opts = {}) {
 		completenessMeter(complete, { details: true, numeric: true }) +
 		endorsementChip(endorsement && endorsement.count, { compact: true });
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
+	const favorite = signedIn() ? favBtn(tool.name, { cls: "favbtn--sm favbtn--bare" }) : "";
+	const topRight = `${flag}${updatedTimeTag(tool.modified, "tcard__when")}${favorite}`;
 	// The title button opens the quick-view.
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(tool.name)}">
-		${flag}
+		<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>
 		<div class="tcard__head">
 			${rank}${toolIcon(tool)}
 			<div class="tcard__heading">
@@ -67,6 +69,5 @@ export function toolCard(tool, opts = {}) {
 		<p class="tcard__desc"${textAttrs(tool.description, tool.descriptionLanguage)}>${esc(tool.description)}</p>
 		<div class="tcard__tags">${tags}</div>
 		<div class="tcard__signals">${signalLine}</div>
-		<div class="tcard__foot">${footLeft}<span class="tcard__footr">${updatedTimeTag(tool.modified, "tcard__when")}${signedIn() ? favBtn(tool.name, { cls: "favbtn--sm" }) : ""}</span></div>
 	</article>`;
 }
