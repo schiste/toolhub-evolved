@@ -87,8 +87,7 @@ def _terms(record: dict[str, Any]) -> list[tuple[str, str, float]]:
 
 def _richness(record: dict[str, Any]) -> int:
     return sum(
-        len(_string_list(record.get(key)))
-        for key in ("keywords", "tasks", "audiences", "for_wikis", "technology_used")
+        len(_string_list(record.get(key))) for key in ("keywords", "tasks", "audiences", "for_wikis", "technology_used")
     )
 
 
@@ -194,9 +193,7 @@ def _communities(
     ordered = sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))
     kept = ordered[:COMMUNITY_LIMIT]
     remap = {label: index for index, (label, _items) in enumerate(kept)}
-    node_communities = {
-        item["name"]: remap.get(labels.get(item["name"], item["name"]), "other") for item in selected
-    }
+    node_communities = {item["name"]: remap.get(labels.get(item["name"], item["name"]), "other") for item in selected}
     used_terms: set[str] = set()
     meta = []
     for index, (_label, items) in enumerate(kept):

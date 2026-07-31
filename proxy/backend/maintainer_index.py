@@ -8,7 +8,7 @@ local Evolved activity into auditable summaries that can feed health scoring.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
@@ -60,6 +60,7 @@ ROLLUP_STALE_DAYS = 7
 MAX_PUBLIC_MAINTAINERS = 20
 VERIFIED_CONFIDENCE_MIN = 70
 VERIFIED_STATUS_CONFIDENCE_MIN = 85
+CLAIM_RANK_MIN = datetime.min.replace(tzinfo=UTC).replace(tzinfo=None)
 
 CLAIM_CONFIDENCE = {
     AUTHOR_CLAIM_TOOLFORGE_MAINTAINER: 95,
@@ -116,7 +117,7 @@ def _claim_edge_identity(row: ToolAuthorClaim) -> tuple[str, str, str, str]:
 
 def _claim_rank(row: ToolAuthorClaim) -> tuple[int, datetime]:
     """Return a deterministic freshness-aware rank for duplicate public edges."""
-    return (_claim_confidence(row), row.checked_at or datetime.min)
+    return (_claim_confidence(row), row.checked_at or CLAIM_RANK_MIN)
 
 
 def _best_claim_rows(rows: list[ToolAuthorClaim]) -> list[ToolAuthorClaim]:

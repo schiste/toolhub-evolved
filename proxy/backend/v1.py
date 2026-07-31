@@ -13,6 +13,7 @@ auditlogs) are append-only, idempotent by client id.
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -37,6 +38,7 @@ from backend import (
     recent_owners,
     security,
     source_analyzer,
+    tool_summaries,
     toolhub,
     toolinfo_discovery,
     toolinfo_sources,
@@ -180,6 +182,8 @@ HEALTH_GRADE_STRONG = 85
 HEALTH_GRADE_GOOD = 70
 HEALTH_GRADE_ATTENTION = 50
 RUNTIME_HEALTH_SCORES = {"healthy": 95, "ok": 90, "degraded": 55, "down": 15, "error": 20}
+PUBLIC_JSON_CACHE_SECONDS = 5 * 60
+PUBLIC_JSON_STALE_IF_ERROR_SECONDS = 24 * 60 * 60
 
 
 def _iso(dt: datetime | None) -> str:
@@ -252,11 +256,8 @@ def _rss_date(value: Any) -> str:  # noqa: ANN401 - accepts ISO strings and date
     dt = value if isinstance(value, datetime) else _parse_optional_iso(value)
     if dt is None:
         dt = utcnow()
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    else:
-        dt = dt.astimezone(UTC)
-    return format_datetime(dt, True)
+    dt = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+    return format_datetime(dt, usegmt=True)
 
 
 def _rss_item(title: str, link: str, description: str, published: Any, guid: str) -> dict[str, str]:  # noqa: ANN401
@@ -298,6 +299,19 @@ def _rss_response(title: str, description: str, link_path: str, items: list[dict
     resp = Response(_rss_xml(title, description, _site_url(link_path), items), content_type=RSS_CONTENT_TYPE)
     resp.headers["Cache-Control"] = "public, max-age=300"
     return resp
+
+
+def _public_json_response(payload: dict[str, Any], *, max_age: int = PUBLIC_JSON_CACHE_SECONDS) -> Response:
+    """Return cacheable JSON with an ETag validator for public local-data endpoints."""
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    etag = f'"{hashlib.sha256(body).hexdigest()}"'
+    headers = {
+        "Cache-Control": f"public, max-age={max_age}, stale-if-error={PUBLIC_JSON_STALE_IF_ERROR_SECONDS}",
+        "ETag": etag,
+    }
+    if request.headers.get("If-None-Match") == etag:
+        return Response(status=304, headers=headers)
+    return Response(body, headers=headers, content_type="application/json; charset=utf-8")
 
 
 def _feed_payload(path: str, params: dict[str, object] | None = None) -> list[dict[str, Any]]:
@@ -863,11 +877,7 @@ def _source_repository_summary(report: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None:  # noqa: ANN401 - SQLAlchemy session
-    row = (
-        s.execute(_latest_public_health_core_statement(tool_name))
-        .scalars()
-        .first()
-    )
+    row = s.execute(_latest_public_health_core_statement(tool_name)).scalars().first()
     report = row.report if row is not None and isinstance(row.report, dict) else {}
     health_core = report.get("healthCore") if isinstance(report.get("healthCore"), dict) else None
     if not health_core:
@@ -1007,7 +1017,7 @@ def _tool_names_from_request() -> list[str]:
     return out[:TOOL_SUMMARY_MAX_NAMES]
 
 
-def _local_tool_summary(s: Any, tool_name: str) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session
+def _build_local_tool_summary(s: Any, tool_name: str) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session
     maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
     keys = [
         row[0]
@@ -4039,7 +4049,7 @@ def v1_canonical_tools() -> Response:
 @v1_bp.route("/v1/graph/")
 def v1_graph() -> Response:
     """Return the cached global tool similarity graph derived from local data."""
-    return jsonify(graph_payload.payload())
+    return _public_json_response(graph_payload.payload())
 
 
 @v1_bp.route("/v1/tools/summaries/")
@@ -4047,19 +4057,24 @@ def v1_tool_summaries() -> Response:
     """Return local Evolved health and maintainer summaries for visible tools."""
     names = _tool_names_from_request()
     if not names:
-        return jsonify({"count": 0, "results": {}, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL})
-    with db.session_scope() as s:
-        results = {name: _local_tool_summary(s, name) for name in names}
-    return jsonify(
+        return _public_json_response(
+            {"count": 0, "results": {}, "cacheMeta": {}, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL}
+        )
+    read = tool_summaries.summaries_for(names, _build_local_tool_summary)
+    return _public_json_response(
         {
-            "count": len(results),
-            "results": results,
+            "count": len(read.results),
+            "results": read.results,
+            "cacheMeta": read.cache_meta,
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
             "cachePolicy": {
                 "canonical": False,
                 "upstream": False,
-                "summary": "Local Evolved summaries only; this endpoint does not fetch official Toolhub.",
+                "summary": (
+                    "Materialized local Evolved summaries only; stale rows are served immediately "
+                    "and refreshed asynchronously."
+                ),
             },
         }
     )

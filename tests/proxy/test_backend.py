@@ -36,6 +36,7 @@ from backend import (  # noqa: E402
     security,
     sync,
     token_crypto,
+    tool_summaries,
     toolhub,
 )
 from backend.author_claims import (  # noqa: E402
@@ -71,6 +72,7 @@ from backend.models import (  # noqa: E402
     ToolOverlay,
     ToolOwnerCache,
     ToolRecord,
+    ToolSummaryCache,
     ToolThanks,
     User,
     utcnow,
@@ -200,6 +202,7 @@ PUBLIC_V1_ROUTES = {
     "/v1/config/": "public feature flags for the signed-out SPA",
     "/v1/user/": "reports authenticated:false when signed out",
     "/v1/canonical/tools/": "public canonical Toolhub cache; local DB only and already-public catalog data",
+    "/v1/graph/": "public similarity graph derived from local canonical Toolhub cache; no upstream fetch",
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
@@ -382,6 +385,23 @@ def test_init_schema_creates_persistent_api_cache_table():
     }.issubset(cols)
     meta_cols = {col["name"] for col in inspect(db.engine()).get_columns(ApiCacheMeta.__tablename__)}
     assert {"key", "value", "updated_at"}.issubset(meta_cols)
+
+
+def test_init_schema_creates_tool_summary_cache_table():
+    db.configure("sqlite://")
+    db.init_schema()
+    cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolSummaryCache.__tablename__)}
+
+    assert {
+        "tool_name",
+        "summary",
+        "source",
+        "sync_status",
+        "computed_at",
+        "expires_at",
+        "stale_until",
+        "last_error",
+    }.issubset(cols)
 
 
 def test_init_schema_creates_tool_author_claim_tables():
@@ -1915,6 +1935,142 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
         "maintainer-status",
         "runtime-health",
     }
+
+
+def test_tool_summaries_endpoint_reuses_materialized_read_model(client, monkeypatch):
+    db.configure("sqlite://")
+    db.init_schema()
+    calls = []
+
+    def build_summary(_s, tool_name):
+        calls.append(tool_name)
+        return {
+            "toolName": tool_name,
+            "health": {"score": 77, "grade": "good", "status": "watch", "dimensions": []},
+            "maintainer": {"status": "unknown"},
+            "maintainerDimension": {"status": "unknown"},
+            "source": sync.SOURCE_LOCAL,
+            "syncStatus": sync.SYNC_EVOLVED_REAL,
+        }
+
+    monkeypatch.setattr(v1_api, "_build_local_tool_summary", build_summary)
+
+    first = client.get("/v1/tools/summaries/?name=cached-tool")
+    second = client.get("/v1/tools/summaries/?name=cached-tool")
+
+    first_data = first.get_json()
+    second_data = second.get_json()
+    assert calls == ["cached-tool"]
+    assert first_data["cacheMeta"]["cached-tool"]["status"] == "miss"
+    assert second_data["cacheMeta"]["cached-tool"]["status"] == "hit"
+    assert second_data["results"]["cached-tool"]["health"]["score"] == 77
+    assert "max-age=300" in second.headers["Cache-Control"]
+    assert "stale-if-error=86400" in second.headers["Cache-Control"]
+    with db.session_scope() as s:
+        row = s.get(ToolSummaryCache, "cached-tool")
+        assert row.summary["health"]["score"] == 77
+
+
+def test_tool_summaries_endpoint_serves_stale_rows_and_queues_refresh(client, monkeypatch):
+    db.configure("sqlite://")
+    db.init_schema()
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(
+            ToolSummaryCache(
+                tool_name="stale-tool",
+                summary={"toolName": "stale-tool", "health": {"score": 42}},
+                computed_at=now - timedelta(hours=1),
+                expires_at=now - timedelta(minutes=1),
+                stale_until=now + timedelta(hours=1),
+            )
+        )
+    queued = []
+    monkeypatch.setattr(tool_summaries, "queue_refresh", lambda names, _builder: queued.extend(names))
+
+    data = client.get("/v1/tools/summaries/?name=stale-tool").get_json()
+
+    assert data["results"]["stale-tool"]["health"]["score"] == 42
+    assert data["cacheMeta"]["stale-tool"]["status"] == "stale"
+    assert queued == ["stale-tool"]
+
+
+def test_tool_summary_cache_refresh_worker_updates_rows_and_records_errors(monkeypatch):
+    db.configure("sqlite://")
+    db.init_schema()
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(
+            ToolSummaryCache(
+                tool_name="queued-tool",
+                summary={"toolName": "queued-tool", "health": {"score": 10}},
+                computed_at=now - timedelta(hours=1),
+                expires_at=now - timedelta(minutes=1),
+                stale_until=now + timedelta(hours=1),
+            )
+        )
+        s.add(
+            ToolSummaryCache(
+                tool_name="error-tool",
+                summary={"toolName": "error-tool", "health": {"score": 20}},
+                computed_at=now - timedelta(hours=1),
+                expires_at=now - timedelta(minutes=1),
+                stale_until=now + timedelta(hours=1),
+            )
+        )
+        s.add(
+            ToolSummaryCache(
+                tool_name="expired-tool",
+                summary={"toolName": "expired-tool", "health": {"score": 30}},
+                computed_at=now - timedelta(days=2),
+                expires_at=now - timedelta(days=1),
+                stale_until=now - timedelta(minutes=1),
+            )
+        )
+
+    submitted = []
+
+    class InlineExecutor:
+        def submit(self, fn, names, builder):
+            submitted.append(names)
+            fn(names, builder)
+
+    def build_summary(_s, tool_name):
+        return {"toolName": tool_name, "health": {"score": 88}}
+
+    def fail_summary(_s, _tool_name):
+        raise RuntimeError("refresh boom")
+
+    monkeypatch.setattr(tool_summaries, "_EXECUTOR", InlineExecutor())
+    tool_summaries._REFRESHING.clear()
+
+    assert tool_summaries.summaries_for([], build_summary) == tool_summaries.SummaryRead(results={}, cache_meta={})
+    assert tool_summaries.refresh([], build_summary) == 0
+    stale_read = tool_summaries.summaries_for(["error-tool"], build_summary, refresh_stale=False)
+    assert stale_read.cache_meta["error-tool"]["status"] == "stale"
+    expired_read = tool_summaries.summaries_for(["expired-tool"], build_summary)
+    assert expired_read.cache_meta["expired-tool"]["status"] == "miss"
+    tool_summaries.queue_refresh(["queued-tool", "queued-tool"], build_summary)
+    tool_summaries._REFRESHING.add("queued-tool")
+    tool_summaries.queue_refresh(["queued-tool"], build_summary)
+    tool_summaries._REFRESHING.clear()
+    tool_summaries.queue_refresh(["error-tool", "missing-tool"], fail_summary)
+
+    assert submitted == [("queued-tool",), ("error-tool", "missing-tool")]
+    with db.session_scope() as s:
+        assert s.get(ToolSummaryCache, "queued-tool").summary["health"]["score"] == 88
+        assert s.get(ToolSummaryCache, "error-tool").last_error == "refresh boom"
+    assert tool_summaries._REFRESHING == set()
+
+
+def test_public_json_response_supports_etag_revalidation(client):
+    first = client.get("/v1/graph/")
+    not_modified = client.get("/v1/graph/", headers={"If-None-Match": first.headers["ETag"]})
+
+    assert first.status_code == 200
+    assert "max-age=300" in first.headers["Cache-Control"]
+    assert not_modified.status_code == 304
+    assert not_modified.get_data() == b""
 
 
 def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():

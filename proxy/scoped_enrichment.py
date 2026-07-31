@@ -146,7 +146,9 @@ def _public_maintainer_summary(tool_name: str, tool: dict[str, Any]) -> dict[str
 def _scoped_claim_count(tool_name: str, username: str) -> int:
     with db.session_scope() as s:
         return s.scalar(
-            select(func.count()).select_from(ToolAuthorClaim).where(
+            select(func.count())
+            .select_from(ToolAuthorClaim)
+            .where(
                 ToolAuthorClaim.tool_name == tool_name,
                 func.lower(ToolAuthorClaim.toolhub_username) == username.casefold(),
             )

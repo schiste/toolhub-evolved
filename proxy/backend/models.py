@@ -125,6 +125,20 @@ class ToolOwnerCache(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ToolSummaryCache(Base):
+    """Materialized public health + maintainer summary for one tool."""
+
+    __tablename__ = "tool_summary_cache"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Favorite(Base):
     """One favorited tool name for one user."""
 
