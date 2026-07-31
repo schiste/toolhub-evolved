@@ -230,7 +230,7 @@ function gradeLabel(value) {
 	if (grade === "needs-attention") return t("sourceAnalysis.gradeAttention", "Needs attention");
 	if (grade === "unknown") return t("sourceAnalysis.gradeUnknown", "Unknown");
 	if (grade === "not-applicable") return t("sourceAnalysis.gradeNotApplicable", "Not applicable");
-	return t("sourceAnalysis.gradeRisk", "Unmaintained");
+	return t("sourceAnalysis.gradeRisk", "Needs attention");
 }
 
 /** @param {unknown} value */

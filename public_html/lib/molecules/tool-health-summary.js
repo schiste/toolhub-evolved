@@ -16,7 +16,7 @@ function gradeLabel(value) {
 	if (grade === "good") return t("toolHealth.gradeGood", "Great");
 	if (grade === "needs-attention") return t("toolHealth.gradeAttention", "Needs attention");
 	if (grade === "unknown") return t("toolHealth.gradeUnknown", "Unknown");
-	return t("toolHealth.gradeRisk", "Unmaintained");
+	return t("toolHealth.gradeRisk", "Needs attention");
 }
 
 /** @param {unknown} value */
@@ -26,7 +26,7 @@ function shortGradeLabel(value) {
 	if (grade === "good") return t("toolHealth.gradeGoodShort", "Great");
 	if (grade === "needs-attention") return t("toolHealth.gradeWatchShort", "Needs attention");
 	if (grade === "unknown") return t("toolHealth.gradeUnknownShort", "Unknown");
-	return t("toolHealth.gradeRiskShort", "Unmaintained");
+	return t("toolHealth.gradeRiskShort", "Needs attention");
 }
 
 /** @param {unknown} grade */

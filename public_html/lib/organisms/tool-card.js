@@ -56,7 +56,7 @@ function healthCornerClass(summary) {
 	if (grade === "good") return " tcard--health-great";
 	if (grade === "needs-attention") return " tcard--health-needs-attention";
 	if (grade === "unknown" || !Number.isFinite(Number(summary?.health?.score))) return " tcard--health-unknown";
-	return " tcard--health-unmaintained";
+	return " tcard--health-risk";
 }
 
 /**

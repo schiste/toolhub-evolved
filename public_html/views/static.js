@@ -461,7 +461,7 @@ function healthThresholdsTable() {
 				esc(t("static.healthScore.gradeName", "Grade")),
 				tWithElements(
 					"static.healthScore.gradeValue",
-					"Legendary ({strong}) >= 85; Great ({good}) >= 70; Needs attention ({needsAttention}) >= 50; Unmaintained ({highRisk}) < 50; Unknown ({unknown}) when no score exists.",
+					"Legendary ({strong}) >= 85; Great ({good}) >= 70; Needs attention ({needsAttention}) >= 50; Needs attention ({highRisk}) < 50; Unknown ({unknown}) when no score exists.",
 					{
 						strong: code("strong"),
 						good: code("good"),

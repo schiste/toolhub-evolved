@@ -807,7 +807,7 @@
 	--tcard-corner-color-hover: var(--color-warning-text);
 	--tcard-corner-color-focus: var(--color-warning-text);
 }
-.tcard--health-unmaintained {
+.tcard--health-risk {
 	--tcard-corner-color: var(--color-destructive);
 	--tcard-corner-color-hover: var(--color-destructive);
 	--tcard-corner-color-focus: var(--color-destructive);
