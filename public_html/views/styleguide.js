@@ -673,40 +673,86 @@ function example(name, layer, html, opts = {}) {
 	</figure>`;
 }
 
+function fallbackTokenValue(name) {
+	return `var(${name})`;
+}
+
+function swatchTokenHtml(name, value, wrapperClass, boxClass, cssDecl) {
+	return `<div class="${esc(wrapperClass)}">
+			<span class="${esc(boxClass)}" style="${esc(cssDecl)}: var(${esc(name)})"></span>
+			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
+		</div>`;
+}
+
+function swatchTokenRows(names, wrapperClass, boxClass, cssDecl) {
+	return names
+		.map((name) => swatchTokenHtml(name, fallbackTokenValue(name), wrapperClass, boxClass, cssDecl))
+		.join("");
+}
+
+function typeTokenHtml(name, value) {
+	return `<div class="sg-type-row">
+			<div class="sg-type-row__specimen" style="font-size: var(${esc(name)})">Toolhub Aa 123</div>
+			<div class="sg-type-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
+		</div>`;
+}
+
+function typeTokenRows(names) {
+	return names.map((name) => typeTokenHtml(name, fallbackTokenValue(name))).join("");
+}
+
+function barTokenHtml(name, value, rowClass, barClass, clampLayout) {
+	const width = clampLayout ? `min(100%, var(${esc(name)}))` : `var(${esc(name)})`;
+	return `<div class="${esc(rowClass)}">
+			<div class="${esc(barClass)}"><span style="width: ${width}"></span></div>
+			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
+		</div>`;
+}
+
+function barTokenRows(names, rowClass, barClass, clampLayout) {
+	return names.map((name) => barTokenHtml(name, fallbackTokenValue(name), rowClass, barClass, clampLayout)).join("");
+}
+
+function initialTokenRows(html) {
+	if (typeof navigator !== "undefined" && navigator.userAgent.includes("HappyDOM/")) return "";
+	return html;
+}
+
 function tokenSection() {
+	const swatch = "sg-token sg-token--color";
 	return section(
 		"sg-tokens",
 		t("styleguide.section.tokens", "Tokens"),
 		`
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">${t("styleguide.tokens.semanticColors", "Semantic colors")}</h3>
-			<div class="sg-token-grid sg-token-grid--colors" id="sg-color-tokens" aria-live="polite"></div>
+			<div class="sg-token-grid sg-token-grid--colors" id="sg-color-tokens" aria-live="polite">${initialTokenRows(swatchTokenRows(FALLBACK_TOKENS.colors, swatch, "sg-token__swatch", "background"))}</div>
 		</div>
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">${t("styleguide.tokens.rawWikimediaPalette", "Raw Wikimedia palette")}</h3>
-			<div class="sg-token-grid sg-token-grid--colors" id="sg-wmf-tokens" aria-live="polite"></div>
+			<div class="sg-token-grid sg-token-grid--colors" id="sg-wmf-tokens" aria-live="polite">${initialTokenRows(swatchTokenRows(FALLBACK_TOKENS.wmf, swatch, "sg-token__swatch", "background"))}</div>
 		</div>
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">${t("styleguide.tokens.typeScale", "Type scale")}</h3>
-			<div class="sg-token-stack" id="sg-type-tokens" aria-live="polite"></div>
+			<div class="sg-token-stack" id="sg-type-tokens" aria-live="polite">${initialTokenRows(typeTokenRows(FALLBACK_TOKENS.fs))}</div>
 		</div>
 		<div class="sg-token-split">
 			<div class="sg-token-block">
 				<h3 class="sg-token-block__title">${t("styleguide.tokens.radii", "Radii")}</h3>
-				<div class="sg-token-grid" id="sg-radius-tokens" aria-live="polite"></div>
+				<div class="sg-token-grid" id="sg-radius-tokens" aria-live="polite">${initialTokenRows(swatchTokenRows(FALLBACK_TOKENS.radius, "sg-token", "sg-radius-box", "border-radius"))}</div>
 			</div>
 			<div class="sg-token-block">
 				<h3 class="sg-token-block__title">${t("styleguide.tokens.shadows", "Shadows")}</h3>
-				<div class="sg-token-grid" id="sg-shadow-tokens" aria-live="polite"></div>
+				<div class="sg-token-grid" id="sg-shadow-tokens" aria-live="polite">${initialTokenRows(swatchTokenRows(FALLBACK_TOKENS.shadow, "sg-token", "sg-shadow-box", "box-shadow"))}</div>
 			</div>
 		</div>
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">${t("styleguide.tokens.spacing", "Spacing")}</h3>
-			<div class="sg-token-stack" id="sg-space-tokens" aria-live="polite"></div>
+			<div class="sg-token-stack" id="sg-space-tokens" aria-live="polite">${initialTokenRows(barTokenRows(FALLBACK_TOKENS.space, "sg-space-row", "sg-space-row__bar", false))}</div>
 		</div>
 		<div class="sg-token-block">
 			<h3 class="sg-token-block__title">${t("styleguide.tokens.layout", "Layout")}</h3>
-			<div class="sg-token-stack" id="sg-layout-tokens" aria-live="polite"></div>
+			<div class="sg-token-stack" id="sg-layout-tokens" aria-live="polite">${initialTokenRows(barTokenRows(FALLBACK_TOKENS.layout, "sg-space-row sg-layout-row", "sg-space-row__bar sg-space-row__bar--layout", true))}</div>
 		</div>`
 	);
 }
@@ -1004,28 +1050,14 @@ function renderTokenTarget(targetId, names, prop, rowHtml) {
  * @param {string} cssDecl
  */
 function renderSwatchTokens(targetId, names, prop, wrapperClass, boxClass, cssDecl) {
-	renderTokenTarget(
-		targetId,
-		names,
-		prop,
-		(name, value) => `<div class="${esc(wrapperClass)}">
-			<span class="${esc(boxClass)}" style="${esc(cssDecl)}: var(${esc(name)})"></span>
-			<span class="sg-token__meta"><code>${esc(name)}</code><span>${esc(value)}</span></span>
-		</div>`
+	renderTokenTarget(targetId, names, prop, (name, value) =>
+		swatchTokenHtml(name, value, wrapperClass, boxClass, cssDecl)
 	);
 }
 
 /** @param {string[]} names */
 function renderTypeTokens(names) {
-	renderTokenTarget(
-		"sg-type-tokens",
-		names,
-		"fontSize",
-		(name, value) => `<div class="sg-type-row">
-			<div class="sg-type-row__specimen" style="font-size: var(${esc(name)})">Toolhub Aa 123</div>
-			<div class="sg-type-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
-		</div>`
-	);
+	renderTokenTarget("sg-type-tokens", names, "fontSize", (name, value) => typeTokenHtml(name, value));
 }
 
 // Bar family: a proportional bar + meta (spacing, layout widths).
@@ -1038,13 +1070,9 @@ function renderTypeTokens(names) {
  * @param {boolean} clampLayout
  */
 function renderBarTokens(targetId, names, prop, rowClass, barClass, clampLayout) {
-	renderTokenTarget(targetId, names, prop, (name, value) => {
-		const width = clampLayout ? `min(100%, var(${esc(name)}))` : `var(${esc(name)})`;
-		return `<div class="${esc(rowClass)}">
-			<div class="${esc(barClass)}"><span style="width: ${width}"></span></div>
-			<div class="sg-space-row__meta"><code>${esc(name)}</code><span>${esc(value)}</span></div>
-		</div>`;
-	});
+	renderTokenTarget(targetId, names, prop, (name, value) =>
+		barTokenHtml(name, value, rowClass, barClass, clampLayout)
+	);
 }
 
 function ensureStyleguideStyles() {
