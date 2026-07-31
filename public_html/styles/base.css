@@ -98,6 +98,15 @@ a:hover {
 	max-width: 72ch;
 }
 
+/* Reference pages keep narrative copy readable while allowing data tables to use the shell. */
+.prose--wide {
+	max-width: none;
+}
+
+.prose--wide > :where(p, ul, ol, blockquote, pre) {
+	max-width: 78ch;
+}
+
 :where(.prose, .qv__desc) > :first-child {
 	margin-top: var(--space-0);
 }
@@ -174,6 +183,9 @@ a:hover {
 .prose__table-wrap {
 	overflow-x: auto;
 	margin: var(--space-0) var(--space-0) var(--space-prose-md);
+}
+.prose--wide .prose__table-wrap {
+	width: 100%;
 }
 .prose table {
 	width: 100%;

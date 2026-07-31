@@ -35,6 +35,7 @@ test("prosePage wraps an escaped title and raw body", () => {
 		title: "A&B <x> — Toolhub",
 		html: '<div class="container page"><article class="prose prose--page"><h1>A&amp;B &lt;x&gt;</h1><p>body</p></article></div>'
 	});
+	assert.ok(S.prosePage("Wide", "<p>body</p>", "wide").html.includes('class="prose prose--page prose--wide"'));
 });
 
 test("ext renders safe external links and rejects unsafe URLs", () => {
@@ -80,6 +81,7 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(rules.includes("Toolhub remains the source of truth"));
 	assert.ok(!rules.includes("Nothing here is ever written back to Toolhub"));
 	const health = S.viewStatic("health-score").html;
+	assert.ok(health.includes('class="prose prose--page prose--wide"'));
 	assert.ok(health.includes("reproducibility spec"));
 	assert.ok(health.includes("/v1/tools/summaries/?name=TOOL_NAME"));
 	assert.ok(health.includes("sum(dimension.score * dimension.weight"));

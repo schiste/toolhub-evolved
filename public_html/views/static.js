@@ -9,12 +9,14 @@ import { icon } from "../lib/atoms/icon.js";
 /**
  * @param {string} title
  * @param {string} bodyHtml
+ * @param {string} [modifier] CSS modifier without the `prose--` prefix
  * @returns {{ title: string, html: string }}
  */
-export function prosePage(title, bodyHtml) {
+export function prosePage(title, bodyHtml, modifier = "") {
+	const className = modifier ? ` prose--${modifier}` : "";
 	return {
 		title: t("static.pageTitle", "{title} — Toolhub", { title }),
-		html: `<div class="container page"><article class="prose prose--page"><h1>${esc(title)}</h1>${bodyHtml}</article></div>`
+		html: `<div class="container page"><article class="prose prose--page${className}"><h1>${esc(title)}</h1>${bodyHtml}</article></div>`
 	};
 }
 const EXTERNAL_REL = "noopener nofollow";
@@ -758,7 +760,7 @@ export const STATIC = {
 /** @param {string} slug */
 export function viewStatic(slug) {
 	const p = STATIC[/** @type {keyof typeof STATIC} */ (slug)]?.();
-	return p ? prosePage(p.title, p.body) : viewNotFound();
+	return p ? prosePage(p.title, p.body, slug === "health-score" ? "wide" : "") : viewNotFound();
 }
 
 /* ---- Help maintain Toolhub Evolved: the contribution hub ---------------- */
