@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t, tWithElements, updatedTimeTag } from "../lib/core/i18n.js";
-import { apiGet, cachedCanonicalTools, normalizeList, normalizeTool } from "../lib/core/api.js";
+import { apiGet, cachedCanonicalTools, normalizeList, normalizeTool, paginate } from "../lib/core/api.js";
 import {
 	attachEndorsements,
 	attachEvolvedSummaries,
@@ -10,7 +10,7 @@ import {
 	setUserContext,
 	wikiMatches
 } from "../lib/core/signals.js";
-import { listHref, navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
+import { navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -206,11 +206,7 @@ function listsGridHTML(lists, empty) {
  */
 function renderHomeMain(model, state) {
 	const filtered = hasHomeFilters(state);
-	const featuredHref = filtered
-		? searchHrefForState(state)
-		: model.lists[0] && model.lists[0].id
-			? listHref(model.lists[0].id)
-			: "/lists";
+	const featuredHref = filtered ? searchHrefForState(state) : "/featured-tools";
 	const fallbackNote = model.cacheFallback
 		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing saved Toolhub data while live data refreshes.")}</p>
 		`
@@ -222,6 +218,28 @@ function renderHomeMain(model, state) {
 		${toolsGridHTML(model.mostListedRanked.slice(0, 8), t("home.noListedToolsMatch", "No listed tools match this sentence."), (t, i) => toolCard(t, { rank: i + 1 }))}
 		<div class="section-head"><h2>${t("home.curatedLists", "Curated lists")}</h2><a class="link" href="/lists">${t("home.viewAllLists", "View all lists")}</a></div>
 		${listsGridHTML(model.lists.slice(0, 6), t("home.noCuratedListsMatch", "No curated lists match this sentence."))}`;
+}
+
+/**
+ * Render every tool from every upstream administrator-featured list.
+ * This is intentionally a complete aggregate view; ranking policy remains in
+ * the shared context signal so the homepage and this page stay consistent.
+ * @returns {Promise<{ title: string, html: string }>}
+ */
+export async function viewFeaturedTools() {
+	const rawLists = await paginate("/lists/", { featured: "true" }, { pageSize: 30, maxPages: 10 });
+	const lists = rawLists.map((/** @type {any} */ list) => normalizeList(list));
+	const tools = dedupeTools(lists.flatMap((list) => list.tools || []));
+	await Promise.all([attachEndorsements(tools), attachEvolvedSummaries(tools)]);
+	const ranked = rankFitsFirst(tools);
+	return {
+		title: t("home.featuredToolsDocTitle", "Featured tools — Toolhub"),
+		html: `<div class="container page">
+		<div class="section-head"><h1 class="page__title">${t("home.featuredTools", "Featured tools")}</h1><a class="link" href="/lists">${t("home.viewFeaturedLists", "View featured lists")}</a></div>
+		<p class="page__intro">${t("home.featuredToolsIntro", "Tools included in public lists selected for the Toolhub landing page.")}</p>
+		${toolsGridHTML(ranked, t("home.noFeaturedTools", "No featured tools found."))}
+	</div>`
+	};
 }
 /**
  * @param {IntentState} state

@@ -83,7 +83,7 @@ const S = {
 	<div class="container layout">
 		<div class="layout__main home-results" data-home-main aria-live="polite">
 			
-		<div class="section-head"><h2>Featured tools</h2><a class="link" href="/lists">View all</a></div>
+		<div class="section-head"><h2>Featured tools</h2><a class="link" href="/featured-tools">View all</a></div>
 		<p class="empty">No tools match this sentence.</p>
 		<div class="section-head"><h2>Most listed</h2><a class="link" href="/lists">View lists</a></div>
 		<p class="empty">No listed tools match this sentence.</p>
@@ -403,7 +403,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 	<div class="container layout">
 		<div class="layout__main home-results" data-home-main aria-live="polite">
 			
-		<div class="section-head"><h2>Featured tools</h2><a class="link" href="/lists/L1">View all</a></div>
+		<div class="section-head"><h2>Featured tools</h2><a class="link" href="/featured-tools">View all</a></div>
 		<ul class="card-grid grid-tools" role="list"><li>
 	<article class="tcard tcard--health-unknown" data-tool="alpha">
 		<div class="tcard__topline"><span class="tcard__meta" dir="auto">wikidata.org</span><span class="tcard__topmeta"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
@@ -704,7 +704,7 @@ test("home unfiltered: lists + tools populated", async () => {
 	expect("unfiltered", r.html);
 });
 
-test("home unfiltered: first list lacks id → featured href /lists", async () => {
+test("home unfiltered: featured tools link opens the aggregate page", async () => {
 	h.apiGet.mockImplementation(async (path) => {
 		if (path === "/ui/home/") return { total_tools: 5 };
 		if (path === "/lists/") return { results: [{ ...LIST_ALPHA, id: "" }] };
@@ -712,13 +712,28 @@ test("home unfiltered: first list lacks id → featured href /lists", async () =
 		return {};
 	});
 	const r = await home.viewHome();
-	// lists[0] exists but its id is falsy → featured "View all" falls back to /lists.
 	assert.ok(
 		r.html.includes(
-			'<div class="section-head"><h2>Featured tools</h2><a class="link" href="/lists">View all</a></div>'
+			'<div class="section-head"><h2>Featured tools</h2><a class="link" href="/featured-tools">View all</a></div>'
 		),
-		"falsy list id falls back to /lists"
+		"featured tools link targets the aggregate page"
 	);
+});
+
+test("featured tools view aggregates every featured list", async () => {
+	h.paginate.mockResolvedValue([
+		LIST_ALPHA,
+		{
+			id: "L2",
+			title: "List Two",
+			tools: [rawTool("charlie", { title: "Charlie" }), rawTool("delta", { title: "Delta" })]
+		}
+	]);
+	const r = await home.viewFeaturedTools();
+	assert.equal(r.title, "Featured tools — Toolhub");
+	assert.ok(r.html.includes('href="/lists">View featured lists</a>'));
+	assert.equal((r.html.match(/<article class="tcard/g) || []).length, 4);
+	assert.ok(r.html.includes('data-tool="delta"'));
 });
 
 test("home empty: nothing matches (responses lack a results key → exercises `.results || []`)", async () => {

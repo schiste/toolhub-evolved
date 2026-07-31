@@ -23,7 +23,10 @@ import * as styleguide from "../../public_html/views/styleguide.js";
 import * as session from "../../public_html/lib/core/session.js";
 import * as store from "../../public_html/lib/core/store.js";
 
-vi.mock("../../public_html/views/home.js", () => ({ viewHome: vi.fn(() => ({ tag: "home" })) }));
+vi.mock("../../public_html/views/home.js", () => ({
+	viewHome: vi.fn(() => ({ tag: "home" })),
+	viewFeaturedTools: vi.fn(() => ({ tag: "featured-tools" }))
+}));
 vi.mock("../../public_html/views/search.js", () => ({ viewSearch: vi.fn(() => ({ tag: "search" })) }));
 vi.mock("../../public_html/views/tool.js", () => ({
 	viewTool: vi.fn((n) => ({ tag: "tool", n })),
@@ -247,6 +250,7 @@ test("dispatch /lists/<id>/history → prosePage with the live-site note", async
 /* ---- dispatch: ROUTES table ------------------------------------------- */
 
 test("dispatch routes the ungated ROUTES entries to their views", async () => {
+	assert.deepEqual(await at("/featured-tools"), { tag: "featured-tools" });
 	assert.deepEqual(await at("/lists"), { tag: "lists" });
 	assert.deepEqual(await at("/published-lists"), { tag: "lists" });
 	// Real page modules are lazy-loaded (dynamic import), so dispatch returns a

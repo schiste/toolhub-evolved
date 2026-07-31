@@ -174,6 +174,7 @@ export function requireSignIn(viewFn, title, lead) {
 setSignInFallback(signInPage);
 
 export const ROUTES = {
+	"featured-tools": () => loadHome().then((m) => m.viewFeaturedTools()),
 	lists: () => loadLists().then((m) => m.viewLists()),
 	graph: () => loadGraph().then((m) => m.viewGraph()),
 	"published-lists": () => loadLists().then((m) => m.viewLists()),
