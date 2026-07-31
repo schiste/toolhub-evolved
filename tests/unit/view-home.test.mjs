@@ -138,7 +138,7 @@ const S = {
 			<span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">A</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="alpha" aria-label="Quick look: Alpha" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Alpha</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -169,7 +169,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">B</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="bravo" aria-label="Quick look: Bravo" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Bravo</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -200,7 +200,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">C</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="charlie" aria-label="Quick look: Charlie" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Charlie</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -233,7 +233,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="rankbadge" aria-hidden="true">1</span><span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">A</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="alpha" aria-label="Quick look: Alpha" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Alpha</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -264,7 +264,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="rankbadge" aria-hidden="true">2</span><span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">B</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="bravo" aria-label="Quick look: Bravo" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Bravo</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -295,7 +295,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="rankbadge" aria-hidden="true">3</span><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">C</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="charlie" aria-label="Quick look: Charlie" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Charlie</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -411,7 +411,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">A</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="alpha" aria-label="Quick look: Alpha" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Alpha</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -442,7 +442,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">B</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="bravo" aria-label="Quick look: Bravo" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Bravo</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -473,7 +473,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">C</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="charlie" aria-label="Quick look: Charlie" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Charlie</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -506,7 +506,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="rankbadge" aria-hidden="true">1</span><span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">B</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="bravo" aria-label="Quick look: Bravo" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Bravo</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -537,7 +537,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="rankbadge" aria-hidden="true">2</span><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">C</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="charlie" aria-label="Quick look: Charlie" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Charlie</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>
@@ -568,7 +568,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<span class="rankbadge" aria-hidden="true">3</span><span class="avatar " style="background:var(--color-progressive)" aria-hidden="true">A</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="alpha" aria-label="Quick look: Alpha" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Alpha</button>
-				<div class="tcard__maint">by <span dir="auto">Unknown</span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>

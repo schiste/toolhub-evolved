@@ -158,7 +158,7 @@ const S = {
 			<span class="avatar " style="background:var(--color-favorite)" aria-hidden="true">S</span>
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="sub-1" aria-label="Quick look: Sub One" style="appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;" dir="auto">Sub One</button>
-				<div class="tcard__maint">by <span></span></div>
+				<div class="tcard__maint">by <span class="tcard__maint-name" title="Unknown, maintainer not confirmed yet" aria-label="Unknown, maintainer not confirmed yet"><span class="tcard__maint-text" dir="auto">Unknown</span></span></div>
 			</div>
 		</div>
 		<p class="tcard__desc"></p>

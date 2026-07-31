@@ -856,12 +856,42 @@
 	color: var(--color-progressive);
 }
 .tcard__maint {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	min-width: 0;
 	font-size: var(--fs-caption);
 	color: var(--color-text-muted);
 	margin-top: var(--space-0-75);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+.tcard__maint-name {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-0-5);
+	min-width: 0;
+	color: var(--color-text-muted);
+	font-weight: 400;
+}
+.tcard__maint-name--confirmed {
+	color: var(--color-success);
+	font-weight: 700;
+}
+.tcard__maint-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.tcard__maint-check {
+	display: inline-flex;
+	flex: 0 0 auto;
+	color: currentColor;
+}
+.tcard__maint-check .icon {
+	width: 0.95em;
+	height: 0.95em;
 }
 .tcard__desc {
 	color: var(--color-text-secondary);

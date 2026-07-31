@@ -8,15 +8,32 @@ import { completeness } from "../../public_html/lib/core/signals.js";
 import { applyExp, setServerUser, signedIn } from "../../public_html/lib/core/session.js";
 import { toolIcon } from "../../public_html/lib/atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../../public_html/lib/atoms/badges.js";
+import { icon } from "../../public_html/lib/atoms/icon.js";
 import { wikiShort } from "../../public_html/lib/atoms/labels.js";
 import { favBtn } from "../../public_html/lib/molecules/favbtn.js";
-import { healthScoreChip, maintainerDisclosure } from "../../public_html/lib/molecules/tool-health-summary.js";
+import { healthScoreChip } from "../../public_html/lib/molecules/tool-health-summary.js";
 
 // In-file constants are hardcoded here (NOT imported) so a mutation to the
 // source constant is not masked by the oracle reading the same mutated value.
 const LIMIT = 2;
 const BTN_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
+
+/** @param {any} summary */
+function hasConfirmedMaintainer(summary) {
+	return (
+		String(summary?.maintainerDimension?.status || "") === "verified-maintainer" ||
+		Number(summary?.maintainer?.counts?.verifiedMaintainers || 0) > 0
+	);
+}
+
+/** @param {any} t @param {any} evolvedSummary */
+function maintainerByline(t, evolvedSummary) {
+	const confirmed = hasConfirmedMaintainer(evolvedSummary);
+	const maintainer = t.maintainer || "Unknown";
+	const label = confirmed ? `${maintainer}, confirmed maintainer` : `${maintainer}, maintainer not confirmed yet`;
+	return `<div class="tcard__maint">by <span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</span></div>`;
+}
 
 /**
  * Pristine oracle: re-derives the exact HTML toolCard() must produce, composing
@@ -44,17 +61,14 @@ function oracle(t, opts = {}) {
 	const completeClass = complete.total && complete.filled === complete.total ? " tcard--complete" : "";
 	const endorsement = t.endorsement;
 	const evolvedSummary = t.evolvedSummary;
-	const trustLine =
-		fitChip(t) +
-		healthScoreChip(evolvedSummary, { compact: true }) +
-		maintainerDisclosure(evolvedSummary, { compact: true, short: true });
+	const trustLine = fitChip(t) + healthScoreChip(evolvedSummary, { compact: true });
 	const metricLine =
 		completenessMeter(complete, { details: true, numeric: true }) +
 		endorsementChip(endorsement && endorsement.count, { compact: true });
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
 	const favorite = signedIn() ? favBtn(t.name, { cls: "favbtn--sm favbtn--bare" }) : "";
 	const topRight = `${flag}${updatedTimeTag(t.modified, "tcard__when")}${favorite}`;
-	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t<div class="tcard__maint">by <span${dirAttrs(t.maintainer)}>${esc(t.maintainer)}</span></div>\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t</article>`;
+	return `\n\t<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(t.name)}">\n\t\t<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>\n\t\t<div class="tcard__head">\n\t\t\t${rank}${toolIcon(t)}\n\t\t\t<div class="tcard__heading">\n\t\t\t\t<button class="tcard__title" type="button" data-tool="${esc(t.name)}" aria-label="Quick look: ${esc(t.title)}" style="${BTN_STYLE}"${dirAttrs(t.title)}>${esc(t.title)}</button>\n\t\t\t\t${maintainerByline(t, evolvedSummary)}\n\t\t\t</div>\n\t\t</div>\n\t\t<p class="tcard__desc"${dirAttrs(t.description)}>${esc(t.description)}</p>\n\t\t<div class="tcard__tags">${tags}</div>\n\t\t<div class="tcard__signals">${signalLine}</div>\n\t</article>`;
 }
 
 const base = {
@@ -130,7 +144,7 @@ test("toolCard adds per-field lang attributes when the tool record exposes them"
 	assert.ok(html.includes('<p class="tcard__desc" dir="auto" lang="fr">A *great* tool</p>'));
 });
 
-test("toolCard renders attached health score and maintainer disclosure", () => {
+test("toolCard renders attached health score and confirmed maintainer byline", () => {
 	const html = toolCard({
 		...base,
 		evolvedSummary: {
@@ -166,8 +180,11 @@ test("toolCard renders attached health score and maintainer disclosure", () => {
 	assert.ok(html.includes("105 weighted points ÷ 1.25 total weight = 84; rounded to 84."));
 	assert.ok(html.includes("How the health score system works"));
 	assert.ok(html.includes('<details class="health-popover'));
-	assert.ok(html.includes("health-chip--compact"));
-	assert.ok(html.includes("Maintained"));
+	assert.ok(!html.includes("health-chip--compact"));
+	assert.ok(!html.includes("Maintained"));
+	assert.ok(html.includes("tcard__maint-name--confirmed"));
+	assert.ok(html.includes("Jane &amp; Co, confirmed maintainer"));
+	assert.ok(html.includes('class="tcard__maint-check"'));
 	assert.ok(html.includes("Calculation: weighted average across 1 of 1 dimensions"));
 });
 

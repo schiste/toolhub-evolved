@@ -5,13 +5,35 @@ import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../atoms/badges.js";
+import { icon } from "../atoms/icon.js";
 import { wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
-import { healthScoreChip, maintainerDisclosure } from "../molecules/tool-health-summary.js";
+import { healthScoreChip } from "../molecules/tool-health-summary.js";
 
 export const CARD_TAG_LIMIT = 2;
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
+
+/** @param {any} summary */
+function hasConfirmedMaintainer(summary) {
+	return (
+		String(summary?.maintainerDimension?.status || "") === "verified-maintainer" ||
+		Number(summary?.maintainer?.counts?.verifiedMaintainers || 0) > 0
+	);
+}
+
+/**
+ * @param {Tool} tool
+ * @param {any} evolvedSummary
+ */
+function maintainerByline(tool, evolvedSummary) {
+	const confirmed = hasConfirmedMaintainer(evolvedSummary);
+	const maintainer = tool.maintainer || t("toolCard.unknownMaintainer", "Unknown");
+	const label = confirmed
+		? t("toolCard.maintainerConfirmed", "{name}, confirmed maintainer", { name: maintainer })
+		: t("toolCard.maintainerUnconfirmed", "{name}, maintainer not confirmed yet", { name: maintainer });
+	return `<div class="tcard__maint">${t("toolCard.by", "by")} <span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</span></div>`;
+}
 
 /**
  * @param {Tool} tool
@@ -45,10 +67,7 @@ export function toolCard(tool, opts = {}) {
 	// isn't on the ambient Tool type — narrow via a structural cast.
 	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (tool).endorsement;
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
-	const trustLine =
-		fitChip(tool) +
-		healthScoreChip(evolvedSummary, { compact: true }) +
-		maintainerDisclosure(evolvedSummary, { compact: true, short: true });
+	const trustLine = fitChip(tool) + healthScoreChip(evolvedSummary, { compact: true });
 	const metricLine =
 		completenessMeter(complete, { details: true, numeric: true }) +
 		endorsementChip(endorsement && endorsement.count, { compact: true });
@@ -63,7 +82,7 @@ export function toolCard(tool, opts = {}) {
 			${rank}${toolIcon(tool)}
 			<div class="tcard__heading">
 				<button class="tcard__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("toolCard.quickLook", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</button>
-				<div class="tcard__maint">${t("toolCard.by", "by")} <span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></div>
+				${maintainerByline(tool, evolvedSummary)}
 			</div>
 		</div>
 		<p class="tcard__desc"${textAttrs(tool.description, tool.descriptionLanguage)}>${esc(tool.description)}</p>
