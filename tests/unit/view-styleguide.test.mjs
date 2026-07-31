@@ -1180,9 +1180,9 @@ function expect(name, actual) {
 	assert.equal(actual, S[name], name);
 }
 
-// resolveToken reads getComputedStyle(probe)[cssProp]; happy-dom returns "" for
-// every property, which would make the per-family `prop` argument unobservable.
-// Stub it to echo the requested property so token values reflect `prop`.
+// resolveToken reads CSS custom properties first and falls back to
+// getComputedStyle(root)[cssProp]; happy-dom returns "" for every custom
+// property, so this keeps the per-family `prop` argument observable.
 const realGetComputedStyle = globalThis.getComputedStyle;
 const styleSheetsDescriptor = Object.getOwnPropertyDescriptor(document, "styleSheets");
 

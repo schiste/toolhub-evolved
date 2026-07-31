@@ -970,27 +970,11 @@ function collectCustomPropertyNames(prefix, fallback) {
  */
 function resolveTokenValues(names, cssProp) {
 	const rootStyles = getComputedStyle(document.documentElement);
-	const host = document.createElement("span");
-	host.style.position = "absolute";
-	host.style.display = "block";
-	host.style.visibility = "hidden";
-	host.style.pointerEvents = "none";
-	host.style.contain = "layout style";
-	/** @type {Array<{ name: string, probe: HTMLElement }>} */
-	const probes = names.map((name) => {
-		const probe = document.createElement("span");
-		probe.style.display = "block";
-		/** @type {any} */ (probe.style)[cssProp] = `var(${name})`;
-		host.appendChild(probe);
-		return { name, probe };
-	});
-	document.body.appendChild(host);
+	const fallback = String(/** @type {any} */ (rootStyles)[cssProp] || "");
 	const values = new Map();
-	for (const { name, probe } of probes) {
-		const resolved = /** @type {any} */ (getComputedStyle(probe))[cssProp];
-		values.set(name, resolved || rootStyles.getPropertyValue(name).trim());
+	for (const name of names) {
+		values.set(name, rootStyles.getPropertyValue(name).trim() || fallback);
 	}
-	host.remove();
 	return values;
 }
 
