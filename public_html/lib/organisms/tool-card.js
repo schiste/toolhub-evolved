@@ -45,12 +45,14 @@ export function toolCard(tool, opts = {}) {
 	// isn't on the ambient Tool type — narrow via a structural cast.
 	const endorsement = /** @type {{ endorsement?: { count?: number } }} */ (tool).endorsement;
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
-	const signalLine =
-		healthScoreChip(evolvedSummary) +
-		maintainerDisclosure(evolvedSummary, { compact: true }) +
-		endorsementChip(endorsement && endorsement.count) +
-		completenessMeter(complete) +
-		fitChip(tool);
+	const trustLine =
+		fitChip(tool) +
+		healthScoreChip(evolvedSummary, { compact: true }) +
+		maintainerDisclosure(evolvedSummary, { compact: true, short: true });
+	const metricLine =
+		completenessMeter(complete, { details: true, numeric: true }) +
+		endorsementChip(endorsement && endorsement.count, { compact: true });
+	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
 	// The title button opens the quick-view.
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}" data-tool="${esc(tool.name)}">

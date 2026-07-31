@@ -85,6 +85,13 @@ test("endorsementChip() plural label for count > 1", () => {
 	);
 });
 
+test("endorsementChip() compact label keeps the full title", () => {
+	assert.equal(
+		endorsementChip(5, { compact: true }),
+		`<span class="signal signal--compact signal--lists" title="Appears in 5 curated lists">${icon("list")} 5 lists</span>`
+	);
+});
+
 // ---- completenessMeter --------------------------------------------------------
 test("completenessMeter() complete state (filled === total)", () => {
 	assert.equal(
@@ -142,6 +149,30 @@ test("completenessMeter() compute path reflects the tool's filled fields (not {}
 	assert.equal(
 		completenessMeter(tool),
 		'<span class="signal" title="Listing 3 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:33%"></span></span>3/9</span>'
+	);
+});
+
+test("completenessMeter() details mode exposes field state in title and aria-label", () => {
+	assert.equal(
+		completenessMeter(
+			{
+				total: 2,
+				filled: 1,
+				items: [
+					{ ok: true, label: "Title" },
+					{ ok: false, label: "Repository" }
+				]
+			},
+			{ details: true, numeric: true }
+		),
+		'<span class="signal" title="Listing 1 of 2 fields complete\nDone: Title\nMissing: Repository" aria-label="Listing 1 of 2 fields complete\nDone: Title\nMissing: Repository"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:50%"></span></span>1/2</span>'
+	);
+});
+
+test("completenessMeter() numeric mode keeps a complete listing as a score", () => {
+	assert.equal(
+		completenessMeter({ total: 9, filled: 9 }, { numeric: true }),
+		'<span class="signal signal--complete" title="Listing 9 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:100%"></span></span>9/9</span>'
 	);
 });
 

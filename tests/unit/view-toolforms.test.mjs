@@ -163,7 +163,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u||tcard__when></span></div>
 	</article></li></ul></div>
 	</section>

@@ -143,7 +143,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 1 list</span><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="signal signal--fit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Fits you</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--trust"><span class="signal signal--fit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Fits you</span></div><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="signal signal--compact signal--lists" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 1 list</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">wikidata.org</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
@@ -157,7 +175,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 3 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 3 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="charlie">
@@ -171,7 +207,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 2 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 2 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 		<div class="section-head"><h2>Most listed</h2><a class="link" href="/search?audiences__term=editor&wiki__term=wikidata.org">View all</a></div>
@@ -187,7 +241,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 1 list</span><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="signal signal--fit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Fits you</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--trust"><span class="signal signal--fit"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M18.154 3.837 8.034 16.62l-1.384.18-4.8-3.6 1.2-1.6 4.02 3.015 9.517-12.02z"/></svg> Fits you</span></div><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="signal signal--compact signal--lists" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 1 list</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">wikidata.org</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
@@ -201,7 +273,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 3 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 3 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="charlie">
@@ -215,7 +305,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 2 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 2 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 		<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>
@@ -314,7 +422,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 1 list</span><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="signal signal--compact signal--lists" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 1 list</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">wikidata.org</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
@@ -328,7 +454,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 3 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 3 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="charlie">
@@ -342,7 +486,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 2 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 2 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 		<div class="section-head"><h2>Most listed</h2><a class="link" href="/lists">View lists</a></div>
@@ -358,7 +520,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 3 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 3 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 3 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="charlie">
@@ -372,7 +552,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 2 lists</span><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span><span class="signal signal--compact signal--lists" title="Appears in 2 curated lists"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 2 lists</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="alpha">
@@ -386,7 +584,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> In 1 list</span><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Done: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span><span class="signal signal--compact signal--lists" title="Appears in 1 curated list"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M3 16H1v-2h2zm16 0H5v-2h14zM3 11H1V9h2zm16 0H5V9h14zM3 6H1V4h2zm16 0H5V4h14z"/></svg> 1 list</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">wikidata.org</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 		<div class="section-head"><h2>Curated lists</h2><a class="link" href="/lists">View all lists</a></div>

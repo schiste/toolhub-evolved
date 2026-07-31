@@ -77,6 +77,13 @@
 	white-space: nowrap;
 }
 
+.health-score--compact,
+.health-chip--compact {
+	min-height: var(--ctl-h-sm);
+	padding-inline: var(--space-1);
+	font-size: var(--fs-micro);
+}
+
 .health-chip {
 	cursor: pointer;
 	list-style: none;
@@ -97,6 +104,13 @@
 	font-weight: 600;
 	color: currentColor;
 	opacity: 0.82;
+}
+
+.health-score--compact .health-score__grade,
+.health-chip--compact .health-chip__label {
+	max-width: 9ch;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .health-score:focus-visible {

@@ -327,6 +327,10 @@ textarea.le__input {
 	height: 1em;
 }
 
+.signal--compact {
+	font-size: var(--fs-micro);
+}
+
 .meter {
 	display: inline-block;
 	width: 30px;

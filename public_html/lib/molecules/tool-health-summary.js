@@ -19,6 +19,16 @@ function gradeLabel(value) {
 	return t("toolHealth.gradeRisk", "High risk");
 }
 
+/** @param {unknown} value */
+function shortGradeLabel(value) {
+	const grade = String(value || "");
+	if (grade === "strong") return t("toolHealth.gradeStrongShort", "Strong");
+	if (grade === "good") return t("toolHealth.gradeGoodShort", "Good");
+	if (grade === "needs-attention") return t("toolHealth.gradeWatchShort", "Watch");
+	if (grade === "unknown") return t("toolHealth.gradeUnknownShort", "Unknown");
+	return t("toolHealth.gradeRiskShort", "Risk");
+}
+
 /** @param {unknown} grade */
 function toneForGrade(grade) {
 	const value = String(grade || "");
@@ -36,6 +46,16 @@ function maintainerLabel(status) {
 	if (value === "verified-maintainer") return t("toolHealth.verifiedMaintainer", "Verified maintainer");
 	if (value === "maintainer-stale") return t("toolHealth.maintainerStale", "Maintainer stale");
 	return t("toolHealth.maintainerUnknown", "Maintainer unknown");
+}
+
+/** @param {unknown} status */
+function shortMaintainerLabel(status) {
+	const value = String(status || "unknown");
+	if (value === "maintained") return t("toolHealth.maintainedShort", "Maintained");
+	if (value === "active-maintainer") return t("toolHealth.activeMaintainerShort", "Active");
+	if (value === "verified-maintainer") return t("toolHealth.verifiedMaintainerShort", "Verified");
+	if (value === "maintainer-stale") return t("toolHealth.maintainerStaleShort", "Stale");
+	return t("toolHealth.maintainerUnknownShort", "Unknown");
 }
 
 /** @param {unknown} value */
@@ -283,16 +303,23 @@ function healthScorePanel(summary) {
 	</div>`;
 }
 
-/** @param {any} summary */
-export function healthScoreChip(summary) {
+/**
+ * @param {any} summary
+ * @param {{ compact?: boolean }} [opts]
+ */
+export function healthScoreChip(summary, opts = {}) {
 	if (!summary?.health) return "";
 	const score = scoreText(summary.health.score);
-	const grade = gradeLabel(summary.health.grade);
+	const grade = opts.compact ? shortGradeLabel(summary.health.grade) : gradeLabel(summary.health.grade);
+	const fullGrade = gradeLabel(summary.health.grade);
 	const tone = toneForGrade(summary.health.grade);
 	const tooltip = healthScoreTooltip(summary);
-	return `<details class="health-popover health-popover--score">
-		<summary class="health-score health-score--${esc(tone)}" title="${esc(tooltip)}" aria-label="${esc(t("toolHealth.openScoreSignals", "Health {score} · {grade}; open calculation details", { score, grade }))}">
-			${icon("analyze")} <span>${t("toolHealth.healthScore", "Health {score}", { score })}</span><span class="health-score__grade">${esc(grade)}</span>
+	const compactClass = opts.compact ? " health-popover--compact" : "";
+	const chipClass = opts.compact ? " health-score--compact" : "";
+	const visibleScore = opts.compact ? esc(score) : t("toolHealth.healthScore", "Health {score}", { score });
+	return `<details class="health-popover health-popover--score${compactClass}">
+		<summary class="health-score health-score--${esc(tone)}${chipClass}" title="${esc(tooltip)}" aria-label="${esc(t("toolHealth.openScoreSignals", "Health {score} · {grade}; open calculation details", { score, grade: fullGrade }))}">
+			${icon("analyze")} <span>${visibleScore}</span><span class="health-score__grade">${esc(grade)}</span>
 		</summary>
 		${healthScorePanel(summary)}
 	</details>`;
@@ -300,7 +327,7 @@ export function healthScoreChip(summary) {
 
 /**
  * @param {any} summary
- * @param {{ compact?: boolean }} [opts]
+ * @param {{ compact?: boolean, short?: boolean }} [opts]
  */
 export function maintainerDisclosure(summary, opts = {}) {
 	if (!summary?.maintainerDimension && !summary?.maintainer) return "";
@@ -317,10 +344,12 @@ export function maintainerDisclosure(summary, opts = {}) {
 		num(dimension.bestConfidence ?? summary?.maintainer?.bestConfidence) ??
 		Math.round((num(dimension.confidence) || 0) * 100);
 	const label = maintainerLabel(status);
+	const visibleLabel = opts.short ? shortMaintainerLabel(status) : label;
 	const compact = opts.compact ? " health-popover--compact" : "";
+	const chipClass = opts.compact ? " health-chip--compact" : "";
 	return `<details class="health-popover${compact}">
-		<summary class="health-chip health-chip--${esc(tone)}" aria-label="${esc(t("toolHealth.openMaintainerSignals", "{label}; open calculation signals", { label }))}">
-			${icon("group")} <span class="health-chip__label">${esc(label)}</span>
+		<summary class="health-chip health-chip--${esc(tone)}${chipClass}" title="${esc(label)}" aria-label="${esc(t("toolHealth.openMaintainerSignals", "{label}; open calculation signals", { label }))}">
+			${icon("group")} <span class="health-chip__label">${esc(visibleLabel)}</span>
 		</summary>
 		<div class="health-popover__panel">
 			<div class="health-popover__head">

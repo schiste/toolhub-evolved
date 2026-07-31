@@ -75,7 +75,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"><span class="tag" data-q="a" dir="auto">a</span></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 1 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Done: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 1 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Done: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:11%"></span></span>1/9</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="bravo">
@@ -89,7 +107,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 				<nav class="pager" aria-label="Pagination"></nav>
@@ -155,7 +191,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li><li>
 	<article class="tcard" data-tool="exp">
@@ -169,7 +223,25 @@ const S = {
 		</div>
 		<p class="tcard__desc"></p>
 		<div class="tcard__tags"></div>
-		<div class="tcard__signals"><span class="signal" title="Listing 0 of 9 fields complete"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div>
+		<div class="tcard__signals"><div class="tcard__signal-row tcard__signal-row--metrics"><span class="signal" title="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback" aria-label="Listing 0 of 9 fields complete
+Missing: Description
+Missing: Tool URL
+Missing: Source repository
+Missing: License
+Missing: Keywords
+Missing: Audience or task tagged
+Missing: Documentation
+Missing: Icon
+Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:0%"></span></span>0/9</span></div></div>
 		<div class="tcard__foot"><span class="tcard__meta" dir="auto">Any wiki</span><span class="tcard__footr"><u|2026-01-01T00:00:00Z|tcard__when></span></div>
 	</article></li></ul>
 				<nav class="pager" aria-label="Pagination"></nav>

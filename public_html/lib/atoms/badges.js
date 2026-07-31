@@ -36,17 +36,25 @@ export function statusBadge(t) {
 	};
 	return t.deprecated || t.experimental ? statusMarkup(st) : "";
 }
-/** @param {number | null | undefined} count */
-export function endorsementChip(count) {
+/**
+ * @param {number | null | undefined} count
+ * @param {{ compact?: boolean }} [opts]
+ */
+export function endorsementChip(count, opts = {}) {
 	const n = Number(count) || 0;
 	if (!n) return "";
 	const label = n === 1 ? t("badges.listOne", "list") : t("badges.listOther", "lists");
-	return `<span class="signal" title="${esc(t("badges.appearsInLists", "Appears in {lists}", { lists: countLabel(n, t("badges.curatedListOne", "curated list"), t("badges.curatedListOther", "curated lists")) }))}">${icon("list")} ${t("badges.inLists", "In {n} {label}", { n, label })}</span>`;
+	const text = opts.compact
+		? t("badges.listCount", "{n} {label}", { n, label })
+		: t("badges.inLists", "In {n} {label}", { n, label });
+	const cls = opts.compact ? " signal--compact signal--lists" : "";
+	return `<span class="signal${cls}" title="${esc(t("badges.appearsInLists", "Appears in {lists}", { lists: countLabel(n, t("badges.curatedListOne", "curated list"), t("badges.curatedListOther", "curated lists")) }))}">${icon("list")} ${text}</span>`;
 }
 /**
  * @param {{ total?: number; filled?: number; items?: { ok: boolean; label: string }[] }} c
+ * @param {{ details?: boolean, numeric?: boolean }} [opts]
  */
-export function completenessMeter(c) {
+export function completenessMeter(c, opts = {}) {
 	const score =
 		c && Object.prototype.hasOwnProperty.call(c, "total")
 			? c
@@ -56,10 +64,37 @@ export function completenessMeter(c) {
 	const total = Math.max(0, Number(score && score.total) || 0);
 	const filled = Math.max(0, Math.min(total, Number(score && score.filled) || 0));
 	const pct = total ? Math.round((filled / total) * 100) : 0;
-	if (total && filled === total) {
-		return `<span class="signal signal--complete" title="${esc(t("badges.fieldsComplete", "Listing {filled} of {total} fields complete", { filled, total }))}">${icon("check")} ${t("badges.wellDocumented", "Well documented")}</span>`;
+	const title = completenessTitle(
+		/** @type {{ items?: { ok: boolean; label: string }[] }} */ (score),
+		filled,
+		total,
+		opts
+	);
+	if (total && filled === total && !opts.numeric) {
+		return `<span class="signal signal--complete" title="${esc(title)}">${icon("check")} ${t("badges.wellDocumented", "Well documented")}</span>`;
 	}
-	return `<span class="signal" title="${esc(t("badges.fieldsComplete", "Listing {filled} of {total} fields complete", { filled, total }))}"><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:${pct}%"></span></span>${filled}/${total}</span>`;
+	const cls = total && filled === total ? " signal--complete" : "";
+	const aria = opts.details ? ` aria-label="${esc(title)}"` : "";
+	return `<span class="signal${cls}" title="${esc(title)}"${aria}><span class="meter" aria-hidden="true"><span class="meter__fill" style="width:${pct}%"></span></span>${filled}/${total}</span>`;
+}
+
+/**
+ * @param {{ items?: { ok: boolean; label: string }[] }} score
+ * @param {number} filled
+ * @param {number} total
+ * @param {{ details?: boolean }} opts
+ */
+function completenessTitle(score, filled, total, opts) {
+	const headline = t("badges.fieldsComplete", "Listing {filled} of {total} fields complete", { filled, total });
+	if (!opts.details || !Array.isArray(score.items) || score.items.length === 0) return headline;
+	const rows = score.items.map((item) => {
+		const state = item.ok ? t("badges.done", "Done") : t("badges.missing", "Missing");
+		return t("badges.fieldState", "{state}: {label}", {
+			state,
+			label: item.label
+		});
+	});
+	return [headline, ...rows].join("\n");
 }
 // The per-field checklist that pairs with completenessMeter (tool page + styleguide).
 /**
