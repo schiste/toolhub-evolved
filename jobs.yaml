@@ -30,6 +30,15 @@
   schedule: "11 */6 * * *"
   emails: onfailure
 
+- name: repository-analysis
+  # Deterministically analyze up to 100 newly added or changed public repositories
+  # per hour. The initial catalog backfill can be run manually with a larger limit.
+  command: /usr/bin/env REPOSITORY_SCAN_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py
+  image: python3.13
+  schedule: "47 * * * *"
+  timeout: 900
+  emails: onfailure
+
 - name: api-cache-invalidator
   # Poll official Toolhub recent changes out of band, invalidate affected rows,
   # then prewarm hot anonymous reads so user requests never pay that cost.

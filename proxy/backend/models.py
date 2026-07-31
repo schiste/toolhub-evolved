@@ -484,6 +484,25 @@ class SourceAnalysisReport(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 
 
+class RepositoryAnalysisState(Base):
+    """Incremental state for deterministic scans of public tool repositories."""
+
+    __tablename__ = "repository_analysis_state"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    repository_url: Mapped[str] = mapped_column(String(2000), default="")
+    provider: Mapped[str] = mapped_column(String(64), default="")
+    commit_sha: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    report_id: Mapped[int | None] = mapped_column(ForeignKey("source_analysis_reports.id"), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+
+
 class ToolHealthTarget(Base):
     """A URL Evolved may check to report health for one tool."""
 

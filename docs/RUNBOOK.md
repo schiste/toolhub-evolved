@@ -427,6 +427,29 @@ URLs, the source indexer allows public `*.toolforge.org`, `*.wmcloud.org`, and
 from Toolforge, and it follows redirects only after validating each hop.
 Arbitrary private hosts are still refused.
 
+The `repository-analysis` job is the deterministic source-analysis layer. It
+selects canonical Toolhub records with an HTTPS repository URL, checks the
+remote HEAD SHA, and skips repositories whose SHA is already analyzed. New
+tools enter automatically when their canonical record reaches the local cache;
+changed repositories are revisited by oldest `checked_at` first. The worker
+uses shallow non-recursive Git checkouts, removes symlinks before traversal,
+does not execute repository code, caps the checkout and analyzer input, stores
+only the redacted report, and records failures/backoff in
+`repository_analysis_state`.
+
+For the initial backfill, run a one-off job after deployment:
+
+```sh
+toolforge jobs run --wait 21600 --image python3.13 \
+  --command '/usr/bin/env REPOSITORY_SCAN_LIMIT=10000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py' \
+  repository-analysis-backfill
+```
+
+The regular hourly job continues the sweep afterwards. `repository_scan` is a
+separate provenance label from maintainer-submitted source-analysis reports;
+automated reports are deterministic and approved for the public health core,
+while raw source and checkout contents are never stored.
+
 ## Backups & restore
 
 Nightly `mariadb-dump` to `~/backups`, 14 dumps kept (`tools/backup-db.sh`).
