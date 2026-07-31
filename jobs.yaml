@@ -30,6 +30,15 @@
   schedule: "11 */6 * * *"
   emails: onfailure
 
+- name: catalog-sync
+  # Paged official catalog mirror: five 100-record pages every 15 minutes,
+  # with a three-second minimum between upstream requests.
+  command: /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
+  image: python3.13
+  schedule: "*/15 * * * *"
+  timeout: 300
+  emails: onfailure
+
 - name: repository-analysis
   # Deterministically analyze up to 100 newly added or changed public repositories
   # per hour. The initial catalog backfill can be run manually with a larger limit.

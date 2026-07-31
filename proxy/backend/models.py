@@ -112,6 +112,24 @@ class CanonicalToolCache(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ToolCatalogSyncState(Base):
+    """Resumable cursor and health state for the complete official catalog sync."""
+
+    __tablename__ = "tool_catalog_sync_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    next_page: Mapped[int] = mapped_column(Integer, default=1)
+    pages_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    records_seen: Mapped[int] = mapped_column(Integer, default=0)
+    cycles_completed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="idle")
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+
+
 class ToolOwnerCache(Base):
     """Derived owner label cache for recent-change tool rows."""
 

@@ -202,6 +202,8 @@ names are:
 | -------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api_cache`                                  | Anonymous public Toolhub API payload cache      | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                             |
 | `api_cache_meta`                             | Anonymous cache coordination state              | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.              |
+| `canonical_tool_cache`                       | Anonymous public canonical cache                | Resumable mirror of official `/api/tools/` records used by local enrichment; rebuildable from Toolhub and never a replacement for live canonical reads.                |
+| `tool_catalog_sync_state`                    | Operational cursor state                        | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                         |
 | `tool_owner_cache`                           | Anonymous public derived owner cache            | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                         |
 | `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                     |
 | `toolhub_tokens`                             | Secret                                          | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                              |
@@ -426,6 +428,16 @@ URLs, the source indexer allows public `*.toolforge.org`, `*.wmcloud.org`, and
 `*.wmflabs.org` ingress hosts even when they resolve to internal service IPs
 from Toolforge, and it follows redirects only after validating each hop.
 Arbitrary private hosts are still refused.
+
+The `catalog-sync` job is the complete official catalog mirror. It walks
+`/api/tools/` with a resumable page cursor and upserts each official record into
+`canonical_tool_cache`, so repository analysis and local derived summaries do
+not depend on which catalog pages users happened to visit. It runs every 15
+minutes, fetches at most five pages of 100 records, and waits at least three
+seconds between requests. That is a maximum of 20 catalog requests per hour;
+the `tool_catalog_sync_state` row records the next page, completed cycles,
+success/error state, and timestamps. A failed page is retried from the same
+cursor on the next run rather than advancing past it.
 
 The `repository-analysis` job is the deterministic source-analysis layer. It
 selects canonical Toolhub records with an HTTPS repository URL, checks the
