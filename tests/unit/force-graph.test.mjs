@@ -305,6 +305,44 @@ test("clicking is safe when onSelect is not provided", () => {
 	assert.doesNotThrow(() => canvas.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 });
 
+test("dragging a node pins it and does not open its quick view", () => {
+	const onSelect = vi.fn();
+	const { canvas } = build({ nodes: [{ id: "n1", title: "Node One" }], edges: [] }, { height: 480, onSelect });
+	canvas.dispatchEvent(new MouseEvent("mousedown", { button: 0, clientX: 360, clientY: 240, bubbles: true }));
+	canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: 410, clientY: 240, bubbles: true }));
+	canvas.dispatchEvent(new MouseEvent("mouseup", { clientX: 410, clientY: 240, bubbles: true }));
+	canvas.dispatchEvent(new MouseEvent("click", { clientX: 410, clientY: 240, bubbles: true }));
+	assert.equal(canvas.style.cursor, "");
+	expect(onSelect).not.toHaveBeenCalled();
+});
+
+test("filters update the visible count without rebuilding the graph", () => {
+	const graph = document.createElement("div");
+	graph.className = "graph";
+	graph.innerHTML = "<div data-graph-filter-count></div><p data-graph-filter-empty hidden></p>";
+	const container = document.createElement("div");
+	graph.append(container);
+	document.body.append(graph);
+	const handle = forceGraph(
+		container,
+		{
+			nodes: [
+				{ id: "one", projects: ["Wikipedia"] },
+				{ id: "two", projects: ["Commons"] }
+			],
+			edges: []
+		},
+		{ height: 480 }
+	);
+	assert.equal(graph.querySelector("[data-graph-filter-count]").textContent, "Showing 2 of 2 tools");
+	handle.setFilters({ projects: "Commons" });
+	assert.equal(graph.querySelector("[data-graph-filter-count]").textContent, "Showing 1 of 2 tools");
+	assert.equal(graph.querySelector("[data-graph-filter-empty]").hidden, true);
+	handle.setFilters({ projects: "Missing" });
+	assert.equal(graph.querySelector("[data-graph-filter-count]").textContent, "Showing 0 of 2 tools");
+	assert.equal(graph.querySelector("[data-graph-filter-empty]").hidden, false);
+});
+
 /* ---- lifecycle ---------------------------------------------------------- */
 test("stop() detaches every pointer listener (mousemove, mouseleave, click)", () => {
 	const onSelect = vi.fn();

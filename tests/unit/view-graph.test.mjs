@@ -33,7 +33,10 @@ beforeEach(() => {
 
 test("viewGraph: a populated map renders the legend, truncated note, canvas, and mounts the force graph", async () => {
 	const g = {
-		nodes: [{ id: "a" }, { id: "b" }],
+		nodes: [
+			{ id: "a", projects: ["Wikipedia"], languages: ["en"] },
+			{ id: "b", projects: ["Commons"], languages: ["fr"] }
+		],
 		truncated: true,
 		communityMeta: [
 			{ id: 1, label: "Alpha", size: 5 },
@@ -60,9 +63,16 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 	assert.match(view.html, /data-graph-action="zoom-out"/);
 	assert.match(view.html, /data-graph-action="fit"/);
 	assert.match(view.html, /data-graph-zoom[^>]*>100%<\/span>/);
+	assert.match(view.html, /data-graph-filter="projects"/);
+	assert.match(view.html, /<option value="Commons">Commons<\/option>/);
+	assert.match(view.html, /data-graph-filter="languages"/);
+	assert.match(view.html, /<option value="fr">fr<\/option>/);
 	// Populated → the empty placeholder is exactly "" : the canvas closes directly onto the
-	// legend (kills the `? ""` → injected-string mutant).
-	assert.match(view.html, /<div id="graph-canvas" class="graph__canvas"><\/div>\s*<div class="graph__legend"/);
+	// legend, with the filter-empty state hidden between them.
+	assert.match(
+		view.html,
+		/<div id="graph-canvas" class="graph__canvas"><\/div>[\s\S]*data-graph-filter-empty[\s\S]*<div class="graph__legend"/
+	);
 
 	// Alpha: color via get(1); Beta: color via get("2"); size + label escaped.
 	assert.match(
@@ -89,9 +99,9 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 
 	// mount() wires the force graph onto the canvas element.
 	document.body.innerHTML =
-		'<div class="graph"><div id="graph-canvas"></div><div data-graph-controls><button data-graph-action="zoom-in"></button><button data-graph-action="zoom-out"></button><button data-graph-action="fit"></button></div></div>';
+		'<div class="graph"><div id="graph-canvas"></div><div data-graph-controls><button data-graph-action="zoom-in"></button><button data-graph-action="zoom-out"></button><button data-graph-action="fit"></button></div><div data-graph-filters><select data-graph-filter="projects"><option value=""></option><option value="Commons">Commons</option></select><select data-graph-filter="languages"><option value=""></option><option value="fr">fr</option></select></div><span data-graph-filter-count></span></div>';
 	const target = document.querySelector("#graph-canvas");
-	const handle = { stop() {}, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn() };
+	const handle = { stop() {}, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn(), setFilters: vi.fn() };
 	forceGraphMod.forceGraph.mockReturnValue(handle);
 	view.mount();
 	assert.equal(forceGraphMod.forceGraph.mock.calls.length, 1);
@@ -107,6 +117,10 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 	assert.equal(handle.zoomIn.mock.calls.length, 1);
 	assert.equal(handle.zoomOut.mock.calls.length, 1);
 	assert.equal(handle.fitView.mock.calls.length, 1);
+	const projectFilter = document.querySelector('[data-graph-filter="projects"]');
+	projectFilter.value = "Commons";
+	projectFilter.dispatchEvent(new Event("change", { bubbles: true }));
+	assert.deepEqual(handle.setFilters.mock.calls[0], [{ projects: "Commons", languages: "" }]);
 });
 
 test("viewGraph: an empty map shows the empty state, no truncated note, and no 'Fits you'", async () => {

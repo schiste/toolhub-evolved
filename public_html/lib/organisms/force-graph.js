@@ -57,6 +57,9 @@ const FALLBACK_COLORS = {
  * @property {number} [weight]
  * @property {number} [score]
  * @property {boolean} [fits]
+ * @property {string[]} [projects]
+ * @property {string[]} [languages]
+ * @property {boolean} [pinned]
  */
 
 /**
@@ -312,9 +315,10 @@ export function forceGraph(container, data, opts = {}) {
 	let hovered = null;
 	// Stryker disable next-line ObjectLiteral: pointer is overwritten by onMove() before the tooltip is ever shown (the tooltip only renders while hovering, which requires a prior mousemove), so this initial value is never observed — equivalent.
 	let pointer = { x: 0, y: 0 };
-	/** @type {{ x: number; y: number; moved: boolean } | null} */
+	/** @type {{ x: number; y: number; moved: boolean; node: FGNode | null } | null} */
 	let drag = null;
 	let dragMoved = false;
+	let filters = { projects: "", languages: "" };
 	/** @type {MutationObserver | null} */
 	let detachObserver = null;
 	let colors = buildColors(data, opts);
@@ -324,6 +328,38 @@ export function forceGraph(container, data, opts = {}) {
 	function updateZoomReadout() {
 		const readout = container.closest(".graph")?.querySelector("[data-graph-zoom]");
 		if (readout) readout.textContent = `${Math.round(zoom * 100)}%`;
+	}
+
+	/** @param {FGNode} node */
+	function matchesFilters(node) {
+		const projects = Array.isArray(node.projects) ? node.projects : [];
+		const languages = Array.isArray(node.languages) ? node.languages : [];
+		return (
+			(!filters.projects || projects.includes(filters.projects)) &&
+			(!filters.languages || languages.includes(filters.languages))
+		);
+	}
+
+	function visibleNodes() {
+		return nodes.filter((node) => matchesFilters(node));
+	}
+
+	function updateFilterReadout() {
+		const graph = container.closest(".graph");
+		const visible = visibleNodes().length;
+		const readout = graph?.querySelector("[data-graph-filter-count]");
+		if (readout) {
+			readout.textContent = t("graph.filterCount", "Showing {visible} of {total} tools", {
+				visible: String(visible),
+				total: String(nodes.length)
+			});
+		}
+		const empty = /** @type {HTMLElement | null} */ (graph?.querySelector("[data-graph-filter-empty]"));
+		if (empty) empty.hidden = visible > 0 || nodes.length === 0;
+		if (hovered && !matchesFilters(hovered)) {
+			hovered = null;
+			positionTooltip();
+		}
 	}
 
 	/** @param {number} x @param {number} y */
@@ -360,10 +396,11 @@ export function forceGraph(container, data, opts = {}) {
 	}
 
 	function fitView() {
-		if (nodes.length === 0) return;
+		const candidates = visibleNodes();
+		if (candidates.length === 0) return;
 		const pad = 56;
-		const xs = nodes.map((node) => node.x);
-		const ys = nodes.map((node) => node.y);
+		const xs = candidates.map((node) => node.x);
+		const ys = candidates.map((node) => node.y);
 		const minX = Math.min(...xs);
 		const maxX = Math.max(...xs);
 		const minY = Math.min(...ys);
@@ -463,6 +500,11 @@ export function forceGraph(container, data, opts = {}) {
 			b.vy -= fy;
 		}
 		for (const node of nodes) {
+			if (node.pinned) {
+				node.vx = 0;
+				node.vy = 0;
+				continue;
+			}
 			node.vx += (cx - node.x) * 0.002;
 			node.vy += (cy - node.y) * 0.002;
 			node.vx *= 0.82;
@@ -556,9 +598,13 @@ export function forceGraph(container, data, opts = {}) {
 		ctx.fillStyle = colors.surface;
 		ctx.fillRect(0, 0, width, height);
 		const active = activeIds();
-		edges.forEach((edge) => drawEdge(edge, active));
-		nodes.filter((node) => active && !active.has(node.id)).forEach((node) => drawNode(node, active));
-		nodes.filter((node) => !active || active.has(node.id)).forEach((node) => drawNode(node, active));
+		const visible = visibleNodes();
+		const visibleIds = new Set(visible.map((node) => node.id));
+		edges
+			.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
+			.forEach((edge) => drawEdge(edge, active));
+		visible.filter((node) => active && !active.has(node.id)).forEach((node) => drawNode(node, active));
+		visible.filter((node) => !active || active.has(node.id)).forEach((node) => drawNode(node, active));
 		ctx.globalAlpha = 1;
 	}
 	// Stryker restore all
@@ -570,8 +616,9 @@ export function forceGraph(container, data, opts = {}) {
 	 */
 	function findNode(x, y) {
 		const point = toGraph(x, y);
-		for (let i = nodes.length - 1; i >= 0; i--) {
-			const node = nodes[i];
+		const candidates = visibleNodes();
+		for (let i = candidates.length - 1; i >= 0; i--) {
+			const node = candidates[i];
 			const half = nodeSize(node) / 2 + 4 / zoom;
 			// Stryker disable next-line EqualityOperator: `<= half` vs `< half` differs only when |x - node.x| equals half exactly; node coords are floats and pointer coords are integers, so equality is a measure-zero case that never occurs — equivalent. (The `> half` inversion is killed by the hover fingerprint.)
 			if (Math.abs(point.x - node.x) <= half && Math.abs(point.y - node.y) <= half) return node;
@@ -607,8 +654,16 @@ export function forceGraph(container, data, opts = {}) {
 				dragMoved = true;
 			}
 			if (drag.moved) {
-				panX += dx;
-				panY += dy;
+				if (drag.node) {
+					const point = toGraph(pointer.x, pointer.y);
+					drag.node.x = clamp(point.x, 10, width - 10);
+					drag.node.y = clamp(point.y, 10, height - 10);
+					drag.node.vx = 0;
+					drag.node.vy = 0;
+				} else {
+					panX += dx;
+					panY += dy;
+				}
 				drag.x = pointer.x;
 				drag.y = pointer.y;
 				canvas.style.cursor = "grabbing";
@@ -647,13 +702,14 @@ export function forceGraph(container, data, opts = {}) {
 		if (event.button !== 0) return;
 		const rect = canvas.getBoundingClientRect();
 		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-		drag = { x: point.x, y: point.y, moved: false };
+		drag = { x: point.x, y: point.y, moved: false, node: findNode(point.x, point.y) };
 		dragMoved = false;
 		canvas.style.cursor = "grabbing";
 		event.preventDefault();
 	}
 
 	function onMouseUp() {
+		if (drag?.node && drag.moved) drag.node.pinned = true;
 		drag = null;
 		canvas.style.cursor = hovered ? "pointer" : "";
 	}
@@ -753,6 +809,7 @@ export function forceGraph(container, data, opts = {}) {
 
 	resize();
 	updateZoomReadout();
+	updateFilterReadout();
 	canvas.addEventListener("mousemove", onMove);
 	canvas.addEventListener("mouseleave", onLeave);
 	canvas.addEventListener("click", onClick);
@@ -780,6 +837,15 @@ export function forceGraph(container, data, opts = {}) {
 		},
 		zoomOut() {
 			zoomAt(1 / ZOOM_STEP, width / 2, height / 2);
+		},
+		/** @param {{ projects?: string; languages?: string }} [next] */
+		setFilters(next = {}) {
+			filters = {
+				projects: typeof next.projects === "string" ? next.projects : "",
+				languages: typeof next.languages === "string" ? next.languages : ""
+			};
+			updateFilterReadout();
+			draw();
 		},
 		// Stryker disable next-line BlockStatement: redraw() only calls draw() (canvas drawing); emptying it has no observable effect. The handle exposing redraw is asserted by the surface-creation test.
 		redraw() {

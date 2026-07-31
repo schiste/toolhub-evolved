@@ -59,8 +59,11 @@ function loadQuickView() {
 	return quickViewModule;
 }
 function closeQuickViewIfLoaded() {
-	if (!quickViewModule) return;
-	quickViewModule.then((m) => m.closeQuickView()).catch(() => undefined);
+	const qv = $("#qv");
+	if (!qv || qv.classList.contains("hidden")) return;
+	loadQuickView()
+		.then((m) => m.closeQuickView())
+		.catch(() => undefined);
 }
 /** @param {KeyboardEvent} e */
 function trapQuickViewIfLoaded(e) {

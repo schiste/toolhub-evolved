@@ -31,6 +31,7 @@ from backend import (  # noqa: E402
     author_claims,
     authz,
     db,
+    graph_payload,
     github_issues,
     maintainer_index,
     recent_owners,
@@ -2123,6 +2124,40 @@ def test_public_json_response_supports_etag_revalidation(client):
     assert "max-age=300" in first.headers["Cache-Control"]
     assert not_modified.status_code == 304
     assert not_modified.get_data() == b""
+
+
+def test_graph_payload_exposes_canonical_project_and_language_facets(monkeypatch):
+    monkeypatch.setattr(
+        graph_payload.canonical_tools,
+        "records",
+        lambda limit: [
+            {
+                "toolName": "commons-tool",
+                "record": {
+                    "name": "commons-tool",
+                    "title": "Commons tool",
+                    "keywords": ["images"],
+                    "for_wikis": ["commons.wikimedia.org"],
+                    "available_ui_languages": ["en", "fr"],
+                },
+            }
+        ],
+    )
+
+    payload = graph_payload.build()
+
+    assert payload["nodes"] == [
+        {
+            "id": "commons-tool",
+            "title": "Commons tool",
+            "community": 0,
+            "weight": 0,
+            "endorsement": 0,
+            "fits": False,
+            "projects": ["commons.wikimedia.org"],
+            "languages": ["en", "fr"],
+        }
+    ]
 
 
 def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():

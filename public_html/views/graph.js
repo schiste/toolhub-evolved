@@ -42,6 +42,43 @@ function graphToolbar() {
 	</div>`;
 }
 
+/**
+ * @param {Array<{ projects?: string[], languages?: string[] }>} nodes
+ * @param {"projects" | "languages"} key
+ * @returns {string[]}
+ */
+function graphFacetValues(nodes, key) {
+	return [...new Set(nodes.flatMap((node) => (Array.isArray(node[key]) ? node[key] : [])))]
+		.filter(Boolean)
+		.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+/** @param {Array<{ projects?: string[], languages?: string[] }>} nodes */
+function graphFilters(nodes) {
+	const projectLabel = t("graph.projectFilter", "Project");
+	const languageLabel = t("graph.languageFilter", "Language");
+	const projectOptions = graphFacetValues(nodes, "projects")
+		.map((value) => `<option value="${esc(value)}">${esc(value)}</option>`)
+		.join("");
+	const languageOptions = graphFacetValues(nodes, "languages")
+		.map((value) => `<option value="${esc(value)}">${esc(value)}</option>`)
+		.join("");
+	return `<div class="graph__filters" data-graph-filters aria-label="${esc(t("graph.filters", "Map filters"))}">
+		<label class="graph__filter" for="graph-project-filter"><span>${esc(projectLabel)}</span><select id="graph-project-filter" class="graph__select" data-graph-filter="projects">
+			<option value="">${esc(t("graph.allProjects", "All projects"))}</option>${projectOptions}
+		</select></label>
+		<label class="graph__filter" for="graph-language-filter"><span>${esc(languageLabel)}</span><select id="graph-language-filter" class="graph__select" data-graph-filter="languages">
+			<option value="">${esc(t("graph.allLanguages", "All languages"))}</option>${languageOptions}
+		</select></label>
+		<span class="graph__filter-count" data-graph-filter-count aria-live="polite">${esc(
+			t("graph.filterCount", "Showing {visible} of {total} tools", {
+				visible: String(nodes.length),
+				total: String(nodes.length)
+			})
+		)}</span>
+	</div>`;
+}
+
 export async function viewGraph() {
 	const g = (await backendGetJson("/v1/graph/")) || { nodes: [], edges: [], communityMeta: [], truncated: 0 };
 	const truncatedNote = g.truncated
@@ -51,14 +88,20 @@ export async function viewGraph() {
 		g.nodes.length > 0
 			? ""
 			: `<p class="empty">${t("graph.mapEmpty", "No richly documented tools are available for the map right now.")}</p>`;
+	const filterEmpty =
+		g.nodes.length > 0
+			? `<p class="empty graph__filter-empty" data-graph-filter-empty hidden>${t("graph.filterEmpty", "No tools match these filters.")}</p>`
+			: "";
 	const html = `
 	<div class="container page">
 		<h1 class="page__title">${t("graph.toolMap", "Tool map")}</h1>
 		<p class="page__intro">${t("graph.intro", "A similarity map of the most thoroughly-documented tools in the catalog. Each tool sits near others with overlapping function, scope, and audience; lines connect nearest neighbors and colors are clusters detected from those connections.")}</p>
 		<div class="graph">
 			${graphToolbar()}
+			${graphFilters(g.nodes)}
 			<div id="graph-canvas" class="graph__canvas"></div>
 			${empty}
+			${filterEmpty}
 			<div class="graph__legend" aria-label="${t("graph.mapLegend", "Map legend")}">${communityLegend(g.communityMeta)}</div>
 			${truncatedNote}
 		</div>
@@ -70,11 +113,26 @@ export async function viewGraph() {
 		target.forceGraphHandle = handle;
 		const controls = document.querySelector("[data-graph-controls]");
 		controls?.addEventListener("click", (event) => {
-			const action = /** @type {HTMLElement | null} */ (event.target)?.closest("[data-graph-action]")?.dataset
-				.graphAction;
+			const action = /** @type {HTMLElement | null} */ (
+				/** @type {Element | null} */ (event.target)?.closest("[data-graph-action]")
+			)?.dataset.graphAction;
 			if (action === "zoom-in") handle.zoomIn();
 			if (action === "zoom-out") handle.zoomOut();
 			if (action === "fit") handle.fitView();
+		});
+		const filterControls = document.querySelector("[data-graph-filters]");
+		filterControls?.addEventListener("change", (event) => {
+			const select = /** @type {HTMLSelectElement | null} */ (
+				/** @type {Element | null} */ (event.target)?.closest("select[data-graph-filter]")
+			);
+			if (!select) return;
+			const projects = /** @type {HTMLSelectElement | null} */ (
+				filterControls.querySelector('[data-graph-filter="projects"]')
+			)?.value;
+			const languages = /** @type {HTMLSelectElement | null} */ (
+				filterControls.querySelector('[data-graph-filter="languages"]')
+			)?.value;
+			handle.setFilters({ projects: projects || "", languages: languages || "" });
 		});
 	}
 	return { title: t("graph.docTitle", "Tool map — Toolhub"), html, mount };

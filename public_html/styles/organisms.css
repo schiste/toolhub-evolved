@@ -450,6 +450,44 @@
 	font-variant-numeric: tabular-nums;
 	text-align: end;
 }
+.graph__filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: end;
+	gap: var(--space-3);
+	margin-bottom: var(--space-3);
+}
+.graph__filter {
+	display: grid;
+	gap: var(--space-1);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	font-weight: 600;
+}
+.graph__select {
+	min-width: 12rem;
+	min-height: var(--ctl-h-md);
+	padding: var(--space-1) var(--space-6) var(--space-1) var(--space-2);
+	border: var(--border-base);
+	border-radius: var(--radius-base);
+	background: var(--color-surface);
+	color: var(--color-text);
+	font: inherit;
+}
+.graph__select:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 1px;
+}
+.graph__filter-count {
+	margin-inline-start: auto;
+	padding-bottom: var(--space-2);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+}
+.graph__filter-empty {
+	margin-block: var(--space-3);
+}
 #graph-canvas,
 .graph__canvas,
 .graph--ego > div {
@@ -474,6 +512,20 @@
 .force-graph:focus-visible {
 	outline: 2px solid var(--color-progressive);
 	outline-offset: -3px;
+}
+@media (width <= 600px) {
+	.graph__filter {
+		flex: 1 1 12rem;
+	}
+	.graph__select {
+		width: 100%;
+		min-width: 0;
+	}
+	.graph__filter-count {
+		flex-basis: 100%;
+		margin-inline-start: var(--space-0);
+		padding-bottom: var(--space-0);
+	}
 }
 .graph__legend {
 	display: flex;

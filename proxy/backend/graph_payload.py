@@ -251,6 +251,8 @@ def build() -> dict[str, Any]:
             "weight": degree[item["name"]],
             "endorsement": 0,
             "fits": False,
+            "projects": _string_list(item["record"].get("for_wikis")),
+            "languages": _string_list(item["record"].get("available_ui_languages")),
         }
         for item in selected
     ]

@@ -504,6 +504,14 @@ test("#qv: a favorite toggles; the backdrop and close button dismiss the modal",
 	assert.deepEqual(favbtn.syncFavButtons.mock.calls[0], ["tool-b", "Q"]);
 	assert.equal(quickview.closeQuickView.mock.calls.length, 0); // fav path returns early
 
+	// A graph route can open the already-imported quick view before main.js has
+	// populated its lazy-module cache; the global close listener must still load
+	// the shared module and close the visible modal.
+	vi.clearAllMocks();
+	click($("#qv [data-qv-close]"));
+	await settleDynamicImports();
+	assert.equal(quickview.closeQuickView.mock.calls.length, 1);
+
 	await loadQuickViewForTest();
 	vi.clearAllMocks();
 	click($("#qv [data-qv-close]"));
