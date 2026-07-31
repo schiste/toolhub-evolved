@@ -425,6 +425,31 @@
 	position: relative;
 	margin-top: var(--space-4);
 }
+.graph__toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	min-height: var(--ctl-h-md);
+	margin-bottom: var(--space-2);
+}
+.graph__toolbar-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+}
+.graph__zoom-out {
+	width: var(--btn-h-sm);
+	padding-inline: var(--space-0);
+	font-size: var(--fs-body);
+}
+.graph__zoom-readout {
+	min-width: 4ch;
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	font-variant-numeric: tabular-nums;
+	text-align: end;
+}
 #graph-canvas,
 .graph__canvas,
 .graph--ego > div {
@@ -442,6 +467,13 @@
 	display: block;
 	width: 100%;
 	background: var(--color-surface);
+	cursor: grab;
+	touch-action: none;
+	user-select: none;
+}
+.force-graph:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: -3px;
 }
 .graph__legend {
 	display: flex;

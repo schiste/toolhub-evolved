@@ -55,6 +55,11 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 	const view = await viewGraph();
 	assert.equal(view.title, "Tool map — Toolhub");
 	assert.match(view.html, /<h1 class="page__title">Tool map<\/h1>/);
+	assert.match(view.html, /data-graph-controls/);
+	assert.match(view.html, /data-graph-action="zoom-in"/);
+	assert.match(view.html, /data-graph-action="zoom-out"/);
+	assert.match(view.html, /data-graph-action="fit"/);
+	assert.match(view.html, /data-graph-zoom[^>]*>100%<\/span>/);
 	// Populated → the empty placeholder is exactly "" : the canvas closes directly onto the
 	// legend (kills the `? ""` → injected-string mutant).
 	assert.match(view.html, /<div id="graph-canvas" class="graph__canvas"><\/div>\s*<div class="graph__legend"/);
@@ -83,9 +88,10 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 	assert.doesNotMatch(view.html, /No richly documented tools/);
 
 	// mount() wires the force graph onto the canvas element.
-	document.body.innerHTML = '<div id="graph-canvas"></div>';
+	document.body.innerHTML =
+		'<div class="graph"><div id="graph-canvas"></div><div data-graph-controls><button data-graph-action="zoom-in"></button><button data-graph-action="zoom-out"></button><button data-graph-action="fit"></button></div></div>';
 	const target = document.querySelector("#graph-canvas");
-	const handle = { stop() {} };
+	const handle = { stop() {}, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn() };
 	forceGraphMod.forceGraph.mockReturnValue(handle);
 	view.mount();
 	assert.equal(forceGraphMod.forceGraph.mock.calls.length, 1);
@@ -95,6 +101,12 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 		{ onSelect: quickview.openQuickView, height: 560 }
 	]);
 	assert.equal(target.forceGraphHandle, handle);
+	document.querySelector('[data-graph-action="zoom-in"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	document.querySelector('[data-graph-action="zoom-out"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	document.querySelector('[data-graph-action="fit"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	assert.equal(handle.zoomIn.mock.calls.length, 1);
+	assert.equal(handle.zoomOut.mock.calls.length, 1);
+	assert.equal(handle.fitView.mock.calls.length, 1);
 });
 
 test("viewGraph: an empty map shows the empty state, no truncated note, and no 'Fits you'", async () => {

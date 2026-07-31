@@ -3,6 +3,9 @@ import { t } from "../core/i18n.js";
 
 const TWO_PI = Math.PI * 2;
 const MAX_TICKS = 400;
+const MIN_ZOOM = 0.55;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 1.2;
 const COMMUNITY_PALETTE = [
 	"--wmf-blue-aaa",
 	"--wmf-green-aaa",
@@ -247,6 +250,7 @@ function createGraphSurface(container) {
 	canvas.className = "force-graph";
 	canvas.setAttribute("aria-label", t("forceGraph.toolSimilarityGraph", "Tool similarity graph"));
 	canvas.setAttribute("role", "img");
+	canvas.setAttribute("tabindex", "0");
 	tooltip.className = "graph__tip";
 	tooltip.hidden = true;
 	container.innerHTML = "";
@@ -288,6 +292,9 @@ function graphStructure(data) {
  * @param {FGData} data
  * @param {FGOpts} [opts]
  */
+// The renderer intentionally keeps simulation, viewport, and canvas lifecycle together
+// so one handle can stop every listener and animation source deterministically.
+// eslint-disable-next-line max-lines-per-function
 export function forceGraph(container, data, opts = {}) {
 	const { canvas, tooltip, ctx } = createGraphSurface(container);
 	const reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -298,15 +305,76 @@ export function forceGraph(container, data, opts = {}) {
 	let raf = 0;
 	let ticks = 0;
 	let stopped = false;
+	let zoom = 1;
+	let panX = 0;
+	let panY = 0;
 	/** @type {FGNode | null} */
 	let hovered = null;
 	// Stryker disable next-line ObjectLiteral: pointer is overwritten by onMove() before the tooltip is ever shown (the tooltip only renders while hovering, which requires a prior mousemove), so this initial value is never observed — equivalent.
 	let pointer = { x: 0, y: 0 };
+	/** @type {{ x: number; y: number; moved: boolean } | null} */
+	let drag = null;
+	let dragMoved = false;
 	/** @type {MutationObserver | null} */
 	let detachObserver = null;
 	let colors = buildColors(data, opts);
 
 	const { nodes, edges, neighborMap, edgeSet } = graphStructure(data);
+
+	function updateZoomReadout() {
+		const readout = container.closest(".graph")?.querySelector("[data-graph-zoom]");
+		if (readout) readout.textContent = `${Math.round(zoom * 100)}%`;
+	}
+
+	/** @param {number} x @param {number} y */
+	function toScreen(x, y) {
+		return { x: x * zoom + panX, y: y * zoom + panY };
+	}
+
+	/** @param {number} x @param {number} y */
+	function toGraph(x, y) {
+		return { x: (x - panX) / zoom, y: (y - panY) / zoom };
+	}
+
+	function redrawView() {
+		updateZoomReadout();
+		draw();
+	}
+
+	/** @param {number} factor @param {number} x @param {number} y */
+	function zoomAt(factor, x, y) {
+		const next = clamp(zoom * factor, MIN_ZOOM, MAX_ZOOM);
+		if (next === zoom) return;
+		const before = toGraph(x, y);
+		zoom = next;
+		panX = x - before.x * zoom;
+		panY = y - before.y * zoom;
+		redrawView();
+	}
+
+	function resetView() {
+		zoom = 1;
+		panX = 0;
+		panY = 0;
+		redrawView();
+	}
+
+	function fitView() {
+		if (nodes.length === 0) return;
+		const pad = 56;
+		const xs = nodes.map((node) => node.x);
+		const ys = nodes.map((node) => node.y);
+		const minX = Math.min(...xs);
+		const maxX = Math.max(...xs);
+		const minY = Math.min(...ys);
+		const maxY = Math.max(...ys);
+		const graphWidth = Math.max(maxX - minX, 1);
+		const graphHeight = Math.max(maxY - minY, 1);
+		zoom = clamp(Math.min((width - pad * 2) / graphWidth, (height - pad * 2) / graphHeight), MIN_ZOOM, MAX_ZOOM);
+		panX = width / 2 - ((minX + maxX) / 2) * zoom;
+		panY = height / 2 - ((minY + maxY) / 2) * zoom;
+		redrawView();
+	}
 
 	// Stryker disable all: activeIds is consumed only by draw() to vary edge/node alpha while hovering (a canvas draw) — no observable, assertable effect.
 	function activeIds() {
@@ -417,11 +485,32 @@ export function forceGraph(container, data, opts = {}) {
 			(edgeSet.has(edgeKey(edge.source, edge.target)) && active.has(edge.source) && active.has(edge.target));
 		ctx.globalAlpha = active ? (isActive ? 0.48 : 0.06) : 0.22;
 		ctx.strokeStyle = colors.border;
-		ctx.lineWidth = isActive ? 1.25 : 1;
+		ctx.lineWidth = (isActive ? 1.25 : 1) / zoom;
 		ctx.beginPath();
-		ctx.moveTo(edge.sourceNode.x, edge.sourceNode.y);
-		ctx.lineTo(edge.targetNode.x, edge.targetNode.y);
+		const source = toScreen(edge.sourceNode.x, edge.sourceNode.y);
+		const target = toScreen(edge.targetNode.x, edge.targetNode.y);
+		ctx.moveTo(source.x, source.y);
+		ctx.lineTo(target.x, target.y);
 		ctx.stroke();
+	}
+
+	/** @param {FGNode} node @param {number} x @param {number} y @param {number} radius */
+	function drawNodeLabel(node, x, y, radius) {
+		const showLabel = node.center || node === hovered || nodes.length <= 60 || zoom >= 1.35;
+		if (!showLabel) return;
+		const label = String(node.title || node.id);
+		const text = label.length > 32 ? `${label.slice(0, 29)}…` : label;
+		ctx.font = "600 11px system-ui, sans-serif";
+		// A fixed estimate keeps the canvas label box stable across platform fonts and
+		// avoids relying on measureText in lightweight canvas implementations.
+		const textWidth = text.length * 6.2;
+		const labelX = x + radius + 7;
+		const labelY = y + 4;
+		ctx.globalAlpha = node === hovered || node.center ? 1 : 0.86;
+		ctx.fillStyle = colors.labelBg;
+		ctx.fillRect(labelX - 4, labelY - 12, textWidth + 8, 17);
+		ctx.fillStyle = colors.labelText;
+		ctx.fillText(text, labelX, labelY);
 	}
 
 	/**
@@ -430,24 +519,34 @@ export function forceGraph(container, data, opts = {}) {
 	 */
 	function drawNode(node, active) {
 		const isActive = !active || active.has(node.id);
-		const size = nodeSize(node);
-		const x = node.x - size / 2;
-		const y = node.y - size / 2;
+		const point = toScreen(node.x, node.y);
+		const size = nodeSize(node) * Math.min(zoom, 1.35);
+		const radius = size / 2;
 		const isOther = node.community === "other";
 		ctx.globalAlpha = active ? (isActive ? (isOther ? 0.72 : 1) : 0.16) : isOther ? 0.62 : 1;
 		ctx.fillStyle = colorForNode(node, colors);
-		ctx.fillRect(x, y, size, size);
+		ctx.beginPath();
+		ctx.arc(point.x, point.y, radius, 0, TWO_PI);
+		ctx.fill();
+		ctx.strokeStyle = colors.surface;
+		ctx.lineWidth = 1;
+		ctx.stroke();
 		if (node.center) {
 			ctx.strokeStyle = colors.labelText;
 			ctx.lineWidth = 2;
-			ctx.strokeRect(x - 2, y - 2, size + 4, size + 4);
+			ctx.beginPath();
+			ctx.arc(point.x, point.y, radius + 3, 0, TWO_PI);
+			ctx.stroke();
 		}
 		if (opts.fitHalo !== false && node.fits) {
 			ctx.globalAlpha = isActive ? 1 : 0.16;
 			ctx.strokeStyle = colors.fit;
 			ctx.lineWidth = 2;
-			ctx.strokeRect(x - 4, y - 4, size + 8, size + 8);
+			ctx.beginPath();
+			ctx.arc(point.x, point.y, radius + 6, 0, TWO_PI);
+			ctx.stroke();
 		}
+		drawNodeLabel(node, point.x, point.y, radius);
 	}
 
 	function draw() {
@@ -470,11 +569,12 @@ export function forceGraph(container, data, opts = {}) {
 	 * @returns {FGNode | null}
 	 */
 	function findNode(x, y) {
+		const point = toGraph(x, y);
 		for (let i = nodes.length - 1; i >= 0; i--) {
 			const node = nodes[i];
-			const half = nodeSize(node) / 2 + 4;
+			const half = nodeSize(node) / 2 + 4 / zoom;
 			// Stryker disable next-line EqualityOperator: `<= half` vs `< half` differs only when |x - node.x| equals half exactly; node coords are floats and pointer coords are integers, so equality is a measure-zero case that never occurs — equivalent. (The `> half` inversion is killed by the hover fingerprint.)
-			if (Math.abs(x - node.x) <= half && Math.abs(y - node.y) <= half) return node;
+			if (Math.abs(point.x - node.x) <= half && Math.abs(point.y - node.y) <= half) return node;
 		}
 		return null;
 	}
@@ -499,6 +599,23 @@ export function forceGraph(container, data, opts = {}) {
 	function onMove(event) {
 		const rect = canvas.getBoundingClientRect();
 		pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+		if (drag) {
+			const dx = pointer.x - drag.x;
+			const dy = pointer.y - drag.y;
+			if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+				drag.moved = true;
+				dragMoved = true;
+			}
+			if (drag.moved) {
+				panX += dx;
+				panY += dy;
+				drag.x = pointer.x;
+				drag.y = pointer.y;
+				canvas.style.cursor = "grabbing";
+				redrawView();
+				return;
+			}
+		}
 		const next = findNode(pointer.x, pointer.y);
 		// Stryker disable next-line ConditionalExpression: forcing this `true` only re-assigns hovered to the same value, re-sets the same cursor, and re-runs draw() (canvas) when the hovered node is unchanged — no observable effect. (Forcing it false is killed by the hover tests, which then never see a tooltip.)
 		if (next !== hovered) {
@@ -510,6 +627,7 @@ export function forceGraph(container, data, opts = {}) {
 	}
 
 	function onLeave() {
+		if (drag) return;
 		hovered = null;
 		canvas.style.cursor = "";
 		positionTooltip();
@@ -517,7 +635,62 @@ export function forceGraph(container, data, opts = {}) {
 	}
 
 	function onClick() {
+		if (dragMoved) {
+			dragMoved = false;
+			return;
+		}
 		if (hovered && typeof opts.onSelect === "function") opts.onSelect(hovered.id);
+	}
+
+	/** @param {MouseEvent} event */
+	function onMouseDown(event) {
+		if (event.button !== 0) return;
+		const rect = canvas.getBoundingClientRect();
+		const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+		drag = { x: point.x, y: point.y, moved: false };
+		dragMoved = false;
+		canvas.style.cursor = "grabbing";
+		event.preventDefault();
+	}
+
+	function onMouseUp() {
+		drag = null;
+		canvas.style.cursor = hovered ? "pointer" : "";
+	}
+
+	/** @param {WheelEvent} event */
+	function onWheel(event) {
+		const rect = canvas.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		event.preventDefault();
+		zoomAt(event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, x, y);
+	}
+
+	/** @param {KeyboardEvent} event */
+	function onKeyDown(event) {
+		const amount = 42;
+		if (event.key === "+" || event.key === "=") {
+			event.preventDefault();
+			zoomAt(ZOOM_STEP, width / 2, height / 2);
+		} else if (event.key === "-") {
+			event.preventDefault();
+			zoomAt(1 / ZOOM_STEP, width / 2, height / 2);
+		} else if (event.key === "0") {
+			event.preventDefault();
+			resetView();
+		} else if (event.key.toLowerCase() === "f") {
+			event.preventDefault();
+			fitView();
+		} else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+			event.preventDefault();
+			panX += event.key === "ArrowLeft" ? amount : -amount;
+			redrawView();
+		} else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+			event.preventDefault();
+			panY += event.key === "ArrowUp" ? amount : -amount;
+			redrawView();
+		}
 	}
 
 	function stop() {
@@ -529,9 +702,14 @@ export function forceGraph(container, data, opts = {}) {
 		detachObserver = null;
 		// Stryker disable next-line StringLiteral: removing the resize listener is redundant — start() (the only thing onResize calls) bails on its `if (stopped) return`, so a stale resize listener has no observable effect after stop() — equivalent.
 		window.removeEventListener("resize", onResize);
+		window.removeEventListener("mouseup", onMouseUp);
 		canvas.removeEventListener("mousemove", onMove);
 		canvas.removeEventListener("mouseleave", onLeave);
 		canvas.removeEventListener("click", onClick);
+		canvas.removeEventListener("mousedown", onMouseDown);
+		canvas.removeEventListener("mouseup", onMouseUp);
+		canvas.removeEventListener("wheel", onWheel);
+		canvas.removeEventListener("keydown", onKeyDown);
 	}
 
 	function animate() {
@@ -574,10 +752,16 @@ export function forceGraph(container, data, opts = {}) {
 	}
 
 	resize();
+	updateZoomReadout();
 	canvas.addEventListener("mousemove", onMove);
 	canvas.addEventListener("mouseleave", onLeave);
 	canvas.addEventListener("click", onClick);
+	canvas.addEventListener("mousedown", onMouseDown);
+	canvas.addEventListener("mouseup", onMouseUp);
+	canvas.addEventListener("wheel", onWheel, { passive: false });
+	canvas.addEventListener("keydown", onKeyDown);
 	window.addEventListener("resize", onResize);
+	window.addEventListener("mouseup", onMouseUp);
 	// Stryker disable next-line ConditionalExpression: window.MutationObserver is always defined in browsers and happy-dom, so forcing this guard true is equivalent. (Forcing it false is killed by the auto-stop test, which then never detaches.)
 	if (window.MutationObserver) {
 		detachObserver = new MutationObserver(() => {
@@ -589,6 +773,14 @@ export function forceGraph(container, data, opts = {}) {
 
 	return {
 		stop,
+		fitView,
+		resetView,
+		zoomIn() {
+			zoomAt(ZOOM_STEP, width / 2, height / 2);
+		},
+		zoomOut() {
+			zoomAt(1 / ZOOM_STEP, width / 2, height / 2);
+		},
 		// Stryker disable next-line BlockStatement: redraw() only calls draw() (canvas drawing); emptying it has no observable effect. The handle exposing redraw is asserted by the surface-creation test.
 		redraw() {
 			draw();

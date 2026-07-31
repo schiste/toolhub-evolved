@@ -198,6 +198,8 @@ test("forceGraph honours a custom height above the floor", () => {
 /* ---- layout: a lone node settles to the centre -------------------------- */
 test("a single node settles to the canvas centre (hit-tested via hover)", () => {
 	const { canvas, tip } = build({ nodes: [{ id: "n1", title: "Node One" }], edges: [] }, { height: 480 });
+	assert.equal(canvas.getAttribute("tabindex"), "0");
+	assert.equal(canvas.getAttribute("role"), "img");
 	move(canvas, 360, 240); // centre
 	assert.equal(tip.hidden, false);
 	assert.equal(tip.textContent, "Node One");
@@ -329,6 +331,10 @@ test("stop() detaches every pointer listener (mousemove, mouseleave, click)", ()
 test("redraw() is callable without throwing", () => {
 	const { handle } = build({ nodes: [{ id: "n1", title: "Node One" }], edges: [] }, { height: 480 });
 	assert.doesNotThrow(() => handle.redraw());
+	assert.doesNotThrow(() => handle.zoomIn());
+	assert.doesNotThrow(() => handle.zoomOut());
+	assert.doesNotThrow(() => handle.fitView());
+	assert.doesNotThrow(() => handle.resetView());
 });
 
 test("reduced motion settles synchronously without scheduling animation frames", () => {
