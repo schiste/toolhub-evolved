@@ -319,7 +319,7 @@ export function healthScoreChip(summary, opts = {}) {
 	const chipClass = opts.compact ? " health-score--compact" : "";
 	const visibleScore = opts.compact ? esc(score) : t("toolHealth.healthScore", "Health {score}", { score });
 	return `<details class="health-popover health-popover--score${compactClass}">
-		<summary class="health-score health-score--${esc(tone)}${chipClass}" title="${esc(tooltip)}" aria-label="${esc(t("toolHealth.openScoreSignals", "Health {score} · {grade}; open calculation details", { score, grade: fullGrade }))}">
+		<summary class="status health-score health-score--${esc(tone)}${chipClass}" title="${esc(tooltip)}" aria-label="${esc(t("toolHealth.openScoreSignals", "Health {score} · {grade}; open calculation details", { score, grade: fullGrade }))}">
 			${icon("analyze")} <span>${visibleScore}</span><span class="health-score__grade">${esc(grade)}</span>
 		</summary>
 		${healthScorePanel(summary)}
@@ -349,7 +349,7 @@ export function maintainerDisclosure(summary, opts = {}) {
 	const compact = opts.compact ? " health-popover--compact" : "";
 	const chipClass = opts.compact ? " health-chip--compact" : "";
 	return `<details class="health-popover${compact}">
-		<summary class="health-chip health-chip--${esc(tone)}${chipClass}" title="${esc(label)}" aria-label="${esc(t("toolHealth.openMaintainerSignals", "{label}; open calculation signals", { label }))}">
+		<summary class="status health-chip health-chip--${esc(tone)}${chipClass}" title="${esc(label)}" aria-label="${esc(t("toolHealth.openMaintainerSignals", "{label}; open calculation signals", { label }))}">
 			${icon("group")} <span class="health-chip__label">${esc(visibleLabel)}</span>
 		</summary>
 		<div class="health-popover__panel">

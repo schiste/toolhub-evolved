@@ -154,6 +154,7 @@
 	--shadow-modal: 0 21px 64px rgb(0 0 0 / 0.3);
 	--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
 	--shadow-progressive-glow: 0 6px 18px color-mix(in srgb, var(--color-progressive) 20%, transparent);
+	--shadow-active-underline: inset 0 -2px 0 currentColor;
 
 	/* ---- Focus ------------------------------------------------------------- */
 	--focus-ring: 0 0 0 3px var(--color-interactive-subtle);
@@ -243,4 +244,5 @@
 	--shadow-popover: 0 8px 28px rgb(0 0 0 / 0.55);
 	--shadow-modal: 0 24px 72px rgb(0 0 0 / 0.65);
 	--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.55);
+	--shadow-active-underline: inset 0 -2px 0 currentColor;
 }

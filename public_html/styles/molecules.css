@@ -73,20 +73,6 @@
 }
 
 /* Tool health and maintainer disclosure. */
-.health-score,
-.health-chip {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--space-1);
-	min-height: 1.65em;
-	padding: var(--space-0-5) var(--space-2);
-	border: var(--border-base);
-	font-size: var(--fs-micro);
-	font-weight: 700;
-	line-height: 1;
-	white-space: nowrap;
-}
-
 .health-score--compact,
 .health-chip--compact {
 	min-height: var(--ctl-h-sm);
@@ -131,35 +117,30 @@
 
 .health-score--legendary {
 	background: var(--color-progressive-subtle);
-	border-color: var(--color-progressive);
 	color: var(--color-progressive);
 }
 
 .health-score--good,
 .health-chip--good {
 	background: var(--color-success-subtle);
-	border-color: var(--color-success);
 	color: var(--color-success);
 }
 
 .health-score--watch,
 .health-chip--watch {
 	background: var(--color-warning-subtle);
-	border-color: var(--color-warning-text);
 	color: var(--color-warning-text);
 }
 
 .health-score--risk,
 .health-chip--risk {
 	background: var(--color-destructive-subtle);
-	border-color: var(--color-destructive);
 	color: var(--color-destructive);
 }
 
 .health-score--unknown,
 .health-chip--unknown {
 	background: var(--color-surface-muted);
-	border-color: var(--color-border);
 	color: var(--color-text-muted);
 }
 
@@ -180,11 +161,11 @@
 }
 
 .health-popover[open] .health-chip {
-	border-block-end-color: currentColor;
+	box-shadow: var(--shadow-active-underline);
 }
 
 .health-popover[open] .health-score {
-	border-block-end-color: currentColor;
+	box-shadow: var(--shadow-active-underline);
 }
 
 .health-popover__panel {

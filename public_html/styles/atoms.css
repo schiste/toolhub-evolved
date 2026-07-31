@@ -284,13 +284,21 @@ textarea.le__input {
 	box-shadow: none;
 }
 
-.status {
+.status,
+.health-score,
+.health-chip,
+.exp-badge {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--space-2);
+	min-height: var(--ctl-h-sm);
 	font-weight: 600;
 	font-size: var(--fs-micro);
 	padding: var(--space-1) var(--space-2);
+	font-family: var(--font-sans);
+	line-height: 1;
+	white-space: nowrap;
+	border: var(--border-transparent);
 	border-radius: var(--radius-pill);
 }
 
@@ -357,15 +365,17 @@ textarea.le__input {
 }
 
 .exp-badge {
-	display: inline-block;
-	vertical-align: middle;
-	background: var(--wmf-purple);
-	color: var(--color-surface);
-	border-radius: var(--radius-pill);
-	padding: var(--space-0-5) var(--space-2);
-	font-size: var(--fs-micro);
-	font-weight: 700;
-	font-family: var(--font-sans);
+	background: var(--color-warning-subtle);
+	color: var(--color-warning-text);
+}
+
+.exp-badge::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	background: currentColor;
 }
 
 .le__label {
