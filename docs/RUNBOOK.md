@@ -408,6 +408,20 @@ endpoint has no retained stream, inspect the paths shown by
 `toolforge jobs list -o long`, usually `~/catalog-sync.out` and
 `~/catalog-sync.err`, without treating old appended errors as a current run.
 
+Every scheduled job is wrapped by `tools/job_guard.sh`. A non-zero child exit
+increments that job's consecutive-failure streak; the third consecutive failure
+disables the child on subsequent schedules while preserving the failure email.
+A successful run resets the streak. The guard state is stored in
+`~/.toolhub-job-guard/` on the tool account's shared home, and an operator can
+resume one job explicitly after fixing the cause:
+
+```sh
+sh ~/repo/tools/job_guard.sh --job-name catalog-sync --reset
+```
+
+The reset only clears the guard; it does not run the job immediately. Use
+`toolforge jobs run` for a controlled manual run.
+
 The crawler exits non-zero (→ failure email) when any URL errored; per-run
 results are also stored in the `crawler_runs` table.
 

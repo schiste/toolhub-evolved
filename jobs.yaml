@@ -5,7 +5,7 @@
 - name: crawler
   # Hourly toolinfo crawl: fetches every registered URL, validates records,
   # upserts locally-registered tools (skipping names that exist upstream).
-  command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/crawl.py
+  command: $HOME/repo/tools/job_guard.sh --job-name crawler -- $HOME/www/python/venv/bin/python $HOME/repo/proxy/crawl.py
   image: python3.13
   schedule: "17 * * * *"
   emails: onfailure
@@ -15,7 +15,7 @@
   # check root /toolinfo.json first, then same-origin sitemap.xml entries.
   # Keep it off the request path, but scan a large enough window that the
   # official catalog converges quickly across repeated runs.
-  command: /usr/bin/env TOOLINFO_DISCOVERY_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_discovery.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name toolinfo-discovery -- /usr/bin/env TOOLINFO_DISCOVERY_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_discovery.py
   image: python3.13
   schedule: "37 */6 * * *"
   emails: onfailure
@@ -25,7 +25,7 @@
   # /api/crawler/urls/, fetch each registered feed, and map tool names back to
   # the feed Toolhub crawls. This is canonical provenance evidence; root/sitemap
   # discovery remains a secondary self-hosted metadata check.
-  command: /usr/bin/env TOOLINFO_SOURCE_INDEX_LIMIT=150 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_sources.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name toolinfo-source-index -- /usr/bin/env TOOLINFO_SOURCE_INDEX_LIMIT=150 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolinfo_sources.py
   image: python3.13
   schedule: "11 */6 * * *"
   emails: onfailure
@@ -34,7 +34,7 @@
   # Initial backfill: five 100-record pages every 15 minutes. After the first
   # cycle, consume recent tool changes and reconcile one page every 12 hours,
   # with a three-second minimum between upstream requests.
-  command: /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-sync -- /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
   image: python3.13
   schedule: "*/15 * * * *"
   timeout: 300
@@ -43,7 +43,7 @@
 - name: repository-analysis
   # Deterministically analyze up to 100 newly added or changed public repositories
   # per hour. The initial catalog backfill can be run manually with a larger limit.
-  command: /usr/bin/env REPOSITORY_SCAN_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name repository-analysis -- /usr/bin/env REPOSITORY_SCAN_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py
   image: python3.13
   schedule: "47 * * * *"
   timeout: 900
@@ -52,7 +52,7 @@
 - name: people-reconcile
   # Rebuild the deterministic people graph and typed relationships. The first
   # run can be inspected safely with `proxy/people_reconcile.py` without --apply.
-  command: /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
   image: python3.13
   schedule: "23 */6 * * *"
   timeout: 600
@@ -61,7 +61,7 @@
 - name: people-reconcile-incremental
   # Process canonical and newly ingested tool changes shortly after their
   # write transaction. The six-hour full pass remains the global backstop.
-  command: /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile-incremental -- /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
   image: python3.13
   schedule: "* * * * *"
   timeout: 120
@@ -70,7 +70,7 @@
 - name: api-cache-invalidator
   # Poll official Toolhub recent changes out of band, invalidate affected rows,
   # then prewarm hot anonymous reads so user requests never pay that cost.
-  command: $HOME/www/python/venv/bin/python $HOME/repo/proxy/cache_invalidation.py
+  command: $HOME/repo/tools/job_guard.sh --job-name api-cache-invalidator -- $HOME/www/python/venv/bin/python $HOME/repo/proxy/cache_invalidation.py
   image: python3.13
   schedule: "* * * * *"
   emails: onfailure
@@ -79,7 +79,7 @@
   # Nightly ToolsDB dump with 14-day rotation (tools/backup-db.sh).
   # The mariadb image ships the client tools; check `toolforge jobs images`
   # if the image name changes.
-  command: sh $HOME/repo/tools/backup-db.sh
+  command: sh $HOME/repo/tools/job_guard.sh --job-name db-backup -- sh $HOME/repo/tools/backup-db.sh
   image: mariadb
   schedule: "45 2 * * *"
   emails: onfailure
