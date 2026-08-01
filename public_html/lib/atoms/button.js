@@ -97,7 +97,14 @@ function withRelToken(attrs, token) {
 function commonAttrs(tag, opts) {
 	// Stryker disable next-line ConditionalExpression: `tag === "a"` is redundant with `outboundHref(opts.href)` — tag is "a" exactly when opts.href is truthy, and outboundHref(falsy href) is always false, so `tag === "a" && …` ≡ `true && …`. (Co-disables the outer ternary's true/false mutants, which the rel tests still assert.)
 	const extraAttrs = tag === "a" && outboundHref(opts.href) ? withRelToken(opts.attrs, "nofollow") : opts.attrs || "";
-	return `${tag === "a" ? ` href="${opts.href}"` : ` type="${esc(opts.type || "button")}"`}${disabledAttrs(tag, opts.disabled)}${extraAttrs ? ` ${extraAttrs}` : ""}`;
+	// esc() on href even though every current caller already passes a sanitized
+	// value (a static path, an encodeURIComponent-built route, or safeUrl()/
+	// safeHttpUrl() output, which escape). That made the guarantee a property of
+	// the call sites rather than of this atom: one future caller passing a raw
+	// catalog field would be an attribute-injection XSS, and the CI tripwire in
+	// tools/checks.mjs could not see it. Escaping here is idempotent for the
+	// already-escaped values, so it holds the line without changing any output.
+	return `${tag === "a" ? ` href="${esc(opts.href)}"` : ` type="${esc(opts.type || "button")}"`}${disabledAttrs(tag, opts.disabled)}${extraAttrs ? ` ${extraAttrs}` : ""}`;
 }
 
 /**

@@ -32,6 +32,7 @@ const RISKY_FIELDS = new Set([
 	"author",
 	"maintainer",
 	"url",
+	"href",
 	"keyword"
 ]);
 
