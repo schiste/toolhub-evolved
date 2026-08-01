@@ -28,19 +28,33 @@ VENV_PY="$HOME/www/python/venv/bin/python"
 run_with_tool_env() {
 	_out="$HOME/.deploy-step.out"
 	rm -f "$_out"
+	# The pod records its own exit status in the file. `webservice shell` does
+	# not reliably propagate one (it falls back to streaming logs), so reading
+	# the marker is exact where trusting $? or grepping for error text is not.
 	webservice python3.13 shell -- \
-		sh -c "$VENV_PY $1 > $_out 2>&1" >/dev/null 2>&1 || true
+		sh -c "$VENV_PY $1 > $_out 2>&1; echo \"__EXIT=\$?\" >> $_out" >/dev/null 2>&1 || true
+
+	# The file is written in the pod and read here over NFS, so it can take a
+	# moment to become visible. Wait for the marker rather than racing it.
+	_waited=0
+	while [ "$_waited" -lt 60 ]; do
+		if grep -q '^__EXIT=' "$_out" 2>/dev/null; then
+			break
+		fi
+		sleep 1
+		_waited=$((_waited + 1))
+	done
+
 	if [ -f "$_out" ]; then
-		sed 's/^/  /' "$_out"
+		grep -v '^__EXIT=' "$_out" | sed 's/^/  /'
 	fi
-	# The pod's exit status is not reliably propagated, so the step reports its
-	# own success and we check for that rather than trusting $?.
-	if ! grep -q . "$_out" 2>/dev/null; then
-		echo "  step produced no output — treating as failed" >&2
+	_status="$(sed -n 's/^__EXIT=//p' "$_out" 2>/dev/null | tail -1)"
+	if [ -z "$_status" ]; then
+		echo "  step did not report an exit status after ${_waited}s" >&2
 		return 1
 	fi
-	if grep -qiE "traceback|^migrate: TOOLHUB_DB_URL is unset" "$_out"; then
-		echo "  step reported an error (see above)" >&2
+	if [ "$_status" -ne 0 ]; then
+		echo "  step exited $_status" >&2
 		return 1
 	fi
 	return 0
