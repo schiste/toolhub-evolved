@@ -92,15 +92,27 @@ const LOCAL_STRIP_CAP = 12;
  * @param {Tool[]} live
  * @returns {Promise<Tool[]>}
  */
-async function localResults(q, live) {
-	let data;
+async function localCandidates(q) {
 	try {
-		data = await backendGetJson(`/v1/search/tools/?q=${encodeURIComponent(q)}`);
+		const data = await backendGetJson(`/v1/search/tools/?q=${encodeURIComponent(q)}`);
+		return data && Array.isArray(data.results) ? data.results : [];
 	} catch {
 		return [];
 	}
+}
+/**
+ * Dedupe local candidates against the live page and build the strip.
+ *
+ * Split from the fetch so the request can run alongside the live search rather
+ * than after it: the dedup is the only part that needs the live results, and it
+ * is pure.
+ * @param {any[]} candidates
+ * @param {Tool[]} live
+ * @returns {Tool[]}
+ */
+function localStrip(candidates, live) {
 	const seen = new Set(live.map((tool) => tool.name));
-	return (data && Array.isArray(data.results) ? data.results : [])
+	return candidates
 		.filter((/** @type {any} */ rec) => rec && rec.name && !seen.has(rec.name))
 		.slice(0, LOCAL_STRIP_CAP)
 		.map((/** @type {any} */ rec) => localToolBase(rec.name, rec));
@@ -130,35 +142,40 @@ export async function viewSearch() {
 		}
 	}
 
-	const loaded = await (async () => {
-		try {
-			const liveData = await apiGet(
-				"/search/tools/",
-				/** @type {Record<string, string>} */ (/** @type {unknown} */ (api))
-			);
-			return {
-				data: liveData,
-				results: (liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool)),
-				canonicalFallback: false
-			};
-		} catch (error) {
-			const cached = await cachedCanonicalTools({ q, limit: page * pageSize }).catch(() => []);
-			const offset = (page - 1) * pageSize;
-			const cachedResults = cached.slice(offset, offset + pageSize);
-			if (cachedResults.length === 0) throw error;
-			return {
-				data: { count: cached.length, facets: {} },
-				results: cachedResults,
-				canonicalFallback: true
-			};
-		}
-	})();
+	// The local strip only needs the live results to dedupe against, so its
+	// request runs alongside the live search instead of after it.
+	const [loaded, candidates] = await Promise.all([
+		(async () => {
+			try {
+				const liveData = await apiGet(
+					"/search/tools/",
+					/** @type {Record<string, string>} */ (/** @type {unknown} */ (api))
+				);
+				return {
+					data: liveData,
+					results: (liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool)),
+					canonicalFallback: false
+				};
+			} catch (error) {
+				const cached = await cachedCanonicalTools({ q, limit: page * pageSize }).catch(() => []);
+				const offset = (page - 1) * pageSize;
+				const cachedResults = cached.slice(offset, offset + pageSize);
+				if (cachedResults.length === 0) throw error;
+				return {
+					data: { count: cached.length, facets: {} },
+					results: cachedResults,
+					canonicalFallback: true
+				};
+			}
+		})(),
+		// Page 1 only — the strip is additive, never paginated.
+		page === 1 ? localCandidates(q) : Promise.resolve([])
+	]);
 	const data = loaded.data;
 	/** @type {Tool[]} */
 	let results = loaded.results;
 	const { canonicalFallback } = loaded;
-	// Federated strip (page 1 only — the strip is additive, never paginated).
-	const local = page === 1 ? await localResults(q, results) : [];
+	const local = localStrip(candidates, results);
 	await Promise.all([
 		attachEndorsements(results, { defer: true }),
 		attachEvolvedSummaries(results),

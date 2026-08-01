@@ -840,3 +840,46 @@ test("normalizeList normalizes embedded tools and applies defaults", () => {
 	assert.equal(featured.toolCount, 0);
 	assert.equal(featured.featured, true);
 });
+
+test("paginate fetches pages 2..N concurrently when the endpoint reports a count", async () => {
+	// Each page after the first stays open long enough to overlap. A serial walk
+	// could never have more than one request in flight at a time.
+	let inFlight = 0;
+	let peak = 0;
+	globalThis.fetch = async (url) => {
+		const page = Number(/[&?]page=(\d+)/.exec(String(url))?.[1] || 1);
+		inFlight += 1;
+		peak = Math.max(peak, inFlight);
+		if (page > 1) await new Promise((resolve) => setTimeout(resolve, 20));
+		inFlight -= 1;
+		return {
+			ok: true,
+			json: async () => ({ count: 10, results: [{ name: `p${page}` }], next: page < 5 ? "?next" : null })
+		};
+	};
+	const out = await api.paginate("/pg-parallel/", {}, { pageSize: 2, map: (r) => r.name });
+
+	assert.deepEqual(out, ["p1", "p2", "p3", "p4", "p5"]);
+	assert.equal(peak, 4, `expected pages 2-5 concurrently, peak in-flight was ${peak}`);
+});
+
+test("paginate keeps the serial next-walk when no usable count is reported", async () => {
+	const order = [];
+	globalThis.fetch = async (url) => {
+		const page = Number(/[&?]page=(\d+)/.exec(String(url))?.[1] || 1);
+		order.push(page);
+		return { ok: true, json: async () => ({ results: [{ name: `p${page}` }], next: page < 3 ? "?next" : null }) };
+	};
+	assert.deepEqual(await api.paginate("/pg-nocount/", {}, { map: (r) => r.name }), ["p1", "p2", "p3"]);
+	assert.deepEqual(order, [1, 2, 3]);
+});
+
+test("paginate keeps earlier pages when one of the concurrent pages fails", async () => {
+	globalThis.fetch = async (url) => {
+		const page = Number(/[&?]page=(\d+)/.exec(String(url))?.[1] || 1);
+		if (page === 2) throw new Error("boom");
+		return { ok: true, json: async () => ({ count: 6, results: [{ name: `p${page}` }], next: "?next" }) };
+	};
+	// Page 2 is dropped; page 3 still contributes rather than being cut off by it.
+	assert.deepEqual(await api.paginate("/pg-partial/", {}, { pageSize: 2, map: (r) => r.name }), ["p1", "p3"]);
+});

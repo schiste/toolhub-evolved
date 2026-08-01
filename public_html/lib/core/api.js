@@ -599,6 +599,14 @@ export function invalidateApiCacheForOfficialWrite(_method, path, body, data) {
 /**
  * Page through a list endpoint, collecting results. Stops on error, missing
  * `next`, or an empty page.
+ *
+ * Page 1 tells us `count`, which is enough to know how many pages exist — so
+ * the rest are fetched concurrently rather than one round trip at a time.
+ * Walking `next` serially meant a multi-page crawl cost the sum of its pages;
+ * on a cold cache that was seconds of upstream latency before anything
+ * depending on it could render. Falls back to the serial `next` walk when the
+ * endpoint does not report a usable count.
+ *
  * @param {string} path
  * @param {Record<string, string>} [params]
  * @param {{ pageSize?: number, maxPages?: number, map?: (item: any) => any }} [options]
@@ -606,16 +614,46 @@ export function invalidateApiCacheForOfficialWrite(_method, path, body, data) {
  * @returns {Promise<any[]>}
  */
 export async function paginate(path, params = {}, { pageSize = 100, maxPages = 10, map } = {}) {
+	/** @param {number} page */
+	const fetchPage = (page) => apiGet(path, { ...params, page_size: String(pageSize), page: String(page) });
+	/** @param {any[]} results @param {any[]} into */
+	const collect = (results, into) => {
+		for (const r of results) into.push(map ? map(r) : r);
+	};
+
 	const out = [];
-	for (let page = 1; page <= maxPages; page++) {
+	let first;
+	try {
+		first = await fetchPage(1);
+	} catch {
+		return out;
+	}
+	const firstResults = first.results || [];
+	collect(firstResults, out);
+	if (!first.next || firstResults.length === 0) return out;
+
+	const count = Number(first.count);
+	if (Number.isFinite(count) && count > 0) {
+		const lastPage = Math.min(maxPages, Math.ceil(count / pageSize));
+		const rest = [];
+		for (let page = 2; page <= lastPage; page++) rest.push(page);
+		const pages = await Promise.all(rest.map((page) => fetchPage(page).catch(() => null)));
+		for (const data of pages) {
+			if (data) collect(data.results || [], out);
+		}
+		return out;
+	}
+
+	// No usable count: walk `next` one page at a time, as before.
+	for (let page = 2; page <= maxPages; page++) {
 		let data;
 		try {
-			data = await apiGet(path, { ...params, page_size: String(pageSize), page: String(page) });
+			data = await fetchPage(page);
 		} catch {
 			break;
 		}
 		const results = data.results || [];
-		for (const r of results) out.push(map ? map(r) : r);
+		collect(results, out);
 		if (!data.next || results.length === 0) break;
 	}
 	return out;
