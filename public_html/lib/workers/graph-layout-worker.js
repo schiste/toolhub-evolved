@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { applyGroupAttraction, integrateNode } from "../core/graph-layout.js";
 
 const TWO_PI = Math.PI * 2;
 const THETA = 0.75;
@@ -86,7 +87,7 @@ function anchors(groupBy, groupMeta, width, height) {
 	return out;
 }
 
-function simulate(payload) {
+export function simulate(payload) {
 	const width = Math.max(320, Number(payload.width) || 720);
 	const height = Math.max(180, Number(payload.height) || 480);
 	const nodes = payload.nodes.map((node, index) => ({ ...node, index, vx: 0, vy: 0 }));
@@ -111,34 +112,16 @@ function simulate(payload) {
 			b.vy -= (dy / dist) * force;
 		}
 		for (const node of nodes) {
-			const memberships = [];
-			for (const group of node.groupValues || []) {
-				const anchor = groupAnchors.get(String(group));
-				if (anchor) memberships.push(anchor);
-			}
-			for (const anchor of memberships) {
-				const rarity = 1 + Math.log((1 + nodes.length) / (1 + anchor.size));
-				const strength = (0.0045 * rarity) / memberships.length;
-				node.vx += (anchor.x - node.x) * strength;
-				node.vy += (anchor.y - node.y) * strength;
-			}
-			if (node.pinned) {
-				node.vx = 0;
-				node.vy = 0;
-				continue;
-			}
-			node.vx += (width / 2 - node.x) * 0.002;
-			node.vy += (height / 2 - node.y) * 0.002;
-			node.vx *= 0.82;
-			node.vy *= 0.82;
-			node.x = clamp(node.x + node.vx, 10, width - 10);
-			node.y = clamp(node.y + node.vy, 10, height - 10);
+			applyGroupAttraction(node, groupAnchors, nodes.length);
+			integrateNode(node, width / 2, height / 2, width, height);
 		}
 	}
 	return nodes.map((node) => ({ x: node.x, y: node.y }));
 }
 
-self.onmessage = (event) => {
-	const payload = event.data || {};
-	self.postMessage({ requestId: payload.requestId, positions: simulate(payload) });
-};
+if (typeof self !== "undefined") {
+	self.onmessage = (event) => {
+		const payload = event.data || {};
+		self.postMessage({ requestId: payload.requestId, positions: simulate(payload) });
+	};
+}

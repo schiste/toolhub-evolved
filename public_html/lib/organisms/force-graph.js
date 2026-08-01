@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { t } from "../core/i18n.js";
+import { applyGroupAttraction, integrateNode } from "../core/graph-layout.js";
 
 const TWO_PI = Math.PI * 2;
 const MAX_TICKS = 400;
@@ -568,32 +569,10 @@ export function forceGraph(container, data, opts = {}) {
 			b.vy -= fy;
 		}
 		for (const node of nodes) {
-			const anchors = [];
-			for (const group of node.groupValues || []) {
-				const anchor = groupAnchors.get(String(group));
-				if (anchor) anchors.push(anchor);
-			}
-			for (const anchor of anchors) {
-				const rarity = 1 + Math.log((1 + nodes.length) / (1 + anchor.size));
-				const strength = (0.0045 * rarity) / anchors.length;
-				node.vx += (anchor.x - node.x) * strength;
-				node.vy += (anchor.y - node.y) * strength;
-			}
+			applyGroupAttraction(node, groupAnchors, nodes.length);
 		}
 		for (const node of nodes) {
-			if (node.pinned) {
-				node.vx = 0;
-				node.vy = 0;
-				continue;
-			}
-			node.vx += (cx - node.x) * 0.002;
-			node.vy += (cy - node.y) * 0.002;
-			node.vx *= 0.82;
-			node.vy *= 0.82;
-			// Stryker disable next-line ArithmeticOperator: the `width - 10` / `height - 10` clamp upper bounds are viewport safety rails; settled nodes stay well inside them so the bound never binds and mutating it has no observable effect — equivalent. (The centring force and damping that determine the position are pinned by the fingerprint.)
-			node.x = clamp(node.x + node.vx, 10, width - 10);
-			// Stryker disable next-line ArithmeticOperator: see above — the height clamp upper bound never binds for settled layouts — equivalent.
-			node.y = clamp(node.y + node.vy, 10, height - 10);
+			integrateNode(node, cx, cy, width, height);
 		}
 	}
 

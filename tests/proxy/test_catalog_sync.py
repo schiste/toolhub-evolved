@@ -201,3 +201,13 @@ def test_limits_cannot_reduce_the_healthy_request_interval():
     assert catalog_sync._bounded_pages(999) == catalog_sync.MAX_PAGES_PER_RUN
     assert catalog_sync._bounded_page_size(999) == catalog_sync.MAX_PAGE_SIZE
     assert catalog_sync._bounded_interval(0) == catalog_sync.DEFAULT_MIN_INTERVAL_SECONDS
+
+
+def test_graph_hydration_fits_toolforge_job_timeout():
+    request_wait_seconds = (catalog_sync.MAX_GRAPH_DETAILS_PER_RUN - 1) * catalog_sync.DEFAULT_MIN_INTERVAL_SECONDS
+
+    assert catalog_sync.MAX_GRAPH_DETAILS_PER_RUN == 10
+    assert request_wait_seconds < 300
+    jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
+    assert "name: catalog-sync" in jobs
+    assert "timeout: 300" in jobs

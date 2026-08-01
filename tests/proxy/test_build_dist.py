@@ -50,6 +50,7 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     tmp = tmp_path / "dist.tmp"
     (src / "styles").mkdir(parents=True)
     (src / "lib" / "core").mkdir(parents=True)
+    (src / "lib" / "workers").mkdir(parents=True)
     (src / "views").mkdir(parents=True)
     (src / "index.html").write_text(
         """<!doctype html>
@@ -65,6 +66,7 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     )
     (src / "styles" / "base.css").write_text("body { color: black; }\n", encoding="utf-8")
     (src / "lib" / "core" / "dom.js").write_text("export const $ = () => null;\n", encoding="utf-8")
+    (src / "lib" / "workers" / "graph-layout-worker.js").write_text("self.onmessage = () => {};\n", encoding="utf-8")
     (src / "views" / "graph.js").write_text("export function viewGraph() {}\n", encoding="utf-8")
 
     monkeypatch.setattr(build_dist, "SRC", src)
@@ -84,6 +86,7 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     main = (dist / "main.js").read_text(encoding="utf-8")
     assert 'from "./lib/core/dom.js?v=abc123"' in main
     assert 'import("./views/graph.js?v=abc123")' in main
+    assert (dist / "lib" / "workers" / "graph-layout-worker.js").is_file()
 
 
 def test_js_build_preserves_template_literal_class_spacing():

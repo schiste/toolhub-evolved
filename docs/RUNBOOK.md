@@ -517,6 +517,12 @@ keeping normal incremental traffic small. The `tool_catalog_sync_state` row
 records the backfill and reconciliation cursors, recent marker, retry queue,
 completed cycles, success/error state, and timestamps.
 
+The public graph endpoint never fetches Toolhub synchronously. It derives a
+bounded nearest-neighbor graph from this shared canonical cache, reports facet
+coverage, and preserves multi-value memberships. Interactive maps use in-page
+forces up to 600 nodes; larger layouts run in a same-origin browser Worker so
+the Toolforge webservice only serves static assets and cached JSON.
+
 The `repository-analysis` job is the deterministic source-analysis layer. It
 selects canonical Toolhub records with an HTTPS repository URL, checks the
 remote HEAD SHA, and skips repositories whose SHA is already analyzed. New

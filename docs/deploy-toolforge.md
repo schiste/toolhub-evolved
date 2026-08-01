@@ -11,6 +11,12 @@ Toolhub Evolved runs as a small **Python (Flask) webservice** that does two thin
    lifecycle that performs Toolhub writes with the signed-in user's OAuth grant
    and stores Evolved fallback metadata when appropriate.
 
+The tool graph remains compatible with the same single Python webservice: graph
+payloads and cache entries are generated server-side, while maps above 600 nodes
+settle in a versioned same-origin browser Worker using Barnes-Hut repulsion. The
+worker is copied into `dist/` by the existing pure-Python production build and
+is allowed explicitly by the strict `worker-src 'self'` CSP directive.
+
 The app uses clean History API routes (`/search`, `/tools/:name`, etc.). The
 Flask webservice serves real files when present and falls back to `index.html`
 for non-API paths, and the app shell uses root-relative assets so direct loads
