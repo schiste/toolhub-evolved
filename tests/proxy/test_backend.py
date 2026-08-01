@@ -4091,6 +4091,31 @@ def test_write_lifecycle_refuses_a_scope_escaping_name_without_storing_a_draft(c
     assert calls == []
 
 
+def test_debug_forwarded_reports_the_proxy_chain_for_sizing_proxyfix(client):
+    """The temporary hop-count probe: signed-in only, and does the N arithmetic.
+
+    ProxyFix(x_for=N) takes the Nth X-Forwarded-For entry from the right, so
+    `candidates` is what turns a live request into a decision: the correct N is
+    the row holding the caller's own public IP. Delete alongside the route.
+    """
+    assert client.get("/v1/debug/forwarded/").status_code == 401
+
+    uid = add_user()
+    sign_in(client, uid)
+    resp = client.get(
+        "/v1/debug/forwarded/",
+        headers={"X-Forwarded-For": "203.0.113.7, 10.1.2.3", "X-Forwarded-Proto": "https"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["xForwardedForEntries"] == ["203.0.113.7", "10.1.2.3"]
+    assert body["hopCount"] == 2
+    # Rightmost entry is x_for=1; the real client sits one further left here.
+    assert body["candidates"] == {"x_for=1": "10.1.2.3", "x_for=2": "203.0.113.7"}
+    assert body["xForwardedProto"] == "https"
+
+
 def stored_grant(uid):
     """Return the decrypted (access, refresh) pair persisted for one user."""
     with db.session_scope() as s:

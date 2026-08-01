@@ -2507,6 +2507,46 @@ def v1_config() -> Response:
     )
 
 
+@v1_bp.route("/v1/debug/forwarded/")
+@login_required
+def v1_debug_forwarded() -> Response:
+    """TEMPORARY: report how this request was forwarded, to size ProxyFix.
+
+    Delete this route once the hop count is recorded in backend.register.
+
+    Why it has to exist: the read and write rate limiters key on
+    request.remote_addr, and no ProxyFix is installed, so behind the Toolforge
+    front proxy every visitor shares one bucket — 121 requests from anyone
+    returns 429 to everyone. Fixing that means ProxyFix(x_for=N), and N is the
+    one value that cannot be guessed safely: too high and a client forges
+    X-Forwarded-For to mint a fresh identity per request (an unlimited bucket,
+    strictly worse than today), too low and it degrades back to the shared
+    bucket. Only a real request through the real proxy chain answers it.
+
+    `candidates` does the arithmetic: ProxyFix with x_for=N takes the Nth entry
+    from the right, so the correct N is whichever row equals the caller's own
+    public IP. Signed-in only — this reflects the caller's own request back to
+    them, and there is no reason to hand the cluster's forwarding shape to
+    anonymous traffic.
+    """
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    entries = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+    return jsonify(
+        {
+            "remoteAddr": request.remote_addr,
+            "xForwardedFor": forwarded_for,
+            "xForwardedForEntries": entries,
+            "hopCount": len(entries),
+            "candidates": {f"x_for={n}": entries[-n] for n in range(1, len(entries) + 1)},
+            "accessRoute": list(request.access_route),
+            "xForwardedProto": request.headers.get("X-Forwarded-Proto", ""),
+            "xRealIp": request.headers.get("X-Real-IP", ""),
+            "forwarded": request.headers.get("Forwarded", ""),
+            "host": request.host,
+        }
+    )
+
+
 @v1_bp.route("/v1/issue-reports/", methods=["POST"])
 @write_guard
 def v1_issue_report() -> Response:
