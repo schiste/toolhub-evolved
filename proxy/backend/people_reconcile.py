@@ -95,10 +95,13 @@ def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
                 if cache is not None and isinstance(cache.record, dict):
                     maintainer_index.replace_toolhub_metadata_edges(s, name, cache.record)
                 maintainer_index.sync_author_claim_edges(s, tool_names=[name])
-                row.last_processed_at = utcnow()
-                row.attempts = 0
-                row.next_attempt_at = None
-                row.last_error = None
+                # Done means gone. Leaving the row behind with next_attempt_at
+                # NULL put it straight back into the claim query above, so the
+                # same oldest rows were reconciled every single minute and the
+                # queue never drained — unbounded repeat work against the
+                # database, growing with the catalog. enqueue_tool_names()
+                # recreates the row when the tool actually changes again.
+                s.delete(row)
             processed += 1
         except Exception as exc:  # noqa: BLE001 - persist retry state before continuing the batch
             failed += 1

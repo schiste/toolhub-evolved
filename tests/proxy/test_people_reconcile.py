@@ -117,8 +117,11 @@ def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
 
     assert summary == {"claimed": 1, "processed": 1, "failed": 0}
     with db.session_scope() as s:
-        queue = s.get(PersonReconciliationQueue, "queued-tool")
-        assert queue is not None
-        assert queue.last_processed_at is not None
-        assert queue.attempts == 0
+        # A processed tool leaves the queue. Keeping the row (with next_attempt_at
+        # NULL) put it straight back into the claim query, so the queue never
+        # drained and the same tools were reconciled every minute forever.
+        assert s.get(PersonReconciliationQueue, "queued-tool") is None
         assert s.query(ToolPersonRelationship).filter_by(tool_name="queued-tool").count() == 1
+
+    # Nothing left to claim, so a second pass is a no-op rather than a repeat.
+    assert people_reconcile.process_queue(limit=1) == {"claimed": 0, "processed": 0, "failed": 0}
