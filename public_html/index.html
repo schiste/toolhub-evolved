@@ -541,8 +541,13 @@
 			<link rel="stylesheet" href="/styles/templates.css" />
 		</noscript>
 
-		<!-- Keep the boot request burst small on Toolforge. Route modules are loaded
-		     by views/router.js only when the current page needs them. -->
+		<!-- The production build (tools/build_dist.py) REPLACES this block with the
+		     full static import graph of main.js and the landing route, so the
+		     browser starts every first-paint module at once instead of discovering
+		     them a level at a time. The short list below is what local development
+		     serves straight from public_html/, where latency does not matter.
+		     Route modules other than home stay lazy in both cases — views/router.js
+		     imports them on demand. -->
 		<link rel="modulepreload" href="/main.js" />
 		<link rel="modulepreload" href="/lib/core/dom.js" />
 		<link rel="modulepreload" href="/lib/core/i18n.js" />

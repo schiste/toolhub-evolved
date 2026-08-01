@@ -31,6 +31,76 @@ _JS_IMPORT_RE = re.compile(
 )
 
 
+# Only `from "./x.js"` / `export … from "./x.js"`, deliberately not `import()`.
+# A dynamic import is a route chunk the router fetches on demand; preloading
+# those would undo the code splitting.
+_STATIC_IMPORT_RE = re.compile(r'\bfrom\s*(?P<quote>["\'])(?P<url>(?:\.{1,2}/)[^"\']+\.js)(?P=quote)')
+# Entry points whose static graphs are preloaded. main.js is the app shell;
+# home.js is the landing route, and without it the router cannot even request
+# the view until it has loaded and run — measured at 1792ms into the page load,
+# with the view's own imports adding two more round-trip waves after that.
+# Other routes stay lazy: a visitor who lands on one pays for one chunk, where
+# preloading every route would cost every visitor all of them.
+_PRELOAD_ENTRIES = ("main.js", "views/home.js")
+_PRELOAD_MARKER = '<link rel="modulepreload"'
+
+
+def _module_graph(entry: Path) -> list[Path]:
+    """Return every module reachable from `entry` through static imports.
+
+    Breadth-first from the entry, so the emitted order roughly matches the
+    order the browser would have discovered them in.
+    """
+    seen: set[Path] = set()
+    order: list[Path] = []
+    queue = [entry]
+    while queue:
+        path = queue.pop(0)
+        resolved = path.resolve()
+        if resolved in seen or not resolved.is_file():
+            continue
+        seen.add(resolved)
+        order.append(resolved)
+        text = resolved.read_text(encoding="utf-8")
+        queue.extend((resolved.parent / match.group("url")).resolve() for match in _STATIC_IMPORT_RE.finditer(text))
+    return order
+
+
+def preload_modules() -> list[str]:
+    """Return root-relative URLs for every module the first paint needs."""
+    urls: list[str] = []
+    for entry in _PRELOAD_ENTRIES:
+        for path in _module_graph(SRC / entry):
+            url = "/" + path.relative_to(SRC).as_posix()
+            if url not in urls:
+                urls.append(url)
+    return urls
+
+
+def _preload_links(version: str, indent: str) -> str:
+    """Render the modulepreload block for the whole first-paint module graph."""
+    return "\n".join(
+        f'{indent}<link rel="modulepreload" href="{_append_version(url, version)}" />' for url in preload_modules()
+    )
+
+
+def _inject_preloads(text: str, version: str) -> str:
+    """Replace the hand-written modulepreload block with the derived graph.
+
+    Nine of these were maintained by hand while the graph was 33 modules deep,
+    so the browser discovered the rest a level at a time — six sequential waves
+    of round trips before the first API call could start. Deriving the list from
+    the imports keeps it complete and stops it rotting.
+    """
+    lines = text.splitlines()
+    hits = [i for i, line in enumerate(lines) if _PRELOAD_MARKER in line]
+    if not hits:
+        return text
+    first, last = hits[0], hits[-1]
+    indent = lines[first][: len(lines[first]) - len(lines[first].lstrip())]
+    return "\n".join([*lines[:first], _preload_links(version, indent), *lines[last + 1 :]]) + "\n"
+
+
 def _source_fingerprint() -> str:
     """Return a local fingerprint for source changes not yet represented by git."""
     latest = max((path.stat().st_mtime_ns for path in SRC.rglob("*") if path.is_file()), default=0)
@@ -137,7 +207,10 @@ def build() -> tuple[int, int]:
             raw += len(data)
             mini += len(text.encode("utf-8"))
         elif path.suffix == ".html":
-            out.write_text(_version_html_assets(data.decode("utf-8"), version), encoding="utf-8")
+            html = _version_html_assets(data.decode("utf-8"), version)
+            if rel.name == "index.html":
+                html = _inject_preloads(html, version)
+            out.write_text(html, encoding="utf-8")
         else:
             out.write_bytes(data)
     if DIST.exists():

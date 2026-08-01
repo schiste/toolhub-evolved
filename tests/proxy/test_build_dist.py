@@ -92,3 +92,52 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
 def test_js_build_preserves_template_literal_class_spacing():
     source = 'const html = `<a class="${base}${current ? " is-active" : ""}" href="/x">x</a>`;\n'
     assert build_dist._minify_js(source) == source
+
+
+def test_build_preloads_the_whole_first_paint_module_graph(monkeypatch, tmp_path):
+    """The preload list is derived, not hand-maintained.
+
+    Nine entries were maintained by hand while the real graph was 33 modules
+    deep, so the browser discovered the rest a level at a time — six sequential
+    waves of round trips before the first API call could start.
+    """
+    src = tmp_path / "public_html"
+    (src / "lib" / "core").mkdir(parents=True)
+    (src / "views").mkdir(parents=True)
+    (src / "index.html").write_text(
+        '<!doctype html>\n<link rel="modulepreload" href="/main.js">\n<link rel="modulepreload" href="/stale.js">\n',
+        encoding="utf-8",
+    )
+    # main.js -> router.js -> shared.js, and router lazily imports both views.
+    (src / "main.js").write_text('import { r } from "./views/router.js";\n', encoding="utf-8")
+    (src / "views" / "router.js").write_text(
+        'import { s } from "../lib/core/shared.js";\n'
+        'export const r = () => import("./home.js");\n'
+        'export const o = () => import("./other.js");\n',
+        encoding="utf-8",
+    )
+    (src / "lib" / "core" / "shared.js").write_text("export const s = 1;\n", encoding="utf-8")
+    # The landing route and its own dependency.
+    (src / "views" / "home.js").write_text('export * from "../lib/core/cards.js";\n', encoding="utf-8")
+    (src / "lib" / "core" / "cards.js").write_text("export const c = 1;\n", encoding="utf-8")
+    # A route nobody landed on: must stay lazy.
+    (src / "views" / "other.js").write_text("export const x = 1;\n", encoding="utf-8")
+
+    monkeypatch.setattr(build_dist, "SRC", src)
+    monkeypatch.setattr(build_dist, "DIST", tmp_path / "dist")
+    monkeypatch.setattr(build_dist, "TMP", tmp_path / "dist.tmp")
+    monkeypatch.setattr(build_dist, "_asset_version", lambda: "abc123")
+    monkeypatch.setattr(build_dist, "_minify_js", lambda text: text)
+    monkeypatch.setattr(build_dist, "_minify_css", lambda text: text)
+
+    build_dist.build()
+    html = (tmp_path / "dist" / "index.html").read_text(encoding="utf-8")
+
+    # The shell graph, the landing route, and the route's own imports.
+    for url in ("/main.js", "/views/router.js", "/lib/core/shared.js", "/views/home.js", "/lib/core/cards.js"):
+        assert f'<link rel="modulepreload" href="{url}?v=abc123" />' in html, url
+    # Lazily-imported routes stay lazy — preloading them would undo the splitting.
+    assert "/views/other.js" not in html
+    # The hand-written block is replaced, not appended to.
+    assert "/stale.js" not in html
+    assert html.count("modulepreload") == 5
