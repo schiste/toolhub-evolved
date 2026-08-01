@@ -125,55 +125,101 @@ function graphFilters(nodes) {
 	</div>`;
 }
 
-export async function viewGraph() {
+export function viewGraph() {
 	const state = graphRequestState();
-	const g = (await backendGetJson(graphRequestUrl(state))) || {
-		nodes: [],
-		edges: [],
-		communityMeta: [],
-		truncated: 0
-	};
-	const empty =
-		g.nodes.length > 0
-			? ""
-			: `<p class="empty">${t("graph.mapEmpty", "No richly documented tools are available for the map right now.")}</p>`;
-	const filterEmpty =
-		g.nodes.length > 0
-			? `<p class="empty graph__filter-empty" data-graph-filter-empty hidden>${t("graph.filterEmpty", "No tools match these filters.")}</p>`
-			: "";
 	const html = `
 	<div class="container page">
 		<h1 class="page__title">${t("graph.toolMap", "Tool map")}</h1>
 		<p class="page__intro">${t("graph.intro", "A similarity map of the most thoroughly-documented tools in the catalog. Each tool sits near others with overlapping function, scope, and audience; lines connect nearest neighbors and colors are clusters detected from those connections.")}</p>
-		<div class="graph">
+		<div class="graph" aria-busy="true">
 			${graphToolbar()}
 			${graphOptions(state)}
-			${graphFilters(g.nodes)}
-			<div id="graph-canvas" class="graph__canvas"></div>
-			${empty}
-			${filterEmpty}
-			<div class="graph__legend" data-graph-legend aria-label="${t("graph.mapLegend", "Map legend")}">${communityLegend(g.groupMeta || g.communityMeta)}</div>
-			<p class="graph__note" data-graph-note${g.truncated ? "" : " hidden"}>${g.truncated ? t("graph.truncatedNote", "Showing the {count} best-documented tools.", { count: esc(g.nodes.length) }) : ""}</p>
+			<div data-graph-filters hidden></div>
+			<div id="graph-canvas" class="graph__canvas"><div class="graph__loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("graph.loading", "Preparing the tool map"))}</span></div></div>
+			<p class="empty" data-graph-empty hidden>${t("graph.mapEmpty", "No richly documented tools are available for the map right now.")}</p>
+			<p class="empty graph__filter-empty" data-graph-filter-empty hidden>${t("graph.filterEmpty", "No tools match these filters.")}</p>
+			<div class="graph__legend" data-graph-legend aria-label="${t("graph.mapLegend", "Map legend")}" hidden></div>
+			<p class="graph__note" data-graph-note hidden></p>
 		</div>
 	</div>`;
 	function mount() {
-		const target = /** @type {HTMLElement | null} */ (document.querySelector("#graph-canvas"));
-		if (!target || g.nodes.length === 0) return;
-		const graph = target.closest(".graph");
-		if (!graph) return;
-		let currentHandle = forceGraph(target, g, { onSelect: openQuickView, height: 560 });
-		target.forceGraphHandle = currentHandle;
+		const targetNode = /** @type {HTMLElement | null} */ (document.querySelector("#graph-canvas"));
+		if (!targetNode) return;
+		const graphNode = targetNode.closest(".graph");
+		if (!(graphNode instanceof HTMLElement)) return;
+		const target = targetNode;
+		const graph = graphNode;
+		/** @type {ReturnType<typeof forceGraph> | null} */
+		let currentHandle = null;
 		let currentState = state;
 		let requestId = 0;
+
+		/** @param {any} next @param {{ limit: number, groupBy: string }} nextState @param {boolean} updateUrl */
+		function showPayload(next, nextState, updateUrl) {
+			if (!Array.isArray(next?.nodes) || !Array.isArray(next?.edges)) throw new Error("Invalid graph payload");
+			currentHandle?.stop();
+			const currentFilters = graph.querySelector("[data-graph-filters]");
+			if (currentFilters) currentFilters.outerHTML = graphFilters(next.nodes);
+			const legend = /** @type {HTMLElement | null} */ (graph.querySelector("[data-graph-legend]"));
+			if (legend) {
+				legend.innerHTML = communityLegend(next.groupMeta || next.communityMeta);
+				legend.hidden = next.nodes.length === 0;
+			}
+			const note = /** @type {HTMLElement | null} */ (graph.querySelector("[data-graph-note]"));
+			if (note) {
+				note.textContent = next.truncated
+					? t("graph.truncatedNote", "Showing the {count} best-documented tools.", {
+							count: String(next.nodes.length)
+						})
+					: "";
+				note.hidden = !next.truncated;
+			}
+			const empty = /** @type {HTMLElement | null} */ (graph.querySelector("[data-graph-empty]"));
+			if (empty) empty.hidden = next.nodes.length > 0;
+			if (next.nodes.length > 0) {
+				currentHandle = forceGraph(target, next, { onSelect: openQuickView, height: 560 });
+				target.forceGraphHandle = currentHandle;
+			} else {
+				target.innerHTML = "";
+				currentHandle = null;
+				target.forceGraphHandle = null;
+			}
+			graph.removeAttribute("aria-busy");
+			if (updateUrl) {
+				const url = new URL(location.href);
+				url.searchParams.set("limit", String(nextState.limit));
+				url.searchParams.set("groupBy", nextState.groupBy);
+				history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+			}
+		}
+
+		/** @param {{ limit: number, groupBy: string }} nextState @param {boolean} updateUrl */
+		async function load(nextState, updateUrl) {
+			const id = ++requestId;
+			graph.setAttribute("aria-busy", "true");
+			try {
+				const next = await backendGetJson(graphRequestUrl(nextState));
+				if (id !== requestId) return;
+				showPayload(next, nextState, updateUrl);
+			} catch {
+				if (id !== requestId) return;
+				graph.removeAttribute("aria-busy");
+				if (!currentHandle) {
+					target.innerHTML = `<div class="graph__loading graph__loading--error" role="alert"><span>${esc(t("graph.loadError", "The tool map could not be loaded."))}</span>${button(t("graph.retry", "Try again"), { size: "sm", attrs: 'data-graph-action="retry"' })}</div>`;
+				}
+			}
+		}
+
 		graph.addEventListener("click", (event) => {
 			const action = /** @type {HTMLElement | null} */ (
 				/** @type {Element | null} */ (event.target)?.closest("[data-graph-action]")
 			)?.dataset.graphAction;
-			if (action === "zoom-in") currentHandle.zoomIn();
-			if (action === "zoom-out") currentHandle.zoomOut();
-			if (action === "fit") currentHandle.fitView();
+			if (action === "zoom-in") currentHandle?.zoomIn();
+			if (action === "zoom-out") currentHandle?.zoomOut();
+			if (action === "fit") currentHandle?.fitView();
+			if (action === "retry") void load(currentState, false);
 		});
-		graph.addEventListener("change", async (event) => {
+		graph.addEventListener("change", (event) => {
 			const option = /** @type {HTMLSelectElement | null} */ (
 				/** @type {Element | null} */ (event.target)?.closest("select[data-graph-option]")
 			);
@@ -184,34 +230,7 @@ export async function viewGraph() {
 				};
 				if (!GRAPH_LIMITS.includes(nextState.limit) || !GRAPH_GROUPINGS.includes(nextState.groupBy)) return;
 				currentState = nextState;
-				const id = ++requestId;
-				graph.setAttribute("aria-busy", "true");
-				const next = await backendGetJson(graphRequestUrl(nextState));
-				if (id !== requestId || !next) {
-					graph.removeAttribute("aria-busy");
-					return;
-				}
-				currentHandle.stop();
-				const currentFilters = graph.querySelector("[data-graph-filters]");
-				if (currentFilters) currentFilters.outerHTML = graphFilters(next.nodes);
-				const legend = graph.querySelector("[data-graph-legend]");
-				if (legend) legend.innerHTML = communityLegend(next.groupMeta || next.communityMeta);
-				const note = graph.querySelector("[data-graph-note]");
-				if (note) {
-					note.textContent = next.truncated
-						? t("graph.truncatedNote", "Showing the {count} best-documented tools.", {
-								count: esc(next.nodes.length)
-							})
-						: "";
-					/** @type {HTMLElement} */ (note).hidden = !next.truncated;
-				}
-				currentHandle = forceGraph(target, next, { onSelect: openQuickView, height: 560 });
-				target.forceGraphHandle = currentHandle;
-				graph.removeAttribute("aria-busy");
-				const url = new URL(location.href);
-				url.searchParams.set("limit", String(nextState.limit));
-				url.searchParams.set("groupBy", nextState.groupBy);
-				history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+				void load(nextState, true);
 				return;
 			}
 			const filterControls = graph.querySelector("[data-graph-filters]");
@@ -225,8 +244,9 @@ export async function viewGraph() {
 			const languages = /** @type {HTMLSelectElement | null} */ (
 				filterControls.querySelector('[data-graph-filter="languages"]')
 			)?.value;
-			currentHandle.setFilters({ projects: projects || "", languages: languages || "" });
+			currentHandle?.setFilters({ projects: projects || "", languages: languages || "" });
 		});
+		void load(state, false);
 	}
 	return { title: t("graph.docTitle", "Tool map — Toolhub"), html, mount };
 }

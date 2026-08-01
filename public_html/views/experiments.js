@@ -104,9 +104,12 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.toolMapCurrent",
-					"Graphs are derived from normalized live Toolhub metadata in the browser and never become a separate canonical dataset."
+					"The map defaults to 250 tools, paints its shell before data arrives, and reads a server-derived payload from the local canonical Toolhub cache; larger views remain explicit user choices."
 				),
-				need: t("experiments.toolMapNeed", "Client-side similarity graph built from live search/list data"),
+				need: t(
+					"experiments.toolMapNeed",
+					"Shared ToolsDB graph payload cache with stale background refresh and client-side canvas rendering"
+				),
 				tryHref: "/graph",
 				tryLabel: t("experiments.toolMapTry", "Open map")
 			},

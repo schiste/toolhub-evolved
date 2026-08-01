@@ -164,6 +164,7 @@ const SERVER_STALE_FOLLOWUP_MS = 1200;
 const apiCache = new Map(); // url -> { data, ts }
 const apiInflight = new Map(); // url -> Promise<data>
 const BACKEND_SEARCH_TTL_MS = 5 * 1000;
+const BACKEND_GRAPH_TTL_MS = 5 * 60 * 1000;
 const backendGetCache = new Map(); // path -> { data, ts }
 const backendGetInflight = new Map(); // path -> Promise<data>
 /** @type {Map<string, ReturnType<typeof setTimeout>>} */
@@ -757,7 +758,8 @@ export function backendErrorBody(error) {
  */
 function backendGetFreshMs(path) {
 	const url = new URL(path, location.origin);
-	return url.pathname === "/v1/search/tools/" ? BACKEND_SEARCH_TTL_MS : 0;
+	if (url.pathname === "/v1/search/tools/") return BACKEND_SEARCH_TTL_MS;
+	return url.pathname === "/v1/graph/" ? BACKEND_GRAPH_TTL_MS : 0;
 }
 /**
  * @param {string} path

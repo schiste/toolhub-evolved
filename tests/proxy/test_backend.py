@@ -2237,6 +2237,91 @@ def test_graph_payload_uses_clustered_layout_for_large_grouped_views(monkeypatch
     assert [group["label"] for group in payload["groupMeta"]] == ["en", "fr"]
 
 
+def test_graph_payload_shared_cache_survives_worker_memory_reset(client, monkeypatch):
+    graph_payload._CACHE.clear()
+    api_cache.clear()
+    built = {"nodes": [{"id": "shared"}], "edges": [], "generatedAt": "2026-08-01T00:00:00Z"}
+    monkeypatch.setattr(graph_payload, "build", lambda **_kwargs: built)
+
+    assert graph_payload.payload(force_refresh=True) == built
+    graph_payload._CACHE.clear()
+    monkeypatch.setattr(graph_payload, "build", lambda **_kwargs: pytest.fail("shared cache should avoid rebuild"))
+
+    assert graph_payload.payload() == built
+
+
+def test_graph_payload_serves_stale_shared_data_while_refreshing(client, monkeypatch):
+    graph_payload._CACHE.clear()
+    graph_payload._REFRESHING.clear()
+    api_cache.clear()
+    clock = {"now": utcnow()}
+    monkeypatch.setattr(api_cache, "utcnow", lambda: clock["now"])
+    old = {"nodes": [{"id": "old"}], "edges": [], "generatedAt": "old"}
+    api_cache.put_success(
+        graph_payload._cache_url(250, "similarity"),
+        api_cache.CacheableResponse(
+            status=200,
+            content_type="application/json",
+            body=dumps(old).encode(),
+        ),
+        fresh_seconds=1,
+        stale_if_error_seconds=60,
+    )
+    clock["now"] += timedelta(seconds=2)
+    fresh = {"nodes": [{"id": "fresh"}], "edges": [], "generatedAt": "fresh"}
+    monkeypatch.setattr(graph_payload, "build", lambda **_kwargs: fresh)
+
+    class InlineExecutor:
+        def submit(self, fn, *args):
+            fn(*args)
+
+    monkeypatch.setattr(graph_payload, "_EXECUTOR", InlineExecutor())
+
+    assert graph_payload.payload() == old
+    graph_payload._CACHE.clear()
+    assert graph_payload.payload() == fresh
+    assert graph_payload._REFRESHING == set()
+
+
+@pytest.mark.parametrize("body", [b"not-json", b'[{"nodes":[],"edges":[]}]', b'{"nodes":[]}'])
+def test_graph_payload_rebuilds_invalid_shared_rows(client, monkeypatch, body):
+    graph_payload._CACHE.clear()
+    api_cache.clear()
+    api_cache.put_success(
+        graph_payload._cache_url(250, "similarity"),
+        api_cache.CacheableResponse(status=200, content_type="application/json", body=body),
+    )
+    rebuilt = {"nodes": [], "edges": [], "generatedAt": "rebuilt"}
+    monkeypatch.setattr(graph_payload, "build", lambda **_kwargs: rebuilt)
+
+    assert graph_payload.payload() == rebuilt
+
+
+def test_graph_payload_worker_cache_bounds_and_refresh_guards(client, monkeypatch):
+    graph_payload._CACHE.clear()
+    for index in range(graph_payload.GRAPH_CACHE_MAX_ENTRIES):
+        graph_payload._CACHE[str(index)] = {"payload": {}, "expires_at": utcnow()}
+    graph_payload._remember("new", {"nodes": [], "edges": []})
+    assert len(graph_payload._CACHE) == graph_payload.GRAPH_CACHE_MAX_ENTRIES
+    assert "new" in graph_payload._CACHE
+
+    cache_key = "250:similarity"
+    graph_payload._REFRESHING.add(cache_key)
+    monkeypatch.setattr(graph_payload, "build", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("refresh")))
+    graph_payload._refresh_worker(250, "similarity", cache_key)
+    assert cache_key not in graph_payload._REFRESHING
+
+    class RejectSubmit:
+        def submit(self, *_args):
+            pytest.fail("an already-running graph refresh must not be submitted twice")
+
+    graph_payload._REFRESHING.add(cache_key)
+    monkeypatch.setattr(graph_payload, "_EXECUTOR", RejectSubmit())
+    graph_payload._queue_refresh(250, "similarity", cache_key)
+    graph_payload._REFRESHING.clear()
+    graph_payload._CACHE.clear()
+
+
 def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():
     compiled = str(v1_api._latest_public_health_core_statement("ada-tool").compile(dialect=mysql.dialect()))
 

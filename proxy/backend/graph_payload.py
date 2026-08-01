@@ -3,14 +3,16 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from threading import Lock
 from typing import Any
 
-from backend import canonical_tools
+from backend import api_cache, canonical_tools
 from backend.models import utcnow
 from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL
 
@@ -24,6 +26,8 @@ SPARSE_EDGE_NODE_LIMIT = 1000
 SPARSE_CANDIDATE_LIMIT = 160
 GRAPH_CACHE_MAX_ENTRIES = 8
 GRAPH_FRESH_SECONDS = 6 * 60 * 60
+GRAPH_STALE_SECONDS = 24 * 60 * 60
+GRAPH_MEMORY_FRESH_SECONDS = 5 * 60
 GROUP_BY_VALUES = ("similarity", "language", "project", "task", "use_case", "tool_type", "technology")
 GROUP_BY_FIELDS = {
     "language": "available_ui_languages",
@@ -44,6 +48,9 @@ TERM_WEIGHTS = {
 _SPLIT_RE = re.compile(r"[\s_:/.-]+")
 _CACHE_LOCK = Lock()
 _CACHE: dict[str, Any] = {}
+_REFRESH_LOCK = Lock()
+_REFRESHING: set[str] = set()
+_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="graph-payload-cache")
 
 
 def _clean_text(value: Any) -> str:  # noqa: ANN401 - official API JSON
@@ -402,21 +409,92 @@ def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> d
     }
 
 
+def _cache_url(limit: int, group_by: str) -> str:
+    """Return the stable synthetic URL used for the shared ToolsDB cache row."""
+    return f"https://toolhub-evolved.local/v1/graph/?limit={limit}&groupBy={group_by}"
+
+
+def _remember(cache_key: str, graph: dict[str, Any]) -> None:
+    """Keep a short-lived per-worker L1 copy in front of the shared cache."""
+    with _CACHE_LOCK:
+        if cache_key not in _CACHE and len(_CACHE) >= GRAPH_CACHE_MAX_ENTRIES:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[cache_key] = {
+            "payload": graph,
+            "expires_at": utcnow() + timedelta(seconds=GRAPH_MEMORY_FRESH_SECONDS),
+        }
+
+
+def _shared_payload(limit: int, group_by: str) -> tuple[dict[str, Any], bool] | None:
+    """Read a valid fresh-or-stale graph payload from the shared ToolsDB cache."""
+    cached = api_cache.get(_cache_url(limit, group_by), allow_stale=True)
+    if cached is None:
+        return None
+    try:
+        graph = json.loads(cached.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if (
+        not isinstance(graph, dict)
+        or not isinstance(graph.get("nodes"), list)
+        or not isinstance(graph.get("edges"), list)
+    ):
+        return None
+    return graph, cached.stale
+
+
+def _build_and_store(limit: int, group_by: str, cache_key: str) -> dict[str, Any]:
+    """Build once, then publish the payload to both shared and worker caches."""
+    graph = build(limit=limit, group_by=group_by)
+    body = json.dumps(graph, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    api_cache.put_success(
+        _cache_url(limit, group_by),
+        api_cache.CacheableResponse(status=200, content_type="application/json", body=body),
+        fresh_seconds=GRAPH_FRESH_SECONDS,
+        stale_if_error_seconds=GRAPH_STALE_SECONDS,
+    )
+    _remember(cache_key, graph)
+    return graph
+
+
+def _refresh_worker(limit: int, group_by: str, cache_key: str) -> None:
+    """Refresh a stale shared payload without putting a user back on the loader."""
+    try:
+        _build_and_store(limit, group_by, cache_key)
+    except Exception:  # noqa: BLE001, S110 - stale graph remains usable when a background refresh fails.
+        pass
+    finally:
+        with _REFRESH_LOCK:
+            _REFRESHING.discard(cache_key)
+
+
+def _queue_refresh(limit: int, group_by: str, cache_key: str) -> None:
+    """Start at most one stale refresh per graph variant in this worker."""
+    with _REFRESH_LOCK:
+        if cache_key in _REFRESHING:
+            return
+        _REFRESHING.add(cache_key)
+    _EXECUTOR.submit(_refresh_worker, limit, group_by, cache_key)
+
+
 def payload(
     *, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity", force_refresh: bool = False
 ) -> dict[str, Any]:
-    """Return the cached graph payload, rebuilding from local data when stale."""
+    """Return an L1/shared cached graph, refreshing stale payloads asynchronously."""
     limit = _normalize_limit(limit)
     group_by = _normalize_group_by(group_by)
     cache_key = f"{limit}:{group_by}"
     now = utcnow()
-    with _CACHE_LOCK:
-        cached = _CACHE.get(cache_key)
-        if not force_refresh and cached is not None and now < cached["expires_at"]:
-            return cached["payload"]
-    fresh = build(limit=limit, group_by=group_by)
-    with _CACHE_LOCK:
-        if len(_CACHE) >= GRAPH_CACHE_MAX_ENTRIES:
-            _CACHE.pop(next(iter(_CACHE)))
-        _CACHE[cache_key] = {"payload": fresh, "expires_at": utcnow() + timedelta(seconds=GRAPH_FRESH_SECONDS)}
-    return fresh
+    if not force_refresh:
+        with _CACHE_LOCK:
+            cached = _CACHE.get(cache_key)
+            if cached is not None and now < cached["expires_at"]:
+                return cached["payload"]
+        shared = _shared_payload(limit, group_by)
+        if shared is not None:
+            graph, stale = shared
+            _remember(cache_key, graph)
+            if stale:
+                _queue_refresh(limit, group_by, cache_key)
+            return graph
+    return _build_and_store(limit, group_by, cache_key)

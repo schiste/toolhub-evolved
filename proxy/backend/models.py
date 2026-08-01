@@ -72,7 +72,7 @@ class ToolhubToken(Base):
 
 
 class ApiCache(Base):
-    """Anonymous official Toolhub GET response cached by the read proxy."""
+    """Anonymous Toolhub GET response or bounded derived public payload."""
 
     __tablename__ = "api_cache"
     url_hash: Mapped[str] = mapped_column(String(64), primary_key=True)

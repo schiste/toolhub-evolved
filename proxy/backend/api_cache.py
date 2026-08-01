@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Persistent cache for anonymous official Toolhub API reads."""
+"""Persistent cache for anonymous Toolhub reads and bounded derived public payloads."""
 
 import json
 from collections.abc import Callable, Iterable

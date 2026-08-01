@@ -93,7 +93,7 @@ test("backendWriteJson handles empty writes, invalid JSON bodies, and backend er
 	);
 });
 
-test("backendGetJson dedupes public local search without caching private v1 reads", async () => {
+test("backendGetJson dedupes public search and graph reads without caching private v1 reads", async () => {
 	let calls = 0;
 	globalThis.fetch = async (url) => {
 		calls += 1;
@@ -110,11 +110,17 @@ test("backendGetJson dedupes public local search without caching private v1 read
 	assert.equal(calls, 1);
 
 	const otherSearch = await api.backendGetJson("/v1/search/tools/?q=map");
+	const graphPath = "/v1/graph/?limit=250&groupBy=similarity";
+	const [graphFirst, graphSecond] = await Promise.all([api.backendGetJson(graphPath), api.backendGetJson(graphPath)]);
+	const graphCached = await api.backendGetJson(graphPath);
 	const privateFirst = await api.backendGetJson("/v1/user/export/");
 	const privateSecond = await api.backendGetJson("/v1/user/export/");
 	assert.equal(otherSearch.calls, 2);
-	assert.equal(privateFirst.calls, 3);
-	assert.equal(privateSecond.calls, 4);
+	assert.equal(graphFirst.calls, 3);
+	assert.equal(graphSecond.calls, 3);
+	assert.equal(graphCached.calls, 3);
+	assert.equal(privateFirst.calls, 4);
+	assert.equal(privateSecond.calls, 5);
 });
 
 // ----------------------------------------------------------------- fetchJson retries

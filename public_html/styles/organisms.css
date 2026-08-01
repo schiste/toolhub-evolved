@@ -493,6 +493,19 @@
 .graph__filter-empty {
 	margin-block: var(--space-3);
 }
+.graph__loading {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: 260px;
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.graph__loading--error {
+	flex-direction: column;
+	color: var(--color-destructive);
+}
 #graph-canvas,
 .graph__canvas,
 .graph--ego > div {
@@ -517,6 +530,9 @@
 .force-graph:focus-visible {
 	outline: 2px solid var(--color-progressive);
 	outline-offset: -3px;
+}
+.graph[aria-busy="true"] .force-graph {
+	opacity: 0.65;
 }
 @media (width <= 600px) {
 	.graph__filter {

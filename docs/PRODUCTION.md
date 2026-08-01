@@ -105,9 +105,10 @@ over unchanged, one level up:
 - **The base catalog stays live Toolhub data.** `apiGet` keeps reading
   `toolhub.wikimedia.org` through the same-origin read proxy. We do not fork or
   mirror the upstream catalog; upstream tools always render from live data. The
-  read proxy keeps only anonymous, expiring `GET /api/*` payloads in `api_cache`
-  so workers share hot responses and can serve short stale data during transient
-  upstream failures. The SPA adds a stale-while-revalidate browser cache for the
+  read proxy keeps anonymous, expiring `GET /api/*` payloads in `api_cache`; the
+  derived tool map uses the same bounded store so its payload also survives
+  restarts and is shared across workers. Stale rows remain briefly usable during
+  refresh failures. The SPA adds a stale-while-revalidate browser cache for the
   same anonymous public reads: stale cached content can render immediately after a
   hard refresh, then a toast announces the live refresh and the route repaints
   when fresh data arrives.
