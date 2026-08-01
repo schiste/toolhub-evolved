@@ -22,6 +22,9 @@ GRAPH_SOURCE_RECORD_LIMIT = GRAPH_NODE_LIMITS[-1]
 COMMUNITY_LIMIT = 8
 KNN_EDGES_PER_NODE = 4
 MAX_GROUPS = 24
+MIN_GROUP_COVERAGE_COUNT = 10
+MIN_GROUP_COVERAGE_RATIO = 0.1
+MIN_GROUP_DISTINCT_VALUES = 2
 SPARSE_EDGE_NODE_LIMIT = 1000
 SPARSE_CANDIDATE_LIMIT = 160
 GRAPH_CACHE_MAX_ENTRIES = 8
@@ -324,6 +327,41 @@ def _group_data(
     return primary, meta, values_by_name
 
 
+def _grouping_coverage(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    total = len(selected)
+    metadata: list[dict[str, Any]] = [
+        {
+            "id": "similarity",
+            "covered": total,
+            "total": total,
+            "coverage": 1.0 if total else 0.0,
+            "distinctValues": 0,
+            "enabled": True,
+        }
+    ]
+    for group_by, field in GROUP_BY_FIELDS.items():
+        values_by_name = {
+            item["name"]: {value for value in _string_list(item["record"].get(field)) if value != "*"}
+            for item in selected
+        }
+        covered = sum(bool(values) for values in values_by_name.values())
+        distinct = len({value for values in values_by_name.values() for value in values})
+        coverage = covered / total if total else 0.0
+        metadata.append(
+            {
+                "id": group_by,
+                "covered": covered,
+                "total": total,
+                "coverage": round(coverage, 4),
+                "distinctValues": distinct,
+                "enabled": covered >= MIN_GROUP_COVERAGE_COUNT
+                and coverage >= MIN_GROUP_COVERAGE_RATIO
+                and distinct >= MIN_GROUP_DISTINCT_VALUES,
+            }
+        )
+    return metadata
+
+
 def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> dict[str, Any]:
     """Build a graph payload without making upstream Toolhub requests."""
     limit = _normalize_limit(limit)
@@ -397,6 +435,7 @@ def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> d
         "nodeLimit": limit,
         "availableNodeLimits": list(GRAPH_NODE_LIMITS),
         "availableGroupings": list(GROUP_BY_VALUES),
+        "groupingMeta": _grouping_coverage(selected),
         "truncated": max(0, len(candidates) - len(selected)),
         "generatedAt": utcnow().isoformat(timespec="seconds") + "Z",
         "source": SOURCE_LOCAL,

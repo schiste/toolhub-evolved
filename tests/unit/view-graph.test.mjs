@@ -155,6 +155,39 @@ test("viewGraph: changing node count or grouping reloads the graph payload", asy
 	assert.equal(api.backendGetJson.mock.calls[1][0], "/v1/graph/?limit=250&groupBy=language");
 });
 
+test("viewGraph: disables grouping choices without enough metadata", async () => {
+	api.backendGetJson.mockResolvedValue({
+		nodes: [{ id: "a" }],
+		edges: [],
+		communityMeta: [],
+		groupMeta: [],
+		groupingMeta: [
+			{ id: "similarity", covered: 1, total: 1, enabled: true },
+			{ id: "project", covered: 1, total: 1, enabled: false }
+		],
+		truncated: false
+	});
+	forceGraphMod.communityColors.mockReturnValue(new Map([["other", "#ccc"]]));
+	forceGraphMod.forceGraph.mockReturnValue({
+		stop: vi.fn(),
+		zoomIn: vi.fn(),
+		zoomOut: vi.fn(),
+		fitView: vi.fn(),
+		setFilters: vi.fn()
+	});
+
+	const view = await viewGraph();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await vi.waitFor(() => assert.equal(forceGraphMod.forceGraph.mock.calls.length, 1));
+
+	const project = /** @type {HTMLOptionElement} */ (
+		document.querySelector('[data-graph-option="groupBy"] option[value="project"]')
+	);
+	assert.equal(project.disabled, true);
+	assert.equal(project.title, "1 of 1 tools have this metadata");
+});
+
 test("viewGraph: mount() does nothing when the canvas element is absent", async () => {
 	api.backendGetJson.mockResolvedValue({ nodes: [{ id: "a" }], truncated: false, communityMeta: [] });
 	forceGraphMod.communityColors.mockReturnValue(new Map([["other", "#ccc"]]));

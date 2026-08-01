@@ -74,6 +74,27 @@ function graphOptions(state) {
 	</div>`;
 }
 
+/**
+ * @param {HTMLElement} graph
+ * @param {Array<{ id: string, covered: number, total: number, enabled: boolean }>} metadata
+ */
+function updateGroupingOptions(graph, metadata) {
+	const select = /** @type {HTMLSelectElement | null} */ (graph.querySelector('[data-graph-option="groupBy"]'));
+	if (!select) return;
+	const byId = new Map((metadata || []).map((item) => [item.id, item]));
+	for (const option of select.options) {
+		const item = byId.get(option.value);
+		if (!item) continue;
+		option.disabled = !item.enabled;
+		option.title = item.enabled
+			? ""
+			: t("graph.groupCoverage", "{covered} of {total} tools have this metadata", {
+					covered: String(item.covered),
+					total: String(item.total)
+				});
+	}
+}
+
 function graphToolbar() {
 	const zoomIn = t("graph.zoomIn", "Zoom in");
 	const zoomOut = t("graph.zoomOut", "Zoom out");
@@ -158,6 +179,7 @@ export function viewGraph() {
 		function showPayload(next, nextState, updateUrl) {
 			if (!Array.isArray(next?.nodes) || !Array.isArray(next?.edges)) throw new Error("Invalid graph payload");
 			currentHandle?.stop();
+			updateGroupingOptions(graph, next.groupingMeta || []);
 			const currentFilters = graph.querySelector("[data-graph-filters]");
 			if (currentFilters) currentFilters.outerHTML = graphFilters(next.nodes);
 			const legend = /** @type {HTMLElement | null} */ (graph.querySelector("[data-graph-legend]"));

@@ -2267,6 +2267,30 @@ def test_graph_payload_uses_clustered_layout_for_large_grouped_views(monkeypatch
     assert [group["label"] for group in payload["groupMeta"]] == ["en", "fr"]
 
 
+def test_graph_payload_reports_grouping_coverage(monkeypatch):
+    records = []
+    for index in range(20):
+        record = {"name": f"tool-{index}", "title": f"Tool {index}", "keywords": ["images"]}
+        if index < 12:
+            record["for_wikis"] = ["commons.wikimedia.org" if index % 2 else "www.wikidata.org"]
+        records.append({"toolName": record["name"], "record": record})
+    monkeypatch.setattr(graph_payload.canonical_tools, "records", lambda limit: records)
+
+    payload = graph_payload.build()
+    coverage = {item["id"]: item for item in payload["groupingMeta"]}
+
+    assert coverage["similarity"]["enabled"] is True
+    assert coverage["project"] == {
+        "id": "project",
+        "covered": 12,
+        "total": 20,
+        "coverage": 0.6,
+        "distinctValues": 2,
+        "enabled": True,
+    }
+    assert coverage["task"]["enabled"] is False
+
+
 def test_graph_payload_shared_cache_survives_worker_memory_reset(client, monkeypatch):
     graph_payload._CACHE.clear()
     api_cache.clear()

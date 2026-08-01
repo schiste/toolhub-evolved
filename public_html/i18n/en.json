@@ -458,6 +458,7 @@
 	"graph.fit": "Fit map",
 	"graph.fitsYou": "Fits you",
 	"graph.groupBy": "Group by",
+	"graph.groupCoverage": "{covered} of {total} tools have this metadata",
 	"graph.groupLanguage": "Languages",
 	"graph.groupProject": "Projects",
 	"graph.groupSimilarity": "Similarity clusters",
