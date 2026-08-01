@@ -83,6 +83,26 @@ class FetchPolicy:
     timeout: int | tuple[int, int]
 
 
+@dataclass(frozen=True)
+class BoundedResponse:
+    """Body plus safe response metadata captured by a bounded fetch."""
+
+    body: bytes
+    url: str
+    content_type: str
+    etag: str | None
+    last_modified: str | None
+
+
+@dataclass(frozen=True)
+class ProbeResponse:
+    """Headers-only result from a guarded public URL reachability probe."""
+
+    url: str
+    status_code: int
+    content_type: str
+
+
 # User-registered toolinfo URLs: anyone can point these anywhere, so they get the
 # strictest treatment. HTTPS-only is not cosmetic — resolution happens just before
 # the fetch, leaving a DNS-rebinding window, and requiring TLS means an internal
@@ -107,6 +127,22 @@ WIKIMEDIA_FEED = FetchPolicy(
     follow_redirects=True,
     max_redirects=5,
     timeout=(5, 60),
+)
+
+PUBLIC_IMAGE = FetchPolicy(
+    schemes=frozenset({"https"}),
+    max_body_bytes=512 * 1024,
+    follow_redirects=True,
+    max_redirects=3,
+    timeout=(5, 20),
+)
+
+PUBLIC_PROBE = FetchPolicy(
+    schemes=frozenset({"http", "https"}),
+    max_body_bytes=0,
+    follow_redirects=True,
+    max_redirects=3,
+    timeout=(5, 15),
 )
 
 
@@ -148,6 +184,13 @@ def _read_capped(resp: requests.Response, url: str, limit: int) -> bytes:
 
 def fetch_bounded(session: requests.Session, url: str, *, policy: FetchPolicy, caller: Caller) -> bytes:
     """Fetch one document under `policy`, validating every URL it reaches."""
+    return fetch_bounded_response(session, url, policy=policy, caller=caller).body
+
+
+def fetch_bounded_response(
+    session: requests.Session, url: str, *, policy: FetchPolicy, caller: Caller
+) -> BoundedResponse:
+    """Fetch one document and retain only bounded, non-sensitive metadata."""
     current_url = url
     for _hop in range(policy.max_redirects + 1):
         require_allowed(current_url, policy, scheme_error=caller.scheme_error)
@@ -171,6 +214,43 @@ def fetch_bounded(session: requests.Session, url: str, *, policy: FetchPolicy, c
                 current_url = urljoin(current_url, location)
                 continue
             resp.raise_for_status()
-            return _read_capped(resp, current_url, policy.max_body_bytes)
+            headers = getattr(resp, "headers", {})
+            return BoundedResponse(
+                body=_read_capped(resp, current_url, policy.max_body_bytes),
+                url=current_url,
+                content_type=(headers.get("Content-Type") or "").split(";", 1)[0].strip().lower(),
+                etag=(headers.get("ETag") or "")[:255] or None,
+                last_modified=(headers.get("Last-Modified") or "")[:255] or None,
+            )
     msg = f"{url}: too many redirects"
     raise ValueError(msg)
+
+
+def probe_reachable(session: requests.Session, url: str, *, caller: Caller) -> ProbeResponse:
+    """Check a URL under SSRF/redirect guards without downloading its body."""
+    current_url = url
+    for _hop in range(PUBLIC_PROBE.max_redirects + 1):
+        require_allowed(current_url, PUBLIC_PROBE, scheme_error=caller.scheme_error)
+        with session.get(
+            current_url,
+            headers={"User-Agent": caller.user_agent, "Accept": caller.accept},
+            timeout=PUBLIC_PROBE.timeout,
+            stream=True,
+            allow_redirects=False,
+        ) as resp:
+            headers = getattr(resp, "headers", {})
+            if resp.is_redirect or resp.is_permanent_redirect:
+                location = headers.get("Location") or headers.get("location") or ""
+                if not location:
+                    message = f"{current_url}: redirect missing Location header"
+                    raise ValueError(message)
+                current_url = urljoin(current_url, location)
+                continue
+            resp.raise_for_status()
+            return ProbeResponse(
+                url=current_url,
+                status_code=int(resp.status_code),
+                content_type=(headers.get("Content-Type") or "").split(";", 1)[0].strip().lower(),
+            )
+    message = f"{url}: too many redirects"
+    raise ValueError(message)
