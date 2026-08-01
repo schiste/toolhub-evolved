@@ -10,7 +10,7 @@ from defusedxml import ElementTree
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend import db, outbound, toolhub
+from backend import db, graph_enrichment, outbound, toolhub
 from backend.author_claims import dedupe_strings
 from backend.models import ToolAuthorClaim, ToolinfoDiscovery, ToolinfoDiscoveryMeta, utcnow
 from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, clean_error
@@ -147,7 +147,12 @@ def _discovery_attempt(
     return data, False
 
 
-def discover_toolinfo_url(raw_url: str, session: requests.Session | None = None) -> dict:
+def discover_toolinfo_url(
+    raw_url: str,
+    session: requests.Session | None = None,
+    *,
+    tool_name: str = "",
+) -> dict:
     """Discover a concrete toolinfo.json URL by checking root first, then sitemap after root 404."""
     url = raw_url.strip()
     active_session = session or requests.Session()
@@ -155,7 +160,7 @@ def discover_toolinfo_url(raw_url: str, session: requests.Session | None = None)
     attempts: list[dict] = []
     data, root_not_found = _discovery_attempt(root_url, "root", attempts, active_session)
     if data is not None:
-        return _found_payload(url, root_url, "root", data, attempts)
+        return _found_payload(url, root_url, "root", data, attempts, tool_name=tool_name)
     if not root_not_found:
         return {
             "ok": False,
@@ -190,7 +195,7 @@ def discover_toolinfo_url(raw_url: str, session: requests.Session | None = None)
     for candidate in _sitemap_toolinfo_urls(sitemap_xml, sitemap_url=sitemap_url, origin=_origin(url)):
         data, _not_found = _discovery_attempt(candidate, "sitemap-toolinfo", attempts, active_session)
         if data is not None:
-            return _found_payload(url, candidate, "sitemap", data, attempts)
+            return _found_payload(url, candidate, "sitemap", data, attempts, tool_name=tool_name)
     return {
         "ok": False,
         "status": STATUS_NOT_FOUND,
@@ -200,8 +205,31 @@ def discover_toolinfo_url(raw_url: str, session: requests.Session | None = None)
     }
 
 
-def _found_payload(input_url: str, toolinfo_url: str, method: str, data: object, attempts: list[dict]) -> dict:
-    return {
+def _matching_record(data: object, tool_name: str) -> dict | None:
+    if not tool_name:
+        return None
+    items = [data] if isinstance(data, dict) else data[:MAX_ITEMS_PER_TOOLINFO] if isinstance(data, list) else []
+    target = tool_name.casefold()
+    return next(
+        (
+            dict(item)
+            for item in items
+            if isinstance(item, dict) and str(item.get("name") or "").strip().casefold() == target
+        ),
+        None,
+    )
+
+
+def _found_payload(  # noqa: PLR0913 - URL, method, document, attempts, and target are distinct evidence
+    input_url: str,
+    toolinfo_url: str,
+    method: str,
+    data: object,
+    attempts: list[dict],
+    *,
+    tool_name: str = "",
+) -> dict:
+    payload = {
         "ok": True,
         "status": STATUS_FOUND,
         "method": method,
@@ -210,6 +238,10 @@ def _found_payload(input_url: str, toolinfo_url: str, method: str, data: object,
         "toolNames": _toolinfo_names(data),
         "attempts": attempts,
     }
+    matched = _matching_record(data, tool_name)
+    if matched is not None:
+        payload["toolRecord"] = matched
+    return payload
 
 
 def tool_discovery_candidate_url(tool: dict) -> str:
@@ -269,6 +301,7 @@ def upsert_pending(s: Session, *, tool_name: str, tool_url: str) -> ToolinfoDisc
     if tool_url and row.tool_url != tool_url[:MAX_URL]:
         row.tool_url = tool_url[:MAX_URL]
         row.status = STATUS_PENDING
+        row.payload = None
         row.expires_at = utcnow()
     return row
 
@@ -283,6 +316,7 @@ def upsert_no_url(s: Session, *, tool_name: str, last_error: str) -> ToolinfoDis
     row.method = None
     row.toolinfo_url = None
     row.tool_names = []
+    row.payload = None
     row.attempts = []
     row.checked_at = utcnow()
     row.expires_at = _expiry_for_status(STATUS_NO_URL)
@@ -300,6 +334,7 @@ def upsert_result(s: Session, *, tool_name: str, tool_url: str, result: dict) ->
     row.method = str(result.get("method") or "") or None
     row.toolinfo_url = str(result.get("toolinfoUrl") or "")[:MAX_URL] or None
     row.tool_names = result.get("toolNames") if isinstance(result.get("toolNames"), list) else []
+    row.payload = result.get("toolRecord") if isinstance(result.get("toolRecord"), dict) else None
     row.attempts = result.get("attempts") if isinstance(result.get("attempts"), list) else []
     row.checked_at = utcnow()
     row.expires_at = _expiry_for_status(status)
@@ -500,9 +535,10 @@ def refresh_known_discoveries(limit: int = 100) -> dict[str, int]:
 
     session = requests.Session()
     for row in rows[:limit]:
-        result = discover_toolinfo_url(row.tool_url, session)
+        result = discover_toolinfo_url(row.tool_url, session, tool_name=row.tool_name)
         with db.session_scope() as s:
             upsert_result(s, tool_name=row.tool_name, tool_url=row.tool_url, result=result)
+        graph_enrichment.refresh_tool_names([row.tool_name])
         refreshed += 1
         if result.get("status") == STATUS_FOUND:
             found += 1

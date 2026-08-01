@@ -18,7 +18,7 @@ from urllib.parse import urlparse, urlunparse
 from sqlalchemy import select
 
 from analyze_source import _local_git_context, _read_tree
-from backend import DEFAULT_DB_URL, db, tool_summaries
+from backend import DEFAULT_DB_URL, db, graph_enrichment, tool_summaries
 from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport, User, utcnow
 from backend.source_analyzer import SourceAnalysisError, analyze_source_files
 from backend.sync import REVIEW_APPROVED, SOURCE_REPOSITORY_SCAN, SYNC_ERROR, SYNC_EVOLVED_REAL, clean_error
@@ -295,6 +295,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             state.last_error = None
             state.source = SOURCE_REPOSITORY_SCAN
             state.sync_status = SYNC_EVOLVED_REAL
+        graph_enrichment.refresh_tool_names([tool_name])
         tool_summaries.refresh([tool_name], _build_local_tool_summary)
     except (RepositoryScanError, OSError, SourceAnalysisError, ValueError) as exc:
         _save_failure(tool_name, url, provider, str(exc))

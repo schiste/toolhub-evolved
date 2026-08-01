@@ -600,13 +600,14 @@ def test_refresh_known_discoveries_seeds_from_author_claims(monkeypatch):
     monkeypatch.setattr(
         toolinfo_discovery,
         "discover_toolinfo_url",
-        lambda url, _session=None: {
+        lambda url, _session=None, **_kwargs: {
             "ok": True,
             "status": "found",
             "method": "root",
             "inputUrl": url,
             "toolinfoUrl": "https://ada.example/toolinfo.json",
             "toolNames": ["ada-tool"],
+            "toolRecord": {"name": "ada-tool", "for_wikis": ["wikidatawiki"]},
             "attempts": [{"url": "https://ada.example/toolinfo.json", "method": "root", "ok": True}],
         },
     )
@@ -620,6 +621,7 @@ def test_refresh_known_discoveries_seeds_from_author_claims(monkeypatch):
         assert row.tool_url == "https://ada.example/tool"
         assert row.status == "found"
         assert row.toolinfo_url == "https://ada.example/toolinfo.json"
+        assert row.payload == {"name": "ada-tool", "for_wikis": ["wikidatawiki"]}
 
 
 def test_refresh_known_discoveries_skips_queued_and_fresh_claims(monkeypatch):
@@ -658,7 +660,12 @@ def test_refresh_known_discoveries_skips_queued_and_fresh_claims(monkeypatch):
     monkeypatch.setattr(
         toolinfo_discovery,
         "discover_toolinfo_url",
-        lambda _url, _session=None: {"ok": False, "status": "error", "attempts": [], "lastError": "timeout"},
+        lambda _url, _session=None, **_kwargs: {
+            "ok": False,
+            "status": "error",
+            "attempts": [],
+            "lastError": "timeout",
+        },
     )
 
     assert toolinfo_discovery.refresh_known_discoveries(limit=2) == {
@@ -697,7 +704,12 @@ def test_refresh_known_discoveries_stops_claim_seeding_at_limit(monkeypatch):
     monkeypatch.setattr(
         toolinfo_discovery,
         "discover_toolinfo_url",
-        lambda _url, _session=None: {"ok": False, "status": "not_found", "attempts": [], "lastError": "missing"},
+        lambda _url, _session=None, **_kwargs: {
+            "ok": False,
+            "status": "not_found",
+            "attempts": [],
+            "lastError": "missing",
+        },
     )
 
     assert toolinfo_discovery.refresh_known_discoveries(limit=1)["refreshed"] == 1
@@ -730,7 +742,7 @@ def test_refresh_known_discoveries_handles_stale_rows_and_missing_urls(monkeypat
     monkeypatch.setattr(
         toolinfo_discovery,
         "discover_toolinfo_url",
-        lambda url, _session=None: {
+        lambda url, _session=None, **_kwargs: {
             "ok": False,
             "status": "not_found",
             "inputUrl": url,
