@@ -6,6 +6,7 @@ idempotent, and it refuses to silently migrate the wrong database.
 """
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -14,8 +15,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import migrate  # noqa: E402
-from backend import api_cache, canonical_tools, db  # noqa: E402
-from backend.models import ApiCache  # noqa: E402
+from backend import api_cache, canonical_tools, db, maintainer_index  # noqa: E402
+from backend.models import ApiCache, ToolAuthorClaim, ToolMaintainerEdge, User, UserToolResolverCache, utcnow  # noqa: E402
+from backend import sync  # noqa: E402
 
 
 @pytest.fixture
@@ -83,6 +85,67 @@ def test_schema_setup_does_no_row_level_work(configured_db):
     migrated = {result.name: result.rows for result in migrate.run_once()}
     assert migrated["api_cache index columns"] == 1
     assert migrated["canonical search_text"] == 1
+
+
+def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db):
+    now = utcnow()
+    with db.session_scope() as s:
+        user = User(wm_sub="schiste", username="Schiste")
+        s.add(user)
+        s.flush()
+        s.add_all(
+            [
+                ToolAuthorClaim(
+                    tool_name="wrong-tool",
+                    author_name="Effeietsanders",
+                    toolhub_username="Schiste",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                ),
+                ToolAuthorClaim(
+                    tool_name="wrong-tool-2",
+                    author_name="Effeietsanders",
+                    toolhub_username="Schiste",
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+                ),
+                ToolAuthorClaim(
+                    tool_name="signed-tool",
+                    author_name="Maintainer Alias",
+                    toolhub_username="Schiste",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
+                ),
+                ToolMaintainerEdge(
+                    tool_name="wrong-tool",
+                    maintainer_key="toolhub:schiste",
+                    maintainer_display_name="Schiste",
+                    toolhub_username="Schiste",
+                    source=maintainer_index.SOURCE_AUTHOR_CLAIM,
+                    method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=95,
+                ),
+                UserToolResolverCache(
+                    user_id=user.id,
+                    payload={"possible": [{"tool": {"name": "wrong-tool"}}]},
+                    computed_at=now,
+                    expires_at=now + timedelta(minutes=5),
+                    stale_until=now + timedelta(days=1),
+                ),
+            ]
+        )
+
+    first = {result.name: result.rows for result in migrate.run_once()}
+    assert first["resolver identity cleanup"] == 4
+    with db.session_scope() as s:
+        assert s.query(ToolAuthorClaim).filter(ToolAuthorClaim.tool_name.in_(["wrong-tool", "wrong-tool-2"])).count() == 0
+        assert s.query(ToolAuthorClaim).filter(ToolAuthorClaim.tool_name == "signed-tool").count() == 1
+        assert s.query(ToolMaintainerEdge).filter(ToolMaintainerEdge.tool_name == "wrong-tool").count() == 0
+        assert s.query(UserToolResolverCache).count() == 0
+
+    second = {result.name: result.rows for result in migrate.run_once()}
+    assert second["resolver identity cleanup"] == 0
 
 
 def test_migrate_refuses_to_run_against_the_unconfigured_default(monkeypatch, capsys):

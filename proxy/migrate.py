@@ -19,7 +19,11 @@ import os
 import sys
 from dataclasses import dataclass
 
-from backend import DEFAULT_DB_URL, api_cache, canonical_tools, catalog_projection, db
+from sqlalchemy import func, or_, select
+
+from backend import DEFAULT_DB_URL, api_cache, canonical_tools, catalog_projection, db, maintainer_index
+from backend.models import ToolAuthorClaim, ToolMaintainerEdge, UserToolResolverCache
+from backend.sync import AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME, AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
 
 
 @dataclass(frozen=True)
@@ -43,7 +47,56 @@ def run_once() -> list[MigrationResult]:
             "catalog projections",
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
         ),
+        MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
     ]
+
+
+def _clean_resolver_identity_claims() -> int:
+    """Remove legacy claims that confused canonical authors with account users.
+
+    The old resolver stored Toolforge proofs and display-name candidates under
+    the canonical author name. That polluted the account's future search terms
+    and expanded one false association into every tool by that author. Strong
+    signed-toolinfo and official-write claims are intentionally left alone.
+    """
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(ToolAuthorClaim).where(
+                    or_(
+                        ToolAuthorClaim.verification_method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                        ToolAuthorClaim.verification_method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+                    ),
+                    func.lower(ToolAuthorClaim.author_name) != func.lower(ToolAuthorClaim.toolhub_username),
+                )
+            ).scalars()
+        )
+        affected_pairs = {(row.tool_name, row.toolhub_username) for row in rows}
+        affected_tools = {tool_name for tool_name, _username in affected_pairs}
+        affected_keys = [maintainer_index.maintainer_key(toolhub_username=username) for _tool, username in affected_pairs]
+        for row in rows:
+            s.delete(row)
+        if not rows:
+            return 0
+        edge_count = 0
+        for tool_name, username in affected_pairs:
+            edge_count += int(
+                s.execute(
+                    ToolMaintainerEdge.__table__.delete().where(
+                        ToolMaintainerEdge.tool_name == tool_name,
+                        ToolMaintainerEdge.toolhub_username == username,
+                        ToolMaintainerEdge.source == maintainer_index.SOURCE_AUTHOR_CLAIM,
+                        ToolMaintainerEdge.method.in_(
+                            {AUTHOR_CLAIM_TOOLFORGE_MAINTAINER, AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME}
+                        ),
+                    )
+                ).rowcount
+                or 0
+            )
+        maintainer_index.sync_author_claim_edges(s, tool_names=sorted(affected_tools))
+        maintainer_index.refresh_activity_rollups(s, maintainer_keys=affected_keys)
+        cache_count = s.query(UserToolResolverCache).delete(synchronize_session=False)
+        return len(rows) + edge_count + int(cache_count or 0)
 
 
 def main(argv: list[str] | None = None) -> int:
