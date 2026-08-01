@@ -24,8 +24,9 @@ from urllib.parse import quote, unquote, urlencode, urlparse
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
-from flask import Blueprint, Response, abort, jsonify, request, session
+from flask import Blueprint, Response, abort, current_app, jsonify, request, session
 from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import Select
 
 from backend import (
@@ -33,8 +34,8 @@ from backend import (
     authz,
     canonical_tools,
     db,
-    graph_payload,
     github_issues,
+    graph_payload,
     maintainer_index,
     recent_owners,
     security,
@@ -66,13 +67,13 @@ from backend.models import (
     CrawlerRun,
     CrawlerUrl,
     Favorite,
+    IssueReport,
     MaintainerActivityRollup,
     SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
-    IssueReport,
     ToolhubToken,
     ToolList,
     ToolMaintainerEdge,
@@ -1313,8 +1314,22 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
         rows = list(
             s.execute(select(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)).scalars()
         )
-        maintainer_index.sync_author_claim_edges(s, usernames=[user.username])
-        return [_claim_payload(row) for row in rows]
+        payloads = [_claim_payload(row) for row in rows]
+    # Refresh the derived maintainer/people index in its own transaction, and
+    # never fail this read because of it. It rebuilds a tool's relationships by
+    # deleting and re-inserting them, so two concurrent callers legitimately
+    # race: one deletes rows the other has already loaded, and the loser's flush
+    # raises StaleDataError. That was surfacing as a 500 here, which the client
+    # retried, which produced more concurrent callers — a loop that saturated
+    # the webservice. The index is supplementary to the payloads above and the
+    # people-reconcile job rebuilds it regardless, so a skipped refresh costs
+    # nothing a moment later.
+    try:
+        with db.session_scope() as s:
+            maintainer_index.sync_author_claim_edges(s, usernames=[user.username])
+    except SQLAlchemyError as exc:
+        current_app.logger.info("deferred maintainer index refresh for %s: %s", user.username, exc)
+    return payloads
 
 
 def _record_successful_toolhub_write(
