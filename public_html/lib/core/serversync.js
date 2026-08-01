@@ -82,7 +82,14 @@ export function lifecycleMeta(res, extraLocalKeys = []) {
 		lastSyncedAt: local.lastSyncedAt || res?.lastSyncedAt,
 		lastError: local.lastError || res?.lastError,
 		toolhubResponse: local.toolhubResponse || res?.toolhubResponse,
+		toolhubStatus:
+			local.toolhubStatus ??
+			res?.toolhubStatus ??
+			(local.toolhubResponse || res?.toolhubResponse)?.status_code ??
+			(local.toolhubResponse || res?.toolhubResponse)?.status,
+		toolhubCode: local.toolhubCode ?? res?.toolhubCode ?? (local.toolhubResponse || res?.toolhubResponse)?.code,
 		validationErrors: local.validationErrors || res?.validationErrors,
+		viewerOwned: local.viewerOwned ?? res?.viewerOwned,
 		officialId: local.officialId
 	};
 	for (const key of extraLocalKeys) meta[key] = local[key];

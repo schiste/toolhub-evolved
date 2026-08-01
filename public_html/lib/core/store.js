@@ -146,7 +146,7 @@ export function withSyncMuted(run) {
 	}
 }
 /**
- * @typedef {{ source?: string, syncStatus?: string, syncLabel?: string, lastSyncedAt?: string, lastError?: string, createdByUserId?: number, deletedAt?: string, officialId?: number, officialName?: string, visibility?: string, toolhubResponse?: Record<string, any> | null, validationErrors?: any[], baseRevision?: string, fieldStatuses?: Record<string, string>, reviewStatus?: string }} SyncMeta
+ * @typedef {{ source?: string, syncStatus?: string, syncLabel?: string, lastSyncedAt?: string, lastError?: string, createdByUserId?: number, viewerOwned?: boolean, deletedAt?: string, officialId?: number, officialName?: string, visibility?: string, toolhubResponse?: Record<string, any> | null, toolhubStatus?: number, toolhubCode?: number | string, validationErrors?: any[], baseRevision?: string, fieldStatuses?: Record<string, string>, reviewStatus?: string }} SyncMeta
  * @typedef {{ id: string, title: string, description: string, tools: string[], modified?: string, created?: string } & SyncMeta} DemoList
  */
 export const demoStore = {
@@ -251,11 +251,14 @@ export function stampSyncMeta(item, meta = {}) {
 	if (meta.lastError !== undefined) out.lastError = meta.lastError;
 	if (meta.lastSyncedAt !== undefined) out.lastSyncedAt = meta.lastSyncedAt;
 	if (meta.createdByUserId !== undefined) out.createdByUserId = meta.createdByUserId;
+	if (meta.viewerOwned !== undefined) out.viewerOwned = meta.viewerOwned;
 	if (meta.deletedAt !== undefined) out.deletedAt = meta.deletedAt;
 	if (meta.officialId !== undefined) out.officialId = meta.officialId;
 	if (meta.officialName !== undefined) out.officialName = meta.officialName;
 	if (meta.visibility !== undefined) out.visibility = meta.visibility;
 	if (meta.toolhubResponse !== undefined) out.toolhubResponse = meta.toolhubResponse;
+	if (meta.toolhubStatus !== undefined) out.toolhubStatus = meta.toolhubStatus;
+	if (meta.toolhubCode !== undefined) out.toolhubCode = meta.toolhubCode;
 	if (meta.validationErrors !== undefined) out.validationErrors = meta.validationErrors;
 	if (meta.baseRevision !== undefined) out.baseRevision = meta.baseRevision;
 	if (meta.fieldStatuses !== undefined) out.fieldStatuses = meta.fieldStatuses;

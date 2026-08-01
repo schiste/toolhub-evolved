@@ -62,6 +62,44 @@ test("backendErrorMessage prefers actionable backend payload details", () => {
 	assert.equal(api.backendErrorBody(new Error("not backend")), null);
 });
 
+test("backendErrorExplanation gives platform-independent next steps", () => {
+	assert.match(
+		api.backendErrorExplanation(new api.BackendError(401, "/v1/write/tools/", { reauth: true })),
+		/authorization has expired.*Sign in again.*write access/i
+	);
+	assert.match(
+		api.backendErrorExplanation(new api.BackendError(403, "/v1/write/tools/", { error: "bad CSRF token" })),
+		/security session is stale.*Reload the page/i
+	);
+	assert.match(
+		api.backendErrorExplanation(
+			new api.BackendError(422, "/v1/write/tools/", {
+				validationErrors: [
+					{ field: "name", message: "This field is required" },
+					{ field: "url", message: "Enter a valid URL" }
+				]
+			})
+		),
+		/name: This field is required; url: Enter a valid URL/i
+	);
+	assert.match(
+		api.backendErrorExplanation({
+			result: "local_fallback",
+			status: 502,
+			lastError: "official Toolhub is unavailable"
+		}),
+		/temporarily unavailable.*retry/i
+	);
+	assert.match(
+		api.backendErrorExplanation(new TypeError("Failed to fetch")),
+		/Could not reach Toolhub Evolved.*connection/i
+	);
+	assert.match(
+		api.backendErrorExplanation(new Error("Toolhub OAuth grant is required")),
+		/authorization has expired.*grant Toolhub write access/i
+	);
+});
+
 test("backendWriteJson handles empty writes, invalid JSON bodies, and backend errors", async () => {
 	const seen = [];
 	globalThis.fetch = async (url, opts) => {

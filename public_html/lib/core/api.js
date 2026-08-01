@@ -30,10 +30,13 @@ const OVERLAY_META_KEYS = new Set([
 	"officialName",
 	"visibility",
 	"toolhubResponse",
+	"toolhubStatus",
+	"toolhubCode",
 	"validationErrors",
 	"baseRevision",
 	"fieldStatuses",
-	"reviewStatus"
+	"reviewStatus",
+	"viewerOwned"
 ]);
 const CANONICAL_TOOL_KEYS = new Set(["name", "origin"]);
 
@@ -67,6 +70,10 @@ export function applyToolOverlay(o) {
 		/** @type {any} */ (o).editValidationErrors = e.validationErrors;
 		/** @type {any} */ (o).editReviewStatus = e.reviewStatus;
 		/** @type {any} */ (o).editLastSyncedAt = e.lastSyncedAt;
+		/** @type {any} */ (o).editToolhubResponse = e.toolhubResponse;
+		/** @type {any} */ (o).editToolhubStatus = e.toolhubStatus;
+		/** @type {any} */ (o).editToolhubCode = e.toolhubCode;
+		/** @type {any} */ (o).editViewerOwned = e.viewerOwned;
 	}
 	const a = toolAnnosMap()[o.name];
 	if (a) {
@@ -77,6 +84,10 @@ export function applyToolOverlay(o) {
 		/** @type {any} */ (o).annotationValidationErrors = a.validationErrors;
 		/** @type {any} */ (o).annotationReviewStatus = a.reviewStatus;
 		/** @type {any} */ (o).annotationLastSyncedAt = a.lastSyncedAt;
+		/** @type {any} */ (o).annotationToolhubResponse = a.toolhubResponse;
+		/** @type {any} */ (o).annotationToolhubStatus = a.toolhubStatus;
+		/** @type {any} */ (o).annotationToolhubCode = a.toolhubCode;
+		/** @type {any} */ (o).annotationViewerOwned = a.viewerOwned;
 	}
 	if (e || a) o.status = /** @type {any} */ (statusOf(o)); // flags may have changed
 	return o;
@@ -114,6 +125,7 @@ export function localToolBase(name, rec) {
 	);
 	o.name = name;
 	o.weeklyViews = 0;
+	/** @type {any} */ (o).viewerOwned = rec.viewerOwned;
 	o.status = statusOf(o);
 	INDEX[name] = o;
 	return applyToolOverlay(o);
@@ -747,6 +759,76 @@ export function backendErrorMessage(error) {
 		return JSON.stringify(details);
 	}
 	return error instanceof Error ? error.message : String(error);
+}
+/**
+ * Turn a backend or network failure into an actionable message for a person.
+ * This intentionally accepts local-fallback response objects as well as thrown
+ * errors because official writes can be persisted locally after an upstream
+ * rejection.
+ * @param {unknown} error
+ * @returns {string}
+ */
+export function backendErrorExplanation(error) {
+	const isBackendError = error instanceof BackendError;
+	const object = error && typeof error === "object" ? /** @type {any} */ (error) : null;
+	const body = isBackendError ? error.body || {} : object || {};
+	const status = isBackendError
+		? error.status
+		: Number.isFinite(Number(object?.status))
+			? Number(object.status)
+			: null;
+	const details = body.details && typeof body.details === "object" ? body.details : body;
+	const rawMessage = [
+		body.lastError,
+		details.message,
+		details.detail,
+		body.error,
+		error instanceof Error ? error.message : null
+	].find((value) => typeof value === "string" && value.trim());
+	const message = rawMessage ? rawMessage.trim() : "The request could not be completed.";
+	const normalized = message.toLowerCase();
+	const validationErrors = Array.isArray(body.validationErrors)
+		? body.validationErrors
+				.map((item) => {
+					if (typeof item === "string") return item.trim();
+					if (!item || typeof item !== "object") return "";
+					const field = item.field || item.name;
+					const detail = item.message || item.detail || item.error;
+					return detail ? `${field ? `${field}: ` : ""}${detail}`.trim() : "";
+				})
+				.filter(Boolean)
+		: [];
+	const prefix = status ? `HTTP ${status}: ` : "";
+
+	if (
+		body.reauth ||
+		status === 401 ||
+		/oauth grant|sign[- ]in is required|authorization has expired/.test(normalized)
+	) {
+		return `${prefix}Your Toolhub sign-in or authorization has expired. Sign in again, grant Toolhub write access, and retry.`;
+	}
+	if (status === 403 && /csrf|security session/.test(normalized)) {
+		return `${prefix}This page's security session is stale. Reload the page and try again; if it persists, sign in again.`;
+	}
+	if (status === 403 || /permission|not allowed|forbidden/.test(normalized)) {
+		return `${prefix}${message} You are signed in, but this account is not allowed to perform this action. Check your Toolhub permissions or use the account that owns the tool.`;
+	}
+	if (status === 429) {
+		return `${prefix}Too many requests were sent. Wait a moment before trying again.`;
+	}
+	if ((status === 400 || status === 422) && validationErrors.length > 0) {
+		return `${prefix}Toolhub rejected the submitted data. Fix these fields: ${validationErrors.join("; ")}.`;
+	}
+	if (status === 502 || status === 503 || status === 504 || /unavailable|timed out|timeout/.test(normalized)) {
+		return `${prefix}Toolhub is temporarily unavailable. No official change was published; wait a moment and retry.`;
+	}
+	if (
+		!isBackendError &&
+		(error instanceof TypeError || /network|fetch|failed to fetch|load failed/.test(normalized))
+	) {
+		return "Could not reach Toolhub Evolved. Check your connection, VPN, or content blocker, then retry.";
+	}
+	return `${prefix}${message} No official change was published; retry or report this error if it continues.`;
 }
 /** @param {unknown} error */
 export function backendErrorBody(error) {

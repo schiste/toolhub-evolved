@@ -890,6 +890,12 @@
 	overflow-wrap: anywhere;
 }
 
+.sync-reconciliation {
+	margin: var(--space-2) var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+
 .sync-panel__actions {
 	display: flex;
 	flex-wrap: wrap;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../core/dom.js";
 import { t } from "../core/i18n.js";
+import { backendErrorExplanation } from "../core/api.js";
 import { SYNC_STATUS, syncStatusLabel } from "../core/store.js";
 import { button } from "../atoms/button.js";
 
@@ -104,7 +105,9 @@ export function syncState(meta = {}) {
 		className: STATUS_CLASS[status] || "unknown",
 		reviewStatus,
 		reviewLabel: reviewLabel(reviewStatus),
-		retryAvailable: status === SYNC_STATUS.localFallback || status === SYNC_STATUS.syncError,
+		retryAvailable:
+			(status === SYNC_STATUS.localFallback || status === SYNC_STATUS.syncError) &&
+			(!meta?.origin || meta.origin === "api"),
 		lastError: meta?.lastError ? String(meta.lastError) : "",
 		validationErrors: validationErrorMessages(meta?.validationErrors)
 	};
@@ -157,15 +160,32 @@ export function validationErrorList(errors) {
 
 /**
  * @param {Record<string, any> | null | undefined} meta
- * @param {{ title?: string, retryAttrs?: string, discardAttrs?: string, retryLabel?: string, discardLabel?: string, showIfOfficial?: boolean }} [opts]
+ * @param {{ title?: string, retryAttrs?: string, discardAttrs?: string, retryLabel?: string, discardLabel?: string, showIfOfficial?: boolean, guidance?: string }} [opts]
  * @returns {string}
  */
 export function syncStatusPanel(meta = {}, opts = {}) {
 	const state = syncState(meta);
 	if (state.status === SYNC_STATUS.official && !opts.showIfOfficial && !meta?.reviewStatus) return "";
+	const upstreamResponse =
+		meta?.toolhubResponse && typeof meta.toolhubResponse === "object" ? meta.toolhubResponse : {};
+	const upstreamStatus = meta?.toolhubStatus ?? upstreamResponse.status_code ?? upstreamResponse.status;
+	const upstreamCode = meta?.toolhubCode ?? upstreamResponse.code;
+	const explanation = state.lastError
+		? backendErrorExplanation({
+				...meta,
+				status: upstreamStatus ?? meta?.status
+			})
+		: "";
+	const guidance = opts.guidance || explanation;
 	const details = [
+		upstreamStatus || upstreamCode
+			? `<p class="sync-panel__diagnostic">${esc(t("syncStatus.upstreamDiagnostic", "Upstream result:"))} ${esc([upstreamStatus ? `HTTP ${upstreamStatus}` : "", upstreamCode ? `Toolhub code ${upstreamCode}` : ""].filter(Boolean).join(" · "))}</p>`
+			: "",
 		state.lastError
 			? `<p class="sync-panel__detail">${t("syncStatus.lastError", "Toolhub response:")} ${esc(state.lastError)}</p>`
+			: "",
+		guidance
+			? `<p class="sync-panel__guidance"><strong>${t("syncStatus.nextStep", "What this means:")}</strong> ${esc(guidance)}</p>`
 			: "",
 		validationErrorList(meta?.validationErrors)
 	]
