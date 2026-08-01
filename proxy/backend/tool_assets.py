@@ -1,0 +1,165 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Fetch and serve rebuildable same-origin tool icon cache entries."""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import tempfile
+from datetime import timedelta
+from pathlib import Path
+from typing import Any
+
+import requests
+from sqlalchemy import select
+
+from backend import db, outbound
+from backend.models import CatalogToolProjection, ToolAssetCache, utcnow
+
+ALLOWED_CONTENT_TYPES = {
+    "image/gif": ".gif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
+}
+MAX_CANDIDATES = 200
+CALLER = outbound.Caller(
+    user_agent="toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org)",
+    accept=", ".join(ALLOWED_CONTENT_TYPES),
+    scheme_error="icon URL must be public HTTPS",
+)
+
+
+def cache_dir() -> Path:
+    default = str(Path(tempfile.gettempdir()) / "toolhub-evolved-assets")
+    value = os.getenv("TOOLHUB_ASSET_CACHE_DIR", default)
+    return Path(value).expanduser().resolve()
+
+
+def _clean_name(value: Any) -> str:  # noqa: ANN401
+    return str(value or "").strip()[:255]
+
+
+def _icon_source(row: CatalogToolProjection) -> tuple[str, str]:
+    record = row.effective_record if isinstance(row.effective_record, dict) else {}
+    url = str(record.get("icon") or "").strip()
+    evidence = row.provenance.get("icon", []) if isinstance(row.provenance, dict) else []
+    source = next((str(item.get("source") or "") for item in evidence if item.get("effective")), "")
+    return url, source or "official_toolhub"
+
+
+def _store_file(body: bytes, suffix: str) -> tuple[str, str]:
+    digest = hashlib.sha256(body).hexdigest()
+    target_dir = cache_dir()
+    target_dir.mkdir(mode=0o750, parents=True, exist_ok=True)
+    target = target_dir / f"{digest}{suffix}"
+    if not target.exists():
+        temporary = target_dir / f".{digest}.tmp"
+        temporary.write_bytes(body)
+        temporary.replace(target)
+    return digest, str(target)
+
+
+def _content_suffix(content_type: str) -> str:
+    suffix = ALLOWED_CONTENT_TYPES.get(content_type)
+    if suffix is None:
+        message = f"unsupported icon content type: {content_type or 'missing'}"
+        raise ValueError(message)
+    return suffix
+
+
+def refresh_tool(tool_name: str, *, session: requests.Session | None = None) -> dict[str, Any]:
+    name = _clean_name(tool_name)
+    if not name:
+        return {"toolName": "", "status": "skipped"}
+    with db.session_scope() as s:
+        projection = s.get(CatalogToolProjection, name)
+        if projection is None:
+            return {"toolName": name, "status": "missing_projection"}
+        url, source = _icon_source(projection)
+    if not url:
+        with db.session_scope() as s:
+            row = s.get(ToolAssetCache, name) or ToolAssetCache(tool_name=name)
+            s.add(row)
+            row.source_url = ""
+            row.source_type = source
+            row.status = "missing"
+            row.checked_at = utcnow()
+            row.next_attempt_at = None
+            row.last_error = None
+        return {"toolName": name, "status": "missing"}
+    try:
+        response = outbound.fetch_bounded_response(
+            session or requests.Session(), url, policy=outbound.PUBLIC_IMAGE, caller=CALLER
+        )
+        suffix = _content_suffix(response.content_type)
+        digest, path = _store_file(response.body, suffix)
+    except (requests.RequestException, OSError, ValueError) as exc:
+        with db.session_scope() as s:
+            row = s.get(ToolAssetCache, name) or ToolAssetCache(tool_name=name)
+            s.add(row)
+            row.source_url = url
+            row.source_type = source
+            row.status = "error"
+            row.attempts = (row.attempts or 0) + 1
+            row.checked_at = utcnow()
+            row.next_attempt_at = utcnow() + timedelta(hours=min(24, 2 ** min(row.attempts, 4)))
+            row.last_error = str(exc)[:1000]
+        return {"toolName": name, "status": "error", "error": str(exc)[:1000]}
+    with db.session_scope() as s:
+        row = s.get(ToolAssetCache, name) or ToolAssetCache(tool_name=name)
+        s.add(row)
+        row.source_url = url
+        row.source_type = source
+        row.content_type = response.content_type
+        row.size_bytes = len(response.body)
+        row.sha256 = digest
+        row.cached_path = path
+        row.etag = response.etag
+        row.last_modified = response.last_modified
+        row.status = "ready"
+        row.checked_at = utcnow()
+        row.next_attempt_at = None
+        row.attempts = 0
+        row.last_error = None
+    return {"toolName": name, "status": "ready", "bytes": len(response.body), "sha256": digest}
+
+
+def refresh_candidates(limit: int = MAX_CANDIDATES) -> dict[str, int]:
+    bounded = max(1, min(MAX_CANDIDATES, int(limit or 1)))
+    with db.session_scope() as s:
+        projections = list(s.execute(select(CatalogToolProjection).order_by(CatalogToolProjection.tool_name)).scalars())
+        assets = {row.tool_name: row for row in s.execute(select(ToolAssetCache)).scalars()}
+    candidates = []
+    for projection in projections:
+        url, _source = _icon_source(projection)
+        asset = assets.get(projection.tool_name)
+        retry_ready = asset is not None and (asset.next_attempt_at is None or asset.next_attempt_at <= utcnow())
+        if (
+            asset is None
+            or asset.source_url != url
+            or asset.status == "pending"
+            or (asset.status == "error" and retry_ready)
+        ):
+            candidates.append(projection.tool_name)
+    ready = errors = 0
+    http = requests.Session()
+    for name in candidates[:bounded]:
+        result = refresh_tool(name, session=http)
+        ready += result["status"] in {"ready", "missing"}
+        errors += result["status"] == "error"
+    return {"candidates": len(candidates), "processed": min(len(candidates), bounded), "ready": ready, "errors": errors}
+
+
+def cached_asset(tool_name: str) -> tuple[bytes, str, str] | None:
+    name = _clean_name(tool_name)
+    with db.session_scope() as s:
+        row = s.get(ToolAssetCache, name)
+    if row is None or row.status != "ready" or not row.cached_path:
+        return None
+    root = cache_dir()
+    path = Path(row.cached_path).resolve()
+    if path.parent != root or not path.is_file():
+        return None
+    return path.read_bytes(), row.content_type, row.sha256
