@@ -89,12 +89,16 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
 const tool = await import("../../public_html/views/tool.js");
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-async function mountedDetailHtml(view) {
+async function mountedDetailHtml(view, name) {
 	const originalRequestIdleCallback = window.requestIdleCallback;
+	const originalRequestAnimationFrame = window.requestAnimationFrame;
+	const originalPath = window.location.pathname;
 	window.requestIdleCallback = (callback) =>
 		setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 }), 0);
+	window.requestAnimationFrame = (callback) => setTimeout(() => callback(performance.now()), 0);
 	vi.useFakeTimers();
 	try {
+		window.history.replaceState({}, "", `/tools/${name}`);
 		document.body.innerHTML = view.html;
 		view.mount();
 		await vi.advanceTimersByTimeAsync(3000);
@@ -103,7 +107,9 @@ async function mountedDetailHtml(view) {
 		await Promise.resolve();
 		return document.body.innerHTML;
 	} finally {
+		window.history.replaceState({}, "", originalPath);
 		window.requestIdleCallback = originalRequestIdleCallback;
+		window.requestAnimationFrame = originalRequestAnimationFrame;
 		vi.useRealTimers();
 	}
 }
@@ -596,7 +602,7 @@ test("viewTool renders per-field lang attributes from Toolhub language metadata"
 	assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto" lang="fr">Outil</h1>'));
 	assert.ok(r.html.includes('<p class="toolpage__subtitle" dir="auto" lang="fr">Sous-titre</p>'));
 	assert.ok(r.html.includes('<div class="prose" dir="auto" lang="fr"><p>Une description en français.</p></div>'));
-	const mountedHtml = await mountedDetailHtml(r);
+	const mountedHtml = await mountedDetailHtml(r, "outil");
 	assert.ok(mountedHtml.includes('class="related__title"'));
 	assert.ok(mountedHtml.includes('dir="auto" lang="fr">Voisin</button>'));
 });
@@ -655,7 +661,7 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.ok(!r.html.includes("thanks__agg"));
 	assert.ok(!r.html.includes("views experimental"));
 	assert.ok(!r.html.includes("Usage <span"));
-	const mountedHtml = await mountedDetailHtml(r);
+	const mountedHtml = await mountedDetailHtml(r, "full");
 	assert.ok(mountedHtml.includes("Related tools"));
 	assert.ok(mountedHtml.includes("Neighborhood"));
 });
@@ -1013,7 +1019,7 @@ test("mount: builds the force graph when an ego graph is present", async () => {
 	h.egoGraph.mockResolvedValue({ nodes: [{ id: "g" }, { id: "a" }, { id: "b" }], edges: [] });
 	h.forceGraph.mockReturnValue({ handle: true });
 	const r = await tool.viewTool("g");
-	await mountedDetailHtml(r);
+	await mountedDetailHtml(r, "g");
 	assert.ok(h.forceGraph.mock.calls.length > 0);
 	const [target, ego, opts] = h.forceGraph.mock.calls.at(-1);
 	assert.equal(target.id, "ego-canvas");
