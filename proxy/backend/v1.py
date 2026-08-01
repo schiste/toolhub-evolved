@@ -2510,21 +2510,36 @@ def v1_me_tools() -> Response:
             cached.metadata["refresh"] = "queued"
         return _private_resolver_response(cached.payload, cached.metadata)
 
-    # Only a cold miss consumes the expensive-read budget. Once a local row
-    # exists, normal page loads do not touch upstream Toolhub at all.
-    if security.resolver_rate_limited(uid):
-        resp = jsonify({"error": "rate limit exceeded"})
-        resp.status_code = 429
-        resp.headers["Cache-Control"] = "no-store"
-        resp.headers["Retry-After"] = str(int(security.WRITE_WINDOW_SECONDS))
-        return resp
-    payload, errors = _resolve_me_tools(user)
-    if payload is None:
-        resp = jsonify({"error": "official Toolhub is unavailable", "username": user.username, "errors": errors})
-        resp.status_code = 502
-        return resp
-    user_tool_cache.store(uid, payload)
-    return _private_resolver_response(payload, {"status": "miss"})
+    # Serialize cold fills per user. The second read matters when another
+    # worker populated the row while this request was waiting for the lock.
+    with db.advisory_lock(f"user-tool-resolver:{uid}", timeout_seconds=10) as acquired:
+        if not acquired:
+            resp = jsonify(
+                {
+                    "error": "resolver fill in progress",
+                    "detail": "Your private Toolhub data is being refreshed. Retry shortly.",
+                }
+            )
+            resp.status_code = 503
+            resp.headers["Cache-Control"] = "private, no-store"
+            resp.headers["Retry-After"] = "3"
+            return resp
+
+        cached = user_tool_cache.read(uid)
+        if cached is not None:
+            if cached.metadata["status"] == "stale":
+                app = current_app._get_current_object()
+                user_tool_cache.queue_refresh(uid, lambda user_id: _refresh_me_tools_cache(app, user_id))
+                cached.metadata["refresh"] = "queued"
+            return _private_resolver_response(cached.payload, cached.metadata)
+
+        payload, errors = _resolve_me_tools(user)
+        if payload is None:
+            resp = jsonify({"error": "official Toolhub is unavailable", "username": user.username, "errors": errors})
+            resp.status_code = 502
+            return resp
+        user_tool_cache.store(uid, payload)
+        return _private_resolver_response(payload, {"status": "miss"})
 
 
 @v1_bp.route("/v1/maintainers/tools/<name>/")

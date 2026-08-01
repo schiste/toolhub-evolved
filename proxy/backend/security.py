@@ -117,38 +117,14 @@ class RollingLimit:
             return False
 
 
-# Per-user limit for the expensive resolver read (/v1/me/tools/). One call fans
-# out to several upstream Toolhub searches and takes seconds, so a client
-# looping on it needs no volume at all to occupy every worker — a steady 1.5
-# requests a second was enough to make the whole site return 503, including
-# static pages. Keyed by user, not address, because every request arrives from
-# the cluster ingress.
-#
-# This is a backstop, not the fix: the loop that caused that was a client-side
-# render cycle (see scheduleApiRefreshRender in main.js). It still has to hold
-# on its own, because shipping the client fix does not stop a browser tab that
-# already loaded the old code — only reloading it does.
-#
-# Sized against duration, not intuition: a call takes ~5s, so six a minute is
-# about half a worker. Browsing makes one call per page visit and never comes
-# close.
-RESOLVER_LIMIT = 6
-
 _writes = RollingLimit(WRITE_LIMIT)
 _reads = RollingLimit(READ_LIMIT)
-_resolver = RollingLimit(RESOLVER_LIMIT)
 
 
 def clear_rate_limits() -> None:
     """Reset the in-memory counters (tests; harmless in prod restarts)."""
     _writes.clear()
     _reads.clear()
-    _resolver.clear()
-
-
-def resolver_rate_limited(user_id: int | None) -> bool:
-    """Record one expensive resolver read and report whether the user is over the limit."""
-    return _resolver.exceeded(user_id if user_id is not None else "unknown")
 
 
 def read_rate_limited(client_addr: str | None) -> bool:

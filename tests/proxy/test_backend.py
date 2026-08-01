@@ -2793,6 +2793,28 @@ def test_me_tools_returns_possible_display_author_matches(client, monkeypatch):
     assert calls == []
 
 
+def test_me_tools_reports_a_cold_fill_in_progress_without_calling_upstream(client, monkeypatch):
+    uid = add_user(username="Ada Lovelace")
+    sign_in(client, uid)
+
+    @contextmanager
+    def unavailable_lock(_name, *, timeout_seconds=0):
+        assert timeout_seconds == 10
+        yield False
+
+    monkeypatch.setattr(db, "advisory_lock", unavailable_lock)
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: pytest.fail("upstream call"))
+
+    resp = client.get("/v1/me/tools/")
+
+    assert resp.status_code == 503
+    assert resp.headers["Retry-After"] == "3"
+    assert resp.get_json() == {
+        "error": "resolver fill in progress",
+        "detail": "Your private Toolhub data is being refreshed. Retry shortly.",
+    }
+
+
 def test_me_tools_records_pending_toolinfo_discovery_for_owned_candidates(client, monkeypatch):
     uid = add_user(username="Ada Lovelace")
     sign_in(client, uid)
