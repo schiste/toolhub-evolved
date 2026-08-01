@@ -151,6 +151,16 @@ def checkout_repository(url: str, destination: Path) -> str:
         ]
     )
     _remove_symlinks(destination)
+    # This gate decides what gets *analyzed*; it does not bound what gets
+    # *fetched*. By the time it runs, clone has already written the whole
+    # working tree to disk. `--filter=blob:limit=` does not close that gap:
+    # clone materializes the working tree and lazily re-fetches every filtered
+    # blob it needs, so a filtered clone lands the same bytes as an unfiltered
+    # one (measured, not assumed). Bounding the fetch would mean --no-checkout
+    # plus reading blobs through `git cat-file`, i.e. rewriting _read_tree.
+    # Until then the real limits on transient disk use are GIT_TIMEOUT_SECONDS
+    # and the tool account's own quota — a full disk fails the clone inside
+    # _git(), which surfaces as a RepositoryScanError and backs the tool off.
     if _checkout_size(destination) > MAX_CHECKOUT_BYTES:
         message = f"checkout exceeds {MAX_CHECKOUT_BYTES} bytes"
         raise RepositoryScanError(message)
