@@ -7,6 +7,9 @@ coverage/
 htmlcov/
 .git/
 .chau7/
+# Local, git-ignored editor/agent state. Not ours to format, and it is rewritten
+# outside the repo's control — checking it fails the pre-push hook at random.
+.claude/
 .stryker-tmp/
 reports/
 pyproject.toml
