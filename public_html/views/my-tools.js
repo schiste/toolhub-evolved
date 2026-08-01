@@ -12,6 +12,7 @@ import { toolRegistrationWorkspace } from "./toolforms.js";
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
 const AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS = "toolhub_write_access";
 const AUTHOR_CLAIM_SIGNED_TOOLINFO = "signed_toolinfo";
+const AUTHOR_CLAIM_TOOLINFO_URL_CONTROL = "toolinfo_url_control";
 const AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME = "author_display_name";
 
 /** @param {any} claim */
@@ -33,6 +34,12 @@ function authorClaimBadge(claim) {
 	if (isVerified && method === AUTHOR_CLAIM_SIGNED_TOOLINFO) {
 		return {
 			label: t("accountTools.verifiedSignedToolinfo", "Verified: signed toolinfo"),
+			className: "review-approved"
+		};
+	}
+	if (isVerified && method === AUTHOR_CLAIM_TOOLINFO_URL_CONTROL) {
+		return {
+			label: t("accountTools.verifiedToolinfoControl", "Verified: toolinfo URL control"),
 			className: "review-approved"
 		};
 	}

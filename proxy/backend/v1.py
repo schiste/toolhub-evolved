@@ -82,6 +82,7 @@ from backend.models import (
     ToolEvent,
     ToolHealthTarget,
     ToolhubToken,
+    ToolinfoControlChallenge,
     ToolList,
     ToolMaintainerEdge,
     ToolMedia,
@@ -95,6 +96,8 @@ from backend.oauth import configured as oauth_configured
 from backend.oauth import dev_login_available
 from backend.security import current_user_id, login_required, write_guard
 from backend.sync import (
+    AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
+    AUTHOR_CLAIM_VERIFIED,
     REVIEW_APPROVED,
     REVIEW_OPEN,
     REVIEW_PENDING,
@@ -111,6 +114,20 @@ from backend.sync import (
     clean_review_status,
     clean_source,
     clean_sync_status,
+)
+from backend.toolinfo_control import (
+    CHALLENGE_FIELD,
+    CHALLENGE_STATUS_EXPIRED,
+    CHALLENGE_STATUS_PENDING,
+    CHALLENGE_STATUS_VERIFIED,
+    CHALLENGE_TTL,
+    CONTROL_CLAIM_TTL,
+    challenge_payload,
+    fetch_matching_item,
+    new_token,
+)
+from backend.toolinfo_control import (
+    expired as challenge_expired,
 )
 
 v1_bp = Blueprint("v1", __name__)
@@ -2202,6 +2219,146 @@ def v1_user() -> Response:
         )
 
 
+@v1_bp.route("/v1/toolinfo/ownership-challenges/")
+@login_required
+def v1_toolinfo_control_challenges() -> Response:
+    """List URL-control challenges belonging to the signed-in account."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 - login_required guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(ToolinfoControlChallenge)
+                .where(ToolinfoControlChallenge.user_id == user.id)
+                .order_by(ToolinfoControlChallenge.created_at.desc(), ToolinfoControlChallenge.id.desc())
+                .limit(50)
+            ).scalars()
+        )
+        for row in rows:
+            if row.status == CHALLENGE_STATUS_PENDING and challenge_expired(row):
+                row.status = CHALLENGE_STATUS_EXPIRED
+        payload = [challenge_payload(row) for row in rows]
+    return jsonify({"challenges": payload, "field": CHALLENGE_FIELD})
+
+
+@v1_bp.route("/v1/toolinfo/ownership-challenges/", methods=["POST"])
+@write_guard
+def v1_toolinfo_control_challenge_create() -> Response:
+    """Create a proof-of-control challenge after validating the exact URL."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 - write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = _json_object_body()
+    if bad is not None:
+        return bad
+    assert body is not None  # noqa: S101 - _json_object_body returned no error
+    tool_name = _clean_name(str(_payload_value(body, "toolName", "tool_name") or "").strip())
+    if tool_name is None:
+        return _bad("toolName is required")
+    toolinfo_url = str(_payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
+    url_error = _url_validation_message(toolinfo_url, label="toolinfo URL")
+    if url_error is not None:
+        return _url_validation_bad("toolinfoUrl", url_error)
+    try:
+        fetch_matching_item(toolinfo_url, tool_name)
+    except Exception as exc:  # noqa: BLE001 - normalize network/parser failures for the user
+        return _bad(
+            f"Could not read {tool_name} from the supplied toolinfo URL: "
+            f"{clean_error(str(exc)) or 'fetch failed'}"
+        )
+    now = utcnow()
+    with db.session_scope() as s:
+        row = ToolinfoControlChallenge(
+            user_id=user.id,
+            tool_name=tool_name,
+            toolinfo_url=toolinfo_url,
+            challenge_token=new_token(),
+            status=CHALLENGE_STATUS_PENDING,
+            created_at=now,
+            expires_at=now + CHALLENGE_TTL,
+        )
+        s.add(row)
+        s.flush()
+        payload = challenge_payload(row)
+    response = jsonify({"ok": True, "challenge": payload, "field": CHALLENGE_FIELD})
+    response.status_code = 201
+    return response
+
+
+@v1_bp.route("/v1/toolinfo/ownership-challenges/<int:challenge_id>/verify/", methods=["POST"])
+@write_guard
+def v1_toolinfo_control_challenge_verify(challenge_id: int) -> Response:
+    """Refetch the URL and materialize a verified per-tool maintainer claim."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 - write_guard guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    with db.session_scope() as s:
+        row = s.execute(
+            select(ToolinfoControlChallenge).where(
+                ToolinfoControlChallenge.id == challenge_id,
+                ToolinfoControlChallenge.user_id == user.id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return _deny(HTTP_NOT_FOUND, "ownership challenge not found")
+        if row.status == CHALLENGE_STATUS_VERIFIED:
+            return jsonify(
+                {"ok": True, "challenge": challenge_payload(row), "claimMethod": AUTHOR_CLAIM_TOOLINFO_URL_CONTROL}
+            )
+        if challenge_expired(row):
+            row.status = CHALLENGE_STATUS_EXPIRED
+            row.last_checked_at = utcnow()
+            row.last_error = "challenge expired; create a new challenge"
+            return _deny(HTTP_CONFLICT, "ownership challenge expired; create a new challenge")
+        try:
+            item = fetch_matching_item(row.toolinfo_url, row.tool_name)
+        except Exception as exc:  # noqa: BLE001 - persist the actionable reason and keep challenge pending
+            row.last_checked_at = utcnow()
+            row.last_error = clean_error(str(exc)) or "toolinfo fetch failed"
+            return _bad(f"Could not verify the toolinfo URL: {row.last_error}")
+        metadata = item.get("x_toolhub_evolved_verification")
+        token = metadata.get("challenge") if isinstance(metadata, dict) else None
+        if token != row.challenge_token:
+            row.last_checked_at = utcnow()
+            row.last_error = f"{CHALLENGE_FIELD} did not contain the issued challenge"
+            return _bad(
+                f"Publish the issued token in {CHALLENGE_FIELD}, then try again.",
+                [{"field": CHALLENGE_FIELD, "message": "challenge token did not match"}],
+            )
+        now = utcnow()
+        claim = s.execute(
+            select(ToolAuthorClaim).where(
+                ToolAuthorClaim.tool_name == row.tool_name,
+                ToolAuthorClaim.author_name == user.username,
+                ToolAuthorClaim.toolhub_username == user.username,
+                ToolAuthorClaim.verification_method == AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
+            )
+        ).scalar_one_or_none()
+        if claim is None:
+            claim = ToolAuthorClaim(
+                tool_name=row.tool_name,
+                author_name=user.username,
+                toolhub_username=user.username,
+                verification_method=AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
+            )
+            s.add(claim)
+        claim.verification_status = AUTHOR_CLAIM_VERIFIED
+        claim.evidence_url = row.toolinfo_url
+        claim.evidence_payload = {"challengeId": row.id, "field": CHALLENGE_FIELD, "proof": "url_control"}
+        claim.checked_at = now
+        claim.expires_at = now + CONTROL_CLAIM_TTL
+        claim.last_error = None
+        row.status = CHALLENGE_STATUS_VERIFIED
+        row.verified_at = now
+        row.last_checked_at = now
+        row.last_error = None
+        maintainer_index.sync_author_claim_edges(s, tool_names=[row.tool_name], usernames=[user.username])
+        payload = challenge_payload(row)
+        claim_data = _claim_payload(claim)
+    return jsonify({"ok": True, "challenge": payload, "claim": claim_data})
+
+
 @v1_bp.route("/v1/author-keys/")
 @login_required
 def v1_author_keys() -> Response:
@@ -4241,6 +4398,14 @@ def v1_user_export() -> Response:
                 .order_by(ToolAuthorKey.created_at, ToolAuthorKey.id)
             ).scalars()
         ]
+        ownership_challenges = [
+            challenge_payload(row)
+            for row in s.execute(
+                select(ToolinfoControlChallenge)
+                .where(ToolinfoControlChallenge.user_id == uid)
+                .order_by(ToolinfoControlChallenge.created_at, ToolinfoControlChallenge.id)
+            ).scalars()
+        ]
         source_analysis_reports = [
             _source_analysis_payload(row)
             for row in s.execute(
@@ -4272,6 +4437,7 @@ def v1_user_export() -> Response:
             "overlay": _assemble_overlay(uid),
             "authorClaims": author_claims,
             "authorKeys": author_keys,
+            "ownershipChallenges": ownership_challenges,
             "maintainerActivity": maintainer_activity,
             "maintainerEdges": maintainer_edges,
             "sourceAnalysisReports": source_analysis_reports,
@@ -4299,6 +4465,7 @@ def v1_user_delete_evolved_data() -> Response:
             "thanks": ToolThanks,
             "media": ToolMedia,
             "sourceAnalysisReports": SourceAnalysisReport,
+            "ownershipChallenges": ToolinfoControlChallenge,
         }.items():
             count = s.execute(select(func.count()).select_from(model).where(model.user_id == uid)).scalar_one()
             deleted[key] = int(count)

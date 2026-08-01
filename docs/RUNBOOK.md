@@ -236,6 +236,7 @@ names are:
 | `tool_events`                                      | Aggregate-only user-visible metrics              | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                                     |
 | `tool_thanks`                                      | Public aggregate, private user relation          | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.                              |
 | `tool_author_claims`                               | Public provenance label, private evidence cache  | Per-tool author-name verification claims tied to a Toolhub username; use for Evolved provenance and "my tools" discovery, never as official Toolhub permission state.                  |
+| `toolinfo_control_challenges`                      | Private, expiring verification workflow          | Short-lived challenges proving an account can change one exact external `toolinfo.json` URL; never a canonical Toolhub ownership or write grant.                                       |
 | `tool_author_keys`                                 | Public-key registry for signed toolinfo claims   | Stores Evolved-registered public keys only; never store private keys, and ignore revoked keys during signed-toolinfo verification.                                                     |
 | `tool_maintainer_edges`                            | Public summary, private evidence cache           | Rebuildable per-tool maintainer projection from official Toolhub metadata and Evolved claims; public API omits raw evidence payloads and never grants permissions.                     |
 | `maintainer_activity_rollups`                      | Public activity bucket, private source rows      | Rebuildable Evolved-local activity summary keyed by namespaced maintainer id; source activity rows stay governed by their original table's privacy/delete rules.                       |
@@ -252,7 +253,8 @@ names are:
 `tool_author_claims` rows are scoped to one `(tool_name, author_name,
 toolhub_username, verification_method)` tuple. `verification_status` is one of
 `verified`, `unverified`, `stale`, or `failed`; `verification_method` is one of
-`toolforge_maintainer`, `toolhub_write_access`, `signed_toolinfo`, or
+`toolforge_maintainer`, `toolhub_write_access`, `signed_toolinfo`,
+`toolinfo_url_control`, or
 `author_display_name`. `author_display_name` is explicitly non-verified
 display metadata unless another method verifies the same per-tool claim.
 Verification is never global to an author display name or Toolhub username:
@@ -271,6 +273,17 @@ Toolhub tool writes add `toolhub_write_access` claims without affecting the
 write response if evidence recording fails. Crawler ingestion records
 `signed_toolinfo` claims before upstream-name de-dupe, so official Toolhub data
 remains canonical while Evolved can still retain signed authorship evidence.
+
+Submitting a crawler URL or a create-time `toolinfo_url` is not an ownership
+proof. The My tools workspace can create a short-lived URL-control challenge
+through `POST /v1/toolinfo/ownership-challenges/`. The user publishes the
+returned token at `x_toolhub_evolved_verification.challenge` in the exact
+toolinfo document, then calls the matching verify endpoint. Evolved refetches
+the exact HTTPS URL through the strict public-fetch policy, checks the tool name
+and token, and only then creates a per-tool `toolinfo_url_control` maintainer
+claim. The challenge expires after 24 hours; the resulting claim expires after
+30 days. This proves control of that metadata endpoint, not control of the
+official Toolhub record, a repository, or a Toolforge account.
 
 The `maintainer-backfill` job is the catalog-wide public projection. It walks
 the local canonical cache, infers exact Toolforge account names from

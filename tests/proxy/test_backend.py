@@ -33,8 +33,8 @@ from backend import (  # noqa: E402
     canonical_tools,
     catalog_projection,
     db,
-    graph_payload,
     github_issues,
+    graph_payload,
     maintainer_index,
     recent_owners,
     security,
@@ -70,6 +70,7 @@ from backend.models import (  # noqa: E402
     ToolEvent,
     ToolHealthTarget,
     ToolhubToken,
+    ToolinfoControlChallenge,
     ToolinfoDiscovery,
     ToolinfoDiscoveryMeta,
     ToolinfoSource,
@@ -83,8 +84,8 @@ from backend.models import (  # noqa: E402
     ToolRecord,
     ToolSummaryCache,
     ToolThanks,
-    UserToolResolverCache,
     User,
+    UserToolResolverCache,
     utcnow,
 )
 from backend.v1 import (  # noqa: E402
@@ -522,6 +523,19 @@ def test_init_schema_creates_tool_author_claim_tables():
         "expires_at",
         "last_error",
     }.issubset(cols)
+    challenge_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoControlChallenge.__tablename__)}
+    assert {
+        "id",
+        "user_id",
+        "tool_name",
+        "toolinfo_url",
+        "challenge_token",
+        "status",
+        "expires_at",
+        "verified_at",
+        "last_checked_at",
+        "last_error",
+    }.issubset(challenge_cols)
     key_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolAuthorKey.__tablename__)}
     assert {
         "id",
@@ -1276,6 +1290,50 @@ def test_claim_payload_marks_expired_verified_claims_stale(client):
         payload = author_claims.claim_payload(row)
     assert payload["verificationStatus"] == sync.AUTHOR_CLAIM_STALE
     assert payload["isVerified"] is False
+
+
+def test_toolinfo_control_challenge_requires_published_token_before_claiming(client, monkeypatch):
+    uid = add_user(username="Ada")
+    sign_in(client, uid)
+    monkeypatch.setattr(v1_api, "fetch_matching_item", lambda _url, name: {"name": name})
+    created = client.post(
+        "/v1/toolinfo/ownership-challenges/",
+        json={"toolName": "ada-tool", "toolinfoUrl": "https://example.org/toolinfo.json"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert created.status_code == 201
+    challenge = created.get_json()["challenge"]
+    assert challenge["field"] == "x_toolhub_evolved_verification.challenge"
+    with db.session_scope() as s:
+        assert s.query(ToolAuthorClaim).count() == 0
+        assert s.query(ToolinfoControlChallenge).count() == 1
+
+    missing = client.post(
+        f"/v1/toolinfo/ownership-challenges/{challenge['id']}/verify/",
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert missing.status_code == 400
+    assert "challenge" in missing.get_json()["error"]
+
+    monkeypatch.setattr(
+        v1_api,
+        "fetch_matching_item",
+        lambda _url, name: {
+            "name": name,
+            "x_toolhub_evolved_verification": {"challenge": challenge["token"]},
+        },
+    )
+    verified = client.post(
+        f"/v1/toolinfo/ownership-challenges/{challenge['id']}/verify/",
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert verified.status_code == 200
+    assert verified.get_json()["claim"]["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLINFO_URL_CONTROL
+    assert verified.get_json()["claim"]["isVerified"] is True
+    with db.session_scope() as s:
+        claim = s.query(ToolAuthorClaim).one()
+        assert claim.verification_method == sync.AUTHOR_CLAIM_TOOLINFO_URL_CONTROL
+        assert claim.evidence_url == "https://example.org/toolinfo.json"
 
 
 def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):

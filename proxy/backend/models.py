@@ -475,6 +475,23 @@ class CrawlerRun(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 
 
+class ToolinfoControlChallenge(Base):
+    """A short-lived proof that an account can change one toolinfo URL."""
+
+    __tablename__ = "toolinfo_control_challenges"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    toolinfo_url: Mapped[str] = mapped_column(String(2000))
+    challenge_token: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ToolinfoDiscovery(Base):
     """Cached discovery state for an official Toolhub tool's toolinfo.json."""
 

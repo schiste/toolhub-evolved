@@ -472,7 +472,19 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 };
 
 function expect(name, actual) {
-	const comparable = legacyToolCardSnapshot(actual);
+	let comparable = legacyToolCardSnapshot(actual);
+	if (name === "addtools" || name === "addtools_empty") {
+		assert.ok(comparable.includes('aria-labelledby="toolinfo-control-title"'));
+		const start = comparable.indexOf(
+			'\t\t\t<section class="panel account-data__section account-workbench__section" aria-labelledby="toolinfo-control-title">'
+		);
+		const end = comparable.indexOf(
+			'\n\t\t\t<section class="panel account-data__section account-workbench__section" aria-labelledby="add-toolinfo-submissions-title">',
+			start
+		);
+		assert.ok(start >= 0 && end >= 0);
+		comparable = comparable.slice(0, start) + comparable.slice(end + 1);
+	}
 	if (BAKE) {
 		fs.writeFileSync(`${SCRATCH}/toolforms__${name}.txt`, comparable);
 		return;

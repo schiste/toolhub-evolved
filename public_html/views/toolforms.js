@@ -1236,12 +1236,93 @@ async function addToolDiscoverToolinfoUrl(url, out, discoveryMisses, renderUrlLi
 	}
 }
 
+function toolinfoControlWorkspace() {
+	const html = accountSection({
+		id: "toolinfo-control-title",
+		title: t("toolforms.toolinfoControlTitle", "Verify control of a toolinfo URL"),
+		intro: t(
+			"toolforms.toolinfoControlIntro",
+			"Registering a URL does not prove ownership. Evolved can verify that you control the exact metadata URL by asking you to publish a short-lived challenge in its JSON."
+		),
+		body: `<form class="le__add" data-control-form novalidate>
+			${fInput(t("toolforms.controlToolName", "Tool name"), "control-tool-name", "", { req: true, ph: "my-tool", hint: t("toolforms.controlToolNameHint", "Use the exact name field from toolinfo.json.") })}
+			${fInput(t("toolforms.controlToolinfoUrl", "Exact toolinfo.json URL"), "control-toolinfo-url", "", { req: true, type: "url", ph: "https://example.org/toolinfo.json" })}
+			${button(t("toolforms.issueControlChallenge", "Issue challenge"), { variant: "outline", type: "submit" })}
+		</form>
+		<div class="toolinfo-control__challenge" data-control-challenge hidden></div>
+		<p class="at__result" data-control-result aria-live="polite"></p>`
+	});
+	function mount() {
+		const form = /** @type {HTMLFormElement | null} */ ($("[data-control-form]"));
+		const result = /** @type {HTMLElement | null} */ ($("[data-control-result]"));
+		const challengeBox = /** @type {HTMLElement | null} */ ($("[data-control-challenge]"));
+		if (!form || !result || !challengeBox) return;
+		form.addEventListener("submit", async (event) => {
+			event.preventDefault();
+			const toolName = fieldValue("control-tool-name").trim();
+			const toolinfoUrl = fieldValue("control-toolinfo-url").trim();
+			if (!toolName || !toolinfoUrl) return;
+			result.className = "at__result";
+			result.textContent = t("toolforms.issuingControlChallenge", "Checking the URL and issuing a challenge…");
+			try {
+				const response = await serverWrite("POST", "/v1/toolinfo/ownership-challenges/", {
+					toolName,
+					toolinfoUrl
+				});
+				const challenge = response?.challenge;
+				if (!challenge?.id || !challenge?.token) {
+					throw new Error(
+						t("toolforms.controlChallengeMissing", "The server did not return a usable challenge.")
+					);
+				}
+				challengeBox.hidden = false;
+				challengeBox.innerHTML = `<p><strong>${esc(t("toolforms.controlPublishLabel", "Publish this value in your toolinfo.json:"))}</strong></p>
+					<pre><code>${esc(JSON.stringify({ x_toolhub_evolved_verification: { challenge: challenge.token } }, null, 2))}</code></pre>
+					<p class="signin-note">${esc(t("toolforms.controlPublishHint", "Keep the field in the exact URL above, wait for the file to update, then verify it here. The challenge expires in 24 hours."))}</p>
+					${button(t("toolforms.verifyControl", "Verify URL control"), { variant: "primary", type: "button", attrs: `data-control-verify="${esc(String(challenge.id))}"` })}`;
+				result.className = "at__result at__result--ok";
+				result.textContent = t(
+					"toolforms.controlChallengeIssued",
+					"Challenge issued. Publish it in the metadata file, then verify."
+				);
+			} catch (error) {
+				result.className = "at__result at__result--err";
+				result.textContent = backendErrorExplanation(error);
+			}
+		});
+		challengeBox.addEventListener("click", async (event) => {
+			const verify = /** @type {HTMLElement} */ (event.target).closest("[data-control-verify]");
+			if (!verify) return;
+			verify.setAttribute("disabled", "disabled");
+			result.className = "at__result";
+			result.textContent = t("toolforms.verifyingControl", "Refetching the metadata file…");
+			try {
+				await serverWrite(
+					"POST",
+					`/v1/toolinfo/ownership-challenges/${encodeURIComponent(verify.getAttribute("data-control-verify") || "")}/verify/`
+				);
+				result.className = "at__result at__result--ok";
+				result.textContent = t(
+					"toolforms.controlVerified",
+					"Verified. This account now has a maintainer claim for this tool based on control of its toolinfo URL."
+				);
+			} catch (error) {
+				verify.removeAttribute("disabled");
+				result.className = "at__result at__result--err";
+				result.textContent = backendErrorExplanation(error);
+			}
+		});
+	}
+	return { html, mount };
+}
+
 // Tool registration workspace: official crawler URL registration plus local toolinfo ingest.
 export function toolRegistrationWorkspace() {
 	/** @type {Array<{ inputUrl: string, message: string, attempts?: Array<{ url?: string }> }>} */
 	const discoveryMisses = [];
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const registerBtn = button(t("toolforms.register", "Register"), { variant: "outline", type: "submit" });
+	const control = toolinfoControlWorkspace();
 	const localToolCount = Object.keys(toolNewMap()).length;
 	const html = `${accountSection({
 		id: "add-toolinfo-url-title",
@@ -1269,6 +1350,7 @@ export function toolRegistrationWorkspace() {
 				</div>
 				<p class="at__result" data-ingest-result aria-live="polite"></p>`
 			})}
+			${control.html}
 			${accountSection({
 				id: "add-toolinfo-submissions-title",
 				title: t("toolforms.yourToolsTitle", "Your tools"),
@@ -1299,6 +1381,7 @@ export function toolRegistrationWorkspace() {
 				return undefined;
 			})
 			.catch(() => undefined);
+		control.mount();
 		/** @type {HTMLElement} */ ($("[data-url-form]")).addEventListener("submit", async (e) => {
 			e.preventDefault();
 			// Stryker disable next-line MethodExpression: #at-url is a type="url" input, which strips surrounding whitespace, so the value is already trimmed — equivalent.

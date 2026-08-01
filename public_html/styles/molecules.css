@@ -1340,6 +1340,17 @@ li.le__empty {
 .at__result--err {
 	color: var(--color-destructive);
 }
+.toolinfo-control__challenge {
+	margin-top: var(--space-3);
+	padding: var(--space-3);
+	border-inline-start: var(--border-progressive-strong);
+	background: var(--color-progressive-subtle);
+}
+.toolinfo-control__challenge pre {
+	margin: var(--space-2) var(--space-0);
+	overflow-x: auto;
+	font-size: var(--fs-caption);
+}
 
 /* Search controls. */
 .search {

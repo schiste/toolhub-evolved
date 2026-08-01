@@ -69,6 +69,10 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   `toolinfo_discovery` rows so owner accounts can see whether each official tool
   exposes root/sitemap `toolinfo.json` without manually submitting URLs; a
   Toolforge job walks official Toolhub tool-list pages to seed that cache.
+  External hosts can additionally prove control of one exact `toolinfo.json`
+  URL through the expiring URL-control challenge in
+  `POST /v1/toolinfo/ownership-challenges/`; this is maintainer evidence only,
+  not canonical Toolhub ownership or a permission grant.
 - **Evolved authorization** (`proxy/backend/authz.py`): Toolhub OAuth remains
   the only sign-in path, while local `users.role` permission sets (`user`,
   `reviewer`, `admin`) gate Evolved-owned data/actions through
