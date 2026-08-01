@@ -125,6 +125,10 @@ FEED_READ_CAP = 100
 FEED_KEEP_CAP = 500
 RSS_FEED_PAGE_SIZE = 30
 RSS_CONTENT_TYPE = "application/rss+xml; charset=utf-8"
+# Last-resort base URL for links inside publicly cached responses when
+# TOOLHUB_EVOLVED_BASE_URL is unset. A constant, never the request Host — see
+# _public_base_url for why that distinction is the whole point.
+DEFAULT_PUBLIC_BASE_URL = "https://toolhub-evolved.toolforge.org"
 ME_TOOLS_SEARCH_PAGE_SIZE = 100
 ME_TOOLS_MAX_SEARCH_TERMS = 20
 AUTHOR_KEY_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -157,6 +161,7 @@ META_KEYS = {
     "visibility",
     "toolhubResponse",
     "validationErrors",
+    "viewerOwned",
     "baseRevision",
     "fieldStatuses",
     "reviewStatus",
@@ -230,8 +235,27 @@ def _is_http_url(value: Any) -> bool:  # noqa: ANN401
 
 
 def _public_base_url() -> str:
+    """Return the canonical base URL for links embedded in publicly cached output.
+
+    request.url_root is built from the Host header, which the client controls.
+    The feeds that consume this are served `Cache-Control: public, max-age=300`,
+    so deriving the base URL from a request would let one forged Host put
+    attacker-chosen <link>/<guid> values into a shared cache and serve them to
+    everyone else for five minutes.
+
+    Production therefore takes the value from configuration only, exactly like
+    the OAuth callback (backend.oauth._callback_url) already does for the same
+    reason. The fallback is a constant, not a header: an unset variable degrades
+    to the wrong-but-fixed canonical host rather than to whatever was asked for.
+    Header derivation stays available under the local-development flag, where
+    there is no shared cache and no registered hostname to protect.
+    """
     configured = os.environ.get("TOOLHUB_EVOLVED_BASE_URL", "").rstrip("/")
-    return configured or request.url_root.rstrip("/")
+    if configured:
+        return configured
+    if os.environ.get("TOOLHUB_INSECURE_COOKIES") == "1":
+        return request.url_root.rstrip("/")
+    return DEFAULT_PUBLIC_BASE_URL
 
 
 def _site_url(path: str) -> str:
@@ -584,6 +608,14 @@ def _tool_record_payload(row: ToolRecord) -> dict:
         out["toolhubResponse"] = row.last_toolhub_response
     if row.validation_errors:
         out["validationErrors"] = row.validation_errors
+    return out
+
+
+def _public_tool_record_payload(row: ToolRecord) -> dict:
+    """Return public tool data without private write diagnostics."""
+    out = _tool_record_payload(row)
+    for key in ("lastError", "toolhubResponse", "validationErrors"):
+        out.pop(key, None)
     return out
 
 
@@ -3512,7 +3544,7 @@ def write_favorite_fallback_discard(tool_name: str) -> Response:
     return _discard_response()
 
 
-def _merged_maps(kind_rows: list[Any]) -> dict[str, dict]:
+def _merged_maps(kind_rows: list[Any], viewer_uid: int | None = None) -> dict[str, dict]:
     """Merge rows (any user) into {tool_name: payload}.
 
     Rows arrive oldest first, so the most recently modified contribution wins
@@ -3528,6 +3560,12 @@ def _merged_maps(kind_rows: list[Any]) -> dict[str, dict]:
                 payload["fieldStatuses"] = row.field_statuses
             if row.review_status:
                 payload["reviewStatus"] = row.review_status
+            if viewer_uid is not None:
+                viewer_owned = row.user_id == viewer_uid
+                payload["viewerOwned"] = viewer_owned
+                if not viewer_owned:
+                    for key in ("lastError", "toolhubResponse", "validationErrors"):
+                        payload.pop(key, None)
             out[row.tool_name] = payload
         else:
             out[row.tool_name] = row.record
@@ -3563,21 +3601,27 @@ def _assemble_overlay(uid: int) -> dict[str, Any]:
                         select(ToolOverlay).where(ToolOverlay.kind == kind).order_by(ToolOverlay.modified_at)
                     ).scalars()
                 ),
+                viewer_uid=uid,
             )
             for key, kind in OVERLAY_KINDS.items()
         }
-        tool_new = {
-            row.tool_name: _tool_record_payload(row)
-            for row in s.execute(
-                select(ToolRecord)
-                .where(
-                    ToolRecord.deleted_at.is_(None),
-                    or_(ToolRecord.user_id == uid, ToolRecord.visibility == VISIBILITY_PUBLIC),
-                )
-                .order_by(ToolRecord.modified_at)
-            ).scalars()
-            if row.user_id == uid or _local_tool_is_public(row)
-        }
+        tool_new = {}
+        for row in s.execute(
+            select(ToolRecord)
+            .where(
+                ToolRecord.deleted_at.is_(None),
+                or_(ToolRecord.user_id == uid, ToolRecord.visibility == VISIBILITY_PUBLIC),
+            )
+            .order_by(ToolRecord.modified_at)
+        ).scalars():
+            if row.user_id != uid and not _local_tool_is_public(row):
+                continue
+            record = _tool_record_payload(row)
+            record["viewerOwned"] = row.user_id == uid
+            if not record["viewerOwned"]:
+                for key in ("lastError", "toolhubResponse", "validationErrors"):
+                    record.pop(key, None)
+            tool_new[row.tool_name] = record
         feeds = {
             key: [
                 r.row
@@ -4597,7 +4641,7 @@ def v1_search() -> Response:
     q = request.args.get("q", "").strip().lower()
     with db.session_scope() as s:
         merged = {
-            row.tool_name: _tool_record_payload(row)
+            row.tool_name: _public_tool_record_payload(row)
             for row in s.execute(
                 select(ToolRecord).where(ToolRecord.deleted_at.is_(None)).order_by(ToolRecord.modified_at)
             ).scalars()
@@ -4645,7 +4689,7 @@ def toolinfo_feed() -> Response:
     """
     with db.session_scope() as s:
         merged = {
-            row.tool_name: _tool_record_payload(row)
+            row.tool_name: _public_tool_record_payload(row)
             for row in s.execute(
                 select(ToolRecord).where(ToolRecord.deleted_at.is_(None)).order_by(ToolRecord.modified_at)
             ).scalars()

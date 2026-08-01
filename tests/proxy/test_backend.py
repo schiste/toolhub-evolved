@@ -301,6 +301,30 @@ def test_recent_rss_feed_uses_official_recent_changes(client, monkeypatch):
     assert root.find("./channel/item/guid").text == "toolhub-recent:7"
 
 
+def test_cached_feed_links_ignore_a_forged_host_header(client, monkeypatch):
+    """A forged Host must not reach <link>/<guid> in a publicly cached feed.
+
+    Feeds go out as `Cache-Control: public, max-age=300`, so a Host-derived base
+    URL is cache poisoning: one request decides what every later reader sees for
+    five minutes. Production reads TOOLHUB_EVOLVED_BASE_URL only — the same rule
+    backend.oauth._callback_url already applies to the OAuth callback.
+    """
+    monkeypatch.delenv("TOOLHUB_EVOLVED_BASE_URL", raising=False)
+    monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_a, **_k: {"results": [{"id": 1, "content_type": "tool", "content_id": "t"}]},
+    )
+
+    resp = client.get("/feeds/recent.xml", headers={"Host": "evil.example"})
+
+    assert resp.status_code == 200
+    text = resp.get_data(as_text=True)
+    assert "evil.example" not in text
+    assert v1_api.DEFAULT_PUBLIC_BASE_URL in text
+
+
 def test_catalog_rss_feeds_call_matching_official_endpoints(client, monkeypatch):
     calls = []
     monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
@@ -573,6 +597,7 @@ def test_init_schema_creates_toolinfo_discovery_table():
         "method",
         "toolinfo_url",
         "tool_names",
+        "payload",
         "attempts",
         "checked_at",
         "expires_at",
@@ -3546,6 +3571,42 @@ def test_merged_maps_handles_legacy_rows_and_missing_review_metadata():
     assert _merged_maps([LegacyRow()]) == {"legacy": {"title": "Legacy"}}
 
 
+def test_overlay_hides_foreign_write_diagnostics_but_keeps_them_for_owner(client):
+    writer = add_user(username="Writer", wm_sub="writer")
+    reader = add_user(username="Reader", wm_sub="reader")
+    sign_in(client, writer)
+    assert (
+        put_overlay(
+            client,
+            "toolEdits",
+            {
+                "private-diagnostic-tool": {
+                    "title": "A public patch",
+                    "syncStatus": "local_fallback",
+                    "lastError": "secret permission response",
+                    "toolhubResponse": {"detail": "private upstream detail"},
+                    "validationErrors": [{"field": "title", "message": "private validation"}],
+                }
+            },
+        ).status_code
+        == 200
+    )
+
+    sign_in(client, reader)
+    foreign = client.get("/v1/overlay/").get_json()["toolEdits"]["private-diagnostic-tool"]
+    assert foreign["viewerOwned"] is False
+    assert foreign["title"] == "A public patch"
+    assert "lastError" not in foreign
+    assert "toolhubResponse" not in foreign
+    assert "validationErrors" not in foreign
+
+    sign_in(client, writer)
+    own = client.get("/v1/overlay/").get_json()["toolEdits"]["private-diagnostic-tool"]
+    assert own["viewerOwned"] is True
+    assert own["lastError"] == "secret permission response"
+    assert own["toolhubResponse"] == {"detail": "private upstream detail"}
+
+
 # ---- public endpoints ------------------------------------------------------
 
 
@@ -4912,6 +4973,8 @@ def test_write_tool_rejection_stores_overlay_fallback_with_validation_errors(cli
     assert data["result"] == "local_fallback"
     assert data["lastError"] == "bad payload"
     assert data["validationErrors"] == [{"field": "title", "messages": ["too short"]}]
+    assert data["toolhubStatus"] == 400
+    assert data["toolhubCode"] is None
     assert data["local"]["title"] == "New title"
     with db.session_scope() as s:
         overlay = s.execute(select(ToolOverlay).where(ToolOverlay.tool_name == "live-tool")).scalar_one()
@@ -4923,6 +4986,22 @@ def test_write_tool_rejection_stores_overlay_fallback_with_validation_errors(cli
         activity = s.execute(select(ActivityRow).where(ActivityRow.kind == "auditlogs")).scalar_one()
         assert activity.official_status == "local_fallback"
         assert activity.last_error == "bad payload"
+        assert activity.payload["httpStatus"] == 400
+        assert activity.payload["submittedFields"] == [
+            "deprecated",
+            "description",
+            "experimental",
+            "forWikis",
+            "keywords",
+            "license",
+            "repository",
+            "title",
+            "toolType",
+            "uiLanguages",
+            "url",
+        ]
+        assert "toolhubResponse" not in activity.payload
+        assert "local" not in activity.payload
 
 
 def test_write_tool_rejection_without_local_permission_returns_official_error(client, monkeypatch):
