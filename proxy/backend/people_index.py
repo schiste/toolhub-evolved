@@ -193,7 +193,14 @@ def _upsert_relationship(s: Session, edge: ToolMaintainerEdge, person: Person) -
 def sync_tool_people(s: Session, tool_name: str) -> list[ToolPersonRelationship]:
     """Rebuild typed relationships for a tool from the compatibility edges."""
     clean_name = _clean(tool_name)
-    s.execute(delete(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_name))
+    # synchronize_session: a bulk DELETE bypasses the identity map, so rows this
+    # session already loaded stay behind as live persistent objects. The upsert
+    # below would then find one, mutate it, and flush an UPDATE for a row that
+    # no longer exists — StaleDataError, which surfaced as a 500 on /v1/me/tools/.
+    s.execute(
+        delete(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_name),
+        execution_options={"synchronize_session": "fetch"},
+    )
     edges = list(
         s.execute(
             select(ToolMaintainerEdge)
