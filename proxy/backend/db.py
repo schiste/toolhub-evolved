@@ -32,6 +32,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
     json_col = "JSON"
     true_default = "TRUE" if engine().dialect.name in {"mysql", "mariadb"} else "1"
     return {
+        "api_cache": {
+            "path": "VARCHAR(512) NOT NULL DEFAULT ''",
+            "collection": "VARCHAR(64) NOT NULL DEFAULT ''",
+            "detail_key": "VARCHAR(255) NOT NULL DEFAULT ''",
+        },
         "users": {
             "role": "VARCHAR(32) NOT NULL DEFAULT 'user'",
             "session_epoch": "INTEGER NOT NULL DEFAULT 0",
@@ -202,6 +207,13 @@ def _upgrade_schema() -> None:
         for table in ("repository_analysis_state", "person_reconciliation_queue"):
             if table in existing_tables:
                 conn.exec_driver_sql(f"UPDATE {table} SET attempts = 0 WHERE attempts IS NULL")
+        if "api_cache" in existing_tables:
+            # Rows written before api_cache gained its path columns carry no
+            # invalidation key, so a changed tool could never evict them and they
+            # would serve stale for the whole stale-if-error window. This is a
+            # cache: dropping those rows is cheaper and safer than backfilling a
+            # URL parse in SQL, and the prewarm job refills them within a minute.
+            conn.exec_driver_sql("DELETE FROM api_cache WHERE path = ''")
 
 
 def configure(url: str) -> None:

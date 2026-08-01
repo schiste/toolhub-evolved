@@ -9,9 +9,10 @@ from hashlib import sha256
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import delete
+from sqlalchemy import and_, delete, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from backend import db
 from backend.models import ApiCache, ApiCacheMeta, utcnow
@@ -50,6 +51,7 @@ _TOOL_AGGREGATE_PATHS = {"/api/search/tools/", "/api/ui/home/"}
 _LIST_COLLECTION_PATH = "/api/lists/"
 _RECENT_COLLECTION_PATH = "/api/recent/"
 _CRAWLER_RUNS_PATH = "/api/crawler/runs/"
+_GRAPH_PATH = "/v1/graph/"
 _LIST_AND_RECENT_PATHS = {_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH}
 
 
@@ -103,6 +105,20 @@ def _path(url: str) -> str:
 def _path_parts(url: str) -> list[str]:
     """Return decoded path parts for upstream cache URL matching."""
     return [unquote(part) for part in _path(url).strip("/").split("/") if part]
+
+
+def _index_keys(url: str) -> tuple[str, str, str]:
+    """Return the (path, collection, detail_key) invalidation columns for a URL.
+
+    Derived once at write time; `invalidate_*` then matches on indexed columns
+    rather than re-parsing every stored URL.
+    """
+    parts = _path_parts(url)
+    if not parts or parts[0] != "api":
+        return _path(url), "", ""
+    collection = parts[1] if len(parts) > 1 else ""
+    detail_key = parts[2] if len(parts) > _DETAIL_PATH_PARTS - 1 else ""
+    return _path(url), collection, detail_key
 
 
 def _is_detail_path(path: str) -> bool:
@@ -173,9 +189,13 @@ def put_success(
     policy = policy_for_url(url)
     fresh = policy.fresh_seconds if fresh_seconds is None else fresh_seconds
     stale_if_error = policy.stale_if_error_seconds if stale_if_error_seconds is None else stale_if_error_seconds
+    path, collection, detail_key = _index_keys(url)
     row = ApiCache(
         url_hash=_key(url),
         url=url,
+        path=path,
+        collection=collection,
+        detail_key=detail_key,
         status=upstream.status,
         content_type=upstream.content_type,
         body=upstream.body,
@@ -310,34 +330,38 @@ def _recent_content_id(row: dict[str, Any]) -> str | None:
     return value or None
 
 
-def _matches_tool_cache(url: str, tool_names: set[str]) -> bool:
-    """Return true when a cached URL is affected by changed tool names."""
-    path = _path(url)
-    if path == _RECENT_COLLECTION_PATH or path in _TOOL_AGGREGATE_PATHS:
-        return bool(tool_names)
-    parts = _path_parts(url)
-    return len(parts) >= _DETAIL_PATH_PARTS and parts[0] == "api" and parts[1] == "tools" and parts[2] in tool_names
+def _tool_clause(tool_names: set[str]) -> ColumnElement[bool] | None:
+    """Build the SQL predicate for cached reads affected by changed tool names."""
+    if not tool_names:
+        return None
+    return or_(
+        ApiCache.path.in_([_RECENT_COLLECTION_PATH, *_TOOL_AGGREGATE_PATHS]),
+        and_(ApiCache.collection == "tools", ApiCache.detail_key.in_(sorted(tool_names))),
+    )
 
 
-def _matches_list_cache(url: str, list_ids: set[str]) -> bool:
-    """Return true when a cached URL is affected by changed list ids."""
-    path = _path(url)
-    if path in _LIST_AND_RECENT_PATHS:
-        return bool(list_ids)
-    parts = _path_parts(url)
-    return len(parts) >= _DETAIL_PATH_PARTS and parts[0] == "api" and parts[1] == "lists" and parts[2] in list_ids
+def _list_clause(list_ids: set[str]) -> ColumnElement[bool] | None:
+    """Build the SQL predicate for cached reads affected by changed list ids."""
+    if not list_ids:
+        return None
+    return or_(
+        ApiCache.path.in_(sorted(_LIST_AND_RECENT_PATHS)),
+        and_(ApiCache.collection == "lists", ApiCache.detail_key.in_(sorted(list_ids))),
+    )
 
 
-def _delete_matching(predicate: Callable[[str], bool]) -> int:
-    """Delete cached rows whose upstream URL matches a predicate."""
+def _delete_where(clause: ColumnElement[bool] | None) -> int:
+    """Delete cached rows matching an indexed SQL predicate.
+
+    Matching happens in the database. The previous Python-side scan had to load
+    every row — `body` blobs included, tens of MB against ToolsDB — to read one
+    URL per row, on a path that runs every minute and on every official write.
+    """
+    if clause is None:
+        return 0
     try:
         with db.session_scope() as s:
-            removed = 0
-            for row in s.query(ApiCache).all():
-                if predicate(row.url):
-                    s.delete(row)
-                    removed += 1
-            return removed
+            return int(s.execute(delete(ApiCache).where(clause)).rowcount or 0)
     except SQLAlchemyError:
         return 0
 
@@ -347,7 +371,7 @@ def invalidate_tool(tool_name: str) -> int:
     name = str(tool_name).strip()
     if not name:
         return 0
-    return _delete_matching(lambda url: _matches_tool_cache(url, {name}))
+    return _delete_where(_tool_clause({name}))
 
 
 def invalidate_list(list_id: int | str) -> int:
@@ -355,17 +379,17 @@ def invalidate_list(list_id: int | str) -> int:
     ident = str(list_id).strip()
     if not ident:
         return 0
-    return _delete_matching(lambda url: _matches_list_cache(url, {ident}))
+    return _delete_where(_list_clause({ident}))
 
 
 def invalidate_list_collection() -> int:
     """Invalidate cached official list collection and recent feed reads."""
-    return _delete_matching(lambda url: _path(url) in {_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH})
+    return _delete_where(ApiCache.path.in_([_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH]))
 
 
 def invalidate_graph() -> int:
     """Invalidate all versioned derived graph payloads after facet changes."""
-    return _delete_matching(lambda url: _path(url) == "/v1/graph/")
+    return _delete_where(ApiCache.path == _GRAPH_PATH)
 
 
 def invalidate_recent_rows(rows: Iterable[dict[str, Any]]) -> int:
@@ -379,9 +403,10 @@ def invalidate_recent_rows(rows: Iterable[dict[str, Any]]) -> int:
             tool_names.add(content_id)
         elif content_type == "list" and content_id is not None:
             list_ids.add(content_id)
-    if not tool_names and not list_ids:
+    clauses = [clause for clause in (_tool_clause(tool_names), _list_clause(list_ids)) if clause is not None]
+    if not clauses:
         return 0
-    return _delete_matching(lambda url: _matches_tool_cache(url, tool_names) or _matches_list_cache(url, list_ids))
+    return _delete_where(or_(*clauses) if len(clauses) > 1 else clauses[0])
 
 
 def maybe_poll_recent_changes(fetch_recent: Callable[[], list[dict[str, Any]]]) -> int:

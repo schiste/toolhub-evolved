@@ -72,11 +72,23 @@ class ToolhubToken(Base):
 
 
 class ApiCache(Base):
-    """Anonymous Toolhub GET response or bounded derived public payload."""
+    """Anonymous Toolhub GET response or bounded derived public payload.
+
+    `path`/`collection`/`detail_key` are the URL decomposition invalidation
+    matches on. They are stored (rather than re-derived from `url` at read time)
+    so invalidation is an indexed DELETE instead of a full-table scan that would
+    have to materialize every `body` blob just to inspect its URL.
+    """
 
     __tablename__ = "api_cache"
     url_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     url: Mapped[str] = mapped_column(Text)
+    # Normalized upstream path, always with a trailing slash (e.g. "/api/tools/").
+    path: Mapped[str] = mapped_column(String(512), default="", index=True)
+    # Decoded second path segment for /api/ URLs ("tools", "lists", …), else "".
+    collection: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # Decoded third path segment: the tool name or list id, else "".
+    detail_key: Mapped[str] = mapped_column(String(255), default="", index=True)
     status: Mapped[int] = mapped_column(Integer)
     content_type: Mapped[str] = mapped_column(String(255), default="application/json")
     body: Mapped[bytes] = mapped_column(LargeBinary(length=10 * 1024 * 1024))

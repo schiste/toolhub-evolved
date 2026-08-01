@@ -847,6 +847,33 @@ def test_api_cache_direct_invalidation_helpers_cover_noop_and_collection_paths(a
     assert api_cache.invalidate_list_collection() == 1
 
 
+def test_api_cache_invalidation_matches_sub_resources_and_encoded_names(app):
+    """Invalidation matches on stored index columns, not a re-parse of every URL."""
+    for url in (
+        "https://toolhub.wikimedia.org/api/tools/my%20tool/",
+        "https://toolhub.wikimedia.org/api/tools/my%20tool/revisions/?page_size=20",
+        "https://toolhub.wikimedia.org/api/tools/other/",
+    ):
+        api_cache.put_success(url, api_cache.CacheableResponse(200, "application/json", b"{}"))
+    # The detail read and its sub-resource go; an unrelated tool stays.
+    assert api_cache.invalidate_tool("my tool") == 2
+    with db.session_scope() as s:
+        assert s.query(ApiCache).count() == 1
+
+
+def test_api_cache_rows_without_an_invalidation_key_are_dropped_on_upgrade(app):
+    """Pre-migration rows carry no path, so they could never be evicted: drop them."""
+    api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/tools/legacy/",
+        api_cache.CacheableResponse(200, "application/json", b"{}"),
+    )
+    with db.session_scope() as s:
+        s.query(ApiCache).update({ApiCache.path: "", ApiCache.collection: "", ApiCache.detail_key: ""})
+    db.init_schema()
+    with db.session_scope() as s:
+        assert s.query(ApiCache).count() == 0
+
+
 def test_api_cache_recent_poll_handles_invalid_marker_empty_rows_and_fetch_errors(app, monkeypatch):
     clock = {"t": utcnow()}
     monkeypatch.setattr(api_cache, "utcnow", lambda: clock["t"])
