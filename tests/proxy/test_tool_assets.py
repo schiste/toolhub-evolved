@@ -8,6 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
+import tool_assets as tool_assets_job  # noqa: E402
 from backend import db, outbound, tool_assets  # noqa: E402
 from backend.models import CatalogToolProjection, ToolAssetCache  # noqa: E402
 
@@ -86,3 +87,14 @@ def test_unsupported_content_type_is_recorded_without_a_file(monkeypatch):
     assert result["status"] == "error"
     assert tool_assets.cached_asset("alpha") is None
     assert not tool_assets.cache_dir().exists()
+
+
+def test_job_keeps_per_tool_errors_as_data_quality_results(monkeypatch, capsys):
+    monkeypatch.setattr(
+        tool_assets,
+        "refresh_candidates",
+        lambda limit: {"candidates": 3, "processed": 3, "ready": 1, "errors": 2},
+    )
+
+    assert tool_assets_job.main() == 0
+    assert '"errors": 2' in capsys.readouterr().out

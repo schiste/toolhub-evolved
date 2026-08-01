@@ -15,7 +15,11 @@ def main() -> int:
     db.init_schema()
     summary = tool_assets.refresh_candidates(limit=int(os.getenv("TOOL_ASSET_LIMIT", "100")))
     sys.stdout.write(json.dumps(summary, sort_keys=True) + "\n")
-    return 1 if summary["errors"] else 0
+    # Individual remote icon failures are durable catalog observations, not a
+    # failed sweep. Unexpected infrastructure/database failures still raise and
+    # make the process non-zero, while invalid sources remain eligible for the
+    # recorded backoff policy instead of tripping the job guard.
+    return 0
 
 
 if __name__ == "__main__":
