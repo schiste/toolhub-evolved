@@ -39,3 +39,6 @@ dist.tmp/
 proxy/var/
 *.sqlite3
 .venv-ci/
+
+# Playwright MCP scratch output (browser snapshots taken while debugging)
+.playwright-mcp/
