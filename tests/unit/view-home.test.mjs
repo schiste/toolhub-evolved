@@ -43,7 +43,8 @@ vi.mock("../../public_html/lib/core/i18n.js", async (orig) => {
 	};
 });
 
-const { applyExp } = await import("../../public_html/lib/core/session.js");
+const { applyExp, setServerUser } = await import("../../public_html/lib/core/session.js");
+const { toggleFav } = await import("../../public_html/lib/core/store.js");
 const { setUserContext } = await import("../../public_html/lib/core/signals.js");
 const home = await import("../../public_html/views/home.js");
 
@@ -669,6 +670,7 @@ const MEMBERSHIP_LISTS = [
 beforeEach(() => {
 	localStorage.clear();
 	applyExp(false);
+	setServerUser(null);
 	document.body.innerHTML = "";
 	h.apiGet.mockReset();
 	h.backendGetJson.mockReset();
@@ -704,6 +706,34 @@ test("home unfiltered: lists + tools populated", async () => {
 	const r = await home.viewHome();
 	assert.equal(r.title, "Toolhub — discover Wikimedia tools");
 	expect("unfiltered", r.html);
+});
+
+test("signed-in home puts favorites before owned tools", async () => {
+	setServerUser("Ada");
+	toggleFav("favorite");
+	h.apiGet.mockImplementation(async (path) => {
+		if (path === "/ui/home/") return { total_tools: 2 };
+		if (path === "/lists/") return { results: [LIST_ALPHA] };
+		if (path === "/search/tools/") return { results: [] };
+		if (path === "/tools/owned/") return rawTool("owned");
+		return {};
+	});
+	h.cachedCanonicalTools.mockResolvedValue([rawTool("favorite", { title: "Favorite" })]);
+	h.backendGetJson.mockImplementation(async (path) => {
+		if (path === "/v1/me/tools/") {
+			return { verified: [{ tool: rawTool("owned", { title: "Owned" }) }], possible: [] };
+		}
+		return { results: {} };
+	});
+
+	const r = await home.viewHome();
+	const favoritesIndex = r.html.indexOf("Your favorite tools");
+	const ownToolsIndex = r.html.indexOf("Your tools");
+	assert.ok(favoritesIndex >= 0, "authenticated home renders favorites");
+	assert.ok(ownToolsIndex > favoritesIndex, "owned tools follow favorites");
+	assert.ok(r.html.includes('data-tool="favorite"'), "favorite tool card renders");
+	assert.ok(r.html.includes('data-tool="owned"'), "owned tool card renders");
+	assert.equal(h.backendGetJson.mock.calls.filter(([path]) => path === "/v1/me/tools/").length, 1);
 });
 
 test("home unfiltered: featured tools link opens the aggregate page", async () => {

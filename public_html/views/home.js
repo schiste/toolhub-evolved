@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t, tWithElements, updatedTimeTag } from "../lib/core/i18n.js";
-import { apiGet, cachedCanonicalTools, normalizeList, normalizeTool, paginate } from "../lib/core/api.js";
+import {
+	apiGet,
+	backendGetJson,
+	cachedCanonicalTools,
+	getToolsByName,
+	normalizeList,
+	normalizeTool,
+	paginate
+} from "../lib/core/api.js";
 import {
 	attachEndorsements,
 	attachEvolvedSummaries,
@@ -11,6 +19,8 @@ import {
 	wikiMatches
 } from "../lib/core/signals.js";
 import { navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
+import { signedIn } from "../lib/core/session.js";
+import { favNames } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -53,7 +63,9 @@ const INTENT_AXES = {
 };
 
 /** @typedef {{ axis: string, term: string, wiki: string }} IntentState */
-/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], cacheFallback?: boolean }} HomeModel */
+/** @typedef {{ tools: Tool[], error?: boolean }} PersonalTools */
+/** @typedef {{ favorites: PersonalTools, ownTools: PersonalTools }} PersonalHomeModel */
+/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean }} HomeModel */
 /** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
 
 function intentAxisItems() {
@@ -201,6 +213,70 @@ function listsGridHTML(lists, empty) {
 	return lists.length > 0 ? grid("grid-lists", lists, listCard) : `<p class="empty">${esc(empty)}</p>`;
 }
 /**
+ * Resolve favorite names from the local-first canonical cache, then fill gaps
+ * from live Toolhub records. The order follows the user's saved order.
+ * @returns {Promise<PersonalTools>}
+ */
+async function favoriteToolsForHome() {
+	const names = favNames();
+	if (names.length === 0) return { tools: [] };
+	/** @type {Tool[]} */
+	let cached = [];
+	let cacheFailed = false;
+	try {
+		cached = await cachedCanonicalTools({ names, limit: names.length });
+	} catch {
+		cacheFailed = true;
+	}
+	const found = new Set(cached.map((tool) => tool.name));
+	const missing = names.filter((name) => !found.has(name));
+	/** @type {Tool[]} */
+	let live = [];
+	if (missing.length > 0) live = /** @type {Tool[]} */ (await getToolsByName(missing));
+	const byName = new Map([...cached, ...live].map((tool) => [tool.name, tool]));
+	const tools = /** @type {Tool[]} */ (names.map((name) => byName.get(name)).filter(Boolean));
+	return { tools, error: cacheFailed && live.length === 0 && tools.length === 0 };
+}
+
+/** @returns {Promise<PersonalTools>} */
+async function ownToolsForHome() {
+	const data = await backendGetJson("/v1/me/tools/");
+	if (!data) return { tools: [], error: true };
+	const tools = [];
+	const seen = new Set();
+	for (const item of [...(data.verified || []), ...(data.possible || [])]) {
+		if (!item?.tool) continue;
+		const tool = normalizeTool(item.tool);
+		if (seen.has(tool.name)) continue;
+		seen.add(tool.name);
+		tools.push(tool);
+	}
+	return { tools };
+}
+
+/** @returns {Promise<PersonalHomeModel>} */
+async function personalHomeModel() {
+	const [favorites, ownTools] = await Promise.all([
+		favoriteToolsForHome().catch(() => ({ tools: [], error: true })),
+		ownToolsForHome().catch(() => ({ tools: [], error: true }))
+	]);
+	const allTools = [...favorites.tools, ...ownTools.tools];
+	await Promise.all([attachEndorsements(allTools), attachEvolvedSummaries(allTools)]);
+	return { favorites, ownTools };
+}
+
+/**
+ * @param {string} title
+ * @param {string} href
+ * @param {PersonalTools} section
+ * @param {string} empty
+ * @param {string} error
+ */
+function personalToolsSectionHTML(title, href, section, empty, error) {
+	const body = section.error ? `<p class="empty">${esc(error)}</p>` : toolsGridHTML(section.tools, empty);
+	return `<div class="section-head"><h2>${esc(title)}</h2><a class="link" href="${href}">${t("home.viewAll", "View all")}</a></div>${body}`;
+}
+/**
  * @param {HomeModel} model
  * @param {IntentState} state
  */
@@ -211,7 +287,23 @@ function renderHomeMain(model, state) {
 		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing saved Toolhub data while live data refreshes.")}</p>
 		`
 		: "";
-	return `${fallbackNote}
+	const personal = model.personal
+		? `${personalToolsSectionHTML(
+				t("home.yourFavorites", "Your favorite tools"),
+				"/favorites",
+				model.personal.favorites,
+				t("home.noFavorites", "You have not saved any favorite tools yet."),
+				t("home.favoritesError", "Your favorites could not be loaded right now.")
+			)}
+		${personalToolsSectionHTML(
+			t("home.yourTools", "Your tools"),
+			"/my-tools",
+			model.personal.ownTools,
+			t("home.noOwnTools", "No Toolhub tools are currently associated with your account."),
+			t("home.ownToolsError", "Your tools could not be loaded right now.")
+		)}`
+		: "";
+	return `${fallbackNote}${personal}
 		<div class="section-head"><h2>${t("home.featuredTools", "Featured tools")}</h2><a class="link" href="${featuredHref}">${t("home.viewAll", "View all")}</a></div>
 		${toolsGridHTML(model.featuredRanked.slice(0, 8), t("home.noToolsMatch", "No tools match this sentence."))}
 		<div class="section-head"><h2>${t("home.mostListed", "Most listed")}</h2><a class="link" href="${filtered ? searchHrefForState(state) : "/lists"}">${filtered ? t("home.viewAll", "View all") : t("home.viewLists", "View lists")}</a></div>
@@ -318,11 +410,15 @@ async function homeSectionsModel(state) {
 
 export async function viewHome() {
 	// Live: total count, featured curated lists (with embedded tools), recent tools.
-	const [home] = await Promise.all([apiGet("/ui/home/").catch(() => ({}))]);
-	const total = home.total_tools || 0;
 	const ctx = getUserContext();
 	const initialState = intentStateFromContext(ctx);
-	const initialModel = await homeSectionsModel(initialState);
+	const [home, initialModel, personal] = await Promise.all([
+		apiGet("/ui/home/").catch(() => ({})),
+		homeSectionsModel(initialState),
+		signedIn() ? personalHomeModel() : Promise.resolve(null)
+	]);
+	initialModel.personal = personal || undefined;
+	const total = home.total_tools || 0;
 	const intentAxis = initialState.axis;
 	const intentTerm = initialState.term;
 	const intentWiki = initialState.wiki;
