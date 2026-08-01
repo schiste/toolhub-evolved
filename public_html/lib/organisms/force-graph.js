@@ -82,6 +82,7 @@ const FALLBACK_COLORS = {
  * @property {FGEdge[]} [edges]
  * @property {{ id: string | number }[]} [communityMeta]
  * @property {{ id: string | number, label?: string, size?: number }[]} [groupMeta]
+ * @property {string} [groupBy]
  * @property {"force" | "clustered"} [layout]
  */
 
@@ -368,6 +369,8 @@ export function forceGraph(container, data, opts = {}) {
 	/** @type {MutationObserver | null} */
 	let detachObserver = null;
 	let colors = buildColors(data, opts);
+	/** @type {Map<string, { x: number, y: number, size: number }>} */
+	let groupAnchors = new Map();
 
 	const { nodes, edges, neighborMap, edgeSet } = graphStructure(data);
 
@@ -485,6 +488,19 @@ export function forceGraph(container, data, opts = {}) {
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		// Stryker disable next-line ConditionalExpression: forcing this false only lets the no-op `nodes.every([])`/seedNodes([]) path run when there are no nodes — same result; forcing it true is killed by the layout fingerprint (nodes would never be seeded) — the surviving variant is equivalent.
 		if (nodes.length === 0) return;
+		groupAnchors = new Map();
+		if (data.groupBy && data.groupBy !== "similarity") {
+			const groups = (data.groupMeta || []).filter((item) => String(item.id) !== "other");
+			const radius = Math.min(width, height) * 0.3;
+			groups.forEach((group, index) => {
+				const angle = (index / Math.max(groups.length, 1)) * TWO_PI;
+				groupAnchors.set(String(group.id), {
+					x: width / 2 + Math.cos(angle) * radius,
+					y: height / 2 + Math.sin(angle) * radius,
+					size: Math.max(1, Number(group.size) || 1)
+				});
+			});
+		}
 		// Stryker disable all: this seed-vs-rescale block is layout bookkeeping with no observable, assertable effect here. On the first resize it seeds (the seedNodes function's own math is killed separately via the hover fingerprint); on a window resize onResize() immediately calls start() -> re-settle to the same deterministic layout, erasing any rescaled positions. So the branch choice and the rescale arithmetic are equivalent.
 		if (ticks === 0 && nodes.every((node) => node.x === 0 && node.y === 0)) {
 			if (staticLayout) seedGroupedNodes(nodes, width, height);
@@ -545,6 +561,19 @@ export function forceGraph(container, data, opts = {}) {
 			a.vy += fy;
 			b.vx -= fx;
 			b.vy -= fy;
+		}
+		for (const node of nodes) {
+			const anchors = [];
+			for (const group of node.groupValues || []) {
+				const anchor = groupAnchors.get(String(group));
+				if (anchor) anchors.push(anchor);
+			}
+			for (const anchor of anchors) {
+				const rarity = 1 + Math.log((1 + nodes.length) / (1 + anchor.size));
+				const strength = (0.0045 * rarity) / anchors.length;
+				node.vx += (anchor.x - node.x) * strength;
+				node.vy += (anchor.y - node.y) * strength;
+			}
 		}
 		for (const node of nodes) {
 			if (node.pinned) {
@@ -937,6 +966,9 @@ export function forceGraph(container, data, opts = {}) {
 		// Stryker disable next-line BlockStatement: redraw() only calls draw() (canvas drawing); emptying it has no observable effect. The handle exposing redraw is asserted by the surface-creation test.
 		redraw() {
 			draw();
+		},
+		positions() {
+			return Object.fromEntries(nodes.map((node) => [node.id, { x: node.x, y: node.y }]));
 		}
 	};
 }

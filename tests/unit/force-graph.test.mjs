@@ -173,6 +173,41 @@ test("forceGraph builds the canvas + tooltip and returns a {stop, redraw} handle
 	assert.equal(/** @type {any} */ (tip).hidden, true);
 	assert.equal(typeof handle.stop, "function");
 	assert.equal(typeof handle.redraw, "function");
+	assert.equal(typeof handle.positions, "function");
+});
+
+test("facet anchors pull shared memberships together while preserving multi-group nodes", () => {
+	const nodes = [
+		{ id: "a1", group: 0, groupValues: [0] },
+		{ id: "b1", group: 1, groupValues: [1] },
+		{ id: "a2", group: 0, groupValues: [0] },
+		{ id: "b2", group: 1, groupValues: [1] },
+		{ id: "bridge", group: 0, groupValues: [0, 1] },
+		{ id: "missing", group: "other", groupValues: [] }
+	];
+	const { handle } = build(
+		{
+			nodes,
+			edges: [],
+			groupBy: "project",
+			layout: "force",
+			groupMeta: [
+				{ id: 0, size: 3 },
+				{ id: 1, size: 3 },
+				{ id: "other", size: 1 }
+			]
+		},
+		{ height: 480 }
+	);
+	const positions = handle.positions();
+	const distance = (a, b) => Math.hypot(positions[a].x - positions[b].x, positions[a].y - positions[b].y);
+	const groupDistance = (distance("a1", "a2") + distance("b1", "b2")) / 2;
+	const crossDistance = (distance("a1", "b1") + distance("a2", "b2")) / 2;
+	const groupMidpoint = (positions.a1.x + positions.a2.x + positions.b1.x + positions.b2.x) / 4;
+
+	assert.ok(groupDistance < crossDistance);
+	assert.ok(Math.abs(positions.bridge.x - groupMidpoint) < crossDistance / 2);
+	assert.notDeepEqual(positions.missing, positions.bridge);
 });
 
 test("forceGraph sizes the canvas from container width and the height option", () => {

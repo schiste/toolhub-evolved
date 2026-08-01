@@ -52,7 +52,7 @@ function communityLegend(communityMeta) {
 function graphOptions(state) {
 	/** @type {Record<string, string>} */
 	const groupingLabels = {
-		similarity: t("graph.groupSimilarity", "Similarity clusters"),
+		similarity: t("graph.groupSimilarity", "Similarity only"),
 		language: t("graph.groupLanguage", "Languages"),
 		project: t("graph.groupProject", "Projects"),
 		task: t("graph.groupTask", "Tasks"),
@@ -70,7 +70,7 @@ function graphOptions(state) {
 	).join("");
 	return `<div class="graph__view-options" data-graph-view-options>
 		<label class="graph__filter" for="graph-limit"><span>${esc(t("graph.nodeCount", "Tools shown"))}</span><select id="graph-limit" class="graph__select" data-graph-option="limit">${limitOptions}</select></label>
-		<label class="graph__filter" for="graph-group-by"><span>${esc(t("graph.groupBy", "Group by"))}</span><select id="graph-group-by" class="graph__select" data-graph-option="groupBy">${groupOptions}</select></label>
+		<label class="graph__filter" for="graph-group-by"><span>${esc(t("graph.groupBy", "Pull together by"))}</span><select id="graph-group-by" class="graph__select" data-graph-option="groupBy">${groupOptions}</select></label>
 	</div>`;
 }
 
