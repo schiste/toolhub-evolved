@@ -80,7 +80,9 @@ export function publicApiCacheClear() {
 const RECENT_OWNER_CACHE_KEY = "toolhub-recent-owner-by-tool:v1";
 const RECENT_OWNER_CACHE_TTL_MS = 15 * 60 * 1000;
 const RECENT_OWNER_CACHE_MAX = 120;
-const PERSONAL_TOOLS_CACHE_KEY = "toolhub-personal-tools:v1";
+// Bump this when the resolver identity contract changes so polluted account
+// associations cannot survive in an existing browser profile.
+const PERSONAL_TOOLS_CACHE_KEY = "toolhub-personal-tools:v2";
 const PERSONAL_TOOLS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** @returns {Record<string, { owner: string, ts: number }>} */
 function recentOwnerCacheRead() {

@@ -57,6 +57,7 @@ from backend.author_claims import (
     ToolhubWriteProvider,
     author_names_from_toolhub_tool,
     canonical_toolinfo_string,
+    claim_is_verified,
     dedupe_strings,
     public_key_fingerprint,
     string_key,
@@ -1172,7 +1173,12 @@ def _claims_by_tool(claims: list[dict]) -> dict[str, list[dict]]:
 
 def _search_terms_for_user(username: str, claims: list[ToolAuthorClaim]) -> list[str]:
     """Return bounded Toolhub author-search terms for a signed-in user."""
-    return _dedupe_strings([username, *[row.author_name for row in claims]])[:ME_TOOLS_MAX_SEARCH_TERMS]
+    aliases = [
+        row.author_name
+        for row in claims
+        if claim_is_verified(row.verification_status, row.verification_method, expires_at=row.expires_at)
+    ]
+    return _dedupe_strings([username, *aliases])[:ME_TOOLS_MAX_SEARCH_TERMS]
 
 
 def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> None:
@@ -1180,18 +1186,22 @@ def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> No
     tool_name = _clean_name(row.get("name"))
     if tool_name is None:
         return
+    author_names = _toolhub_author_names(row)
+    matched = [name for name in author_names if _string_key(name) == _string_key(term)]
+    if not matched:
+        return
     entry = candidates.setdefault(
         tool_name,
         {
             "tool": row,
             "matchedAuthorNames": [],
+            "claimAuthorNames": [],
             "searchTerms": [],
         },
     )
     entry["searchTerms"] = _dedupe_strings([*entry["searchTerms"], term])
-    author_names = _toolhub_author_names(row)
-    matched = [name for name in author_names if _string_key(name) == _string_key(term)] or [term]
     entry["matchedAuthorNames"] = _dedupe_strings([*entry["matchedAuthorNames"], *matched])
+    entry["claimAuthorNames"] = _dedupe_strings([*entry["claimAuthorNames"], *matched])
 
 
 def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_name: str, username: str) -> None:
@@ -1204,14 +1214,16 @@ def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_n
         {
             "tool": row,
             "matchedAuthorNames": [],
+            "claimAuthorNames": [],
             "searchTerms": [],
         },
     )
     entry["tool"] = row
     entry["searchTerms"] = _dedupe_strings([*entry["searchTerms"], f"toolforge:{toolforge_name}"])
-    entry["matchedAuthorNames"] = _dedupe_strings(
-        [*entry["matchedAuthorNames"], *(_toolhub_author_names(row) or [username])]
-    )
+    # Membership proves the signed-in account operates the tool. It does not
+    # prove that the canonical Toolhub author name belongs to that account.
+    entry["matchedAuthorNames"] = _dedupe_strings([*entry["matchedAuthorNames"], username])
+    entry["claimAuthorNames"] = _dedupe_strings([*entry["claimAuthorNames"], username])
     entry["evidenceUrl"] = TOOLFORGE_MAINTAINER_PROVIDER.evidence_url(toolforge_name)
     entry["evidencePayload"] = {
         **(entry.get("evidencePayload") if isinstance(entry.get("evidencePayload"), dict) else {}),
@@ -1316,7 +1328,7 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
                 s,
                 user,
                 tool_name=tool_name,
-                author_names=entry["matchedAuthorNames"],
+                author_names=entry.get("claimAuthorNames", entry["matchedAuthorNames"]),
                 evidence_url=entry.get("evidenceUrl") or _author_search_evidence_url(search_term),
                 evidence_payload=entry.get("evidencePayload") or {"searchTerms": entry["searchTerms"]},
             )
@@ -2452,6 +2464,9 @@ def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str,
         existing["tool"] = entry["tool"]
         existing["matchedAuthorNames"] = _dedupe_strings(
             [*existing["matchedAuthorNames"], *entry["matchedAuthorNames"]]
+        )
+        existing["claimAuthorNames"] = _dedupe_strings(
+            [*existing.get("claimAuthorNames", []), *entry.get("claimAuthorNames", [])]
         )
         existing["searchTerms"] = _dedupe_strings([*existing["searchTerms"], *entry["searchTerms"]])
         if entry.get("evidenceUrl"):

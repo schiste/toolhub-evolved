@@ -16,9 +16,7 @@ from backend import DEFAULT_DB_URL, db, maintainer_index, toolhub, toolinfo_disc
 from backend.author_claims import (
     AuthorNameProvider,
     ToolforgeMaintainerProvider,
-    author_names_from_toolhub_tool,
     claim_payload,
-    dedupe_strings,
 )
 from backend.models import MaintainerActivityRollup, ToolAuthorClaim, ToolMaintainerEdge, User
 
@@ -66,12 +64,15 @@ def _official_tool(tool_name: str) -> dict[str, Any]:
 
 def _candidate(tool: dict[str, Any], *, toolforge_name: str, username: str) -> dict[str, dict[str, Any]]:
     tool_name = str(tool.get("name") or "").strip()
-    author_names = dedupe_strings(author_names_from_toolhub_tool(tool) or [username])
+    # Toolforge membership proves the operator account, not the canonical
+    # display author stored on the Toolhub record.
+    author_names = [username]
     provider = ToolforgeMaintainerProvider()
     return {
         tool_name: {
             "tool": tool,
             "matchedAuthorNames": author_names,
+            "claimAuthorNames": author_names,
             "searchTerms": [f"toolforge:{toolforge_name}"],
             "evidenceUrl": provider.evidence_url(toolforge_name),
             "evidencePayload": {

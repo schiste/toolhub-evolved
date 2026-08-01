@@ -1231,7 +1231,7 @@ def test_authz_login_role_from_env(monkeypatch):
 
 
 def test_toolhub_author_names_ignore_unknown_author_shapes():
-    assert _toolhub_author_names({"author": [None], "modified_by": {"username": "Ada"}}) == ["Ada"]
+    assert _toolhub_author_names({"author": [None], "modified_by": {"username": "Ada"}}) == []
 
 
 def test_author_name_provider_records_unverified_claims(client):
@@ -3018,11 +3018,11 @@ def test_me_tools_discovers_toolforge_memberships_when_author_name_differs(clien
     assert data["toolforgeToolNames"] == ["toolhub-evolved", "blybot", "missing"]
     assert data["counts"] == {"verified": 2, "possible": 0}
     assert [item["tool"]["name"] for item in data["verified"]] == ["toolforge-toolhub-evolved", "toolforge-blybot"]
-    assert data["verified"][0]["matchedAuthorNames"] == ["Christophe"]
+    assert data["verified"][0]["matchedAuthorNames"] == ["Schiste"]
     assert "toolforge:toolhub-evolved" in data["verified"][0]["searchTerms"]
     assert data["verified"][0]["evidenceUrl"].endswith("/tools/id/toolhub-evolved")
     assert any(
-        claim["authorName"] == "Christophe"
+        claim["authorName"] == "Schiste"
         and claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
         and claim["isVerified"]
         for claim in data["verified"][0]["claims"]
@@ -3107,7 +3107,7 @@ def test_me_tools_merges_author_search_and_toolforge_membership_candidates(clien
     data = client.get("/v1/me/tools/").get_json()
     assert data["counts"] == {"verified": 1, "possible": 0}
     item = data["verified"][0]
-    assert item["matchedAuthorNames"] == ["Schiste", "Christophe"]
+    assert item["matchedAuthorNames"] == ["Schiste"]
     assert item["searchTerms"] == ["Schiste", "toolforge:toolhub-evolved"]
     assert item["evidenceUrl"].endswith("/tools/id/toolhub-evolved")
 
@@ -3190,7 +3190,7 @@ def test_me_tools_verified_author_claims_are_per_tool_not_global(client, monkeyp
     )
 
 
-def test_me_tools_toolforge_provider_upgrades_display_name_claim(client, monkeypatch):
+def test_me_tools_does_not_reuse_unverified_display_name_claim_as_alias(client, monkeypatch):
     uid = add_user(username="schiste")
     sign_in(client, uid)
     with db.session_scope() as s:
@@ -3204,35 +3204,17 @@ def test_me_tools_toolforge_provider_upgrades_display_name_claim(client, monkeyp
             )
         )
 
+    calls = []
+
     def fake_public_api_get(path, *, params=None):
-        if params["author__term"] == "Christophe":
-            return {
-                "results": [
-                    {
-                        "name": "toolhub-evolved",
-                        "title": "Toolhub Evolved",
-                        "url": "https://toolhub-evolved.toolforge.org",
-                        "author": [{"name": "Christophe"}],
-                    }
-                ]
-            }
+        calls.append(params["author__term"])
         return {"results": []}
 
     monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    monkeypatch.setattr(
-        author_claims.requests,
-        "get",
-        lambda *a, **k: type("Resp", (), {"status_code": 200, "text": '<a href="/profile/schiste/">Schiste</a>'})(),
-    )
     data = client.get("/v1/me/tools/").get_json()
-    assert data["counts"] == {"verified": 1, "possible": 0}
-    claims = data["verified"][0]["claims"]
-    assert any(
-        claim["authorName"] == "Christophe"
-        and claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
-        and claim["isVerified"]
-        for claim in claims
-    )
+    assert calls == ["schiste"]
+    assert data["searchTerms"] == ["schiste"]
+    assert data["counts"] == {"verified": 0, "possible": 0}
 
 
 def test_me_tools_never_treats_display_author_claim_as_verified(client, monkeypatch):

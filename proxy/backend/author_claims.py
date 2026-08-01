@@ -153,7 +153,7 @@ def dedupe_strings(values: list[Any]) -> list[str]:
 
 
 def author_names_from_toolhub_tool(tool: dict) -> list[str]:
-    """Return author display and identity names from one official Toolhub tool."""
+    """Return declared author display and identity names from one official Toolhub tool."""
     raw_authors = tool.get("author")
     authors = raw_authors if isinstance(raw_authors, list) else [raw_authors]
     names: list[Any] = []
@@ -162,10 +162,6 @@ def author_names_from_toolhub_tool(tool: dict) -> list[str]:
             names.extend([author.get("name"), author.get("wiki_username"), author.get("developer_username")])
         elif isinstance(author, str | int | float):
             names.append(author)
-    for actor_key in ("created_by", "modified_by"):
-        actor = tool.get(actor_key)
-        if isinstance(actor, dict):
-            names.append(actor.get("username"))
     return dedupe_strings(names)
 
 
