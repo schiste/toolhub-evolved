@@ -62,7 +62,7 @@ const FALLBACK_COLORS = {
  * @property {string[]} [languages]
  * @property {boolean} [pinned]
  * @property {number | string} [group]
- * @property {string[]} [groupValues]
+ * @property {(number | string)[]} [groupValues]
  */
 
 /**
@@ -611,7 +611,7 @@ export function forceGraph(container, data, opts = {}) {
 		const point = toScreen(node.x, node.y);
 		const size = nodeSize(node) * Math.min(zoom, 1.35);
 		const radius = size / 2;
-		const isOther = node.community === "other";
+		const isOther = (node.group ?? node.community) === "other";
 		ctx.globalAlpha = active ? (isActive ? (isOther ? 0.72 : 1) : 0.16) : isOther ? 0.62 : 1;
 		ctx.fillStyle = colorForNode(node, colors);
 		ctx.beginPath();

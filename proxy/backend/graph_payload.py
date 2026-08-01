@@ -277,54 +277,61 @@ def _group_label(value: str) -> str:
     return _human_label(value) if value not in {"*", "other"} else "Other"
 
 
+def _facet_value(value: str) -> tuple[str, str] | None:
+    clean = " ".join(value.split()).strip()
+    if not clean or clean == "*":
+        return None
+    return clean.casefold(), _group_label(clean)
+
+
 def _group_data(
     selected: list[dict[str, Any]],
     group_by: str,
     node_communities: dict[str, int | str],
     community_meta: list[dict[str, Any]],
-) -> tuple[dict[str, int], list[dict[str, Any]], dict[str, list[str]]]:
+) -> tuple[dict[str, int | str], list[dict[str, Any]], dict[str, list[int | str]]]:
     if group_by == "similarity":
         groups = {str(item["id"]): item for item in community_meta}
         counts = Counter(str(node_communities.get(item["name"], "other")) for item in selected)
         if counts.get("other"):
-            groups["other"] = {"id": len(community_meta), "label": "Other", "size": counts["other"]}
+            groups["other"] = {"id": "other", "label": "Other", "size": counts["other"]}
         meta = [groups[key] for key in sorted(groups, key=lambda key: (key == "other", str(key)))]
-        other_id = len(community_meta)
-        primary = {
-            item["name"]: int(node_communities.get(item["name"], "other"))
-            if str(node_communities.get(item["name"], "other")).isdigit()
-            else other_id
-            for item in selected
-        }
-        values = {item["name"]: [str(primary[item["name"]])] for item in selected}
+        primary = {item["name"]: node_communities.get(item["name"], "other") for item in selected}
+        values = {item["name"]: [primary[item["name"]]] for item in selected}
         return primary, meta, values
 
     field = GROUP_BY_FIELDS[group_by]
     counts: Counter[str] = Counter()
+    labels: dict[str, str] = {}
     values_by_name: dict[str, list[str]] = {}
     for item in selected:
-        raw_values = _string_list(item["record"].get(field))
-        values = sorted({value for value in raw_values if value != "*"}, key=str.casefold)
+        normalized = [_facet_value(value) for value in _string_list(item["record"].get(field))]
+        values = sorted({value[0] for value in normalized if value is not None})
+        for value in normalized:
+            if value is not None:
+                labels.setdefault(value[0], value[1])
         values_by_name[item["name"]] = values
         counts.update(values)
-    ordered = sorted(counts, key=lambda value: (-counts[value], value.casefold()))
+    ordered = sorted(counts, key=lambda value: (-counts[value], value))
     kept = ordered[: MAX_GROUPS - 1]
     group_ids = {value: index for index, value in enumerate(kept)}
-    other_id = len(kept)
-    group_sizes: Counter[int] = Counter()
-    primary: dict[str, int] = {}
+    primary: dict[str, int | str] = {}
+    memberships: dict[str, list[int | str]] = {}
+    other_size = 0
     for item in selected:
         values = values_by_name[item["name"]]
-        group = next((group_ids[value] for value in values if value in group_ids), other_id)
-        primary[item["name"]] = group
-        group_sizes[group] += 1
+        groups = sorted(group_ids[value] for value in values if value in group_ids)
+        memberships[item["name"]] = groups
+        primary[item["name"]] = groups[0] if groups else "other"
+        if not groups:
+            other_size += 1
     meta = [
-        {"id": group, "label": _group_label(value), "size": group_sizes[group]}
+        {"id": group, "label": labels[value], "size": counts[value]}
         for value, group in ((value, group_ids[value]) for value in kept)
     ]
-    if group_sizes[other_id]:
-        meta.append({"id": other_id, "label": "Other", "size": group_sizes[other_id]})
-    return primary, meta, values_by_name
+    if other_size:
+        meta.append({"id": "other", "label": "Other", "size": other_size})
+    return primary, meta, memberships
 
 
 def _grouping_coverage(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -341,7 +348,11 @@ def _grouping_coverage(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
     for group_by, field in GROUP_BY_FIELDS.items():
         values_by_name = {
-            item["name"]: {value for value in _string_list(item["record"].get(field)) if value != "*"}
+            item["name"]: {
+                normalized[0]
+                for value in _string_list(item["record"].get(field))
+                if (normalized := _facet_value(value)) is not None
+            }
             for item in selected
         }
         covered = sum(bool(values) for values in values_by_name.values())
@@ -391,20 +402,14 @@ def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> d
     candidates.sort(key=lambda item: (-item["richness"], item["title"].casefold(), item["name"]))
     selected = candidates[:limit]
     names = [item["name"] for item in selected]
-    if group_by == "similarity":
-        term_sets = [{f"{kind}:{term}" for kind, term, _weight in item["entries"]} for item in candidates]
-        idf = _idf(term_sets)
-        vectors = {item["name"]: _vector(item["entries"], idf) for item in selected}
-        edges = _knn_edges(names, vectors) if limit <= SPARSE_EDGE_NODE_LIMIT else _sparse_knn_edges(names, vectors)
-        labels = _detect_communities(names, edges)
-        node_communities, community_meta = _communities(selected, labels)
-    else:
-        edges = []
-        node_communities, community_meta = {}, []
+    term_sets = [{f"{kind}:{term}" for kind, term, _weight in item["entries"]} for item in candidates]
+    idf = _idf(term_sets)
+    vectors = {item["name"]: _vector(item["entries"], idf) for item in selected}
+    edges = _knn_edges(names, vectors) if len(selected) <= SPARSE_EDGE_NODE_LIMIT else _sparse_knn_edges(names, vectors)
+    labels = _detect_communities(names, edges)
+    node_communities, community_meta = _communities(selected, labels)
     node_groups, group_meta, group_values = _group_data(selected, group_by, node_communities, community_meta)
-    clustered = group_by != "similarity" or limit > SPARSE_EDGE_NODE_LIMIT
-    if clustered:
-        edges = []
+    clustered = len(selected) > SPARSE_EDGE_NODE_LIMIT
     degree = Counter()
     for edge in edges:
         degree[str(edge["source"])] += 1

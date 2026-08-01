@@ -2214,7 +2214,7 @@ def test_graph_payload_exposes_canonical_project_and_language_facets(monkeypatch
             "projects": ["commons.wikimedia.org"],
             "languages": ["en", "fr"],
             "group": 0,
-            "groupValues": ["0"],
+            "groupValues": [0],
         }
     ]
 
@@ -2233,7 +2233,7 @@ def test_graph_endpoint_passes_limit_and_grouping_parameters(client, monkeypatch
     assert captured == {"limit": "4000", "group_by": "language"}
 
 
-def test_graph_payload_uses_clustered_layout_for_large_grouped_views(monkeypatch):
+def test_graph_payload_preserves_similarity_edges_in_grouped_views(monkeypatch):
     monkeypatch.setattr(
         graph_payload.canonical_tools,
         "records",
@@ -2262,9 +2262,46 @@ def test_graph_payload_uses_clustered_layout_for_large_grouped_views(monkeypatch
     payload = graph_payload.build(limit=4000, group_by="language")
 
     assert payload["nodeLimit"] == 4000
-    assert payload["layout"] == "clustered"
-    assert payload["edges"] == []
+    assert payload["layout"] == "force"
+    assert payload["edges"] == [{"source": "english-tool", "target": "french-tool", "weight": 1.0}]
     assert [group["label"] for group in payload["groupMeta"]] == ["en", "fr"]
+
+
+def test_graph_payload_preserves_multi_value_memberships_and_counts(monkeypatch):
+    monkeypatch.setattr(
+        graph_payload.canonical_tools,
+        "records",
+        lambda limit: [
+            {
+                "toolName": "multi-tool",
+                "record": {
+                    "name": "multi-tool",
+                    "title": "Multi tool",
+                    "keywords": ["images"],
+                    "for_wikis": ["Commons.wikimedia.org", "www.wikidata.org"],
+                },
+            },
+            {
+                "toolName": "commons-tool",
+                "record": {
+                    "name": "commons-tool",
+                    "title": "Commons tool",
+                    "keywords": ["images"],
+                    "for_wikis": ["commons.wikimedia.org"],
+                },
+            },
+        ],
+    )
+
+    payload = graph_payload.build(group_by="project")
+
+    by_name = {node["id"]: node for node in payload["nodes"]}
+    assert by_name["multi-tool"]["groupValues"] == [0, 1]
+    assert by_name["multi-tool"]["group"] == 0
+    assert payload["groupMeta"] == [
+        {"id": 0, "label": "Commons wikimedia org", "size": 2},
+        {"id": 1, "label": "www wikidata org", "size": 1},
+    ]
 
 
 def test_graph_payload_reports_grouping_coverage(monkeypatch):
