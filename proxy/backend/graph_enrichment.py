@@ -234,6 +234,12 @@ def refresh_tool_names(tool_names: list[str]) -> dict[str, int]:
         batch = _refresh_batch(names[offset : offset + MAX_REFRESH_TOOLS])
         for key in ("refreshed", "changed", "errors"):
             summary[key] += batch[key]
+    # Every producer already refreshes graph enrichment after changing public
+    # evidence. Chaining the catalog projection here gives those producers one
+    # transaction-safe integration point and keeps projection work off reads.
+    from backend import catalog_projection  # noqa: PLC0415 - avoid backend startup cycles.
+
+    catalog_projection.refresh_tool_names(names)
     return summary
 
 

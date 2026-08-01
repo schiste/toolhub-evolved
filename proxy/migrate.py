@@ -19,7 +19,7 @@ import os
 import sys
 from dataclasses import dataclass
 
-from backend import DEFAULT_DB_URL, api_cache, canonical_tools, db
+from backend import DEFAULT_DB_URL, api_cache, canonical_tools, catalog_projection, db
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,10 @@ def run_once() -> list[MigrationResult]:
     return [
         MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
         MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
+        MigrationResult(
+            "catalog projections",
+            catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
+        ),
     ]
 
 

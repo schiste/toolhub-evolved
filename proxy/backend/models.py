@@ -160,6 +160,80 @@ class GraphToolEnrichment(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class CatalogToolProjection(Base):
+    """Versioned Evolved-local catalog view assembled from public evidence."""
+
+    __tablename__ = "catalog_tool_projection"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    effective_record: Mapped[dict] = mapped_column(JSON, default=dict)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_timestamps: Mapped[dict] = mapped_column(JSON, default=dict)
+    search_text: Mapped[str] = mapped_column(Text, default="")
+    projection_version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    refreshed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CatalogCuration(Base):
+    """One reviewed local correction proposed for an official catalog tool."""
+
+    __tablename__ = "catalog_curations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    patch: Mapped[dict] = mapped_column(JSON, default=dict)
+    lifecycle_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_tool_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    review_status: Mapped[str] = mapped_column(String(32), default=REVIEW_PENDING, index=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    modified_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+
+
+class CatalogFacetValue(Base):
+    """Indexed normalized facet value materialized from one catalog projection."""
+
+    __tablename__ = "catalog_facet_values"
+    __table_args__ = (UniqueConstraint("tool_name", "field", "value"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    field: Mapped[str] = mapped_column(String(64), index=True)
+    value: Mapped[str] = mapped_column(String(255), index=True)
+    label: Mapped[str] = mapped_column(String(255), default="")
+    provenance: Mapped[list] = mapped_column(JSON, default=list)
+    confidence_basis_points: Mapped[int] = mapped_column(Integer, default=10000)
+    refreshed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolAssetCache(Base):
+    """Rebuildable metadata for one safely cached public tool asset."""
+
+    __tablename__ = "tool_asset_cache"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    source_url: Mapped[str] = mapped_column(String(2000), default="")
+    source_type: Mapped[str] = mapped_column(String(64), default="official_toolhub")
+    content_type: Mapped[str] = mapped_column(String(255), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    cached_path: Mapped[str] = mapped_column(String(512), default="")
+    etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ToolCatalogSyncState(Base):
     """Resumable cursor and health state for the complete official catalog sync."""
 
