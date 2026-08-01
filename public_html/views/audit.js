@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../lib/core/dom.js";
+import { publicActivityRows } from "../lib/core/activity-privacy.js";
 import { t, timeTag } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
 import { listHref, toolHref } from "../lib/core/routing.js";
@@ -20,7 +21,7 @@ export function targetHref(target) {
 export async function viewAudit() {
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/auditlogs/", { page_size: "25" }).catch(() => ({ results: [] }));
-	const merged = demoFeed(DEMO_KEYS.auditlogs, data.results || []);
+	const merged = publicActivityRows(demoFeed(DEMO_KEYS.auditlogs, publicActivityRows(data.results || [])));
 	const rows = merged
 		.map((a) => {
 			const who = esc((a.user && a.user.username) || t("parity.systemCap", "System"));

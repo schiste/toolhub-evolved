@@ -10,6 +10,7 @@ hash can never silently drift out of sync.
 import base64
 import gzip
 import hashlib
+import json
 import os
 import re
 import sys
@@ -429,6 +430,29 @@ def test_cache_miss_does_not_poll_recent_changes_on_request_path(client, fake_ge
     assert resp.status_code == 200
     assert captured["calls"] == 1
     assert resp.headers["X-Toolhub-Evolved-Cache"] == "miss"
+
+
+@pytest.mark.parametrize(
+    ("path", "private_row"),
+    [
+        ("/api/recent/?page_size=30", {"content_type": "favorite", "content_id": "private-tool"}),
+        (
+            "/api/auditlogs/?page_size=25",
+            {"action": "favorite-removed", "target": {"type": "favorite", "id": "private-tool"}},
+        ),
+    ],
+)
+def test_public_activity_proxy_filters_private_preferences_on_miss_and_hit(client, fake_get, path, private_row):
+    public_row = {"content_type": "tool", "content_id": "public-tool"}
+    body = json.dumps({"count": 2, "results": [private_row, public_row]}).encode()
+    captured = fake_get(FakeUpstream(200, body))
+
+    first = client.get(path)
+    second = client.get(path)
+
+    assert first.get_json()["results"] == [public_row]
+    assert second.get_json()["results"] == [public_row]
+    assert captured["calls"] == 1
 
 
 def test_stale_cache_does_not_block_on_upstream_exception(client, fake_get, monkeypatch, scheduled_revalidations):

@@ -23,7 +23,7 @@ import requests
 from flask import Flask, Response, g, request, send_from_directory
 
 import backend
-from backend import api_cache, canonical_tools, security
+from backend import activity_privacy, api_cache, canonical_tools, security
 
 HERE = Path(__file__).resolve().parent
 _SOURCE_DIR = (HERE.parent / "public_html").resolve()
@@ -128,7 +128,8 @@ def _cached_api_response(
     upstream_dur_ms: float | None = None,
 ) -> Response:
     """Build a proxy response from a detached cache hit."""
-    resp = Response(hit.body, status=hit.status, content_type=hit.content_type)
+    body = activity_privacy.sanitize_public_api_payload(hit.url, hit.body)
+    resp = Response(body, status=hit.status, content_type=hit.content_type)
     resp.headers["Cache-Control"] = api_cache.cache_control(hit.url, stale=hit.stale)
     _with_proxy_diagnostics(
         resp,
@@ -236,6 +237,7 @@ def _relay_upstream_response(
     url: str, upstream: requests.Response, payload: bytes, stale: api_cache.CachedResponse | None
 ) -> Response:
     """Persist/relay an upstream response according to the anonymous read-cache contract."""
+    payload = activity_privacy.sanitize_public_api_payload(url, payload)
     content_type = upstream.headers.get("content-type", "application/json")
     cacheable = _CACHEABLE_MIN_STATUS <= upstream.status_code < _CACHEABLE_MAX_STATUS
     if upstream.status_code == _HTTP_NOT_MODIFIED and stale is not None:

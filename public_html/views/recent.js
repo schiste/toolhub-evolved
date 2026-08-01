@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
+import { publicActivityRows } from "../lib/core/activity-privacy.js";
 import { t, timeTag } from "../lib/core/i18n.js";
 import { apiGet, backendGetJson } from "../lib/core/api.js";
 import { authorHref, navigateTo, listHref, toolHref } from "../lib/core/routing.js";
@@ -356,7 +357,9 @@ export async function viewRecent() {
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
 	const data = await apiGet("/recent/", { page_size: "30" }).catch(() => ({ results: [] }));
 	// Local Evolved edits appear at the top of the live feed.
-	const merged = applyCachedRecentOwners(demoFeed(DEMO_KEYS.revisions, data.results || []));
+	const merged = applyCachedRecentOwners(
+		publicActivityRows(demoFeed(DEMO_KEYS.revisions, publicActivityRows(data.results || [])))
+	);
 	const showOptions = recentSelectOptions(RECENT_FILTERS, state.show);
 	const statusOptions = recentSelectOptions(RECENT_STATUS_FILTERS, state.status);
 	const sortOptions = recentSelectOptions(RECENT_SORTS, state.sort);

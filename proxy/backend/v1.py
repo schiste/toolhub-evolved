@@ -30,6 +30,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import Select
 
 from backend import (
+    activity_privacy,
     api_cache,
     authz,
     canonical_tools,
@@ -353,7 +354,8 @@ def _feed_payload(path: str, params: dict[str, object] | None = None) -> list[di
     if not isinstance(payload, dict):
         return []
     rows = payload.get("results")
-    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    public_rows = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    return activity_privacy.public_activity_rows(public_rows) if path.rstrip("/") == "/api/recent" else public_rows
 
 
 def _upstream_feed_error(exc: Exception) -> Response:
@@ -3783,15 +3785,17 @@ def _assemble_overlay(uid: int) -> dict[str, Any]:
                     record.pop(key, None)
             tool_new[row.tool_name] = record
         feeds = {
-            key: [
-                r.row
-                for r in s.execute(
-                    select(ActivityRow)
-                    .where(ActivityRow.kind == key)
-                    .order_by(ActivityRow.created_at.desc(), ActivityRow.id.desc())
-                    .limit(FEED_READ_CAP)
-                ).scalars()
-            ]
+            key: activity_privacy.public_activity_rows(
+                [
+                    r.row
+                    for r in s.execute(
+                        select(ActivityRow)
+                        .where(ActivityRow.kind == key)
+                        .order_by(ActivityRow.created_at.desc(), ActivityRow.id.desc())
+                        .limit(FEED_READ_CAP)
+                    ).scalars()
+                ]
+            )
             for key in FEED_KEYS
         }
     return {

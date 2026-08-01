@@ -121,6 +121,25 @@ test("viewRecent: a tool change renders as a table row with owner and updater co
 	);
 });
 
+test("viewRecent: private favorite activity is removed from live and local rows", async () => {
+	api.apiGet.mockResolvedValue({
+		results: [
+			{ content_type: "favorite", content_id: "private-live", content_title: "Private live favorite" },
+			{ content_type: "tool", content_id: "public-tool", content_title: "Public tool" }
+		]
+	});
+	const store = await import("../../public_html/lib/core/store.js");
+	store.demoFeed.mockImplementationOnce((_key, live) => [
+		{ action: "favorite-removed", target: { type: "favorite" }, content_title: "Private local favorite" },
+		...live
+	]);
+
+	const view = await viewRecent();
+
+	assert.match(view.html, /Public tool/);
+	assert.doesNotMatch(view.html, /Private live favorite|Private local favorite/);
+});
+
 test("viewRecent: a deferred owner is not written to the client cache", async () => {
 	setSearch("");
 	api.apiGet.mockImplementation((path) => {
@@ -639,6 +658,20 @@ test("viewAudit: no entries → the empty placeholder", async () => {
 	api.apiGet.mockRejectedValue(new Error("x"));
 	const view = await viewAudit();
 	assert.match(view.html, /<ul class="feed"><li><div class="feed__static">No audit entries\.<\/div><\/li><\/ul>/);
+});
+
+test("viewAudit: private favorite actions are not rendered", async () => {
+	api.apiGet.mockResolvedValue({
+		results: [
+			{ action: "favorited", target: { type: "favorite", id: "private-tool", label: "Private tool" } },
+			{ action: "updated", target: { type: "tool", id: "public-tool", label: "Public tool" } }
+		]
+	});
+
+	const view = await viewAudit();
+
+	assert.match(view.html, /Public tool/);
+	assert.doesNotMatch(view.html, /Private tool|favorited/);
 });
 
 test("viewAudit: a response with no results array also shows the placeholder", async () => {
