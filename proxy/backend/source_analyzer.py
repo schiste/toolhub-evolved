@@ -18,6 +18,12 @@ from typing import Any
 
 MAX_FILES = 120
 MAX_FILE_BYTES = 256 * 1024
+# Not the effective ceiling for HTTP submissions: Flask's MAX_CONTENT_LENGTH
+# (1 MiB, set in backend.register) rejects the request body first, so a caller
+# coming through /v1/source-analysis/ can never reach this limit. It binds the
+# in-process callers that bypass the request layer — repository_scan.py feeding
+# a cloned checkout, and analyze_source.py run from the CLI — where nothing
+# else caps the aggregate. Read it as the analyzer's own limit, not the API's.
 MAX_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_PATH_CHARS = 240
 MAX_LINE_CHARS = 500
