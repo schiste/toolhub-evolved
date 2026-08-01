@@ -81,6 +81,7 @@ from backend.models import (  # noqa: E402
     ToolRecord,
     ToolSummaryCache,
     ToolThanks,
+    UserToolResolverCache,
     User,
     utcnow,
 )
@@ -431,6 +432,20 @@ def test_init_schema_creates_tool_summary_cache_table():
         "summary",
         "source",
         "sync_status",
+        "computed_at",
+        "expires_at",
+        "stale_until",
+        "last_error",
+    }.issubset(cols)
+
+
+def test_init_schema_creates_private_user_tool_resolver_cache_table():
+    db.configure("sqlite://")
+    db.init_schema()
+    cols = {col["name"] for col in inspect(db.engine()).get_columns(UserToolResolverCache.__tablename__)}
+    assert {
+        "user_id",
+        "payload",
         "computed_at",
         "expires_at",
         "stale_until",
@@ -2768,6 +2783,14 @@ def test_me_tools_returns_possible_display_author_matches(client, monkeypatch):
     assert item["claims"][0]["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
     assert item["claims"][0]["isVerified"] is False
     assert item["toolinfoDiscovery"]["status"] == "no_url"
+    assert data["cache"]["status"] == "miss"
+
+    calls.clear()
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: pytest.fail("cache miss"))
+    cached = client.get("/v1/me/tools/")
+    assert cached.status_code == 200
+    assert cached.get_json()["cache"]["status"] == "fresh"
+    assert calls == []
 
 
 def test_me_tools_records_pending_toolinfo_discovery_for_owned_candidates(client, monkeypatch):

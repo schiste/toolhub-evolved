@@ -44,6 +44,7 @@ from backend import (
     toolhub,
     toolinfo_discovery,
     toolinfo_sources,
+    user_tool_cache,
 )
 from backend.author_claims import (
     SIGNATURE_META_KEY,
@@ -2417,23 +2418,8 @@ def v1_source_analysis_review(report_id: int) -> Response:
     return jsonify({"ok": True, "sourceAnalysis": payload})
 
 
-@v1_bp.route("/v1/me/tools/")
-@login_required
-def v1_me_tools() -> Response:
-    """Resolve Toolhub tools that may belong to the signed-in Toolhub user."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — login_required guarantees this
-    # This read fans out to several upstream Toolhub searches and takes seconds,
-    # so a client polling it saturates the workers on its own and every other
-    # route — static pages included — starts returning 503. Throttle it per user.
-    if security.resolver_rate_limited(uid):
-        resp = jsonify({"error": "rate limit exceeded"})
-        resp.status_code = 429
-        resp.headers["Cache-Control"] = "no-store"
-        resp.headers["Retry-After"] = str(int(security.WRITE_WINDOW_SECONDS))
-        return resp
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-
+def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    """Perform one expensive resolver pass and return its private payload."""
     with db.session_scope() as s:
         stored_claims = list(
             s.execute(select(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)).scalars()
@@ -2463,9 +2449,7 @@ def v1_me_tools() -> Response:
     errors.extend(toolforge_errors)
 
     if errors and not candidates and len(errors) == len(search_terms):
-        resp = jsonify({"error": "official Toolhub is unavailable", "username": user.username, "errors": errors})
-        resp.status_code = 502
-        return resp
+        return None, errors
 
     claim_payloads = _record_candidate_provider_claims(user, candidates)
     claims_by_tool = _claims_by_tool(claim_payloads)
@@ -2473,7 +2457,7 @@ def v1_me_tools() -> Response:
     sources_by_tool = toolinfo_sources.sources_for_tools(list(candidates))
     groups = _resolver_groups(candidates, claims_by_tool, discoveries_by_tool, sources_by_tool)
 
-    return jsonify(
+    return (
         {
             "username": user.username,
             "searchTerms": search_terms,
@@ -2484,8 +2468,63 @@ def v1_me_tools() -> Response:
             "verified": groups["verified"],
             "possible": groups["possible"],
             "errors": errors,
-        }
+        },
+        errors,
     )
+
+
+def _refresh_me_tools_cache(app: Any, user_id: int) -> dict[str, Any] | None:
+    """Load the user in the worker and refresh their private resolver row."""
+    with app.app_context():
+        with db.advisory_lock(f"user-tool-resolver:{user_id}") as acquired:
+            if not acquired:
+                return None
+            with db.session_scope() as s:
+                user = s.get(User, user_id)
+            if user is None:
+                raise RuntimeError("Toolhub user no longer exists")
+            payload, errors = _resolve_me_tools(user)
+            if payload is None:
+                raise RuntimeError(f"official Toolhub unavailable: {errors}")
+            return payload
+
+
+def _private_resolver_response(payload: dict[str, Any], metadata: dict[str, str]) -> Response:
+    response = jsonify({**payload, "cache": metadata})
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@v1_bp.route("/v1/me/tools/")
+@login_required
+def v1_me_tools() -> Response:
+    """Read the private local replica, refreshing it only when stale or absent."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 — login_required guarantees this
+    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    cached = user_tool_cache.read(uid)
+    if cached is not None:
+        if cached.metadata["status"] == "stale":
+            app = current_app._get_current_object()
+            user_tool_cache.queue_refresh(uid, lambda user_id: _refresh_me_tools_cache(app, user_id))
+            cached.metadata["refresh"] = "queued"
+        return _private_resolver_response(cached.payload, cached.metadata)
+
+    # Only a cold miss consumes the expensive-read budget. Once a local row
+    # exists, normal page loads do not touch upstream Toolhub at all.
+    if security.resolver_rate_limited(uid):
+        resp = jsonify({"error": "rate limit exceeded"})
+        resp.status_code = 429
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Retry-After"] = str(int(security.WRITE_WINDOW_SECONDS))
+        return resp
+    payload, errors = _resolve_me_tools(user)
+    if payload is None:
+        resp = jsonify({"error": "official Toolhub is unavailable", "username": user.username, "errors": errors})
+        resp.status_code = 502
+        return resp
+    user_tool_cache.store(uid, payload)
+    return _private_resolver_response(payload, {"status": "miss"})
 
 
 @v1_bp.route("/v1/maintainers/tools/<name>/")

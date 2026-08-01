@@ -213,6 +213,18 @@ class ToolSummaryCache(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class UserToolResolverCache(Base):
+    """Private last-known resolver result for one Toolhub user."""
+
+    __tablename__ = "user_tool_resolver_cache"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class IssueReport(Base):
     """Idempotency ledger for issues published from the authenticated drawer."""
 
