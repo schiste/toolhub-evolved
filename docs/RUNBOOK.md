@@ -403,8 +403,18 @@ toolforge jobs logs toolinfo-source-index  # last official crawler source index 
 toolforge jobs logs api-cache-invalidator
 ```
 
+Jobs are configured with Toolforge file logs. If the central `jobs logs`
+endpoint has no retained stream, inspect the paths shown by
+`toolforge jobs list -o long`, usually `~/catalog-sync.out` and
+`~/catalog-sync.err`, without treating old appended errors as a current run.
+
 The crawler exits non-zero (→ failure email) when any URL errored; per-run
 results are also stored in the `crawler_runs` table.
+
+Every Python job calls `db.init_schema()` before doing work. Existing Toolforge
+databases receive idempotent additive repairs there, including the catalog
+reconciliation cursor columns and null retry-counter normalization. No database
+reset is required after a deploy.
 
 The crawler reads every enabled `crawler_urls` row hourly. For each toolinfo item
 it first records valid `signed_toolinfo` author-claim evidence when the URL
@@ -512,6 +522,12 @@ The regular hourly job continues the sweep afterwards. `repository_scan` is a
 separate provenance label from maintainer-submitted source-analysis reports;
 automated reports are deterministic and approved for the public health core,
 while raw source and checkout contents are never stored.
+
+Repository failures are recorded with exponential backoff and do not abort the
+remaining candidates in the hourly batch. The people full pass and its
+incremental queue share a MariaDB advisory lock so they cannot concurrently
+replace the same derived maintainer edges; a locked invocation exits cleanly and
+the next scheduled run retries it.
 
 ## Backups & restore
 
