@@ -28,6 +28,7 @@ MIN_GROUP_DISTINCT_VALUES = 2
 SPARSE_EDGE_NODE_LIMIT = 1000
 SPARSE_CANDIDATE_LIMIT = 160
 GRAPH_CACHE_MAX_ENTRIES = 8
+GRAPH_CACHE_VERSION = 2
 GRAPH_FRESH_SECONDS = 6 * 60 * 60
 GRAPH_STALE_SECONDS = 24 * 60 * 60
 GRAPH_MEMORY_FRESH_SECONDS = 5 * 60
@@ -455,7 +456,7 @@ def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> d
 
 def _cache_url(limit: int, group_by: str) -> str:
     """Return the stable synthetic URL used for the shared ToolsDB cache row."""
-    return f"https://toolhub-evolved.local/v1/graph/?limit={limit}&groupBy={group_by}"
+    return f"https://toolhub-evolved.local/v1/graph/?limit={limit}&groupBy={group_by}&version={GRAPH_CACHE_VERSION}"
 
 
 def _remember(cache_key: str, graph: dict[str, Any]) -> None:
