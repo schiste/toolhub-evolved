@@ -39,12 +39,16 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
         s.query(ApiCache).update({ApiCache.path: "", ApiCache.collection: "", ApiCache.detail_key: ""})
         s.execute(db.text("UPDATE canonical_tool_cache SET search_text = ''"))
 
+    # Asserted per migration rather than as a whole set, so adding a migration
+    # extends this rather than breaking it.
     first = {result.name: result.rows for result in migrate.run_once()}
-    assert first == {"api_cache index columns": 1, "canonical search_text": 1}
+    assert first["api_cache index columns"] == 1
+    assert first["canonical search_text"] == 1
 
     # Running again is a no-op, so a deploy can re-run it without thinking.
     second = {result.name: result.rows for result in migrate.run_once()}
-    assert second == {"api_cache index columns": 0, "canonical search_text": 0}
+    assert second["api_cache index columns"] == 0
+    assert second["canonical search_text"] == 0
     assert [r for r in canonical_tools.search("cached earlier")][0]["toolName"] == "legacy-tool"
 
 
@@ -76,7 +80,9 @@ def test_schema_setup_does_no_row_level_work(configured_db):
         assert s.query(ApiCache).one().path == ""
         assert s.execute(db.text("SELECT search_text FROM canonical_tool_cache")).scalar() == ""
     # Only the explicit migration does the row work.
-    assert sum(result.rows for result in migrate.run_once()) == 2
+    migrated = {result.name: result.rows for result in migrate.run_once()}
+    assert migrated["api_cache index columns"] == 1
+    assert migrated["canonical search_text"] == 1
 
 
 def test_migrate_refuses_to_run_against_the_unconfigured_default(monkeypatch, capsys):

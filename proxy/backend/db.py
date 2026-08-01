@@ -19,6 +19,19 @@ from backend.models import Base
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
 
+# Per-worker connection budget. Four webservice workers x (2 + 2) = 16, inside
+# ToolsDB's 20-per-account limit with headroom for the scheduled jobs. Most
+# requests are static files or shared-cache hits and never take a connection at
+# all, so a small pool is not the bottleneck; exceeding the account limit would
+# be, and it fails as connection errors rather than as slowness.
+POOL_SIZE_PER_WORKER = 2
+POOL_OVERFLOW_PER_WORKER = 2
+# ToolsDB drops idle connections; recycle below that so a pooled connection is
+# never handed out already dead.
+POOL_RECYCLE_SECONDS = 280
+# Wait briefly for a free connection, then fail loudly rather than pile up.
+POOL_TIMEOUT_SECONDS = 10
+
 
 def _schema_additions() -> dict[str, dict[str, str]]:
     """Columns added after the first Toolforge deployment.
@@ -228,7 +241,20 @@ def configure(url: str) -> None:
         # In-memory SQLite: share the one database across connections/threads.
         _engine = create_engine(url, poolclass=StaticPool, connect_args={"check_same_thread": False})
     else:
-        _engine = create_engine(url, pool_pre_ping=True)
+        # Bounded on purpose. ToolsDB allows 20 connections per tool account, and
+        # SQLAlchemy's defaults (5 pooled + 10 overflow) are per process — with
+        # four webservice workers that is up to 60, so under load the pool would
+        # hand out connections the database then refuses. Keep every worker's
+        # ceiling low enough that the whole webservice fits in the budget with
+        # room left for the scheduled jobs, which connect from their own pods.
+        _engine = create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=POOL_SIZE_PER_WORKER,
+            max_overflow=POOL_OVERFLOW_PER_WORKER,
+            pool_recycle=POOL_RECYCLE_SECONDS,
+            pool_timeout=POOL_TIMEOUT_SECONDS,
+        )
     _session_factory = sessionmaker(bind=_engine, expire_on_commit=False)
 
 

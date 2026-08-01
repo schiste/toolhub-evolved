@@ -13,6 +13,9 @@ git -C "$REPO_DIR" pull --ff-only
 # The python webservice runs ~/www/python/src/app.py (symlinked to proxy/).
 mkdir -p "$HOME/www/python"
 ln -sfn "$REPO_DIR/proxy" "$HOME/www/python/src"
+# uWSGI reads this path; symlinking keeps the deployed settings identical to the
+# reviewed file rather than something edited in place on the server.
+ln -sfn "$REPO_DIR/proxy/uwsgi.ini" "$HOME/www/python/uwsgi.ini"
 
 # Build the production dist/ (best-effort). app.py serves dist/ when present and
 # falls back to public_html/ otherwise, so any failure here just means the raw
