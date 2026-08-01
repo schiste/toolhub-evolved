@@ -118,12 +118,17 @@ class RollingLimit:
 
 
 # Per-user limit for the expensive resolver read (/v1/me/tools/). One call fans
-# out to several upstream Toolhub searches and takes 4-7 seconds, so a client
-# polling it needs no volume at all to occupy every worker — a steady 1.5
+# out to several upstream Toolhub searches and takes seconds, so a client
+# looping on it needs no volume at all to occupy every worker — a steady 1.5
 # requests a second was enough to make the whole site return 503, including
 # static pages. Keyed by user, not address, because every request arrives from
-# the cluster ingress. A person opening the page never approaches this.
-RESOLVER_LIMIT = 6
+# the cluster ingress.
+#
+# This is a backstop, not the fix: the loop that caused that was a client-side
+# render cycle (see scheduleApiRefreshRender in main.js). Set well above what
+# browsing generates — a page visit makes one call — so it only ever catches a
+# runaway.
+RESOLVER_LIMIT = 30
 
 _writes = RollingLimit(WRITE_LIMIT)
 _reads = RollingLimit(READ_LIMIT)

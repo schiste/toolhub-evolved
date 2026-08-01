@@ -224,11 +224,24 @@ export async function attachEndorsements(tools, opts = {}) {
 }
 
 const EVOLVED_SUMMARY_TTL_MS = 5 * 60 * 1000;
+/* How long to leave a not-yet-materialized summary alone. Long enough that a
+   render loop cannot form, short enough that the background builder's results
+   still show up on the next navigation. */
+const EVOLVED_SUMMARY_MISSING_BACKOFF_MS = 60 * 1000;
 const EVOLVED_SUMMARY_BATCH_SIZE = 24;
 const EVOLVED_SUMMARY_IDLE_TIMEOUT_MS = 2200;
 const EVOLVED_SUMMARY_IDLE_FALLBACK_MS = 700;
 /** @type {Map<string, { summary: any, ts: number }>} */
 const evolvedSummaryCache = new Map();
+/* Names the backend has no materialized summary for yet, with the time we last
+   asked. Without this, "not in the response" reads as "still stale" and every
+   render asks again — and because each answer that carries any new summary
+   emits a refresh event, and that event re-renders the whole route, the route's
+   own requests are re-issued too. That is a feedback loop with no damping: it
+   was re-requesting /v1/me/tools/ about 1.5 times a second, which is what
+   saturated the webservice. Backing off makes the loop terminate. */
+/** @type {Map<string, number>} */
+const evolvedSummaryMissing = new Map();
 /** @type {Map<string, Promise<void>>} */
 const evolvedSummaryInflight = new Map();
 /** @type {Set<string>} */
@@ -266,7 +279,13 @@ function refreshEvolvedSummaries(names, opts = {}) {
 			const updated = [];
 			for (const name of batch) {
 				const summary = results[name];
-				if (!summary) continue;
+				if (!summary) {
+					// Not materialized yet. Remember that, so the next render does
+					// not ask again immediately — see evolvedSummaryMissing.
+					evolvedSummaryMissing.set(name, Date.now());
+					continue;
+				}
+				evolvedSummaryMissing.delete(name);
 				evolvedSummaryCache.set(name, { summary, ts: Date.now() });
 				updated.push(name);
 			}
@@ -329,7 +348,12 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 	for (const tool of tools) {
 		const cached = evolvedSummaryCache.get(tool.name);
 		if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
-		if (!cached || now - cached.ts > EVOLVED_SUMMARY_TTL_MS) stale.push(tool.name);
+		if (cached && now - cached.ts <= EVOLVED_SUMMARY_TTL_MS) continue;
+		// A name the backend has already told us it has not materialized is not
+		// worth re-asking on every render; wait out the backoff first.
+		const askedAt = evolvedSummaryMissing.get(tool.name);
+		if (askedAt !== undefined && now - askedAt <= EVOLVED_SUMMARY_MISSING_BACKOFF_MS) continue;
+		stale.push(tool.name);
 	}
 	if (opts.waitForFresh) {
 		await refreshEvolvedSummaries(stale, { emit: false });

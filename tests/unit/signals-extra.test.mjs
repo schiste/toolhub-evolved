@@ -282,3 +282,53 @@ test("rankFitsFirst is identity without context and stable fits-first with conte
 	);
 	signals.setUserContext(null);
 });
+
+test("a summary the backend has not materialized is not re-requested every render", async () => {
+	// The regression this guards: "absent from the response" used to read as
+	// "still stale", so every render asked again. Each answer carrying any new
+	// summary emits a refresh event, the shell re-renders the whole route, and
+	// the route re-issues its own requests — a feedback loop that hammered
+	// /v1/me/tools/ until the webservice had no worker left.
+	const originalRequestIdleCallback = globalThis.requestIdleCallback;
+	globalThis.requestIdleCallback = undefined;
+	vi.useFakeTimers();
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		// Backend has queued a build but has nothing to serve yet.
+		return { ok: true, json: async () => ({ results: {}, cacheMeta: { pending: { status: "pending" } } }) };
+	};
+	try {
+		const tools = [{ name: "pending-tool" }];
+		await signals.attachEvolvedSummaries(tools);
+		await vi.advanceTimersByTimeAsync(700);
+		await Promise.resolve();
+		assert.equal(calls.length, 1, "first render asks once");
+
+		// Several more renders, as the refresh-render cycle would produce.
+		for (let i = 0; i < 5; i += 1) {
+			await signals.attachEvolvedSummaries([{ name: "pending-tool" }]);
+			await vi.advanceTimersByTimeAsync(700);
+			await Promise.resolve();
+		}
+		assert.equal(calls.length, 1, `re-asked ${calls.length - 1}x while pending — the loop is back`);
+
+		// After the backoff the name is eligible again, so a materialized
+		// summary still lands without needing a reload.
+		await vi.advanceTimersByTimeAsync(60_000);
+		globalThis.fetch = async (url) => {
+			calls.push(String(url));
+			return { ok: true, json: async () => ({ results: { "pending-tool": { health: { score: 42 } } } }) };
+		};
+		const tools2 = [{ name: "pending-tool" }];
+		await signals.attachEvolvedSummaries(tools2);
+		await vi.advanceTimersByTimeAsync(700);
+		await Promise.resolve();
+		assert.equal(calls.length, 2, "backoff expired, so it asks again");
+		await signals.attachEvolvedSummaries(tools2);
+		assert.equal(tools2[0].evolvedSummary.health.score, 42);
+	} finally {
+		globalThis.requestIdleCallback = originalRequestIdleCallback;
+		vi.useRealTimers();
+	}
+});

@@ -265,11 +265,29 @@ function hideApiToastSoon(ms = 2400) {
 		if (region) region.innerHTML = "";
 	}, ms);
 }
+/* A data-refresh event repaints the route by re-running render(), which
+   re-issues everything that route fetches — and those fetches can emit refresh
+   events of their own. That is a feedback loop with nothing damping it: one
+   such loop re-requested /v1/me/tools/ about 1.5 times a second until the
+   webservice had no worker left for anything else.
+
+   The emitters are meant to be self-limiting (they only fire when data actually
+   changed), but that is a property every future emitter has to preserve, and it
+   is not checkable from here. So bound it: a refresh repaint is cosmetic — the
+   route already rendered with real data — and dropping some costs nothing.
+   Navigating resets the budget, because that is a fresh route with fresh work. */
+const MAX_REFRESH_RENDERS_PER_ROUTE = 4;
+let refreshRendersThisRoute = 0;
+export function resetRefreshRenderBudget() {
+	refreshRendersThisRoute = 0;
+}
 function scheduleApiRefreshRender() {
 	if ($("#view")?.getAttribute("aria-busy") === "true") {
 		pendingApiRefreshRender = true;
 		return;
 	}
+	if (refreshRendersThisRoute >= MAX_REFRESH_RENDERS_PER_ROUTE) return;
+	refreshRendersThisRoute += 1;
 	if (apiRefreshRenderTimer) clearTimeout(apiRefreshRenderTimer);
 	apiRefreshRenderTimer = setTimeout(() => {
 		apiRefreshRenderTimer = null;
@@ -464,8 +482,14 @@ document.addEventListener("click", (e) => {
 	e.preventDefault();
 	navigateTo(url.pathname + url.search);
 });
-window.addEventListener("popstate", render);
-window.addEventListener("toolhub:navigate", render);
+// Real navigation only — a refresh repaint calls render() directly and must not
+// top its own budget back up, which would defeat the cap.
+const renderForNavigation = () => {
+	resetRefreshRenderBudget();
+	render();
+};
+window.addEventListener("popstate", renderForNavigation);
+window.addEventListener("toolhub:navigate", renderForNavigation);
 normalizeLegacyHashRoute();
 Promise.resolve(render()).finally(() => {
 	if (!observedFirstContentPaint) {
