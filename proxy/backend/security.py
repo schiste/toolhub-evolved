@@ -117,14 +117,29 @@ class RollingLimit:
             return False
 
 
+# Per-user limit for the expensive resolver read (/v1/me/tools/). One call fans
+# out to several upstream Toolhub searches and takes 4-7 seconds, so a client
+# polling it needs no volume at all to occupy every worker — a steady 1.5
+# requests a second was enough to make the whole site return 503, including
+# static pages. Keyed by user, not address, because every request arrives from
+# the cluster ingress. A person opening the page never approaches this.
+RESOLVER_LIMIT = 6
+
 _writes = RollingLimit(WRITE_LIMIT)
 _reads = RollingLimit(READ_LIMIT)
+_resolver = RollingLimit(RESOLVER_LIMIT)
 
 
 def clear_rate_limits() -> None:
     """Reset the in-memory counters (tests; harmless in prod restarts)."""
     _writes.clear()
     _reads.clear()
+    _resolver.clear()
+
+
+def resolver_rate_limited(user_id: int | None) -> bool:
+    """Record one expensive resolver read and report whether the user is over the limit."""
+    return _resolver.exceeded(user_id if user_id is not None else "unknown")
 
 
 def read_rate_limited(client_addr: str | None) -> bool:

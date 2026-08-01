@@ -2423,6 +2423,15 @@ def v1_me_tools() -> Response:
     """Resolve Toolhub tools that may belong to the signed-in Toolhub user."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
+    # This read fans out to several upstream Toolhub searches and takes seconds,
+    # so a client polling it saturates the workers on its own and every other
+    # route — static pages included — starts returning 503. Throttle it per user.
+    if security.resolver_rate_limited(uid):
+        resp = jsonify({"error": "rate limit exceeded"})
+        resp.status_code = 429
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Retry-After"] = str(int(security.WRITE_WINDOW_SECONDS))
+        return resp
     user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
 
     with db.session_scope() as s:
