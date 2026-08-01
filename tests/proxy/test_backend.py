@@ -2304,11 +2304,47 @@ def test_graph_payload_preserves_multi_value_memberships_and_counts(monkeypatch)
     ]
 
 
+def test_graph_payload_splits_technology_values_and_extracts_platforms(monkeypatch):
+    records = [
+        {
+            "toolName": "mixed-stack",
+            "record": {
+                "name": "mixed-stack",
+                "title": "Mixed stack",
+                "keywords": ["images"],
+                "technology_used": ["Toolforge", "Deno, Kubernetes, React, Preact"],
+            },
+        },
+        {
+            "toolName": "php-stack",
+            "record": {
+                "name": "php-stack",
+                "title": "PHP stack",
+                "keywords": ["images"],
+                "technology_used": ["toolforge", "PHP"],
+            },
+        },
+    ]
+    monkeypatch.setattr(graph_payload.canonical_tools, "records", lambda limit: records)
+
+    technology = graph_payload.build(group_by="technology")
+    platform = graph_payload.build(group_by="platform")
+
+    assert [group["label"] for group in technology["groupMeta"]] == ["Deno", "PHP", "Preact", "React"]
+    assert platform["groupMeta"] == [
+        {"id": 0, "label": "Toolforge", "size": 2},
+        {"id": 1, "label": "Kubernetes", "size": 1},
+    ]
+    coverage = {item["id"]: item for item in platform["groupingMeta"]}
+    assert coverage["technology"]["enabled"] is True
+    assert coverage["platform"]["enabled"] is True
+
+
 def test_graph_payload_reports_grouping_coverage(monkeypatch):
     records = []
     for index in range(20):
         record = {"name": f"tool-{index}", "title": f"Tool {index}", "keywords": ["images"]}
-        if index < 12:
+        if index < 2:
             record["for_wikis"] = ["commons.wikimedia.org" if index % 2 else "www.wikidata.org"]
         records.append({"toolName": record["name"], "record": record})
     monkeypatch.setattr(graph_payload.canonical_tools, "records", lambda limit: records)
@@ -2319,9 +2355,9 @@ def test_graph_payload_reports_grouping_coverage(monkeypatch):
     assert coverage["similarity"]["enabled"] is True
     assert coverage["project"] == {
         "id": "project",
-        "covered": 12,
+        "covered": 2,
         "total": 20,
-        "coverage": 0.6,
+        "coverage": 0.1,
         "distinctValues": 2,
         "enabled": True,
     }
@@ -2342,7 +2378,7 @@ def test_graph_payload_shared_cache_survives_worker_memory_reset(client, monkeyp
 
 
 def test_graph_payload_cache_key_is_schema_versioned():
-    assert graph_payload._cache_url(250, "project").endswith("limit=250&groupBy=project&version=2")
+    assert graph_payload._cache_url(250, "project").endswith("limit=250&groupBy=project&version=3")
 
 
 def test_graph_payload_serves_stale_shared_data_while_refreshing(client, monkeypatch):

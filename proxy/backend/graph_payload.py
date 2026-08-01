@@ -22,17 +22,16 @@ GRAPH_SOURCE_RECORD_LIMIT = GRAPH_NODE_LIMITS[-1]
 COMMUNITY_LIMIT = 8
 KNN_EDGES_PER_NODE = 4
 MAX_GROUPS = 24
-MIN_GROUP_COVERAGE_COUNT = 10
-MIN_GROUP_COVERAGE_RATIO = 0.1
+MIN_GROUP_COVERAGE_COUNT = 2
 MIN_GROUP_DISTINCT_VALUES = 2
 SPARSE_EDGE_NODE_LIMIT = 1000
 SPARSE_CANDIDATE_LIMIT = 160
 GRAPH_CACHE_MAX_ENTRIES = 8
-GRAPH_CACHE_VERSION = 2
+GRAPH_CACHE_VERSION = 3
 GRAPH_FRESH_SECONDS = 6 * 60 * 60
 GRAPH_STALE_SECONDS = 24 * 60 * 60
 GRAPH_MEMORY_FRESH_SECONDS = 5 * 60
-GROUP_BY_VALUES = ("similarity", "language", "project", "task", "use_case", "tool_type", "technology")
+GROUP_BY_VALUES = ("similarity", "language", "project", "task", "use_case", "tool_type", "technology", "platform")
 GROUP_BY_FIELDS = {
     "language": "available_ui_languages",
     "project": "for_wikis",
@@ -40,6 +39,15 @@ GROUP_BY_FIELDS = {
     "use_case": "audiences",
     "tool_type": "tool_type",
     "technology": "technology_used",
+    "platform": "technology_used",
+}
+PLATFORM_ALIASES = {
+    "toolforge": "Toolforge",
+    "kubernetes": "Kubernetes",
+    "paws": "PAWS",
+    "cloud vps": "Wikimedia Cloud VPS",
+    "wikimedia cloud vps": "Wikimedia Cloud VPS",
+    "wikimedia cloud services": "Wikimedia Cloud Services",
 }
 TERM_WEIGHTS = {
     "task": 1.4,
@@ -50,6 +58,7 @@ TERM_WEIGHTS = {
 }
 
 _SPLIT_RE = re.compile(r"[\s_:/.-]+")
+_FACET_LIST_RE = re.compile(r"\s*[,;]\s*")
 _CACHE_LOCK = Lock()
 _CACHE: dict[str, Any] = {}
 _REFRESH_LOCK = Lock()
@@ -285,6 +294,23 @@ def _facet_value(value: str) -> tuple[str, str] | None:
     return clean.casefold(), _group_label(clean)
 
 
+def _technology_parts(record: dict[str, Any]) -> list[str]:
+    """Normalize free-form Toolhub technology entries without changing canonical records."""
+    parts: list[str] = []
+    for raw in _string_list(record.get("technology_used")):
+        parts.extend(part for part in _FACET_LIST_RE.split(raw) if part)
+    return parts
+
+
+def _facet_strings(record: dict[str, Any], group_by: str) -> list[str]:
+    if group_by not in {"technology", "platform"}:
+        return _string_list(record.get(GROUP_BY_FIELDS[group_by]))
+    parts = _technology_parts(record)
+    if group_by == "platform":
+        return [PLATFORM_ALIASES[part.casefold()] for part in parts if part.casefold() in PLATFORM_ALIASES]
+    return [part for part in parts if part.casefold() not in PLATFORM_ALIASES]
+
+
 def _group_data(
     selected: list[dict[str, Any]],
     group_by: str,
@@ -301,12 +327,11 @@ def _group_data(
         values = {item["name"]: [primary[item["name"]]] for item in selected}
         return primary, meta, values
 
-    field = GROUP_BY_FIELDS[group_by]
     counts: Counter[str] = Counter()
     labels: dict[str, str] = {}
     values_by_name: dict[str, list[str]] = {}
     for item in selected:
-        normalized = [_facet_value(value) for value in _string_list(item["record"].get(field))]
+        normalized = [_facet_value(value) for value in _facet_strings(item["record"], group_by)]
         values = sorted({value[0] for value in normalized if value is not None})
         for value in normalized:
             if value is not None:
@@ -347,11 +372,11 @@ def _grouping_coverage(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "enabled": True,
         }
     ]
-    for group_by, field in GROUP_BY_FIELDS.items():
+    for group_by in GROUP_BY_FIELDS:
         values_by_name = {
             item["name"]: {
                 normalized[0]
-                for value in _string_list(item["record"].get(field))
+                for value in _facet_strings(item["record"], group_by)
                 if (normalized := _facet_value(value)) is not None
             }
             for item in selected
@@ -366,9 +391,7 @@ def _grouping_coverage(selected: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "total": total,
                 "coverage": round(coverage, 4),
                 "distinctValues": distinct,
-                "enabled": covered >= MIN_GROUP_COVERAGE_COUNT
-                and coverage >= MIN_GROUP_COVERAGE_RATIO
-                and distinct >= MIN_GROUP_DISTINCT_VALUES,
+                "enabled": covered >= MIN_GROUP_COVERAGE_COUNT and distinct >= MIN_GROUP_DISTINCT_VALUES,
             }
         )
     return metadata
