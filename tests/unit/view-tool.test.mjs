@@ -733,15 +733,19 @@ test("viewTool renders real Evolved signals, approved media, thanks, and media s
 		)
 	);
 	const r = await tool.viewTool("sig");
-	assert.ok(r.html.includes("2 thanks on Evolved"));
-	assert.ok(r.html.includes("5 Evolved interactions in 30 days"));
-	assert.ok(r.html.includes("Evolved health: healthy"));
-	assert.ok(r.html.includes("Screenshots · Evolved data"));
-	assert.ok(r.html.includes("Screenshot · Evolved data</figcaption>"));
-	assert.ok(r.html.includes("Signal screenshot"));
-	assert.ok(r.html.includes("Signal screenshot · CC-BY-SA-4.0 · Evolved data"));
+	assert.ok(r.html.includes("data-evolved-signals-slot"));
+	assert.ok(r.html.includes("data-media-slot"));
 	document.body.innerHTML = r.html;
 	r.mount();
+	await tick();
+	await tick();
+	assert.ok(document.body.innerHTML.includes("2 thanks on Evolved"));
+	assert.ok(document.body.innerHTML.includes("5 Evolved interactions in 30 days"));
+	assert.ok(document.body.innerHTML.includes("Evolved health: healthy"));
+	assert.ok(document.body.innerHTML.includes("Screenshots · Evolved data"));
+	assert.ok(document.body.innerHTML.includes("Screenshot · Evolved data</figcaption>"));
+	assert.ok(document.body.innerHTML.includes("Signal screenshot"));
+	assert.ok(document.body.innerHTML.includes("Signal screenshot · CC-BY-SA-4.0 · Evolved data"));
 	assert.deepEqual(h.serverWrite.mock.calls[0], ["POST", "/v1/tools/sig/events/", { eventType: "view" }]);
 	document.querySelector("[data-thanks]").click();
 	await tick();
@@ -831,18 +835,39 @@ test("viewTool keeps rendering when Evolved signal and media reads fail", async 
 });
 
 test("viewTool renders all local sync errors", async () => {
+	setServerUser("Writer");
 	h.getTool.mockResolvedValue(
 		toolFixture("sync-errors", {
 			title: "Sync Errors",
 			lastError: "create failed",
 			editLastError: "edit failed",
-			annotationLastError: "annotation failed"
+			annotationLastError: "annotation failed",
+			viewerOwned: true,
+			editViewerOwned: true,
+			annotationViewerOwned: true
 		})
 	);
 	const r = await tool.viewTool("sync-errors");
 	assert.ok(r.html.includes("Toolhub response: create failed"));
 	assert.ok(r.html.includes("Toolhub response: edit failed"));
 	assert.ok(r.html.includes("Toolhub response: annotation failed"));
+});
+
+test("viewTool keeps foreign sync diagnostics private and shows a reconciliation notice", async () => {
+	setServerUser("Reader");
+	h.getTool.mockResolvedValue(
+		toolFixture("foreign-sync", {
+			title: "Foreign Sync",
+			edited: true,
+			editSyncStatus: "local_fallback",
+			editLastError: "private permission response",
+			editViewerOwned: false
+		})
+	);
+	const r = await tool.viewTool("foreign-sync");
+	assert.ok(r.html.includes("Some tool data needs to be reconciled with official Toolhub."));
+	assert.ok(!r.html.includes("private permission response"));
+	assert.ok(!r.html.includes("Toolhub response:"));
 });
 
 test("viewTool thanks button removes an existing thank", async () => {
@@ -855,6 +880,8 @@ test("viewTool thanks button removes an existing thank", async () => {
 	const r = await tool.viewTool("thanked");
 	document.body.innerHTML = r.html;
 	r.mount();
+	await tick();
+	await tick();
 	document.querySelector("[data-thanks]").click();
 	await tick();
 	assert.deepEqual(h.serverWrite.mock.calls[1], ["DELETE", "/v1/tools/thanked/thanks/"]);
@@ -870,6 +897,8 @@ test("viewTool reports thanks and media write failures", async () => {
 	const r = await tool.viewTool("writefail");
 	document.body.innerHTML = r.html;
 	r.mount();
+	await tick();
+	await tick();
 	document.querySelector("[data-thanks]").click();
 	await tick();
 	assert.equal(document.querySelector("[data-signals-result]").className, "at__result at__result--err");

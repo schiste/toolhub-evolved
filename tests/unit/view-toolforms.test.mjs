@@ -428,7 +428,7 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 			<h2 class="le__h2">Core information</h2>
 			<div class="sync-panel sync-panel--local-draft">
 		<div class="sync-panel__head"><strong>Core field write status</strong> <span class="sync-badge sync-badge--local-draft">Saved locally</span></div>
-		
+		<div class="sync-panel__body"><p class="sync-panel__guidance"><strong>What this means:</strong> This tool is managed by a crawler. Update its public toolinfo.json source and wait for the next crawl; generic core-field edits are not accepted by official Toolhub.</p></div>
 		<div class="sync-panel__actions"><button class="btn btn--danger btn--sm" type="button" data-tf-delete><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="m16 8-1.087 12H5.087L4 8h2l.913 10h6.174L14 8zM13 4h5v2H2V4h5V0h6zM9 4h2V2H9z"/></svg> Discard local core fields</button></div>
 	</div>
 			<p class="le__ro">Name: <code>crawled</code><span class="sync-field" aria-label="Name provenance"><span class="sync-field__name">Name</span><span class="sync-badge sync-badge--local-draft">Saved locally</span></span></p>
@@ -1479,7 +1479,9 @@ test("mount addtools: sparse Toolhub fallback keeps the submitted URL with unkno
 		undefined,
 		{ source: "local", syncStatus: "local_fallback" }
 	]);
-	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("Unknown Toolhub error"));
+	assert.ok(
+		document.querySelector("[data-ingest-result]").textContent.includes("The request could not be completed")
+	);
 });
 
 test("mount addtools: backend transport failure does not create a local URL", async () => {
@@ -1652,7 +1654,9 @@ test("mount addtools: sparse URL retry fallback shows an unknown-error message",
 		undefined,
 		{ source: "local", syncStatus: "local_fallback", localId: 13 }
 	]);
-	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("Unknown Toolhub error"));
+	assert.ok(
+		document.querySelector("[data-ingest-result]").textContent.includes("The request could not be completed")
+	);
 });
 
 test("mount addtools: URL retry transport failure keeps the fallback row", async () => {
@@ -1703,23 +1707,8 @@ test("mount addtools: removing a url updates the list", () => {
 	assert.ok(document.querySelector("[data-url-list]").innerHTML.includes("No URLs registered."));
 });
 
-test("mount addtools: removing an official url asks Toolhub to delete it", () => {
+test("mount addtools: removing an official url asks Toolhub to delete it", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
-	h.crawlerUrls.mockReturnValue([{ url: "https://x.example/toolinfo.json", id: 12 }]);
-	const r = tf.viewAddTools();
-	document.body.innerHTML = r.html;
-	r.mount();
-	h.crawlerUrls.mockReturnValue([]);
-	document
-		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
-		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/crawler/urls/12/"]);
-	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
-});
-
-test("mount addtools: failed official url delete still removes the local url", async () => {
-	h.officialWriteAvailable.mockReturnValue(true);
-	h.officialWrite.mockRejectedValue(new Error("delete failed"));
 	h.crawlerUrls.mockReturnValue([{ url: "https://x.example/toolinfo.json", id: 12 }]);
 	const r = tf.viewAddTools();
 	document.body.innerHTML = r.html;
@@ -1733,7 +1722,24 @@ test("mount addtools: failed official url delete still removes the local url", a
 	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
 });
 
-test("mount addtools: removing a local fallback url discards it in Evolved", async () => {
+test("mount addtools: failed official url delete keeps the local url and explains the failure", async () => {
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.officialWrite.mockRejectedValue(new Error("delete failed"));
+	h.crawlerUrls.mockReturnValue([{ url: "https://x.example/toolinfo.json", id: 12 }]);
+	const r = tf.viewAddTools();
+	document.body.innerHTML = r.html;
+	r.mount();
+	h.crawlerUrls.mockReturnValue([]);
+	document
+		.querySelector('[data-url-rm="https://x.example/toolinfo.json"]')
+		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/crawler/urls/12/"]);
+	assert.equal(h.crawlerUrlDelete.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("delete failed"));
+});
+
+test("mount addtools: failed local fallback delete keeps the local url", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
 	h.officialWrite.mockRejectedValue(new Error("discard failed"));
 	h.crawlerUrls.mockReturnValue([
@@ -1748,7 +1754,8 @@ test("mount addtools: removing a local fallback url discards it in Evolved", asy
 		.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/crawler/urls/13/fallback/"]);
-	assert.deepEqual(h.crawlerUrlDelete.mock.calls[0], ["https://x.example/toolinfo.json"]);
+	assert.equal(h.crawlerUrlDelete.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-ingest-result]").textContent.includes("discard failed"));
 });
 
 test("mount addtools: url-list click outside a remove button is a no-op", () => {
@@ -1939,7 +1946,9 @@ test("mount annotations: sparse Toolhub fallback shows an unknown-error message"
 	confirmChangeReview();
 	await tick();
 	assert.equal(h.demoStoreSet.mock.calls[0][0], DEMO_KEYS.toolAnnos);
-	assert.ok(document.querySelector("[data-official-result]").textContent.includes("Unknown Toolhub error"));
+	assert.ok(
+		document.querySelector("[data-official-result]").textContent.includes("The request could not be completed")
+	);
 });
 
 test("mount annotations: backend transport failure shows an error without local fallback", async () => {

@@ -4,7 +4,7 @@ import { relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import {
 	INDEX,
 	apiGet,
-	backendErrorMessage,
+	backendErrorExplanation,
 	backendGetJson,
 	clearApiCache,
 	getTool,
@@ -14,7 +14,7 @@ import { renderMarkdown } from "../lib/core/markdown.js";
 import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
 import { attachEvolvedSummaries, completeness, endorsementOf, listMemberships } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
-import { clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
+import { SYNC_STATUS, clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
 import { authorHref, navigateTo, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
@@ -354,28 +354,94 @@ function mediaPanel(media) {
 	</div>`;
 }
 
+/** @param {string} name */
+function bindOptionalToolPanelEvents(name) {
+	document.querySelector("[data-thanks]")?.addEventListener("click", async (event) => {
+		const btn = /** @type {HTMLElement} */ (event.currentTarget);
+		const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-signals-result]"));
+		const thanked = btn.getAttribute("data-thanked") === "1";
+		try {
+			await serverWrite(thanked ? "DELETE" : "POST", `/v1/tools/${encodeURIComponent(name)}/thanks/`);
+			btn.setAttribute("data-thanked", thanked ? "0" : "1");
+			btn.textContent = thanked ? t("tool.thankTool", "Thank this tool") : t("tool.thanked", "Thanks sent");
+			if (out) {
+				out.className = "at__result at__result--ok";
+				out.textContent = thanked
+					? t("tool.thanksRemoved", "Thanks removed.")
+					: t("tool.thanksSaved", "Thanks saved.");
+			}
+		} catch {
+			if (out) {
+				out.className = "at__result at__result--err";
+				out.textContent = t("tool.thanksFailed", "Could not update thanks.");
+			}
+		}
+	});
+	document.querySelector("[data-media-form]")?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const form = /** @type {HTMLElement} */ (event.currentTarget);
+		/** @param {string} selector */
+		const value = (selector) =>
+			/** @type {HTMLInputElement | null} */ (form.querySelector(selector))?.value.trim() || "";
+		const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-media-result]"));
+		try {
+			await serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/media/`, {
+				url: value("[data-media-url]"),
+				license: value("[data-media-license]"),
+				source: value("[data-media-source]")
+			});
+			if (out) {
+				out.className = "at__result at__result--ok";
+				out.textContent = t("tool.mediaSubmitted", "Screenshot submitted for review.");
+			}
+			form.querySelectorAll("input").forEach((input) => {
+				/** @type {HTMLInputElement} */ (input).value = "";
+			});
+		} catch {
+			if (out) {
+				out.className = "at__result at__result--err";
+				out.textContent = t("tool.mediaFailed", "Could not submit screenshot.");
+			}
+		}
+	});
+}
+
 /**
  * @param {Tool & { edited?: boolean, annotated?: boolean }} tool
  * @param {string} name
  */
 function toolSyncUi(tool, name) {
+	const coreViewerOwned = tool.viewerOwned !== false;
+	const editViewerOwned = tool.editViewerOwned !== false;
+	const annotationViewerOwned = tool.annotationViewerOwned !== false;
 	const coreMeta = {
 		syncStatus: tool.syncStatus,
 		lastError: tool.lastError,
 		validationErrors: tool.validationErrors,
-		reviewStatus: tool.reviewStatus
+		reviewStatus: tool.reviewStatus,
+		toolhubResponse: tool.toolhubResponse,
+		toolhubStatus: tool.toolhubStatus,
+		toolhubCode: tool.toolhubCode,
+		origin: tool.origin
 	};
 	const editMeta = {
 		syncStatus: tool.editSyncStatus,
 		lastError: tool.editLastError,
 		validationErrors: tool.editValidationErrors,
-		reviewStatus: tool.editReviewStatus
+		reviewStatus: tool.editReviewStatus,
+		toolhubResponse: tool.editToolhubResponse,
+		toolhubStatus: tool.editToolhubStatus,
+		toolhubCode: tool.editToolhubCode,
+		origin: tool.origin
 	};
 	const annotationMeta = {
 		syncStatus: tool.annotationSyncStatus,
 		lastError: tool.annotationLastError,
 		validationErrors: tool.annotationValidationErrors,
-		reviewStatus: tool.annotationReviewStatus
+		reviewStatus: tool.annotationReviewStatus,
+		toolhubResponse: tool.annotationToolhubResponse,
+		toolhubStatus: tool.annotationToolhubStatus,
+		toolhubCode: tool.annotationToolhubCode
 	};
 	const hasCoreSyncPanel =
 		isNewTool(name) || Boolean(tool.lastError || tool.validationErrors?.length || tool.reviewStatus);
@@ -385,13 +451,36 @@ function toolSyncUi(tool, name) {
 	const hasAnnotationSyncPanel =
 		Boolean(tool.annotated) ||
 		Boolean(tool.annotationLastError || tool.annotationValidationErrors?.length || tool.annotationReviewStatus);
+	const needsReconciliation = (meta) =>
+		[SYNC_STATUS.localFallback, SYNC_STATUS.syncError].includes(String(meta?.syncStatus || "")) ||
+		Boolean(meta?.lastError || meta?.validationErrors?.length);
+	const hiddenReconciliation =
+		(hasCoreSyncPanel && !coreViewerOwned && needsReconciliation({ ...coreMeta, syncStatus: tool.syncStatus })) ||
+		(hasEditSyncPanel &&
+			!editViewerOwned &&
+			needsReconciliation({
+				syncStatus: tool.editSyncStatus,
+				lastError: tool.editLastError,
+				validationErrors: tool.editValidationErrors
+			})) ||
+		(hasAnnotationSyncPanel &&
+			!annotationViewerOwned &&
+			needsReconciliation({
+				syncStatus: tool.annotationSyncStatus,
+				lastError: tool.annotationLastError,
+				validationErrors: tool.annotationValidationErrors
+			}));
 	const provTags = [
 		wikidataChip(tool.wikidata),
 		...(signedIn()
 			? [
-					isNewTool(name) ? fieldProvenance(t("tool.coreFields", "Core fields"), coreMeta) : "",
-					tool.edited ? fieldProvenance(t("tool.coreFields", "Core fields"), editMeta) : "",
-					tool.annotated
+					isNewTool(name) && coreViewerOwned
+						? fieldProvenance(t("tool.coreFields", "Core fields"), coreMeta)
+						: "",
+					tool.edited && editViewerOwned
+						? fieldProvenance(t("tool.coreFields", "Core fields"), editMeta)
+						: "",
+					tool.annotated && annotationViewerOwned
 						? fieldProvenance(t("tool.communityAnnotations", "Community annotations"), annotationMeta)
 						: ""
 				]
@@ -400,19 +489,31 @@ function toolSyncUi(tool, name) {
 		.filter(Boolean)
 		.join(" ");
 	const syncPanels = [
-		hasCoreSyncPanel
-			? syncStatusPanel(coreMeta, { title: t("tool.coreWriteStatus", "Core field write status") })
+		hasCoreSyncPanel && coreViewerOwned && signedIn()
+			? syncStatusPanel(coreMeta, {
+					title: t("tool.coreWriteStatus", "Core field write status"),
+					guidance:
+						tool.origin && tool.origin !== "api"
+							? t(
+									"syncStatus.crawlerOwnedGuidance",
+									"This tool is managed by a crawler. Update its public toolinfo.json source and wait for the next crawl; generic core-field edits are not accepted by official Toolhub."
+								)
+							: ""
+				})
 			: "",
-		hasEditSyncPanel
+		hasEditSyncPanel && editViewerOwned && signedIn()
 			? syncStatusPanel(editMeta, { title: t("tool.coreWriteStatus", "Core field write status") })
 			: "",
-		hasAnnotationSyncPanel
+		hasAnnotationSyncPanel && annotationViewerOwned && signedIn()
 			? syncStatusPanel(annotationMeta, { title: t("tool.annotationWriteStatus", "Annotation write status") })
 			: ""
 	]
 		.filter(Boolean)
 		.join("");
-	return { provTags, syncPanels };
+	const reconciliationNotice = hiddenReconciliation
+		? `<p class="sync-reconciliation" role="status">${t("syncStatus.reconciliationNotice", "Some tool data needs to be reconciled with official Toolhub.")}</p>`
+		: "";
+	return { provTags, syncPanels, reconciliationNotice };
 }
 
 /**
@@ -463,11 +564,10 @@ export async function viewTool(name) {
 		);
 	if (!tool) return viewToolNotFound(name);
 	const resolvedTool = tool;
-	const [evolvedSignals, evolvedMedia] = await Promise.all([
-		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/signals/`).catch(() => null),
-		backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
-	]);
-	await attachEvolvedSummaries([tool], { waitForFresh: true });
+	// Signals, media, and fresh summaries are additive Evolved data. Keep the
+	// canonical tool page render independent from their availability and let
+	// mount() hydrate their dedicated slots after the primary content exists.
+	await attachEvolvedSummaries([tool]);
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
 	setIssueContext(() => ({
 		kind: "tool",
@@ -481,8 +581,7 @@ export async function viewTool(name) {
 		experimental: Boolean(tool.experimental),
 		health: evolvedSummary?.health?.score ?? null
 	}));
-	const mediaRows = Array.isArray(evolvedMedia?.results) ? evolvedMedia.results : [];
-	const { provTags, syncPanels } = toolSyncUi(tool, name);
+	const { provTags, syncPanels, reconciliationNotice } = toolSyncUi(tool, name);
 	const tags = keywordTags(tool, { empty: "—" });
 	const authors = authorInlineList(tool);
 	const openToolUrl = safeHttpUrl(tool.url);
@@ -524,6 +623,7 @@ export async function viewTool(name) {
 				${replacementNote(tool)}
 				${provTags ? `<div class="toolpage__prov">${provTags}</div>` : ""}
 				${syncPanels}
+				${reconciliationNotice}
 				<div class="toolpage__glance">${glance}</div>
 				<div class="toolpage__row">
 					${realBadge}
@@ -580,14 +680,26 @@ export async function viewTool(name) {
 					${completenessMeter(complete)}
 					${completenessList(complete)}
 				</div>
-				${evolvedSignalsPanel(evolvedSignals)}
-				${mediaPanel(mediaRows)}
+				<div data-evolved-signals-slot></div>
+				<div data-media-slot></div>
 			</aside>
 		</div>
 	</div>`;
 	function mount() {
 		const mountedPath = window.location.pathname;
 		const stillCurrentTool = () => window.location.pathname === mountedPath;
+		Promise.all([
+			backendGetJson(`/v1/tools/${encodeURIComponent(name)}/signals/`).catch(() => null),
+			backendGetJson(`/v1/tools/${encodeURIComponent(name)}/media/`).catch(() => null)
+		]).then(([signals, media]) => {
+			if (!stillCurrentTool()) return;
+			const signalsSlot = document.querySelector("[data-evolved-signals-slot]");
+			if (signalsSlot) signalsSlot.outerHTML = evolvedSignalsPanel(signals);
+			const mediaSlot = document.querySelector("[data-media-slot]");
+			const mediaRows = Array.isArray(media?.results) ? media.results : [];
+			if (mediaSlot) mediaSlot.outerHTML = mediaPanel(mediaRows);
+			bindOptionalToolPanelEvents(name);
+		});
 		if (signedIn()) {
 			serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/events/`, { eventType: "view" }).catch(() => {});
 		}
@@ -645,57 +757,9 @@ export async function viewTool(name) {
 						"tool.officialDeleteFailed",
 						"Official Toolhub did not delete the tool: {msg}",
 						{
-							msg: backendErrorMessage(error)
+							msg: backendErrorExplanation(error)
 						}
 					);
-				}
-			}
-		});
-		document.querySelector("[data-thanks]")?.addEventListener("click", async (event) => {
-			const btn = /** @type {HTMLElement} */ (event.currentTarget);
-			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-signals-result]"));
-			const thanked = btn.getAttribute("data-thanked") === "1";
-			try {
-				await serverWrite(thanked ? "DELETE" : "POST", `/v1/tools/${encodeURIComponent(name)}/thanks/`);
-				btn.setAttribute("data-thanked", thanked ? "0" : "1");
-				btn.textContent = thanked ? t("tool.thankTool", "Thank this tool") : t("tool.thanked", "Thanks sent");
-				if (out) {
-					out.className = "at__result at__result--ok";
-					out.textContent = thanked
-						? t("tool.thanksRemoved", "Thanks removed.")
-						: t("tool.thanksSaved", "Thanks saved.");
-				}
-			} catch {
-				if (out) {
-					out.className = "at__result at__result--err";
-					out.textContent = t("tool.thanksFailed", "Could not update thanks.");
-				}
-			}
-		});
-		document.querySelector("[data-media-form]")?.addEventListener("submit", async (event) => {
-			event.preventDefault();
-			const form = /** @type {HTMLElement} */ (event.currentTarget);
-			/** @param {string} selector */
-			const value = (selector) =>
-				/** @type {HTMLInputElement | null} */ (form.querySelector(selector))?.value.trim() || "";
-			const out = /** @type {HTMLElement | null} */ (document.querySelector("[data-media-result]"));
-			try {
-				await serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/media/`, {
-					url: value("[data-media-url]"),
-					license: value("[data-media-license]"),
-					source: value("[data-media-source]")
-				});
-				if (out) {
-					out.className = "at__result at__result--ok";
-					out.textContent = t("tool.mediaSubmitted", "Screenshot submitted for review.");
-				}
-				form.querySelectorAll("input").forEach((input) => {
-					/** @type {HTMLInputElement} */ (input).value = "";
-				});
-			} catch {
-				if (out) {
-					out.className = "at__result at__result--err";
-					out.textContent = t("tool.mediaFailed", "Could not submit screenshot.");
 				}
 			}
 		});

@@ -2,7 +2,7 @@
 import { $, $input, dirAttrs, esc, isHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { countLabel, t } from "../lib/core/i18n.js";
 import {
-	backendErrorMessage,
+	backendErrorExplanation,
 	backendErrorBody,
 	backendGetJson,
 	clearApiCache,
@@ -361,7 +361,11 @@ function toolCoreMeta(cur, name, editing, existingOfficialTool) {
 			syncStatus: cur.syncStatus || SYNC_STATUS.localDraft,
 			lastError: cur.lastError,
 			validationErrors: cur.validationErrors,
-			reviewStatus: cur.reviewStatus
+			reviewStatus: cur.reviewStatus,
+			toolhubResponse: cur.toolhubResponse,
+			toolhubStatus: cur.toolhubStatus,
+			toolhubCode: cur.toolhubCode,
+			origin: cur.origin
 		};
 	}
 	const edit = name ? toolEditsMap()[name] : null;
@@ -370,7 +374,11 @@ function toolCoreMeta(cur, name, editing, existingOfficialTool) {
 			syncStatus: cur.editSyncStatus || edit?.syncStatus || SYNC_STATUS.localDraft,
 			lastError: cur.editLastError || edit?.lastError,
 			validationErrors: cur.editValidationErrors || edit?.validationErrors,
-			reviewStatus: cur.editReviewStatus || edit?.reviewStatus
+			reviewStatus: cur.editReviewStatus || edit?.reviewStatus,
+			toolhubResponse: cur.editToolhubResponse || edit?.toolhubResponse,
+			toolhubStatus: cur.editToolhubStatus || edit?.toolhubStatus,
+			toolhubCode: cur.editToolhubCode || edit?.toolhubCode,
+			origin: cur.origin
 		};
 	}
 	return existingOfficialTool ? { syncStatus: SYNC_STATUS.official } : null;
@@ -457,7 +465,7 @@ function saveAnnotationFallbackResult(name, anno, res, out) {
 	out.textContent = t(
 		"toolforms.officialWriteFailed",
 		"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-		{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+		{ msg: backendErrorExplanation(res) }
 	);
 }
 
@@ -485,7 +493,7 @@ function setupToolCoreRetry(name) {
 				out.textContent = t(
 					"toolforms.officialWriteFailed",
 					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-					{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+					{ msg: backendErrorExplanation(res) }
 				);
 				return;
 			}
@@ -498,7 +506,7 @@ function setupToolCoreRetry(name) {
 				"toolforms.officialWriteFailedNoDraft",
 				"Official Toolhub did not accept the write: {msg}",
 				{
-					msg: backendErrorMessage(error)
+					msg: backendErrorExplanation(error)
 				}
 			);
 		}
@@ -530,7 +538,7 @@ function setupAnnotationRetry(name) {
 				"toolforms.officialWriteFailedNoDraft",
 				"Official Toolhub did not accept the write: {msg}",
 				{
-					msg: backendErrorMessage(error)
+					msg: backendErrorExplanation(error)
 				}
 			);
 		}
@@ -597,7 +605,7 @@ function toolhubSignInRequiredMessage() {
  * @param {Record<string, string[]>} [fieldMap]
  */
 function showOfficialWriteFailure(out, error, fieldMap) {
-	const msg = backendErrorMessage(error);
+	const msg = backendErrorExplanation(error);
 	if (fieldMap) applyBackendFieldErrors(error, fieldMap);
 	out.className = "at__result at__result--err";
 	out.textContent = t("toolforms.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
@@ -782,7 +790,7 @@ function setupToolCoreSubmit(form, { editing, name, current, changeReview }) {
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
 						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+						{ msg: backendErrorExplanation(res) }
 					);
 					return;
 				}
@@ -838,7 +846,7 @@ export async function viewToolForm(name) {
 	const coreMeta = toolCoreMeta(cur, name, editing, existingOfficialTool);
 	const coreState = coreMeta ? syncState(coreMeta) : null;
 	const coreRetryAttrs =
-		editing && coreState?.retryAvailable && officialWriteAvailable()
+		editing && !crawlerOwned && coreState?.retryAvailable && officialWriteAvailable()
 			? `data-tf-retry="${isNewTool(/** @type {string} */ (name)) ? "new" : "edit"}"`
 			: "";
 	const coreDiscardAttrs =
@@ -851,6 +859,12 @@ export async function viewToolForm(name) {
 		? syncStatusPanel(coreMeta, {
 				title: t("toolforms.coreWriteStatus", "Core field write status"),
 				retryAttrs: coreRetryAttrs,
+				guidance: isCrawler
+					? t(
+							"syncStatus.crawlerOwnedGuidance",
+							"This tool is managed by a crawler. Update its public toolinfo.json source and wait for the next crawl; generic core-field edits are not accepted by official Toolhub."
+						)
+					: "",
 				discardAttrs: coreDiscardAttrs,
 				discardLabel: editing
 					? t("toolforms.discardLocalCore", "Discard local core fields")
@@ -953,7 +967,7 @@ export async function viewToolForm(name) {
 						"toolforms.officialDeleteFailed",
 						"Official Toolhub did not delete the tool: {msg}",
 						{
-							msg: backendErrorMessage(error)
+							msg: backendErrorExplanation(error)
 						}
 					);
 				}
@@ -1061,7 +1075,7 @@ async function addToolRegisterCrawlerUrl(url, out) {
 			out.textContent = t(
 				"toolforms.officialWriteFailed",
 				"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-				{ msg: res.lastError || t("toolforms.unknownOfficialError", "Unknown Toolhub error") }
+				{ msg: backendErrorExplanation(res) }
 			);
 		} else {
 			out.className = "at__result at__result--ok";
@@ -1239,9 +1253,7 @@ export function toolRegistrationWorkspace() {
 									"toolforms.officialWriteFailed",
 									"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
 									{
-										msg:
-											res.lastError ||
-											t("toolforms.unknownOfficialError", "Unknown Toolhub error")
+										msg: backendErrorExplanation(res)
 									}
 								)
 							: t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
@@ -1252,7 +1264,7 @@ export function toolRegistrationWorkspace() {
 						"toolforms.officialWriteFailedNoDraft",
 						"Official Toolhub did not accept the write: {msg}",
 						{
-							msg: backendErrorMessage(error)
+							msg: backendErrorExplanation(error)
 						}
 					);
 				}
@@ -1262,12 +1274,35 @@ export function toolRegistrationWorkspace() {
 			if (!b) return;
 			const officialId = b.getAttribute("data-url-id");
 			const localId = b.getAttribute("data-url-local-id");
+			const out = /** @type {HTMLElement} */ ($("[data-ingest-result]"));
 			if (officialWriteAvailable() && officialId) {
-				officialWrite("DELETE", `/v1/write/crawler/urls/${officialId}/`).catch(() => {
-					// Keep local removal responsive; the user can re-register if upstream delete failed.
-				});
+				try {
+					await officialWrite("DELETE", `/v1/write/crawler/urls/${officialId}/`);
+				} catch (error) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialUrlDeleteFailed",
+						"Official Toolhub could not remove the URL: {msg}",
+						{
+							msg: backendErrorExplanation(error)
+						}
+					);
+					return;
+				}
 			} else if (officialWriteAvailable() && localId) {
-				officialWrite("DELETE", `/v1/write/crawler/urls/${localId}/fallback/`).catch(() => undefined);
+				try {
+					await officialWrite("DELETE", `/v1/write/crawler/urls/${localId}/fallback/`);
+				} catch (error) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.officialUrlDeleteFailed",
+						"Official Toolhub could not remove the URL: {msg}",
+						{
+							msg: backendErrorExplanation(error)
+						}
+					);
+					return;
+				}
 			}
 			crawlerUrlDelete(/** @type {string} */ (b.getAttribute("data-url-rm")));
 			renderUrlList();
@@ -1387,7 +1422,7 @@ ${iconDiagnostic ? `\t\t\t${iconDiagnostic}\n` : ""}\t\t\t<div class="le__action
 					navigateTo(toolHref(name));
 					return;
 				} catch (error) {
-					const msg = backendErrorMessage(error);
+					const msg = backendErrorExplanation(error);
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailedNoDraft",
