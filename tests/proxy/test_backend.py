@@ -30,6 +30,7 @@ from backend import (  # noqa: E402
     api_cache,
     author_claims,
     authz,
+    canonical_tools,
     db,
     graph_payload,
     github_issues,
@@ -1005,6 +1006,7 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         "recent_latest_marker",
         "recent_pending_tools",
         "recent_last_at",
+        "detail_hydration_cursor",
         "status",
         "last_started_at",
         "last_success_at",
@@ -1933,6 +1935,34 @@ def test_canonical_tools_endpoint_reads_local_cache_only(client):
     assert by_name["cachePolicy"]["upstream"] is False
     assert search["count"] == 1
     assert search["results"][0]["toolName"] == "cached-tool"
+
+
+def test_sparse_listing_upsert_preserves_rich_detail_metadata(client):
+    canonical_tools.upsert_records(
+        [
+            {
+                "name": "rich-tool",
+                "title": "Original title",
+                "keywords": ["images"],
+                "tasks": ["Upload files"],
+                "for_wikis": ["commons.wikimedia.org"],
+            }
+        ],
+        source_url="https://toolhub.wikimedia.org/api/tools/rich-tool/",
+        detail=True,
+    )
+
+    canonical_tools.upsert_records(
+        [{"name": "rich-tool", "title": "Updated title", "tasks": []}],
+        source_url="https://toolhub.wikimedia.org/api/tools/?page=1",
+        detail=False,
+    )
+
+    cached = canonical_tools.tools_by_name(["rich-tool"])["rich-tool"]
+    assert cached["record"]["title"] == "Updated title"
+    assert cached["record"]["tasks"] == ["Upload files"]
+    assert cached["record"]["for_wikis"] == ["commons.wikimedia.org"]
+    assert cached["sourceUrl"].endswith("/api/tools/rich-tool/")
 
 
 def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(client):

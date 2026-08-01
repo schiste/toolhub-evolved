@@ -508,11 +508,14 @@ the same cursor on the next run rather than advancing past it.
 After the first complete catalog cycle, the job stops repeated full ingestion.
 Each run checks the newest `/api/recent/` page, fetches changed tool details
 individually, and keeps failed detail names in a retry queue. It also reconciles
-one `/api/tools/` page every 12 hours. This spreads a full safety reconciliation
-over roughly a month for a catalog of several thousand tools while keeping
-normal incremental traffic small. The `tool_catalog_sync_state` row records the
-backfill and reconciliation cursors, recent marker, retry queue, completed
-cycles, success/error state, and timestamps.
+one `/api/tools/` page every 12 hours. It additionally hydrates at most ten
+not-yet-detailed graph candidates per run, using a persistent name cursor and
+the same three-second request spacing. This remains outside web requests and
+within the Toolforge job's 300-second limit. The reconciliation spreads a full
+safety pass over roughly a month for a catalog of several thousand tools while
+keeping normal incremental traffic small. The `tool_catalog_sync_state` row
+records the backfill and reconciliation cursors, recent marker, retry queue,
+completed cycles, success/error state, and timestamps.
 
 The `repository-analysis` job is the deterministic source-analysis layer. It
 selects canonical Toolhub records with an HTTPS repository URL, checks the

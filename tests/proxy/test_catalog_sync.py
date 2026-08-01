@@ -107,6 +107,8 @@ def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
     assert summary["phase"] == "steady"
     assert summary["recent_tools"] == 1
     assert summary["recent_errors"] == 0
+    assert summary["hydrated_tools"] == 0
+    assert summary["hydration_errors"] == 0
     assert summary["reconcile_pages"] == 1
     assert summary["reconcile_records"] == 1
     assert sleeps == []
@@ -134,6 +136,47 @@ def test_steady_state_defers_reconciliation_until_interval(monkeypatch):
     summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
 
     assert summary["reconcile_pages"] == 0
+
+
+def test_steady_state_hydrates_graph_candidates_with_persistent_cursor(monkeypatch):
+    with db.session_scope() as s:
+        s.add(ToolCatalogSyncState(key=catalog_sync.STATE_KEY, cycles_completed=1))
+        s.add_all(
+            [
+                CanonicalToolCache(
+                    tool_name=name,
+                    record={"name": name, "title": name, "keywords": ["graph"]},
+                    source_url="https://toolhub.wikimedia.org/api/tools/?page=1",
+                    expires_at=catalog_sync.utcnow(),
+                    stale_until=catalog_sync.utcnow(),
+                )
+                for name in ("alpha", "beta")
+            ]
+        )
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda: [])
+    monkeypatch.setattr(
+        catalog_sync, "_reconcile_if_due", lambda _page_size: {"reconcile_pages": 0, "reconcile_records": 0}
+    )
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda path, **_kwargs: {
+            "name": path.rstrip("/").rsplit("/", 1)[-1],
+            "title": "Hydrated",
+            "keywords": ["graph"],
+            "tasks": ["Explore"],
+        },
+    )
+    sleeps = []
+
+    summary = catalog_sync.run(min_interval_seconds=3, sleep_fn=sleeps.append)
+
+    assert summary["hydrated_tools"] == 2
+    assert summary["hydration_errors"] == 0
+    assert sleeps == [3]
+    with db.session_scope() as s:
+        assert s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY).detail_hydration_cursor == "beta"
+        assert s.get(CanonicalToolCache, "alpha").record["tasks"] == ["Explore"]
 
 
 def test_run_preserves_cursor_and_records_error(monkeypatch):

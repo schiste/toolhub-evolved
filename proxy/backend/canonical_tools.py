@@ -74,12 +74,25 @@ def ingest_payload(url: str, body: bytes) -> int:
     records = _iter_tool_records(payload)
     if not records:
         return 0
-    return upsert_records(records, source_url=url, detail=_is_tool_detail_url(url))
+    return upsert_records(records, source_url=url, detail=is_tool_detail_url(url))
 
 
-def _is_tool_detail_url(url: str) -> bool:
+def is_tool_detail_url(url: str) -> bool:
     parts = _path_parts(url)
     return len(parts) == TOOL_DETAIL_PARTS and parts[0] == "api" and parts[1] == "tools" and bool(parts[2])
+
+
+def _has_value(value: Any) -> bool:  # noqa: ANN401 - official API JSON
+    return value not in (None, "", [], {})
+
+
+def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Apply listing fields without erasing richer detail-only metadata."""
+    merged = dict(existing)
+    for key, value in incoming.items():
+        if _has_value(value) or key not in merged:
+            merged[key] = value
+    return merged
 
 
 def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bool = False) -> int:
@@ -89,39 +102,40 @@ def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bo
     expires_at = now + timedelta(seconds=fresh)
     stale_until = now + timedelta(seconds=fresh + STALE_IF_ERROR_SECONDS)
     seen: set[str] = set()
-    rows: list[CanonicalToolCache] = []
+    clean_records: list[tuple[str, dict[str, Any]]] = []
     for record in records:
         name = _clean_name(record.get("name"))
         if not name or name in seen:
             continue
         seen.add(name)
-        rows.append(
-            CanonicalToolCache(
-                tool_name=name,
-                record=record,
-                source_url=source_url[:MAX_SOURCE_URL],
-                source=SOURCE_OFFICIAL,
-                sync_status=SYNC_OFFICIAL,
-                fetched_at=now,
-                expires_at=expires_at,
-                stale_until=stale_until,
-                last_error=None,
-            )
-        )
-    if not rows:
+        clean_records.append((name, record))
+    if not clean_records:
         return 0
     try:
         with db.session_scope() as s:
-            for row in rows:
-                s.merge(row)
+            for name, record in clean_records:
+                row = s.get(CanonicalToolCache, name)
+                existing_is_detail = bool(row and is_tool_detail_url(row.source_url))
+                if row is None:
+                    row = CanonicalToolCache(tool_name=name)
+                    s.add(row)
+                row.record = record if detail else _merge_listing_record(row.record or {}, record)
+                if detail or not existing_is_detail:
+                    row.source_url = source_url[:MAX_SOURCE_URL]
+                    row.expires_at = expires_at
+                    row.stale_until = stale_until
+                row.source = SOURCE_OFFICIAL
+                row.sync_status = SYNC_OFFICIAL
+                row.fetched_at = now
+                row.last_error = None
     except SQLAlchemyError:
         return 0
     # Queue only after the canonical transaction succeeds. Processing is
     # asynchronous so anonymous API requests do not wait on derived indexes.
     from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid backend startup cycles.
 
-    enqueue_tool_names([row.tool_name for row in rows], reason="canonical_fetch")
-    return len(rows)
+    enqueue_tool_names([name for name, _record in clean_records], reason="canonical_fetch")
+    return len(clean_records)
 
 
 def _payload(row: CanonicalToolCache) -> dict[str, Any]:

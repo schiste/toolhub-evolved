@@ -32,8 +32,8 @@
 
 - name: catalog-sync
   # Initial backfill: five 100-record pages every 15 minutes. After the first
-  # cycle, consume recent tool changes and reconcile one page every 12 hours,
-  # with a three-second minimum between upstream requests.
+  # cycle, consume recent changes, hydrate up to ten graph candidates, and
+  # reconcile one page every 12 hours, with three seconds between requests.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-sync -- /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
   image: python3.13
   schedule: "*/15 * * * *"

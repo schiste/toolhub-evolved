@@ -142,6 +142,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "recent_latest_marker": "VARCHAR(255) NULL",
             "recent_pending_tools": f"{json_col} NULL",
             "recent_last_at": "DATETIME NULL",
+            "detail_hydration_cursor": "VARCHAR(255) NULL",
             "status": "VARCHAR(32) NOT NULL DEFAULT 'idle'",
             "last_started_at": "DATETIME NULL",
             "last_success_at": "DATETIME NULL",

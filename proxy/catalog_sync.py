@@ -31,6 +31,7 @@ MAX_MIN_INTERVAL_SECONDS = 60.0
 RECENT_PATH = "/api/recent/"
 RECENT_PAGE_SIZE = 50
 MAX_RECENT_DETAILS_PER_RUN = 20
+MAX_GRAPH_DETAILS_PER_RUN = 10
 RECONCILE_INTERVAL = timedelta(hours=12)
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
@@ -274,6 +275,45 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
     return {"recent_tools": successful, "recent_errors": errors}
 
 
+def _graph_detail_candidates(cursor: str | None) -> list[str]:
+    rows = canonical_tools.records()
+    names = sorted(
+        str(row.get("toolName") or "")
+        for row in rows
+        if isinstance(row.get("record"), dict)
+        and (row["record"].get("keywords") or row["record"].get("tasks"))
+        and not canonical_tools.is_tool_detail_url(str(row.get("sourceUrl") or ""))
+    )
+    if not names:
+        return []
+    if not cursor:
+        return names[:MAX_GRAPH_DETAILS_PER_RUN]
+    after_cursor = [name for name in names if name > cursor]
+    wrapped = [name for name in names if name <= cursor]
+    return (after_cursor + wrapped)[:MAX_GRAPH_DETAILS_PER_RUN]
+
+
+def _hydrate_graph_details(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, int]:
+    with db.session_scope() as s:
+        cursor = _state(s).detail_hydration_cursor
+    names = _graph_detail_candidates(cursor)
+    successful = errors = 0
+    for index, name in enumerate(names):
+        if index:
+            sleep_fn(interval)
+        try:
+            payload = toolhub.public_api_get(f"/api/tools/{quote(name, safe='')}/")
+            if not isinstance(payload, dict):
+                raise _invalid_detail_error(name)
+            successful += canonical_tools.upsert_records([payload], source_url=detail_url(name), detail=True)
+        except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError):
+            errors += 1
+        finally:
+            with db.session_scope() as s:
+                _state(s).detail_hydration_cursor = name
+    return {"hydrated_tools": successful, "hydration_errors": errors}
+
+
 def _reconcile_if_due(page_size: int) -> dict[str, int]:
     now = utcnow()
     with db.session_scope() as s:
@@ -310,12 +350,22 @@ def run(
             )
             return {"phase": "backfill", **backfill}
         recent = _recent_updates(interval, sleep_fn)
+        hydration = _hydrate_graph_details(interval, sleep_fn)
         reconcile = _reconcile_if_due(effective_page_size)
     except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:
         _mark_error(exc)
         raise
     else:
-        return {"phase": "steady", "pages": 0, "records": 0, "next_page": 1, "completed": True, **recent, **reconcile}
+        return {
+            "phase": "steady",
+            "pages": 0,
+            "records": 0,
+            "next_page": 1,
+            "completed": True,
+            **recent,
+            **hydration,
+            **reconcile,
+        }
 
 
 def _env_int(name: str, default: int) -> int:
