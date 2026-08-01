@@ -8,6 +8,7 @@ hash can never silently drift out of sync.
 """
 
 import base64
+import gzip
 import hashlib
 import os
 import re
@@ -610,3 +611,75 @@ def test_client_cache_policy_mirrors_the_server_policy():
         assert js_ttl_ms(js_name) == server_seconds * 1000, (
             f"{js_name} in api.js disagrees with backend/api_cache.py ({server_seconds}s)"
         )
+
+
+def test_html_shell_is_gzipped_when_the_client_accepts_it(client):
+    """The edge compresses text/javascript and text/css but not text/html.
+
+    The SPA shell therefore went out as ~29 KB of uncompressed markup — measured
+    at 852ms of body transfer against a 1.8ms server time — so the app
+    compresses it itself.
+    """
+    compressed = client.get("/", headers={"Accept-Encoding": "gzip"})
+    plain = client.get("/", headers={"Accept-Encoding": ""})
+
+    assert compressed.headers["Content-Encoding"] == "gzip"
+    assert "Accept-Encoding" in compressed.headers["Vary"]
+    assert gzip.decompress(compressed.data) == plain.data
+    assert len(compressed.data) < len(plain.data) / 2
+    # Content-Length has to describe the bytes actually sent.
+    assert int(compressed.headers["Content-Length"]) == len(compressed.data)
+
+    # A client that did not ask keeps the identity encoding.
+    assert "Content-Encoding" not in plain.headers
+
+
+def test_compression_leaves_revalidation_and_small_bodies_alone(client, fake_get):
+    """ETags must keep matching, and tiny payloads are not worth compressing."""
+    first = client.get("/", headers={"Accept-Encoding": "gzip"})
+    not_modified = client.get(
+        "/", headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]}
+    )
+    # Re-tagging per encoding would make every revalidation miss and turn a free
+    # 304 back into a full download.
+    assert not_modified.status_code == proxy_app._HTTP_NOT_MODIFIED
+    assert not_modified.get_data() == b""
+    assert "Content-Encoding" not in not_modified.headers
+
+    fake_get(FakeUpstream(200, b'{"small":true}'))
+    tiny = client.get("/api/tools/", headers={"Accept-Encoding": "gzip"})
+    assert "Content-Encoding" not in tiny.headers, "below one packet, compressing saves nothing"
+
+
+def test_large_json_proxy_responses_are_compressed(client, fake_get):
+    """The /api proxy relays decoded upstream bodies, so they arrive uncompressed."""
+    payload = b'{"results":[' + b'{"name":"tool"},' * 400 + b'{"name":"last"}]}'
+    fake_get(FakeUpstream(200, payload))
+    resp = client.get("/api/search/tools/", headers={"Accept-Encoding": "gzip"})
+
+    assert resp.headers["Content-Encoding"] == "gzip"
+    assert gzip.decompress(resp.data) == payload
+
+
+def test_compression_skips_responses_it_must_not_touch():
+    """Guards on the compressible check, each for a different reason."""
+    from flask import Response as FlaskResponse
+
+    big = b"x" * 4000
+
+    already = FlaskResponse(big, content_type="text/plain")
+    already.headers["Content-Encoding"] = "br"
+    assert proxy_app._compressible(already) is False, "must not double-encode"
+
+    ranged = FlaskResponse(big, content_type="text/plain")
+    ranged.headers["Content-Range"] = "bytes 0-3999/8000"
+    assert proxy_app._compressible(ranged) is False, "a byte range is not the whole entity"
+
+    # Already-compressed binary formats only get bigger.
+    assert proxy_app._compressible(FlaskResponse(big, content_type="image/png")) is False
+
+    streamed = FlaskResponse((chunk for chunk in [big]), content_type="text/plain")
+    assert streamed.content_length is None
+    assert proxy_app._compressible(streamed) is False, "unknown length: cannot size-check it"
+
+    assert proxy_app._compressible(FlaskResponse(big, content_type="text/plain")) is True

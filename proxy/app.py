@@ -14,6 +14,7 @@ OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from gzip import compress as gzip_compress
 from pathlib import Path
 from threading import Lock
 from time import perf_counter
@@ -42,6 +43,18 @@ UA = "toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org; christophe@aep
 # Toolhub JSON pages are a few hundred KiB at most, so 10 MiB is generous slack.
 _MAX_UPSTREAM_BYTES = 10 * 1024 * 1024
 _CHUNK_BYTES = 64 * 1024
+# Types the edge does not already compress, plus text/* handled by prefix.
+_COMPRESSIBLE_TYPES = {
+    "application/json",
+    "application/javascript",
+    "application/manifest+json",
+    "application/rss+xml",
+    "application/xml",
+    "image/svg+xml",
+}
+_COMPRESS_MIN_BYTES = 1400
+_COMPRESS_MAX_BYTES = 2 * 1024 * 1024
+_COMPRESS_LEVEL = 6
 _VERSIONED_STATIC_CACHE = "public, max-age=31536000, immutable"
 _REVALIDATED_STATIC_CACHE = "no-cache"
 _HTTP_NOT_MODIFIED = 304
@@ -307,6 +320,54 @@ _SECURITY_HEADERS = {
 def start_request_timing() -> None:
     """Capture total Flask request duration for Server-Timing."""
     g.toolhub_evolved_request_start = perf_counter()
+
+
+def _compressible(resp: Response) -> bool:
+    """Report whether this response is worth gzipping and safe to gzip."""
+    if resp.status_code < 200 or resp.status_code in {204, 304}:
+        return False
+    if "Content-Encoding" in resp.headers or "Content-Range" in resp.headers:
+        return False
+    mimetype = (resp.mimetype or "").lower()
+    if mimetype not in _COMPRESSIBLE_TYPES and not mimetype.startswith("text/"):
+        return False
+    size = resp.content_length
+    if size is None:
+        return False
+    # Below roughly one network packet, compressing costs CPU and saves nothing.
+    # Above the cap, refuse rather than pull an arbitrarily large file into
+    # memory to compress it — static assets here are tens of KB.
+    return _COMPRESS_MIN_BYTES <= size <= _COMPRESS_MAX_BYTES
+
+
+@app.after_request
+def compress_response(resp: Response) -> Response:
+    """Gzip text responses the edge leaves uncompressed.
+
+    The ingress compresses text/javascript and text/css but not text/html, so
+    the SPA shell went out as 28.7 KB of uncompressed markup — measured at
+    852ms of body transfer against a 1.8ms server time. It gzips to 6.8 KB,
+    which fits in about one round trip.
+
+    The ETag is deliberately left alone. Flask compares If-None-Match against
+    the uncompressed file's tag before this runs, so re-tagging here would make
+    every revalidation miss and turn free 304s back into full downloads.
+    `Vary` is what keeps caches from handing a gzipped body to a client that
+    did not ask for one.
+    """
+    if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+        return resp
+    resp.headers.add("Vary", "Accept-Encoding")
+    if not _compressible(resp):
+        return resp
+    # send_from_directory streams from a file wrapper, which get_data() refuses
+    # to touch; the size cap above is what makes buffering it safe.
+    resp.direct_passthrough = False
+    body = gzip_compress(resp.get_data(), _COMPRESS_LEVEL)
+    resp.set_data(body)
+    resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Content-Length"] = str(len(body))
+    return resp
 
 
 @app.after_request
