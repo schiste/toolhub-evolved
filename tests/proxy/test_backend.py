@@ -998,7 +998,21 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     health_columns = {col["name"] for col in inspect(eng).get_columns("tool_health_targets")}
     assert {"source", "sync_status", "review_status", "last_synced_at", "deleted_at"}.issubset(health_columns)
     catalog_columns = {col["name"] for col in inspect(eng).get_columns("tool_catalog_sync_state")}
-    assert {"reconcile_next_page", "reconcile_cycles_completed", "reconcile_last_at"}.issubset(catalog_columns)
+    assert {
+        "reconcile_next_page",
+        "reconcile_cycles_completed",
+        "reconcile_last_at",
+        "recent_latest_marker",
+        "recent_pending_tools",
+        "recent_last_at",
+        "status",
+        "last_started_at",
+        "last_success_at",
+        "last_completed_at",
+        "last_error",
+        "source",
+        "sync_status",
+    }.issubset(catalog_columns)
     with eng.connect() as conn:
         assert conn.scalar(select(text("attempts")).select_from(text("repository_analysis_state"))) == 0
         assert conn.scalar(select(text("attempts")).select_from(text("person_reconciliation_queue"))) == 0
