@@ -19,8 +19,8 @@ import {
 	wikiMatches
 } from "../lib/core/signals.js";
 import { navigateTo, NEEDS, PERSONAS, toolHref } from "../lib/core/routing.js";
-import { signedIn } from "../lib/core/session.js";
-import { favNames } from "../lib/core/store.js";
+import { serverUserName, signedIn } from "../lib/core/session.js";
+import { favNames, personalToolsCacheGet, personalToolsCacheSet } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -66,8 +66,36 @@ const INTENT_AXES = {
 /** @typedef {{ axis: string, term: string, wiki: string }} IntentState */
 /** @typedef {{ tools: Tool[], error?: boolean, loading?: boolean }} PersonalTools */
 /** @typedef {{ favorites: PersonalTools, ownTools: PersonalTools }} PersonalHomeModel */
+/** @typedef {{ model: PersonalHomeModel, refresh?: Promise<PersonalHomeModel> }} PersonalHomeResult */
 /** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean }} HomeModel */
 /** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
+
+// Account resolution is substantially more expensive than the public catalog
+// reads. Keep one request per signed-in user in flight and reuse its result for
+// a short window so cache-refresh repaints cannot re-run the resolver.
+const PERSONAL_HOME_TTL_MS = 30_000;
+/** @type {Map<string, { model: PersonalHomeModel, expiresAt: number }>} */
+const personalHomeCache = new Map();
+/** @type {Map<string, Promise<PersonalHomeModel>>} */
+const personalHomeRequests = new Map();
+const PERSONAL_TOOLS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Read the account-scoped browser cache. The username is part of the cache
+ * record rather than an implicit global, so switching accounts cannot reuse a
+ * previous user's associations.
+ * @param {string} username
+ * @returns {{ tools: Tool[], updatedAt: number } | null}
+ */
+function readPersonalToolsCache(username) {
+	const cached = personalToolsCacheGet(username);
+	return cached ? { tools: cached.tools.map((tool) => normalizeTool(tool)), updatedAt: cached.updatedAt } : null;
+}
+
+/** @param {string} username @param {Tool[]} tools */
+function writePersonalToolsCache(username, tools) {
+	personalToolsCacheSet(username, tools);
+}
 
 function intentAxisItems() {
 	return Object.entries(INTENT_AXES).map(([value, cfg]) => [value, cfg.label]);
@@ -242,7 +270,9 @@ async function favoriteToolsForHome() {
 /** @returns {Promise<PersonalTools>} */
 async function ownToolsForHome() {
 	const data = await backendGetJson("/v1/me/tools/");
-	if (!data) return { tools: [], error: true };
+	if (!data || data.error || (!Array.isArray(data.verified) && !Array.isArray(data.possible))) {
+		return { tools: [], error: true };
+	}
 	const tools = [];
 	const seen = new Set();
 	for (const item of [...(data.verified || []), ...(data.possible || [])]) {
@@ -255,15 +285,49 @@ async function ownToolsForHome() {
 	return { tools };
 }
 
-/** @returns {Promise<PersonalHomeModel>} */
-async function personalHomeModel() {
+/** @param {string} key @returns {Promise<PersonalHomeModel>} */
+async function resolvePersonalHomeModel(key) {
 	const [favorites, ownTools] = await Promise.all([
 		favoriteToolsForHome().catch(() => ({ tools: [], error: true })),
 		ownToolsForHome().catch(() => ({ tools: [], error: true }))
 	]);
+	if (!ownTools.error) writePersonalToolsCache(key, ownTools.tools);
 	const allTools = [...favorites.tools, ...ownTools.tools];
 	await Promise.all([attachEndorsements(allTools, { defer: true }), attachEvolvedSummaries(allTools)]);
-	return { favorites, ownTools };
+	const model = { favorites, ownTools };
+	personalHomeCache.set(key, { model, expiresAt: Date.now() + PERSONAL_HOME_TTL_MS });
+	return model;
+}
+
+/** @param {string} key @returns {Promise<PersonalHomeModel>} */
+function startPersonalHomeRequest(key) {
+	const pending = personalHomeRequests.get(key);
+	if (pending) return pending;
+	const request = resolvePersonalHomeModel(key).finally(() => {
+		personalHomeRequests.delete(key);
+	});
+	personalHomeRequests.set(key, request);
+	return request;
+}
+
+/** @returns {Promise<PersonalHomeResult>} */
+async function personalHomeModel() {
+	const key = serverUserName() || "signed-in";
+	const cached = personalHomeCache.get(key);
+	if (cached && cached.expiresAt > Date.now()) return { model: cached.model };
+	const stored = readPersonalToolsCache(key);
+	if (!stored) return { model: await startPersonalHomeRequest(key) };
+
+	const [favorites] = await Promise.all([favoriteToolsForHome().catch(() => ({ tools: [], error: true }))]);
+	const ownTools = { tools: stored.tools };
+	const allTools = [...favorites.tools, ...ownTools.tools];
+	await Promise.all([attachEndorsements(allTools, { defer: true }), attachEvolvedSummaries(allTools)]);
+	const model = { favorites, ownTools };
+	personalHomeCache.set(key, { model, expiresAt: Date.now() + PERSONAL_HOME_TTL_MS });
+	if (Date.now() - stored.updatedAt > PERSONAL_TOOLS_CACHE_TTL_MS) {
+		return { model, refresh: startPersonalHomeRequest(key) };
+	}
+	return { model };
 }
 
 /**
@@ -286,29 +350,29 @@ function personalToolsSectionHTML(title, href, section, empty, error) {
  * @param {IntentState} state
  */
 function renderHomeMain(model, state) {
-	const filtered = hasHomeFilters(state);
-	const featuredHref = filtered ? searchHrefForState(state) : "/featured-tools";
-	const fallbackNote = model.cacheFallback
-		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing saved Toolhub data while live data refreshes.")}</p>
-		`
-		: "";
-	const personal = model.personal
-		? `${personalToolsSectionHTML(
-				t("home.yourFavorites", "Your favorite tools"),
-				"/favorites",
-				model.personal.favorites,
-				t("home.noFavorites", "You have not saved any favorite tools yet."),
-				t("home.favoritesError", "Your favorites could not be loaded right now.")
-			)}
+	if (model.personal) {
+		return `${personalToolsSectionHTML(
+			t("home.yourFavorites", "Your favorite tools"),
+			"/favorites",
+			model.personal.favorites,
+			t("home.noFavorites", "You have not saved any favorite tools yet."),
+			t("home.favoritesError", "Your favorites could not be loaded right now.")
+		)}
 		${personalToolsSectionHTML(
 			t("home.yourTools", "Your tools"),
 			"/my-tools",
 			model.personal.ownTools,
 			t("home.noOwnTools", "No Toolhub tools are currently associated with your account."),
 			t("home.ownToolsError", "Your tools could not be loaded right now.")
-		)}`
+		)}`;
+	}
+	const filtered = hasHomeFilters(state);
+	const featuredHref = filtered ? searchHrefForState(state) : "/featured-tools";
+	const fallbackNote = model.cacheFallback
+		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing saved Toolhub data while live data refreshes.")}</p>
+		`
 		: "";
-	return `${fallbackNote}${personal}
+	return `${fallbackNote}
 		<div class="section-head"><h2>${t("home.featuredTools", "Featured tools")}</h2><a class="link" href="${featuredHref}">${t("home.viewAll", "View all")}</a></div>
 		${toolsGridHTML(model.featuredRanked.slice(0, 8), t("home.noToolsMatch", "No tools match this sentence."))}
 		<div class="section-head"><h2>${t("home.mostListed", "Most listed")}</h2><a class="link" href="${filtered ? searchHrefForState(state) : "/lists"}">${filtered ? t("home.viewAll", "View all") : t("home.viewLists", "View lists")}</a></div>
@@ -420,7 +484,9 @@ export async function viewHome() {
 	const authenticated = signedIn();
 	const [home, initialModel] = await Promise.all([
 		apiGet("/ui/home/").catch(() => ({})),
-		homeSectionsModel(initialState)
+		authenticated
+			? Promise.resolve({ lists: [], featuredRanked: [], mostListedRanked: [], recentTools: [] })
+			: homeSectionsModel(initialState)
 	]);
 	initialModel.personal = authenticated
 		? {
@@ -557,10 +623,19 @@ export async function viewHome() {
 				homeRecent.innerHTML = `<li class="recent__empty">${t("home.recentRefreshError", "Unable to refresh recently updated tools.")}</li>`;
 			};
 			if (authenticated) {
-				personalHomeModel().then((personal) => {
+				personalHomeModel().then(({ model: personal, refresh }) => {
 					if (!homeMain.isConnected) return;
 					initialModel.personal = personal;
 					renderHomeModel(initialModel);
+					if (refresh) {
+						refresh.then((next) => {
+							if (!homeMain.isConnected || (next.ownTools.error && personal.ownTools.tools.length > 0)) {
+								return;
+							}
+							initialModel.personal = next;
+							renderHomeModel(initialModel);
+						});
+					}
 				});
 			}
 			const refreshHome = async () => {

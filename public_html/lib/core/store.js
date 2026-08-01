@@ -80,6 +80,8 @@ export function publicApiCacheClear() {
 const RECENT_OWNER_CACHE_KEY = "toolhub-recent-owner-by-tool:v1";
 const RECENT_OWNER_CACHE_TTL_MS = 15 * 60 * 1000;
 const RECENT_OWNER_CACHE_MAX = 120;
+const PERSONAL_TOOLS_CACHE_KEY = "toolhub-personal-tools:v1";
+const PERSONAL_TOOLS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** @returns {Record<string, { owner: string, ts: number }>} */
 function recentOwnerCacheRead() {
 	try {
@@ -129,6 +131,40 @@ export function recentOwnerCacheDelete(name) {
 	if (!Object.hasOwn(cache, name)) return;
 	delete cache[name];
 	recentOwnerCacheWrite(cache);
+}
+
+/**
+ * Read a username-scoped browser copy of the account's resolved tools.
+ * @param {string} username
+ * @returns {{ tools: any[], updatedAt: number } | null}
+ */
+export function personalToolsCacheGet(username) {
+	try {
+		const all = JSON.parse(localStorage.getItem(PERSONAL_TOOLS_CACHE_KEY) || "{}");
+		const entry = all && typeof all === "object" ? all[username] : null;
+		if (!entry || !Array.isArray(entry.tools) || typeof entry.updatedAt !== "number") return null;
+		if (Date.now() - entry.updatedAt > PERSONAL_TOOLS_CACHE_MAX_AGE_MS) return null;
+		return { tools: entry.tools, updatedAt: entry.updatedAt };
+	} catch {
+		return null;
+	}
+}
+
+/** @param {string} username @param {any[]} tools */
+export function personalToolsCacheSet(username, tools) {
+	try {
+		const raw = JSON.parse(localStorage.getItem(PERSONAL_TOOLS_CACHE_KEY) || "{}");
+		const all = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+		all[username] = { tools: tools.slice(0, 200), updatedAt: Date.now() };
+		const bounded = Object.fromEntries(
+			Object.entries(all)
+				.sort(([, a], [, b]) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+				.slice(0, 3)
+		);
+		localStorage.setItem(PERSONAL_TOOLS_CACHE_KEY, JSON.stringify(bounded));
+	} catch {
+		// Private browsing and quota limits must never block the homepage.
+	}
 }
 /* ---- Server write-through hook (production sync) ------------------------
    When a real session exists, serversync.js registers a handler here and every

@@ -736,6 +736,8 @@ test("signed-in home puts favorites before owned tools", async () => {
 	const ownToolsIndex = r.html.indexOf("Your tools");
 	assert.ok(favoritesIndex >= 0, "authenticated home renders favorites");
 	assert.ok(ownToolsIndex > favoritesIndex, "owned tools follow favorites");
+	assert.equal(r.html.includes("<h2>Featured tools</h2>"), false, "authenticated home hides featured tools");
+	assert.equal(r.html.includes("<h2>Most listed</h2>"), false, "authenticated home hides most listed tools");
 	assert.ok(r.html.includes("skeleton-grid--tool"), "personal panels render without blocking the route");
 	document.body.innerHTML = r.html;
 	r.mount();
@@ -743,6 +745,8 @@ test("signed-in home puts favorites before owned tools", async () => {
 	await tick();
 	assert.ok(document.body.innerHTML.includes('data-tool="favorite"'), "favorite tool card renders");
 	assert.ok(document.body.innerHTML.includes('data-tool="owned"'), "owned tool card renders");
+	assert.equal(document.body.innerHTML.includes("<h2>Featured tools</h2>"), false);
+	assert.equal(document.body.innerHTML.includes("<h2>Most listed</h2>"), false);
 	assert.equal(h.backendGetJson.mock.calls.filter(([path]) => path === "/v1/me/tools/").length, 1);
 });
 
