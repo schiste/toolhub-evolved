@@ -1007,6 +1007,7 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         "recent_pending_tools",
         "recent_last_at",
         "detail_hydration_cursor",
+        "detail_hydration_pending_tools",
         "status",
         "last_started_at",
         "last_success_at",

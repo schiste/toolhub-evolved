@@ -9,7 +9,7 @@ import requests
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from backend import db, outbound, toolhub
+from backend import db, graph_enrichment, outbound, toolhub
 from backend.author_claims import dedupe_strings
 from backend.models import ToolinfoSource, ToolinfoSourceItem, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_ERROR, SYNC_OFFICIAL, clean_error, clean_int
@@ -246,7 +246,9 @@ def _store_source_items(source_id: int, items: list[dict]) -> int:
                     sync_status=SYNC_OFFICIAL,
                 )
             )
-        return len(items)
+        item_count = len(items)
+    graph_enrichment.refresh_tool_names([item["tool_name"] for item in items])
+    return item_count
 
 
 def _source_targets(limit: int) -> list[tuple[int, str]]:

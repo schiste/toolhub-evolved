@@ -14,7 +14,7 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-from backend import DEFAULT_DB_URL, canonical_tools, db, toolhub
+from backend import DEFAULT_DB_URL, canonical_tools, db, graph_enrichment, toolhub
 from backend.models import ToolCatalogSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -31,7 +31,7 @@ MAX_MIN_INTERVAL_SECONDS = 60.0
 RECENT_PATH = "/api/recent/"
 RECENT_PAGE_SIZE = 50
 MAX_RECENT_DETAILS_PER_RUN = 20
-MAX_GRAPH_DETAILS_PER_RUN = 10
+MAX_GRAPH_DETAILS_PER_RUN = 20
 RECONCILE_INTERVAL = timedelta(hours=12)
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
@@ -206,6 +206,7 @@ def _store_page(page: int, page_size: int, rows: list[dict[str, Any]], *, has_ne
         state.status = STATUS_IDLE
         state.source = SOURCE_OFFICIAL
         state.sync_status = SYNC_OFFICIAL
+    graph_enrichment.refresh_tool_names([str(row.get("name") or "") for row in rows])
     return inserted
 
 
@@ -250,6 +251,7 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         return {"recent_tools": 0, "recent_errors": 0}
     names = _dedupe_names(pending + _tool_names(_new_recent_rows(rows, previous)))
     successful = errors = 0
+    refreshed_names: list[str] = []
     remaining: list[str] = []
     for index, name in enumerate(names[:MAX_RECENT_DETAILS_PER_RUN]):
         if index:
@@ -259,6 +261,7 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
             if not isinstance(payload, dict):
                 raise _invalid_detail_error(name)
             successful += canonical_tools.upsert_records([payload], source_url=detail_url(name), detail=True)
+            refreshed_names.append(name)
         except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError):
             errors += 1
             remaining.append(name)
@@ -272,32 +275,49 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         state.status = STATUS_IDLE
         state.source = SOURCE_OFFICIAL
         state.sync_status = SYNC_OFFICIAL
+    graph_enrichment.refresh_tool_names(refreshed_names)
     return {"recent_tools": successful, "recent_errors": errors}
 
 
-def _graph_detail_candidates(cursor: str | None) -> list[str]:
+def _graph_detail_candidates(cursor: str | None, pending: list[str]) -> list[str]:
     rows = canonical_tools.records()
-    names = sorted(
-        str(row.get("toolName") or "")
+    ranked = sorted(
+        (
+            -sum(
+                not row["record"].get(field)
+                for field in (
+                    "for_wikis",
+                    "technology_used",
+                    "tasks",
+                    "audiences",
+                    "available_ui_languages",
+                    "tool_type",
+                )
+            ),
+            str(row.get("toolName") or ""),
+        )
         for row in rows
         if isinstance(row.get("record"), dict)
         and (row["record"].get("keywords") or row["record"].get("tasks"))
         and not canonical_tools.is_tool_detail_url(str(row.get("sourceUrl") or ""))
     )
+    names = [name for _missing, name in ranked if name]
     if not names:
-        return []
-    if not cursor:
-        return names[:MAX_GRAPH_DETAILS_PER_RUN]
-    after_cursor = [name for name in names if name > cursor]
-    wrapped = [name for name in names if name <= cursor]
-    return (after_cursor + wrapped)[:MAX_GRAPH_DETAILS_PER_RUN]
+        return _dedupe_names(pending)[:MAX_GRAPH_DETAILS_PER_RUN]
+    start = names.index(cursor) + 1 if cursor in names else 0
+    rotated = names[start:] + names[:start]
+    return _dedupe_names([*pending, *rotated])[:MAX_GRAPH_DETAILS_PER_RUN]
 
 
 def _hydrate_graph_details(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, int]:
     with db.session_scope() as s:
-        cursor = _state(s).detail_hydration_cursor
-    names = _graph_detail_candidates(cursor)
+        state = _state(s)
+        cursor = state.detail_hydration_cursor
+        pending = list(state.detail_hydration_pending_tools or [])
+    names = _graph_detail_candidates(cursor, pending)
     successful = errors = 0
+    refreshed_names: list[str] = []
+    remaining = [name for name in pending if name not in names]
     for index, name in enumerate(names):
         if index:
             sleep_fn(interval)
@@ -306,11 +326,15 @@ def _hydrate_graph_details(interval: float, sleep_fn: Callable[[float], None]) -
             if not isinstance(payload, dict):
                 raise _invalid_detail_error(name)
             successful += canonical_tools.upsert_records([payload], source_url=detail_url(name), detail=True)
+            refreshed_names.append(name)
         except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError):
             errors += 1
-        finally:
-            with db.session_scope() as s:
-                _state(s).detail_hydration_cursor = name
+            remaining.append(name)
+        with db.session_scope() as s:
+            state = _state(s)
+            state.detail_hydration_cursor = name
+            state.detail_hydration_pending_tools = _dedupe_names(remaining)
+    graph_enrichment.refresh_tool_names(refreshed_names)
     return {"hydrated_tools": successful, "hydration_errors": errors}
 
 

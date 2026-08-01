@@ -197,6 +197,44 @@ def test_run_preserves_cursor_and_records_error(monkeypatch):
         assert state.last_error == "Toolhub API returned 503"
 
 
+def test_graph_hydration_retries_failures_before_advancing_the_rotation(monkeypatch):
+    with db.session_scope() as s:
+        s.add(ToolCatalogSyncState(key=catalog_sync.STATE_KEY, cycles_completed=1))
+        s.add(
+            CanonicalToolCache(
+                tool_name="retry-me",
+                record={"name": "retry-me", "title": "Retry", "keywords": ["graph"]},
+                source_url="https://toolhub.wikimedia.org/api/tools/?page=1",
+                expires_at=catalog_sync.utcnow(),
+                stale_until=catalog_sync.utcnow(),
+            )
+        )
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda: [])
+    monkeypatch.setattr(
+        catalog_sync, "_reconcile_if_due", lambda _page_size: {"reconcile_pages": 0, "reconcile_records": 0}
+    )
+    calls = 0
+
+    def detail(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise toolhub.ToolhubAPIError(503, {"detail": "busy"})
+        return {"name": "retry-me", "title": "Retry", "keywords": ["graph"], "for_wikis": ["wikidatawiki"]}
+
+    monkeypatch.setattr(toolhub, "public_api_get", detail)
+
+    first = catalog_sync.run(sleep_fn=lambda _seconds: None)
+    with db.session_scope() as s:
+        assert s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY).detail_hydration_pending_tools == ["retry-me"]
+    second = catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert first["hydration_errors"] == 1
+    assert second["hydrated_tools"] == 1
+    with db.session_scope() as s:
+        assert s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY).detail_hydration_pending_tools == []
+
+
 def test_limits_cannot_reduce_the_healthy_request_interval():
     assert catalog_sync._bounded_pages(999) == catalog_sync.MAX_PAGES_PER_RUN
     assert catalog_sync._bounded_page_size(999) == catalog_sync.MAX_PAGE_SIZE
@@ -204,9 +242,11 @@ def test_limits_cannot_reduce_the_healthy_request_interval():
 
 
 def test_graph_hydration_fits_toolforge_job_timeout():
-    request_wait_seconds = (catalog_sync.MAX_GRAPH_DETAILS_PER_RUN - 1) * catalog_sync.DEFAULT_MIN_INTERVAL_SECONDS
+    request_wait_seconds = (
+        catalog_sync.MAX_RECENT_DETAILS_PER_RUN + catalog_sync.MAX_GRAPH_DETAILS_PER_RUN - 2
+    ) * catalog_sync.DEFAULT_MIN_INTERVAL_SECONDS
 
-    assert catalog_sync.MAX_GRAPH_DETAILS_PER_RUN == 10
+    assert catalog_sync.MAX_GRAPH_DETAILS_PER_RUN == 20
     assert request_wait_seconds < 300
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     assert "name: catalog-sync" in jobs

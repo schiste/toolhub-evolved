@@ -144,6 +144,7 @@ class ToolCatalogSyncState(Base):
     recent_pending_tools: Mapped[list] = mapped_column(JSON, default=list)
     recent_last_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     detail_hydration_cursor: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    detail_hydration_pending_tools: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(32), default="idle")
     last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
