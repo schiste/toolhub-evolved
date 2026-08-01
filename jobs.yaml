@@ -59,6 +59,33 @@
   timeout: 300
   emails: onfailure
 
+- name: catalog-projection
+  # Repair/version-upgrade the Evolved-local provenance projection. Producer
+  # jobs refresh changed tools immediately; this bounded sweep is the backstop.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-projection -- /usr/bin/env CATALOG_PROJECTION_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_projection.py
+  image: python3.13
+  schedule: "58 * * * *"
+  timeout: 300
+  emails: onfailure
+
+- name: tool-assets
+  # Fetch icons only in the background under outbound URL, type, and size
+  # limits. The webservice serves cached bytes and never fetches on a read.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name tool-assets -- /usr/bin/env TOOL_ASSET_LIMIT=100 TOOLHUB_ASSET_CACHE_DIR=/data/project/toolhub-evolved/data/icon-cache /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/tool_assets.py
+  image: python3.13
+  schedule: "7 * * * *"
+  timeout: 600
+  emails: onfailure
+
+- name: catalog-validation
+  # Probe effective public URLs under the shared SSRF/redirect guard. Results
+  # are observations only; invalid official evidence remains preserved.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation -- /usr/bin/env CATALOG_VALIDATION_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
+  image: python3.13
+  schedule: "3 * * * *"
+  timeout: 600
+  emails: onfailure
+
 - name: people-reconcile
   # Rebuild the deterministic people graph and typed relationships. The first
   # run can be inspected safely with `proxy/people_reconcile.py` without --apply.
