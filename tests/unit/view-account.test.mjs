@@ -438,7 +438,10 @@ test("export action reports backend failures", async () => {
 	await tick();
 	const out = document.querySelector("[data-account-result]");
 	assert.equal(out.className, "at__result at__result--err");
-	assert.equal(out.textContent, "Export failed: offline");
+	assert.equal(
+		out.textContent,
+		"Export failed: offline No official change was published; retry or report this error if it continues."
+	);
 });
 
 test("delete action calls the server and clears the local cache", async () => {
@@ -484,7 +487,10 @@ test("delete action reports backend failures without clearing local cache", asyn
 	await tick();
 	const out = document.querySelector("[data-account-result]");
 	assert.equal(out.className, "at__result at__result--err");
-	assert.equal(out.textContent, "Delete failed: permission denied");
+	assert.equal(
+		out.textContent,
+		"Delete failed: permission denied You are signed in, but this account is not allowed to perform this action. Check your Toolhub permissions or use the account that owns the tool."
+	);
 	assert.equal(h.clearAll.mock.calls.length, 0);
 });
 

@@ -1119,7 +1119,9 @@ test("mount create: sparse Toolhub fallback uses form values and an unknown-erro
 		},
 		{ source: "local", syncStatus: "local_fallback" }
 	]);
-	assert.ok(document.querySelector("[data-official-result]").textContent.includes("Unknown Toolhub error"));
+	assert.ok(
+		document.querySelector("[data-official-result]").textContent.includes("The request could not be completed")
+	);
 });
 
 test("mount local edit: retry publishes the fallback list to Toolhub", async () => {
@@ -1276,15 +1278,16 @@ test("mount edit: delete without Toolhub sign-in is blocked", () => {
 	);
 });
 
-test("mount edit: deleting a local fallback list discards it in Evolved", async () => {
+test("mount edit: failed local fallback delete keeps the list and explains the failure", async () => {
 	h.officialWriteAvailable.mockReturnValue(true);
 	h.officialWrite.mockRejectedValue(new Error("discard failed"));
 	mountEdit("demo-1", { id: "demo-1", title: "T", description: "", tools: [] });
 	document.querySelector("[data-le-delete]").dispatchEvent(new MouseEvent("click", { bubbles: true }));
 	await tick();
 	assert.deepEqual(h.officialWrite.mock.calls[0], ["DELETE", "/v1/write/lists/demo-1/fallback/"]);
-	assert.deepEqual(h.demoListDelete.mock.calls[0], ["demo-1"]);
-	assert.deepEqual(h.navigateTo.mock.calls.at(-1), ["/my-lists"]);
+	assert.equal(h.demoListDelete.mock.calls.length, 0);
+	assert.equal(h.navigateTo.mock.calls.length, 0);
+	assert.ok(document.querySelector("[data-official-result]").textContent.includes("discard failed"));
 });
 
 test("mount official edit: delete publishes to official Toolhub", async () => {

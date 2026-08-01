@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, esc } from "../lib/core/dom.js";
-import { backendErrorMessage, backendGetJson } from "../lib/core/api.js";
+import { backendErrorExplanation, backendGetJson } from "../lib/core/api.js";
 import { t, tWithElements } from "../lib/core/i18n.js";
 import { serverWrite } from "../lib/core/serversync.js";
 import {
@@ -185,7 +185,7 @@ export function viewDeveloperSettings() {
 		}
 		loadKeys().catch((error) => {
 			renderAuthorKeys([]);
-			setDeveloperResult(backendErrorMessage(error), "err");
+			setDeveloperResult(backendErrorExplanation(error), "err");
 		});
 		$("[data-author-key-form]")?.addEventListener("submit", async (event) => {
 			event.preventDefault();
@@ -201,7 +201,7 @@ export function viewDeveloperSettings() {
 			} catch (error) {
 				setDeveloperResult(
 					t("developerSettings.keyRegisterFailed", "Key registration failed: {msg}", {
-						msg: backendErrorMessage(error)
+						msg: backendErrorExplanation(error)
 					}),
 					"err"
 				);
@@ -220,7 +220,7 @@ export function viewDeveloperSettings() {
 			} catch (error) {
 				setDeveloperResult(
 					t("developerSettings.keyRevokeFailed", "Key revocation failed: {msg}", {
-						msg: backendErrorMessage(error)
+						msg: backendErrorExplanation(error)
 					}),
 					"err"
 				);
@@ -249,7 +249,7 @@ export function viewDeveloperSettings() {
 			} catch (error) {
 				setDeveloperResult(
 					t("developerSettings.payloadFailed", "Payload generation failed: {msg}", {
-						msg: backendErrorMessage(error)
+						msg: backendErrorExplanation(error)
 					}),
 					"err"
 				);

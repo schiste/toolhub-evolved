@@ -4,7 +4,7 @@ import { countLabel, t } from "../lib/core/i18n.js";
 import {
 	ApiError,
 	apiGet,
-	backendErrorMessage,
+	backendErrorExplanation,
 	clearApiCache,
 	getToolsByName,
 	normalizeList,
@@ -105,7 +105,7 @@ function setupListRetry(work) {
 				out.textContent = t(
 					"lists.officialWriteFailed",
 					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-					{ msg: res.lastError || t("lists.unknownOfficialError", "Unknown Toolhub error") }
+					{ msg: backendErrorExplanation(res) }
 				);
 				return;
 			}
@@ -119,7 +119,7 @@ function setupListRetry(work) {
 				"lists.officialWriteFailedNoDraft",
 				"Official Toolhub did not accept the write: {msg}",
 				{
-					msg: backendErrorMessage(error)
+					msg: backendErrorExplanation(error)
 				}
 			);
 		}
@@ -148,15 +148,23 @@ function setupListDelete(work, officialEditing) {
 				out.textContent = t(
 					"lists.officialWriteFailedNoDraft",
 					"Official Toolhub did not accept the write: {msg}",
-					{ msg: backendErrorMessage(error) }
+					{ msg: backendErrorExplanation(error) }
 				);
 				return;
 			}
 		}
 		if (officialWriteAvailable()) {
-			await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/fallback/`).catch(
-				() => undefined
-			);
+			try {
+				await officialWrite("DELETE", `/v1/write/lists/${encodeURIComponent(work.id)}/fallback/`);
+			} catch (error) {
+				out.className = "at__result at__result--err";
+				out.textContent = t(
+					"lists.officialWriteFailedNoDraft",
+					"Official Toolhub did not accept the write: {msg}",
+					{ msg: backendErrorExplanation(error) }
+				);
+				return;
+			}
 			demoListDelete(work.id);
 			navigateTo("/my-lists");
 			return;
@@ -233,7 +241,7 @@ export async function viewList(id) {
 			icon: "edit"
 		});
 	}
-	await Promise.all([attachEndorsements(tools), attachEvolvedSummaries(tools)]);
+	await Promise.all([attachEndorsements(tools, { defer: true }), attachEvolvedSummaries(tools)]);
 	tools = rankFitsFirst(tools);
 	const html = `
 	<div class="container page">
@@ -284,7 +292,7 @@ export function viewMyLists() {
 // overlay only stores which names are favorited. Needs: GET /api/user/favorites/ in production.
 export async function viewFavorites() {
 	const tools = /** @type {Tool[]} */ (await getToolsByName(favNames()));
-	await Promise.all([attachEndorsements(tools), attachEvolvedSummaries(tools)]);
+	await Promise.all([attachEndorsements(tools, { defer: true }), attachEvolvedSummaries(tools)]);
 	const body =
 		tools.length > 0
 			? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t))
@@ -560,7 +568,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 						out.textContent = t(
 							"lists.officialWriteFailed",
 							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-							{ msg: res.lastError || t("lists.unknownOfficialError", "Unknown Toolhub error") }
+							{ msg: backendErrorExplanation(res) }
 						);
 						return;
 					}
@@ -569,7 +577,7 @@ function renderListEdit(src, { editing, officialEditing }) {
 					navigateTo(officialId ? listHref(String(officialId)) : listHref(work.id));
 					return;
 				} catch (error) {
-					const msg = backendErrorMessage(error);
+					const msg = backendErrorExplanation(error);
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"lists.officialWriteFailedNoDraft",

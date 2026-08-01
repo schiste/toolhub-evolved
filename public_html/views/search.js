@@ -159,7 +159,11 @@ export async function viewSearch() {
 	const { canonicalFallback } = loaded;
 	// Federated strip (page 1 only — the strip is additive, never paginated).
 	const local = page === 1 ? await localResults(q, results) : [];
-	await Promise.all([attachEndorsements(results), attachEvolvedSummaries(results), attachEvolvedSummaries(local)]);
+	await Promise.all([
+		attachEndorsements(results, { defer: true }),
+		attachEvolvedSummaries(results),
+		attachEvolvedSummaries(local)
+	]);
 	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
 	if (clientStatuses.size > 0) {
 		results = results.filter((t) => CLIENT_STATUS_FILTERS.some((s) => clientStatuses.has(s.value) && s.match(t)));

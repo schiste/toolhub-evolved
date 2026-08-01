@@ -47,6 +47,7 @@ const { applyExp, setServerUser } = await import("../../public_html/lib/core/ses
 const { toggleFav } = await import("../../public_html/lib/core/store.js");
 const { setUserContext } = await import("../../public_html/lib/core/signals.js");
 const home = await import("../../public_html/views/home.js");
+const tick = () => new Promise((res) => setTimeout(res, 0));
 
 // --- expected snapshots (baked from un-mutated output) ---
 const S = {
@@ -705,7 +706,11 @@ test("home unfiltered: lists + tools populated", async () => {
 	});
 	const r = await home.viewHome();
 	assert.equal(r.title, "Toolhub — discover Wikimedia tools");
-	expect("unfiltered", r.html);
+	assert.ok(!r.html.includes("signal--lists"), "cold endorsement data does not block first paint");
+	await tick();
+	await tick();
+	const hydrated = await home.viewHome();
+	expect("unfiltered", hydrated.html);
 });
 
 test("signed-in home puts favorites before owned tools", async () => {
@@ -731,8 +736,13 @@ test("signed-in home puts favorites before owned tools", async () => {
 	const ownToolsIndex = r.html.indexOf("Your tools");
 	assert.ok(favoritesIndex >= 0, "authenticated home renders favorites");
 	assert.ok(ownToolsIndex > favoritesIndex, "owned tools follow favorites");
-	assert.ok(r.html.includes('data-tool="favorite"'), "favorite tool card renders");
-	assert.ok(r.html.includes('data-tool="owned"'), "owned tool card renders");
+	assert.ok(r.html.includes("skeleton-grid--tool"), "personal panels render without blocking the route");
+	document.body.innerHTML = r.html;
+	r.mount();
+	await tick();
+	await tick();
+	assert.ok(document.body.innerHTML.includes('data-tool="favorite"'), "favorite tool card renders");
+	assert.ok(document.body.innerHTML.includes('data-tool="owned"'), "owned tool card renders");
 	assert.equal(h.backendGetJson.mock.calls.filter(([path]) => path === "/v1/me/tools/").length, 1);
 });
 
@@ -868,8 +878,6 @@ async function mountHome(opts = {}) {
 	r.mount();
 	return r;
 }
-
-const tick = () => new Promise((res) => setTimeout(res, 0));
 
 test("mount: re-mounting home removes the prior document listeners (no leak)", async () => {
 	const removed = [];

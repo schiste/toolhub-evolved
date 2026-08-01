@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "../lib/core/dom.js";
-import { backendErrorMessage, backendGetJson } from "../lib/core/api.js";
+import { backendErrorExplanation, backendGetJson } from "../lib/core/api.js";
 import { t } from "../lib/core/i18n.js";
 import { serverWrite } from "../lib/core/serversync.js";
 import { demoStore } from "../lib/core/store.js";
@@ -71,7 +71,7 @@ export function viewAccountSettings() {
 			} catch (error) {
 				out.className = "at__result at__result--err";
 				out.textContent = t("accountData.exportFailed", "Export failed: {msg}", {
-					msg: backendErrorMessage(error)
+					msg: backendErrorExplanation(error)
 				});
 			}
 		});
@@ -90,7 +90,7 @@ export function viewAccountSettings() {
 			} catch (error) {
 				out.className = "at__result at__result--err";
 				out.textContent = t("accountData.deleteFailed", "Delete failed: {msg}", {
-					msg: backendErrorMessage(error)
+					msg: backendErrorExplanation(error)
 				});
 			}
 		});

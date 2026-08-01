@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "../core/dom.js";
-import { backendErrorMessage } from "../core/api.js";
+import { backendErrorExplanation } from "../core/api.js";
 import { pageDiagnostics } from "../core/diagnostics.js";
 import { t } from "../core/i18n.js";
 import { signedIn } from "../core/session.js";
@@ -190,7 +190,7 @@ async function publish() {
 		const target = body();
 		if (target) target.innerHTML = successHTML(result);
 	} catch (error) {
-		setError(backendErrorMessage(error));
+		setError(backendErrorExplanation(error));
 		if (button) button.disabled = false;
 	}
 }

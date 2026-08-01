@@ -196,8 +196,27 @@ export function rankFitsFirst(tools) {
 	// Stryker restore ArithmeticOperator
 }
 // Attach `.endorsement` to each tool from the (memoized) membership map.
-/** @param {Tool[]} tools */
-export async function attachEndorsements(tools) {
+/**
+ * @param {Tool[]} tools
+ * @param {{ defer?: boolean }} [opts]
+ */
+export async function attachEndorsements(tools, opts = {}) {
+	if (opts.defer) {
+		const cached = readMembershipCache();
+		const lm = cached ? cached.map : new Map();
+		for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, lm);
+		// A cold membership cache must never hold up a route. listMemberships()
+		// deduplicates the crawl; the event lets the active view repaint counts.
+		listMemberships()
+			.then((fresh) => {
+				for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, fresh);
+				if (typeof document !== "undefined") {
+					document.dispatchEvent(new CustomEvent("toolhub:endorsements-refresh"));
+				}
+			})
+			.catch(() => {});
+		return tools;
+	}
 	const lm = await listMemberships();
 	// `endorsement` is a view-attached extra not declared on the Tool interface.
 	for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, lm);

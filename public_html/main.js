@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "./lib/core/dom.js";
-import { backendGetJson } from "./lib/core/api.js";
+import { backendErrorExplanation, backendGetJson } from "./lib/core/api.js";
 import {
 	markAppBootStart,
 	initPageDiagnostics,
@@ -163,8 +163,15 @@ function toggleFavorite(name) {
 	syncFavButtons(name, on);
 	if (officialWriteAvailable()) {
 		const path = on ? "/v1/write/user/favorites/" : `/v1/write/user/favorites/${encodeURIComponent(name)}/`;
-		officialWrite(on ? "POST" : "DELETE", path, on ? { name } : undefined).catch(() => {
-			// Keep the local overlay as a draft if official Toolhub rejects the write.
+		officialWrite(on ? "POST" : "DELETE", path, on ? { name } : undefined).catch((error) => {
+			// Keep the local overlay responsive, but explain that official sync failed.
+			showApiToast(
+				t("favorites.syncFailed", "Favorite saved locally, but official Toolhub sync failed: {msg}", {
+					msg: backendErrorExplanation(error)
+				}),
+				"warning"
+			);
+			hideApiToastSoon(6000);
 		});
 	}
 }
@@ -295,6 +302,9 @@ document.addEventListener("toolhub:api-cache-refresh", (e) => {
 	}
 });
 document.addEventListener("toolhub:evolved-summaries-refresh", () => {
+	scheduleApiRefreshRender();
+});
+document.addEventListener("toolhub:endorsements-refresh", () => {
 	scheduleApiRefreshRender();
 });
 document.addEventListener("toolhub:route-render-end", () => {

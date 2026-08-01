@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc } from "../core/dom.js";
-import { backendErrorMessage, backendGetJson } from "../core/api.js";
+import { backendErrorExplanation, backendGetJson } from "../core/api.js";
 import { t, timeTag } from "../core/i18n.js";
 import { serverWrite } from "../core/serversync.js";
 import { button } from "../atoms/button.js";
@@ -515,7 +515,7 @@ async function loadReports() {
 		const data = await backendGetJson("/v1/source-analysis/?limit=5");
 		list.innerHTML = reportsList(arrayRows(data?.results));
 	} catch (error) {
-		list.innerHTML = `<p class="empty">${esc(backendErrorMessage(error))}</p>`;
+		list.innerHTML = `<p class="empty">${esc(backendErrorExplanation(error))}</p>`;
 	}
 }
 
@@ -532,7 +532,7 @@ async function submitAnalysis(event) {
 			...(await sourceFilesFromInput(fileInput))
 		];
 	} catch (error) {
-		setSourceAnalysisStatus(backendErrorMessage(error), "err");
+		setSourceAnalysisStatus(backendErrorExplanation(error), "err");
 		return;
 	}
 	if (files.length === 0) {
@@ -571,7 +571,7 @@ async function submitAnalysis(event) {
 		await loadReports();
 	} catch (error) {
 		setSourceAnalysisStatus(
-			t("sourceAnalysis.failed", "Analysis failed: {msg}", { msg: backendErrorMessage(error) }),
+			t("sourceAnalysis.failed", "Analysis failed: {msg}", { msg: backendErrorExplanation(error) }),
 			"err"
 		);
 	} finally {
@@ -611,7 +611,7 @@ async function handleSourceAnalysisAction(event) {
 		await loadReports();
 	} catch (error) {
 		setSourceAnalysisStatus(
-			t("sourceAnalysis.reviewFailed", "Review failed: {msg}", { msg: backendErrorMessage(error) }),
+			t("sourceAnalysis.reviewFailed", "Review failed: {msg}", { msg: backendErrorExplanation(error) }),
 			"err"
 		);
 	}

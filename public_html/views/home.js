@@ -24,6 +24,7 @@ import { favNames } from "../lib/core/store.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { button } from "../lib/atoms/button.js";
 import { icon } from "../lib/atoms/icon.js";
+import { cardGridSkeleton } from "../lib/molecules/skeleton.js";
 import { grid } from "../lib/organisms/grid.js";
 import { listCard } from "../lib/organisms/list-card.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -63,7 +64,7 @@ const INTENT_AXES = {
 };
 
 /** @typedef {{ axis: string, term: string, wiki: string }} IntentState */
-/** @typedef {{ tools: Tool[], error?: boolean }} PersonalTools */
+/** @typedef {{ tools: Tool[], error?: boolean, loading?: boolean }} PersonalTools */
 /** @typedef {{ favorites: PersonalTools, ownTools: PersonalTools }} PersonalHomeModel */
 /** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean }} HomeModel */
 /** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
@@ -261,7 +262,7 @@ async function personalHomeModel() {
 		ownToolsForHome().catch(() => ({ tools: [], error: true }))
 	]);
 	const allTools = [...favorites.tools, ...ownTools.tools];
-	await Promise.all([attachEndorsements(allTools), attachEvolvedSummaries(allTools)]);
+	await Promise.all([attachEndorsements(allTools, { defer: true }), attachEvolvedSummaries(allTools)]);
 	return { favorites, ownTools };
 }
 
@@ -273,7 +274,11 @@ async function personalHomeModel() {
  * @param {string} error
  */
 function personalToolsSectionHTML(title, href, section, empty, error) {
-	const body = section.error ? `<p class="empty">${esc(error)}</p>` : toolsGridHTML(section.tools, empty);
+	const body = section.loading
+		? cardGridSkeleton("tool", 4)
+		: section.error
+			? `<p class="empty">${esc(error)}</p>`
+			: toolsGridHTML(section.tools, empty);
 	return `<div class="section-head"><h2>${esc(title)}</h2><a class="link" href="${href}">${t("home.viewAll", "View all")}</a></div>${body}`;
 }
 /**
@@ -322,7 +327,7 @@ export async function viewFeaturedTools() {
 	const rawLists = await paginate("/lists/", { featured: "true" }, { pageSize: 30, maxPages: 10 });
 	const lists = rawLists.map((/** @type {any} */ list) => normalizeList(list));
 	const tools = dedupeTools(lists.flatMap((list) => list.tools || []));
-	await Promise.all([attachEndorsements(tools), attachEvolvedSummaries(tools)]);
+	await Promise.all([attachEndorsements(tools, { defer: true }), attachEvolvedSummaries(tools)]);
 	const ranked = rankFitsFirst(tools);
 	return {
 		title: t("home.featuredToolsDocTitle", "Featured tools — Toolhub"),
@@ -377,7 +382,7 @@ async function homeSectionsModel(state) {
 		if (featured.length === 0 && fallbackTools.length > 0) {
 			featured = fallbackTools.filter((tool) => toolMatchesIntent(tool, state));
 		}
-		await Promise.all([attachEndorsements(featured), attachEvolvedSummaries(featured)]);
+		await Promise.all([attachEndorsements(featured, { defer: true }), attachEvolvedSummaries(featured)]);
 		const matchingNames = new Set(featured.map((t) => t.name));
 		lists = lists.filter((l) =>
 			// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
@@ -387,7 +392,7 @@ async function homeSectionsModel(state) {
 		// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
 		featured = dedupeTools(lists.flatMap((l) => l.tools || []));
 		if (featured.length === 0 && fallbackTools.length > 0) featured = fallbackTools.slice(0, 8);
-		await Promise.all([attachEndorsements(featured), attachEvolvedSummaries(featured)]);
+		await Promise.all([attachEndorsements(featured, { defer: true }), attachEvolvedSummaries(featured)]);
 	}
 	let recentTools = (recent.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
 	if (recentTools.length === 0 && fallbackTools.length > 0) recentTools = fallbackTools.slice(0, 5);
@@ -412,12 +417,17 @@ export async function viewHome() {
 	// Live: total count, featured curated lists (with embedded tools), recent tools.
 	const ctx = getUserContext();
 	const initialState = intentStateFromContext(ctx);
-	const [home, initialModel, personal] = await Promise.all([
+	const authenticated = signedIn();
+	const [home, initialModel] = await Promise.all([
 		apiGet("/ui/home/").catch(() => ({})),
-		homeSectionsModel(initialState),
-		signedIn() ? personalHomeModel() : Promise.resolve(null)
+		homeSectionsModel(initialState)
 	]);
-	initialModel.personal = personal || undefined;
+	initialModel.personal = authenticated
+		? {
+				favorites: { tools: [], loading: true },
+				ownTools: { tools: [], loading: true }
+			}
+		: undefined;
 	const total = home.total_tools || 0;
 	const intentAxis = initialState.axis;
 	const intentTerm = initialState.term;
@@ -546,6 +556,13 @@ export async function viewHome() {
 				homeMain.innerHTML = `<p class="empty">${t("home.refreshError", "Unable to refresh tools right now.")}</p>`;
 				homeRecent.innerHTML = `<li class="recent__empty">${t("home.recentRefreshError", "Unable to refresh recently updated tools.")}</li>`;
 			};
+			if (authenticated) {
+				personalHomeModel().then((personal) => {
+					if (!homeMain.isConnected) return;
+					initialModel.personal = personal;
+					renderHomeModel(initialModel);
+				});
+			}
 			const refreshHome = async () => {
 				// Stryker disable next-line UpdateOperator: refreshSeq is only ever compared for equality to detect a superseded refresh; ++ and -- both produce a unique value per call, so the stale-guard behaves identically — equivalent.
 				const seq = ++refreshSeq;
@@ -554,6 +571,7 @@ export async function viewHome() {
 				try {
 					const model = await homeSectionsModel(state);
 					if (seq !== refreshSeq) return;
+					model.personal = initialModel.personal;
 					renderHomeModel(model);
 				} catch {
 					if (seq !== refreshSeq) return;
