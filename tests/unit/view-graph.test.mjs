@@ -65,6 +65,7 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 	assert.match(view.html, /data-graph-action="zoom-out"/);
 	assert.match(view.html, /data-graph-action="fit"/);
 	assert.match(view.html, /data-graph-zoom[^>]*>100%<\/span>/);
+	assert.match(view.html, /<option value="platform">Platforms<\/option>/);
 
 	// The router can commit the shell before the request resolves; mount hydrates it in place.
 	document.body.innerHTML = view.html;

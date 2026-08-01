@@ -460,6 +460,7 @@
 	"graph.groupBy": "Pull together by",
 	"graph.groupCoverage": "{covered} of {total} tools have this metadata",
 	"graph.groupLanguage": "Languages",
+	"graph.groupPlatform": "Platforms",
 	"graph.groupProject": "Projects",
 	"graph.groupSimilarity": "Similarity only",
 	"graph.groupTask": "Tasks",

@@ -8,7 +8,16 @@ import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 
 const GRAPH_LIMITS = [250, 500, 1000, 2000, 4000];
-const GRAPH_GROUPINGS = ["similarity", "language", "project", "task", "use_case", "tool_type", "technology"];
+const GRAPH_GROUPINGS = [
+	"similarity",
+	"language",
+	"project",
+	"task",
+	"use_case",
+	"tool_type",
+	"technology",
+	"platform"
+];
 
 /** @returns {{ limit: number, groupBy: string }} */
 function graphRequestState() {
@@ -58,7 +67,8 @@ function graphOptions(state) {
 		task: t("graph.groupTask", "Tasks"),
 		use_case: t("graph.groupUseCase", "Use cases"),
 		tool_type: t("graph.groupToolType", "Tool types"),
-		technology: t("graph.groupTechnology", "Technology")
+		technology: t("graph.groupTechnology", "Technology"),
+		platform: t("graph.groupPlatform", "Platforms")
 	};
 	const limitOptions = GRAPH_LIMITS.map(
 		(limit) =>
