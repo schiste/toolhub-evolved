@@ -1224,6 +1224,7 @@ def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_n
     # prove that the canonical Toolhub author name belongs to that account.
     entry["matchedAuthorNames"] = _dedupe_strings([*entry["matchedAuthorNames"], username])
     entry["claimAuthorNames"] = _dedupe_strings([*entry["claimAuthorNames"], username])
+    entry["toolforgeMembershipName"] = toolforge_name
     entry["evidenceUrl"] = TOOLFORGE_MAINTAINER_PROVIDER.evidence_url(toolforge_name)
     entry["evidencePayload"] = {
         **(entry.get("evidencePayload") if isinstance(entry.get("evidencePayload"), dict) else {}),
@@ -1332,13 +1333,22 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
                 evidence_url=entry.get("evidenceUrl") or _author_search_evidence_url(search_term),
                 evidence_payload=entry.get("evidencePayload") or {"searchTerms": entry["searchTerms"]},
             )
-            TOOLFORGE_MAINTAINER_PROVIDER.verify(
-                s,
-                user,
-                tool_name=tool_name,
-                author_names=entry["matchedAuthorNames"],
-                toolhub_tool=entry["tool"],
-            )
+            membership_name = entry.get("toolforgeMembershipName")
+            if membership_name:
+                TOOLFORGE_MAINTAINER_PROVIDER.record_membership(
+                    s,
+                    user,
+                    tool_name=tool_name,
+                    toolforge_name=membership_name,
+                )
+            else:
+                TOOLFORGE_MAINTAINER_PROVIDER.verify(
+                    s,
+                    user,
+                    tool_name=tool_name,
+                    author_names=entry["matchedAuthorNames"],
+                    toolhub_tool=entry["tool"],
+                )
         rows = list(
             s.execute(select(ToolAuthorClaim).where(ToolAuthorClaim.toolhub_username == user.username)).scalars()
         )
@@ -2468,6 +2478,8 @@ def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str,
         existing["claimAuthorNames"] = _dedupe_strings(
             [*existing.get("claimAuthorNames", []), *entry.get("claimAuthorNames", [])]
         )
+        if entry.get("toolforgeMembershipName"):
+            existing["toolforgeMembershipName"] = entry["toolforgeMembershipName"]
         existing["searchTerms"] = _dedupe_strings([*existing["searchTerms"], *entry["searchTerms"]])
         if entry.get("evidenceUrl"):
             existing["evidenceUrl"] = entry["evidenceUrl"]

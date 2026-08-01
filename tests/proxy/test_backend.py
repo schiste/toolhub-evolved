@@ -3123,23 +3123,19 @@ def test_me_tools_merges_toolforge_candidate_without_optional_evidence(client, m
         lambda _username: (
             {
                 "toolforge-ada": {
-                    "tool": row,
-                    "matchedAuthorNames": ["Ada"],
-                    "searchTerms": ["toolforge:ada"],
-                }
+                "tool": row,
+                "matchedAuthorNames": ["Ada"],
+                "searchTerms": ["toolforge:ada"],
+                "toolforgeMembershipName": "ada",
+            }
             },
             [],
             ["ada"],
         ),
     )
-    monkeypatch.setattr(
-        v1_api,
-        "TOOLFORGE_MAINTAINER_PROVIDER",
-        ToolforgeMaintainerProvider(fetcher=lambda _name: (404, "")),
-    )
     data = client.get("/v1/me/tools/").get_json()
-    assert data["counts"] == {"verified": 0, "possible": 1}
-    assert data["possible"][0]["searchTerms"] == ["Ada", "toolforge:ada"]
+    assert data["counts"] == {"verified": 1, "possible": 0}
+    assert data["verified"][0]["searchTerms"] == ["Ada", "toolforge:ada"]
 
 
 def test_me_tools_verified_author_claims_are_per_tool_not_global(client, monkeypatch):

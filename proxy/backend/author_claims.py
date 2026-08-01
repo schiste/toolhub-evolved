@@ -102,6 +102,14 @@ class SignatureMeta:
     signature: str
 
 
+@dataclass(frozen=True)
+class ToolsadminMaintainer:
+    """One maintainer listed by the public Toolsadmin page."""
+
+    display_name: str
+    username: str = ""
+
+
 class _MaintainerParser(HTMLParser):
     """Extract Toolsadmin maintainer names from public tool pages."""
 
@@ -109,6 +117,8 @@ class _MaintainerParser(HTMLParser):
         super().__init__()
         self._in_anchor = False
         self._href = ""
+        self._username = ""
+        self.entries: list[ToolsadminMaintainer] = []
         self.maintainers: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -116,17 +126,20 @@ class _MaintainerParser(HTMLParser):
             return
         self._href = dict(attrs).get("href") or ""
         self._in_anchor = "/profile/" in self._href or "/users/" in self._href
+        self._username = _toolsadmin_username_from_href(self._href) if self._in_anchor else ""
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "a":
             self._in_anchor = False
             self._href = ""
+            self._username = ""
 
     def handle_data(self, data: str) -> None:
         if self._in_anchor:
             name = clean_string(data)
             if name:
                 self.maintainers.append(name)
+                self.entries.append(ToolsadminMaintainer(display_name=name, username=self._username))
 
 
 def clean_string(value: Any) -> str:  # noqa: ANN401 - untrusted API/user JSON
@@ -137,6 +150,17 @@ def clean_string(value: Any) -> str:  # noqa: ANN401 - untrusted API/user JSON
 def string_key(value: Any) -> str:  # noqa: ANN401 - untrusted API/user JSON
     """Return a case-insensitive comparison key."""
     return clean_string(value).casefold()
+
+
+def _toolsadmin_username_from_href(href: str) -> str:
+    """Extract a stable profile handle from a Toolsadmin maintainer link."""
+    parts = [unquote(part).strip() for part in urlparse(href).path.split("/") if part.strip()]
+    for marker in ("profile", "users"):
+        if marker in parts:
+            index = parts.index(marker) + 1
+            if index < len(parts):
+                return parts[index][:255]
+    return ""
 
 
 def dedupe_strings(values: list[Any]) -> list[str]:
@@ -312,9 +336,15 @@ class ToolforgeMaintainerProvider:
                 continue
             if status >= HTTP_BAD_REQUEST:
                 return self._record_failed(s, user, tool_name, names, evidence_url, f"Toolsadmin returned {status}")
-            maintainers = parse_toolsadmin_maintainers(body)
-            if any(string_key(name) == string_key(user.username) for name in maintainers):
-                return self._record_verified(s, user, tool_name, names, toolforge_name, maintainers, evidence_url)
+            maintainer_entries = parse_toolsadmin_maintainer_entries(body)
+            if any(
+                string_key(entry.username) == string_key(user.username)
+                or string_key(entry.display_name) == string_key(user.username)
+                for entry in maintainer_entries
+            ):
+                return self._record_verified(
+                    s, user, tool_name, names, toolforge_name, maintainer_entries, evidence_url
+                )
         return self._record_failed(
             s,
             user,
@@ -322,6 +352,36 @@ class ToolforgeMaintainerProvider:
             names,
             self.evidence_url(toolforge_names[0]),
             "user is not listed as a Toolforge maintainer",
+        )
+
+    def record_membership(
+        self,
+        s: Session,
+        user: User,
+        *,
+        tool_name: str,
+        toolforge_name: str,
+    ) -> ToolAuthorClaim:
+        """Record direct LDAP membership without requiring a page fetch.
+
+        LDAP membership is returned for the authenticated Wikimedia identity and
+        names the exact ``tools.<account>`` service group. It is therefore a
+        stronger account-access proof than matching a canonical author string;
+        Toolsadmin remains the public catalog-wide maintainer source.
+        """
+        return record_author_claim(
+            s,
+            tool_name=tool_name,
+            author_name=user.username,
+            toolhub_username=user.username,
+            verification_status=AUTHOR_CLAIM_VERIFIED,
+            verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+            evidence_url=self.evidence_url(toolforge_name),
+            evidence_payload={
+                "toolforgeToolName": toolforge_name,
+                "discoveryMethod": "toolforge_ldap_membership",
+            },
+            expires_at=utcnow() + TOOLFORGE_CLAIM_TTL,
         )
 
     def evidence_url(self, toolforge_name: str) -> str:
@@ -355,7 +415,7 @@ class ToolforgeMaintainerProvider:
         tool_name: str,
         author_names: list[str],
         toolforge_name: str,
-        maintainers: list[str],
+        maintainers: list[ToolsadminMaintainer],
         evidence_url: str,
     ) -> list[ToolAuthorClaim]:
         expires_at = utcnow() + TOOLFORGE_CLAIM_TTL
@@ -368,7 +428,13 @@ class ToolforgeMaintainerProvider:
                 verification_status=AUTHOR_CLAIM_VERIFIED,
                 verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 evidence_url=evidence_url,
-                evidence_payload={"toolforgeToolName": toolforge_name, "maintainers": maintainers},
+                evidence_payload={
+                    "toolforgeToolName": toolforge_name,
+                    "maintainers": [
+                        {"displayName": entry.display_name, "username": entry.username}
+                        for entry in maintainers
+                    ],
+                },
                 expires_at=expires_at,
             )
             for author_name in author_names
@@ -551,33 +617,55 @@ def _html_fragment_text(fragment: str) -> str:
     return clean_string(re.sub(r"\s+", " ", text))
 
 
-def _captioned_maintainer_table_names(html: str) -> list[str]:
-    """Extract names from the current Toolsadmin maintainer table markup."""
-    names: list[str] = []
+def _dedupe_toolsadmin_maintainers(entries: list[ToolsadminMaintainer]) -> list[ToolsadminMaintainer]:
+    """Deduplicate maintainer entries by stable handle, then display name."""
+    out: list[ToolsadminMaintainer] = []
+    seen: set[str] = set()
+    for entry in entries:
+        display_name = clean_string(entry.display_name)
+        username = clean_string(entry.username)
+        key = string_key(username or display_name)
+        if display_name and key and key not in seen:
+            out.append(ToolsadminMaintainer(display_name=display_name, username=username))
+            seen.add(key)
+    return out
+
+
+def parse_toolsadmin_maintainer_entries(html: str) -> list[ToolsadminMaintainer]:
+    """Extract maintainer display names and stable profile handles."""
+    entries: list[ToolsadminMaintainer] = []
+    found_captioned_table = False
     for table in re.findall(r"<table\b[^>]*>.*?</table>", html, flags=re.DOTALL | re.IGNORECASE):
         caption_match = re.search(r"<caption[^>]*>(.*?)</caption>", table, flags=re.DOTALL | re.IGNORECASE)
         if caption_match is None or string_key(_html_fragment_text(caption_match.group(1))) != "maintainers":
             continue
-        names.extend(
-            _html_fragment_text(cell)
-            for cell in re.findall(r"<td\b[^>]*>(.*?)</td>", table, flags=re.DOTALL | re.IGNORECASE)
-        )
-    return dedupe_strings(names)
+        found_captioned_table = True
+        parser = _MaintainerParser()
+        parser.feed(table)
+        entries.extend(parser.entries)
+        if not parser.entries:
+            entries.extend(
+                ToolsadminMaintainer(display_name=_html_fragment_text(cell))
+                for cell in re.findall(r"<td\b[^>]*>(.*?)</td>", table, flags=re.DOTALL | re.IGNORECASE)
+            )
+    if found_captioned_table:
+        return _dedupe_toolsadmin_maintainers(entries)
+
+    parser = _MaintainerParser()
+    parser.feed(html)
+    if parser.entries:
+        return _dedupe_toolsadmin_maintainers(parser.entries)
+    marker = re.search(r"Maintainers\s+Maintainers\s+(.*?)\s+Git repositories", html, flags=re.DOTALL | re.IGNORECASE)
+    if marker is None:
+        return []
+    return _dedupe_toolsadmin_maintainers(
+        [ToolsadminMaintainer(display_name=line.strip()) for line in marker.group(1).splitlines()]
+    )
 
 
 def parse_toolsadmin_maintainers(html: str) -> list[str]:
     """Extract public maintainer names from a Toolsadmin tool detail page."""
-    table_names = _captioned_maintainer_table_names(html)
-    if table_names:
-        return table_names
-    parser = _MaintainerParser()
-    parser.feed(html)
-    if parser.maintainers:
-        return dedupe_strings(parser.maintainers)
-    marker = re.search(r"Maintainers\s+Maintainers\s+(.*?)\s+Git repositories", html, flags=re.DOTALL | re.IGNORECASE)
-    if marker is None:
-        return []
-    return dedupe_strings([line.strip() for line in marker.group(1).splitlines()])
+    return [entry.display_name for entry in parse_toolsadmin_maintainer_entries(html)]
 
 
 def toolforge_tool_names_from_member_dns(member_dns: list[Any]) -> list[str]:
