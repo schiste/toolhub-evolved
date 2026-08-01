@@ -1405,6 +1405,10 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
     user = _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
     try:
         body, status = toolhub.api_request(user.id, method, path, json=payload)
+    except ValueError:
+        # toolhub.api_path refused the path (outside /api/, or a dot segment that
+        # urllib3 would normalize into an escape). Nothing left the process.
+        return _bad("invalid official Toolhub path")
     except toolhub.ToolhubAuthError as exc:
         resp = jsonify({"error": str(exc), "reauth": True})
         resp.status_code = 401
@@ -1499,6 +1503,12 @@ def _attempt_official_write(user: User, method: str, path: str, payload: object 
     """Call Toolhub with the user's grant; auth failures remain non-fallback."""
     try:
         body, status = toolhub.api_request(user.id, method, path, json=payload)
+    except ValueError:
+        # toolhub.api_path refused the path, so nothing left the process. Return a
+        # denial rather than a failure payload: a failure here would be treated as
+        # "Toolhub rejected the write" and stored as a local fallback draft, which
+        # would persist a draft keyed on a path that can never be valid.
+        return {}, _bad("invalid official Toolhub path")
     except toolhub.ToolhubAuthError as exc:
         resp = jsonify({"error": str(exc), "reauth": True})
         resp.status_code = HTTP_UNAUTHORIZED
@@ -1552,6 +1562,7 @@ def _official_failure_response(failure: dict) -> Response:
 
 
 def _local_fallback_response(failure: dict, local: dict) -> Response:
+    details = failure.get("details") if isinstance(failure.get("details"), dict) else {}
     payload = {
         "ok": True,
         "result": SYNC_LOCAL_FALLBACK,
@@ -1559,6 +1570,8 @@ def _local_fallback_response(failure: dict, local: dict) -> Response:
         "lastError": failure["lastError"],
         "validationErrors": failure["validationErrors"],
         "toolhubResponse": failure["details"],
+        "toolhubStatus": failure.get("status"),
+        "toolhubCode": details.get("code"),
         "local": local,
     }
     if failure.get("crawlerFetch") is not None:
@@ -1566,6 +1579,23 @@ def _local_fallback_response(failure: dict, local: dict) -> Response:
     resp = jsonify(payload)
     resp.status_code = 202
     return resp
+
+
+def _safe_failure_activity_payload(payload: dict) -> dict:
+    """Keep fallback activity queryable without publishing submitted values."""
+    response = payload.get("toolhubResponse")
+    response = response if isinstance(response, dict) else {}
+    safe = {
+        "syncStatus": SYNC_LOCAL_FALLBACK,
+        "httpStatus": payload.get("_toolhubStatus") or response.get("status_code") or response.get("status"),
+        "toolhubCode": payload.get("_toolhubCode") or response.get("code"),
+        "lastError": payload.get("lastError"),
+    }
+    local = payload.get("local")
+    if isinstance(local, dict):
+        meta = set(META_KEYS) | {"id", "name", "deleted"}
+        safe["submittedFields"] = sorted(key for key in local if key not in meta)
+    return {key: value for key, value in safe.items() if value not in (None, "", [])}
 
 
 def _emit_structured_activity(  # noqa: PLR0913 - activity rows need explicit queryable fields
@@ -1580,6 +1610,9 @@ def _emit_structured_activity(  # noqa: PLR0913 - activity rows need explicit qu
     title: str | None = None,
 ) -> None:
     """Add Evolved activity in both legacy feed shapes plus structured columns."""
+    stored_payload = (
+        _safe_failure_activity_payload(payload) if official_status == SYNC_LOCAL_FALLBACK else payload
+    )
     now = utcnow()
     client_id = f"w{uuid4().hex}"
     label = title or object_key
@@ -1619,11 +1652,11 @@ def _emit_structured_activity(  # noqa: PLR0913 - activity rows need explicit qu
                 object_key=object_key,
                 action=action,
                 official_status=official_status,
-                payload=payload,
+                payload=stored_payload,
                 source=SOURCE_LOCAL,
                 sync_status=SYNC_EVOLVED_REAL,
                 last_synced_at=now if official_status == SYNC_OFFICIAL else None,
-                last_error=clean_error(payload.get("lastError")),
+                last_error=clean_error(stored_payload.get("lastError")),
             )
         )
 
@@ -2647,7 +2680,13 @@ def _write_tool_core(route_name: str | None = None) -> Response:
             object_key=name,
             official_status=SYNC_LOCAL_FALLBACK,
             payload=_with_crawler_fetch(
-                {"lastError": attempt["lastError"], "toolhubResponse": attempt["details"], "local": local},
+                {
+                    "lastError": attempt["lastError"],
+                    "toolhubResponse": attempt["details"],
+                    "_toolhubStatus": attempt["status"],
+                    "_toolhubCode": attempt["details"].get("code") if isinstance(attempt["details"], dict) else None,
+                    "local": local,
+                },
                 crawler_fetch,
             ),
             title=fields["title"],

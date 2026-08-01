@@ -229,17 +229,35 @@ def _json_or_text(resp: requests.Response) -> object:
         return {"message": resp.text}
 
 
-def _public_api_url(path: str, params: dict[str, object] | None = None) -> str:
-    """Build a fixed anonymous Toolhub API URL for cacheable GET reads."""
+def api_path(path: str, *, what: str) -> str:
+    """Return a normalized Toolhub API path, refusing anything outside /api/.
+
+    Shared by the anonymous read helper and the authenticated write bridge. It
+    lived only on the read side at first, which left the write side — the half
+    that carries a user's bearer grant — as the unguarded one. Both now clear the
+    same two checks:
+
+    1. The path stays under /api/, so neither helper can be steered at /o/token/
+       or any other non-API endpoint.
+    2. No parent-directory segments. The prefix check alone is not enough:
+       urllib3 normalizes dot segments when it builds the request line, so
+       "/api/tools/../" is sent as "/api/" and leaves the resource scope the
+       route intended. Flask's <name> converter already excludes "/", which
+       bounds the climb to one level, but "bounded escape" is still escape.
+    """
     normalized = "/" + path.lstrip("/")
     if normalized != "/api/" and not normalized.startswith("/api/"):
-        msg = "anonymous reads are limited to Toolhub /api/"
+        msg = f"{what} are limited to Toolhub /api/"
         raise ValueError(msg)
-    # The prefix check alone is not enough: requests normalizes dot segments, so
-    # "/api/../o/token/" would satisfy it and then leave the /api/ tree.
     if any(part == ".." for part in normalized.split("/")):
-        msg = "anonymous reads may not use parent-directory segments"
+        msg = f"{what} may not use parent-directory segments"
         raise ValueError(msg)
+    return normalized
+
+
+def _public_api_url(path: str, params: dict[str, object] | None = None) -> str:
+    """Build a fixed anonymous Toolhub API URL for cacheable GET reads."""
+    normalized = api_path(path, what="anonymous reads")
     pairs = [(key, value) for key, value in (params or {}).items() if value is not None]
     query = urlencode(pairs, doseq=True)
     return f"{base_url()}{normalized}{('?' + query) if query else ''}"
@@ -279,10 +297,14 @@ def public_api_get(path: str, *, params: dict[str, object] | None = None) -> obj
 
 
 def request_with_token(method: str, path: str, *, access_token: str, json: object | None = None) -> tuple[object, int]:
-    """Call the official Toolhub API with a supplied OAuth access token."""
+    """Call the official Toolhub API with a supplied OAuth access token.
+
+    Raises ValueError for a path that leaves /api/; callers surface that as a
+    400 rather than letting a scope-escaping write reach Toolhub.
+    """
     resp = requests.request(
         method,
-        f"{base_url()}{path}",
+        f"{base_url()}{api_path(path, what='official API calls')}",
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
         json=json,
         timeout=REQUEST_TIMEOUT,

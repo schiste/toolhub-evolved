@@ -3979,6 +3979,57 @@ def test_public_api_url_stays_inside_the_api_tree():
             toolhub._public_api_url(path)
 
 
+def test_request_with_token_stays_inside_the_api_tree(monkeypatch):
+    """The authenticated write bridge gets the same path guard as anonymous reads.
+
+    It did not for a while: only _public_api_url checked, so the half carrying a
+    user's bearer grant was the unguarded one. A single "../" segment is enough,
+    because urllib3 normalizes dot segments when it builds the request line —
+    /api/tools/../ leaves as /api/, escaping the resource scope the route named.
+    """
+    sent = []
+    monkeypatch.setattr(toolhub.requests, "request", lambda m, url, **_k: sent.append((m, url)))
+    for path in ("/o/token/", "/api/tools/../", "/api/tools/../../o/token/"):
+        with pytest.raises(ValueError, match="official API calls"):
+            toolhub.request_with_token("PUT", path, access_token="at", json={})
+    assert sent == [], f"a refused path still reached the network: {sent}"
+
+
+def test_official_write_route_refuses_a_scope_escaping_tool_name(client, monkeypatch):
+    """The refusal surfaces as a 400, not a 500, and never reaches Toolhub."""
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    calls = []
+    monkeypatch.setattr(toolhub.requests, "request", lambda m, url, **_k: calls.append((m, url)))
+    resp = client.put("/v1/toolhub/tools/../", json={"name": "x"}, headers={"X-CSRF-Token": "tok"})
+    assert resp.status_code == 400
+    assert calls == []
+
+
+def test_write_lifecycle_refuses_a_scope_escaping_name_without_storing_a_draft(client, monkeypatch):
+    """The second api_request call site is guarded too, and does not fall back.
+
+    _attempt_official_write feeds the /v1/write/* lifecycle, where a refusal is
+    normally stored as a local draft. A rejected path is not an upstream outage,
+    so it must deny instead — otherwise a draft gets persisted against a path
+    that can never become valid.
+    """
+    uid = add_user()
+    sign_in(client, uid)
+    toolhub.save_grant(uid, {"access_token": "at"})
+    calls = []
+    monkeypatch.setattr(toolhub.requests, "request", lambda m, url, **_k: calls.append((m, url)))
+
+    resp = client.delete("/v1/write/tools/../", headers={"X-CSRF-Token": "tok"})
+
+    # 400 specifically, not 404: the route matches and the view runs, so this
+    # asserts the guard fired rather than that routing happened to miss.
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid official Toolhub path"
+    assert calls == []
+
+
 def stored_grant(uid):
     """Return the decrypted (access, refresh) pair persisted for one user."""
     with db.session_scope() as s:
