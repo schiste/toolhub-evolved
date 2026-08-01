@@ -44,6 +44,7 @@ afterEach(() => {
 	window.matchMedia = origMatchMedia;
 	document.documentElement.style.cssText = "";
 	vi.restoreAllMocks();
+	vi.unstubAllGlobals();
 });
 
 function setVars(vars) {
@@ -396,6 +397,36 @@ test("clustered large maps use deterministic positioning without force animation
 	);
 	expect(raf).not.toHaveBeenCalled();
 	handle.stop();
+});
+
+test("large maps settle in a worker without blocking the animation loop", () => {
+	reduced = false;
+	const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockReturnValue(1);
+	let sent;
+	class FakeWorker {
+		constructor() {
+			this.onmessage = null;
+			this.onerror = null;
+		}
+		postMessage(payload) {
+			sent = payload;
+			this.onmessage({
+				data: {
+					requestId: payload.requestId,
+					positions: payload.nodes.map((_node, index) => ({ x: index + 10, y: index + 20 }))
+				}
+			});
+		}
+		terminate() {}
+	}
+	vi.stubGlobal("Worker", FakeWorker);
+	const nodes = Array.from({ length: 601 }, (_, index) => ({ id: `n-${index}`, groupValues: [] }));
+
+	const { handle } = build({ nodes, edges: [], layout: "clustered", groupBy: "project", groupMeta: [] });
+
+	expect(raf).not.toHaveBeenCalled();
+	assert.equal(sent.nodes.length, 601);
+	assert.deepEqual(handle.positions()["n-600"], { x: 610, y: 620 });
 });
 
 /* ---- lifecycle ---------------------------------------------------------- */

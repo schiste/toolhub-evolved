@@ -147,6 +147,7 @@ def test_csp_is_strict_and_matches_inline_script(client):
     script_src = next(d for d in csp.split(";") if d.strip().startswith("script-src"))
     assert f"sha256-{digest}" in script_src, "CSP script-src hash is stale vs the index.html inline script"
     assert "'unsafe-inline'" not in script_src, "script-src must stay strict (no unsafe-inline)"
+    assert "worker-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
     assert "object-src 'none'" in csp
 

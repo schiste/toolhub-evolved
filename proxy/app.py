@@ -283,6 +283,7 @@ _THEME_SCRIPT_HASH = "sha256-XASlFDDB4Ati9OFy/+a7zp7h86hBsK6RJ9H/0Db17GA="
 _CSP = (
     "default-src 'self'; "
     f"script-src 'self' '{_THEME_SCRIPT_HASH}'; "
+    "worker-src 'self'; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' https: data:; "
     "font-src 'self'; "

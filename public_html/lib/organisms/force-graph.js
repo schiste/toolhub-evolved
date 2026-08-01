@@ -357,7 +357,9 @@ export function forceGraph(container, data, opts = {}) {
 	let zoom = 1;
 	let panX = 0;
 	let panY = 0;
-	const staticLayout = data.layout === "clustered" || (data.nodes || []).length > STATIC_LAYOUT_NODE_LIMIT;
+	const workerLayout = (data.nodes || []).length > STATIC_LAYOUT_NODE_LIMIT && typeof Worker === "function";
+	let staticLayout =
+		!workerLayout && (data.layout === "clustered" || (data.nodes || []).length > STATIC_LAYOUT_NODE_LIMIT);
 	/** @type {FGNode | null} */
 	let hovered = null;
 	// Stryker disable next-line ObjectLiteral: pointer is overwritten by onMove() before the tooltip is ever shown (the tooltip only renders while hovering, which requires a prior mousemove), so this initial value is never observed — equivalent.
@@ -371,6 +373,9 @@ export function forceGraph(container, data, opts = {}) {
 	let colors = buildColors(data, opts);
 	/** @type {Map<string, { x: number, y: number, size: number }>} */
 	let groupAnchors = new Map();
+	/** @type {Worker | null} */
+	let layoutWorker = null;
+	let layoutRequest = 0;
 
 	const { nodes, edges, neighborMap, edgeSet } = graphStructure(data);
 
@@ -862,6 +867,9 @@ export function forceGraph(container, data, opts = {}) {
 
 	function stop() {
 		stopped = true;
+		layoutRequest++;
+		layoutWorker?.terminate();
+		layoutWorker = null;
 		if (raf) cancelAnimationFrame(raf);
 		raf = 0;
 		// Stryker disable next-line ConditionalExpression: detachObserver is non-null whenever window.MutationObserver exists (always, in browsers and happy-dom) and null otherwise; forcing the guard true/false either matches reality or fails to disconnect a one-shot observer whose only action is the (idempotent) stop — no observable effect — equivalent.
@@ -903,9 +911,78 @@ export function forceGraph(container, data, opts = {}) {
 		draw();
 	}
 
+	function layoutWorkerUrl() {
+		const moduleUrl = new URL(import.meta.url);
+		const url = new URL("../workers/graph-layout-worker.js", moduleUrl);
+		const version = moduleUrl.searchParams.get("v");
+		if (version) url.searchParams.set("v", version);
+		return url;
+	}
+
+	function startWorkerLayout() {
+		layoutWorker?.terminate();
+		const requestId = ++layoutRequest;
+		try {
+			layoutWorker = new Worker(layoutWorkerUrl(), { type: "module" });
+			layoutWorker.onmessage = (event) => {
+				if (stopped || requestId !== layoutRequest || !Array.isArray(event.data?.positions)) return;
+				event.data.positions.forEach((point, index) => {
+					const node = nodes[index];
+					if (!node || !Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return;
+					node.x = point.x;
+					node.y = point.y;
+					node.vx = 0;
+					node.vy = 0;
+				});
+				ticks = MAX_TICKS;
+				layoutWorker?.terminate();
+				layoutWorker = null;
+				draw();
+			};
+			layoutWorker.onerror = () => {
+				if (requestId !== layoutRequest) return;
+				layoutWorker?.terminate();
+				layoutWorker = null;
+				staticLayout = true;
+				seedGroupedNodes(nodes, width, height);
+				ticks = MAX_TICKS;
+				draw();
+			};
+			layoutWorker.postMessage({
+				requestId,
+				width,
+				height,
+				nodes: nodes.map((node) => ({
+					x: node.x,
+					y: node.y,
+					pinned: Boolean(node.pinned),
+					groupValues: node.groupValues || []
+				})),
+				edges: edges.map((edge) => ({
+					source: edge.sourceNode.index,
+					target: edge.targetNode.index,
+					weight: edge.weight
+				})),
+				groupBy: data.groupBy || "similarity",
+				groupMeta: data.groupMeta || [],
+				ticks: MAX_TICKS
+			});
+			draw();
+		} catch {
+			staticLayout = true;
+			seedGroupedNodes(nodes, width, height);
+			ticks = MAX_TICKS;
+			draw();
+		}
+	}
+
 	function start() {
 		// Stryker disable next-line ConditionalExpression: forcing this guard true (always return) is killed by the fingerprint (no settle); forcing it false is unobservable because, after stop(), the only caller (onResize) never fires — its listener was removed — equivalent.
 		if (stopped) return;
+		if (workerLayout) {
+			startWorkerLayout();
+			return;
+		}
 		if (staticLayout) {
 			ticks = MAX_TICKS;
 			draw();
