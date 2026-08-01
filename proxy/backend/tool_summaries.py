@@ -19,6 +19,9 @@ from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL, clean_error
 
 SUMMARY_FRESH_SECONDS = 30 * 60
 SUMMARY_STALE_SECONDS = 24 * 60 * 60
+# Ceiling on names awaiting a background build. Reads re-queue what is dropped,
+# so this caps memory and worker backlog without losing coverage.
+MAX_QUEUED_BUILDS = 500
 _EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tool-summary-cache")
 _REFRESH_LOCK = Lock()
 _REFRESHING: set[str] = set()
@@ -106,12 +109,22 @@ def _rows_by_name(s: Session, names: tuple[str, ...]) -> dict[str, ToolSummaryCa
 
 
 def summaries_for(names: list[str], build_summary: SummaryBuilder, *, refresh_stale: bool = True) -> SummaryRead:
-    """Return local summaries, materializing missing rows and queueing stale refreshes."""
+    """Return already-materialized local summaries, queueing anything missing or stale.
+
+    This read never builds a summary. Building one costs roughly a dozen
+    statements per tool — including writes — so materializing a page's worth of
+    cold tools inline meant hundreds of round trips inside a single request,
+    holding a write transaction while every other reader waited behind it.
+
+    A name with no materialized row is simply absent from `results`; callers
+    treat summaries as additive and render without them, and the queued build
+    means the next read has it.
+    """
     ordered_names = tuple(dict.fromkeys(names))
     if not ordered_names:
         return SummaryRead(results={}, cache_meta={})
 
-    stale_names: list[str] = []
+    pending_names: list[str] = []
     now = utcnow()
     with db.session_scope() as s:
         rows = _rows_by_name(s, ordered_names)
@@ -119,39 +132,41 @@ def summaries_for(names: list[str], build_summary: SummaryBuilder, *, refresh_st
         cache_meta: dict[str, dict[str, str]] = {}
         for name in ordered_names:
             row = rows.get(name)
-            if row is not None:
-                fresh = _fresh_payload(row, now)
-                if fresh is not None:
-                    results[name], cache_meta[name] = fresh
-                    continue
-                stale = _stale_payload(row, now)
-                if stale is not None:
-                    results[name], cache_meta[name] = stale
-                    stale_names.append(name)
-                    continue
-            results[name], cache_meta[name] = _build_and_store(
-                s,
-                tool_name=name,
-                row=row,
-                build_summary=build_summary,
-                now=now,
-            )
+            if row is None:
+                cache_meta[name] = {"status": "pending"}
+                pending_names.append(name)
+                continue
+            fresh = _fresh_payload(row, now)
+            if fresh is not None:
+                results[name], cache_meta[name] = fresh
+                continue
+            stale = _stale_payload(row, now)
+            if stale is not None:
+                results[name], cache_meta[name] = stale
+                pending_names.append(name)
+                continue
+            # Past stale_until: the body is no longer servable, but the row is
+            # still the build target, so rebuild it rather than reporting a hit.
+            cache_meta[name] = {"status": "pending"}
+            pending_names.append(name)
 
-    if refresh_stale and stale_names:
-        queue_refresh(stale_names, build_summary)
+    if refresh_stale and pending_names:
+        queue_refresh(pending_names, build_summary)
     return SummaryRead(results=results, cache_meta=cache_meta)
 
 
 def refresh(names: list[str], build_summary: SummaryBuilder) -> int:
-    """Rebuild and store summaries for the supplied tool names."""
+    """Rebuild and store summaries for the supplied tool names.
+
+    One transaction per tool: a build takes write locks, so batching the whole
+    queue into a single transaction would hold them for the length of the batch.
+    """
     ordered_names = tuple(dict.fromkeys(names))
-    if not ordered_names:
-        return 0
-    now = utcnow()
-    with db.session_scope() as s:
-        rows = _rows_by_name(s, ordered_names)
-        for name in ordered_names:
-            _build_and_store(s, tool_name=name, row=rows.get(name), build_summary=build_summary, now=now)
+    for name in ordered_names:
+        now = utcnow()
+        with db.session_scope() as s:
+            row = s.get(ToolSummaryCache, name)
+            _build_and_store(s, tool_name=name, row=row, build_summary=build_summary, now=now)
     return len(ordered_names)
 
 
@@ -171,9 +186,15 @@ def _refresh_worker(names: tuple[str, ...], build_summary: SummaryBuilder) -> No
 
 
 def queue_refresh(names: list[str], build_summary: SummaryBuilder) -> None:
-    """Queue one background refresh for each stale summary not already running."""
+    """Queue one background build for each summary not already being built.
+
+    Bounded: a cold catalog would otherwise queue every tool the moment someone
+    opens a card grid. Names dropped here are re-queued by the next read, so the
+    cache still converges — just at a rate one worker can absorb.
+    """
     with _REFRESH_LOCK:
-        queued = tuple(name for name in dict.fromkeys(names) if name not in _REFRESHING)
+        room = max(0, MAX_QUEUED_BUILDS - len(_REFRESHING))
+        queued = tuple(name for name in dict.fromkeys(names) if name not in _REFRESHING)[:room]
         _REFRESHING.update(queued)
     if queued:
         _EXECUTOR.submit(_refresh_worker, queued, build_summary)

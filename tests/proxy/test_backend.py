@@ -2018,9 +2018,25 @@ def test_sparse_listing_upsert_preserves_rich_detail_metadata(client):
     assert cached["sourceUrl"].endswith("/api/tools/rich-tool/")
 
 
-def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(client):
+def _stub_summary_executor(monkeypatch):
+    """Keep summary materialization off background threads inside a test.
+
+    Reads only ever queue a build now, so a live executor would race the
+    explicit refresh() these tests use to materialize deterministically.
+    """
+
+    class NoopExecutor:
+        def submit(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(tool_summaries, "_EXECUTOR", NoopExecutor())
+    tool_summaries._REFRESHING.clear()
+
+
+def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(client, monkeypatch):
     db.configure("sqlite://")
     db.init_schema()
+    _stub_summary_executor(monkeypatch)
     now = utcnow()
     with db.session_scope() as s:
         user = User(wm_sub="maintainer-summary", username="Ada", registered_at=now - timedelta(days=2))
@@ -2078,6 +2094,12 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
             )
         )
 
+    # The read never builds; it reports the name as pending and queues it.
+    pending = client.get("/v1/tools/summaries/?name=ada-tool").get_json()
+    assert pending["results"] == {}
+    assert pending["cacheMeta"]["ada-tool"]["status"] == "pending"
+
+    tool_summaries.refresh(["ada-tool"], v1_api._build_local_tool_summary)  # noqa: SLF001 - background worker's job
     data = client.get("/v1/tools/summaries/?name=ada-tool").get_json()
     summary = data["results"]["ada-tool"]
 
@@ -2103,6 +2125,7 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
 def test_tool_summaries_endpoint_reuses_materialized_read_model(client, monkeypatch):
     db.configure("sqlite://")
     db.init_schema()
+    _stub_summary_executor(monkeypatch)
     calls = []
 
     def build_summary(_s, tool_name):
@@ -2119,14 +2142,20 @@ def test_tool_summaries_endpoint_reuses_materialized_read_model(client, monkeypa
     monkeypatch.setattr(v1_api, "_build_local_tool_summary", build_summary)
 
     first = client.get("/v1/tools/summaries/?name=cached-tool")
+    # Nothing is materialized on the read path, so the first response builds nothing.
+    assert calls == []
+    tool_summaries.refresh(["cached-tool"], build_summary)
     second = client.get("/v1/tools/summaries/?name=cached-tool")
+    third = client.get("/v1/tools/summaries/?name=cached-tool")
 
     first_data = first.get_json()
     second_data = second.get_json()
-    assert calls == ["cached-tool"]
-    assert first_data["cacheMeta"]["cached-tool"]["status"] == "miss"
+    assert calls == ["cached-tool"]  # the extra reads reuse the materialized row
+    assert first_data["results"] == {}
+    assert first_data["cacheMeta"]["cached-tool"]["status"] == "pending"
     assert second_data["cacheMeta"]["cached-tool"]["status"] == "hit"
     assert second_data["results"]["cached-tool"]["health"]["score"] == 77
+    assert third.get_json()["cacheMeta"]["cached-tool"]["status"] == "hit"
     assert "max-age=300" in second.headers["Cache-Control"]
     assert "stale-if-error=86400" in second.headers["Cache-Control"]
     with db.session_scope() as s:
@@ -2211,15 +2240,22 @@ def test_tool_summary_cache_refresh_worker_updates_rows_and_records_errors(monke
     assert tool_summaries.refresh([], build_summary) == 0
     stale_read = tool_summaries.summaries_for(["error-tool"], build_summary, refresh_stale=False)
     assert stale_read.cache_meta["error-tool"]["status"] == "stale"
+    # Past stale_until the body is unservable, so the row is queued for rebuild
+    # rather than rebuilt inline; same for a name with no row at all.
     expired_read = tool_summaries.summaries_for(["expired-tool"], build_summary)
-    assert expired_read.cache_meta["expired-tool"]["status"] == "miss"
+    assert expired_read.cache_meta["expired-tool"]["status"] == "pending"
+    assert expired_read.results == {}
+    unknown_read = tool_summaries.summaries_for(["never-seen"], build_summary, refresh_stale=False)
+    assert unknown_read.cache_meta["never-seen"]["status"] == "pending"
+    assert unknown_read.results == {}
     tool_summaries.queue_refresh(["queued-tool", "queued-tool"], build_summary)
     tool_summaries._REFRESHING.add("queued-tool")
     tool_summaries.queue_refresh(["queued-tool"], build_summary)
     tool_summaries._REFRESHING.clear()
     tool_summaries.queue_refresh(["error-tool", "missing-tool"], fail_summary)
 
-    assert submitted == [("queued-tool",), ("error-tool", "missing-tool")]
+    # The expired read queued its own rebuild, ahead of the explicit queue calls.
+    assert submitted == [("expired-tool",), ("queued-tool",), ("error-tool", "missing-tool")]
     with db.session_scope() as s:
         assert s.get(ToolSummaryCache, "queued-tool").summary["health"]["score"] == 88
         assert s.get(ToolSummaryCache, "error-tool").last_error == "refresh boom"
