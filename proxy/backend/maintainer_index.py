@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import delete, func, select
 
 from backend import people_index
-from backend.author_claims import dedupe_strings
+from backend.author_claims import ToolsadminMaintainer, dedupe_strings
 from backend.models import (
     ActivityRow,
     CrawlerUrl,
@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 SOURCE_AUTHOR_CLAIM = "evolved_author_claim"
 SOURCE_TOOLHUB_AUTHOR = "toolhub_author_metadata"
 SOURCE_TOOLHUB_ACTOR = "toolhub_catalog_actor"
+SOURCE_TOOLFORGE_TOOLSADMIN = "toolforge_toolsadmin"
 METHOD_TOOLHUB_AUTHOR = "toolhub_author_metadata"
 METHOD_TOOLHUB_ACTOR = "toolhub_catalog_actor"
 ACTIVE_DAYS = 90
@@ -132,12 +133,24 @@ def _best_claim_rows(rows: list[ToolAuthorClaim]) -> list[ToolAuthorClaim]:
     return [best[key] for key in sorted(best)]
 
 
-def _edge_status(confidences: list[int]) -> str:
-    if not confidences:
+def _edge_status_value(edge: ToolMaintainerEdge) -> str:
+    """Return an edge status that respects evidence expiry at read time."""
+    status = edge.verification_status or AUTHOR_CLAIM_UNVERIFIED
+    if status == AUTHOR_CLAIM_VERIFIED and edge.expires_at is not None and edge.expires_at <= utcnow():
+        return AUTHOR_CLAIM_STALE
+    return status
+
+
+def _edge_status(edges: list[ToolMaintainerEdge]) -> str:
+    if not edges:
         return "unknown"
-    best = max(confidences)
+    fresh_verified = [edge.confidence for edge in edges if _edge_status_value(edge) == AUTHOR_CLAIM_VERIFIED]
+    if fresh_verified:
+        best = max(fresh_verified)
+    else:
+        best = max((edge.confidence for edge in edges if _edge_status_value(edge) != AUTHOR_CLAIM_FAILED), default=0)
     if best >= VERIFIED_STATUS_CONFIDENCE_MIN:
-        return "verified"
+        return "probable" if not fresh_verified else "verified"
     if best >= VERIFIED_CONFIDENCE_MIN:
         return "probable"
     return "candidate"
@@ -229,6 +242,58 @@ def upsert_edge_from_claim(s: Session, row: ToolAuthorClaim) -> ToolMaintainerEd
         expires_at=row.expires_at,
         last_error=row.last_error,
     )
+
+
+def replace_toolforge_maintainer_edges(
+    s: Session,
+    tool_name: str,
+    pages: list[tuple[str, list[ToolsadminMaintainer], str]],
+    *,
+    checked_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime passthrough
+    expires_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime passthrough
+) -> list[ToolMaintainerEdge]:
+    """Replace public Toolsadmin maintainer evidence for one canonical tool."""
+    clean_tool_name = clean_text(tool_name)
+    if not clean_tool_name:
+        return []
+    s.execute(
+        delete(ToolMaintainerEdge).where(
+            ToolMaintainerEdge.tool_name == clean_tool_name,
+            ToolMaintainerEdge.source == SOURCE_TOOLFORGE_TOOLSADMIN,
+        )
+    )
+    now = checked_at or utcnow()
+    edges: list[ToolMaintainerEdge] = []
+    for toolforge_name, maintainers, evidence_url in pages:
+        for maintainer in maintainers:
+            display_name = clean_text(maintainer.display_name)
+            wiki_username = clean_text(maintainer.username)
+            if not display_name:
+                continue
+            edges.append(
+                _upsert_edge(
+                    s,
+                    tool_name=clean_tool_name,
+                    key=maintainer_key(wiki_username=wiki_username, display_name=display_name),
+                    display_name=display_name,
+                    wiki_username=wiki_username,
+                    author_name=display_name,
+                    source=SOURCE_TOOLFORGE_TOOLSADMIN,
+                    method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    verification_status=AUTHOR_CLAIM_VERIFIED,
+                    confidence=CLAIM_CONFIDENCE[AUTHOR_CLAIM_TOOLFORGE_MAINTAINER],
+                    evidence_url=evidence_url,
+                    evidence_payload={
+                        "toolforgeToolName": toolforge_name,
+                        "profileUsername": wiki_username,
+                    },
+                    checked_at=now,
+                    expires_at=expires_at,
+                )
+            )
+    refresh_activity_rollups(s, maintainer_keys=[edge.maintainer_key for edge in edges])
+    people_index.sync_tool_people(s, clean_tool_name)
+    return edges
 
 
 def sync_author_claim_edges(
@@ -408,7 +473,7 @@ def public_edge_payload(edge: ToolMaintainerEdge, activity: MaintainerActivityRo
         "displayName": edge.maintainer_display_name,
         "toolhubUsername": edge.toolhub_username,
         "wikiUsername": edge.wiki_username,
-        "verificationStatus": edge.verification_status,
+        "verificationStatus": _edge_status_value(edge),
         "confidence": edge.confidence,
         "source": edge.source,
         "method": edge.method,
@@ -465,7 +530,7 @@ def public_tool_summary(s: Session, tool_name: str) -> dict:
     people_summary = people_index.public_people_summary(s, clean_tool_name)
     return {
         "toolName": clean_tool_name,
-        "status": _edge_status(confidences),
+        "status": _edge_status(edges),
         "counts": {
             "maintainers": len(maintainers),
             "verifiedMaintainers": verified_count,

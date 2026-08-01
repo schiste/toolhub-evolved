@@ -40,6 +40,16 @@
   timeout: 300
   emails: onfailure
 
+- name: maintainer-backfill
+  # Backfill public Toolsadmin maintainer evidence for cached Toolforge tools.
+  # One request is spaced at least three seconds from the previous request;
+  # the cursor advances after every tool and retries failures next cycle.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name maintainer-backfill -- /usr/bin/env MAINTAINER_BACKFILL_LIMIT=60 MAINTAINER_BACKFILL_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/maintainer_backfill.py
+  image: python3.13
+  schedule: "13 * * * *"
+  timeout: 300
+  emails: onfailure
+
 - name: repository-analysis
   # Deterministically analyze up to 100 newly added or changed public repositories
   # per hour. The initial catalog backfill can be run manually with a larger limit.

@@ -260,6 +260,23 @@ class ToolCatalogSyncState(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
 
 
+class MaintainerBackfillState(Base):
+    """Resumable state for the paced Toolsadmin maintainer backfill."""
+
+    __tablename__ = "maintainer_backfill_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    next_tool_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tools_checked: Mapped[int] = mapped_column(Integer, default=0)
+    maintainers_found: Mapped[int] = mapped_column(Integer, default=0)
+    failed_tools: Mapped[int] = mapped_column(Integer, default=0)
+    cycles_completed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="idle")
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ToolOwnerCache(Base):
     """Derived owner label cache for recent-change tool rows."""
 

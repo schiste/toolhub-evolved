@@ -218,6 +218,7 @@ names are:
 | `catalog_curations`                                | Pending/private review; approved evidence public | Reviewer-approved local corrections only. Proposals never mutate canonical Toolhub data and do not affect projections before approval.                                                 |
 | `tool_asset_cache`                                 | Anonymous public derived icon metadata           | Rebuildable index for size/type-checked icons stored under `$TOOLHUB_ASSET_CACHE_DIR`; web reads never fetch remote URLs and missing files fall back safely.                           |
 | `tool_catalog_sync_state`                          | Operational cursor state                         | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                                         |
+| `maintainer_backfill_state`                        | Operational cursor state                         | Stores the paced Toolsadmin maintainer backfill cursor, cycle counters, and failures; safe to reset to restart the derived maintainer projection.                                      |
 | `tool_owner_cache`                                 | Anonymous public derived owner cache             | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                                         |
 | `users`                                            | Private account mapping                          | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                                     |
 | `toolhub_tokens`                                   | Secret                                           | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                                              |
@@ -259,16 +260,29 @@ Verification is never global to an author display name or Toolhub username:
 other tool without a separate verified claim row for that exact tool.
 `GET /v1/me/tools/` uses those rows as additional Toolhub author-search terms
 and also discovers Toolforge `tools.*` memberships for the signed-in username
-through public LDAP. Each discovered Toolforge account is fetched from official
-Toolhub by exact `toolforge-<name>` record name, then checked against the public
-Toolsadmin maintainer page before it receives a verified Toolforge-maintainer
-claim. This means a user whose Toolhub records list a display author such as
-`Christophe` can still get verified `Schiste` Toolforge-owned tools without a
-manual alias. Successful official Toolhub tool writes add `toolhub_write_access`
-claims without affecting the write response if evidence recording fails. Crawler
-ingestion records `signed_toolinfo` claims before upstream-name de-dupe, so
-official Toolhub data remains canonical while Evolved can still retain signed
-authorship evidence.
+through public LDAP. Each discovered Toolforge account is linked to the exact
+official `toolforge-<name>` record. That LDAP membership is a verified
+per-tool operational-access claim for the authenticated Wikimedia identity; it
+does not assert canonical Toolhub authorship and does not require a second
+Toolsadmin request on the user request path. This means a user whose Toolhub
+records list a display author such as `Christophe` can still get verified
+`Schiste` Toolforge-owned tools without a manual alias. Successful official
+Toolhub tool writes add `toolhub_write_access` claims without affecting the
+write response if evidence recording fails. Crawler ingestion records
+`signed_toolinfo` claims before upstream-name de-dupe, so official Toolhub data
+remains canonical while Evolved can still retain signed authorship evidence.
+
+The `maintainer-backfill` job is the catalog-wide public projection. It walks
+the local canonical cache, infers exact Toolforge account names from
+`toolforge-<name>` records and Toolforge URLs, fetches each public Toolsadmin
+maintainer page at a minimum three-second interval, and stores rebuildable
+`toolforge_toolsadmin` edges. Profile handles become stable `wiki:` identities;
+display-only markup remains heuristic. A successful empty page removes old
+maintainers for that account, while a transient HTTP or network failure keeps
+the last known evidence and retries on the next cycle. The job processes 60
+tools per hour by default, checkpoints after every tool, and completes a
+several-thousand-tool backfill over repeated cycles without running inside web
+requests.
 
 The normalized people view is available from `GET /v1/people/tools/<name>/` and
 is also included in the existing maintainer summary response as `people`. One
@@ -405,6 +419,7 @@ toolforge jobs logs crawler                # last local crawl output
 toolforge jobs logs toolinfo-discovery     # last root/sitemap discovery output
 toolforge jobs logs toolinfo-source-index  # last official crawler source index output
 toolforge jobs logs api-cache-invalidator
+toolforge jobs logs maintainer-backfill
 ```
 
 Jobs are configured with Toolforge file logs. If the central `jobs logs`
