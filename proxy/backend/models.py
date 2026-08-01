@@ -112,6 +112,22 @@ class CanonicalToolCache(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class GraphToolEnrichment(Base):
+    """Versioned, provenance-aware facets derived for the public tool graph."""
+
+    __tablename__ = "graph_tool_enrichment"
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    facets: Mapped[dict] = mapped_column(JSON, default=dict)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_timestamps: Mapped[dict] = mapped_column(JSON, default=dict)
+    enrichment_version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    refreshed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ToolCatalogSyncState(Base):
     """Resumable cursor and health state for the complete official catalog sync."""
 
@@ -335,6 +351,7 @@ class ToolinfoDiscovery(Base):
     method: Mapped[str | None] = mapped_column(String(64), nullable=True)
     toolinfo_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     tool_names: Mapped[list] = mapped_column(JSON, default=list)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     attempts: Mapped[list] = mapped_column(JSON, default=list)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)

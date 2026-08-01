@@ -12,7 +12,7 @@ from datetime import timedelta
 from threading import Lock
 from typing import Any
 
-from backend import api_cache, canonical_tools
+from backend import api_cache, canonical_tools, graph_enrichment
 from backend.models import utcnow
 from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL
 
@@ -27,7 +27,7 @@ MIN_GROUP_DISTINCT_VALUES = 2
 SPARSE_EDGE_NODE_LIMIT = 1000
 SPARSE_CANDIDATE_LIMIT = 160
 GRAPH_CACHE_MAX_ENTRIES = 8
-GRAPH_CACHE_VERSION = 4
+GRAPH_CACHE_VERSION = 5
 GRAPH_FRESH_SECONDS = 6 * 60 * 60
 GRAPH_STALE_SECONDS = 24 * 60 * 60
 GRAPH_MEMORY_FRESH_SECONDS = 5 * 60
@@ -432,7 +432,7 @@ def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> d
     """Build a graph payload without making upstream Toolhub requests."""
     limit = _normalize_limit(limit)
     group_by = _normalize_group_by(group_by)
-    rows = canonical_tools.records(limit=GRAPH_SOURCE_RECORD_LIMIT)
+    rows = graph_enrichment.merge_cached_records(canonical_tools.records(limit=GRAPH_SOURCE_RECORD_LIMIT))
     candidates: list[dict[str, Any]] = []
     for row in rows:
         record = row.get("record") if isinstance(row, dict) else None
@@ -503,7 +503,10 @@ def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> d
         "cachePolicy": {
             "canonical": True,
             "upstream": False,
-            "summary": "Derived from Evolved's structured canonical Toolhub cache; no browser-side upstream crawl.",
+            "summary": (
+                "Derived from Evolved's canonical Toolhub cache plus provenance-aware materialized facets; "
+                "no browser-side upstream crawl."
+            ),
         },
     }
 

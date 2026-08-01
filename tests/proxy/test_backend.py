@@ -2401,7 +2401,7 @@ def test_graph_payload_shared_cache_survives_worker_memory_reset(client, monkeyp
 
 
 def test_graph_payload_cache_key_is_schema_versioned():
-    assert graph_payload._cache_url(250, "project").endswith("limit=250&groupBy=project&version=4")
+    assert graph_payload._cache_url(250, "project").endswith("limit=250&groupBy=project&version=5")
 
 
 def test_graph_payload_serves_stale_shared_data_while_refreshing(client, monkeypatch):

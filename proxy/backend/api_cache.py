@@ -363,6 +363,11 @@ def invalidate_list_collection() -> int:
     return _delete_matching(lambda url: _path(url) in {_LIST_COLLECTION_PATH, _RECENT_COLLECTION_PATH})
 
 
+def invalidate_graph() -> int:
+    """Invalidate all versioned derived graph payloads after facet changes."""
+    return _delete_matching(lambda url: _path(url) == "/v1/graph/")
+
+
 def invalidate_recent_rows(rows: Iterable[dict[str, Any]]) -> int:
     """Invalidate cached official reads affected by Toolhub recent rows."""
     tool_names: set[str] = set()

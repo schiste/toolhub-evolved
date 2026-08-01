@@ -151,6 +151,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "source": "VARCHAR(32) NOT NULL DEFAULT 'official'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'official'",
         },
+        "toolinfo_discovery": {
+            "payload": f"{json_col} NULL",
+        },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
         },
