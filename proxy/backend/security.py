@@ -125,10 +125,14 @@ class RollingLimit:
 # the cluster ingress.
 #
 # This is a backstop, not the fix: the loop that caused that was a client-side
-# render cycle (see scheduleApiRefreshRender in main.js). Set well above what
-# browsing generates — a page visit makes one call — so it only ever catches a
-# runaway.
-RESOLVER_LIMIT = 30
+# render cycle (see scheduleApiRefreshRender in main.js). It still has to hold
+# on its own, because shipping the client fix does not stop a browser tab that
+# already loaded the old code — only reloading it does.
+#
+# Sized against duration, not intuition: a call takes ~5s, so six a minute is
+# about half a worker. Browsing makes one call per page visit and never comes
+# close.
+RESOLVER_LIMIT = 6
 
 _writes = RollingLimit(WRITE_LIMIT)
 _reads = RollingLimit(READ_LIMIT)
