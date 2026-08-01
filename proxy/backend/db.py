@@ -195,11 +195,17 @@ def _schema_additions() -> dict[str, dict[str, str]]:
 
 
 def _upgrade_schema() -> None:
-    """Apply idempotent additive migrations for existing deployments."""
+    """Apply idempotent additive DDL for existing deployments.
+
+    DDL only, deliberately. This runs from init_schema() on every worker
+    start, so anything proportional to table size runs once per process on
+    every restart — with several workers starting at once, against a table a
+    live request needs. Row-level migrations belong in proxy/migrate.py, which
+    the deploy runs once before the restart.
+    """
     eng = engine()
     inspector = inspect(eng)
     existing_tables = set(inspector.get_table_names())
-    added: set[tuple[str, str]] = set()
     with eng.begin() as conn:
         for table, columns in _schema_additions().items():
             if table not in existing_tables:
@@ -208,25 +214,9 @@ def _upgrade_schema() -> None:
             for name, ddl in columns.items():
                 if name not in existing_columns:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
-                    added.add((table, name))
         for table in ("repository_analysis_state", "person_reconciliation_queue"):
             if table in existing_tables:
                 conn.exec_driver_sql(f"UPDATE {table} SET attempts = 0 WHERE attempts IS NULL")
-        if "api_cache" in existing_tables:
-            # Rows written before api_cache gained its path columns carry no
-            # invalidation key, so a changed tool could never evict them and they
-            # would serve stale for the whole stale-if-error window. This is a
-            # cache: dropping those rows is cheaper and safer than backfilling a
-            # URL parse in SQL, and the prewarm job refills them within a minute.
-            conn.exec_driver_sql("DELETE FROM api_cache WHERE path = ''")
-    # After the DDL transaction commits, so the new column is visible to the
-    # backfill's own session. Runs once, in the upgrade that adds the column:
-    # rows cached before it existed would otherwise stay invisible to search
-    # until some later sync happened to rewrite them.
-    if ("canonical_tool_cache", "search_text") in added:
-        from backend import canonical_tools  # noqa: PLC0415 - avoid a db <-> canonical_tools import cycle.
-
-        canonical_tools.backfill_search_text()
 
 
 def configure(url: str) -> None:

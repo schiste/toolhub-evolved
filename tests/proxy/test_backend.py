@@ -861,17 +861,30 @@ def test_api_cache_invalidation_matches_sub_resources_and_encoded_names(app):
         assert s.query(ApiCache).count() == 1
 
 
-def test_api_cache_rows_without_an_invalidation_key_are_dropped_on_upgrade(app):
-    """Pre-migration rows carry no path, so they could never be evicted: drop them."""
+def test_api_cache_rows_without_an_invalidation_key_are_backfilled_not_dropped(app):
+    """Pre-migration rows have no path, so nothing could evict them. Give them one.
+
+    Deleting instead would empty the shared cache exactly when a deploy restarts
+    every worker, sending the resulting cold traffic straight upstream.
+    """
     api_cache.put_success(
         "https://toolhub.wikimedia.org/api/tools/legacy/",
-        api_cache.CacheableResponse(200, "application/json", b"{}"),
+        api_cache.CacheableResponse(200, "application/json", b'{"cached":true}'),
     )
     with db.session_scope() as s:
         s.query(ApiCache).update({ApiCache.path: "", ApiCache.collection: "", ApiCache.detail_key: ""})
-    db.init_schema()
+    # A row with no index key is invisible to invalidation ...
+    assert api_cache.invalidate_tool("legacy") == 0
+
+    assert api_cache.backfill_index_columns() == 1
+    assert api_cache.backfill_index_columns() == 0  # idempotent
+
+    # ... and after the backfill it is both intact and evictable.
     with db.session_scope() as s:
-        assert s.query(ApiCache).count() == 0
+        row = s.query(ApiCache).one()
+        assert bytes(row.body) == b'{"cached":true}'
+        assert (row.path, row.collection, row.detail_key) == ("/api/tools/legacy/", "tools", "legacy")
+    assert api_cache.invalidate_tool("legacy") == 1
 
 
 def test_api_cache_recent_poll_handles_invalid_marker_empty_rows_and_fetch_errors(app, monkeypatch):

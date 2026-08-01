@@ -145,29 +145,35 @@ def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bo
     return len(clean_records)
 
 
-def backfill_search_text() -> int:
+def backfill_search_text(*, batch_size: int = 500) -> int:
     """Populate search_text for rows cached before the column existed.
 
-    Called once, when the migration actually adds the column. Without it every
-    pre-existing row is invisible to search() until some later sync happens to
-    rewrite it, which for the canonical catalog could be hours.
+    Without it every pre-existing row is invisible to search() until some later
+    sync happens to rewrite it, which for the canonical catalog could be hours.
+
+    Run from proxy/migrate.py, not from schema setup: this reads and rewrites
+    every row, and the catalog is thousands of rows with a full JSON record
+    each. Batched into short transactions so it never holds locks on a table
+    that live reads need, and safe to run repeatedly.
     """
     filled = 0
-    try:
-        with db.session_scope() as s:
-            rows = list(
-                s.execute(
-                    select(CanonicalToolCache).where(
-                        (CanonicalToolCache.search_text == "") | CanonicalToolCache.search_text.is_(None)
-                    )
-                ).scalars()
-            )
-            for row in rows:
-                row.record = row.record or {}  # reassignment re-derives search_text
-                filled += 1
-    except SQLAlchemyError:
-        return filled
-    return filled
+    while True:
+        try:
+            with db.session_scope() as s:
+                rows = list(
+                    s.execute(
+                        select(CanonicalToolCache)
+                        .where((CanonicalToolCache.search_text == "") | CanonicalToolCache.search_text.is_(None))
+                        .limit(batch_size)
+                    ).scalars()
+                )
+                if not rows:
+                    return filled
+                for row in rows:
+                    row.record = row.record or {}  # reassignment re-derives search_text
+                    filled += 1
+        except SQLAlchemyError:
+            return filled
 
 
 def _payload(row: CanonicalToolCache) -> dict[str, Any]:

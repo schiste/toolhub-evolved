@@ -9,7 +9,7 @@ from hashlib import sha256
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import and_, delete, or_
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -449,6 +449,32 @@ def maybe_poll_recent_changes(fetch_recent: Callable[[], list[dict[str, Any]]]) 
     except SQLAlchemyError:
         return removed
     return removed
+
+
+def backfill_index_columns(*, batch_size: int = 500) -> int:
+    """Populate path/collection/detail_key for rows cached before those columns.
+
+    A row with no path cannot be matched by any invalidate_*, so a changed tool
+    would never evict it and it would serve stale for its whole stale-if-error
+    window. Deriving the keys from the stored URL keeps the cache intact;
+    dropping the rows instead would empty the shared cache at exactly the
+    moment a deploy restarts every worker, and send the resulting cold traffic
+    straight upstream.
+
+    Batched, and safe to run repeatedly: only rows still missing a path are touched.
+    """
+    filled = 0
+    while True:
+        try:
+            with db.session_scope() as s:
+                rows = list(s.execute(select(ApiCache).where(ApiCache.path == "").limit(batch_size)).scalars())
+                if not rows:
+                    return filled
+                for row in rows:
+                    row.path, row.collection, row.detail_key = _index_keys(row.url)
+                    filled += 1
+        except SQLAlchemyError:
+            return filled
 
 
 def clear() -> None:

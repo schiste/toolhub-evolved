@@ -19,6 +19,33 @@ ln -sfn "$REPO_DIR/proxy" "$HOME/www/python/src"
 # source is served (still gzipped at the edge) — never a broken deploy. Toolforge
 # has no Node, so we minify CSS with pure-Python rcssmin in the webservice venv.
 VENV_PY="$HOME/www/python/venv/bin/python"
+
+# Run a python script with the tool's environment (TOOLHUB_DB_URL, OAuth
+# secrets, ...). Those are injected into webservice/job pods only, never into
+# the `become` shell this script runs in, so any step that talks to the
+# configured database has to go through here. Output is captured to a file
+# because the shell pod does not reliably stream back, then relayed.
+run_with_tool_env() {
+	_out="$HOME/.deploy-step.out"
+	rm -f "$_out"
+	webservice python3.13 shell -- \
+		sh -c "$VENV_PY $1 > $_out 2>&1" >/dev/null 2>&1 || true
+	if [ -f "$_out" ]; then
+		sed 's/^/  /' "$_out"
+	fi
+	# The pod's exit status is not reliably propagated, so the step reports its
+	# own success and we check for that rather than trusting $?.
+	if ! grep -q . "$_out" 2>/dev/null; then
+		echo "  step produced no output — treating as failed" >&2
+		return 1
+	fi
+	if grep -qiE "traceback|^migrate: TOOLHUB_DB_URL is unset" "$_out"; then
+		echo "  step reported an error (see above)" >&2
+		return 1
+	fi
+	return 0
+}
+
 if [ -x "$VENV_PY" ]; then
 	# Keep the venv in sync with requirements BEFORE restarting: a pull that adds
 	# a dependency (e.g. SQLAlchemy) would otherwise restart into ImportError.
@@ -26,11 +53,27 @@ if [ -x "$VENV_PY" ]; then
 	# keeps serving — loud failure, no broken restart.
 	echo "Syncing Python dependencies ..."
 	"$VENV_PY" -m pip install -q -r "$REPO_DIR/proxy/requirements.txt"
+	# Row-level migrations, once, BEFORE the restart. Schema setup inside the
+	# webservice is DDL-only on purpose: a migration proportional to table size
+	# would otherwise run in every worker on every restart, blocking them from
+	# serving. Under `set -eu` a failure aborts the deploy while the old process
+	# keeps serving.
+	#
+	# Run inside a webservice shell, not here: Toolforge injects the tool's
+	# environment (TOOLHUB_DB_URL and friends) into webservice and job pods
+	# only. A DB step run directly from this script reads no TOOLHUB_DB_URL,
+	# falls back to the repo-local SQLite file, and reports success having
+	# touched nothing real. --require-configured-db makes that fail loudly.
+	echo "Running data migrations ..."
+	run_with_tool_env "$REPO_DIR/proxy/migrate.py --require-configured-db"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
 	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  dist build skipped — serving raw source"
+	# Same reason as the migration above: without the tool environment this
+	# warmed a repo-local SQLite file and reported "warmed=13" while the
+	# configured shared cache stayed cold.
 	echo "Prewarming shared API cache ..."
-	"$VENV_PY" "$REPO_DIR/proxy/cache_invalidation.py"
+	run_with_tool_env "$REPO_DIR/proxy/cache_invalidation.py" || echo "  prewarm skipped"
 else
 	echo "Webservice venv not found; serving raw source (dist/ not built)."
 fi
