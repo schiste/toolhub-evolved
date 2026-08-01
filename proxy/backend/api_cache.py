@@ -17,14 +17,25 @@ from sqlalchemy.sql.elements import ColumnElement
 from backend import db
 from backend.models import ApiCache, ApiCacheMeta, utcnow
 
-RECENT_FRESH_SECONDS = 30
-SEARCH_FRESH_SECONDS = 2 * 60
-DETAIL_FRESH_SECONDS = 15 * 60
+# Freshness is a backstop, not the primary correctness mechanism: the
+# api-cache-invalidator job polls Toolhub's recent-change feed every
+# RECENT_POLL_SECONDS and deletes the rows a change actually affects. Toolhub
+# sees a handful of edits a day, so short TTLs bought no freshness the poll did
+# not already provide and cost an upstream revalidation on nearly every visit.
+#
+# These windows must stay in step with the mirrored client policy in
+# public_html/lib/core/api.js; tests/proxy/test_app.py fails if they drift.
+RECENT_FRESH_SECONDS = 5 * 60
+SEARCH_FRESH_SECONDS = 30 * 60
+DETAIL_FRESH_SECONDS = 6 * 60 * 60
 CRAWLER_FRESH_SECONDS = 6 * 60 * 60
 CONFIG_FRESH_SECONDS = 24 * 60 * 60
-DEFAULT_FRESH_SECONDS = 60
+DEFAULT_FRESH_SECONDS = 15 * 60
 STALE_IF_ERROR_SECONDS = 24 * 60 * 60
-RECENT_POLL_SECONDS = RECENT_FRESH_SECONDS
+# Deliberately independent of RECENT_FRESH_SECONDS. The poll is what makes the
+# longer windows above safe, so how often we look for changes must not move
+# just because we changed how long a cached recent feed is served.
+RECENT_POLL_SECONDS = 30
 
 # Compatibility aliases for tests/callers that only need the default policy.
 FRESH_SECONDS = DEFAULT_FRESH_SECONDS

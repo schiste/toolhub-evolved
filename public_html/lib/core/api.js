@@ -160,12 +160,16 @@ export const API_BASE = "/api";
    also lives in localStorage so hard refreshes can render useful content before
    the live API refresh finishes. /v1 session, OAuth, overlay, and write calls use
    the backend* helpers below and never enter this cache. */
-const API_RECENT_TTL_MS = 30 * 1000;
-const API_SEARCH_TTL_MS = 2 * 60 * 1000;
-const API_DETAIL_TTL_MS = 15 * 60 * 1000;
+/* These mirror the server policy in proxy/backend/api_cache.py — the shared
+   cache invalidates on Toolhub's recent-change feed, so freshness is a backstop
+   rather than the mechanism, and short windows only bought revalidations.
+   tests/proxy/test_app.py fails if the two sides drift apart. */
+const API_RECENT_TTL_MS = 5 * 60 * 1000;
+const API_SEARCH_TTL_MS = 30 * 60 * 1000;
+const API_DETAIL_TTL_MS = 6 * 60 * 60 * 1000;
 const API_CRAWLER_TTL_MS = 6 * 60 * 60 * 1000;
 const API_CONFIG_TTL_MS = 24 * 60 * 60 * 1000;
-const API_DEFAULT_TTL_MS = 60 * 1000;
+const API_DEFAULT_TTL_MS = 15 * 60 * 1000;
 const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
 const API_STORAGE_MAX_ENTRIES = 48;
 const API_STORAGE_MAX_CHARS = 240000;

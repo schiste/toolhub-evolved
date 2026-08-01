@@ -200,7 +200,8 @@ def test_success_is_relayed_and_cached(client, fake_get):
     resp = client.get("/api/search/tools/?q=wiki&page=2")
     assert resp.status_code == 200
     assert resp.data == b'{"ok":true}'
-    assert resp.headers["Cache-Control"] == "public, max-age=120, stale-if-error=86400"
+    search_ttl = proxy_app.api_cache.SEARCH_FRESH_SECONDS
+    assert resp.headers["Cache-Control"] == f"public, max-age={search_ttl}, stale-if-error=86400"
     # query string forwarded verbatim, and redirects must not be followed
     assert captured["url"] == "https://toolhub.wikimedia.org/api/search/tools/?q=wiki&page=2"
     assert captured["kwargs"]["allow_redirects"] is False
@@ -287,7 +288,8 @@ def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
     second = client.get("/api/ui/home/")
     assert captured["calls"] == 1, "second identical GET must hit the persistent API cache"
     assert first.data == second.data == b'{"v":1}'
-    assert second.headers["Cache-Control"] == "public, max-age=60, stale-if-error=86400"
+    default_ttl = proxy_app.api_cache.DEFAULT_FRESH_SECONDS
+    assert second.headers["Cache-Control"] == f"public, max-age={default_ttl}, stale-if-error=86400"
     assert second.headers["X-Toolhub-Evolved-Cache"] == "hit"
     assert second.headers["X-Toolhub-Evolved-Upstream"] == "200"
     timing = second.headers["Server-Timing"]
@@ -297,10 +299,14 @@ def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
 
 
 def test_cache_policy_uses_endpoint_specific_ttls():
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/recent/").fresh_seconds == 30
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/search/tools/?q=wiki").fresh_seconds == 120
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/tools/citoid/").fresh_seconds == 900
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/lists/123/").fresh_seconds == 900
+    """Pin the freshness windows. These are deliberately long: the
+    api-cache-invalidator evicts what actually changed, so a short window
+    only adds upstream revalidations. Changing a number here should be a
+    conscious retune, not a side effect."""
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/recent/").fresh_seconds == 5 * 60
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/search/tools/?q=wiki").fresh_seconds == 30 * 60
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/tools/citoid/").fresh_seconds == 6 * 60 * 60
+    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/lists/123/").fresh_seconds == 6 * 60 * 60
     assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/schema/").fresh_seconds == 86400
 
 
@@ -309,11 +315,12 @@ def test_detail_cache_stores_stale_if_error_after_fresh_window(client, fake_get,
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     fake_get(FakeUpstream(200, b'{"name":"citoid"}'))
     resp = client.get("/api/tools/citoid/")
-    assert resp.headers["Cache-Control"] == "public, max-age=900, stale-if-error=86400"
+    detail_ttl = proxy_app.api_cache.DETAIL_FRESH_SECONDS
+    assert resp.headers["Cache-Control"] == f"public, max-age={detail_ttl}, stale-if-error=86400"
     with db.session_scope() as s:
         row = s.query(ApiCache).one()
-        assert row.expires_at == clock["t"] + timedelta(seconds=900)
-        assert row.stale_until == clock["t"] + timedelta(seconds=900 + 86400)
+        assert row.expires_at == clock["t"] + timedelta(seconds=detail_ttl)
+        assert row.stale_until == clock["t"] + timedelta(seconds=detail_ttl + 86400)
 
 
 def test_stale_cache_is_served_immediately_after_ttl(client, fake_get, monkeypatch, scheduled_revalidations):
@@ -569,3 +576,37 @@ def test_path_traversal_falls_back_to_index_not_the_file():
     body = resp.get_data(as_text=True)
     assert "Toolforge webservice for Toolhub Evolved" not in body, "app.py source must never leak"
     assert "<!doctype html" in body.lower()
+
+
+def test_client_cache_policy_mirrors_the_server_policy():
+    """The SPA duplicates the server's freshness windows; fail if they drift.
+
+    public_html/lib/core/api.js keeps its own copy of the cache policy so it can
+    decide synchronously whether a cached response is still fresh. Two hand-kept
+    copies of the same numbers drift, and the failure is silent: the browser
+    would serve something the shared cache already considers stale (or refetch
+    something it considers fresh). Recompute one from the other instead.
+    """
+    from backend import api_cache
+
+    source = (ROOT / "public_html" / "lib" / "core" / "api.js").read_text(encoding="utf-8")
+
+    def js_ttl_ms(name: str) -> int:
+        # e.g. `const API_SEARCH_TTL_MS = 30 * 60 * 1000;`
+        match = re.search(rf"const {name}\s*=\s*([0-9*\s]+);", source)
+        assert match, f"{name} not found in api.js — the client policy moved"
+        return eval(match.group(1))  # noqa: S307 - digits and '*' only, matched by the regex above
+
+    expected = {
+        "API_RECENT_TTL_MS": api_cache.RECENT_FRESH_SECONDS,
+        "API_SEARCH_TTL_MS": api_cache.SEARCH_FRESH_SECONDS,
+        "API_DETAIL_TTL_MS": api_cache.DETAIL_FRESH_SECONDS,
+        "API_CRAWLER_TTL_MS": api_cache.CRAWLER_FRESH_SECONDS,
+        "API_CONFIG_TTL_MS": api_cache.CONFIG_FRESH_SECONDS,
+        "API_DEFAULT_TTL_MS": api_cache.DEFAULT_FRESH_SECONDS,
+        "API_STALE_IF_ERROR_MS": api_cache.STALE_IF_ERROR_SECONDS,
+    }
+    for js_name, server_seconds in expected.items():
+        assert js_ttl_ms(js_name) == server_seconds * 1000, (
+            f"{js_name} in api.js disagrees with backend/api_cache.py ({server_seconds}s)"
+        )

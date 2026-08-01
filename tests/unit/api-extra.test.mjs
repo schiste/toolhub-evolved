@@ -240,11 +240,15 @@ test("apiGetResponse exposes raw API responses with the JSON Accept header", asy
 
 // ----------------------------------------------------------------- SWR cache
 test("apiCachePolicy classifies endpoint volatility", () => {
-	assert.deepEqual(api.apiCachePolicy("/api/recent/"), { freshMs: 30000, staleIfErrorMs: 86400000 });
-	assert.deepEqual(api.apiCachePolicy("/api/search/tools/?q=wiki"), { freshMs: 120000, staleIfErrorMs: 86400000 });
-	assert.deepEqual(api.apiCachePolicy("/api/tools/citoid/"), { freshMs: 900000, staleIfErrorMs: 86400000 });
-	assert.deepEqual(api.apiCachePolicy("/api/lists/123/"), { freshMs: 900000, staleIfErrorMs: 86400000 });
-	assert.deepEqual(api.apiCachePolicy("/api/schema/"), { freshMs: 86400000, staleIfErrorMs: 86400000 });
+	// Long windows on purpose: the shared cache evicts on Toolhub's recent-change
+	// feed, so a short window adds revalidations without adding freshness. These
+	// mirror backend/api_cache.py — tests/proxy/test_app.py fails if they drift.
+	const day = 86400000;
+	assert.deepEqual(api.apiCachePolicy("/api/recent/"), { freshMs: 5 * 60000, staleIfErrorMs: day });
+	assert.deepEqual(api.apiCachePolicy("/api/search/tools/?q=wiki"), { freshMs: 30 * 60000, staleIfErrorMs: day });
+	assert.deepEqual(api.apiCachePolicy("/api/tools/citoid/"), { freshMs: 6 * 3600000, staleIfErrorMs: day });
+	assert.deepEqual(api.apiCachePolicy("/api/lists/123/"), { freshMs: 6 * 3600000, staleIfErrorMs: day });
+	assert.deepEqual(api.apiCachePolicy("/api/schema/"), { freshMs: day, staleIfErrorMs: day });
 });
 
 test("apiGet caches, serves fresh hits without refetching, and revalidates stale entries", async () => {
