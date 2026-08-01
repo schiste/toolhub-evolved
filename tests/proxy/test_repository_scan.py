@@ -117,3 +117,27 @@ def test_scan_tool_stores_approved_repository_report_and_commit_state(monkeypatc
         assert state.status == "analyzed"
         assert state.commit_sha == commit
         assert state.report_id == report.id
+
+
+def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
+    candidates = [("bad-tool", {"repository": "https://github.com/example/bad"}), ("good-tool", {})]
+    failures = []
+    monkeypatch.setattr(repository_scan, "candidate_tools", lambda *_args, **_kwargs: candidates)
+
+    def fake_scan(name, _record, *, force=False):
+        if name == "bad-tool":
+            raise RuntimeError("unexpected scanner failure")
+        return "skipped"
+
+    monkeypatch.setattr(repository_scan, "scan_tool", fake_scan)
+    monkeypatch.setattr(repository_scan, "_save_failure", lambda name, url, provider, error: failures.append(name))
+
+    assert repository_scan.run(limit=2) == {
+        "candidates": 2,
+        "analyzed": 0,
+        "skipped": 1,
+        "backoff": 0,
+        "unsupported": 0,
+        "error": 1,
+    }
+    assert failures == ["bad-tool"]

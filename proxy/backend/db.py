@@ -10,7 +10,7 @@ is disposed.
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -135,6 +135,17 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
         },
+        "tool_catalog_sync_state": {
+            "reconcile_next_page": "INTEGER NOT NULL DEFAULT 1",
+            "reconcile_cycles_completed": "INTEGER NOT NULL DEFAULT 0",
+            "reconcile_last_at": "DATETIME NULL",
+        },
+        "repository_analysis_state": {
+            "attempts": "INTEGER NOT NULL DEFAULT 0",
+        },
+        "person_reconciliation_queue": {
+            "attempts": "INTEGER NOT NULL DEFAULT 0",
+        },
         "tool_maintainer_edges": {
             "wiki_username": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
@@ -173,6 +184,9 @@ def _upgrade_schema() -> None:
             for name, ddl in columns.items():
                 if name not in existing_columns:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+        for table in ("repository_analysis_state", "person_reconciliation_queue"):
+            if table in existing_tables:
+                conn.exec_driver_sql(f"UPDATE {table} SET attempts = 0 WHERE attempts IS NULL")
 
 
 def configure(url: str) -> None:
@@ -200,6 +214,26 @@ def init_schema() -> None:
     """Create any missing tables (idempotent; see docs/RUNBOOK.md for changes)."""
     Base.metadata.create_all(engine())
     _upgrade_schema()
+
+
+@contextmanager
+def advisory_lock(name: str, *, timeout_seconds: int = 0) -> Iterator[bool]:
+    """Hold a best-effort process lock on MariaDB; remain a no-op on SQLite."""
+    if engine().dialect.name not in {"mysql", "mariadb"}:
+        yield True
+        return
+    connection = engine().connect()
+    acquired = False
+    try:
+        acquired = connection.scalar(
+            text("SELECT GET_LOCK(:name, :timeout)"),
+            {"name": name, "timeout": max(0, int(timeout_seconds))},
+        ) == 1
+        yield acquired
+    finally:
+        if acquired:
+            connection.scalar(text("SELECT RELEASE_LOCK(:name)"), {"name": name})
+        connection.close()
 
 
 @contextmanager

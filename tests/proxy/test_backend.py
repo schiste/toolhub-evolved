@@ -17,7 +17,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 from flask import Flask
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -973,6 +973,11 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         conn.exec_driver_sql("CREATE TABLE tool_thanks (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_health_targets (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_media (id INTEGER PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE tool_catalog_sync_state (key VARCHAR(64) PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE repository_analysis_state (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)")
+        conn.exec_driver_sql("CREATE TABLE person_reconciliation_queue (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)")
+        conn.exec_driver_sql("INSERT INTO repository_analysis_state (tool_name, attempts) VALUES ('legacy', NULL)")
+        conn.exec_driver_sql("INSERT INTO person_reconciliation_queue (tool_name, attempts) VALUES ('legacy', NULL)")
     db._upgrade_schema()
     user_columns = {col["name"] for col in inspect(eng).get_columns("users")}
     assert "role" in user_columns
@@ -992,6 +997,14 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     assert {"created_by_user_id", "review_status", "source", "sync_status"}.issubset(thanks_columns)
     health_columns = {col["name"] for col in inspect(eng).get_columns("tool_health_targets")}
     assert {"source", "sync_status", "review_status", "last_synced_at", "deleted_at"}.issubset(health_columns)
+    catalog_columns = {col["name"] for col in inspect(eng).get_columns("tool_catalog_sync_state")}
+    assert {"reconcile_next_page", "reconcile_cycles_completed", "reconcile_last_at"}.issubset(catalog_columns)
+    with eng.connect() as conn:
+        assert conn.scalar(select(text("attempts")).select_from(text("repository_analysis_state"))) == 0
+        assert conn.scalar(select(text("attempts")).select_from(text("person_reconciliation_queue"))) == 0
+
+    with db.advisory_lock("test-lock") as acquired:
+        assert acquired is True
 
     assert sync.clean_source("official") == "official"
     assert sync.clean_source("bogus") == "local"

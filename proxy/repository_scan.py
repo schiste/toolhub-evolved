@@ -208,7 +208,7 @@ def _save_failure(tool_name: str, url: str, provider: str, error: str) -> None:
         row.repository_url = url
         row.provider = provider
         row.status = "error"
-        row.attempts += 1
+        row.attempts = (row.attempts or 0) + 1
         row.checked_at = utcnow()
         row.next_attempt_at = _backoff(row.attempts)
         row.last_error = clean_error(error)
@@ -334,7 +334,17 @@ def run(limit: int = 100, *, force: bool = False, tool_name: str | None = None) 
     results = dict.fromkeys(("candidates", "analyzed", "skipped", "backoff", "unsupported", "error"), 0)
     for name, record in candidate_tools(limit, tool_name):
         results["candidates"] += 1
-        results[scan_tool(name, record, force=force)] += 1
+        try:
+            result = scan_tool(name, record, force=force)
+        except Exception as exc:  # noqa: BLE001 - one malformed repository must not abort the batch
+            result = "error"
+            try:
+                raw_url = _raw_tool_repository(record)
+                _save_failure(name, repository_url(raw_url), provider_for(repository_url(raw_url)), str(exc))
+            except Exception:
+                # Preserve the batch result even if the database cannot record the failure.
+                pass
+        results[result] += 1
     return results
 
 
