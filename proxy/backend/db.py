@@ -157,6 +157,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "source": "VARCHAR(32) NOT NULL DEFAULT 'official'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'official'",
         },
+        "canonical_tool_cache": {
+            "search_text": f"{text_col} NULL",
+        },
         "toolinfo_discovery": {
             "payload": f"{json_col} NULL",
         },
@@ -196,6 +199,7 @@ def _upgrade_schema() -> None:
     eng = engine()
     inspector = inspect(eng)
     existing_tables = set(inspector.get_table_names())
+    added: set[tuple[str, str]] = set()
     with eng.begin() as conn:
         for table, columns in _schema_additions().items():
             if table not in existing_tables:
@@ -204,6 +208,7 @@ def _upgrade_schema() -> None:
             for name, ddl in columns.items():
                 if name not in existing_columns:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+                    added.add((table, name))
         for table in ("repository_analysis_state", "person_reconciliation_queue"):
             if table in existing_tables:
                 conn.exec_driver_sql(f"UPDATE {table} SET attempts = 0 WHERE attempts IS NULL")
@@ -214,6 +219,14 @@ def _upgrade_schema() -> None:
             # cache: dropping those rows is cheaper and safer than backfilling a
             # URL parse in SQL, and the prewarm job refills them within a minute.
             conn.exec_driver_sql("DELETE FROM api_cache WHERE path = ''")
+    # After the DDL transaction commits, so the new column is visible to the
+    # backfill's own session. Runs once, in the upgrade that adds the column:
+    # rows cached before it existed would otherwise stay invisible to search
+    # until some later sync happened to rewrite them.
+    if ("canonical_tool_cache", "search_text") in added:
+        from backend import canonical_tools  # noqa: PLC0415 - avoid a db <-> canonical_tools import cycle.
+
+        canonical_tools.backfill_search_text()
 
 
 def configure(url: str) -> None:

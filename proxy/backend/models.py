@@ -10,7 +10,7 @@ reads while live Toolhub data is stale or unavailable.
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
@@ -24,6 +24,9 @@ from backend.sync import (
     SYNC_LOCAL_DRAFT,
     SYNC_OFFICIAL,
 )
+
+# Bound on the denormalized canonical search haystack (see CanonicalToolCache).
+SEARCH_TEXT_MAX_CHARS = 4000
 
 
 def utcnow() -> datetime:
@@ -115,6 +118,10 @@ class CanonicalToolCache(Base):
     __tablename__ = "canonical_tool_cache"
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     record: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Lowercased name/title/description, denormalized out of `record` so a search
+    # can filter and limit in SQL. Matching inside the JSON column would mean
+    # shipping every record to Python to test a substring.
+    search_text: Mapped[str] = mapped_column(Text, default="")
     source_url: Mapped[str] = mapped_column(String(2000), default="")
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
@@ -122,6 +129,19 @@ class CanonicalToolCache(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    @validates("record")
+    def _derive_search_text(self, _key: str, record: dict | None) -> dict | None:
+        """Keep search_text in step with record on every assignment.
+
+        Deriving it here rather than at the call site means a row inserted by
+        any path is searchable; a caller that forgot would otherwise write a
+        row that simply never matches, with nothing to indicate why.
+        """
+        source = record or {}
+        parts = (source.get("name"), source.get("title"), source.get("description"))
+        self.search_text = "\n".join(str(part or "") for part in parts).casefold()[:SEARCH_TEXT_MAX_CHARS]
+        return record
 
 
 class GraphToolEnrichment(Base):

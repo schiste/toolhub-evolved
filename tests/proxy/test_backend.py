@@ -1990,6 +1990,37 @@ def test_canonical_tools_endpoint_reads_local_cache_only(client):
     assert search["results"][0]["toolName"] == "cached-tool"
 
 
+def test_canonical_search_filters_in_sql_and_escapes_like_wildcards(app):
+    canonical_tools.upsert_records(
+        [
+            {"name": "percent-tool", "title": "100% coverage", "description": "about percentages"},
+            {"name": "plain-tool", "title": "Plain", "description": "nothing special"},
+        ],
+        source_url="https://toolhub.wikimedia.org/api/search/tools/",
+    )
+
+    # "%" is a literal here, not the LIKE wildcard that would match everything.
+    matched = canonical_tools.search("100%")
+    assert [row["toolName"] for row in matched] == ["percent-tool"]
+    assert [row["toolName"] for row in canonical_tools.search("_lain")] == []
+    assert {row["toolName"] for row in canonical_tools.search("tool")} == {"percent-tool", "plain-tool"}
+    # The limit is applied by the database, not after loading the table.
+    assert len(canonical_tools.search("", limit=1)) == 1
+
+
+def test_canonical_search_text_backfills_for_rows_cached_before_the_column(app):
+    canonical_tools.upsert_records(
+        [{"name": "legacy-tool", "title": "Legacy", "description": "cached earlier"}],
+        source_url="https://toolhub.wikimedia.org/api/search/tools/",
+    )
+    with db.session_scope() as s:
+        s.query(CanonicalToolCache).update({CanonicalToolCache.search_text: ""})
+    assert canonical_tools.search("cached earlier") == []
+
+    assert canonical_tools.backfill_search_text() == 1
+    assert [row["toolName"] for row in canonical_tools.search("cached earlier")] == ["legacy-tool"]
+
+
 def test_sparse_listing_upsert_preserves_rich_detail_metadata(client):
     canonical_tools.upsert_records(
         [

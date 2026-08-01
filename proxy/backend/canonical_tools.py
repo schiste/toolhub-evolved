@@ -86,6 +86,11 @@ def _has_value(value: Any) -> bool:  # noqa: ANN401 - official API JSON
     return value not in (None, "", [], {})
 
 
+def _escape_like(term: str) -> str:
+    """Escape LIKE wildcards so a query for "100%" is not a match-anything pattern."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     """Apply listing fields without erasing richer detail-only metadata."""
     merged = dict(existing)
@@ -119,6 +124,8 @@ def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bo
                 if row is None:
                     row = CanonicalToolCache(tool_name=name)
                     s.add(row)
+                # search_text follows automatically: the model derives it from
+                # every `record` assignment (see CanonicalToolCache).
                 row.record = record if detail else _merge_listing_record(row.record or {}, record)
                 if detail or not existing_is_detail:
                     row.source_url = source_url[:MAX_SOURCE_URL]
@@ -136,6 +143,31 @@ def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bo
 
     enqueue_tool_names([name for name, _record in clean_records], reason="canonical_fetch")
     return len(clean_records)
+
+
+def backfill_search_text() -> int:
+    """Populate search_text for rows cached before the column existed.
+
+    Called once, when the migration actually adds the column. Without it every
+    pre-existing row is invisible to search() until some later sync happens to
+    rewrite it, which for the canonical catalog could be hours.
+    """
+    filled = 0
+    try:
+        with db.session_scope() as s:
+            rows = list(
+                s.execute(
+                    select(CanonicalToolCache).where(
+                        (CanonicalToolCache.search_text == "") | CanonicalToolCache.search_text.is_(None)
+                    )
+                ).scalars()
+            )
+            for row in rows:
+                row.record = row.record or {}  # reassignment re-derives search_text
+                filled += 1
+    except SQLAlchemyError:
+        return filled
+    return filled
 
 
 def _payload(row: CanonicalToolCache) -> dict[str, Any]:
@@ -173,29 +205,22 @@ def tools_by_name(names: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS) -> list[dict[str, Any]]:
-    """Search cached canonical records locally with simple deterministic matching."""
+    """Search cached canonical records locally with simple deterministic matching.
+
+    Filtering and limiting happen in SQL. Reading the whole table to keep at
+    most `limit` rows meant transferring every cached record's JSON — the full
+    catalog — for a query that returns a page of results.
+    """
     term = str(query or "").strip().casefold()
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
-    with db.session_scope() as s:
-        rows = list(
-            s.execute(
-                select(CanonicalToolCache).order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
-            ).scalars()
-        )
+    statement = select(CanonicalToolCache).order_by(
+        CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name
+    )
     if term:
-        rows = [
-            row
-            for row in rows
-            if term
-            in "\n".join(
-                [
-                    str(row.tool_name or ""),
-                    str((row.record or {}).get("title") or ""),
-                    str((row.record or {}).get("description") or ""),
-                ]
-            ).casefold()
-        ]
-    return [_payload(row) for row in rows[:capped]]
+        statement = statement.where(CanonicalToolCache.search_text.like(f"%{_escape_like(term)}%", escape="\\"))
+    with db.session_scope() as s:
+        rows = list(s.execute(statement.limit(capped)).scalars())
+    return [_payload(row) for row in rows]
 
 
 def records(*, limit: int = MAX_RECORD_RESULTS) -> list[dict[str, Any]]:
