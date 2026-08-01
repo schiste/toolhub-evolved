@@ -59,6 +59,8 @@ _VERSIONED_STATIC_CACHE = "public, max-age=31536000, immutable"
 _REVALIDATED_STATIC_CACHE = "no-cache"
 _HTTP_NOT_MODIFIED = 304
 _CACHEABLE_MIN_STATUS = 200
+# Statuses that carry no body to compress.
+_BODILESS_STATUSES = {204, _HTTP_NOT_MODIFIED}
 _CACHEABLE_MAX_STATUS = 300
 _TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
 _CACHE_HEADER = "X-Toolhub-Evolved-Cache"
@@ -324,7 +326,7 @@ def start_request_timing() -> None:
 
 def _compressible(resp: Response) -> bool:
     """Report whether this response is worth gzipping and safe to gzip."""
-    if resp.status_code < 200 or resp.status_code in {204, 304}:
+    if resp.status_code < _CACHEABLE_MIN_STATUS or resp.status_code in _BODILESS_STATUSES:
         return False
     if "Content-Encoding" in resp.headers or "Content-Range" in resp.headers:
         return False
