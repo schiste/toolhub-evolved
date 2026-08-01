@@ -19,6 +19,16 @@ function fallbackForImage(img) {
 	return iconFallbackAvatar(title, variant, img.getAttribute("src") || "");
 }
 
+/** @param {Element} img */
+function tryRemoteFallback(img) {
+	const fallback = img.getAttribute("data-icon-fallback-src");
+	if (!fallback || fallback === img.getAttribute("src")) return false;
+	img.removeAttribute("data-icon-fallback-src");
+	img.setAttribute("src", fallback);
+	img.setAttribute("data-icon-state", "remote-fallback");
+	return true;
+}
+
 const ICON_FALLBACK_ROOTS = new WeakSet();
 
 /** @param {Document | HTMLElement} [root] */
@@ -31,6 +41,7 @@ export function initIconFallbacks(root = document) {
 			if (!(target instanceof Element) || target.tagName !== "IMG" || !target.classList.contains("avatar--img")) {
 				return;
 			}
+			if (tryRemoteFallback(target)) return;
 			const doc = target.ownerDocument || document;
 			const container = doc.createElement("template");
 			container.innerHTML = fallbackForImage(target);

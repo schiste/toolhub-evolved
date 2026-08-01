@@ -794,6 +794,8 @@ export function normalizeTool(t) {
 		experimental,
 		modified: t.modified_date || t.modified || null,
 		origin: t.origin || "crawler",
+		catalogProjection: t._catalogProjection || null,
+		cachedIconUrl: t._cachedIconUrl || null,
 		weeklyViews: 0,
 		status: statusOf({ deprecated, experimental })
 	};
@@ -806,8 +808,21 @@ export function normalizeTool(t) {
  * @returns {Promise<Tool | null>}
  */
 export async function getTool(name) {
+	const projectionPending = backendGetJson(`/v1/catalog/tools/${encodeURIComponent(name)}/projection/`).catch(
+		() => null
+	);
+	const withProjection = async (/** @type {any} */ raw) => {
+		const projection = await projectionPending;
+		if (!projection || !projection.record) return normalizeTool(raw);
+		return normalizeTool({
+			...raw,
+			...projection.record,
+			_catalogProjection: projection,
+			_cachedIconUrl: projection.asset?.url || null
+		});
+	};
 	try {
-		return normalizeTool(await apiGet(`/tools/${encodeURIComponent(name)}/`));
+		return withProjection(await apiGet(`/tools/${encodeURIComponent(name)}/`));
 	} catch (error) {
 		// A real 404 means the tool is absent → null (caller shows "not found").
 		// Any other failure (5xx, network, parse) is an outage, not an absence —
@@ -817,7 +832,9 @@ export async function getTool(name) {
 			return signedIn() && isNewTool(name) ? newToolBase(name) : null;
 		}
 		const fallback = await cachedCanonicalTools({ names: [name], limit: 1 }).catch(() => []);
-		if (fallback[0]) return fallback[0];
+		if (fallback[0]) {
+			return withProjection(fallback[0].canonicalRecord || fallback[0]);
+		}
 		throw error;
 	}
 }
@@ -845,7 +862,14 @@ export async function cachedCanonicalTools(options = {}) {
 	params.set("limit", String(options.limit || names.length || 24));
 	const data = await backendGetJson(`/v1/canonical/tools/?${params.toString()}`);
 	const rows = Array.isArray(data?.results) ? data.results : [];
-	return rows.map((/** @type {any} */ row) => (row && row.record ? normalizeTool(row.record) : null)).filter(Boolean);
+	return rows
+		.map((/** @type {any} */ row) => {
+			if (!row || !row.record) return null;
+			const tool = normalizeTool(row.record);
+			tool.canonicalRecord = row.record;
+			return tool;
+		})
+		.filter(Boolean);
 }
 /**
  * @param {any} l

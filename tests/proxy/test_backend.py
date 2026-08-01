@@ -31,6 +31,7 @@ from backend import (  # noqa: E402
     author_claims,
     authz,
     canonical_tools,
+    catalog_projection,
     db,
     graph_payload,
     github_issues,
@@ -55,6 +56,7 @@ from backend.models import (  # noqa: E402
     ApiCache,
     ApiCacheMeta,
     CanonicalToolCache,
+    CatalogCuration,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
@@ -210,6 +212,9 @@ PUBLIC_V1_ROUTES = {
     "/v1/config/": "public feature flags for the signed-out SPA",
     "/v1/user/": "reports authenticated:false when signed out",
     "/v1/canonical/tools/": "public canonical Toolhub cache; local DB only and already-public catalog data",
+    "/v1/catalog/tools/<name>/projection/": "public versioned projection assembled only from local public evidence",
+    "/v1/catalog/tools/<name>/icon/": "public bounded icon bytes previously validated by a background job",
+    "/v1/catalog/curations/<int:curation_id>/": "public approved correction evidence; pending rows remain hidden",
     "/v1/graph/": "public similarity graph derived from local canonical Toolhub cache; no upstream fetch",
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
@@ -260,6 +265,53 @@ def test_public_route_allowlist_has_no_stale_entries(app):
         if str(rule.rule) == path and hasattr(app.view_functions[rule.endpoint], security.GUARD_ATTR)
     )
     assert now_guarded == [], f"these are guarded now and can leave PUBLIC_V1_ROUTES: {now_guarded}"
+
+
+def test_catalog_projection_and_reviewed_curation_are_local_only(client):
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="alpha",
+                record={"name": "alpha", "title": "Alpha", "url": "https://official.example"},
+                source_url="https://toolhub.wikimedia.org/api/tools/alpha/",
+                fetched_at=now,
+                expires_at=now,
+                stale_until=now,
+            )
+        )
+    catalog_projection.refresh_tool_names(["alpha"])
+
+    projected = client.get("/v1/catalog/tools/alpha/projection/")
+    assert projected.status_code == 200
+    assert projected.get_json()["record"]["url"] == "https://official.example"
+    assert projected.headers["ETag"]
+
+    uid = add_user()
+    sign_in(client, uid)
+    response = client.post(
+        "/v1/catalog/tools/alpha/curations/",
+        json={"patch": {"url": "https://corrected.example"}, "rationale": "The official URL is obsolete."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert response.status_code == 201
+    curation_id = response.get_json()["item"]["id"]
+    assert client.get(f"/v1/catalog/curations/{curation_id}/").status_code == 404
+
+    reviewer_id = add_user("Reviewer", "2", role=authz.ROLE_REVIEWER)
+    sign_in(client, reviewer_id)
+    approved = client.put(
+        f"/v1/moderation/public-data/catalog-curations/{curation_id}/",
+        json={"reviewStatus": "approved"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert approved.status_code == 200
+    assert client.get(f"/v1/catalog/curations/{curation_id}/").status_code == 200
+    assert client.get("/v1/catalog/tools/alpha/projection/").get_json()["record"]["url"] == (
+        "https://corrected.example"
+    )
+    with db.session_scope() as s:
+        assert s.get(CatalogCuration, curation_id).reviewed_by_user_id == reviewer_id
 
 
 # ---- public RSS feeds ------------------------------------------------------

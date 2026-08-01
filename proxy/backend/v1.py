@@ -33,6 +33,7 @@ from backend import (
     api_cache,
     authz,
     canonical_tools,
+    catalog_projection,
     db,
     github_issues,
     graph_payload,
@@ -40,6 +41,7 @@ from backend import (
     recent_owners,
     security,
     source_analyzer,
+    tool_assets,
     tool_summaries,
     toolhub,
     toolinfo_discovery,
@@ -65,6 +67,8 @@ from backend.author_claims import (
 )
 from backend.models import (
     ActivityRow,
+    CanonicalToolCache,
+    CatalogCuration,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
@@ -141,6 +145,7 @@ VISIBILITY_PRIVATE = "private"
 VISIBILITY_PUBLIC = "public"
 EVENT_TYPES = {"view", "launch", "save", "list_add"}
 MODERATION_MODELS = {
+    "catalog-curations": CatalogCuration,
     "tool-records": ToolRecord,
     "health-targets": ToolHealthTarget,
     "media": ToolMedia,
@@ -654,6 +659,16 @@ def _thanks_payload(row: ToolThanks) -> dict:
 
 def _moderation_item(kind: str, row: object) -> dict:
     payload_builders = {
+        "catalog-curations": lambda item: {
+            "id": item.id,
+            "toolName": item.tool_name,
+            "patch": item.patch,
+            "rationale": item.rationale,
+            "reviewStatus": item.review_status,
+            "createdByUserId": item.created_by_user_id,
+            "createdAt": _iso(item.created_at),
+            "modifiedAt": _iso(item.modified_at),
+        },
         "tool-records": _tool_record_payload,
         "health-targets": _health_target_payload,
         "media": _media_payload,
@@ -4629,6 +4644,90 @@ def _moderation_row(s: Any, kind: str, item_id: int) -> object | None:  # noqa: 
     return s.get(MODERATION_MODELS[kind], item_id)
 
 
+@v1_bp.route("/v1/catalog/tools/<name>/projection/")
+def v1_catalog_tool_projection(name: str) -> Response:
+    """Return one public Evolved projection with field-level evidence."""
+    payload = catalog_projection.projection_payload(name)
+    if payload is None:
+        return _deny(HTTP_NOT_FOUND, "catalog projection not found")
+    return _public_json_response(payload)
+
+
+@v1_bp.route("/v1/catalog/tools/<name>/icon/")
+def v1_catalog_tool_icon(name: str) -> Response:
+    """Serve a previously validated icon; never fetch on this read path."""
+    asset = tool_assets.cached_asset(name)
+    if asset is None:
+        return _deny(HTTP_NOT_FOUND, "cached icon not found")
+    body, content_type, digest = asset
+    etag = f'"{digest}"'
+    headers = {
+        "Cache-Control": "public, max-age=86400, stale-if-error=604800",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+        "ETag": etag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    if request.headers.get("If-None-Match") == etag:
+        return Response(status=304, headers=headers)
+    return Response(body, headers=headers, content_type=content_type)
+
+
+@v1_bp.route("/v1/catalog/curations/<int:curation_id>/")
+def v1_catalog_curation(curation_id: int) -> Response:
+    """Return one approved public correction referenced by provenance."""
+    with db.session_scope() as s:
+        row = s.get(CatalogCuration, curation_id)
+        if row is None or row.deleted_at is not None or row.review_status != REVIEW_APPROVED:
+            return _deny(HTTP_NOT_FOUND, "catalog curation not found")
+        payload = _moderation_item("catalog-curations", row)["data"]
+        payload.pop("createdByUserId", None)
+    return _public_json_response(payload)
+
+
+@v1_bp.route("/v1/catalog/tools/<name>/curations/", methods=["POST"])
+@write_guard
+def v1_catalog_curation_create(name: str) -> Response:
+    """Create a bounded local correction proposal; canonical data is untouched."""
+    clean_name = _clean_name(name)
+    if clean_name is None:
+        return _bad("tool name is required")
+    value = request.get_json(silent=True)
+    if not isinstance(value, dict):
+        return _bad("curation body must be a JSON object")
+    patch, errors = catalog_projection.validate_curation_patch(value.get("patch"))
+    if errors:
+        return _bad("curation validation failed", errors)
+    rationale = " ".join(str(value.get("rationale") or "").split()).strip()[:2000]
+    if not rationale:
+        return _bad("rationale is required", [{"field": "rationale", "message": "Explain the correction."}])
+    user = _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    with db.session_scope() as s:
+        if s.get(CanonicalToolCache, clean_name) is None:
+            return _deny(HTTP_NOT_FOUND, "canonical tool not found")
+        row = CatalogCuration(
+            tool_name=clean_name,
+            created_by_user_id=user.id,
+            patch=patch,
+            rationale=rationale,
+            review_status=REVIEW_PENDING,
+        )
+        s.add(row)
+        s.flush()
+        item = _moderation_item("catalog-curations", row)
+        _emit_structured_activity(
+            s,
+            user,
+            action="catalog-curation-proposed",
+            object_type="catalog-curations",
+            object_key=str(row.id),
+            official_status=SYNC_EVOLVED_REAL,
+            payload=item,
+        )
+    response = jsonify({"ok": True, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL, "item": item})
+    response.status_code = 201
+    return response
+
+
 def _moderation_row_visible(kind: str, row: object | None) -> bool:
     if row is None:
         return False
@@ -4646,6 +4745,15 @@ def v1_moderation_public_data() -> Response:
     _require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
     with db.session_scope() as s:
         items = [
+            *[
+                _moderation_item("catalog-curations", row)
+                for row in s.execute(
+                    select(CatalogCuration)
+                    .where(CatalogCuration.deleted_at.is_(None), CatalogCuration.review_status == REVIEW_PENDING)
+                    .order_by(CatalogCuration.modified_at.desc(), CatalogCuration.id.desc())
+                    .limit(50)
+                ).scalars()
+            ],
             *[
                 _moderation_item("tool-records", row)
                 for row in s.execute(
@@ -4717,7 +4825,12 @@ def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
             return _deny(HTTP_NOT_FOUND, "moderation record not found")
         assert row is not None  # noqa: S101 - visible check excludes None
         row.review_status = str(review_status)
-        if isinstance(row, ToolRecord):
+        if isinstance(row, CatalogCuration):
+            row.reviewed_by_user_id = user.id
+            row.reviewed_at = utcnow()
+            row.source = SOURCE_LOCAL
+            row.sync_status = SYNC_EVOLVED_REAL
+        elif isinstance(row, ToolRecord):
             row.source = SOURCE_LOCAL
             row.sync_status = SYNC_EVOLVED_REAL
             if review_status == REVIEW_APPROVED:
@@ -4738,6 +4851,9 @@ def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
             official_status=SYNC_EVOLVED_REAL,
             payload={"kind": kind, "reviewStatus": review_status, "item": item},
         )
+        projection_name = row.tool_name if isinstance(row, CatalogCuration) else None
+    if projection_name:
+        catalog_projection.refresh_tool_names([projection_name])
     return jsonify(
         {
             "ok": True,

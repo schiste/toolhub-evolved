@@ -70,12 +70,12 @@ function isDirectImageUrl(url) {
 }
 /** @param {Tool} t @param {string | undefined} variant */
 function iconCacheKey(t, variant) {
-	return `${variant === "lg" ? "lg" : ""}\u0000${String(t.name || "")}\u0000${String(t.title || "")}\u0000${String(t.icon ?? "").trim()}`;
+	return `${variant === "lg" ? "lg" : ""}\u0000${String(t.name || "")}\u0000${String(t.title || "")}\u0000${String(t.icon ?? "").trim()}\u0000${String(t.cachedIconUrl || "")}`;
 }
 /**
  * @param {Tool} t
  * @param {string} [variant]
- * @returns {{ state: "direct" | "commons" | "generated" | "invalid", src: string, raw: string, title: string, px: number, variant: string }}
+ * @returns {{ state: "cached" | "direct" | "commons" | "generated" | "invalid", src: string, fallbackSrc: string, raw: string, title: string, px: number, variant: string }}
  */
 export function iconMeta(t, variant) {
 	const key = iconCacheKey(t, variant);
@@ -84,21 +84,37 @@ export function iconMeta(t, variant) {
 	const px = variant === "lg" ? 72 : 48;
 	const raw = String(t.icon ?? "").trim();
 	const title = String(t.title || t.name || "");
-	let state = /** @type {"direct" | "commons" | "generated" | "invalid"} */ (raw ? "invalid" : "generated");
+	let state = /** @type {"cached" | "direct" | "commons" | "generated" | "invalid"} */ (
+		raw ? "invalid" : "generated"
+	);
 	let src = "";
+	let fallbackSrc = "";
 	if (raw) {
 		const direct = isDirectImageUrl(raw) ? raw : "";
 		const commons = direct ? "" : commonsThumb(raw, px * 2) || "";
-		src = safeHttpUrl(direct || commons);
+		fallbackSrc = safeHttpUrl(direct || commons);
+		src = fallbackSrc;
 		if (src) state = direct ? "direct" : "commons";
 	}
-	const meta = Object.freeze({ state, src, raw, title, px, variant: variant === "lg" ? "lg" : "" });
+	if (/^\/v1\/catalog\/tools\/[^/?#]+\/icon\/$/.test(String(t.cachedIconUrl || ""))) {
+		src = String(t.cachedIconUrl);
+		state = "cached";
+	}
+	const meta = Object.freeze({
+		state,
+		src,
+		fallbackSrc: state === "cached" ? fallbackSrc : "",
+		raw,
+		title,
+		px,
+		variant: variant === "lg" ? "lg" : ""
+	});
 	ICON_META_CACHE.set(key, meta);
 	return meta;
 }
-/** @param {{ state: string, raw: string, title: string }} meta */
+/** @param {{ state: string, fallbackSrc: string, raw: string, title: string }} meta */
 function iconDataAttrs(meta) {
-	return ` data-icon-state="${esc(meta.state)}" data-icon-source="${esc(meta.raw)}" data-icon-fallback="${esc(meta.title)}"`;
+	return ` data-icon-state="${esc(meta.state)}" data-icon-source="${esc(meta.raw)}" data-icon-fallback="${esc(meta.title)}"${meta.fallbackSrc ? ` data-icon-fallback-src="${esc(meta.fallbackSrc)}"` : ""}`;
 }
 // Tool icon: real Commons image if the tool has one, else a letter avatar.
 /**

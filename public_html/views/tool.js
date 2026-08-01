@@ -293,6 +293,75 @@ function replacementNote(tool) {
 	return `<div class="toolpage__notice">${t("tool.replacedBy", "Replaced by")} ${linked}</div>`;
 }
 
+const CATALOG_SOURCE_LABELS = {
+	official_toolhub: "Official Toolhub",
+	official_toolinfo: "Registered toolinfo.json",
+	self_hosted_toolinfo: "Discovered toolinfo.json",
+	repository_analysis: "Repository analysis",
+	evolved_curation: "Reviewed Evolved correction"
+};
+
+/** @param {unknown} value */
+function evidenceValue(value) {
+	if (Array.isArray(value)) return value.join(", ");
+	if (value && typeof value === "object") {
+		const localized = /** @type {Record<string, any>} */ (value);
+		return String(localized.en || localized.mul || Object.values(localized)[0] || "");
+	}
+	return String(value ?? "");
+}
+
+/** @param {Record<string, any> | null | undefined} projection */
+function catalogProvenancePanel(projection) {
+	const provenance = projection?.provenance;
+	if (!provenance || typeof provenance !== "object") return "";
+	const labels = {
+		title: t("tool.provenanceTitleField", "Title"),
+		description: t("tool.provenanceDescriptionField", "Description"),
+		url: t("tool.provenanceUrlField", "Tool URL"),
+		repository: t("tool.provenanceRepositoryField", "Repository"),
+		icon: t("tool.provenanceIconField", "Icon"),
+		tool_type: t("tool.provenanceTypeField", "Tool type"),
+		for_wikis: t("tool.provenanceWikisField", "Wikis"),
+		technology_used: t("tool.provenanceTechnologyField", "Technology")
+	};
+	const sections = Object.entries(labels)
+		.map(([field, label]) => {
+			const rows = Array.isArray(provenance[field]) ? provenance[field] : [];
+			if (rows.length === 0) return "";
+			const fieldValidation = projection?.validation?.[field] || {};
+			const distinct = new Set(
+				rows.map((row) => evidenceValue(row.value).trim().toLocaleLowerCase()).filter(Boolean)
+			);
+			const warning =
+				fieldValidation.reachable === false
+					? `<span class="catalog-evidence__warning">${t("tool.provenanceUnreachable", "URL currently unreachable")}</span>`
+					: rows.some((row) => row.valid === false)
+						? `<span class="catalog-evidence__warning">${t("tool.provenanceInvalidEvidence", "invalid evidence retained")}</span>`
+						: distinct.size > 1
+							? `<span class="catalog-evidence__warning">${t("tool.provenanceContradiction", "sources disagree")}</span>`
+							: "";
+			const items = rows
+				.map((row) => {
+					const source =
+						/** @type {Record<string, string>} */ (CATALOG_SOURCE_LABELS)[row.source] ||
+						row.source ||
+						t("tool.provenanceUnknown", "Unknown source");
+					const href = safeUrl(row.sourceUrl);
+					const sourceMarkup = href
+						? `<a href="${href}" target="_blank" rel="noopener nofollow">${esc(source)}</a>`
+						: `<span>${esc(source)}</span>`;
+					return `<li class="${row.effective ? "catalog-evidence__effective" : ""}"><strong>${esc(evidenceValue(row.value))}</strong> · ${sourceMarkup}${row.effective ? ` · ${t("tool.provenanceEffective", "effective")}` : ` · ${t("tool.provenanceSupporting", "supporting")}`}${row.valid === false ? ` · ${t("tool.provenanceInvalid", "invalid")}` : ""}</li>`;
+				})
+				.join("");
+			return `<details class="catalog-evidence__field"><summary>${esc(label)} ${warning}</summary><ul>${items}</ul></details>`;
+		})
+		.filter(Boolean)
+		.join("");
+	if (!sections) return "";
+	return `<section class="catalog-evidence" aria-labelledby="catalog-evidence-title"><h2 class="toolpage__h2" id="catalog-evidence-title">${t("tool.provenanceTitle", "Metadata evidence")}</h2><p>${t("tool.provenanceIntro", "Toolhub Evolved keeps the official record intact and shows which local evidence supports each displayed field.")}</p>${sections}</section>`;
+}
+
 /** @param {Record<string, any> | null} signals */
 function evolvedSignalsPanel(signals) {
 	const thanks = signals?.thanks || {};
@@ -657,6 +726,7 @@ export async function viewTool(name) {
 					${metaItem(t("tool.metaTechnology", "Technology"), (tool.technologyUsed || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 					${metaItem(t("tool.metaAudiences", "Audiences"), (tool.audiences || []).map((/** @type {string} */ item) => esc(item)).join(", "))}
 				</div>
+				${catalogProvenancePanel(tool.catalogProjection)}
 
 				<div data-related-tools-slot></div>
 				<div data-neighborhood-slot></div>

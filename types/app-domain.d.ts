@@ -92,6 +92,9 @@ interface Tool {
 	experimental: boolean;
 	modified: string | null;
 	origin: string;
+	catalogProjection?: Record<string, any> | null;
+	cachedIconUrl?: string | null;
+	canonicalRecord?: Record<string, any>;
 	weeklyViews: number;
 	// statusOf() returns one of three fixed level/label pairs (see ToolStatus).
 	status: ToolStatus;

@@ -235,6 +235,26 @@ function readToolFormFields() {
 	};
 }
 
+/** @param {Tool} current @param {Record<string, any>} fields */
+function localCurationPatch(current, fields) {
+	const pairs = [
+		["title", current.title, fields.title],
+		["description", current.description, fields.description],
+		["url", current.url, fields.url],
+		["repository", current.repository || "", fields.repository || ""],
+		["license", current.license || "", fields.license || ""],
+		["tool_type", current.toolType || "", fields.toolType || ""],
+		["keywords", current.keywords || [], fields.keywords],
+		["for_wikis", current.forWikis || [], fields.forWikis],
+		["available_ui_languages", current.uiLanguages || [], fields.uiLanguages]
+	];
+	return Object.fromEntries(
+		pairs
+			.filter(([_key, before, after]) => JSON.stringify(before) !== JSON.stringify(after))
+			.map(([key, _before, after]) => [key, after])
+	);
+}
+
 /**
  * @param {Tool} current
  * @param {Record<string, any>} fields
@@ -314,6 +334,49 @@ function toolCoreChangeDescriptors(current, fields) {
  */
 function withFieldProvenance(html, label, meta) {
 	return meta ? `<div class="sync-field-wrap">${html}${fieldProvenance(label, meta)}</div>` : html;
+}
+
+/**
+ * Add catalog evidence beside an editable field without conflating it with
+ * the separate official-write status shown by fieldProvenance().
+ * @param {string} html
+ * @param {string} label
+ * @param {Record<string, any> | null} writeMeta
+ * @param {Record<string, any> | null | undefined} projection
+ * @param {string} field
+ */
+function withCatalogFieldProvenance(html, label, writeMeta, projection, field) {
+	const wrapped = withFieldProvenance(html, label, writeMeta);
+	const rows = Array.isArray(projection?.provenance?.[field]) ? projection.provenance[field] : [];
+	if (rows.length === 0) return wrapped;
+	const effective = rows.find((row) => row.effective) || rows[0];
+	const sources = new Set(rows.map((row) => String(row.source || "")).filter(Boolean));
+	const invalid = rows.filter((row) => row.valid === false).length;
+	const reachability = projection?.validation?.[field]?.reachable;
+	const sourceLabels = {
+		official_toolhub: t("toolforms.sourceOfficial", "Official Toolhub"),
+		official_toolinfo: t("toolforms.sourceRegisteredToolinfo", "registered toolinfo.json"),
+		self_hosted_toolinfo: t("toolforms.sourceDiscoveredToolinfo", "discovered toolinfo.json"),
+		repository_analysis: t("toolforms.sourceRepositoryAnalysis", "repository analysis"),
+		evolved_curation: t("toolforms.sourceEvolvedCuration", "reviewed Evolved correction")
+	};
+	const source =
+		/** @type {Record<string, string>} */ (sourceLabels)[effective.source] ||
+		effective.source ||
+		t("toolforms.sourceUnknown", "unknown source");
+	const note = [
+		t("toolforms.effectiveSource", "Effective source: {source}", { source }),
+		sources.size > 1
+			? t("toolforms.supportingSourceCount", "{count} supporting source types", { count: sources.size })
+			: "",
+		invalid
+			? t("toolforms.invalidEvidenceCount", "{count} invalid value(s) retained as evidence", { count: invalid })
+			: "",
+		reachability === false ? t("toolforms.effectiveUrlUnreachable", "effective URL currently unreachable") : ""
+	]
+		.filter(Boolean)
+		.join(" · ");
+	return `${wrapped}<p class="field__hint catalog-field-evidence">${esc(note)}</p>`;
 }
 
 /**
@@ -875,6 +938,9 @@ export async function viewToolForm(name) {
 		? ""
 		: `${fInput(t("toolforms.fieldToolinfoUrl", "toolinfo.json URL"), "tf-toolinfo-url", "", { type: "url", ph: "https://example.org/toolinfo.json", hint: t("toolforms.fieldCreateToolinfoUrlHint", "Optional: Evolved will fetch it now to fill missing fields and keep it registered for future crawler refreshes.") })}
 			`;
+	const localCurationControls = editing
+		? `<fieldset class="panel catalog-curation"><legend>${t("toolforms.localCorrectionTitle", "Propose an Evolved correction")}</legend><p>${t("toolforms.localCorrectionIntro", "Submit the changed fields as a local proposal for reviewer approval. This does not modify Toolhub.")}</p>${fArea(t("toolforms.localCorrectionRationale", "Reason for the correction"), "tf-curation-rationale", "", t("toolforms.localCorrectionRationaleHint", "Explain the evidence or invalid value that this correction addresses."))}${button(t("toolforms.submitLocalCorrection", "Submit local correction"), { variant: "outline", type: "button", attrs: "data-tf-curation" })}<p class="at__result" data-curation-result aria-live="polite"></p></fieldset>`
+		: "";
 	const html = `
 	<div class="container page le">
 		<a class="back" href="${editing ? toolHref(name) : "/my-tools"}">${t("toolforms.back", "← Back")}</a>
@@ -885,16 +951,16 @@ export async function viewToolForm(name) {
 			<h2 class="le__h2">${t("toolforms.coreInformation", "Core information")}</h2>
 			${coreStatusPanel}
 			${editing ? `<p class="le__ro">${t("toolforms.nameLabel", "Name:")} <code>${esc(name)}</code>${coreMeta ? fieldProvenance(t("toolforms.fieldNameShort", "Name"), coreMeta) : ""}</p>` : fInput(t("toolforms.fieldName", "Name (unique id)"), "tf-name", "", { req: true, ph: "my-cool-tool", max: 120, hint: t("toolforms.fieldNameHint", "Stable lowercase id used in Toolhub URLs; it cannot be changed later.") })}${isCrawler ? `\n\t\t\t${crawlerAuthorField(cur, coreMeta)}` : ""}
-			${withFieldProvenance(fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") }), t("toolforms.fieldTitle", "Title"), coreMeta)}
-			${withFieldProvenance(fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it.")), t("toolforms.fieldDescription", "Description"), coreMeta)}
-			${withFieldProvenance(fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") }), t("toolforms.fieldUrl", "URL"), coreMeta)}
-			${createToolinfoField}${withFieldProvenance(fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") }), t("toolforms.fieldRepository", "Source code repository"), coreMeta)}
-			${withFieldProvenance(fInput(t("toolforms.fieldLicense", "License (SPDX id)"), "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: t("toolforms.fieldLicenseHint", "Use an SPDX identifier when known; leave blank if the license is unknown.") }), t("toolforms.fieldLicenseShort", "License"), coreMeta)}
-			${withFieldProvenance(fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") }), t("toolforms.fieldToolType", "Tool type"), coreMeta)}
-			${withFieldProvenance(fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") }), t("toolforms.fieldKeywordsShort", "Keywords"), coreMeta)}
+			${withCatalogFieldProvenance(fInput(t("toolforms.fieldTitle", "Title"), "tf-title", cur.title, { req: true, hint: t("toolforms.fieldTitleHint", "Short public name shown in search results and tool pages.") }), t("toolforms.fieldTitle", "Title"), coreMeta, cur.catalogProjection, "title")}
+			${withCatalogFieldProvenance(fArea(t("toolforms.fieldDescription", "Description"), "tf-desc", cur.description, t("toolforms.fieldDescriptionHint", "One or two useful sentences: what it does, who it helps, and when to use it.")), t("toolforms.fieldDescription", "Description"), coreMeta, cur.catalogProjection, "description")}
+			${withCatalogFieldProvenance(fInput(t("toolforms.fieldUrl", "URL"), "tf-url", cur.url, { req: true, type: "url", ph: "https://…", hint: t("toolforms.fieldUrlHint", "Primary place people launch the tool or read its documentation.") }), t("toolforms.fieldUrl", "URL"), coreMeta, cur.catalogProjection, "url")}
+			${createToolinfoField}${withCatalogFieldProvenance(fInput(t("toolforms.fieldRepository", "Source code repository"), "tf-repo", cur.repository, { type: "url", hint: t("toolforms.fieldRepositoryHint", "Optional public repository where contributors can inspect or patch the code.") }), t("toolforms.fieldRepository", "Source code repository"), coreMeta, cur.catalogProjection, "repository")}
+			${withCatalogFieldProvenance(fInput(t("toolforms.fieldLicense", "License (SPDX id)"), "tf-license", cur.license, { ph: "GPL-3.0-or-later", hint: t("toolforms.fieldLicenseHint", "Use an SPDX identifier when known; leave blank if the license is unknown.") }), t("toolforms.fieldLicenseShort", "License"), coreMeta, cur.catalogProjection, "license")}
+			${withCatalogFieldProvenance(fSelect(t("toolforms.fieldToolType", "Tool type"), "tf-type", cur.toolType, TOOL_TYPES, { hint: t("toolforms.fieldToolTypeHint", "Choose the closest match; community annotations can refine discovery later.") }), t("toolforms.fieldToolType", "Tool type"), coreMeta, cur.catalogProjection, "tool_type")}
+			${withCatalogFieldProvenance(fInput(t("toolforms.fieldKeywords", "Keywords (comma-separated)"), "tf-keywords", toCsv(cur.keywords), { hint: t("toolforms.fieldKeywordsHint", "Search terms people may try; avoid repeating only the title.") }), t("toolforms.fieldKeywordsShort", "Keywords"), coreMeta, cur.catalogProjection, "keywords")}
 			${editing ? "" : duplicateRegion()}
-			${withFieldProvenance(fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.") }), t("toolforms.fieldWikisShort", "Works on wikis"), coreMeta)}
-			${withFieldProvenance(fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page after saving.") }), t("toolforms.fieldLangsShort", "Interface languages"), coreMeta)}
+			${withCatalogFieldProvenance(fInput(t("toolforms.fieldWikis", "Works on wikis (comma-separated, * for all)"), "tf-wikis", toCsv(cur.forWikis), { hint: t("toolforms.fieldWikisHint", "Use wiki hostnames such as en.wikipedia.org, commons.wikimedia.org, *.wikisource.org, or * for all wikis.") }), t("toolforms.fieldWikisShort", "Works on wikis"), coreMeta, cur.catalogProjection, "for_wikis")}
+			${withCatalogFieldProvenance(fInput(t("toolforms.fieldLangs", "Available UI languages (comma-separated codes)"), "tf-langs", toCsv(cur.uiLanguages), { ph: "en, fr, de", hint: t("toolforms.fieldLangsHint", "BCP-47 / wiki language codes; saved values refresh the tool page after saving.") }), t("toolforms.fieldLangsShort", "Interface languages"), coreMeta, cur.catalogProjection, "available_ui_languages")}
 			<div class="le__checks">${fCheck(t("toolforms.fieldDeprecated", "Deprecated"), "tf-deprecated", cur.deprecated)}${fCheck(t("toolforms.experimentalBadge", "Experimental"), "tf-experimental", cur.experimental)}</div>
 			<div class="le__actions">
 				${button(editing ? t("toolforms.saveChanges", "Save changes") : t("toolforms.submitTool", "Register tool"), { variant: "primary", type: "submit" })}
@@ -905,12 +971,53 @@ export async function viewToolForm(name) {
 	</div>`;
 	function mount() {
 		const form = /** @type {HTMLFormElement} */ ($("[data-tool-form]"));
+		if (localCurationControls) {
+			$(".le__actions")?.insertAdjacentHTML("beforebegin", localCurationControls);
+		}
 		const changeReview = editing ? mountChangeReview(form) : null;
 		const resetChangeReview = () => changeReview?.reset();
 		form.addEventListener("input", resetChangeReview);
 		form.addEventListener("change", resetChangeReview);
 		setupToolCoreSubmit(form, { editing, name, current: cur, changeReview });
 		setupToolCoreRetry(name);
+		const curation = $("[data-tf-curation]");
+		if (curation) {
+			curation.addEventListener("click", async () => {
+				const out = /** @type {HTMLElement} */ ($("[data-curation-result]"));
+				const patch = localCurationPatch(cur, readToolFormFields());
+				const rationale = fieldValue("tf-curation-rationale");
+				if (Object.keys(patch).length === 0) {
+					out.className = "at__result at__result--err";
+					out.textContent = t(
+						"toolforms.localCorrectionNoChanges",
+						"Change at least one supported field first."
+					);
+					return;
+				}
+				if (!rationale) {
+					setFieldError(
+						"tf-curation-rationale",
+						t("toolforms.localCorrectionRationaleRequired", "Explain why this correction is needed.")
+					);
+					return;
+				}
+				try {
+					await serverWrite(
+						"POST",
+						`/v1/catalog/tools/${encodeURIComponent(/** @type {string} */ (name))}/curations/`,
+						{ patch, rationale }
+					);
+					out.className = "at__result at__result--ok";
+					out.textContent = t(
+						"toolforms.localCorrectionSubmitted",
+						"Local correction submitted for reviewer approval."
+					);
+				} catch (error) {
+					out.className = "at__result at__result--err";
+					out.textContent = backendErrorExplanation(error);
+				}
+			});
+		}
 		const rev = $("[data-tf-revert]");
 		if (rev) {
 			rev.addEventListener("click", async () => {

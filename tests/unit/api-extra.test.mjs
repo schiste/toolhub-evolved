@@ -779,7 +779,8 @@ test("getTool prefers live Toolhub data over signed-in local newToolBase", async
 	assert.equal(nt.name, "NewOne");
 	assert.equal(nt.title, "Official NewOne");
 	assert.equal(nt.origin, "crawler");
-	assert.equal(calls, 1);
+	// One official record read plus one same-origin Evolved projection read.
+	assert.equal(calls, 2);
 	session.applyExp(false);
 	session.setServerUser(null);
 });

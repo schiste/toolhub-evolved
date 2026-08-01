@@ -1942,6 +1942,34 @@
 .toolpage__tags {
 	margin: var(--space-3) var(--space-0);
 }
+
+.catalog-evidence {
+	margin-block: var(--space-6);
+}
+
+.catalog-evidence__field {
+	border-block-start: 1px solid var(--color-border);
+	padding-block: var(--space-2);
+}
+
+.catalog-evidence__field summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.catalog-evidence__field ul {
+	margin-block: var(--space-2) var(--space-0);
+}
+
+.catalog-evidence__effective {
+	color: var(--color-success);
+}
+
+.catalog-evidence__warning {
+	color: var(--color-warning-text);
+	font-size: var(--fs-small);
+	font-weight: 400;
+}
 .toolpage__actions {
 	display: flex;
 	flex-direction: column;
