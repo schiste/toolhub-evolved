@@ -261,7 +261,13 @@ def test_index_official_crawler_sources_stores_valid_invalid_and_error_rows(monk
             raise value
         return value
 
+    refreshed = []
     monkeypatch.setattr(toolinfo_sources, "fetch_toolinfo_feed_once", fake_fetch)
+    monkeypatch.setattr(
+        toolinfo_sources.graph_enrichment,
+        "refresh_tool_names",
+        lambda names: refreshed.extend(names),
+    )
     summary = toolinfo_sources.index_official_crawler_sources(limit=3)
     assert summary == {
         "registered": 3,
@@ -272,6 +278,7 @@ def test_index_official_crawler_sources_stores_valid_invalid_and_error_rows(monk
         "errors": 1,
         "items": 1,
     }
+    assert refreshed == ["valid-tool"]
 
     with db.session_scope() as s:
         sources = {source.url: source for source in s.query(ToolinfoSource).all()}
@@ -288,8 +295,41 @@ def test_index_official_crawler_sources_stores_valid_invalid_and_error_rows(monk
 
 
 def test_store_and_error_helpers_tolerate_missing_sources():
-    toolinfo_sources._mark_source_error(404, "missing")
-    assert toolinfo_sources._store_source_items(404, [{"tool_name": "x", "title": "x", "tool_url": "x", "payload": {}}]) == 0
+    assert toolinfo_sources._mark_source_error(404, "missing") == []
+    assert toolinfo_sources._store_source_items(
+        404, [{"tool_name": "x", "title": "x", "tool_url": "x", "payload": {}}]
+    ) == (0, [])
+
+
+def test_store_source_items_returns_removed_names_for_reenrichment():
+    with db.session_scope() as s:
+        source = ToolinfoSource(url="https://source.example/feed.json", valid=True)
+        s.add(source)
+        s.flush()
+        source_id = source.id
+        s.add(
+            ToolinfoSourceItem(
+                source_id=source_id,
+                source_url=source.url,
+                tool_name="removed-tool",
+                payload={"name": "removed-tool"},
+            )
+        )
+
+    count, changed_names = toolinfo_sources._store_source_items(
+        source_id,
+        [
+            {
+                "tool_name": "replacement-tool",
+                "title": "Replacement",
+                "tool_url": "https://replacement.example",
+                "payload": {"name": "replacement-tool"},
+            }
+        ],
+    )
+
+    assert count == 1
+    assert changed_names == ["removed-tool", "replacement-tool"]
 
 
 def test_sources_for_tools_prefers_lowest_official_source_id_and_serializes():

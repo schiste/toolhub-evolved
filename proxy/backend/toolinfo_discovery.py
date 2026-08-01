@@ -210,14 +210,18 @@ def _matching_record(data: object, tool_name: str) -> dict | None:
         return None
     items = [data] if isinstance(data, dict) else data[:MAX_ITEMS_PER_TOOLINFO] if isinstance(data, list) else []
     target = tool_name.casefold()
-    return next(
+    matching = next(
         (
-            dict(item)
+            item
             for item in items
             if isinstance(item, dict) and str(item.get("name") or "").strip().casefold() == target
         ),
         None,
     )
+    if matching is None:
+        return None
+    fields = ("name", *graph_enrichment.FACET_FIELDS)
+    return {field: matching[field] for field in fields if field in matching}
 
 
 def _found_payload(  # noqa: PLR0913 - URL, method, document, attempts, and target are distinct evidence

@@ -32,7 +32,7 @@
 
 - name: catalog-sync
   # Initial backfill: five 100-record pages every 15 minutes. After the first
-  # cycle, consume recent changes, hydrate up to ten graph candidates, and
+  # cycle, consume recent changes, hydrate up to twenty graph candidates, and
   # reconcile one page every 12 hours, with three seconds between requests.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-sync -- /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
   image: python3.13
@@ -47,6 +47,16 @@
   image: python3.13
   schedule: "47 * * * *"
   timeout: 900
+  emails: onfailure
+
+- name: graph-enrichment
+  # Local-only repair and quality audit. Producer jobs materialize affected
+  # tools immediately; this hourly sweep catches missed rows and rule-version
+  # upgrades, then logs facet coverage and taxonomy regressions.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name graph-enrichment -- /usr/bin/env GRAPH_ENRICHMENT_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/graph_enrichment.py
+  image: python3.13
+  schedule: "55 * * * *"
+  timeout: 300
   emails: onfailure
 
 - name: people-reconcile

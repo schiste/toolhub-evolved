@@ -156,3 +156,24 @@ def test_repair_prioritizes_graph_eligible_missing_metadata():
     with db.session_scope() as s:
         assert s.get(GraphToolEnrichment, "eligible") is not None
         assert s.get(GraphToolEnrichment, "not-eligible") is None
+
+
+def test_refresh_tool_names_batches_without_dropping_large_feeds(monkeypatch):
+    batches = []
+
+    def fake_refresh(names):
+        batches.append(names)
+        return {"requested": len(names), "refreshed": len(names), "changed": len(names), "errors": 0}
+
+    monkeypatch.setattr(graph_enrichment, "_refresh_batch", fake_refresh)
+    names = [f"tool-{index}" for index in range(graph_enrichment.MAX_REFRESH_TOOLS + 1)]
+
+    summary = graph_enrichment.refresh_tool_names([*names, names[0], " "])
+
+    assert [len(batch) for batch in batches] == [graph_enrichment.MAX_REFRESH_TOOLS, 1]
+    assert summary == {
+        "requested": graph_enrichment.MAX_REFRESH_TOOLS + 1,
+        "refreshed": graph_enrichment.MAX_REFRESH_TOOLS + 1,
+        "changed": graph_enrichment.MAX_REFRESH_TOOLS + 1,
+        "errors": 0,
+    }

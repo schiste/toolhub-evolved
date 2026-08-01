@@ -206,24 +206,35 @@ def _item_rows(data: object) -> list[dict]:
     return items
 
 
-def _mark_source_error(source_id: int, error: str) -> None:
+def _mark_source_error(source_id: int, error: str) -> list[str]:
     with db.session_scope() as s:
         source = s.get(ToolinfoSource, source_id)
         if source is None:
-            return
+            return []
+        affected_names = list(
+            s.execute(
+                select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)
+            ).scalars()
+        )
         source.last_fetched_at = utcnow()
         source.status = SOURCE_STATUS_ERROR
         source.valid = False
         source.last_error = clean_error(error)
         source.sync_status = SYNC_ERROR
+    return affected_names
 
 
-def _store_source_items(source_id: int, items: list[dict]) -> int:
+def _store_source_items(source_id: int, items: list[dict]) -> tuple[int, list[str]]:
     now = utcnow()
     with db.session_scope() as s:
         source = s.get(ToolinfoSource, source_id)
         if source is None:
-            return 0
+            return 0, []
+        previous_names = list(
+            s.execute(
+                select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)
+            ).scalars()
+        )
         s.execute(delete(ToolinfoSourceItem).where(ToolinfoSourceItem.source_id == source_id))
         source.last_fetched_at = now
         source.status = SOURCE_STATUS_VALID if items else SOURCE_STATUS_INVALID
@@ -247,8 +258,8 @@ def _store_source_items(source_id: int, items: list[dict]) -> int:
                 )
             )
         item_count = len(items)
-    graph_enrichment.refresh_tool_names([item["tool_name"] for item in items])
-    return item_count
+    changed_names = list(dict.fromkeys([*previous_names, *(item["tool_name"] for item in items)]))
+    return item_count, changed_names
 
 
 def _source_targets(limit: int) -> list[tuple[int, str]]:
@@ -271,23 +282,26 @@ def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
     """Fetch official registered feeds and persist per-tool source mappings."""
     registry = sync_registered_sources()
     fetched = valid = invalid = errors = items = 0
+    changed_names: list[str] = []
     session = requests.Session()
     for source_id, url in _source_targets(max(1, limit)):
         try:
             data = fetch_toolinfo_feed_once(url, session)
             item_rows = _item_rows(data)
-            item_count = _store_source_items(source_id, item_rows)
+            item_count, source_names = _store_source_items(source_id, item_rows)
         except (requests.RequestException, TypeError, ValueError, json.JSONDecodeError) as exc:
-            _mark_source_error(source_id, str(exc))
+            changed_names.extend(_mark_source_error(source_id, str(exc)))
             fetched += 1
             errors += 1
             continue
         fetched += 1
         items += item_count
+        changed_names.extend(source_names)
         if item_count:
             valid += 1
         else:
             invalid += 1
+    graph_enrichment.refresh_tool_names(changed_names)
     return {
         "registered": registry["registered"],
         "skipped": registry["skipped"],

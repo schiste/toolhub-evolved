@@ -161,9 +161,8 @@ def _mark_failures(names: list[str], error: BaseException) -> None:
         pass
 
 
-def refresh_tool_names(tool_names: list[str]) -> dict[str, int]:
-    """Rebuild materialized facets for exact canonical tool names."""
-    names = list(dict.fromkeys(name for value in tool_names if (name := _clean_name(value))))[:MAX_REFRESH_TOOLS]
+def _refresh_batch(names: list[str]) -> dict[str, int]:
+    """Rebuild one bounded batch of exact canonical tool names."""
     if not names:
         return {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
     now = utcnow()
@@ -225,6 +224,17 @@ def refresh_tool_names(tool_names: list[str]) -> dict[str, int]:
     if changed:
         api_cache.invalidate_graph()
     return {"requested": len(names), "refreshed": len(names), "changed": changed, "errors": 0}
+
+
+def refresh_tool_names(tool_names: list[str]) -> dict[str, int]:
+    """Rebuild all requested names in bounded database batches."""
+    names = list(dict.fromkeys(name for value in tool_names if (name := _clean_name(value))))
+    summary = {"requested": len(names), "refreshed": 0, "changed": 0, "errors": 0}
+    for offset in range(0, len(names), MAX_REFRESH_TOOLS):
+        batch = _refresh_batch(names[offset : offset + MAX_REFRESH_TOOLS])
+        for key in ("refreshed", "changed", "errors"):
+            summary[key] += batch[key]
+    return summary
 
 
 def refresh_candidates(limit: int = 500) -> dict[str, int]:

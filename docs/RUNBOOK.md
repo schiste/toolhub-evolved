@@ -213,6 +213,7 @@ names are:
 | `api_cache`                                  | Anonymous public Toolhub API payload cache      | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                             |
 | `api_cache_meta`                             | Anonymous cache coordination state              | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.              |
 | `canonical_tool_cache`                       | Anonymous public canonical cache                | Resumable mirror of official `/api/tools/` records used by local enrichment; rebuildable from Toolhub and never a replacement for live canonical reads.                |
+| `graph_tool_enrichment`                      | Anonymous public derived graph facets           | Versioned materialization of graph-relevant metadata with per-value provenance; rebuilt from canonical, crawler, discovered toolinfo, and approved repository sources. |
 | `tool_catalog_sync_state`                    | Operational cursor state                        | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                         |
 | `tool_owner_cache`                           | Anonymous public derived owner cache            | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                         |
 | `users`                                      | Private account mapping                         | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                     |
@@ -528,6 +529,17 @@ tools cover at least two values; untagged nodes retain similarity forces instead
 of being attracted to a synthetic `Other` group. Interactive maps use in-page forces up to 600 nodes;
 larger layouts run in a same-origin browser Worker so the Toolforge webservice
 only serves static assets and cached JSON.
+
+Graph facets are materialized in `graph_tool_enrichment`. Official Toolhub
+detail leads, official crawler payloads follow, matching self-hosted
+`toolinfo.json` records may add missing values, and approved repository-analysis
+suggestions have the lowest precedence. Producer jobs refresh affected tools
+after their own transaction commits. The hourly `graph-enrichment` job is the
+versioned repair backstop; it processes missing/failed rows locally, invalidates
+derived graph cache entries only when facets change, and logs coverage,
+platform leakage, compound technology values, retry counts, and materialization
+status. It makes no upstream requests and stays within the standard 300-second
+Toolforge job budget.
 
 The `repository-analysis` job is the deterministic source-analysis layer. It
 selects canonical Toolhub records with an HTTPS repository URL, checks the
