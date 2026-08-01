@@ -524,6 +524,24 @@ export async function apiGet(path, params) {
 	return apiFetch(url);
 }
 /**
+ * Report whether a read is already answerable from cache, without fetching.
+ *
+ * Lets a view tell a genuinely cold read from a warm one, so it can pay for a
+ * local-first first paint only when there is nothing cached to serve.
+ * @param {string} path
+ * @param {Record<string, string>} [params]
+ * @returns {boolean}
+ */
+export function apiCached(path, params) {
+	const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+	const url = API_BASE + path + qs;
+	loadPersistentApiCache();
+	const hit = apiCache.get(url);
+	if (!hit) return false;
+	const policy = apiCachePolicy(url);
+	return Date.now() - hit.ts <= policy.freshMs + policy.staleIfErrorMs;
+}
+/**
  * Fetch a same-origin Toolhub API URL and expose the raw Response. This keeps
  * network ownership in core while letting developer tools inspect status and
  * headers that apiGet intentionally abstracts away.
@@ -621,6 +639,7 @@ export async function paginate(path, params = {}, { pageSize = 100, maxPages = 1
 		for (const r of results) into.push(map ? map(r) : r);
 	};
 
+	/** @type {any[]} */
 	const out = [];
 	let first;
 	try {

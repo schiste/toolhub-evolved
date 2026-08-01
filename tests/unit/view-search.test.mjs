@@ -13,7 +13,10 @@ const h = vi.hoisted(() => ({
 	paginate: vi.fn(),
 	navigateTo: vi.fn(),
 	backendGetJson: vi.fn(),
-	cachedCanonicalTools: vi.fn()
+	cachedCanonicalTools: vi.fn(),
+	// Mocked apiGet never populates the real cache, so the cold/warm signal the
+	// local-first path reads has to be controllable here.
+	apiCached: vi.fn(() => false)
 }));
 
 vi.mock("../../public_html/lib/core/api.js", async (orig) => {
@@ -23,7 +26,8 @@ vi.mock("../../public_html/lib/core/api.js", async (orig) => {
 		apiGet: h.apiGet,
 		paginate: h.paginate,
 		backendGetJson: h.backendGetJson,
-		cachedCanonicalTools: h.cachedCanonicalTools
+		cachedCanonicalTools: h.cachedCanonicalTools,
+		apiCached: h.apiCached
 	};
 });
 vi.mock("../../public_html/lib/core/routing.js", async (orig) => {
@@ -332,9 +336,14 @@ beforeEach(() => {
 	h.navigateTo.mockReset();
 	h.backendGetJson.mockReset();
 	h.cachedCanonicalTools.mockReset();
+	h.apiCached.mockReset();
 	h.paginate.mockResolvedValue([]);
 	h.backendGetJson.mockRejectedValue(new Error("backend offline")); // default: no local strip
 	h.cachedCanonicalTools.mockResolvedValue([]);
+	// Default to a warm live cache so existing tests exercise the live path;
+	// the local-first tests opt in by leaving the canonical cache populated.
+	h.apiCached.mockReturnValue(true);
+	search.resetLocalFirstStateForTests();
 	setUrl("");
 });
 
@@ -397,14 +406,66 @@ test("search empty results, no facets (response is {} → exercises `data.result
 	expect("empty", r.html);
 });
 
+test("search serves local canonical results first on a cold query, then upgrades to live", async () => {
+	setUrl("q=cite");
+	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
+	// Live is slow; the local answer must not wait for it.
+	let resolveLive;
+	h.apiGet.mockReturnValue(
+		new Promise((resolve) => {
+			resolveLive = resolve;
+		})
+	);
+
+	const first = await search.viewSearch();
+	assert.ok(first.html.includes('data-tool="cached-cite"'), "local results paint before Toolhub answers");
+	assert.ok(first.html.includes("showing saved results while Toolhub loads"));
+
+	// Once live lands it is served instead, without the interim note.
+	resolveLive({ results: [rawTool("live-cite", { title: "Live Cite" })], count: 1, facets: FACETS });
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	h.apiGet.mockResolvedValue({ results: [rawTool("live-cite", { title: "Live Cite" })], count: 1, facets: FACETS });
+	h.apiCached.mockReturnValue(true); // the live response is cached now
+	const second = await search.viewSearch();
+	assert.ok(second.html.includes('data-tool="live-cite"'));
+	assert.ok(!second.html.includes("showing saved results while Toolhub loads"));
+});
+
 test("search falls back to cached canonical tools when live Toolhub search fails", async () => {
 	setUrl("q=cite");
+	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
 	h.apiGet.mockRejectedValue(new Error("down"));
 	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
-	const r = await search.viewSearch();
+
+	// Cold query: local paints first, optimistically.
+	const first = await search.viewSearch();
 	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 24 }]);
-	assert.ok(r.html.includes("showing saved Toolhub data"));
-	assert.ok(r.html.includes('data-tool="cached-cite"'));
+	assert.ok(first.html.includes('data-tool="cached-cite"'));
+
+	// The live failure settles, and the re-render states it plainly rather than
+	// leaving a "loading" note that will never resolve.
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	const second = await search.viewSearch();
+	assert.ok(second.html.includes("showing saved Toolhub data"));
+	assert.ok(!second.html.includes("showing saved results while Toolhub loads"));
+	assert.ok(second.html.includes('data-tool="cached-cite"'));
+});
+
+test("a failed live search does not loop back into the local-first path", async () => {
+	setUrl("q=loopcheck");
+	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
+	h.apiGet.mockRejectedValue(new Error("down"));
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-loop", { title: "Cached Loop" })]);
+
+	await search.viewSearch();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	// Every later render takes the normal path and reports the failure, rather
+	// than optimistically repainting local results forever.
+	for (let i = 0; i < 3; i += 1) {
+		const again = await search.viewSearch();
+		assert.ok(again.html.includes("showing saved Toolhub data"), `render ${i} must report the failure`);
+	}
 });
 
 test("search sort=complete orders by completeness with title tiebreak", async () => {

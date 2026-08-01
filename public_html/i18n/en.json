@@ -764,6 +764,7 @@
 	"search.experimental": "Experimental",
 	"search.filteredInBrowser": "filtered in your browser",
 	"search.filters": "Filters",
+	"search.localFirstResults": "showing saved results while Toolhub loads",
 	"search.mostComplete": "Most complete",
 	"search.mostRelevant": "Most relevant",
 	"search.nameAZ": "Name (A–Z)",
