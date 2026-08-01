@@ -343,6 +343,26 @@ test("filters update the visible count without rebuilding the graph", () => {
 	assert.equal(graph.querySelector("[data-graph-filter-empty]").hidden, false);
 });
 
+test("clustered large maps use deterministic positioning without force animation", () => {
+	reduced = false;
+	const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockReturnValue(1);
+	const nodes = Array.from({ length: 601 }, (_, index) => ({ id: `n-${index}`, group: index % 2 }));
+	const { handle } = build(
+		{
+			nodes,
+			edges: [],
+			layout: "clustered",
+			groupMeta: [
+				{ id: 0, label: "A" },
+				{ id: 1, label: "B" }
+			]
+		},
+		{ height: 480 }
+	);
+	expect(raf).not.toHaveBeenCalled();
+	handle.stop();
+});
+
 /* ---- lifecycle ---------------------------------------------------------- */
 test("stop() detaches every pointer listener (mousemove, mouseleave, click)", () => {
 	const onSelect = vi.fn();

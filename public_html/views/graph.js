@@ -7,6 +7,24 @@ import { button, iconButton } from "../lib/atoms/button.js";
 import { communityColors, forceGraph } from "../lib/organisms/force-graph.js";
 import { openQuickView } from "../lib/organisms/quickview.js";
 
+const GRAPH_LIMITS = [250, 500, 1000, 2000, 4000];
+const GRAPH_GROUPINGS = ["similarity", "language", "project", "task", "use_case", "tool_type", "technology"];
+
+/** @returns {{ limit: number, groupBy: string }} */
+function graphRequestState() {
+	const params = new URLSearchParams(location.search);
+	const requestedLimit = Number(params.get("limit"));
+	const limit = GRAPH_LIMITS.includes(requestedLimit) ? requestedLimit : GRAPH_LIMITS[0];
+	const requestedGroup = params.get("groupBy") || "";
+	const groupBy = GRAPH_GROUPINGS.includes(requestedGroup) ? requestedGroup : "similarity";
+	return { limit, groupBy };
+}
+
+/** @param {{ limit: number, groupBy: string }} state */
+function graphRequestUrl(state) {
+	return `/v1/graph/?limit=${encodeURIComponent(String(state.limit))}&groupBy=${encodeURIComponent(state.groupBy)}`;
+}
+
 /**
  * @param {{ id: string | number, label: string, size: number }[]} communityMeta
  * @returns {string}
@@ -17,15 +35,43 @@ function communityLegend(communityMeta) {
 		const color = colors.get(community.id) || colors.get(String(community.id));
 		return `<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(color)}"></span><span class="graph__legend-text">${esc(community.label)} <span class="graph__legend-count">(${esc(String(community.size))})</span></span></span>`;
 	});
-	items.push(
-		`<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get("other"))}"></span><span class="graph__legend-text">${t("graph.other", "Other")}</span></span>`
-	);
+	if (!(communityMeta || []).some((community) => community.label === "Other")) {
+		items.push(
+			`<span class="graph__legend-item"><span class="graph__swatch" style="background: ${esc(colors.get("other"))}"></span><span class="graph__legend-text">${t("graph.other", "Other")}</span></span>`
+		);
+	}
 	if (hasContext()) {
 		items.push(
 			`<span class="graph__legend-item"><span class="graph__swatch graph__swatch--halo"></span><span class="graph__legend-text">${t("graph.fitsYou", "Fits you")}</span></span>`
 		);
 	}
 	return items.join("");
+}
+
+/** @param {{ limit: number, groupBy: string }} state */
+function graphOptions(state) {
+	/** @type {Record<string, string>} */
+	const groupingLabels = {
+		similarity: t("graph.groupSimilarity", "Similarity clusters"),
+		language: t("graph.groupLanguage", "Languages"),
+		project: t("graph.groupProject", "Projects"),
+		task: t("graph.groupTask", "Tasks"),
+		use_case: t("graph.groupUseCase", "Use cases"),
+		tool_type: t("graph.groupToolType", "Tool types"),
+		technology: t("graph.groupTechnology", "Technology")
+	};
+	const limitOptions = GRAPH_LIMITS.map(
+		(limit) =>
+			`<option value="${limit}"${limit === state.limit ? " selected" : ""}>${limit.toLocaleString()}</option>`
+	).join("");
+	const groupOptions = GRAPH_GROUPINGS.map(
+		(group) =>
+			`<option value="${esc(group)}"${group === state.groupBy ? " selected" : ""}>${esc(groupingLabels[group])}</option>`
+	).join("");
+	return `<div class="graph__view-options" data-graph-view-options>
+		<label class="graph__filter" for="graph-limit"><span>${esc(t("graph.nodeCount", "Tools shown"))}</span><select id="graph-limit" class="graph__select" data-graph-option="limit">${limitOptions}</select></label>
+		<label class="graph__filter" for="graph-group-by"><span>${esc(t("graph.groupBy", "Group by"))}</span><select id="graph-group-by" class="graph__select" data-graph-option="groupBy">${groupOptions}</select></label>
+	</div>`;
 }
 
 function graphToolbar() {
@@ -80,10 +126,13 @@ function graphFilters(nodes) {
 }
 
 export async function viewGraph() {
-	const g = (await backendGetJson("/v1/graph/")) || { nodes: [], edges: [], communityMeta: [], truncated: 0 };
-	const truncatedNote = g.truncated
-		? `<p class="graph__note">${t("graph.truncatedNote", "Showing the {count} best-documented tools.", { count: esc(g.nodes.length) })}</p>`
-		: "";
+	const state = graphRequestState();
+	const g = (await backendGetJson(graphRequestUrl(state))) || {
+		nodes: [],
+		edges: [],
+		communityMeta: [],
+		truncated: 0
+	};
 	const empty =
 		g.nodes.length > 0
 			? ""
@@ -98,41 +147,85 @@ export async function viewGraph() {
 		<p class="page__intro">${t("graph.intro", "A similarity map of the most thoroughly-documented tools in the catalog. Each tool sits near others with overlapping function, scope, and audience; lines connect nearest neighbors and colors are clusters detected from those connections.")}</p>
 		<div class="graph">
 			${graphToolbar()}
+			${graphOptions(state)}
 			${graphFilters(g.nodes)}
 			<div id="graph-canvas" class="graph__canvas"></div>
 			${empty}
 			${filterEmpty}
-			<div class="graph__legend" aria-label="${t("graph.mapLegend", "Map legend")}">${communityLegend(g.communityMeta)}</div>
-			${truncatedNote}
+			<div class="graph__legend" data-graph-legend aria-label="${t("graph.mapLegend", "Map legend")}">${communityLegend(g.groupMeta || g.communityMeta)}</div>
+			<p class="graph__note" data-graph-note${g.truncated ? "" : " hidden"}>${g.truncated ? t("graph.truncatedNote", "Showing the {count} best-documented tools.", { count: esc(g.nodes.length) }) : ""}</p>
 		</div>
 	</div>`;
 	function mount() {
 		const target = /** @type {HTMLElement | null} */ (document.querySelector("#graph-canvas"));
 		if (!target || g.nodes.length === 0) return;
-		const handle = forceGraph(target, g, { onSelect: openQuickView, height: 560 });
-		target.forceGraphHandle = handle;
-		const controls = document.querySelector("[data-graph-controls]");
-		controls?.addEventListener("click", (event) => {
+		const graph = target.closest(".graph");
+		if (!graph) return;
+		let currentHandle = forceGraph(target, g, { onSelect: openQuickView, height: 560 });
+		target.forceGraphHandle = currentHandle;
+		let currentState = state;
+		let requestId = 0;
+		graph.addEventListener("click", (event) => {
 			const action = /** @type {HTMLElement | null} */ (
 				/** @type {Element | null} */ (event.target)?.closest("[data-graph-action]")
 			)?.dataset.graphAction;
-			if (action === "zoom-in") handle.zoomIn();
-			if (action === "zoom-out") handle.zoomOut();
-			if (action === "fit") handle.fitView();
+			if (action === "zoom-in") currentHandle.zoomIn();
+			if (action === "zoom-out") currentHandle.zoomOut();
+			if (action === "fit") currentHandle.fitView();
 		});
-		const filterControls = document.querySelector("[data-graph-filters]");
-		filterControls?.addEventListener("change", (event) => {
+		graph.addEventListener("change", async (event) => {
+			const option = /** @type {HTMLSelectElement | null} */ (
+				/** @type {Element | null} */ (event.target)?.closest("select[data-graph-option]")
+			);
+			if (option) {
+				const nextState = {
+					limit: option.dataset.graphOption === "limit" ? Number(option.value) : currentState.limit,
+					groupBy: option.dataset.graphOption === "groupBy" ? option.value : currentState.groupBy
+				};
+				if (!GRAPH_LIMITS.includes(nextState.limit) || !GRAPH_GROUPINGS.includes(nextState.groupBy)) return;
+				currentState = nextState;
+				const id = ++requestId;
+				graph.setAttribute("aria-busy", "true");
+				const next = await backendGetJson(graphRequestUrl(nextState));
+				if (id !== requestId || !next) {
+					graph.removeAttribute("aria-busy");
+					return;
+				}
+				currentHandle.stop();
+				const currentFilters = graph.querySelector("[data-graph-filters]");
+				if (currentFilters) currentFilters.outerHTML = graphFilters(next.nodes);
+				const legend = graph.querySelector("[data-graph-legend]");
+				if (legend) legend.innerHTML = communityLegend(next.groupMeta || next.communityMeta);
+				const note = graph.querySelector("[data-graph-note]");
+				if (note) {
+					note.textContent = next.truncated
+						? t("graph.truncatedNote", "Showing the {count} best-documented tools.", {
+								count: esc(next.nodes.length)
+							})
+						: "";
+					/** @type {HTMLElement} */ (note).hidden = !next.truncated;
+				}
+				currentHandle = forceGraph(target, next, { onSelect: openQuickView, height: 560 });
+				target.forceGraphHandle = currentHandle;
+				graph.removeAttribute("aria-busy");
+				const url = new URL(location.href);
+				url.searchParams.set("limit", String(nextState.limit));
+				url.searchParams.set("groupBy", nextState.groupBy);
+				history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+				return;
+			}
+			const filterControls = graph.querySelector("[data-graph-filters]");
 			const select = /** @type {HTMLSelectElement | null} */ (
 				/** @type {Element | null} */ (event.target)?.closest("select[data-graph-filter]")
 			);
-			if (!select) return;
+			if (!select || !filterControls) return;
 			const projects = /** @type {HTMLSelectElement | null} */ (
 				filterControls.querySelector('[data-graph-filter="projects"]')
 			)?.value;
 			const languages = /** @type {HTMLSelectElement | null} */ (
 				filterControls.querySelector('[data-graph-filter="languages"]')
 			)?.value;
-			handle.setFilters({ projects: projects || "", languages: languages || "" });
+			currentHandle.setFilters({ projects: projects || "", languages: languages || "" });
 		});
 	}
 	return { title: t("graph.docTitle", "Tool map — Toolhub"), html, mount };

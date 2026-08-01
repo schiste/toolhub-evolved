@@ -93,7 +93,7 @@ test("viewGraph: a populated map renders the legend, truncated note, canvas, and
 	// Items joined with "" → adjacent legend items (kills the .join("") separator).
 	assert.match(view.html, /<\/span><\/span><span class="graph__legend-item">/);
 	// truncated → the note shows the node count.
-	assert.match(view.html, /<p class="graph__note">Showing the 2 best-documented tools\.<\/p>/);
+	assert.match(view.html, /<p class="graph__note" data-graph-note>Showing the 2 best-documented tools\.<\/p>/);
 	// Populated → no empty-state paragraph.
 	assert.doesNotMatch(view.html, /No richly documented tools/);
 
@@ -130,18 +130,48 @@ test("viewGraph: an empty map shows the empty state, no truncated note, and no '
 	api.backendGetJson.mockResolvedValue({ nodes: [], truncated: false, communityMeta: [] });
 	const view = await viewGraph();
 	assert.match(view.html, /<p class="empty">No richly documented tools are available for the map right now\.<\/p>/);
-	assert.doesNotMatch(view.html, /graph__note/);
+	assert.match(view.html, /<p class="graph__note" data-graph-note hidden><\/p>/);
 	assert.doesNotMatch(view.html, /Fits you/);
 	// Legend still carries the "Other" entry.
 	assert.match(view.html, /graph__legend-text">Other<\/span>/);
 	// Not truncated → truncatedNote is exactly "" : the legend div closes directly onto the
 	// graph div (kills the `: ""` → injected-string mutant).
-	assert.match(view.html, /Other(?:<\/span>){2}<\/div>\s*<\/div>/);
+	assert.match(view.html, /Other(?:<\/span>){2}<\/div>[\s\S]*data-graph-note hidden/);
 
 	// mount() is a no-op when there are no nodes, even though the canvas exists.
 	document.body.innerHTML = '<div id="graph-canvas"></div>';
 	view.mount();
 	assert.equal(forceGraphMod.forceGraph.mock.calls.length, 0);
+});
+
+test("viewGraph: changing node count or grouping reloads the graph payload", async () => {
+	const initial = { nodes: [{ id: "a" }], edges: [], communityMeta: [], groupMeta: [], truncated: false };
+	const grouped = {
+		nodes: [{ id: "a", projects: ["Commons"] }],
+		edges: [],
+		communityMeta: [],
+		groupMeta: [{ id: 0, label: "Commons", size: 1 }],
+		truncated: false
+	};
+	api.backendGetJson.mockResolvedValueOnce(initial).mockResolvedValueOnce(grouped);
+	forceGraphMod.communityColors.mockReturnValue(new Map([["other", "#ccc"]]));
+	const firstHandle = { stop: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn(), setFilters: vi.fn() };
+	const secondHandle = { stop: vi.fn(), zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn(), setFilters: vi.fn() };
+	forceGraphMod.forceGraph.mockReturnValueOnce(firstHandle).mockReturnValueOnce(secondHandle);
+
+	const view = await viewGraph();
+	document.body.innerHTML =
+		'<div class="graph"><div data-graph-controls></div><div data-graph-view-options><select data-graph-option="limit"><option value="250"></option><option value="4000"></option></select><select data-graph-option="groupBy"><option value="similarity"></option><option value="language"></option></select></div><div data-graph-filters></div><div id="graph-canvas"></div><div data-graph-legend></div><p data-graph-note hidden></p></div>';
+	view.mount();
+	const groupSelect = document.querySelector('[data-graph-option="groupBy"]');
+	groupSelect.value = "language";
+	groupSelect.dispatchEvent(new Event("change", { bubbles: true }));
+	await Promise.resolve();
+	await Promise.resolve();
+
+	assert.equal(firstHandle.stop.mock.calls.length, 1);
+	assert.equal(forceGraphMod.forceGraph.mock.calls.length, 2);
+	assert.equal(api.backendGetJson.mock.calls[1][0], "/v1/graph/?limit=250&groupBy=language");
 });
 
 test("viewGraph: mount() does nothing when the canvas element is absent", async () => {

@@ -2156,8 +2156,58 @@ def test_graph_payload_exposes_canonical_project_and_language_facets(monkeypatch
             "fits": False,
             "projects": ["commons.wikimedia.org"],
             "languages": ["en", "fr"],
+            "group": 0,
+            "groupValues": ["0"],
         }
     ]
+
+
+def test_graph_endpoint_passes_limit_and_grouping_parameters(client, monkeypatch):
+    captured = {}
+
+    def fake_payload(**kwargs):
+        captured.update(kwargs)
+        return {"nodes": [], "edges": []}
+
+    monkeypatch.setattr(v1_api.graph_payload, "payload", fake_payload)
+    response = client.get("/v1/graph/?limit=4000&groupBy=language")
+
+    assert response.status_code == 200
+    assert captured == {"limit": "4000", "group_by": "language"}
+
+
+def test_graph_payload_uses_clustered_layout_for_large_grouped_views(monkeypatch):
+    monkeypatch.setattr(
+        graph_payload.canonical_tools,
+        "records",
+        lambda limit: [
+            {
+                "toolName": "english-tool",
+                "record": {
+                    "name": "english-tool",
+                    "title": "English tool",
+                    "keywords": ["images"],
+                    "available_ui_languages": ["en"],
+                },
+            },
+            {
+                "toolName": "french-tool",
+                "record": {
+                    "name": "french-tool",
+                    "title": "French tool",
+                    "keywords": ["images"],
+                    "available_ui_languages": ["fr"],
+                },
+            },
+        ],
+    )
+
+    payload = graph_payload.build(limit=4000, group_by="language")
+
+    assert payload["nodeLimit"] == 4000
+    assert payload["layout"] == "clustered"
+    assert payload["edges"] == []
+    assert [group["label"] for group in payload["groupMeta"]] == ["en", "fr"]
 
 
 def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():

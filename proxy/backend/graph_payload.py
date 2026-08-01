@@ -14,11 +14,25 @@ from backend import canonical_tools
 from backend.models import utcnow
 from backend.sync import SOURCE_LOCAL, SYNC_EVOLVED_REAL
 
-GLOBAL_NODE_LIMIT = 250
-GRAPH_SOURCE_RECORD_LIMIT = 1000
+GRAPH_NODE_LIMITS = (250, 500, 1000, 2000, 4000)
+DEFAULT_NODE_LIMIT = GRAPH_NODE_LIMITS[0]
+GRAPH_SOURCE_RECORD_LIMIT = GRAPH_NODE_LIMITS[-1]
 COMMUNITY_LIMIT = 8
 KNN_EDGES_PER_NODE = 4
+MAX_GROUPS = 24
+SPARSE_EDGE_NODE_LIMIT = 1000
+SPARSE_CANDIDATE_LIMIT = 160
+GRAPH_CACHE_MAX_ENTRIES = 8
 GRAPH_FRESH_SECONDS = 6 * 60 * 60
+GROUP_BY_VALUES = ("similarity", "language", "project", "task", "use_case", "tool_type", "technology")
+GROUP_BY_FIELDS = {
+    "language": "available_ui_languages",
+    "project": "for_wikis",
+    "task": "tasks",
+    "use_case": "audiences",
+    "tool_type": "tool_type",
+    "technology": "technology_used",
+}
 TERM_WEIGHTS = {
     "task": 1.4,
     "keyword": 1.0,
@@ -29,7 +43,7 @@ TERM_WEIGHTS = {
 
 _SPLIT_RE = re.compile(r"[\s_:/.-]+")
 _CACHE_LOCK = Lock()
-_CACHE: dict[str, Any] = {"payload": None, "expires_at": utcnow()}
+_CACHE: dict[str, Any] = {}
 
 
 def _clean_text(value: Any) -> str:  # noqa: ANN401 - official API JSON
@@ -141,6 +155,36 @@ def _knn_edges(names: list[str], vectors: dict[str, dict[str, float]]) -> list[d
     ]
 
 
+def _sparse_knn_edges(names: list[str], vectors: dict[str, dict[str, float]]) -> list[dict[str, Any]]:
+    """Build deterministic nearest-neighbor edges without an all-pairs scan."""
+    inverted: dict[str, set[str]] = defaultdict(set)
+    for name in names:
+        for term in vectors.get(name, {}):
+            inverted[term].add(name)
+
+    edge_map: dict[tuple[str, str], float] = {}
+    for source in names:
+        overlaps: Counter[str] = Counter()
+        for term in vectors.get(source, {}):
+            for target in inverted.get(term, set()):
+                if target != source:
+                    overlaps[target] += 1
+        candidates = [name for name, _count in sorted(overlaps.items(), key=lambda item: (-item[1], item[0]))]
+        scored = [
+            (target, _cosine(vectors.get(source, {}), vectors.get(target, {})))
+            for target in candidates[:SPARSE_CANDIDATE_LIMIT]
+        ]
+        scored = [(target, weight) for target, weight in scored if weight > 0]
+        scored.sort(key=lambda item: (-item[1], item[0]))
+        for target, weight in scored[:KNN_EDGES_PER_NODE]:
+            key = _sorted_pair(source, target)
+            edge_map[key] = max(edge_map.get(key, 0.0), weight)
+    return [
+        {"source": source, "target": target, "weight": round(weight, 4)}
+        for (source, target), weight in sorted(edge_map.items())
+    ]
+
+
 def _detect_communities(names: list[str], edges: list[dict[str, Any]]) -> dict[str, str]:
     labels = {name: name for name in sorted(names)}
     adjacency: dict[str, list[tuple[str, float]]] = {name: [] for name in labels}
@@ -206,8 +250,77 @@ def _communities(
     return node_communities, meta
 
 
-def build() -> dict[str, Any]:
+def _normalize_limit(value: Any) -> int:  # noqa: ANN401 - query parameter or internal caller
+    try:
+        requested = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_NODE_LIMIT
+    return min(GRAPH_NODE_LIMITS, key=lambda limit: (abs(limit - requested), limit))
+
+
+def _normalize_group_by(value: Any) -> str:  # noqa: ANN401 - query parameter or internal caller
+    group_by = _clean_text(value)
+    return group_by if group_by in GROUP_BY_VALUES else "similarity"
+
+
+def _group_label(value: str) -> str:
+    return _human_label(value) if value not in {"*", "other"} else "Other"
+
+
+def _group_data(
+    selected: list[dict[str, Any]],
+    group_by: str,
+    node_communities: dict[str, int | str],
+    community_meta: list[dict[str, Any]],
+) -> tuple[dict[str, int], list[dict[str, Any]], dict[str, list[str]]]:
+    if group_by == "similarity":
+        groups = {str(item["id"]): item for item in community_meta}
+        counts = Counter(str(node_communities.get(item["name"], "other")) for item in selected)
+        if counts.get("other"):
+            groups["other"] = {"id": len(community_meta), "label": "Other", "size": counts["other"]}
+        meta = [groups[key] for key in sorted(groups, key=lambda key: (key == "other", str(key)))]
+        other_id = len(community_meta)
+        primary = {
+            item["name"]: int(node_communities.get(item["name"], "other"))
+            if str(node_communities.get(item["name"], "other")).isdigit()
+            else other_id
+            for item in selected
+        }
+        values = {item["name"]: [str(primary[item["name"]])] for item in selected}
+        return primary, meta, values
+
+    field = GROUP_BY_FIELDS[group_by]
+    counts: Counter[str] = Counter()
+    values_by_name: dict[str, list[str]] = {}
+    for item in selected:
+        raw_values = _string_list(item["record"].get(field))
+        values = sorted({value for value in raw_values if value != "*"}, key=str.casefold)
+        values_by_name[item["name"]] = values
+        counts.update(values)
+    ordered = sorted(counts, key=lambda value: (-counts[value], value.casefold()))
+    kept = ordered[: MAX_GROUPS - 1]
+    group_ids = {value: index for index, value in enumerate(kept)}
+    other_id = len(kept)
+    group_sizes: Counter[int] = Counter()
+    primary: dict[str, int] = {}
+    for item in selected:
+        values = values_by_name[item["name"]]
+        group = next((group_ids[value] for value in values if value in group_ids), other_id)
+        primary[item["name"]] = group
+        group_sizes[group] += 1
+    meta = [
+        {"id": group, "label": _group_label(value), "size": group_sizes[group]}
+        for value, group in ((value, group_ids[value]) for value in kept)
+    ]
+    if group_sizes[other_id]:
+        meta.append({"id": other_id, "label": "Other", "size": group_sizes[other_id]})
+    return primary, meta, values_by_name
+
+
+def build(*, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity") -> dict[str, Any]:
     """Build a graph payload without making upstream Toolhub requests."""
+    limit = _normalize_limit(limit)
+    group_by = _normalize_group_by(group_by)
     rows = canonical_tools.records(limit=GRAPH_SOURCE_RECORD_LIMIT)
     candidates: list[dict[str, Any]] = []
     for row in rows:
@@ -231,14 +344,22 @@ def build() -> dict[str, Any]:
         )
 
     candidates.sort(key=lambda item: (-item["richness"], item["title"].casefold(), item["name"]))
-    selected = candidates[:GLOBAL_NODE_LIMIT]
-    term_sets = [{f"{kind}:{term}" for kind, term, _weight in item["entries"]} for item in candidates]
-    idf = _idf(term_sets)
-    vectors = {item["name"]: _vector(item["entries"], idf) for item in selected}
+    selected = candidates[:limit]
     names = [item["name"] for item in selected]
-    edges = _knn_edges(names, vectors)
-    labels = _detect_communities(names, edges)
-    node_communities, community_meta = _communities(selected, labels)
+    if group_by == "similarity":
+        term_sets = [{f"{kind}:{term}" for kind, term, _weight in item["entries"]} for item in candidates]
+        idf = _idf(term_sets)
+        vectors = {item["name"]: _vector(item["entries"], idf) for item in selected}
+        edges = _knn_edges(names, vectors) if limit <= SPARSE_EDGE_NODE_LIMIT else _sparse_knn_edges(names, vectors)
+        labels = _detect_communities(names, edges)
+        node_communities, community_meta = _communities(selected, labels)
+    else:
+        edges = []
+        node_communities, community_meta = {}, []
+    node_groups, group_meta, group_values = _group_data(selected, group_by, node_communities, community_meta)
+    clustered = group_by != "similarity" or limit > SPARSE_EDGE_NODE_LIMIT
+    if clustered:
+        edges = []
     degree = Counter()
     for edge in edges:
         degree[str(edge["source"])] += 1
@@ -253,6 +374,8 @@ def build() -> dict[str, Any]:
             "fits": False,
             "projects": _string_list(item["record"].get("for_wikis")),
             "languages": _string_list(item["record"].get("available_ui_languages")),
+            "group": node_groups.get(item["name"], 0),
+            "groupValues": group_values.get(item["name"], []),
         }
         for item in selected
     ]
@@ -261,6 +384,12 @@ def build() -> dict[str, Any]:
         "edges": edges,
         "communities": len(community_meta),
         "communityMeta": community_meta,
+        "groupBy": group_by,
+        "groupMeta": group_meta,
+        "layout": "clustered" if clustered else "force",
+        "nodeLimit": limit,
+        "availableNodeLimits": list(GRAPH_NODE_LIMITS),
+        "availableGroupings": list(GROUP_BY_VALUES),
         "truncated": max(0, len(candidates) - len(selected)),
         "generatedAt": utcnow().isoformat(timespec="seconds") + "Z",
         "source": SOURCE_LOCAL,
@@ -273,15 +402,21 @@ def build() -> dict[str, Any]:
     }
 
 
-def payload(*, force_refresh: bool = False) -> dict[str, Any]:
+def payload(
+    *, limit: int = DEFAULT_NODE_LIMIT, group_by: str = "similarity", force_refresh: bool = False
+) -> dict[str, Any]:
     """Return the cached graph payload, rebuilding from local data when stale."""
+    limit = _normalize_limit(limit)
+    group_by = _normalize_group_by(group_by)
+    cache_key = f"{limit}:{group_by}"
     now = utcnow()
     with _CACHE_LOCK:
-        cached = _CACHE.get("payload")
-        if not force_refresh and cached is not None and now < _CACHE["expires_at"]:
-            return cached
-    fresh = build()
+        cached = _CACHE.get(cache_key)
+        if not force_refresh and cached is not None and now < cached["expires_at"]:
+            return cached["payload"]
+    fresh = build(limit=limit, group_by=group_by)
     with _CACHE_LOCK:
-        _CACHE["payload"] = fresh
-        _CACHE["expires_at"] = utcnow() + timedelta(seconds=GRAPH_FRESH_SECONDS)
+        if len(_CACHE) >= GRAPH_CACHE_MAX_ENTRIES:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[cache_key] = {"payload": fresh, "expires_at": utcnow() + timedelta(seconds=GRAPH_FRESH_SECONDS)}
     return fresh

@@ -21,7 +21,7 @@ MAX_QUERY_NAMES = 50
 MAX_SEARCH_RESULTS = 50
 MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
-MAX_RECORD_RESULTS = 1000
+MAX_RECORD_RESULTS = 5000
 
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - untrusted official API JSON

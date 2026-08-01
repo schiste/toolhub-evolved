@@ -4117,8 +4117,13 @@ def v1_canonical_tools() -> Response:
 
 @v1_bp.route("/v1/graph/")
 def v1_graph() -> Response:
-    """Return the cached global tool similarity graph derived from local data."""
-    return _public_json_response(graph_payload.payload())
+    """Return a cached global graph derived from the local canonical catalog."""
+    return _public_json_response(
+        graph_payload.payload(
+            limit=request.args.get("limit"),
+            group_by=request.args.get("groupBy"),
+        )
+    )
 
 
 @v1_bp.route("/v1/tools/summaries/")

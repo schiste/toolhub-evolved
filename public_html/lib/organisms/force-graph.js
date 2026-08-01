@@ -6,6 +6,7 @@ const MAX_TICKS = 400;
 const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 1.2;
+const STATIC_LAYOUT_NODE_LIMIT = 600;
 const COMMUNITY_PALETTE = [
 	"--wmf-blue-aaa",
 	"--wmf-green-aaa",
@@ -60,6 +61,8 @@ const FALLBACK_COLORS = {
  * @property {string[]} [projects]
  * @property {string[]} [languages]
  * @property {boolean} [pinned]
+ * @property {number | string} [group]
+ * @property {string[]} [groupValues]
  */
 
 /**
@@ -78,6 +81,8 @@ const FALLBACK_COLORS = {
  * @property {Partial<FGNode>[]} [nodes]
  * @property {FGEdge[]} [edges]
  * @property {{ id: string | number }[]} [communityMeta]
+ * @property {{ id: string | number, label?: string, size?: number }[]} [groupMeta]
+ * @property {"force" | "clustered"} [layout]
  */
 
 /**
@@ -88,6 +93,7 @@ const FALLBACK_COLORS = {
  * @property {string} labelBg
  * @property {string} labelText
  * @property {Map<string | number, string>} communityMap
+ * @property {Map<string | number, string>} groupMap
  * @property {((community: number | string) => string | null | undefined) | null} communityColor
  * @property {string} other
  * @property {string} score
@@ -145,18 +151,20 @@ function nodeSize(node) {
 // Stryker disable all: colorForNode's return value is only ever assigned to ctx.fillStyle (a canvas draw); it has no observable, assertable effect on the DOM/handle, so every mutant here is equivalent (per the canvas-draw exclusion).
 function colorForNode(node, colors) {
 	if (node.center) return colors.center;
-	if (node.community !== null && node.community !== undefined) {
+	const group = node.group ?? node.community;
+	if (group !== null && group !== undefined) {
 		if (typeof colors.communityColor === "function") {
-			const custom = colors.communityColor(node.community);
+			const custom = colors.communityColor(group);
 			if (custom) return custom;
 		}
-		if (colors.communityMap.has(node.community)) {
-			return /** @type {string} */ (colors.communityMap.get(node.community));
+		const colorMap = (node.group !== null && node.group !== undefined && colors.groupMap) || colors.communityMap;
+		if (colorMap.has(group)) {
+			return /** @type {string} */ (colorMap.get(group));
 		}
-		if (colors.communityMap.has(String(node.community))) {
-			return /** @type {string} */ (colors.communityMap.get(String(node.community)));
+		if (colorMap.has(String(group))) {
+			return /** @type {string} */ (colorMap.get(String(group)));
 		}
-		const index = Number(node.community);
+		const index = Number(group);
 		if (Number.isFinite(index)) return colors.palette[index % colors.palette.length];
 	}
 	if (node.score !== null && node.score !== undefined) return colors.score;
@@ -206,6 +214,7 @@ function buildColors(data, opts) {
 		labelBg: cssVar(styles, "--color-surface", FALLBACK_COLORS.labelBg),
 		labelText: cssVar(styles, "--color-text", FALLBACK_COLORS.labelText),
 		communityMap: communityColors(data?.communityMeta || [], { palette, neutral }),
+		groupMap: communityColors(data?.groupMeta || data?.communityMeta || [], { palette, neutral }),
 		communityColor: typeof opts.communityColor === "function" ? opts.communityColor : null,
 		other: neutral,
 		score: cssVar(styles, "--wmf-green-aaa", FALLBACK_COLORS.score),
@@ -242,6 +251,42 @@ function seedNodes(nodes, width, height) {
 		node.y = cy + Math.sin(angle) * span * ring;
 		node.vx = 0;
 		node.vy = 0;
+	});
+}
+
+/**
+ * @param {FGNode[]} nodes
+ * @param {number} width
+ * @param {number} height
+ */
+function seedGroupedNodes(nodes, width, height) {
+	/** @type {Map<string | number, FGNode[]>} */
+	const groups = new Map();
+	for (const node of nodes) {
+		const group = node.group ?? "other";
+		if (!groups.has(group)) groups.set(group, []);
+		groups.get(group).push(node);
+	}
+	const ordered = [...groups.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+	const columns = Math.max(1, Math.ceil(Math.sqrt(ordered.length)));
+	const rows = Math.max(1, Math.ceil(ordered.length / columns));
+	const cellWidth = width / columns;
+	const cellHeight = height / rows;
+	ordered.forEach(([, members], groupIndex) => {
+		const column = groupIndex % columns;
+		const row = Math.floor(groupIndex / columns);
+		const memberColumns = Math.max(1, Math.ceil(Math.sqrt(members.length)));
+		const memberRows = Math.max(1, Math.ceil(members.length / memberColumns));
+		const gapX = Math.max(8, (cellWidth - 44) / memberColumns);
+		const gapY = Math.max(8, (cellHeight - 44) / memberRows);
+		members.forEach((node, index) => {
+			const memberColumn = index % memberColumns;
+			const memberRow = Math.floor(index / memberColumns);
+			node.x = column * cellWidth + 22 + memberColumn * gapX;
+			node.y = row * cellHeight + 30 + memberRow * gapY;
+			node.vx = 0;
+			node.vy = 0;
+		});
 	});
 }
 
@@ -311,6 +356,7 @@ export function forceGraph(container, data, opts = {}) {
 	let zoom = 1;
 	let panX = 0;
 	let panY = 0;
+	const staticLayout = data.layout === "clustered" || (data.nodes || []).length > STATIC_LAYOUT_NODE_LIMIT;
 	/** @type {FGNode | null} */
 	let hovered = null;
 	// Stryker disable next-line ObjectLiteral: pointer is overwritten by onMove() before the tooltip is ever shown (the tooltip only renders while hovering, which requires a prior mousemove), so this initial value is never observed — equivalent.
@@ -441,7 +487,8 @@ export function forceGraph(container, data, opts = {}) {
 		if (nodes.length === 0) return;
 		// Stryker disable all: this seed-vs-rescale block is layout bookkeeping with no observable, assertable effect here. On the first resize it seeds (the seedNodes function's own math is killed separately via the hover fingerprint); on a window resize onResize() immediately calls start() -> re-settle to the same deterministic layout, erasing any rescaled positions. So the branch choice and the rescale arithmetic are equivalent.
 		if (ticks === 0 && nodes.every((node) => node.x === 0 && node.y === 0)) {
-			seedNodes(nodes, width, height);
+			if (staticLayout) seedGroupedNodes(nodes, width, height);
+			else seedNodes(nodes, width, height);
 		} else {
 			const sx = width / Math.max(oldWidth, 1);
 			const sy = height / Math.max(oldHeight, 1);
@@ -538,7 +585,7 @@ export function forceGraph(container, data, opts = {}) {
 
 	/** @param {FGNode} node @param {number} x @param {number} y @param {number} radius */
 	function drawNodeLabel(node, x, y, radius) {
-		const showLabel = node.center || node === hovered || nodes.length <= 60 || zoom >= 1.35;
+		const showLabel = node.center || node === hovered || nodes.length <= 60 || (!staticLayout && zoom >= 1.35);
 		if (!showLabel) return;
 		const label = String(node.title || node.id);
 		const text = label.length > 32 ? `${label.slice(0, 29)}…` : label;
@@ -591,6 +638,40 @@ export function forceGraph(container, data, opts = {}) {
 		drawNodeLabel(node, point.x, point.y, radius);
 	}
 
+	/** @param {FGNode[]} visible */
+	function drawGroups(visible) {
+		if (!staticLayout) return;
+		const bounds = new Map();
+		for (const node of visible) {
+			const group = node.group ?? "other";
+			const current = bounds.get(group) || { minX: node.x, maxX: node.x, minY: node.y, maxY: node.y };
+			current.minX = Math.min(current.minX, node.x);
+			current.maxX = Math.max(current.maxX, node.x);
+			current.minY = Math.min(current.minY, node.y);
+			current.maxY = Math.max(current.maxY, node.y);
+			bounds.set(group, current);
+		}
+		for (const [group, box] of bounds) {
+			const topLeft = toScreen(box.minX - 18, box.minY - 24);
+			const bottomRight = toScreen(box.maxX + 18, box.maxY + 18);
+			const color = colors.groupMap.get(group) || colors.groupMap.get(String(group)) || colors.other;
+			ctx.globalAlpha = 0.08;
+			ctx.fillStyle = color;
+			ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+			ctx.globalAlpha = 0.45;
+			ctx.strokeStyle = color;
+			ctx.lineWidth = 1;
+			ctx.strokeRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+			const meta = (data.groupMeta || []).find((item) => String(item.id) === String(group));
+			if (meta?.label) {
+				ctx.globalAlpha = 0.9;
+				ctx.fillStyle = colors.labelText;
+				ctx.font = "600 11px system-ui, sans-serif";
+				ctx.fillText(`${meta.label} (${meta.size || 0})`, topLeft.x + 6, topLeft.y + 15);
+			}
+		}
+	}
+
 	function draw() {
 		colors = buildColors(data, opts);
 		ctx.globalAlpha = 1;
@@ -600,6 +681,7 @@ export function forceGraph(container, data, opts = {}) {
 		const active = activeIds();
 		const visible = visibleNodes();
 		const visibleIds = new Set(visible.map((node) => node.id));
+		drawGroups(visible);
 		edges
 			.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
 			.forEach((edge) => drawEdge(edge, active));
@@ -795,6 +877,11 @@ export function forceGraph(container, data, opts = {}) {
 	function start() {
 		// Stryker disable next-line ConditionalExpression: forcing this guard true (always return) is killed by the fingerprint (no settle); forcing it false is unobservable because, after stop(), the only caller (onResize) never fires — its listener was removed — equivalent.
 		if (stopped) return;
+		if (staticLayout) {
+			ticks = MAX_TICKS;
+			draw();
+			return;
+		}
 		// Stryker disable next-line ConditionalExpression: raf is 0 whenever start() runs (init or post-stop), so `if (raf)` never cancels and forcing it true only calls cancelAnimationFrame(0) — no observable effect — equivalent.
 		if (raf) cancelAnimationFrame(raf);
 		if (reducedMotion) settleAndDraw();
