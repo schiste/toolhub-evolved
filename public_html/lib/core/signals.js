@@ -43,8 +43,52 @@ export function freshness(t) {
 
 /* ---- Endorsement: curated-list membership ---------------------------------
    The honest "popularity" proxy — how many published lists include the tool.
-   Built once per session from the (small) set of lists; the list index embeds
-   each list's tools, so this is a couple of (SWR-cached) calls, memoized here. */
+   Built from the list index. Keep a bounded browser copy because this derived
+   map is safe to reuse across deploys and otherwise forces a sequential crawl
+   on every fresh SPA process. */
+const LIST_MEMBERSHIPS_CACHE_KEY = "toolhub-list-memberships:v1";
+const LIST_MEMBERSHIPS_FRESH_MS = 15 * 60 * 1000;
+const LIST_MEMBERSHIPS_STALE_MS = 24 * 60 * 60 * 1000;
+const LIST_MEMBERSHIPS_MAX_CHARS = 450000;
+
+/**
+ * @returns {{ map: Map<string, Array<{ id: string, title: string }>>, ageMs: number } | null}
+ */
+function readMembershipCache() {
+	try {
+		const raw = JSON.parse(localStorage.getItem(LIST_MEMBERSHIPS_CACHE_KEY) || "null");
+		if (!raw || typeof raw.ts !== "number" || !Array.isArray(raw.entries)) return null;
+		const ageMs = Date.now() - raw.ts;
+		if (ageMs < 0 || ageMs > LIST_MEMBERSHIPS_STALE_MS) return null;
+		const map = new Map();
+		for (const entry of raw.entries) {
+			if (!Array.isArray(entry) || typeof entry[0] !== "string" || !Array.isArray(entry[1])) continue;
+			const lists = entry[1]
+				.filter(
+					(list) =>
+						list &&
+						(typeof list.id === "string" || typeof list.id === "number") &&
+						typeof list.title === "string"
+				)
+				.map((list) => ({ id: String(list.id), title: list.title }));
+			map.set(entry[0], lists);
+		}
+		return { map, ageMs };
+	} catch {
+		return null;
+	}
+}
+
+/** @param {Map<string, Array<{ id: string, title: string }>>} map */
+function writeMembershipCache(map) {
+	try {
+		const payload = JSON.stringify({ ts: Date.now(), entries: [...map.entries()] });
+		if (payload.length <= LIST_MEMBERSHIPS_MAX_CHARS) {
+			localStorage.setItem(LIST_MEMBERSHIPS_CACHE_KEY, payload);
+		}
+	} catch {}
+}
+
 async function buildMemberships() {
 	const map = new Map();
 	const lists = await paginate("/lists/", {}, { pageSize: 50, maxPages: 10 });
@@ -60,9 +104,23 @@ async function buildMemberships() {
 	}
 	return map;
 }
-// Returns Map<toolName, [{id,title}]>; memoized for the session.
-// Stryker disable next-line ArrowFunction: buildMemberships never rejects (paginate swallows per-page errors), so this .catch is unreachable; memoizeAsync also caches the single outcome, so the success and failure paths cannot both be exercised.
-export const listMemberships = memoizeAsync(() => buildMemberships().catch(() => new Map()));
+// Returns Map<toolName, [{id,title}]>; memoized for the session. A stale
+// browser map is returned immediately while a background rebuild updates the
+// next page load, keeping derived badges non-blocking after deploys.
+export const listMemberships = memoizeAsync(async () => {
+	const cached = readMembershipCache();
+	if (cached) {
+		if (cached.ageMs > LIST_MEMBERSHIPS_FRESH_MS) {
+			buildMemberships()
+				.then(writeMembershipCache)
+				.catch(() => {});
+		}
+		return cached.map;
+	}
+	const map = await buildMemberships().catch(() => new Map());
+	if (map.size > 0) writeMembershipCache(map);
+	return map;
+});
 /**
  * @param {string} name
  * @param {Map<string, Array<{ id: string, title: string }>>} map
