@@ -297,6 +297,9 @@ test("apiGet serves persisted public GET cache after hard refresh and refreshes 
 	try {
 		const first = await api.apiGet("/recent/");
 		assert.equal(first.v, "old");
+		// The storage write is debounced to idle; flush it so the reimport below
+		// genuinely reads a persisted cache, as a hard refresh would.
+		api.flushApiCache();
 		assert.ok(localStorage.getItem("toolhub-api-cache:v1"));
 
 		now += api.apiCachePolicy("/api/recent/").freshMs;
@@ -404,6 +407,33 @@ test("apiFetch dedupes concurrent requests for the same url", async () => {
 	assert.equal(calls, 1);
 });
 
+test("persisted API cache stays inside a total storage budget, newest first", async () => {
+	// One ~120k-char payload per URL: enough of them to blow past any origin
+	// quota if only the per-entry cap applied.
+	const big = { rows: Array.from({ length: 3000 }, (_, i) => `row-${i}-${"x".repeat(30)}`) };
+	globalThis.fetch = async () => ({ ok: true, json: async () => big });
+	// Distinct timestamps, so "newest first" is an observable ordering rather
+	// than whatever order a stable sort happened to preserve.
+	let now = 9_000_000;
+	const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+	try {
+		for (let i = 0; i < 40; i += 1) {
+			now += 1;
+			await api.apiGet(`/budget-${i}/`);
+		}
+		api.flushApiCache();
+
+		const raw = localStorage.getItem("toolhub-api-cache:v1");
+		const stored = JSON.parse(raw);
+		assert.ok(raw.length <= 1200000, `payload ${raw.length} chars exceeds the budget`);
+		assert.ok(stored.entries.length > 0, "budget must still admit the newest entries");
+		assert.ok(stored.entries.length < 40, "budget must drop the oldest entries");
+		assert.equal(stored.entries[0][0], "/api/budget-39/");
+	} finally {
+		nowSpy.mockRestore();
+	}
+});
+
 test("clearApiCache evicts cached GET data", async () => {
 	let calls = 0;
 	globalThis.fetch = async () => {
@@ -412,6 +442,8 @@ test("clearApiCache evicts cached GET data", async () => {
 	};
 	const first = await api.apiGet("/cache-clear/");
 	const cached = await api.apiGet("/cache-clear/");
+	// The storage write is debounced to idle; flush it to observe the result.
+	api.flushApiCache();
 	assert.ok(localStorage.getItem("toolhub-api-cache:v1"));
 	api.clearApiCache();
 	assert.equal(localStorage.getItem("toolhub-api-cache:v1"), null);
@@ -419,6 +451,7 @@ test("clearApiCache evicts cached GET data", async () => {
 	assert.equal(first.calls, 1);
 	assert.equal(cached.calls, 1);
 	assert.equal(refreshed.calls, 2);
+	api.flushApiCache();
 	assert.ok(localStorage.getItem("toolhub-api-cache:v1"));
 });
 

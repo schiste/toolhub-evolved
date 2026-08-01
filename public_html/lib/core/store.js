@@ -54,11 +54,23 @@ export function publicApiCacheLoad(maxAgeMs) {
 		return [];
 	}
 }
-/** @param {[string, { data: any, ts: number }][]} entries */
-export function publicApiCacheSave(entries) {
+/**
+ * Persist the public API cache from an already-serialized payload.
+ *
+ * The caller serializes, because it has to measure each entry against a storage
+ * budget anyway; taking the finished string here means the cache is stringified
+ * once per entry instead of once for sizing and again for writing.
+ *
+ * @param {string} payload a JSON string of `{ entries: [url, { data, ts }][] }`
+ * @returns {boolean} false when storage rejected the write (quota, disabled)
+ */
+export function publicApiCacheSave(payload) {
 	try {
-		localStorage.setItem(PUBLIC_API_CACHE_KEY, JSON.stringify({ entries }));
-	} catch {}
+		localStorage.setItem(PUBLIC_API_CACHE_KEY, payload);
+		return true;
+	} catch {
+		return false;
+	}
 }
 export function publicApiCacheClear() {
 	try {

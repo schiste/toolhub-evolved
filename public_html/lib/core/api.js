@@ -169,6 +169,14 @@ const API_DEFAULT_TTL_MS = 60 * 1000;
 const API_STALE_IF_ERROR_MS = 24 * 60 * 60 * 1000;
 const API_STORAGE_MAX_ENTRIES = 48;
 const API_STORAGE_MAX_CHARS = 240000;
+/* Total budget across all persisted entries. The per-entry cap alone allowed
+   48 x 240000 chars, far past any browser's ~5MB origin quota — and a quota
+   failure is silent, so the cache would simply stop updating and every reload
+   would start cold. Kept well under quota to leave room for the overlay,
+   membership, and owner caches that share it. */
+const API_STORAGE_TOTAL_MAX_CHARS = 1200000;
+const API_PERSIST_IDLE_TIMEOUT_MS = 2000;
+const API_PERSIST_FALLBACK_MS = 400;
 const API_PERSISTENT_MAX_AGE_MS = API_CONFIG_TTL_MS + API_STALE_IF_ERROR_MS;
 const SERVER_CACHE_HEADER = "X-Toolhub-Evolved-Cache";
 const SERVER_STALE_CACHE = "stale";
@@ -182,6 +190,7 @@ const backendGetInflight = new Map(); // path -> Promise<data>
 /** @type {Map<string, ReturnType<typeof setTimeout>>} */
 const apiServerStaleFollowups = new Map();
 let apiCacheLoaded = false;
+let apiPersistScheduled = false;
 const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
 const TOOL_AGGREGATE_PATHS = new Set(["/api/search/tools/", "/api/ui/home/"]);
 const LIST_COLLECTION_PATH = "/api/lists/";
@@ -331,21 +340,82 @@ function loadPersistentApiCache() {
 		return;
 	}
 }
-function persistApiCache() {
+/**
+ * Serialize the live cache into a storage payload under a total char budget.
+ *
+ * Newest first, so the budget is spent on what a reload is most likely to need.
+ * Each entry is stringified exactly once and its JSON reused verbatim in the
+ * payload — measuring with one JSON.stringify and writing with another meant
+ * serializing the whole cache twice.
+ * @returns {string}
+ */
+function serializeApiCache() {
+	const fresh = [...apiCache.entries()]
+		.filter(([url, entry]) => {
+			if (!url.startsWith(API_BASE)) return false;
+			const policy = apiCachePolicy(url);
+			return Date.now() - entry.ts <= policy.freshMs + policy.staleIfErrorMs;
+		})
+		.sort((a, b) => b[1].ts - a[1].ts)
+		.slice(0, API_STORAGE_MAX_ENTRIES);
+	const parts = [];
+	let total = 0;
+	for (const [url, entry] of fresh) {
+		let dataJson;
+		try {
+			dataJson = JSON.stringify(entry.data);
+		} catch {
+			continue; // a payload we cannot serialize is simply not persisted
+		}
+		if (typeof dataJson !== "string" || dataJson.length > API_STORAGE_MAX_CHARS) continue;
+		const part = `[${JSON.stringify(url)},{"data":${dataJson},"ts":${entry.ts}}]`;
+		if (total + part.length > API_STORAGE_TOTAL_MAX_CHARS) break;
+		parts.push(part);
+		total += part.length + 1; // + the joining comma
+	}
+	return `{"entries":[${parts.join(",")}]}`;
+}
+function writeApiCacheToStorage() {
+	apiPersistScheduled = false;
 	try {
-		const entries = [...apiCache.entries()]
-			.filter(([url, entry]) => {
-				if (!url.startsWith(API_BASE)) return false;
-				const policy = apiCachePolicy(url);
-				return Date.now() - entry.ts <= policy.freshMs + policy.staleIfErrorMs;
-			})
-			.sort((a, b) => b[1].ts - a[1].ts)
-			.slice(0, API_STORAGE_MAX_ENTRIES)
-			.filter(([, entry]) => JSON.stringify(entry.data).length <= API_STORAGE_MAX_CHARS);
-		publicApiCacheSave(entries);
+		publicApiCacheSave(serializeApiCache());
 	} catch {
 		return;
 	}
+}
+/**
+ * Queue one storage write for the next idle moment.
+ *
+ * This used to run synchronously on every API response: serializing the cache
+ * twice and handing localStorage a multi-megabyte string, on the main thread,
+ * while the view was rendering. Coalescing means a burst of responses (a route
+ * that fetches several endpoints, plus background revalidations) costs one
+ * write instead of one per response.
+ */
+function persistApiCache() {
+	if (apiPersistScheduled) return;
+	apiPersistScheduled = true;
+	if (typeof requestIdleCallback === "function") {
+		requestIdleCallback(writeApiCacheToStorage, { timeout: API_PERSIST_IDLE_TIMEOUT_MS });
+	} else {
+		setTimeout(writeApiCacheToStorage, API_PERSIST_FALLBACK_MS);
+	}
+}
+/**
+ * Write any queued cache payload to storage now.
+ *
+ * A debounced write that only ever runs when the browser is idle would lose the
+ * newest responses for anyone who navigates away promptly — the exact visit
+ * whose data the next load wants most. Called on pagehide, and by tests that
+ * need the write to have happened.
+ */
+export function flushApiCache() {
+	if (apiPersistScheduled) writeApiCacheToStorage();
+}
+if (typeof addEventListener === "function") {
+	// pagehide, not unload: it fires for bfcache navigations too, and is the
+	// event browsers still guarantee for "the page is going away".
+	addEventListener("pagehide", flushApiCache);
 }
 /**
  * An HTTP-level API failure carrying the upstream status, so callers can tell a
