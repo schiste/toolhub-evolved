@@ -2299,8 +2299,31 @@ def test_graph_payload_preserves_multi_value_memberships_and_counts(monkeypatch)
     assert by_name["multi-tool"]["groupValues"] == [0, 1]
     assert by_name["multi-tool"]["group"] == 0
     assert payload["groupMeta"] == [
-        {"id": 0, "label": "Commons wikimedia org", "size": 2},
-        {"id": 1, "label": "www wikidata org", "size": 1},
+        {"id": 0, "label": "Wikimedia Commons", "size": 2},
+        {"id": 1, "label": "Wikidata", "size": 1},
+    ]
+
+
+def test_graph_payload_merges_project_aliases_and_family_wildcards(monkeypatch):
+    records = []
+    for name, project in (
+        ("domain", "www.wikidata.org"),
+        ("label", "Wikidata"),
+        ("family", "*.wikisource.org"),
+    ):
+        records.append(
+            {
+                "toolName": name,
+                "record": {"name": name, "title": name, "keywords": ["images"], "for_wikis": [project]},
+            }
+        )
+    monkeypatch.setattr(graph_payload.canonical_tools, "records", lambda limit: records)
+
+    payload = graph_payload.build(group_by="project")
+
+    assert payload["groupMeta"] == [
+        {"id": 0, "label": "Wikidata", "size": 2},
+        {"id": 1, "label": "Wikisource", "size": 1},
     ]
 
 
@@ -2378,7 +2401,7 @@ def test_graph_payload_shared_cache_survives_worker_memory_reset(client, monkeyp
 
 
 def test_graph_payload_cache_key_is_schema_versioned():
-    assert graph_payload._cache_url(250, "project").endswith("limit=250&groupBy=project&version=3")
+    assert graph_payload._cache_url(250, "project").endswith("limit=250&groupBy=project&version=4")
 
 
 def test_graph_payload_serves_stale_shared_data_while_refreshing(client, monkeypatch):

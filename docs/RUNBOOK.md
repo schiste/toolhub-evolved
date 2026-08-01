@@ -522,9 +522,10 @@ bounded nearest-neighbor graph from this shared canonical cache, reports facet
 coverage, and preserves multi-value memberships. Its derived taxonomy splits
 comma-delimited technology values and separates known hosting/runtime platforms
 (including Toolforge) into the `platform` facet without rewriting canonical
-Toolhub records. A facet becomes selectable once two tools cover at least two
-values; untagged nodes retain similarity forces instead of being attracted to a
-synthetic `Other` group. Interactive maps use in-page forces up to 600 nodes;
+Toolhub records. Common project-domain, database-name, and family-wildcard
+aliases resolve to shared project anchors. A facet becomes selectable once two
+tools cover at least two values; untagged nodes retain similarity forces instead
+of being attracted to a synthetic `Other` group. Interactive maps use in-page forces up to 600 nodes;
 larger layouts run in a same-origin browser Worker so the Toolforge webservice
 only serves static assets and cached JSON.
 

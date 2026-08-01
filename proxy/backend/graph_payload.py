@@ -27,7 +27,7 @@ MIN_GROUP_DISTINCT_VALUES = 2
 SPARSE_EDGE_NODE_LIMIT = 1000
 SPARSE_CANDIDATE_LIMIT = 160
 GRAPH_CACHE_MAX_ENTRIES = 8
-GRAPH_CACHE_VERSION = 3
+GRAPH_CACHE_VERSION = 4
 GRAPH_FRESH_SECONDS = 6 * 60 * 60
 GRAPH_STALE_SECONDS = 24 * 60 * 60
 GRAPH_MEMORY_FRESH_SECONDS = 5 * 60
@@ -48,6 +48,25 @@ PLATFORM_ALIASES = {
     "cloud vps": "Wikimedia Cloud VPS",
     "wikimedia cloud vps": "Wikimedia Cloud VPS",
     "wikimedia cloud services": "Wikimedia Cloud Services",
+}
+PROJECT_ALIASES = {
+    "commons": "Wikimedia Commons",
+    "commons.wikimedia.org": "Wikimedia Commons",
+    "commonswiki": "Wikimedia Commons",
+    "wikidata": "Wikidata",
+    "wikidata.org": "Wikidata",
+    "wikidatawiki": "Wikidata",
+    "www.wikidata.org": "Wikidata",
+}
+PROJECT_FAMILY_ALIASES = {
+    "wikipedia.org": "Wikipedia",
+    "wikibooks.org": "Wikibooks",
+    "wikinews.org": "Wikinews",
+    "wikiquote.org": "Wikiquote",
+    "wikisource.org": "Wikisource",
+    "wikiversity.org": "Wikiversity",
+    "wikivoyage.org": "Wikivoyage",
+    "wiktionary.org": "Wiktionary",
 }
 TERM_WEIGHTS = {
     "task": 1.4,
@@ -302,7 +321,19 @@ def _technology_parts(record: dict[str, Any]) -> list[str]:
     return parts
 
 
+def _project_value(value: str) -> str:
+    clean = " ".join(value.split()).strip().rstrip("/")
+    key = clean.casefold()
+    if key in PROJECT_ALIASES:
+        return PROJECT_ALIASES[key]
+    if key.startswith("*.") and key[2:] in PROJECT_FAMILY_ALIASES:
+        return PROJECT_FAMILY_ALIASES[key[2:]]
+    return clean
+
+
 def _facet_strings(record: dict[str, Any], group_by: str) -> list[str]:
+    if group_by == "project":
+        return [_project_value(value) for value in _string_list(record.get(GROUP_BY_FIELDS[group_by]))]
     if group_by not in {"technology", "platform"}:
         return _string_list(record.get(GROUP_BY_FIELDS[group_by]))
     parts = _technology_parts(record)
