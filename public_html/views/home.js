@@ -15,6 +15,8 @@ import {
 	attachEvolvedSummaries,
 	getUserContext,
 	rankFitsFirst,
+	seedEvolvedSummaries,
+	seedListMemberships,
 	setUserContext,
 	wikiMatches
 } from "../lib/core/signals.js";
@@ -67,7 +69,7 @@ const INTENT_AXES = {
 /** @typedef {{ tools: Tool[], error?: boolean, loading?: boolean }} PersonalTools */
 /** @typedef {{ favorites: PersonalTools, ownTools: PersonalTools }} PersonalHomeModel */
 /** @typedef {{ model: PersonalHomeModel, refresh?: Promise<PersonalHomeModel> }} PersonalHomeResult */
-/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean }} HomeModel */
+/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean, totalTools?: number }} HomeModel */
 /** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
 
 // Account resolution is substantially more expensive than the public catalog
@@ -403,6 +405,37 @@ export async function viewFeaturedTools() {
 	};
 }
 /**
+ * Build the home model from the server-composed /v1/home/ payload.
+ * Returns null when the endpoint is unavailable or empty, so the caller falls
+ * back to fetching each section itself.
+ * @returns {Promise<HomeModel | null>}
+ */
+async function composedHomeModel() {
+	const data = await backendGetJson("/v1/home/");
+	if (!data || !Array.isArray(data.lists)) return null;
+	/** @type {ToolList[]} */
+	const lists = data.lists.map((/** @type {any} */ list) => normalizeList(list));
+	/** @type {Tool[]} */
+	const recentTools = (data.recentTools || []).map((/** @type {any} */ tool) => normalizeTool(tool));
+	const featured = dedupeTools(lists.flatMap((l) => l.tools || []));
+	if (featured.length === 0 && recentTools.length === 0) return null;
+	// Seed before attaching, so neither call needs the network.
+	seedEvolvedSummaries(data.summaries || {});
+	seedListMemberships(data.endorsements || {});
+	await Promise.all([attachEndorsements(featured, { defer: true }), attachEvolvedSummaries(featured)]);
+	await attachEvolvedSummaries(recentTools);
+	const mostListed = sortedByEndorsements(featured);
+	return {
+		lists,
+		featuredRanked: rankFitsFirst(featured),
+		mostListedRanked: rankFitsFirst(mostListed),
+		recentTools,
+		cacheFallback: false,
+		totalTools: data.totalTools
+	};
+}
+
+/**
  * @param {IntentState} state
  * @returns {Promise<HomeModel>}
  */
@@ -482,12 +515,28 @@ export async function viewHome() {
 	const ctx = getUserContext();
 	const initialState = intentStateFromContext(ctx);
 	const authenticated = signedIn();
-	const [home, initialModel] = await Promise.all([
-		apiGet("/ui/home/").catch(() => ({})),
-		authenticated
-			? Promise.resolve({ lists: [], featuredRanked: [], mostListedRanked: [], recentTools: [] })
-			: homeSectionsModel(initialState)
-	]);
+	// One request for the signed-out landing page: /v1/home/ carries the
+	// sections, the summaries, the endorsement counts and the catalog size, so
+	// nothing here needs a second round trip. Everything else — signed in, or a
+	// composed payload that is unavailable or filtered — keeps the original
+	// parallel fetch, including the deferred endorsement crawl that must not
+	// block first paint.
+	const composed = authenticated || hasHomeFilters(initialState) ? null : await composedHomeModel().catch(() => null);
+	const [home, initialModel] = composed
+		? [{ total_tools: composed.totalTools }, composed]
+		: await Promise.all([
+				apiGet("/ui/home/").catch(() => ({})),
+				authenticated
+					? Promise.resolve(
+							/** @type {HomeModel} */ ({
+								lists: [],
+								featuredRanked: [],
+								mostListedRanked: [],
+								recentTools: []
+							})
+						)
+					: homeSectionsModel(initialState)
+			]);
 	initialModel.personal = authenticated
 		? {
 				favorites: { tools: [], loading: true },

@@ -403,6 +403,11 @@ def invalidate_graph() -> int:
     return _delete_where(ApiCache.path == _GRAPH_PATH)
 
 
+def invalidate_url(url: str) -> int:
+    """Invalidate one exact cached entry, derived payloads included."""
+    return _delete_where(ApiCache.url_hash == _key(url))
+
+
 def invalidate_recent_rows(rows: Iterable[dict[str, Any]]) -> int:
     """Invalidate cached official reads affected by Toolhub recent rows."""
     tool_names: set[str] = set()

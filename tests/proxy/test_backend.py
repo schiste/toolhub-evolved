@@ -217,6 +217,10 @@ PUBLIC_V1_ROUTES = {
     "/v1/catalog/tools/<name>/icon/": "public bounded icon bytes previously validated by a background job",
     "/v1/catalog/curations/<int:curation_id>/": "public approved correction evidence; pending rows remain hidden",
     "/v1/graph/": "public similarity graph derived from local canonical Toolhub cache; no upstream fetch",
+    "/v1/home/": (
+        "public landing page composed from the shared anonymous Toolhub read cache and local summaries; "
+        "exactly the data the signed-out homepage already fetched one endpoint at a time"
+    ),
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",

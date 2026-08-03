@@ -38,6 +38,7 @@ from backend import (
     db,
     github_issues,
     graph_payload,
+    home_payload,
     maintainer_index,
     recent_owners,
     security,
@@ -4526,6 +4527,21 @@ def v1_canonical_tools() -> Response:
                 "summary": "Local structured cache populated from prior official Toolhub API reads.",
             },
         }
+    )
+
+
+@v1_bp.route("/v1/home/")
+def v1_home() -> Response:
+    """Return the whole landing page in one composed, cached payload.
+
+    The homepage previously needed nine reads with a dependency between them —
+    summaries and the most-listed ordering could not start until the list and
+    search reads returned. Composing here collapses that into one request.
+    """
+    return _public_json_response(
+        home_payload.payload(
+            lambda names: tool_summaries.summaries_for(names, _build_local_tool_summary),
+        )
     )
 
 

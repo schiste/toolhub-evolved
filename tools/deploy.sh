@@ -129,6 +129,11 @@ if [ "$ready" -ne 1 ]; then
 fi
 
 echo "Prewarming derived Evolved endpoints ..."
+# The landing page is one composed payload; warm it so the first visitor after a
+# deploy reads a cached row instead of paying for the composition.
+if ! curl -fsS --max-time 60 -o /dev/null "$BASE_URL/v1/home/"; then
+	echo "  home prewarm skipped" >&2
+fi
 if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/graph/"; then
 	echo "  graph prewarm skipped" >&2
 fi

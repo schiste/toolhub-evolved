@@ -107,7 +107,29 @@ async function buildMemberships() {
 // Returns Map<toolName, [{id,title}]>; memoized for the session. A stale
 // browser map is returned immediately while a background rebuild updates the
 // next page load, keeping derived badges non-blocking after deploys.
+/** @type {Map<string, Array<{ id: string, title: string }>> | null} */
+let seededMemberships = null;
+/**
+ * Prime the membership map from a payload the server already composed.
+ *
+ * The landing page used to derive this itself by crawling every page of
+ * /api/lists/ — two requests that also gated the most-listed ordering.
+ * @param {Record<string, Array<{ id: string, title: string }>>} endorsements
+ * @returns {void}
+ */
+export function seedListMemberships(endorsements) {
+	const map = new Map();
+	for (const [name, lists] of Object.entries(endorsements || {})) {
+		if (name && Array.isArray(lists)) map.set(name, lists);
+	}
+	if (map.size === 0) return;
+	writeMembershipCache(map);
+	// listMemberships() is memoized for the session, so the seed has to be what
+	// that memo resolves to — otherwise the deferred crawl still runs.
+	seededMemberships = map;
+}
 export const listMemberships = memoizeAsync(async () => {
+	if (seededMemberships) return seededMemberships;
 	const cached = readMembershipCache();
 	if (cached) {
 		if (cached.ageMs > LIST_MEMBERSHIPS_FRESH_MS) {
@@ -244,6 +266,20 @@ const evolvedSummaryCache = new Map();
 const evolvedSummaryMissing = new Map();
 /** @type {Map<string, Promise<void>>} */
 const evolvedSummaryInflight = new Map();
+/**
+ * Prime summaries from a payload the server already composed, so the landing
+ * page does not need the second round trip that used to follow the tool list.
+ * @param {Record<string, any>} summaries
+ * @returns {void}
+ */
+export function seedEvolvedSummaries(summaries) {
+	const ts = Date.now();
+	for (const [name, summary] of Object.entries(summaries || {})) {
+		if (!name || !summary) continue;
+		evolvedSummaryMissing.delete(name);
+		evolvedSummaryCache.set(name, { summary, ts });
+	}
+}
 /** @type {Set<string>} */
 const evolvedSummaryPending = new Set();
 let evolvedSummaryScheduled = false;

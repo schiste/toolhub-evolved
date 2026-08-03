@@ -1470,3 +1470,48 @@ test("mount: filtered context with empty {} responses → empty page (filtered `
 	const r = await home.viewHome();
 	assert.ok(r.html.includes('<p class="empty">No tools match this sentence.</p>'), "filtered featured empty");
 });
+
+test("the landing page is one request when the server composes it", async () => {
+	// The whole point of /v1/home/: the page used to need nine reads, and the
+	// summaries plus the most-listed ordering could not start until the list and
+	// search reads came back. Composing it server-side removes both the fan-out
+	// and that dependency level.
+	h.backendGetJson.mockImplementation((path) => {
+		if (path !== "/v1/home/") throw new Error(`unexpected backend call: ${path}`);
+		return Promise.resolve({
+			totalTools: 4461,
+			lists: [{ id: "L1", title: "Curated", published: true, tools: [rawTool("alpha", { title: "Alpha" })] }],
+			recentTools: [rawTool("bravo", { title: "Bravo" })],
+			summaries: { alpha: { health: { score: 91, grade: "good" } } },
+			endorsements: { alpha: [{ id: "L1", title: "Curated" }] }
+		});
+	});
+
+	const r = await home.viewHome();
+
+	// No upstream reads at all: not the lists, not the search, not the crawl.
+	assert.equal(h.apiGet.mock.calls.length, 0, "composed payload must not trigger /api reads");
+	assert.equal(h.paginate.mock.calls.length, 0, "membership crawl must not run");
+	assert.equal(h.backendGetJson.mock.calls.length, 1, "exactly one request");
+
+	assert.match(r.html, /data-tool="alpha"/); // featured grid
+	assert.match(r.html, /recent__title[^>]*>Bravo</); // recently-updated panel
+	assert.match(r.html, /Curated/); // curated lists section
+	assert.match(r.html, /Search 4,461 tools/); // count came from the same payload
+});
+
+test("the landing page still renders per-section when the composed endpoint is unavailable", async () => {
+	h.backendGetJson.mockRejectedValue(new Error("no composed endpoint"));
+	h.apiGet.mockImplementation((path) => {
+		if (path === "/lists/") return Promise.resolve({ results: [] });
+		if (path === "/search/tools/") return Promise.resolve({ results: [rawTool("charlie", { title: "Charlie" })] });
+		if (path === "/ui/home/") return Promise.resolve({ total_tools: 7 });
+		return Promise.resolve({ results: [] });
+	});
+	h.paginate.mockResolvedValue([]);
+
+	const r = await home.viewHome();
+
+	assert.ok(h.apiGet.mock.calls.length > 0, "falls back to fetching each section");
+	assert.match(r.html, /recent__title[^>]*>Charlie</);
+});
