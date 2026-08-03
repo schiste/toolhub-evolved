@@ -2804,26 +2804,50 @@ html[dir="rtl"] .recent-table {
 /* What's new: a compact, reusable release announcement. */
 .whats-new {
 	position: fixed;
-	inset: 0;
+	inset-inline: 0;
+	bottom: var(--space-4);
 	z-index: 65;
 	display: flex;
-	align-items: flex-start;
 	justify-content: center;
-	padding: var(--space-modal-block) var(--space-3);
-	background: var(--color-overlay-modal);
-	overflow-y: auto;
+	padding: var(--space-0) var(--space-3) env(safe-area-inset-bottom);
+	pointer-events: none;
 }
 .whats-new.hidden {
 	display: none;
 }
+.whats-new__collapsed {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	min-height: var(--btn-h-md);
+	padding: var(--space-2) var(--space-4);
+	border: var(--border-base);
+	border-radius: var(--radius-lg);
+	background: var(--color-surface);
+	box-shadow: var(--shadow);
+	color: var(--color-progressive);
+	font-size: var(--fs-body-small);
+	font-weight: 700;
+	cursor: pointer;
+	pointer-events: auto;
+}
+.whats-new.is-collapsed .whats-new__collapsed {
+	display: inline-flex;
+}
 .whats-new__box {
 	position: relative;
 	width: min(100%, 760px);
+	max-height: min(70vh, 720px);
+	overflow-y: auto;
 	padding: var(--space-5);
 	border: var(--border-base);
 	border-radius: var(--radius-lg);
 	background: var(--color-surface);
 	box-shadow: var(--shadow-modal);
+	pointer-events: auto;
+}
+.whats-new.is-collapsed .whats-new__box {
+	display: none;
 }
 .whats-new__box > h2 {
 	margin: var(--space-0) var(--space-6) var(--space-1) var(--space-0);

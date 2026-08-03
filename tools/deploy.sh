@@ -88,6 +88,7 @@ if [ -x "$VENV_PY" ]; then
 	"$VENV_PY" "$REPO_DIR/tools/build_changelog.py"
 	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py"
 	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  dist build skipped — serving raw source"
+	"$VENV_PY" -c "from pathlib import Path; import sys; path = (Path('$REPO_DIR') / 'dist/data/deployments.json').resolve(); print(f'  release manifest: {path}'); sys.exit('release manifest missing after dist build') if not path.is_file() or path.stat().st_size == 0 else None"
 	# Same reason as the migration above: without the tool environment this
 	# warmed a repo-local SQLite file and reported "warmed=13" while the
 	# configured shared cache stayed cold.

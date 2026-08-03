@@ -70,6 +70,9 @@ def marketing_notes() -> dict[str, str]:
 		value = clean_marketing(value)
 		if value:
 			notes[name] = value
+	missing = [name for name in MARKETING_FILES if not notes.get(name)]
+	if missing:
+		raise RuntimeError(f"missing required marketing changelog content: {', '.join(missing)}")
 	return notes
 
 
@@ -77,6 +80,7 @@ def record(public_output: Path, history_path: Path) -> None:
 	head = git("rev-parse", "HEAD").strip()
 	short_head = git("rev-parse", "--short=12", "HEAD").strip()
 	history = load_history(history_path)
+	marketing = marketing_notes()
 	if not history or history[0].get("sha") != head:
 		previous = str(history[0].get("sha")) if history else ""
 		try:
@@ -89,12 +93,12 @@ def record(public_output: Path, history_path: Path) -> None:
 			"deployedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
 			"changes": changes,
 		}
-		marketing = marketing_notes()
-		if marketing:
-			record["marketing"] = marketing
+		record["marketing"] = marketing
 		history = [record, *history[:1]]
-		history_path.parent.mkdir(parents=True, exist_ok=True)
-		write_json(history_path, history)
+	elif history[0].get("marketing") != marketing:
+		history[0]["marketing"] = marketing
+	history_path.parent.mkdir(parents=True, exist_ok=True)
+	write_json(history_path, history)
 	write_json(public_output, {"schemaVersion": 1, "deployments": history[:2]})
 	print(f"deployments: wrote {public_output} ({len(history[:2])} deploys)")
 

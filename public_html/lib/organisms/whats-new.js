@@ -91,16 +91,6 @@ export function renderWhatsNew() {
 			: `<p class="whats-new__empty">${esc(t("whatsNew.noDeployments", "No deployment notes are available yet."))}</p>`;
 }
 
-/** @param {boolean} on */
-function setPageInert(on) {
-	$$("body > *").forEach((element) => {
-		if (element.id === ROOT_ID || element.tagName === "SCRIPT") return;
-		if ("inert" in element) element.inert = on;
-		if (on) element.setAttribute("aria-hidden", "true");
-		else element.removeAttribute("aria-hidden");
-	});
-}
-
 /** @param {boolean} [remember] */
 export function closeWhatsNew(remember = true) {
 	const element = root();
@@ -109,11 +99,30 @@ export function closeWhatsNew(remember = true) {
 		const latest = latestDeployment();
 		if (latest) markWhatsNewSeen(deploymentId(latest));
 	}
-	element.classList.add("hidden");
-	element.setAttribute("aria-hidden", "true");
-	document.body.style.overflow = "";
-	setPageInert(false);
+	element.classList.add("is-collapsed");
+	element.setAttribute("aria-hidden", "false");
+	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
 	if (lastFocus instanceof HTMLElement) lastFocus.focus();
+}
+
+function hideWhatsNew() {
+	const element = root();
+	if (!element) return;
+	element.classList.add("hidden");
+	element.classList.remove("is-collapsed");
+	element.setAttribute("aria-hidden", "true");
+	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
+	if (lastFocus instanceof HTMLElement) lastFocus.focus();
+}
+
+function showCollapsedWhatsNew() {
+	const element = root();
+	if (!element) return;
+	renderWhatsNew();
+	element.classList.remove("hidden");
+	element.classList.add("is-collapsed");
+	element.setAttribute("aria-hidden", "false");
+	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
 }
 
 export function openWhatsNew() {
@@ -122,16 +131,23 @@ export function openWhatsNew() {
 	lastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
 	renderWhatsNew();
 	element.classList.remove("hidden");
+	element.classList.remove("is-collapsed");
 	element.setAttribute("aria-hidden", "false");
-	document.body.style.overflow = "hidden";
-	setPageInert(true);
+	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "true");
 	$("[data-whats-new-close]")?.focus();
 }
 
 /** @param {KeyboardEvent} event */
 function trapTab(event) {
 	const element = root();
-	if (!element || element.classList.contains("hidden") || event.key !== "Tab") return;
+	if (
+		!element ||
+		element.classList.contains("hidden") ||
+		element.classList.contains("is-collapsed") ||
+		event.key !== "Tab"
+	) {
+		return;
+	}
 	const focusable = $$('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])', element).filter(
 		(node) => !node.hidden && node.offsetParent !== null
 	);
@@ -153,11 +169,10 @@ export async function initWhatsNew() {
 	const element = root();
 	if (!element) return;
 	element.addEventListener("click", (event) => {
-		if (event.target === element) closeWhatsNew();
 		if (event.target?.closest("[data-whats-new-close]")) closeWhatsNew();
 		if (event.target?.closest("[data-whats-new-never]")) {
 			disableWhatsNewAutoOpen();
-			closeWhatsNew(false);
+			hideWhatsNew();
 		}
 	});
 	document.addEventListener("click", (event) => {
@@ -173,6 +188,7 @@ export async function initWhatsNew() {
 	releaseData = await backendGetJson("/data/deployments.json");
 	if (!releaseData) return;
 	if (shouldAutoOpen()) openWhatsNew();
+	else if (!whatsNewNever()) showCollapsedWhatsNew();
 }
 
 export function resetWhatsNewForTests() {
