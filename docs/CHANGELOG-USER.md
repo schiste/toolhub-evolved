@@ -3,7 +3,7 @@
 
 # What's New for Users
 
-- See a more up-to-date list of changes.
-- Learn what changed when a new version arrives.
-- Notice new improvements more easily.
-- Follow Toolhub Evolved's progress more clearly.
+- New releases appear in a small notice at the bottom of the page.
+- Open the notice to read separate updates for the two latest deployments.
+- Collapse the notice when you are done without losing access to it.
+- Release notes now explain changes in clearer, simpler language.

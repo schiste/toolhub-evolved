@@ -3,7 +3,7 @@
 
 # Technical Release Notes
 
-- Regenerates the changelog from committed project history.
-- Keeps documented changes aligned with recorded development work.
-- Adds changelog announcements to the deployment process.
-- Improves release visibility for maintainers and contributors.
+- Adds an expanded and collapsed bottom-center release-notice component.
+- Keeps release details keyboard-accessible without making the rest of the application inert.
+- Preserves deployment-specific marketing notes in the public two-entry release manifest.
+- Rejects a deployment when either required marketing layer is empty.

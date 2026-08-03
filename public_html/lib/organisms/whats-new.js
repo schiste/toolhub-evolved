@@ -3,11 +3,13 @@ import { $, $$, esc } from "../core/dom.js";
 import { backendGetJson } from "../core/api.js";
 import { t } from "../core/i18n.js";
 import {
+	clearWhatsNewCollapsed,
 	disableWhatsNewAutoOpen,
+	markWhatsNewCollapsed,
 	markWhatsNewSeen,
 	whatsNewForced,
-	whatsNewNever,
-	whatsNewSeen
+	whatsNewCollapsed,
+	whatsNewNever
 } from "../core/release-notices.js";
 
 const ROOT_ID = "whats-new";
@@ -32,13 +34,6 @@ function latestDeployment() {
 
 function deploymentId(deployment) {
 	return String(deployment?.id || deployment?.sha || "");
-}
-
-function shouldAutoOpen() {
-	const latest = latestDeployment();
-	if (!latest || !deploymentId(latest)) return false;
-	if (whatsNewForced()) return true;
-	return !whatsNewNever() && !whatsNewSeen(deploymentId(latest));
 }
 
 /** @param {string | undefined} value */
@@ -99,6 +94,7 @@ export function closeWhatsNew(remember = true) {
 		const latest = latestDeployment();
 		if (latest) markWhatsNewSeen(deploymentId(latest));
 	}
+	markWhatsNewCollapsed();
 	element.classList.add("is-collapsed");
 	element.setAttribute("aria-hidden", "false");
 	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
@@ -129,6 +125,7 @@ export function openWhatsNew() {
 	const element = root();
 	if (!element) return;
 	lastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
+	clearWhatsNewCollapsed();
 	renderWhatsNew();
 	element.classList.remove("hidden");
 	element.classList.remove("is-collapsed");
@@ -187,7 +184,7 @@ export async function initWhatsNew() {
 	});
 	releaseData = await backendGetJson("/data/deployments.json");
 	if (!releaseData) return;
-	if (shouldAutoOpen()) openWhatsNew();
+	if (whatsNewForced() || (!whatsNewNever() && !whatsNewCollapsed())) openWhatsNew();
 	else if (!whatsNewNever()) showCollapsedWhatsNew();
 }
 

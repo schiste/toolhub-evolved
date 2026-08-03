@@ -2,6 +2,7 @@
 /* Browser-only acknowledgement state for public release notices. */
 export const WHATS_NEW_NEVER_KEY = "toolhub-whats-new-never";
 export const WHATS_NEW_SEEN_KEY = "toolhub-whats-new-seen";
+export const WHATS_NEW_COLLAPSED_KEY = "toolhub-whats-new-collapsed";
 
 function read(key) {
 	try {
@@ -30,10 +31,26 @@ export function whatsNewSeen(id) {
 	return Boolean(id) && read(WHATS_NEW_SEEN_KEY) === id;
 }
 
+export function whatsNewCollapsed() {
+	return read(WHATS_NEW_COLLAPSED_KEY) === "1";
+}
+
 /** @param {string} id */
 export function markWhatsNewSeen(id) {
 	try {
 		if (id) globalThis.localStorage?.setItem(WHATS_NEW_SEEN_KEY, id);
+	} catch {}
+}
+
+export function markWhatsNewCollapsed() {
+	try {
+		globalThis.localStorage?.setItem(WHATS_NEW_COLLAPSED_KEY, "1");
+	} catch {}
+}
+
+export function clearWhatsNewCollapsed() {
+	try {
+		globalThis.localStorage?.removeItem(WHATS_NEW_COLLAPSED_KEY);
 	} catch {}
 }
 

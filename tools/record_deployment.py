@@ -76,12 +76,31 @@ def marketing_notes() -> dict[str, str]:
 	return notes
 
 
+def deployment_specific_marketing(
+	notes: dict[str, str], changes: list[dict[str, str]], previous: dict[str, object] | None, short_head: str
+) -> dict[str, str]:
+	"""Keep adjacent deployments understandable when the source notes repeat."""
+	if not previous or previous.get("marketing") != notes:
+		return notes
+	items = [
+		f"- {change.get('subject', 'Updated Toolhub Evolved')} ({change.get('shortSha', short_head)})"
+		for change in changes[:8]
+	]
+	if not items:
+		items = [f"- Serving release commit {short_head}"]
+	return {
+		"technical": "- Deployment-specific changes:\n" + "\n".join(items),
+		"user": "- This release includes:\n" + "\n".join(items),
+	}
+
+
 def record(public_output: Path, history_path: Path) -> None:
 	head = git("rev-parse", "HEAD").strip()
 	short_head = git("rev-parse", "--short=12", "HEAD").strip()
 	history = load_history(history_path)
 	marketing = marketing_notes()
 	if not history or history[0].get("sha") != head:
+		previous_record = history[0] if history else None
 		previous = str(history[0].get("sha")) if history else ""
 		try:
 			changes = commit_rows(f"{previous}..{head}" if previous else None)
@@ -93,10 +112,15 @@ def record(public_output: Path, history_path: Path) -> None:
 			"deployedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
 			"changes": changes,
 		}
-		record["marketing"] = marketing
+		record["marketing"] = deployment_specific_marketing(marketing, changes, previous_record, short_head)
 		history = [record, *history[:1]]
-	elif history[0].get("marketing") != marketing:
-		history[0]["marketing"] = marketing
+	else:
+		previous_record = history[1] if len(history) > 1 else None
+		changes = history[0].get("changes", [])
+		if not isinstance(changes, list):
+			changes = []
+		if history[0].get("marketing") != marketing:
+			history[0]["marketing"] = deployment_specific_marketing(marketing, changes, previous_record, short_head)
 	history_path.parent.mkdir(parents=True, exist_ok=True)
 	write_json(history_path, history)
 	write_json(public_output, {"schemaVersion": 1, "deployments": history[:2]})
