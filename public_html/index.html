@@ -574,6 +574,14 @@
 				Evolved preview: live Toolhub data with Evolved additions.
 			</span>
 			<a class="mockup-banner__link" href="/experiments" data-i18n="shell.featureStatus">Feature status</a>
+			<button
+				class="mockup-banner__link mockup-banner__button"
+				type="button"
+				data-whats-new-open
+				data-i18n="shell.whatsNew"
+			>
+				What's new
+			</button>
 			<a class="mockup-banner__link" href="/rules-of-engagement" data-i18n="shell.rulesOfEngagement"
 				>Rules of Engagement</a
 			>
@@ -761,6 +769,7 @@
 					<a href="/terms" data-i18n="shell.footer.termsOfUse">Terms of Use</a>
 					<a href="/code-of-conduct" data-i18n="shell.footer.codeOfConduct">Code of Conduct</a>
 					<a href="/feeds" data-i18n="shell.footer.feedsRss">Feeds (RSS)</a>
+					<a href="/changelog" data-i18n="shell.footer.changelog">Changelog</a>
 					<a href="/rules-of-engagement" data-i18n="shell.footer.rulesOfEngagement">Rules of Engagement</a>
 				</nav>
 			</div>
@@ -852,6 +861,56 @@
 					</svg>
 				</button>
 				<div id="qv-body"></div>
+			</div>
+		</div>
+
+		<div class="whats-new hidden" id="whats-new" aria-hidden="true">
+			<div
+				class="whats-new__box"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="whats-new-title"
+				aria-describedby="whats-new-intro"
+			>
+				<button
+					class="qv__x"
+					type="button"
+					data-whats-new-close
+					aria-label="Close What's new"
+					data-i18n-aria-label="whatsNew.close"
+				>
+					<svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false">
+						<path
+							d="M16.707 4.707 11.414 10l5.293 5.293-1.414 1.414L10 11.414l-5.293 5.293-1.414-1.414L8.586 10 3.293 4.707l1.414-1.414z"
+						/>
+					</svg>
+				</button>
+				<h2 id="whats-new-title" data-i18n="whatsNew.title">What's new</h2>
+				<p id="whats-new-intro" data-i18n="whatsNew.intro">
+					Here are the changes in the two most recent deployments.
+				</p>
+				<div id="whats-new-body"></div>
+				<div class="whats-new__actions">
+					<button
+						class="btn btn--primary btn--md"
+						type="button"
+						data-whats-new-close
+						data-i18n="whatsNew.closeButton"
+					>
+						Close
+					</button>
+					<button
+						class="btn btn--subtle btn--md"
+						type="button"
+						data-whats-new-never
+						data-i18n="whatsNew.neverButton"
+					>
+						Don't show automatically again
+					</button>
+					<a class="btn btn--subtle btn--md" href="/changelog" data-i18n="whatsNew.fullChangelog"
+						>Full changelog</a
+					>
+				</div>
 			</div>
 		</div>
 

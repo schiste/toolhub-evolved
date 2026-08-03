@@ -32,6 +32,7 @@ import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "
 import { initCommandPalette, syncCommandPaletteChrome } from "./lib/organisms/command-palette.js";
 import { initIconFallbacks } from "./lib/organisms/icon-fallbacks.js";
 import { clearIssueContext, initIssueDrawer, syncIssueReportTrigger } from "./lib/organisms/issue-drawer.js";
+import { closeWhatsNew, initWhatsNew, renderWhatsNew } from "./lib/organisms/whats-new.js";
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
@@ -193,6 +194,9 @@ if (siteNoticeDismiss) {
 initTheme();
 initIconFallbacks();
 initIssueDrawer();
+afterFirstPaint(() => {
+	initWhatsNew().catch(() => undefined);
+});
 // "System" is a default picker, not a toggle option: it is the implicit default used
 // while nothing is stored in localStorage (theme.js then follows the OS preference).
 // The toggle therefore exposes only Light and Dark.
@@ -405,6 +409,7 @@ document.addEventListener("toolhub:route-render-start", () => {
 	markPageDiagnostics(`${location.pathname}${location.search}`);
 	clearIssueContext();
 	closeAcctMenu();
+	closeWhatsNew();
 	closeQuickViewIfLoaded();
 });
 document.addEventListener("keydown", (e) => {
@@ -508,6 +513,7 @@ if (bootLocale !== DEFAULT_LOCALE && !isPseudoLocale(bootLocale)) {
 					markFrontendTimingOnce("labels-loaded", { locale: bootLocale, source: "catalog" });
 					renderThemeToggle();
 					localizeShell();
+					renderWhatsNew();
 					renderAccount();
 					syncSubmitButton();
 					render();

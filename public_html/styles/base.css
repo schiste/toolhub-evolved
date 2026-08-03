@@ -326,6 +326,11 @@ summary:focus-visible,
 	white-space: nowrap;
 }
 
+.mockup-banner__button {
+	font: inherit;
+	cursor: pointer;
+}
+
 .mockup-banner__link:hover {
 	text-decoration: none;
 }

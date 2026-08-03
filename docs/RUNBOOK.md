@@ -416,12 +416,19 @@ surface.
 
 ```sh
 become <toolname>
-sh ~/repo/tools/deploy.sh          # pull → build dist → restart → smoke-check
+sh ~/repo/tools/deploy.sh          # pull → publish changelog/deploy history → build dist → restart → smoke-check
 ```
 
 Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
 followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
 if the webservice doesn't come back healthy.
+
+Every deploy generates `public_html/data/changelog.json` from the serving Git
+checkout and records the latest two successful deploys in
+`public_html/data/deployments.json`. The deploy history is retained outside the
+checkout so a `git pull --ff-only` remains clean. The pre-push hook runs the same
+changelog generator as a parse check; the deploy is the publication point because
+it is the first place that knows which commit actually reached production.
 
 ## Scheduled jobs
 

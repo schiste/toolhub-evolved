@@ -35,6 +35,10 @@ htmlcov/
 dist/
 dist.tmp/
 
+# Runtime release artifacts generated on each Toolforge deploy.
+public_html/data/changelog.json
+public_html/data/deployments.json
+
 # Backend local database + local CI venv
 proxy/var/
 *.sqlite3

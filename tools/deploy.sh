@@ -85,6 +85,8 @@ if [ -x "$VENV_PY" ]; then
 	run_with_tool_env "$REPO_DIR/proxy/migrate.py --require-configured-db"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
+	"$VENV_PY" "$REPO_DIR/tools/build_changelog.py"
+	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py"
 	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  dist build skipped — serving raw source"
 	# Same reason as the migration above: without the tool environment this
 	# warmed a repo-local SQLite file and reported "warmed=13" while the

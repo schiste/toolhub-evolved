@@ -14,3 +14,4 @@ npx prettier --check .
 npm run checks
 npm run clean:prod
 npm run features:docs:check
+python3 tools/build_changelog.py --output "${TMPDIR:-/tmp}/toolhub-evolved-changelog.json"
