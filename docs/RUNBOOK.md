@@ -430,6 +430,10 @@ checkout so a `git pull --ff-only` remains clean. The pre-push hook runs the sam
 changelog generator as a parse check; the deploy is the publication point because
 it is the first place that knows which commit actually reached production.
 
+To rebuild the human-readable repository history locally, run
+`npm run changelog:generate`. It groups conventional commits by date and change
+type, and links every entry to its exact GitHub commit.
+
 ## Scheduled jobs
 
 ```sh

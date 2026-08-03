@@ -15,7 +15,34 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = ROOT / "public_html/data/changelog.json"
 FIELD_SEPARATOR = "\x1f"
 MAX_COMMITS = 40
-CONVENTIONAL_SUBJECT = re.compile(r"^(?P<kind>[a-z]+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?:\s*(?P<summary>.+)$")
+CONVENTIONAL_SUBJECT = re.compile(
+	r"^(?P<kind>[a-z][a-z0-9-]*)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?:\s*(?P<summary>.+)$"
+)
+CATEGORY_LABELS = {
+	"feat": "Features",
+	"fix": "Fixes",
+	"perf": "Performance",
+	"docs": "Documentation",
+	"test": "Tests",
+	"chore": "Maintenance",
+	"ci": "Maintenance",
+	"ops": "Operations",
+	"refactor": "Refactoring",
+	"style": "Interface and accessibility",
+}
+CATEGORY_ORDER = (
+	"Features",
+	"Fixes",
+	"Performance",
+	"Interface and accessibility",
+	"Documentation",
+	"Operations",
+	"Refactoring",
+	"Tests",
+	"Maintenance",
+	"Other",
+)
+GENERATED_CHANGELOG_SUBJECT = "docs: regenerate changelog from git history"
 
 
 def git(*args: str) -> str:
@@ -36,15 +63,21 @@ def classify(subject: str) -> tuple[str, str, bool, str]:
 	)
 
 
-def commits() -> list[dict[str, object]]:
+def commits(max_count: int | None = MAX_COMMITS) -> list[dict[str, object]]:
 	format_string = "%H%x1f%h%x1f%aI%x1f%an%x1f%s%x1e"
-	rows = git("log", f"--max-count={MAX_COMMITS}", f"--pretty=format:{format_string}").split("\x1e")
+	args = ["log"]
+	if max_count is not None:
+		args.append(f"--max-count={max_count}")
+	args.append(f"--pretty=format:{format_string}")
+	rows = git(*args).split("\x1e")
 	items: list[dict[str, object]] = []
 	for row in rows:
 		parts = row.strip("\n").split(FIELD_SEPARATOR)
 		if len(parts) != 5 or not parts[0]:
 			continue
 		sha, short_sha, authored_at, author, subject = parts
+		if subject.strip() == GENERATED_CHANGELOG_SUBJECT:
+			continue
 		kind, scope, breaking, summary = classify(subject)
 		items.append(
 			{
@@ -71,17 +104,63 @@ def artifact() -> dict[str, object]:
 	}
 
 
+def markdown_escape(value: str) -> str:
+	return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def render_markdown() -> str:
+	all_commits = commits(None)
+	by_date: dict[str, dict[str, list[dict[str, object]]]] = {}
+	for commit in all_commits:
+		date = str(commit["authoredAt"])[:10] or "Undated"
+		kind = str(commit["kind"])
+		category = CATEGORY_LABELS.get(kind, "Other")
+		by_date.setdefault(date, {}).setdefault(category, []).append(commit)
+
+	lines = [
+		"# Changelog",
+		"",
+		"All notable Toolhub Evolved changes, grouped from the repository's Git history.",
+		"This file is generated with `npm run changelog:generate`; do not edit it by hand.",
+		"",
+	]
+	for date, categories in by_date.items():
+		lines.extend([f"## {date}", ""])
+		for category in CATEGORY_ORDER:
+			items = categories.get(category, [])
+			if not items:
+				continue
+			lines.extend([f"### {category}", ""])
+			for commit in items:
+				sha = str(commit["sha"])
+				short_sha = str(commit["shortSha"])
+				summary = markdown_escape(str(commit["summary"]))
+				lines.append(
+					f"- {summary} ([{short_sha}](https://github.com/schiste/toolhub-evolved/commit/{sha}))"
+				)
+			lines.append("")
+	return "\n".join(lines).rstrip() + "\n"
+
+
 def write(output: Path) -> None:
 	output.parent.mkdir(parents=True, exist_ok=True)
 	output.write_text(json.dumps(artifact(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 	print(f"changelog: wrote {output}")
 
 
+def write_markdown(output: Path) -> None:
+	output.write_text(render_markdown(), encoding="utf-8")
+	print(f"changelog: wrote {output}")
+
+
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+	parser.add_argument("--markdown-output", type=Path)
 	args = parser.parse_args()
 	write(args.output)
+	if args.markdown_output:
+		write_markdown(args.markdown_output)
 
 
 if __name__ == "__main__":
