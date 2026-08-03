@@ -2,7 +2,13 @@
 import { $, $$, esc } from "../core/dom.js";
 import { backendGetJson } from "../core/api.js";
 import { t } from "../core/i18n.js";
-import { disableWhatsNewAutoOpen, markWhatsNewSeen, whatsNewNever, whatsNewSeen } from "../core/release-notices.js";
+import {
+	disableWhatsNewAutoOpen,
+	markWhatsNewSeen,
+	whatsNewForced,
+	whatsNewNever,
+	whatsNewSeen
+} from "../core/release-notices.js";
 
 const ROOT_ID = "whats-new";
 const BODY_ID = "whats-new-body";
@@ -13,7 +19,7 @@ let releaseData = null;
 let lastFocus = null;
 let initialized = false;
 
-/** @typedef {{ id?: string, sha?: string, deployedAt?: string, changes?: Change[] }} Deployment */
+/** @typedef {{ id?: string, sha?: string, deployedAt?: string, changes?: Change[], marketing?: { technical?: string, user?: string } }} Deployment */
 /** @typedef {{ sha?: string, shortSha?: string, authoredAt?: string, subject?: string }} Change */
 
 function root() {
@@ -31,6 +37,7 @@ function deploymentId(deployment) {
 function shouldAutoOpen() {
 	const latest = latestDeployment();
 	if (!latest || !deploymentId(latest)) return false;
+	if (whatsNewForced()) return true;
 	return !whatsNewNever() && !whatsNewSeen(deploymentId(latest));
 }
 
@@ -59,12 +66,18 @@ function deploymentHTML(deployment) {
 					)
 					.join("")}</ul>`
 			: `<p class="whats-new__empty">${esc(t("whatsNew.noChanges", "No individual changes were recorded for this deploy."))}</p>`;
+	const userNotes = deployment.marketing?.user
+		? `<div class="whats-new__summary"><h4>${esc(t("whatsNew.forUsers", "For users"))}</h4><div class="whats-new__markdown">${esc(deployment.marketing.user)}</div></div>`
+		: "";
+	const technicalNotes = deployment.marketing?.technical
+		? `<details class="whats-new__technical"><summary class="whats-new__technical-summary">${esc(t("whatsNew.technicalDetails", "Technical details"))}</summary><div class="whats-new__markdown">${esc(deployment.marketing.technical)}</div></details>`
+		: "";
 	return `<section class="whats-new__deploy" aria-labelledby="whats-new-deploy-${esc(id)}">
 		<div class="whats-new__deploy-head">
 			<div><h3 id="whats-new-deploy-${esc(id)}">${esc(t("whatsNew.deployed", "Deployed {date}", { date: dateLabel(deployment.deployedAt) }))}</h3>
 			<p>${esc(t("whatsNew.commit", "Serving commit"))} ${commitLink}</p></div>
 			<span class="whats-new__badge">${esc(t("whatsNew.deploy", "Deploy"))}</span>
-		</div>${changeHTML}
+		</div>${userNotes}${technicalNotes}${changeHTML}
 	</section>`;
 }
 

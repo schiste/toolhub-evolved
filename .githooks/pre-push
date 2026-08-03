@@ -17,3 +17,37 @@ npm run features:docs:check
 python3 tools/build_changelog.py \
 	--output "${TMPDIR:-/tmp}/toolhub-evolved-changelog.json" \
 	--markdown-output "${TMPDIR:-/tmp}/toolhub-evolved-CHANGELOG.md"
+
+# Chau7 is an optional local raw-MCP provider. When it is available, generate
+# both reviewed marketing layers from exactly the commits in this push and
+# reject stale/missing checked-in copy. Developers without Chau7 can keep the
+# deterministic hook checks; CI can require the provider explicitly with
+# TOOLHUB_CHANGELOG_LLM_REQUIRED=1.
+push_range=""
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+	if [ -n "${local_sha:-}" ] && [ "${local_sha}" != "0000000000000000000000000000000000000000" ]; then
+		if [ "${remote_sha:-}" = "0000000000000000000000000000000000000000" ] || [ -z "${remote_sha:-}" ]; then
+			push_range="${local_sha}"
+		else
+			push_range="${remote_sha}..${local_sha}"
+		fi
+	fi
+done
+
+marketing_technical="${TMPDIR:-/tmp}/toolhub-evolved-CHANGELOG-TECHNICAL-MARKETING.md"
+marketing_user="${TMPDIR:-/tmp}/toolhub-evolved-CHANGELOG-USER.md"
+marketing_range="${push_range:-HEAD}"
+if [ -n "${TOOLHUB_CHAU7_MCP_BRIDGE:-}" ] || [ -n "${TOOLHUB_CHANGELOG_LLM_COMMAND:-}" ] || [ "${TOOLHUB_CHANGELOG_LLM_REQUIRED:-}" = "1" ]; then
+	python3 tools/generate_marketing_changelog.py \
+		--required \
+		--range "$marketing_range" \
+		--technical-output "$marketing_technical" \
+		--user-output "$marketing_user"
+	if ! cmp -s "$marketing_technical" docs/CHANGELOG-TECHNICAL-MARKETING.md || \
+		! cmp -s "$marketing_user" docs/CHANGELOG-USER.md; then
+		echo "marketing changelog: generated files are missing or stale; review and run 'npm run changelog:marketing', then commit both files before pushing" >&2
+		exit 1
+	fi
+else
+	echo "marketing changelog: skipped (no raw MCP provider; configure Chau7 or TOOLHUB_CHANGELOG_LLM_COMMAND)"
+fi

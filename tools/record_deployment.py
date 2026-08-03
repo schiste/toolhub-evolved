@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PUBLIC_OUTPUT = ROOT / "public_html/data/deployments.json"
 DEFAULT_HISTORY = Path.home() / ".toolhub-evolved-deploy-history.json"
 FIELD_SEPARATOR = "\x1f"
+MARKETING_FILES = {
+	"technical": ROOT / "docs/CHANGELOG-TECHNICAL-MARKETING.md",
+	"user": ROOT / "docs/CHANGELOG-USER.md",
+}
 
 
 def git(*args: str) -> str:
@@ -51,6 +55,24 @@ def write_json(path: Path, value: object) -> None:
 	path.write_text(json.dumps(value, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
+def clean_marketing(value: str) -> str:
+	lines = [line for line in value.splitlines() if not line.startswith("<!--") and not line.startswith("# ")]
+	return "\n".join(lines).strip()
+
+
+def marketing_notes() -> dict[str, str]:
+	notes: dict[str, str] = {}
+	for name, path in MARKETING_FILES.items():
+		try:
+			value = path.read_text(encoding="utf-8").strip()
+		except FileNotFoundError:
+			continue
+		value = clean_marketing(value)
+		if value:
+			notes[name] = value
+	return notes
+
+
 def record(public_output: Path, history_path: Path) -> None:
 	head = git("rev-parse", "HEAD").strip()
 	short_head = git("rev-parse", "--short=12", "HEAD").strip()
@@ -67,6 +89,9 @@ def record(public_output: Path, history_path: Path) -> None:
 			"deployedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
 			"changes": changes,
 		}
+		marketing = marketing_notes()
+		if marketing:
+			record["marketing"] = marketing
 		history = [record, *history[:1]]
 		history_path.parent.mkdir(parents=True, exist_ok=True)
 		write_json(history_path, history)

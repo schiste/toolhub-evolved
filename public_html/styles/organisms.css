@@ -2878,6 +2878,35 @@ html[dir="rtl"] .recent-table {
 .whats-new__changes li + li {
 	margin-top: var(--space-2);
 }
+.whats-new__summary {
+	margin-top: var(--space-4);
+	padding: var(--space-3);
+	border-inline-start: var(--border-progressive-strong);
+	background: var(--color-progressive-subtle);
+}
+.whats-new__summary h4 {
+	margin: var(--space-0) var(--space-0) var(--space-2);
+	font-size: var(--fs-body-small);
+}
+.whats-new__markdown {
+	white-space: pre-line;
+	font-size: var(--fs-body-small);
+}
+.whats-new__technical {
+	margin-top: var(--space-3);
+	font-size: var(--fs-body-small);
+}
+.whats-new__technical-summary {
+	color: var(--color-progressive);
+	font-weight: 700;
+	cursor: pointer;
+}
+.whats-new__technical .whats-new__markdown {
+	margin-top: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: var(--border-muted);
+	color: var(--color-text-muted);
+}
 .whats-new__empty {
 	color: var(--color-text-muted);
 	font-style: italic;

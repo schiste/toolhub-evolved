@@ -17,6 +17,7 @@
 		"features:docs": "node tools/feature-docs.mjs",
 		"features:docs:check": "node tools/feature-docs.mjs --check",
 		"changelog:generate": "python3 tools/build_changelog.py --markdown-output CHANGELOG.md && prettier --write CHANGELOG.md",
+		"changelog:marketing": "python3 tools/generate_marketing_changelog.py",
 		"budget": "node tools/js-budget.mjs",
 		"i18n:extract": "node tools/i18n-extract.mjs",
 		"i18n:check": "node tools/i18n-extract.mjs --check",

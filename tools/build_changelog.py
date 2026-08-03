@@ -63,9 +63,13 @@ def classify(subject: str) -> tuple[str, str, bool, str]:
 	)
 
 
-def commits(max_count: int | None = MAX_COMMITS) -> list[dict[str, object]]:
+def commits(
+	max_count: int | None = MAX_COMMITS, revision_range: str | None = None
+) -> list[dict[str, object]]:
 	format_string = "%H%x1f%h%x1f%aI%x1f%an%x1f%s%x1e"
 	args = ["log"]
+	if revision_range:
+		args.append(revision_range)
 	if max_count is not None:
 		args.append(f"--max-count={max_count}")
 	args.append(f"--pretty=format:{format_string}")
@@ -95,12 +99,12 @@ def commits(max_count: int | None = MAX_COMMITS) -> list[dict[str, object]]:
 	return items
 
 
-def artifact() -> dict[str, object]:
+def artifact(revision_range: str | None = None) -> dict[str, object]:
 	return {
 		"schemaVersion": 1,
 		"generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
 		"repository": "https://github.com/schiste/toolhub-evolved",
-		"commits": commits(),
+		"commits": commits(revision_range=revision_range),
 	}
 
 
@@ -142,9 +146,11 @@ def render_markdown() -> str:
 	return "\n".join(lines).rstrip() + "\n"
 
 
-def write(output: Path) -> None:
+def write(output: Path, revision_range: str | None = None) -> None:
 	output.parent.mkdir(parents=True, exist_ok=True)
-	output.write_text(json.dumps(artifact(), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+	output.write_text(
+		json.dumps(artifact(revision_range), indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
+	)
 	print(f"changelog: wrote {output}")
 
 
@@ -157,10 +163,12 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
 	parser.add_argument("--markdown-output", type=Path)
+	parser.add_argument("--range", dest="revision_range", help="Git revision range to include")
 	args = parser.parse_args()
-	write(args.output)
+	write(args.output, args.revision_range)
 	if args.markdown_output:
-		write_markdown(args.markdown_output)
+		args.markdown_output.write_text(render_markdown(), encoding="utf-8")
+		print(f"changelog: wrote {args.markdown_output}")
 
 
 if __name__ == "__main__":

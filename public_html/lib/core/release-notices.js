@@ -16,6 +16,15 @@ export function whatsNewNever() {
 	return read(WHATS_NEW_NEVER_KEY) === "1";
 }
 
+/** @returns {boolean} */
+export function whatsNewForced() {
+	try {
+		return new URLSearchParams(globalThis.location?.search || "").get("whats-new") === "1";
+	} catch {
+		return false;
+	}
+}
+
 /** @param {string} id @returns {boolean} */
 export function whatsNewSeen(id) {
 	return Boolean(id) && read(WHATS_NEW_SEEN_KEY) === id;

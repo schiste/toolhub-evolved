@@ -1770,11 +1770,13 @@
 	"whatsNew.commit": "Serving commit",
 	"whatsNew.deploy": "Deploy",
 	"whatsNew.deployed": "Deployed {date}",
+	"whatsNew.forUsers": "For users",
 	"whatsNew.fullChangelog": "Full changelog",
 	"whatsNew.intro": "Here are the changes in the two most recent deployments.",
 	"whatsNew.neverButton": "Don't show automatically again",
 	"whatsNew.noChanges": "No individual changes were recorded for this deploy.",
 	"whatsNew.noDeployments": "No deployment notes are available yet.",
+	"whatsNew.technicalDetails": "Technical details",
 	"whatsNew.title": "What's new",
 	"whatsNew.unknownDate": "Date unavailable",
 	"whatsNew.unnamedChange": "Unlabelled change"

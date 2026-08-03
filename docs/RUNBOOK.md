@@ -434,6 +434,23 @@ To rebuild the human-readable repository history locally, run
 `npm run changelog:generate`. It groups conventional commits by date and change
 type, and links every entry to its exact GitHub commit.
 
+`npm run changelog:marketing` asks the local Chau7 raw MCP bridge to spawn one
+release-note subagent from the pending Git range. It writes
+`docs/CHANGELOG-TECHNICAL-MARKETING.md` for maintainers and
+`docs/CHANGELOG-USER.md` for plain-language user announcements. The exact
+`CHANGELOG.md` remains the source record. The pre-push hook generates these two
+files into temporary paths and rejects a push when the checked-in versions are
+missing or stale, so the generated copy must be reviewed and committed
+explicitly.
+
+To opt into the local Chau7 bridge, set
+`TOOLHUB_CHAU7_MCP_BRIDGE=$HOME/.chau7/bin/chau7-mcp-bridge` before running the
+hook or `npm run changelog:marketing`. A different raw MCP/API adapter can be
+selected with `TOOLHUB_CHANGELOG_LLM_COMMAND`; it must read the prompt from stdin and write the constrained
+`<TECHNICAL>...</TECHNICAL>` and `<USER>...</USER>` response to stdout. Set
+`TOOLHUB_CHANGELOG_LLM_REQUIRED=1` in CI or a local shell when the provider
+must be present.
+
 ## Scheduled jobs
 
 ```sh
