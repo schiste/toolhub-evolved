@@ -296,7 +296,7 @@ def _relay_upstream_response(
 # colours). img-src allows any https origin: tool icons are arbitrary remote
 # images. The browser only ever fetches same-origin (/api/ is proxied
 # server-side), hence connect-src 'self'.
-_THEME_SCRIPT_HASH = "sha256-XASlFDDB4Ati9OFy/+a7zp7h86hBsK6RJ9H/0Db17GA="
+_THEME_SCRIPT_HASH = "sha256-0jnGfpn4hz/aPaiYRwInkUBQsdz1aKWsN4Kq79pSrXI="
 _CSP = (
     "default-src 'self'; "
     f"script-src 'self' '{_THEME_SCRIPT_HASH}'; "

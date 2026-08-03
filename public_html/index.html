@@ -30,6 +30,33 @@
 						document.documentElement.classList.add("sitenotice-dismissed");
 					}
 				} catch (e) {}
+				/* Boot watchdog. The app is native ES modules, so a single failed
+				   module request fails the whole graph and leaves a blank page —
+				   and Toolforge does return transient 503s, most reliably while a
+				   deploy restarts the webservice. Route modules already retry
+				   themselves (views/router.js); the entry graph cannot, because by
+				   the time it fails there is no app running to notice.
+
+				   main.js marks the document booted; if that has not happened in
+				   time, reload once. Guarded by sessionStorage so a persistent
+				   failure shows the blank page rather than reloading forever. */
+				try {
+					var RELOAD_KEY = "toolhub-boot-retry";
+					window.addEventListener("load", function () {
+						/* Module scripts execute before load fires, so if main.js
+						   had run the attribute would already be set. The delay is
+						   only slack for a slow device, not for the network. */
+						setTimeout(function () {
+							if (document.documentElement.hasAttribute("data-booted")) {
+								sessionStorage.removeItem(RELOAD_KEY);
+								return;
+							}
+							if (sessionStorage.getItem(RELOAD_KEY)) return;
+							sessionStorage.setItem(RELOAD_KEY, "1");
+							location.reload();
+						}, 3000);
+					});
+				} catch (e) {}
 			})();
 		</script>
 		<!-- Typography uses the native Wikimedia/Codex system font stack (see styles/tokens.css):

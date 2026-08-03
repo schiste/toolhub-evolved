@@ -36,6 +36,11 @@ import { closeWhatsNew, initWhatsNew, renderWhatsNew } from "./lib/organisms/wha
 import { closeLangMenu, renderLangPicker, showLangNote, toggleLangMenu } from "./lib/organisms/langpicker.js";
 import { render } from "./views/router.js";
 
+/* Tell the boot watchdog in index.html that the module graph resolved. This
+   module's body only runs once every static import it depends on has loaded,
+   so reaching this line is exactly the condition the watchdog is waiting for —
+   a failed module request would have left the page blank instead. */
+document.documentElement.setAttribute("data-booted", "1");
 markAppBootStart();
 initPageDiagnostics();
 const observedFirstContentPaint = observeFirstContentPaint();
