@@ -83,6 +83,20 @@ vi.mock("../../public_html/lib/core/store.js", async (importOriginal) => {
 	const actual = await importOriginal();
 	return { ...actual, isDemoListId: vi.fn() };
 });
+/* static.js is imported on demand now, so a render that lands on one of its
+   pages needs a few microtask turns before the mocked view is reached. */
+const flushModuleLoad = async () => {
+	for (let i = 0; i < 50; i += 1) await Promise.resolve();
+};
+/* Flush microtasks until `check` is satisfied, so a test can wait on the module
+   load without guessing how many turns it takes. */
+const flushUntil = async (check) => {
+	for (let i = 0; i < 200; i += 1) {
+		if (check()) return true;
+		await Promise.resolve();
+	}
+	return check();
+};
 const at = (path) => {
 	window.history.replaceState({}, "", path);
 	return router.dispatch();
@@ -380,7 +394,7 @@ test("dispatch a STATIC slug → viewStatic; an unknown slug → viewNotFound", 
 
 /* ---- requireSignIn / setSignInFallback -------------------------------- */
 
-test("requireSignIn runs the view when signed in, else the fallback with title/lead", () => {
+test("requireSignIn runs the view when signed in, else the fallback with title/lead", async () => {
 	const viewFn = vi.fn(() => ({ tag: "ok" }));
 
 	session.signedIn.mockReturnValue(true);
@@ -388,8 +402,11 @@ test("requireSignIn runs the view when signed in, else the fallback with title/l
 	assert.equal(viewFn.mock.calls.length, 1);
 	assert.equal(staticViews.signInPage.mock.calls.length, 0);
 
+	// The sign-in page lives in static.js, which is now imported on demand, so
+	// the gate resolves asynchronously. dispatch() is awaited by render(), so a
+	// Promise here is the same contract every other route already has.
 	session.signedIn.mockReturnValue(false);
-	const out = router.requireSignIn(viewFn, "T", "L");
+	const out = await router.requireSignIn(viewFn, "T", "L");
 	assert.equal(viewFn.mock.calls.length, 1); // not called again
 	assert.deepEqual(staticViews.signInPage.mock.calls[0], ["T", "L"]);
 	assert.deepEqual(out, { tag: "signin", title: "T", lead: "L" });
@@ -634,12 +651,14 @@ test("render: a superseded navigation neither flashes its spinner nor commits", 
 		const dA = deferred();
 		staticViews.viewApiDocs.mockReturnValue(dA.promise);
 		const pA = router.render();
+		await flushModuleLoad();
 
 		// Navigation B (also slow) to /contribute supersedes A before A resolves.
 		window.history.replaceState({}, "", "/contribute");
 		const dB = deferred();
 		staticViews.viewContribute.mockReturnValue(dB.promise);
 		const pB = router.render();
+		await flushModuleLoad();
 
 		// B resolves first and commits.
 		dB.resolve({ title: "Contribute — Toolhub", html: "<div>CONTRIBUTE</div>" });
@@ -670,7 +689,7 @@ test("render: waits for declared route styles before committing the view", async
 	const viewEl = document.querySelector("#view");
 
 	const p = router.render();
-	await Promise.resolve();
+	await flushUntil(() => document.querySelector("link[data-route-style]"));
 	const link = document.querySelector("link[data-route-style]");
 
 	assert.ok(link);

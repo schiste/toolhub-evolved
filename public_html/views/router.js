@@ -5,7 +5,7 @@ import { navigateTo, parseRoute } from "../lib/core/routing.js";
 import { serverSessionResolved, signedIn } from "../lib/core/session.js";
 import { button } from "../lib/atoms/button.js";
 import { routeSkeletonHTML } from "../lib/molecules/skeleton.js";
-import { STATIC, prosePage, signInPage, viewApiDocs, viewContribute, viewNotFound, viewStatic } from "./static.js";
+import { isStaticSlug } from "./static-routes.js";
 
 // Route modules are loaded on demand so first paint does not require every page's
 // module graph. On Toolforge this also avoids a burst of static-file requests,
@@ -45,6 +45,14 @@ const loadAudit = () => loadRouteModule("./audit.js", () => import("./audit.js")
 const loadGraph = () => loadRouteModule("./graph.js", () => import("./graph.js"));
 const loadExperiments = () => loadRouteModule("./experiments.js", () => import("./experiments.js"));
 const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./styleguide.js"));
+const loadChangelog = () => loadRouteModule("./changelog.js", () => import("./changelog.js"));
+// The prose pages, the sign-in page and the 404 all live in static.js — the
+// largest module in the app. Loading it on demand like any other route keeps it
+// out of the first paint; every use below is a render, reached only when that
+// page is actually being shown.
+const loadStatic = () => loadRouteModule("./static.js", () => import("./static.js"));
+/** @param {string} title @param {string} [lead] @returns {Promise<View>} */
+const staticSignInPage = (title, lead) => loadStatic().then((m) => m.signInPage(title, lead));
 
 /** @type {Map<string, Promise<void>>} */
 const routeStyleLoads = new Map();
@@ -134,10 +142,10 @@ function loadViewStyles(view) {
 	return Promise.all(view.styles.map((href) => loadRouteStyle(href))).then(() => {});
 }
 
-/** @type {((title: string, lead?: string) => View) | null} */
+/** @type {((title: string, lead?: string) => ViewResult) | null} */
 let signInFallback = null;
 /**
- * @param {(title: string, lead?: string) => View} fn
+ * @param {(title: string, lead?: string) => ViewResult} fn
  * @returns {void}
  */
 export function setSignInFallback(fn) {
@@ -169,15 +177,18 @@ export function authLoadingPage(title, lead) {
  */
 export function requireSignIn(viewFn, title, lead) {
 	if (!serverSessionResolved()) return authLoadingPage(title, lead);
-	return signedIn() ? viewFn() : /** @type {(title: string, lead?: string) => View} */ (signInFallback)(title, lead);
+	return signedIn()
+		? viewFn()
+		: /** @type {(title: string, lead?: string) => ViewResult} */ (signInFallback)(title, lead);
 }
-setSignInFallback(signInPage);
+setSignInFallback(staticSignInPage);
 
 export const ROUTES = {
 	"featured-tools": () => loadHome().then((m) => m.viewFeaturedTools()),
 	lists: () => loadLists().then((m) => m.viewLists()),
 	graph: () => loadGraph().then((m) => m.viewGraph()),
 	"published-lists": () => loadLists().then((m) => m.viewLists()),
+	changelog: () => loadChangelog().then((m) => m.viewChangelog()),
 	"my-lists": () =>
 		requireSignIn(
 			() => loadLists().then((m) => m.viewMyLists()),
@@ -211,7 +222,7 @@ export const ROUTES = {
 			t("router.devSettingsLead", "Manage Evolved developer features for this Toolhub sign-in.")
 		),
 	login: () =>
-		signInPage(
+		staticSignInPage(
 			t("router.signInTitle", "Sign in"),
 			t("router.signInLead", "Sign in to save favourites, build lists, and edit tool information.")
 		),
@@ -219,8 +230,8 @@ export const ROUTES = {
 	members: () => loadMembers().then((m) => m.viewMembers()),
 	"crawler-history": () => loadCrawler().then((m) => m.viewCrawler()),
 	"audit-logs": () => loadAudit().then((m) => m.viewAudit()),
-	"api-docs": viewApiDocs,
-	contribute: viewContribute,
+	"api-docs": () => loadStatic().then((m) => m.viewApiDocs()),
+	contribute: () => loadStatic().then((m) => m.viewContribute()),
 	experiments: () => loadExperiments().then((m) => m.viewExperiments()),
 	styleguide: () => loadStyleguide().then((m) => m.viewStyleguide())
 };
@@ -270,9 +281,11 @@ function dispatchListRoute(seg) {
 		);
 	}
 	if (seg[2] === "history") {
-		return prosePage(
-			t("router.listHistoryTitle", "List history"),
-			`<p>${tWithElements("router.listHistoryBody", "Revision history for this list is available on the {liveSite}.", { liveSite: `<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${esc(t("router.liveSite", "live site"))}</a>` })}</p>`
+		return loadStatic().then((m) =>
+			m.prosePage(
+				t("router.listHistoryTitle", "List history"),
+				`<p>${tWithElements("router.listHistoryBody", "Revision history for this list is available on the {liveSite}.", { liveSite: `<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${esc(t("router.liveSite", "live site"))}</a>` })}</p>`
+			)
 		);
 	}
 	return loadLists().then((m) => m.viewList(decodeURIComponent(seg[1])));
@@ -282,13 +295,13 @@ export function dispatch() {
 	const seg = path.split("/").filter(Boolean); // e.g. ["tools","foo"]
 	if (path === "/") return loadHome().then((m) => m.viewHome());
 	if (seg[0] === "user" && seg[1] === "login") {
-		return signInPage(
+		return staticSignInPage(
 			t("router.signInTitle", "Sign in"),
 			t("router.signInLead", "Sign in to save favourites, build lists, and edit tool information.")
 		);
 	}
 	if (seg[0] === "user" && seg[1] === "logout") {
-		return signInPage(
+		return staticSignInPage(
 			t("router.signedOutTitle", "Signed out"),
 			t("router.signedOutLead", "You are signed out of this Toolhub prototype.")
 		);
@@ -300,8 +313,8 @@ export function dispatch() {
 	if (ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]) {
 		return ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]();
 	}
-	if (STATIC[/** @type {keyof typeof STATIC} */ (seg[0])]) return viewStatic(seg[0]);
-	return viewNotFound();
+	if (isStaticSlug(seg[0])) return loadStatic().then((m) => m.viewStatic(seg[0]));
+	return loadStatic().then((m) => m.viewNotFound());
 }
 /**
  * @param {string} pathHash

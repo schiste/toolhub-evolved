@@ -196,3 +196,12 @@ test("viewApiDocs shows the unavailable placeholder when the root cannot be read
 	assert.ok(view.html.includes("data-api-explorer"));
 	assert.ok(view.html.includes("Authenticated writes never go through that proxy"));
 });
+
+test("STATIC_SLUGS lists exactly the pages static.js can render", async () => {
+	// The router recognises a static route from this list without importing
+	// static.js — that is what keeps the largest module in the app out of the
+	// first paint. Two hand-kept copies drift, and the failure is a 404 on a
+	// real page, so recompute one from the other.
+	const { STATIC_SLUGS } = await import("../../public_html/views/static-routes.js");
+	assert.deepEqual([...STATIC_SLUGS].sort(), Object.keys(S.STATIC).sort());
+});
