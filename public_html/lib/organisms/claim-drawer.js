@@ -171,6 +171,7 @@ function showError(error) {
 	node.hidden = false;
 }
 
+/** @param {string} tool @param {number} generation */
 function isCurrent(tool, generation) {
 	return currentTool === tool && drawerGeneration === generation && !root()?.classList.contains("hidden");
 }
