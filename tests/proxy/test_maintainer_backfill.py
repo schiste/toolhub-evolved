@@ -13,7 +13,7 @@ from backend.author_claims import (  # noqa: E402
     ToolforgeMaintainerProvider,
     parse_toolsadmin_maintainer_entries,
 )
-from backend.models import MaintainerBackfillState, ToolMaintainerEdge, utcnow  # noqa: E402
+from backend.models import MaintainerBackfillState, PersonIdentifier, ToolRelationshipEvidence, utcnow  # noqa: E402
 import maintainer_backfill  # noqa: E402
 
 
@@ -77,8 +77,10 @@ def test_backfill_materializes_stable_public_edges_and_checkpoints(monkeypatch):
 
     assert summary == {"tools": 1, "maintainers": 1, "failed": 0, "requests": 1, "cycleComplete": True, "remaining": 0}
     with db.session_scope() as s:
-        edge = s.query(ToolMaintainerEdge).one()
-        assert edge.maintainer_key == "wiki:ada"
+        edge = s.query(ToolRelationshipEvidence).one()
+        identifier = s.query(PersonIdentifier).filter_by(person_id=edge.person_id).one()
+        assert identifier.namespace == "wiki_username"
+        assert identifier.normalized_value == "ada"
         assert edge.source == maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN
         state = s.get(MaintainerBackfillState, maintainer_backfill.STATE_KEY)
         assert state is not None
@@ -112,4 +114,4 @@ def test_failed_backfill_preserves_existing_evidence(monkeypatch):
 
     assert summary["failed"] == 1
     with db.session_scope() as s:
-        assert s.query(ToolMaintainerEdge).count() == 1
+        assert s.query(ToolRelationshipEvidence).count() == 1

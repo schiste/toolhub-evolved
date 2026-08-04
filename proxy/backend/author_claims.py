@@ -18,13 +18,14 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, unquote, urlparse
 
 import requests
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from backend import toolhub
 from backend.models import ToolAuthorClaim, ToolAuthorKey, User, utcnow
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
     AUTHOR_CLAIM_FAILED,
+    AUTHOR_CLAIM_REVOKED,
     AUTHOR_CLAIM_SIGNED_TOOLINFO,
     AUTHOR_CLAIM_STALE,
     AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
@@ -32,6 +33,9 @@ from backend.sync import (
     AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
     AUTHOR_CLAIM_UNVERIFIED,
     AUTHOR_CLAIM_VERIFIED,
+    PERSON_REL_AUTHOR,
+    PERSON_REL_MAINTAINER,
+    PERSON_REL_RECORD_OWNER,
     clean_author_claim_method,
     clean_author_claim_status,
     clean_error,
@@ -211,23 +215,38 @@ def claim_is_verified(status: str, method: str, *, expires_at: Any = None) -> bo
 
 def claim_payload(row: ToolAuthorClaim) -> dict:
     """Serialize one stored author claim into the resolver response contract."""
-    status = clean_author_claim_status(row.verification_status)
+    status = AUTHOR_CLAIM_REVOKED if row.revoked_at is not None else clean_author_claim_status(row.verification_status)
     method = clean_author_claim_method(row.verification_method)
     if status == AUTHOR_CLAIM_VERIFIED and _is_expired(row.expires_at):
         status = AUTHOR_CLAIM_STALE
     return {
+        "id": row.id,
         "toolName": row.tool_name,
         "authorName": row.author_name,
         "toolhubUsername": row.toolhub_username,
         "verificationStatus": status,
         "verificationMethod": method,
+        "requestedRelationship": row.requested_relationship or claim_relationship_for_method(method),
         "isVerified": claim_is_verified(status, method, expires_at=row.expires_at),
         "evidenceUrl": row.evidence_url or "",
         "evidencePayload": row.evidence_payload,
         "checkedAt": _iso(row.checked_at),
         "expiresAt": _iso(row.expires_at),
         "lastError": row.last_error or "",
+        "createdAt": _iso(row.created_at),
+        "updatedAt": _iso(row.updated_at),
+        "revokedAt": _iso(row.revoked_at),
     }
+
+
+def claim_relationship_for_method(method: str) -> str:
+    """Return the relationship a proof method is allowed to establish."""
+    clean_method = clean_author_claim_method(method)
+    if clean_method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
+        return PERSON_REL_RECORD_OWNER
+    if clean_method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
+        return PERSON_REL_AUTHOR
+    return PERSON_REL_MAINTAINER
 
 
 def record_author_claim(  # noqa: PLR0913 - claim rows intentionally carry explicit evidence fields
@@ -238,6 +257,7 @@ def record_author_claim(  # noqa: PLR0913 - claim rows intentionally carry expli
     toolhub_username: str,
     verification_status: str,
     verification_method: str,
+    user_id: int | None = None,
     evidence_url: str | None = None,
     evidence_payload: dict | None = None,
     expires_at: Any = None,  # noqa: ANN401
@@ -248,14 +268,23 @@ def record_author_claim(  # noqa: PLR0913 - claim rows intentionally carry expli
     status = clean_author_claim_status(verification_status)
     if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME and status == AUTHOR_CLAIM_VERIFIED:
         status = AUTHOR_CLAIM_UNVERIFIED
-    row = s.execute(
-        select(ToolAuthorClaim).where(
-            ToolAuthorClaim.tool_name == clean_string(tool_name),
-            ToolAuthorClaim.author_name == clean_string(author_name),
-            ToolAuthorClaim.toolhub_username == clean_string(toolhub_username),
-            ToolAuthorClaim.verification_method == method,
+    identity = and_(
+        ToolAuthorClaim.tool_name == clean_string(tool_name),
+        ToolAuthorClaim.author_name == clean_string(author_name),
+        ToolAuthorClaim.verification_method == method,
+    )
+    account = (
+        or_(
+            ToolAuthorClaim.user_id == user_id,
+            and_(
+                ToolAuthorClaim.user_id.is_(None),
+                ToolAuthorClaim.toolhub_username == clean_string(toolhub_username),
+            ),
         )
-    ).scalar_one_or_none()
+        if user_id is not None
+        else ToolAuthorClaim.toolhub_username == clean_string(toolhub_username)
+    )
+    row = s.execute(select(ToolAuthorClaim).where(identity, account)).scalar_one_or_none()
     if row is None:
         row = ToolAuthorClaim(
             tool_name=clean_string(tool_name),
@@ -264,12 +293,17 @@ def record_author_claim(  # noqa: PLR0913 - claim rows intentionally carry expli
             verification_method=method,
         )
         s.add(row)
+    row.user_id = user_id or row.user_id
+    row.toolhub_username = clean_string(toolhub_username)
     row.verification_status = status
+    row.requested_relationship = row.requested_relationship or claim_relationship_for_method(method)
+    row.revoked_at = None
     row.evidence_url = (evidence_url or "")[:MAX_EVIDENCE_URL] or None
     row.evidence_payload = evidence_payload
     row.checked_at = utcnow()
     row.expires_at = expires_at
     row.last_error = clean_error(last_error)
+    row.updated_at = utcnow()
     return row
 
 
@@ -294,6 +328,7 @@ class AuthorNameProvider:
                 tool_name=tool_name,
                 author_name=author_name,
                 toolhub_username=user.username,
+                user_id=user.id,
                 verification_status=AUTHOR_CLAIM_UNVERIFIED,
                 verification_method=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
                 evidence_url=evidence_url,
@@ -326,7 +361,7 @@ class ToolforgeMaintainerProvider:
         if not toolforge_names:
             return []
         names = dedupe_strings(author_names) or [user.username]
-        if self._fresh_rows_cover(s, user.username, tool_name, names):
+        if self._fresh_rows_cover(s, user, tool_name, names):
             return []
         for toolforge_name in toolforge_names:
             evidence_url = self.evidence_url(toolforge_name)
@@ -376,6 +411,7 @@ class ToolforgeMaintainerProvider:
             tool_name=tool_name,
             author_name=user.username,
             toolhub_username=user.username,
+            user_id=user.id,
             verification_status=AUTHOR_CLAIM_VERIFIED,
             verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
             evidence_url=self.evidence_url(toolforge_name),
@@ -398,11 +434,17 @@ class ToolforgeMaintainerProvider:
         )
         return response.status_code, response.text
 
-    def _fresh_rows_cover(self, s: Session, username: str, tool_name: str, author_names: list[str]) -> bool:
+    def _fresh_rows_cover(self, s: Session, user: User, tool_name: str, author_names: list[str]) -> bool:
         rows = s.execute(
             select(ToolAuthorClaim).where(
                 ToolAuthorClaim.tool_name == tool_name,
-                ToolAuthorClaim.toolhub_username == username,
+                or_(
+                    ToolAuthorClaim.user_id == user.id,
+                    and_(
+                        ToolAuthorClaim.user_id.is_(None),
+                        ToolAuthorClaim.toolhub_username == user.username,
+                    ),
+                ),
                 ToolAuthorClaim.verification_method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 ToolAuthorClaim.verification_status == AUTHOR_CLAIM_VERIFIED,
             )
@@ -427,14 +469,14 @@ class ToolforgeMaintainerProvider:
                 tool_name=tool_name,
                 author_name=author_name,
                 toolhub_username=user.username,
+                user_id=user.id,
                 verification_status=AUTHOR_CLAIM_VERIFIED,
                 verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 evidence_url=evidence_url,
                 evidence_payload={
                     "toolforgeToolName": toolforge_name,
                     "maintainers": [
-                        {"displayName": entry.display_name, "username": entry.username}
-                        for entry in maintainers
+                        {"displayName": entry.display_name, "username": entry.username} for entry in maintainers
                     ],
                 },
                 expires_at=expires_at,
@@ -458,6 +500,7 @@ class ToolforgeMaintainerProvider:
                 tool_name=tool_name,
                 author_name=author_name,
                 toolhub_username=user.username,
+                user_id=user.id,
                 verification_status=AUTHOR_CLAIM_FAILED,
                 verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 evidence_url=evidence_url,
@@ -494,6 +537,7 @@ class ToolhubWriteProvider:
                 tool_name=tool_name,
                 author_name=author_name,
                 toolhub_username=user.username,
+                user_id=user.id,
                 verification_status=AUTHOR_CLAIM_VERIFIED,
                 verification_method=AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
                 evidence_url=f"{toolhub.base_url()}/api/tools/{quote(tool_name, safe='')}/",
@@ -535,7 +579,7 @@ class SignedToolinfoProvider:
                 signature,
                 "unsupported signature algorithm",
             )
-        key = self._key_for_signature(s, user.username, signature)
+        key = self._key_for_signature(s, user, signature)
         if key is None:
             return self._record_failure(
                 s,
@@ -562,6 +606,7 @@ class SignedToolinfoProvider:
                 tool_name=tool_name,
                 author_name=author_name,
                 toolhub_username=user.username,
+                user_id=user.id,
                 verification_status=AUTHOR_CLAIM_VERIFIED,
                 verification_method=AUTHOR_CLAIM_SIGNED_TOOLINFO,
                 evidence_url=evidence_url,
@@ -575,15 +620,23 @@ class SignedToolinfoProvider:
             for author_name in author_names
         ]
 
-    def _key_for_signature(self, s: Session, username: str, signature: SignatureMeta) -> ToolAuthorKey | None:
-        return s.execute(
+    def _key_for_signature(self, s: Session, user: User, signature: SignatureMeta) -> ToolAuthorKey | None:
+        key = s.execute(
             select(ToolAuthorKey).where(
-                ToolAuthorKey.toolhub_username == username,
+                or_(
+                    ToolAuthorKey.user_id == user.id,
+                    and_(ToolAuthorKey.user_id.is_(None), ToolAuthorKey.toolhub_username == user.username),
+                ),
                 ToolAuthorKey.key_id == signature.key_id,
                 ToolAuthorKey.algorithm == signature.algorithm,
                 ToolAuthorKey.revoked_at.is_(None),
             )
         ).scalar_one_or_none()
+        if key is not None:
+            # Opportunistically migrate legacy username-owned keys on use.
+            key.user_id = user.id
+            key.toolhub_username = user.username
+        return key
 
     def _record_failure(  # noqa: PLR0913 - claim evidence is clearer as named arguments.
         self,
@@ -602,6 +655,7 @@ class SignedToolinfoProvider:
                 tool_name=tool_name,
                 author_name=author_name,
                 toolhub_username=user.username,
+                user_id=user.id,
                 verification_status=AUTHOR_CLAIM_FAILED,
                 verification_method=AUTHOR_CLAIM_SIGNED_TOOLINFO,
                 evidence_url=evidence_url,

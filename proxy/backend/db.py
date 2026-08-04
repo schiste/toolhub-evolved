@@ -53,6 +53,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "users": {
             "role": "VARCHAR(32) NOT NULL DEFAULT 'user'",
             "session_epoch": "INTEGER NOT NULL DEFAULT 0",
+            "person_id": "INTEGER NULL",
         },
         "toolhub_tokens": {
             "last_validated_at": "DATETIME NULL",
@@ -173,6 +174,33 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "canonical_tool_cache": {
             "search_text": f"{text_col} NULL",
         },
+        "people": {
+            # Filled by the one-off data migration. UUID generation is kept out
+            # of worker-start DDL because it is proportional to row count.
+            "public_id": "VARCHAR(36) NULL",
+        },
+        "person_identifiers": {
+            "identifier_kind": "VARCHAR(32) NOT NULL DEFAULT 'handle'",
+            "source": "VARCHAR(64) NOT NULL DEFAULT 'local'",
+            "is_current": f"BOOLEAN NOT NULL DEFAULT {true_default}",
+            "verified_at": "DATETIME NULL",
+            "last_seen_at": "DATETIME NULL",
+            "retired_at": "DATETIME NULL",
+            "updated_at": "DATETIME NULL",
+        },
+        "tool_author_claims": {
+            "user_id": "INTEGER NULL",
+            "requested_relationship": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "revoked_at": "DATETIME NULL",
+            "created_at": "DATETIME NULL",
+            "updated_at": "DATETIME NULL",
+        },
+        "tool_author_keys": {
+            "user_id": "INTEGER NULL",
+        },
+        "tool_relationship_evidence": {
+            "observed_name": "VARCHAR(255) NOT NULL DEFAULT ''",
+        },
         "toolinfo_discovery": {
             "payload": f"{json_col} NULL",
         },
@@ -181,9 +209,6 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "person_reconciliation_queue": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
-        },
-        "tool_maintainer_edges": {
-            "wiki_username": "VARCHAR(255) NOT NULL DEFAULT ''",
         },
         "tool_health_targets": {
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
@@ -229,7 +254,9 @@ def _upgrade_schema() -> None:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
         for table in ("repository_analysis_state", "person_reconciliation_queue"):
             if table in existing_tables:
-                conn.exec_driver_sql(f"UPDATE {table} SET attempts = 0 WHERE attempts IS NULL")
+                conn.exec_driver_sql(
+                    f"UPDATE {table} SET attempts = 0 WHERE attempts IS NULL"  # noqa: S608 - fixed allowlist
+                )
 
 
 def configure(url: str) -> None:
@@ -281,10 +308,13 @@ def advisory_lock(name: str, *, timeout_seconds: int = 0) -> Iterator[bool]:
     connection = engine().connect()
     acquired = False
     try:
-        acquired = connection.scalar(
-            text("SELECT GET_LOCK(:name, :timeout)"),
-            {"name": name, "timeout": max(0, int(timeout_seconds))},
-        ) == 1
+        acquired = (
+            connection.scalar(
+                text("SELECT GET_LOCK(:name, :timeout)"),
+                {"name": name, "timeout": max(0, int(timeout_seconds))},
+            )
+            == 1
+        )
         yield acquired
     finally:
         if acquired:

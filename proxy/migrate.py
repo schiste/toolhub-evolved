@@ -18,12 +18,21 @@ re-running this is cheap and safe, and a partial run simply resumes.
 import os
 import sys
 from dataclasses import dataclass
+from uuid import uuid4
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, inspect, or_, select, text
 
-from backend import DEFAULT_DB_URL, api_cache, canonical_tools, catalog_projection, db, maintainer_index
-from backend.models import ToolAuthorClaim, ToolMaintainerEdge, UserToolResolverCache
-from backend.sync import AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME, AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+from backend import DEFAULT_DB_URL, api_cache, canonical_tools, catalog_projection, db, maintainer_index, people_index
+from backend.author_claims import claim_relationship_for_method
+from backend.models import Person, PersonIdentifier, ToolAuthorClaim, ToolAuthorKey, User, UserToolResolverCache, utcnow
+from backend.sync import (
+    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+    AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+    PERSON_REL_AUTHOR,
+    PERSON_REL_CATALOG_ACTOR,
+    PERSON_REL_MAINTAINER,
+    PERSON_REL_RECORD_OWNER,
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,9 @@ def run_once() -> list[MigrationResult]:
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
         ),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
+        MigrationResult("people immutable ids and account links", _backfill_people_identity()),
+        MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
+        MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
 
 
@@ -73,30 +85,189 @@ def _clean_resolver_identity_claims() -> int:
         )
         affected_pairs = {(row.tool_name, row.toolhub_username) for row in rows}
         affected_tools = {tool_name for tool_name, _username in affected_pairs}
-        affected_keys = [maintainer_index.maintainer_key(toolhub_username=username) for _tool, username in affected_pairs]
         for row in rows:
             s.delete(row)
         if not rows:
             return 0
-        edge_count = 0
-        for tool_name, username in affected_pairs:
-            edge_count += int(
-                s.execute(
-                    ToolMaintainerEdge.__table__.delete().where(
-                        ToolMaintainerEdge.tool_name == tool_name,
-                        ToolMaintainerEdge.toolhub_username == username,
-                        ToolMaintainerEdge.source == maintainer_index.SOURCE_AUTHOR_CLAIM,
-                        ToolMaintainerEdge.method.in_(
-                            {AUTHOR_CLAIM_TOOLFORGE_MAINTAINER, AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME}
-                        ),
-                    )
-                ).rowcount
-                or 0
+        legacy_edge_count = 0
+        if "tool_maintainer_edges" in inspect(db.engine()).get_table_names():
+            statement = text(
+                "DELETE FROM tool_maintainer_edges "
+                "WHERE tool_name = :tool_name AND lower(toolhub_username) = :username "
+                "AND source = :source AND method IN (:toolforge_method, :display_method)"
             )
+            for tool_name, username in affected_pairs:
+                legacy_edge_count += int(
+                    s.execute(
+                        statement,
+                        {
+                            "tool_name": tool_name,
+                            "username": username.casefold(),
+                            "source": maintainer_index.SOURCE_AUTHOR_CLAIM,
+                            "toolforge_method": AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                            "display_method": AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+                        },
+                    ).rowcount
+                    or 0
+                )
         maintainer_index.sync_author_claim_edges(s, tool_names=sorted(affected_tools))
-        maintainer_index.refresh_activity_rollups(s, maintainer_keys=affected_keys)
         cache_count = s.query(UserToolResolverCache).delete(synchronize_session=False)
-        return len(rows) + edge_count + int(cache_count or 0)
+        return len(rows) + legacy_edge_count + int(cache_count or 0)
+
+
+def _backfill_people_identity() -> int:
+    """Assign opaque ids, classify identifiers, and link OAuth accounts."""
+    touched = 0
+    now = utcnow()
+    with db.session_scope() as s:
+        for person in s.execute(select(Person).order_by(Person.id)).scalars():
+            if not person.public_id:
+                person.public_id = str(uuid4())
+                touched += 1
+        for identifier in s.execute(select(PersonIdentifier).order_by(PersonIdentifier.id)).scalars():
+            namespace_map = {"toolhub": people_index.NS_TOOLHUB_USERNAME, "wiki": people_index.NS_WIKI_USERNAME}
+            namespace = namespace_map.get(identifier.namespace, identifier.namespace)
+            kind = (
+                people_index.IDENTIFIER_STABLE
+                if namespace == people_index.NS_TOOLHUB_USER_ID
+                else people_index.IDENTIFIER_HANDLE
+            )
+            if (
+                identifier.namespace != namespace
+                or identifier.identifier_kind != kind
+                or identifier.last_seen_at is None
+            ):
+                identifier.namespace = namespace
+                identifier.identifier_kind = kind
+                identifier.source = identifier.source or "legacy_people_projection"
+                identifier.is_current = True
+                identifier.last_seen_at = identifier.last_seen_at or identifier.created_at or now
+                identifier.updated_at = now
+                touched += 1
+        users = list(s.execute(select(User).order_by(User.id)).scalars())
+        for user in users:
+            old_person_id = user.person_id
+            people_index.link_user(s, user)
+            touched += int(old_person_id != user.person_id)
+        touched += _backfill_account_owned_records(s, users)
+    inspector = inspect(db.engine())
+
+    def has_unique_column(table: str, column: str) -> bool:
+        indexes = inspector.get_indexes(table)
+        constraints = inspector.get_unique_constraints(table)
+        return any(index.get("unique") and index.get("column_names") == [column] for index in indexes) or any(
+            constraint.get("column_names") == [column] for constraint in constraints
+        )
+
+    with db.engine().begin() as connection:
+        if not has_unique_column("people", "public_id"):
+            connection.exec_driver_sql("CREATE UNIQUE INDEX ux_people_public_id ON people (public_id)")
+        if not has_unique_column("users", "person_id"):
+            connection.exec_driver_sql("CREATE UNIQUE INDEX ux_users_person_id ON users (person_id)")
+    return touched
+
+
+def _backfill_account_owned_records(s, users: list[User]) -> int:  # noqa: ANN001 - SQLAlchemy session
+    """Move legacy claim/key ownership from mutable handles to account ids."""
+    touched = 0
+    users_by_id = {user.id: user for user in users}
+    users_by_handle = {user.username.casefold(): user for user in users}
+    for model in (ToolAuthorClaim, ToolAuthorKey):
+        for row in s.execute(select(model).order_by(model.id)).scalars():
+            owner = (
+                users_by_id.get(row.user_id)
+                if row.user_id is not None
+                else users_by_handle.get(row.toolhub_username.casefold())
+            )
+            if owner is not None and (row.user_id != owner.id or row.toolhub_username != owner.username):
+                row.user_id = owner.id
+                row.toolhub_username = owner.username
+                touched += 1
+            if model is ToolAuthorClaim:
+                changed = False
+                if not row.requested_relationship:
+                    row.requested_relationship = claim_relationship_for_method(row.verification_method)
+                    changed = True
+                if row.created_at is None:
+                    row.created_at = row.checked_at or utcnow()
+                    changed = True
+                if row.updated_at is None:
+                    row.updated_at = row.checked_at or row.created_at
+                    changed = True
+                touched += int(changed)
+    return touched
+
+
+def _legacy_role(source: str, method: str) -> str:
+    if source == maintainer_index.SOURCE_TOOLHUB_AUTHOR:
+        return PERSON_REL_AUTHOR
+    if source == maintainer_index.SOURCE_TOOLHUB_ACTOR:
+        return PERSON_REL_CATALOG_ACTOR
+    if method == "toolhub_write_access":
+        return PERSON_REL_RECORD_OWNER
+    if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
+        return PERSON_REL_AUTHOR
+    return PERSON_REL_MAINTAINER
+
+
+def _backfill_relationship_evidence() -> int:
+    """Backfill evidence from canonical Toolhub cache, claims, and old edges."""
+    touched = 0
+    with db.session_scope() as s:
+        canonical_rows = s.execute(text("SELECT tool_name, record FROM canonical_tool_cache")).mappings().all()
+        for row in canonical_rows:
+            record = row["record"]
+            if isinstance(record, str):
+                import json  # noqa: PLC0415 - only needed by the one-off migration
+
+                record = json.loads(record)
+            if isinstance(record, dict):
+                touched += len(maintainer_index.replace_toolhub_metadata_edges(s, row["tool_name"], record))
+        claim_tools = [row[0] for row in s.execute(select(ToolAuthorClaim.tool_name).distinct()).all()]
+        touched += len(maintainer_index.sync_author_claim_edges(s, tool_names=claim_tools))
+
+        if "tool_maintainer_edges" not in inspect(db.engine()).get_table_names():
+            return touched
+        legacy = s.execute(text("SELECT * FROM tool_maintainer_edges ORDER BY tool_name, id")).mappings().all()
+        grouped: dict[tuple[str, str], list[dict]] = {}
+        for row in legacy:
+            source = str(row.get("source") or "legacy_maintainer_edge")
+            method = str(row.get("method") or "")
+            grouped.setdefault((str(row["tool_name"]), source), []).append(
+                {
+                    "display_name": row.get("maintainer_display_name") or row.get("author_name") or "",
+                    "toolhub_username": row.get("toolhub_username") or "",
+                    "wiki_username": row.get("wiki_username") or "",
+                    "relationship_type": _legacy_role(source, method),
+                    "method": method,
+                    "evidence_key": str(row.get("id") or ""),
+                    "verification_status": row.get("verification_status") or "unverified",
+                    "confidence": row.get("confidence") or 0,
+                    "toolhub_canonical": source.startswith("toolhub_"),
+                    "evidence_url": row.get("evidence_url"),
+                    "evidence_payload": row.get("evidence_payload"),
+                    "first_seen_at": row.get("first_seen_at"),
+                    "checked_at": row.get("checked_at"),
+                    "expires_at": row.get("expires_at"),
+                    "last_error": row.get("last_error"),
+                }
+            )
+        for (tool_name, source), observations in grouped.items():
+            touched += len(people_index.replace_source_evidence(s, tool_name, source, observations))
+    return touched
+
+
+def _retire_legacy_people_tables() -> int:
+    """Drop obsolete projections after their evidence has been migrated."""
+    legacy_tables = ("tool_person_relationships", "maintainer_activity_rollups", "tool_maintainer_edges")
+    existing = set(inspect(db.engine()).get_table_names())
+    retired = 0
+    with db.engine().begin() as connection:
+        for table in legacy_tables:
+            if table in existing:
+                connection.exec_driver_sql(f"DROP TABLE {table}")
+                retired += 1
+    return retired
 
 
 def main(argv: list[str] | None = None) -> int:

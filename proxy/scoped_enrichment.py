@@ -12,13 +12,13 @@ from urllib.parse import quote
 
 from sqlalchemy import func, select
 
-from backend import DEFAULT_DB_URL, db, maintainer_index, toolhub, toolinfo_discovery, toolinfo_sources
+from backend import DEFAULT_DB_URL, db, maintainer_index, people_index, toolhub, toolinfo_discovery, toolinfo_sources
 from backend.author_claims import (
     AuthorNameProvider,
     ToolforgeMaintainerProvider,
     claim_payload,
 )
-from backend.models import MaintainerActivityRollup, ToolAuthorClaim, ToolMaintainerEdge, User
+from backend.models import PersonActivitySummary, ToolAuthorClaim, ToolPersonRelationship, User
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -49,6 +49,7 @@ def _existing_user(username: str) -> User:
             id=user.id,
             wm_sub=user.wm_sub,
             username=user.username,
+            person_id=user.person_id,
             role=user.role,
             registered_at=user.registered_at,
         )
@@ -111,7 +112,7 @@ def _record_scoped_claims(user: User, tool_name: str, entry: dict[str, Any]) -> 
             s.execute(
                 select(ToolAuthorClaim).where(
                     ToolAuthorClaim.tool_name == tool_name,
-                    ToolAuthorClaim.toolhub_username == stored_user.username,
+                    ToolAuthorClaim.user_id == stored_user.id,
                 )
             ).scalars()
         )
@@ -122,36 +123,36 @@ def _public_maintainer_summary(tool_name: str, tool: dict[str, Any]) -> dict[str
     with db.session_scope() as s:
         metadata_edges = maintainer_index.replace_toolhub_metadata_edges(s, tool_name, tool)
         claim_edges = maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
-        keys = [
+        person_ids = {
             row[0]
             for row in s.execute(
-                select(ToolMaintainerEdge.maintainer_key).where(ToolMaintainerEdge.tool_name == tool_name).distinct()
+                select(ToolPersonRelationship.person_id).where(ToolPersonRelationship.tool_name == tool_name).distinct()
             ).all()
-        ]
-        rollups = maintainer_index.refresh_activity_rollups(s, maintainer_keys=keys)
+        }
+        summaries = people_index.refresh_activity_summaries(s, person_ids=person_ids)
         summary = maintainer_index.public_tool_summary(s, tool_name)
         stored_rollups = list(
-            s.execute(select(MaintainerActivityRollup).where(MaintainerActivityRollup.maintainer_key.in_(keys or [""])))
+            s.execute(select(PersonActivitySummary).where(PersonActivitySummary.person_id.in_(person_ids or {-1})))
             .scalars()
             .all()
         )
     return {
         "metadataEdgesRefreshed": len(metadata_edges),
         "claimEdgesRefreshed": len(claim_edges),
-        "activityRollupsForToolKeys": len(rollups),
-        "storedActivityRollupsForToolKeys": len(stored_rollups),
+        "activitySummariesForPeople": len(summaries),
+        "storedActivitySummariesForPeople": len(stored_rollups),
         "maintainerSummary": summary,
     }
 
 
-def _scoped_claim_count(tool_name: str, username: str) -> int:
+def _scoped_claim_count(tool_name: str, user_id: int) -> int:
     with db.session_scope() as s:
         return s.scalar(
             select(func.count())
             .select_from(ToolAuthorClaim)
             .where(
                 ToolAuthorClaim.tool_name == tool_name,
-                func.lower(ToolAuthorClaim.toolhub_username) == username.casefold(),
+                ToolAuthorClaim.user_id == user_id,
             )
         )
 
@@ -173,7 +174,7 @@ def _run(username: str, tool_name: str, toolforge_name: str) -> dict[str, Any]:
         "resolverCounts": {"verified": 1 if verified_claims else 0, "possible": 0 if verified_claims else 1},
         "toolinfoDiscovery": discoveries_by_tool.get(tool_name),
         "toolinfoSource": sources_by_tool.get(tool_name),
-        "claimCountForScopedUserAndTool": _scoped_claim_count(tool_name, username),
+        "claimCountForScopedUserAndTool": _scoped_claim_count(tool_name, user.id),
         **maintainer_payload,
     }
 

@@ -1,31 +1,25 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Derived maintainer graph and local activity rollups.
+"""Relationship-evidence ingestion and compatibility health summaries.
 
-This module does not define canonical maintainer truth. It consolidates public
-Toolhub metadata, Toolforge/signed-toolinfo/write-access author claims, and
-local Evolved activity into auditable summaries that can feed health scoring.
+The module name is retained for internal callers, but the former maintainer
+edge and username-rollup projections no longer exist. Toolhub catalog metadata
+is recorded as canonical upstream evidence; Evolved claims and Toolsadmin are
+complementary evidence and never grant Toolhub permissions.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 
 from backend import people_index
-from backend.author_claims import ToolsadminMaintainer, dedupe_strings
 from backend.models import (
-    ActivityRow,
-    CrawlerUrl,
-    MaintainerActivityRollup,
-    SourceAnalysisReport,
+    PersonActivitySummary,
     ToolAuthorClaim,
-    ToolAuthorKey,
-    ToolList,
-    ToolMaintainerEdge,
-    ToolOverlay,
-    ToolRecord,
+    ToolPersonRelationship,
+    ToolRelationshipEvidence,
     User,
     utcnow,
 )
@@ -39,8 +33,11 @@ from backend.sync import (
     AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
     AUTHOR_CLAIM_UNVERIFIED,
     AUTHOR_CLAIM_VERIFIED,
+    PERSON_REL_AUTHOR,
+    PERSON_REL_CATALOG_ACTOR,
+    PERSON_REL_MAINTAINER,
+    PERSON_REL_RECORD_OWNER,
     SOURCE_LOCAL,
-    SOURCE_OFFICIAL,
     SYNC_EVOLVED_REAL,
     clean_author_claim_method,
     clean_author_claim_status,
@@ -49,18 +46,15 @@ from backend.sync import (
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from backend.author_claims import ToolsadminMaintainer
+
 SOURCE_AUTHOR_CLAIM = "evolved_author_claim"
 SOURCE_TOOLHUB_AUTHOR = "toolhub_author_metadata"
 SOURCE_TOOLHUB_ACTOR = "toolhub_catalog_actor"
 SOURCE_TOOLFORGE_TOOLSADMIN = "toolforge_toolsadmin"
 METHOD_TOOLHUB_AUTHOR = "toolhub_author_metadata"
-METHOD_TOOLHUB_ACTOR = "toolhub_catalog_actor"
-ACTIVE_DAYS = 90
-QUIET_DAYS = 365
-STALE_DAYS = 730
-RECENT_ACTIVITY_DAYS = 90
-ROLLUP_STALE_DAYS = 7
-MAX_PUBLIC_MAINTAINERS = 20
+METHOD_TOOLHUB_CREATED_BY = "toolhub_created_by"
+METHOD_TOOLHUB_MODIFIED_BY = "toolhub_modified_by"
 VERIFIED_CONFIDENCE_MIN = 70
 VERIFIED_STATUS_CONFIDENCE_MIN = 85
 CLAIM_RANK_MIN = datetime.min.replace(tzinfo=UTC).replace(tzinfo=None)
@@ -80,18 +74,8 @@ STATUS_MULTIPLIER = {
 }
 
 
-def clean_text(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - untrusted API/user JSON
-    """Return a bounded stripped string."""
+def clean_text(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - untrusted source data
     return str(value or "").strip()[:limit]
-
-
-def maintainer_key(*, toolhub_username: str = "", wiki_username: str = "", display_name: str = "") -> str:
-    """Return a stable, namespaced maintainer key."""
-    if toolhub_username:
-        return f"toolhub:{toolhub_username.casefold()}"
-    if wiki_username:
-        return f"wiki:{wiki_username.casefold()}"
-    return f"author:{display_name.casefold()}"
 
 
 def _claim_status(row: ToolAuthorClaim) -> str:
@@ -103,147 +87,106 @@ def _claim_status(row: ToolAuthorClaim) -> str:
 
 def _claim_confidence(row: ToolAuthorClaim) -> int:
     method = clean_author_claim_method(row.verification_method)
-    status = _claim_status(row)
-    return round(CLAIM_CONFIDENCE.get(method, 20) * STATUS_MULTIPLIER.get(status, 0.5))
+    return round(CLAIM_CONFIDENCE.get(method, 20) * STATUS_MULTIPLIER.get(_claim_status(row), 0.5))
 
 
-def _claim_edge_identity(row: ToolAuthorClaim) -> tuple[str, str, str, str]:
-    """Return the public maintainer edge identity a claim writes to."""
-    username = clean_text(row.toolhub_username)
-    author_name = clean_text(row.author_name)
+def _claim_identity(row: ToolAuthorClaim) -> tuple[str, str, str]:
     return (
         clean_text(row.tool_name),
-        maintainer_key(toolhub_username=username, display_name=author_name),
-        SOURCE_AUTHOR_CLAIM,
+        f"user:{row.user_id}" if row.user_id is not None else f"username:{clean_text(row.toolhub_username).casefold()}",
         clean_author_claim_method(row.verification_method),
     )
 
 
-def _claim_rank(row: ToolAuthorClaim) -> tuple[int, datetime]:
-    """Return a deterministic freshness-aware rank for duplicate public edges."""
-    return (_claim_confidence(row), row.checked_at or CLAIM_RANK_MIN)
-
-
 def _best_claim_rows(rows: list[ToolAuthorClaim]) -> list[ToolAuthorClaim]:
-    """Collapse raw claims to the strongest claim for each public edge identity."""
-    best: dict[tuple[str, str, str, str], ToolAuthorClaim] = {}
+    best: dict[tuple[str, str, str], ToolAuthorClaim] = {}
     for row in rows:
-        identity = _claim_edge_identity(row)
+        identity = _claim_identity(row)
         current = best.get(identity)
-        if current is None or _claim_rank(row) > _claim_rank(current):
+        rank = (_claim_confidence(row), row.checked_at or CLAIM_RANK_MIN)
+        current_rank = (_claim_confidence(current), current.checked_at or CLAIM_RANK_MIN) if current else None
+        if current_rank is None or rank > current_rank:
             best[identity] = row
     return [best[key] for key in sorted(best)]
 
 
-def _edge_status_value(edge: ToolMaintainerEdge) -> str:
-    """Return an edge status that respects evidence expiry at read time."""
-    status = edge.verification_status or AUTHOR_CLAIM_UNVERIFIED
-    if status == AUTHOR_CLAIM_VERIFIED and edge.expires_at is not None and edge.expires_at <= utcnow():
-        return AUTHOR_CLAIM_STALE
-    return status
+def _claim_role(row: ToolAuthorClaim) -> str:
+    if row.requested_relationship in {
+        PERSON_REL_AUTHOR,
+        PERSON_REL_MAINTAINER,
+        PERSON_REL_RECORD_OWNER,
+        PERSON_REL_CATALOG_ACTOR,
+    }:
+        return row.requested_relationship
+    method = clean_author_claim_method(row.verification_method)
+    if method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
+        return PERSON_REL_RECORD_OWNER
+    if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
+        return PERSON_REL_AUTHOR
+    return PERSON_REL_MAINTAINER
 
 
-def _edge_status(edges: list[ToolMaintainerEdge]) -> str:
-    if not edges:
-        return "unknown"
-    fresh_verified = [edge.confidence for edge in edges if _edge_status_value(edge) == AUTHOR_CLAIM_VERIFIED]
-    if fresh_verified:
-        best = max(fresh_verified)
-    else:
-        best = max((edge.confidence for edge in edges if _edge_status_value(edge) != AUTHOR_CLAIM_FAILED), default=0)
-    if best >= VERIFIED_STATUS_CONFIDENCE_MIN:
-        return "probable" if not fresh_verified else "verified"
-    if best >= VERIFIED_CONFIDENCE_MIN:
-        return "probable"
-    return "candidate"
-
-
-def _activity_status(age_days: int | None) -> str:
-    if age_days is None:
-        return "unknown"
-    if age_days <= ACTIVE_DAYS:
-        return "active"
-    if age_days <= QUIET_DAYS:
-        return "quiet"
-    if age_days <= STALE_DAYS:
-        return "stale"
-    return "dormant"
-
-
-def _upsert_edge(  # noqa: PLR0913 - maintainer edges intentionally carry explicit provenance fields.
+def sync_author_claim_edges(
     s: Session,
     *,
-    tool_name: str,
-    key: str,
-    display_name: str,
-    toolhub_username: str = "",
-    wiki_username: str = "",
-    author_name: str = "",
-    source: str,
-    method: str,
-    verification_status: str,
-    confidence: int,
-    evidence_url: str | None = None,
-    evidence_payload: dict | None = None,
-    checked_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime field passthrough
-    expires_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime field passthrough
-    last_error: str | None = None,
-) -> ToolMaintainerEdge:
-    """Upsert one maintainer edge."""
-    now = utcnow()
-    row = s.execute(
-        select(ToolMaintainerEdge).where(
-            ToolMaintainerEdge.tool_name == tool_name,
-            ToolMaintainerEdge.maintainer_key == key,
-            ToolMaintainerEdge.source == source,
-            ToolMaintainerEdge.method == method,
+    tool_names: list[str] | None = None,
+    usernames: list[str] | None = None,
+    user_ids: list[int] | None = None,
+) -> list[ToolRelationshipEvidence]:
+    """Replace Evolved claim evidence for the requested tools."""
+    query = select(ToolAuthorClaim).where(ToolAuthorClaim.revoked_at.is_(None))
+    if tool_names:
+        query = query.where(ToolAuthorClaim.tool_name.in_(tool_names))
+    if usernames:
+        query = query.where(ToolAuthorClaim.toolhub_username.in_(usernames))
+    if user_ids:
+        query = query.where(ToolAuthorClaim.user_id.in_(user_ids))
+    claims = _best_claim_rows(list(s.execute(query).scalars()))
+    users_by_id = {
+        user.id: user
+        for user in s.execute(
+            select(User).where(User.id.in_({claim.user_id for claim in claims if claim.user_id}))
+        ).scalars()
+    }
+    for username in {clean_text(claim.toolhub_username) for claim in claims if claim.user_id is None}:
+        for user in s.execute(select(User).where(func.lower(User.username) == username.casefold())).scalars():
+            claim_rows = [
+                claim
+                for claim in claims
+                if claim.user_id is None and clean_text(claim.toolhub_username).casefold() == username.casefold()
+            ]
+            for claim in claim_rows:
+                claim.user_id = user.id
+                claim.toolhub_username = user.username
+            users_by_id[user.id] = user
+    for user in users_by_id.values():
+        people_index.link_user(s, user)
+    by_tool: dict[str, list[dict[str, Any]]] = {}
+    for claim in claims:
+        method = clean_author_claim_method(claim.verification_method)
+        user = users_by_id.get(claim.user_id) if claim.user_id is not None else None
+        by_tool.setdefault(clean_text(claim.tool_name), []).append(
+            {
+                "display_name": clean_text((user.username if user else claim.toolhub_username) or claim.author_name),
+                "toolhub_user_id": clean_text(user.wm_sub) if user else "",
+                "toolhub_username": clean_text(user.username if user else claim.toolhub_username),
+                "relationship_type": _claim_role(claim),
+                "method": method,
+                "evidence_key": clean_text(claim.author_name),
+                "verification_status": _claim_status(claim),
+                "confidence": _claim_confidence(claim),
+                "evidence_url": claim.evidence_url,
+                "evidence_payload": claim.evidence_payload,
+                "checked_at": claim.checked_at,
+                "expires_at": claim.expires_at,
+                "last_error": claim.last_error,
+            }
         )
-    ).scalar_one_or_none()
-    if row is None:
-        row = ToolMaintainerEdge(
-            tool_name=tool_name,
-            maintainer_key=key,
-            source=source,
-            method=method,
-            first_seen_at=now,
-        )
-        s.add(row)
-    row.maintainer_display_name = display_name
-    row.toolhub_username = toolhub_username
-    row.wiki_username = wiki_username
-    row.author_name = author_name
-    row.verification_status = verification_status
-    row.confidence = max(0, min(100, confidence))
-    row.evidence_url = evidence_url[:2000] if evidence_url else None
-    row.evidence_payload = evidence_payload
-    row.checked_at = checked_at or now
-    row.expires_at = expires_at
-    row.last_error = last_error[:2000] if last_error else None
-    return row
-
-
-def upsert_edge_from_claim(s: Session, row: ToolAuthorClaim) -> ToolMaintainerEdge:
-    """Upsert an edge from one existing author claim."""
-    username = clean_text(row.toolhub_username)
-    author_name = clean_text(row.author_name)
-    display = username or author_name
-    return _upsert_edge(
-        s,
-        tool_name=clean_text(row.tool_name),
-        key=maintainer_key(toolhub_username=username, display_name=author_name),
-        display_name=display,
-        toolhub_username=username,
-        author_name=author_name,
-        source=SOURCE_AUTHOR_CLAIM,
-        method=clean_author_claim_method(row.verification_method),
-        verification_status=_claim_status(row),
-        confidence=_claim_confidence(row),
-        evidence_url=row.evidence_url,
-        evidence_payload=row.evidence_payload,
-        checked_at=row.checked_at,
-        expires_at=row.expires_at,
-        last_error=row.last_error,
-    )
+    affected = {clean_text(name) for name in (tool_names or []) if clean_text(name)} | set(by_tool)
+    rows: list[ToolRelationshipEvidence] = []
+    for tool_name in sorted(affected):
+        rows.extend(people_index.replace_source_evidence(s, tool_name, SOURCE_AUTHOR_CLAIM, by_tool.get(tool_name, [])))
+    return rows
 
 
 def replace_toolforge_maintainer_edges(
@@ -253,303 +196,154 @@ def replace_toolforge_maintainer_edges(
     *,
     checked_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime passthrough
     expires_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime passthrough
-) -> list[ToolMaintainerEdge]:
-    """Replace public Toolsadmin maintainer evidence for one canonical tool."""
-    clean_tool_name = clean_text(tool_name)
-    if not clean_tool_name:
-        return []
-    s.execute(
-        delete(ToolMaintainerEdge).where(
-            ToolMaintainerEdge.tool_name == clean_tool_name,
-            ToolMaintainerEdge.source == SOURCE_TOOLFORGE_TOOLSADMIN,
-        )
-    )
-    now = checked_at or utcnow()
-    edges: list[ToolMaintainerEdge] = []
+) -> list[ToolRelationshipEvidence]:
+    """Replace Toolsadmin operational-maintainer evidence for one tool."""
+    observations = []
     for toolforge_name, maintainers, evidence_url in pages:
         for maintainer in maintainers:
-            display_name = clean_text(maintainer.display_name)
-            wiki_username = clean_text(maintainer.username)
-            if not display_name:
+            display = clean_text(maintainer.display_name)
+            if not display:
                 continue
-            edges.append(
-                _upsert_edge(
-                    s,
-                    tool_name=clean_tool_name,
-                    key=maintainer_key(wiki_username=wiki_username, display_name=display_name),
-                    display_name=display_name,
-                    wiki_username=wiki_username,
-                    author_name=display_name,
-                    source=SOURCE_TOOLFORGE_TOOLSADMIN,
-                    method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-                    verification_status=AUTHOR_CLAIM_VERIFIED,
-                    confidence=CLAIM_CONFIDENCE[AUTHOR_CLAIM_TOOLFORGE_MAINTAINER],
-                    evidence_url=evidence_url,
-                    evidence_payload={
+            observations.append(
+                {
+                    "display_name": display,
+                    "wiki_username": clean_text(maintainer.username),
+                    "relationship_type": PERSON_REL_MAINTAINER,
+                    "method": AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    "evidence_key": clean_text(toolforge_name),
+                    "verification_status": AUTHOR_CLAIM_VERIFIED,
+                    "confidence": CLAIM_CONFIDENCE[AUTHOR_CLAIM_TOOLFORGE_MAINTAINER],
+                    "evidence_url": evidence_url,
+                    "evidence_payload": {
                         "toolforgeToolName": toolforge_name,
-                        "profileUsername": wiki_username,
+                        "profileUsername": clean_text(maintainer.username),
                     },
-                    checked_at=now,
-                    expires_at=expires_at,
-                )
+                    "checked_at": checked_at,
+                    "expires_at": expires_at,
+                }
             )
-    refresh_activity_rollups(s, maintainer_keys=[edge.maintainer_key for edge in edges])
-    people_index.sync_tool_people(s, clean_tool_name)
-    return edges
+    return people_index.replace_source_evidence(s, tool_name, SOURCE_TOOLFORGE_TOOLSADMIN, observations)
 
 
-def sync_author_claim_edges(
-    s: Session, *, tool_names: list[str] | None = None, usernames: list[str] | None = None
-) -> list[ToolMaintainerEdge]:
-    """Refresh maintainer edges from stored Evolved author claims."""
-    query = select(ToolAuthorClaim)
-    if tool_names:
-        query = query.where(ToolAuthorClaim.tool_name.in_(tool_names))
-    if usernames:
-        query = query.where(ToolAuthorClaim.toolhub_username.in_(usernames))
-    rows = _best_claim_rows(list(s.execute(query).scalars()))
-    edges = [upsert_edge_from_claim(s, row) for row in rows]
-    refresh_activity_rollups(s, maintainer_keys=[edge.maintainer_key for edge in edges])
-    affected_tools = {clean_text(name) for name in (tool_names or []) if clean_text(name)}
-    affected_tools.update(edge.tool_name for edge in edges)
-    for name in sorted(affected_tools):
-        people_index.sync_tool_people(s, name)
-    return edges
-
-
-def _toolhub_author_rows(tool: dict) -> list[dict[str, str]]:
+def _toolhub_observations(tool: dict[str, Any]) -> list[dict[str, Any]]:
     raw_authors = tool.get("author")
     authors = raw_authors if isinstance(raw_authors, list) else [raw_authors]
-    rows: list[dict[str, str]] = []
-    for author in authors:
+    observations: list[dict[str, Any]] = []
+    for index, author in enumerate(authors):
         if isinstance(author, dict):
             display = clean_text(author.get("name") or author.get("developer_username") or author.get("wiki_username"))
-            developer = clean_text(author.get("developer_username"))
-            wiki = clean_text(author.get("wiki_username"))
-            if display:
-                rows.append({"display": display, "toolhub": developer, "wiki": wiki, "method": METHOD_TOOLHUB_AUTHOR})
-        elif isinstance(author, str | int | float):
+            toolhub_username = clean_text(author.get("developer_username"))
+            wiki_username = clean_text(author.get("wiki_username"))
+        else:
             display = clean_text(author)
-            if display:
-                rows.append({"display": display, "toolhub": "", "wiki": "", "method": METHOD_TOOLHUB_AUTHOR})
-    for actor_key in ("created_by", "modified_by"):
-        actor = tool.get(actor_key)
-        if isinstance(actor, dict):
-            username = clean_text(actor.get("username"))
-            if username:
-                rows.append({"display": username, "toolhub": username, "wiki": "", "method": METHOD_TOOLHUB_ACTOR})
+            toolhub_username = ""
+            wiki_username = ""
+        if display:
+            observations.append(
+                {
+                    "display_name": display,
+                    "source": SOURCE_TOOLHUB_AUTHOR,
+                    "toolhub_username": toolhub_username,
+                    "wiki_username": wiki_username,
+                    "relationship_type": PERSON_REL_AUTHOR,
+                    "method": METHOD_TOOLHUB_AUTHOR,
+                    "evidence_key": str(index),
+                    "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 45,
+                    "toolhub_canonical": True,
+                    "evidence_payload": {"toolhubField": "author"},
+                }
+            )
+    for field, method in (("created_by", METHOD_TOOLHUB_CREATED_BY), ("modified_by", METHOD_TOOLHUB_MODIFIED_BY)):
+        actor = tool.get(field)
+        if not isinstance(actor, dict):
+            continue
+        username = clean_text(actor.get("username"))
+        user_id = clean_text(actor.get("id"), 64)
+        if username or user_id:
+            observations.append(
+                {
+                    "display_name": username,
+                    "source": SOURCE_TOOLHUB_ACTOR,
+                    "toolhub_user_id": user_id,
+                    "toolhub_username": username,
+                    # Catalog actors are observations, not ownership grants.
+                    "relationship_type": PERSON_REL_CATALOG_ACTOR,
+                    "method": method,
+                    "evidence_key": field,
+                    "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 55,
+                    "toolhub_canonical": True,
+                    "evidence_payload": {"toolhubField": field},
+                }
+            )
+    return observations
+
+
+def replace_toolhub_metadata_edges(s: Session, tool_name: str, tool: dict[str, Any]) -> list[ToolRelationshipEvidence]:
+    """Project canonical Toolhub author and actor fields into evidence."""
+    observations = _toolhub_observations(tool)
+    rows = people_index.replace_source_evidence(
+        s,
+        tool_name,
+        SOURCE_TOOLHUB_AUTHOR,
+        [row for row in observations if row["source"] == SOURCE_TOOLHUB_AUTHOR],
+    )
+    rows.extend(
+        people_index.replace_source_evidence(
+            s,
+            tool_name,
+            SOURCE_TOOLHUB_ACTOR,
+            [row for row in observations if row["source"] == SOURCE_TOOLHUB_ACTOR],
+        )
+    )
     return rows
 
 
-def replace_toolhub_metadata_edges(s: Session, tool_name: str, tool: dict) -> list[ToolMaintainerEdge]:
-    """Replace weak official Toolhub metadata edges for one tool."""
-    clean_tool_name = clean_text(tool_name or tool.get("name"))
-    if not clean_tool_name:
-        return []
-    s.execute(
-        delete(ToolMaintainerEdge).where(
-            ToolMaintainerEdge.tool_name == clean_tool_name,
-            ToolMaintainerEdge.source.in_({SOURCE_TOOLHUB_AUTHOR, SOURCE_TOOLHUB_ACTOR}),
-        )
+def activity_payload(row: PersonActivitySummary | None) -> dict[str, Any]:
+    return people_index.activity_payload(row)
+
+
+def _summary_status(relationships: list[ToolPersonRelationship]) -> str:
+    if not relationships:
+        return "unknown"
+    verified = [row.confidence for row in relationships if row.verification_status == AUTHOR_CLAIM_VERIFIED]
+    best = max(verified or [row.confidence for row in relationships])
+    if verified and best >= VERIFIED_STATUS_CONFIDENCE_MIN:
+        return "verified"
+    return "probable" if best >= VERIFIED_CONFIDENCE_MIN else "candidate"
+
+
+def public_tool_summary(s: Session, tool_name: str) -> dict[str, Any]:
+    """Return the normalized people summary plus health-scoring aggregates."""
+    summary = people_index.public_people_summary(s, tool_name)
+    relationships = list(
+        s.execute(
+            select(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_text(tool_name))
+        ).scalars()
     )
-    edges: list[ToolMaintainerEdge] = []
-    for row in _toolhub_author_rows(tool):
-        source = SOURCE_TOOLHUB_ACTOR if row["method"] == METHOD_TOOLHUB_ACTOR else SOURCE_TOOLHUB_AUTHOR
-        confidence = 55 if source == SOURCE_TOOLHUB_ACTOR else 45
-        edges.append(
-            _upsert_edge(
-                s,
-                tool_name=clean_tool_name,
-                key=maintainer_key(
-                    toolhub_username=row["toolhub"],
-                    wiki_username=row["wiki"],
-                    display_name=row["display"],
-                ),
-                display_name=row["display"],
-                toolhub_username=row["toolhub"],
-                wiki_username=row["wiki"],
-                author_name=row["display"],
-                source=source,
-                method=row["method"],
-                verification_status=AUTHOR_CLAIM_UNVERIFIED,
-                confidence=confidence,
-                evidence_payload={"toolhubToolName": clean_tool_name},
-            )
-        )
-    refresh_activity_rollups(s, maintainer_keys=[edge.maintainer_key for edge in edges])
-    return edges
-
-
-def _toolhub_usernames_for_keys(keys: set[str]) -> set[str]:
-    return {key.split(":", 1)[1] for key in keys if key.startswith("toolhub:")}
-
-
-def _activity_dates_for_user(s: Session, user: User) -> list[Any]:
-    dates: list[Any] = [user.registered_at]
-    activity_sources = (
-        select(ToolList.modified_at).where(ToolList.user_id == user.id),
-        select(ToolRecord.modified_at).where(ToolRecord.user_id == user.id),
-        select(ToolOverlay.modified_at).where(ToolOverlay.user_id == user.id),
-        select(ActivityRow.created_at).where(ActivityRow.user_id == user.id),
-        select(CrawlerUrl.added_at).where(CrawlerUrl.user_id == user.id),
-        select(SourceAnalysisReport.created_at).where(SourceAnalysisReport.user_id == user.id),
-        select(ToolAuthorKey.last_used_at).where(ToolAuthorKey.toolhub_username == user.username),
-        select(ToolAuthorKey.created_at).where(ToolAuthorKey.toolhub_username == user.username),
-    )
-    for query in activity_sources:
-        dates.extend(row[0] for row in s.execute(query).all() if row[0] is not None)
-    return dates
-
-
-def _rollup_for_key(s: Session, key: str) -> MaintainerActivityRollup:
-    username = key.split(":", 1)[1] if key.startswith("toolhub:") else ""
-    users = []
-    if username:
-        users = list(s.execute(select(User).where(func.lower(User.username) == username.casefold())).scalars())
-    dates: list[Any] = []
-    display = username
-    for user in users:
-        display = user.username
-        dates.extend(_activity_dates_for_user(s, user))
-    now = utcnow()
-    recent_after = now - timedelta(days=RECENT_ACTIVITY_DAYS)
-    recent_count = sum(1 for value in dates if value is not None and value >= recent_after)
-    last_activity = max(dates) if dates else None
-    age_days = (now - last_activity).days if last_activity is not None else None
-    edges = list(s.execute(select(ToolMaintainerEdge).where(ToolMaintainerEdge.maintainer_key == key)).scalars())
-    active_tool_count = len({edge.tool_name for edge in edges})
-    verified_tool_count = len(
+    people = summary["people"]
+    activity_statuses = [str(item.get("activity", {}).get("status") or "unknown") for item in people]
+    summary.update(
         {
-            edge.tool_name
-            for edge in edges
-            if edge.verification_status == AUTHOR_CLAIM_VERIFIED and edge.confidence >= VERIFIED_CONFIDENCE_MIN
+            "status": _summary_status(relationships),
+            "bestConfidence": max((row.confidence for row in relationships), default=0),
+            "healthCounts": {
+                "people": len(people),
+                "maintainers": summary["counts"].get(PERSON_REL_MAINTAINER, 0),
+                "verifiedPeople": len(
+                    {row.person_id for row in relationships if row.verification_status == AUTHOR_CLAIM_VERIFIED}
+                ),
+                "activePeople": sum(status in {"active", "quiet"} for status in activity_statuses),
+                "evidence": sum(row.evidence_count for row in relationships),
+            },
+            "publicDataPolicy": {
+                "catalogAuthority": "toolhub",
+                "relationshipProjection": "toolhub-evolved",
+                "evidencePayload": "private",
+            },
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
         }
     )
-    row = s.get(MaintainerActivityRollup, key)
-    if row is None:
-        row = MaintainerActivityRollup(maintainer_key=key)
-        s.add(row)
-    row.maintainer_display_name = display or (edges[0].maintainer_display_name if edges else "")
-    row.toolhub_username = display if username else ""
-    row.source = SOURCE_LOCAL
-    row.active_tool_count = active_tool_count
-    row.verified_tool_count = verified_tool_count
-    row.recent_activity_count = recent_count
-    row.last_activity_at = last_activity
-    row.activity_status = _activity_status(age_days)
-    row.computed_at = now
-    row.stale_at = now + timedelta(days=ROLLUP_STALE_DAYS)
-    return row
-
-
-def refresh_activity_rollups(s: Session, *, maintainer_keys: list[str] | None = None) -> list[MaintainerActivityRollup]:
-    """Refresh local activity rollups for known maintainer keys."""
-    if maintainer_keys is None:
-        keys = set()
-        keys.update(row[0] for row in s.execute(select(ToolMaintainerEdge.maintainer_key).distinct()))
-        keys.update(f"toolhub:{row[0].casefold()}" for row in s.execute(select(User.username)).all() if row[0])
-    else:
-        keys = set(maintainer_keys)
-    keys.update(f"toolhub:{username.casefold()}" for username in _toolhub_usernames_for_keys(keys))
-    return [_rollup_for_key(s, key) for key in sorted(keys) if key]
-
-
-def activity_payload(row: MaintainerActivityRollup | None) -> dict:
-    """Public-safe activity rollup payload."""
-    if row is None:
-        return {"status": "unknown"}
-    age_days = (utcnow() - row.last_activity_at).days if row.last_activity_at is not None else None
-    return {
-        "status": row.activity_status or "unknown",
-        "lastActivityAgeDays": age_days,
-        "recentActivityCount": row.recent_activity_count,
-        "activeToolCount": row.active_tool_count,
-        "verifiedToolCount": row.verified_tool_count,
-        "computedAt": row.computed_at.isoformat(timespec="seconds") + "Z" if row.computed_at else "",
-    }
-
-
-def public_edge_payload(edge: ToolMaintainerEdge, activity: MaintainerActivityRollup | None = None) -> dict:
-    """Public-safe maintainer edge payload without raw evidence."""
-    return {
-        "displayName": edge.maintainer_display_name,
-        "toolhubUsername": edge.toolhub_username,
-        "wikiUsername": edge.wiki_username,
-        "verificationStatus": _edge_status_value(edge),
-        "confidence": edge.confidence,
-        "source": edge.source,
-        "method": edge.method,
-        "activity": activity_payload(activity),
-    }
-
-
-def public_tool_summary(s: Session, tool_name: str) -> dict:
-    """Return a public-safe maintainer summary for one tool."""
-    clean_tool_name = clean_text(tool_name)
-    edges = list(
-        s.execute(
-            select(ToolMaintainerEdge)
-            .where(ToolMaintainerEdge.tool_name == clean_tool_name)
-            .order_by(ToolMaintainerEdge.confidence.desc(), ToolMaintainerEdge.maintainer_display_name)
-        ).scalars()
-    )
-    rollups = {
-        row.maintainer_key: row
-        for row in s.execute(
-            select(MaintainerActivityRollup).where(
-                MaintainerActivityRollup.maintainer_key.in_({edge.maintainer_key for edge in edges} or {""})
-            )
-        ).scalars()
-    }
-    grouped: dict[str, dict[str, Any]] = {}
-    for edge in edges:
-        current = grouped.setdefault(
-            edge.maintainer_key,
-            {
-                "edge": edge,
-                "confidence": edge.confidence,
-                "methods": [],
-            },
-        )
-        if edge.confidence > current["confidence"]:
-            current["edge"] = edge
-            current["confidence"] = edge.confidence
-        current["methods"].append(edge.method)
-    maintainers = []
-    active_count = 0
-    verified_count = 0
-    for key, item in sorted(grouped.items(), key=lambda row: (-int(row[1]["confidence"]), row[0])):
-        edge = item["edge"]
-        activity = rollups.get(key)
-        payload = public_edge_payload(edge, activity)
-        payload["methods"] = dedupe_strings(item["methods"])
-        maintainers.append(payload)
-        if payload["verificationStatus"] == AUTHOR_CLAIM_VERIFIED and payload["confidence"] >= VERIFIED_CONFIDENCE_MIN:
-            verified_count += 1
-        if payload["activity"].get("status") in {"active", "quiet"}:
-            active_count += 1
-    confidences = [edge.confidence for edge in edges]
-    people_summary = people_index.public_people_summary(s, clean_tool_name)
-    return {
-        "toolName": clean_tool_name,
-        "status": _edge_status(edges),
-        "counts": {
-            "maintainers": len(maintainers),
-            "verifiedMaintainers": verified_count,
-            "activeMaintainers": active_count,
-            "evidenceEdges": len(edges),
-        },
-        "bestConfidence": max(confidences) if confidences else 0,
-        "maintainers": maintainers[:MAX_PUBLIC_MAINTAINERS],
-        "publicDataPolicy": {
-            "canonical": False,
-            "evidence": "private",
-            "summary": "Derived Evolved maintainer summary built from Toolhub, Toolforge, and Evolved evidence.",
-        },
-        "source": SOURCE_OFFICIAL if any(edge.source.startswith("toolhub") for edge in edges) else SOURCE_LOCAL,
-        "syncStatus": SYNC_EVOLVED_REAL,
-        "people": people_summary["people"],
-        "relationshipCounts": people_summary["counts"],
-        "relationshipCount": people_summary["relationshipCount"],
-        "identityPolicy": people_summary["identityPolicy"],
-    }
+    return summary

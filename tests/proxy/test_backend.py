@@ -61,9 +61,10 @@ from backend.models import (  # noqa: E402
     CrawlerUrl,
     Favorite,
     IssueReport,
-    MaintainerActivityRollup,
     Person,
+    PersonActivitySummary,
     PersonIdentifier,
+    PersonProfile,
     SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
@@ -76,11 +77,11 @@ from backend.models import (  # noqa: E402
     ToolinfoSource,
     ToolinfoSourceItem,
     ToolList,
-    ToolMaintainerEdge,
     ToolMedia,
     ToolOverlay,
     ToolOwnerCache,
     ToolPersonRelationship,
+    ToolRelationshipEvidence,
     ToolRecord,
     ToolSummaryCache,
     ToolThanks,
@@ -224,9 +225,8 @@ PUBLIC_V1_ROUTES = {
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
-    "/v1/maintainers/tools/<name>/": (
-        "public derived maintainer summary; evidence is redacted and reads are rate limited"
-    ),
+    "/v1/people/": "public local people search; reads are rate limited",
+    "/v1/people/<public_id>/": "public local person profile; reads are rate limited",
     "/v1/people/tools/<name>/": (
         "public normalized people and typed tool relationships; evidence is redacted and reads are rate limited"
     ),
@@ -519,13 +519,18 @@ def test_init_schema_creates_tool_author_claim_tables():
         "tool_name",
         "author_name",
         "toolhub_username",
+        "user_id",
         "verification_status",
         "verification_method",
+        "requested_relationship",
         "evidence_url",
         "evidence_payload",
         "checked_at",
         "expires_at",
+        "revoked_at",
         "last_error",
+        "created_at",
+        "updated_at",
     }.issubset(cols)
     challenge_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolinfoControlChallenge.__tablename__)}
     assert {
@@ -544,6 +549,7 @@ def test_init_schema_creates_tool_author_claim_tables():
     assert {
         "id",
         "toolhub_username",
+        "user_id",
         "key_id",
         "public_key",
         "algorithm",
@@ -575,99 +581,111 @@ def test_init_schema_creates_tool_author_claim_tables():
             )
 
 
-def test_init_schema_creates_maintainer_projection_tables():
+def test_init_schema_creates_people_evidence_and_activity_tables():
     db.configure("sqlite://")
     db.init_schema()
-    edge_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolMaintainerEdge.__tablename__)}
+    edge_cols = {col["name"] for col in inspect(db.engine()).get_columns(ToolRelationshipEvidence.__tablename__)}
     assert {
         "id",
         "tool_name",
-        "maintainer_key",
-        "maintainer_display_name",
-        "toolhub_username",
-        "wiki_username",
-        "author_name",
+        "person_id",
+        "relationship_type",
         "source",
         "method",
         "verification_status",
         "confidence",
         "evidence_url",
         "evidence_payload",
+        "evidence_key",
+        "observed_name",
+        "toolhub_canonical",
         "first_seen_at",
         "checked_at",
         "expires_at",
         "last_error",
     }.issubset(edge_cols)
-    rollup_cols = {col["name"] for col in inspect(db.engine()).get_columns(MaintainerActivityRollup.__tablename__)}
+    rollup_cols = {col["name"] for col in inspect(db.engine()).get_columns(PersonActivitySummary.__tablename__)}
     assert {
-        "maintainer_key",
-        "maintainer_display_name",
-        "toolhub_username",
-        "source",
-        "maintainer_count_hint",
-        "active_tool_count",
+        "person_id",
+        "related_tool_count",
         "verified_tool_count",
-        "recent_activity_count",
-        "last_activity_at",
+        "contribution_count",
+        "recent_contribution_count",
+        "last_contribution_at",
         "activity_status",
         "computed_at",
         "stale_at",
     }.issubset(rollup_cols)
 
     with db.session_scope() as s:
-        edge = ToolMaintainerEdge(tool_name="ada-tool", maintainer_key="toolhub:ada", maintainer_display_name="Ada")
-        rollup = MaintainerActivityRollup(maintainer_key="toolhub:ada", maintainer_display_name="Ada")
+        person = Person(canonical_key="toolhub:ada", display_name="Ada")
+        s.add(person)
+        s.flush()
+        edge = ToolRelationshipEvidence(
+            tool_name="ada-tool",
+            person_id=person.id,
+            relationship_type=sync.PERSON_REL_AUTHOR,
+            source="toolhub_author_metadata",
+            method="toolhub_author_metadata",
+        )
+        rollup = PersonActivitySummary(person_id=person.id)
         s.add(edge)
         s.add(rollup)
         s.flush()
-        assert edge.source == sync.SOURCE_LOCAL
         assert edge.verification_status == sync.AUTHOR_CLAIM_UNVERIFIED
         assert edge.confidence == 0
         assert rollup.activity_status == "unknown"
-        assert rollup.active_tool_count == 0
+        assert rollup.related_tool_count == 0
 
 
 def test_people_graph_deduplicates_stable_identity_and_keeps_roles_separate():
     db.configure("sqlite://")
     db.init_schema()
     with db.session_scope() as s:
-        s.add_all(
-            [
-                ToolMaintainerEdge(
-                    tool_name="ada-tool",
-                    maintainer_key="toolhub:ada",
-                    maintainer_display_name="Ada Lovelace",
-                    toolhub_username="Ada",
-                    source="toolhub_author_metadata",
-                    method="toolhub_author_metadata",
-                    confidence=45,
-                ),
-                ToolMaintainerEdge(
-                    tool_name="ada-tool",
-                    maintainer_key="toolhub:ada",
-                    maintainer_display_name="Ada",
-                    toolhub_username="Ada",
-                    source="evolved_author_claim",
-                    method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
-                    confidence=95,
-                ),
-            ]
-        )
-        s.flush()
         from backend import people_index
 
-        relationships = people_index.sync_tool_people(s, "ada-tool")
+        people_index.replace_source_evidence(
+            s,
+            "ada-tool",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Ada Lovelace",
+                    "toolhub_username": "Ada",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                    "method": "toolhub_author_metadata",
+                    "confidence": 45,
+                    "toolhub_canonical": True,
+                }
+            ],
+        )
+        relationships = people_index.replace_source_evidence(
+            s,
+            "ada-tool",
+            "evolved_author_claim",
+            [
+                {
+                    "display_name": "Ada",
+                    "toolhub_username": "Ada",
+                    "relationship_type": sync.PERSON_REL_MAINTAINER,
+                    "method": sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    "verification_status": sync.AUTHOR_CLAIM_VERIFIED,
+                    "confidence": 95,
+                }
+            ],
+        )
         summary = people_index.public_people_summary(s, "ada-tool")
 
-        assert len(relationships) == 2
+        assert len(relationships) == 1
         assert s.query(Person).count() == 1
         assert s.query(PersonIdentifier).count() == 1
         assert s.query(ToolPersonRelationship).count() == 2
         assert summary["counts"][sync.PERSON_REL_AUTHOR] == 1
         assert summary["counts"][sync.PERSON_REL_MAINTAINER] == 1
-        assert summary["people"][0]["identityQuality"] == "stable"
-        assert summary["people"][0]["identifiers"] == [{"namespace": "toolhub", "value": "Ada"}]
+        assert summary["people"][0]["identityQuality"] == "handle"
+        assert summary["people"][0]["identifiers"] == [
+            {"namespace": "toolhub_username", "value": "Ada", "kind": "handle"}
+        ]
 
 
 def test_init_schema_creates_toolinfo_discovery_table():
@@ -1125,8 +1143,12 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         conn.exec_driver_sql("CREATE TABLE tool_health_targets (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_media (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_catalog_sync_state (key VARCHAR(64) PRIMARY KEY)")
-        conn.exec_driver_sql("CREATE TABLE repository_analysis_state (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)")
-        conn.exec_driver_sql("CREATE TABLE person_reconciliation_queue (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)")
+        conn.exec_driver_sql(
+            "CREATE TABLE repository_analysis_state (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)"
+        )
+        conn.exec_driver_sql(
+            "CREATE TABLE person_reconciliation_queue (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)"
+        )
         conn.exec_driver_sql("INSERT INTO repository_analysis_state (tool_name, attempts) VALUES ('legacy', NULL)")
         conn.exec_driver_sql("INSERT INTO person_reconciliation_queue (tool_name, attempts) VALUES ('legacy', NULL)")
     db._upgrade_schema()
@@ -1749,6 +1771,43 @@ def test_author_key_lifecycle(client):
     assert revoked["key"]["revokedAt"].endswith("Z")
 
 
+def test_account_owned_claims_and_keys_survive_username_change(client):
+    uid = add_user(username="Ada", wm_sub="42")
+    sign_in(client, uid)
+    public_key = b64encode(b"1" * 32).decode("ascii")
+    assert (
+        client.post(
+            "/v1/author-keys/",
+            json={"keyId": "stable-owner", "publicKey": public_key},
+            headers={"X-CSRF-Token": "tok"},
+        ).status_code
+        == 201
+    )
+    with db.session_scope() as s:
+        s.add(
+            ToolAuthorClaim(
+                tool_name="ada-tool",
+                author_name="Ada Lovelace",
+                toolhub_username="Ada",
+                user_id=uid,
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                verification_method=sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
+            )
+        )
+        s.get(User, uid).username = "Countess"
+
+    listed = client.get("/v1/author-keys/").get_json()
+    assert listed["username"] == "Countess"
+    assert [key["keyId"] for key in listed["keys"]] == ["stable-owner"]
+    exported = client.get("/v1/user/export/").get_json()
+    assert [claim["toolName"] for claim in exported["authorClaims"]] == ["ada-tool"]
+
+    with db.session_scope() as s:
+        key = s.query(ToolAuthorKey).one()
+        assert key.user_id == uid
+        assert key.toolhub_username == "Ada"  # display snapshot; never used as ownership
+
+
 def test_author_key_registration_validates_input(client):
     uid = add_user()
     sign_in(client, uid)
@@ -2059,11 +2118,11 @@ def test_maintainer_index_builds_public_safe_summary_from_claims():
 
         assert len(edges) == 1
         assert summary["status"] == "verified"
-        assert summary["counts"]["maintainers"] == 1
-        assert summary["counts"]["verifiedMaintainers"] == 1
-        assert summary["counts"]["activeMaintainers"] == 1
+        assert summary["counts"][sync.PERSON_REL_MAINTAINER] == 1
+        assert summary["healthCounts"]["verifiedPeople"] == 1
+        assert summary["healthCounts"]["activePeople"] == 0
         assert summary["bestConfidence"] == 95
-        assert summary["maintainers"][0]["activity"]["status"] == "active"
+        assert summary["people"][0]["activity"]["status"] == "unknown"
         assert "private evidence" not in dumps(summary)
 
 
@@ -2102,10 +2161,10 @@ def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
 
         assert len(edges) == 1
         assert summary["status"] == "verified"
-        assert summary["counts"]["verifiedMaintainers"] == 1
+        assert summary["healthCounts"]["verifiedPeople"] == 1
         assert summary["bestConfidence"] == 95
-        assert summary["maintainers"][0]["toolhubUsername"] == "Schiste"
-        assert summary["maintainers"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_VERIFIED
+        assert summary["people"][0]["displayName"] == "Schiste"
+        assert summary["people"][0]["relationships"][0]["status"] == sync.AUTHOR_CLAIM_VERIFIED
 
 
 def test_canonical_tools_endpoint_reads_local_cache_only(client):
@@ -2745,22 +2804,28 @@ def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():
     assert "source_analysis_reports.reviewed_at IS NULL" in compiled
 
 
-def test_maintainer_rollup_refresh_distinguishes_empty_and_full_scope():
+def test_person_activity_summary_refresh_distinguishes_empty_and_full_scope():
     db.configure("sqlite://")
     db.init_schema()
     with db.session_scope() as s:
-        s.add(User(wm_sub="maintainer-empty", username="Ada"))
-        assert maintainer_index.refresh_activity_rollups(s, maintainer_keys=[]) == []
-        assert s.query(MaintainerActivityRollup).count() == 0
+        user = User(wm_sub="maintainer-empty", username="Ada")
+        s.add(user)
+        s.flush()
+        from backend import people_index
 
-        rollups = maintainer_index.refresh_activity_rollups(s)
-        assert len(rollups) == 1
-        assert s.query(MaintainerActivityRollup).count() == 1
+        people_index.link_user(s, user)
+        assert people_index.refresh_activity_summaries(s, person_ids=set()) == []
+        assert s.query(PersonActivitySummary).count() == 0
+
+        summaries = people_index.refresh_activity_summaries(s)
+        assert len(summaries) == 1
+        assert s.query(PersonActivitySummary).count() == 1
 
 
-def test_public_tool_maintainers_endpoint_merges_official_metadata_and_evolved_claims(client, monkeypatch):
+def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(client):
     with db.session_scope() as s:
-        s.add(User(wm_sub="maintainer-2", username="Ada", registered_at=utcnow() - timedelta(days=5)))
+        user = User(wm_sub="42", username="Ada", registered_at=utcnow() - timedelta(days=5))
+        s.add(user)
         s.add(
             ToolAuthorClaim(
                 tool_name="ada-tool",
@@ -2771,55 +2836,235 @@ def test_public_tool_maintainers_endpoint_merges_official_metadata_and_evolved_c
                 evidence_payload={"signature": "private signature payload"},
             )
         )
+        s.flush()
+        from backend import people_index
 
-    monkeypatch.setattr(
-        toolhub,
-        "public_api_get",
-        lambda path: {
-            "name": "ada-tool",
-            "author": [{"name": "Ada Lovelace", "developer_username": "Ada", "wiki_username": "AdaWiki"}],
-            "created_by": {"username": "Ada"},
-            "modified_by": {"username": "Grace"},
-        }
-        if path == "/api/tools/ada-tool/"
-        else pytest.fail(f"unexpected path {path}"),
-    )
+        people_index.link_user(s, user)
+        maintainer_index.replace_toolhub_metadata_edges(
+            s,
+            "ada-tool",
+            {
+                "name": "ada-tool",
+                "author": [{"name": "Ada Lovelace", "developer_username": "Ada", "wiki_username": "AdaWiki"}],
+                "created_by": {"id": 42, "username": "Ada"},
+                "modified_by": {"id": 43, "username": "Grace"},
+            },
+        )
+        maintainer_index.sync_author_claim_edges(s, tool_names=["ada-tool"])
 
-    resp = client.get("/v1/maintainers/tools/ada-tool/")
+    resp = client.get("/v1/people/tools/ada-tool/")
     data = resp.get_json()
     assert resp.status_code == 200
     assert data["toolName"] == "ada-tool"
-    assert data["status"] == "verified"
-    assert data["counts"]["verifiedMaintainers"] == 1
-    assert data["counts"]["evidenceEdges"] == 4
-    assert data["publicDataPolicy"]["canonical"] is False
+    assert data["counts"][sync.PERSON_REL_AUTHOR] == 1
+    assert data["counts"][sync.PERSON_REL_MAINTAINER] == 1
+    assert data["counts"][sync.PERSON_REL_CATALOG_ACTOR] == 2
+    assert data["counts"][sync.PERSON_REL_RECORD_OWNER] == 0
+    assert data["canonicalAuthority"]["catalog"] == "toolhub"
     assert "private signature payload" not in dumps(data)
-    assert data["relationshipCounts"][sync.PERSON_REL_AUTHOR] == 1
-    assert data["relationshipCounts"][sync.PERSON_REL_MAINTAINER] == 1
-    ada_person = next(item for item in data["people"] if item["id"] == "toolhub:ada")
-    assert {item["namespace"] for item in ada_person["identifiers"]} == {"toolhub", "wiki"}
+    assert "Ada Lovelace" in {
+        evidence["observedName"]
+        for person in data["people"]
+        for relationship in person["relationships"]
+        for evidence in relationship["evidence"]
+    }
+    ada_person = next(item for item in data["people"] if item["displayName"] == "Ada")
+    assert {item["namespace"] for item in ada_person["identifiers"]} == {
+        "toolhub_user_id",
+        "toolhub_username",
+        "wiki_username",
+    }
     assert {relationship["type"] for relationship in ada_person["relationships"]} == {
         sync.PERSON_REL_AUTHOR,
         sync.PERSON_REL_MAINTAINER,
-        sync.PERSON_REL_RECORD_OWNER,
-    }
-    ada = next(item for item in data["maintainers"] if item["toolhubUsername"] == "Ada")
-    assert set(ada["methods"]) == {
-        sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
-        maintainer_index.METHOD_TOOLHUB_ACTOR,
-        maintainer_index.METHOD_TOOLHUB_AUTHOR,
+        sync.PERSON_REL_CATALOG_ACTOR,
     }
 
-    people_resp = client.get("/v1/people/tools/ada-tool/")
-    assert people_resp.status_code == 200
-    assert people_resp.get_json()["people"] == data["people"]
 
-
-def test_public_tool_maintainers_endpoint_is_rate_limited(client, monkeypatch):
+def test_public_tool_people_endpoint_is_rate_limited(client, monkeypatch):
     monkeypatch.setattr(security, "read_rate_limited", lambda _remote_addr: True)
-    resp = client.get("/v1/maintainers/tools/ada-tool/")
+    resp = client.get("/v1/people/tools/ada-tool/")
     assert resp.status_code == 429
     assert resp.get_json()["error"] == "rate limit exceeded"
+
+
+def test_person_profile_uses_immutable_public_id_and_evolved_owned_content(client):
+    uid = add_user(username="Ada", wm_sub="42")
+    sign_in(client, uid)
+
+    initial = client.get("/v1/me/profile/").get_json()["profile"]
+    public_id = initial["personId"]
+    assert len(public_id) == 36
+
+    updated = client.put(
+        "/v1/me/profile/",
+        json={
+            "bio": "Builds Wikimedia tools.",
+            "websiteUrl": "https://example.org/ada",
+            "avatarUrl": "http://unsafe.example/avatar.png",
+            "location": "London",
+            "links": ["https://meta.wikimedia.org/wiki/User:Ada", "javascript:alert(1)"],
+        },
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["profile"]
+    assert updated["personId"] == public_id
+    assert updated["avatarUrl"] == ""
+    assert updated["links"] == ["https://meta.wikimedia.org/wiki/User:Ada"]
+
+    public = client.get(f"/v1/people/{public_id}/").get_json()
+    assert public["profile"]["bio"] == "Builds Wikimedia tools."
+    assert public["canonicalAuthority"] == {"catalog": "toolhub", "profiles": "toolhub-evolved"}
+    search = client.get("/v1/people/?q=ada").get_json()
+    assert search["results"][0]["id"] == public_id
+    assert search["results"][0]["profile"]["bio"] == "Builds Wikimedia tools."
+
+    hidden = client.put(
+        "/v1/me/profile/",
+        json={"bio": "Private bio", "visibility": "private"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert hidden.status_code == 200
+    assert client.get(f"/v1/people/{public_id}/").get_json()["profile"] == {}
+    assert client.get("/v1/people/?q=ada").get_json()["results"][0]["profile"] == {}
+
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        assert user is not None
+        user.username = "Renamed"
+        from backend import people_index
+
+        people_index.link_user(s, user)
+        person = s.get(Person, user.person_id)
+        assert person.public_id == public_id
+        assert person.display_name == "Renamed"
+        current_handles = {
+            row.value
+            for row in s.query(PersonIdentifier).filter_by(
+                person_id=person.id,
+                namespace=people_index.NS_TOOLHUB_USERNAME,
+                is_current=True,
+            )
+        }
+        assert current_handles == {"Renamed"}
+        assert s.query(PersonIdentifier).filter_by(value="Ada", is_current=False).count() == 1
+
+
+def test_unified_claim_api_preserves_history_and_withdraws_revoked_evidence(client, monkeypatch):
+    uid = add_user(username="Ada", wm_sub="42")
+    sign_in(client, uid)
+    canonical = {
+        "name": "ada-tool",
+        "title": "Ada Tool",
+        "author": [{"name": "Ada Lovelace"}],
+        "url": "https://example.org/ada-tool",
+    }
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: canonical)
+
+    options = client.get("/v1/tools/ada-tool/claim-options/")
+    assert options.status_code == 200
+    payload = options.get_json()
+    assert payload["canonicalAuthority"] == {"catalog": "toolhub", "claims": "toolhub-evolved"}
+    assert next(row for row in payload["options"] if row["method"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)[
+        "authorNames"
+    ] == ["Ada Lovelace"]
+
+    created = client.post(
+        "/v1/tools/ada-tool/claims/",
+        json={"method": sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME, "authorName": "Ada Lovelace"},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert created.status_code == 201
+    claim = created.get_json()["claims"][0]
+    assert claim["requestedRelationship"] == sync.PERSON_REL_AUTHOR
+    assert claim["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
+    assert claim["isVerified"] is False
+    history = client.get("/v1/me/claims/").get_json()["claims"]
+    assert [row["id"] for row in history] == [claim["id"]]
+
+    revoked = client.delete(
+        f"/v1/claims/{claim['id']}/",
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert revoked.status_code == 200
+    assert revoked.get_json()["claim"]["verificationStatus"] == sync.AUTHOR_CLAIM_REVOKED
+    assert revoked.get_json()["claim"]["revokedAt"]
+    assert client.get("/v1/me/claims/").get_json()["claims"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_REVOKED
+    with db.session_scope() as s:
+        assert (
+            s.query(ToolRelationshipEvidence)
+            .filter_by(tool_name="ada-tool", source=maintainer_index.SOURCE_AUTHOR_CLAIM, withdrawn_at=None)
+            .count()
+            == 0
+        )
+        withdrawn = (
+            s.query(ToolRelationshipEvidence)
+            .filter_by(tool_name="ada-tool", source=maintainer_index.SOURCE_AUTHOR_CLAIM)
+            .one()
+        )
+        assert withdrawn.withdrawn_at is not None
+        assert s.query(ToolPersonRelationship).filter_by(tool_name="ada-tool").count() == 0
+
+
+def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, monkeypatch):
+    uid = add_user(username="Schiste", wm_sub="42")
+    sign_in(client, uid)
+    canonical = {
+        "name": "toolhub-evolved",
+        "title": "Toolhub Evolved",
+        "author": [{"name": "Christophe"}],
+        "url": "https://toolhub-evolved.toolforge.org",
+    }
+    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: canonical)
+    member_dns = ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
+    monkeypatch.setattr(
+        v1_api,
+        "TOOLFORGE_MEMBERSHIP_PROVIDER",
+        ToolforgeMembershipProvider(lookup=lambda _username: member_dns),
+    )
+
+    created = client.post(
+        "/v1/tools/toolhub-evolved/claims/",
+        json={"method": sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert created.status_code == 201
+    claim = created.get_json()["claims"][0]
+    assert claim["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
+    assert claim["isVerified"] is True
+    with db.session_scope() as s:
+        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolhub-evolved").one()
+        assert relationship.relationship_type == sync.PERSON_REL_MAINTAINER
+        assert relationship.toolhub_canonical is False
+
+
+def test_multiple_evidence_rows_collapse_to_one_relationship():
+    db.configure("sqlite://")
+    db.init_schema()
+    from backend import people_index
+
+    with db.session_scope() as s:
+        for source, confidence in (("toolhub_author_metadata", 45), ("signed_toolinfo", 88)):
+            people_index.replace_source_evidence(
+                s,
+                "ada-tool",
+                source,
+                [
+                    {
+                        "display_name": "Ada",
+                        "toolhub_username": "Ada",
+                        "relationship_type": sync.PERSON_REL_AUTHOR,
+                        "method": source,
+                        "verification_status": sync.AUTHOR_CLAIM_VERIFIED,
+                        "confidence": confidence,
+                        "toolhub_canonical": source == "toolhub_author_metadata",
+                    }
+                ],
+            )
+        relationship = s.query(ToolPersonRelationship).one()
+        assert relationship.evidence_count == 2
+        assert relationship.confidence == 88
+        assert relationship.toolhub_canonical is True
+        assert s.query(ToolRelationshipEvidence).count() == 2
 
 
 def test_source_analysis_uses_evolved_maintainer_context_for_named_tools(client):
@@ -2847,10 +3092,10 @@ def test_source_analysis_uses_evolved_maintainer_context_for_named_tools(client)
     assert resp.status_code == 201
     report = resp.get_json()["sourceAnalysis"]["report"]
     context = report["repositoryContext"]
-    assert context["maintainers"]["source"] == "evolved-maintainer-index"
+    assert context["maintainers"]["source"] == "evolved-people-index"
     assert context["maintainers"]["maintainerCount"] == 1
-    assert context["maintainerActivity"]["status"] == "active"
-    assert report["summary"]["maintainerStatus"] == "active"
+    assert context["maintainerActivity"]["status"] == "unknown"
+    assert report["summary"]["maintainerStatus"] == "unknown"
 
 
 def test_me_tools_requires_login(client):
@@ -3185,11 +3430,11 @@ def test_me_tools_merges_toolforge_candidate_without_optional_evidence(client, m
         lambda _username: (
             {
                 "toolforge-ada": {
-                "tool": row,
-                "matchedAuthorNames": ["Ada"],
-                "searchTerms": ["toolforge:ada"],
-                "toolforgeMembershipName": "ada",
-            }
+                    "tool": row,
+                    "matchedAuthorNames": ["Ada"],
+                    "searchTerms": ["toolforge:ada"],
+                    "toolforgeMembershipName": "ada",
+                }
             },
             [],
             ["ada"],
@@ -5902,9 +6147,19 @@ def test_v1_config_reports_oauth(client, monkeypatch):
     monkeypatch.delenv("TOOLHUB_OAUTH_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("TOOLHUB_DEV_LOGIN", raising=False)
     monkeypatch.delenv("TOOLHUB_GITHUB_TOKEN", raising=False)
-    assert client.get("/v1/config/").get_json() == {"oauth": False, "officialWrites": False, "devLogin": False, "issueReports": False}
+    assert client.get("/v1/config/").get_json() == {
+        "oauth": False,
+        "officialWrites": False,
+        "devLogin": False,
+        "issueReports": False,
+    }
     configure_oauth(monkeypatch)
-    assert client.get("/v1/config/").get_json() == {"oauth": True, "officialWrites": True, "devLogin": False, "issueReports": False}
+    assert client.get("/v1/config/").get_json() == {
+        "oauth": True,
+        "officialWrites": True,
+        "devLogin": False,
+        "issueReports": False,
+    }
 
 
 def test_issue_report_requires_approval(client):
@@ -5927,7 +6182,11 @@ def test_issue_report_publishes_once_and_is_idempotent(client, monkeypatch):
 
     def publish(title, body):
         calls.append((title, body))
-        return {"number": 123, "url": "https://github.com/schiste/toolhub-evolved/issues/123", "repository": "schiste/toolhub-evolved"}
+        return {
+            "number": 123,
+            "url": "https://github.com/schiste/toolhub-evolved/issues/123",
+            "repository": "schiste/toolhub-evolved",
+        }
 
     monkeypatch.setattr(github_issues, "publish_issue", publish)
     payload = {

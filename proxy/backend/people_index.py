@@ -1,293 +1,682 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Normalized people and typed tool relationships.
+"""Canonical Evolved people, relationship evidence, and public projections.
 
-People are deduplicated by stable usernames where available. Roles are kept on
-tool relationships, because the same person may author one tool, maintain
-another, and own an official Toolhub record without those roles being
-interchangeable.
+Toolhub remains authoritative for catalog records. This module records where a
+fact came from, resolves identities, and materializes a local public view; none
+of those rows grant or replace upstream Toolhub permissions.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, or_, select
 
 from backend.models import (
-    MaintainerActivityRollup,
+    ActivityRow,
+    CatalogCuration,
     Person,
+    PersonActivitySummary,
     PersonIdentifier,
-    ToolMaintainerEdge,
+    PersonProfile,
+    SourceAnalysisReport,
+    ToolOverlay,
     ToolPersonRelationship,
+    ToolRecord,
+    ToolRelationshipEvidence,
+    User,
     utcnow,
 )
 from backend.sync import (
-    AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
-    AUTHOR_CLAIM_SIGNED_TOOLINFO,
-    AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-    AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
-    AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
+    AUTHOR_CLAIM_FAILED,
+    AUTHOR_CLAIM_STALE,
     AUTHOR_CLAIM_UNVERIFIED,
+    AUTHOR_CLAIM_VERIFIED,
     PERSON_REL_AUTHOR,
     PERSON_REL_CATALOG_ACTOR,
     PERSON_REL_MAINTAINER,
     PERSON_REL_RECORD_OWNER,
+    REVIEW_APPROVED,
+    SOURCE_LOCAL,
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.orm import Session
 
+IDENTIFIER_STABLE = "stable_id"
+IDENTIFIER_HANDLE = "handle"
+NS_TOOLHUB_USER_ID = "toolhub_user_id"
+NS_TOOLHUB_USERNAME = "toolhub_username"
+NS_WIKI_USERNAME = "wiki_username"
+PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
+RECENT_ACTIVITY_DAYS = 90
+ACTIVITY_STALE_DAYS = 1
+ACTIVE_CONTRIBUTION_DAYS = 30
+QUIET_CONTRIBUTION_DAYS = 180
 
-def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - untrusted upstream values
+
+def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - upstream values are untrusted
     return str(value or "").strip()[:limit]
 
 
-def _normalized(value: str) -> str:
+def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrusted
     return _clean(value).casefold()
 
 
-def relationship_type(edge: ToolMaintainerEdge) -> str:
-    """Map legacy edge provenance to the least-strong truthful role."""
-    source_roles = {
-        "toolhub_author_metadata": PERSON_REL_AUTHOR,
-        "toolhub_catalog_actor": PERSON_REL_RECORD_OWNER
-        if edge.method == "toolhub_catalog_actor"
-        else PERSON_REL_CATALOG_ACTOR,
-    }
-    method_roles = {
-        AUTHOR_CLAIM_TOOLFORGE_MAINTAINER: PERSON_REL_MAINTAINER,
-        AUTHOR_CLAIM_SIGNED_TOOLINFO: PERSON_REL_MAINTAINER,
-        AUTHOR_CLAIM_TOOLINFO_URL_CONTROL: PERSON_REL_MAINTAINER,
-        AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS: PERSON_REL_RECORD_OWNER,
-        AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME: PERSON_REL_AUTHOR,
-    }
-    return source_roles.get(edge.source, method_roles.get(edge.method, PERSON_REL_MAINTAINER))
+def _canonical_key(
+    *, toolhub_user_id: str = "", toolhub_username: str = "", wiki_username: str = "", display: str = ""
+) -> str:
+    if clean_id := _clean(toolhub_user_id, 64):
+        return f"toolhub-id:{clean_id}"
+    if clean_username := _normalized(toolhub_username):
+        return f"toolhub:{clean_username}"
+    if clean_wiki := _normalized(wiki_username):
+        return f"wiki:{clean_wiki}"
+    return f"display:{_normalized(display)}"
 
 
-def _stable_identifiers(edge: ToolMaintainerEdge) -> list[tuple[str, str]]:
-    identifiers = []
-    if _clean(edge.toolhub_username):
-        identifiers.append(("toolhub", _clean(edge.toolhub_username)))
-    if _clean(edge.wiki_username):
-        identifiers.append(("wiki", _clean(edge.wiki_username)))
-    return identifiers
+def _identifier_spec(namespace: str) -> tuple[str, bool]:
+    return (IDENTIFIER_STABLE, True) if namespace == NS_TOOLHUB_USER_ID else (IDENTIFIER_HANDLE, False)
 
 
-def _identifier_priority(namespace: str) -> tuple[int, str]:
-    return ({"toolhub": 0, "wiki": 1}.get(namespace, 9), namespace)
-
-
-def _person_candidates(s: Session, edge: ToolMaintainerEdge) -> list[Person]:
-    candidates: dict[int, Person] = {}
-    key = _clean(edge.maintainer_key)
-    if key:
-        row = s.execute(select(Person).where(Person.canonical_key == key)).scalar_one_or_none()
-        if row is not None:
-            candidates[row.id] = row
-    for namespace, value in _stable_identifiers(edge):
-        identifier = s.execute(
-            select(PersonIdentifier).where(
-                PersonIdentifier.namespace == namespace,
-                PersonIdentifier.normalized_value == _normalized(value),
-            )
-        ).scalar_one_or_none()
-        if identifier is None:
-            continue
-        row = s.get(Person, identifier.person_id)
-        if row is not None:
-            candidates[row.id] = row
-    return sorted(
-        candidates.values(),
-        key=lambda row: (_identifier_priority(row.canonical_key.split(":", 1)[0])[0], row.id),
-    )
-
-
-def _find_person(s: Session, edge: ToolMaintainerEdge) -> Person | None:
-    candidates = _person_candidates(s, edge)
-    if candidates:
-        return candidates[0]
-    display = _clean(edge.maintainer_display_name or edge.author_name)
-    if not display:
+def _identifier_person(s: Session, namespace: str, value: str) -> Person | None:
+    normalized = _normalized(value)
+    if not normalized:
         return None
-    # A display-only person can be upgraded when a stable Toolhub identity
-    # later appears. This is deliberately limited to one exact fallback row.
-    candidates = list(
-        s.execute(
-            select(Person).where(
-                func.lower(Person.display_name) == display.casefold(),
-                Person.identity_quality == "display_name",
+    identifier = s.execute(
+        select(PersonIdentifier).where(
+            PersonIdentifier.namespace == namespace,
+            PersonIdentifier.normalized_value == normalized,
+            PersonIdentifier.is_current.is_(True),
+        )
+    ).scalar_one_or_none()
+    return s.get(Person, identifier.person_id) if identifier is not None else None
+
+
+def _upsert_identifier(  # noqa: PLR0913 - explicit identity provenance fields
+    s: Session,
+    person: Person,
+    *,
+    namespace: str,
+    value: str,
+    source: str,
+    checked_at: datetime | None = None,
+    authoritative_reassignment: bool = False,
+) -> PersonIdentifier | None:
+    clean_value = _clean(value)
+    if not clean_value:
+        return None
+    normalized = _normalized(clean_value)
+    row = s.execute(
+        select(PersonIdentifier).where(
+            PersonIdentifier.namespace == namespace,
+            PersonIdentifier.normalized_value == normalized,
+        )
+    ).scalar_one_or_none()
+    kind, intrinsically_verified = _identifier_spec(namespace)
+    now = checked_at or utcnow()
+    if row is None:
+        row = PersonIdentifier(
+            person_id=person.id,
+            namespace=namespace,
+            value=clean_value,
+            normalized_value=normalized,
+            identifier_kind=kind,
+            source=source,
+            verified_at=now if intrinsically_verified else None,
+        )
+        s.add(row)
+    elif row.person_id != person.id:
+        if not authoritative_reassignment or kind == IDENTIFIER_STABLE:
+            # Stable identifier collisions require audited reconciliation.
+            # Handles move only when a stable Toolhub id proves their current
+            # owner; unverified source observations never move identity data.
+            return row
+        row.person_id = person.id
+    row.value = clean_value
+    row.identifier_kind = kind
+    row.source = source or row.source
+    row.is_current = True
+    row.last_seen_at = now
+    row.retired_at = None
+    row.updated_at = now
+    return row
+
+
+def _retire_superseded_handles(
+    s: Session,
+    person: Person,
+    *,
+    toolhub_username: str,
+    wiki_username: str,
+    retired_at: datetime,
+) -> None:
+    """Retire mutable handles superseded by a stable Toolhub identity."""
+    for namespace, current_value in (
+        (NS_TOOLHUB_USERNAME, toolhub_username),
+        (NS_WIKI_USERNAME, wiki_username),
+    ):
+        current_normalized = _normalized(current_value)
+        if not current_normalized:
+            continue
+        old_handles = s.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.person_id == person.id,
+                PersonIdentifier.namespace == namespace,
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.normalized_value != current_normalized,
             )
         ).scalars()
-    )
-    return candidates[0] if len(candidates) == 1 else None
+        for old_handle in old_handles:
+            old_handle.is_current = False
+            old_handle.retired_at = retired_at
+            old_handle.updated_at = retired_at
 
 
-def _upsert_person(s: Session, edge: ToolMaintainerEdge) -> Person:
-    key = _clean(edge.maintainer_key)
-    display = _clean(edge.maintainer_display_name or edge.author_name or edge.toolhub_username)
-    person = _find_person(s, edge)
-    stable = bool(_stable_identifiers(edge))
+def ensure_person(  # noqa: PLR0913 - source adapters provide independent identifiers
+    s: Session,
+    *,
+    display_name: str = "",
+    toolhub_user_id: str = "",
+    toolhub_username: str = "",
+    wiki_username: str = "",
+    source: str = SOURCE_LOCAL,
+    checked_at: datetime | None = None,
+) -> Person:
+    """Resolve or create a person from strongest to weakest identity evidence."""
+    candidates = [
+        _identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id),
+        _identifier_person(s, NS_TOOLHUB_USERNAME, toolhub_username),
+        _identifier_person(s, NS_WIKI_USERNAME, wiki_username),
+    ]
+    person = next((candidate for candidate in candidates if candidate is not None), None)
+    display = _clean(display_name or toolhub_username or wiki_username)
+    if person is None:
+        key = _canonical_key(
+            toolhub_user_id=toolhub_user_id,
+            toolhub_username=toolhub_username,
+            wiki_username=wiki_username,
+            display=display,
+        )
+        person = s.execute(select(Person).where(Person.canonical_key == key)).scalar_one_or_none()
+    if person is None and display:
+        matches = list(
+            s.execute(
+                select(Person).where(
+                    func.lower(Person.display_name) == display.casefold(),
+                    Person.identity_quality == "display_name",
+                )
+            ).scalars()
+        )
+        person = matches[0] if len(matches) == 1 else None
     if person is None:
         person = Person(
-            canonical_key=key or f"display:{_normalized(display)}",
+            canonical_key=_canonical_key(
+                toolhub_user_id=toolhub_user_id,
+                toolhub_username=toolhub_username,
+                wiki_username=wiki_username,
+                display=display,
+            ),
             display_name=display,
-            identity_quality="stable" if stable else "display_name",
+            identity_quality="stable"
+            if toolhub_user_id
+            else ("handle" if toolhub_username or wiki_username else "display_name"),
         )
         s.add(person)
         s.flush()
-    elif key and person.canonical_key != key and stable and person.identity_quality == "display_name":
-        person.canonical_key = key
-        person.identity_quality = "stable"
     if display and (not person.display_name or person.identity_quality == "display_name"):
         person.display_name = display
-    if stable:
+    if toolhub_user_id:
         person.identity_quality = "stable"
-    person.updated_at = utcnow()
+        person.canonical_key = _canonical_key(toolhub_user_id=toolhub_user_id)
+    elif person.identity_quality == "display_name" and (toolhub_username or wiki_username):
+        person.identity_quality = "handle"
+    person.updated_at = checked_at or utcnow()
     s.flush()
-    for namespace, value in _stable_identifiers(edge):
-        normalized = _normalized(value)
-        existing = s.execute(
-            select(PersonIdentifier).where(
-                PersonIdentifier.namespace == namespace,
-                PersonIdentifier.normalized_value == normalized,
-            )
-        ).scalar_one_or_none()
-        if existing is None:
-            s.add(PersonIdentifier(person_id=person.id, namespace=namespace, value=value, normalized_value=normalized))
-        elif existing.person_id != person.id:
-            # A conflicting stable identity is never auto-merged. The existing
-            # identifier wins until an explicit reconciliation can review it.
-            continue
+    if toolhub_user_id:
+        _retire_superseded_handles(
+            s,
+            person,
+            toolhub_username=toolhub_username,
+            wiki_username=wiki_username,
+            retired_at=checked_at or utcnow(),
+        )
+    for namespace, value in (
+        (NS_TOOLHUB_USER_ID, toolhub_user_id),
+        (NS_TOOLHUB_USERNAME, toolhub_username),
+        (NS_WIKI_USERNAME, wiki_username),
+    ):
+        _upsert_identifier(
+            s,
+            person,
+            namespace=namespace,
+            value=value,
+            source=source,
+            checked_at=checked_at,
+            authoritative_reassignment=bool(toolhub_user_id and namespace != NS_TOOLHUB_USER_ID),
+        )
     s.flush()
     return person
 
 
-def _upsert_relationship(s: Session, edge: ToolMaintainerEdge, person: Person) -> ToolPersonRelationship:
-    role = relationship_type(edge)
-    row = s.execute(
-        select(ToolPersonRelationship).where(
-            ToolPersonRelationship.tool_name == edge.tool_name,
-            ToolPersonRelationship.person_id == person.id,
-            ToolPersonRelationship.relationship_type == role,
-            ToolPersonRelationship.source == edge.source,
-            ToolPersonRelationship.method == edge.method,
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        row = ToolPersonRelationship(
-            tool_name=edge.tool_name,
-            person_id=person.id,
-            relationship_type=role,
-            source=edge.source,
-            method=edge.method,
-        )
-        s.add(row)
-    row.verification_status = edge.verification_status or AUTHOR_CLAIM_UNVERIFIED
-    row.confidence = max(0, min(100, int(edge.confidence or 0)))
-    row.evidence_url = edge.evidence_url[:2000] if edge.evidence_url else None
-    row.checked_at = edge.checked_at or utcnow()
-    row.expires_at = edge.expires_at
-    row.updated_at = utcnow()
-    s.flush()
-    return row
-
-
-def sync_tool_people(s: Session, tool_name: str) -> list[ToolPersonRelationship]:
-    """Rebuild typed relationships for a tool from the compatibility edges."""
-    clean_name = _clean(tool_name)
-    # synchronize_session: a bulk DELETE bypasses the identity map, so rows this
-    # session already loaded stay behind as live persistent objects. The upsert
-    # below would then find one, mutate it, and flush an UPDATE for a row that
-    # no longer exists — StaleDataError, which surfaced as a 500 on /v1/me/tools/.
-    s.execute(
-        delete(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_name),
-        execution_options={"synchronize_session": "fetch"},
+def link_user(s: Session, user: User) -> Person:
+    """Link an OAuth account to a person using Toolhub's immutable user id."""
+    person = ensure_person(
+        s,
+        display_name=user.username,
+        toolhub_user_id=user.wm_sub,
+        toolhub_username=user.username,
+        source="toolhub_oauth",
     )
-    edges = list(
+    person.display_name = user.username
+    person.updated_at = utcnow()
+    user.person_id = person.id
+    return person
+
+
+def replace_source_evidence(
+    s: Session,
+    tool_name: str,
+    source: str,
+    observations: list[dict[str, Any]],
+) -> list[ToolRelationshipEvidence]:
+    """Replace one source's observations and resolve the affected tool."""
+    clean_tool = _clean(tool_name)
+    now = utcnow()
+    existing = list(
         s.execute(
-            select(ToolMaintainerEdge)
-            .where(ToolMaintainerEdge.tool_name == clean_name)
-            .order_by(ToolMaintainerEdge.confidence.desc(), ToolMaintainerEdge.id)
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == clean_tool,
+                ToolRelationshipEvidence.source == source,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
         ).scalars()
     )
-    return [_upsert_relationship(s, edge, _upsert_person(s, edge)) for edge in edges]
+    for row in existing:
+        row.withdrawn_at = now
+        row.updated_at = now
+    rows = []
+    for observation in observations:
+        person = ensure_person(
+            s,
+            display_name=_clean(observation.get("display_name")),
+            toolhub_user_id=_clean(observation.get("toolhub_user_id"), 64),
+            toolhub_username=_clean(observation.get("toolhub_username")),
+            wiki_username=_clean(observation.get("wiki_username")),
+            source=source,
+            checked_at=observation.get("checked_at"),
+        )
+        role = _clean(observation.get("relationship_type"), 32) or PERSON_REL_AUTHOR
+        method = _clean(observation.get("method"), 64)
+        evidence_key = _clean(observation.get("evidence_key"), 255)
+        row = s.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == clean_tool,
+                ToolRelationshipEvidence.person_id == person.id,
+                ToolRelationshipEvidence.relationship_type == role,
+                ToolRelationshipEvidence.source == source,
+                ToolRelationshipEvidence.method == method,
+                ToolRelationshipEvidence.evidence_key == evidence_key,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = ToolRelationshipEvidence(
+                tool_name=clean_tool,
+                person_id=person.id,
+                relationship_type=role,
+                source=source,
+                method=method,
+                evidence_key=evidence_key,
+                first_seen_at=observation.get("first_seen_at") or now,
+            )
+            s.add(row)
+        row.verification_status = _clean(observation.get("verification_status"), 32) or AUTHOR_CLAIM_UNVERIFIED
+        row.observed_name = _clean(observation.get("display_name"))
+        row.confidence = max(0, min(100, int(observation.get("confidence") or 0)))
+        row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
+        row.evidence_url = _clean(observation.get("evidence_url"), 2000) or None
+        row.evidence_payload = observation.get("evidence_payload")
+        row.checked_at = observation.get("checked_at") or now
+        row.expires_at = observation.get("expires_at")
+        row.withdrawn_at = None
+        row.last_error = _clean(observation.get("last_error"), 2000) or None
+        row.updated_at = now
+        rows.append(row)
+    s.flush()
+    resolve_tool_relationships(s, clean_tool)
+    return rows
 
 
-def _activity_payload(rollup: Any) -> dict[str, Any]:  # noqa: ANN401 - optional SQLAlchemy model
-    if rollup is None:
+def _resolved_status(evidence: list[ToolRelationshipEvidence]) -> str:
+    now = utcnow()
+    current = [row for row in evidence if row.expires_at is None or row.expires_at > now]
+    statuses = {row.verification_status for row in current}
+    if AUTHOR_CLAIM_VERIFIED in statuses:
+        return AUTHOR_CLAIM_VERIFIED
+    if current:
+        return AUTHOR_CLAIM_UNVERIFIED if AUTHOR_CLAIM_UNVERIFIED in statuses else AUTHOR_CLAIM_FAILED
+    return AUTHOR_CLAIM_STALE
+
+
+def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRelationship]:
+    """Collapse active evidence into one current row per person/tool/role."""
+    clean_tool = _clean(tool_name)
+    evidence = list(
+        s.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == clean_tool,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    )
+    grouped: dict[tuple[int, str], list[ToolRelationshipEvidence]] = {}
+    for row in evidence:
+        grouped.setdefault((row.person_id, row.relationship_type), []).append(row)
+    current_rows = list(
+        s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_tool)).scalars()
+    )
+    current = {(row.person_id, row.relationship_type): row for row in current_rows}
+    for key, row in current.items():
+        if key not in grouped:
+            s.delete(row)
+    now = utcnow()
+    resolved = []
+    for (person_id, role), supporting in grouped.items():
+        row = current.get((person_id, role))
+        if row is None:
+            row = ToolPersonRelationship(tool_name=clean_tool, person_id=person_id, relationship_type=role)
+            s.add(row)
+        row.verification_status = _resolved_status(supporting)
+        row.confidence = max(item.confidence for item in supporting)
+        row.evidence_count = len(supporting)
+        row.toolhub_canonical = any(item.toolhub_canonical for item in supporting)
+        expiries = [item.expires_at for item in supporting if item.expires_at is not None]
+        row.expires_at = max(expiries) if expiries else None
+        row.resolved_at = now
+        row.updated_at = now
+        resolved.append(row)
+    s.flush()
+    refresh_activity_summaries(s, person_ids={row.person_id for row in resolved})
+    return resolved
+
+
+def _contribution_dates(s: Session, user_id: int) -> list[datetime]:
+    """Return dates of public, substantive Evolved contributions only."""
+    queries = (
+        select(ToolRecord.modified_at).where(
+            ToolRecord.user_id == user_id,
+            ToolRecord.visibility == "public",
+            ToolRecord.review_status == REVIEW_APPROVED,
+            ToolRecord.deleted_at.is_(None),
+        ),
+        select(CatalogCuration.modified_at).where(
+            CatalogCuration.created_by_user_id == user_id,
+            CatalogCuration.review_status == REVIEW_APPROVED,
+            CatalogCuration.deleted_at.is_(None),
+        ),
+        select(ToolOverlay.modified_at).where(
+            ToolOverlay.user_id == user_id,
+            ToolOverlay.review_status == REVIEW_APPROVED,
+            ToolOverlay.deleted_at.is_(None),
+        ),
+        select(SourceAnalysisReport.reviewed_at).where(
+            SourceAnalysisReport.user_id == user_id,
+            SourceAnalysisReport.review_status == REVIEW_APPROVED,
+        ),
+        select(ActivityRow.created_at).where(
+            ActivityRow.user_id == user_id,
+            ActivityRow.kind == "revisions",
+            or_(ActivityRow.official_status.is_(None), ActivityRow.official_status != "failed"),
+        ),
+    )
+    dates: list[datetime] = []
+    for query in queries:
+        dates.extend(value for (value,) in s.execute(query).all() if value is not None)
+    return dates
+
+
+def refresh_activity_summaries(s: Session, *, person_ids: set[int] | None = None) -> list[PersonActivitySummary]:
+    """Refresh public contribution summaries, never private account activity."""
+    ids = person_ids
+    if ids is None:
+        ids = {row[0] for row in s.execute(select(Person.id)).all()}
+    if not ids:
+        return []
+    now = utcnow()
+    recent_after = now - timedelta(days=RECENT_ACTIVITY_DAYS)
+    summaries = []
+    for person_id in sorted(ids):
+        users = list(s.execute(select(User).where(User.person_id == person_id)).scalars())
+        dates = [date for user in users for date in _contribution_dates(s, user.id)]
+        relationships = list(
+            s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.person_id == person_id)).scalars()
+        )
+        row = s.get(PersonActivitySummary, person_id)
+        if row is None:
+            row = PersonActivitySummary(person_id=person_id)
+            s.add(row)
+        row.related_tool_count = len({item.tool_name for item in relationships})
+        row.verified_tool_count = len(
+            {item.tool_name for item in relationships if item.verification_status == AUTHOR_CLAIM_VERIFIED}
+        )
+        row.contribution_count = len(dates)
+        row.recent_contribution_count = sum(date >= recent_after for date in dates)
+        row.last_contribution_at = max(dates) if dates else None
+        age = (now - row.last_contribution_at).days if row.last_contribution_at else None
+        row.activity_status = (
+            "active"
+            if age is not None and age <= ACTIVE_CONTRIBUTION_DAYS
+            else ("quiet" if age is not None and age <= QUIET_CONTRIBUTION_DAYS else "unknown")
+        )
+        row.computed_at = now
+        row.stale_at = now + timedelta(days=ACTIVITY_STALE_DAYS)
+        summaries.append(row)
+    return summaries
+
+
+def activity_payload(row: PersonActivitySummary | None) -> dict[str, Any]:
+    if row is None:
         return {"status": "unknown"}
     return {
-        "status": rollup.activity_status or "unknown",
-        "recentActivityCount": rollup.recent_activity_count,
-        "activeToolCount": rollup.active_tool_count,
-        "verifiedToolCount": rollup.verified_tool_count,
-        "lastActivityAgeDays": (utcnow() - rollup.last_activity_at).days if rollup.last_activity_at else None,
+        "status": row.activity_status or "unknown",
+        "contributionCount": row.contribution_count,
+        "recentContributionCount": row.recent_contribution_count,
+        "relatedToolCount": row.related_tool_count,
+        "verifiedToolCount": row.verified_tool_count,
+        "lastContributionAgeDays": (utcnow() - row.last_contribution_at).days if row.last_contribution_at else None,
+        "computedAt": row.computed_at.isoformat(timespec="seconds") + "Z" if row.computed_at else "",
+    }
+
+
+def _identifiers_by_person(s: Session, person_ids: set[int]) -> dict[int, list[dict[str, Any]]]:
+    result: dict[int, list[dict[str, Any]]] = {}
+    rows = s.execute(
+        select(PersonIdentifier)
+        .where(PersonIdentifier.person_id.in_(person_ids or {-1}), PersonIdentifier.is_current.is_(True))
+        .order_by(PersonIdentifier.namespace, PersonIdentifier.value)
+    ).scalars()
+    for row in rows:
+        result.setdefault(row.person_id, []).append(
+            {"namespace": row.namespace, "value": row.value, "kind": row.identifier_kind}
+        )
+    return result
+
+
+def _person_base_payload(
+    person: Person,
+    identifiers: list[dict[str, Any]],
+    profile: PersonProfile | None,
+    activity: PersonActivitySummary | None,
+) -> dict[str, Any]:
+    return {
+        "id": person.public_id,
+        "displayName": person.display_name,
+        "identityQuality": person.identity_quality,
+        "identifiers": identifiers,
+        "profile": {
+            "bio": profile.bio,
+            "avatarUrl": profile.avatar_url,
+            "websiteUrl": profile.website_url,
+            "location": profile.location,
+            "links": profile.links if isinstance(profile.links, list) else [],
+        }
+        if profile is not None and profile.visibility == "public"
+        else {},
+        "activity": activity_payload(activity),
     }
 
 
 def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
-    """Return public-safe people and typed relationships for one tool."""
-    clean_name = _clean(tool_name)
+    """Return the canonical local people view for a Toolhub tool."""
+    clean_tool = _clean(tool_name)
     relationships = list(
         s.execute(
             select(ToolPersonRelationship)
-            .where(ToolPersonRelationship.tool_name == clean_name)
+            .where(ToolPersonRelationship.tool_name == clean_tool)
             .order_by(ToolPersonRelationship.confidence.desc(), ToolPersonRelationship.id)
         ).scalars()
     )
-    people_by_id: dict[int, dict[str, Any]] = {}
     person_ids = {row.person_id for row in relationships}
-    people = {
-        row.id: row for row in s.execute(select(Person).where(Person.id.in_(person_ids or {-1}))).scalars()
+    people = {row.id: row for row in s.execute(select(Person).where(Person.id.in_(person_ids or {-1}))).scalars()}
+    identifiers = _identifiers_by_person(s, person_ids)
+    profiles = {
+        row.person_id: row
+        for row in s.execute(select(PersonProfile).where(PersonProfile.person_id.in_(person_ids or {-1}))).scalars()
     }
-    identifiers = {}
-    for row in s.execute(select(PersonIdentifier).where(PersonIdentifier.person_id.in_(person_ids or {-1}))).scalars():
-        identifiers.setdefault(row.person_id, []).append({"namespace": row.namespace, "value": row.value})
-    rollups = {
-        row.maintainer_key: row
-        for row in s.execute(select(MaintainerActivityRollup)).scalars()
+    activities = {
+        row.person_id: row
+        for row in s.execute(
+            select(PersonActivitySummary).where(PersonActivitySummary.person_id.in_(person_ids or {-1}))
+        ).scalars()
     }
-    for row in relationships:
-        person = people.get(row.person_id)
+    evidence = list(
+        s.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == clean_tool,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    )
+    evidence_by_key: dict[tuple[int, str], list[ToolRelationshipEvidence]] = {}
+    for item in evidence:
+        evidence_by_key.setdefault((item.person_id, item.relationship_type), []).append(item)
+    items_by_id: dict[int, dict[str, Any]] = {}
+    for relationship in relationships:
+        person = people.get(relationship.person_id)
         if person is None:
             continue
-        payload = people_by_id.setdefault(
+        payload = items_by_id.setdefault(
             person.id,
-            {
-                "id": person.canonical_key,
-                "displayName": person.display_name,
-                "identityQuality": person.identity_quality,
-                "identifiers": identifiers.get(person.id, []),
-                "relationships": [],
-            },
+            _person_base_payload(
+                person, identifiers.get(person.id, []), profiles.get(person.id), activities.get(person.id)
+            )
+            | {"relationships": []},
         )
+        supporting = evidence_by_key.get((person.id, relationship.relationship_type), [])
         payload["relationships"].append(
+            {
+                "type": relationship.relationship_type,
+                "status": relationship.verification_status,
+                "confidence": relationship.confidence,
+                "evidenceCount": relationship.evidence_count,
+                "toolhubCanonical": relationship.toolhub_canonical,
+                "evidence": [
+                    {
+                        "source": row.source,
+                        "method": row.method,
+                        "observedName": row.observed_name,
+                        "status": row.verification_status,
+                        "confidence": row.confidence,
+                        "available": bool(row.evidence_url),
+                    }
+                    for row in supporting
+                ],
+            }
+        )
+    items = sorted(
+        items_by_id.values(),
+        key=lambda item: (-max((role["confidence"] for role in item["relationships"]), default=0), item["id"]),
+    )
+    counts = {
+        role: sum(any(relationship["type"] == role for relationship in item["relationships"]) for item in items)
+        for role in PUBLIC_ROLES
+    }
+    return {
+        "toolName": clean_tool,
+        "people": items,
+        "counts": counts,
+        "relationshipCount": len(relationships),
+        "source": SOURCE_LOCAL,
+        "syncStatus": "evolved_real",
+        "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},
+    }
+
+
+def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
+    person = s.execute(select(Person).where(Person.public_id == _clean(public_id, 36))).scalar_one_or_none()
+    if person is None:
+        return None
+    identifiers = _identifiers_by_person(s, {person.id}).get(person.id, [])
+    profile = s.get(PersonProfile, person.id)
+    activity = s.get(PersonActivitySummary, person.id)
+    relationships = list(
+        s.execute(
+            select(ToolPersonRelationship)
+            .where(ToolPersonRelationship.person_id == person.id)
+            .order_by(ToolPersonRelationship.tool_name, ToolPersonRelationship.relationship_type)
+        ).scalars()
+    )
+    tools: dict[str, list[dict[str, Any]]] = {}
+    for row in relationships:
+        tools.setdefault(row.tool_name, []).append(
             {
                 "type": row.relationship_type,
                 "status": row.verification_status,
                 "confidence": row.confidence,
-                "source": row.source,
-                "method": row.method,
-                "activity": _activity_payload(rollups.get(person.canonical_key)),
-                "evidenceAvailable": bool(row.evidence_url),
+                "evidenceCount": row.evidence_count,
+                "toolhubCanonical": row.toolhub_canonical,
             }
         )
-    items = sorted(
-        people_by_id.values(),
-        key=lambda item: (-max((r["confidence"] for r in item["relationships"]), default=0), item["id"]),
-    )
-    roles = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
-    counts = {
-        role: sum(1 for item in items if any(r["type"] == role for r in item["relationships"]))
-        for role in roles
+    return _person_base_payload(person, identifiers, profile, activity) | {
+        "tools": [{"name": name, "relationships": roles} for name, roles in tools.items()],
+        "toolCount": len(tools),
+        "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},
     }
-    return {
-        "people": items,
-        "counts": counts,
-        "relationshipCount": len(relationships),
-        "identityPolicy": {
-            "stableIdentifiers": ["toolhub", "wiki"],
-            "displayNameFallback": "heuristic",
-            "canonical": False,
-        },
+
+
+def find_people(s: Session, query: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    clean_query = _clean(query)
+    statement = select(Person).order_by(Person.display_name, Person.public_id).limit(max(1, min(limit, 100)))
+    if clean_query:
+        matching_ids = select(PersonIdentifier.person_id).where(
+            PersonIdentifier.normalized_value.like(f"%{_normalized(clean_query)}%")
+        )
+        statement = statement.where(
+            or_(func.lower(Person.display_name).like(f"%{clean_query.casefold()}%"), Person.id.in_(matching_ids))
+        )
+    people = list(s.execute(statement).scalars())
+    identifiers = _identifiers_by_person(s, {person.id for person in people})
+    activities = {
+        row.person_id: row
+        for row in s.execute(
+            select(PersonActivitySummary).where(
+                PersonActivitySummary.person_id.in_({person.id for person in people} or {-1})
+            )
+        ).scalars()
     }
+    profiles = {
+        row.person_id: row
+        for row in s.execute(
+            select(PersonProfile).where(
+                PersonProfile.person_id.in_({person.id for person in people} or {-1}),
+                PersonProfile.visibility == "public",
+            )
+        ).scalars()
+    }
+    return [
+        _person_base_payload(person, identifiers.get(person.id, []), profiles.get(person.id), activities.get(person.id))
+        for person in people
+    ]

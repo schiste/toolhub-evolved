@@ -8,6 +8,7 @@ reads while live Toolhub data is stale or unavailable.
 """
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
@@ -51,6 +52,10 @@ class User(Base):
     # a string. Keeping the DB column avoids a destructive migration on Toolforge.
     wm_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(255))
+    # A signed-in account and a public person are deliberately separate. Some
+    # people never sign in, while one authenticated Toolhub account can be
+    # linked deterministically through its immutable numeric upstream id.
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("people.id"), nullable=True, unique=True, index=True)
     role: Mapped[str] = mapped_column(String(32), default="user")
     # Bumped on sign-out to invalidate every session cookie already issued to
     # this user. Flask sessions are signed client-side cookies, so without a
@@ -601,30 +606,39 @@ class ToolThanks(Base):
 
 
 class ToolAuthorClaim(Base):
-    """Per-tool proof state for a Toolhub author name claimed by a Toolhub user."""
+    """Account-owned workflow state for one requested person/tool relationship."""
 
     __tablename__ = "tool_author_claims"
-    __table_args__ = (UniqueConstraint("tool_name", "author_name", "toolhub_username", "verification_method"),)
+    __table_args__ = (
+        UniqueConstraint("tool_name", "author_name", "toolhub_username", "verification_method"),
+        UniqueConstraint("tool_name", "author_name", "user_id", "verification_method"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     author_name: Mapped[str] = mapped_column(String(255), index=True)
     toolhub_username: Mapped[str] = mapped_column(String(255), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
     verification_method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
+    requested_relationship: Mapped[str] = mapped_column(String(32), default="", index=True)
     evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class ToolAuthorKey(Base):
     """A public key a Toolhub user registered for signed toolinfo ownership proofs."""
 
     __tablename__ = "tool_author_keys"
-    __table_args__ = (UniqueConstraint("toolhub_username", "key_id"),)
+    __table_args__ = (UniqueConstraint("toolhub_username", "key_id"), UniqueConstraint("user_id", "key_id"))
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     toolhub_username: Mapped[str] = mapped_column(String(255), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     key_id: Mapped[str] = mapped_column(String(128), index=True)
     public_key: Mapped[str] = mapped_column(Text)
     algorithm: Mapped[str] = mapped_column(String(32), default="ed25519")
@@ -633,54 +647,13 @@ class ToolAuthorKey(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
-class ToolMaintainerEdge(Base):
-    """Derived per-tool maintainer edge with provenance and confidence."""
-
-    __tablename__ = "tool_maintainer_edges"
-    __table_args__ = (UniqueConstraint("tool_name", "maintainer_key", "source", "method"),)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tool_name: Mapped[str] = mapped_column(String(255), index=True)
-    maintainer_key: Mapped[str] = mapped_column(String(255), index=True)
-    maintainer_display_name: Mapped[str] = mapped_column(String(255), default="")
-    toolhub_username: Mapped[str] = mapped_column(String(255), default="", index=True)
-    wiki_username: Mapped[str] = mapped_column(String(255), default="", index=True)
-    author_name: Mapped[str] = mapped_column(String(255), default="")
-    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
-    method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
-    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
-    confidence: Mapped[int] = mapped_column(Integer, default=0)
-    evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
-    evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
-class MaintainerActivityRollup(Base):
-    """Derived local activity rollup for one maintainer identity."""
-
-    __tablename__ = "maintainer_activity_rollups"
-    maintainer_key: Mapped[str] = mapped_column(String(255), primary_key=True)
-    maintainer_display_name: Mapped[str] = mapped_column(String(255), default="")
-    toolhub_username: Mapped[str] = mapped_column(String(255), default="", index=True)
-    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
-    maintainer_count_hint: Mapped[int] = mapped_column(Integer, default=1)
-    active_tool_count: Mapped[int] = mapped_column(Integer, default=0)
-    verified_tool_count: Mapped[int] = mapped_column(Integer, default=0)
-    recent_activity_count: Mapped[int] = mapped_column(Integer, default=0)
-    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    activity_status: Mapped[str] = mapped_column(String(32), default="unknown")
-    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    stale_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-
 class Person(Base):
     """A deduplicated person identity shared across tool relationships."""
 
     __tablename__ = "people"
     canonical_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, default=lambda: str(uuid4()))
     display_name: Mapped[str] = mapped_column(String(255), default="")
     identity_quality: Mapped[str] = mapped_column(String(32), default="display_name")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -688,7 +661,7 @@ class Person(Base):
 
 
 class PersonIdentifier(Base):
-    """A stable external identifier attached to one person."""
+    """An external stable id or mutable handle attached to one person."""
 
     __tablename__ = "person_identifiers"
     __table_args__ = (UniqueConstraint("namespace", "normalized_value"),)
@@ -697,27 +670,94 @@ class PersonIdentifier(Base):
     namespace: Mapped[str] = mapped_column(String(32))
     value: Mapped[str] = mapped_column(String(255))
     normalized_value: Mapped[str] = mapped_column(String(255))
+    identifier_kind: Mapped[str] = mapped_column(String(32), default="handle", index=True)
+    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class ToolPersonRelationship(Base):
-    """Evidence-backed role relationship between one tool and one person."""
+class PersonProfile(Base):
+    """Evolved-owned public profile content for a resolved person."""
 
-    __tablename__ = "tool_person_relationships"
-    __table_args__ = (UniqueConstraint("tool_name", "person_id", "relationship_type", "source", "method"),)
+    __tablename__ = "person_profiles"
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), primary_key=True)
+    bio: Mapped[str] = mapped_column(Text, default="")
+    avatar_url: Mapped[str] = mapped_column(String(2000), default="")
+    website_url: Mapped[str] = mapped_column(String(2000), default="")
+    location: Mapped[str] = mapped_column(String(255), default="")
+    links: Mapped[list] = mapped_column(JSON, default=list)
+    visibility: Mapped[str] = mapped_column(String(32), default="public", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolRelationshipEvidence(Base):
+    """One provenance observation supporting a typed person/tool relationship."""
+
+    __tablename__ = "tool_relationship_evidence"
+    __table_args__ = (
+        UniqueConstraint("tool_name", "person_id", "relationship_type", "source", "method", "evidence_key"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tool_name: Mapped[str] = mapped_column(String(255), index=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
     relationship_type: Mapped[str] = mapped_column(String(32), index=True)
-    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL)
+    source: Mapped[str] = mapped_column(String(64), default=SOURCE_LOCAL, index=True)
     method: Mapped[str] = mapped_column(String(64), default=AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)
+    evidence_key: Mapped[str] = mapped_column(String(255), default="")
+    observed_name: Mapped[str] = mapped_column(String(255), default="")
     verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
     confidence: Mapped[int] = mapped_column(Integer, default=0)
+    # True only when the observation is a projection of canonical Toolhub
+    # catalog data. It never implies Evolved owns that upstream fact.
+    toolhub_canonical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolPersonRelationship(Base):
+    """One resolved current role between a tool and a person."""
+
+    __tablename__ = "person_tool_relationships"
+    __table_args__ = (UniqueConstraint("tool_name", "person_id", "relationship_type"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), index=True)
+    relationship_type: Mapped[str] = mapped_column(String(32), index=True)
+    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence_count: Mapped[int] = mapped_column(Integer, default=0)
+    toolhub_canonical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    resolved_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PersonActivitySummary(Base):
+    """Rebuildable public contribution summary for one person."""
+
+    __tablename__ = "person_activity_summaries"
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id"), primary_key=True)
+    related_tool_count: Mapped[int] = mapped_column(Integer, default=0)
+    verified_tool_count: Mapped[int] = mapped_column(Integer, default=0)
+    contribution_count: Mapped[int] = mapped_column(Integer, default=0)
+    recent_contribution_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_contribution_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    activity_status: Mapped[str] = mapped_column(String(32), default="unknown")
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    stale_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PersonReconciliationRun(Base):
