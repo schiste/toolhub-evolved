@@ -1327,3 +1327,42 @@ test("sponsorEntry: a null entry in the sponsor list contributes nothing", async
 	const r = await tool.viewTool("spnull");
 	assert.ok(!r.html.includes("toolpage__sponsor"), "null entry → no sponsor line");
 });
+
+test("viewTool starts the health summary read alongside the canonical fetch", async () => {
+	const order = [];
+	h.attachEvolvedSummaries.mockImplementation(async (tools, opts) => {
+		order.push(opts?.waitForFresh ? "summary:blocking" : "summary:attach");
+		return tools;
+	});
+	h.getTool.mockImplementation(async () => {
+		order.push("getTool");
+		return toolFixture("minimal", { title: "Minimal Tool" });
+	});
+
+	await tool.viewTool("minimal");
+
+	// The name comes from the route, so the summary read must not queue behind
+	// the slower canonical fetch — otherwise the score cannot be in first paint.
+	assert.deepEqual(order, ["summary:blocking", "getTool", "summary:attach"]);
+	assert.deepEqual(h.attachEvolvedSummaries.mock.calls[0][0], [{ name: "minimal" }]);
+});
+
+test("viewTool still renders when the health summary read never resolves", async () => {
+	vi.useFakeTimers();
+	try {
+		h.attachEvolvedSummaries.mockImplementation((tools, opts) =>
+			opts?.waitForFresh ? new Promise(() => {}) : Promise.resolve(tools)
+		);
+		h.getTool.mockResolvedValue(toolFixture("minimal", { title: "Minimal Tool" }));
+
+		const pending = tool.viewTool("minimal");
+		await vi.advanceTimersByTimeAsync(600);
+		const r = await pending;
+
+		// A stalled additive read degrades to a scoreless page, never a blank one.
+		assert.equal(r.title, "Minimal Tool — Toolhub");
+		assert.ok(r.html.includes('<h1 class="toolpage__title" dir="auto">Minimal Tool</h1>'));
+	} finally {
+		vi.useRealTimers();
+	}
+});

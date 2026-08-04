@@ -625,8 +625,20 @@ function toolManagementActions(tool, canDeleteOfficialTool) {
 	return { managementLinks };
 }
 
+/* Upper bound on how long the health summary may delay the tool page. It runs
+   alongside the canonical fetch and reads only local data, so it is not
+   expected to be reached — this exists so a stalled read degrades to a
+   scoreless first paint rather than a blank page. */
+const SUMMARY_FIRST_PAINT_GRACE_MS = 600;
+
 /** @param {string} name */
 export async function viewTool(name) {
+	// The name is known from the route, so the local summary read does not have
+	// to wait for the canonical record. Running it alongside getTool costs no
+	// extra wall time — the upstream read is the slower of the two — and means
+	// the health score is present for the first render rather than arriving in
+	// a later repaint.
+	const summaryReady = attachEvolvedSummaries([{ name }], { waitForFresh: true }).catch(() => null);
 	const tool =
 		/** @type {(Tool & { edited?: boolean, annotated?: boolean, endorsement?: { count?: number } }) | null} */ (
 			await getTool(name)
@@ -636,6 +648,17 @@ export async function viewTool(name) {
 	// Signals, media, and fresh summaries are additive Evolved data. Keep the
 	// canonical tool page render independent from their availability and let
 	// mount() hydrate their dedicated slots after the primary content exists.
+	// Bounded on purpose. The read above has already had the whole canonical
+	// fetch to finish and is local, so it has effectively always landed by now;
+	// the cap only ensures a hung summary read can never hold up a page that
+	// renders perfectly well without a score.
+	await Promise.race([
+		summaryReady,
+		new Promise((resolve) => {
+			setTimeout(resolve, SUMMARY_FIRST_PAINT_GRACE_MS);
+		})
+	]);
+	// Reads the cache the call above just filled; no further request.
 	await attachEvolvedSummaries([tool]);
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
 	setIssueContext(() => ({

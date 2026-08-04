@@ -422,9 +422,12 @@ function scheduleEvolvedSummaryRefresh(names) {
  * Attach local Evolved health/maintainer summaries for visible tool cards.
  * The endpoint reads only Evolved's local database, so this never blocks on
  * official Toolhub after the canonical/summary cache has been populated.
- * @param {Tool[]} tools
+ * Only the name is read, so a caller that has one before it has the record —
+ * the tool route, which takes it from the URL — can start this early.
+ * @template {{ name: string }} T
+ * @param {T[]} tools
  * @param {{ waitForFresh?: boolean, defer?: boolean }} [opts]
- * @returns {Promise<Tool[]>}
+ * @returns {Promise<T[]>}
  */
 export async function attachEvolvedSummaries(tools, opts = {}) {
 	const names = [...new Set((tools || []).map((tool) => tool && tool.name).filter(Boolean))].slice(0, 50);
