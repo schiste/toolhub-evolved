@@ -226,7 +226,7 @@ def claim_payload(row: ToolAuthorClaim) -> dict:
         "toolhubUsername": row.toolhub_username,
         "verificationStatus": status,
         "verificationMethod": method,
-        "requestedRelationship": row.requested_relationship or claim_relationship_for_method(method),
+        "requestedRelationship": claim_relationship_for_method(method),
         "isVerified": claim_is_verified(status, method, expires_at=row.expires_at),
         "evidenceUrl": row.evidence_url or "",
         "evidencePayload": row.evidence_payload,
@@ -296,7 +296,7 @@ def record_author_claim(  # noqa: PLR0913 - claim rows intentionally carry expli
     row.user_id = user_id or row.user_id
     row.toolhub_username = clean_string(toolhub_username)
     row.verification_status = status
-    row.requested_relationship = row.requested_relationship or claim_relationship_for_method(method)
+    row.requested_relationship = claim_relationship_for_method(method)
     row.revoked_at = None
     row.evidence_url = (evidence_url or "")[:MAX_EVIDENCE_URL] or None
     row.evidence_payload = evidence_payload
@@ -361,8 +361,9 @@ class ToolforgeMaintainerProvider:
         if not toolforge_names:
             return []
         names = dedupe_strings(author_names) or [user.username]
-        if self._fresh_rows_cover(s, user, tool_name, names):
-            return []
+        fresh_rows = self._fresh_rows(s, user, tool_name, names)
+        if len(fresh_rows) == len(names):
+            return fresh_rows
         for toolforge_name in toolforge_names:
             evidence_url = self.evidence_url(toolforge_name)
             try:
@@ -434,7 +435,10 @@ class ToolforgeMaintainerProvider:
         )
         return response.status_code, response.text
 
-    def _fresh_rows_cover(self, s: Session, user: User, tool_name: str, author_names: list[str]) -> bool:
+    def _fresh_rows(
+        self, s: Session, user: User, tool_name: str, author_names: list[str]
+    ) -> list[ToolAuthorClaim]:
+        """Return fresh verified rows in the requested author-name order."""
         rows = s.execute(
             select(ToolAuthorClaim).where(
                 ToolAuthorClaim.tool_name == tool_name,
@@ -449,8 +453,8 @@ class ToolforgeMaintainerProvider:
                 ToolAuthorClaim.verification_status == AUTHOR_CLAIM_VERIFIED,
             )
         ).scalars()
-        fresh = {string_key(row.author_name) for row in rows if not _is_expired(row.expires_at)}
-        return all(string_key(name) in fresh for name in author_names)
+        fresh = {string_key(row.author_name): row for row in rows if not _is_expired(row.expires_at)}
+        return [fresh[key] for name in author_names if (key := string_key(name)) in fresh]
 
     def _record_verified(  # noqa: PLR0913 - claim evidence is clearer as named arguments.
         self,

@@ -111,13 +111,6 @@ def _best_claim_rows(rows: list[ToolAuthorClaim]) -> list[ToolAuthorClaim]:
 
 
 def _claim_role(row: ToolAuthorClaim) -> str:
-    if row.requested_relationship in {
-        PERSON_REL_AUTHOR,
-        PERSON_REL_MAINTAINER,
-        PERSON_REL_RECORD_OWNER,
-        PERSON_REL_CATALOG_ACTOR,
-    }:
-        return row.requested_relationship
     method = clean_author_claim_method(row.verification_method)
     if method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
         return PERSON_REL_RECORD_OWNER

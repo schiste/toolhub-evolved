@@ -123,6 +123,7 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
                     toolhub_username="Schiste",
                     verification_status=sync.AUTHOR_CLAIM_VERIFIED,
                     verification_method=sync.AUTHOR_CLAIM_SIGNED_TOOLINFO,
+                    requested_relationship=sync.PERSON_REL_CATALOG_ACTOR,
                 ),
                 ToolAuthorKey(toolhub_username="Schiste", key_id="legacy-key", public_key="pk"),
                 UserToolResolverCache(
@@ -144,6 +145,7 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
         signed_claim = s.query(ToolAuthorClaim).filter(ToolAuthorClaim.tool_name == "signed-tool").one()
         migrated_user = s.query(User).one()
         assert signed_claim.user_id == migrated_user.id
+        assert signed_claim.requested_relationship == sync.PERSON_REL_MAINTAINER
         assert s.query(ToolAuthorKey).one().user_id == migrated_user.id
         assert s.query(UserToolResolverCache).count() == 0
 

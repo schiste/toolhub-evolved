@@ -1383,14 +1383,47 @@ def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):
         assert len(rows) == 1
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
         assert rows[0].verification_method == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
-        provider.verify(
+        repeated = provider.verify(
             s,
             user,
             tool_name="toolhub-evolved",
             author_names=["Christophe"],
             toolhub_tool={"url": "https://toolhub-evolved.toolforge.org"},
         )
+        assert [row.id for row in repeated] == [rows[0].id]
     assert calls == ["toolhub-evolved"]
+
+
+def test_claim_method_overrides_a_malformed_stored_relationship(client):
+    uid = add_user(username="Ada")
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        claim = ToolAuthorClaim(
+            tool_name="ada-tool",
+            author_name="Ada",
+            toolhub_username="Ada",
+            user_id=uid,
+            verification_method=sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
+            verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+            requested_relationship=sync.PERSON_REL_CATALOG_ACTOR,
+        )
+        s.add(claim)
+        s.flush()
+
+        assert author_claims.claim_payload(claim)["requestedRelationship"] == sync.PERSON_REL_RECORD_OWNER
+        maintainer_index.sync_author_claim_edges(s, tool_names=["ada-tool"], user_ids=[uid])
+        assert s.query(ToolPersonRelationship).one().relationship_type == sync.PERSON_REL_RECORD_OWNER
+
+        author_claims.record_author_claim(
+            s,
+            tool_name="ada-tool",
+            author_name="Ada",
+            toolhub_username=user.username,
+            user_id=user.id,
+            verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+            verification_method=sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
+        )
+        assert claim.requested_relationship == sync.PERSON_REL_RECORD_OWNER
 
 
 def test_toolforge_maintainer_provider_retries_failed_claims(client):

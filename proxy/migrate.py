@@ -185,8 +185,9 @@ def _backfill_account_owned_records(s, users: list[User]) -> int:  # noqa: ANN00
                 touched += 1
             if model is ToolAuthorClaim:
                 changed = False
-                if not row.requested_relationship:
-                    row.requested_relationship = claim_relationship_for_method(row.verification_method)
+                expected_relationship = claim_relationship_for_method(row.verification_method)
+                if row.requested_relationship != expected_relationship:
+                    row.requested_relationship = expected_relationship
                     changed = True
                 if row.created_at is None:
                     row.created_at = row.checked_at or utcnow()
