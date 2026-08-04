@@ -88,7 +88,7 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(health.includes("sum(dimension.score * dimension.weight"));
 	assert.ok(health.includes("source-health"));
 	assert.ok(health.includes("maintainer-status"));
-	assert.ok(health.includes("counts.verifiedMaintainers"));
+	assert.ok(health.includes("healthCounts.verifiedPeople"));
 	assert.ok(health.includes("runtime-health"));
 	assert.ok(health.includes("healthy"));
 	assert.ok(health.includes("95"));

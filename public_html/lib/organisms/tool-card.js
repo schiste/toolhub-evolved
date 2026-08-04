@@ -17,7 +17,7 @@ export const CARD_TAG_LIMIT = 2;
 function hasConfirmedMaintainer(summary) {
 	return (
 		String(summary?.maintainerDimension?.status || "") === "verified-maintainer" ||
-		Number(summary?.maintainer?.counts?.verifiedMaintainers || 0) > 0
+		Number(summary?.maintainer?.healthCounts?.verifiedPeople || 0) > 0
 	);
 }
 

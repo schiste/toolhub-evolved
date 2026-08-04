@@ -308,6 +308,8 @@ export function dispatch() {
 	}
 	if (seg[0] === "search") return loadSearch().then((m) => m.viewSearch());
 	if (seg[0] === "by" && seg[1]) return loadAuthors().then((m) => m.viewAuthor(decodeURIComponent(seg[1])));
+	if (seg[0] === "people" && !seg[1]) return loadAuthors().then((m) => m.viewPeople());
+	if (seg[0] === "people" && seg[1]) return loadAuthors().then((m) => m.viewPerson(decodeURIComponent(seg[1])));
 	if (seg[0] === "tools" && seg[1]) return dispatchToolRoute(seg);
 	if (seg[0] === "lists" && seg[1]) return dispatchListRoute(seg);
 	if (ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]) {

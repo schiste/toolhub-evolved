@@ -11,6 +11,7 @@ import {
 	isNewTool
 } from "../lib/core/api.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
+import { peopleForTool } from "../lib/core/people.js";
 import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
 import {
 	attachEvolvedSummaries,
@@ -23,7 +24,7 @@ import {
 import { signedIn } from "../lib/core/session.js";
 import { SYNC_STATUS, clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
-import { authorHref, navigateTo, toolHref } from "../lib/core/routing.js";
+import { authorHref, navigateTo, personHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { completenessList, completenessMeter, endorsementChip, fitChip, statusBadge } from "../lib/atoms/badges.js";
 import { button } from "../lib/atoms/button.js";
@@ -33,13 +34,16 @@ import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { healthScoreChip, maintainerDisclosure } from "../lib/molecules/tool-health-summary.js";
+import { openClaimDrawer } from "../lib/organisms/claim-drawer.js";
 import { setIssueContext } from "../lib/organisms/issue-drawer.js";
 import { prosePage, viewNotFound } from "./static.js";
 
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
-/** @typedef {{ name: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
+/** @typedef {{ name: string, publicId?: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
+/** @typedef {{ id?: string, displayName?: string, identifiers?: Array<{ namespace?: string, value?: string }>, relationships?: Array<{ type?: string, evidence?: Array<{ observedName?: string }> }> }} PublicPerson */
+/** @typedef {{ people?: PublicPerson[] }} PeopleSummary */
 
 /** @param {{ tool: Tool, shared?: string[] }} item */
 function relatedToolRow(item) {
@@ -209,19 +213,35 @@ function authorExternalLink(entry) {
 
 /** @param {AuthorEntry} entry */
 function authorLink(entry) {
-	return `<span class="author-ref"><a href="${esc(authorHref(entry.name))}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>${authorExternalLink(entry)}</span>`;
+	const href = entry.publicId ? personHref(entry.publicId) : authorHref(entry.name);
+	return `<span class="author-ref"><a href="${esc(href)}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>${authorExternalLink(entry)}</span>`;
 }
 
-/** @param {Tool} t */
-function authorInlineList(t) {
-	return authorEntries(t)
-		.map((entry) => authorLink(entry))
-		.join('<span class="toolpage__sep">, </span>');
+/** @param {Tool} t @param {PeopleSummary | null} peopleSummary */
+function authorInlineList(t, peopleSummary) {
+	const authors = Array.isArray(peopleSummary?.people)
+		? peopleSummary.people.filter((person) =>
+				person.relationships?.some((relationship) => relationship.type === "author")
+			)
+		: [];
+	const entries = authorEntries(t).map((entry) => {
+		const key = entry.name.toLocaleLowerCase();
+		const person = authors.find(
+			(candidate) =>
+				candidate.displayName?.toLocaleLowerCase() === key ||
+				candidate.identifiers?.some((identifier) => identifier.value?.toLocaleLowerCase() === key) ||
+				candidate.relationships?.some((relationship) =>
+					relationship.evidence?.some((evidence) => evidence.observedName?.toLocaleLowerCase() === key)
+				)
+		);
+		return person ? { ...entry, publicId: person.id } : entry;
+	});
+	return entries.map((entry) => authorLink(entry)).join('<span class="toolpage__sep">, </span>');
 }
 
-/** @param {any} evolvedSummary */
-function maintainerPeople(evolvedSummary) {
-	const people = evolvedSummary?.maintainer?.people;
+/** @param {PeopleSummary | null} peopleSummary @returns {AuthorEntry[] | null} */
+function maintainerPeople(peopleSummary) {
+	const people = peopleSummary?.people;
 	if (!Array.isArray(people)) return null;
 	return people
 		.filter(
@@ -231,13 +251,16 @@ function maintainerPeople(evolvedSummary) {
 		)
 		.map((person) => ({
 			name: person.displayName || t("tool.unknownMaintainer", "Unknown"),
-			profile: { wikiUsername: person.identifiers?.find((item) => item.namespace === "wiki")?.value }
+			publicId: person.id,
+			profile: {
+				wikiUsername: person.identifiers?.find((item) => item.namespace === "wiki_username")?.value
+			}
 		}));
 }
 
-/** @param {Tool} tool @param {any} evolvedSummary */
-function maintainerListMarkup(tool, evolvedSummary) {
-	const entries = maintainerPeople(evolvedSummary) || authorEntries(tool);
+/** @param {Tool} tool @param {PeopleSummary | null} peopleSummary */
+function maintainerListMarkup(tool, peopleSummary) {
+	const entries = maintainerPeople(peopleSummary) || authorEntries(tool);
 	const list = entries
 		.map((entry) => `<li>${avatar(entry.name)}<span class="maint-list__name">${authorLink(entry)}</span></li>`)
 		.join("");
@@ -606,6 +629,12 @@ function toolManagementActions(tool, canDeleteOfficialTool) {
 	const managementLinks = signedIn()
 		? `<div class="toolpage__management" aria-label="${esc(t("tool.ownerActions", "Maintainer actions"))}">
 			<span class="toolpage__owner-label">${t("tool.ownerActions", "Maintainer actions")}</span>
+			${button(t("claim.toolAction", "Claim a relationship"), {
+				variant: "outline",
+				size: "md",
+				icon: "group",
+				attrs: "data-tool-claim"
+			})}
 			${historyAction}
 			${button(t("tool.editTool", "Edit tool"), { variant: "outline", size: "md", href: `${toolHref(tool.name)}/edit`, icon: "edit" })}
 			${button(t("tool.editAnnotations", "Edit annotations"), { variant: "outline", size: "md", href: `${toolHref(tool.name)}/edit-annotations`, icon: "tag" })}
@@ -643,6 +672,7 @@ export async function viewTool(name) {
 		graceMs: EVOLVED_SUMMARY_GRACE_MS,
 		view: SUMMARY_VIEW_FULL
 	}).catch(() => null);
+	const peopleReady = peopleForTool(name).catch(() => null);
 	const tool =
 		/** @type {(Tool & { edited?: boolean, annotated?: boolean, endorsement?: { count?: number } }) | null} */ (
 			await getTool(name)
@@ -653,6 +683,7 @@ export async function viewTool(name) {
 	// canonical tool page render independent from their availability and let
 	// mount() hydrate their dedicated slots after the primary content exists.
 	await summaryReady;
+	const peopleSummary = await peopleReady;
 	// Reads the cache the call above just filled; no further request.
 	await attachEvolvedSummaries([tool], { view: SUMMARY_VIEW_FULL });
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
@@ -670,7 +701,7 @@ export async function viewTool(name) {
 	}));
 	const { provTags, syncPanels, reconciliationNotice } = toolSyncUi(tool, name);
 	const tags = keywordTags(tool, { empty: "—" });
-	const authors = authorInlineList(tool);
+	const authors = authorInlineList(tool, peopleSummary);
 	const openToolUrl = safeHttpUrl(tool.url);
 
 	// REAL links — render only the ones present on the record.
@@ -694,7 +725,7 @@ export async function viewTool(name) {
 	// At-a-glance chips (real metadata).
 	const glance = glanceChips(tool);
 
-	const maintList = maintainerListMarkup(tool, evolvedSummary);
+	const maintList = maintainerListMarkup(tool, peopleSummary);
 	const complete = completeness(tool);
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const html = `
@@ -791,6 +822,7 @@ export async function viewTool(name) {
 		if (signedIn()) {
 			serverWrite("POST", `/v1/tools/${encodeURIComponent(name)}/events/`, { eventType: "view" }).catch(() => {});
 		}
+		document.querySelector("[data-tool-claim]")?.addEventListener("click", () => openClaimDrawer(name));
 		afterDetailPrimaryPaint(() => {
 			Promise.all([
 				listMemberships().catch(() => new Map()),

@@ -211,7 +211,7 @@ test("toolCard renders attached health score and confirmed maintainer byline", (
 				],
 				calculation: { dimensionCount: 1, includedDimensionCount: 1, includedWeight: 1.25 }
 			},
-			maintainer: { counts: { maintainers: 2, verifiedMaintainers: 1, activeMaintainers: 1 } },
+			maintainer: { healthCounts: { maintainers: 2, verifiedPeople: 1, activePeople: 1 } },
 			maintainerDimension: { status: "maintained", bestConfidence: 84 }
 		}
 	});

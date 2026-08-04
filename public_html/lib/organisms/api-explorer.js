@@ -97,26 +97,6 @@ export const API_EXPLORER_ENDPOINTS = /** @type {ApiExplorerEndpoint[]} */ ([
 		]
 	},
 	{
-		id: "tool-maintainers",
-		title: t("apiExplorer.toolMaintainers", "Maintainer summary"),
-		description: t(
-			"apiExplorer.toolMaintainersDesc",
-			"Read Evolved's public-safe derived maintainer summary for one tool."
-		),
-		pathTemplate: "/v1/maintainers/tools/{name}/",
-		origin: "same-origin",
-		fields: [
-			{
-				name: "name",
-				label: t("apiExplorer.toolName", "Tool name"),
-				kind: "path",
-				defaultValue: "quickstatements",
-				placeholder: "quickstatements",
-				required: true
-			}
-		]
-	},
-	{
 		id: "tool-people",
 		title: t("apiExplorer.toolPeople", "People and relationships"),
 		description: t(

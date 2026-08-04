@@ -11,6 +11,10 @@ export function listHref(id) {
 export function authorHref(name) {
 	return `/by/${encodeURIComponent(name)}`;
 }
+/** @param {string} publicId */
+export function personHref(publicId) {
+	return `/people/${encodeURIComponent(publicId)}`;
+}
 /* ------------------------------------------------------------- static cfg */
 // Personas = WHO you are → real `audiences` facet values (audiences__term).
 export const PERSONAS = [

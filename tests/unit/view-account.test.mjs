@@ -504,3 +504,68 @@ test("delete action can be cancelled", async () => {
 	assert.equal(h.serverWrite.mock.calls.length, 0);
 	assert.equal(h.clearAll.mock.calls.length, 0);
 });
+
+test("preferences edits the immutable-person profile and renders claim history", async () => {
+	h.backendGetJson.mockReset();
+	h.serverWrite.mockReset();
+	h.backendGetJson
+		.mockResolvedValueOnce({
+			profile: {
+				personId: "3d6fdd39-b090-4c19-919f-7753b45e1046",
+				displayName: "Ada Lovelace",
+				bio: "Builds tools",
+				location: "London",
+				websiteUrl: "https://example.org",
+				avatarUrl: "https://example.org/avatar.png",
+				links: ["https://meta.wikimedia.org/wiki/User:Ada"],
+				visibility: "public"
+			}
+		})
+		.mockResolvedValueOnce({
+			claims: [
+				{
+					toolName: "ada-tool",
+					requestedRelationship: "maintainer",
+					verificationMethod: "toolforge_maintainer",
+					verificationStatus: "verified"
+				}
+			]
+		});
+	h.serverWrite.mockResolvedValue({
+		profile: {
+			personId: "3d6fdd39-b090-4c19-919f-7753b45e1046",
+			displayName: "Ada Lovelace",
+			bio: "Updated bio",
+			links: [],
+			visibility: "private"
+		}
+	});
+	const view = viewAccountSettings();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await tick();
+	await tick();
+	assert.equal(document.querySelector('[name="bio"]').value, "Builds tools");
+	assert.ok(document.querySelector("[data-profile-link]").innerHTML.includes("/people/3d6fdd39"));
+	assert.ok(document.querySelector("[data-claim-history]").textContent.includes("ada-tool"));
+	assert.ok(document.querySelector("[data-claim-history]").textContent.includes("Verified"));
+
+	document.querySelector('[name="bio"]').value = "Updated bio";
+	document.querySelector('[name="links"]').value = "";
+	document.querySelector('[name="private"]').checked = true;
+	document.querySelector("[data-profile-form]").dispatchEvent(new Event("submit", { bubbles: true }));
+	await tick();
+	assert.deepEqual(h.serverWrite.mock.calls[0], [
+		"PUT",
+		"/v1/me/profile/",
+		{
+			bio: "Updated bio",
+			location: "London",
+			websiteUrl: "https://example.org",
+			avatarUrl: "https://example.org/avatar.png",
+			links: [],
+			visibility: "private"
+		}
+	]);
+	assert.ok(document.querySelector("[data-account-result]").textContent.includes("Profile saved"));
+});

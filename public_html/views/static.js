@@ -126,7 +126,7 @@ function healthPublicDimensionsTable() {
 				esc(
 					t(
 						"static.healthScore.maintainerStatusIncluded",
-						"At least one maintainer edge exists and bestConfidence is numeric."
+						"At least one resolved person relationship exists and bestConfidence is numeric."
 					)
 				),
 				tWithElements(
@@ -181,7 +181,7 @@ function healthMaintainerFormulaTable() {
 				esc(t("static.healthScore.maintainerBaseStep", "Base")),
 				tWithElements(
 					"static.healthScore.maintainerBaseRule",
-					"Start with {bestConfidence}, the highest public maintainer edge confidence for the tool.",
+					"Start with {bestConfidence}, the highest resolved relationship confidence for the tool.",
 					{
 						bestConfidence: code("bestConfidence")
 					}
@@ -205,19 +205,19 @@ function healthMaintainerFormulaTable() {
 				esc(t("static.healthScore.maintainerVerificationStep", "Verification adjustment")),
 				tWithElements(
 					"static.healthScore.maintainerVerificationRule",
-					"If {verifiedMaintainers} is greater than 0, add 5 points.",
+					"If {verifiedPeople} is greater than 0, add 5 points.",
 					{
-						verifiedMaintainers: code("counts.verifiedMaintainers")
+						verifiedPeople: code("healthCounts.verifiedPeople")
 					}
 				)
 			],
 			[
-				esc(t("static.healthScore.maintainerEmptyStep", "Empty maintainer set")),
+				esc(t("static.healthScore.maintainerEmptyStep", "Empty people set")),
 				tWithElements(
 					"static.healthScore.maintainerEmptyRule",
-					"If {maintainers} is 0, the dimension has no score and is excluded.",
+					"If {people} is 0, the dimension has no score and is excluded.",
 					{
-						maintainers: code("counts.maintainers")
+						people: code("healthCounts.people")
 					}
 				)
 			],
@@ -569,7 +569,7 @@ function viewHealthScoreStaticPage() {
 		<h2>${t("static.healthScore.variablesTitle", "5. Variables used")}</h2>
 		<ul>
 			<li>${tWithElements("static.healthScore.catalogVariablesItem", "Cached official Toolhub catalog data supplies tool identity and maintainer metadata such as {name}, authors, maintainers, tool type, repository URL, documentation URLs, keywords, license, deprecation state, and listing modified timestamp.", { name: code("tool.name") })}</li>
-			<li>${t("static.healthScore.maintainerVariablesItem", "Evolved maintainer indexing supplies maintainer count, verified maintainer count, active maintainer count, evidence edge count, best confidence, last maintainer activity age, recent activity count, active tool count, and verified tool count.")}</li>
+			<li>${t("static.healthScore.maintainerVariablesItem", "Evolved people indexing supplies person count, verified person count, active person count, relationship evidence count, best confidence, last public contribution age, recent contribution count, related tool count, and verified tool count.")}</li>
 			<li>${t("static.healthScore.sourceVariablesItem", "Source analysis supplies detected Wikimedia projects, API actions, OAuth scopes, access-right classes, credential warnings, dependencies, lockfiles, manifests, CI evidence, tests, docs, frontend accessibility evidence, source file classes, and suggested toolinfo metadata.")}</li>
 			<li>${t("static.healthScore.repositoryVariablesItem", "Trusted repository context supplies repository URL, provider, branch, default branch, last commit timestamp, commit id, commit count, contributor count, tag, dirty state, and analysis timestamp.")}</li>
 			<li>${t("static.healthScore.runtimeVariablesItem", "Evolved runtime checks supply target URL, latest status, last checked timestamp, and last stored error when an approved health target exists.")}</li>

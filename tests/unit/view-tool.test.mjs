@@ -1148,6 +1148,38 @@ test("authorEntries: reversed authorObjs use find(), and a missing author falls 
 	assert.ok(r.html.includes('href="/by/Gamma" dir="auto">Gamma</a></span>'), "gamma has no external link");
 });
 
+test("tool authors and maintainers link to immutable people ids through observed relationship names", async () => {
+	h.getTool.mockResolvedValue(
+		toolFixture("person-links", {
+			title: "Person links",
+			authors: ["Ada Lovelace"],
+			authorObjs: [{ name: "Ada Lovelace", url: null, wikiUsername: null }]
+		})
+	);
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(
+			path.includes("/v1/people/tools/")
+				? {
+						people: [
+							{
+								id: "person-42",
+								displayName: "Ada",
+								identifiers: [{ namespace: "toolhub_username", value: "Ada" }],
+								relationships: [
+									{ type: "author", evidence: [{ observedName: "Ada Lovelace" }] },
+									{ type: "maintainer", evidence: [{ observedName: "Ada" }] }
+								]
+							}
+						]
+					}
+				: { thanks: {}, usage30d: {}, health: {} }
+		)
+	);
+
+	const result = await tool.viewTool("person-links");
+	assert.equal(result.html.match(/href="\/people\/person-42"/g)?.length, 2);
+});
+
 test("authorEntries: falsy author names are filtered out", async () => {
 	h.getTool.mockResolvedValue(toolFixture("af", { title: "AF", authors: ["Real", ""], authorObjs: [] }));
 	const r = await tool.viewTool("af");

@@ -340,7 +340,7 @@ export function maintainerDisclosure(summary, opts = {}) {
 			: status.includes("stale")
 				? "risk"
 				: "watch";
-	const counts = summary?.maintainer?.counts || {};
+	const counts = summary?.maintainer?.healthCounts || {};
 	const confidence =
 		num(dimension.bestConfidence ?? summary?.maintainer?.bestConfidence) ??
 		Math.round((num(dimension.confidence) || 0) * 100);
@@ -359,8 +359,8 @@ export function maintainerDisclosure(summary, opts = {}) {
 			</div>
 			<dl class="health-popover__facts">
 				<div><dt>${t("toolHealth.maintainers", "Maintainers")}</dt><dd>${esc(String(counts.maintainers ?? 0))}</dd></div>
-				<div><dt>${t("toolHealth.verified", "Verified")}</dt><dd>${esc(String(counts.verifiedMaintainers ?? 0))}</dd></div>
-				<div><dt>${t("toolHealth.active", "Active")}</dt><dd>${esc(String(counts.activeMaintainers ?? 0))}</dd></div>
+				<div><dt>${t("toolHealth.verified", "Verified")}</dt><dd>${esc(String(counts.verifiedPeople ?? 0))}</dd></div>
+				<div><dt>${t("toolHealth.active", "Active")}</dt><dd>${esc(String(counts.activePeople ?? 0))}</dd></div>
 			</dl>
 			${dimensionsList(summary)}
 			<p class="health-popover__formula">${esc(calculationText(summary))}</p>

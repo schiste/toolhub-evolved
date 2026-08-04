@@ -42,9 +42,11 @@ test("viewAuthor renders the author name, count, back link and a tools grid", as
 	// (kills icon("external") → icon("")).
 	assert.match(
 		view.html,
-		/<a class="author-page__profile" href="https:\/\/example\.org\/ada" target="_blank" rel="noopener nofollow">Author profile /
+		/<a class="author-page__profile" href="https:\/\/example\.org\/ada" target="_blank" rel="noopener nofollow">example\.org /
 	);
-	assert.ok(view.html.includes(`Author profile ${icon("external")}</a>`));
+	assert.ok(view.html.includes(`example.org ${icon("external")}</a>`));
+	assert.match(view.html, /<h2 id="author-role-author">Tools authored<\/h2>/);
+	assert.match(view.html, /<dt>Public contributions<\/dt><dd>0<\/dd>/);
 });
 
 test("viewAuthor uses the requested name and singular label when the index omits them", async () => {
@@ -55,7 +57,7 @@ test("viewAuthor uses the requested name and singular label when the index omits
 	assert.equal(view.title, "Grace Hopper — Toolhub");
 	assert.match(view.html, /<h1 class="page__title" dir="auto">Grace Hopper<\/h1>/);
 	// Empty tools → empty state, never a grid.
-	assert.match(view.html, /<p class="empty">No tools found for this author\.<\/p>/);
+	assert.match(view.html, /<p class="empty">No tools found for this person\.<\/p>/);
 	assert.doesNotMatch(view.html, /card-grid/);
 	// No profile → profileLink is exactly "" (kills the `: ""` → injected-string mutant):
 	// the inner head <div> closes and the section-head <div> closes with only whitespace

@@ -40,7 +40,6 @@ test("endpoint definitions cover the curated anonymous read surface", () => {
 		[
 			"/api/search/tools/",
 			"/api/tools/{name}/",
-			"/v1/maintainers/tools/{name}/",
 			"/v1/people/tools/{name}/",
 			"/api/tools/{name}/revisions/",
 			"/api/lists/",
@@ -66,11 +65,11 @@ test("buildExplorerRequest encodes path parameters and query strings", () => {
 });
 
 test("buildExplorerRequest keeps Evolved endpoints same-origin", () => {
-	const request = buildExplorerRequest(mustEndpoint("tool-maintainers"), { name: "Foo/Bar" });
-	assert.equal(request.path, "/v1/maintainers/tools/Foo%2FBar/");
+	const request = buildExplorerRequest(mustEndpoint("tool-people"), { name: "Foo/Bar" });
+	assert.equal(request.path, "/v1/people/tools/Foo%2FBar/");
 	assert.equal(request.proxyUrl, request.path);
 	assert.equal(request.canonicalUrl, request.path);
-	assert.match(request.curlCanonical, /'\/v1\/maintainers\/tools\/Foo%2FBar\/'/);
+	assert.match(request.curlCanonical, /'\/v1\/people\/tools\/Foo%2FBar\/'/);
 });
 
 test("buildExplorerRequest uses defaults and reports missing required path fields", () => {
