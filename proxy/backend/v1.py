@@ -2691,8 +2691,47 @@ def _refresh_me_tools_cache(app: Any, user_id: int) -> dict[str, Any] | None:
             return payload
 
 
+#: Matches the client's own per-render cap, so this never composes summaries
+#: for tools the page will not draw.
+_ME_TOOLS_SUMMARY_LIMIT = 50
+
+
+def _me_tools_summaries(payload: dict[str, Any]) -> dict[str, Any]:
+    """Materialized summaries for the tools this payload is about to render.
+
+    Composed per response rather than stored with the payload: summaries are
+    public and change on their own schedule, so caching them inside a private
+    per-user replica would both leak them into the wrong lifetime and let them
+    go stale with it.
+
+    Strictly read-only (`refresh_stale=False`). Queueing builds from here would
+    let a private read kick off catalog-wide maintainer and people syncing —
+    the same coupling that turned this endpoint into a retry storm before. A
+    name with no materialized row is simply absent, and the client's own
+    deferred refresh picks it up through the public summaries endpoint, which
+    is where that work belongs.
+    """
+    names: list[str] = []
+    for bucket in ("verified", "possible"):
+        for item in payload.get(bucket) or []:
+            if not isinstance(item, dict):
+                continue
+            tool = item.get("tool")
+            name = tool.get("name") if isinstance(tool, dict) else None
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
+            if len(names) >= _ME_TOOLS_SUMMARY_LIMIT:
+                break
+    if not names:
+        return {}
+    return tool_summaries.summaries_for(names, _build_local_tool_summary, refresh_stale=False).results
+
+
 def _private_resolver_response(payload: dict[str, Any], metadata: dict[str, str]) -> Response:
-    response = jsonify({**payload, "cache": metadata})
+    # Carry the health summaries with the tools they belong to. Without this the
+    # client can only ask for them after this response lands, so the cards paint
+    # once without a score and again with one.
+    response = jsonify({**payload, "cache": metadata, "summaries": _me_tools_summaries(payload)})
     response.headers["Cache-Control"] = "private, no-store"
     return response
 

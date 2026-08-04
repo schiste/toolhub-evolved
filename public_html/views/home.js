@@ -275,6 +275,9 @@ async function ownToolsForHome() {
 	if (!data || data.error || (!Array.isArray(data.verified) && !Array.isArray(data.possible))) {
 		return { tools: [], error: true };
 	}
+	// Shipped with the tools, so the score is present for the first render
+	// instead of arriving in a second round trip.
+	seedEvolvedSummaries(data.summaries || {});
 	const tools = [];
 	const seen = new Set();
 	for (const item of [...(data.verified || []), ...(data.possible || [])]) {

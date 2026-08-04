@@ -6271,3 +6271,49 @@ def test_oauth_logout_rejects_get_and_bad_csrf(client):
     resp = client.post("/oauth/logout", data={"csrf": "wrong"})
     assert resp.headers["Location"] == "/?logout=error"
     assert client.get("/v1/user/").get_json()["authenticated"] is True  # still signed in
+
+
+def test_me_tools_carries_materialized_summaries_without_queueing_builds(client, monkeypatch):
+    """The private read ships health scores but never triggers summary builds.
+
+    Building a summary syncs maintainer and people records. Letting a private
+    per-user read start that work is what turned this endpoint into a retry
+    storm before, so the read has to stay strictly materialized-only.
+    """
+    uid = add_user(username="Ada Lovelace")
+    sign_in(client, uid)
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {
+            "results": [
+                {
+                    "name": "ada-tool",
+                    "title": "Ada Tool",
+                    "author": "Ada Lovelace",
+                    "created_by": {"username": "Toolhub"},
+                    "modified_by": {"username": "Ada Lovelace"},
+                }
+            ]
+        },
+    )
+    queued = []
+    monkeypatch.setattr(tool_summaries, "queue_refresh", lambda names, _build: queued.extend(names))
+    seen = {}
+
+    def fake_summaries_for(names, build_summary, *, refresh_stale=True):
+        seen["names"] = list(names)
+        seen["refresh_stale"] = refresh_stale
+        return tool_summaries.SummaryRead(
+            results={"ada-tool": {"health": {"score": 71}}},
+            cache_meta={"ada-tool": {"status": "fresh"}},
+        )
+
+    monkeypatch.setattr(tool_summaries, "summaries_for", fake_summaries_for)
+
+    data = client.get("/v1/me/tools/").get_json()
+
+    assert data["summaries"]["ada-tool"]["health"]["score"] == 71
+    assert seen["names"] == ["ada-tool"]
+    assert seen["refresh_stale"] is False, "a private read must not queue summary builds"
+    assert queued == []
