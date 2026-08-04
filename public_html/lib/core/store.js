@@ -85,7 +85,12 @@ const TOOL_SUMMARY_CACHE_KEY = "toolhub-tool-summaries:v1";
    revalidation TTL in signals.js on purpose: that one decides when to refresh
    in the background, this one decides when a score is too old to display. */
 const TOOL_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/* A summary runs about 8KB (the maintainer block and health.sourceHealth are
+   most of it), so the character budget binds long before this count does. It is
+   only a ceiling against pathologically small summaries. */
 const TOOL_SUMMARY_CACHE_MAX = 250;
+/* Roughly 48 tools — a full landing page plus recently opened tools — while
+   leaving room for the much larger API response cache in the same origin. */
 const TOOL_SUMMARY_CACHE_MAX_CHARS = 400000;
 /** @returns {Record<string, { summary: any, ts: number }>} */
 export function toolSummaryCacheRead() {
@@ -114,14 +119,20 @@ export function toolSummaryCacheWrite(cache) {
 		const newest = Object.entries(cache)
 			.sort((a, b) => b[1].ts - a[1].ts)
 			.slice(0, TOOL_SUMMARY_CACHE_MAX);
-		// Drop the oldest entries until the payload fits rather than letting a
-		// quota error throw away the whole cache.
-		let serialized = JSON.stringify(Object.fromEntries(newest));
-		while (newest.length > 0 && serialized.length > TOOL_SUMMARY_CACHE_MAX_CHARS) {
-			newest.length = Math.floor(newest.length / 2);
-			serialized = JSON.stringify(Object.fromEntries(newest));
+		// Keep the most recently seen summaries that fit in the budget. Measured
+		// per entry rather than by halving the list, which would discard entries
+		// that still had room, and rather than letting a quota error throw the
+		// whole cache away.
+		/** @type {Record<string, { summary: any, ts: number }>} */
+		const kept = {};
+		let used = 2; // the enclosing braces
+		for (const [name, entry] of newest) {
+			const cost = JSON.stringify(entry).length + name.length + 4; // "name":…,
+			if (used + cost > TOOL_SUMMARY_CACHE_MAX_CHARS) break;
+			used += cost;
+			kept[name] = entry;
 		}
-		localStorage.setItem(TOOL_SUMMARY_CACHE_KEY, serialized);
+		localStorage.setItem(TOOL_SUMMARY_CACHE_KEY, JSON.stringify(kept));
 	} catch {}
 }
 const RECENT_OWNER_CACHE_KEY = "toolhub-recent-owner-by-tool:v1";

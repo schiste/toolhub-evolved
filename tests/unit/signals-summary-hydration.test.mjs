@@ -124,6 +124,25 @@ test("a stored summary is reused without any request while it is fresh", async (
 	assert.deepEqual(calls, [], "re-requested a summary that was still fresh");
 });
 
+test("storing more summaries than fit keeps the most recent rather than dropping everything", async () => {
+	const { toolSummaryCacheRead, toolSummaryCacheWrite } = await import("../../public_html/lib/core/store.js");
+	// Real summaries run about 8KB; 120 of them are far past the budget.
+	const filler = "x".repeat(8000);
+	const now = Date.now();
+	const cache = {};
+	for (let i = 0; i < 120; i += 1) cache[`tool-${i}`] = { summary: { filler, i }, ts: now - i * 1000 };
+	toolSummaryCacheWrite(cache);
+
+	const stored = toolSummaryCacheRead();
+	const names = Object.keys(stored);
+	assert.ok(names.length > 0, "the whole cache was thrown away instead of trimmed");
+	assert.ok(names.length < 120, "expected the oversized cache to be trimmed");
+	assert.ok(localStorage.getItem(STORAGE_KEY).length <= 400000, "stored payload exceeded the budget");
+	// Newest first, so the tools the reader just looked at are the ones kept.
+	assert.ok(Object.hasOwn(stored, "tool-0"), "dropped the most recently seen summary");
+	assert.ok(!Object.hasOwn(stored, "tool-119"), "kept the oldest summary over newer ones");
+});
+
 test("a changed score still reaches the view without a reload", async () => {
 	globalThis.fetch = async () => ({
 		ok: true,
