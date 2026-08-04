@@ -33,6 +33,10 @@ SummaryBuilder = Callable[[Session, str], dict[str, Any]]
 VIEW_FULL = "full"
 VIEW_CARD = "card"
 VIEWS = (VIEW_FULL, VIEW_CARD)
+#: Count blocks a card needs from the maintainer record. Two names because the
+#: field is mid-rename; carrying both keeps cards correct whichever the
+#: frontend in the browser is reading.
+MAINTAINER_COUNT_KEYS = ("counts", "healthCounts")
 
 
 def card_view(summary: dict[str, Any]) -> dict[str, Any]:
@@ -47,11 +51,14 @@ def card_view(summary: dict[str, Any]) -> dict[str, Any]:
     projected: dict[str, Any] = {key: value for key, value in summary.items() if key != "maintainer"}
     maintainer = summary.get("maintainer")
     if isinstance(maintainer, dict):
-        counts = maintainer.get("healthCounts")
-        # hasConfirmedMaintainer() reads only the counts; keeping the key with
-        # an empty object keeps that check working rather than making an absent
-        # maintainer look like an unmaintained one.
-        projected["maintainer"] = {"healthCounts": counts if isinstance(counts, dict) else {}}
+        # hasConfirmedMaintainer() reads only the count block. Carry every count
+        # block that exists, under its own name: the field is mid-rename from
+        # `counts` to `healthCounts`, and a card that keeps the wrong one silently
+        # loses its confirmed-maintainer byline. Both are small; the bulk of a
+        # maintainer record is the people list, which no card reads.
+        projected["maintainer"] = {
+            key: maintainer[key] for key in MAINTAINER_COUNT_KEYS if isinstance(maintainer.get(key), dict)
+        }
     return projected
 
 

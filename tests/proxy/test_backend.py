@@ -6340,6 +6340,11 @@ def test_card_view_drops_the_maintainer_record_but_keeps_the_counts():
     assert len(dumps(card)) < len(dumps(full)) / 2
     # The original is untouched, since it is the cached row's payload.
     assert "people" in full["maintainer"]
+    # The count block is mid-rename between `counts` and `healthCounts`. A card
+    # that keeps only one name silently loses its confirmed-maintainer byline
+    # against a frontend reading the other, so both have to survive.
+    legacy = tool_summaries.card_view({"maintainer": {"counts": {"verifiedMaintainers": 3}, "people": [1, 2]}})
+    assert legacy["maintainer"] == {"counts": {"verifiedMaintainers": 3}}
 
 
 def test_card_view_keeps_an_absent_maintainer_absent():
