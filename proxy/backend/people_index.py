@@ -8,6 +8,7 @@ of those rows grant or replace upstream Toolhub permissions.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -39,6 +40,7 @@ from backend.sync import (
     PERSON_REL_RECORD_OWNER,
     REVIEW_APPROVED,
     SOURCE_LOCAL,
+    SYNC_OFFICIAL,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +69,12 @@ def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrus
 
 
 def _canonical_key(
-    *, toolhub_user_id: str = "", toolhub_username: str = "", wiki_username: str = "", display: str = ""
+    *,
+    toolhub_user_id: str = "",
+    toolhub_username: str = "",
+    wiki_username: str = "",
+    display: str = "",
+    display_scope: str = "",
 ) -> str:
     if clean_id := _clean(toolhub_user_id, 64):
         return f"toolhub-id:{clean_id}"
@@ -75,7 +82,11 @@ def _canonical_key(
         return f"toolhub:{clean_username}"
     if clean_wiki := _normalized(wiki_username):
         return f"wiki:{clean_wiki}"
-    return f"display:{_normalized(display)}"
+    display_key = _normalized(display)
+    if display_scope:
+        scope_hash = hashlib.sha256(_clean(display_scope, 2000).encode()).hexdigest()[:20]
+        return f"display:{display_key}:{scope_hash}"
+    return f"display:{display_key}"
 
 
 def _identifier_spec(namespace: str) -> tuple[str, bool]:
@@ -185,13 +196,19 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     wiki_username: str = "",
     source: str = SOURCE_LOCAL,
     checked_at: datetime | None = None,
+    display_scope: str = "",
 ) -> Person:
     """Resolve or create a person from strongest to weakest identity evidence."""
-    candidates = [
-        _identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id),
-        _identifier_person(s, NS_TOOLHUB_USERNAME, toolhub_username),
-        _identifier_person(s, NS_WIKI_USERNAME, wiki_username),
-    ]
+    # An immutable id is authoritative: a mutable handle owned by somebody
+    # else must move to the stable identity, never select and merge that owner.
+    candidates = (
+        [_identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id)]
+        if _clean(toolhub_user_id, 64)
+        else [
+            _identifier_person(s, NS_TOOLHUB_USERNAME, toolhub_username),
+            _identifier_person(s, NS_WIKI_USERNAME, wiki_username),
+        ]
+    )
     person = next((candidate for candidate in candidates if candidate is not None), None)
     display = _clean(display_name or toolhub_username or wiki_username)
     if person is None:
@@ -200,9 +217,10 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             toolhub_username=toolhub_username,
             wiki_username=wiki_username,
             display=display,
+            display_scope=display_scope,
         )
         person = s.execute(select(Person).where(Person.canonical_key == key)).scalar_one_or_none()
-    if person is None and display:
+    if person is None and display and not display_scope:
         matches = list(
             s.execute(
                 select(Person).where(
@@ -219,6 +237,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
                 toolhub_username=toolhub_username,
                 wiki_username=wiki_username,
                 display=display,
+                display_scope=display_scope,
             ),
             display_name=display,
             identity_quality="stable"
@@ -300,6 +319,10 @@ def replace_source_evidence(
         row.updated_at = now
     rows = []
     for observation in observations:
+        role = _clean(observation.get("relationship_type"), 32) or PERSON_REL_AUTHOR
+        method = _clean(observation.get("method"), 64)
+        evidence_key = _clean(observation.get("evidence_key"), 255)
+        display_scope = f"{clean_tool}\x1f{source}\x1f{role}\x1f{method}\x1f{evidence_key}"
         person = ensure_person(
             s,
             display_name=_clean(observation.get("display_name")),
@@ -308,10 +331,8 @@ def replace_source_evidence(
             wiki_username=_clean(observation.get("wiki_username")),
             source=source,
             checked_at=observation.get("checked_at"),
+            display_scope=display_scope,
         )
-        role = _clean(observation.get("relationship_type"), 32) or PERSON_REL_AUTHOR
-        method = _clean(observation.get("method"), 64)
-        evidence_key = _clean(observation.get("evidence_key"), 255)
         row = s.execute(
             select(ToolRelationshipEvidence).where(
                 ToolRelationshipEvidence.tool_name == clean_tool,
@@ -379,6 +400,7 @@ def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRel
         s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_tool)).scalars()
     )
     current = {(row.person_id, row.relationship_type): row for row in current_rows}
+    affected_person_ids = {row.person_id for row in current_rows}
     for key, row in current.items():
         if key not in grouped:
             s.delete(row)
@@ -394,12 +416,13 @@ def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRel
         row.evidence_count = len(supporting)
         row.toolhub_canonical = any(item.toolhub_canonical for item in supporting)
         expiries = [item.expires_at for item in supporting if item.expires_at is not None]
-        row.expires_at = max(expiries) if expiries else None
+        row.expires_at = None if len(expiries) != len(supporting) else max(expiries)
         row.resolved_at = now
         row.updated_at = now
         resolved.append(row)
     s.flush()
-    refresh_activity_summaries(s, person_ids={row.person_id for row in resolved})
+    affected_person_ids.update(row.person_id for row in resolved)
+    refresh_activity_summaries(s, person_ids=affected_person_ids)
     return resolved
 
 
@@ -429,7 +452,8 @@ def _contribution_dates(s: Session, user_id: int) -> list[datetime]:
         select(ActivityRow.created_at).where(
             ActivityRow.user_id == user_id,
             ActivityRow.kind == "revisions",
-            or_(ActivityRow.official_status.is_(None), ActivityRow.official_status != "failed"),
+            ActivityRow.official_status == SYNC_OFFICIAL,
+            ActivityRow.object_type != "favorite",
         ),
     )
     dates: list[datetime] = []
@@ -649,7 +673,14 @@ def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
 
 def find_people(s: Session, query: str, *, limit: int = 50) -> list[dict[str, Any]]:
     clean_query = _clean(query)
-    statement = select(Person).order_by(Person.display_name, Person.public_id).limit(max(1, min(limit, 100)))
+    related_people = select(ToolPersonRelationship.person_id)
+    profile_people = select(PersonProfile.person_id)
+    statement = (
+        select(Person)
+        .where(or_(Person.id.in_(related_people), Person.id.in_(profile_people)))
+        .order_by(Person.display_name, Person.public_id)
+        .limit(max(1, min(limit, 100)))
+    )
     if clean_query:
         matching_ids = select(PersonIdentifier.person_id).where(
             PersonIdentifier.normalized_value.like(f"%{_normalized(clean_query)}%")

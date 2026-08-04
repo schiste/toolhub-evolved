@@ -3067,6 +3067,108 @@ def test_multiple_evidence_rows_collapse_to_one_relationship():
         assert s.query(ToolRelationshipEvidence).count() == 2
 
 
+def test_stable_toolhub_id_never_inherits_the_previous_owner_of_a_reused_handle():
+    db.configure("sqlite://")
+    db.init_schema()
+    from backend import people_index
+
+    with db.session_scope() as s:
+        previous = people_index.ensure_person(s, display_name="Alice", toolhub_username="Alice")
+        current = people_index.ensure_person(
+            s,
+            display_name="New Alice",
+            toolhub_user_id="42",
+            toolhub_username="Alice",
+        )
+
+        assert current.id != previous.id
+        stable = s.query(PersonIdentifier).filter_by(namespace="toolhub_user_id", normalized_value="42").one()
+        handle = s.query(PersonIdentifier).filter_by(namespace="toolhub_username", normalized_value="alice").one()
+        assert stable.person_id == current.id
+        assert handle.person_id == current.id
+
+
+def test_display_only_observations_are_scoped_instead_of_globally_merged():
+    db.configure("sqlite://")
+    db.init_schema()
+    from backend import people_index
+
+    observation = [{"display_name": "Alex", "relationship_type": sync.PERSON_REL_AUTHOR}]
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(s, "first-tool", "toolhub_author_metadata", observation)
+        people_index.replace_source_evidence(s, "second-tool", "toolhub_author_metadata", observation)
+        first_ids = {row.person_id for row in s.query(ToolRelationshipEvidence).all()}
+
+        assert len(first_ids) == 2
+        people_index.replace_source_evidence(s, "first-tool", "toolhub_author_metadata", observation)
+        assert {row.person_id for row in s.query(ToolRelationshipEvidence).all()} == first_ids
+
+
+def test_people_directory_omits_unreferenced_identity_rows():
+    db.configure("sqlite://")
+    db.init_schema()
+    from backend import people_index
+
+    with db.session_scope() as s:
+        s.add(Person(canonical_key="display:orphan", display_name="Orphan", identity_quality="display_name"))
+        people_index.replace_source_evidence(
+            s,
+            "visible-tool",
+            "toolhub_author_metadata",
+            [{"display_name": "Visible", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+
+        assert [person["displayName"] for person in people_index.find_people(s, "")] == ["Visible"]
+
+
+def test_permanent_evidence_keeps_a_collapsed_relationship_permanent():
+    db.configure("sqlite://")
+    db.init_schema()
+    from backend import people_index
+
+    base = {
+        "display_name": "Ada",
+        "toolhub_username": "Ada",
+        "relationship_type": sync.PERSON_REL_MAINTAINER,
+    }
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(s, "ada-tool", "permanent", [base])
+        people_index.replace_source_evidence(
+            s,
+            "ada-tool",
+            "temporary",
+            [base | {"expires_at": utcnow() + timedelta(days=1)}],
+        )
+
+        assert s.query(ToolPersonRelationship).one().expires_at is None
+
+
+def test_removing_last_relationship_invalidates_the_person_activity_summary():
+    db.configure("sqlite://")
+    db.init_schema()
+    from backend import people_index
+
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "ada-tool",
+            "claim",
+            [
+                {
+                    "display_name": "Ada",
+                    "toolhub_username": "Ada",
+                    "relationship_type": sync.PERSON_REL_MAINTAINER,
+                }
+            ],
+        )
+        person_id = s.query(Person).one().id
+        assert s.get(PersonActivitySummary, person_id).related_tool_count == 1
+
+        people_index.replace_source_evidence(s, "ada-tool", "claim", [])
+
+        assert s.get(PersonActivitySummary, person_id).related_tool_count == 0
+
+
 def test_source_analysis_uses_evolved_maintainer_context_for_named_tools(client):
     uid = add_user(username="Ada")
     sign_in(client, uid)

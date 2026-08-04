@@ -16,7 +16,15 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import migrate  # noqa: E402
 from backend import api_cache, canonical_tools, db, maintainer_index  # noqa: E402
-from backend.models import ApiCache, ToolAuthorClaim, ToolAuthorKey, User, UserToolResolverCache, utcnow  # noqa: E402
+from backend.models import (  # noqa: E402
+    ApiCache,
+    ToolAuthorClaim,
+    ToolAuthorKey,
+    ToolRelationshipEvidence,
+    User,
+    UserToolResolverCache,
+    utcnow,
+)
 from backend import sync  # noqa: E402
 
 
@@ -141,6 +149,35 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
 
     second = {result.name: result.rows for result in migrate.run_once()}
     assert second["resolver identity cleanup"] == 0
+
+
+def test_relationship_backfill_prefers_current_canonical_metadata_over_legacy_snapshot(configured_db):
+    canonical_tools.upsert_records(
+        [{"name": "identity-tool", "author": [{"name": "Current Author"}]}],
+        source_url="https://toolhub.wikimedia.org/api/search/tools/",
+    )
+    with db.engine().begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE tool_maintainer_edges ("
+            "id INTEGER PRIMARY KEY, tool_name VARCHAR(255), source VARCHAR(64), method VARCHAR(64), "
+            "maintainer_display_name VARCHAR(255), toolhub_username VARCHAR(255))"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO tool_maintainer_edges "
+            "(id, tool_name, source, method, maintainer_display_name, toolhub_username) "
+            "VALUES (1, 'identity-tool', 'toolhub_author_metadata', "
+            "'toolhub_author_metadata', 'Stale Author', '')"
+        )
+
+    migrate._backfill_relationship_evidence()  # noqa: SLF001 - migration-order regression coverage
+
+    with db.session_scope() as s:
+        active = s.query(ToolRelationshipEvidence).filter_by(
+            tool_name="identity-tool",
+            source="toolhub_author_metadata",
+            withdrawn_at=None,
+        )
+        assert [row.observed_name for row in active] == ["Current Author"]
 
 
 def test_migrate_refuses_to_run_against_the_unconfigured_default(monkeypatch, capsys):

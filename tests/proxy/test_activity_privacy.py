@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import activity_privacy, db  # noqa: E402
+from backend import activity_privacy, db, people_index  # noqa: E402
 from backend.models import ActivityRow, User  # noqa: E402
 from backend.v1 import _assemble_overlay  # noqa: E402, PLC2701 - integration coverage for the response assembler
 
@@ -72,3 +72,46 @@ def test_overlay_assembler_never_shares_another_users_favorite_activity() -> Non
     overlay = _assemble_overlay(viewer_id)
 
     assert overlay["revisions"] == [{"content_type": "tool", "content_id": "public-tool"}]
+
+
+def test_public_contribution_summary_excludes_favorites_and_local_fallback_events() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    with db.session_scope() as session:
+        user = User(wm_sub="42", username="Ada")
+        session.add(user)
+        session.flush()
+        person = people_index.link_user(session, user)
+        session.add_all(
+            [
+                ActivityRow(
+                    kind="revisions",
+                    client_id="official-tool",
+                    user_id=user.id,
+                    object_type="tool",
+                    official_status="official",
+                    row={},
+                ),
+                ActivityRow(
+                    kind="revisions",
+                    client_id="private-favorite",
+                    user_id=user.id,
+                    object_type="favorite",
+                    official_status="official",
+                    row={},
+                ),
+                ActivityRow(
+                    kind="revisions",
+                    client_id="failed-tool",
+                    user_id=user.id,
+                    object_type="tool",
+                    official_status="local_fallback",
+                    row={},
+                ),
+            ]
+        )
+        session.flush()
+
+        summary = people_index.refresh_activity_summaries(session, person_ids={person.id})[0]
+
+        assert summary.contribution_count == 1

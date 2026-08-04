@@ -214,21 +214,9 @@ def _backfill_relationship_evidence() -> int:
     """Backfill evidence from canonical Toolhub cache, claims, and old edges."""
     touched = 0
     with db.session_scope() as s:
-        canonical_rows = s.execute(text("SELECT tool_name, record FROM canonical_tool_cache")).mappings().all()
-        for row in canonical_rows:
-            record = row["record"]
-            if isinstance(record, str):
-                import json  # noqa: PLC0415 - only needed by the one-off migration
-
-                record = json.loads(record)
-            if isinstance(record, dict):
-                touched += len(maintainer_index.replace_toolhub_metadata_edges(s, row["tool_name"], record))
-        claim_tools = [row[0] for row in s.execute(select(ToolAuthorClaim.tool_name).distinct()).all()]
-        touched += len(maintainer_index.sync_author_claim_edges(s, tool_names=claim_tools))
-
-        if "tool_maintainer_edges" not in inspect(db.engine()).get_table_names():
-            return touched
-        legacy = s.execute(text("SELECT * FROM tool_maintainer_edges ORDER BY tool_name, id")).mappings().all()
+        legacy = []
+        if "tool_maintainer_edges" in inspect(db.engine()).get_table_names():
+            legacy = s.execute(text("SELECT * FROM tool_maintainer_edges ORDER BY tool_name, id")).mappings().all()
         grouped: dict[tuple[str, str], list[dict]] = {}
         for row in legacy:
             source = str(row.get("source") or "legacy_maintainer_edge")
@@ -254,6 +242,21 @@ def _backfill_relationship_evidence() -> int:
             )
         for (tool_name, source), observations in grouped.items():
             touched += len(people_index.replace_source_evidence(s, tool_name, source, observations))
+
+        # Legacy rows are only a fallback. Rebuild authoritative local sources
+        # afterward so stale legacy snapshots cannot replace current canonical
+        # metadata or current claim state when they share a source name.
+        canonical_rows = s.execute(text("SELECT tool_name, record FROM canonical_tool_cache")).mappings().all()
+        for row in canonical_rows:
+            record = row["record"]
+            if isinstance(record, str):
+                import json  # noqa: PLC0415 - only needed by the one-off migration
+
+                record = json.loads(record)
+            if isinstance(record, dict):
+                touched += len(maintainer_index.replace_toolhub_metadata_edges(s, row["tool_name"], record))
+        claim_tools = [row[0] for row in s.execute(select(ToolAuthorClaim.tool_name).distinct()).all()]
+        touched += len(maintainer_index.sync_author_claim_edges(s, tool_names=claim_tools))
     return touched
 
 
