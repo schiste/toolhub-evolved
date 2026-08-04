@@ -48,6 +48,9 @@ const { toggleFav } = await import("../../public_html/lib/core/store.js");
 const { setUserContext } = await import("../../public_html/lib/core/signals.js");
 const home = await import("../../public_html/views/home.js");
 const tick = () => new Promise((res) => setTimeout(res, 0));
+/* Longer than the summary grace window, so "cold" means what it says: the
+   endorsement crawl must still be outstanding when the page first paints. */
+const COLD_ENDORSEMENT_MS = 300;
 
 // --- expected snapshots (baked from un-mutated output) ---
 const S = {
@@ -704,11 +707,21 @@ test("home unfiltered: lists + tools populated", async () => {
 		}
 		return {};
 	});
+	// A cold endorsement crawl paginates every list, so it is genuinely slow.
+	// Modelling it as instant would let it slip into the first render through
+	// any await at all and stop this from guarding anything.
+	h.paginate.mockImplementation(
+		async (path) =>
+			new Promise((resolve) => {
+				setTimeout(() => resolve(path === "/lists/" ? MEMBERSHIP_LISTS : []), COLD_ENDORSEMENT_MS);
+			})
+	);
 	const r = await home.viewHome();
 	assert.equal(r.title, "Toolhub — discover Wikimedia tools");
 	assert.ok(!r.html.includes("signal--lists"), "cold endorsement data does not block first paint");
-	await tick();
-	await tick();
+	await new Promise((resolve) => {
+		setTimeout(resolve, COLD_ENDORSEMENT_MS + 50);
+	});
 	const hydrated = await home.viewHome();
 	expect("unfiltered", hydrated.html);
 });

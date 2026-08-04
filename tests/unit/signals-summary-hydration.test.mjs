@@ -176,3 +176,57 @@ test("a changed score still reaches the view without a reload", async () => {
 		document.removeEventListener("toolhub:evolved-summaries-refresh", onRefresh);
 	}
 });
+
+test("cache-first mode paints a slow summary late rather than holding the page", async () => {
+	let release;
+	globalThis.fetch = async () =>
+		new Promise((resolve) => {
+			release = () =>
+				resolve({ ok: true, json: async () => ({ results: { "slow-tool": { health: { score: 33 } } } }) });
+		});
+
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+	const events = [];
+	const onRefresh = (event) => events.push(event.detail);
+	document.addEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	try {
+		const tools = [{ name: "slow-tool" }];
+		const attached = signals.attachEvolvedSummaries(tools, { graceMs: signals.EVOLVED_SUMMARY_GRACE_MS });
+		// The read has not answered, so the grace window must expire and let the
+		// route render without a score.
+		await vi.advanceTimersByTimeAsync(signals.EVOLVED_SUMMARY_GRACE_MS);
+		await attached;
+		assert.equal(tools[0].evolvedSummary, undefined, "grace window did not expire");
+		assert.deepEqual(events, []);
+
+		// The answer arrives after the page painted, so now it has to repaint.
+		release();
+		await settleIdle();
+		assert.deepEqual(events, [{ names: ["slow-tool"] }], "a late summary never reached the view");
+	} finally {
+		document.removeEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	}
+});
+
+test("cache-first mode does not wait when every summary is already known", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ results: { "known-tool": { health: { score: 12 } } } }) };
+	};
+	vi.resetModules();
+	const first = await import(SIGNALS);
+	await first.attachEvolvedSummaries([{ name: "known-tool" }]);
+	await settleIdle();
+
+	calls.length = 0;
+	vi.resetModules();
+	const second = await import(SIGNALS);
+	const tools = [{ name: "known-tool" }];
+	// No timer advance at all: a fully cached route must not pay the grace period.
+	await second.attachEvolvedSummaries(tools, { graceMs: second.EVOLVED_SUMMARY_GRACE_MS });
+
+	assert.equal(tools[0].evolvedSummary.health.score, 12);
+	assert.deepEqual(calls, [], "re-requested a summary it already had");
+});

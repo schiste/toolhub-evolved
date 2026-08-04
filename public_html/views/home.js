@@ -13,6 +13,7 @@ import {
 import {
 	attachEndorsements,
 	attachEvolvedSummaries,
+	EVOLVED_SUMMARY_GRACE_MS,
 	getUserContext,
 	rankFitsFirst,
 	seedEvolvedSummaries,
@@ -298,7 +299,10 @@ async function resolvePersonalHomeModel(key) {
 	]);
 	if (!ownTools.error) writePersonalToolsCache(key, ownTools.tools);
 	const allTools = [...favorites.tools, ...ownTools.tools];
-	await Promise.all([attachEndorsements(allTools, { defer: true }), attachEvolvedSummaries(allTools)]);
+	await Promise.all([
+		attachEndorsements(allTools, { defer: true }),
+		attachEvolvedSummaries(allTools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+	]);
 	const model = { favorites, ownTools };
 	personalHomeCache.set(key, { model, expiresAt: Date.now() + PERSONAL_HOME_TTL_MS });
 	return model;
@@ -326,7 +330,10 @@ async function personalHomeModel() {
 	const [favorites] = await Promise.all([favoriteToolsForHome().catch(() => ({ tools: [], error: true }))]);
 	const ownTools = { tools: stored.tools };
 	const allTools = [...favorites.tools, ...ownTools.tools];
-	await Promise.all([attachEndorsements(allTools, { defer: true }), attachEvolvedSummaries(allTools)]);
+	await Promise.all([
+		attachEndorsements(allTools, { defer: true }),
+		attachEvolvedSummaries(allTools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+	]);
 	const model = { favorites, ownTools };
 	personalHomeCache.set(key, { model, expiresAt: Date.now() + PERSONAL_HOME_TTL_MS });
 	if (Date.now() - stored.updatedAt > PERSONAL_TOOLS_CACHE_TTL_MS) {
@@ -396,7 +403,10 @@ export async function viewFeaturedTools() {
 	const rawLists = await paginate("/lists/", { featured: "true" }, { pageSize: 30, maxPages: 10 });
 	const lists = rawLists.map((/** @type {any} */ list) => normalizeList(list));
 	const tools = dedupeTools(lists.flatMap((list) => list.tools || []));
-	await Promise.all([attachEndorsements(tools, { defer: true }), attachEvolvedSummaries(tools)]);
+	await Promise.all([
+		attachEndorsements(tools, { defer: true }),
+		attachEvolvedSummaries(tools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+	]);
 	const ranked = rankFitsFirst(tools);
 	return {
 		title: t("home.featuredToolsDocTitle", "Featured tools — Toolhub"),
@@ -425,8 +435,11 @@ async function composedHomeModel() {
 	// Seed before attaching, so neither call needs the network.
 	seedEvolvedSummaries(data.summaries || {});
 	seedListMemberships(data.endorsements || {});
-	await Promise.all([attachEndorsements(featured, { defer: true }), attachEvolvedSummaries(featured)]);
-	await attachEvolvedSummaries(recentTools);
+	await Promise.all([
+		attachEndorsements(featured, { defer: true }),
+		attachEvolvedSummaries(featured, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+	]);
+	await attachEvolvedSummaries(recentTools, { graceMs: EVOLVED_SUMMARY_GRACE_MS });
 	const mostListed = sortedByEndorsements(featured);
 	return {
 		lists,
@@ -482,7 +495,10 @@ async function homeSectionsModel(state) {
 		if (featured.length === 0 && fallbackTools.length > 0) {
 			featured = fallbackTools.filter((tool) => toolMatchesIntent(tool, state));
 		}
-		await Promise.all([attachEndorsements(featured, { defer: true }), attachEvolvedSummaries(featured)]);
+		await Promise.all([
+			attachEndorsements(featured, { defer: true }),
+			attachEvolvedSummaries(featured, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+		]);
 		const matchingNames = new Set(featured.map((t) => t.name));
 		lists = lists.filter((l) =>
 			// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
@@ -492,11 +508,14 @@ async function homeSectionsModel(state) {
 		// Stryker disable next-line ArrayDeclaration: normalizeList always sets `tools` to an array, so the `|| []` fallback is never taken — equivalent.
 		featured = dedupeTools(lists.flatMap((l) => l.tools || []));
 		if (featured.length === 0 && fallbackTools.length > 0) featured = fallbackTools.slice(0, 8);
-		await Promise.all([attachEndorsements(featured, { defer: true }), attachEvolvedSummaries(featured)]);
+		await Promise.all([
+			attachEndorsements(featured, { defer: true }),
+			attachEvolvedSummaries(featured, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+		]);
 	}
 	let recentTools = (recent.results || []).map((/** @type {any} */ tool) => normalizeTool(tool));
 	if (recentTools.length === 0 && fallbackTools.length > 0) recentTools = fallbackTools.slice(0, 5);
-	await attachEvolvedSummaries(recentTools);
+	await attachEvolvedSummaries(recentTools, { graceMs: EVOLVED_SUMMARY_GRACE_MS });
 	// Something failed AND nothing loaded → this is an outage, not an empty
 	// catalog. Rethrow so viewHome's caller (the router) shows the error page;
 	// the interactive refreshHome path catches this and shows its own notice.

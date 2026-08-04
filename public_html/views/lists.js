@@ -10,7 +10,12 @@ import {
 	normalizeList,
 	normalizeTool
 } from "../lib/core/api.js";
-import { attachEndorsements, attachEvolvedSummaries, rankFitsFirst } from "../lib/core/signals.js";
+import {
+	attachEndorsements,
+	attachEvolvedSummaries,
+	EVOLVED_SUMMARY_GRACE_MS,
+	rankFitsFirst
+} from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
 import { lifecycleMeta, officialWrite, officialWriteAvailable } from "../lib/core/serversync.js";
 import { listHref, navigateTo } from "../lib/core/routing.js";
@@ -241,7 +246,10 @@ export async function viewList(id) {
 			icon: "edit"
 		});
 	}
-	await Promise.all([attachEndorsements(tools, { defer: true }), attachEvolvedSummaries(tools)]);
+	await Promise.all([
+		attachEndorsements(tools, { defer: true }),
+		attachEvolvedSummaries(tools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+	]);
 	tools = rankFitsFirst(tools);
 	const html = `
 	<div class="container page">
@@ -292,7 +300,10 @@ export function viewMyLists() {
 // overlay only stores which names are favorited. Needs: GET /api/user/favorites/ in production.
 export async function viewFavorites() {
 	const tools = /** @type {Tool[]} */ (await getToolsByName(favNames()));
-	await Promise.all([attachEndorsements(tools, { defer: true }), attachEvolvedSummaries(tools)]);
+	await Promise.all([
+		attachEndorsements(tools, { defer: true }),
+		attachEvolvedSummaries(tools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+	]);
 	const body =
 		tools.length > 0
 			? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t))

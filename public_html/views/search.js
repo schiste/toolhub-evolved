@@ -10,7 +10,13 @@ import {
 	normalizeTool
 } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
-import { attachEndorsements, attachEvolvedSummaries, completeness, rankFitsFirst } from "../lib/core/signals.js";
+import {
+	attachEndorsements,
+	attachEvolvedSummaries,
+	completeness,
+	EVOLVED_SUMMARY_GRACE_MS,
+	rankFitsFirst
+} from "../lib/core/signals.js";
 import { button } from "../lib/atoms/button.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { renderPager } from "../lib/molecules/pager.js";
@@ -252,8 +258,8 @@ export async function viewSearch() {
 	const local = localStrip(candidates, results);
 	await Promise.all([
 		attachEndorsements(results, { defer: true }),
-		attachEvolvedSummaries(results),
-		attachEvolvedSummaries(local)
+		attachEvolvedSummaries(results, { graceMs: EVOLVED_SUMMARY_GRACE_MS }),
+		attachEvolvedSummaries(local, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
 	]);
 	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
 	if (clientStatuses.size > 0) {

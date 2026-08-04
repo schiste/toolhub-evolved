@@ -251,6 +251,11 @@ const EVOLVED_SUMMARY_TTL_MS = 5 * 60 * 1000;
    render loop cannot form, short enough that the background builder's results
    still show up on the next navigation. */
 const EVOLVED_SUMMARY_MISSING_BACKOFF_MS = 60 * 1000;
+/* How long a route may wait for summaries it does not already have before
+   painting without them. The endpoint reads only local data, so this covers a
+   normal round trip with room to spare while staying well inside the page's
+   own load budget. */
+export const EVOLVED_SUMMARY_GRACE_MS = 250;
 const EVOLVED_SUMMARY_BATCH_SIZE = 24;
 const EVOLVED_SUMMARY_IDLE_TIMEOUT_MS = 2200;
 const EVOLVED_SUMMARY_IDLE_FALLBACK_MS = 700;
@@ -335,7 +340,7 @@ function emitEvolvedSummaryRefresh(names) {
 
 /**
  * @param {string[]} names
- * @param {{ emit?: boolean }} [opts]
+ * @param {{ emit?: boolean, emitWhen?: () => boolean }} [opts]
  * @returns {Promise<void>}
  */
 function refreshEvolvedSummaries(names, opts = {}) {
@@ -375,7 +380,11 @@ function refreshEvolvedSummaries(names, opts = {}) {
 				if (!previous || !sameSummary(previous.summary, summary)) updated.push(name);
 			}
 			if (stored) persistEvolvedSummaries();
-			if (opts.emit !== false && updated.length > 0) emitEvolvedSummaryRefresh(updated);
+			// Decided at resolution time, not call time: a caller that waited for
+			// this and gave up needs the late answer to repaint, while one that
+			// got it before rendering does not.
+			const shouldEmit = opts.emitWhen ? opts.emitWhen() : opts.emit !== false;
+			if (shouldEmit && updated.length > 0) emitEvolvedSummaryRefresh(updated);
 		})
 		.catch(() => {
 			// Health summaries are additive; cards remain valid without them.
@@ -424,9 +433,15 @@ function scheduleEvolvedSummaryRefresh(names) {
  * official Toolhub after the canonical/summary cache has been populated.
  * Only the name is read, so a caller that has one before it has the record —
  * the tool route, which takes it from the URL — can start this early.
+ *
+ * `graceMs` is the cache-first mode: whatever is already known attaches
+ * synchronously, the rest is given a short bounded wait so it can make the
+ * first paint, and anything slower than that arrives as a normal background
+ * refresh. Use it on routes that render tool cards; it degrades to today's
+ * deferred behaviour rather than holding up the page.
  * @template {{ name: string }} T
  * @param {T[]} tools
- * @param {{ waitForFresh?: boolean, defer?: boolean }} [opts]
+ * @param {{ waitForFresh?: boolean, defer?: boolean, graceMs?: number }} [opts]
  * @returns {Promise<T[]>}
  */
 export async function attachEvolvedSummaries(tools, opts = {}) {
@@ -447,7 +462,27 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 		if (askedAt !== undefined && now - askedAt <= EVOLVED_SUMMARY_MISSING_BACKOFF_MS) continue;
 		stale.push(tool.name);
 	}
-	if (opts.waitForFresh) {
+	if (opts.graceMs !== undefined) {
+		// Nothing stale resolves immediately, so a fully cached route pays no
+		// grace period at all.
+		let late = false;
+		const pending = refreshEvolvedSummaries(stale, { emitWhen: () => late });
+		/** @type {ReturnType<typeof setTimeout> | undefined} */
+		let timer;
+		await Promise.race([
+			pending.finally(() => clearTimeout(timer)),
+			new Promise((resolve) => {
+				timer = setTimeout(resolve, opts.graceMs);
+			})
+		]);
+		// Past this point the answer is too late for the first paint, so let it
+		// repaint instead of arriving silently.
+		late = true;
+		for (const tool of tools) {
+			const cached = evolvedSummaryCache.get(tool.name);
+			if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
+		}
+	} else if (opts.waitForFresh) {
 		await refreshEvolvedSummaries(stale, { emit: false });
 		for (const tool of tools) {
 			const cached = evolvedSummaryCache.get(tool.name);

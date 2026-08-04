@@ -2,7 +2,7 @@
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { attachEvolvedSummaries } from "../lib/core/signals.js";
+import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
 import { icon } from "../lib/atoms/icon.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
@@ -15,7 +15,7 @@ export async function viewAuthor(name) {
 	const entry = await toolsByAuthor(name);
 	const authorName = entry.name || name;
 	const tools = entry.tools || [];
-	await attachEvolvedSummaries(tools);
+	await attachEvolvedSummaries(tools, { graceMs: EVOLVED_SUMMARY_GRACE_MS });
 	const profileUrl = safeUrl(authorProfileUrl(entry.profile));
 	const profileLink = profileUrl
 		? `<a class="author-page__profile" href="${profileUrl}" target="_blank" rel="noopener nofollow">${t("authors.authorProfile", "Author profile")} ${icon("external")}</a>`
