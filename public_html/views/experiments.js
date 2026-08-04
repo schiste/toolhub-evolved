@@ -195,14 +195,31 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.maintainerSummaryCurrent",
-					"Evolved derives public-safe maintainer summaries from official Toolhub metadata, verified per-tool claims, and local activity rollups without creating a canonical maintainer database."
+					"Evolved derives public-safe people summaries from official Toolhub metadata, verified evidence, and person-keyed public contribution activity without creating a competing canonical catalog."
 				),
 				need: t(
 					"experiments.maintainerSummaryNeed",
-					"`tool_maintainer_edges`, `maintainer_activity_rollups`, and public GET /v1/maintainers/tools/{name}/"
+					"`tool_relationship_evidence`, `person_tool_relationships`, `person_activity_summaries`, and public GET /v1/people/tools/{name}/"
 				),
 				tryHref: "/api-docs",
 				tryLabel: t("experiments.docsPagesTry", "API explorer")
+			},
+			{
+				name: t("experiments.publicProfilesName", "People, profiles, and relationship claims"),
+				what: t(
+					"experiments.publicProfilesWhat",
+					"Discover people, publish an Evolved profile, and prove author, maintainer, or Toolhub record-authority relationships."
+				),
+				current: t(
+					"experiments.publicProfilesCurrent",
+					"Public profiles use immutable person ids and role-grouped Toolhub tools. Signed-in users can claim through listed-author association, Toolforge membership, URL control, signed toolinfo, or automatic official-write evidence."
+				),
+				need: t(
+					"experiments.publicProfilesNeed",
+					"Person-centric APIs, Evolved profile storage, unified claim workflow, evidence reconciliation, and canonical Toolhub reads"
+				),
+				tryHref: "/people",
+				tryLabel: t("experiments.publicProfilesTry", "Browse people")
 			},
 			{
 				name: t("experiments.sourceAnalysisName", "Source code analysis"),
@@ -229,9 +246,12 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.accountDataCurrent",
-					"Users can export local overlays, fallbacks, keys, claims, activity, and signals, delete local Evolved data without touching official Toolhub, and get a home for future Evolved-only settings."
+					"Users can edit Evolved-owned public profile content, review relationship-claim history, export local data, and delete it without touching official Toolhub."
 				),
-				need: t("experiments.accountDataNeed", "GET /v1/user/export/ and DELETE /v1/user/evolved-data/"),
+				need: t(
+					"experiments.accountDataNeed",
+					"GET/PUT /v1/me/profile/, GET /v1/me/claims/, GET /v1/user/export/, and DELETE /v1/user/evolved-data/"
+				),
 				tryHref: "/preferences",
 				tryLabel: t("experiments.accountDataTry", "Preferences")
 			},

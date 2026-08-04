@@ -121,6 +121,17 @@ function actions() {
 			keywords: ["graph", "relationships", "network"]
 		},
 		{
+			id: "people",
+			title: t("commandPalette.people", "People"),
+			description: t(
+				"commandPalette.peopleDesc",
+				"Find authors, maintainers, record owners, and catalog contributors."
+			),
+			href: "/people",
+			iconName: "group",
+			keywords: ["people", "authors", "maintainers", "profiles", "contributors"]
+		},
+		{
 			id: "recent",
 			title: t("commandPalette.recent", "Recent"),
 			description: t("commandPalette.recentDesc", "See recent Toolhub catalog changes."),

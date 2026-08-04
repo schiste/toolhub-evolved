@@ -235,13 +235,14 @@ names are:
 | `toolinfo_source_items`                            | Per-tool official feed source evidence           | Maps tool names to the official crawler feed item that declared them; stores compact feed payload evidence for My tools and future provenance features.                                |
 | `tool_events`                                      | Aggregate-only user-visible metrics              | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                                     |
 | `tool_thanks`                                      | Public aggregate, private user relation          | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.                              |
-| `tool_author_claims`                               | Public provenance label, private evidence cache  | Per-tool author-name verification claims tied to a Toolhub username; use for Evolved provenance and "my tools" discovery, never as official Toolhub permission state.                  |
+| `tool_author_claims`                               | Public provenance label, private evidence cache  | Per-tool verification claims owned by stable local `user_id`; `toolhub_username` is only a mutable display snapshot. Never treat a claim as official Toolhub permission state.         |
 | `toolinfo_control_challenges`                      | Private, expiring verification workflow          | Short-lived challenges proving an account can change one exact external `toolinfo.json` URL; never a canonical Toolhub ownership or write grant.                                       |
-| `tool_author_keys`                                 | Public-key registry for signed toolinfo claims   | Stores Evolved-registered public keys only; never store private keys, and ignore revoked keys during signed-toolinfo verification.                                                     |
-| `tool_maintainer_edges`                            | Public summary, private evidence cache           | Rebuildable per-tool maintainer projection from official Toolhub metadata and Evolved claims; public API omits raw evidence payloads and never grants permissions.                     |
-| `maintainer_activity_rollups`                      | Public activity bucket, private source rows      | Rebuildable Evolved-local activity summary keyed by namespaced maintainer id; source activity rows stay governed by their original table's privacy/delete rules.                       |
-| `people` / `person_identifiers`                    | Public identity projection                       | Deduplicated people keyed by stable Toolhub identifiers where available; display-name-only rows are heuristic and not canonical accounts.                                              |
-| `tool_person_relationships`                        | Public typed relationship projection             | Rebuildable per-tool author, maintainer, record-owner, or catalog-actor relationships with confidence and provenance; raw evidence stays private.                                      |
+| `tool_author_keys`                                 | Public-key registry for signed toolinfo claims   | Stores Evolved-registered public keys owned by stable local `user_id`; never store private keys, and ignore revoked keys during verification.                                          |
+| `people` / `person_identifiers`                    | Public identity projection                       | People have immutable Evolved public ids. Immutable Toolhub user ids are distinguished from mutable Toolhub/wiki handles; display-name-only rows remain heuristic.                     |
+| `person_profiles`                                  | Evolved-owned public profile                     | Bio, links, avatar, location, and visibility belong to Evolved. Toolhub remains canonical for catalog records and permissions.                                                         |
+| `tool_relationship_evidence`                       | Provenance ledger                                | Toolhub author/actor metadata, Toolsadmin observations, and Evolved claims remain separate evidence. Raw evidence payloads are private and no row grants Toolhub permissions.          |
+| `person_tool_relationships`                        | Public typed relationship projection             | One resolved current row per tool, person, and role; many evidence rows can support it. `catalog_actor` is never promoted to `record_owner` without explicit write-access evidence.    |
+| `person_activity_summaries`                        | Public contribution read model                   | Rebuildable, person-keyed summary of approved/public contributions only; registration and private account actions do not imply active maintenance.                                     |
 | `person_reconciliation_runs`                       | Operational audit                                | One dry-run or apply pass with deterministic counts, completion status, and error state.                                                                                               |
 | `person_reconciliation_mappings`                   | Operational audit                                | Source/target person mappings and reasons for every retained or merged identity considered by a run.                                                                                   |
 | `person_reconciliation_conflicts`                  | Operational review                               | Ambiguities deliberately left unresolved, especially display-name collisions; never used as automatic merge evidence.                                                                  |
@@ -250,9 +251,11 @@ names are:
 | `tool_health_targets` / `tool_health_checks`       | Public checked status after approval             | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health.                 |
 | `tool_media`                                       | Public only after approval                       | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                                         |
 
-`tool_author_claims` rows are scoped to one `(tool_name, author_name,
-toolhub_username, verification_method)` tuple. `verification_status` is one of
-`verified`, `unverified`, `stale`, or `failed`; `verification_method` is one of
+`tool_author_claims` is the account-owned relationship workflow, not a second
+relationship projection. Rows are scoped to one `(tool_name, author_name,
+account, verification_method)` tuple and record the method-derived requested
+role. `verification_status` is one of `verified`, `unverified`, `stale`,
+`failed`, or `revoked`; `verification_method` is one of
 `toolforge_maintainer`, `toolhub_write_access`, `signed_toolinfo`,
 `toolinfo_url_control`, or
 `author_display_name`. `author_display_name` is explicitly non-verified
@@ -273,6 +276,13 @@ Toolhub tool writes add `toolhub_write_access` claims without affecting the
 write response if evidence recording fails. Crawler ingestion records
 `signed_toolinfo` claims before upstream-name de-dupe, so official Toolhub data
 remains canonical while Evolved can still retain signed authorship evidence.
+The user-facing workflow is exposed through
+`GET /v1/tools/<name>/claim-options/`, `POST /v1/tools/<name>/claims/`,
+`GET /v1/me/claims/`, `POST /v1/claims/<id>/verify/`, and
+`DELETE /v1/claims/<id>/`. Revocation retains the workflow and immutable
+evidence history, marks its evidence withdrawn, and removes the derived current
+relationship. Toolhub write authority is never self-asserted: it is recorded
+only after a successful official tool write.
 
 Submitting a crawler URL or a create-time `toolinfo_url` is not an ownership
 proof. The My tools workspace can create a short-lived URL-control challenge
@@ -297,22 +307,24 @@ tools per hour by default, checkpoints after every tool, and completes a
 several-thousand-tool backfill over repeated cycles without running inside web
 requests.
 
-The normalized people view is available from `GET /v1/people/tools/<name>/` and
-is also included in the existing maintainer summary response as `people`. One
+The normalized people view is available from `GET /v1/people/tools/<name>/`.
+Person-centric reads use `GET /v1/people/<public_id>/` and `GET /v1/people/`.
+One
 person may have several relationships to the same tool: `author` means the
 canonical Toolhub author field listed the person; `maintainer` means Evolved
 has operational evidence such as Toolforge membership or signed toolinfo;
-`record_owner` means evidence concerns authority over the official Toolhub
-record; and `catalog_actor` is an observed catalog activity actor. These roles
-are intentionally not interchangeable. Toolhub usernames are deduplicated
-case-insensitively; a display-name fallback is marked `identityQuality:
-display_name` and may be reconciled later when a stable identifier is found.
+`record_owner` means explicit evidence concerns authority over the official
+Toolhub record; and `catalog_actor` is only an observed catalog activity actor. These roles
+are intentionally not interchangeable. Toolhub's immutable numeric user id is
+the strongest account link; usernames are case-insensitive mutable handles. A
+display-name fallback is marked `identityQuality: display_name` and may be
+resolved later when stronger evidence arrives.
 
 Historical reconciliation is deterministic and rerunnable. Run
 `python proxy/people_reconcile.py` for a database-backed dry-run, inspect the
 recorded mappings and conflicts, then run it with `--apply` to materialize
-canonical-cache metadata edges, merge only stable identifiers linked by the
-same evidence edge, and rebuild all typed relationships. The scheduled
+canonical Toolhub metadata evidence, link accounts only through immutable ids,
+and rebuild all typed relationships. The scheduled
 `people-reconcile` job uses `--apply` after the initial catalog cache exists;
 display-name-only candidates remain separate and are reported rather than
 silently merged.
@@ -328,7 +340,7 @@ cross-tool stable-identifier merges and old conflicts require a global scan.
 Signed toolinfo metadata is read from `x_toolhub_evolved_signature` or
 `x-toolhub-evolved-signature`. The signed bytes are the canonical JSON toolinfo
 item with that metadata removed. Active `tool_author_keys` rows are matched by
-Toolhub username, key id, and algorithm; revoked keys are ignored. Operationally,
+stable account id, key id, and algorithm; revoked keys are ignored. Operationally,
 claims are time-bounded and may become `stale`, while public keys can be kept
 until the user revokes them or deletes their Evolved-local data.
 
@@ -626,7 +638,7 @@ while raw source and checkout contents are never stored.
 Repository failures are recorded with exponential backoff and do not abort the
 remaining candidates in the hourly batch. The people full pass and its
 incremental queue share a MariaDB advisory lock so they cannot concurrently
-replace the same derived maintainer edges; a locked invocation exits cleanly and
+replace the same Toolsadmin relationship evidence; a locked invocation exits cleanly and
 the next scheduled run retries it.
 
 ## Backups & restore
