@@ -3,6 +3,7 @@
 // Listing completeness, curated-list endorsement, freshness, and fit-to-your-context.
 // Serves tool users (evaluate/trust) and maintainers (improve-your-listing).
 import { backendGetJson, hasValue, paginate } from "./api.js";
+import { toolSummaryCacheRead, toolSummaryCacheWrite } from "./store.js";
 import { memoizeAsync } from "./util.js";
 
 /* ---- Listing completeness --------------------------------------------------
@@ -266,6 +267,43 @@ const evolvedSummaryCache = new Map();
 const evolvedSummaryMissing = new Map();
 /** @type {Map<string, Promise<void>>} */
 const evolvedSummaryInflight = new Map();
+let evolvedSummaryHydrated = false;
+/**
+ * Pull summaries stored by an earlier page load into the in-memory map, so the
+ * first render of a route can already carry health scores. Called at the point
+ * of use rather than on import: a route that shows no tool cards should not pay
+ * for the parse.
+ * @returns {void}
+ */
+function hydrateEvolvedSummaries() {
+	if (evolvedSummaryHydrated) return;
+	evolvedSummaryHydrated = true;
+	for (const [name, entry] of Object.entries(toolSummaryCacheRead())) {
+		if (!evolvedSummaryCache.has(name)) evolvedSummaryCache.set(name, entry);
+	}
+}
+let evolvedSummaryPersistScheduled = false;
+/** @returns {void} */
+function persistEvolvedSummaries() {
+	if (evolvedSummaryPersistScheduled) return;
+	evolvedSummaryPersistScheduled = true;
+	scheduleIdle(() => {
+		evolvedSummaryPersistScheduled = false;
+		toolSummaryCacheWrite(Object.fromEntries(evolvedSummaryCache));
+	});
+}
+/**
+ * @param {any} a
+ * @param {any} b
+ * @returns {boolean}
+ */
+function sameSummary(a, b) {
+	try {
+		return JSON.stringify(a) === JSON.stringify(b);
+	} catch {
+		return false;
+	}
+}
 /**
  * Prime summaries from a payload the server already composed, so the landing
  * page does not need the second round trip that used to follow the tool list.
@@ -274,11 +312,16 @@ const evolvedSummaryInflight = new Map();
  */
 export function seedEvolvedSummaries(summaries) {
 	const ts = Date.now();
+	let seeded = false;
 	for (const [name, summary] of Object.entries(summaries || {})) {
 		if (!name || !summary) continue;
 		evolvedSummaryMissing.delete(name);
 		evolvedSummaryCache.set(name, { summary, ts });
+		seeded = true;
 	}
+	// Keep what the landing page composed, so the next route reuses it instead
+	// of asking for the same summaries again.
+	if (seeded) persistEvolvedSummaries();
 }
 /** @type {Set<string>} */
 const evolvedSummaryPending = new Set();
@@ -313,6 +356,7 @@ function refreshEvolvedSummaries(names, opts = {}) {
 		.then((data) => {
 			const results = data && typeof data.results === "object" ? data.results : {};
 			const updated = [];
+			let stored = false;
 			for (const name of batch) {
 				const summary = results[name];
 				if (!summary) {
@@ -321,10 +365,16 @@ function refreshEvolvedSummaries(names, opts = {}) {
 					evolvedSummaryMissing.set(name, Date.now());
 					continue;
 				}
+				const previous = evolvedSummaryCache.get(name);
 				evolvedSummaryMissing.delete(name);
 				evolvedSummaryCache.set(name, { summary, ts: Date.now() });
-				updated.push(name);
+				stored = true;
+				// Now that summaries survive the page, most refreshes confirm the
+				// score already on screen. Emitting for those would repaint the
+				// whole route to draw the same number, so only report changes.
+				if (!previous || !sameSummary(previous.summary, summary)) updated.push(name);
 			}
+			if (stored) persistEvolvedSummaries();
 			if (opts.emit !== false && updated.length > 0) emitEvolvedSummaryRefresh(updated);
 		})
 		.catch(() => {
@@ -379,6 +429,9 @@ function scheduleEvolvedSummaryRefresh(names) {
 export async function attachEvolvedSummaries(tools, opts = {}) {
 	const names = [...new Set((tools || []).map((tool) => tool && tool.name).filter(Boolean))].slice(0, 50);
 	if (names.length === 0) return tools;
+	// Before deciding what is stale, recover what an earlier page load stored:
+	// these attach synchronously below and so land in the first paint.
+	hydrateEvolvedSummaries();
 	const now = Date.now();
 	const stale = [];
 	for (const tool of tools) {

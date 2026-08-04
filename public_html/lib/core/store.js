@@ -77,6 +77,53 @@ export function publicApiCacheClear() {
 		localStorage.removeItem(PUBLIC_API_CACHE_KEY);
 	} catch {}
 }
+/* Health summaries survive the page so a card can show its score in the very
+   first paint. Without this the in-memory map starts empty on every load, every
+   name reads as stale, and the score can only arrive in a later repaint. */
+const TOOL_SUMMARY_CACHE_KEY = "toolhub-tool-summaries:v1";
+/* How long a stored summary is worth showing at all. Longer than the
+   revalidation TTL in signals.js on purpose: that one decides when to refresh
+   in the background, this one decides when a score is too old to display. */
+const TOOL_SUMMARY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const TOOL_SUMMARY_CACHE_MAX = 250;
+const TOOL_SUMMARY_CACHE_MAX_CHARS = 400000;
+/** @returns {Record<string, { summary: any, ts: number }>} */
+export function toolSummaryCacheRead() {
+	try {
+		const now = Date.now();
+		const raw = JSON.parse(localStorage.getItem(TOOL_SUMMARY_CACHE_KEY) || "{}");
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+		return Object.fromEntries(
+			Object.entries(raw).filter(([, entry]) => {
+				return (
+					entry &&
+					typeof entry === "object" &&
+					entry.summary &&
+					typeof entry.ts === "number" &&
+					now - entry.ts <= TOOL_SUMMARY_CACHE_TTL_MS
+				);
+			})
+		);
+	} catch {
+		return {};
+	}
+}
+/** @param {Record<string, { summary: any, ts: number }>} cache */
+export function toolSummaryCacheWrite(cache) {
+	try {
+		const newest = Object.entries(cache)
+			.sort((a, b) => b[1].ts - a[1].ts)
+			.slice(0, TOOL_SUMMARY_CACHE_MAX);
+		// Drop the oldest entries until the payload fits rather than letting a
+		// quota error throw away the whole cache.
+		let serialized = JSON.stringify(Object.fromEntries(newest));
+		while (newest.length > 0 && serialized.length > TOOL_SUMMARY_CACHE_MAX_CHARS) {
+			newest.length = Math.floor(newest.length / 2);
+			serialized = JSON.stringify(Object.fromEntries(newest));
+		}
+		localStorage.setItem(TOOL_SUMMARY_CACHE_KEY, serialized);
+	} catch {}
+}
 const RECENT_OWNER_CACHE_KEY = "toolhub-recent-owner-by-tool:v1";
 const RECENT_OWNER_CACHE_TTL_MS = 15 * 60 * 1000;
 const RECENT_OWNER_CACHE_MAX = 120;

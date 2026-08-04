@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Health scores have to survive the page. The in-memory summary map starts
+// empty on every load, so without persistence every name reads as stale and the
+// score can only ever arrive in a later repaint — which is what users saw as
+// "the card renders, then the score shows up".
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, test, vi } from "vitest";
+import { installStorage } from "./_storage-setup.mjs";
+
+const SIGNALS = "../../public_html/lib/core/signals.js";
+const STORAGE_KEY = "toolhub-tool-summaries:v1";
+
+let originalFetch;
+let originalRequestIdleCallback;
+beforeEach(() => {
+	installStorage();
+	originalFetch = globalThis.fetch;
+	originalRequestIdleCallback = globalThis.requestIdleCallback;
+	// Force the setTimeout fallback so idle work is drivable by fake timers.
+	globalThis.requestIdleCallback = undefined;
+	vi.useFakeTimers();
+});
+afterEach(() => {
+	globalThis.fetch = originalFetch;
+	globalThis.requestIdleCallback = originalRequestIdleCallback;
+	vi.useRealTimers();
+});
+
+/** Run every pending idle callback and let the promises behind them settle. */
+async function settleIdle() {
+	await vi.advanceTimersByTimeAsync(1500);
+	await Promise.resolve();
+	await Promise.resolve();
+}
+
+/* Past EVOLVED_SUMMARY_TTL_MS, so a stored summary is still shown but is due
+   for a background revalidation. Inside the TTL nothing is re-requested at all,
+   which is the common case when navigating between routes. */
+const PAST_REVALIDATION_TTL_MS = 6 * 60 * 1000;
+
+test("a summary stored by an earlier page load is attached before any request", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ results: { "stored-tool": { health: { score: 88 } } } }) };
+	};
+
+	// First page load: the summary arrives from the backend and is stored.
+	vi.resetModules();
+	const first = await import(SIGNALS);
+	await first.attachEvolvedSummaries([{ name: "stored-tool" }]);
+	await settleIdle();
+	assert.equal(calls.length, 1, "expected the deferred refresh to run once");
+	assert.ok(localStorage.getItem(STORAGE_KEY), "summary was not persisted for the next load");
+
+	// Second page load: a fresh module graph, the same browser profile.
+	calls.length = 0;
+	vi.resetModules();
+	const second = await import(SIGNALS);
+	const tools = [{ name: "stored-tool" }];
+	await second.attachEvolvedSummaries(tools);
+
+	assert.equal(tools[0].evolvedSummary.health.score, 88, "score is missing from the first render");
+	assert.deepEqual(calls, [], "a request ran before the score could be shown");
+});
+
+test("revalidating an unchanged summary does not repaint the route", async () => {
+	const summary = { health: { score: 64, grade: "good" } };
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ results: { "steady-tool": summary } }) };
+	};
+
+	vi.resetModules();
+	const first = await import(SIGNALS);
+	await first.attachEvolvedSummaries([{ name: "steady-tool" }]);
+	await settleIdle();
+
+	const events = [];
+	const onRefresh = (event) => events.push(event.detail);
+	document.addEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	try {
+		// A later page load attaches the stored score, then revalidates in the
+		// background. The backend returns the same summary, so there is nothing
+		// to redraw and no event should fire.
+		await vi.advanceTimersByTimeAsync(PAST_REVALIDATION_TTL_MS);
+		calls.length = 0;
+		vi.resetModules();
+		const second = await import(SIGNALS);
+		const tools = [{ name: "steady-tool" }];
+		await second.attachEvolvedSummaries(tools);
+		assert.equal(tools[0].evolvedSummary.health.score, 64);
+		await settleIdle();
+
+		assert.equal(calls.length, 1, "expected exactly one background revalidation");
+		assert.deepEqual(events, [], "an unchanged score still triggered a rerender");
+	} finally {
+		document.removeEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	}
+});
+
+test("a stored summary is reused without any request while it is fresh", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ results: { "fresh-tool": { health: { score: 51 } } } }) };
+	};
+	vi.resetModules();
+	const first = await import(SIGNALS);
+	await first.attachEvolvedSummaries([{ name: "fresh-tool" }]);
+	await settleIdle();
+
+	// Navigating to another route moments later must not re-ask for a summary
+	// the browser already has.
+	calls.length = 0;
+	vi.resetModules();
+	const second = await import(SIGNALS);
+	const tools = [{ name: "fresh-tool" }];
+	await second.attachEvolvedSummaries(tools);
+	await settleIdle();
+
+	assert.equal(tools[0].evolvedSummary.health.score, 51);
+	assert.deepEqual(calls, [], "re-requested a summary that was still fresh");
+});
+
+test("a changed score still reaches the view without a reload", async () => {
+	globalThis.fetch = async () => ({
+		ok: true,
+		json: async () => ({ results: { "moving-tool": { health: { score: 40 } } } })
+	});
+	vi.resetModules();
+	const first = await import(SIGNALS);
+	await first.attachEvolvedSummaries([{ name: "moving-tool" }]);
+	await settleIdle();
+
+	const events = [];
+	const onRefresh = (event) => events.push(event.detail);
+	document.addEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	try {
+		globalThis.fetch = async () => ({
+			ok: true,
+			json: async () => ({ results: { "moving-tool": { health: { score: 77 } } } })
+		});
+		await vi.advanceTimersByTimeAsync(PAST_REVALIDATION_TTL_MS);
+		vi.resetModules();
+		const second = await import(SIGNALS);
+		const tools = [{ name: "moving-tool" }];
+		await second.attachEvolvedSummaries(tools);
+		assert.equal(tools[0].evolvedSummary.health.score, 40, "stored score should paint first");
+		await settleIdle();
+
+		assert.deepEqual(events, [{ names: ["moving-tool"] }], "the new score never reached the view");
+		await second.attachEvolvedSummaries(tools);
+		assert.equal(tools[0].evolvedSummary.health.score, 77);
+	} finally {
+		document.removeEventListener("toolhub:evolved-summaries-refresh", onRefresh);
+	}
+});
