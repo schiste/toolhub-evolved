@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, esc, safeUrl } from "../lib/core/dom.js";
 import { backendErrorExplanation, backendGetJson } from "../lib/core/api.js";
+import { claimMethodLabel, claimStatusLabel, relationshipLabel } from "../lib/core/claims.js";
 import { t } from "../lib/core/i18n.js";
 import { personHref, toolHref } from "../lib/core/routing.js";
 import { serverWrite } from "../lib/core/serversync.js";
@@ -37,18 +38,6 @@ function profileForm() {
 	</form>`;
 }
 
-/** @param {any} claim */
-function claimStatus(claim) {
-	const labels = /** @type {Record<string, string>} */ ({
-		verified: t("claim.statusVerified", "Verified"),
-		unverified: t("claim.statusUnverified", "Unverified"),
-		failed: t("claim.statusFailed", "Verification failed"),
-		stale: t("claim.statusStale", "Needs re-verification"),
-		revoked: t("claim.statusRevoked", "Revoked")
-	});
-	return labels[claim?.verificationStatus] || claim?.verificationStatus || "";
-}
-
 /** @param {any[]} claims */
 function claimHistory(claims) {
 	if (claims.length === 0) {
@@ -57,8 +46,8 @@ function claimHistory(claims) {
 	return `<div class="account-claims">${claims
 		.map(
 			(/** @type {any} */ claim) => `<article class="account-claim">
-				<div><a href="${toolHref(claim.toolName)}"><strong>${esc(claim.toolName)}</strong></a><p>${esc(claim.requestedRelationship || "relationship")} · ${esc(claim.verificationMethod || "")}</p></div>
-				<span class="claim-status claim-status--${esc(claim.verificationStatus || "unverified")}">${esc(claimStatus(claim))}</span>
+				<div><a href="${toolHref(claim.toolName)}"><strong>${esc(claim.toolName)}</strong></a><p>${esc(relationshipLabel(claim.requestedRelationship || ""))} · ${esc(claimMethodLabel(claim.verificationMethod || ""))}</p></div>
+				<span class="claim-status claim-status--${esc(claim.verificationStatus || "unverified")}">${esc(claimStatusLabel(claim.verificationStatus || "unverified"))}</span>
 			</article>`
 		)
 		.join("")}</div>`;

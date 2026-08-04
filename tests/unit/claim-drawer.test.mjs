@@ -86,3 +86,31 @@ test("claim drawer can verify and revoke active proof rows", async () => {
 	await tick();
 	assert.deepEqual(h.serverWrite.mock.calls[1], ["DELETE", "/v1/claims/9/"]);
 });
+
+test("claim drawer ignores an older tool response after a newer tool is opened", async () => {
+	let resolveFirst;
+	const firstResponse = new Promise((resolve) => {
+		resolveFirst = resolve;
+	});
+	h.backendGetJson.mockReturnValueOnce(firstResponse).mockResolvedValueOnce(options());
+
+	const firstOpen = openClaimDrawer("first-tool");
+	await openClaimDrawer("second-tool");
+	resolveFirst(
+		options([
+			{
+				id: 1,
+				authorName: "Wrong stale person",
+				verificationMethod: "author_display_name",
+				verificationStatus: "unverified"
+			}
+		])
+	);
+	await firstOpen;
+
+	assert.deepEqual(h.backendGetJson.mock.calls, [
+		["/v1/tools/first-tool/claim-options/"],
+		["/v1/tools/second-tool/claim-options/"]
+	]);
+	assert.ok(!document.body.textContent.includes("Wrong stale person"));
+});

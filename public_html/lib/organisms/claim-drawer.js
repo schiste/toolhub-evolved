@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc, safeUrl } from "../core/dom.js";
 import { backendErrorExplanation, backendGetJson } from "../core/api.js";
+import { claimStatusLabel, relationshipLabel } from "../core/claims.js";
 import { t } from "../core/i18n.js";
 import { serverWrite } from "../core/serversync.js";
 import { icon } from "../atoms/icon.js";
@@ -52,6 +53,8 @@ const METHODS = {
 let lastFocus = null;
 /** @type {string} */
 let currentTool = "";
+/** Every open/close transition invalidates work started by an older drawer. */
+let drawerGeneration = 0;
 
 function root() {
 	return /** @type {HTMLElement | null} */ (document.querySelector("[data-claim-drawer]"));
@@ -81,31 +84,6 @@ function ensureDrawer() {
 	drawer?.addEventListener("submit", handleSubmit);
 }
 
-/** @param {any} claim */
-function statusLabel(claim) {
-	const status = String(claim?.verificationStatus || "unverified");
-	return (
-		{
-			verified: t("claim.statusVerified", "Verified"),
-			unverified: t("claim.statusUnverified", "Unverified"),
-			failed: t("claim.statusFailed", "Verification failed"),
-			stale: t("claim.statusStale", "Needs re-verification"),
-			revoked: t("claim.statusRevoked", "Revoked")
-		}[status] || status
-	);
-}
-
-/** @param {string} role */
-function relationshipLabel(role) {
-	const labels = /** @type {Record<string, string>} */ ({
-		author: t("claim.roleAuthor", "Author"),
-		maintainer: t("claim.roleMaintainer", "Maintainer"),
-		record_owner: t("claim.roleRecordOwner", "Toolhub record owner"),
-		catalog_actor: t("claim.roleCatalogActor", "Catalog contributor")
-	});
-	return labels[role] || t("claim.roleRelationship", "Relationship");
-}
-
 /** @param {string} method */
 function methodAction(method) {
 	const labels = /** @type {Record<string, string>} */ ({
@@ -125,7 +103,7 @@ function claimRow(claim) {
 	const active = claim?.verificationStatus !== "revoked";
 	const canVerify = active && !["author_display_name", "toolhub_write_access"].includes(claim?.verificationMethod);
 	return `<article class="claim-record">
-		<div class="claim-record__head"><strong>${esc(meta.title())}</strong><span class="claim-status claim-status--${esc(claim?.verificationStatus || "unverified")}">${esc(statusLabel(claim))}</span></div>
+		<div class="claim-record__head"><strong>${esc(meta.title())}</strong><span class="claim-status claim-status--${esc(claim?.verificationStatus || "unverified")}">${esc(claimStatusLabel(String(claim?.verificationStatus || "unverified")))}</span></div>
 		<p>${esc(relationshipLabel(claim?.requestedRelationship))} · ${esc(claim?.authorName || "")}</p>
 		${claim?.lastError ? `<p class="claim-record__error">${esc(claim.lastError)}</p>` : ""}
 		<div class="claim-record__actions">
@@ -193,10 +171,17 @@ function showError(error) {
 	node.hidden = false;
 }
 
-async function reload(challenge = null) {
-	const data = await backendGetJson(`/v1/tools/${encodeURIComponent(currentTool)}/claim-options/`);
+function isCurrent(tool, generation) {
+	return currentTool === tool && drawerGeneration === generation && !root()?.classList.contains("hidden");
+}
+
+/** @param {string} tool @param {number} generation @param {any} [challenge] */
+async function reload(tool, generation, challenge = null) {
+	const data = await backendGetJson(`/v1/tools/${encodeURIComponent(tool)}/claim-options/`);
 	if (!data) throw new Error(t("claim.loadFailed", "Could not load relationship options."));
+	if (!isCurrent(tool, generation)) return false;
 	render(data, challenge);
+	return true;
 }
 
 /** @param {SubmitEvent} event */
@@ -207,6 +192,8 @@ async function handleSubmit(event) {
 	const submit = /** @type {HTMLButtonElement | null} */ (form.querySelector('button[type="submit"]'));
 	if (submit?.disabled) return;
 	if (submit) submit.disabled = true;
+	const tool = currentTool;
+	const generation = drawerGeneration;
 	const values = new FormData(form);
 	const payload = /** @type {Record<string, string | undefined>} */ ({ method: form.dataset.claimMethod });
 	for (const key of ["authorName", "toolinfoUrl"]) {
@@ -214,11 +201,13 @@ async function handleSubmit(event) {
 		if (value) payload[key] = value;
 	}
 	try {
-		const result = await serverWrite("POST", `/v1/tools/${encodeURIComponent(currentTool)}/claims/`, payload);
-		await reload(result?.challenge || null);
+		const result = await serverWrite("POST", `/v1/tools/${encodeURIComponent(tool)}/claims/`, payload);
+		await reload(tool, generation, result?.challenge || null);
 	} catch (error) {
-		showError(error);
-		if (submit) submit.disabled = false;
+		if (isCurrent(tool, generation)) {
+			showError(error);
+			if (submit) submit.disabled = false;
+		}
 	}
 }
 
@@ -233,11 +222,19 @@ async function handleClick(event) {
 	const revoke = target?.closest("[data-claim-revoke]");
 	if (!verify && !revoke) return;
 	const id = verify?.getAttribute("data-claim-verify") || revoke?.getAttribute("data-claim-revoke");
+	const tool = currentTool;
+	const generation = drawerGeneration;
+	const action = /** @type {HTMLButtonElement | null} */ (verify || revoke);
+	if (action?.disabled) return;
+	if (action) action.disabled = true;
 	try {
 		await serverWrite(verify ? "POST" : "DELETE", verify ? `/v1/claims/${id}/verify/` : `/v1/claims/${id}/`);
-		await reload();
+		await reload(tool, generation);
 	} catch (error) {
-		showError(error);
+		if (isCurrent(tool, generation)) {
+			showError(error);
+			if (action) action.disabled = false;
+		}
 	}
 }
 
@@ -245,6 +242,8 @@ async function handleClick(event) {
 export async function openClaimDrawer(toolName) {
 	ensureDrawer();
 	currentTool = String(toolName || "").trim();
+	const generation = ++drawerGeneration;
+	const tool = currentTool;
 	lastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
 	const drawer = root();
 	if (!drawer || !currentTool) return;
@@ -256,13 +255,13 @@ export async function openClaimDrawer(toolName) {
 		target.innerHTML = `<p class="claim-drawer__loading">${t("claim.loading", "Loading proof methods…")}</p>`;
 	}
 	try {
-		await reload();
+		if (!(await reload(tool, generation))) return;
 		window.setTimeout(
 			() => /** @type {HTMLElement | null} */ (body()?.querySelector("button, input, select"))?.focus(),
 			0
 		);
 	} catch (error) {
-		if (target) {
+		if (target && isCurrent(tool, generation)) {
 			target.innerHTML = `<p class="claim-drawer__error" role="alert">${esc(backendErrorExplanation(error))}</p>`;
 		}
 	}
@@ -274,6 +273,7 @@ export function closeClaimDrawer() {
 	drawer.classList.add("hidden");
 	drawer.setAttribute("aria-hidden", "true");
 	document.body.classList.remove("claim-drawer-open");
+	drawerGeneration += 1;
 	currentTool = "";
 	lastFocus?.focus?.();
 	lastFocus = null;
