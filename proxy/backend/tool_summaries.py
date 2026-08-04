@@ -37,18 +37,30 @@ VIEWS = (VIEW_FULL, VIEW_CARD)
 #: field is mid-rename; carrying both keeps cards correct whichever the
 #: frontend in the browser is reading.
 MAINTAINER_COUNT_KEYS = ("counts", "healthCounts")
+#: Parts of `health` that only the score popover reads. They are most of a
+#: summary's remaining weight, and the popover starts collapsed, so cards get
+#: them after the page has loaded rather than inside the payload that renders it.
+#: `dimensions` doubles as the marker: absent means "not loaded yet", whereas an
+#: empty list means the tool genuinely has none.
+HEALTH_POPOVER_KEYS = ("dimensions", "calculation", "sourceHealth")
 
 
 def card_view(summary: dict[str, Any]) -> dict[str, Any]:
-    """Project a stored summary down to what a tool card actually renders.
+    """Project a stored summary down to what a tool card paints immediately.
 
-    A card shows the score, the grade, and whether a maintainer is confirmed,
-    and carries the calculation breakdown in a collapsed popover — so it needs
-    all of `health`, but none of the `maintainer` record behind the counts.
-    That record is the largest part of a summary by some margin, and it is only
-    ever read on the tool detail page.
+    A card paints a score chip and a maintainer byline. It also carries the
+    calculation breakdown, but inside a collapsed popover that most readers
+    never open — so that part is fetched after the route has rendered and
+    patched into the panel in place.
+
+    What is left is the score, the grade, and the maintainer counts behind the
+    byline. The maintainer record and the popover payload are both dropped; the
+    people list alone is the largest block in a summary and no card reads it.
     """
     projected: dict[str, Any] = {key: value for key, value in summary.items() if key != "maintainer"}
+    health = summary.get("health")
+    if isinstance(health, dict):
+        projected["health"] = {key: value for key, value in health.items() if key not in HEALTH_POPOVER_KEYS}
     maintainer = summary.get("maintainer")
     if isinstance(maintainer, dict):
         # hasConfirmedMaintainer() reads only the count block. Carry every count

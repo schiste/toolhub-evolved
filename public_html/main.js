@@ -28,6 +28,7 @@ import { listToolToggle, toggleFav } from "./lib/core/store.js";
 import { navigateTo, normalizeLegacyHashRoute } from "./lib/core/routing.js";
 import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
+import { initLazyHealthPopovers } from "./lib/molecules/health-popover-lazy.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
 import { initCommandPalette, syncCommandPaletteChrome } from "./lib/organisms/command-palette.js";
 import { initIconFallbacks } from "./lib/organisms/icon-fallbacks.js";
@@ -199,6 +200,9 @@ if (siteNoticeDismiss) {
 initTheme();
 initIconFallbacks();
 initIssueDrawer();
+// Cards ship without the score popover's breakdown; fill it in once each route
+// is on screen and the page is idle.
+initLazyHealthPopovers();
 afterFirstPaint(() => {
 	initWhatsNew().catch(() => undefined);
 });

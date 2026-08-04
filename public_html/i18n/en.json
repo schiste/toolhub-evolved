@@ -1837,6 +1837,7 @@
 	"toolHealth.metricWeight": "Weight",
 	"toolHealth.metricWeightedPoints": "Weighted points",
 	"toolHealth.noDimensions": "No local dimensions are available yet.",
+	"toolHealth.loadingBreakdown": "Loading the breakdown…",
 	"toolHealth.openMaintainerSignals": "{label}; open calculation signals",
 	"toolHealth.openScoreSignals": "Health {score} · {grade}; open calculation details",
 	"toolHealth.scoreArithmetic": "Weighted points {weightedSum} divided by total included weight {weight} gives {raw}; rounded score {score}.",

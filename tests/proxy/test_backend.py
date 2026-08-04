@@ -6725,8 +6725,10 @@ def test_card_view_drops_the_maintainer_record_but_keeps_the_counts():
     }
     card = tool_summaries.card_view(full)
 
-    # Everything a card draws survives the projection.
-    assert card["health"] == full["health"]
+    # Everything the card paints up front survives; the popover breakdown is
+    # covered separately, since it is fetched after render.
+    assert card["health"]["score"] == full["health"]["score"]
+    assert card["health"]["grade"] == full["health"]["grade"]
     assert card["maintainerDimension"] == full["maintainerDimension"]
     assert card["maintainer"]["healthCounts"] == {"verifiedPeople": 2}
     # The people list is the bulk of a summary and is detail-page only.
@@ -6739,6 +6741,31 @@ def test_card_view_drops_the_maintainer_record_but_keeps_the_counts():
     # against a frontend reading the other, so both have to survive.
     legacy = tool_summaries.card_view({"maintainer": {"counts": {"verifiedMaintainers": 3}, "people": [1, 2]}})
     assert legacy["maintainer"] == {"counts": {"verifiedMaintainers": 3}}
+
+
+def test_card_view_drops_the_popover_breakdown():
+    """The breakdown is fetched after render, so it must not ship with the card."""
+    full = {
+        "health": {
+            "score": 71,
+            "grade": "good",
+            "dimensions": [{"key": "d", "score": 80}],
+            "calculation": {"dimensionCount": 4},
+            "sourceHealth": {"dimensions": [{"key": "s"}]},
+        }
+    }
+    card = tool_summaries.card_view(full)
+
+    # The chip still renders: score and grade survive.
+    assert card["health"]["score"] == 71
+    assert card["health"]["grade"] == "good"
+    for key in ("dimensions", "calculation", "sourceHealth"):
+        assert key not in card["health"], key
+    # `dimensions` absent is the marker the frontend reads as "not loaded yet",
+    # so it must not be projected as an empty list, which means "none exist".
+    assert "dimensions" not in card["health"]
+    # The cached row is untouched — the detail page reads it whole.
+    assert full["health"]["dimensions"] == [{"key": "d", "score": 80}]
 
 
 def test_card_view_keeps_an_absent_maintainer_absent():

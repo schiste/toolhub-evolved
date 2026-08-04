@@ -210,10 +210,16 @@ function healthScoreTooltip(summary) {
 	const dimensions = Array.isArray(health.dimensions) ? health.dimensions : [];
 	const lines = [
 		t("toolHealth.scoreTitle", "Local Evolved health score"),
-		t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade }),
-		calculationText(summary),
-		scoreArithmeticText(summary)
+		t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade })
 	];
+	// Everything below is derived from the breakdown. While that is still
+	// loading, say so rather than reporting zeros and "none available" as if
+	// they were the tool's real figures.
+	if (!hasHealthPopoverDetail(summary)) {
+		lines.push(t("toolHealth.loadingBreakdown", "Loading the breakdown…"));
+		return lines.join("\n");
+	}
+	lines.push(calculationText(summary), scoreArithmeticText(summary));
 	if (dimensions.length > 0) {
 		lines.push(t("toolHealth.includedDimensions", "Included dimensions:"));
 		for (const item of dimensions) lines.push(`- ${dimensionTooltipLine(item)}`);
@@ -268,7 +274,38 @@ function sourceHealthBreakdown(sourceHealth) {
 }
 
 /** @param {any} summary */
-function healthScorePanel(summary) {
+/**
+ * Whether a summary carries the breakdown the score popover needs.
+ *
+ * Cards are served a projection without it, because the popover starts
+ * collapsed and it is most of the payload. An absent `dimensions` means it has
+ * not been fetched yet; an empty array means the tool genuinely has none.
+ * @param {any} summary
+ * @returns {boolean}
+ */
+export function hasHealthPopoverDetail(summary) {
+	return Array.isArray(summary?.health?.dimensions);
+}
+
+/** @param {any} summary */
+function healthScorePanelPending(summary) {
+	const health = summary?.health || {};
+	const score = scoreText(health.score);
+	const grade = gradeLabel(health.grade);
+	// Rendered with the same shell as the loaded panel so patching it in place
+	// does not move anything around the reader.
+	return `<div class="health-popover__panel health-score__panel" data-health-panel="pending">
+		<div class="health-popover__head">
+			<strong>${t("toolHealth.scoreTitle", "Local Evolved health score")}</strong>
+			<span>${t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade })}</span>
+		</div>
+		<p class="health-popover__empty">${t("toolHealth.loadingBreakdown", "Loading the breakdown…")}</p>
+	</div>`;
+}
+
+/** @param {any} summary */
+export function healthScorePanel(summary) {
+	if (!hasHealthPopoverDetail(summary)) return healthScorePanelPending(summary);
 	const health = summary?.health || {};
 	const score = scoreText(health.score);
 	const grade = gradeLabel(health.grade);
