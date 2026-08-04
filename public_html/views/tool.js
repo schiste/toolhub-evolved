@@ -17,7 +17,8 @@ import {
 	completeness,
 	endorsementOf,
 	EVOLVED_SUMMARY_GRACE_MS,
-	listMemberships
+	listMemberships,
+	SUMMARY_VIEW_FULL
 } from "../lib/core/signals.js";
 import { signedIn } from "../lib/core/session.js";
 import { SYNC_STATUS, clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
@@ -638,7 +639,10 @@ export async function viewTool(name) {
 	// extra wall time — the upstream read is the slower of the two — and means
 	// the health score is present for the first render rather than arriving in
 	// a later repaint.
-	const summaryReady = attachEvolvedSummaries([{ name }], { graceMs: EVOLVED_SUMMARY_GRACE_MS }).catch(() => null);
+	const summaryReady = attachEvolvedSummaries([{ name }], {
+		graceMs: EVOLVED_SUMMARY_GRACE_MS,
+		view: SUMMARY_VIEW_FULL
+	}).catch(() => null);
 	const tool =
 		/** @type {(Tool & { edited?: boolean, annotated?: boolean, endorsement?: { count?: number } }) | null} */ (
 			await getTool(name)
@@ -650,7 +654,7 @@ export async function viewTool(name) {
 	// mount() hydrate their dedicated slots after the primary content exists.
 	await summaryReady;
 	// Reads the cache the call above just filled; no further request.
-	await attachEvolvedSummaries([tool]);
+	await attachEvolvedSummaries([tool], { view: SUMMARY_VIEW_FULL });
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
 	setIssueContext(() => ({
 		kind: "tool",

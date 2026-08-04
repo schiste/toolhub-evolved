@@ -230,3 +230,37 @@ test("cache-first mode does not wait when every summary is already known", async
 	assert.equal(tools[0].evolvedSummary.health.score, 12);
 	assert.deepEqual(calls, [], "re-requested a summary it already had");
 });
+
+test("a card summary does not satisfy the detail page", async () => {
+	const CARD = { health: { score: 55 }, maintainer: { counts: { verifiedMaintainers: 1 } } };
+	const FULL = { health: { score: 55 }, maintainer: { counts: { verifiedMaintainers: 1 }, people: ["ada"] } };
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		const card = String(url).includes("view=card");
+		return { ok: true, json: async () => ({ results: { "two-view-tool": card ? CARD : FULL } }) };
+	};
+
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+	// A card route populates the cache with the projected shape.
+	const cardTools = [{ name: "two-view-tool" }];
+	await signals.attachEvolvedSummaries(cardTools, { graceMs: signals.EVOLVED_SUMMARY_GRACE_MS });
+	await settleIdle();
+	assert.equal(cardTools[0].evolvedSummary.maintainer.people, undefined);
+	assert.ok(calls[0].includes("view=card"));
+
+	// The detail page needs the maintainer record, so the card entry — fresh as
+	// it is — must not be treated as a hit.
+	calls.length = 0;
+	const detailTools = [{ name: "two-view-tool" }];
+	await signals.attachEvolvedSummaries(detailTools, {
+		graceMs: signals.EVOLVED_SUMMARY_GRACE_MS,
+		view: signals.SUMMARY_VIEW_FULL
+	});
+	await settleIdle();
+
+	assert.equal(calls.length, 1, "detail page reused a card-shaped summary");
+	assert.ok(calls[0].includes("view=full"), `asked for the wrong shape: ${calls[0]}`);
+	assert.deepEqual(detailTools[0].evolvedSummary.maintainer.people, ["ada"]);
+});

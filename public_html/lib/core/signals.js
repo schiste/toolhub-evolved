@@ -259,7 +259,13 @@ export const EVOLVED_SUMMARY_GRACE_MS = 250;
 const EVOLVED_SUMMARY_BATCH_SIZE = 24;
 const EVOLVED_SUMMARY_IDLE_TIMEOUT_MS = 2200;
 const EVOLVED_SUMMARY_IDLE_FALLBACK_MS = 700;
-/** @type {Map<string, { summary: any, ts: number }>} */
+/* Summaries are served in two shapes. A card needs the score and the
+   calculation popover; the tool page additionally needs the maintainer record,
+   which is the bulk of the payload. Entries record which shape they hold so a
+   card-view hit can never satisfy the detail page. */
+export const SUMMARY_VIEW_CARD = "card";
+export const SUMMARY_VIEW_FULL = "full";
+/** @type {Map<string, { summary: any, ts: number, view: string }>} */
 const evolvedSummaryCache = new Map();
 /* Names the backend has no materialized summary for yet, with the time we last
    asked. Without this, "not in the response" reads as "still stale" and every
@@ -284,7 +290,9 @@ function hydrateEvolvedSummaries() {
 	if (evolvedSummaryHydrated) return;
 	evolvedSummaryHydrated = true;
 	for (const [name, entry] of Object.entries(toolSummaryCacheRead())) {
-		if (!evolvedSummaryCache.has(name)) evolvedSummaryCache.set(name, entry);
+		if (!evolvedSummaryCache.has(name)) {
+			evolvedSummaryCache.set(name, { ...entry, view: entry.view || SUMMARY_VIEW_FULL });
+		}
 	}
 }
 let evolvedSummaryPersistScheduled = false;
@@ -321,7 +329,7 @@ export function seedEvolvedSummaries(summaries) {
 	for (const [name, summary] of Object.entries(summaries || {})) {
 		if (!name || !summary) continue;
 		evolvedSummaryMissing.delete(name);
-		evolvedSummaryCache.set(name, { summary, ts });
+		evolvedSummaryCache.set(name, { summary, ts, view: SUMMARY_VIEW_CARD });
 		seeded = true;
 	}
 	// Keep what the landing page composed, so the next route reuses it instead
@@ -340,7 +348,7 @@ function emitEvolvedSummaryRefresh(names) {
 
 /**
  * @param {string[]} names
- * @param {{ emit?: boolean, emitWhen?: () => boolean }} [opts]
+ * @param {{ emit?: boolean, emitWhen?: () => boolean, view?: string }} [opts]
  * @returns {Promise<void>}
  */
 function refreshEvolvedSummaries(names, opts = {}) {
@@ -356,7 +364,8 @@ function refreshEvolvedSummaries(names, opts = {}) {
 		if (batch.length >= EVOLVED_SUMMARY_BATCH_SIZE) break;
 	}
 	if (batch.length === 0) return Promise.allSettled(pending).then(() => undefined);
-	const params = new URLSearchParams({ names: batch.join(",") });
+	const view = opts.view === SUMMARY_VIEW_FULL ? SUMMARY_VIEW_FULL : SUMMARY_VIEW_CARD;
+	const params = new URLSearchParams({ names: batch.join(","), view });
 	const request = backendGetJson(`/v1/tools/summaries/?${params.toString()}`)
 		.then((data) => {
 			const results = data && typeof data.results === "object" ? data.results : {};
@@ -372,12 +381,16 @@ function refreshEvolvedSummaries(names, opts = {}) {
 				}
 				const previous = evolvedSummaryCache.get(name);
 				evolvedSummaryMissing.delete(name);
-				evolvedSummaryCache.set(name, { summary, ts: Date.now() });
+				evolvedSummaryCache.set(name, { summary, ts: Date.now(), view });
 				stored = true;
 				// Now that summaries survive the page, most refreshes confirm the
 				// score already on screen. Emitting for those would repaint the
 				// whole route to draw the same number, so only report changes.
-				if (!previous || !sameSummary(previous.summary, summary)) updated.push(name);
+				// A view change is not a content change: the two shapes come from
+				// the same row, and whoever asked for the new shape is attaching
+				// it directly rather than waiting for this event.
+				const changed = !previous || (previous.view === view && !sameSummary(previous.summary, summary));
+				if (changed) updated.push(name);
 			}
 			if (stored) persistEvolvedSummaries();
 			// Decided at resolution time, not call time: a caller that waited for
@@ -441,7 +454,7 @@ function scheduleEvolvedSummaryRefresh(names) {
  * deferred behaviour rather than holding up the page.
  * @template {{ name: string }} T
  * @param {T[]} tools
- * @param {{ waitForFresh?: boolean, defer?: boolean, graceMs?: number }} [opts]
+ * @param {{ waitForFresh?: boolean, defer?: boolean, graceMs?: number, view?: string }} [opts]
  * @returns {Promise<T[]>}
  */
 export async function attachEvolvedSummaries(tools, opts = {}) {
@@ -451,11 +464,21 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 	// these attach synchronously below and so land in the first paint.
 	hydrateEvolvedSummaries();
 	const now = Date.now();
+	const wantFull = opts.view === SUMMARY_VIEW_FULL;
 	const stale = [];
 	for (const tool of tools) {
 		const cached = evolvedSummaryCache.get(tool.name);
-		if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
-		if (cached && now - cached.ts <= EVOLVED_SUMMARY_TTL_MS) continue;
+		// A card-shaped summary is missing the maintainer record, so showing it
+		// on the detail page would render an incomplete page as if it were done.
+		const usable = cached && (!wantFull || cached.view === SUMMARY_VIEW_FULL);
+		if (usable) /** @type {any} */ (tool).evolvedSummary = cached.summary;
+		if (usable && now - cached.ts <= EVOLVED_SUMMARY_TTL_MS) continue;
+		if (cached && !usable) {
+			// Re-ask for the fuller shape rather than waiting out the backoff,
+			// which only tracks names the backend has nothing at all for.
+			stale.push(tool.name);
+			continue;
+		}
 		// A name the backend has already told us it has not materialized is not
 		// worth re-asking on every render; wait out the backoff first.
 		const askedAt = evolvedSummaryMissing.get(tool.name);
@@ -466,7 +489,7 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 		// Nothing stale resolves immediately, so a fully cached route pays no
 		// grace period at all.
 		let late = false;
-		const pending = refreshEvolvedSummaries(stale, { emitWhen: () => late });
+		const pending = refreshEvolvedSummaries(stale, { emitWhen: () => late, view: opts.view });
 		/** @type {ReturnType<typeof setTimeout> | undefined} */
 		let timer;
 		await Promise.race([
@@ -480,16 +503,20 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 		late = true;
 		for (const tool of tools) {
 			const cached = evolvedSummaryCache.get(tool.name);
-			if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
+			if (cached && (!wantFull || cached.view === SUMMARY_VIEW_FULL)) {
+				/** @type {any} */ (tool).evolvedSummary = cached.summary;
+			}
 		}
 	} else if (opts.waitForFresh) {
-		await refreshEvolvedSummaries(stale, { emit: false });
+		await refreshEvolvedSummaries(stale, { emit: false, view: opts.view });
 		for (const tool of tools) {
 			const cached = evolvedSummaryCache.get(tool.name);
-			if (cached) /** @type {any} */ (tool).evolvedSummary = cached.summary;
+			if (cached && (!wantFull || cached.view === SUMMARY_VIEW_FULL)) {
+				/** @type {any} */ (tool).evolvedSummary = cached.summary;
+			}
 		}
 	} else if (opts.defer === false) {
-		refreshEvolvedSummaries(stale);
+		refreshEvolvedSummaries(stale, { view: opts.view });
 	} else {
 		scheduleEvolvedSummaryRefresh(stale);
 	}

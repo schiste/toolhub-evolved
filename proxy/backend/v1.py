@@ -2724,7 +2724,9 @@ def _me_tools_summaries(payload: dict[str, Any]) -> dict[str, Any]:
                 break
     if not names:
         return {}
-    return tool_summaries.summaries_for(names, _build_local_tool_summary, refresh_stale=False).results
+    return tool_summaries.summaries_for(
+        names, _build_local_tool_summary, refresh_stale=False, view=tool_summaries.VIEW_CARD
+    ).results
 
 
 def _private_resolver_response(payload: dict[str, Any], metadata: dict[str, str]) -> Response:
@@ -4579,7 +4581,9 @@ def v1_home() -> Response:
     """
     return _public_json_response(
         home_payload.payload(
-            lambda names: tool_summaries.summaries_for(names, _build_local_tool_summary),
+            lambda names: tool_summaries.summaries_for(
+                names, _build_local_tool_summary, view=tool_summaries.VIEW_CARD
+            ),
         )
     )
 
@@ -4603,7 +4607,12 @@ def v1_tool_summaries() -> Response:
         return _public_json_response(
             {"count": 0, "results": {}, "cacheMeta": {}, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL}
         )
-    read = tool_summaries.summaries_for(names, _build_local_tool_summary)
+    # Cards ask for the projected view; the tool detail page omits it and gets
+    # the whole record.
+    view = request.args.get("view") or tool_summaries.VIEW_FULL
+    if view not in tool_summaries.VIEWS:
+        return _deny(HTTP_BAD_REQUEST, "unknown summary view")
+    read = tool_summaries.summaries_for(names, _build_local_tool_summary, view=view)
     return _public_json_response(
         {
             "count": len(read.results),

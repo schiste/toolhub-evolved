@@ -6301,9 +6301,10 @@ def test_me_tools_carries_materialized_summaries_without_queueing_builds(client,
     monkeypatch.setattr(tool_summaries, "queue_refresh", lambda names, _build: queued.extend(names))
     seen = {}
 
-    def fake_summaries_for(names, build_summary, *, refresh_stale=True):
+    def fake_summaries_for(names, build_summary, *, refresh_stale=True, view=tool_summaries.VIEW_FULL):
         seen["names"] = list(names)
         seen["refresh_stale"] = refresh_stale
+        seen["view"] = view
         return tool_summaries.SummaryRead(
             results={"ada-tool": {"health": {"score": 71}}},
             cache_meta={"ada-tool": {"status": "fresh"}},
@@ -6316,4 +6317,32 @@ def test_me_tools_carries_materialized_summaries_without_queueing_builds(client,
     assert data["summaries"]["ada-tool"]["health"]["score"] == 71
     assert seen["names"] == ["ada-tool"]
     assert seen["refresh_stale"] is False, "a private read must not queue summary builds"
+    assert seen["view"] == tool_summaries.VIEW_CARD, "the signed-in home renders cards, not detail pages"
     assert queued == []
+
+
+def test_card_view_drops_the_maintainer_record_but_keeps_the_counts():
+    """Cards render the score and popover; only the detail page reads maintainers."""
+    full = {
+        "toolName": "ada-tool",
+        "health": {"score": 71, "grade": "good", "sourceHealth": {"repository": {"branch": "main"}}},
+        "maintainerDimension": {"status": "verified-maintainer"},
+        "maintainer": {"healthCounts": {"verifiedPeople": 2}, "people": [{"name": "Ada"}] * 20},
+    }
+    card = tool_summaries.card_view(full)
+
+    # Everything a card draws survives the projection.
+    assert card["health"] == full["health"]
+    assert card["maintainerDimension"] == full["maintainerDimension"]
+    assert card["maintainer"]["healthCounts"] == {"verifiedPeople": 2}
+    # The people list is the bulk of a summary and is detail-page only.
+    assert "people" not in card["maintainer"]
+    assert len(dumps(card)) < len(dumps(full)) / 2
+    # The original is untouched, since it is the cached row's payload.
+    assert "people" in full["maintainer"]
+
+
+def test_card_view_keeps_an_absent_maintainer_absent():
+    """A missing maintainer must not become an empty-but-present one."""
+    card = tool_summaries.card_view({"health": {"score": 10}})
+    assert "maintainer" not in card

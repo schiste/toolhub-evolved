@@ -28,6 +28,37 @@ _REFRESHING: set[str] = set()
 
 SummaryBuilder = Callable[[Session, str], dict[str, Any]]
 
+#: The two shapes a stored summary is served in. "full" is the materialized
+#: record; "card" is the subset a tool card can render.
+VIEW_FULL = "full"
+VIEW_CARD = "card"
+VIEWS = (VIEW_FULL, VIEW_CARD)
+
+
+def card_view(summary: dict[str, Any]) -> dict[str, Any]:
+    """Project a stored summary down to what a tool card actually renders.
+
+    A card shows the score, the grade, and whether a maintainer is confirmed,
+    and carries the calculation breakdown in a collapsed popover — so it needs
+    all of `health`, but none of the `maintainer` record behind the counts.
+    That record is the largest part of a summary by some margin, and it is only
+    ever read on the tool detail page.
+    """
+    projected: dict[str, Any] = {key: value for key, value in summary.items() if key != "maintainer"}
+    maintainer = summary.get("maintainer")
+    if isinstance(maintainer, dict):
+        counts = maintainer.get("healthCounts")
+        # hasConfirmedMaintainer() reads only the counts; keeping the key with
+        # an empty object keeps that check working rather than making an absent
+        # maintainer look like an unmaintained one.
+        projected["maintainer"] = {"healthCounts": counts if isinstance(counts, dict) else {}}
+    return projected
+
+
+def project(summary: dict[str, Any], view: str) -> dict[str, Any]:
+    """Return `summary` in the requested view."""
+    return card_view(summary) if view == VIEW_CARD else summary
+
 
 @dataclass(frozen=True)
 class SummaryRead:
@@ -108,7 +139,13 @@ def _rows_by_name(s: Session, names: tuple[str, ...]) -> dict[str, ToolSummaryCa
     return {row.tool_name: row for row in rows}
 
 
-def summaries_for(names: list[str], build_summary: SummaryBuilder, *, refresh_stale: bool = True) -> SummaryRead:
+def summaries_for(
+    names: list[str],
+    build_summary: SummaryBuilder,
+    *,
+    refresh_stale: bool = True,
+    view: str = VIEW_FULL,
+) -> SummaryRead:
     """Return already-materialized local summaries, queueing anything missing or stale.
 
     This read never builds a summary. Building one costs roughly a dozen
@@ -138,11 +175,13 @@ def summaries_for(names: list[str], build_summary: SummaryBuilder, *, refresh_st
                 continue
             fresh = _fresh_payload(row, now)
             if fresh is not None:
-                results[name], cache_meta[name] = fresh
+                payload, cache_meta[name] = fresh
+                results[name] = project(payload, view)
                 continue
             stale = _stale_payload(row, now)
             if stale is not None:
-                results[name], cache_meta[name] = stale
+                payload, cache_meta[name] = stale
+                results[name] = project(payload, view)
                 pending_names.append(name)
                 continue
             # Past stale_until: the body is no longer servable, but the row is

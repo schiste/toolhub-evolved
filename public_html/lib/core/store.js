@@ -92,7 +92,8 @@ const TOOL_SUMMARY_CACHE_MAX = 250;
 /* Roughly 48 tools — a full landing page plus recently opened tools — while
    leaving room for the much larger API response cache in the same origin. */
 const TOOL_SUMMARY_CACHE_MAX_CHARS = 400000;
-/** @returns {Record<string, { summary: any, ts: number }>} */
+/** @typedef {{ summary: any, ts: number, view?: string }} StoredToolSummary */
+/** @returns {Record<string, StoredToolSummary>} */
 export function toolSummaryCacheRead() {
 	try {
 		const now = Date.now();
@@ -113,7 +114,7 @@ export function toolSummaryCacheRead() {
 		return {};
 	}
 }
-/** @param {Record<string, { summary: any, ts: number }>} cache */
+/** @param {Record<string, StoredToolSummary>} cache */
 export function toolSummaryCacheWrite(cache) {
 	try {
 		const newest = Object.entries(cache)
@@ -123,7 +124,7 @@ export function toolSummaryCacheWrite(cache) {
 		// per entry rather than by halving the list, which would discard entries
 		// that still had room, and rather than letting a quota error throw the
 		// whole cache away.
-		/** @type {Record<string, { summary: any, ts: number }>} */
+		/** @type {Record<string, StoredToolSummary>} */
 		const kept = {};
 		let used = 2; // the enclosing braces
 		for (const [name, entry] of newest) {

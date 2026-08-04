@@ -180,7 +180,7 @@ test("attachEvolvedSummaries defers additive summaries until idle time", async (
 		await vi.advanceTimersByTimeAsync(1);
 		await Promise.resolve();
 
-		assert.deepEqual(calls, ["/v1/tools/summaries/?names=idle-summary-tool"]);
+		assert.deepEqual(calls, ["/v1/tools/summaries/?names=idle-summary-tool&view=card"]);
 	} finally {
 		globalThis.requestIdleCallback = originalRequestIdleCallback;
 		vi.useRealTimers();
