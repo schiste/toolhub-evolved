@@ -336,8 +336,9 @@ export function seedEvolvedSummaries(summaries) {
 	// of asking for the same summaries again.
 	if (seeded) persistEvolvedSummaries();
 }
-/** @type {Set<string>} */
-const evolvedSummaryPending = new Set();
+/** Names awaiting a background refresh, keyed by the view they were asked for.
+ * @type {Map<string, Set<string>>} */
+const evolvedSummaryPending = new Map();
 let evolvedSummaryScheduled = false;
 
 /** @param {string[]} names */
@@ -423,19 +424,37 @@ function scheduleIdle(callback) {
 
 function drainScheduledEvolvedSummaries() {
 	evolvedSummaryScheduled = false;
-	const batch = [...evolvedSummaryPending].slice(0, EVOLVED_SUMMARY_BATCH_SIZE);
-	for (const name of batch) evolvedSummaryPending.delete(name);
-	refreshEvolvedSummaries(batch).finally(() => {
-		if (evolvedSummaryPending.size > 0) scheduleEvolvedSummaryRefresh([]);
-	});
+	// Queued per view. A single queue silently served every request as a card
+	// read, so a caller waiting for the fuller shape never got it, treated the
+	// card-shaped answer as unusable, and re-queued the same names on the next
+	// render — a request loop that never converged.
+	for (const [view, queued] of evolvedSummaryPending) {
+		if (queued.size === 0) continue;
+		const batch = [...queued].slice(0, EVOLVED_SUMMARY_BATCH_SIZE);
+		for (const name of batch) queued.delete(name);
+		refreshEvolvedSummaries(batch, { view }).finally(() => {
+			if (pendingSummaryCount() > 0) scheduleEvolvedSummaryRefresh([]);
+		});
+	}
 }
 
-/** @param {string[]} names */
-function scheduleEvolvedSummaryRefresh(names) {
+function pendingSummaryCount() {
+	let total = 0;
+	for (const queued of evolvedSummaryPending.values()) total += queued.size;
+	return total;
+}
+
+/**
+ * @param {string[]} names
+ * @param {string} [view]
+ */
+function scheduleEvolvedSummaryRefresh(names, view = SUMMARY_VIEW_CARD) {
+	const queued = evolvedSummaryPending.get(view) || new Set();
+	evolvedSummaryPending.set(view, queued);
 	for (const name of names) {
-		if (name) evolvedSummaryPending.add(name);
+		if (name) queued.add(name);
 	}
-	if (evolvedSummaryScheduled || evolvedSummaryPending.size === 0) return;
+	if (evolvedSummaryScheduled || pendingSummaryCount() === 0) return;
 	evolvedSummaryScheduled = true;
 	scheduleIdle(drainScheduledEvolvedSummaries);
 }
@@ -518,7 +537,7 @@ export async function attachEvolvedSummaries(tools, opts = {}) {
 	} else if (opts.defer === false) {
 		refreshEvolvedSummaries(stale, { view: opts.view });
 	} else {
-		scheduleEvolvedSummaryRefresh(stale);
+		scheduleEvolvedSummaryRefresh(stale, opts.view);
 	}
 	return tools;
 }

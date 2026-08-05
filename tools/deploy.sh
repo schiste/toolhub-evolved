@@ -39,8 +39,14 @@ run_with_tool_env() {
 
 	# The file is written in the pod and read here over NFS, so it can take a
 	# moment to become visible. Wait for the marker rather than racing it.
+	#
+	# Generous on purpose. This budget covers pod scheduling as well as the step
+	# itself, and giving up early is worse than waiting: the step keeps running
+	# after the deploy aborts, so a schema migration can land while the old code
+	# is still being served. A migration that dropped retired tables did exactly
+	# that and 500ed the maintainer endpoints until the restart caught up.
 	_waited=0
-	while [ "$_waited" -lt 60 ]; do
+	while [ "$_waited" -lt 600 ]; do
 		if grep -q '^__EXIT=' "$_out" 2>/dev/null; then
 			break
 		fi

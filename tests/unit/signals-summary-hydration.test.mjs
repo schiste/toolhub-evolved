@@ -264,3 +264,22 @@ test("a card summary does not satisfy the detail page", async () => {
 	assert.ok(calls[0].includes("view=full"), `asked for the wrong shape: ${calls[0]}`);
 	assert.deepEqual(detailTools[0].evolvedSummary.maintainer.people, ["ada"]);
 });
+
+test("a deferred refresh keeps the view it was asked for", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		return { ok: true, json: async () => ({ results: {} }) };
+	};
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+
+	// The deferred queue used to be one flat set, so it served everything as a
+	// card read. A caller that needed the fuller shape then treated the answer
+	// as unusable and re-queued the same name on every render.
+	await signals.attachEvolvedSummaries([{ name: "deferred-tool" }], { view: signals.SUMMARY_VIEW_FULL });
+	await settleIdle();
+
+	assert.equal(calls.length, 1, `expected one deferred request, got ${calls.length}`);
+	assert.ok(calls[0].includes("view=full"), `deferred request downgraded the view: ${calls[0]}`);
+});

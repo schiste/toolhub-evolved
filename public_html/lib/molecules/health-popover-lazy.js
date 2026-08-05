@@ -51,10 +51,14 @@ export async function hydrateHealthPopovers(root = document) {
 	const names = [...new Set(panels.map((entry) => entry.name))];
 	/** @type {Array<{ name: string, evolvedSummary?: any }>} */
 	const carriers = names.map((name) => ({ name }));
+	// waitForFresh, not the deferred default: this already runs after the route
+	// painted and at idle, so there is nothing left to keep off the critical
+	// path, and the panels can only be patched once the answer is actually here.
+	//
 	// The full view is a superset of the card view, so this also upgrades the
 	// stored summaries: a later visit renders the breakdown from cache with no
 	// request at all.
-	await attachEvolvedSummaries(carriers, { view: SUMMARY_VIEW_FULL });
+	await attachEvolvedSummaries(carriers, { view: SUMMARY_VIEW_FULL, waitForFresh: true });
 	const byName = new Map(carriers.map((carrier) => [carrier.name, carrier.evolvedSummary]));
 	let filled = 0;
 	for (const { name, panel } of panels) {

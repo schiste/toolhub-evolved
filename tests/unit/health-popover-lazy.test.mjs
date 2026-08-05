@@ -63,6 +63,9 @@ test("hydration fills the panel in place and asks for the full view once", async
 		["ada-tool"]
 	);
 	assert.equal(opts.view, "full");
+	// Must not take the deferred path: that queue served every request as a
+	// card read, so the breakdown never arrived and the panel re-queued forever.
+	assert.equal(opts.waitForFresh, true, "hydration must wait for the answer it patches in");
 	// Patched in place: still one card, now carrying the breakdown.
 	assert.equal(document.querySelectorAll("article[data-tool]").length, 1);
 	assert.equal(document.querySelector('[data-health-panel="pending"]'), null);
