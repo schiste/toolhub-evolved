@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from analyze_source import _local_git_context, _read_tree
 from backend import DEFAULT_DB_URL, db, graph_enrichment, tool_summaries
@@ -352,9 +353,11 @@ def run(limit: int = 100, *, force: bool = False, tool_name: str | None = None) 
             try:
                 raw_url = _raw_tool_repository(record)
                 _save_failure(name, repository_url(raw_url), provider_for(repository_url(raw_url)), str(exc))
-            except Exception:
-                # Preserve the batch result even if the database cannot record the failure.
-                pass
+            except SQLAlchemyError as save_exc:
+                # One tool's failure must not abort the batch, but swallowing this
+                # silently would hide a database problem behind a run that merely
+                # looks like a lot of scan errors. Report it and carry on.
+                sys.stderr.write(f"repository-scan: could not record the failure for {name}: {save_exc}\n")
         results[result] += 1
     return results
 
