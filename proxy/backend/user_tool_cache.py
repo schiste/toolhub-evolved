@@ -3,18 +3,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import Lock
-from typing import Any
-
-from sqlalchemy import select
+from typing import TYPE_CHECKING, Any
 
 from backend import db
 from backend.models import UserToolResolverCache, utcnow
 from backend.sync import clean_error
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 FRESH_SECONDS = 15 * 60
 STALE_SECONDS = 7 * 24 * 60 * 60
@@ -25,6 +25,8 @@ _REFRESHING: set[int] = set()
 
 @dataclass(frozen=True)
 class CacheRead:
+    """One cached resolver payload with its freshness metadata."""
+
     payload: dict[str, Any]
     metadata: dict[str, str]
 
