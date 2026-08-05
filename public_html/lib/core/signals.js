@@ -278,6 +278,31 @@ const evolvedSummaryCache = new Map();
 const evolvedSummaryMissing = new Map();
 /** @type {Map<string, Promise<void>>} */
 const evolvedSummaryInflight = new Map();
+/**
+ * Store a summary without ever trading a full record for a card projection.
+ *
+ * Both shapes are built from the same materialized row, so a card answer
+ * carries nothing the full one lacks — but overwriting with it makes the entry
+ * unusable for the detail view, which re-fetches, which the next card render
+ * downgrades again. Every writer goes through here so that cannot be
+ * reintroduced one caller at a time.
+ * @param {string} name
+ * @param {any} summary
+ * @param {string} view
+ * @param {number} ts
+ * @returns {boolean} whether the stored payload actually changed
+ */
+function storeEvolvedSummary(name, summary, view, ts) {
+	const previous = evolvedSummaryCache.get(name);
+	const keepFuller = previous?.view === SUMMARY_VIEW_FULL && view === SUMMARY_VIEW_CARD;
+	evolvedSummaryCache.set(name, {
+		summary: keepFuller ? previous.summary : summary,
+		ts,
+		view: keepFuller ? SUMMARY_VIEW_FULL : view
+	});
+	return !keepFuller && (!previous || !sameSummary(previous.summary, summary));
+}
+
 let evolvedSummaryHydrated = false;
 /**
  * Pull summaries stored by an earlier page load into the in-memory map, so the
@@ -329,7 +354,7 @@ export function seedEvolvedSummaries(summaries) {
 	for (const [name, summary] of Object.entries(summaries || {})) {
 		if (!name || !summary) continue;
 		evolvedSummaryMissing.delete(name);
-		evolvedSummaryCache.set(name, { summary, ts, view: SUMMARY_VIEW_CARD });
+		storeEvolvedSummary(name, summary, SUMMARY_VIEW_CARD, ts);
 		seeded = true;
 	}
 	// Keep what the landing page composed, so the next route reuses it instead
@@ -380,20 +405,8 @@ function refreshEvolvedSummaries(names, opts = {}) {
 					evolvedSummaryMissing.set(name, Date.now());
 					continue;
 				}
-				const previous = evolvedSummaryCache.get(name);
 				evolvedSummaryMissing.delete(name);
-				// Never trade a full record for a card projection. Both are built
-				// from the same materialized row, so the card answer carries nothing
-				// the full one lacks — but overwriting with it makes the entry
-				// unusable for the detail view, which then re-fetches, which the
-				// next card render downgrades again. That ping-pong was costing a
-				// redundant full fetch on every single route render.
-				const keepFuller = previous?.view === SUMMARY_VIEW_FULL && view === SUMMARY_VIEW_CARD;
-				evolvedSummaryCache.set(name, {
-					summary: keepFuller ? previous.summary : summary,
-					ts: Date.now(),
-					view: keepFuller ? SUMMARY_VIEW_FULL : view
-				});
+				const contentChanged = storeEvolvedSummary(name, summary, view, Date.now());
 				stored = true;
 				// Now that summaries survive the page, most refreshes confirm the
 				// score already on screen. Emitting for those would repaint the
@@ -401,9 +414,7 @@ function refreshEvolvedSummaries(names, opts = {}) {
 				// A view change is not a content change: the two shapes come from
 				// the same row, and whoever asked for the new shape is attaching
 				// it directly rather than waiting for this event.
-				const changed =
-					!previous || (!keepFuller && previous.view === view && !sameSummary(previous.summary, summary));
-				if (changed) updated.push(name);
+				if (contentChanged) updated.push(name);
 			}
 			if (stored) persistEvolvedSummaries();
 			// Decided at resolution time, not call time: a caller that waited for

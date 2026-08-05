@@ -317,3 +317,34 @@ test("a card response never downgrades a stored full summary", async () => {
 	assert.deepEqual(calls, [], "the view ping-pong is back");
 	assert.deepEqual(fullTools[0].evolvedSummary, FULL);
 });
+
+test("re-seeding the composed home payload does not evict a stored full summary", async () => {
+	const CARD = { health: { score: 60 } };
+	const FULL = { health: { score: 60, dimensions: [{ key: "d" }] } };
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push((String(url).match(/view=\w+/) || ["view=?"])[0]);
+		return { ok: true, json: async () => ({ results: { "seeded-tool": FULL } }) };
+	};
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+
+	// The landing payload seeds card-shaped summaries, then the popover
+	// hydration upgrades one to the full record.
+	signals.seedEvolvedSummaries({ "seeded-tool": CARD });
+	await signals.attachEvolvedSummaries([{ name: "seeded-tool" }], {
+		view: signals.SUMMARY_VIEW_FULL,
+		waitForFresh: true
+	});
+	assert.deepEqual(calls, ["view=full"]);
+
+	// Home re-renders and seeds again. That must not throw away the breakdown —
+	// it did, which cost a redundant full fetch on every single route render.
+	calls.length = 0;
+	signals.seedEvolvedSummaries({ "seeded-tool": CARD });
+	const tools = [{ name: "seeded-tool" }];
+	await signals.attachEvolvedSummaries(tools, { view: signals.SUMMARY_VIEW_FULL, waitForFresh: true });
+
+	assert.deepEqual(calls, [], "re-seeding forced the breakdown to be fetched again");
+	assert.deepEqual(tools[0].evolvedSummary, FULL);
+});
