@@ -12,7 +12,6 @@ assembled GET merges all users' rows, newest first. Feed keys (revisions,
 auditlogs) are append-only, idempotent by client id.
 """
 
-import base64
 import hashlib
 import json
 import os
@@ -43,7 +42,6 @@ from backend import (
     people_index,
     recent_owners,
     security,
-    source_analyzer,
     tool_assets,
     tool_summaries,
     toolhub,
@@ -51,18 +49,15 @@ from backend import (
 )
 from backend.author_claims import (
     DISPLAY_NAME_CLAIM_TTL,
-    SIGNATURE_META_KEY,
     AuthorNameProvider,
     SignedToolinfoProvider,
     ToolforgeMaintainerProvider,
     ToolforgeMembershipProvider,
     ToolhubWriteProvider,
     author_names_from_toolhub_tool,
-    canonical_toolinfo_string,
     public_key_fingerprint,
     record_author_claim,
     toolforge_names_from_toolhub_tool,
-    validate_ed25519_public_key,
 )
 from backend.author_claims import (
     claim_payload as author_claim_payload,
@@ -123,8 +118,6 @@ from backend.sync import (
     clean_error,
     clean_int,
     clean_review_status,
-    clean_source,
-    clean_sync_status,
 )
 from backend.toolinfo_control import (
     CHALLENGE_FIELD,
@@ -263,10 +256,6 @@ def _payload_value(payload: dict, camel: str, snake: str | None = None) -> Any: 
     if camel in payload:
         return payload.get(camel)
     return payload.get(snake or camel)
-
-
-def _visibility(value: Any, default: str = VISIBILITY_PRIVATE) -> str:  # noqa: ANN401
-    return value if value in {VISIBILITY_PRIVATE, VISIBILITY_PUBLIC} else default
 
 
 def _clean_name(value: str) -> str | None:
@@ -813,62 +802,6 @@ def _source_analysis_payload(row: SourceAnalysisReport) -> dict:
     }
 
 
-def _maintainer_context_from_summary(summary: dict) -> dict:
-    """Translate normalized people relationships into source-analyzer context."""
-    counts = summary.get("healthCounts") if isinstance(summary.get("healthCounts"), dict) else {}
-    people = summary.get("people") if isinstance(summary.get("people"), list) else []
-    if not people:
-        return {}
-    ages: list[int] = []
-    recent_activity_count = 0
-    for row in people:
-        activity = row.get("activity") if isinstance(row, dict) else {}
-        if not isinstance(activity, dict):
-            continue
-        age = clean_int(activity.get("lastContributionAgeDays"))
-        if age is not None:
-            ages.append(max(0, age))
-        recent_activity_count += clean_int(activity.get("recentContributionCount")) or 0
-    context: dict[str, Any] = {
-        "maintainerCount": clean_int(counts.get("maintainers")) or 0,
-        "activeMaintainerCount": clean_int(counts.get("activePeople")) or 0,
-        "recentActivityCount": recent_activity_count,
-        "source": "evolved-people-index",
-        "analyzedAt": _iso(utcnow()),
-    }
-    if ages:
-        context["lastActivityAgeDays"] = min(ages)
-    return context
-
-
-def _source_repository_context(tool_name: str | None, repository_context: object) -> object:
-    """Add Evolved maintainer context to source analysis when no caller context exists."""
-    if tool_name is None or (repository_context is not None and not isinstance(repository_context, dict)):
-        return repository_context
-    if (
-        isinstance(repository_context, dict)
-        and isinstance(repository_context.get("maintainers"), dict)
-        and repository_context["maintainers"]
-    ):
-        return repository_context
-    with db.session_scope() as s:
-        maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
-        person_ids = {
-            row[0]
-            for row in s.execute(
-                select(ToolPersonRelationship.person_id).where(ToolPersonRelationship.tool_name == tool_name).distinct()
-            ).all()
-        }
-        people_index.refresh_activity_summaries(s, person_ids=person_ids)
-        summary = maintainer_index.public_tool_summary(s, tool_name)
-    maintainer_context = _maintainer_context_from_summary(summary)
-    if not maintainer_context:
-        return repository_context
-    merged = dict(repository_context or {})
-    merged["maintainers"] = maintainer_context
-    return merged
-
-
 def _score_grade(score: int | None) -> str:
     if score is None:
         return "unknown"
@@ -1162,23 +1095,6 @@ def _clean_author_key_id(value: Any) -> str | None:  # noqa: ANN401 - untrusted 
     return text_value if AUTHOR_KEY_ID_RE.fullmatch(text_value) else None
 
 
-def _toolinfo_body(value: Any) -> dict | None:  # noqa: ANN401 - untrusted JSON
-    """Return one toolinfo object from JSON input."""
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.JSONDecodeError:
-            return None
-    if not isinstance(value, dict):
-        return None
-    return value if _clean_name(value.get("name")) is not None else None
-
-
-def _signature_metadata(key_id: str) -> dict:
-    """Return the metadata block a maintainer adds after signing."""
-    return {"algorithm": "ed25519", "key_id": key_id, "signature": SIGNATURE_PLACEHOLDER}
-
-
 def _toolhub_tool_detail(tool_name: str) -> dict | None:
     """Fetch one exact official Toolhub tool record by name."""
     payload = toolhub.public_api_get(f"/api/tools/{quote(tool_name, safe='')}/")
@@ -1298,46 +1214,6 @@ def _invalidate_official_api_cache(path: str, request_payload: object | None, re
             api_cache.invalidate_list(list_id)
         else:
             api_cache.invalidate_list_collection()
-
-
-def _official_response(method: str, path: str, payload: object | None = None) -> Response:
-    """Call official Toolhub as the current user and normalize failures."""
-    user = _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    try:
-        body, status = toolhub.api_request(user.id, method, path, json=payload)
-    except ValueError:
-        # toolhub.api_path refused the path (outside /api/, or a dot segment that
-        # urllib3 would normalize into an escape). Nothing left the process.
-        return _bad("invalid official Toolhub path")
-    except toolhub.ToolhubAuthError as exc:
-        resp = jsonify({"error": str(exc), "reauth": True})
-        resp.status_code = 401
-        return resp
-    except toolhub.ToolhubAPIError as exc:
-        resp = jsonify(
-            {"error": "official Toolhub rejected the write", "status": exc.status_code, "details": exc.payload}
-        )
-        resp.status_code = exc.status_code
-        return resp
-    except toolhub.requests.RequestException:
-        resp = jsonify({"error": "official Toolhub is unavailable"})
-        resp.status_code = 502
-        return resp
-    _invalidate_official_api_cache(path, payload, body)
-    _record_successful_toolhub_write(user, method, path, payload, body)
-    if status == HTTP_NO_CONTENT:
-        return jsonify({"ok": True})
-    resp = jsonify({"ok": True, "toolhub": body})
-    resp.status_code = status
-    return resp
-
-
-def _official_json_response(method: str, path: str) -> Response:
-    """Parse a JSON object body and forward it to official Toolhub."""
-    value = request.get_json(silent=True)
-    if not isinstance(value, dict):
-        return _bad("body must be a JSON object")
-    return _official_response(method, path, value)
 
 
 def _json_object_body() -> tuple[dict | None, Response | None]:
@@ -1621,80 +1497,6 @@ def _verify_control_challenge_record(
     return claim, None
 
 
-@v1_bp.route("/v1/toolinfo/ownership-challenges/")
-@login_required
-def v1_toolinfo_control_challenges() -> Response:
-    """List URL-control challenges belonging to the signed-in account."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - login_required guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    with db.session_scope() as s:
-        rows = list(
-            s.execute(
-                select(ToolinfoControlChallenge)
-                .where(ToolinfoControlChallenge.user_id == user.id)
-                .order_by(ToolinfoControlChallenge.created_at.desc(), ToolinfoControlChallenge.id.desc())
-                .limit(50)
-            ).scalars()
-        )
-        for row in rows:
-            if row.status == CHALLENGE_STATUS_PENDING and challenge_expired(row):
-                row.status = CHALLENGE_STATUS_EXPIRED
-        payload = [challenge_payload(row) for row in rows]
-    return jsonify({"challenges": payload, "field": CHALLENGE_FIELD})
-
-
-@v1_bp.route("/v1/toolinfo/ownership-challenges/", methods=["POST"])
-@write_guard
-def v1_toolinfo_control_challenge_create() -> Response:
-    """Create a proof-of-control challenge after validating the exact URL."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = _json_object_body()
-    if bad is not None:
-        return bad
-    assert body is not None  # noqa: S101 - _json_object_body returned no error
-    tool_name = _clean_name(str(_payload_value(body, "toolName", "tool_name") or "").strip())
-    if tool_name is None:
-        return _bad("toolName is required")
-    toolinfo_url = str(_payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
-    with db.session_scope() as s:
-        row, error = _create_control_challenge(s, user, tool_name, toolinfo_url)
-        if error is not None:
-            return error
-        assert row is not None  # noqa: S101 - helper returned no error
-        payload = challenge_payload(row)
-    response = jsonify({"ok": True, "challenge": payload, "field": CHALLENGE_FIELD})
-    response.status_code = 201
-    return response
-
-
-@v1_bp.route("/v1/toolinfo/ownership-challenges/<int:challenge_id>/verify/", methods=["POST"])
-@write_guard
-def v1_toolinfo_control_challenge_verify(challenge_id: int) -> Response:
-    """Refetch the URL and materialize a verified per-tool maintainer claim."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    with db.session_scope() as s:
-        row = s.execute(
-            select(ToolinfoControlChallenge).where(
-                ToolinfoControlChallenge.id == challenge_id,
-                ToolinfoControlChallenge.user_id == user.id,
-            )
-        ).scalar_one_or_none()
-        if row is None:
-            return _deny(HTTP_NOT_FOUND, "ownership challenge not found")
-        claim, error = _verify_control_challenge_record(s, user, row)
-        if error is not None:
-            return error
-        assert claim is not None  # noqa: S101 - helper returned no error
-        payload = challenge_payload(row)
-        claim_data = _claim_payload(claim)
-    return jsonify({"ok": True, "challenge": payload, "claim": claim_data})
-
-
 @v1_bp.route("/v1/tools/<name>/claim-options/")
 @login_required
 def v1_tool_claim_options(name: str) -> Response:
@@ -1906,267 +1708,6 @@ def v1_claim_revoke(claim_id: int) -> Response:
         return jsonify({"ok": True, "claim": _claim_payload(row)})
 
 
-@v1_bp.route("/v1/author-keys/")
-@login_required
-def v1_author_keys() -> Response:
-    """List public keys registered by the signed-in Toolhub user."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — login_required guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    with db.session_scope() as s:
-        keys = [
-            _author_key_payload(row)
-            for row in s.execute(
-                select(ToolAuthorKey)
-                .where(_author_key_owned_by(user))
-                .order_by(ToolAuthorKey.revoked_at.is_not(None), ToolAuthorKey.created_at, ToolAuthorKey.id)
-            ).scalars()
-        ]
-    return jsonify({"username": user.username, "keys": keys})
-
-
-@v1_bp.route("/v1/author-keys/", methods=["POST"])
-@write_guard
-def v1_author_key_create() -> Response:
-    """Register one public key for signed-toolinfo verification."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = _json_object_body()
-    if bad is not None:
-        return bad
-    assert body is not None  # noqa: S101 — _json_object_body returned no error
-    key_id = _clean_author_key_id(_payload_value(body, "keyId", "key_id"))
-    if key_id is None:
-        return _bad("keyId must use 1-128 letters, digits, dots, colons, underscores or hyphens")
-    algorithm = str(_payload_value(body, "algorithm") or "ed25519").strip().lower()
-    if algorithm != "ed25519":
-        return _bad("only ed25519 public keys are supported")
-    try:
-        public_key = validate_ed25519_public_key(str(_payload_value(body, "publicKey", "public_key") or ""))
-    except (TypeError, ValueError) as exc:
-        return _bad(str(exc))
-    with db.session_scope() as s:
-        existing = s.execute(
-            select(ToolAuthorKey).where(_author_key_owned_by(user), ToolAuthorKey.key_id == key_id)
-        ).scalar_one_or_none()
-        if existing is not None:
-            return _deny(HTTP_CONFLICT, "key id already exists")
-        row = ToolAuthorKey(
-            toolhub_username=user.username,
-            user_id=user.id,
-            key_id=key_id,
-            public_key=public_key,
-            algorithm=algorithm,
-        )
-        s.add(row)
-        s.flush()
-        payload = _author_key_payload(row)
-    resp = jsonify({"ok": True, "key": payload})
-    resp.status_code = 201
-    return resp
-
-
-@v1_bp.route("/v1/author-keys/<key_id>/", methods=["DELETE"])
-@write_guard
-def v1_author_key_revoke(key_id: str) -> Response:
-    """Revoke one registered public key for the signed-in Toolhub user."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
-    clean_key_id = _clean_author_key_id(key_id)
-    if clean_key_id is None:
-        return _bad("invalid key id")
-    with db.session_scope() as s:
-        row = s.execute(
-            select(ToolAuthorKey).where(
-                _author_key_owned_by(user),
-                ToolAuthorKey.key_id == clean_key_id,
-            )
-        ).scalar_one_or_none()
-        if row is None:
-            return _deny(HTTP_NOT_FOUND, "public key not found")
-        if row.revoked_at is None:
-            row.revoked_at = utcnow()
-        payload = _author_key_payload(row)
-    return jsonify({"ok": True, "key": payload})
-
-
-@v1_bp.route("/v1/toolinfo/signing-payload/", methods=["POST"])
-@write_guard
-def v1_toolinfo_signing_payload() -> Response:
-    """Return the canonical toolinfo bytes that a registered key should sign."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    body, bad = _json_object_body()
-    if bad is not None:
-        return bad
-    assert body is not None  # noqa: S101 — _json_object_body returned no error
-    key_id = _clean_author_key_id(_payload_value(body, "keyId", "key_id"))
-    if key_id is None:
-        return _bad("choose a registered key id")
-    toolinfo = _toolinfo_body(_payload_value(body, "toolinfo"))
-    if toolinfo is None:
-        return _bad("toolinfo must be one JSON object with a valid name")
-    with db.session_scope() as s:
-        key = s.execute(
-            select(ToolAuthorKey).where(
-                _author_key_owned_by(user),
-                ToolAuthorKey.key_id == key_id,
-                ToolAuthorKey.revoked_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        if key is None:
-            return _deny(HTTP_NOT_FOUND, "active public key not found")
-    canonical_payload = canonical_toolinfo_string(toolinfo)
-    signature_metadata = _signature_metadata(key_id)
-    return jsonify(
-        {
-            "toolName": _clean_name(toolinfo.get("name")),
-            "keyId": key_id,
-            "algorithm": "ed25519",
-            "signatureField": SIGNATURE_META_KEY,
-            "canonicalPayload": canonical_payload,
-            "canonicalPayloadBase64": base64.b64encode(canonical_payload.encode("utf-8")).decode("ascii"),
-            "signatureMetadata": signature_metadata,
-            "signedToolinfoPreview": {**toolinfo, SIGNATURE_META_KEY: signature_metadata},
-        }
-    )
-
-
-@v1_bp.route("/v1/source-analysis/")
-@login_required
-def v1_source_analysis_list() -> Response:
-    """List source-analysis reports owned by the signed-in user."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — login_required guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    limit = min(
-        max(clean_int(request.args.get("limit")) or SOURCE_ANALYSIS_DEFAULT_LIMIT, 1),
-        SOURCE_ANALYSIS_MAX_LIMIT,
-    )
-    tool_name = _clean_name(request.args.get("tool", ""))
-    stmt = select(SourceAnalysisReport).where(SourceAnalysisReport.user_id == uid)
-    if tool_name is not None:
-        stmt = stmt.where(SourceAnalysisReport.tool_name == tool_name)
-    with db.session_scope() as s:
-        reports = list(
-            s.execute(
-                stmt.order_by(SourceAnalysisReport.created_at.desc(), SourceAnalysisReport.id.desc()).limit(limit)
-            )
-            .scalars()
-            .all()
-        )
-    return jsonify({"count": len(reports), "results": [_source_analysis_payload(row) for row in reports]})
-
-
-@v1_bp.route("/v1/source-analysis/", methods=["POST"])
-@write_guard
-def v1_source_analysis_create() -> Response:
-    """Analyze submitted source files and store the derived report."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = _json_object_body()
-    if bad is not None:
-        return bad
-    assert body is not None  # noqa: S101 — _json_object_body returned no error
-    tool_name = _clean_name(_payload_value(body, "toolName", "tool_name"))
-    source_label = str(_payload_value(body, "sourceLabel", "source_label") or "").strip()[:MAX_NAME]
-    repository_context = _source_repository_context(
-        tool_name,
-        _payload_value(body, "repositoryContext", "repository_context"),
-    )
-    try:
-        report = source_analyzer.analyze_source_files(
-            _payload_value(body, "files"),
-            tool_name=tool_name,
-            source_label=source_label,
-            repository_context=repository_context,
-        )
-    except source_analyzer.SourceAnalysisError as exc:
-        return _bad(str(exc))
-    with db.session_scope() as s:
-        row = SourceAnalysisReport(
-            user_id=uid,
-            created_by_user_id=uid,
-            tool_name=tool_name,
-            source_label=source_label,
-            report=report,
-            review_status=REVIEW_OPEN,
-            source=SOURCE_LOCAL,
-            sync_status=SYNC_EVOLVED_REAL,
-        )
-        s.add(row)
-        s.flush()
-        payload = _source_analysis_payload(row)
-        _emit_structured_activity(
-            s,
-            user,
-            action="source-analysis-created",
-            object_type="source_analysis",
-            object_key=str(row.id),
-            official_status=SYNC_EVOLVED_REAL,
-            payload={"toolName": tool_name, "sourceLabel": source_label},
-            title=tool_name or source_label or f"Source analysis #{row.id}",
-        )
-    resp = jsonify({"ok": True, "sourceAnalysis": payload})
-    resp.status_code = 201
-    return resp
-
-
-@v1_bp.route("/v1/source-analysis/<int:report_id>/")
-@login_required
-def v1_source_analysis_detail(report_id: int) -> Response:
-    """Return one source-analysis report owned by the signed-in user."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — login_required guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    with db.session_scope() as s:
-        row = s.get(SourceAnalysisReport, report_id)
-        if row is None or row.user_id != uid:
-            return _deny(HTTP_NOT_FOUND, SOURCE_ANALYSIS_NOT_FOUND)
-        payload = _source_analysis_payload(row)
-    return jsonify({"sourceAnalysis": payload})
-
-
-@v1_bp.route("/v1/source-analysis/<int:report_id>/review/", methods=["POST"])
-@write_guard
-def v1_source_analysis_review(report_id: int) -> Response:
-    """Mark one source-analysis report as open, approved, or rejected."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = _json_object_body()
-    if bad is not None:
-        return bad
-    assert body is not None  # noqa: S101 — _json_object_body returned no error
-    review_status = str(_payload_value(body, "reviewStatus", "review_status") or "").strip()
-    if review_status not in SOURCE_ANALYSIS_REVIEW_STATUSES:
-        return _bad("reviewStatus must be open, approved, or rejected")
-    review_notes = clean_error(_payload_value(body, "reviewNotes", "review_notes"))
-    with db.session_scope() as s:
-        row = s.get(SourceAnalysisReport, report_id)
-        if row is None or row.user_id != uid:
-            return _deny(HTTP_NOT_FOUND, SOURCE_ANALYSIS_NOT_FOUND)
-        row.review_status = review_status
-        row.review_notes = review_notes
-        row.reviewed_at = None if review_status == REVIEW_OPEN else utcnow()
-        payload = _source_analysis_payload(row)
-        _emit_structured_activity(
-            s,
-            user,
-            action=f"source-analysis-{review_status}",
-            object_type="source_analysis",
-            object_key=str(row.id),
-            official_status=SYNC_EVOLVED_REAL,
-            payload={"toolName": row.tool_name, "reviewStatus": review_status},
-            title=row.tool_name or row.source_label or f"Source analysis #{row.id}",
-        )
-    return jsonify({"ok": True, "sourceAnalysis": payload})
-
-
 #: Matches the client's own per-render cap, so this never composes summaries
 #: for tools the page will not draw.
 _ME_TOOLS_SUMMARY_LIMIT = 50
@@ -2342,73 +1883,6 @@ def v1_issue_report() -> Response:  # noqa: C901, PLR0911 - validation exits kee
     return jsonify(published), 201
 
 
-@v1_bp.route("/v1/toolhub/tools/", methods=["POST"])
-@write_guard
-def official_tool_create() -> Response:
-    """Create an official Toolhub tool with the current user's grant."""
-    return _official_json_response("POST", "/api/tools/")
-
-
-@v1_bp.route("/v1/toolhub/tools/<name>/", methods=["PUT", "DELETE"])
-@write_guard
-def official_tool_update(name: str) -> Response:
-    """Update or delete an official Toolhub tool."""
-    if request.method == "DELETE":
-        return _official_response("DELETE", _upstream_path(f"tools/{name}/"))
-    return _official_json_response("PUT", _upstream_path(f"tools/{name}/"))
-
-
-@v1_bp.route("/v1/toolhub/tools/<name>/annotations/", methods=["PUT"])
-@write_guard
-def official_annotations_update(name: str) -> Response:
-    """Update official Toolhub annotations for a tool."""
-    return _official_json_response("PUT", _upstream_path(f"tools/{name}/annotations/"))
-
-
-@v1_bp.route("/v1/toolhub/lists/", methods=["POST"])
-@write_guard
-def official_list_create() -> Response:
-    """Create an official Toolhub list."""
-    return _official_json_response("POST", "/api/lists/")
-
-
-@v1_bp.route("/v1/toolhub/lists/<int:list_id>/", methods=["PUT", "DELETE"])
-@write_guard
-def official_list_update(list_id: int) -> Response:
-    """Update or delete an official Toolhub list."""
-    if request.method == "DELETE":
-        return _official_response("DELETE", _upstream_path(f"lists/{list_id}/"))
-    return _official_json_response("PUT", _upstream_path(f"lists/{list_id}/"))
-
-
-@v1_bp.route("/v1/toolhub/user/favorites/", methods=["POST"])
-@write_guard
-def official_favorite_add() -> Response:
-    """Add an official Toolhub favorite."""
-    return _official_json_response("POST", "/api/user/favorites/")
-
-
-@v1_bp.route("/v1/toolhub/user/favorites/<tool_name>/", methods=["DELETE"])
-@write_guard
-def official_favorite_delete(tool_name: str) -> Response:
-    """Remove an official Toolhub favorite."""
-    return _official_response("DELETE", _upstream_path(f"user/favorites/{tool_name}/"))
-
-
-@v1_bp.route("/v1/toolhub/crawler/urls/", methods=["POST"])
-@write_guard
-def official_crawler_url_add() -> Response:
-    """Register an official Toolhub crawler URL."""
-    return _official_json_response("POST", "/api/crawler/urls/")
-
-
-@v1_bp.route("/v1/toolhub/crawler/urls/<int:url_id>/", methods=["DELETE"])
-@write_guard
-def official_crawler_url_delete(url_id: int) -> Response:
-    """Unregister an official Toolhub crawler URL."""
-    return _official_response("DELETE", _upstream_path(f"crawler/urls/{url_id}/"))
-
-
 @v1_bp.route("/v1/crawler/toolinfo-discovery/", methods=["POST"])
 @write_guard
 def discover_toolinfo_url() -> Response:
@@ -2527,130 +2001,6 @@ def _assemble_overlay(uid: int) -> dict[str, Any]:
     }
 
 
-@v1_bp.route("/v1/overlay/")
-@login_required
-def v1_overlay_get() -> Response:
-    """Return the full overlay in the SPA's localStorage shapes (one pull at sign-in)."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — login_required guarantees this
-    _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    return jsonify(_assemble_overlay(uid))
-
-
-def _put_favorites(uid: int, value: Any) -> Response | None:  # noqa: ANN401
-    if not isinstance(value, list) or not all(isinstance(n, str) and 0 < len(n) <= MAX_NAME for n in value):
-        return _bad("favorites must be a list of tool names")
-    names = list(dict.fromkeys(value))[:MAX_ITEMS]
-    with db.session_scope() as s:
-        s.execute(delete(Favorite).where(Favorite.user_id == uid))
-        s.add_all(
-            [
-                Favorite(
-                    user_id=uid,
-                    created_by_user_id=uid,
-                    tool_name=n,
-                    position=i,
-                    source=SOURCE_LOCAL,
-                    sync_status=SYNC_LOCAL_DRAFT,
-                )
-                for i, n in enumerate(names)
-            ]
-        )
-    return None
-
-
-def _put_lists(uid: int, value: Any) -> Response | None:  # noqa: ANN401
-    if not isinstance(value, list):
-        return _bad("lists must be a list")
-    for item in value[:MAX_ITEMS]:
-        ok = (
-            isinstance(item, dict)
-            and isinstance(item.get("id"), str)
-            and isinstance(item.get("title"), str)
-            and isinstance(item.get("tools"), list)
-        )
-        if not ok:
-            return _bad("each list needs id, title and tools")
-    with db.session_scope() as s:
-        s.execute(delete(ToolList).where(ToolList.user_id == uid))
-        for item in value[:MAX_ITEMS]:
-            official_id = clean_int(_payload_value(item, "officialId", "official_list_id"))
-            default_status = SYNC_OFFICIAL if official_id is not None else SYNC_LOCAL_DRAFT
-            sync_status = clean_sync_status(_payload_value(item, "syncStatus", "sync_status"), default_status)
-            last_synced_at = _parse_optional_iso(_payload_value(item, "lastSyncedAt", "last_synced_at"))
-            if sync_status == SYNC_OFFICIAL and last_synced_at is None:
-                last_synced_at = _parse_iso(item.get("modified"))
-            response = _payload_value(item, "toolhubResponse", "last_toolhub_response")
-            validation_errors = _payload_value(item, "validationErrors", "validation_errors")
-            s.add(
-                ToolList(
-                    client_id=str(item["id"])[:64],
-                    user_id=uid,
-                    created_by_user_id=uid,
-                    title=str(item["title"])[:MAX_NAME],
-                    description=str(item.get("description", "")),
-                    tools=[str(t)[:MAX_NAME] for t in item["tools"][:MAX_ITEMS]],
-                    created_at=_parse_iso(item.get("created")),
-                    modified_at=_parse_iso(item.get("modified")),
-                    official_list_id=official_id,
-                    source=clean_source(
-                        _payload_value(item, "source"),
-                        SOURCE_OFFICIAL if official_id else SOURCE_LOCAL,
-                    ),
-                    sync_status=sync_status,
-                    last_synced_at=last_synced_at,
-                    last_error=clean_error(_payload_value(item, "lastError", "last_error")),
-                    last_toolhub_response=response if isinstance(response, dict) else None,
-                    validation_errors=validation_errors if isinstance(validation_errors, list) else None,
-                )
-            )
-    return None
-
-
-def _put_crawler_urls(uid: int, value: Any) -> Response | None:  # noqa: ANN401
-    ok = isinstance(value, list) and all(
-        isinstance(u, dict) and isinstance(u.get("url"), str) and u["url"].startswith("https://") for u in value
-    )
-    if not ok:
-        return _bad("crawlerUrls must be a list of {url (https), added}")
-    with db.session_scope() as s:
-        s.execute(delete(CrawlerUrl).where(CrawlerUrl.user_id == uid))
-        for u in value[:MAX_ITEMS]:
-            official_id = clean_int(_payload_value(u, "officialId") if "officialId" in u else u.get("id"))
-            default_status = SYNC_OFFICIAL if official_id is not None else SYNC_LOCAL_DRAFT
-            sync_status = clean_sync_status(_payload_value(u, "syncStatus", "sync_status"), default_status)
-            last_synced_at = _parse_optional_iso(_payload_value(u, "lastSyncedAt", "last_synced_at"))
-            if sync_status == SYNC_OFFICIAL and last_synced_at is None:
-                last_synced_at = _parse_iso(u.get("added"))
-            response = _payload_value(u, "toolhubResponse", "last_toolhub_response")
-            validation_errors = _payload_value(u, "validationErrors", "validation_errors")
-            s.add(
-                CrawlerUrl(
-                    user_id=uid,
-                    created_by_user_id=uid,
-                    url=str(u["url"])[:2000],
-                    added_at=_parse_iso(u.get("added")),
-                    official_crawler_url_id=official_id,
-                    source=clean_source(_payload_value(u, "source"), SOURCE_OFFICIAL if official_id else SOURCE_LOCAL),
-                    enabled=bool(u.get("enabled", True)),
-                    last_checked_at=_parse_optional_iso(_payload_value(u, "lastCheckedAt", "last_checked_at")),
-                    last_status=str(_payload_value(u, "lastStatus", "last_status") or "")[:64] or None,
-                    last_error=clean_error(_payload_value(u, "lastError", "last_error")),
-                    last_toolhub_response=response if isinstance(response, dict) else None,
-                    validation_errors=validation_errors if isinstance(validation_errors, list) else None,
-                    sync_status=sync_status,
-                    last_synced_at=last_synced_at,
-                )
-            )
-    return None
-
-
-def _valid_map(value: Any) -> bool:  # noqa: ANN401
-    return isinstance(value, dict) and all(
-        isinstance(k, str) and 0 < len(k) <= MAX_NAME and isinstance(v, dict) for k, v in value.items()
-    )
-
-
 MAX_DESCRIPTION = 5000
 MAX_URL = 2000
 _STR_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")
@@ -2686,224 +2036,9 @@ def _clean_tool_record(rec: dict) -> dict | None:
     return clean
 
 
-def _tool_record_meta(
-    rec: dict,
-    *,
-    can_review: bool = False,
-    existing_review_status: str | None = None,
-    record_changed: bool = True,
-) -> dict[str, Any]:
-    """Extract lifecycle metadata from a toolNew payload."""
-    is_crawler_record = rec.get("origin") == "crawler"
-    visibility = _visibility(
-        _payload_value(rec, "visibility"), VISIBILITY_PUBLIC if is_crawler_record else VISIBILITY_PRIVATE
-    )
-    preserved_review = clean_review_status(existing_review_status, REVIEW_PENDING)
-    if can_review:
-        review_status = clean_review_status(_payload_value(rec, "reviewStatus", "review_status"), preserved_review)
-    elif visibility == VISIBILITY_PUBLIC and not record_changed:
-        review_status = preserved_review
-    else:
-        review_status = REVIEW_PENDING
-    default_status = SYNC_EVOLVED_REAL if visibility == VISIBILITY_PUBLIC else SYNC_LOCAL_DRAFT
-    status = clean_sync_status(_payload_value(rec, "syncStatus", "sync_status"), default_status)
-    official_name = _payload_value(rec, "officialName", "official_name")
-    response = _payload_value(rec, "toolhubResponse", "last_toolhub_response")
-    validation_errors = _payload_value(rec, "validationErrors", "validation_errors")
-    return {
-        "visibility": visibility,
-        "source": SOURCE_LOCAL,
-        "sync_status": status,
-        "review_status": review_status,
-        "last_synced_at": _parse_optional_iso(_payload_value(rec, "lastSyncedAt", "last_synced_at")),
-        "last_error": clean_error(_payload_value(rec, "lastError", "last_error")),
-        "official_name": str(official_name)[:MAX_NAME] if isinstance(official_name, str) and official_name else None,
-        "last_toolhub_response": response if isinstance(response, dict) else None,
-        "validation_errors": validation_errors if isinstance(validation_errors, list) else None,
-    }
-
-
-def _overlay_meta(
-    patch: dict,
-    *,
-    can_review: bool = False,
-    existing_review_status: str | None = None,
-) -> dict[str, Any]:
-    """Extract lifecycle metadata from a toolEdits/toolAnnos payload."""
-    field_statuses = _payload_value(patch, "fieldStatuses", "field_statuses")
-    response = _payload_value(patch, "toolhubResponse", "last_toolhub_response")
-    validation_errors = _payload_value(patch, "validationErrors", "validation_errors")
-    preserved_review = clean_review_status(existing_review_status, REVIEW_OPEN)
-    return {
-        "base_revision": str(_payload_value(patch, "baseRevision", "base_revision") or "")[:MAX_NAME] or None,
-        "field_statuses": field_statuses if isinstance(field_statuses, dict) else None,
-        "source": clean_source(_payload_value(patch, "source"), SOURCE_LOCAL),
-        "sync_status": clean_sync_status(
-            _payload_value(patch, "syncStatus", "sync_status"),
-            SYNC_LOCAL_FALLBACK if _payload_value(patch, "lastError", "last_error") else SYNC_LOCAL_DRAFT,
-        ),
-        "last_synced_at": _parse_optional_iso(_payload_value(patch, "lastSyncedAt", "last_synced_at")),
-        "last_error": clean_error(_payload_value(patch, "lastError", "last_error")),
-        "last_toolhub_response": response if isinstance(response, dict) else None,
-        "validation_errors": validation_errors if isinstance(validation_errors, list) else None,
-        "review_status": (
-            clean_review_status(_payload_value(patch, "reviewStatus", "review_status"), preserved_review)
-            if can_review
-            else preserved_review
-        ),
-    }
-
-
 def _data_patch(patch: dict) -> dict:
     """Remove lifecycle metadata before merging a local overlay into a tool."""
     return {k: v for k, v in patch.items() if k not in META_KEYS and k not in CANONICAL_TOOL_KEYS}
-
-
-def _put_tool_new(uid: int, entries: dict[str, dict], s: Any, *, can_review: bool = False) -> Response | None:  # noqa: ANN401
-    # A tool name registered by someone else is not writable here: the pulled
-    # cache holds the globally merged view, so a client legitimately pushes
-    # other users' records back verbatim — those must never be re-owned.
-    # Edits to other people's tools flow through the toolEdits/toolAnnos
-    # overlays instead.
-    others = {r.tool_name for r in s.execute(select(ToolRecord).where(ToolRecord.user_id != uid)).scalars()}
-    existing_own = {r.tool_name: r for r in s.execute(select(ToolRecord).where(ToolRecord.user_id == uid)).scalars()}
-    cleaned: dict[str, tuple[dict, dict[str, Any]]] = {}
-    for name, rec in entries.items():
-        if name in others:
-            continue  # echo of (or attempt on) another user's registration
-        clean = _clean_tool_record(rec)
-        if clean is None:
-            return _bad(f"toolNew record '{name}' needs title, description and an https url")
-        existing = existing_own.get(name)
-        cleaned[name] = (
-            clean,
-            _tool_record_meta(
-                rec,
-                can_review=can_review,
-                existing_review_status=getattr(existing, "review_status", None),
-                record_changed=existing is None
-                or (existing.record if isinstance(existing.record, dict) else {}) != clean,
-            ),
-        )
-    s.execute(delete(ToolRecord).where(ToolRecord.user_id == uid))
-    s.add_all(
-        [
-            ToolRecord(tool_name=n, user_id=uid, created_by_user_id=uid, record=rec, modified_at=utcnow(), **meta)
-            for n, (rec, meta) in cleaned.items()
-        ]
-    )
-    return None
-
-
-def _put_tool_map(uid: int, value: Any, *, key: str, user: User) -> Response | None:  # noqa: ANN401
-    if not _valid_map(value):
-        return _bad(f"{key} must be a map of tool name to object")
-    entries = dict(list(value.items())[:MAX_ITEMS])
-    with db.session_scope() as s:
-        can_review = authz.can(user, authz.ACTION_PUBLIC_REVIEW)
-        if key == "toolNew":
-            return _put_tool_new(uid, entries, s, can_review=can_review)
-        kind = OVERLAY_KINDS[key]
-        # Echo suppression: entries identical to another user's current overlay
-        # came in via the merged pull — replaying them must not create a copy
-        # owned by the caller. Only genuinely new/changed patches are theirs.
-        others = {
-            r.tool_name: r.patch
-            for r in s.execute(
-                select(ToolOverlay).where(ToolOverlay.kind == kind, ToolOverlay.user_id != uid)
-            ).scalars()
-        }
-        own = {n: patch for n, patch in entries.items() if others.get(n) != _data_patch(patch)}
-        existing_own = {
-            r.tool_name: r
-            for r in s.execute(
-                select(ToolOverlay).where(ToolOverlay.kind == kind, ToolOverlay.user_id == uid)
-            ).scalars()
-        }
-        s.execute(delete(ToolOverlay).where(ToolOverlay.user_id == uid, ToolOverlay.kind == kind))
-        s.add_all(
-            [
-                ToolOverlay(
-                    kind=kind,
-                    tool_name=n,
-                    user_id=uid,
-                    created_by_user_id=uid,
-                    patch=_data_patch(patch),
-                    modified_at=utcnow(),
-                    **_overlay_meta(
-                        patch,
-                        can_review=can_review,
-                        existing_review_status=getattr(existing_own.get(n), "review_status", None),
-                    ),
-                )
-                for n, patch in own.items()
-            ]
-        )
-    return None
-
-
-def _put_feed(uid: int, value: Any, *, key: str) -> Response | None:  # noqa: ANN401
-    ok = isinstance(value, list) and all(isinstance(r, dict) and isinstance(r.get("id"), str) for r in value)
-    if not ok:
-        return _bad(f"{key} must be a list of rows with string ids")
-    with db.session_scope() as s:
-        # Dedupe globally, not per user: pulled feeds are global, so clients
-        # push other users' rows back — those must not be duplicated under the
-        # caller's account.
-        known = set(s.execute(select(ActivityRow.client_id).where(ActivityRow.kind == key)).scalars())
-        for row in value[:MAX_ITEMS]:
-            if row["id"] not in known:
-                known.add(row["id"])  # a payload may repeat an id — insert once
-                s.add(
-                    ActivityRow(
-                        kind=key,
-                        client_id=str(row["id"])[:64],
-                        user_id=uid,
-                        created_by_user_id=uid,
-                        row=row,
-                        created_at=_parse_iso(row.get("timestamp")),
-                    )
-                )
-        total = s.execute(select(func.count()).select_from(ActivityRow).where(ActivityRow.kind == key)).scalar_one()
-        if total > FEED_KEEP_CAP:
-            # Fetch victim ids first: MariaDB rejects LIMIT inside IN-subqueries.
-            oldest_ids = list(
-                s.execute(
-                    select(ActivityRow.id)
-                    .where(ActivityRow.kind == key)
-                    .order_by(ActivityRow.created_at, ActivityRow.id)
-                    .limit(total - FEED_KEEP_CAP)
-                ).scalars()
-            )
-            s.execute(delete(ActivityRow).where(ActivityRow.id.in_(oldest_ids)))
-    return None
-
-
-@v1_bp.route("/v1/overlay/<key>", methods=["PUT"])
-@write_guard
-def v1_overlay_put(key: str) -> Response:
-    """Write-through target for one localStorage overlay key."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    value = request.get_json(silent=True)
-    if value is None:
-        return _bad("body must be JSON")
-    if key == "favorites":
-        err = _put_favorites(uid, value)
-    elif key == "lists":
-        err = _put_lists(uid, value)
-    elif key == "crawlerUrls":
-        err = _put_crawler_urls(uid, value)
-    elif key in OVERLAY_KINDS or key == "toolNew":
-        err = _put_tool_map(uid, value, key=key, user=user)
-    elif key in FEED_KEYS:
-        err = _put_feed(uid, value, key=key)
-    else:
-        resp = jsonify({"error": "unknown overlay key"})
-        resp.status_code = HTTP_NOT_FOUND
-        return resp
-    return err if err is not None else jsonify({"ok": True})
 
 
 @v1_bp.route("/v1/crawler/runs/")
@@ -3457,10 +2592,6 @@ def v1_tool_media_delete(media_id: int) -> Response:
     return jsonify({"ok": True})
 
 
-def _moderation_row(s: Any, kind: str, item_id: int) -> object | None:  # noqa: ANN401
-    return s.get(MODERATION_MODELS[kind], item_id)
-
-
 @v1_bp.route("/v1/catalog/tools/<name>/projection/")
 def v1_catalog_tool_projection(name: str) -> Response:
     """Return one public Evolved projection with field-level evidence."""
@@ -3543,143 +2674,6 @@ def v1_catalog_curation_create(name: str) -> Response:
     response = jsonify({"ok": True, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL, "item": item})
     response.status_code = 201
     return response
-
-
-def _moderation_row_visible(kind: str, row: object | None) -> bool:
-    if row is None:
-        return False
-    if getattr(row, "deleted_at", None) is not None:
-        return False
-    if kind == "tool-records":
-        return getattr(row, "visibility", None) == VISIBILITY_PUBLIC
-    return True
-
-
-@v1_bp.route("/v1/moderation/public-data/")
-@login_required
-def v1_moderation_public_data() -> Response:
-    """Return pending Evolved-owned public data for reviewer moderation."""
-    _require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
-    with db.session_scope() as s:
-        items = [
-            *[
-                _moderation_item("catalog-curations", row)
-                for row in s.execute(
-                    select(CatalogCuration)
-                    .where(CatalogCuration.deleted_at.is_(None), CatalogCuration.review_status == REVIEW_PENDING)
-                    .order_by(CatalogCuration.modified_at.desc(), CatalogCuration.id.desc())
-                    .limit(50)
-                ).scalars()
-            ],
-            *[
-                _moderation_item("tool-records", row)
-                for row in s.execute(
-                    select(ToolRecord)
-                    .where(
-                        ToolRecord.deleted_at.is_(None),
-                        ToolRecord.visibility == VISIBILITY_PUBLIC,
-                        ToolRecord.review_status == REVIEW_PENDING,
-                    )
-                    .order_by(ToolRecord.modified_at.desc(), ToolRecord.id.desc())
-                    .limit(50)
-                ).scalars()
-            ],
-            *[
-                _moderation_item("health-targets", row)
-                for row in s.execute(
-                    select(ToolHealthTarget)
-                    .where(ToolHealthTarget.deleted_at.is_(None), ToolHealthTarget.review_status == REVIEW_PENDING)
-                    .order_by(ToolHealthTarget.created_at.desc(), ToolHealthTarget.id.desc())
-                    .limit(50)
-                ).scalars()
-            ],
-            *[
-                _moderation_item("media", row)
-                for row in s.execute(
-                    select(ToolMedia)
-                    .where(ToolMedia.deleted_at.is_(None), ToolMedia.review_status == REVIEW_PENDING)
-                    .order_by(ToolMedia.created_at.desc(), ToolMedia.id.desc())
-                    .limit(50)
-                ).scalars()
-            ],
-            *[
-                _moderation_item("thanks", row)
-                for row in s.execute(
-                    select(ToolThanks)
-                    .where(ToolThanks.review_status == REVIEW_PENDING)
-                    .order_by(ToolThanks.created_at.desc(), ToolThanks.id.desc())
-                    .limit(50)
-                ).scalars()
-            ],
-        ]
-    return jsonify(
-        {
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-            "count": len(items),
-            "results": items,
-        }
-    )
-
-
-@v1_bp.route("/v1/moderation/public-data/<kind>/<int:item_id>/", methods=["PUT"])
-@write_guard
-def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
-    """Apply reviewer moderation to one Evolved-owned public record."""
-    if kind not in MODERATION_KINDS:
-        return _deny(HTTP_NOT_FOUND, "moderation record not found")
-    user = _require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
-    value = request.get_json(silent=True)
-    if not isinstance(value, dict):
-        return _bad("moderation body must be a JSON object")
-    review_status = value.get("reviewStatus") or value.get("review_status")
-    if review_status not in PUBLIC_REVIEW_STATUSES:
-        return _bad("reviewStatus must be pending, approved, or rejected")
-    with db.session_scope() as s:
-        row = _moderation_row(s, kind, item_id)
-        if not _moderation_row_visible(kind, row):
-            return _deny(HTTP_NOT_FOUND, "moderation record not found")
-        assert row is not None  # noqa: S101 - visible check excludes None
-        row.review_status = str(review_status)
-        if isinstance(row, CatalogCuration):
-            row.reviewed_by_user_id = user.id
-            row.reviewed_at = utcnow()
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-        elif isinstance(row, ToolRecord):
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-            if review_status == REVIEW_APPROVED:
-                row.visibility = VISIBILITY_PUBLIC
-        elif isinstance(row, ToolHealthTarget):
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-        else:
-            row.sync_status = SYNC_EVOLVED_REAL
-        s.flush()
-        item = _moderation_item(kind, row)
-        _emit_structured_activity(
-            s,
-            user,
-            action="public-data-reviewed",
-            object_type=kind,
-            object_key=str(item_id),
-            official_status=SYNC_EVOLVED_REAL,
-            payload={"kind": kind, "reviewStatus": review_status, "item": item},
-        )
-        projection_name = row.tool_name if isinstance(row, CatalogCuration) else None
-    if projection_name:
-        catalog_projection.refresh_tool_names([projection_name])
-    return jsonify(
-        {
-            "ok": True,
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-            "item": item,
-        }
-    )
 
 
 @v1_bp.route("/v1/search/tools/")

@@ -42,24 +42,55 @@ def _names(node: ast.AST) -> set[str]:
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
 
 
+def _external_references() -> set[str]:
+    """Names that already-split v1_* modules reach as `v1.<name>`.
+
+    Those modules are invisible to an analysis that reads only v1.py, so a
+    helper they depend on would look unused by anything but the family being
+    extracted — and moving it breaks them.
+    """
+    found: set[str] = set()
+    for path in (ROOT / "proxy" / "backend").glob("v1_*.py"):
+        found |= set(re.findall(r"\bv1\.(\w+)", path.read_text()))
+    return found
+
+
 def plan(src: str, want: str) -> tuple[set[str], set[str]]:
-    """Return the definitions that move, and the names they still need from v1.py."""
+    """Return the definitions that move, and the names they still need from v1.py.
+
+    A helper moves only when *every* reference to it moves with it. Walking
+    outward from routes is not enough: v1.py also has helpers called from
+    functions no route reaches, and taking one of those out leaves the caller
+    with an undefined name.
+    """
     top, family, consts = _analyse(src)
-    owner: dict[str, set[str]] = collections.defaultdict(set)
-    for route, fam in family.items():
-        seen, stack = set(), [route]
-        while stack:
-            cur = stack.pop()
-            if cur not in top:
-                continue
-            for callee in _names(top[cur]) & set(top):
-                if callee not in seen and callee not in family:
-                    seen.add(callee)
-                    stack.append(callee)
-        for helper in seen:
-            owner[helper].add(fam)
+    tree = ast.parse(src)
+    # Who references what, including from module level and non-route helpers.
+    referrers: dict[str, set[str]] = collections.defaultdict(set)
+    for name, node in top.items():
+        for used in _names(node) & set(top):
+            if used != name:
+                referrers[used].add(name)
+    module_level = set()
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            module_level |= _names(node) & set(top)
+    pinned = module_level | _external_references()
     moving = {r for r, fam in family.items() if fam == want}
-    moving |= {h for h, fams in owner.items() if fams == {want}}
+    # Grow by fixpoint: pull in a helper only once nothing outside `moving`
+    # still refers to it.
+    changed = True
+    while changed:
+        changed = False
+        candidates = set()
+        for name in moving:
+            candidates |= _names(top[name]) & set(top)
+        for helper in candidates - moving:
+            if helper in family or helper in pinned:
+                continue
+            if referrers[helper] <= moving:
+                moving.add(helper)
+                changed = True
     stays = (set(top) - moving) | consts
     needs: set[str] = set()
     for name in moving:
@@ -112,8 +143,25 @@ def split(want: str, *, dry_run: bool = False) -> int:
         return 0
     module.write_text(body)
     V1.write_text(kept)
-    subprocess.run(["ruff", "check", str(module), "--select", "F401,I001", "--fix", "-q"], cwd=ROOT, check=False)
-    subprocess.run(["ruff", "format", "-q", str(module)], cwd=ROOT, check=False)
+    # --fixable, not --select: narrowing the rule set makes every noqa for a
+    # disabled rule look unused, and RUF100 then deletes it. That quietly
+    # stripped 55 `# noqa: S101` directives the first time.
+    subprocess.run(["ruff", "check", str(module), "--fix", "--fixable", "F401,I001", "-q"], cwd=ROOT, check=False)
+    subprocess.run(["ruff", "format", "-q", str(module), str(V1)], cwd=ROOT, check=False)
+    # A name left behind on either side is the failure mode that matters, and
+    # it otherwise shows up much later as an unrelated test error.
+    undefined = subprocess.run(
+        ["ruff", "check", str(module), str(V1), "--select", "F821", "--output-format", "concise"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if undefined:
+        print("  UNDEFINED NAMES after the split — do not commit:")
+        for line in undefined.splitlines()[:10]:
+            print("   ", line)
+        return 1
     print(f"  register v1_{slug}_bp in backend/__init__.py, then verify the url_map")
     return 0
 

@@ -18,7 +18,13 @@ from flask import Flask
 from backend import db, token_crypto
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
+from backend.v1_author_keys import v1_author_keys_bp
 from backend.v1_me import v1_me_bp
+from backend.v1_moderation import v1_moderation_bp
+from backend.v1_overlay import v1_overlay_bp
+from backend.v1_source_analysis import v1_source_analysis_bp
+from backend.v1_toolhub import v1_toolhub_bp
+from backend.v1_toolinfo import v1_toolinfo_bp
 from backend.v1_write import v1_write_bp
 
 DEFAULT_DB_URL = f"sqlite:///{Path(__file__).resolve().parent.parent / 'var' / 'app.sqlite3'}"
@@ -75,4 +81,10 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(oauth_bp)
     app.register_blueprint(v1_bp)
     app.register_blueprint(v1_write_bp)
+    app.register_blueprint(v1_toolinfo_bp)
+    app.register_blueprint(v1_source_analysis_bp)
+    app.register_blueprint(v1_moderation_bp)
+    app.register_blueprint(v1_author_keys_bp)
+    app.register_blueprint(v1_toolhub_bp)
+    app.register_blueprint(v1_overlay_bp)
     app.register_blueprint(v1_me_bp)
