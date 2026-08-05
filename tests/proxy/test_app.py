@@ -9,6 +9,7 @@ hash can never silently drift out of sync.
 
 import base64
 import gzip
+import pathlib
 import hashlib
 import json
 import os
@@ -753,3 +754,61 @@ def test_static_files_serve_the_build_time_gzip_twin(tmp_path, monkeypatch):
         )
         assert again.status_code == proxy_app._HTTP_NOT_MODIFIED
         assert again.get_data() == b""
+
+
+def test_built_assets_are_read_from_disk_once(tmp_path, monkeypatch):
+    """Static files come from memory, so a request never waits on NFS.
+
+    Toolforge serves the tool's files from NFS and that read is what static
+    requests cost: measured on the deployed pod, dynamic JSON answered in 30ms
+    while static files took 250-880ms, a tiny favicon slower than a 4KB module.
+    A cold page load asks for 33 of them.
+    """
+    root = tmp_path / "dist"
+    root.mkdir()
+    body = b"// module\n" + b"x" * 4000
+    (root / "app.js").write_bytes(body)
+    (root / "app.js.gz").write_bytes(gzip.compress(body, 9, mtime=0))
+    monkeypatch.setattr(proxy_app, "_DIST_DIR", root)
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+    proxy_app._STATIC_CACHE.clear()
+
+    reads = []
+    real_read = pathlib.Path.read_bytes
+    monkeypatch.setattr(
+        pathlib.Path, "read_bytes", lambda self: (reads.append(self.name), real_read(self))[1]
+    )
+
+    with proxy_app.app.test_client() as c:
+        first = c.get("/app.js?v=1", headers={"Accept-Encoding": "gzip"})
+        second = c.get("/app.js?v=1", headers={"Accept-Encoding": "gzip"})
+
+        assert gzip.decompress(first.data) == body
+        assert second.data == first.data
+        # Second request must not touch the filesystem at all.
+        assert reads.count("app.js.gz") == 1, f"re-read from disk: {reads}"
+
+        # Revalidation still returns a free 304 rather than the whole body.
+        again = c.get(
+            "/app.js?v=1",
+            headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]},
+        )
+        assert again.status_code == proxy_app._HTTP_NOT_MODIFIED
+        assert again.get_data() == b""
+
+
+def test_raw_source_is_not_cached_so_edits_show_up(tmp_path, monkeypatch):
+    """Development serves public_html/ directly; a cached copy would hide edits."""
+    root = tmp_path / "public_html"
+    root.mkdir()
+    (root / "app.js").write_bytes(b"// first\n" + b"x" * 2000)
+    # dist/ is elsewhere, so this root is the raw-source fallback.
+    monkeypatch.setattr(proxy_app, "_DIST_DIR", tmp_path / "dist")
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+    proxy_app._STATIC_CACHE.clear()
+
+    with proxy_app.app.test_client() as c:
+        assert b"// first" in c.get("/app.js", headers={"Accept-Encoding": ""}).data
+        (root / "app.js").write_bytes(b"// second\n" + b"x" * 2000)
+        assert b"// second" in c.get("/app.js", headers={"Accept-Encoding": ""}).data
+    assert not proxy_app._STATIC_CACHE, "raw source must not be cached"
