@@ -15,7 +15,6 @@ OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 
 from concurrent.futures import ThreadPoolExecutor
 from gzip import compress as gzip_compress
-from hashlib import sha256
 from mimetypes import guess_type
 from pathlib import Path
 from threading import Lock
@@ -68,12 +67,6 @@ _TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
 _CACHE_HEADER = "X-Toolhub-Evolved-Cache"
 _UPSTREAM_HEADER = "X-Toolhub-Evolved-Upstream"
 _SERVER_TIMING_HEADER = "Server-Timing"
-# Built static assets held in memory so a request never waits on NFS. Keyed by
-# absolute path; only ever populated from dist/, which a deploy replaces before
-# restarting the webservice.
-_STATIC_CACHE: dict[str, tuple[bytes, str]] = {}
-_STATIC_CACHE_LOCK = Lock()
-_STATIC_CACHE_MAX_BYTES = 16 * 1024 * 1024
 _UPSTREAM_TIMEOUT = "timeout"
 _UPSTREAM_BACKGROUND = "background"
 
@@ -454,60 +447,6 @@ def api_proxy(path: str) -> Response:
     return _relay_upstream_response(url, upstream, payload, stale)
 
 
-def _read_static(target: Path) -> tuple[bytes, str] | None:
-    """Return one static file's bytes and ETag, reading it from disk at most once.
-
-    Toolforge serves the tool's files from NFS, and that read — not transfer, not
-    CPU — is what static requests actually cost here. Measured on the deployed
-    pod: dynamic JSON answered in 30ms while static files took 250-880ms, with
-    a tiny favicon slower than a 4KB module, so the cost is per-read latency and
-    not size. A cold page load asks for 33 modules.
-
-    Only the built `dist/` tree is cached. It is rewritten by a deploy and the
-    webservice restarts immediately after, so entries cannot outlive their file;
-    serving raw `public_html/` in development keeps reading from disk so an edit
-    still shows up on reload.
-    """
-    if _static_root() != _DIST_DIR:
-        return None
-    key = str(target)
-    hit = _STATIC_CACHE.get(key)
-    if hit is not None:
-        return hit
-    try:
-        body = target.read_bytes()
-    except OSError:
-        return None
-    # Content-derived, so an unchanged asset keeps its tag across deploys and a
-    # changed one cannot reuse a stale client copy.
-    entry = (body, f'"{sha256(body).hexdigest()[:32]}"')
-    with _STATIC_CACHE_LOCK:
-        # The whole built tree is ~1MB against this pod's 512Mi, but bound it
-        # anyway rather than trusting that to stay true.
-        if _cached_static_bytes() + len(body) <= _STATIC_CACHE_MAX_BYTES:
-            _STATIC_CACHE[key] = entry
-    return entry
-
-
-def _cached_static_bytes() -> int:
-    """Total bytes currently held in the static cache."""
-    return sum(len(body) for body, _ in _STATIC_CACHE.values())
-
-
-def _static_response(body: bytes, etag: str, content_type: str, *, gzipped: bool) -> Response:
-    """Build a conditional-aware response for an in-memory static file."""
-    if request.headers.get("If-None-Match") == etag:
-        resp = Response(status=_HTTP_NOT_MODIFIED)
-    else:
-        resp = Response(body, content_type=content_type)
-        resp.headers["Content-Length"] = str(len(body))
-    resp.headers["ETag"] = etag
-    if gzipped:
-        resp.headers["Content-Encoding"] = "gzip"
-        resp.headers.add("Vary", "Accept-Encoding")
-    return resp
-
-
 def _send_static(root: Path, path: str) -> Response:
     """Serve a static file, preferring the twin gzipped at build time.
 
@@ -524,20 +463,15 @@ def _send_static(root: Path, path: str) -> Response:
     if "gzip" in request.headers.get("Accept-Encoding", "").lower():
         packed = (root / f"{path}.gz").resolve()
         if root in packed.parents and packed.is_file():
-            # The client needs the type of what it has after decoding, not that
-            # of the .gz actually read off disk.
-            content_type = guess_type(path)[0] or "application/octet-stream"
-            cached = _read_static(packed)
-            if cached is not None:
-                return _static_response(*cached, content_type, gzipped=True)
             resp = send_from_directory(root, f"{path}.gz")
-            resp.headers["Content-Type"] = content_type
+            # send_from_directory typed this from the .gz suffix; the client
+            # needs the type of what it will have after decoding.
+            guessed = guess_type(path)[0]
+            if guessed:
+                resp.headers["Content-Type"] = guessed
             resp.headers["Content-Encoding"] = "gzip"
             resp.headers.add("Vary", "Accept-Encoding")
             return resp
-    cached = _read_static((root / path).resolve())
-    if cached is not None:
-        return _static_response(*cached, guess_type(path)[0] or "application/octet-stream", gzipped=False)
     return send_from_directory(root, path)
 
 
@@ -556,7 +490,7 @@ def static_files(path: str) -> Response:
         resp = _send_static(root, path)
         resp.headers["Cache-Control"] = _VERSIONED_STATIC_CACHE if request.args.get("v") else _REVALIDATED_STATIC_CACHE
         return resp
-    resp = _send_static(root, "index.html")
+    resp = send_from_directory(root, "index.html")
     resp.headers["Cache-Control"] = _REVALIDATED_STATIC_CACHE
     return resp
 
