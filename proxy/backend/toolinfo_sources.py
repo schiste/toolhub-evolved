@@ -212,9 +212,7 @@ def _mark_source_error(source_id: int, error: str) -> list[str]:
         if source is None:
             return []
         affected_names = list(
-            s.execute(
-                select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)
-            ).scalars()
+            s.execute(select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)).scalars()
         )
         source.last_fetched_at = utcnow()
         source.status = SOURCE_STATUS_ERROR
@@ -231,9 +229,7 @@ def _store_source_items(source_id: int, items: list[dict]) -> tuple[int, list[st
         if source is None:
             return 0, []
         previous_names = list(
-            s.execute(
-                select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)
-            ).scalars()
+            s.execute(select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)).scalars()
         )
         s.execute(delete(ToolinfoSourceItem).where(ToolinfoSourceItem.source_id == source_id))
         source.last_fetched_at = now

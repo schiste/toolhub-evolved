@@ -30,7 +30,9 @@ def configured() -> bool:
 
 
 def _labels() -> list[str]:
-    return [label.strip()[:50] for label in os.environ.get("TOOLHUB_GITHUB_ISSUE_LABELS", "").split(",") if label.strip()]
+    return [
+        label.strip()[:50] for label in os.environ.get("TOOLHUB_GITHUB_ISSUE_LABELS", "").split(",") if label.strip()
+    ]
 
 
 def _json_context(context: dict[str, Any]) -> str:

@@ -219,9 +219,7 @@ def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS) -> list[dict[str
     """
     term = str(query or "").strip().casefold()
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
-    statement = select(CanonicalToolCache).order_by(
-        CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name
-    )
+    statement = select(CanonicalToolCache).order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
     if term:
         statement = statement.where(CanonicalToolCache.search_text.like(f"%{_escape_like(term)}%", escape="\\"))
     with db.session_scope() as s:

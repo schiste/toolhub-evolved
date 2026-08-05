@@ -435,9 +435,7 @@ class ToolforgeMaintainerProvider:
         )
         return response.status_code, response.text
 
-    def _fresh_rows(
-        self, s: Session, user: User, tool_name: str, author_names: list[str]
-    ) -> list[ToolAuthorClaim]:
+    def _fresh_rows(self, s: Session, user: User, tool_name: str, author_names: list[str]) -> list[ToolAuthorClaim]:
         """Return fresh verified rows in the requested author-name order."""
         rows = s.execute(
             select(ToolAuthorClaim).where(

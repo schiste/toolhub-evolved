@@ -211,11 +211,7 @@ def _matching_record(data: object, tool_name: str) -> dict | None:
     items = [data] if isinstance(data, dict) else data[:MAX_ITEMS_PER_TOOLINFO] if isinstance(data, list) else []
     target = tool_name.casefold()
     matching = next(
-        (
-            item
-            for item in items
-            if isinstance(item, dict) and str(item.get("name") or "").strip().casefold() == target
-        ),
+        (item for item in items if isinstance(item, dict) and str(item.get("name") or "").strip().casefold() == target),
         None,
     )
     if matching is None:
