@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
+import backend.v1_write as v1_write_api  # noqa: E402
 from backend import (  # noqa: E402
     api_cache,
     author_claims,
@@ -94,14 +95,16 @@ from backend.v1 import (  # noqa: E402
     _invalidate_official_api_cache,
     _iso,
     _merged_maps,
+    _parse_iso,
+    _parse_optional_iso,
+    _string_payload_value,
+    _toolhub_author_names,
+)
+from backend.v1_write import (  # noqa: E402
     _message_from_payload,
     _official_annotation_payload,
     _official_id,
-    _parse_iso,
-    _parse_optional_iso,
     _string_list,
-    _string_payload_value,
-    _toolhub_author_names,
     _validation_errors,
 )
 
@@ -5282,14 +5285,14 @@ def test_write_lifecycle_validation_helpers_normalize_toolhub_errors():
         "comment": "Annotated from Toolhub Evolved",
     }
     assert _official_id("not-dict", 5) == 5
-    assert v1_api._create_toolinfo_url({}) == (None, None)
-    assert v1_api._create_toolinfo_url({"toolinfoUrl": 7}) == (None, None)
-    assert v1_api._matching_toolinfo_item("bad", "my-tool") is None
-    assert v1_api._matching_toolinfo_item([{"name": "other"}, None, {"name": "my-tool"}], "my-tool") == {
+    assert v1_write_api._create_toolinfo_url({}) == (None, None)
+    assert v1_write_api._create_toolinfo_url({"toolinfoUrl": 7}) == (None, None)
+    assert v1_write_api._matching_toolinfo_item("bad", "my-tool") is None
+    assert v1_write_api._matching_toolinfo_item([{"name": "other"}, None, {"name": "my-tool"}], "my-tool") == {
         "name": "my-tool"
     }
-    assert v1_api._matching_toolinfo_item([{"name": "other"}], "my-tool") is None
-    merged, enriched = v1_api._merge_toolinfo_fields(
+    assert v1_write_api._matching_toolinfo_item([{"name": "other"}], "my-tool") is None
+    merged, enriched = v1_write_api._merge_toolinfo_fields(
         {
             "repository": "https://manual.example/repo",
             "license": "Apache-2.0",
@@ -5319,7 +5322,7 @@ def test_create_toolinfo_fetch_helpers_reuse_crawler_module(monkeypatch):
     import crawl
 
     monkeypatch.setattr(crawl, "_fetch_json", lambda _session, url: {"url": url})
-    assert v1_api._fetch_toolinfo_json_once("https://toolinfo.example/toolinfo.json") == {
+    assert v1_write_api._fetch_toolinfo_json_once("https://toolinfo.example/toolinfo.json") == {
         "url": "https://toolinfo.example/toolinfo.json"
     }
 
@@ -5340,11 +5343,11 @@ def test_create_toolinfo_enrichment_handles_invalid_matching_item(monkeypatch):
         "origin": "api",
     }
     monkeypatch.setattr(
-        v1_api,
+        v1_write_api,
         "_fetch_toolinfo_json_once",
         lambda _url: {"name": "my-tool", "title": "Incomplete", "url": "https://toolinfo.example/tool"},
     )
-    merged, item, result = v1_api._create_toolinfo_enrichment(
+    merged, item, result = v1_write_api._create_toolinfo_enrichment(
         fields,
         "my-tool",
         "https://toolinfo.example/toolinfo.json",
@@ -5364,7 +5367,7 @@ def test_record_create_toolinfo_evidence_handles_no_item_and_provider_failure(cl
     uid = add_user(username="schiste")
     with db.session_scope() as s:
         user = s.get(User, uid)
-        v1_api._record_create_toolinfo_evidence(
+        v1_write_api._record_create_toolinfo_evidence(
             s,
             user,
             "https://toolinfo.example/no-item.json",
@@ -5379,7 +5382,7 @@ def test_record_create_toolinfo_evidence_handles_no_item_and_provider_failure(cl
     monkeypatch.setattr(v1_api.SIGNED_TOOLINFO_PROVIDER, "verify", fail_verify)
     with db.session_scope() as s:
         user = s.get(User, uid)
-        v1_api._record_create_toolinfo_evidence(
+        v1_write_api._record_create_toolinfo_evidence(
             s,
             user,
             "https://toolinfo.example/provider-failure.json",
@@ -5411,7 +5414,7 @@ def test_write_tool_create_fetches_toolinfo_and_records_evidence(client, monkeyp
     official_calls = []
     verify_calls = []
 
-    monkeypatch.setattr(v1_api, "_fetch_toolinfo_json_once", lambda url: {**toolinfo_item, "url": url})
+    monkeypatch.setattr(v1_write_api, "_fetch_toolinfo_json_once", lambda url: {**toolinfo_item, "url": url})
     monkeypatch.setattr(
         v1_api.SIGNED_TOOLINFO_PROVIDER,
         "verify",
@@ -5492,7 +5495,7 @@ def test_write_tool_create_toolinfo_fetch_failure_keeps_official_create(client, 
         official_calls.append(kwargs.get("json"))
         return FakeResp({"name": "my-tool"}, 201)
 
-    monkeypatch.setattr(v1_api, "_fetch_toolinfo_json_once", fail_fetch)
+    monkeypatch.setattr(v1_write_api, "_fetch_toolinfo_json_once", fail_fetch)
     monkeypatch.setattr(toolhub.requests, "request", fake_request)
     resp = client.post(
         "/v1/write/tools/",
@@ -5521,7 +5524,7 @@ def test_write_tool_create_toolinfo_no_match_stays_in_local_fallback_response(cl
     uid = add_user()
     sign_in(client, uid)
     toolhub.save_grant(uid, {"access_token": "at"})
-    monkeypatch.setattr(v1_api, "_fetch_toolinfo_json_once", lambda _url: [{"name": "other-tool"}])
+    monkeypatch.setattr(v1_write_api, "_fetch_toolinfo_json_once", lambda _url: [{"name": "other-tool"}])
     monkeypatch.setattr(toolhub.requests, "request", lambda *_args, **_kwargs: FakeResp({"message": "bad"}, 400))
     resp = client.post(
         "/v1/write/tools/",

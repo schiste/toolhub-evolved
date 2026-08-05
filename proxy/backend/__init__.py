@@ -18,6 +18,7 @@ from flask import Flask
 from backend import db, token_crypto
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
+from backend.v1_write import v1_write_bp
 
 DEFAULT_DB_URL = f"sqlite:///{Path(__file__).resolve().parent.parent / 'var' / 'app.sqlite3'}"
 SESSION_DAYS = 30
@@ -72,3 +73,4 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     db.init_schema()
     app.register_blueprint(oauth_bp)
     app.register_blueprint(v1_bp)
+    app.register_blueprint(v1_write_bp)
