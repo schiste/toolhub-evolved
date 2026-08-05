@@ -283,3 +283,37 @@ test("a deferred refresh keeps the view it was asked for", async () => {
 	assert.equal(calls.length, 1, `expected one deferred request, got ${calls.length}`);
 	assert.ok(calls[0].includes("view=full"), `deferred request downgraded the view: ${calls[0]}`);
 });
+
+test("a card response never downgrades a stored full summary", async () => {
+	const CARD = { health: { score: 50 } };
+	const FULL = { health: { score: 50, dimensions: [{ key: "d" }] } };
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push((String(url).match(/view=\w+/) || ["view=?"])[0]);
+		const card = String(url).includes("view=card");
+		return { ok: true, json: async () => ({ results: { "pong-tool": card ? CARD : FULL } }) };
+	};
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+
+	// The detail-shaped read lands first.
+	await signals.attachEvolvedSummaries([{ name: "pong-tool" }], {
+		view: signals.SUMMARY_VIEW_FULL,
+		waitForFresh: true
+	});
+	assert.deepEqual(calls, ["view=full"]);
+
+	// A card render must reuse it rather than replacing it with the thinner
+	// shape — otherwise the next detail read has to fetch all over again.
+	const cardTools = [{ name: "pong-tool" }];
+	await signals.attachEvolvedSummaries(cardTools, { graceMs: signals.EVOLVED_SUMMARY_GRACE_MS });
+	await settleIdle();
+	assert.deepEqual(cardTools[0].evolvedSummary, FULL, "card render lost the breakdown");
+
+	// And the detail read still needs no new request.
+	calls.length = 0;
+	const fullTools = [{ name: "pong-tool" }];
+	await signals.attachEvolvedSummaries(fullTools, { view: signals.SUMMARY_VIEW_FULL, waitForFresh: true });
+	assert.deepEqual(calls, [], "the view ping-pong is back");
+	assert.deepEqual(fullTools[0].evolvedSummary, FULL);
+});
