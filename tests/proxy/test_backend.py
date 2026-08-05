@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
+import backend.v1_me as v1_me_api  # noqa: E402
 import backend.v1_write as v1_write_api  # noqa: E402
 from backend import (  # noqa: E402
     api_cache,
@@ -98,6 +99,8 @@ from backend.v1 import (  # noqa: E402
     _parse_iso,
     _parse_optional_iso,
     _string_payload_value,
+)
+from backend.v1_me import (  # noqa: E402
     _toolhub_author_names,
 )
 from backend.v1_write import (  # noqa: E402
@@ -3501,14 +3504,14 @@ def test_toolforge_membership_candidate_fetch_handles_invalid_and_failed_toolhub
         raise AssertionError(name)
 
     monkeypatch.setattr(v1_api, "_toolhub_tool_detail", fake_detail)
-    candidates, errors, names = v1_api._candidate_tools_for_toolforge_memberships("Schiste")
+    candidates, errors, names = v1_me_api._candidate_tools_for_toolforge_memberships("Schiste")
     assert candidates == {}
     assert names == ["invalid", "busy", "down", "missing"]
     assert errors == [
         {"term": "toolforge-busy", "status": 503, "details": {"message": "busy"}},
         {"term": "toolforge-down", "status": 502, "details": {"message": "down"}},
     ]
-    v1_api._add_toolforge_candidate({}, {"title": "Nameless"}, "bad", "Schiste")
+    v1_me_api._add_toolforge_candidate({}, {"title": "Nameless"}, "bad", "Schiste")
 
 
 def test_me_tools_merges_author_search_and_toolforge_membership_candidates(client, monkeypatch):
@@ -3563,7 +3566,7 @@ def test_me_tools_merges_toolforge_candidate_without_optional_evidence(client, m
     row = {"name": "toolforge-ada", "title": "Ada", "author": [{"name": "Ada"}]}
     monkeypatch.setattr(toolhub, "public_api_get", lambda *args, **kwargs: {"results": [row]})
     monkeypatch.setattr(
-        v1_api,
+        v1_me_api,
         "_candidate_tools_for_toolforge_memberships",
         lambda _username: (
             {
