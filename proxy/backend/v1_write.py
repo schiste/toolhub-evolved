@@ -259,7 +259,7 @@ def _fetch_toolinfo_json_once(url: str) -> object:
     """Reuse the scheduled crawler's hardened fetcher for create-time enrichment."""
     import crawl  # noqa: PLC0415 - local import avoids backend package startup cycles.
 
-    return crawl._fetch_json(toolhub.requests.Session(), url)  # noqa: SLF001 - shared internal crawler primitive.
+    return crawl._fetch_json(toolhub.requests.Session(), url)
 
 
 def _normalize_toolinfo_item(item: dict) -> dict | None:

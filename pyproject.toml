@@ -34,3 +34,15 @@ branch = true
 fail_under = 100
 show_missing = true
 exclude_also = ["if __name__ == .__main__.:"]
+
+[tool.ruff.lint.per-file-ignores]
+# The v1_* modules are one route module split by size, not independent
+# components: backend/v1.py held 83 of the app's 87 routes across 23 unrelated
+# resource families, so unrelated changes all landed in the same file. The
+# split families still reach v1.py's helpers, which SLF001 reads as poking at
+# another object's privates. It is not wrong to flag it — those 25 helpers
+# (134 cross-module call sites) are now package API and belong in a common
+# module with public names. Renaming them touches 303 more references inside
+# v1.py, so it is its own change; this exemption is scoped to the split
+# modules so the rule keeps working everywhere else.
+"proxy/backend/v1_*.py" = ["SLF001"]

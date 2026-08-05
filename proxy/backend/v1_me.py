@@ -438,7 +438,7 @@ def v1_me_tools() -> Response:
     cached = user_tool_cache.read(uid)
     if cached is not None:
         if cached.metadata["status"] == "stale":
-            app = current_app._get_current_object()  # noqa: SLF001 - detach Flask app from LocalProxy for worker
+            app = current_app._get_current_object()
             user_tool_cache.queue_refresh(uid, lambda user_id: _refresh_me_tools_cache(app, user_id))
             cached.metadata["refresh"] = "queued"
         return _private_resolver_response(cached.payload, cached.metadata)
@@ -461,7 +461,7 @@ def v1_me_tools() -> Response:
         cached = user_tool_cache.read(uid)
         if cached is not None:
             if cached.metadata["status"] == "stale":
-                app = current_app._get_current_object()  # noqa: SLF001 - detach Flask app from LocalProxy for worker
+                app = current_app._get_current_object()
                 user_tool_cache.queue_refresh(uid, lambda user_id: _refresh_me_tools_cache(app, user_id))
                 cached.metadata["refresh"] = "queued"
             return _private_resolver_response(cached.payload, cached.metadata)

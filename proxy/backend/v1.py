@@ -20,13 +20,12 @@ import re
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from typing import Any
-from urllib.parse import quote, unquote, urlencode, urlparse
+from urllib.parse import quote, unquote, urlparse
 from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
-from flask import Blueprint, Flask, Response, abort, current_app, jsonify, request, session
+from flask import Blueprint, Response, abort, jsonify, request, session
 from sqlalchemy import and_, delete, func, or_, select, text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -49,8 +48,6 @@ from backend import (
     tool_summaries,
     toolhub,
     toolinfo_discovery,
-    toolinfo_sources,
-    user_tool_cache,
 )
 from backend.author_claims import (
     DISPLAY_NAME_CLAIM_TTL,
@@ -62,11 +59,8 @@ from backend.author_claims import (
     ToolhubWriteProvider,
     author_names_from_toolhub_tool,
     canonical_toolinfo_string,
-    claim_is_verified,
-    dedupe_strings,
     public_key_fingerprint,
     record_author_claim,
-    string_key,
     toolforge_names_from_toolhub_tool,
     validate_ed25519_public_key,
 )
@@ -767,12 +761,6 @@ def _deny(status: int, error: str) -> Response:
     return resp
 
 
-
-
-
-
-
-
 def _claim_payload(row: ToolAuthorClaim) -> dict:
     """Serialize one stored author claim into the resolver response contract."""
     return author_claim_payload(row)
@@ -1191,32 +1179,10 @@ def _signature_metadata(key_id: str) -> dict:
     return {"algorithm": "ed25519", "key_id": key_id, "signature": SIGNATURE_PLACEHOLDER}
 
 
-
-
 def _toolhub_tool_detail(tool_name: str) -> dict | None:
     """Fetch one exact official Toolhub tool record by name."""
     payload = toolhub.public_api_get(f"/api/tools/{quote(tool_name, safe='')}/")
     return payload if isinstance(payload, dict) and _clean_name(payload.get("name")) else None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _record_successful_toolhub_write(
@@ -1747,8 +1713,6 @@ def v1_tool_claim_options(name: str) -> Response:
         return jsonify(_claim_options(s, stored_user, tool))
 
 
-
-
 @v1_bp.route("/v1/tools/<name>/claims/", methods=["POST"])
 @write_guard
 def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -2203,19 +2167,9 @@ def v1_source_analysis_review(report_id: int) -> Response:
     return jsonify({"ok": True, "sourceAnalysis": payload})
 
 
-
-
-
-
 #: Matches the client's own per-render cap, so this never composes summaries
 #: for tools the page will not draw.
 _ME_TOOLS_SUMMARY_LIMIT = 50
-
-
-
-
-
-
 
 
 @v1_bp.route("/v1/people/tools/<name>/")
@@ -2276,12 +2230,6 @@ def _profile_payload(profile: PersonProfile | None, person: Person) -> dict[str,
         "source": SOURCE_LOCAL,
         "syncStatus": SYNC_EVOLVED_REAL,
     }
-
-
-
-
-
-
 
 
 @v1_bp.route("/v1/config/")
