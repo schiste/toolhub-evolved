@@ -12,7 +12,7 @@ export const DEMO_KEYS = {
 	crawlerUrls: "crawlerUrls"
 };
 export const FEED_LOG_CAP = 100;
-export const PUBLIC_API_CACHE_KEY = "toolhub-api-cache:v1";
+const PUBLIC_API_CACHE_KEY = "toolhub-api-cache:v1";
 export const SYNC_STATUS = {
 	official: "official",
 	localDraft: "local_draft",

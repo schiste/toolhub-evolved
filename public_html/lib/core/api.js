@@ -154,7 +154,7 @@ export function statusOf(t) {
    Every read goes through the same-origin proxy (/api → toolhub.wikimedia.org/api).
    Tool/list objects are normalized to the compact shape the views/cards expect.
    There is no bundled snapshot — the catalog is always the live one. */
-export const API_BASE = "/api";
+const API_BASE = "/api";
 /* Stale-while-revalidate cache for anonymous Toolhub GET reads. Keyed by full
    same-origin /api URL. Hot entries live in memory; a bounded public-data copy
    also lives in localStorage so hard refreshes can render useful content before
@@ -578,7 +578,7 @@ export function invalidateListApiCache(listId) {
 	if (!ident) return 0;
 	return invalidateApiCacheWhere((url) => matchesListCache(url, new Set([ident])));
 }
-export function invalidateListCollectionApiCache() {
+function invalidateListCollectionApiCache() {
 	return invalidateApiCacheWhere(
 		(url) => apiPath(url) === LIST_COLLECTION_PATH || apiPath(url) === RECENT_COLLECTION_PATH
 	);
