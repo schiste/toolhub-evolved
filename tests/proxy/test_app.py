@@ -707,3 +707,49 @@ def test_compression_skips_responses_it_must_not_touch():
     assert proxy_app._compressible(streamed) is False, "unknown length: cannot size-check it"
 
     assert proxy_app._compressible(FlaskResponse(big, content_type="text/plain")) is True
+
+
+def test_static_files_serve_the_build_time_gzip_twin(tmp_path, monkeypatch):
+    """A precompressed twin is served as-is instead of gzipping per request.
+
+    The pod is capped at 500m of CPU and was spending 66% of its scheduling
+    periods throttled while a cold page load fetched 33 modules, every one of
+    them gzipped in-process. tools/build_dist.py stores the .gz once per deploy.
+    """
+    root = tmp_path / "dist"
+    (root / "lib").mkdir(parents=True)
+    body = b"// module\n" + b"x" * 4000
+    (root / "lib" / "app.js").write_bytes(body)
+    (root / "lib" / "app.js.gz").write_bytes(gzip.compress(body, 9, mtime=0))
+    # No twin for this one: it must still be served, compressed the old way.
+    (root / "lib" / "other.js").write_bytes(body)
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+
+    with proxy_app.app.test_client() as c:
+        packed = c.get("/lib/app.js?v=abc", headers={"Accept-Encoding": "gzip"})
+        plain = c.get("/lib/app.js?v=abc", headers={"Accept-Encoding": ""})
+        fallback = c.get("/lib/other.js?v=abc", headers={"Accept-Encoding": "gzip"})
+
+        assert packed.headers["Content-Encoding"] == "gzip"
+        assert gzip.decompress(packed.data) == body, "twin does not decode to the original"
+        # The client needs the type of what it gets after decoding, not of the
+        # .gz that was actually read off disk.
+        assert packed.headers["Content-Type"].startswith(("text/javascript", "application/javascript"))
+        assert "Accept-Encoding" in packed.headers["Vary"]
+        assert packed.headers["Cache-Control"] == proxy_app._VERSIONED_STATIC_CACHE
+
+        # A client that did not ask for gzip still gets the plain file.
+        assert "Content-Encoding" not in plain.headers
+        assert plain.data == body
+
+        # Without a twin, the request-time path still compresses.
+        assert fallback.headers["Content-Encoding"] == "gzip"
+        assert gzip.decompress(fallback.data) == body
+
+        # Revalidation has to keep working, or every reload is a full download.
+        again = c.get(
+            "/lib/app.js?v=abc",
+            headers={"Accept-Encoding": "gzip", "If-None-Match": packed.headers["ETag"]},
+        )
+        assert again.status_code == proxy_app._HTTP_NOT_MODIFIED
+        assert again.get_data() == b""

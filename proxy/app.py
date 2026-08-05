@@ -15,6 +15,7 @@ OAuth grant; Evolved-only overlay writes land in the local database via /v1.
 
 from concurrent.futures import ThreadPoolExecutor
 from gzip import compress as gzip_compress
+from mimetypes import guess_type
 from pathlib import Path
 from threading import Lock
 from time import perf_counter
@@ -446,6 +447,34 @@ def api_proxy(path: str) -> Response:
     return _relay_upstream_response(url, upstream, payload, stale)
 
 
+def _send_static(root: Path, path: str) -> Response:
+    """Serve a static file, preferring the twin gzipped at build time.
+
+    Compressing in the request path cost CPU on every hit, and this pod is
+    capped at 500m — it was spending 66% of its scheduling periods throttled
+    while a cold page load fetched 33 modules. tools/build_dist.py stores a
+    `.gz` beside each text asset, so serving one is a file read.
+
+    Flask derives the ETag and answers If-None-Match from whichever file it is
+    given, so the gzipped twin carries its own tag and revalidation keeps
+    working. `Vary` is what stops a cache handing that body to a client that
+    did not ask for it.
+    """
+    if "gzip" in request.headers.get("Accept-Encoding", "").lower():
+        packed = (root / f"{path}.gz").resolve()
+        if root in packed.parents and packed.is_file():
+            resp = send_from_directory(root, f"{path}.gz")
+            # send_from_directory typed this from the .gz suffix; the client
+            # needs the type of what it will have after decoding.
+            guessed = guess_type(path)[0]
+            if guessed:
+                resp.headers["Content-Type"] = guessed
+            resp.headers["Content-Encoding"] = "gzip"
+            resp.headers.add("Vary", "Accept-Encoding")
+            return resp
+    return send_from_directory(root, path)
+
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def static_files(path: str) -> Response:
@@ -458,7 +487,7 @@ def static_files(path: str) -> Response:
     root = _static_root()
     candidate = (root / path).resolve()
     if path and root in candidate.parents and candidate.is_file():
-        resp = send_from_directory(root, path)
+        resp = _send_static(root, path)
         resp.headers["Cache-Control"] = _VERSIONED_STATIC_CACHE if request.args.get("v") else _REVALIDATED_STATIC_CACHE
         return resp
     resp = send_from_directory(root, "index.html")

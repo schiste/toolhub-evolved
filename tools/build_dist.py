@@ -12,6 +12,7 @@ unaffected unless a previous build is present.
 Run from anywhere: `python tools/build_dist.py`.
 """
 
+import gzip
 import os
 import re
 import shutil
@@ -179,6 +180,40 @@ def _minify_css(text: str) -> str:
     return rcssmin.cssmin(text)
 
 
+#: Suffixes worth storing a gzipped twin for. Everything here is text the
+#: webservice would otherwise compress on every single request.
+_PRECOMPRESS_SUFFIXES = {".js", ".css", ".html", ".json", ".svg", ".xml", ".txt", ".webmanifest"}
+#: Below roughly one network packet, compression saves nothing. Matches the
+#: request-time threshold in proxy/app.py so both paths agree on what is worth
+#: compressing.
+_PRECOMPRESS_MIN_BYTES = 1400
+_PRECOMPRESS_LEVEL = 9
+
+
+def _write_precompressed(out: Path) -> int:
+    """Store a gzipped twin beside `out` when it is worth serving.
+
+    The pod is capped at 500m of CPU and was spending 66% of its scheduling
+    periods throttled; a cold page load fetches 33 ES modules and gzipped every
+    one of them in-process. Doing it here means that work happens once per
+    deploy instead of once per request, and it can afford level 9 where the
+    request path could not.
+    """
+    if out.suffix not in _PRECOMPRESS_SUFFIXES:
+        return 0
+    raw = out.read_bytes()
+    if len(raw) < _PRECOMPRESS_MIN_BYTES:
+        return 0
+    # mtime=0 keeps the output byte-identical for identical input, so an
+    # unchanged asset does not churn its ETag on every deploy.
+    packed = gzip.compress(raw, _PRECOMPRESS_LEVEL, mtime=0)
+    # A "compressed" file that grew would just cost bytes and CPU to unpack.
+    if len(packed) >= len(raw):
+        return 0
+    out.with_suffix(out.suffix + ".gz").write_bytes(packed)
+    return len(packed)
+
+
 def build() -> tuple[int, int]:
     """Mirror SRC into DIST, preserving JS, minifying CSS, and copying everything else.
 
@@ -188,7 +223,7 @@ def build() -> tuple[int, int]:
     if TMP.exists():
         shutil.rmtree(TMP)
     version = _asset_version()
-    raw = mini = 0
+    raw = mini = packed = 0
     for path in sorted(SRC.rglob("*")):
         if path.is_dir():
             continue
@@ -213,16 +248,17 @@ def build() -> tuple[int, int]:
             out.write_text(html, encoding="utf-8")
         else:
             out.write_bytes(data)
+        packed += _write_precompressed(out)
     if DIST.exists():
         shutil.rmtree(DIST)
     TMP.rename(DIST)  # swap the freshly-built tree in
-    return raw, mini
+    return raw, mini, packed
 
 
 if __name__ == "__main__":
-    raw_bytes, mini_bytes = build()
+    raw_bytes, mini_bytes, packed_bytes = build()
     pct = 0 if raw_bytes == 0 else round((raw_bytes - mini_bytes) * 100 / raw_bytes)
     sys.stdout.write(
         f"Built {DIST} — JS preserved, CSS minified; JS/CSS {raw_bytes} -> {mini_bytes} bytes "
-        f"({pct}% smaller, pre-gzip)\n"
+        f"({pct}% smaller, pre-gzip); {packed_bytes} bytes of gzipped twins stored\n"
     )
