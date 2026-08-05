@@ -248,7 +248,12 @@ PUBLIC_V1_ROUTES = {
 
 
 def _v1_rules(app):
-    return [rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("v1.")]
+    # Every v1 blueprint, not just the original one. backend/v1.py was split by
+    # resource family, so routes now live under endpoints like "v1_write." and
+    # "v1_catalog." too. Matching only "v1." quietly dropped them from the guard
+    # audit below — the check would still pass while covering a fraction of the
+    # surface it claims to.
+    return [rule for rule in app.url_map.iter_rules() if rule.endpoint.split(".", 1)[0].startswith("v1")]
 
 
 def test_every_v1_route_is_guarded_or_allowlisted(app):

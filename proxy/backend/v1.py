@@ -16,7 +16,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from email.utils import format_datetime
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
@@ -24,7 +24,7 @@ from uuid import uuid4
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import Blueprint, Response, abort, jsonify, request, session
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -33,7 +33,6 @@ from backend import (
     api_cache,
     authz,
     canonical_tools,
-    catalog_projection,
     db,
     github_issues,
     graph_payload,
@@ -42,50 +41,39 @@ from backend import (
     people_index,
     recent_owners,
     security,
-    tool_assets,
     tool_summaries,
     toolhub,
-    toolinfo_discovery,
 )
 from backend.author_claims import (
-    DISPLAY_NAME_CLAIM_TTL,
     AuthorNameProvider,
     SignedToolinfoProvider,
     ToolforgeMaintainerProvider,
     ToolforgeMembershipProvider,
     ToolhubWriteProvider,
-    author_names_from_toolhub_tool,
     public_key_fingerprint,
     record_author_claim,
-    toolforge_names_from_toolhub_tool,
 )
 from backend.author_claims import (
     claim_payload as author_claim_payload,
 )
 from backend.models import (
     ActivityRow,
-    CanonicalToolCache,
     CatalogCuration,
-    CrawlerRun,
     CrawlerUrl,
     Favorite,
     IssueReport,
     Person,
-    PersonActivitySummary,
     PersonProfile,
     SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
-    ToolEvent,
     ToolHealthTarget,
-    ToolhubToken,
     ToolinfoControlChallenge,
     ToolList,
     ToolMedia,
     ToolOverlay,
     ToolPersonRelationship,
     ToolRecord,
-    ToolRelationshipEvidence,
     ToolThanks,
     User,
     utcnow,
@@ -99,17 +87,12 @@ from backend.sync import (
     AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
     AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
     AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
-    AUTHOR_CLAIM_UNVERIFIED,
     AUTHOR_CLAIM_VERIFIED,
-    PERSON_REL_AUTHOR,
-    PERSON_REL_MAINTAINER,
-    PERSON_REL_RECORD_OWNER,
     REVIEW_APPROVED,
     REVIEW_OPEN,
     REVIEW_PENDING,
     REVIEW_REJECTED,
     SOURCE_LOCAL,
-    SOURCE_OFFICIAL,
     SYNC_ERROR,
     SYNC_EVOLVED_REAL,
     SYNC_LOCAL_DRAFT,
@@ -126,7 +109,6 @@ from backend.toolinfo_control import (
     CHALLENGE_STATUS_VERIFIED,
     CHALLENGE_TTL,
     CONTROL_CLAIM_TTL,
-    challenge_payload,
     fetch_matching_item,
     new_token,
 )
@@ -261,10 +243,6 @@ def _payload_value(payload: dict, camel: str, snake: str | None = None) -> Any: 
 def _clean_name(value: str) -> str | None:
     value = str(value or "").strip()
     return value[:MAX_NAME] if value else None
-
-
-def _is_http_url(value: Any) -> bool:  # noqa: ANN401
-    return isinstance(value, str) and value.startswith(("http://", "https://")) and len(value) <= MAX_URL
 
 
 def _public_base_url() -> str:
@@ -1315,32 +1293,6 @@ def healthz() -> Response:
     return jsonify({"ok": True})
 
 
-@v1_bp.route("/v1/user/")
-def v1_user() -> Response:
-    """Who am I? Adds the CSRF token the write endpoints require."""
-    uid = current_user_id()
-    if uid is None:
-        return jsonify({"authenticated": False})
-    with db.session_scope() as s:
-        user = s.get(User, uid)
-        if user is None:  # pragma: no cover - delete-mid-request race; see _current_policy_user
-            session.clear()
-            return jsonify({"authenticated": False})
-        role = authz.user_role(user)
-        official_writes = s.get(ToolhubToken, uid) is not None
-        return jsonify(
-            {
-                "authenticated": True,
-                "username": user.username,
-                "csrf": session.get("csrf", ""),
-                "officialWrites": official_writes,
-                "evolvedRole": role,
-                "evolvedRoleLabel": authz.role_label(role),
-                "evolvedPermissions": authz.role_permissions(role),
-            }
-        )
-
-
 def _claim_tool_or_error(name: str) -> tuple[dict | None, Response | None]:
     """Load one canonical Toolhub record for a claim operation."""
     clean_name = _clean_name(name)
@@ -1353,70 +1305,6 @@ def _claim_tool_or_error(name: str) -> tuple[dict | None, Response | None]:
     if tool is None or _clean_name(tool.get("name")) != clean_name:
         return None, _deny(HTTP_NOT_FOUND, "canonical Toolhub tool not found")
     return tool, None
-
-
-def _claim_options(s: Any, user: User, tool: dict) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session
-    """Describe user-specific proof paths without treating any option as a grant."""
-    tool_name = str(tool.get("name") or "")
-    author_names = author_names_from_toolhub_tool(tool)
-    toolforge_names = toolforge_names_from_toolhub_tool(tool_name, tool)
-    active_key_count = int(
-        s.execute(
-            select(func.count())
-            .select_from(ToolAuthorKey)
-            .where(_author_key_owned_by(user), ToolAuthorKey.revoked_at.is_(None))
-        ).scalar_one()
-    )
-    claims = list(
-        s.execute(
-            select(ToolAuthorClaim)
-            .where(ToolAuthorClaim.tool_name == tool_name, _author_claim_owned_by(user))
-            .order_by(ToolAuthorClaim.created_at.desc(), ToolAuthorClaim.id.desc())
-        ).scalars()
-    )
-    return {
-        "tool": {"name": tool_name, "title": tool.get("title") or tool_name, "source": SOURCE_OFFICIAL},
-        "personId": people_index.link_user(s, user).public_id,
-        "options": [
-            {
-                "method": AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-                "relationship": PERSON_REL_MAINTAINER,
-                "available": bool(toolforge_names),
-                "toolforgeNames": toolforge_names,
-                "requires": [],
-            },
-            {
-                "method": AUTHOR_CLAIM_TOOLINFO_URL_CONTROL,
-                "relationship": PERSON_REL_MAINTAINER,
-                "available": True,
-                "requires": ["toolinfoUrl"],
-                "challengeField": CHALLENGE_FIELD,
-            },
-            {
-                "method": AUTHOR_CLAIM_SIGNED_TOOLINFO,
-                "relationship": PERSON_REL_MAINTAINER,
-                "available": active_key_count > 0,
-                "requires": ["toolinfoUrl"],
-                "activeKeyCount": active_key_count,
-            },
-            {
-                "method": AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
-                "relationship": PERSON_REL_AUTHOR,
-                "available": bool(author_names),
-                "requires": ["authorName"],
-                "authorNames": author_names,
-            },
-            {
-                "method": AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
-                "relationship": PERSON_REL_RECORD_OWNER,
-                "available": s.get(ToolhubToken, user.id) is not None,
-                "automatic": True,
-                "requires": [],
-            },
-        ],
-        "claims": [_claim_payload(row) for row in claims],
-        "canonicalAuthority": {"catalog": "toolhub", "claims": "toolhub-evolved"},
-    }
 
 
 def _create_control_challenge(
@@ -1497,264 +1385,9 @@ def _verify_control_challenge_record(
     return claim, None
 
 
-@v1_bp.route("/v1/tools/<name>/claim-options/")
-@login_required
-def v1_tool_claim_options(name: str) -> Response:
-    """Return proof methods and existing claims for one canonical Toolhub tool."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - login_required guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    tool, error = _claim_tool_or_error(name)
-    if error is not None:
-        return error
-    assert tool is not None  # noqa: S101 - helper returned no error
-    with db.session_scope() as s:
-        stored_user = s.get(User, user.id)
-        if stored_user is None:
-            return _deny(HTTP_UNAUTHORIZED, "sign in required")
-        return jsonify(_claim_options(s, stored_user, tool))
-
-
-@v1_bp.route("/v1/tools/<name>/claims/", methods=["POST"])
-@write_guard
-def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912, PLR0915
-    """Start or refresh one account-owned relationship proof workflow."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = _json_object_body()
-    if bad is not None:
-        return bad
-    assert body is not None  # noqa: S101 - body parser returned no error
-    method = str(_payload_value(body, "method") or "").strip()
-    if method not in CLAIM_METHODS:
-        return _bad("unknown claim verification method")
-    if method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
-        return _deny(HTTP_CONFLICT, "Toolhub record authority is recorded automatically after an official write")
-    tool, error = _claim_tool_or_error(name)
-    if error is not None:
-        return error
-    assert tool is not None  # noqa: S101 - helper returned no error
-    tool_name = str(tool["name"])
-    challenge = None
-    rows: list[ToolAuthorClaim] = []
-    with db.session_scope() as s:
-        stored_user = s.get(User, user.id)
-        if stored_user is None:
-            return _deny(HTTP_UNAUTHORIZED, "sign in required")
-        if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
-            canonical_names = author_names_from_toolhub_tool(tool)
-            author_name = str(_payload_value(body, "authorName", "author_name") or "").strip()
-            selected = next((value for value in canonical_names if value.casefold() == author_name.casefold()), None)
-            if selected is None:
-                return _bad("authorName must be one of the names on the canonical Toolhub record")
-            rows = [
-                record_author_claim(
-                    s,
-                    tool_name=tool_name,
-                    author_name=selected,
-                    toolhub_username=stored_user.username,
-                    user_id=stored_user.id,
-                    verification_status=AUTHOR_CLAIM_UNVERIFIED,
-                    verification_method=method,
-                    evidence_url=f"{toolhub.base_url()}/api/tools/{quote(tool_name, safe='')}/",
-                    evidence_payload={"toolhubField": "author", "claimKind": "identity_association"},
-                    expires_at=utcnow() + DISPLAY_NAME_CLAIM_TTL,
-                )
-            ]
-        elif method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER:
-            toolforge_names = toolforge_names_from_toolhub_tool(tool_name, tool)
-            if not toolforge_names:
-                return _deny(HTTP_CONFLICT, "this Toolhub record does not identify a Toolforge tool")
-            memberships = {
-                value.casefold(): value for value in TOOLFORGE_MEMBERSHIP_PROVIDER.tool_names(stored_user.username)
-            }
-            matched = next((value for value in toolforge_names if value.casefold() in memberships), None)
-            if matched:
-                rows = [
-                    TOOLFORGE_MAINTAINER_PROVIDER.record_membership(
-                        s, stored_user, tool_name=tool_name, toolforge_name=matched
-                    )
-                ]
-            else:
-                rows = TOOLFORGE_MAINTAINER_PROVIDER.verify(
-                    s,
-                    stored_user,
-                    tool_name=tool_name,
-                    author_names=[stored_user.username],
-                    toolhub_tool=tool,
-                )
-        elif method == AUTHOR_CLAIM_TOOLINFO_URL_CONTROL:
-            toolinfo_url = str(_payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
-            challenge, challenge_error = _create_control_challenge(s, stored_user, tool_name, toolinfo_url)
-            if challenge_error is not None:
-                return challenge_error
-            assert challenge is not None  # noqa: S101 - helper returned no error
-            rows = [
-                record_author_claim(
-                    s,
-                    tool_name=tool_name,
-                    author_name=stored_user.username,
-                    toolhub_username=stored_user.username,
-                    user_id=stored_user.id,
-                    verification_status=AUTHOR_CLAIM_UNVERIFIED,
-                    verification_method=method,
-                    evidence_url=toolinfo_url,
-                    evidence_payload={"challengeId": challenge.id, "field": CHALLENGE_FIELD},
-                    expires_at=challenge.expires_at,
-                )
-            ]
-        elif method == AUTHOR_CLAIM_SIGNED_TOOLINFO:
-            toolinfo_url = str(_payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
-            url_error = _url_validation_message(toolinfo_url, label="toolinfo URL")
-            if url_error is not None:
-                return _url_validation_bad("toolinfoUrl", url_error)
-            try:
-                item = fetch_matching_item(toolinfo_url, tool_name)
-            except Exception as exc:  # noqa: BLE001 - normalize bounded external proof failures
-                return _bad(f"Could not read signed toolinfo: {clean_error(str(exc)) or 'fetch failed'}")
-            rows = SIGNED_TOOLINFO_PROVIDER.verify(s, stored_user, toolinfo=item, evidence_url=toolinfo_url)
-            if not rows:
-                return _bad("the matching toolinfo item has no supported signature metadata")
-        s.flush()
-        maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name], user_ids=[stored_user.id])
-        payload = [_claim_payload(row) for row in rows]
-        challenge_data = challenge_payload(challenge) if challenge is not None else None
-    response = jsonify({"ok": True, "claims": payload, "challenge": challenge_data})
-    response.status_code = 201
-    return response
-
-
-@v1_bp.route("/v1/claims/<int:claim_id>/verify/", methods=["POST"])
-@write_guard
-def v1_claim_verify(claim_id: int) -> Response:  # noqa: C901, PLR0911
-    """Re-run the proof provider for one active account-owned claim."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    with db.session_scope() as s:
-        stored_user = s.get(User, user.id)
-        row = s.execute(
-            select(ToolAuthorClaim).where(ToolAuthorClaim.id == claim_id, _author_claim_owned_by(user))
-        ).scalar_one_or_none()
-        if stored_user is None or row is None:
-            return _deny(HTTP_NOT_FOUND, "claim not found")
-        if row.revoked_at is not None:
-            return _deny(HTTP_CONFLICT, "revoked claims cannot be verified")
-        method = row.verification_method
-        if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
-            return _deny(HTTP_CONFLICT, "a listed author name is identity evidence and cannot self-verify")
-        if method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
-            return _deny(HTTP_CONFLICT, "Toolhub record authority is verified automatically")
-        if method == AUTHOR_CLAIM_TOOLINFO_URL_CONTROL:
-            evidence = row.evidence_payload if isinstance(row.evidence_payload, dict) else {}
-            challenge_id = clean_int(evidence.get("challengeId"))
-            challenge = s.get(ToolinfoControlChallenge, challenge_id) if challenge_id is not None else None
-            if challenge is None or challenge.user_id != stored_user.id:
-                return _deny(HTTP_NOT_FOUND, "claim challenge not found")
-            updated, error = _verify_control_challenge_record(s, stored_user, challenge)
-            if error is not None:
-                return error
-            assert updated is not None  # noqa: S101 - helper returned no error
-            return jsonify({"ok": True, "claim": _claim_payload(updated), "challenge": challenge_payload(challenge)})
-        tool, error = _claim_tool_or_error(row.tool_name)
-        if error is not None:
-            return error
-        assert tool is not None  # noqa: S101 - helper returned no error
-        if method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER:
-            rows = TOOLFORGE_MAINTAINER_PROVIDER.verify(
-                s,
-                stored_user,
-                tool_name=row.tool_name,
-                author_names=[row.author_name],
-                toolhub_tool=tool,
-            )
-            updated = rows[0] if rows else row
-        elif method == AUTHOR_CLAIM_SIGNED_TOOLINFO:
-            try:
-                item = fetch_matching_item(row.evidence_url or "", row.tool_name)
-            except Exception as exc:  # noqa: BLE001 - normalize bounded external proof failures
-                return _bad(f"Could not read signed toolinfo: {clean_error(str(exc)) or 'fetch failed'}")
-            rows = SIGNED_TOOLINFO_PROVIDER.verify(s, stored_user, toolinfo=item, evidence_url=row.evidence_url)
-            updated = rows[0] if rows else row
-        else:
-            return _bad("unsupported claim method")
-        s.flush()
-        maintainer_index.sync_author_claim_edges(s, tool_names=[row.tool_name], user_ids=[stored_user.id])
-        return jsonify({"ok": True, "claim": _claim_payload(updated)})
-
-
-@v1_bp.route("/v1/claims/<int:claim_id>/", methods=["DELETE"])
-@write_guard
-def v1_claim_revoke(claim_id: int) -> Response:
-    """Revoke one local claim and withdraw its derived relationship evidence."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
-    with db.session_scope() as s:
-        row = s.execute(
-            select(ToolAuthorClaim).where(ToolAuthorClaim.id == claim_id, _author_claim_owned_by(user))
-        ).scalar_one_or_none()
-        if row is None:
-            return _deny(HTTP_NOT_FOUND, "claim not found")
-        row.revoked_at = row.revoked_at or utcnow()
-        row.updated_at = utcnow()
-        evidence = row.evidence_payload if isinstance(row.evidence_payload, dict) else {}
-        challenge_id = clean_int(evidence.get("challengeId"))
-        challenge = s.get(ToolinfoControlChallenge, challenge_id) if challenge_id is not None else None
-        if challenge is not None and challenge.user_id == user.id and challenge.status == CHALLENGE_STATUS_PENDING:
-            challenge.status = CHALLENGE_STATUS_EXPIRED
-        maintainer_index.sync_author_claim_edges(s, tool_names=[row.tool_name], user_ids=[user.id])
-        return jsonify({"ok": True, "claim": _claim_payload(row)})
-
-
 #: Matches the client's own per-render cap, so this never composes summaries
 #: for tools the page will not draw.
 _ME_TOOLS_SUMMARY_LIMIT = 50
-
-
-@v1_bp.route("/v1/people/tools/<name>/")
-def v1_tool_people(name: str) -> Response:
-    """Read the local people projection for a canonical Toolhub tool."""
-    if security.read_rate_limited(request.remote_addr):
-        return _deny(HTTP_TOO_MANY, "rate limit exceeded")
-    clean_name = _clean_name(name)
-    if clean_name is None:
-        return _bad("tool name is required")
-    with db.session_scope() as s:
-        return jsonify(people_index.public_people_summary(s, clean_name))
-
-
-@v1_bp.route("/v1/people/")
-def v1_people() -> Response:
-    """Search public Evolved people without treating handles as stable ids."""
-    if security.read_rate_limited(request.remote_addr):
-        return _deny(HTTP_TOO_MANY, "rate limit exceeded")
-    query = str(request.args.get("q") or "").strip()
-    limit = min(max(clean_int(request.args.get("limit")) or 50, 1), 100)
-    with db.session_scope() as s:
-        results = people_index.find_people(s, query, limit=limit)
-    return jsonify(
-        {
-            "count": len(results),
-            "results": results,
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_EVOLVED_REAL,
-            "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},
-        }
-    )
-
-
-@v1_bp.route("/v1/people/<public_id>/")
-def v1_person(public_id: str) -> Response:
-    """Return one public person, profile, tools, roles, and contribution summary."""
-    if security.read_rate_limited(request.remote_addr):
-        return _deny(HTTP_TOO_MANY, "rate limit exceeded")
-    with db.session_scope() as s:
-        payload = people_index.person_detail(s, public_id)
-    if payload is None:
-        return _deny(HTTP_NOT_FOUND, "person not found")
-    return jsonify(payload)
 
 
 def _profile_payload(profile: PersonProfile | None, person: Person) -> dict[str, Any]:
@@ -1881,22 +1514,6 @@ def v1_issue_report() -> Response:  # noqa: C901, PLR0911 - validation exits kee
             )
         )
     return jsonify(published), 201
-
-
-@v1_bp.route("/v1/crawler/toolinfo-discovery/", methods=["POST"])
-@write_guard
-def discover_toolinfo_url() -> Response:
-    """Find a toolinfo.json URL from a tool homepage/root URL."""
-    value, err = _json_object_body()
-    if err is not None:
-        return err
-    assert value is not None  # noqa: S101 - err covers non-dict bodies
-    raw_url = _payload_value(value, "url", "baseUrl")
-    error = _url_validation_message(raw_url, label="tool URL")
-    if error is not None:
-        return _url_validation_bad("url", error)
-    _require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
-    return jsonify(toolinfo_discovery.discover_toolinfo_url(str(raw_url)))
 
 
 def _merged_maps(kind_rows: list[Any], viewer_uid: int | None = None) -> dict[str, dict]:
@@ -2041,202 +1658,6 @@ def _data_patch(patch: dict) -> dict:
     return {k: v for k, v in patch.items() if k not in META_KEYS and k not in CANONICAL_TOOL_KEYS}
 
 
-@v1_bp.route("/v1/crawler/runs/")
-@login_required
-def v1_crawler_runs() -> Response:
-    """Recent local crawler job outcomes for signed-in contributors."""
-    with db.session_scope() as s:
-        runs = [
-            {
-                "id": row.id,
-                "startedAt": _iso(row.started_at),
-                "endedAt": _iso(row.ended_at),
-                "urlsCount": row.urls_count,
-                "added": row.added,
-                "updated": row.updated,
-                "ok": row.ok,
-                "errors": row.errors if isinstance(row.errors, list) else [],
-                "source": row.source or SOURCE_LOCAL,
-                "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
-            }
-            for row in s.execute(
-                select(CrawlerRun).order_by(CrawlerRun.started_at.desc(), CrawlerRun.id.desc()).limit(20)
-            ).scalars()
-        ]
-    return jsonify({"count": len(runs), "results": runs})
-
-
-@v1_bp.route("/v1/user/export/")
-@login_required
-def v1_user_export() -> Response:
-    """Export the caller's Evolved-owned data; official Toolhub data is not copied."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — login_required guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    username = user.username
-    with db.session_scope() as s:
-        author_claims = [
-            _claim_payload(row)
-            for row in s.execute(
-                select(ToolAuthorClaim)
-                .where(_author_claim_owned_by(user))
-                .order_by(
-                    ToolAuthorClaim.tool_name,
-                    ToolAuthorClaim.author_name,
-                    ToolAuthorClaim.verification_method,
-                )
-            ).scalars()
-        ]
-        author_keys = [
-            _author_key_payload(row)
-            for row in s.execute(
-                select(ToolAuthorKey)
-                .where(_author_key_owned_by(user))
-                .order_by(ToolAuthorKey.created_at, ToolAuthorKey.id)
-            ).scalars()
-        ]
-        ownership_challenges = [
-            challenge_payload(row)
-            for row in s.execute(
-                select(ToolinfoControlChallenge)
-                .where(ToolinfoControlChallenge.user_id == uid)
-                .order_by(ToolinfoControlChallenge.created_at, ToolinfoControlChallenge.id)
-            ).scalars()
-        ]
-        source_analysis_reports = [
-            _source_analysis_payload(row)
-            for row in s.execute(
-                select(SourceAnalysisReport)
-                .where(SourceAnalysisReport.user_id == uid)
-                .order_by(SourceAnalysisReport.created_at, SourceAnalysisReport.id)
-            ).scalars()
-        ]
-        person = s.get(Person, user.person_id) if user.person_id is not None else None
-        relationship_evidence = [
-            {
-                "toolName": row.tool_name,
-                "relationshipType": row.relationship_type,
-                "source": row.source,
-                "method": row.method,
-                "verificationStatus": row.verification_status,
-                "confidence": row.confidence,
-                "checkedAt": _iso(row.checked_at),
-                "expiresAt": _iso(row.expires_at),
-            }
-            for row in s.execute(
-                select(ToolRelationshipEvidence)
-                .where(
-                    ToolRelationshipEvidence.person_id == (person.id if person is not None else -1),
-                    ToolRelationshipEvidence.source == maintainer_index.SOURCE_AUTHOR_CLAIM,
-                    ToolRelationshipEvidence.withdrawn_at.is_(None),
-                )
-                .order_by(ToolRelationshipEvidence.tool_name, ToolRelationshipEvidence.method)
-            ).scalars()
-        ]
-        contribution_activity = people_index.activity_payload(
-            s.get(PersonActivitySummary, person.id) if person is not None else None
-        )
-        profile = s.get(PersonProfile, person.id) if person is not None else None
-    return jsonify(
-        {
-            "exportedAt": _iso(utcnow()),
-            "user": {"username": username},
-            "overlay": _assemble_overlay(uid),
-            "authorClaims": author_claims,
-            "authorKeys": author_keys,
-            "ownershipChallenges": ownership_challenges,
-            "person": {"id": person.public_id, "displayName": person.display_name} if person is not None else None,
-            "profile": _profile_payload(profile, person) if profile is not None and person is not None else None,
-            "contributionActivity": contribution_activity,
-            "relationshipEvidence": relationship_evidence,
-            "sourceAnalysisReports": source_analysis_reports,
-        }
-    )
-
-
-@v1_bp.route("/v1/user/evolved-data/", methods=["DELETE"])
-@write_guard
-def v1_user_delete_evolved_data() -> Response:
-    """Delete the caller's local Evolved data without touching official Toolhub."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
-    deleted: dict[str, int] = {}
-    with db.session_scope() as s:
-        for key, model in {
-            "favorites": Favorite,
-            "lists": ToolList,
-            "toolNew": ToolRecord,
-            "toolOverlays": ToolOverlay,
-            "activity": ActivityRow,
-            "crawlerUrls": CrawlerUrl,
-            "toolEvents": ToolEvent,
-            "thanks": ToolThanks,
-            "media": ToolMedia,
-            "sourceAnalysisReports": SourceAnalysisReport,
-            "ownershipChallenges": ToolinfoControlChallenge,
-        }.items():
-            count = s.execute(select(func.count()).select_from(model).where(model.user_id == uid)).scalar_one()
-            deleted[key] = int(count)
-            s.execute(delete(model).where(model.user_id == uid))
-        health_count = s.execute(
-            select(func.count()).select_from(ToolHealthTarget).where(ToolHealthTarget.created_by_user_id == uid)
-        ).scalar_one()
-        deleted["healthTargets"] = int(health_count)
-        s.execute(delete(ToolHealthTarget).where(ToolHealthTarget.created_by_user_id == uid))
-        author_claim_owner = _author_claim_owned_by(user)
-        author_claim_count = s.execute(
-            select(func.count()).select_from(ToolAuthorClaim).where(author_claim_owner)
-        ).scalar_one()
-        deleted["authorClaims"] = int(author_claim_count)
-        s.execute(delete(ToolAuthorClaim).where(author_claim_owner))
-        author_key_owner = _author_key_owned_by(user)
-        author_key_count = s.execute(
-            select(func.count()).select_from(ToolAuthorKey).where(author_key_owner)
-        ).scalar_one()
-        deleted["authorKeys"] = int(author_key_count)
-        s.execute(delete(ToolAuthorKey).where(author_key_owner))
-        person_id = user.person_id
-        affected_tools = {
-            row[0]
-            for row in s.execute(
-                select(ToolRelationshipEvidence.tool_name).where(
-                    ToolRelationshipEvidence.person_id == (person_id if person_id is not None else -1),
-                    ToolRelationshipEvidence.source == maintainer_index.SOURCE_AUTHOR_CLAIM,
-                )
-            ).all()
-        }
-        evidence_count = s.execute(
-            select(func.count())
-            .select_from(ToolRelationshipEvidence)
-            .where(
-                ToolRelationshipEvidence.person_id == (person_id if person_id is not None else -1),
-                ToolRelationshipEvidence.source == maintainer_index.SOURCE_AUTHOR_CLAIM,
-            )
-        ).scalar_one()
-        deleted["relationshipEvidence"] = int(evidence_count)
-        s.execute(
-            delete(ToolRelationshipEvidence).where(
-                ToolRelationshipEvidence.person_id == (person_id if person_id is not None else -1),
-                ToolRelationshipEvidence.source == maintainer_index.SOURCE_AUTHOR_CLAIM,
-            )
-        )
-        profile_count = 0
-        if person_id is not None:
-            profile_count = int(
-                s.execute(
-                    select(func.count()).select_from(PersonProfile).where(PersonProfile.person_id == person_id)
-                ).scalar_one()
-            )
-            s.execute(delete(PersonProfile).where(PersonProfile.person_id == person_id))
-        deleted["profile"] = profile_count
-        for tool_name in sorted(affected_tools):
-            people_index.resolve_tool_relationships(s, tool_name)
-        if person_id is not None:
-            people_index.refresh_activity_summaries(s, person_ids={person_id})
-    return jsonify({"ok": True, "deleted": deleted})
-
-
 @v1_bp.route("/v1/canonical/tools/")
 def v1_canonical_tools() -> Response:
     """Return locally cached canonical official Toolhub tool records."""
@@ -2289,292 +1710,6 @@ def v1_graph() -> Response:
     )
 
 
-@v1_bp.route("/v1/tools/summaries/")
-def v1_tool_summaries() -> Response:
-    """Return local Evolved health and maintainer summaries for visible tools."""
-    names = _tool_names_from_request()
-    if not names:
-        return _public_json_response(
-            {"count": 0, "results": {}, "cacheMeta": {}, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL}
-        )
-    # Cards ask for the projected view; the tool detail page omits it and gets
-    # the whole record.
-    view = request.args.get("view") or tool_summaries.VIEW_FULL
-    if view not in tool_summaries.VIEWS:
-        return _deny(HTTP_BAD_REQUEST, "unknown summary view")
-    read = tool_summaries.summaries_for(names, _build_local_tool_summary, view=view)
-    return _public_json_response(
-        {
-            "count": len(read.results),
-            "results": read.results,
-            "cacheMeta": read.cache_meta,
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_EVOLVED_REAL,
-            "cachePolicy": {
-                "canonical": False,
-                "upstream": False,
-                "summary": (
-                    "Materialized local Evolved summaries only; stale rows are served immediately "
-                    "and refreshed asynchronously."
-                ),
-            },
-        }
-    )
-
-
-@v1_bp.route("/v1/tools/<name>/signals/")
-def v1_tool_signals(name: str) -> Response:
-    """Real Evolved-owned signal summary for one tool."""
-    clean_name = _clean_name(name)
-    if clean_name is None:
-        return _bad("tool name is required")
-    since = (utcnow() - timedelta(days=30)).date().isoformat()
-    uid = current_user_id()
-    with db.session_scope() as s:
-        thanks_count = s.execute(
-            select(func.count())
-            .select_from(ToolThanks)
-            .where(
-                ToolThanks.tool_name == clean_name,
-                ToolThanks.active.is_(True),
-                ToolThanks.review_status == REVIEW_APPROVED,
-            )
-        ).scalar_one()
-        user_thanked = (
-            bool(
-                s.execute(
-                    select(ToolThanks.id).where(
-                        ToolThanks.tool_name == clean_name,
-                        ToolThanks.user_id == uid,
-                        ToolThanks.active.is_(True),
-                        ToolThanks.review_status == REVIEW_APPROVED,
-                    )
-                ).first()
-            )
-            if uid is not None
-            else False
-        )
-        events_30d = s.execute(
-            select(func.count()).select_from(ToolEvent).where(ToolEvent.tool_name == clean_name, ToolEvent.day >= since)
-        ).scalar_one()
-        health = s.execute(
-            select(ToolHealthTarget)
-            .where(ToolHealthTarget.tool_name == clean_name, ToolHealthTarget.enabled.is_(True))
-            .where(ToolHealthTarget.deleted_at.is_(None))
-            .where(ToolHealthTarget.review_status == REVIEW_APPROVED)
-            .order_by(ToolHealthTarget.last_checked_at.desc(), ToolHealthTarget.id.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-    return jsonify(
-        {
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-            "thanks": {
-                "count": int(thanks_count),
-                "userThanked": user_thanked,
-                "syncStatus": SYNC_EVOLVED_REAL,
-                "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-            },
-            "usage30d": {
-                "count": int(events_30d),
-                "label": "30-day Evolved usage",
-                "syncStatus": SYNC_EVOLVED_REAL,
-                "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-            },
-            "health": {
-                "status": health.last_status if health and health.last_status else "unknown",
-                "checkedAt": _iso(health.last_checked_at) if health else "",
-                "targetUrl": health.target_url if health else "",
-                "lastError": health.last_error if health else "",
-                "reviewStatus": clean_review_status(health.review_status, REVIEW_APPROVED) if health else "",
-                "syncStatus": SYNC_EVOLVED_REAL,
-                "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-            },
-        }
-    )
-
-
-@v1_bp.route("/v1/tools/<name>/events/", methods=["POST"])
-@write_guard
-def v1_tool_event(name: str) -> Response:
-    """Record one privacy-limited Evolved interaction event."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    clean_name = _clean_name(name)
-    value = request.get_json(silent=True) or {}
-    event_type = value.get("eventType") if isinstance(value, dict) else None
-    if clean_name is None or event_type not in EVENT_TYPES:
-        return _bad("eventType must be one of view, launch, save, list_add")
-    now = utcnow()
-    with db.session_scope() as s:
-        s.add(
-            ToolEvent(
-                tool_name=clean_name,
-                event_type=event_type,
-                user_id=uid,
-                created_by_user_id=uid,
-                day=now.date().isoformat(),
-                event_meta=value.get("meta") if isinstance(value.get("meta"), dict) else None,
-                created_at=now,
-            )
-        )
-    return jsonify({"ok": True})
-
-
-@v1_bp.route("/v1/tools/<name>/thanks/", methods=["POST", "DELETE"])
-@write_guard
-def v1_tool_thanks(name: str) -> Response:
-    """Add or remove the caller's Evolved thanks for one tool."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    if request.method == "POST":
-        _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    else:
-        _require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
-    clean_name = _clean_name(name)
-    if clean_name is None:
-        return _bad("tool name is required")
-    with db.session_scope() as s:
-        row = s.execute(
-            select(ToolThanks).where(ToolThanks.tool_name == clean_name, ToolThanks.user_id == uid)
-        ).scalar_one_or_none()
-        if row is None:
-            row = ToolThanks(
-                tool_name=clean_name,
-                user_id=uid,
-                created_by_user_id=uid,
-                active=request.method == "POST",
-                review_status=REVIEW_APPROVED,
-            )
-            s.add(row)
-        else:
-            if row.created_by_user_id is None:
-                row.created_by_user_id = uid
-            row.review_status = clean_review_status(row.review_status, REVIEW_APPROVED)
-            row.active = request.method == "POST"
-            row.updated_at = utcnow()
-    return jsonify(
-        {
-            "ok": True,
-            "source": SOURCE_LOCAL,
-            "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": _sync_label(SYNC_EVOLVED_REAL),
-        }
-    )
-
-
-@v1_bp.route("/v1/tools/<name>/health-target/", methods=["PUT"])
-@write_guard
-def v1_tool_health_target(name: str) -> Response:
-    """Store the caller's Evolved health target URL for a tool."""
-    uid = current_user_id()
-    assert uid is not None  # noqa: S101 — write_guard guarantees this
-    _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    clean_name = _clean_name(name)
-    value = request.get_json(silent=True) or {}
-    target_url = value.get("url") if isinstance(value, dict) else None
-    if clean_name is None or not _is_http_url(target_url):
-        return _bad("health target needs an http(s) url")
-    with db.session_scope() as s:
-        row = s.execute(
-            select(ToolHealthTarget).where(
-                ToolHealthTarget.tool_name == clean_name,
-                ToolHealthTarget.created_by_user_id == uid,
-            )
-        ).scalar_one_or_none()
-        if row is None:
-            row = ToolHealthTarget(
-                tool_name=clean_name,
-                created_by_user_id=uid,
-                target_url=target_url[:MAX_URL],
-                source=SOURCE_LOCAL,
-                sync_status=SYNC_EVOLVED_REAL,
-                review_status=REVIEW_PENDING,
-            )
-            s.add(row)
-        else:
-            if row.target_url != target_url[:MAX_URL]:
-                row.review_status = REVIEW_PENDING
-            row.target_url = target_url[:MAX_URL]
-            row.source = SOURCE_LOCAL
-            row.sync_status = SYNC_EVOLVED_REAL
-            row.enabled = True
-            row.deleted_at = None
-            row.last_error = None
-        s.flush()
-        payload = _health_target_payload(row)
-    return jsonify({"ok": True, "healthTarget": payload})
-
-
-def _tool_media_get(clean_name: str) -> Response:
-    """Return approved public media for a tool."""
-    with db.session_scope() as s:
-        rows = list(
-            s.execute(
-                select(ToolMedia)
-                .where(
-                    ToolMedia.tool_name == clean_name,
-                    ToolMedia.deleted_at.is_(None),
-                    ToolMedia.review_status == REVIEW_APPROVED,
-                )
-                .order_by(ToolMedia.created_at.desc(), ToolMedia.id.desc())
-                .limit(12)
-            ).scalars()
-        )
-    return jsonify({"count": len(rows), "results": [_media_payload(row) for row in rows]})
-
-
-def _tool_media_post(clean_name: str) -> Response:
-    """Submit URL-based media metadata for Evolved moderation."""
-    guard = write_guard(lambda: None)()
-    if guard is not None:
-        return guard
-    user = _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    uid = user.id
-    value = request.get_json(silent=True)
-    if not isinstance(value, dict):
-        return _bad("media body must be a JSON object")
-    media_url = value.get("url")
-    license_id = str(value.get("license") or "").strip()
-    source = str(value.get("source") or "").strip()
-    if not (_is_http_url(media_url) and license_id and source):
-        return _bad("media needs url, license, and source")
-    with db.session_scope() as s:
-        row = ToolMedia(
-            tool_name=clean_name,
-            user_id=uid,
-            created_by_user_id=uid,
-            url=str(media_url)[:MAX_URL],
-            title=str(value.get("title") or "")[:MAX_NAME],
-            license=license_id[:MAX_NAME],
-            source=source[:MAX_URL],
-            review_status=REVIEW_PENDING,
-            sync_status=SYNC_EVOLVED_REAL,
-        )
-        s.add(row)
-        s.flush()
-        payload = _media_payload(row)
-    return jsonify({"ok": True, "media": payload})
-
-
-@v1_bp.route("/v1/tools/<name>/media/", methods=["GET", "POST"])
-def v1_tool_media(name: str) -> Response:
-    """List approved media, or submit URL-based media metadata for moderation.
-
-    No @write_guard here because GET is public: the POST half applies the guard
-    itself inside _tool_media_post. An audit that reads decorators alone will
-    score this route as an unauthenticated write, so check there before believing it.
-    """
-    clean_name = _clean_name(name)
-    if clean_name is None:
-        return _bad("tool name is required")
-    if request.method == "GET":
-        return _tool_media_get(clean_name)
-    return _tool_media_post(clean_name)
-
-
 @v1_bp.route("/v1/media/<int:media_id>/", methods=["DELETE"])
 @write_guard
 def v1_tool_media_delete(media_id: int) -> Response:
@@ -2590,90 +1725,6 @@ def v1_tool_media_delete(media_id: int) -> Response:
             return resp
         row.deleted_at = utcnow()
     return jsonify({"ok": True})
-
-
-@v1_bp.route("/v1/catalog/tools/<name>/projection/")
-def v1_catalog_tool_projection(name: str) -> Response:
-    """Return one public Evolved projection with field-level evidence."""
-    payload = catalog_projection.projection_payload(name)
-    if payload is None:
-        return _deny(HTTP_NOT_FOUND, "catalog projection not found")
-    return _public_json_response(payload)
-
-
-@v1_bp.route("/v1/catalog/tools/<name>/icon/")
-def v1_catalog_tool_icon(name: str) -> Response:
-    """Serve a previously validated icon; never fetch on this read path."""
-    asset = tool_assets.cached_asset(name)
-    if asset is None:
-        return _deny(HTTP_NOT_FOUND, "cached icon not found")
-    body, content_type, digest = asset
-    etag = f'"{digest}"'
-    headers = {
-        "Cache-Control": "public, max-age=86400, stale-if-error=604800",
-        "Content-Security-Policy": "sandbox; default-src 'none'",
-        "ETag": etag,
-        "X-Content-Type-Options": "nosniff",
-    }
-    if request.headers.get("If-None-Match") == etag:
-        return Response(status=304, headers=headers)
-    return Response(body, headers=headers, content_type=content_type)
-
-
-@v1_bp.route("/v1/catalog/curations/<int:curation_id>/")
-def v1_catalog_curation(curation_id: int) -> Response:
-    """Return one approved public correction referenced by provenance."""
-    with db.session_scope() as s:
-        row = s.get(CatalogCuration, curation_id)
-        if row is None or row.deleted_at is not None or row.review_status != REVIEW_APPROVED:
-            return _deny(HTTP_NOT_FOUND, "catalog curation not found")
-        payload = _moderation_item("catalog-curations", row)["data"]
-        payload.pop("createdByUserId", None)
-    return _public_json_response(payload)
-
-
-@v1_bp.route("/v1/catalog/tools/<name>/curations/", methods=["POST"])
-@write_guard
-def v1_catalog_curation_create(name: str) -> Response:
-    """Create a bounded local correction proposal; canonical data is untouched."""
-    clean_name = _clean_name(name)
-    if clean_name is None:
-        return _bad("tool name is required")
-    value = request.get_json(silent=True)
-    if not isinstance(value, dict):
-        return _bad("curation body must be a JSON object")
-    patch, errors = catalog_projection.validate_curation_patch(value.get("patch"))
-    if errors:
-        return _bad("curation validation failed", errors)
-    rationale = " ".join(str(value.get("rationale") or "").split()).strip()[:2000]
-    if not rationale:
-        return _bad("rationale is required", [{"field": "rationale", "message": "Explain the correction."}])
-    user = _require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    with db.session_scope() as s:
-        if s.get(CanonicalToolCache, clean_name) is None:
-            return _deny(HTTP_NOT_FOUND, "canonical tool not found")
-        row = CatalogCuration(
-            tool_name=clean_name,
-            created_by_user_id=user.id,
-            patch=patch,
-            rationale=rationale,
-            review_status=REVIEW_PENDING,
-        )
-        s.add(row)
-        s.flush()
-        item = _moderation_item("catalog-curations", row)
-        _emit_structured_activity(
-            s,
-            user,
-            action="catalog-curation-proposed",
-            object_type="catalog-curations",
-            object_key=str(row.id),
-            official_status=SYNC_EVOLVED_REAL,
-            payload=item,
-        )
-    response = jsonify({"ok": True, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL, "item": item})
-    response.status_code = 201
-    return response
 
 
 @v1_bp.route("/v1/search/tools/")
