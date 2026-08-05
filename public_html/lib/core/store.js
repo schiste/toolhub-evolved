@@ -329,21 +329,6 @@ export function withDemoFixture(fixture, render) {
 	}
 }
 /**
- * @param {string | null | undefined} status
- * @returns {string}
- */
-export function syncStatusLabel(status) {
-	return (
-		{
-			[SYNC_STATUS.official]: "Published to Toolhub",
-			[SYNC_STATUS.localDraft]: "Saved locally",
-			[SYNC_STATUS.localFallback]: "Saved locally after Toolhub rejected it",
-			[SYNC_STATUS.evolvedReal]: "Evolved data",
-			[SYNC_STATUS.syncError]: "Sync issue"
-		}[String(status || "")] || "Saved locally"
-	);
-}
-/**
  * @template {Record<string, any>} T
  * @param {T} item
  * @param {Partial<SyncMeta>} [meta]
@@ -624,14 +609,18 @@ export function ingestToolinfo(text) {
 	return { added, updated, errors };
 }
 // CSV helpers for array form fields.
-/** @param {string[] | null | undefined} a */
-export function toCsv(a) {
-	return (a || []).join(", ");
-}
-/** @param {unknown} s */
-export function fromCsv(s) {
-	return String(s || "")
-		.split(",")
-		.map((x) => x.trim())
-		.filter(Boolean);
+
+/* Used by the record assembler below as well as by the sync-status molecule,
+   so it stays here: core must not import from lib/molecules. */
+/** @param {string} status @returns {string} */
+export function syncStatusLabel(status) {
+	return (
+		{
+			[SYNC_STATUS.official]: "Published to Toolhub",
+			[SYNC_STATUS.localDraft]: "Saved locally",
+			[SYNC_STATUS.localFallback]: "Saved locally after Toolhub rejected it",
+			[SYNC_STATUS.evolvedReal]: "Evolved data",
+			[SYNC_STATUS.syncError]: "Sync issue"
+		}[String(status || "")] || "Saved locally"
+	);
 }

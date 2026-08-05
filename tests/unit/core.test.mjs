@@ -86,10 +86,10 @@ test("API scalar helpers preserve core data priority and empty semantics", () =>
 	assert.equal(api.firstUrl(["https://plain.example"]), "https://plain.example");
 	assert.equal(api.firstUrl([]), null);
 	assert.equal(api.firstUrl({ url: "https://ignored.example" }), null);
-	assert.equal(api.hasValue([]), false);
-	assert.equal(api.hasValue(["x"]), true);
-	assert.equal(api.hasValue(""), false);
-	assert.equal(api.hasValue(0), true);
+	assert.equal(util.hasValue([]), false);
+	assert.equal(util.hasValue(["x"]), true);
+	assert.equal(util.hasValue(""), false);
+	assert.equal(util.hasValue(0), true);
 	assert.equal(api.pick("core", "annotation", "fallback"), "core");
 	assert.equal(api.pick("", "annotation", "fallback"), "annotation");
 	assert.equal(api.pick(null, [], "fallback"), "fallback");

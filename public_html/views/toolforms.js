@@ -18,7 +18,7 @@ import {
 	serverWrite
 } from "../lib/core/serversync.js";
 import { getSimilarityIndex, nearestNeighbors } from "../lib/core/similarity.js";
-import { normStr } from "../lib/core/util.js";
+import { fromCsv, normStr, toCsv } from "../lib/core/util.js";
 import {
 	DEMO_KEYS,
 	SOURCE,
@@ -28,11 +28,9 @@ import {
 	crawlerUrlDelete,
 	crawlerUrls,
 	demoStore,
-	fromCsv,
 	ingestToolinfo,
 	logActivity,
 	stampSyncMeta,
-	toCsv,
 	toolAnnosMap,
 	toolEditsMap,
 	toolNewMap

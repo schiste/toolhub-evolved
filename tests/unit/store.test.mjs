@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import * as util from "../../public_html/lib/core/util.js";
 import assert from "node:assert/strict";
 import { test, beforeEach, afterAll, vi } from "vitest";
 import * as store from "../../public_html/lib/core/store.js";
@@ -553,16 +554,16 @@ test("ingestToolinfo counts updates and logs create vs update activity", () => {
 });
 
 test("toCsv joins with ', ' and tolerates empty input", () => {
-	assert.equal(store.toCsv(["a", "b", "c"]), "a, b, c");
-	assert.equal(store.toCsv([]), "");
-	assert.equal(store.toCsv(null), "");
-	assert.equal(store.toCsv(undefined), "");
+	assert.equal(util.toCsv(["a", "b", "c"]), "a, b, c");
+	assert.equal(util.toCsv([]), "");
+	assert.equal(util.toCsv(null), "");
+	assert.equal(util.toCsv(undefined), "");
 });
 
 test("fromCsv splits, trims, and drops empties", () => {
-	assert.deepEqual(store.fromCsv("a, b ,,c"), ["a", "b", "c"]);
-	assert.deepEqual(store.fromCsv(" only "), ["only"]);
-	assert.deepEqual(store.fromCsv(""), []);
-	assert.deepEqual(store.fromCsv(null), []);
-	assert.deepEqual(store.fromCsv(undefined), []);
+	assert.deepEqual(util.fromCsv("a, b ,,c"), ["a", "b", "c"]);
+	assert.deepEqual(util.fromCsv(" only "), ["only"]);
+	assert.deepEqual(util.fromCsv(""), []);
+	assert.deepEqual(util.fromCsv(null), []);
+	assert.deepEqual(util.fromCsv(undefined), []);
 });

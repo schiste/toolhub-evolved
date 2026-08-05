@@ -25,3 +25,32 @@ export function normStr(value) {
 		.trim()
 		.toLowerCase();
 }
+
+/**
+ * Whether a value is present: a non-empty array, or anything but null,
+ * undefined and the empty string.
+ *
+ * Lived in api.js, which is about talking to Toolhub and has nothing to do
+ * with this.
+ * @param {any} v
+ * @returns {boolean}
+ */
+/** @param {unknown} v */
+export function hasValue(v) {
+	return Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
+}
+
+/* Generic list<->text conversion for comma-separated form fields. These were
+   in store.js, which is the localStorage layer and never had anything to do
+   with them. */
+/** @param {any[]} a @returns {string} */
+export function toCsv(a) {
+	return (a || []).join(", ");
+}
+/** @param {string} s @returns {string[]} */
+export function fromCsv(s) {
+	return String(s || "")
+		.split(",")
+		.map((x) => x.trim())
+		.filter(Boolean);
+}

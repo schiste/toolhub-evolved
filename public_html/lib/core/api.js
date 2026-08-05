@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import { hasValue } from "./util.js";
 import { localizedField, t } from "./i18n.js";
 import { markFrontendTiming, markFrontendTimingOnce } from "./diagnostics.js";
 import { signedIn, USER } from "./session.js";
@@ -689,10 +690,6 @@ export function firstUrl(v) {
 		return x && typeof x === "object" ? x.url : x;
 	}
 	return null;
-}
-/** @param {unknown} v */
-export function hasValue(v) {
-	return Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== "";
 }
 /**
  * Choose the first of core/annotation that has a value, else the fallback. The

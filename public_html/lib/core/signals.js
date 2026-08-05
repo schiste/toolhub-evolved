@@ -2,9 +2,9 @@
 // Real, honest trust signals derived from live Toolhub data — no simulation.
 // Listing completeness, curated-list endorsement, freshness, and fit-to-your-context.
 // Serves tool users (evaluate/trust) and maintainers (improve-your-listing).
-import { backendGetJson, hasValue, paginate } from "./api.js";
+import { backendGetJson, paginate } from "./api.js";
 import { toolSummaryCacheRead, toolSummaryCacheWrite } from "./store.js";
-import { memoizeAsync } from "./util.js";
+import { memoizeAsync, hasValue } from "./util.js";
 
 /* ---- Listing completeness --------------------------------------------------
    What fraction of the toolinfo a maintainer could fill is actually filled.
