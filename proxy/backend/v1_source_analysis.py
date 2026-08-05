@@ -20,6 +20,7 @@ from backend import (
     source_analyzer,
     v1,
 )
+from backend import v1_common as common
 from backend.models import (
     SourceAnalysisReport,
     ToolPersonRelationship,
@@ -58,7 +59,7 @@ def _maintainer_context_from_summary(summary: dict) -> dict:
         "activeMaintainerCount": clean_int(counts.get("activePeople")) or 0,
         "recentActivityCount": recent_activity_count,
         "source": "evolved-people-index",
-        "analyzedAt": v1._iso(utcnow()),
+        "analyzedAt": common.iso(utcnow()),
     }
     if ages:
         context["lastActivityAgeDays"] = min(ages)
@@ -99,12 +100,12 @@ def v1_source_analysis_list() -> Response:
     """List source-analysis reports owned by the signed-in user."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
-    v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     limit = min(
         max(clean_int(request.args.get("limit")) or v1.SOURCE_ANALYSIS_DEFAULT_LIMIT, 1),
         v1.SOURCE_ANALYSIS_MAX_LIMIT,
     )
-    tool_name = v1._clean_name(request.args.get("tool", ""))
+    tool_name = common.clean_name(request.args.get("tool", ""))
     stmt = select(SourceAnalysisReport).where(SourceAnalysisReport.user_id == uid)
     if tool_name is not None:
         stmt = stmt.where(SourceAnalysisReport.tool_name == tool_name)
@@ -116,7 +117,7 @@ def v1_source_analysis_list() -> Response:
             .scalars()
             .all()
         )
-    return jsonify({"count": len(reports), "results": [v1._source_analysis_payload(row) for row in reports]})
+    return jsonify({"count": len(reports), "results": [common.source_analysis_payload(row) for row in reports]})
 
 
 @v1_source_analysis_bp.route("/v1/source-analysis/", methods=["POST"])
@@ -125,26 +126,26 @@ def v1_source_analysis_create() -> Response:
     """Analyze submitted source files and store the derived report."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = v1._json_object_body()
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = common.json_object_body()
     if bad is not None:
         return bad
-    assert body is not None  # noqa: S101 — v1._json_object_body returned no error
-    tool_name = v1._clean_name(v1._payload_value(body, "toolName", "tool_name"))
-    source_label = str(v1._payload_value(body, "sourceLabel", "source_label") or "").strip()[: v1.MAX_NAME]
+    assert body is not None  # noqa: S101 — common.json_object_body returned no error
+    tool_name = common.clean_name(common.payload_value(body, "toolName", "tool_name"))
+    source_label = str(common.payload_value(body, "sourceLabel", "source_label") or "").strip()[: common.MAX_NAME]
     repository_context = _source_repository_context(
         tool_name,
-        v1._payload_value(body, "repositoryContext", "repository_context"),
+        common.payload_value(body, "repositoryContext", "repository_context"),
     )
     try:
         report = source_analyzer.analyze_source_files(
-            v1._payload_value(body, "files"),
+            common.payload_value(body, "files"),
             tool_name=tool_name,
             source_label=source_label,
             repository_context=repository_context,
         )
     except source_analyzer.SourceAnalysisError as exc:
-        return v1._bad(str(exc))
+        return common.bad(str(exc))
     with db.session_scope() as s:
         row = SourceAnalysisReport(
             user_id=uid,
@@ -158,8 +159,8 @@ def v1_source_analysis_create() -> Response:
         )
         s.add(row)
         s.flush()
-        payload = v1._source_analysis_payload(row)
-        v1._emit_structured_activity(
+        payload = common.source_analysis_payload(row)
+        common.emit_structured_activity(
             s,
             user,
             action="source-analysis-created",
@@ -180,12 +181,12 @@ def v1_source_analysis_detail(report_id: int) -> Response:
     """Return one source-analysis report owned by the signed-in user."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
-    v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         row = s.get(SourceAnalysisReport, report_id)
         if row is None or row.user_id != uid:
-            return v1._deny(v1.HTTP_NOT_FOUND, v1.SOURCE_ANALYSIS_NOT_FOUND)
-        payload = v1._source_analysis_payload(row)
+            return common.deny(common.HTTP_NOT_FOUND, v1.SOURCE_ANALYSIS_NOT_FOUND)
+        payload = common.source_analysis_payload(row)
     return jsonify({"sourceAnalysis": payload})
 
 
@@ -195,24 +196,24 @@ def v1_source_analysis_review(report_id: int) -> Response:
     """Mark one source-analysis report as open, approved, or rejected."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = v1._json_object_body()
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = common.json_object_body()
     if bad is not None:
         return bad
-    assert body is not None  # noqa: S101 — v1._json_object_body returned no error
-    review_status = str(v1._payload_value(body, "reviewStatus", "review_status") or "").strip()
+    assert body is not None  # noqa: S101 — common.json_object_body returned no error
+    review_status = str(common.payload_value(body, "reviewStatus", "review_status") or "").strip()
     if review_status not in v1.SOURCE_ANALYSIS_REVIEW_STATUSES:
-        return v1._bad("reviewStatus must be open, approved, or rejected")
-    review_notes = clean_error(v1._payload_value(body, "reviewNotes", "review_notes"))
+        return common.bad("reviewStatus must be open, approved, or rejected")
+    review_notes = clean_error(common.payload_value(body, "reviewNotes", "review_notes"))
     with db.session_scope() as s:
         row = s.get(SourceAnalysisReport, report_id)
         if row is None or row.user_id != uid:
-            return v1._deny(v1.HTTP_NOT_FOUND, v1.SOURCE_ANALYSIS_NOT_FOUND)
+            return common.deny(common.HTTP_NOT_FOUND, v1.SOURCE_ANALYSIS_NOT_FOUND)
         row.review_status = review_status
         row.review_notes = review_notes
         row.reviewed_at = None if review_status == REVIEW_OPEN else utcnow()
-        payload = v1._source_analysis_payload(row)
-        v1._emit_structured_activity(
+        payload = common.source_analysis_payload(row)
+        common.emit_structured_activity(
             s,
             user,
             action=f"source-analysis-{review_status}",

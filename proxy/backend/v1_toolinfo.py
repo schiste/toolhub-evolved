@@ -19,6 +19,7 @@ from backend import (
     db,
     v1,
 )
+from backend import v1_common as common
 from backend.author_claims import (
     SIGNATURE_META_KEY,
     canonical_toolinfo_string,
@@ -50,7 +51,7 @@ def _toolinfo_body(value: Any) -> dict | None:  # noqa: ANN401 - untrusted JSON
             return None
     if not isinstance(value, dict):
         return None
-    return value if v1._clean_name(value.get("name")) is not None else None
+    return value if common.clean_name(value.get("name")) is not None else None
 
 
 def _signature_metadata(key_id: str) -> dict:
@@ -64,7 +65,7 @@ def v1_toolinfo_control_challenges() -> Response:
     """List URL-control challenges belonging to the signed-in account."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - login_required guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         rows = list(
             s.execute(
@@ -87,17 +88,17 @@ def v1_toolinfo_control_challenge_create() -> Response:
     """Create a proof-of-control challenge after validating the exact URL."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = v1._json_object_body()
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = common.json_object_body()
     if bad is not None:
         return bad
-    assert body is not None  # noqa: S101 - v1._json_object_body returned no error
-    tool_name = v1._clean_name(str(v1._payload_value(body, "toolName", "tool_name") or "").strip())
+    assert body is not None  # noqa: S101 - common.json_object_body returned no error
+    tool_name = common.clean_name(str(common.payload_value(body, "toolName", "tool_name") or "").strip())
     if tool_name is None:
-        return v1._bad("toolName is required")
-    toolinfo_url = str(v1._payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
+        return common.bad("toolName is required")
+    toolinfo_url = str(common.payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
     with db.session_scope() as s:
-        row, error = v1._create_control_challenge(s, user, tool_name, toolinfo_url)
+        row, error = common.create_control_challenge(s, user, tool_name, toolinfo_url)
         if error is not None:
             return error
         assert row is not None  # noqa: S101 - helper returned no error
@@ -113,7 +114,7 @@ def v1_toolinfo_control_challenge_verify(challenge_id: int) -> Response:
     """Refetch the URL and materialize a verified per-tool maintainer claim."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         row = s.execute(
             select(ToolinfoControlChallenge).where(
@@ -122,13 +123,13 @@ def v1_toolinfo_control_challenge_verify(challenge_id: int) -> Response:
             )
         ).scalar_one_or_none()
         if row is None:
-            return v1._deny(v1.HTTP_NOT_FOUND, "ownership challenge not found")
-        claim, error = v1._verify_control_challenge_record(s, user, row)
+            return common.deny(common.HTTP_NOT_FOUND, "ownership challenge not found")
+        claim, error = common.verify_control_challenge_record(s, user, row)
         if error is not None:
             return error
         assert claim is not None  # noqa: S101 - helper returned no error
         payload = challenge_payload(row)
-        claim_data = v1._claim_payload(claim)
+        claim_data = common.claim_payload(claim)
     return jsonify({"ok": True, "challenge": payload, "claim": claim_data})
 
 
@@ -138,32 +139,32 @@ def v1_toolinfo_signing_payload() -> Response:
     """Return the canonical toolinfo bytes that a registered key should sign."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    body, bad = v1._json_object_body()
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    body, bad = common.json_object_body()
     if bad is not None:
         return bad
-    assert body is not None  # noqa: S101 — v1._json_object_body returned no error
-    key_id = v1._clean_author_key_id(v1._payload_value(body, "keyId", "key_id"))
+    assert body is not None  # noqa: S101 — common.json_object_body returned no error
+    key_id = common.clean_author_key_id(common.payload_value(body, "keyId", "key_id"))
     if key_id is None:
-        return v1._bad("choose a registered key id")
-    toolinfo = _toolinfo_body(v1._payload_value(body, "toolinfo"))
+        return common.bad("choose a registered key id")
+    toolinfo = _toolinfo_body(common.payload_value(body, "toolinfo"))
     if toolinfo is None:
-        return v1._bad("toolinfo must be one JSON object with a valid name")
+        return common.bad("toolinfo must be one JSON object with a valid name")
     with db.session_scope() as s:
         key = s.execute(
             select(ToolAuthorKey).where(
-                v1._author_key_owned_by(user),
+                common.author_key_owned_by(user),
                 ToolAuthorKey.key_id == key_id,
                 ToolAuthorKey.revoked_at.is_(None),
             )
         ).scalar_one_or_none()
         if key is None:
-            return v1._deny(v1.HTTP_NOT_FOUND, "active public key not found")
+            return common.deny(common.HTTP_NOT_FOUND, "active public key not found")
     canonical_payload = canonical_toolinfo_string(toolinfo)
     signature_metadata = _signature_metadata(key_id)
     return jsonify(
         {
-            "toolName": v1._clean_name(toolinfo.get("name")),
+            "toolName": common.clean_name(toolinfo.get("name")),
             "keyId": key_id,
             "algorithm": "ed25519",
             "signatureField": SIGNATURE_META_KEY,

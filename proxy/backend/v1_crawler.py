@@ -14,8 +14,8 @@ from backend import (
     authz,
     db,
     toolinfo_discovery,
-    v1,
 )
+from backend import v1_common as common
 from backend.models import (
     CrawlerRun,
 )
@@ -32,15 +32,15 @@ v1_crawler_bp = Blueprint("v1_crawler", __name__)
 @write_guard
 def discover_toolinfo_url() -> Response:
     """Find a toolinfo.json URL from a tool homepage/root URL."""
-    value, err = v1._json_object_body()
+    value, err = common.json_object_body()
     if err is not None:
         return err
     assert value is not None  # noqa: S101 - err covers non-dict bodies
-    raw_url = v1._payload_value(value, "url", "baseUrl")
-    error = v1._url_validation_message(raw_url, label="tool URL")
+    raw_url = common.payload_value(value, "url", "baseUrl")
+    error = common.url_validation_message(raw_url, label="tool URL")
     if error is not None:
-        return v1._url_validation_bad("url", error)
-    v1._require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
+        return common.url_validation_bad("url", error)
+    common.require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
     return jsonify(toolinfo_discovery.discover_toolinfo_url(str(raw_url)))
 
 
@@ -52,8 +52,8 @@ def v1_crawler_runs() -> Response:
         runs = [
             {
                 "id": row.id,
-                "startedAt": v1._iso(row.started_at),
-                "endedAt": v1._iso(row.ended_at),
+                "startedAt": common.iso(row.started_at),
+                "endedAt": common.iso(row.ended_at),
                 "urlsCount": row.urls_count,
                 "added": row.added,
                 "updated": row.updated,

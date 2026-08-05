@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
+import backend.v1_common as v1_common_api  # noqa: E402
 import backend.v1_me as v1_me_api  # noqa: E402
 import backend.v1_write as v1_write_api  # noqa: E402
 from backend import (  # noqa: E402
@@ -93,12 +94,14 @@ from backend.models import (  # noqa: E402
 )
 from backend.v1 import (  # noqa: E402
     FEED_KEEP_CAP,
-    _invalidate_official_api_cache,
-    _iso,
-    _merged_maps,
-    _parse_iso,
-    _parse_optional_iso,
-    _string_payload_value,
+)
+from backend.v1_common import (  # noqa: E402
+    invalidate_official_api_cache,
+    iso,
+    merged_maps,
+    parse_iso,
+    parse_optional_iso,
+    string_payload_value,
 )
 from backend.v1_me import (  # noqa: E402
     _toolhub_author_names,
@@ -1121,13 +1124,13 @@ def test_official_cache_invalidation_helper_handles_edge_paths(monkeypatch):
     monkeypatch.setattr(api_cache, "invalidate_list", lambda ident: calls.append(("list", ident)))
     monkeypatch.setattr(api_cache, "invalidate_list_collection", lambda: calls.append(("lists", "*")))
 
-    assert _string_payload_value("not-json", "name") is None
-    assert _string_payload_value({"id": None, "name": " from-request "}, "id", "name") == "from-request"
-    assert _string_payload_value({"id": "", "name": "from-empty-fallback"}, "id", "name") == "from-empty-fallback"
-    _invalidate_official_api_cache("/not-api", None, None)
-    _invalidate_official_api_cache("/api/tools/", {}, {})
-    _invalidate_official_api_cache("/api/tools/", {"name": "from-request"}, ["not-a-dict"])
-    _invalidate_official_api_cache("/api/lists/", {}, {})
+    assert string_payload_value("not-json", "name") is None
+    assert string_payload_value({"id": None, "name": " from-request "}, "id", "name") == "from-request"
+    assert string_payload_value({"id": "", "name": "from-empty-fallback"}, "id", "name") == "from-empty-fallback"
+    invalidate_official_api_cache("/not-api", None, None)
+    invalidate_official_api_cache("/api/tools/", {}, {})
+    invalidate_official_api_cache("/api/tools/", {"name": "from-request"}, ["not-a-dict"])
+    invalidate_official_api_cache("/api/lists/", {}, {})
 
     assert calls == [("tool", "from-request"), ("lists", "*")]
 
@@ -1332,7 +1335,7 @@ def test_claim_payload_marks_expired_verified_claims_stale(client):
 def test_toolinfo_control_challenge_requires_published_token_before_claiming(client, monkeypatch):
     uid = add_user(username="Ada")
     sign_in(client, uid)
-    monkeypatch.setattr(v1_api, "fetch_matching_item", lambda _url, name: {"name": name})
+    monkeypatch.setattr(v1_common_api, "fetch_matching_item", lambda _url, name: {"name": name})
     created = client.post(
         "/v1/toolinfo/ownership-challenges/",
         json={"toolName": "ada-tool", "toolinfoUrl": "https://example.org/toolinfo.json"},
@@ -1353,7 +1356,7 @@ def test_toolinfo_control_challenge_requires_published_token_before_claiming(cli
     assert "challenge" in missing.get_json()["error"]
 
     monkeypatch.setattr(
-        v1_api,
+        v1_common_api,
         "fetch_matching_item",
         lambda _url, name: {
             "name": name,
@@ -1624,8 +1627,8 @@ def test_successful_toolhub_write_provider_errors_are_non_fatal(client, monkeypa
         def record_success(self, *args, **kwargs):
             raise RuntimeError("claim storage down")
 
-    monkeypatch.setattr(v1_api, "TOOLHUB_WRITE_PROVIDER", RaisingProvider())
-    v1_api._record_successful_toolhub_write(  # noqa: SLF001 - tests private non-fatal side effect
+    monkeypatch.setattr(v1_common_api, "TOOLHUB_WRITE_PROVIDER", RaisingProvider())
+    v1_common_api.record_successful_toolhub_write(  # noqa: SLF001 - tests private non-fatal side effect
         User(id=1, wm_sub="1", username="Ada"),
         "POST",
         "/api/tools/",
@@ -2375,7 +2378,7 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
     assert pending["results"] == {}
     assert pending["cacheMeta"]["ada-tool"]["status"] == "pending"
 
-    tool_summaries.refresh(["ada-tool"], v1_api._build_local_tool_summary)  # noqa: SLF001 - background worker's job
+    tool_summaries.refresh(["ada-tool"], v1_common_api.build_local_tool_summary)  # noqa: SLF001 - background worker's job
     data = client.get("/v1/tools/summaries/?name=ada-tool").get_json()
     summary = data["results"]["ada-tool"]
 
@@ -2415,7 +2418,7 @@ def test_tool_summaries_endpoint_reuses_materialized_read_model(client, monkeypa
             "syncStatus": sync.SYNC_EVOLVED_REAL,
         }
 
-    monkeypatch.setattr(v1_api, "_build_local_tool_summary", build_summary)
+    monkeypatch.setattr(v1_common_api, "build_local_tool_summary", build_summary)
 
     first = client.get("/v1/tools/summaries/?name=cached-tool")
     # Nothing is materialized on the read path, so the first response builds nothing.
@@ -2842,7 +2845,7 @@ def test_graph_payload_worker_cache_bounds_and_refresh_guards(client, monkeypatc
 
 
 def test_latest_public_health_core_query_uses_mariadb_portable_null_ordering():
-    compiled = str(v1_api._latest_public_health_core_statement("ada-tool").compile(dialect=mysql.dialect()))
+    compiled = str(v1_common_api.latest_public_health_core_statement("ada-tool").compile(dialect=mysql.dialect()))
 
     assert "NULLS LAST" not in compiled.upper()
     assert "source_analysis_reports.reviewed_at IS NULL" in compiled
@@ -3508,7 +3511,7 @@ def test_toolforge_membership_candidate_fetch_handles_invalid_and_failed_toolhub
             raise toolhub.ToolhubAPIError(404, {"message": "missing"})
         raise AssertionError(name)
 
-    monkeypatch.setattr(v1_api, "_toolhub_tool_detail", fake_detail)
+    monkeypatch.setattr(v1_common_api, "toolhub_tool_detail", fake_detail)
     candidates, errors, names = v1_me_api._candidate_tools_for_toolforge_memberships("Schiste")
     assert candidates == {}
     assert names == ["invalid", "busy", "down", "missing"]
@@ -4185,17 +4188,17 @@ def test_crawler_runs_and_user_data_controls(client):
 
 
 def test_iso_helpers():
-    assert _iso(None) == ""
-    assert _iso(utcnow()).endswith("Z")
-    assert _parse_iso("2026-07-25T10:00:00+02:00").hour == 8  # aware → UTC naive
-    assert _parse_iso("2026-07-25T10:00:00").hour == 10  # naive kept
-    assert _parse_iso(None).year >= 2026  # invalid → now
-    assert _parse_optional_iso("2026-07-25T10:00:00").hour == 10
+    assert iso(None) == ""
+    assert iso(utcnow()).endswith("Z")
+    assert parse_iso("2026-07-25T10:00:00+02:00").hour == 8  # aware → UTC naive
+    assert parse_iso("2026-07-25T10:00:00").hour == 10  # naive kept
+    assert parse_iso(None).year >= 2026  # invalid → now
+    assert parse_optional_iso("2026-07-25T10:00:00").hour == 10
 
 
 def test_merged_maps_handles_legacy_rows_and_missing_review_metadata():
     overlay = ToolOverlay(tool_name="patched", kind="edits", patch={"title": "Patched"}, review_status=None)
-    assert _merged_maps([overlay]) == {
+    assert merged_maps([overlay]) == {
         "patched": {"title": "Patched", "source": "local", "syncStatus": "local_draft", "syncLabel": "Local draft"}
     }
 
@@ -4203,7 +4206,7 @@ def test_merged_maps_handles_legacy_rows_and_missing_review_metadata():
         tool_name = "legacy"
         record = {"title": "Legacy"}
 
-    assert _merged_maps([LegacyRow()]) == {"legacy": {"title": "Legacy"}}
+    assert merged_maps([LegacyRow()]) == {"legacy": {"title": "Legacy"}}
 
 
 def test_overlay_hides_foreign_write_diagnostics_but_keeps_them_for_owner(client):
@@ -5190,7 +5193,7 @@ def test_official_bridge_routes_forward_all_write_paths(client, monkeypatch):
         ),
         ("DELETE", "/v1/toolhub/crawler/urls/9/", None, "DELETE", "/api/crawler/urls/9/"),
     ]
-    for method, path, payload, _upstream_method, _upstream_path in cases:
+    for method, path, payload, _upstream_method, upstream_path in cases:
         resp = client.open(method=method, path=path, json=payload, headers={"X-CSRF-Token": "tok"})
         assert resp.status_code == 200
     assert [(method, url.removeprefix("https://toolhub.wikimedia.org")) for method, url, _json in calls] == [

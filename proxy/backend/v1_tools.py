@@ -23,6 +23,7 @@ from backend import (
     toolhub,
     v1,
 )
+from backend import v1_common as common
 from backend.author_claims import (
     DISPLAY_NAME_CLAIM_TTL,
     author_names_from_toolhub_tool,
@@ -69,7 +70,7 @@ v1_tools_bp = Blueprint("v1_tools", __name__)
 
 
 def _is_http_url(value: Any) -> bool:  # noqa: ANN401
-    return isinstance(value, str) and value.startswith(("http://", "https://")) and len(value) <= v1.MAX_URL
+    return isinstance(value, str) and value.startswith(("http://", "https://")) and len(value) <= common.MAX_URL
 
 
 def _claim_options(s: Any, user: User, tool: dict) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session
@@ -81,13 +82,13 @@ def _claim_options(s: Any, user: User, tool: dict) -> dict[str, Any]:  # noqa: A
         s.execute(
             select(func.count())
             .select_from(ToolAuthorKey)
-            .where(v1._author_key_owned_by(user), ToolAuthorKey.revoked_at.is_(None))
+            .where(common.author_key_owned_by(user), ToolAuthorKey.revoked_at.is_(None))
         ).scalar_one()
     )
     claims = list(
         s.execute(
             select(ToolAuthorClaim)
-            .where(ToolAuthorClaim.tool_name == tool_name, v1._author_claim_owned_by(user))
+            .where(ToolAuthorClaim.tool_name == tool_name, common.author_claim_owned_by(user))
             .order_by(ToolAuthorClaim.created_at.desc(), ToolAuthorClaim.id.desc())
         ).scalars()
     )
@@ -131,7 +132,7 @@ def _claim_options(s: Any, user: User, tool: dict) -> dict[str, Any]:  # noqa: A
                 "requires": [],
             },
         ],
-        "claims": [v1._claim_payload(row) for row in claims],
+        "claims": [common.claim_payload(row) for row in claims],
         "canonicalAuthority": {"catalog": "toolhub", "claims": "toolhub-evolved"},
     }
 
@@ -142,15 +143,15 @@ def v1_tool_claim_options(name: str) -> Response:
     """Return proof methods and existing claims for one canonical Toolhub tool."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - login_required guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
-    tool, error = v1._claim_tool_or_error(name)
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    tool, error = common.claim_tool_or_error(name)
     if error is not None:
         return error
     assert tool is not None  # noqa: S101 - helper returned no error
     with db.session_scope() as s:
         stored_user = s.get(User, user.id)
         if stored_user is None:
-            return v1._deny(v1.HTTP_UNAUTHORIZED, "sign in required")
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
         return jsonify(_claim_options(s, stored_user, tool))
 
 
@@ -160,17 +161,19 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
     """Start or refresh one account-owned relationship proof workflow."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = v1._json_object_body()
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = common.json_object_body()
     if bad is not None:
         return bad
     assert body is not None  # noqa: S101 - body parser returned no error
-    method = str(v1._payload_value(body, "method") or "").strip()
+    method = str(common.payload_value(body, "method") or "").strip()
     if method not in v1.CLAIM_METHODS:
-        return v1._bad("unknown claim verification method")
+        return common.bad("unknown claim verification method")
     if method == AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS:
-        return v1._deny(v1.HTTP_CONFLICT, "Toolhub record authority is recorded automatically after an official write")
-    tool, error = v1._claim_tool_or_error(name)
+        return common.deny(
+            common.HTTP_CONFLICT, "Toolhub record authority is recorded automatically after an official write"
+        )
+    tool, error = common.claim_tool_or_error(name)
     if error is not None:
         return error
     assert tool is not None  # noqa: S101 - helper returned no error
@@ -180,13 +183,13 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
     with db.session_scope() as s:
         stored_user = s.get(User, user.id)
         if stored_user is None:
-            return v1._deny(v1.HTTP_UNAUTHORIZED, "sign in required")
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
         if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
             canonical_names = author_names_from_toolhub_tool(tool)
-            author_name = str(v1._payload_value(body, "authorName", "author_name") or "").strip()
+            author_name = str(common.payload_value(body, "authorName", "author_name") or "").strip()
             selected = next((value for value in canonical_names if value.casefold() == author_name.casefold()), None)
             if selected is None:
-                return v1._bad("authorName must be one of the names on the canonical Toolhub record")
+                return common.bad("authorName must be one of the names on the canonical Toolhub record")
             rows = [
                 record_author_claim(
                     s,
@@ -204,7 +207,7 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
         elif method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER:
             toolforge_names = toolforge_names_from_toolhub_tool(tool_name, tool)
             if not toolforge_names:
-                return v1._deny(v1.HTTP_CONFLICT, "this Toolhub record does not identify a Toolforge tool")
+                return common.deny(common.HTTP_CONFLICT, "this Toolhub record does not identify a Toolforge tool")
             memberships = {
                 value.casefold(): value for value in v1.TOOLFORGE_MEMBERSHIP_PROVIDER.tool_names(stored_user.username)
             }
@@ -224,8 +227,8 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
                     toolhub_tool=tool,
                 )
         elif method == AUTHOR_CLAIM_TOOLINFO_URL_CONTROL:
-            toolinfo_url = str(v1._payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
-            challenge, challenge_error = v1._create_control_challenge(s, stored_user, tool_name, toolinfo_url)
+            toolinfo_url = str(common.payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
+            challenge, challenge_error = common.create_control_challenge(s, stored_user, tool_name, toolinfo_url)
             if challenge_error is not None:
                 return challenge_error
             assert challenge is not None  # noqa: S101 - helper returned no error
@@ -244,20 +247,20 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
                 )
             ]
         elif method == AUTHOR_CLAIM_SIGNED_TOOLINFO:
-            toolinfo_url = str(v1._payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
-            url_error = v1._url_validation_message(toolinfo_url, label="toolinfo URL")
+            toolinfo_url = str(common.payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
+            url_error = common.url_validation_message(toolinfo_url, label="toolinfo URL")
             if url_error is not None:
-                return v1._url_validation_bad("toolinfoUrl", url_error)
+                return common.url_validation_bad("toolinfoUrl", url_error)
             try:
                 item = fetch_matching_item(toolinfo_url, tool_name)
             except Exception as exc:  # noqa: BLE001 - normalize bounded external proof failures
-                return v1._bad(f"Could not read signed toolinfo: {clean_error(str(exc)) or 'fetch failed'}")
+                return common.bad(f"Could not read signed toolinfo: {clean_error(str(exc)) or 'fetch failed'}")
             rows = v1.SIGNED_TOOLINFO_PROVIDER.verify(s, stored_user, toolinfo=item, evidence_url=toolinfo_url)
             if not rows:
-                return v1._bad("the matching toolinfo item has no supported signature metadata")
+                return common.bad("the matching toolinfo item has no supported signature metadata")
         s.flush()
         maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name], user_ids=[stored_user.id])
-        payload = [v1._claim_payload(row) for row in rows]
+        payload = [common.claim_payload(row) for row in rows]
         challenge_data = challenge_payload(challenge) if challenge is not None else None
     response = jsonify({"ok": True, "claims": payload, "challenge": challenge_data})
     response.status_code = 201
@@ -267,18 +270,18 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
 @v1_tools_bp.route("/v1/tools/summaries/")
 def v1_tool_summaries() -> Response:
     """Return local Evolved health and maintainer summaries for visible tools."""
-    names = v1._tool_names_from_request()
+    names = common.tool_names_from_request()
     if not names:
-        return v1._public_json_response(
+        return common.public_json_response(
             {"count": 0, "results": {}, "cacheMeta": {}, "source": SOURCE_LOCAL, "syncStatus": SYNC_EVOLVED_REAL}
         )
     # Cards ask for the projected view; the tool detail page omits it and gets
     # the whole record.
     view = request.args.get("view") or tool_summaries.VIEW_FULL
     if view not in tool_summaries.VIEWS:
-        return v1._deny(v1.HTTP_BAD_REQUEST, "unknown summary view")
-    read = tool_summaries.summaries_for(names, v1._build_local_tool_summary, view=view)
-    return v1._public_json_response(
+        return common.deny(common.HTTP_BAD_REQUEST, "unknown summary view")
+    read = tool_summaries.summaries_for(names, common.build_local_tool_summary, view=view)
+    return common.public_json_response(
         {
             "count": len(read.results),
             "results": read.results,
@@ -300,9 +303,9 @@ def v1_tool_summaries() -> Response:
 @v1_tools_bp.route("/v1/tools/<name>/signals/")
 def v1_tool_signals(name: str) -> Response:
     """Real Evolved-owned signal summary for one tool."""
-    clean_name = v1._clean_name(name)
+    clean_name = common.clean_name(name)
     if clean_name is None:
-        return v1._bad("tool name is required")
+        return common.bad("tool name is required")
     since = (utcnow() - timedelta(days=30)).date().isoformat()
     uid = current_user_id()
     with db.session_scope() as s:
@@ -344,27 +347,27 @@ def v1_tool_signals(name: str) -> Response:
         {
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+            "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
             "thanks": {
                 "count": int(thanks_count),
                 "userThanked": user_thanked,
                 "syncStatus": SYNC_EVOLVED_REAL,
-                "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+                "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
             },
             "usage30d": {
                 "count": int(events_30d),
                 "label": "30-day Evolved usage",
                 "syncStatus": SYNC_EVOLVED_REAL,
-                "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+                "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
             },
             "health": {
                 "status": health.last_status if health and health.last_status else "unknown",
-                "checkedAt": v1._iso(health.last_checked_at) if health else "",
+                "checkedAt": common.iso(health.last_checked_at) if health else "",
                 "targetUrl": health.target_url if health else "",
                 "lastError": health.last_error if health else "",
                 "reviewStatus": clean_review_status(health.review_status, REVIEW_APPROVED) if health else "",
                 "syncStatus": SYNC_EVOLVED_REAL,
-                "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+                "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
             },
         }
     )
@@ -376,12 +379,12 @@ def v1_tool_event(name: str) -> Response:
     """Record one privacy-limited Evolved interaction event."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    v1._require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    clean_name = v1._clean_name(name)
+    common.require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    clean_name = common.clean_name(name)
     value = request.get_json(silent=True) or {}
     event_type = value.get("eventType") if isinstance(value, dict) else None
     if clean_name is None or event_type not in v1.EVENT_TYPES:
-        return v1._bad("eventType must be one of view, launch, save, list_add")
+        return common.bad("eventType must be one of view, launch, save, list_add")
     now = utcnow()
     with db.session_scope() as s:
         s.add(
@@ -405,12 +408,12 @@ def v1_tool_thanks(name: str) -> Response:
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
     if request.method == "POST":
-        v1._require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+        common.require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
     else:
-        v1._require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
-    clean_name = v1._clean_name(name)
+        common.require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
+    clean_name = common.clean_name(name)
     if clean_name is None:
-        return v1._bad("tool name is required")
+        return common.bad("tool name is required")
     with db.session_scope() as s:
         row = s.execute(
             select(ToolThanks).where(ToolThanks.tool_name == clean_name, ToolThanks.user_id == uid)
@@ -435,7 +438,7 @@ def v1_tool_thanks(name: str) -> Response:
             "ok": True,
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+            "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
         }
     )
 
@@ -446,12 +449,12 @@ def v1_tool_health_target(name: str) -> Response:
     """Store the caller's Evolved health target URL for a tool."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    v1._require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
-    clean_name = v1._clean_name(name)
+    common.require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    clean_name = common.clean_name(name)
     value = request.get_json(silent=True) or {}
     target_url = value.get("url") if isinstance(value, dict) else None
     if clean_name is None or not _is_http_url(target_url):
-        return v1._bad("health target needs an http(s) url")
+        return common.bad("health target needs an http(s) url")
     with db.session_scope() as s:
         row = s.execute(
             select(ToolHealthTarget).where(
@@ -463,23 +466,23 @@ def v1_tool_health_target(name: str) -> Response:
             row = ToolHealthTarget(
                 tool_name=clean_name,
                 created_by_user_id=uid,
-                target_url=target_url[: v1.MAX_URL],
+                target_url=target_url[: common.MAX_URL],
                 source=SOURCE_LOCAL,
                 sync_status=SYNC_EVOLVED_REAL,
                 review_status=REVIEW_PENDING,
             )
             s.add(row)
         else:
-            if row.target_url != target_url[: v1.MAX_URL]:
+            if row.target_url != target_url[: common.MAX_URL]:
                 row.review_status = REVIEW_PENDING
-            row.target_url = target_url[: v1.MAX_URL]
+            row.target_url = target_url[: common.MAX_URL]
             row.source = SOURCE_LOCAL
             row.sync_status = SYNC_EVOLVED_REAL
             row.enabled = True
             row.deleted_at = None
             row.last_error = None
         s.flush()
-        payload = v1._health_target_payload(row)
+        payload = common.health_target_payload(row)
     return jsonify({"ok": True, "healthTarget": payload})
 
 
@@ -498,7 +501,7 @@ def _tool_media_get(clean_name: str) -> Response:
                 .limit(12)
             ).scalars()
         )
-    return jsonify({"count": len(rows), "results": [v1._media_payload(row) for row in rows]})
+    return jsonify({"count": len(rows), "results": [common.media_payload(row) for row in rows]})
 
 
 def _tool_media_post(clean_name: str) -> Response:
@@ -506,31 +509,31 @@ def _tool_media_post(clean_name: str) -> Response:
     guard = write_guard(lambda: None)()
     if guard is not None:
         return guard
-    user = v1._require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+    user = common.require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
     uid = user.id
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
-        return v1._bad("media body must be a JSON object")
+        return common.bad("media body must be a JSON object")
     media_url = value.get("url")
     license_id = str(value.get("license") or "").strip()
     source = str(value.get("source") or "").strip()
     if not (_is_http_url(media_url) and license_id and source):
-        return v1._bad("media needs url, license, and source")
+        return common.bad("media needs url, license, and source")
     with db.session_scope() as s:
         row = ToolMedia(
             tool_name=clean_name,
             user_id=uid,
             created_by_user_id=uid,
-            url=str(media_url)[: v1.MAX_URL],
-            title=str(value.get("title") or "")[: v1.MAX_NAME],
-            license=license_id[: v1.MAX_NAME],
-            source=source[: v1.MAX_URL],
+            url=str(media_url)[: common.MAX_URL],
+            title=str(value.get("title") or "")[: common.MAX_NAME],
+            license=license_id[: common.MAX_NAME],
+            source=source[: common.MAX_URL],
             review_status=REVIEW_PENDING,
             sync_status=SYNC_EVOLVED_REAL,
         )
         s.add(row)
         s.flush()
-        payload = v1._media_payload(row)
+        payload = common.media_payload(row)
     return jsonify({"ok": True, "media": payload})
 
 
@@ -542,9 +545,9 @@ def v1_tool_media(name: str) -> Response:
     itself inside _tool_media_post. An audit that reads decorators alone will
     score this route as an unauthenticated write, so check there before believing it.
     """
-    clean_name = v1._clean_name(name)
+    clean_name = common.clean_name(name)
     if clean_name is None:
-        return v1._bad("tool name is required")
+        return common.bad("tool name is required")
     if request.method == "GET":
         return _tool_media_get(clean_name)
     return _tool_media_post(clean_name)

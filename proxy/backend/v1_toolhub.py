@@ -14,6 +14,7 @@ from backend import (
     toolhub,
     v1,
 )
+from backend import v1_common as common
 from backend.security import write_guard
 
 v1_toolhub_bp = Blueprint("v1_toolhub", __name__)
@@ -21,13 +22,13 @@ v1_toolhub_bp = Blueprint("v1_toolhub", __name__)
 
 def _official_response(method: str, path: str, payload: object | None = None) -> Response:
     """Call official Toolhub as the current user and normalize failures."""
-    user = v1._require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
+    user = common.require_policy_or_abort(authz.ACTION_TOOLHUB_WRITE)
     try:
         body, status = toolhub.api_request(user.id, method, path, json=payload)
     except ValueError:
         # toolhub.api_path refused the path (outside /api/, or a dot segment that
         # urllib3 would normalize into an escape). Nothing left the process.
-        return v1._bad("invalid official Toolhub path")
+        return common.bad("invalid official Toolhub path")
     except toolhub.ToolhubAuthError as exc:
         resp = jsonify({"error": str(exc), "reauth": True})
         resp.status_code = 401
@@ -42,8 +43,8 @@ def _official_response(method: str, path: str, payload: object | None = None) ->
         resp = jsonify({"error": "official Toolhub is unavailable"})
         resp.status_code = 502
         return resp
-    v1._invalidate_official_api_cache(path, payload, body)
-    v1._record_successful_toolhub_write(user, method, path, payload, body)
+    common.invalidate_official_api_cache(path, payload, body)
+    common.record_successful_toolhub_write(user, method, path, payload, body)
     if status == v1.HTTP_NO_CONTENT:
         return jsonify({"ok": True})
     resp = jsonify({"ok": True, "toolhub": body})
@@ -55,7 +56,7 @@ def _official_json_response(method: str, path: str) -> Response:
     """Parse a JSON object body and forward it to official Toolhub."""
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
-        return v1._bad("body must be a JSON object")
+        return common.bad("body must be a JSON object")
     return _official_response(method, path, value)
 
 
@@ -71,15 +72,15 @@ def official_tool_create() -> Response:
 def official_tool_update(name: str) -> Response:
     """Update or delete an official Toolhub tool."""
     if request.method == "DELETE":
-        return _official_response("DELETE", v1._upstream_path(f"tools/{name}/"))
-    return _official_json_response("PUT", v1._upstream_path(f"tools/{name}/"))
+        return _official_response("DELETE", common.upstream_path(f"tools/{name}/"))
+    return _official_json_response("PUT", common.upstream_path(f"tools/{name}/"))
 
 
 @v1_toolhub_bp.route("/v1/toolhub/tools/<name>/annotations/", methods=["PUT"])
 @write_guard
 def official_annotations_update(name: str) -> Response:
     """Update official Toolhub annotations for a tool."""
-    return _official_json_response("PUT", v1._upstream_path(f"tools/{name}/annotations/"))
+    return _official_json_response("PUT", common.upstream_path(f"tools/{name}/annotations/"))
 
 
 @v1_toolhub_bp.route("/v1/toolhub/lists/", methods=["POST"])
@@ -94,8 +95,8 @@ def official_list_create() -> Response:
 def official_list_update(list_id: int) -> Response:
     """Update or delete an official Toolhub list."""
     if request.method == "DELETE":
-        return _official_response("DELETE", v1._upstream_path(f"lists/{list_id}/"))
-    return _official_json_response("PUT", v1._upstream_path(f"lists/{list_id}/"))
+        return _official_response("DELETE", common.upstream_path(f"lists/{list_id}/"))
+    return _official_json_response("PUT", common.upstream_path(f"lists/{list_id}/"))
 
 
 @v1_toolhub_bp.route("/v1/toolhub/user/favorites/", methods=["POST"])
@@ -109,7 +110,7 @@ def official_favorite_add() -> Response:
 @write_guard
 def official_favorite_delete(tool_name: str) -> Response:
     """Remove an official Toolhub favorite."""
-    return _official_response("DELETE", v1._upstream_path(f"user/favorites/{tool_name}/"))
+    return _official_response("DELETE", common.upstream_path(f"user/favorites/{tool_name}/"))
 
 
 @v1_toolhub_bp.route("/v1/toolhub/crawler/urls/", methods=["POST"])
@@ -123,4 +124,4 @@ def official_crawler_url_add() -> Response:
 @write_guard
 def official_crawler_url_delete(url_id: int) -> Response:
     """Unregister an official Toolhub crawler URL."""
-    return _official_response("DELETE", v1._upstream_path(f"crawler/urls/{url_id}/"))
+    return _official_response("DELETE", common.upstream_path(f"crawler/urls/{url_id}/"))

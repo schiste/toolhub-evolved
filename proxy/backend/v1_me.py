@@ -26,6 +26,7 @@ from backend import (
     user_tool_cache,
     v1,
 )
+from backend import v1_common as common
 from backend.author_claims import (
     author_names_from_toolhub_tool,
     claim_is_verified,
@@ -94,7 +95,7 @@ def _search_terms_for_user(username: str, claims: list[ToolAuthorClaim]) -> list
 
 def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> None:
     """Merge one official Toolhub search result into the candidate map."""
-    tool_name = v1._clean_name(row.get("name"))
+    tool_name = common.clean_name(row.get("name"))
     if tool_name is None:
         return
     author_names = _toolhub_author_names(row)
@@ -117,7 +118,7 @@ def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> No
 
 def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_name: str, username: str) -> None:
     """Merge one exact Toolforge-derived Toolhub tool into the candidate map."""
-    tool_name = v1._clean_name(row.get("name"))
+    tool_name = common.clean_name(row.get("name"))
     if tool_name is None:
         return
     entry = candidates.setdefault(
@@ -170,9 +171,9 @@ def _candidate_tools_for_toolforge_memberships(username: str) -> tuple[dict[str,
     for toolforge_name in toolforge_names:
         official_name = f"toolforge-{toolforge_name}"
         try:
-            row = v1._toolhub_tool_detail(official_name)
+            row = common.toolhub_tool_detail(official_name)
         except toolhub.ToolhubAPIError as exc:
-            if exc.status_code != v1.HTTP_NOT_FOUND:
+            if exc.status_code != common.HTTP_NOT_FOUND:
                 errors.append({"term": official_name, "status": exc.status_code, "details": exc.payload})
             continue
         except toolhub.requests.RequestException as exc:
@@ -263,12 +264,12 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
         rows = list(
             s.execute(
                 select(ToolAuthorClaim).where(
-                    v1._author_claim_owned_by(user),
+                    common.author_claim_owned_by(user),
                     ToolAuthorClaim.revoked_at.is_(None),
                 )
             ).scalars()
         )
-        payloads = [v1._claim_payload(row) for row in rows]
+        payloads = [common.claim_payload(row) for row in rows]
     # Refresh the derived maintainer/people index in its own transaction, and
     # never fail this read because of it. It rebuilds a tool's relationships by
     # deleting and re-inserting them, so two concurrent callers legitimately
@@ -292,16 +293,16 @@ def v1_me_claims() -> Response:
     """List relationship-claim workflow rows owned by the signed-in account."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 - login_required guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         rows = list(
             s.execute(
                 select(ToolAuthorClaim)
-                .where(v1._author_claim_owned_by(user))
+                .where(common.author_claim_owned_by(user))
                 .order_by(ToolAuthorClaim.updated_at.desc(), ToolAuthorClaim.id.desc())
             ).scalars()
         )
-        return jsonify({"claims": [v1._claim_payload(row) for row in rows]})
+        return jsonify({"claims": [common.claim_payload(row) for row in rows]})
 
 
 def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
@@ -310,7 +311,7 @@ def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str,
         stored_claims = list(
             s.execute(
                 select(ToolAuthorClaim).where(
-                    v1._author_claim_owned_by(user),
+                    common.author_claim_owned_by(user),
                     ToolAuthorClaim.revoked_at.is_(None),
                 )
             ).scalars()
@@ -410,12 +411,12 @@ def _me_tools_summaries(payload: dict[str, Any]) -> dict[str, Any]:
             name = tool.get("name") if isinstance(tool, dict) else None
             if isinstance(name, str) and name and name not in names:
                 names.append(name)
-            if len(names) >= v1._ME_TOOLS_SUMMARY_LIMIT:
+            if len(names) >= common.ME_TOOLS_SUMMARY_LIMIT:
                 break
     if not names:
         return {}
     return tool_summaries.summaries_for(
-        names, v1._build_local_tool_summary, refresh_stale=False, view=tool_summaries.VIEW_CARD
+        names, common.build_local_tool_summary, refresh_stale=False, view=tool_summaries.VIEW_CARD
     ).results
 
 
@@ -434,11 +435,11 @@ def v1_me_tools() -> Response:
     """Read the private local replica, refreshing it only when stale or absent."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     cached = user_tool_cache.read(uid)
     if cached is not None:
         if cached.metadata["status"] == "stale":
-            app = current_app._get_current_object()
+            app = current_app._get_current_object()  # noqa: SLF001 - detach Flask app from LocalProxy for worker
             user_tool_cache.queue_refresh(uid, lambda user_id: _refresh_me_tools_cache(app, user_id))
             cached.metadata["refresh"] = "queued"
         return _private_resolver_response(cached.payload, cached.metadata)
@@ -461,7 +462,7 @@ def v1_me_tools() -> Response:
         cached = user_tool_cache.read(uid)
         if cached is not None:
             if cached.metadata["status"] == "stale":
-                app = current_app._get_current_object()
+                app = current_app._get_current_object()  # noqa: SLF001 - detach Flask app from LocalProxy for worker
                 user_tool_cache.queue_refresh(uid, lambda user_id: _refresh_me_tools_cache(app, user_id))
                 cached.metadata["refresh"] = "queued"
             return _private_resolver_response(cached.payload, cached.metadata)
@@ -492,9 +493,9 @@ def v1_me_profile_get() -> Response:
     with db.session_scope() as s:
         user = s.get(User, uid)
         if user is None:
-            return v1._deny(v1.HTTP_UNAUTHORIZED, "sign in required")
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
         person = people_index.link_user(s, user)
-        return jsonify({"profile": v1._profile_payload(s.get(PersonProfile, person.id), person)})
+        return jsonify({"profile": common.profile_payload(s.get(PersonProfile, person.id), person)})
 
 
 @v1_me_bp.route("/v1/me/profile/", methods=["PUT"])
@@ -506,12 +507,12 @@ def v1_me_profile_put() -> Response:
     with db.session_scope() as s:
         user = s.get(User, uid)
         if user is None:
-            return v1._deny(v1.HTTP_UNAUTHORIZED, "sign in required")
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
         person = people_index.link_user(s, user)
         profile = s.get(PersonProfile, person.id)
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
-            return v1._bad("JSON object required")
+            return common.bad("JSON object required")
         if profile is None:
             profile = PersonProfile(person_id=person.id)
             s.add(profile)
@@ -524,4 +525,4 @@ def v1_me_profile_put() -> Response:
         profile.visibility = "private" if payload.get("visibility") == "private" else "public"
         profile.updated_at = utcnow()
         s.flush()
-        return jsonify({"profile": v1._profile_payload(profile, person)})
+        return jsonify({"profile": common.profile_payload(profile, person)})

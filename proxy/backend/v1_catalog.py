@@ -14,8 +14,8 @@ from backend import (
     catalog_projection,
     db,
     tool_assets,
-    v1,
 )
+from backend import v1_common as common
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
@@ -36,8 +36,8 @@ def v1_catalog_tool_projection(name: str) -> Response:
     """Return one public Evolved projection with field-level evidence."""
     payload = catalog_projection.projection_payload(name)
     if payload is None:
-        return v1._deny(v1.HTTP_NOT_FOUND, "catalog projection not found")
-    return v1._public_json_response(payload)
+        return common.deny(common.HTTP_NOT_FOUND, "catalog projection not found")
+    return common.public_json_response(payload)
 
 
 @v1_catalog_bp.route("/v1/catalog/tools/<name>/icon/")
@@ -45,7 +45,7 @@ def v1_catalog_tool_icon(name: str) -> Response:
     """Serve a previously validated icon; never fetch on this read path."""
     asset = tool_assets.cached_asset(name)
     if asset is None:
-        return v1._deny(v1.HTTP_NOT_FOUND, "cached icon not found")
+        return common.deny(common.HTTP_NOT_FOUND, "cached icon not found")
     body, content_type, digest = asset
     etag = f'"{digest}"'
     headers = {
@@ -65,32 +65,32 @@ def v1_catalog_curation(curation_id: int) -> Response:
     with db.session_scope() as s:
         row = s.get(CatalogCuration, curation_id)
         if row is None or row.deleted_at is not None or row.review_status != REVIEW_APPROVED:
-            return v1._deny(v1.HTTP_NOT_FOUND, "catalog curation not found")
-        payload = v1._moderation_item("catalog-curations", row)["data"]
+            return common.deny(common.HTTP_NOT_FOUND, "catalog curation not found")
+        payload = common.moderation_item("catalog-curations", row)["data"]
         payload.pop("createdByUserId", None)
-    return v1._public_json_response(payload)
+    return common.public_json_response(payload)
 
 
 @v1_catalog_bp.route("/v1/catalog/tools/<name>/curations/", methods=["POST"])
 @write_guard
 def v1_catalog_curation_create(name: str) -> Response:
     """Create a bounded local correction proposal; canonical data is untouched."""
-    clean_name = v1._clean_name(name)
+    clean_name = common.clean_name(name)
     if clean_name is None:
-        return v1._bad("tool name is required")
+        return common.bad("tool name is required")
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
-        return v1._bad("curation body must be a JSON object")
+        return common.bad("curation body must be a JSON object")
     patch, errors = catalog_projection.validate_curation_patch(value.get("patch"))
     if errors:
-        return v1._bad("curation validation failed", errors)
+        return common.bad("curation validation failed", errors)
     rationale = " ".join(str(value.get("rationale") or "").split()).strip()[:2000]
     if not rationale:
-        return v1._bad("rationale is required", [{"field": "rationale", "message": "Explain the correction."}])
-    user = v1._require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
+        return common.bad("rationale is required", [{"field": "rationale", "message": "Explain the correction."}])
+    user = common.require_policy_or_abort(authz.ACTION_PUBLIC_WRITE)
     with db.session_scope() as s:
         if s.get(CanonicalToolCache, clean_name) is None:
-            return v1._deny(v1.HTTP_NOT_FOUND, "canonical tool not found")
+            return common.deny(common.HTTP_NOT_FOUND, "canonical tool not found")
         row = CatalogCuration(
             tool_name=clean_name,
             created_by_user_id=user.id,
@@ -100,8 +100,8 @@ def v1_catalog_curation_create(name: str) -> Response:
         )
         s.add(row)
         s.flush()
-        item = v1._moderation_item("catalog-curations", row)
-        v1._emit_structured_activity(
+        item = common.moderation_item("catalog-curations", row)
+        common.emit_structured_activity(
             s,
             user,
             action="catalog-curation-proposed",

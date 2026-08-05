@@ -13,8 +13,8 @@ from sqlalchemy import select
 from backend import (
     authz,
     db,
-    v1,
 )
+from backend import v1_common as common
 from backend.author_claims import (
     validate_ed25519_public_key,
 )
@@ -33,13 +33,13 @@ def v1_author_keys() -> Response:
     """List public keys registered by the signed-in Toolhub user."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — login_required guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
     with db.session_scope() as s:
         keys = [
-            v1._author_key_payload(row)
+            common.author_key_payload(row)
             for row in s.execute(
                 select(ToolAuthorKey)
-                .where(v1._author_key_owned_by(user))
+                .where(common.author_key_owned_by(user))
                 .order_by(ToolAuthorKey.revoked_at.is_not(None), ToolAuthorKey.created_at, ToolAuthorKey.id)
             ).scalars()
         ]
@@ -52,27 +52,27 @@ def v1_author_key_create() -> Response:
     """Register one public key for signed-toolinfo verification."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
-    body, bad = v1._json_object_body()
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_WRITE, authz.Resource(owner_user_id=uid))
+    body, bad = common.json_object_body()
     if bad is not None:
         return bad
-    assert body is not None  # noqa: S101 — v1._json_object_body returned no error
-    key_id = v1._clean_author_key_id(v1._payload_value(body, "keyId", "key_id"))
+    assert body is not None  # noqa: S101 — common.json_object_body returned no error
+    key_id = common.clean_author_key_id(common.payload_value(body, "keyId", "key_id"))
     if key_id is None:
-        return v1._bad("keyId must use 1-128 letters, digits, dots, colons, underscores or hyphens")
-    algorithm = str(v1._payload_value(body, "algorithm") or "ed25519").strip().lower()
+        return common.bad("keyId must use 1-128 letters, digits, dots, colons, underscores or hyphens")
+    algorithm = str(common.payload_value(body, "algorithm") or "ed25519").strip().lower()
     if algorithm != "ed25519":
-        return v1._bad("only ed25519 public keys are supported")
+        return common.bad("only ed25519 public keys are supported")
     try:
-        public_key = validate_ed25519_public_key(str(v1._payload_value(body, "publicKey", "public_key") or ""))
+        public_key = validate_ed25519_public_key(str(common.payload_value(body, "publicKey", "public_key") or ""))
     except (TypeError, ValueError) as exc:
-        return v1._bad(str(exc))
+        return common.bad(str(exc))
     with db.session_scope() as s:
         existing = s.execute(
-            select(ToolAuthorKey).where(v1._author_key_owned_by(user), ToolAuthorKey.key_id == key_id)
+            select(ToolAuthorKey).where(common.author_key_owned_by(user), ToolAuthorKey.key_id == key_id)
         ).scalar_one_or_none()
         if existing is not None:
-            return v1._deny(v1.HTTP_CONFLICT, "key id already exists")
+            return common.deny(common.HTTP_CONFLICT, "key id already exists")
         row = ToolAuthorKey(
             toolhub_username=user.username,
             user_id=user.id,
@@ -82,7 +82,7 @@ def v1_author_key_create() -> Response:
         )
         s.add(row)
         s.flush()
-        payload = v1._author_key_payload(row)
+        payload = common.author_key_payload(row)
     resp = jsonify({"ok": True, "key": payload})
     resp.status_code = 201
     return resp
@@ -94,20 +94,20 @@ def v1_author_key_revoke(key_id: str) -> Response:
     """Revoke one registered public key for the signed-in Toolhub user."""
     uid = current_user_id()
     assert uid is not None  # noqa: S101 — write_guard guarantees this
-    user = v1._require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
-    clean_key_id = v1._clean_author_key_id(key_id)
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
+    clean_key_id = common.clean_author_key_id(key_id)
     if clean_key_id is None:
-        return v1._bad("invalid key id")
+        return common.bad("invalid key id")
     with db.session_scope() as s:
         row = s.execute(
             select(ToolAuthorKey).where(
-                v1._author_key_owned_by(user),
+                common.author_key_owned_by(user),
                 ToolAuthorKey.key_id == clean_key_id,
             )
         ).scalar_one_or_none()
         if row is None:
-            return v1._deny(v1.HTTP_NOT_FOUND, "public key not found")
+            return common.deny(common.HTTP_NOT_FOUND, "public key not found")
         if row.revoked_at is None:
             row.revoked_at = utcnow()
-        payload = v1._author_key_payload(row)
+        payload = common.author_key_payload(row)
     return jsonify({"ok": True, "key": payload})

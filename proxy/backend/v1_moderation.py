@@ -18,6 +18,7 @@ from backend import (
     db,
     v1,
 )
+from backend import v1_common as common
 from backend.models import (
     CatalogCuration,
     ToolHealthTarget,
@@ -47,7 +48,7 @@ def _moderation_row_visible(kind: str, row: object | None) -> bool:
     if getattr(row, "deleted_at", None) is not None:
         return False
     if kind == "tool-records":
-        return getattr(row, "visibility", None) == v1.VISIBILITY_PUBLIC
+        return getattr(row, "visibility", None) == common.VISIBILITY_PUBLIC
     return True
 
 
@@ -55,11 +56,11 @@ def _moderation_row_visible(kind: str, row: object | None) -> bool:
 @login_required
 def v1_moderation_public_data() -> Response:
     """Return pending Evolved-owned public data for reviewer moderation."""
-    v1._require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
+    common.require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
     with db.session_scope() as s:
         items = [
             *[
-                v1._moderation_item("catalog-curations", row)
+                common.moderation_item("catalog-curations", row)
                 for row in s.execute(
                     select(CatalogCuration)
                     .where(CatalogCuration.deleted_at.is_(None), CatalogCuration.review_status == REVIEW_PENDING)
@@ -68,12 +69,12 @@ def v1_moderation_public_data() -> Response:
                 ).scalars()
             ],
             *[
-                v1._moderation_item("tool-records", row)
+                common.moderation_item("tool-records", row)
                 for row in s.execute(
                     select(ToolRecord)
                     .where(
                         ToolRecord.deleted_at.is_(None),
-                        ToolRecord.visibility == v1.VISIBILITY_PUBLIC,
+                        ToolRecord.visibility == common.VISIBILITY_PUBLIC,
                         ToolRecord.review_status == REVIEW_PENDING,
                     )
                     .order_by(ToolRecord.modified_at.desc(), ToolRecord.id.desc())
@@ -81,7 +82,7 @@ def v1_moderation_public_data() -> Response:
                 ).scalars()
             ],
             *[
-                v1._moderation_item("health-targets", row)
+                common.moderation_item("health-targets", row)
                 for row in s.execute(
                     select(ToolHealthTarget)
                     .where(ToolHealthTarget.deleted_at.is_(None), ToolHealthTarget.review_status == REVIEW_PENDING)
@@ -90,7 +91,7 @@ def v1_moderation_public_data() -> Response:
                 ).scalars()
             ],
             *[
-                v1._moderation_item("media", row)
+                common.moderation_item("media", row)
                 for row in s.execute(
                     select(ToolMedia)
                     .where(ToolMedia.deleted_at.is_(None), ToolMedia.review_status == REVIEW_PENDING)
@@ -99,7 +100,7 @@ def v1_moderation_public_data() -> Response:
                 ).scalars()
             ],
             *[
-                v1._moderation_item("thanks", row)
+                common.moderation_item("thanks", row)
                 for row in s.execute(
                     select(ToolThanks)
                     .where(ToolThanks.review_status == REVIEW_PENDING)
@@ -112,7 +113,7 @@ def v1_moderation_public_data() -> Response:
         {
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+            "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
             "count": len(items),
             "results": items,
         }
@@ -124,18 +125,18 @@ def v1_moderation_public_data() -> Response:
 def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
     """Apply reviewer moderation to one Evolved-owned public record."""
     if kind not in v1.MODERATION_KINDS:
-        return v1._deny(v1.HTTP_NOT_FOUND, "moderation record not found")
-    user = v1._require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
+        return common.deny(common.HTTP_NOT_FOUND, "moderation record not found")
+    user = common.require_policy_or_abort(authz.ACTION_PUBLIC_REVIEW)
     value = request.get_json(silent=True)
     if not isinstance(value, dict):
-        return v1._bad("moderation body must be a JSON object")
+        return common.bad("moderation body must be a JSON object")
     review_status = value.get("reviewStatus") or value.get("review_status")
     if review_status not in v1.PUBLIC_REVIEW_STATUSES:
-        return v1._bad("reviewStatus must be pending, approved, or rejected")
+        return common.bad("reviewStatus must be pending, approved, or rejected")
     with db.session_scope() as s:
         row = _moderation_row(s, kind, item_id)
         if not _moderation_row_visible(kind, row):
-            return v1._deny(v1.HTTP_NOT_FOUND, "moderation record not found")
+            return common.deny(common.HTTP_NOT_FOUND, "moderation record not found")
         assert row is not None  # noqa: S101 - visible check excludes None
         row.review_status = str(review_status)
         if isinstance(row, CatalogCuration):
@@ -147,15 +148,15 @@ def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
             row.source = SOURCE_LOCAL
             row.sync_status = SYNC_EVOLVED_REAL
             if review_status == REVIEW_APPROVED:
-                row.visibility = v1.VISIBILITY_PUBLIC
+                row.visibility = common.VISIBILITY_PUBLIC
         elif isinstance(row, ToolHealthTarget):
             row.source = SOURCE_LOCAL
             row.sync_status = SYNC_EVOLVED_REAL
         else:
             row.sync_status = SYNC_EVOLVED_REAL
         s.flush()
-        item = v1._moderation_item(kind, row)
-        v1._emit_structured_activity(
+        item = common.moderation_item(kind, row)
+        common.emit_structured_activity(
             s,
             user,
             action="public-data-reviewed",
@@ -172,7 +173,7 @@ def v1_moderation_public_data_update(kind: str, item_id: int) -> Response:
             "ok": True,
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
-            "syncLabel": v1._sync_label(SYNC_EVOLVED_REAL),
+            "syncLabel": common.sync_label(SYNC_EVOLVED_REAL),
             "item": item,
         }
     )

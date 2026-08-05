@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import activity_privacy, db, people_index  # noqa: E402
 from backend.models import ActivityRow, User  # noqa: E402
-from backend.v1 import _assemble_overlay  # noqa: E402, PLC2701 - integration coverage for the response assembler
+from backend.v1_common import assemble_overlay  # noqa: E402, PLC2701 - integration coverage for the response assembler
 
 
 def test_private_preference_activity_recognizes_backend_and_upstream_shapes() -> None:
@@ -69,7 +69,7 @@ def test_overlay_assembler_never_shares_another_users_favorite_activity() -> Non
             ]
         )
 
-    overlay = _assemble_overlay(viewer_id)
+    overlay = assemble_overlay(viewer_id)
 
     assert overlay["revisions"] == [{"content_type": "tool", "content_id": "public-tool"}]
 

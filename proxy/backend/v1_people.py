@@ -15,6 +15,7 @@ from backend import (
     security,
     v1,
 )
+from backend import v1_common as common
 from backend.sync import (
     SOURCE_LOCAL,
     SYNC_EVOLVED_REAL,
@@ -28,10 +29,10 @@ v1_people_bp = Blueprint("v1_people", __name__)
 def v1_tool_people(name: str) -> Response:
     """Read the local people projection for a canonical Toolhub tool."""
     if security.read_rate_limited(request.remote_addr):
-        return v1._deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
-    clean_name = v1._clean_name(name)
+        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+    clean_name = common.clean_name(name)
     if clean_name is None:
-        return v1._bad("tool name is required")
+        return common.bad("tool name is required")
     with db.session_scope() as s:
         return jsonify(people_index.public_people_summary(s, clean_name))
 
@@ -40,7 +41,7 @@ def v1_tool_people(name: str) -> Response:
 def v1_people() -> Response:
     """Search public Evolved people without treating handles as stable ids."""
     if security.read_rate_limited(request.remote_addr):
-        return v1._deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
     query = str(request.args.get("q") or "").strip()
     limit = min(max(clean_int(request.args.get("limit")) or 50, 1), 100)
     with db.session_scope() as s:
@@ -60,9 +61,9 @@ def v1_people() -> Response:
 def v1_person(public_id: str) -> Response:
     """Return one public person, profile, tools, roles, and contribution summary."""
     if security.read_rate_limited(request.remote_addr):
-        return v1._deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
     with db.session_scope() as s:
         payload = people_index.person_detail(s, public_id)
     if payload is None:
-        return v1._deny(v1.HTTP_NOT_FOUND, "person not found")
+        return common.deny(common.HTTP_NOT_FOUND, "person not found")
     return jsonify(payload)
