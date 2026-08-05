@@ -3,6 +3,7 @@
 
 import json
 import os
+from http import HTTPStatus
 from typing import Any
 
 import requests
@@ -16,7 +17,49 @@ MAX_BODY_CHARS = 50000
 
 
 class IssuePublishError(RuntimeError):
-    """A safe, user-facing failure from the GitHub Issues API."""
+    """A safe, user-facing failure from the GitHub Issues API.
+
+    The text is carried by the subclass rather than passed in at the raise
+    site, because it is not an internal detail: v1 returns `str(exc)` straight
+    to the caller, so each message is part of the API's contract and belongs
+    with the failure it describes.
+    """
+
+    message = "The issue could not be published."
+
+    def __init__(self) -> None:
+        """Raise with the subclass's message."""
+        super().__init__(self.message)
+
+
+class IssueNotConfiguredError(IssuePublishError):
+    """No GitHub token or repository is configured for this deployment."""
+
+    message = "Issue publishing is not configured."
+
+
+class IssueUnreachableError(IssuePublishError):
+    """The GitHub API could not be contacted at all."""
+
+    message = "GitHub could not be reached."
+
+
+class IssueRejectedError(IssuePublishError):
+    """GitHub answered, but did not create the issue."""
+
+    message = "GitHub did not accept the issue."
+
+
+class IssueUnreadableError(IssuePublishError):
+    """GitHub's response was not JSON."""
+
+    message = "GitHub returned an invalid issue response."
+
+
+class IssueIncompleteError(IssuePublishError):
+    """GitHub's response was JSON but lacked the issue number or URL."""
+
+    message = "GitHub returned an incomplete issue response."
 
 
 def repository() -> str:
@@ -66,7 +109,7 @@ def publish_issue(title: str, body: str) -> dict[str, Any]:
     """Create one issue through GitHub using the server-only configured token."""
     token = os.environ.get("TOOLHUB_GITHUB_TOKEN", "").strip()
     if not token or not repository():
-        raise IssuePublishError("Issue publishing is not configured.")
+        raise IssueNotConfiguredError
     url = f"{GITHUB_API}/repos/{repository()}/issues"
     payload: dict[str, Any] = {"title": title[:MAX_TITLE], "body": body[:MAX_BODY_CHARS]}
     labels = _labels()
@@ -85,15 +128,15 @@ def publish_issue(title: str, body: str) -> dict[str, Any]:
             timeout=15,
         )
     except requests.RequestException as exc:
-        raise IssuePublishError("GitHub could not be reached.") from exc
-    if response.status_code != 201:
-        raise IssuePublishError("GitHub did not accept the issue.")
+        raise IssueUnreachableError from exc
+    if response.status_code != HTTPStatus.CREATED:
+        raise IssueRejectedError
     try:
         result = response.json()
     except ValueError as exc:
-        raise IssuePublishError("GitHub returned an invalid issue response.") from exc
+        raise IssueUnreadableError from exc
     number = result.get("number")
     html_url = result.get("html_url")
     if not isinstance(number, int) or not isinstance(html_url, str):
-        raise IssuePublishError("GitHub returned an incomplete issue response.")
+        raise IssueIncompleteError
     return {"number": number, "url": html_url, "repository": repository()}
