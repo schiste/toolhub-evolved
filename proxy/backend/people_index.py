@@ -9,15 +9,17 @@ of those rows grant or replace upstream Toolhub permissions.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, timedelta
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from backend import people_policy
 from backend.models import (
     ActivityRow,
     CatalogCuration,
+    CatalogFacetValue,
     Person,
     PersonActivitySummary,
     PersonIdentifier,
@@ -63,6 +65,32 @@ RECENT_ACTIVITY_DAYS = 90
 ACTIVITY_STALE_DAYS = 1
 ACTIVE_CONTRIBUTION_DAYS = 30
 QUIET_CONTRIBUTION_DAYS = 180
+
+
+@dataclass(frozen=True)
+class PeopleDirectoryQuery:
+    """Validated directory query passed from the HTTP boundary."""
+
+    query: str = ""
+    page: int = 1
+    page_size: int = 24
+    role: str = ""
+    verification: str = ""
+    activity: str = ""
+    project: str = ""
+    ordering: str = "relevance"
+
+
+@dataclass(frozen=True)
+class UnresolvedAttributionQuery:
+    """Search parameters for labels that do not identify a public person."""
+
+    query: str = ""
+    page: int = 1
+    page_size: int = 10
+    role: str = ""
+    project: str = ""
+    tool_name: str = ""
 
 
 def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - upstream values are untrusted
@@ -656,8 +684,24 @@ def unresolved_attributions(
     tool_name: str = "",
 ) -> list[dict[str, Any]]:
     """Aggregate display-only relationship evidence without inventing people."""
-    clean_query = _clean(query)
-    clean_tool = _clean(tool_name)
+    return search_unresolved_attributions(
+        s,
+        UnresolvedAttributionQuery(
+            query=query,
+            page=1,
+            page_size=limit,
+            tool_name=tool_name,
+        ),
+    )["results"]
+
+
+def search_unresolved_attributions(
+    s: Session,
+    search: UnresolvedAttributionQuery,
+) -> dict[str, Any]:
+    """Search unresolved labels with totals independent from public people."""
+    clean_query = _clean(search.query)
+    clean_tool = _clean(search.tool_name)
     normalized_label = func.lower(Person.display_name)
     statement = (
         select(
@@ -672,13 +716,25 @@ def unresolved_attributions(
         .where(~_public_identity_clause(), Person.display_name != "")
         .group_by(normalized_label)
         .order_by(normalized_label)
-        .limit(max(1, min(limit, 100)))
     )
+    if search.project:
+        statement = statement.join(
+            CatalogFacetValue,
+            CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
+        ).where(
+            CatalogFacetValue.field == "wiki",
+            func.lower(CatalogFacetValue.value) == search.project.casefold(),
+        )
+    if search.role:
+        statement = statement.where(ToolPersonRelationship.relationship_type == search.role)
     if clean_query:
         statement = statement.where(normalized_label.like(f"%{clean_query.casefold()}%"))
     if clean_tool:
         statement = statement.where(ToolPersonRelationship.tool_name == clean_tool)
-    rows = list(s.execute(statement).all())
+    total = int(s.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0)
+    safe_page = max(1, search.page)
+    safe_page_size = max(1, min(search.page_size, 100))
+    rows = list(s.execute(statement.offset((safe_page - 1) * safe_page_size).limit(safe_page_size)).all())
     normalized_labels = {row.normalized_label for row in rows}
     roles_by_label: dict[str, set[str]] = {}
     if normalized_labels:
@@ -693,9 +749,19 @@ def unresolved_attributions(
         )
         if clean_tool:
             roles = roles.where(ToolPersonRelationship.tool_name == clean_tool)
+        if search.project:
+            roles = roles.join(
+                CatalogFacetValue,
+                CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
+            ).where(
+                CatalogFacetValue.field == "wiki",
+                func.lower(CatalogFacetValue.value) == search.project.casefold(),
+            )
+        if search.role:
+            roles = roles.where(ToolPersonRelationship.relationship_type == search.role)
         for label, role in s.execute(roles).all():
             roles_by_label.setdefault(label, set()).add(role)
-    return [
+    results = [
         {
             "label": row.label,
             "identityStatus": "unresolved_attribution",
@@ -709,6 +775,16 @@ def unresolved_attributions(
         }
         for row in rows
     ]
+    page_count = max(1, (total + safe_page_size - 1) // safe_page_size)
+    return {
+        "count": total,
+        "page": safe_page,
+        "pageSize": safe_page_size,
+        "pageCount": page_count,
+        "nextPage": safe_page + 1 if safe_page < page_count else None,
+        "previousPage": safe_page - 1 if safe_page > 1 else None,
+        "results": results,
+    }
 
 
 def _person_base_payload(
@@ -941,26 +1017,227 @@ def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
 
 
 def find_people(s: Session, query: str, *, limit: int = 50) -> list[dict[str, Any]]:
-    clean_query = _clean(query)
+    """Compatibility wrapper for callers that only need the first page."""
+    return search_people_directory(
+        s,
+        PeopleDirectoryQuery(query=query, page=1, page_size=limit),
+    )["results"]
+
+
+def _current_verified_clause(*, checked_at: datetime) -> Any:  # noqa: ANN401 - SQL expression
+    return and_(
+        ToolPersonRelationship.verification_status == AUTHOR_CLAIM_VERIFIED,
+        or_(
+            ToolPersonRelationship.expires_at.is_(None),
+            ToolPersonRelationship.expires_at > checked_at,
+        ),
+    )
+
+
+def _relationship_directory_filter(
+    *,
+    role: str,
+    verification: str,
+    project: str,
+    checked_at: datetime,
+) -> Any:  # noqa: ANN401 - correlated SQL expression
+    statement = select(ToolPersonRelationship.id).where(ToolPersonRelationship.person_id == Person.id)
+    if project:
+        statement = statement.join(
+            CatalogFacetValue,
+            CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
+        ).where(
+            CatalogFacetValue.field == "wiki",
+            func.lower(CatalogFacetValue.value) == project.casefold(),
+        )
+    if role:
+        statement = statement.where(ToolPersonRelationship.relationship_type == role)
+    if verification == "verified":
+        statement = statement.where(_current_verified_clause(checked_at=checked_at))
+    elif verification == "renewal_needed":
+        statement = statement.where(
+            or_(
+                ToolPersonRelationship.verification_status == AUTHOR_CLAIM_STALE,
+                and_(
+                    ToolPersonRelationship.verification_status == AUTHOR_CLAIM_VERIFIED,
+                    ToolPersonRelationship.expires_at.is_not(None),
+                    ToolPersonRelationship.expires_at <= checked_at,
+                ),
+            )
+        )
+    elif verification == "unverified":
+        statement = statement.where(
+            ToolPersonRelationship.verification_status.not_in((AUTHOR_CLAIM_VERIFIED, AUTHOR_CLAIM_STALE))
+        )
+    return statement.exists()
+
+
+def _directory_relationship_summaries(
+    s: Session,
+    person_ids: set[int],
+    *,
+    checked_at: datetime,
+) -> dict[int, dict[str, Any]]:
+    summaries: dict[int, dict[str, Any]] = {}
+    rows = s.execute(
+        select(ToolPersonRelationship).where(ToolPersonRelationship.person_id.in_(person_ids or {-1}))
+    ).scalars()
+    for row in rows:
+        summary = summaries.setdefault(
+            row.person_id,
+            {
+                "relationshipCount": 0,
+                "verifiedRelationshipCount": 0,
+                "evidenceCount": 0,
+                "bestConfidence": 0,
+                "types": set(),
+                "verifiedTypes": set(),
+            },
+        )
+        summary["relationshipCount"] += 1
+        summary["evidenceCount"] += row.evidence_count
+        summary["bestConfidence"] = max(summary["bestConfidence"], row.confidence)
+        summary["types"].add(row.relationship_type)
+        is_current_verified = row.verification_status == AUTHOR_CLAIM_VERIFIED and (
+            row.expires_at is None or row.expires_at > checked_at
+        )
+        if is_current_verified:
+            summary["verifiedRelationshipCount"] += 1
+            summary["verifiedTypes"].add(row.relationship_type)
+    for summary in summaries.values():
+        summary["types"] = [role for role in PUBLIC_ROLES if role in summary["types"]]
+        summary["verifiedTypes"] = [role for role in PUBLIC_ROLES if role in summary["verifiedTypes"]]
+    return summaries
+
+
+def search_people_directory(
+    s: Session,
+    search: PeopleDirectoryQuery,
+) -> dict[str, Any]:
+    """Search publishable people with stable ordering, filters, and real totals."""
+    clean_query = _clean(search.query)
+    normalized_query = _normalized(clean_query)
+    checked_at = utcnow()
     related_people = select(ToolPersonRelationship.person_id)
     profile_people = select(PersonProfile.person_id)
     statement = (
         select(Person)
+        .outerjoin(PersonActivitySummary, PersonActivitySummary.person_id == Person.id)
         .where(
             or_(Person.id.in_(related_people), Person.id.in_(profile_people)),
             _public_identity_clause(),
         )
-        .order_by(Person.display_name, Person.public_id)
-        .limit(max(1, min(limit, 100)))
     )
     if clean_query:
         matching_ids = select(PersonIdentifier.person_id).where(
-            PersonIdentifier.normalized_value.like(f"%{_normalized(clean_query)}%")
+            PersonIdentifier.is_current.is_(True),
+            PersonIdentifier.normalized_value.like(f"%{normalized_query}%"),
         )
         statement = statement.where(
             or_(func.lower(Person.display_name).like(f"%{clean_query.casefold()}%"), Person.id.in_(matching_ids))
         )
-    people = list(s.execute(statement).scalars())
+    if search.role or search.verification or search.project:
+        statement = statement.where(
+            _relationship_directory_filter(
+                role=search.role,
+                verification=search.verification,
+                project=search.project,
+                checked_at=checked_at,
+            )
+        )
+    if search.activity:
+        if search.activity == "unknown":
+            statement = statement.where(
+                or_(
+                    PersonActivitySummary.person_id.is_(None),
+                    PersonActivitySummary.activity_status == "unknown",
+                )
+            )
+        else:
+            statement = statement.where(PersonActivitySummary.activity_status == search.activity)
+
+    total = int(s.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0)
+    identity_rank = case(
+        (Person.identity_quality == IDENTIFIER_STABLE, 3),
+        (Person.identity_quality == IDENTIFIER_HANDLE, 2),
+        else_=1,
+    )
+    current_verified_confidence = (
+        select(func.max(ToolPersonRelationship.confidence))
+        .where(
+            ToolPersonRelationship.person_id == Person.id,
+            _current_verified_clause(checked_at=checked_at),
+        )
+        .correlate(Person)
+        .scalar_subquery()
+    )
+    name_order = (func.lower(Person.display_name), Person.public_id)
+    relationship_order = (
+        func.coalesce(PersonActivitySummary.verified_tool_count, 0).desc(),
+        func.coalesce(current_verified_confidence, 0).desc(),
+        func.coalesce(PersonActivitySummary.related_tool_count, 0).desc(),
+    )
+    activity_order = (
+        case((PersonActivitySummary.last_contribution_at.is_(None), 1), else_=0),
+        PersonActivitySummary.last_contribution_at.desc(),
+    )
+    if search.ordering == "name":
+        order = name_order
+    elif search.ordering == "recent":
+        order = (*activity_order, *relationship_order, *name_order)
+    elif search.ordering == "relationship":
+        order = (*relationship_order, *activity_order, identity_rank.desc(), *name_order)
+    elif normalized_query:
+        exact_stable = (
+            select(PersonIdentifier.id)
+            .where(
+                PersonIdentifier.person_id == Person.id,
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.identifier_kind == IDENTIFIER_STABLE,
+                PersonIdentifier.normalized_value == normalized_query,
+            )
+            .correlate(Person)
+            .exists()
+        )
+        exact_handle = (
+            select(PersonIdentifier.id)
+            .where(
+                PersonIdentifier.person_id == Person.id,
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.identifier_kind == IDENTIFIER_HANDLE,
+                PersonIdentifier.normalized_value == normalized_query,
+            )
+            .correlate(Person)
+            .exists()
+        )
+        prefix_identifier = (
+            select(PersonIdentifier.id)
+            .where(
+                PersonIdentifier.person_id == Person.id,
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.normalized_value.like(f"{normalized_query}%"),
+            )
+            .correlate(Person)
+            .exists()
+        )
+        match_rank = case(
+            (exact_stable, 6),
+            (exact_handle, 5),
+            (func.lower(Person.display_name) == clean_query.casefold(), 4),
+            (prefix_identifier, 3),
+            (func.lower(Person.display_name).like(f"{clean_query.casefold()}%"), 2),
+            else_=1,
+        )
+        order = (match_rank.desc(), identity_rank.desc(), *relationship_order, *activity_order, *name_order)
+    else:
+        order = (*relationship_order, *activity_order, identity_rank.desc(), *name_order)
+
+    safe_page = max(1, search.page)
+    safe_page_size = max(1, min(search.page_size, 100))
+    people = list(
+        s.execute(statement.order_by(*order).offset((safe_page - 1) * safe_page_size).limit(safe_page_size)).scalars()
+    )
+    person_ids = {person.id for person in people}
     identifiers = _identifiers_by_person(s, {person.id for person in people})
     activities = {
         row.person_id: row
@@ -979,7 +1256,31 @@ def find_people(s: Session, query: str, *, limit: int = 50) -> list[dict[str, An
             )
         ).scalars()
     }
-    return [
+    relationship_summaries = _directory_relationship_summaries(s, person_ids, checked_at=checked_at)
+    results = [
         _person_base_payload(person, identifiers.get(person.id, []), profiles.get(person.id), activities.get(person.id))
+        | {
+            "relationshipSummary": relationship_summaries.get(
+                person.id,
+                {
+                    "relationshipCount": 0,
+                    "verifiedRelationshipCount": 0,
+                    "evidenceCount": 0,
+                    "bestConfidence": 0,
+                    "types": [],
+                    "verifiedTypes": [],
+                },
+            )
+        }
         for person in people
     ]
+    page_count = max(1, (total + safe_page_size - 1) // safe_page_size)
+    return {
+        "count": total,
+        "page": safe_page,
+        "pageSize": safe_page_size,
+        "pageCount": page_count,
+        "nextPage": safe_page + 1 if safe_page < page_count else None,
+        "previousPage": safe_page - 1 if safe_page > 1 else None,
+        "results": results,
+    }

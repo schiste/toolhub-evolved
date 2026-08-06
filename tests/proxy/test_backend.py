@@ -3361,8 +3361,11 @@ def test_people_directory_endpoint_separates_unresolved_attributions(client):
     data = client.get("/v1/people/?q=alex").get_json()
     assert data["count"] == 1
     assert data["results"][0]["displayName"] == "Alex Maintainer"
-    assert data["unresolvedCount"] == 1
-    assert data["unresolvedAttributions"][0]["label"] == "Alex"
+    assert "unresolvedAttributions" not in data
+
+    unresolved = client.get("/v1/people/attributions/?q=alex").get_json()
+    assert unresolved["count"] == 1
+    assert unresolved["results"][0]["label"] == "Alex"
 
 
 def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
