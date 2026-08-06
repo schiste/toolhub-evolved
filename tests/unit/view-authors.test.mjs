@@ -249,15 +249,30 @@ test("viewAuthor explains unresolved labels without inventing a person link", as
 
 test("viewPeople separates resolved profiles from unresolved attributions", async () => {
 	h.backendGetJson.mockResolvedValueOnce({
+		count: 1,
+		page: 1,
+		pageSize: 24,
+		pageCount: 1,
 		results: [
 			{
 				id: "person-1",
 				displayName: "Ada",
+				identityQuality: "stable_id",
 				profile: {},
-				activity: { relatedToolCount: 3 }
+				activity: { relatedToolCount: 3 },
+				relationshipSummary: {
+					types: ["author", "maintainer"],
+					verifiedTypes: ["maintainer"]
+				}
 			}
-		],
-		unresolvedAttributions: [
+		]
+	});
+	h.backendGetJson.mockResolvedValueOnce({
+		count: 1,
+		page: 1,
+		pageSize: 10,
+		pageCount: 1,
+		results: [
 			{
 				label: "Magnus Manske",
 				identityStatus: "unresolved_attribution",
@@ -271,6 +286,9 @@ test("viewPeople separates resolved profiles from unresolved attributions", asyn
 
 	assert.match(view.html, /href="\/people\/person-1"/);
 	assert.match(view.html, /Resolved profiles/);
+	assert.match(view.html, /Showing 1–1 of 1 people/);
+	assert.match(view.html, /Identity backed by a stable account ID/);
+	assert.match(view.html, /Verified: Maintainer/);
 	assert.match(view.html, /Attributions awaiting identity evidence/);
 	assert.match(view.html, /Magnus Manske/);
 	assert.match(view.html, /50 tools · 50 observations/);

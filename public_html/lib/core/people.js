@@ -33,10 +33,11 @@ export async function searchPeopleDirectory(search = {}) {
 	const options = typeof search === "string" ? { q: search } : search;
 	const params = directoryParams(options);
 	const data = await backendGetJson(`/v1/people/${params.size > 0 ? `?${params}` : ""}`);
+	const people = Array.isArray(data?.results) ? data.results : [];
 	return {
-		people: Array.isArray(data?.results) ? data.results : [],
+		people,
 		unresolvedAttributions: Array.isArray(data?.unresolvedAttributions) ? data.unresolvedAttributions : [],
-		count: Number(data?.count) || 0,
+		count: Number.isFinite(Number(data?.count)) ? Number(data.count) : people.length,
 		page: Number(data?.page) || 1,
 		pageSize: Number(data?.pageSize) || options.pageSize || 24,
 		pageCount: Number(data?.pageCount) || 1,
@@ -49,9 +50,10 @@ export async function searchPeopleDirectory(search = {}) {
 export async function searchUnresolvedAttributions(search = {}) {
 	const params = directoryParams(search);
 	const data = await backendGetJson(`/v1/people/attributions/${params.size > 0 ? `?${params}` : ""}`);
+	const attributions = Array.isArray(data?.results) ? data.results : [];
 	return {
-		attributions: Array.isArray(data?.results) ? data.results : [],
-		count: Number(data?.count) || 0,
+		attributions,
+		count: Number.isFinite(Number(data?.count)) ? Number(data.count) : attributions.length,
 		page: Number(data?.page) || 1,
 		pageSize: Number(data?.pageSize) || search.pageSize || 10,
 		pageCount: Number(data?.pageCount) || 1,

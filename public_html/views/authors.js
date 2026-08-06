@@ -1,16 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
+import { $, dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { identityQualityLabel } from "../lib/core/claims.js";
-import { personById, resolvePersonHandle, searchPeopleDirectory, toolsForPerson } from "../lib/core/people.js";
-import { personHref } from "../lib/core/routing.js";
+import { identityQualityLabel, relationshipLabel } from "../lib/core/claims.js";
+import {
+	personById,
+	resolvePersonHandle,
+	searchPeopleDirectory,
+	searchUnresolvedAttributions,
+	toolsForPerson
+} from "../lib/core/people.js";
+import { navigateTo, personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
 import { icon } from "../lib/atoms/icon.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { relationshipTrustMarkup } from "../lib/molecules/relationship-trust.js";
+import { renderPager } from "../lib/molecules/pager.js";
+
+const PEOPLE_PAGE_SIZES = [12, 24, 48];
+const DEFAULT_PEOPLE_PAGE_SIZE = 24;
+const PEOPLE_ROLES = new Set(["author", "maintainer", "record_owner", "catalog_actor"]);
+const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified", "renewal_needed"]);
+const PEOPLE_ACTIVITIES = new Set(["active", "quiet", "unknown"]);
+const PEOPLE_ORDERINGS = new Set(["relevance", "relationship", "recent", "name"]);
 
 /** @param {any} person */
 function profileLinks(person) {
@@ -220,8 +234,22 @@ function personCard(person) {
 		? `<img class="people-card__avatar" src="${esc(avatarUrl)}" alt="" width="56" height="56" loading="lazy" />`
 		: avatar(name, "people-card__avatar");
 	const count = Number(person?.activity?.relatedToolCount) || 0;
+	const summary = person?.relationshipSummary || {};
+	const verifiedTypes = Array.isArray(summary.verifiedTypes) ? summary.verifiedTypes : [];
+	const types = Array.isArray(summary.types) ? summary.types : [];
+	const relationshipDetail =
+		verifiedTypes.length > 0
+			? t("authors.verifiedRelationshipRoles", "Verified: {roles}", {
+					roles: verifiedTypes.map((role) => relationshipLabel(role)).join(", ")
+				})
+			: types.length > 0
+				? t("authors.relationshipRoles", "Relationships: {roles}", {
+						roles: types.map((role) => relationshipLabel(role)).join(", ")
+					})
+				: t("authors.noRelationshipSummary", "No relationship summary");
+	const identityDetail = identityQualityLabel(person?.identityQuality || "");
 	return `<a class="people-card" href="${personHref(person.id)}" data-person-name="${esc(name.toLocaleLowerCase())}">
-		${picture}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(countLabel(count, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))}</small></span>
+		${picture}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(countLabel(count, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))} · ${esc(identityDetail)}</small><small>${esc(relationshipDetail)}</small></span>
 	</a>`;
 }
 
@@ -244,47 +272,248 @@ function unresolvedAttribution(attribution) {
 	</li>`;
 }
 
-/** @param {{people: any[], unresolvedAttributions: any[]}} directory */
-function directoryResults(directory) {
-	const unresolved = directory.unresolvedAttributions || [];
+/** @param {string | null} value @param {Set<string>} allowed @param {string} fallback */
+function choice(value, allowed, fallback = "") {
+	return value && allowed.has(value) ? value : fallback;
+}
+
+/** @param {string | null} value @param {number} fallback */
+function positiveInteger(value, fallback) {
+	const parsed = Number.parseInt(value || "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** @param {URLSearchParams} [params] */
+export function peopleDirectoryState(params = new URLSearchParams(globalThis.location?.search || "")) {
+	const requestedSize = positiveInteger(params.get("page_size"), DEFAULT_PEOPLE_PAGE_SIZE);
+	return {
+		q: String(params.get("q") || "").trim(),
+		page: positiveInteger(params.get("page"), 1),
+		pageSize: PEOPLE_PAGE_SIZES.includes(requestedSize) ? requestedSize : DEFAULT_PEOPLE_PAGE_SIZE,
+		role: choice(params.get("role"), PEOPLE_ROLES),
+		verification: choice(params.get("verification"), PEOPLE_VERIFICATIONS),
+		activity: choice(params.get("activity"), PEOPLE_ACTIVITIES),
+		project: String(params.get("project") || "")
+			.trim()
+			.slice(0, 255),
+		ordering: choice(params.get("ordering"), PEOPLE_ORDERINGS, "relevance"),
+		attributionPage: positiveInteger(params.get("attribution_page"), 1)
+	};
+}
+
+/** @param {ReturnType<typeof peopleDirectoryState>} state */
+function peopleDirectoryHref(state) {
+	const params = new URLSearchParams();
+	if (state.q) params.set("q", state.q);
+	if (state.role) params.set("role", state.role);
+	if (state.verification) params.set("verification", state.verification);
+	if (state.activity) params.set("activity", state.activity);
+	if (state.project) params.set("project", state.project);
+	if (state.ordering !== "relevance") params.set("ordering", state.ordering);
+	if (state.pageSize !== DEFAULT_PEOPLE_PAGE_SIZE) params.set("page_size", String(state.pageSize));
+	if (state.page > 1) params.set("page", String(state.page));
+	if (state.attributionPage > 1) params.set("attribution_page", String(state.attributionPage));
+	return `/people${params.size > 0 ? `?${params}` : ""}`;
+}
+
+/** @param {string} value @param {string} current @param {string} label */
+function option(value, current, label) {
+	return `<option value="${esc(value)}"${value === current ? " selected" : ""}>${esc(label)}</option>`;
+}
+
+/** @param {ReturnType<typeof peopleDirectoryState>} state */
+function activeFilterSummary(state) {
+	const values = [
+		state.role ? relationshipLabel(state.role) : "",
+		state.verification
+			? {
+					verified: t("authors.filterVerified", "Currently verified"),
+					unverified: t("authors.filterUnverified", "Unverified"),
+					renewal_needed: t("authors.filterRenewal", "Renewal needed")
+				}[state.verification]
+			: "",
+		state.activity ? t("authors.activityFilterValue", "Activity: {status}", { status: state.activity }) : "",
+		state.project ? t("authors.projectFilterValue", "Project: {project}", { project: state.project }) : ""
+	].filter(Boolean);
+	return values.length > 0
+		? `<div class="people-directory__active"><span>${t("authors.activeFilters", "Active filters:")} ${values.map((value) => `<strong>${esc(value)}</strong>`).join(" · ")}</span><a href="/people">${t("authors.clearFilters", "Clear filters")}</a></div>`
+		: "";
+}
+
+/** @param {any} directory @param {ReturnType<typeof peopleDirectoryState>} state */
+function resolvedDirectoryResults(directory, state) {
+	const people = directory.people || [];
+	const count = Number(directory.count) || 0;
+	const first = people.length > 0 ? (directory.page - 1) * directory.pageSize + 1 : 0;
+	const last = first + people.length - 1;
+	const summary =
+		people.length > 0
+			? t("authors.showingPeopleRange", "Showing {first}–{last} of {count} people", { first, last, count })
+			: t("authors.peopleCount", "{count} people", { count });
 	return `<section aria-labelledby="people-profiles-title">
-		<h2 id="people-profiles-title" class="people-page__section-title">${t("authors.resolvedProfiles", "Resolved profiles")}</h2>
-		${peopleResults(directory.people || [])}
-	</section>
-	${
-		unresolved.length > 0
-			? `<section class="people-attributions" aria-labelledby="people-attributions-title">
-			<div class="section-head"><div><h2 id="people-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.unresolvedAttributionsIntro", "These labels appear in tool records, but there is not enough stable evidence to publish them as people.")}</p></div></div>
-			<ul class="people-attributions__list">${unresolved.map((attribution) => unresolvedAttribution(attribution)).join("")}</ul>
-		</section>`
-			: ""
-	}`;
+		<div class="section-head people-page__results-head"><div><h2 id="people-profiles-title" class="people-page__section-title">${t("authors.resolvedProfiles", "Resolved profiles")}</h2><p class="muted" aria-live="polite">${esc(summary)}${state.q ? ` ${t("authors.forQuery", "for")} “<span${dirAttrs(state.q)}>${esc(state.q)}</span>”` : ""}</p></div></div>
+		${peopleResults(people)}
+		<nav class="pager" data-people-pager aria-label="${esc(t("authors.peoplePagination", "People pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>
+	</section>`;
+}
+
+/** @param {any} directory */
+function unresolvedDirectoryResults(directory) {
+	const attributions = directory.attributions || [];
+	if (attributions.length === 0 && !directory.error) return "";
+	return `<section class="people-attributions" aria-labelledby="people-attributions-title">
+		<div class="section-head"><div><h2 id="people-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.unresolvedAttributionsIntro", "These labels appear in tool records, but there is not enough stable evidence to publish them as people.")}</p></div><span class="muted">${esc(countLabel(directory.count || 0, t("authors.labelOne", "label"), t("authors.labelOther", "labels")))}</span></div>
+		${
+			directory.error
+				? `<p class="empty" role="alert">${t("authors.attributionSearchFailed", "Unresolved attributions could not be loaded.")}</p>`
+				: `<ul class="people-attributions__list">${attributions.map((attribution) => unresolvedAttribution(attribution)).join("")}</ul><nav class="pager" data-attribution-pager aria-label="${esc(t("authors.attributionPagination", "Unresolved attribution pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>`
+		}
+	</section>`;
+}
+
+function peopleSearchError() {
+	return `<div class="empty people-directory__error" role="alert"><p>${t("authors.peopleSearchFailed", "People search could not be loaded. Try again.")}</p><button class="btn btn--primary" type="button" data-people-retry>${t("authors.retrySearch", "Retry search")}</button></div>`;
+}
+
+/** @param {ReturnType<typeof peopleDirectoryState>} state */
+function directoryForm(state) {
+	const roleOptions = [
+		["", t("authors.anyRole", "Any role")],
+		...Array.from(PEOPLE_ROLES, (role) => [role, relationshipLabel(role)])
+	]
+		.map(([value, label]) => option(value, state.role, label))
+		.join("");
+	const verificationOptions = [
+		["", t("authors.anyVerification", "Any verification")],
+		["verified", t("authors.filterVerified", "Currently verified")],
+		["unverified", t("authors.filterUnverified", "Unverified")],
+		["renewal_needed", t("authors.filterRenewal", "Renewal needed")]
+	]
+		.map(([value, label]) => option(value, state.verification, label))
+		.join("");
+	const activityOptions = [
+		["", t("authors.anyActivity", "Any activity")],
+		["active", t("authors.activityActive", "Active")],
+		["quiet", t("authors.activityQuiet", "Quiet")],
+		["unknown", t("authors.activityUnknown", "Unknown")]
+	]
+		.map(([value, label]) => option(value, state.activity, label))
+		.join("");
+	const orderingOptions = [
+		["relevance", t("authors.orderRelevance", "Most relevant")],
+		["relationship", t("authors.orderRelationship", "Strongest relationships")],
+		["recent", t("authors.orderRecent", "Recent activity")],
+		["name", t("authors.orderName", "Name (A–Z)")]
+	]
+		.map(([value, label]) => option(value, state.ordering, label))
+		.join("");
+	const pageSizeOptions = PEOPLE_PAGE_SIZES.map((size) =>
+		option(String(size), String(state.pageSize), t("authors.peoplePerPage", "{size} per page", { size }))
+	).join("");
+	return `<form class="people-directory" data-people-search role="search">
+		<div class="searchbar people-page__search"><input class="searchbar__input" name="q" type="search" value="${esc(state.q)}" placeholder="${esc(t("authors.searchPeople", "Search people"))}" aria-label="${esc(t("authors.searchPeople", "Search people"))}" /><button class="btn btn--primary" type="submit">${icon("search")} ${t("authors.search", "Search")}</button></div>
+		<div class="people-directory__filters" aria-label="${esc(t("authors.directoryFilters", "Directory filters"))}">
+			<label><span>${t("authors.roleFilter", "Role")}</span><select name="role" data-people-auto>${roleOptions}</select></label>
+			<label><span>${t("authors.verificationFilter", "Verification")}</span><select name="verification" data-people-auto>${verificationOptions}</select></label>
+			<label><span>${t("authors.activityFilter", "Activity")}</span><select name="activity" data-people-auto>${activityOptions}</select></label>
+			<label><span>${t("authors.projectFilter", "Project or wiki")}</span><input name="project" value="${esc(state.project)}" placeholder="wikidata.org" /></label>
+			<label><span>${t("authors.ordering", "Sort by")}</span><select name="ordering" data-people-auto>${orderingOptions}</select></label>
+			<label><span>${t("authors.resultsPerPage", "Results per page")}</span><select name="page_size" data-people-auto>${pageSizeOptions}</select></label>
+		</div>
+	</form>`;
 }
 
 export async function viewPeople() {
-	const directory = await searchPeopleDirectory("");
+	const state = peopleDirectoryState();
+	const attributionsApplicable = !state.verification && !state.activity;
+	const [directoryResult, attributionResult] = await Promise.allSettled([
+		searchPeopleDirectory(state),
+		attributionsApplicable
+			? searchUnresolvedAttributions({
+					q: state.q,
+					page: state.attributionPage,
+					pageSize: 10,
+					role: state.role,
+					project: state.project
+				})
+			: Promise.resolve({ attributions: [], count: 0, page: 1, pageSize: 10, pageCount: 1 })
+	]);
+	const directory =
+		directoryResult.status === "fulfilled"
+			? directoryResult.value
+			: { people: [], count: 0, page: state.page, pageSize: state.pageSize, pageCount: 1, error: true };
+	const attributions =
+		attributionResult.status === "fulfilled"
+			? attributionResult.value
+			: { attributions: [], count: 0, page: state.attributionPage, pageSize: 10, pageCount: 1, error: true };
 	return {
 		title: t("authors.peopleDocTitle", "People — Toolhub"),
 		html: `<div class="container page people-page">
 			<header><h1 class="page__title">${t("authors.peopleTitle", "People")}</h1><p class="page__intro">${t("authors.peopleIntro", "Discover authors, maintainers, record owners, and catalog contributors resolved from Toolhub and Evolved evidence.")}</p></header>
-			<form class="searchbar people-page__search" data-people-search role="search"><input class="searchbar__input" name="q" type="search" placeholder="${esc(t("authors.searchPeople", "Search people"))}" aria-label="${esc(t("authors.searchPeople", "Search people"))}" /><button class="btn btn--primary" type="submit">${icon("search")} ${t("authors.search", "Search")}</button></form>
-			<div data-people-results>${directoryResults(directory)}</div>
+			${directoryForm(state)}
+			${activeFilterSummary(state)}
+			<div data-people-results>${directory.error ? peopleSearchError() : resolvedDirectoryResults(directory, state)}</div>
+			<div data-attribution-results>${attributionsApplicable ? unresolvedDirectoryResults(attributions) : ""}</div>
 		</div>`,
 		mount() {
-			document.querySelector("[data-people-search]")?.addEventListener("submit", async (event) => {
-				event.preventDefault();
-				const form = /** @type {HTMLFormElement} */ (event.currentTarget);
-				const target = document.querySelector("[data-people-results]");
-				const query = String(new FormData(form).get("q") || "").trim();
-				if (target) target.innerHTML = `<p class="signin-note">${t("authors.searching", "Searching…")}</p>`;
-				try {
-					const results = await searchPeopleDirectory(query);
-					if (target) target.innerHTML = directoryResults(results);
-				} catch {
-					if (target) {
-						target.innerHTML = `<p class="empty">${t("authors.peopleSearchFailed", "People search could not be loaded. Try again.")}</p>`;
-					}
+			const form = /** @type {HTMLFormElement | null} */ ($("[data-people-search]"));
+			const showLoading = () => {
+				const target = $("[data-people-results]");
+				if (target) {
+					target.innerHTML = `<p class="signin-note" role="status" aria-live="polite">${t("authors.searching", "Searching…")}</p>`;
 				}
+			};
+			const navigateFromForm = () => {
+				if (!form) return;
+				const data = new FormData(form);
+				showLoading();
+				navigateTo(
+					peopleDirectoryHref({
+						q: String(data.get("q") || "").trim(),
+						page: 1,
+						pageSize: positiveInteger(String(data.get("page_size") || ""), DEFAULT_PEOPLE_PAGE_SIZE),
+						role: choice(String(data.get("role") || ""), PEOPLE_ROLES),
+						verification: choice(String(data.get("verification") || ""), PEOPLE_VERIFICATIONS),
+						activity: choice(String(data.get("activity") || ""), PEOPLE_ACTIVITIES),
+						project: String(data.get("project") || "")
+							.trim()
+							.slice(0, 255),
+						ordering: choice(String(data.get("ordering") || ""), PEOPLE_ORDERINGS, "relevance"),
+						attributionPage: 1
+					})
+				);
+			};
+			form?.addEventListener("submit", (event) => {
+				event.preventDefault();
+				navigateFromForm();
+			});
+			form?.querySelectorAll("[data-people-auto]").forEach((control) =>
+				control.addEventListener("change", navigateFromForm)
+			);
+			$("[data-people-pager]")?.addEventListener("click", (event) => {
+				const button = /** @type {HTMLElement | null} */ (event.target?.closest?.("[data-page]"));
+				if (!button) return;
+				showLoading();
+				navigateTo(
+					peopleDirectoryHref({
+						...state,
+						page: positiveInteger(button.getAttribute("data-page"), state.page)
+					})
+				);
+			});
+			$("[data-attribution-pager]")?.addEventListener("click", (event) => {
+				const button = /** @type {HTMLElement | null} */ (event.target?.closest?.("[data-page]"));
+				if (!button) return;
+				navigateTo(
+					peopleDirectoryHref({
+						...state,
+						attributionPage: positiveInteger(button.getAttribute("data-page"), state.attributionPage)
+					})
+				);
+			});
+			$("[data-people-retry]")?.addEventListener("click", () => {
+				showLoading();
+				window.dispatchEvent(new Event("toolhub:navigate"));
 			});
 		}
 	};
