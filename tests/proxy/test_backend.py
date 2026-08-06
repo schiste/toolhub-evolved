@@ -62,6 +62,7 @@ from backend.models import (  # noqa: E402
     ApiCacheMeta,
     CanonicalToolCache,
     CatalogCuration,
+    CatalogFacetValue,
     CrawlerRun,
     CrawlerUrl,
     Favorite,
@@ -240,6 +241,7 @@ PUBLIC_V1_ROUTES = {
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/people/": "public local people search; reads are rate limited",
+    "/v1/people/attributions/": "public unresolved-label discovery over local evidence; reads are rate limited",
     "/v1/people/resolve/": "public exact-handle resolution over local public identities; reads are rate limited",
     "/v1/people/<public_id>/": "public local person profile; reads are rate limited",
     "/v1/people/tools/<name>/": (
@@ -3368,6 +3370,201 @@ def test_people_directory_endpoint_separates_unresolved_attributions(client):
     assert unresolved["results"][0]["label"] == "Alex"
 
 
+def _add_directory_person(
+    session,
+    *,
+    display_name,
+    stable_id,
+    tool_name,
+    role=sync.PERSON_REL_AUTHOR,
+    status=sync.AUTHOR_CLAIM_UNVERIFIED,
+    confidence=0,
+    activity="unknown",
+    expires_at=None,
+    toolhub_username="",
+):
+    from backend import people_index
+
+    person = people_index.ensure_person(
+        session,
+        display_name=display_name,
+        toolhub_user_id=stable_id,
+        toolhub_username=toolhub_username,
+    )
+    session.flush()
+    session.add(
+        ToolPersonRelationship(
+            tool_name=tool_name,
+            person_id=person.id,
+            relationship_type=role,
+            verification_status=status,
+            confidence=confidence,
+            evidence_count=1,
+            expires_at=expires_at,
+        )
+    )
+    session.add(
+        PersonActivitySummary(
+            person_id=person.id,
+            related_tool_count=1,
+            verified_tool_count=1 if status == sync.AUTHOR_CLAIM_VERIFIED else 0,
+            activity_status=activity,
+        )
+    )
+    return person
+
+
+def test_people_directory_returns_real_totals_and_stable_pages(client):
+    with db.session_scope() as s:
+        for index in range(55):
+            _add_directory_person(
+                s,
+                display_name=f"Person {index:02d}",
+                stable_id=f"directory-{index}",
+                tool_name=f"tool-{index}",
+            )
+
+    first = client.get("/v1/people/?page_size=24&ordering=name").get_json()
+    second = client.get("/v1/people/?page=2&page_size=24&ordering=name").get_json()
+
+    assert first["count"] == 55
+    assert first["pageCount"] == 3
+    assert len(first["results"]) == 24
+    assert first["previous"] is None
+    assert "page=2" in first["next"]
+    assert [person["displayName"] for person in second["results"][:2]] == ["Person 24", "Person 25"]
+    assert "page=1" in second["previous"]
+    assert "page=3" in second["next"]
+
+
+def test_people_directory_prioritizes_exact_stable_ids_and_handles(client):
+    with db.session_scope() as s:
+        _add_directory_person(
+            s,
+            display_name="42",
+            stable_id="display-42",
+            tool_name="display-tool",
+        )
+        _add_directory_person(
+            s,
+            display_name="Identifier Match",
+            stable_id="42",
+            tool_name="identifier-tool",
+        )
+        _add_directory_person(
+            s,
+            display_name="Magnus",
+            stable_id="display-magnus",
+            tool_name="magnus-display-tool",
+        )
+        _add_directory_person(
+            s,
+            display_name="Structured Handle",
+            stable_id="handle-magnus",
+            toolhub_username="Magnus",
+            tool_name="magnus-handle-tool",
+        )
+
+    stable = client.get("/v1/people/?q=42").get_json()
+    handle = client.get("/v1/people/?q=Magnus").get_json()
+
+    assert stable["results"][0]["displayName"] == "Identifier Match"
+    assert handle["results"][0]["displayName"] == "Structured Handle"
+
+
+def test_people_directory_combines_role_verification_activity_and_project_filters(client):
+    now = utcnow()
+    with db.session_scope() as s:
+        matching = _add_directory_person(
+            s,
+            display_name="Matching Maintainer",
+            stable_id="matching",
+            tool_name="matching-tool",
+            role=sync.PERSON_REL_MAINTAINER,
+            status=sync.AUTHOR_CLAIM_VERIFIED,
+            confidence=95,
+            activity="active",
+            expires_at=now + timedelta(days=1),
+        )
+        _add_directory_person(
+            s,
+            display_name="Wrong Project",
+            stable_id="wrong-project",
+            tool_name="wrong-project-tool",
+            role=sync.PERSON_REL_MAINTAINER,
+            status=sync.AUTHOR_CLAIM_VERIFIED,
+            activity="active",
+        )
+        _add_directory_person(
+            s,
+            display_name="Unverified Maintainer",
+            stable_id="unverified",
+            tool_name="unverified-tool",
+            role=sync.PERSON_REL_MAINTAINER,
+            activity="active",
+        )
+        expired = _add_directory_person(
+            s,
+            display_name="Expired Maintainer",
+            stable_id="expired",
+            tool_name="expired-tool",
+            role=sync.PERSON_REL_MAINTAINER,
+            status=sync.AUTHOR_CLAIM_VERIFIED,
+            activity="active",
+            expires_at=now - timedelta(seconds=1),
+        )
+        for tool_name in ("matching-tool", "unverified-tool", "expired-tool"):
+            s.add(CatalogFacetValue(tool_name=tool_name, field="wiki", value="wikidata.org", label="Wikidata"))
+        matching_id = matching.public_id
+        expired_id = expired.public_id
+
+    filtered = client.get(
+        "/v1/people/?role=maintainer&verification=verified&activity=active&project=wikidata.org"
+    ).get_json()
+    renewal = client.get("/v1/people/?verification=renewal_needed").get_json()
+
+    assert [person["id"] for person in filtered["results"]] == [matching_id]
+    assert filtered["results"][0]["relationshipSummary"]["verifiedTypes"] == [sync.PERSON_REL_MAINTAINER]
+    assert [person["id"] for person in renewal["results"]] == [expired_id]
+
+
+def test_unresolved_attributions_have_independent_pagination(client):
+    from backend import people_index
+
+    with db.session_scope() as s:
+        for index in range(25):
+            people_index.replace_source_evidence(
+                s,
+                f"unresolved-tool-{index}",
+                "toolhub_author_metadata",
+                [{"display_name": f"Unresolved {index:02d}", "relationship_type": sync.PERSON_REL_AUTHOR}],
+            )
+
+    page = client.get("/v1/people/attributions/?q=Unresolved&page=2&page_size=10").get_json()
+
+    assert page["count"] == 25
+    assert page["pageCount"] == 3
+    assert len(page["results"]) == 10
+    assert page["results"][0]["label"] == "Unresolved 10"
+    assert "page=3" in page["next"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/v1/people/?page=0",
+        "/v1/people/?page_size=nope",
+        "/v1/people/?role=administrator",
+        "/v1/people/?verification=old",
+        "/v1/people/?activity=recent",
+        "/v1/people/?ordering=random",
+        "/v1/people/attributions/?role=administrator",
+    ),
+)
+def test_people_directory_rejects_invalid_parameters(client, path):
+    assert client.get(path).status_code == 400
+
+
 def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
     from backend import people_index
 
@@ -3560,7 +3757,7 @@ def test_operator_approval_moves_evidence_without_changing_role_and_survives_ref
 
     directory = client.get("/v1/people/?q=Magnus%20Manske").get_json()
     assert directory["count"] == 1
-    assert directory["unresolvedCount"] == 0
+    assert client.get("/v1/people/attributions/?q=Magnus%20Manske").get_json()["count"] == 0
     assert {item["namespace"] for item in directory["results"][0]["identifiers"]} == {
         "toolhub_user_id",
         "toolhub_username",

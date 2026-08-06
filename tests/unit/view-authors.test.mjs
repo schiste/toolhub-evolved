@@ -4,7 +4,7 @@ import { beforeEach, test, vi } from "vitest";
 // toolsByAuthor hits the network (paginate → apiGet), so it is fixture-driven here.
 // authorProfileUrl, grid, toolCard, and the dom/i18n helpers stay real so the rendered
 // HTML — and the `(t) => toolCard(t)` mapper arrow — is exercised end to end.
-import { viewAuthor, viewPeople, viewPerson } from "../../public_html/views/authors.js";
+import { peopleDirectoryState, viewAuthor, viewPeople, viewPerson } from "../../public_html/views/authors.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
 import * as authorIndex from "../../public_html/lib/core/author-index.js";
 
@@ -25,6 +25,7 @@ vi.mock("../../public_html/lib/core/author-index.js", async (importOriginal) => 
 const tool = (name, title) => ({ name, title, keywords: [], forWikis: [] });
 
 beforeEach(() => {
+	window.history.replaceState({}, "", "/people");
 	h.backendGetJson.mockReset();
 	h.backendGetJson.mockResolvedValue({ status: "not_found" });
 	h.getToolsByName.mockReset();
@@ -294,4 +295,106 @@ test("viewPeople separates resolved profiles from unresolved attributions", asyn
 	assert.match(view.html, /50 tools · 50 observations/);
 	assert.match(view.html, /Identity unresolved/);
 	assert.doesNotMatch(view.html, /href="[^"]*Magnus/);
+});
+
+test("peopleDirectoryState validates and restores shareable URL state", () => {
+	const state = peopleDirectoryState(
+		new URLSearchParams(
+			"q=Magnus+Manske&page=3&page_size=48&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name&attribution_page=2"
+		)
+	);
+
+	assert.deepEqual(state, {
+		q: "Magnus Manske",
+		page: 3,
+		pageSize: 48,
+		role: "maintainer",
+		verification: "verified",
+		activity: "active",
+		project: "wikidata.org",
+		ordering: "name",
+		attributionPage: 2
+	});
+	assert.deepEqual(peopleDirectoryState(new URLSearchParams("page=0&page_size=999&role=admin&ordering=random")), {
+		q: "",
+		page: 1,
+		pageSize: 24,
+		role: "",
+		verification: "",
+		activity: "",
+		project: "",
+		ordering: "relevance",
+		attributionPage: 1
+	});
+});
+
+test("viewPeople hydrates filters from the URL and sends the complete API query", async () => {
+	window.history.replaceState(
+		{},
+		"",
+		"/people?q=Magnus+Manske&page=2&page_size=48&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name"
+	);
+	h.backendGetJson.mockResolvedValueOnce({ count: 0, page: 2, pageSize: 48, pageCount: 1, results: [] });
+
+	const view = await viewPeople();
+
+	assert.match(view.html, /name="q"[^>]*value="Magnus Manske"/);
+	assert.match(view.html, /option value="maintainer" selected/);
+	assert.match(view.html, /option value="verified" selected/);
+	assert.match(view.html, /option value="active" selected/);
+	assert.match(view.html, /name="project" value="wikidata.org"/);
+	assert.match(view.html, /option value="name" selected/);
+	assert.equal(h.backendGetJson.mock.calls.length, 1);
+	assert.match(h.backendGetJson.mock.calls[0][0], /^\/v1\/people\/\?/);
+	assert.match(h.backendGetJson.mock.calls[0][0], /q=Magnus\+Manske/);
+	assert.match(h.backendGetJson.mock.calls[0][0], /page=2/);
+	assert.match(h.backendGetJson.mock.calls[0][0], /role=maintainer/);
+});
+
+test("people search submission navigates, resets paging, and announces loading", async () => {
+	h.backendGetJson
+		.mockResolvedValueOnce({ count: 0, page: 1, pageSize: 24, pageCount: 1, results: [] })
+		.mockResolvedValueOnce({ count: 0, page: 1, pageSize: 10, pageCount: 1, results: [] });
+	const view = await viewPeople();
+	document.body.innerHTML = view.html;
+	view.mount();
+
+	document.querySelector('[name="q"]').value = "Ada Lovelace";
+	document.querySelector('[name="role"]').value = "author";
+	document.querySelector("[data-people-search]").dispatchEvent(new Event("submit", { cancelable: true }));
+
+	assert.equal(location.pathname, "/people");
+	assert.equal(new URLSearchParams(location.search).get("q"), "Ada Lovelace");
+	assert.equal(new URLSearchParams(location.search).get("role"), "author");
+	assert.equal(new URLSearchParams(location.search).has("page"), false);
+	assert.match(document.querySelector("[data-people-results]").innerHTML, /role="status"/);
+	assert.match(document.querySelector("[data-people-results]").textContent, /Searching/);
+});
+
+test("people pagination preserves filters in the URL", async () => {
+	window.history.replaceState({}, "", "/people?q=Ada&role=maintainer");
+	h.backendGetJson
+		.mockResolvedValueOnce({ count: 50, page: 1, pageSize: 24, pageCount: 3, results: [] })
+		.mockResolvedValueOnce({ count: 0, page: 1, pageSize: 10, pageCount: 1, results: [] });
+	const view = await viewPeople();
+	document.body.innerHTML = view.html;
+	view.mount();
+
+	document.querySelector('[data-people-pager] [data-page="2"]').click();
+
+	const params = new URLSearchParams(location.search);
+	assert.equal(params.get("q"), "Ada");
+	assert.equal(params.get("role"), "maintainer");
+	assert.equal(params.get("page"), "2");
+});
+
+test("people directory renders retryable errors instead of remaining in a loading state", async () => {
+	h.backendGetJson.mockRejectedValue(new Error("offline"));
+	const view = await viewPeople();
+
+	assert.match(view.html, /role="alert"/);
+	assert.match(view.html, /People search could not be loaded/);
+	assert.match(view.html, /Retry search/);
+	assert.match(view.html, /Unresolved attributions could not be loaded/);
+	assert.doesNotMatch(view.html, /Searching…/);
 });
