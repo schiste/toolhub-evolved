@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
-import { test, vi } from "vitest";
+import { beforeEach, test, vi } from "vitest";
 // toolsByAuthor hits the network (paginate → apiGet), so it is fixture-driven here.
 // authorProfileUrl, grid, toolCard, and the dom/i18n helpers stay real so the rendered
 // HTML — and the `(t) => toolCard(t)` mapper arrow — is exercised end to end.
@@ -20,6 +20,12 @@ vi.mock("../../public_html/lib/core/author-index.js", async (importOriginal) => 
 });
 
 const tool = (name, title) => ({ name, title, keywords: [], forWikis: [] });
+
+beforeEach(() => {
+	h.backendGetJson.mockReset();
+	h.backendGetJson.mockResolvedValue({ status: "not_found" });
+	authorIndex.toolsByAuthor.mockReset();
+});
 
 test("viewAuthor renders the author name, count, back link and a tools grid", async () => {
 	authorIndex.toolsByAuthor.mockResolvedValue({
@@ -96,6 +102,77 @@ test("viewAuthor drops an unsafe (non-http) profile URL via safeUrl", async () =
 	const view = await viewAuthor("Sneaky");
 	assert.doesNotMatch(view.html, /author-page__profile/);
 	assert.doesNotMatch(view.html, /javascript:/);
+});
+
+test("viewAuthor resolves one exact handle through the dedicated resolver", async () => {
+	h.backendGetJson
+		.mockResolvedValueOnce({
+			status: "resolved",
+			person: { id: "person-ada", displayName: "Ada Lovelace" }
+		})
+		.mockResolvedValueOnce({
+			id: "person-ada",
+			displayName: "Ada Lovelace",
+			identifiers: [{ namespace: "toolhub_username", value: "Ada" }],
+			profile: {},
+			activity: { status: "unknown" },
+			tools: []
+		});
+
+	const view = await viewAuthor("Ada");
+
+	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/resolve/?handle=Ada");
+	assert.equal(h.backendGetJson.mock.calls[1][0], "/v1/people/person-ada/");
+	assert.equal(view.title, "Ada Lovelace — Toolhub");
+	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
+});
+
+test("viewAuthor renders disambiguation instead of selecting the first duplicate", async () => {
+	h.backendGetJson.mockResolvedValueOnce({
+		status: "ambiguous",
+		matchType: "display_name",
+		candidates: [
+			{
+				id: "person-one",
+				displayName: "Shared Name",
+				identifiers: [{ namespace: "toolforge_username", value: "shared-one" }]
+			},
+			{
+				id: "person-two",
+				displayName: "Shared Name",
+				identifiers: [{ namespace: "wiki_username", value: "Shared Two" }]
+			}
+		],
+		unresolvedAttributions: []
+	});
+
+	const view = await viewAuthor("Shared Name");
+
+	assert.equal(view.title, "Shared Name — Choose a person");
+	assert.match(view.html, /This name does not identify one unique person/);
+	assert.match(view.html, /href="\/people\/person-one"/);
+	assert.match(view.html, /href="\/people\/person-two"/);
+	assert.match(view.html, /Toolforge: shared-one/);
+	assert.match(view.html, /Wiki: Shared Two/);
+	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
+});
+
+test("viewAuthor explains unresolved labels without inventing a person link", async () => {
+	h.backendGetJson.mockResolvedValueOnce({
+		status: "ambiguous",
+		matchType: "none",
+		candidates: [],
+		unresolvedAttributions: [
+			{ label: "Magnus Manske", toolCount: 50, evidenceCount: 50, identityStatus: "unresolved_attribution" }
+		]
+	});
+
+	const view = await viewAuthor("Magnus Manske");
+
+	assert.match(view.html, /Attributions awaiting identity evidence/);
+	assert.match(view.html, /50 tools · 50 observations/);
+	assert.doesNotMatch(view.html, /href="\/people\/[^"]+"/);
+	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
 test("viewPeople separates resolved profiles from unresolved attributions", async () => {

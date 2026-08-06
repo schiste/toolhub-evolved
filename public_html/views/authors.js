@@ -2,7 +2,7 @@
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { personByHandle, personById, searchPeopleDirectory, toolsForPerson } from "../lib/core/people.js";
+import { personById, resolvePersonHandle, searchPeopleDirectory, toolsForPerson } from "../lib/core/people.js";
 import { personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -133,10 +133,60 @@ async function resolvedView(person) {
 	return renderPerson(person, tools);
 }
 
+/** @param {any} identifier */
+function identifierLabel(identifier) {
+	const labels = /** @type {Record<string, string>} */ ({
+		toolhub_user_id: t("authors.toolhubId", "Toolhub ID"),
+		toolhub_username: t("authors.toolhubUsername", "Toolhub"),
+		toolforge_username: t("authors.toolforgeUsername", "Toolforge"),
+		wikimedia_global_user_id: t("authors.wikimediaId", "Wikimedia ID"),
+		wiki_username: t("authors.wikiUsername", "Wiki")
+	});
+	return `${labels[identifier?.namespace] || identifier?.namespace || t("authors.identifier", "Identifier")}: ${identifier?.value || ""}`;
+}
+
+/** @param {any} person */
+function disambiguationCard(person) {
+	const name = person?.displayName || t("authors.unknownPerson", "Unknown person");
+	const identifiers = (Array.isArray(person?.identifiers) ? person.identifiers : [])
+		.filter((/** @type {any} */ identifier) => identifier?.value)
+		.map((/** @type {any} */ identifier) => identifierLabel(identifier));
+	const detail = identifiers.join(" · ") || t("authors.verifiedIdentity", "Verified identity");
+	return `<a class="people-card" href="${personHref(person.id)}">
+		${avatar(name, "people-card__avatar")}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(detail)}</small></span>
+	</a>`;
+}
+
+/** @param {string} name @param {any} resolution */
+function renderDisambiguation(name, resolution) {
+	const candidates = Array.isArray(resolution?.candidates) ? resolution.candidates : [];
+	const unresolved = Array.isArray(resolution?.unresolvedAttributions) ? resolution.unresolvedAttributions : [];
+	const choices =
+		candidates.length > 0
+			? `<section aria-labelledby="author-candidates-title"><h2 id="author-candidates-title" class="people-page__section-title">${t("authors.possiblePeople", "Possible people")}</h2><div class="people-grid">${candidates.map((/** @type {any} */ person) => disambiguationCard(person)).join("")}</div></section>`
+			: "";
+	const attributions =
+		unresolved.length > 0
+			? `<section class="people-attributions" aria-labelledby="author-attributions-title"><div class="section-head"><div><h2 id="author-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.disambiguationUnresolved", "These tool attributions use this label but do not contain enough stable evidence to select a person.")}</p></div></div><ul class="people-attributions__list">${unresolved.map((/** @type {any} */ attribution) => unresolvedAttribution(attribution)).join("")}</ul></section>`
+			: "";
+	return {
+		title: t("authors.disambiguationDocTitle", "{name} — Choose a person", { name }),
+		html: `<div class="container page people-page author-disambiguation">
+			<a class="back" href="/people">${t("authors.backToPeople", "← Back to people")}</a>
+			<header><h1 class="page__title"${dirAttrs(name)}>${esc(name)}</h1><p class="page__intro">${t("authors.disambiguationIntro", "This name does not identify one unique person. Choose a verified identity below.")}</p></header>
+			${choices}${attributions}
+		</div>`
+	};
+}
+
 /** Legacy name route; the name is resolved through current identifiers first. @param {string} name */
 export async function viewAuthor(name) {
-	const person = await personByHandle(name).catch(() => null);
-	if (person) return resolvedView(person);
+	const resolution = await resolvePersonHandle(name).catch(() => null);
+	if (resolution?.status === "resolved" && resolution?.person?.id) {
+		const person = await personById(resolution.person.id);
+		return resolvedView(person);
+	}
+	if (resolution?.status === "ambiguous") return renderDisambiguation(name, resolution);
 	// Toolhub remains canonical and is the final fallback while a newly changed
 	// catalog record is waiting for the local people projection to refresh.
 	const entry = await toolsByAuthor(name);

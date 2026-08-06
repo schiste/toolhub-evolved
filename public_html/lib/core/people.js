@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { backendGetJson, getToolsByName } from "./api.js";
-import { normStr } from "./util.js";
 
 /** @param {string} toolName */
 export function peopleForTool(toolName) {
@@ -28,18 +27,20 @@ export async function searchPeople(query) {
 }
 
 /**
- * Resolve a legacy /by/{name} route without treating that name as an id.
+ * Ask the backend to resolve a legacy /by/{name} route under identity policy.
+ * @param {string} query
+ */
+export function resolvePersonHandle(query) {
+	return backendGetJson(`/v1/people/resolve/?handle=${encodeURIComponent(query)}`);
+}
+
+/**
+ * Compatibility helper for callers that only understand resolved-or-null.
  * @param {string} query
  */
 export async function personByHandle(query) {
-	const key = normStr(query);
-	const candidates = await searchPeople(query);
-	const person = candidates.find(
-		(/** @type {any} */ candidate) =>
-			normStr(candidate?.displayName) === key ||
-			candidate?.identifiers?.some((/** @type {any} */ identifier) => normStr(identifier?.value) === key)
-	);
-	return person?.id ? personById(person.id) : null;
+	const resolution = await resolvePersonHandle(query);
+	return resolution?.status === "resolved" && resolution?.person?.id ? personById(resolution.person.id) : null;
 }
 
 /** @param {any} person */
