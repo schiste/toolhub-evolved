@@ -46,3 +46,9 @@ proxy/var/
 
 # Playwright MCP scratch output (browser snapshots taken while debugging)
 .playwright-mcp/
+
+# Playwright run output: screenshots, traces, and *-storage.json session state.
+# The storage files hold signed-in cookies, so this must never be committable —
+# it appeared untracked and unignored once, one `git add -A` away from putting a
+# live session in the history.
+output/
