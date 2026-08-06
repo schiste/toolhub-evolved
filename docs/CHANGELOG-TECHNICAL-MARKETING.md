@@ -1,6 +1,6 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..081e06f (36 commits) -->
+<!-- Source range: 828438f..24be52a (38 commits) -->
 
 # Technical Release Notes
 
@@ -13,3 +13,4 @@
 - Clears every ruff finding across proxy/ with no new suppressions, and brings ruff format back to passing.
 - Ignores a build-time gzipped twin older than the file it represents, so correcting a generated artifact in place is not silently overridden by the stale compressed copy.
 - Fails the push when the checked-in release notes do not describe the commits being pushed, which is how they went unnoticed for 34 commits while the hook reported them as skipped.
+- Ignores output/, where Playwright runs leave screenshots and storage-state files containing the signed-in session's cookies.

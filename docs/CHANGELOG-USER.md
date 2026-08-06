@@ -1,6 +1,6 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..081e06f (36 commits) -->
+<!-- Source range: 828438f..24be52a (38 commits) -->
 
 # What's New for Users
 
