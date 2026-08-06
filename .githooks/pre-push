@@ -49,5 +49,10 @@ if [ -n "${TOOLHUB_CHAU7_MCP_BRIDGE:-}" ] || [ -n "${TOOLHUB_CHANGELOG_LLM_COMMA
 		exit 1
 	fi
 else
-	echo "marketing changelog: skipped (no raw MCP provider; configure Chau7 or TOOLHUB_CHANGELOG_LLM_COMMAND)"
+	# No provider, so the notes cannot be regenerated here. That used to end the
+	# matter, and the checked-in notes went stale for 34 commits while every push
+	# printed this same line and passed. Whatever is committed still ships, so at
+	# least require it to describe what is being pushed.
+	echo "marketing changelog: not regenerated (no raw MCP provider; configure Chau7 or TOOLHUB_CHANGELOG_LLM_COMMAND)"
+	python3 tools/check_changelog_freshness.py
 fi
