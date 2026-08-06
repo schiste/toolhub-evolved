@@ -4,7 +4,7 @@ import { test, vi } from "vitest";
 // toolsByAuthor hits the network (paginate → apiGet), so it is fixture-driven here.
 // authorProfileUrl, grid, toolCard, and the dom/i18n helpers stay real so the rendered
 // HTML — and the `(t) => toolCard(t)` mapper arrow — is exercised end to end.
-import { viewAuthor } from "../../public_html/views/authors.js";
+import { viewAuthor, viewPeople } from "../../public_html/views/authors.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
 import * as authorIndex from "../../public_html/lib/core/author-index.js";
 
@@ -96,4 +96,35 @@ test("viewAuthor drops an unsafe (non-http) profile URL via safeUrl", async () =
 	const view = await viewAuthor("Sneaky");
 	assert.doesNotMatch(view.html, /author-page__profile/);
 	assert.doesNotMatch(view.html, /javascript:/);
+});
+
+test("viewPeople separates resolved profiles from unresolved attributions", async () => {
+	h.backendGetJson.mockResolvedValueOnce({
+		results: [
+			{
+				id: "person-1",
+				displayName: "Ada",
+				profile: {},
+				activity: { relatedToolCount: 3 }
+			}
+		],
+		unresolvedAttributions: [
+			{
+				label: "Magnus Manske",
+				identityStatus: "unresolved_attribution",
+				toolCount: 50,
+				evidenceCount: 50
+			}
+		]
+	});
+
+	const view = await viewPeople();
+
+	assert.match(view.html, /href="\/people\/person-1"/);
+	assert.match(view.html, /Resolved profiles/);
+	assert.match(view.html, /Attributions awaiting identity evidence/);
+	assert.match(view.html, /Magnus Manske/);
+	assert.match(view.html, /50 tools · 50 observations/);
+	assert.match(view.html, /Identity unresolved/);
+	assert.doesNotMatch(view.html, /href="[^"]*Magnus/);
 });

@@ -2,7 +2,7 @@
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
 import { countLabel, t } from "../lib/core/i18n.js";
-import { personByHandle, personById, searchPeople, toolsForPerson } from "../lib/core/people.js";
+import { personByHandle, personById, searchPeopleDirectory, toolsForPerson } from "../lib/core/people.js";
 import { personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -178,14 +178,43 @@ function peopleResults(people) {
 		: `<p class="empty">${t("authors.noPeopleFound", "No people found.")}</p>`;
 }
 
+/** @param {any} attribution */
+function unresolvedAttribution(attribution) {
+	const label = attribution?.label || t("authors.unknownAttribution", "Unknown attribution");
+	const tools = Number(attribution?.toolCount) || 0;
+	const observations = Number(attribution?.evidenceCount) || Number(attribution?.attributionCount) || 0;
+	return `<li class="people-attribution">
+		<span class="people-attribution__mark" aria-hidden="true">?</span>
+		<span class="people-attribution__content"><strong${dirAttrs(label)}>${esc(label)}</strong><small>${esc(countLabel(tools, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))} · ${esc(countLabel(observations, t("authors.observationOne", "observation"), t("authors.observationOther", "observations")))}</small></span>
+		<span class="people-attribution__status">${t("authors.identityUnresolved", "Identity unresolved")}</span>
+	</li>`;
+}
+
+/** @param {{people: any[], unresolvedAttributions: any[]}} directory */
+function directoryResults(directory) {
+	const unresolved = directory.unresolvedAttributions || [];
+	return `<section aria-labelledby="people-profiles-title">
+		<h2 id="people-profiles-title" class="people-page__section-title">${t("authors.resolvedProfiles", "Resolved profiles")}</h2>
+		${peopleResults(directory.people || [])}
+	</section>
+	${
+		unresolved.length > 0
+			? `<section class="people-attributions" aria-labelledby="people-attributions-title">
+			<div class="section-head"><div><h2 id="people-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.unresolvedAttributionsIntro", "These labels appear in tool records, but there is not enough stable evidence to publish them as people.")}</p></div></div>
+			<ul class="people-attributions__list">${unresolved.map((attribution) => unresolvedAttribution(attribution)).join("")}</ul>
+		</section>`
+			: ""
+	}`;
+}
+
 export async function viewPeople() {
-	const people = await searchPeople("");
+	const directory = await searchPeopleDirectory("");
 	return {
 		title: t("authors.peopleDocTitle", "People — Toolhub"),
 		html: `<div class="container page people-page">
 			<header><h1 class="page__title">${t("authors.peopleTitle", "People")}</h1><p class="page__intro">${t("authors.peopleIntro", "Discover authors, maintainers, record owners, and catalog contributors resolved from Toolhub and Evolved evidence.")}</p></header>
 			<form class="searchbar people-page__search" data-people-search role="search"><input class="searchbar__input" name="q" type="search" placeholder="${esc(t("authors.searchPeople", "Search people"))}" aria-label="${esc(t("authors.searchPeople", "Search people"))}" /><button class="btn btn--primary" type="submit">${icon("search")} ${t("authors.search", "Search")}</button></form>
-			<div data-people-results>${peopleResults(people)}</div>
+			<div data-people-results>${directoryResults(directory)}</div>
 		</div>`,
 		mount() {
 			document.querySelector("[data-people-search]")?.addEventListener("submit", async (event) => {
@@ -194,8 +223,14 @@ export async function viewPeople() {
 				const target = document.querySelector("[data-people-results]");
 				const query = String(new FormData(form).get("q") || "").trim();
 				if (target) target.innerHTML = `<p class="signin-note">${t("authors.searching", "Searching…")}</p>`;
-				const results = await searchPeople(query);
-				if (target) target.innerHTML = peopleResults(results);
+				try {
+					const results = await searchPeopleDirectory(query);
+					if (target) target.innerHTML = directoryResults(results);
+				} catch {
+					if (target) {
+						target.innerHTML = `<p class="empty">${t("authors.peopleSearchFailed", "People search could not be loaded. Try again.")}</p>`;
+					}
+				}
 			});
 		}
 	};

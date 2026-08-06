@@ -13,9 +13,18 @@ export function personById(publicId) {
 }
 
 /** @param {string} query */
-export async function searchPeople(query) {
+export async function searchPeopleDirectory(query) {
 	const data = await backendGetJson(`/v1/people/?q=${encodeURIComponent(query)}&limit=50`);
-	return Array.isArray(data?.results) ? data.results : [];
+	return {
+		people: Array.isArray(data?.results) ? data.results : [],
+		unresolvedAttributions: Array.isArray(data?.unresolvedAttributions) ? data.unresolvedAttributions : []
+	};
+}
+
+/** @param {string} query */
+export async function searchPeople(query) {
+	const directory = await searchPeopleDirectory(query);
+	return directory.people;
 }
 
 /**

@@ -2308,6 +2308,9 @@
 	max-width: 720px;
 	margin-block: var(--space-4) var(--space-5);
 }
+.people-page__section-title {
+	margin-block-end: var(--space-3);
+}
 .people-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
@@ -2342,6 +2345,57 @@
 .people-card small {
 	color: var(--color-text-secondary);
 }
+.people-attributions {
+	margin-block-start: var(--space-6);
+	padding-block-start: var(--space-4);
+	border-block-start: var(--border-base);
+}
+.people-attributions .section-head {
+	align-items: flex-start;
+}
+.people-attributions__intro {
+	max-width: 720px;
+	margin-block: var(--space-1) var(--space-0);
+}
+.people-attributions__list {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-3) var(--space-0) var(--space-0);
+	padding: var(--space-0);
+	list-style: none;
+}
+.people-attribution {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--space-3);
+	padding: var(--space-3);
+	border-inline-start: var(--border-heavy);
+	background: var(--color-surface-muted);
+}
+.people-attribution__mark {
+	display: grid;
+	width: 32px;
+	height: 32px;
+	place-items: center;
+	border: var(--border-base);
+	border-radius: 50%;
+	color: var(--color-text-secondary);
+	font-weight: 700;
+}
+.people-attribution__content {
+	display: grid;
+	gap: var(--space-1);
+	min-width: 0;
+}
+.people-attribution small,
+.people-attribution__status {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.people-attribution__status {
+	white-space: nowrap;
+}
 @media (width <= 640px) {
 	.author-page__head,
 	.author-page__identity {
@@ -2353,6 +2407,12 @@
 	}
 	.author-page__stats {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.people-attribution {
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+	.people-attribution__status {
+		grid-column: 2;
 	}
 }
 .complete-list {
