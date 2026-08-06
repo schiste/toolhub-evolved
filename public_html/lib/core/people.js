@@ -11,12 +11,52 @@ export function personById(publicId) {
 	return backendGetJson(`/v1/people/${encodeURIComponent(publicId)}/`);
 }
 
-/** @param {string} query */
-export async function searchPeopleDirectory(query) {
-	const data = await backendGetJson(`/v1/people/?q=${encodeURIComponent(query)}&limit=50`);
+/**
+ * @typedef {{q?: string, page?: number, pageSize?: number, role?: string, verification?: string, activity?: string, project?: string, ordering?: string}} PeopleDirectorySearch
+ */
+
+/** @param {PeopleDirectorySearch} search */
+function directoryParams(search) {
+	const params = new URLSearchParams();
+	if (search.q) params.set("q", search.q);
+	if (search.page && search.page > 1) params.set("page", String(search.page));
+	if (search.pageSize) params.set("page_size", String(search.pageSize));
+	for (const key of ["role", "verification", "activity", "project", "ordering"]) {
+		const value = search[/** @type {keyof PeopleDirectorySearch} */ (key)];
+		if (value) params.set(key, String(value));
+	}
+	return params;
+}
+
+/** @param {PeopleDirectorySearch|string} [search] */
+export async function searchPeopleDirectory(search = {}) {
+	const options = typeof search === "string" ? { q: search } : search;
+	const params = directoryParams(options);
+	const data = await backendGetJson(`/v1/people/${params.size > 0 ? `?${params}` : ""}`);
 	return {
 		people: Array.isArray(data?.results) ? data.results : [],
-		unresolvedAttributions: Array.isArray(data?.unresolvedAttributions) ? data.unresolvedAttributions : []
+		unresolvedAttributions: Array.isArray(data?.unresolvedAttributions) ? data.unresolvedAttributions : [],
+		count: Number(data?.count) || 0,
+		page: Number(data?.page) || 1,
+		pageSize: Number(data?.pageSize) || options.pageSize || 24,
+		pageCount: Number(data?.pageCount) || 1,
+		next: data?.next || null,
+		previous: data?.previous || null
+	};
+}
+
+/** @param {Pick<PeopleDirectorySearch, "q"|"page"|"pageSize"|"role"|"project">} [search] */
+export async function searchUnresolvedAttributions(search = {}) {
+	const params = directoryParams(search);
+	const data = await backendGetJson(`/v1/people/attributions/${params.size > 0 ? `?${params}` : ""}`);
+	return {
+		attributions: Array.isArray(data?.results) ? data.results : [],
+		count: Number(data?.count) || 0,
+		page: Number(data?.page) || 1,
+		pageSize: Number(data?.pageSize) || search.pageSize || 10,
+		pageCount: Number(data?.pageCount) || 1,
+		next: data?.next || null,
+		previous: data?.previous || null
 	};
 }
 
