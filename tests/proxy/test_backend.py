@@ -2970,6 +2970,16 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
         sync.PERSON_REL_CATALOG_ACTOR,
     }
     assert {relationship["type"] for relationship in author_person["relationships"]} == {sync.PERSON_REL_AUTHOR}
+    evidence = author_person["relationships"][0]["evidence"][0]
+    assert evidence["checkedAt"].endswith("Z")
+    assert "expiresAt" in evidence
+    assert "evidenceUrl" not in evidence
+
+    person_detail = client.get(f"/v1/people/{author_person['id']}/").get_json()
+    detail_relationship = person_detail["tools"][0]["relationships"][0]
+    assert detail_relationship["evidence"][0]["source"] == evidence["source"]
+    assert detail_relationship["evidence"][0]["method"] == evidence["method"]
+    assert detail_relationship["evidence"][0]["checkedAt"] == evidence["checkedAt"]
 
 
 def test_public_tool_people_endpoint_is_rate_limited(client, monkeypatch):

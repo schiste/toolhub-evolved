@@ -9,7 +9,7 @@ of those rows grant or replace upstream Toolhub permissions.
 from __future__ import annotations
 
 import hashlib
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
@@ -71,6 +71,47 @@ def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - upstream valu
 
 def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrusted
     return _clean(value).casefold()
+
+
+def _iso(value: datetime | None) -> str:
+    """Serialize stored UTC timestamps without exposing database details."""
+    if value is None:
+        return ""
+    normalized = value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo is not None else value
+    return normalized.isoformat(timespec="seconds") + "Z"
+
+
+def _public_relationship_payload(
+    person: Person,
+    relationship: ToolPersonRelationship,
+    supporting: list[ToolRelationshipEvidence],
+) -> dict[str, Any]:
+    """Project one relationship and its public-safe provenance."""
+    return {
+        "type": relationship.relationship_type,
+        "status": relationship.verification_status,
+        "confidence": relationship.confidence,
+        "evidenceCount": relationship.evidence_count,
+        "toolhubCanonical": relationship.toolhub_canonical,
+        "evidence": [
+            {
+                "source": row.source,
+                "method": row.method,
+                "observedName": row.observed_name,
+                "status": row.verification_status,
+                "confidence": row.confidence,
+                "available": bool(row.evidence_url),
+                "identityBasis": person.identity_quality,
+                "relationshipBasis": people_policy.relationship_basis(
+                    relationship.relationship_type,
+                    row.method,
+                ),
+                "checkedAt": _iso(row.checked_at),
+                "expiresAt": _iso(row.expires_at),
+            }
+            for row in supporting
+        ],
+    }
 
 
 def _canonical_key(  # noqa: PLR0911, PLR0913 - explicit identifiers define precedence
@@ -812,10 +853,12 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
     }
     evidence = list(
         s.execute(
-            select(ToolRelationshipEvidence).where(
+            select(ToolRelationshipEvidence)
+            .where(
                 ToolRelationshipEvidence.tool_name == clean_tool,
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
             )
+            .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
         ).scalars()
     )
     evidence_by_key: dict[tuple[int, str], list[ToolRelationshipEvidence]] = {}
@@ -834,31 +877,7 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
             | {"relationships": []},
         )
         supporting = evidence_by_key.get((person.id, relationship.relationship_type), [])
-        payload["relationships"].append(
-            {
-                "type": relationship.relationship_type,
-                "status": relationship.verification_status,
-                "confidence": relationship.confidence,
-                "evidenceCount": relationship.evidence_count,
-                "toolhubCanonical": relationship.toolhub_canonical,
-                "evidence": [
-                    {
-                        "source": row.source,
-                        "method": row.method,
-                        "observedName": row.observed_name,
-                        "status": row.verification_status,
-                        "confidence": row.confidence,
-                        "available": bool(row.evidence_url),
-                        "identityBasis": person.identity_quality,
-                        "relationshipBasis": people_policy.relationship_basis(
-                            relationship.relationship_type,
-                            row.method,
-                        ),
-                    }
-                    for row in supporting
-                ],
-            }
-        )
+        payload["relationships"].append(_public_relationship_payload(person, relationship, supporting))
     items = sorted(
         items_by_id.values(),
         key=lambda item: (-max((role["confidence"] for role in item["relationships"]), default=0), item["id"]),
@@ -897,16 +916,27 @@ def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
             .order_by(ToolPersonRelationship.tool_name, ToolPersonRelationship.relationship_type)
         ).scalars()
     )
+    evidence = list(
+        s.execute(
+            select(ToolRelationshipEvidence)
+            .where(
+                ToolRelationshipEvidence.person_id == person.id,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+            .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
+        ).scalars()
+    )
+    evidence_by_key: dict[tuple[str, str], list[ToolRelationshipEvidence]] = {}
+    for item in evidence:
+        evidence_by_key.setdefault((item.tool_name, item.relationship_type), []).append(item)
     tools: dict[str, list[dict[str, Any]]] = {}
     for row in relationships:
         tools.setdefault(row.tool_name, []).append(
-            {
-                "type": row.relationship_type,
-                "status": row.verification_status,
-                "confidence": row.confidence,
-                "evidenceCount": row.evidence_count,
-                "toolhubCanonical": row.toolhub_canonical,
-            }
+            _public_relationship_payload(
+                person,
+                row,
+                evidence_by_key.get((row.tool_name, row.relationship_type), []),
+            )
         )
     return _person_base_payload(person, identifiers, profile, activity) | {
         "tools": [{"name": name, "relationships": roles} for name, roles in tools.items()],
