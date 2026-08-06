@@ -79,7 +79,7 @@ def test_backfill_materializes_stable_public_edges_and_checkpoints(monkeypatch):
     with db.session_scope() as s:
         edge = s.query(ToolRelationshipEvidence).one()
         identifier = s.query(PersonIdentifier).filter_by(person_id=edge.person_id).one()
-        assert identifier.namespace == "wiki_username"
+        assert identifier.namespace == "toolforge_username"
         assert identifier.normalized_value == "ada"
         assert edge.source == maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN
         state = s.get(MaintainerBackfillState, maintainer_backfill.STATE_KEY)
