@@ -238,6 +238,7 @@ PUBLIC_V1_ROUTES = {
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/people/": "public local people search; reads are rate limited",
+    "/v1/people/resolve/": "public exact-handle resolution over local public identities; reads are rate limited",
     "/v1/people/<public_id>/": "public local person profile; reads are rate limited",
     "/v1/people/tools/<name>/": (
         "public normalized people and typed tool relationships; evidence is redacted and reads are rate limited"
