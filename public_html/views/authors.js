@@ -2,6 +2,7 @@
 import { dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
 import { countLabel, t } from "../lib/core/i18n.js";
+import { identityQualityLabel } from "../lib/core/claims.js";
 import { personById, resolvePersonHandle, searchPeopleDirectory, toolsForPerson } from "../lib/core/people.js";
 import { personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
@@ -9,6 +10,7 @@ import { icon } from "../lib/atoms/icon.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
+import { relationshipTrustMarkup } from "../lib/molecules/relationship-trust.js";
 
 /** @param {any} person */
 function profileLinks(person) {
@@ -37,45 +39,46 @@ function profileLinks(person) {
 		.join("");
 }
 
-const ROLE_ORDER = ["record_owner", "maintainer", "author", "catalog_actor"];
-
-/** @param {string} role */
-function roleLabel(role) {
-	const labels = /** @type {Record<string, string>} */ ({
-		record_owner: t("authors.recordOwnerTools", "Toolhub records managed"),
-		maintainer: t("authors.maintainerTools", "Tools maintained"),
-		author: t("authors.authorTools", "Tools authored"),
-		catalog_actor: t("authors.catalogActorTools", "Catalog contributions")
-	});
-	return labels[role] || t("authors.relatedTools", "Related tools");
+/** @param {Tool} tool */
+function relationshipsForTool(tool) {
+	const relationships = Array.isArray(/** @type {any} */ (tool).personRelationships)
+		? /** @type {any[]} */ (/** @type {any} */ (tool).personRelationships)
+		: [];
+	if (relationships.length > 0) return relationships;
+	return [
+		{
+			type: "author",
+			status: "unverified",
+			confidence: 0,
+			evidenceCount: 1,
+			toolhubCanonical: true,
+			evidence: [{ source: "toolhub_author_metadata", method: "toolhub_author_metadata", status: "unverified" }]
+		}
+	];
 }
 
-/** Each tool is rendered once, under the strongest relationship it carries. @param {Tool[]} tools */
-function groupedTools(tools) {
-	const groups = /** @type {Map<string, Tool[]>} */ (new Map(ROLE_ORDER.map((role) => [role, []])));
-	for (const tool of tools) {
-		const roles = new Set(
-			(Array.isArray(/** @type {any} */ (tool).personRelationships)
-				? /** @type {any} */ (tool).personRelationships
-				: []
-			).map((/** @type {any} */ relationship) => relationship?.type)
-		);
-		const primary = ROLE_ORDER.find((role) => roles.has(role)) || "author";
-		groups.get(primary)?.push(tool);
-	}
-	return ROLE_ORDER.map((role) => {
-		const rows = groups.get(role) || [];
-		return rows.length > 0
-			? `<section class="author-page__tools" aria-labelledby="author-role-${role}"><div class="section-head"><h2 id="author-role-${role}">${esc(roleLabel(role))}</h2><span class="muted">${rows.length}</span></div>${grid("grid-tools", rows, (/** @type {Tool} */ tool) => toolCard(tool))}</section>`
-			: "";
-	}).join("");
+/** Render one tool once while preserving every relationship carried by that tool. @param {Tool[]} tools */
+function relatedTools(tools) {
+	return `<section class="author-page__tools" aria-labelledby="author-related-tools">
+		<div class="section-head"><h2 id="author-related-tools">${t("authors.relatedTools", "Related tools")}</h2><span class="muted">${tools.length}</span></div>
+		${grid(
+			"grid-tools author-page__tool-grid",
+			tools,
+			(/** @type {Tool} */ tool) =>
+				`<div class="author-tool-card">${toolCard(tool)}<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for {tool}", { tool: tool.title || tool.name }))}">${relationshipsForTool(
+					tool
+				)
+					.map((relationship) => relationshipTrustMarkup(relationship))
+					.join("")}</div></div>`
+		)}
+	</section>`;
 }
 
 /** @param {any} activity @param {number} toolCount */
 function activityStats(activity, toolCount) {
 	const stats = [
 		[t("authors.relatedToolsStat", "Related tools"), activity?.relatedToolCount ?? toolCount],
-		[t("authors.verifiedToolsStat", "Verified tools"), activity?.verifiedToolCount ?? 0],
+		[t("authors.verifiedToolsStat", "Tools with a verified relationship"), activity?.verifiedToolCount ?? 0],
 		[t("authors.contributionsStat", "Public contributions"), activity?.contributionCount ?? 0],
 		[t("authors.recentContributionsStat", "Recent contributions"), activity?.recentContributionCount ?? 0]
 	];
@@ -91,12 +94,13 @@ function renderPerson(person, tools) {
 	const externalLinks = profileLinks(person);
 	const body =
 		tools.length > 0
-			? groupedTools(tools)
+			? relatedTools(tools)
 			: `<p class="empty">${t("authors.noToolsFound", "No tools found for this person.")}</p>`;
 	const bio = profile.bio ? `<div class="prose author-page__bio">${esc(profile.bio)}</div>` : "";
 	const meta = [
 		profile.location,
-		person?.activity?.status && person.activity.status !== "unknown" ? person.activity.status : ""
+		person?.activity?.status && person.activity.status !== "unknown" ? person.activity.status : "",
+		person?.identityQuality ? identityQualityLabel(person.identityQuality) : ""
 	]
 		.filter(Boolean)
 		.join(" · ");

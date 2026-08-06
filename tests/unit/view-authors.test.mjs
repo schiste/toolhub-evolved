@@ -4,15 +4,18 @@ import { beforeEach, test, vi } from "vitest";
 // toolsByAuthor hits the network (paginate → apiGet), so it is fixture-driven here.
 // authorProfileUrl, grid, toolCard, and the dom/i18n helpers stay real so the rendered
 // HTML — and the `(t) => toolCard(t)` mapper arrow — is exercised end to end.
-import { viewAuthor, viewPeople } from "../../public_html/views/authors.js";
+import { viewAuthor, viewPeople, viewPerson } from "../../public_html/views/authors.js";
 import { icon } from "../../public_html/lib/atoms/icon.js";
 import * as authorIndex from "../../public_html/lib/core/author-index.js";
 
-const h = vi.hoisted(() => ({ backendGetJson: vi.fn(() => Promise.resolve({ results: {} })) }));
+const h = vi.hoisted(() => ({
+	backendGetJson: vi.fn(() => Promise.resolve({ results: {} })),
+	getToolsByName: vi.fn(() => Promise.resolve([]))
+}));
 
 vi.mock("../../public_html/lib/core/api.js", async (importOriginal) => {
 	const actual = await importOriginal();
-	return { ...actual, backendGetJson: h.backendGetJson };
+	return { ...actual, backendGetJson: h.backendGetJson, getToolsByName: h.getToolsByName };
 });
 vi.mock("../../public_html/lib/core/author-index.js", async (importOriginal) => {
 	const actual = await importOriginal();
@@ -24,6 +27,8 @@ const tool = (name, title) => ({ name, title, keywords: [], forWikis: [] });
 beforeEach(() => {
 	h.backendGetJson.mockReset();
 	h.backendGetJson.mockResolvedValue({ status: "not_found" });
+	h.getToolsByName.mockReset();
+	h.getToolsByName.mockResolvedValue([]);
 	authorIndex.toolsByAuthor.mockReset();
 });
 
@@ -41,7 +46,7 @@ test("viewAuthor renders the author name, count, back link and a tools grid", as
 	// countLabel(2, "tool", "tools") → "2 tools" (kills the "tool"/"tools" literals + count).
 	assert.match(view.html, /<p class="page__intro">2 tools<\/p>/);
 	// Real grid + the mapper arrow produce one card per tool.
-	assert.match(view.html, /<ul class="card-grid grid-tools" role="list">/);
+	assert.match(view.html, /<ul class="card-grid grid-tools author-page__tool-grid" role="list">/);
 	assert.match(view.html, /data-tool="t1"/);
 	assert.match(view.html, /data-tool="t2"/);
 	// Author profile link present and outbound, with the real external icon
@@ -51,8 +56,75 @@ test("viewAuthor renders the author name, count, back link and a tools grid", as
 		/<a class="author-page__profile" href="https:\/\/example\.org\/ada" target="_blank" rel="noopener nofollow">example\.org /
 	);
 	assert.ok(view.html.includes(`example.org ${icon("external")}</a>`));
-	assert.match(view.html, /<h2 id="author-role-author">Tools authored<\/h2>/);
+	assert.match(view.html, /<h2 id="author-related-tools">Related tools<\/h2>/);
+	assert.match(view.html, /Listed author/);
 	assert.match(view.html, /<dt>Public contributions<\/dt><dd>0<\/dd>/);
+});
+
+test("viewPerson renders every role with distinct provenance on one tool", async () => {
+	h.backendGetJson.mockResolvedValueOnce({
+		id: "person-trust",
+		displayName: "Ada Lovelace",
+		identityQuality: "stable_id",
+		profile: {},
+		activity: { status: "unknown", relatedToolCount: 1, verifiedToolCount: 1 },
+		tools: [
+			{
+				name: "trust-tool",
+				relationships: [
+					{
+						type: "author",
+						status: "unverified",
+						confidence: 45,
+						evidenceCount: 1,
+						toolhubCanonical: true,
+						evidence: [
+							{
+								source: "toolhub_author_metadata",
+								method: "toolhub_author_metadata",
+								status: "unverified",
+								checkedAt: "2026-08-01T12:00:00Z",
+								identityBasis: "stable_id"
+							}
+						]
+					},
+					{
+						type: "maintainer",
+						status: "verified",
+						confidence: 95,
+						evidenceCount: 1,
+						evidence: [
+							{
+								source: "toolforge_toolsadmin",
+								method: "toolforge_maintainer",
+								status: "verified",
+								checkedAt: "2026-08-02T12:00:00Z"
+							}
+						]
+					},
+					{
+						type: "record_owner",
+						status: "verified",
+						confidence: 90,
+						evidenceCount: 1,
+						evidence: [{ method: "toolhub_write_access", status: "verified" }]
+					}
+				]
+			}
+		]
+	});
+	h.getToolsByName.mockResolvedValue([tool("trust-tool", "Trust Tool")]);
+
+	const view = await viewPerson("person-trust");
+
+	assert.equal(view.html.match(/data-tool="trust-tool"/g)?.length, 1);
+	assert.match(view.html, /Identity backed by a stable account ID/);
+	assert.match(view.html, /Listed author/);
+	assert.match(view.html, /Verified Toolforge maintainer/);
+	assert.match(view.html, /Verified Toolhub record authority/);
+	assert.match(view.html, /Toolhub author field/);
+	assert.match(view.html, /datetime="2026-08-01T12:00:00\.000Z"/);
+	assert.match(view.html, /<dt>Tools with a verified relationship<\/dt><dd>1<\/dd>/);
 });
 
 test("viewAuthor uses the requested name and singular label when the index omits them", async () => {
@@ -76,7 +148,7 @@ test("viewAuthor shows exactly one tool with the singular 'tool' label", async (
 	authorIndex.toolsByAuthor.mockResolvedValue({ name: "Solo", tools: [tool("only", "Only Tool")], profile: {} });
 	const view = await viewAuthor("Solo");
 	assert.match(view.html, /<p class="page__intro">1 tool<\/p>/);
-	assert.match(view.html, /<ul class="card-grid grid-tools" role="list">/);
+	assert.match(view.html, /<ul class="card-grid grid-tools author-page__tool-grid" role="list">/);
 });
 
 test("viewAuthor builds a Meta-Wiki profile URL from a wikiUsername", async () => {

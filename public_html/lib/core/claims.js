@@ -69,6 +69,15 @@ export function evidenceSourceLabel(source) {
 	return labels[source] || source || t("peopleEvidence.sourceUnknown", "Unknown source");
 }
 
+/** @param {string} quality */
+export function identityQualityLabel(quality) {
+	const labels = /** @type {Record<string, string>} */ ({
+		stable_id: t("peopleEvidence.identityStable", "Identity backed by a stable account ID"),
+		handle: t("peopleEvidence.identityHandle", "Identity backed by a public account handle")
+	});
+	return labels[quality] || t("peopleEvidence.identityIncomplete", "Identity evidence incomplete");
+}
+
 /**
  * Describe precisely what one public relationship proves.
  * @param {any} relationship
