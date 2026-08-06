@@ -4,6 +4,7 @@
 
 # Technical Release Notes
 
+- Replaces the 50-result, first-match legacy author resolver with a server-side exact-handle decision API and explicit frontend disambiguation for display names, handle collisions, and unresolved labels.
 - Stops publishing display-only attribution records as people, aggregates them by label, and keeps their per-source identity scopes intact.
 - Adds Toolhub and Wikimedia stable identifiers, correctly namespaces Toolforge developer handles, and persists authenticated LDAP membership evidence without treating access as authorship.
 - Adds bounded exact-Toolhub identity discovery, durable approve/reject/split review decisions, stable-id conflict quarantine, and automatic reapplication after catalog refreshes.

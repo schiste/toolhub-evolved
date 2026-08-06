@@ -309,6 +309,14 @@ requests.
 
 The normalized people view is available from `GET /v1/people/tools/<name>/`.
 Person-centric reads use `GET /v1/people/<public_id>/` and `GET /v1/people/`.
+Legacy `/by/<name>` routes call
+`GET /v1/people/resolve/?handle=<name>`. The resolver returns `resolved` only
+when one public person owns the exact current Toolhub, Toolforge, or wiki
+handle. Cross-namespace handle collisions, public display-name matches, and
+matching unresolved attribution labels return `ambiguous`; display names never
+select a person. The frontend renders those candidates and unresolved evidence
+as a disambiguation page. `not_found` alone may use the canonical Toolhub author
+aggregate fallback while local projections catch up.
 The directory and person-detail route publish only identities backed by a
 current stable identifier, a current handle, or an Evolved profile. Display-only
 evidence remains scoped per observation and is returned separately as aggregated

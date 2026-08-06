@@ -4,6 +4,7 @@
 
 # What's New for Users
 
+- Older author-name links now open a choice page when a name could refer to several people, instead of selecting an arbitrary profile.
 - The people directory no longer presents every repeated free-text author or maintainer label as a different person; unresolved attributions stay visible as grouped evidence instead.
 - Verified people can now carry stable Toolhub and Wikimedia account identities plus Toolforge and wiki handles, while reviewed links retain the original author or maintainer role.
 - Browse people and open a profile for anyone who works on a tool.
