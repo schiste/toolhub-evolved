@@ -4,6 +4,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+    from datetime import datetime
 
 ACTION_AUTO_LINK = "auto_link"
 ACTION_CANDIDATE = "candidate"
@@ -18,6 +23,10 @@ REASON_EXACT_TOOLHUB = "exact_toolhub_username_candidate"
 REASON_TOOLFORGE_CORROBORATED = "exact_toolhub_username_and_toolforge_membership"
 REASON_DISPLAY_ONLY = "display_name_only"
 REASON_STABLE_CONFLICT = "conflicting_stable_identifiers"
+
+VIEWER_AUDIENCE_CONTRIBUTOR = "contributor"
+VIEWER_AUDIENCE_MAINTAINER = "verified_maintainer"
+VIEWER_AUDIENCE_RECORD_AUTHORITY = "record_authority"
 
 
 @dataclass(frozen=True)
@@ -70,3 +79,21 @@ def relationship_basis(role: str, method: str) -> str:
     if role == "catalog_actor":
         return "catalog_activity"
     return "relationship_observation"
+
+
+def viewer_action_audience(
+    relationships: Iterable[Mapping[str, Any]],
+    *,
+    checked_at: datetime,
+) -> str:
+    """Classify action wording from current verified per-tool relationships."""
+    current_roles = {
+        str(row.get("type") or "")
+        for row in relationships
+        if row.get("status") == "verified" and (row.get("expires_at") is None or row["expires_at"] > checked_at)
+    }
+    if "record_owner" in current_roles:
+        return VIEWER_AUDIENCE_RECORD_AUTHORITY
+    if "maintainer" in current_roles:
+        return VIEWER_AUDIENCE_MAINTAINER
+    return VIEWER_AUDIENCE_CONTRIBUTOR

@@ -39,6 +39,8 @@ from backend import (  # noqa: E402
     github_issues,
     graph_payload,
     maintainer_index,
+    people_index,
+    people_policy,
     recent_owners,
     security,
     sync,
@@ -3104,6 +3106,75 @@ def test_unified_claim_api_preserves_history_and_withdraws_revoked_evidence(clie
         )
         assert withdrawn.withdrawn_at is not None
         assert s.query(ToolPersonRelationship).filter_by(tool_name="ada-tool").count() == 0
+
+
+def test_tool_viewer_context_uses_only_current_relationships_owned_by_the_signed_in_person(client):
+    viewer_id = add_user(username="Viewer", wm_sub="viewer-42")
+    other_id = add_user(username="Other", wm_sub="other-43")
+    with db.session_scope() as s:
+        viewer = s.get(User, viewer_id)
+        other = s.get(User, other_id)
+        viewer_person = people_index.link_user(s, viewer)
+        other_person = people_index.link_user(s, other)
+        s.add_all(
+            [
+                ToolPersonRelationship(
+                    tool_name="viewer-tool",
+                    person_id=viewer_person.id,
+                    relationship_type=sync.PERSON_REL_MAINTAINER,
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    confidence=35,
+                    evidence_count=1,
+                ),
+                ToolPersonRelationship(
+                    tool_name="viewer-tool",
+                    person_id=other_person.id,
+                    relationship_type=sync.PERSON_REL_RECORD_OWNER,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=90,
+                    evidence_count=1,
+                ),
+            ]
+        )
+    assert client.get("/v1/tools/viewer-tool/viewer-context/").status_code == 401
+
+    sign_in(client, viewer_id)
+    contributor = client.get("/v1/tools/viewer-tool/viewer-context/")
+    assert contributor.status_code == 200
+    assert contributor.headers["Cache-Control"] == "private, no-store"
+    assert contributor.get_json()["audience"] == people_policy.VIEWER_AUDIENCE_CONTRIBUTOR
+    assert contributor.get_json()["qualifyingRelationships"] == []
+    assert "evidencePayload" not in dumps(contributor.get_json())
+
+    with db.session_scope() as s:
+        viewer = s.get(User, viewer_id)
+        relationship = s.query(ToolPersonRelationship).filter_by(
+            tool_name="viewer-tool",
+            person_id=viewer.person_id,
+            relationship_type=sync.PERSON_REL_MAINTAINER,
+        ).one()
+        relationship.verification_status = sync.AUTHOR_CLAIM_VERIFIED
+        relationship.expires_at = utcnow() + timedelta(days=1)
+
+    maintainer = client.get("/v1/tools/viewer-tool/viewer-context/").get_json()
+    assert maintainer["audience"] == people_policy.VIEWER_AUDIENCE_MAINTAINER
+    assert maintainer["qualifyingRelationships"][0]["type"] == sync.PERSON_REL_MAINTAINER
+
+    with db.session_scope() as s:
+        viewer = s.get(User, viewer_id)
+        s.add(
+            ToolPersonRelationship(
+                tool_name="viewer-tool",
+                person_id=viewer.person_id,
+                relationship_type=sync.PERSON_REL_RECORD_OWNER,
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                confidence=90,
+                evidence_count=1,
+            )
+        )
+
+    authority = client.get("/v1/tools/viewer-tool/viewer-context/").get_json()
+    assert authority["audience"] == people_policy.VIEWER_AUDIENCE_RECORD_AUTHORITY
 
 
 def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, monkeypatch):

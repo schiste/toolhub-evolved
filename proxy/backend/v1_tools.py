@@ -19,6 +19,7 @@ from backend import (
     db,
     maintainer_index,
     people_index,
+    people_policy,
     tool_summaries,
     toolhub,
     v1,
@@ -37,6 +38,7 @@ from backend.models import (
     ToolHealthTarget,
     ToolhubToken,
     ToolMedia,
+    ToolPersonRelationship,
     ToolThanks,
     User,
     utcnow,
@@ -71,6 +73,64 @@ v1_tools_bp = Blueprint("v1_tools", __name__)
 
 def _is_http_url(value: Any) -> bool:  # noqa: ANN401
     return isinstance(value, str) and value.startswith(("http://", "https://")) and len(value) <= common.MAX_URL
+
+
+@v1_tools_bp.route("/v1/tools/<name>/viewer-context/")
+@login_required
+def v1_tool_viewer_context(name: str) -> Response:
+    """Return private relationship-derived wording context for one viewer and tool."""
+    uid = current_user_id()
+    assert uid is not None  # noqa: S101 - login_required guarantees this
+    user = common.require_policy_or_abort(authz.ACTION_PRIVATE_READ, authz.Resource(owner_user_id=uid))
+    tool_name = str(name or "").strip()[:255]
+    now = utcnow()
+    with db.session_scope() as s:
+        stored_user = s.get(User, user.id)
+        if stored_user is None:
+            return common.deny(common.HTTP_UNAUTHORIZED, "sign in required")
+        person = people_index.link_user(s, stored_user)
+        rows = list(
+            s.execute(
+                select(ToolPersonRelationship)
+                .where(
+                    ToolPersonRelationship.tool_name == tool_name,
+                    ToolPersonRelationship.person_id == person.id,
+                )
+                .order_by(ToolPersonRelationship.relationship_type)
+            ).scalars()
+        )
+        relationships = [
+            {
+                "type": row.relationship_type,
+                "status": row.verification_status,
+                "confidence": row.confidence,
+                "evidenceCount": row.evidence_count,
+                "expiresAt": common.iso(row.expires_at),
+            }
+            for row in rows
+            if row.verification_status == "verified" and (row.expires_at is None or row.expires_at > now)
+        ]
+        audience = people_policy.viewer_action_audience(
+            [
+                {
+                    "type": row.relationship_type,
+                    "status": row.verification_status,
+                    "expires_at": row.expires_at,
+                }
+                for row in rows
+            ],
+            checked_at=now,
+        )
+        response = jsonify(
+            {
+                "toolName": tool_name,
+                "personId": person.public_id,
+                "audience": audience,
+                "qualifyingRelationships": relationships,
+            }
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
 
 
 def _claim_options(s: Any, user: User, tool: dict) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy session

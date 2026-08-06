@@ -2,12 +2,14 @@
 """Acceptance matrix for conservative people reconciliation policy."""
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import people_policy  # noqa: E402
+from backend.models import utcnow  # noqa: E402
 
 
 def test_stable_authenticated_handle_and_review_evidence_can_auto_link():
@@ -49,3 +51,34 @@ def test_conflicting_stable_ids_override_every_merge_signal():
 def test_relationship_basis_does_not_turn_membership_into_authorship():
     assert people_policy.relationship_basis("author", "toolforge_maintainer") == "toolforge_access_or_maintainership"
     assert people_policy.relationship_basis("author", "toolhub_author_metadata") == "authorship_attribution"
+
+
+def test_viewer_action_audience_requires_current_verified_tool_authority():
+    now = utcnow()
+    assert (
+        people_policy.viewer_action_audience(
+            [{"type": "maintainer", "status": "verified", "expires_at": now + timedelta(days=1)}],
+            checked_at=now,
+        )
+        == people_policy.VIEWER_AUDIENCE_MAINTAINER
+    )
+    assert (
+        people_policy.viewer_action_audience(
+            [
+                {"type": "maintainer", "status": "verified", "expires_at": None},
+                {"type": "record_owner", "status": "verified", "expires_at": None},
+            ],
+            checked_at=now,
+        )
+        == people_policy.VIEWER_AUDIENCE_RECORD_AUTHORITY
+    )
+    for relationship in (
+        {"type": "author", "status": "verified", "expires_at": None},
+        {"type": "maintainer", "status": "unverified", "expires_at": None},
+        {"type": "maintainer", "status": "stale", "expires_at": None},
+        {"type": "maintainer", "status": "verified", "expires_at": now - timedelta(seconds=1)},
+    ):
+        assert (
+            people_policy.viewer_action_audience([relationship], checked_at=now)
+            == people_policy.VIEWER_AUDIENCE_CONTRIBUTOR
+        )
