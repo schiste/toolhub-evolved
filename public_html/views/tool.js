@@ -232,7 +232,9 @@ function authorInlineList(t, peopleSummary) {
 				candidate.displayName?.toLocaleLowerCase() === key ||
 				candidate.identifiers?.some((identifier) => identifier.value?.toLocaleLowerCase() === key) ||
 				candidate.relationships?.some((relationship) =>
-					relationship.evidence?.some((evidence) => evidence.observedName?.toLocaleLowerCase() === key)
+					relationship.evidence?.some(
+						(/** @type {any} */ evidence) => evidence.observedName?.toLocaleLowerCase() === key
+					)
 				)
 		);
 		return person ? { ...entry, publicId: person.id } : entry;
