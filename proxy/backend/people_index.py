@@ -1051,7 +1051,7 @@ def person_detail(
     if person is None or person.id not in public_identity_ids(s, {person.id}):
         return None
     requested = tool_page or PersonToolPage()
-    page = max(1, requested.page)
+    requested_page = max(1, requested.page)
     page_size = max(1, min(requested.page_size, 50))
     identifiers = _identifiers_by_person(s, {person.id}).get(person.id, [])
     profile = s.get(PersonProfile, person.id)
@@ -1062,6 +1062,8 @@ def person_detail(
         .group_by(ToolPersonRelationship.tool_name)
     )
     tool_count = int(s.scalar(select(func.count()).select_from(tool_names_statement.order_by(None).subquery())) or 0)
+    page_count = max(1, (tool_count + page_size - 1) // page_size)
+    page = min(requested_page, page_count)
     tool_names = list(
         s.execute(
             tool_names_statement.order_by(ToolPersonRelationship.tool_name)
@@ -1134,7 +1136,6 @@ def person_detail(
                 "relationships": roles_by_tool.get(name, []),
             }
         )
-    page_count = max(1, (tool_count + page_size - 1) // page_size)
     return _person_base_payload(person, identifiers, profile, activity) | {
         "tools": {
             "count": tool_count,
