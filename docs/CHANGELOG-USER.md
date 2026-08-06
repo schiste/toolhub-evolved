@@ -1,9 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..24be52a (38 commits) -->
+<!-- Source range: 828438f..6accefa (51 commits) -->
 
 # What's New for Users
 
+- The people directory no longer presents every repeated free-text author or maintainer label as a different person; unresolved attributions stay visible as grouped evidence instead.
+- Verified people can now carry stable Toolhub and Wikimedia account identities plus Toolforge and wiki handles, while reviewed links retain the original author or maintainer role.
 - Browse people and open a profile for anyone who works on a tool.
 - Publish your own profile, and claim the tools you write or maintain by proving it through your listed author name, your Toolforge membership, a URL you control, or a signed toolinfo file.
 - Review the claims you have made, and edit or delete your Evolved profile, from Preferences.

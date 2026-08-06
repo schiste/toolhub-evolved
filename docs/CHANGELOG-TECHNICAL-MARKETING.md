@@ -1,9 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..24be52a (38 commits) -->
+<!-- Source range: 828438f..6accefa (51 commits) -->
 
 # Technical Release Notes
 
+- Stops publishing display-only attribution records as people, aggregates them by label, and keeps their per-source identity scopes intact.
+- Adds Toolhub and Wikimedia stable identifiers, correctly namespaces Toolforge developer handles, and persists authenticated LDAP membership evidence without treating access as authorship.
+- Adds bounded exact-Toolhub identity discovery, durable approve/reject/split review decisions, stable-id conflict quarantine, and automatic reapplication after catalog refreshes.
 - Adds person-centric APIs, Evolved profile storage, and a unified relationship-claim workflow with evidence reconciliation over canonical Toolhub reads.
 - Serves tool cards a projected health summary — score, grade and maintainer counts — instead of the whole record, and fetches the popover breakdown after the route has rendered.
 - Persists health summaries in the browser, so a cached score paints with its card and revalidates in the background instead of arriving in a later repaint.

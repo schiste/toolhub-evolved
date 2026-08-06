@@ -238,13 +238,13 @@ names are:
 | `tool_author_claims`                               | Public provenance label, private evidence cache  | Per-tool verification claims owned by stable local `user_id`; `toolhub_username` is only a mutable display snapshot. Never treat a claim as official Toolhub permission state.         |
 | `toolinfo_control_challenges`                      | Private, expiring verification workflow          | Short-lived challenges proving an account can change one exact external `toolinfo.json` URL; never a canonical Toolhub ownership or write grant.                                       |
 | `tool_author_keys`                                 | Public-key registry for signed toolinfo claims   | Stores Evolved-registered public keys owned by stable local `user_id`; never store private keys, and ignore revoked keys during verification.                                          |
-| `people` / `person_identifiers`                    | Public identity projection                       | People have immutable Evolved public ids. Immutable Toolhub user ids are distinguished from mutable Toolhub/wiki handles; display-name-only rows remain heuristic.                     |
+| `people` / `person_identifiers`                    | Public identity projection                       | People have immutable Evolved public ids. Toolhub and Wikimedia numeric ids are stable; Toolhub, Toolforge, and wiki usernames are mutable handles. Display-only rows are not people.  |
 | `person_profiles`                                  | Evolved-owned public profile                     | Bio, links, avatar, location, and visibility belong to Evolved. Toolhub remains canonical for catalog records and permissions.                                                         |
 | `tool_relationship_evidence`                       | Provenance ledger                                | Toolhub author/actor metadata, Toolsadmin observations, and Evolved claims remain separate evidence. Raw evidence payloads are private and no row grants Toolhub permissions.          |
 | `person_tool_relationships`                        | Public typed relationship projection             | One resolved current row per tool, person, and role; many evidence rows can support it. `catalog_actor` is never promoted to `record_owner` without explicit write-access evidence.    |
 | `person_activity_summaries`                        | Public contribution read model                   | Rebuildable, person-keyed summary of approved/public contributions only; registration and private account actions do not imply active maintenance.                                     |
 | `person_reconciliation_runs`                       | Operational audit                                | One dry-run or apply pass with deterministic counts, completion status, and error state.                                                                                               |
-| `person_reconciliation_mappings`                   | Operational audit                                | Source/target person mappings and reasons for every retained or merged identity considered by a run.                                                                                   |
+| `person_reconciliation_mappings`                   | Operational review                               | Durable candidate, approved, rejected, or split source/target mappings with bounded evidence, confidence, reviewer, and notes. Approved mappings are reapplied after source refreshes. |
 | `person_reconciliation_conflicts`                  | Operational review                               | Ambiguities deliberately left unresolved, especially display-name collisions; never used as automatic merge evidence.                                                                  |
 | `person_reconciliation_queue`                      | Operational work queue                           | Deduplicated changed-tool names waiting for bounded incremental edge and relationship reconciliation, with retry state.                                                                |
 | `source_analysis_reports`                          | Private per user                                 | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.                    |
@@ -319,24 +319,46 @@ canonical Toolhub author field listed the person; `maintainer` means Evolved
 has operational evidence such as Toolforge membership or signed toolinfo;
 `record_owner` means explicit evidence concerns authority over the official
 Toolhub record; and `catalog_actor` is only an observed catalog activity actor. These roles
-are intentionally not interchangeable. Toolhub's immutable numeric user id is
-the strongest account link; usernames are case-insensitive mutable handles. A
-display-name fallback is marked `identityQuality: display_name` and may be
-resolved later when stronger evidence arrives.
+are intentionally not interchangeable. Toolhub's immutable numeric user id and
+the Wikimedia CentralAuth global user id are stable account links. Toolhub,
+Toolforge developer, and wiki usernames are case-insensitive mutable handles.
+Display-name observations are aggregated for discovery but do not receive a
+public person id.
 
 Historical reconciliation is deterministic and rerunnable. Run
 `python proxy/people_reconcile.py` for a database-backed dry-run, inspect the
 recorded mappings and conflicts, then run it with `--apply` to materialize
-canonical Toolhub metadata evidence, link accounts only through immutable ids,
-and rebuild all typed relationships. The scheduled
+canonical Toolhub metadata evidence, link accounts through stable ids or
+structured handles, and rebuild all typed relationships. Apply runs check up
+to 25 unresolved labels against Toolhub's exact username endpoint by default
+(`PEOPLE_IDENTITY_CANDIDATE_LIMIT` or `--candidate-label-limit` changes the
+bound). An exact match is only a review candidate. Matching Toolforge LDAP
+membership raises its confidence but still does not auto-merge it. The scheduled
 `people-reconcile` job uses `--apply` after the initial catalog cache exists;
 display-name-only candidates remain separate and are reported rather than
 silently merged.
 
 Admins use `GET /v1/moderation/people-conflicts/` to inspect pending identity
 ambiguities and `PUT /v1/moderation/people-conflicts/<id>/` to mark one pending,
-resolved, or dismissed with review notes. A disposition records operator review
-only: it never merges identities or grants Toolhub permissions.
+resolved, or dismissed with review notes. They use
+`GET /v1/moderation/people-candidates/` to inspect exact Toolhub candidates and
+`PUT /v1/moderation/people-candidates/<id>/` with `decision` set to `approved`,
+`rejected`, or `split`. Approval moves the original provenance to the stable
+person without changing its relationship role; rejection and split decisions
+move nothing. Every decision is durable and none grants Toolhub permissions.
+
+After deployment, run a dry pass first and inspect its summary, then run the
+bounded apply pass:
+
+```sh
+.venv/bin/python proxy/people_reconcile.py
+.venv/bin/python proxy/people_reconcile.py --apply --candidate-label-limit 25
+```
+
+The apply pass backfills OAuth account links, rebuilds canonical and claim
+evidence, reapplies approved mappings, refreshes activity summaries, and queues
+new exact-name candidates. A non-zero `stableIdentityConflicts` count requires
+operator review; the reconciler never chooses between disagreeing stable ids.
 
 Canonical Toolhub fetches and local Toolinfo ingestion enqueue affected tool
 names in `person_reconciliation_queue` after their write transaction commits.

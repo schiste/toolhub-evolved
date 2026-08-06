@@ -97,8 +97,9 @@
   emails: onfailure
 
 - name: people-reconcile
-  # Rebuild the deterministic people graph and typed relationships. The first
-  # run can be inspected safely with `proxy/people_reconcile.py` without --apply.
+  # Rebuild the deterministic people graph and typed relationships, reapply
+  # durable approvals, and check a bounded set of unresolved labels for exact
+  # Toolhub identity candidates. A dry run performs no external lookups.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
   image: python3.13
   schedule: "23 */6 * * *"
