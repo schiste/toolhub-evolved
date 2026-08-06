@@ -3283,6 +3283,75 @@ def test_people_directory_endpoint_separates_unresolved_attributions(client):
     assert data["unresolvedAttributions"][0]["label"] == "Alex"
 
 
+def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
+    from backend import people_index
+
+    with db.session_scope() as s:
+        resolved = people_index.ensure_person(
+            s,
+            display_name="Ada Lovelace",
+            toolhub_user_id="1",
+            toolhub_username="Ada",
+        )
+        first_same_name = people_index.ensure_person(
+            s,
+            display_name="Shared Name",
+            toolhub_user_id="2",
+            toolforge_username="first-handle",
+        )
+        second_same_name = people_index.ensure_person(
+            s,
+            display_name="Shared Name",
+            toolhub_user_id="3",
+            wiki_username="second-handle",
+        )
+        cross_namespace_one = people_index.ensure_person(
+            s,
+            display_name="Cross One",
+            toolhub_user_id="4",
+            toolforge_username="shared-handle",
+        )
+        cross_namespace_two = people_index.ensure_person(
+            s,
+            display_name="Cross Two",
+            toolhub_user_id="5",
+            wiki_username="shared-handle",
+        )
+        people_index.replace_source_evidence(
+            s,
+            "unresolved-tool",
+            "source",
+            [{"display_name": "Magnus Manske", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        resolved_public_id = resolved.public_id
+        same_name_ids = {first_same_name.public_id, second_same_name.public_id}
+        cross_namespace_ids = {cross_namespace_one.public_id, cross_namespace_two.public_id}
+
+    exact = client.get("/v1/people/resolve/?handle=ada").get_json()
+    assert exact["status"] == "resolved"
+    assert exact["matchType"] == "handle"
+    assert exact["person"]["id"] == resolved_public_id
+    assert exact["person"]["matchedNamespaces"] == ["toolhub_username"]
+
+    display = client.get("/v1/people/resolve/?handle=Shared%20Name").get_json()
+    assert display["status"] == "ambiguous"
+    assert display["matchType"] == "display_name"
+    assert {person["id"] for person in display["candidates"]} == same_name_ids
+
+    cross_namespace = client.get("/v1/people/resolve/?handle=shared-handle").get_json()
+    assert cross_namespace["status"] == "ambiguous"
+    assert cross_namespace["matchType"] == "handle"
+    assert {person["id"] for person in cross_namespace["candidates"]} == cross_namespace_ids
+
+    unresolved = client.get("/v1/people/resolve/?handle=Magnus%20Manske").get_json()
+    assert unresolved["status"] == "ambiguous"
+    assert unresolved["candidates"] == []
+    assert unresolved["unresolvedAttributions"][0]["label"] == "Magnus Manske"
+
+    assert client.get("/v1/people/resolve/?handle=Nobody").get_json()["status"] == "not_found"
+    assert client.get("/v1/people/resolve/").status_code == 400
+
+
 def test_operator_can_triage_people_conflicts_without_merging(client):
     with db.session_scope() as s:
         run = PersonReconciliationRun(mode="apply", status="completed")

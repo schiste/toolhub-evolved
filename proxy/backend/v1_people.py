@@ -60,6 +60,26 @@ def v1_people() -> Response:
     )
 
 
+@v1_people_bp.route("/v1/people/resolve/")
+def v1_people_resolve() -> Response:
+    """Resolve a legacy name route only through one unique exact handle."""
+    if security.read_rate_limited(request.remote_addr):
+        return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+    handle = str(request.args.get("handle") or "").strip()
+    if not handle:
+        return common.bad("handle is required")
+    with db.session_scope() as s:
+        payload = people_index.resolve_legacy_handle(s, handle)
+    return jsonify(
+        payload
+        | {
+            "source": SOURCE_LOCAL,
+            "syncStatus": SYNC_EVOLVED_REAL,
+            "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},
+        }
+    )
+
+
 @v1_people_bp.route("/v1/people/<public_id>/")
 def v1_person(public_id: str) -> Response:
     """Return one public person, profile, tools, roles, and contribution summary."""

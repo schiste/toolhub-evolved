@@ -58,6 +58,7 @@ NS_TOOLFORGE_USERNAME = "toolforge_username"
 NS_WIKI_USERNAME = "wiki_username"
 PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
 PUBLIC_IDENTIFIER_KINDS = (IDENTIFIER_STABLE, IDENTIFIER_HANDLE)
+PUBLIC_HANDLE_NAMESPACES = (NS_TOOLHUB_USERNAME, NS_TOOLFORGE_USERNAME, NS_WIKI_USERNAME)
 RECENT_ACTIVITY_DAYS = 90
 ACTIVITY_STALE_DAYS = 1
 ACTIVE_CONTRIBUTION_DAYS = 30
@@ -690,6 +691,98 @@ def _person_base_payload(
         if profile is not None and profile.visibility == "public"
         else {},
         "activity": activity_payload(activity),
+    }
+
+
+def resolve_legacy_handle(s: Session, query: str) -> dict[str, Any]:
+    """Resolve one exact structured handle or return explicit ambiguity."""
+    clean_query = _clean(query)
+    normalized = _normalized(clean_query)
+    if not normalized:
+        return {"status": "not_found", "query": clean_query, "matchType": "none", "candidates": []}
+    handle_rows = list(
+        s.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.namespace.in_(PUBLIC_HANDLE_NAMESPACES),
+                PersonIdentifier.normalized_value == normalized,
+                PersonIdentifier.is_current.is_(True),
+            )
+        ).scalars()
+    )
+    handle_person_ids = public_identity_ids(s, {row.person_id for row in handle_rows})
+    matched_namespaces: dict[int, set[str]] = {}
+    for row in handle_rows:
+        if row.person_id in handle_person_ids:
+            matched_namespaces.setdefault(row.person_id, set()).add(row.namespace)
+
+    match_type = "handle"
+    candidate_ids = set(handle_person_ids)
+    if not candidate_ids:
+        display_ids = {
+            row[0]
+            for row in s.execute(
+                select(Person.id).where(func.lower(Person.display_name) == normalized)
+            ).all()
+        }
+        candidate_ids = public_identity_ids(s, display_ids)
+        match_type = "display_name" if candidate_ids else "none"
+
+    people = list(
+        s.execute(
+            select(Person)
+            .where(Person.id.in_(candidate_ids or {-1}))
+            .order_by(Person.display_name, Person.public_id)
+        ).scalars()
+    )
+    identifiers = _identifiers_by_person(s, candidate_ids)
+    profiles = {
+        row.person_id: row
+        for row in s.execute(
+            select(PersonProfile).where(
+                PersonProfile.person_id.in_(candidate_ids or {-1}),
+                PersonProfile.visibility == "public",
+            )
+        ).scalars()
+    }
+    activities = {
+        row.person_id: row
+        for row in s.execute(
+            select(PersonActivitySummary).where(PersonActivitySummary.person_id.in_(candidate_ids or {-1}))
+        ).scalars()
+    }
+    candidates = [
+        _person_base_payload(person, identifiers.get(person.id, []), profiles.get(person.id), activities.get(person.id))
+        | {"matchedNamespaces": sorted(matched_namespaces.get(person.id, set()))}
+        for person in people
+    ]
+    unresolved = [
+        attribution
+        for attribution in unresolved_attributions(s, clean_query, limit=100)
+        if _normalized(attribution.get("label")) == normalized
+    ]
+    if match_type == "handle" and len(candidates) == 1:
+        return {
+            "status": "resolved",
+            "query": clean_query,
+            "matchType": match_type,
+            "person": candidates[0],
+            "candidates": candidates,
+            "unresolvedAttributions": unresolved,
+        }
+    if candidates or unresolved:
+        return {
+            "status": "ambiguous",
+            "query": clean_query,
+            "matchType": match_type,
+            "candidates": candidates,
+            "unresolvedAttributions": unresolved,
+        }
+    return {
+        "status": "not_found",
+        "query": clean_query,
+        "matchType": "none",
+        "candidates": [],
+        "unresolvedAttributions": [],
     }
 
 
