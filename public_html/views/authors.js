@@ -71,20 +71,38 @@ function relationshipsForTool(tool) {
 	];
 }
 
-/** Render one tool once while preserving every relationship carried by that tool. @param {Tool[]} tools */
-function relatedTools(tools) {
+/**
+ * Render one tool once while preserving every relationship carried by that tool.
+ * @param {Tool[]} tools
+ * @param {{count?: number, page?: number, pageSize?: number, pageCount?: number}} toolPage
+ */
+function relatedTools(tools, toolPage) {
+	const count = Number(toolPage?.count) || tools.length;
+	const page = Number(toolPage?.page) || 1;
+	const pageSize = Number(toolPage?.pageSize) || Math.max(1, tools.length);
+	const first = tools.length > 0 ? (page - 1) * pageSize + 1 : 0;
+	const last = first + tools.length - 1;
+	const range =
+		tools.length > 0
+			? t("authors.showingRelatedTools", "Showing {first}–{last} of {count}", { first, last, count })
+			: t("authors.noToolsOnPage", "No related tools on this page.");
 	return `<section class="author-page__tools" aria-labelledby="author-related-tools">
-		<div class="section-head"><h2 id="author-related-tools">${t("authors.relatedTools", "Related tools")}</h2><span class="muted">${tools.length}</span></div>
-		${grid(
-			"grid-tools author-page__tool-grid",
-			tools,
-			(/** @type {Tool} */ tool) =>
-				`<div class="author-tool-card">${toolCard(tool)}<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for {tool}", { tool: tool.title || tool.name }))}">${relationshipsForTool(
-					tool
-				)
-					.map((relationship) => relationshipTrustMarkup(relationship))
-					.join("")}</div></div>`
-		)}
+		<div class="section-head"><div><h2 id="author-related-tools">${t("authors.relatedTools", "Related tools")}</h2><p class="muted" aria-live="polite">${esc(range)}</p></div><span class="muted">${count}</span></div>
+		${
+			tools.length > 0
+				? grid(
+						"grid-tools author-page__tool-grid",
+						tools,
+						(/** @type {Tool} */ tool) =>
+							`<div class="author-tool-card">${toolCard(tool)}${/** @type {any} */ (tool).profileSummaryStatus === "missing" ? `<p class="author-tool-card__summary-note">${t("authors.toolMetadataUnavailable", "Tool metadata is unavailable; relationships are shown from local evidence.")}</p>` : ""}<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for {tool}", { tool: tool.title || tool.name }))}">${relationshipsForTool(
+								tool
+							)
+								.map((relationship) => relationshipTrustMarkup(relationship))
+								.join("")}</div></div>`
+					)
+				: `<p class="empty">${t("authors.noToolsOnPage", "No related tools on this page.")}</p>`
+		}
+		<nav class="pager" data-person-tools-pager aria-label="${esc(t("authors.relatedToolsPagination", "Related tools pagination"))}">${renderPager(page, Number(toolPage?.pageCount) || 1)}</nav>
 	</section>`;
 }
 
@@ -106,9 +124,13 @@ function renderPerson(person, tools) {
 	const name = person?.displayName || t("authors.unknownPerson", "Unknown person");
 	const profile = person?.profile || {};
 	const externalLinks = profileLinks(person);
+	const toolPage = Array.isArray(person?.tools)
+		? { count: tools.length, page: 1, pageSize: Math.max(1, tools.length), pageCount: 1 }
+		: person?.tools || { count: person?.toolCount ?? tools.length, page: 1, pageSize: 24, pageCount: 1 };
+	const toolCount = Number(person?.toolCount ?? toolPage.count ?? tools.length) || 0;
 	const body =
-		tools.length > 0
-			? relatedTools(tools)
+		toolCount > 0
+			? relatedTools(tools, toolPage)
 			: `<p class="empty">${t("authors.noToolsFound", "No tools found for this person.")}</p>`;
 	const bio = profile.bio ? `<div class="prose author-page__bio">${esc(profile.bio)}</div>` : "";
 	const meta = [
@@ -131,16 +153,24 @@ function renderPerson(person, tools) {
 					${profileAvatar}
 					<div>
 					<h1 class="page__title"${dirAttrs(name)}>${esc(name)}</h1>
-					<p class="page__intro">${esc(countLabel(tools.length, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))}</p>
+					<p class="page__intro">${esc(countLabel(toolCount, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))}</p>
 					${meta ? `<p class="muted">${esc(meta)}</p>` : ""}
 					</div>
 				</div>
 				${externalLinks ? `<div class="author-page__links">${externalLinks}</div>` : ""}
 			</div>
 			${bio}
-			${activityStats(person?.activity, tools.length)}
+			${activityStats(person?.activity, toolCount)}
 			${body}
-		</div>`
+		</div>`,
+		mount() {
+			$("[data-person-tools-pager]")?.addEventListener("click", (event) => {
+				const button = /** @type {HTMLElement | null} */ (event.target?.closest?.("[data-page]"));
+				if (!button || !person?.id) return;
+				const page = positiveInteger(button.getAttribute("data-page"), 1);
+				navigateTo(`${personHref(person.id)}${page > 1 ? `?page=${page}` : ""}`);
+			});
+		}
 	};
 }
 
@@ -149,6 +179,10 @@ async function resolvedView(person) {
 	const tools = await toolsForPerson(person);
 	await attachEvolvedSummaries(tools, { graceMs: EVOLVED_SUMMARY_GRACE_MS });
 	return renderPerson(person, tools);
+}
+
+function profileToolPage() {
+	return positiveInteger(new URLSearchParams(globalThis.location?.search || "").get("page"), 1);
 }
 
 /** @param {any} identifier */
@@ -201,7 +235,7 @@ function renderDisambiguation(name, resolution) {
 export async function viewAuthor(name) {
 	const resolution = await resolvePersonHandle(name).catch(() => null);
 	if (resolution?.status === "resolved" && resolution?.person?.id) {
-		const person = await personById(resolution.person.id);
+		const person = await personById(resolution.person.id, { toolPage: profileToolPage() });
 		return resolvedView(person);
 	}
 	if (resolution?.status === "ambiguous") return renderDisambiguation(name, resolution);
@@ -222,7 +256,7 @@ export async function viewAuthor(name) {
 
 /** Immutable public-id route. @param {string} publicId */
 export async function viewPerson(publicId) {
-	const person = await personById(publicId);
+	const person = await personById(publicId, { toolPage: profileToolPage() });
 	return resolvedView(person);
 }
 
