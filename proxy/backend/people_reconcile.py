@@ -8,12 +8,14 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from backend import db, maintainer_index, people_index
+from backend import db, maintainer_index, people_index, people_policy
+from backend.author_claims import ToolforgeMembershipProvider
 from backend.models import (
     CanonicalToolCache,
     Person,
     PersonIdentifier,
     PersonReconciliationConflict,
+    PersonReconciliationMapping,
     PersonReconciliationQueue,
     PersonReconciliationRun,
     ToolAuthorClaim,
@@ -22,6 +24,7 @@ from backend.models import (
     User,
     utcnow,
 )
+from backend.people_identity import ToolhubIdentityProvider
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -31,6 +34,7 @@ MODE_APPLY = "apply"
 RUN_COMPLETED = "completed"
 RUN_FAILED = "failed"
 DEFAULT_QUEUE_LIMIT = 100
+DEFAULT_CANDIDATE_LABEL_LIMIT = 25
 
 
 class PersonReconciliationError(ValueError):
@@ -158,6 +162,106 @@ def _ambiguous_display_names(s: Session) -> list[dict[str, Any]]:
     return conflicts
 
 
+def _candidate_source_people(s: Session) -> list[Person]:
+    """Return unresolved people with active tool evidence and no prior decision."""
+    related_ids = select(ToolPersonRelationship.person_id)
+    decided_ids = select(PersonReconciliationMapping.source_person_id).where(
+        PersonReconciliationMapping.source_person_id.is_not(None)
+    )
+    people = list(
+        s.execute(
+            select(Person)
+            .where(
+                Person.id.in_(related_ids),
+                Person.id.not_in(decided_ids),
+                Person.display_name != "",
+            )
+            .order_by(func.lower(Person.display_name), Person.id)
+        ).scalars()
+    )
+    public_ids = people_index.public_identity_ids(s, {person.id for person in people})
+    return [person for person in people if person.id not in public_ids]
+
+
+def _tool_names_for_person(s: Session, person_id: int) -> tuple[list[str], list[str]]:
+    rows = list(
+        s.execute(
+            select(ToolPersonRelationship).where(ToolPersonRelationship.person_id == person_id)
+        ).scalars()
+    )
+    return sorted({row.tool_name for row in rows}), sorted({row.relationship_type for row in rows})
+
+
+def _membership_aliases(tool_names: list[str]) -> set[str]:
+    aliases = set()
+    for name in tool_names:
+        clean = _clean(name).casefold()
+        if clean:
+            aliases.add(clean)
+            aliases.add(clean.removeprefix("toolforge-"))
+    return aliases
+
+
+def discover_identity_candidates(
+    s: Session,
+    *,
+    run_id: int,
+    identity_provider: ToolhubIdentityProvider,
+    membership_provider: ToolforgeMembershipProvider,
+    label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+) -> int:
+    """Persist exact Toolhub matches for review without merging display identities."""
+    sources = _candidate_source_people(s)
+    by_label: dict[str, list[Person]] = {}
+    for person in sources:
+        by_label.setdefault(person.display_name.casefold(), []).append(person)
+    created = 0
+    for people in list(by_label.values())[: max(1, min(int(label_limit), 100))]:
+        identity = identity_provider.lookup_exact(people[0].display_name)
+        if identity is None:
+            continue
+        target = people_index.ensure_person(
+            s,
+            display_name=identity.toolhub_username,
+            toolhub_user_id=identity.toolhub_user_id,
+            wikimedia_global_user_id=identity.wikimedia_global_user_id,
+            toolhub_username=identity.toolhub_username,
+            source="toolhub_public_user",
+        )
+        memberships = membership_provider.tool_names(identity.toolhub_username)
+        membership_aliases = _membership_aliases(memberships)
+        for source in people:
+            tool_names, roles = _tool_names_for_person(s, source.id)
+            matched_memberships = sorted(_membership_aliases(tool_names) & membership_aliases)
+            decision = people_policy.decide_identity_link(
+                exact_toolhub_candidate=True,
+                same_tool_toolforge_membership=bool(matched_memberships),
+            )
+            mapping = PersonReconciliationMapping(
+                run_id=run_id,
+                source_person_id=source.id,
+                target_person_id=target.id,
+                source_key=source.canonical_key,
+                target_key=target.canonical_key,
+                decision=people_policy.ACTION_CANDIDATE,
+                reason=decision.reason,
+                confidence=decision.confidence,
+                evidence={
+                    "identity": identity.evidence_payload(),
+                    "sourcePublicId": source.public_id,
+                    "toolNames": tool_names,
+                    "relationshipTypes": roles,
+                    "toolforgeMemberships": memberships,
+                    "matchedToolforgeMemberships": matched_memberships,
+                },
+                updated_at=utcnow(),
+            )
+            s.add(mapping)
+            created += 1
+    s.flush()
+    return created
+
+
 def build_plan(s: Session) -> dict[str, Any]:
     cached_tools = {row[0] for row in s.execute(select(CanonicalToolCache.tool_name)).all()}
     claim_tools = {row[0] for row in s.execute(select(ToolAuthorClaim.tool_name).distinct()).all()}
@@ -171,7 +275,15 @@ def build_plan(s: Session) -> dict[str, Any]:
     }
 
 
-def run(s: Session, *, mode: str = MODE_DRY_RUN) -> dict[str, Any]:
+def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic in tests
+    s: Session,
+    *,
+    mode: str = MODE_DRY_RUN,
+    discover_candidates: bool = False,
+    identity_provider: ToolhubIdentityProvider | None = None,
+    membership_provider: ToolforgeMembershipProvider | None = None,
+    candidate_label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+) -> dict[str, Any]:
     """Audit or rebuild Toolhub-backed evidence and local people projections."""
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
         raise PersonReconciliationError(mode)
@@ -186,6 +298,19 @@ def run(s: Session, *, mode: str = MODE_DRY_RUN) -> dict[str, Any]:
             for name in before["toolNames"]:
                 _reconcile_tool(s, name)
             people_index.refresh_activity_summaries(s)
+            candidate_count = (
+                discover_identity_candidates(
+                    s,
+                    run_id=run_row.id,
+                    identity_provider=identity_provider or ToolhubIdentityProvider(),
+                    membership_provider=membership_provider or ToolforgeMembershipProvider(),
+                    label_limit=candidate_label_limit,
+                )
+                if discover_candidates
+                else 0
+            )
+        else:
+            candidate_count = 0
         after = build_plan(s)
         for conflict in after["conflicts"]:
             existing = s.execute(
@@ -215,6 +340,7 @@ def run(s: Session, *, mode: str = MODE_DRY_RUN) -> dict[str, Any]:
             "relationships": after["relationshipsScanned"],
             "conflicts": len(after["conflicts"]),
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY else 0,
+            "identityCandidatesCreated": candidate_count,
             "catalogAuthority": "toolhub",
         }
     except Exception as exc:

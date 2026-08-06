@@ -19,6 +19,12 @@ def main(argv: list[str] | None = None) -> int:
         help="materialize historical edges, merge deterministic identities, and rebuild relationships",
     )
     parser.add_argument(
+        "--candidate-label-limit",
+        type=int,
+        default=int(os.environ.get("PEOPLE_IDENTITY_CANDIDATE_LIMIT", people_reconcile.DEFAULT_CANDIDATE_LABEL_LIMIT)),
+        help="maximum unresolved labels to check against Toolhub during an apply run",
+    )
+    parser.add_argument(
         "--queue",
         action="store_true",
         help="process the bounded incremental queue instead of running a historical scan",
@@ -37,7 +43,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             mode = people_reconcile.MODE_APPLY if args.apply else people_reconcile.MODE_DRY_RUN
             with db.session_scope() as session:
-                summary = people_reconcile.run(session, mode=mode)
+                summary = people_reconcile.run(
+                    session,
+                    mode=mode,
+                    discover_candidates=args.apply,
+                    candidate_label_limit=args.candidate_label_limit,
+                )
     sys.stdout.write(json.dumps(summary, sort_keys=True) + "\n")
     return 0
 

@@ -789,7 +789,12 @@ class PersonReconciliationMapping(Base):
     decision: Mapped[str] = mapped_column(String(32), default="candidate")
     reason: Mapped[str] = mapped_column(String(128), default="")
     confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class PersonReconciliationConflict(Base):

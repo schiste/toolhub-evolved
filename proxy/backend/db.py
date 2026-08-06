@@ -211,6 +211,13 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "person_reconciliation_queue": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
         },
+        "person_reconciliation_mappings": {
+            "evidence": f"{json_col} NULL",
+            "reviewed_by_user_id": "INTEGER NULL",
+            "reviewed_at": "DATETIME NULL",
+            "review_notes": f"{text_col} NULL",
+            "updated_at": "DATETIME NULL",
+        },
         "person_reconciliation_conflicts": {
             "status": "VARCHAR(32) NOT NULL DEFAULT 'pending'",
             "reviewed_by_user_id": "INTEGER NULL",
