@@ -129,7 +129,7 @@ def _backfill_people_identity() -> int:
             namespace = namespace_map.get(identifier.namespace, identifier.namespace)
             kind = (
                 people_index.IDENTIFIER_STABLE
-                if namespace == people_index.NS_TOOLHUB_USER_ID
+                if namespace in {people_index.NS_TOOLHUB_USER_ID, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID}
                 else people_index.IDENTIFIER_HANDLE
             )
             if (

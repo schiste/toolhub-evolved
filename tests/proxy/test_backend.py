@@ -4925,6 +4925,21 @@ def test_toolhub_current_user_rejects_bad_shapes(monkeypatch):
         toolhub.current_user("at")
 
 
+def test_toolhub_extracts_only_wikimedia_global_identity():
+    assert (
+        toolhub.wikimedia_global_user_id(
+            {
+                "social_auth": [
+                    {"provider": "github", "uid": "other"},
+                    {"provider": "wikimedia", "uid": 160},
+                ]
+            }
+        )
+        == "160"
+    )
+    assert toolhub.wikimedia_global_user_id({"social_auth": "invalid"}) == ""
+
+
 def test_toolhub_text_error_payload(monkeypatch):
     monkeypatch.setattr(toolhub.requests, "request", lambda *a, **k: TextResp())
     with pytest.raises(toolhub.ToolhubAPIError) as exc:
@@ -6651,7 +6666,14 @@ def test_oauth_callback_success_and_relogin(client, monkeypatch):
     monkeypatch.setattr(
         toolhub.requests,
         "request",
-        lambda *a, **k: FakeResp({"id": 7, "username": "Ada", "is_authenticated": True}),
+        lambda *a, **k: FakeResp(
+            {
+                "id": 7,
+                "username": "Ada",
+                "is_authenticated": True,
+                "social_auth": [{"provider": "wikimedia", "uid": "160"}],
+            }
+        ),
     )
     state = start_login(client)
     assert client.get(f"/oauth/callback?code=c&state={state}").headers["Location"] == "/"
@@ -6661,6 +6683,14 @@ def test_oauth_callback_success_and_relogin(client, monkeypatch):
     assert me["csrf"]
     with db.session_scope() as s:
         assert s.query(ToolhubToken).count() == 1
+        assert s.query(User).one().wikimedia_global_user_id == "160"
+        assert (
+            s.query(PersonIdentifier)
+            .filter_by(namespace="wikimedia_global_user_id", normalized_value="160")
+            .one()
+            .person_id
+            == s.query(User).one().person_id
+        )
     # second login for the same Toolhub user id updates the username instead of duplicating
     monkeypatch.setattr(
         toolhub.requests,

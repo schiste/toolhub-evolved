@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 IDENTIFIER_STABLE = "stable_id"
 IDENTIFIER_HANDLE = "handle"
 NS_TOOLHUB_USER_ID = "toolhub_user_id"
+NS_WIKIMEDIA_GLOBAL_USER_ID = "wikimedia_global_user_id"
 NS_TOOLHUB_USERNAME = "toolhub_username"
 NS_WIKI_USERNAME = "wiki_username"
 PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
@@ -72,6 +73,7 @@ def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrus
 def _canonical_key(
     *,
     toolhub_user_id: str = "",
+    wikimedia_global_user_id: str = "",
     toolhub_username: str = "",
     wiki_username: str = "",
     display: str = "",
@@ -79,6 +81,8 @@ def _canonical_key(
 ) -> str:
     if clean_id := _clean(toolhub_user_id, 64):
         return f"toolhub-id:{clean_id}"
+    if clean_global_id := _clean(wikimedia_global_user_id, 64):
+        return f"wikimedia-global-id:{clean_global_id}"
     if clean_username := _normalized(toolhub_username):
         return f"toolhub:{clean_username}"
     if clean_wiki := _normalized(wiki_username):
@@ -91,7 +95,8 @@ def _canonical_key(
 
 
 def _identifier_spec(namespace: str) -> tuple[str, bool]:
-    return (IDENTIFIER_STABLE, True) if namespace == NS_TOOLHUB_USER_ID else (IDENTIFIER_HANDLE, False)
+    stable_namespaces = {NS_TOOLHUB_USER_ID, NS_WIKIMEDIA_GLOBAL_USER_ID}
+    return (IDENTIFIER_STABLE, True) if namespace in stable_namespaces else (IDENTIFIER_HANDLE, False)
 
 
 def _identifier_person(s: Session, namespace: str, value: str) -> Person | None:
@@ -193,6 +198,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     *,
     display_name: str = "",
     toolhub_user_id: str = "",
+    wikimedia_global_user_id: str = "",
     toolhub_username: str = "",
     wiki_username: str = "",
     source: str = SOURCE_LOCAL,
@@ -202,9 +208,13 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     """Resolve or create a person from strongest to weakest identity evidence."""
     # An immutable id is authoritative: a mutable handle owned by somebody
     # else must move to the stable identity, never select and merge that owner.
+    stable_candidates = [
+        _identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id),
+        _identifier_person(s, NS_WIKIMEDIA_GLOBAL_USER_ID, wikimedia_global_user_id),
+    ]
     candidates = (
-        [_identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id)]
-        if _clean(toolhub_user_id, 64)
+        stable_candidates
+        if _clean(toolhub_user_id, 64) or _clean(wikimedia_global_user_id, 64)
         else [
             _identifier_person(s, NS_TOOLHUB_USERNAME, toolhub_username),
             _identifier_person(s, NS_WIKI_USERNAME, wiki_username),
@@ -215,6 +225,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     if person is None:
         key = _canonical_key(
             toolhub_user_id=toolhub_user_id,
+            wikimedia_global_user_id=wikimedia_global_user_id,
             toolhub_username=toolhub_username,
             wiki_username=wiki_username,
             display=display,
@@ -235,6 +246,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         person = Person(
             canonical_key=_canonical_key(
                 toolhub_user_id=toolhub_user_id,
+                wikimedia_global_user_id=wikimedia_global_user_id,
                 toolhub_username=toolhub_username,
                 wiki_username=wiki_username,
                 display=display,
@@ -242,21 +254,24 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             ),
             display_name=display,
             identity_quality="stable"
-            if toolhub_user_id
+            if toolhub_user_id or wikimedia_global_user_id
             else ("handle" if toolhub_username or wiki_username else "display_name"),
         )
         s.add(person)
         s.flush()
     if display and (not person.display_name or person.identity_quality == "display_name"):
         person.display_name = display
-    if toolhub_user_id:
+    if toolhub_user_id or wikimedia_global_user_id:
         person.identity_quality = "stable"
-        person.canonical_key = _canonical_key(toolhub_user_id=toolhub_user_id)
+        person.canonical_key = _canonical_key(
+            toolhub_user_id=toolhub_user_id,
+            wikimedia_global_user_id=wikimedia_global_user_id,
+        )
     elif person.identity_quality == "display_name" and (toolhub_username or wiki_username):
         person.identity_quality = "handle"
     person.updated_at = checked_at or utcnow()
     s.flush()
-    if toolhub_user_id:
+    if toolhub_user_id or wikimedia_global_user_id:
         _retire_superseded_handles(
             s,
             person,
@@ -266,6 +281,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         )
     for namespace, value in (
         (NS_TOOLHUB_USER_ID, toolhub_user_id),
+        (NS_WIKIMEDIA_GLOBAL_USER_ID, wikimedia_global_user_id),
         (NS_TOOLHUB_USERNAME, toolhub_username),
         (NS_WIKI_USERNAME, wiki_username),
     ):
@@ -276,7 +292,10 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             value=value,
             source=source,
             checked_at=checked_at,
-            authoritative_reassignment=bool(toolhub_user_id and namespace != NS_TOOLHUB_USER_ID),
+            authoritative_reassignment=bool(
+                (toolhub_user_id or wikimedia_global_user_id)
+                and namespace not in {NS_TOOLHUB_USER_ID, NS_WIKIMEDIA_GLOBAL_USER_ID}
+            ),
         )
     s.flush()
     return person
@@ -288,6 +307,7 @@ def link_user(s: Session, user: User) -> Person:
         s,
         display_name=user.username,
         toolhub_user_id=user.wm_sub,
+        wikimedia_global_user_id=user.wikimedia_global_user_id or "",
         toolhub_username=user.username,
         source="toolhub_oauth",
     )

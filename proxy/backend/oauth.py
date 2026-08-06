@@ -179,6 +179,7 @@ def oauth_callback() -> Response:
         token_payload = toolhub.exchange_code(code=request.args["code"], redirect_uri=redirect_uri)
         profile = toolhub.current_user(str(token_payload["access_token"]))
         toolhub_user_id, username = str(profile["id"]), str(profile["username"])
+        wikimedia_global_user_id = toolhub.wikimedia_global_user_id(profile)
     except toolhub.ToolhubAPIError as exc:
         return _login_failed(f"Toolhub rejected the exchange (HTTP {exc.status_code})", exc.payload)
     except requests.HTTPError as exc:
@@ -192,11 +193,17 @@ def oauth_callback() -> Response:
     with db.session_scope() as s:
         user = s.execute(select(User).where(User.wm_sub == toolhub_user_id)).scalar_one_or_none()
         if user is None:
-            user = User(wm_sub=toolhub_user_id, username=username, role=authz.role_for_login(toolhub_user_id, username))
+            user = User(
+                wm_sub=toolhub_user_id,
+                username=username,
+                wikimedia_global_user_id=wikimedia_global_user_id or None,
+                role=authz.role_for_login(toolhub_user_id, username),
+            )
             s.add(user)
             s.flush()
         else:
             user.username = username
+            user.wikimedia_global_user_id = wikimedia_global_user_id or user.wikimedia_global_user_id
             user.role = authz.role_for_login(toolhub_user_id, username, user.role)
         people_index.link_user(s, user)
         uid, epoch = user.id, user.session_epoch or 0

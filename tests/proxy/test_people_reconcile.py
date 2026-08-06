@@ -29,7 +29,7 @@ def _configure() -> None:
 def test_apply_links_account_by_immutable_toolhub_id_and_is_idempotent():
     _configure()
     with db.session_scope() as s:
-        user = User(wm_sub="42", username="Alice")
+        user = User(wm_sub="42", username="Alice", wikimedia_global_user_id="160")
         s.add(user)
         s.add(
             CanonicalToolCache(
@@ -59,6 +59,7 @@ def test_apply_links_account_by_immutable_toolhub_id_and_is_idempotent():
         assert {row.namespace for row in s.query(PersonIdentifier)} == {
             "toolhub_user_id",
             "toolhub_username",
+            "wikimedia_global_user_id",
             "wiki_username",
         }
 

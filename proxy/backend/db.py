@@ -54,6 +54,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "role": "VARCHAR(32) NOT NULL DEFAULT 'user'",
             "session_epoch": "INTEGER NOT NULL DEFAULT 0",
             "person_id": "INTEGER NULL",
+            "wikimedia_global_user_id": "VARCHAR(64) NULL",
         },
         "toolhub_tokens": {
             "last_validated_at": "DATETIME NULL",

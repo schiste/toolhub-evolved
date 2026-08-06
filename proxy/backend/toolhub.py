@@ -126,6 +126,20 @@ def current_user(access_token: str) -> dict[str, object]:
     return data
 
 
+def wikimedia_global_user_id(profile: dict[str, object]) -> str:
+    """Return the stable Wikimedia global account id in a Toolhub user row."""
+    social_auth = profile.get("social_auth")
+    if not isinstance(social_auth, list):
+        return ""
+    for identity in social_auth:
+        if not isinstance(identity, dict) or str(identity.get("provider") or "").casefold() != "wikimedia":
+            continue
+        value = str(identity.get("uid") or "").strip()
+        if value:
+            return value[:64]
+    return ""
+
+
 def _expires_at(token_payload: dict[str, object]) -> datetime | None:
     raw = token_payload.get("expires_in")
     try:

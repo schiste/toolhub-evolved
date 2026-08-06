@@ -52,6 +52,9 @@ class User(Base):
     # a string. Keeping the DB column avoids a destructive migration on Toolforge.
     wm_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(255))
+    # Stable CentralAuth identity returned by Toolhub's Wikimedia social-auth
+    # binding. Unlike the username, this survives account renames.
+    wikimedia_global_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # A signed-in account and a public person are deliberately separate. Some
     # people never sign in, while one authenticated Toolhub account can be
     # linked deterministically through its immutable numeric upstream id.
