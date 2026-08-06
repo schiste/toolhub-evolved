@@ -2995,6 +2995,134 @@ def test_public_tool_people_endpoint_is_rate_limited(client, monkeypatch):
     assert resp.get_json()["error"] == "rate limit exceeded"
 
 
+def test_person_profile_paginates_prolific_relationships_without_upstream_fan_out(client, monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: pytest.fail("person profiles must not fetch Toolhub tool details"),
+    )
+    now = utcnow()
+    with db.session_scope() as s:
+        user = User(wm_sub="prolific-42", username="Prolific Maintainer")
+        s.add(user)
+        s.flush()
+        person = people_index.link_user(s, user)
+        public_id = person.public_id
+        relationships = [
+            ToolPersonRelationship(
+                tool_name=f"profile-tool-{index:03d}",
+                person_id=person.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                confidence=90,
+                evidence_count=1 if index == 24 else 0,
+            )
+            for index in range(250)
+        ]
+        relationships.append(
+            ToolPersonRelationship(
+                tool_name="profile-tool-024",
+                person_id=person.id,
+                relationship_type=sync.PERSON_REL_MAINTAINER,
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                confidence=95,
+                evidence_count=1,
+            )
+        )
+        s.add_all(relationships)
+        s.add_all(
+            [
+                ToolRelationshipEvidence(
+                    tool_name="profile-tool-024",
+                    person_id=person.id,
+                    relationship_type=sync.PERSON_REL_AUTHOR,
+                    source="toolhub_author_metadata",
+                    method="toolhub_author_metadata",
+                    evidence_key="author-24",
+                    observed_name="Prolific Maintainer",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=90,
+                ),
+                ToolRelationshipEvidence(
+                    tool_name="profile-tool-024",
+                    person_id=person.id,
+                    relationship_type=sync.PERSON_REL_MAINTAINER,
+                    source="toolforge_toolsadmin",
+                    method="toolforge_maintainer",
+                    evidence_key="maintainer-24",
+                    observed_name="Prolific Maintainer",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=95,
+                ),
+                CanonicalToolCache(
+                    tool_name="profile-tool-024",
+                    record={
+                        "name": "profile-tool-024",
+                        "title": "Canonical Tool 24",
+                        "description": "A locally cached canonical summary.",
+                        "secret": "must not leave the compact projection",
+                    },
+                    expires_at=now + timedelta(hours=1),
+                    stale_until=now + timedelta(hours=2),
+                ),
+            ]
+        )
+
+    first = client.get(f"/v1/people/{public_id}/")
+    assert first.status_code == 200
+    first_data = first.get_json()
+    assert first_data["toolCount"] == 250
+    assert first_data["tools"] | {"results": []} == {
+        "count": 250,
+        "page": 1,
+        "pageSize": 24,
+        "pageCount": 11,
+        "nextPage": 2,
+        "previousPage": None,
+        "next": f"/v1/people/{public_id}/?tool_page=2",
+        "previous": None,
+        "results": [],
+    }
+    assert len(first_data["tools"]["results"]) == 24
+    assert first_data["tools"]["results"][0]["name"] == "profile-tool-000"
+    assert first_data["tools"]["results"][-1]["name"] == "profile-tool-023"
+
+    second = client.get(f"/v1/people/{public_id}/?tool_page=2&tool_page_size=24").get_json()
+    assert second["tools"]["page"] == 2
+    assert len(second["tools"]["results"]) == 24
+    assert second["tools"]["previous"] == f"/v1/people/{public_id}/?tool_page=1&tool_page_size=24"
+    assert second["tools"]["next"] == f"/v1/people/{public_id}/?tool_page=3&tool_page_size=24"
+    cached = second["tools"]["results"][0]
+    assert cached["name"] == "profile-tool-024"
+    assert cached["summaryStatus"] == "available"
+    assert cached["summary"]["title"] == "Canonical Tool 24"
+    assert "secret" not in cached["summary"]
+    assert {relationship["type"] for relationship in cached["relationships"]} == {
+        sync.PERSON_REL_AUTHOR,
+        sync.PERSON_REL_MAINTAINER,
+    }
+    assert {relationship["evidence"][0]["source"] for relationship in cached["relationships"]} == {
+        "toolhub_author_metadata",
+        "toolforge_toolsadmin",
+    }
+    missing = second["tools"]["results"][1]
+    assert missing["name"] == "profile-tool-025"
+    assert missing["summaryStatus"] == "missing"
+    assert missing["summary"]["_missingCanonical"] is True
+
+    final = client.get(f"/v1/people/{public_id}/?tool_page=999").get_json()
+    assert final["tools"]["page"] == 11
+    assert [row["name"] for row in final["tools"]["results"]] == [
+        f"profile-tool-{index:03d}" for index in range(240, 250)
+    ]
+    capped = client.get(f"/v1/people/{public_id}/?tool_page_size=500").get_json()
+    assert capped["tools"]["pageSize"] == 50
+    assert capped["tools"]["pageCount"] == 5
+    assert len(capped["tools"]["results"]) == 50
+    for query in ("tool_page=0", "tool_page=nope", "tool_page_size=0"):
+        assert client.get(f"/v1/people/{public_id}/?{query}").status_code == 400
+
+
 def test_person_profile_uses_immutable_public_id_and_evolved_owned_content(client):
     uid = add_user(username="Ada", wm_sub="42")
     sign_in(client, uid)

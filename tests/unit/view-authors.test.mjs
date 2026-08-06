@@ -69,56 +69,65 @@ test("viewPerson renders every role with distinct provenance on one tool", async
 		identityQuality: "stable_id",
 		profile: {},
 		activity: { status: "unknown", relatedToolCount: 1, verifiedToolCount: 1 },
-		tools: [
-			{
-				name: "trust-tool",
-				relationships: [
-					{
-						type: "author",
-						status: "unverified",
-						confidence: 45,
-						evidenceCount: 1,
-						toolhubCanonical: true,
-						evidence: [
-							{
-								source: "toolhub_author_metadata",
-								method: "toolhub_author_metadata",
-								status: "unverified",
-								checkedAt: "2026-08-01T12:00:00Z",
-								identityBasis: "stable_id"
-							}
-						]
-					},
-					{
-						type: "maintainer",
-						status: "verified",
-						confidence: 95,
-						evidenceCount: 1,
-						evidence: [
-							{
-								source: "toolforge_toolsadmin",
-								method: "toolforge_maintainer",
-								status: "verified",
-								checkedAt: "2026-08-02T12:00:00Z"
-							}
-						]
-					},
-					{
-						type: "record_owner",
-						status: "verified",
-						confidence: 90,
-						evidenceCount: 1,
-						evidence: [{ method: "toolhub_write_access", status: "verified" }]
-					}
-				]
-			}
-		]
+		toolCount: 1,
+		tools: {
+			count: 1,
+			page: 1,
+			pageSize: 24,
+			pageCount: 1,
+			results: [
+				{
+					name: "trust-tool",
+					summary: { name: "trust-tool", title: "Trust Tool", description: "A compact profile summary." },
+					summaryStatus: "available",
+					relationships: [
+						{
+							type: "author",
+							status: "unverified",
+							confidence: 45,
+							evidenceCount: 1,
+							toolhubCanonical: true,
+							evidence: [
+								{
+									source: "toolhub_author_metadata",
+									method: "toolhub_author_metadata",
+									status: "unverified",
+									checkedAt: "2026-08-01T12:00:00Z",
+									identityBasis: "stable_id"
+								}
+							]
+						},
+						{
+							type: "maintainer",
+							status: "verified",
+							confidence: 95,
+							evidenceCount: 1,
+							evidence: [
+								{
+									source: "toolforge_toolsadmin",
+									method: "toolforge_maintainer",
+									status: "verified",
+									checkedAt: "2026-08-02T12:00:00Z"
+								}
+							]
+						},
+						{
+							type: "record_owner",
+							status: "verified",
+							confidence: 90,
+							evidenceCount: 1,
+							evidence: [{ method: "toolhub_write_access", status: "verified" }]
+						}
+					]
+				}
+			]
+		}
 	});
-	h.getToolsByName.mockResolvedValue([tool("trust-tool", "Trust Tool")]);
 
 	const view = await viewPerson("person-trust");
 
 	assert.equal(view.html.match(/data-tool="trust-tool"/g)?.length, 1);
+	assert.match(view.html, /Trust Tool/);
 	assert.match(view.html, /Identity backed by a stable account ID/);
 	assert.match(view.html, /Listed author/);
 	assert.match(view.html, /Verified Toolforge maintainer/);
@@ -126,6 +135,48 @@ test("viewPerson renders every role with distinct provenance on one tool", async
 	assert.match(view.html, /Toolhub author field/);
 	assert.match(view.html, /datetime="2026-08-01T12:00:00\.000Z"/);
 	assert.match(view.html, /<dt>Tools with a verified relationship<\/dt><dd>1<\/dd>/);
+	assert.equal(h.getToolsByName.mock.calls.length, 0);
+});
+
+test("viewPerson requests one bounded embedded page and never loads per-tool details", async () => {
+	window.history.replaceState({}, "", "/people/person-prolific?page=2");
+	const results = Array.from({ length: 24 }, (_, offset) => {
+		const index = offset + 24;
+		const name = `profile-tool-${String(index).padStart(3, "0")}`;
+		return {
+			name,
+			summary: { name, title: `Profile Tool ${index}`, description: `Compact summary ${index}` },
+			summaryStatus: "available",
+			relationships: []
+		};
+	});
+	h.backendGetJson.mockImplementation((url) => {
+		if (url === "/v1/people/person-prolific/?tool_page=2") {
+			return Promise.resolve({
+				id: "person-prolific",
+				displayName: "Prolific Maintainer",
+				profile: {},
+				activity: { status: "active", relatedToolCount: 250 },
+				toolCount: 250,
+				tools: { count: 250, page: 2, pageSize: 24, pageCount: 11, results }
+			});
+		}
+		if (String(url).startsWith("/v1/tools/summaries/")) return Promise.resolve({ results: {} });
+		return Promise.reject(new Error(`unexpected request: ${url}`));
+	});
+
+	const view = await viewPerson("person-prolific");
+
+	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/person-prolific/?tool_page=2");
+	assert.equal(view.html.match(/data-tool="profile-tool-/g)?.length, 24);
+	assert.match(view.html, /<p class="page__intro">250 tools<\/p>/);
+	assert.match(view.html, /Showing 25–48 of 250/);
+	assert.equal(h.getToolsByName.mock.calls.length, 0);
+	document.body.innerHTML = view.html;
+	view.mount();
+	document.querySelector('[data-person-tools-pager] [data-page="3"]').click();
+	assert.equal(location.pathname, "/people/person-prolific");
+	assert.equal(new URLSearchParams(location.search).get("page"), "3");
 });
 
 test("viewAuthor uses the requested name and singular label when the index omits them", async () => {
