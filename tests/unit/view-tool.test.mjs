@@ -1180,12 +1180,79 @@ test("tool authors and maintainers link to immutable people ids through observed
 	assert.equal(result.html.match(/href="\/people\/person-42"/g)?.length, 2);
 });
 
+test("tool maintainer panel separates verified, stale, and unresolved relationships", async () => {
+	h.getTool.mockResolvedValue(toolFixture("trust-maintainers", { title: "Trust maintainers" }));
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(
+			path.includes("/v1/people/tools/")
+				? {
+						people: [
+							{
+								id: "verified-person",
+								displayName: "Verified User",
+								relationships: [
+									{
+										type: "maintainer",
+										status: "verified",
+										confidence: 95,
+										evidenceCount: 1,
+										evidence: [
+											{
+												source: "toolforge_toolsadmin",
+												method: "toolforge_maintainer",
+												status: "verified",
+												checkedAt: "2026-08-05T12:00:00Z"
+											}
+										]
+									}
+								]
+							},
+							{
+								id: "stale-person",
+								displayName: "Previous User",
+								relationships: [
+									{
+										type: "maintainer",
+										status: "stale",
+										confidence: 61,
+										evidenceCount: 1,
+										evidence: [{ method: "toolforge_maintainer", status: "verified" }]
+									}
+								]
+							}
+						],
+						unresolvedAttributions: [
+							{
+								label: "Name Only",
+								relationshipTypes: ["maintainer"],
+								evidenceCount: 2,
+								bestConfidence: 20
+							}
+						]
+					}
+				: { thanks: {}, usage30d: {}, health: {} }
+		)
+	);
+
+	const result = await tool.viewTool("trust-maintainers");
+
+	assert.match(result.html, /Maintainer relationships/);
+	assert.match(result.html, /Verified current relationships/);
+	assert.match(result.html, /Verified Toolforge maintainer/);
+	assert.match(result.html, /Unverified or previous attributions/);
+	assert.match(result.html, /Previous verification—renewal needed/);
+	assert.match(result.html, /Name Only/);
+	assert.match(result.html, /Identity unresolved/);
+	assert.match(result.html, /Unverified attribution/);
+	assert.match(result.html, /Last checked/);
+});
+
 test("authorEntries: falsy author names are filtered out", async () => {
 	h.getTool.mockResolvedValue(toolFixture("af", { title: "AF", authors: ["Real", ""], authorObjs: [] }));
 	const r = await tool.viewTool("af");
-	// each author appears twice (by-line + maintainer list); one real author → 2 refs.
+	// Canonical authors remain in the by-line and are not promoted into the maintainer panel.
 	const refs = r.html.match(/class="author-ref"/g) || [];
-	assert.equal(refs.length, 2, "only the non-empty author rendered (×2 sections)");
+	assert.equal(refs.length, 1, "only the non-empty author rendered in the author by-line");
 });
 
 test("author with a wiki username only gets a meta external link", async () => {

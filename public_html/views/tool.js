@@ -34,6 +34,7 @@ import { favBtn } from "../lib/molecules/favbtn.js";
 import { saveToListControl } from "../lib/molecules/savemenu.js";
 import { fieldProvenance, syncStatusPanel } from "../lib/molecules/sync-status.js";
 import { healthScoreChip, maintainerDisclosure } from "../lib/molecules/tool-health-summary.js";
+import { relationshipTrustMarkup } from "../lib/molecules/relationship-trust.js";
 import { openClaimDrawer } from "../lib/organisms/claim-drawer.js";
 import { setIssueContext } from "../lib/organisms/issue-drawer.js";
 import { prosePage, viewNotFound } from "./static.js";
@@ -42,8 +43,8 @@ const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
 /** @typedef {{ name: string, publicId?: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
-/** @typedef {{ id?: string, displayName?: string, identifiers?: Array<{ namespace?: string, value?: string }>, relationships?: Array<{ type?: string, evidence?: Array<{ observedName?: string }> }> }} PublicPerson */
-/** @typedef {{ people?: PublicPerson[] }} PeopleSummary */
+/** @typedef {{ id?: string, displayName?: string, identifiers?: Array<{ namespace?: string, value?: string }>, relationships?: Array<any> }} PublicPerson */
+/** @typedef {{ people?: PublicPerson[], unresolvedAttributions?: Array<any> }} PeopleSummary */
 
 /** @param {{ tool: Tool, shared?: string[] }} item */
 function relatedToolRow(item) {
@@ -239,34 +240,88 @@ function authorInlineList(t, peopleSummary) {
 	return entries.map((entry) => authorLink(entry)).join('<span class="toolpage__sep">, </span>');
 }
 
-/** @param {PeopleSummary | null} peopleSummary @returns {AuthorEntry[] | null} */
+/** @param {PeopleSummary | null} peopleSummary */
 function maintainerPeople(peopleSummary) {
 	const people = peopleSummary?.people;
-	if (!Array.isArray(people)) return null;
-	return people
-		.filter(
-			(person) =>
-				Array.isArray(person.relationships) &&
-				person.relationships.some((relationship) => relationship.type === "maintainer")
-		)
-		.map((person) => ({
-			name: person.displayName || t("tool.unknownMaintainer", "Unknown"),
-			publicId: person.id,
-			profile: {
-				wikiUsername: person.identifiers?.find((item) => item.namespace === "wiki_username")?.value
-			}
-		}));
+	if (!Array.isArray(people)) return [];
+	return people.flatMap((person) =>
+		(Array.isArray(person.relationships) ? person.relationships : [])
+			.filter((relationship) => relationship?.type === "maintainer")
+			.map((relationship) => ({
+				entry: {
+					name: person.displayName || t("tool.unknownMaintainer", "Unknown"),
+					publicId: person.id,
+					profile: {
+						wikiUsername: person.identifiers?.find((item) => item.namespace === "wiki_username")?.value
+					}
+				},
+				relationship
+			}))
+	);
 }
 
-/** @param {Tool} tool @param {PeopleSummary | null} peopleSummary */
-function maintainerListMarkup(tool, peopleSummary) {
-	const entries = maintainerPeople(peopleSummary) || authorEntries(tool);
-	const list = entries
-		.map((entry) => `<li>${avatar(entry.name)}<span class="maint-list__name">${authorLink(entry)}</span></li>`)
-		.join("");
+/** @param {any} item */
+function maintainerRelationshipRow(item) {
+	return `<li class="maint-list__item">
+		<div class="maint-list__identity">${avatar(item.entry.name)}<span class="maint-list__name">${authorLink(item.entry)}</span></div>
+		${relationshipTrustMarkup(item.relationship)}
+	</li>`;
+}
+
+/** @param {any} attribution */
+function unresolvedMaintainerRow(attribution) {
+	const name = attribution?.label || t("tool.unknownMaintainer", "Unknown");
+	const relationship = {
+		type: "maintainer",
+		status: "unverified",
+		confidence: attribution?.bestConfidence || 0,
+		evidenceCount: attribution?.evidenceCount || attribution?.attributionCount || 0,
+		toolhubCanonical: false,
+		evidence: []
+	};
+	return `<li class="maint-list__item">
+		<div class="maint-list__identity">${avatar(name)}<span class="maint-list__name"><span${dirAttrs(name)}>${esc(name)}</span><small>${t("tool.identityUnresolved", "Identity unresolved")}</small></span></div>
+		${relationshipTrustMarkup(relationship)}
+	</li>`;
+}
+
+/** @param {string} title @param {string} className @param {string[]} rows */
+function maintainerGroup(title, className, rows) {
+	return rows.length > 0
+		? `<section class="maint-list__group ${className}"><h3>${title}</h3><ul>${rows.join("")}</ul></section>`
+		: "";
+}
+
+/** @param {PeopleSummary | null} peopleSummary */
+function maintainerListMarkup(peopleSummary) {
+	if (!peopleSummary) {
+		return `<p class="maint-list__empty">${t("tool.maintainerRelationshipsUnavailable", "Maintainer relationship data is currently unavailable.")}</p>`;
+	}
+	const entries = maintainerPeople(peopleSummary);
+	const verified = entries.filter((item) => item.relationship?.status === "verified");
+	const other = entries.filter((item) => item.relationship?.status !== "verified");
+	const unresolved = (
+		Array.isArray(peopleSummary.unresolvedAttributions) ? peopleSummary.unresolvedAttributions : []
+	).filter((attribution) =>
+		Array.isArray(attribution?.relationshipTypes) ? attribution.relationshipTypes.includes("maintainer") : false
+	);
+	const markup =
+		maintainerGroup(
+			t("tool.verifiedMaintainerRelationships", "Verified current relationships"),
+			"maint-list__group--verified",
+			verified.map((item) => maintainerRelationshipRow(item))
+		) +
+		maintainerGroup(
+			t("tool.otherMaintainerAttributions", "Unverified or previous attributions"),
+			"maint-list__group--other",
+			[
+				...other.map((item) => maintainerRelationshipRow(item)),
+				...unresolved.map((attribution) => unresolvedMaintainerRow(attribution))
+			]
+		);
 	return (
-		list ||
-		`<li class="maint-list__empty">${t("tool.noMaintainerRelationship", "No maintainer relationship has been verified for this tool yet.")}</li>`
+		markup ||
+		`<p class="maint-list__empty">${t("tool.noMaintainerRelationship", "No maintainer relationship has been verified for this tool yet.")}</p>`
 	);
 }
 
@@ -725,7 +780,7 @@ export async function viewTool(name) {
 	// At-a-glance chips (real metadata).
 	const glance = glanceChips(tool);
 
-	const maintList = maintainerListMarkup(tool, peopleSummary);
+	const maintList = maintainerListMarkup(peopleSummary);
 	const complete = completeness(tool);
 	// Stryker disable next-line StringLiteral: button() defaults variant to "outline", so "" renders identical markup — equivalent.
 	const html = `
@@ -791,8 +846,8 @@ export async function viewTool(name) {
 						${deleteResult}
 					</div>
 				<div class="panel">
-					<h2 class="panel__title">${t("tool.maintainersTitle", "Maintainers")}</h2>
-					<ul class="maint-list">${maintList}</ul>
+					<h2 class="panel__title">${t("tool.maintainersTitle", "Maintainer relationships")}</h2>
+					<div class="maint-list">${maintList}</div>
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">${t("tool.listingCompleteness", "Listing completeness")}</h2>

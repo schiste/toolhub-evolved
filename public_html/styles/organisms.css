@@ -2202,14 +2202,30 @@
 }
 
 .maint-list {
-	list-style: none;
-	margin: var(--space-0);
-	padding: var(--space-0);
-	display: flex;
-	flex-direction: column;
+	display: grid;
 	gap: var(--space-2);
 }
-.maint-list :where(li) {
+.maint-list__group {
+	display: grid;
+	gap: var(--space-2);
+}
+.maint-list__group h3 {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.maint-list__group ul {
+	display: grid;
+	gap: var(--space-3);
+	margin: var(--space-0);
+	padding: var(--space-0);
+	list-style: none;
+}
+.maint-list__item {
+	display: grid;
+	gap: var(--space-2);
+}
+.maint-list__identity {
 	display: flex;
 	align-items: center;
 	gap: var(--space-2);
@@ -2222,7 +2238,13 @@
 	border-radius: var(--radius-sm);
 }
 .maint-list__name {
+	display: grid;
+	gap: var(--space-0-5);
 	min-width: 0;
+}
+.maint-list__name small {
+	color: var(--color-text-secondary);
+	font-size: var(--fs-micro);
 }
 .author-ref {
 	display: inline-flex;
