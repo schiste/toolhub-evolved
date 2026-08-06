@@ -141,9 +141,7 @@ def v1_moderation_people_candidate_update(mapping_id: int) -> Response:
         row.updated_at = row.reviewed_at
         try:
             affected_tools = (
-                people_reconcile.apply_mapping(s, row)
-                if decision == people_reconcile.MAPPING_APPROVED
-                else 0
+                people_reconcile.apply_mapping(s, row) if decision == people_reconcile.MAPPING_APPROVED else 0
             )
         except people_reconcile.PersonReconciliationError as exc:
             s.rollback()

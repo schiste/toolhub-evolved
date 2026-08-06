@@ -760,19 +760,14 @@ def resolve_legacy_handle(s: Session, query: str) -> dict[str, Any]:
     candidate_ids = set(handle_person_ids)
     if not candidate_ids:
         display_ids = {
-            row[0]
-            for row in s.execute(
-                select(Person.id).where(func.lower(Person.display_name) == normalized)
-            ).all()
+            row[0] for row in s.execute(select(Person.id).where(func.lower(Person.display_name) == normalized)).all()
         }
         candidate_ids = public_identity_ids(s, display_ids)
         match_type = "display_name" if candidate_ids else "none"
 
     people = list(
         s.execute(
-            select(Person)
-            .where(Person.id.in_(candidate_ids or {-1}))
-            .order_by(Person.display_name, Person.public_id)
+            select(Person).where(Person.id.in_(candidate_ids or {-1})).order_by(Person.display_name, Person.public_id)
         ).scalars()
     )
     identifiers = _identifiers_by_person(s, candidate_ids)

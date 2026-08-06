@@ -97,9 +97,7 @@ def _move_mapping_evidence(
     """Move provenance to an approved stable identity without changing roles."""
     if mapping.source_person_id is None or mapping.target_person_id is None:
         return set()
-    statement = select(ToolRelationshipEvidence).where(
-        ToolRelationshipEvidence.person_id == mapping.source_person_id
-    )
+    statement = select(ToolRelationshipEvidence).where(ToolRelationshipEvidence.person_id == mapping.source_person_id)
     if tool_name:
         statement = statement.where(ToolRelationshipEvidence.tool_name == tool_name)
     evidence = list(s.execute(statement.order_by(ToolRelationshipEvidence.id)).scalars())
@@ -283,9 +281,7 @@ def _candidate_source_people(s: Session) -> list[Person]:
 
 def _tool_names_for_person(s: Session, person_id: int) -> tuple[list[str], list[str]]:
     rows = list(
-        s.execute(
-            select(ToolPersonRelationship).where(ToolPersonRelationship.person_id == person_id)
-        ).scalars()
+        s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.person_id == person_id)).scalars()
     )
     return sorted({row.tool_name for row in rows}), sorted({row.relationship_type for row in rows})
 
