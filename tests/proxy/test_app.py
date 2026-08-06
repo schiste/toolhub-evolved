@@ -753,3 +753,32 @@ def test_static_files_serve_the_build_time_gzip_twin(tmp_path, monkeypatch):
         )
         assert again.status_code == proxy_app._HTTP_NOT_MODIFIED
         assert again.get_data() == b""
+
+
+def test_a_stale_gzip_twin_is_ignored(tmp_path, monkeypatch):
+    """A twin older than its file must not be served.
+
+    build_dist writes both together, so this only arises when something else
+    rewrites a file in place — correcting a generated release manifest, say.
+    The stale twin would otherwise win for every client that accepts gzip,
+    which is all of them, and the correction would appear to have no effect.
+    """
+    root = tmp_path / "dist"
+    root.mkdir()
+    stale = b'{"note": "old"}' + b" " * 2000
+    fresh = b'{"note": "corrected"}' + b" " * 2000
+    (root / "data.json").write_bytes(stale)
+    (root / "data.json.gz").write_bytes(gzip.compress(stale, 9, mtime=0))
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+
+    with proxy_app.app.test_client() as c:
+        served = c.get("/data.json", headers={"Accept-Encoding": "gzip"})
+        assert gzip.decompress(served.data) == stale, "twin should be served while it is current"
+
+        # Rewrite only the plain file, leaving the twin behind.
+        (root / "data.json").write_bytes(fresh)
+        os.utime(root / "data.json.gz", (0, 0))
+
+        corrected = c.get("/data.json", headers={"Accept-Encoding": "gzip"})
+        body = gzip.decompress(corrected.data) if corrected.headers.get("Content-Encoding") == "gzip" else corrected.data
+        assert body == fresh, "a stale twin was served instead of the corrected file"

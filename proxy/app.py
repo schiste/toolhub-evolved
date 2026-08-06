@@ -447,6 +447,15 @@ def api_proxy(path: str) -> Response:
     return _relay_upstream_response(url, upstream, payload, stale)
 
 
+def _twin_is_current(packed: Path, plain: Path) -> bool:
+    """Whether a gzipped twin is at least as new as the file it represents."""
+    try:
+        return packed.stat().st_mtime >= plain.stat().st_mtime
+    except OSError:
+        # No plain file to compare against: the twin is all there is.
+        return True
+
+
 def _send_static(root: Path, path: str) -> Response:
     """Serve a static file, preferring the twin gzipped at build time.
 
@@ -459,10 +468,17 @@ def _send_static(root: Path, path: str) -> Response:
     given, so the gzipped twin carries its own tag and revalidation keeps
     working. `Vary` is what stops a cache handing that body to a client that
     did not ask for it.
+
+    A twin older than the file it stands for is ignored. The build writes both
+    together, so this only happens when something else rewrites a file in
+    place — correcting a generated release manifest, say — and the stale twin
+    would otherwise win silently for every client that accepts gzip, which is
+    all of them.
     """
     if "gzip" in request.headers.get("Accept-Encoding", "").lower():
         packed = (root / f"{path}.gz").resolve()
-        if root in packed.parents and packed.is_file():
+        plain = (root / path).resolve()
+        if root in packed.parents and packed.is_file() and _twin_is_current(packed, plain):
             resp = send_from_directory(root, f"{path}.gz")
             # send_from_directory typed this from the .gz suffix; the client
             # needs the type of what it will have after decoding.
