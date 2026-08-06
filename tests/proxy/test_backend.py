@@ -712,6 +712,15 @@ def test_people_graph_deduplicates_stable_identity_and_keeps_roles_separate():
         assert summary["people"][0]["identifiers"] == [
             {"namespace": "toolhub_username", "value": "Ada", "kind": "handle"}
         ]
+        author = next(
+            relationship
+            for relationship in summary["people"][0]["relationships"]
+            if relationship["type"] == sync.PERSON_REL_AUTHOR
+        )
+        assert author["evidence"][0]["identityBasis"] == "handle"
+        assert (
+            author["evidence"][0]["relationshipBasis"] == "authorship_attribution"
+        )
 
 
 def test_init_schema_creates_toolinfo_discovery_table():

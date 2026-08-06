@@ -163,6 +163,7 @@ def sync_author_claim_edges(
                 "display_name": clean_text((user.username if user else claim.toolhub_username) or claim.author_name),
                 "toolhub_user_id": clean_text(user.wm_sub) if user else "",
                 "toolhub_username": clean_text(user.username if user else claim.toolhub_username),
+                "authenticated_claim": bool(user),
                 "relationship_type": _claim_role(claim),
                 "method": method,
                 "evidence_key": clean_text(claim.author_name),

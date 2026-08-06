@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
+from backend import people_policy
 from backend.models import (
     ActivityRow,
     CatalogCuration,
@@ -70,7 +71,7 @@ def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrus
     return _clean(value).casefold()
 
 
-def _canonical_key(
+def _canonical_key(  # noqa: PLR0913 - explicit external identifiers define precedence
     *,
     toolhub_user_id: str = "",
     wikimedia_global_user_id: str = "",
@@ -354,6 +355,16 @@ def replace_source_evidence(
             checked_at=observation.get("checked_at"),
             display_scope=display_scope,
         )
+        identity_decision = people_policy.decide_identity_link(
+            same_stable_identifier=bool(
+                _clean(observation.get("toolhub_user_id"), 64)
+                or _clean(observation.get("wikimedia_global_user_id"), 64)
+            ),
+            structured_handle=bool(
+                _clean(observation.get("toolhub_username")) or _clean(observation.get("wiki_username"))
+            ),
+            authenticated_claim=bool(observation.get("authenticated_claim")),
+        )
         row = s.execute(
             select(ToolRelationshipEvidence).where(
                 ToolRelationshipEvidence.tool_name == clean_tool,
@@ -380,7 +391,13 @@ def replace_source_evidence(
         row.confidence = max(0, min(100, int(observation.get("confidence") or 0)))
         row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
         row.evidence_url = _clean(observation.get("evidence_url"), 2000) or None
-        row.evidence_payload = observation.get("evidence_payload")
+        raw_payload = observation.get("evidence_payload")
+        evidence_payload = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+        evidence_payload["identityResolution"] = {
+            "action": identity_decision.action,
+            "reason": identity_decision.reason,
+        }
+        row.evidence_payload = evidence_payload
         row.checked_at = observation.get("checked_at") or now
         row.expires_at = observation.get("expires_at")
         row.withdrawn_at = None
@@ -717,6 +734,11 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
                         "status": row.verification_status,
                         "confidence": row.confidence,
                         "available": bool(row.evidence_url),
+                        "identityBasis": person.identity_quality,
+                        "relationshipBasis": people_policy.relationship_basis(
+                            relationship.relationship_type,
+                            row.method,
+                        ),
                     }
                     for row in supporting
                 ],
