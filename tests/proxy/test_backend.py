@@ -69,6 +69,7 @@ from backend.models import (  # noqa: E402
     PersonIdentifier,
     PersonProfile,
     PersonReconciliationConflict,
+    PersonReconciliationMapping,
     PersonReconciliationRun,
     SourceAnalysisReport,
     ToolAuthorClaim,
@@ -3292,6 +3293,133 @@ def test_operator_can_triage_people_conflicts_without_merging(client):
     assert response.get_json()["conflict"]["status"] == "resolved"
     assert client.get("/v1/moderation/people-conflicts/").get_json()["count"] == 0
     assert client.get("/v1/moderation/people-conflicts/?status=resolved").get_json()["count"] == 1
+
+
+def test_operator_approval_moves_evidence_without_changing_role_and_survives_refresh(client):
+    from backend import people_index, people_reconcile
+
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "mix-n-match",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Magnus Manske",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                    "method": "toolhub_author_metadata",
+                }
+            ],
+        )
+        source = s.query(Person).filter_by(identity_quality="display_name").one()
+        target = people_index.ensure_person(
+            s,
+            display_name="Magnus Manske",
+            toolhub_user_id="152",
+            wikimedia_global_user_id="160",
+            toolhub_username="Magnus Manske",
+        )
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=source.id,
+            target_person_id=target.id,
+            source_key=source.canonical_key,
+            target_key=target.canonical_key,
+            decision="candidate",
+            reason="exact_toolhub_username_and_toolforge_membership",
+            confidence=90,
+            evidence={"toolNames": ["mix-n-match"]},
+        )
+        s.add(mapping)
+        s.flush()
+        mapping_id = mapping.id
+        source_id = source.id
+        target_id = target.id
+
+    admin_id = add_user(username="Operator", wm_sub="operator", role=authz.ROLE_ADMIN)
+    sign_in(client, admin_id)
+    queued = client.get("/v1/moderation/people-candidates/").get_json()
+    assert queued["count"] == 1
+    assert queued["results"][0]["confidence"] == 90
+
+    approved = client.put(
+        f"/v1/moderation/people-candidates/{mapping_id}/",
+        json={"decision": "approved", "reviewNotes": "LDAP membership corroborated."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert approved.status_code == 200
+    assert approved.get_json()["affectedTools"] == 1
+    with db.session_scope() as s:
+        evidence = s.query(ToolRelationshipEvidence).one()
+        relationship = s.query(ToolPersonRelationship).one()
+        assert evidence.person_id == target_id
+        assert relationship.person_id == target_id
+        assert relationship.relationship_type == sync.PERSON_REL_AUTHOR
+        assert s.get(PersonReconciliationMapping, mapping_id).decision == "approved"
+
+        people_index.replace_source_evidence(
+            s,
+            "mix-n-match",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Magnus Manske",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                    "method": "toolhub_author_metadata",
+                }
+            ],
+        )
+        assert s.query(ToolRelationshipEvidence).filter_by(person_id=source_id).count() == 1
+        assert people_reconcile.apply_approved_mappings_for_tool(s, "mix-n-match") == 1
+        people_index.resolve_tool_relationships(s, "mix-n-match")
+        assert s.query(ToolRelationshipEvidence).filter_by(person_id=source_id).count() == 0
+        assert s.query(ToolRelationshipEvidence).filter_by(person_id=target_id).count() == 1
+
+
+def test_operator_split_decision_is_durable_and_does_not_move_evidence(client):
+    from backend import people_index
+
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "same-label-tool",
+            "source",
+            [{"display_name": "Alex", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        source = s.query(Person).one()
+        target = people_index.ensure_person(s, display_name="Alex", toolhub_user_id="77")
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=source.id,
+            target_person_id=target.id,
+            source_key=source.canonical_key,
+            target_key=target.canonical_key,
+            decision="candidate",
+        )
+        s.add(mapping)
+        s.flush()
+        mapping_id = mapping.id
+        source_id = source.id
+
+    admin_id = add_user(username="Operator", wm_sub="operator", role=authz.ROLE_ADMIN)
+    sign_in(client, admin_id)
+    response = client.put(
+        f"/v1/moderation/people-candidates/{mapping_id}/",
+        json={"decision": "split", "reviewNotes": "Different human."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["affectedTools"] == 0
+    with db.session_scope() as s:
+        assert s.get(PersonReconciliationMapping, mapping_id).decision == "split"
+        assert s.query(ToolRelationshipEvidence).one().person_id == source_id
 
 
 def test_permanent_evidence_keeps_a_collapsed_relationship_permanent():

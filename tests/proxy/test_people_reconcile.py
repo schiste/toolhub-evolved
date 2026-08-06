@@ -97,6 +97,22 @@ def test_display_names_remain_non_merging_conflicts():
         assert s.query(PersonReconciliationConflict).count() == 1
 
 
+def test_stable_identity_never_adopts_a_unique_display_only_person():
+    _configure()
+    with db.session_scope() as s:
+        display = people_index.ensure_person(s, display_name="Magnus Manske", display_scope="one-observation")
+        stable = people_index.ensure_person(
+            s,
+            display_name="Magnus Manske",
+            toolhub_user_id="152",
+            toolhub_username="Magnus Manske",
+        )
+
+        assert display.id != stable.id
+        assert display.identity_quality == "display_name"
+        assert stable.identity_quality == "stable"
+
+
 def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
     _configure()
     with db.session_scope() as s:

@@ -233,7 +233,13 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             display_scope=display_scope,
         )
         person = s.execute(select(Person).where(Person.canonical_key == key)).scalar_one_or_none()
-    if person is None and display and not display_scope:
+    has_identity_evidence = bool(
+        _clean(toolhub_user_id, 64)
+        or _clean(wikimedia_global_user_id, 64)
+        or _clean(toolhub_username)
+        or _clean(wiki_username)
+    )
+    if person is None and display and not display_scope and not has_identity_evidence:
         matches = list(
             s.execute(
                 select(Person).where(

@@ -35,6 +35,11 @@ RUN_COMPLETED = "completed"
 RUN_FAILED = "failed"
 DEFAULT_QUEUE_LIMIT = 100
 DEFAULT_CANDIDATE_LABEL_LIMIT = 25
+MAPPING_CANDIDATE = people_policy.ACTION_CANDIDATE
+MAPPING_APPROVED = "approved"
+MAPPING_REJECTED = "rejected"
+MAPPING_SPLIT = "split"
+MAPPING_DECISIONS = {MAPPING_CANDIDATE, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
 
 
 class PersonReconciliationError(ValueError):
@@ -68,7 +73,100 @@ def _reconcile_tool(s: Session, name: str) -> None:
     if cache is not None and isinstance(cache.record, dict):
         maintainer_index.replace_toolhub_metadata_edges(s, name, cache.record)
     maintainer_index.sync_author_claim_edges(s, tool_names=[name])
+    apply_approved_mappings_for_tool(s, name)
     people_index.resolve_tool_relationships(s, name)
+
+
+def _same_evidence_query(row: ToolRelationshipEvidence, target_person_id: int) -> Any:  # noqa: ANN401
+    return select(ToolRelationshipEvidence).where(
+        ToolRelationshipEvidence.tool_name == row.tool_name,
+        ToolRelationshipEvidence.person_id == target_person_id,
+        ToolRelationshipEvidence.relationship_type == row.relationship_type,
+        ToolRelationshipEvidence.source == row.source,
+        ToolRelationshipEvidence.method == row.method,
+        ToolRelationshipEvidence.evidence_key == row.evidence_key,
+    )
+
+
+def _move_mapping_evidence(
+    s: Session,
+    mapping: PersonReconciliationMapping,
+    *,
+    tool_name: str | None = None,
+) -> set[str]:
+    """Move provenance to an approved stable identity without changing roles."""
+    if mapping.source_person_id is None or mapping.target_person_id is None:
+        return set()
+    statement = select(ToolRelationshipEvidence).where(
+        ToolRelationshipEvidence.person_id == mapping.source_person_id
+    )
+    if tool_name:
+        statement = statement.where(ToolRelationshipEvidence.tool_name == tool_name)
+    evidence = list(s.execute(statement.order_by(ToolRelationshipEvidence.id)).scalars())
+    affected_tools = {row.tool_name for row in evidence}
+    for row in evidence:
+        duplicate = s.execute(_same_evidence_query(row, mapping.target_person_id)).scalar_one_or_none()
+        if duplicate is None:
+            row.person_id = mapping.target_person_id
+            continue
+        if row.confidence > duplicate.confidence:
+            duplicate.confidence = row.confidence
+            duplicate.verification_status = row.verification_status
+            duplicate.evidence_url = row.evidence_url
+            duplicate.evidence_payload = row.evidence_payload
+            duplicate.checked_at = row.checked_at
+            duplicate.expires_at = row.expires_at
+            duplicate.last_error = row.last_error
+            duplicate.updated_at = utcnow()
+        duplicate.withdrawn_at = None if row.withdrawn_at is None else duplicate.withdrawn_at
+        s.delete(row)
+    s.flush()
+    return affected_tools
+
+
+def apply_mapping(s: Session, mapping: PersonReconciliationMapping) -> int:
+    """Apply one operator-approved mapping and rebuild only affected tools."""
+    if mapping.decision != MAPPING_APPROVED:
+        return 0
+    if mapping.source_person_id is None or mapping.target_person_id is None:
+        msg = "mapping must name source and target people"
+        raise PersonReconciliationError(msg)
+    if mapping.source_person_id == mapping.target_person_id:
+        msg = "mapping source and target must differ"
+        raise PersonReconciliationError(msg)
+    if mapping.target_person_id not in people_index.public_identity_ids(s, {mapping.target_person_id}):
+        msg = "mapping target must have stable identity evidence"
+        raise PersonReconciliationError(msg)
+    source_identifiers = list(
+        s.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.person_id == mapping.source_person_id,
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.identifier_kind == people_index.IDENTIFIER_STABLE,
+            )
+        ).scalars()
+    )
+    if source_identifiers:
+        msg = "mapping source acquired stable identity evidence and requires conflict review"
+        raise PersonReconciliationError(msg)
+    affected_tools = _move_mapping_evidence(s, mapping)
+    for name in sorted(affected_tools):
+        people_index.resolve_tool_relationships(s, name)
+    mapping.updated_at = utcnow()
+    return len(affected_tools)
+
+
+def apply_approved_mappings_for_tool(s: Session, tool_name: str) -> int:
+    """Reapply durable approvals after an upstream evidence refresh."""
+    mappings = list(
+        s.execute(
+            select(PersonReconciliationMapping).where(PersonReconciliationMapping.decision == MAPPING_APPROVED)
+        ).scalars()
+    )
+    applied = 0
+    for mapping in mappings:
+        applied += int(bool(_move_mapping_evidence(s, mapping, tool_name=tool_name)))
+    return applied
 
 
 def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:

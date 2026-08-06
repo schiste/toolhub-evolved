@@ -16,12 +16,15 @@ from backend import (
     authz,
     catalog_projection,
     db,
+    people_reconcile,
     v1,
 )
 from backend import v1_common as common
 from backend.models import (
     CatalogCuration,
+    Person,
     PersonReconciliationConflict,
+    PersonReconciliationMapping,
     ToolHealthTarget,
     ToolMedia,
     ToolRecord,
@@ -38,6 +41,126 @@ from backend.sync import (
 
 v1_moderation_bp = Blueprint("v1_moderation", __name__)
 PEOPLE_CONFLICT_STATUSES = {"pending", "resolved", "dismissed"}
+
+
+def _people_mapping_payload(
+    row: PersonReconciliationMapping,
+    source: Person | None,
+    target: Person | None,
+) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "decision": row.decision,
+        "reason": row.reason,
+        "confidence": row.confidence,
+        "source": {
+            "personId": source.public_id if source else "",
+            "displayName": source.display_name if source else "",
+            "canonicalKey": row.source_key,
+        },
+        "target": {
+            "personId": target.public_id if target else "",
+            "displayName": target.display_name if target else "",
+            "canonicalKey": row.target_key,
+        },
+        "evidence": row.evidence if isinstance(row.evidence, dict) else {},
+        "reviewedByUserId": row.reviewed_by_user_id,
+        "reviewedAt": row.reviewed_at.isoformat(timespec="seconds") + "Z" if row.reviewed_at else "",
+        "reviewNotes": row.review_notes or "",
+        "createdAt": row.created_at.isoformat(timespec="seconds") + "Z" if row.created_at else "",
+    }
+
+
+@v1_moderation_bp.route("/v1/moderation/people-candidates/")
+@login_required
+def v1_moderation_people_candidates() -> Response:
+    """List persisted identity candidates and durable operator decisions."""
+    common.require_policy_or_abort(authz.ACTION_OPERATOR)
+    decision = str(request.args.get("decision") or people_reconcile.MAPPING_CANDIDATE).strip()
+    if decision not in people_reconcile.MAPPING_DECISIONS:
+        return common.bad("decision must be candidate, approved, rejected, or split")
+    limit = min(max(common.clean_int(request.args.get("limit")) or 50, 1), 100)
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(PersonReconciliationMapping)
+                .where(PersonReconciliationMapping.decision == decision)
+                .order_by(
+                    PersonReconciliationMapping.confidence.desc(),
+                    PersonReconciliationMapping.id,
+                )
+                .limit(limit)
+            ).scalars()
+        )
+        people = {
+            person.id: person
+            for person in s.execute(
+                select(Person).where(
+                    Person.id.in_(
+                        {
+                            person_id
+                            for row in rows
+                            for person_id in (row.source_person_id, row.target_person_id)
+                            if person_id is not None
+                        }
+                        or {-1}
+                    )
+                )
+            ).scalars()
+        }
+        results = [
+            _people_mapping_payload(row, people.get(row.source_person_id), people.get(row.target_person_id))
+            for row in rows
+        ]
+    return jsonify({"count": len(results), "results": results, "decision": decision})
+
+
+@v1_moderation_bp.route("/v1/moderation/people-candidates/<int:mapping_id>/", methods=["PUT"])
+@write_guard
+def v1_moderation_people_candidate_update(mapping_id: int) -> Response:
+    """Approve, reject, or split one candidate and persist the disposition."""
+    user = common.require_policy_or_abort(authz.ACTION_OPERATOR)
+    value = request.get_json(silent=True)
+    if not isinstance(value, dict):
+        return common.bad("moderation body must be a JSON object")
+    decision = str(value.get("decision") or "").strip()
+    allowed = people_reconcile.MAPPING_DECISIONS - {people_reconcile.MAPPING_CANDIDATE}
+    if decision not in allowed:
+        return common.bad("decision must be approved, rejected, or split")
+    notes = str(value.get("reviewNotes") or "").strip()[:2000]
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationMapping, mapping_id)
+        if row is None:
+            return common.deny(common.HTTP_NOT_FOUND, "people candidate not found")
+        if row.decision != people_reconcile.MAPPING_CANDIDATE:
+            return common.deny(common.HTTP_CONFLICT, "people candidate already has a durable decision")
+        row.decision = decision
+        row.review_notes = notes or None
+        row.reviewed_by_user_id = user.id
+        row.reviewed_at = utcnow()
+        row.updated_at = row.reviewed_at
+        try:
+            affected_tools = (
+                people_reconcile.apply_mapping(s, row)
+                if decision == people_reconcile.MAPPING_APPROVED
+                else 0
+            )
+        except people_reconcile.PersonReconciliationError as exc:
+            s.rollback()
+            return common.deny(common.HTTP_CONFLICT, str(exc))
+        source = s.get(Person, row.source_person_id) if row.source_person_id is not None else None
+        target = s.get(Person, row.target_person_id) if row.target_person_id is not None else None
+        payload = _people_mapping_payload(row, source, target)
+        common.emit_structured_activity(
+            s,
+            user,
+            action=f"people-candidate-{decision}",
+            object_type="people-candidate",
+            object_key=str(row.id),
+            official_status=SYNC_EVOLVED_REAL,
+            payload={"decision": decision, "affectedTools": affected_tools},
+        )
+    return jsonify({"ok": True, "candidate": payload, "affectedTools": affected_tools})
 
 
 def _people_conflict_payload(row: PersonReconciliationConflict) -> dict[str, Any]:
