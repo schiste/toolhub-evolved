@@ -8,7 +8,6 @@ import { completeness } from "../../public_html/lib/core/signals.js";
 import { applyExp, setServerUser, signedIn } from "../../public_html/lib/core/session.js";
 import { toolIcon } from "../../public_html/lib/atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../../public_html/lib/atoms/badges.js";
-import { icon } from "../../public_html/lib/atoms/icon.js";
 import { wikiShort } from "../../public_html/lib/atoms/labels.js";
 import { favBtn } from "../../public_html/lib/molecules/favbtn.js";
 import { healthScoreChip } from "../../public_html/lib/molecules/tool-health-summary.js";
@@ -35,7 +34,7 @@ function maintainerByline(t, evolvedSummary) {
 	const label = confirmed ? `${maintainer}, confirmed maintainer` : `${maintainer}, maintainer not confirmed yet`;
 	const known = Boolean(t.maintainer) && maintainer !== "Unknown";
 	const owner = known
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</a>`
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? '<span class="tcard__maint-status">verified maintainer relationship</span>' : ""}</a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">by ${owner}</div>`;
 }
@@ -231,7 +230,8 @@ test("toolCard renders attached health score and confirmed maintainer byline", (
 	assert.ok(!html.includes("Maintained"));
 	assert.ok(html.includes("tcard__maint-name--confirmed"));
 	assert.ok(html.includes("Jane &amp; Co, confirmed maintainer"));
-	assert.ok(html.includes('class="tcard__maint-check"'));
+	assert.ok(html.includes('<span class="tcard__maint-status">verified maintainer relationship</span>'));
+	assert.ok(!html.includes("tcard__maint-check"));
 	assert.ok(html.includes("Calculation: weighted average across 1 of 1 dimensions"));
 });
 

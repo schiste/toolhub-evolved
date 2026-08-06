@@ -1709,6 +1709,7 @@
 	"toolCard.maintainerConfirmed": "{name}, confirmed maintainer",
 	"toolCard.maintainerUnconfirmed": "{name}, maintainer not confirmed yet",
 	"toolCard.unknownMaintainer": "Unknown",
+	"toolCard.verifiedMaintainerRelationship": "verified maintainer relationship",
 	"toolforms.annoForTitle": "Community annotations for",
 	"toolforms.annoIntro": "Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see",
 	"toolforms.annotationWriteStatus": "Annotation write status",

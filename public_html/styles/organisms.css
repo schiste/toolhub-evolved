@@ -997,14 +997,11 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.tcard__maint-check {
-	display: inline-flex;
+.tcard__maint-status {
 	flex: 0 0 auto;
 	color: currentColor;
-}
-.tcard__maint-check .icon {
-	width: 0.95em;
-	height: 0.95em;
+	font-size: var(--fs-micro);
+	font-weight: 600;
 }
 .tcard__desc {
 	color: var(--color-text-secondary);

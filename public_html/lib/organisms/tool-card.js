@@ -6,7 +6,6 @@ import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
 import { completenessMeter, endorsementChip, fitChip } from "../atoms/badges.js";
-import { icon } from "../atoms/icon.js";
 import { wikiShort } from "../atoms/labels.js";
 import { favBtn } from "../molecules/favbtn.js";
 import { healthScoreChip } from "../molecules/tool-health-summary.js";
@@ -33,7 +32,7 @@ function maintainerByline(tool, evolvedSummary) {
 		? t("toolCard.maintainerConfirmed", "{name}, confirmed maintainer", { name: maintainer })
 		: t("toolCard.maintainerUnconfirmed", "{name}, maintainer not confirmed yet", { name: maintainer });
 	const owner = hasOwner
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-check" aria-hidden="true">${icon("check")}</span>` : ""}</a>`
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-status">${t("toolCard.verifiedMaintainerRelationship", "verified maintainer relationship")}</span>` : ""}</a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">${t("toolCard.by", "by")} ${owner}</div>`;
 }
