@@ -1,6 +1,6 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..4fb37e2 (35 commits) -->
+<!-- Source range: 828438f..081e06f (36 commits) -->
 
 # What's New for Users
 
@@ -11,3 +11,4 @@
 - Pages carry much less data than before, so they open faster — the front page is about a quarter of its previous size.
 - Opening a health score still shows the full breakdown of how it was worked out; that part now loads once the page itself is ready.
 - Corrections to the published release notes now take effect immediately instead of being masked by a cached compressed copy.
+- No visible change: the release notes on this page are now checked automatically, so they cannot fall behind what has shipped.
