@@ -18,13 +18,16 @@ from sqlalchemy import and_, case, func, or_, select
 from backend import people_policy
 from backend.models import (
     ActivityRow,
+    CanonicalToolCache,
     CatalogCuration,
     CatalogFacetValue,
+    CatalogToolProjection,
     Person,
     PersonActivitySummary,
     PersonIdentifier,
     PersonProfile,
     SourceAnalysisReport,
+    ToolAssetCache,
     ToolOverlay,
     ToolPersonRelationship,
     ToolRecord,
@@ -91,6 +94,14 @@ class UnresolvedAttributionQuery:
     role: str = ""
     project: str = ""
     tool_name: str = ""
+
+
+@dataclass(frozen=True)
+class PersonToolPage:
+    """Bounded tool page embedded in one public profile response."""
+
+    page: int = 1
+    page_size: int = 24
 
 
 def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - upstream values are untrusted
@@ -973,17 +984,98 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
     }
 
 
-def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
+PROFILE_TOOL_FIELDS = (
+    "name",
+    "title",
+    "description",
+    "url",
+    "icon",
+    "keywords",
+    "tool_type",
+    "for_wikis",
+    "deprecated",
+    "experimental",
+    "modified_date",
+    "license",
+    "repository",
+    "user_docs_url",
+    "developer_docs_url",
+    "feedback_url",
+    "bugtracker_url",
+    "translate_url",
+    "technology_used",
+    "audiences",
+    "tasks",
+    "available_ui_languages",
+    "author",
+    "created_by",
+)
+
+
+def _compact_profile_tool(
+    name: str,
+    canonical: CanonicalToolCache | None,
+    projection: CatalogToolProjection | None,
+    asset: ToolAssetCache | None,
+) -> tuple[dict[str, Any], str]:
+    canonical_record = canonical.record if canonical is not None and isinstance(canonical.record, dict) else {}
+    projected_record = (
+        projection.effective_record if projection is not None and isinstance(projection.effective_record, dict) else {}
+    )
+    combined = {**canonical_record, **projected_record}
+    if not combined:
+        return (
+            {
+                "name": name,
+                "title": name,
+                "description": "",
+                "origin": "profile_relationship",
+                "_missingCanonical": True,
+            },
+            "missing",
+        )
+    summary = {field: combined[field] for field in PROFILE_TOOL_FIELDS if field in combined}
+    summary["name"] = name
+    summary["origin"] = "canonical_cache"
+    if asset is not None and asset.status == "ready":
+        summary["_cachedIconUrl"] = f"/v1/catalog/tools/{name}/icon/"
+    return summary, "available"
+
+
+def person_detail(
+    s: Session,
+    public_id: str,
+    tool_page: PersonToolPage | None = None,
+) -> dict[str, Any] | None:
     person = s.execute(select(Person).where(Person.public_id == _clean(public_id, 36))).scalar_one_or_none()
     if person is None or person.id not in public_identity_ids(s, {person.id}):
         return None
+    requested = tool_page or PersonToolPage()
+    page = max(1, requested.page)
+    page_size = max(1, min(requested.page_size, 50))
     identifiers = _identifiers_by_person(s, {person.id}).get(person.id, [])
     profile = s.get(PersonProfile, person.id)
     activity = s.get(PersonActivitySummary, person.id)
+    tool_names_statement = (
+        select(ToolPersonRelationship.tool_name)
+        .where(ToolPersonRelationship.person_id == person.id)
+        .group_by(ToolPersonRelationship.tool_name)
+    )
+    tool_count = int(s.scalar(select(func.count()).select_from(tool_names_statement.order_by(None).subquery())) or 0)
+    tool_names = list(
+        s.execute(
+            tool_names_statement.order_by(ToolPersonRelationship.tool_name)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).scalars()
+    )
     relationships = list(
         s.execute(
             select(ToolPersonRelationship)
-            .where(ToolPersonRelationship.person_id == person.id)
+            .where(
+                ToolPersonRelationship.person_id == person.id,
+                ToolPersonRelationship.tool_name.in_(tool_names or {""}),
+            )
             .order_by(ToolPersonRelationship.tool_name, ToolPersonRelationship.relationship_type)
         ).scalars()
     )
@@ -992,6 +1084,7 @@ def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
             select(ToolRelationshipEvidence)
             .where(
                 ToolRelationshipEvidence.person_id == person.id,
+                ToolRelationshipEvidence.tool_name.in_(tool_names or {""}),
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
             )
             .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
@@ -1000,18 +1093,59 @@ def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
     evidence_by_key: dict[tuple[str, str], list[ToolRelationshipEvidence]] = {}
     for item in evidence:
         evidence_by_key.setdefault((item.tool_name, item.relationship_type), []).append(item)
-    tools: dict[str, list[dict[str, Any]]] = {}
+    roles_by_tool: dict[str, list[dict[str, Any]]] = {}
     for row in relationships:
-        tools.setdefault(row.tool_name, []).append(
+        roles_by_tool.setdefault(row.tool_name, []).append(
             _public_relationship_payload(
                 person,
                 row,
                 evidence_by_key.get((row.tool_name, row.relationship_type), []),
             )
         )
+    canonical_by_name = {
+        row.tool_name: row
+        for row in s.execute(
+            select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(tool_names or {""}))
+        ).scalars()
+    }
+    projections_by_name = {
+        row.tool_name: row
+        for row in s.execute(
+            select(CatalogToolProjection).where(CatalogToolProjection.tool_name.in_(tool_names or {""}))
+        ).scalars()
+    }
+    assets_by_name = {
+        row.tool_name: row
+        for row in s.execute(select(ToolAssetCache).where(ToolAssetCache.tool_name.in_(tool_names or {""}))).scalars()
+    }
+    tools = []
+    for name in tool_names:
+        summary, summary_status = _compact_profile_tool(
+            name,
+            canonical_by_name.get(name),
+            projections_by_name.get(name),
+            assets_by_name.get(name),
+        )
+        tools.append(
+            {
+                "name": name,
+                "summary": summary,
+                "summaryStatus": summary_status,
+                "relationships": roles_by_tool.get(name, []),
+            }
+        )
+    page_count = max(1, (tool_count + page_size - 1) // page_size)
     return _person_base_payload(person, identifiers, profile, activity) | {
-        "tools": [{"name": name, "relationships": roles} for name, roles in tools.items()],
-        "toolCount": len(tools),
+        "tools": {
+            "count": tool_count,
+            "page": page,
+            "pageSize": page_size,
+            "pageCount": page_count,
+            "nextPage": page + 1 if page < page_count else None,
+            "previousPage": page - 1 if page > 1 else None,
+            "results": tools,
+        },
+        "toolCount": tool_count,
         "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},
     }
 

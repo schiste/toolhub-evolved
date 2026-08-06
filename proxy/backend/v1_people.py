@@ -66,6 +66,14 @@ def _page_url(page: int | None) -> str | None:
     return f"{request.path}?{urlencode(args)}"
 
 
+def _person_tool_page_url(page: int | None) -> str | None:
+    if page is None:
+        return None
+    args = request.args.to_dict(flat=True)
+    args["tool_page"] = str(page)
+    return f"{request.path}?{urlencode(args)}"
+
+
 @v1_people_bp.route("/v1/people/tools/<name>/")
 def v1_tool_people(name: str) -> Response:
     """Read the local people projection for a canonical Toolhub tool."""
@@ -187,11 +195,22 @@ def v1_people_resolve() -> Response:
 
 @v1_people_bp.route("/v1/people/<public_id>/")
 def v1_person(public_id: str) -> Response:
-    """Return one public person, profile, tools, roles, and contribution summary."""
+    """Return one public person with one bounded local-only tool page."""
     if security.read_rate_limited(request.remote_addr):
         return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
+    try:
+        tool_page = _positive_arg("tool_page", 1)
+        tool_page_size = _positive_arg("tool_page_size", 24, maximum=50)
+    except InvalidPeopleQueryError as exc:
+        return common.bad(str(exc))
     with db.session_scope() as s:
-        payload = people_index.person_detail(s, public_id)
+        payload = people_index.person_detail(
+            s,
+            public_id,
+            people_index.PersonToolPage(page=tool_page, page_size=tool_page_size),
+        )
     if payload is None:
         return common.deny(common.HTTP_NOT_FOUND, "person not found")
+    payload["tools"]["next"] = _person_tool_page_url(payload["tools"]["nextPage"])
+    payload["tools"]["previous"] = _person_tool_page_url(payload["tools"]["previousPage"])
     return jsonify(payload)

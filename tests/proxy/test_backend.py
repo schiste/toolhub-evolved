@@ -2980,7 +2980,9 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     assert "evidenceUrl" not in evidence
 
     person_detail = client.get(f"/v1/people/{author_person['id']}/").get_json()
-    detail_relationship = person_detail["tools"][0]["relationships"][0]
+    assert person_detail["tools"]["count"] == 1
+    assert person_detail["tools"]["results"][0]["summaryStatus"] == "missing"
+    detail_relationship = person_detail["tools"]["results"][0]["relationships"][0]
     assert detail_relationship["evidence"][0]["source"] == evidence["source"]
     assert detail_relationship["evidence"][0]["method"] == evidence["method"]
     assert detail_relationship["evidence"][0]["checkedAt"] == evidence["checkedAt"]
