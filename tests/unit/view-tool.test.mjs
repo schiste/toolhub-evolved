@@ -556,6 +556,19 @@ beforeEach(() => {
 	h.serverWrite.mockResolvedValue({ ok: true });
 });
 
+/** @param {string} audience */
+function respondWithViewerAudience(audience) {
+	h.backendGetJson.mockImplementation((path) =>
+		Promise.resolve(
+			path.includes("/viewer-context/")
+				? { audience }
+				: path.includes("/media/")
+					? { results: [] }
+					: { thanks: {}, usage30d: {}, health: {} }
+		)
+	);
+}
+
 /* ---------------- viewTool ---------------- */
 
 test("viewTool not found", async () => {
@@ -656,7 +669,10 @@ test("viewTool full (signed in, rich fields, related + ego graph)", async () => 
 	assert.ok(r.html.includes('href="/tools/full/edit-annotations"'));
 	assert.ok(r.html.includes('class="toolpage__management"'));
 	assert.equal((r.html.match(/Open tool<\/a>/g) || []).length, 1);
-	assert.ok(r.html.includes("Maintainer actions"));
+	assert.ok(r.html.includes("Contribute"));
+	assert.ok(!r.html.includes("Maintainer actions"));
+	assert.ok(r.html.includes("Suggest tool changes"));
+	assert.ok(r.html.includes("Contribute annotations"));
 	assert.ok(!r.html.includes("shotstrip"));
 	assert.ok(!r.html.includes("thanks__agg"));
 	assert.ok(!r.html.includes("views experimental"));
@@ -918,6 +934,7 @@ test("viewTool reports thanks and media write failures", async () => {
 test("viewTool signed-in detail delete publishes official Toolhub delete", async () => {
 	setServerUser("Grace Hopper");
 	h.officialWriteAvailable.mockReturnValue(true);
+	respondWithViewerAudience("record_authority");
 	h.getTool.mockResolvedValue(toolFixture("delete-me", { title: "Delete Me", origin: "api" }));
 	const r = await tool.viewTool("delete-me");
 	assert.ok(r.html.includes("data-tool-delete"), "delete action is rendered on the detail page");
@@ -934,6 +951,7 @@ test("viewTool signed-in detail delete publishes official Toolhub delete", async
 test("viewTool signed-in detail delete reports official failure and stays put", async () => {
 	setServerUser("Grace Hopper");
 	h.officialWriteAvailable.mockReturnValue(true);
+	respondWithViewerAudience("record_authority");
 	h.officialWrite.mockRejectedValue(new Error("permission denied"));
 	h.getTool.mockResolvedValue(toolFixture("delete-fail", { title: "Delete Fail", origin: "api" }));
 	const r = await tool.viewTool("delete-fail");
@@ -951,10 +969,57 @@ test("viewTool signed-in detail delete reports official failure and stays put", 
 test("viewTool does not render official delete for local-only tool records", async () => {
 	setServerUser("Grace Hopper");
 	h.officialWriteAvailable.mockReturnValue(true);
+	respondWithViewerAudience("record_authority");
 	h.isNewTool.mockReturnValue(true);
 	h.getTool.mockResolvedValue(toolFixture("local-only", { title: "Local Only" }));
 	const r = await tool.viewTool("local-only");
 	assert.ok(!r.html.includes("data-tool-delete"), "local-only tools use the edit-form discard path");
+});
+
+test("viewTool reserves maintainer wording for a verified maintainer audience", async () => {
+	setServerUser("Verified Maintainer");
+	h.officialWriteAvailable.mockReturnValue(true);
+	respondWithViewerAudience("verified_maintainer");
+	h.getTool.mockResolvedValue(toolFixture("maintainer-actions", { title: "Maintainer Actions" }));
+
+	const r = await tool.viewTool("maintainer-actions");
+
+	assert.ok(r.html.includes('aria-label="Maintainer actions"'));
+	assert.ok(r.html.includes("Manage relationships"));
+	assert.ok(r.html.includes("Edit tool</a>"));
+	assert.ok(r.html.includes("Edit annotations</a>"));
+	assert.ok(!r.html.includes("data-tool-delete"), "maintainership does not imply Toolhub record deletion");
+});
+
+test("viewTool labels record authority separately and allows capability-gated deletion", async () => {
+	setServerUser("Record Owner");
+	h.officialWriteAvailable.mockReturnValue(true);
+	respondWithViewerAudience("record_authority");
+	h.getTool.mockResolvedValue(toolFixture("record-actions", { title: "Record Actions", origin: "api" }));
+
+	const r = await tool.viewTool("record-actions");
+
+	assert.ok(r.html.includes('aria-label="Tool management"'));
+	assert.ok(r.html.includes("Edit Toolhub record"));
+	assert.ok(!r.html.includes("Maintainer actions"));
+	assert.ok(r.html.includes("data-tool-delete"));
+});
+
+test("viewTool fails closed to contributor wording when viewer context is unavailable", async () => {
+	setServerUser("Audit Account");
+	h.officialWriteAvailable.mockReturnValue(true);
+	h.backendGetJson.mockImplementation((path) =>
+		path.includes("/viewer-context/")
+			? Promise.reject(new Error("context unavailable"))
+			: Promise.resolve(path.includes("/media/") ? { results: [] } : { thanks: {}, usage30d: {}, health: {} })
+	);
+	h.getTool.mockResolvedValue(toolFixture("audit-actions", { title: "Audit Actions", origin: "api" }));
+
+	const r = await tool.viewTool("audit-actions");
+
+	assert.ok(r.html.includes('aria-label="Contribute"'));
+	assert.ok(!r.html.includes("Maintainer actions"));
+	assert.ok(!r.html.includes("data-tool-delete"), "an OAuth token alone is not per-tool record authority");
 });
 
 test("viewTool deprecated with replacement as URL", async () => {
