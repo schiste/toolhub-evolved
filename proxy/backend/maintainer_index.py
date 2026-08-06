@@ -315,6 +315,8 @@ def public_tool_summary(s: Session, tool_name: str) -> dict[str, Any]:
             select(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_text(tool_name))
         ).scalars()
     )
+    published_ids = people_index.public_identity_ids(s, {row.person_id for row in relationships})
+    relationships = [row for row in relationships if row.person_id in published_ids]
     people = summary["people"]
     activity_statuses = [str(item.get("activity", {}).get("status") or "unknown") for item in people]
     summary.update(

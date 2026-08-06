@@ -84,6 +84,13 @@ def test_display_names_remain_non_merging_conflicts():
         assert summary["conflicts"] == 1
         assert s.query(Person).count() == 2
         assert s.query(PersonReconciliationConflict).count() == 1
+        conflict = s.query(PersonReconciliationConflict).one()
+        assert conflict.status == "pending"
+        assert conflict.details["candidateCount"] == 2
+        assert conflict.details["unresolvedAttributionCount"] == 2
+
+        people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
+        assert s.query(PersonReconciliationConflict).count() == 1
 
 
 def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():

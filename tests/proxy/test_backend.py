@@ -68,6 +68,8 @@ from backend.models import (  # noqa: E402
     PersonActivitySummary,
     PersonIdentifier,
     PersonProfile,
+    PersonReconciliationConflict,
+    PersonReconciliationRun,
     SourceAnalysisReport,
     ToolAuthorClaim,
     ToolAuthorKey,
@@ -630,6 +632,16 @@ def test_init_schema_creates_people_evidence_and_activity_tables():
         "computed_at",
         "stale_at",
     }.issubset(rollup_cols)
+    conflict_cols = {
+        col["name"] for col in inspect(db.engine()).get_columns(PersonReconciliationConflict.__tablename__)
+    }
+    assert {
+        "status",
+        "reviewed_by_user_id",
+        "reviewed_at",
+        "review_notes",
+        "last_seen_at",
+    }.issubset(conflict_cols)
 
     with db.session_scope() as s:
         person = Person(canonical_key="toolhub:ada", display_name="Ada")
@@ -1163,6 +1175,7 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         conn.exec_driver_sql(
             "CREATE TABLE person_reconciliation_queue (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)"
         )
+        conn.exec_driver_sql("CREATE TABLE person_reconciliation_conflicts (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("INSERT INTO repository_analysis_state (tool_name, attempts) VALUES ('legacy', NULL)")
         conn.exec_driver_sql("INSERT INTO person_reconciliation_queue (tool_name, attempts) VALUES ('legacy', NULL)")
     db._upgrade_schema()
@@ -1202,6 +1215,10 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         "source",
         "sync_status",
     }.issubset(catalog_columns)
+    conflict_columns = {col["name"] for col in inspect(eng).get_columns("person_reconciliation_conflicts")}
+    assert {"status", "reviewed_by_user_id", "reviewed_at", "review_notes", "last_seen_at"}.issubset(
+        conflict_columns
+    )
     with eng.connect() as conn:
         assert conn.scalar(select(text("attempts")).select_from(text("repository_analysis_state"))) == 0
         assert conn.scalar(select(text("attempts")).select_from(text("person_reconciliation_queue"))) == 0
@@ -3150,8 +3167,28 @@ def test_display_only_observations_are_scoped_instead_of_globally_merged():
         people_index.replace_source_evidence(s, "first-tool", "toolhub_author_metadata", observation)
         assert {row.person_id for row in s.query(ToolRelationshipEvidence).all()} == first_ids
 
+        assert people_index.find_people(s, "Alex") == []
+        assert people_index.person_detail(s, s.query(Person).first().public_id) is None
+        assert people_index.unresolved_attributions(s, "Alex") == [
+            {
+                "label": "Alex",
+                "identityStatus": "unresolved_attribution",
+                "attributionCount": 2,
+                "toolCount": 2,
+                "evidenceCount": 2,
+                "bestConfidence": 0,
+                "relationshipTypes": [sync.PERSON_REL_AUTHOR],
+            }
+        ]
 
-def test_people_directory_omits_unreferenced_identity_rows():
+        summary = people_index.public_people_summary(s, "first-tool")
+        assert summary["people"] == []
+        assert summary["counts"][sync.PERSON_REL_AUTHOR] == 0
+        assert summary["unresolvedCounts"][sync.PERSON_REL_AUTHOR] == 1
+        assert summary["unresolvedAttributions"][0]["label"] == "Alex"
+
+
+def test_people_directory_publishes_evidence_backed_identities_not_display_observations():
     db.configure("sqlite://")
     db.init_schema()
     from backend import people_index
@@ -3164,8 +3201,88 @@ def test_people_directory_omits_unreferenced_identity_rows():
             "toolhub_author_metadata",
             [{"display_name": "Visible", "relationship_type": sync.PERSON_REL_AUTHOR}],
         )
+        people_index.replace_source_evidence(
+            s,
+            "handle-tool",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Handle backed",
+                    "toolhub_username": "handle-backed",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                }
+            ],
+        )
 
-        assert [person["displayName"] for person in people_index.find_people(s, "")] == ["Visible"]
+        assert [person["displayName"] for person in people_index.find_people(s, "")] == ["Handle backed"]
+        assert people_index.unresolved_attributions(s)[0]["label"] == "Visible"
+
+
+def test_people_directory_endpoint_separates_unresolved_attributions(client):
+    with db.session_scope() as s:
+        from backend import people_index
+
+        people_index.replace_source_evidence(
+            s,
+            "display-tool",
+            "toolhub_author_metadata",
+            [{"display_name": "Alex", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        people_index.replace_source_evidence(
+            s,
+            "handle-tool",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Alex Maintainer",
+                    "wiki_username": "alex-maintainer",
+                    "relationship_type": sync.PERSON_REL_MAINTAINER,
+                }
+            ],
+        )
+
+    data = client.get("/v1/people/?q=alex").get_json()
+    assert data["count"] == 1
+    assert data["results"][0]["displayName"] == "Alex Maintainer"
+    assert data["unresolvedCount"] == 1
+    assert data["unresolvedAttributions"][0]["label"] == "Alex"
+
+
+def test_operator_can_triage_people_conflicts_without_merging(client):
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        conflict = PersonReconciliationConflict(
+            run_id=run.id,
+            conflict_type="ambiguous_display_name",
+            value="alex",
+            details={"candidateCount": 2, "stableEvidenceAvailable": True},
+        )
+        s.add(conflict)
+        s.flush()
+        conflict_id = conflict.id
+
+    assert client.get("/v1/moderation/people-conflicts/").status_code == 401
+    reviewer_id = add_user(username="Reviewer", wm_sub="reviewer", role=authz.ROLE_REVIEWER)
+    sign_in(client, reviewer_id)
+    assert client.get("/v1/moderation/people-conflicts/").status_code == 403
+
+    admin_id = add_user(username="Operator", wm_sub="operator", role=authz.ROLE_ADMIN)
+    sign_in(client, admin_id)
+    pending = client.get("/v1/moderation/people-conflicts/").get_json()
+    assert pending["count"] == 1
+    assert pending["results"][0]["details"]["stableEvidenceAvailable"] is True
+
+    response = client.put(
+        f"/v1/moderation/people-conflicts/{conflict_id}/",
+        json={"status": "resolved", "reviewNotes": "Stable account evidence checked."},
+        headers={"X-CSRF-Token": "tok"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["conflict"]["status"] == "resolved"
+    assert client.get("/v1/moderation/people-conflicts/").get_json()["count"] == 0
+    assert client.get("/v1/moderation/people-conflicts/?status=resolved").get_json()["count"] == 1
 
 
 def test_permanent_evidence_keeps_a_collapsed_relationship_permanent():

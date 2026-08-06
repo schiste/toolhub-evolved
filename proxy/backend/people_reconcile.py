@@ -12,6 +12,7 @@ from backend import db, maintainer_index, people_index
 from backend.models import (
     CanonicalToolCache,
     Person,
+    PersonIdentifier,
     PersonReconciliationConflict,
     PersonReconciliationQueue,
     PersonReconciliationRun,
@@ -113,14 +114,48 @@ def _ambiguous_display_names(s: Session) -> list[dict[str, Any]]:
         .group_by(func.lower(Person.display_name))
         .having(func.count(Person.id) > 1)
     ).all()
-    return [
-        {
-            "type": "ambiguous_display_name",
-            "value": name,
-            "details": "Display names are presentation data and are never automatic merge evidence.",
+    conflicts = []
+    for name, count in rows:
+        candidates = list(
+            s.execute(select(Person).where(func.lower(Person.display_name) == name).order_by(Person.id)).scalars()
+        )
+        candidate_ids = {person.id for person in candidates}
+        published_ids = people_index.public_identity_ids(s, candidate_ids)
+        identifier_rows = list(
+            s.execute(
+                select(PersonIdentifier).where(
+                    PersonIdentifier.person_id.in_(candidate_ids),
+                    PersonIdentifier.is_current.is_(True),
+                )
+            ).scalars()
+        )
+        stable_ids = {
+            identifier.person_id
+            for identifier in identifier_rows
+            if identifier.identifier_kind == people_index.IDENTIFIER_STABLE
         }
-        for name, _count in rows
-    ]
+        handle_ids = {
+            identifier.person_id
+            for identifier in identifier_rows
+            if identifier.identifier_kind == people_index.IDENTIFIER_HANDLE
+        }
+        conflicts.append(
+            {
+                "type": "ambiguous_display_name",
+                "value": name,
+                "details": {
+                    "reason": "Display names are presentation data and are never automatic merge evidence.",
+                    "candidateCount": count,
+                    "resolvedCandidateCount": len(published_ids),
+                    "unresolvedAttributionCount": count - len(published_ids),
+                    "stableCandidateCount": len(stable_ids),
+                    "handleCandidateCount": len(handle_ids),
+                    "candidatePublicIds": [person.public_id for person in candidates],
+                    "stableEvidenceAvailable": bool(stable_ids),
+                },
+            }
+        )
+    return conflicts
 
 
 def build_plan(s: Session) -> dict[str, Any]:
@@ -153,14 +188,26 @@ def run(s: Session, *, mode: str = MODE_DRY_RUN) -> dict[str, Any]:
             people_index.refresh_activity_summaries(s)
         after = build_plan(s)
         for conflict in after["conflicts"]:
-            s.add(
-                PersonReconciliationConflict(
-                    run_id=run_row.id,
-                    conflict_type=conflict["type"],
-                    value=conflict["value"],
-                    details={"reason": conflict["details"]},
+            existing = s.execute(
+                select(PersonReconciliationConflict).where(
+                    PersonReconciliationConflict.conflict_type == conflict["type"],
+                    PersonReconciliationConflict.value == conflict["value"],
+                    PersonReconciliationConflict.status == "pending",
                 )
-            )
+            ).scalar_one_or_none()
+            if existing is None:
+                s.add(
+                    PersonReconciliationConflict(
+                        run_id=run_row.id,
+                        conflict_type=conflict["type"],
+                        value=conflict["value"],
+                        details=conflict["details"],
+                    )
+                )
+            else:
+                existing.run_id = run_row.id
+                existing.details = conflict["details"]
+                existing.last_seen_at = utcnow()
         summary = {
             "mode": mode,
             "peopleScanned": after["peopleScanned"],

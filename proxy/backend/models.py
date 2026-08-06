@@ -799,6 +799,11 @@ class PersonReconciliationConflict(Base):
     conflict_type: Mapped[str] = mapped_column(String(64), default="")
     value: Mapped[str] = mapped_column(String(255), default="")
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

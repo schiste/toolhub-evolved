@@ -21,6 +21,7 @@ from backend import (
 from backend import v1_common as common
 from backend.models import (
     CatalogCuration,
+    PersonReconciliationConflict,
     ToolHealthTarget,
     ToolMedia,
     ToolRecord,
@@ -36,6 +37,81 @@ from backend.sync import (
 )
 
 v1_moderation_bp = Blueprint("v1_moderation", __name__)
+PEOPLE_CONFLICT_STATUSES = {"pending", "resolved", "dismissed"}
+
+
+def _people_conflict_payload(row: PersonReconciliationConflict) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "type": row.conflict_type,
+        "label": row.value,
+        "status": row.status,
+        "details": row.details if isinstance(row.details, dict) else {},
+        "runId": row.run_id,
+        "reviewedByUserId": row.reviewed_by_user_id,
+        "reviewedAt": row.reviewed_at.isoformat(timespec="seconds") + "Z" if row.reviewed_at else "",
+        "reviewNotes": row.review_notes or "",
+        "lastSeenAt": row.last_seen_at.isoformat(timespec="seconds") + "Z" if row.last_seen_at else "",
+        "createdAt": row.created_at.isoformat(timespec="seconds") + "Z" if row.created_at else "",
+    }
+
+
+@v1_moderation_bp.route("/v1/moderation/people-conflicts/")
+@login_required
+def v1_moderation_people_conflicts() -> Response:
+    """List identity ambiguities for Evolved operators without merging them."""
+    common.require_policy_or_abort(authz.ACTION_OPERATOR)
+    status = str(request.args.get("status") or "pending").strip()
+    if status not in PEOPLE_CONFLICT_STATUSES:
+        return common.bad("status must be pending, resolved, or dismissed")
+    limit = min(max(common.clean_int(request.args.get("limit")) or 50, 1), 100)
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(PersonReconciliationConflict)
+                .where(PersonReconciliationConflict.status == status)
+                .order_by(
+                    PersonReconciliationConflict.last_seen_at.desc(),
+                    PersonReconciliationConflict.id.desc(),
+                )
+                .limit(limit)
+            ).scalars()
+        )
+        results = [_people_conflict_payload(row) for row in rows]
+    return jsonify({"count": len(results), "results": results, "status": status})
+
+
+@v1_moderation_bp.route("/v1/moderation/people-conflicts/<int:conflict_id>/", methods=["PUT"])
+@write_guard
+def v1_moderation_people_conflict_update(conflict_id: int) -> Response:
+    """Record an operator disposition; identity changes remain a separate audited action."""
+    user = common.require_policy_or_abort(authz.ACTION_OPERATOR)
+    value = request.get_json(silent=True)
+    if not isinstance(value, dict):
+        return common.bad("moderation body must be a JSON object")
+    status = str(value.get("status") or "").strip()
+    if status not in PEOPLE_CONFLICT_STATUSES:
+        return common.bad("status must be pending, resolved, or dismissed")
+    notes = str(value.get("reviewNotes") or "").strip()[:2000]
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationConflict, conflict_id)
+        if row is None:
+            return common.deny(common.HTTP_NOT_FOUND, "people conflict not found")
+        row.status = status
+        row.review_notes = notes or None
+        row.reviewed_by_user_id = user.id if status != "pending" else None
+        row.reviewed_at = utcnow() if status != "pending" else None
+        payload = _people_conflict_payload(row)
+        common.emit_structured_activity(
+            s,
+            user,
+            action="people-conflict-reviewed",
+            object_type="people-conflict",
+            object_key=str(row.id),
+            official_status=SYNC_EVOLVED_REAL,
+            payload={"status": status, "conflict": payload},
+        )
+    return jsonify({"ok": True, "conflict": payload})
 
 
 def _moderation_row(s: Any, kind: str, item_id: int) -> object | None:  # noqa: ANN401

@@ -46,10 +46,13 @@ def v1_people() -> Response:
     limit = min(max(clean_int(request.args.get("limit")) or 50, 1), 100)
     with db.session_scope() as s:
         results = people_index.find_people(s, query, limit=limit)
+        unresolved = people_index.unresolved_attributions(s, query, limit=limit)
     return jsonify(
         {
             "count": len(results),
             "results": results,
+            "unresolvedCount": len(unresolved),
+            "unresolvedAttributions": unresolved,
             "source": SOURCE_LOCAL,
             "syncStatus": SYNC_EVOLVED_REAL,
             "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},

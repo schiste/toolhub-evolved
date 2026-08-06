@@ -54,6 +54,7 @@ NS_TOOLHUB_USER_ID = "toolhub_user_id"
 NS_TOOLHUB_USERNAME = "toolhub_username"
 NS_WIKI_USERNAME = "wiki_username"
 PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
+PUBLIC_IDENTIFIER_KINDS = (IDENTIFIER_STABLE, IDENTIFIER_HANDLE)
 RECENT_ACTIVITY_DAYS = 90
 ACTIVITY_STALE_DAYS = 1
 ACTIVE_CONTRIBUTION_DAYS = 30
@@ -529,6 +530,86 @@ def _identifiers_by_person(s: Session, person_ids: set[int]) -> dict[int, list[d
     return result
 
 
+def _public_identity_clause() -> Any:  # noqa: ANN401 - SQLAlchemy boolean expression
+    identifier_people = select(PersonIdentifier.person_id).where(
+        PersonIdentifier.is_current.is_(True),
+        PersonIdentifier.identifier_kind.in_(PUBLIC_IDENTIFIER_KINDS),
+    )
+    profile_people = select(PersonProfile.person_id)
+    return or_(Person.id.in_(identifier_people), Person.id.in_(profile_people))
+
+
+def public_identity_ids(s: Session, person_ids: set[int] | None = None) -> set[int]:
+    """Return identities safe to publish as people, based on current evidence."""
+    statement = select(Person.id).where(_public_identity_clause())
+    if person_ids is not None:
+        statement = statement.where(Person.id.in_(person_ids or {-1}))
+    return {row[0] for row in s.execute(statement).all()}
+
+
+def unresolved_attributions(
+    s: Session,
+    query: str = "",
+    *,
+    limit: int = 50,
+    tool_name: str = "",
+) -> list[dict[str, Any]]:
+    """Aggregate display-only relationship evidence without inventing people."""
+    clean_query = _clean(query)
+    clean_tool = _clean(tool_name)
+    normalized_label = func.lower(Person.display_name)
+    statement = (
+        select(
+            normalized_label.label("normalized_label"),
+            func.min(Person.display_name).label("label"),
+            func.count(func.distinct(Person.id)).label("attribution_count"),
+            func.count(func.distinct(ToolPersonRelationship.tool_name)).label("tool_count"),
+            func.sum(ToolPersonRelationship.evidence_count).label("evidence_count"),
+            func.max(ToolPersonRelationship.confidence).label("best_confidence"),
+        )
+        .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
+        .where(~_public_identity_clause(), Person.display_name != "")
+        .group_by(normalized_label)
+        .order_by(normalized_label)
+        .limit(max(1, min(limit, 100)))
+    )
+    if clean_query:
+        statement = statement.where(normalized_label.like(f"%{clean_query.casefold()}%"))
+    if clean_tool:
+        statement = statement.where(ToolPersonRelationship.tool_name == clean_tool)
+    rows = list(s.execute(statement).all())
+    normalized_labels = {row.normalized_label for row in rows}
+    roles_by_label: dict[str, set[str]] = {}
+    if normalized_labels:
+        roles = (
+            select(normalized_label, ToolPersonRelationship.relationship_type)
+            .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
+            .where(
+                ~_public_identity_clause(),
+                normalized_label.in_(normalized_labels),
+            )
+            .distinct()
+        )
+        if clean_tool:
+            roles = roles.where(ToolPersonRelationship.tool_name == clean_tool)
+        for label, role in s.execute(roles).all():
+            roles_by_label.setdefault(label, set()).add(role)
+    return [
+        {
+            "label": row.label,
+            "identityStatus": "unresolved_attribution",
+            "attributionCount": row.attribution_count,
+            "toolCount": row.tool_count,
+            "evidenceCount": row.evidence_count or 0,
+            "bestConfidence": row.best_confidence or 0,
+            "relationshipTypes": [
+                role for role in PUBLIC_ROLES if role in roles_by_label.get(row.normalized_label, set())
+            ],
+        }
+        for row in rows
+    ]
+
+
 def _person_base_payload(
     person: Person,
     identifiers: list[dict[str, Any]],
@@ -563,7 +644,8 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
             .order_by(ToolPersonRelationship.confidence.desc(), ToolPersonRelationship.id)
         ).scalars()
     )
-    person_ids = {row.person_id for row in relationships}
+    all_person_ids = {row.person_id for row in relationships}
+    person_ids = public_identity_ids(s, all_person_ids)
     people = {row.id: row for row in s.execute(select(Person).where(Person.id.in_(person_ids or {-1}))).scalars()}
     identifiers = _identifiers_by_person(s, person_ids)
     profiles = {
@@ -628,10 +710,15 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
         role: sum(any(relationship["type"] == role for relationship in item["relationships"]) for item in items)
         for role in PUBLIC_ROLES
     }
+    unresolved = unresolved_attributions(s, tool_name=clean_tool, limit=100)
+    unresolved_counts = {role: sum(role in item["relationshipTypes"] for item in unresolved) for role in PUBLIC_ROLES}
     return {
         "toolName": clean_tool,
         "people": items,
         "counts": counts,
+        "unresolvedAttributions": unresolved,
+        "unresolvedCounts": unresolved_counts,
+        "resolvedRelationshipCount": sum(len(item["relationships"]) for item in items),
         "relationshipCount": len(relationships),
         "source": SOURCE_LOCAL,
         "syncStatus": "evolved_real",
@@ -641,7 +728,7 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
 
 def person_detail(s: Session, public_id: str) -> dict[str, Any] | None:
     person = s.execute(select(Person).where(Person.public_id == _clean(public_id, 36))).scalar_one_or_none()
-    if person is None:
+    if person is None or person.id not in public_identity_ids(s, {person.id}):
         return None
     identifiers = _identifiers_by_person(s, {person.id}).get(person.id, [])
     profile = s.get(PersonProfile, person.id)
@@ -677,7 +764,10 @@ def find_people(s: Session, query: str, *, limit: int = 50) -> list[dict[str, An
     profile_people = select(PersonProfile.person_id)
     statement = (
         select(Person)
-        .where(or_(Person.id.in_(related_people), Person.id.in_(profile_people)))
+        .where(
+            or_(Person.id.in_(related_people), Person.id.in_(profile_people)),
+            _public_identity_clause(),
+        )
         .order_by(Person.display_name, Person.public_id)
         .limit(max(1, min(limit, 100)))
     )
