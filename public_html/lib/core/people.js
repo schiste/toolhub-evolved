@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { backendGetJson, getToolsByName } from "./api.js";
+import { backendGetJson, normalizeTool } from "./api.js";
 
 /** @param {string} toolName */
 export function peopleForTool(toolName) {
 	return backendGetJson(`/v1/people/tools/${encodeURIComponent(toolName)}/`);
 }
 
-/** @param {string} publicId */
-export function personById(publicId) {
-	return backendGetJson(`/v1/people/${encodeURIComponent(publicId)}/`);
+/** @param {string} publicId @param {{toolPage?: number, toolPageSize?: number}} [options] */
+export function personById(publicId, options = {}) {
+	const params = new URLSearchParams();
+	if (options.toolPage && options.toolPage > 1) params.set("tool_page", String(options.toolPage));
+	if (options.toolPageSize) params.set("tool_page_size", String(options.toolPageSize));
+	return backendGetJson(`/v1/people/${encodeURIComponent(publicId)}/${params.size > 0 ? `?${params}` : ""}`);
 }
 
 /**
@@ -88,12 +91,29 @@ export async function personByHandle(query) {
 }
 
 /** @param {any} person */
-export async function toolsForPerson(person) {
-	const relationships = new Map(
-		(Array.isArray(person?.tools) ? person.tools : [])
-			.filter((/** @type {any} */ tool) => tool?.name)
-			.map((/** @type {any} */ tool) => [tool.name, Array.isArray(tool.relationships) ? tool.relationships : []])
+export function toolsForPerson(person) {
+	const rows = Array.isArray(person?.tools)
+		? person.tools
+		: Array.isArray(person?.tools?.results)
+			? person.tools.results
+			: [];
+	return /** @type {Tool[]} */ (
+		rows
+			.filter((/** @type {any} */ row) => row?.name)
+			.map((/** @type {any} */ row) => {
+				const summary = row.summary && typeof row.summary === "object" ? row.summary : {};
+				const tool = normalizeTool({
+					name: row.name,
+					title: row.name,
+					description: "",
+					origin: "profile_relationship",
+					...summary
+				});
+				return {
+					...tool,
+					personRelationships: Array.isArray(row.relationships) ? row.relationships : [],
+					profileSummaryStatus: row.summaryStatus || (summary._missingCanonical ? "missing" : "available")
+				};
+			})
 	);
-	const tools = /** @type {Tool[]} */ (await getToolsByName([...relationships.keys()]));
-	return tools.map((tool) => ({ ...tool, personRelationships: relationships.get(tool.name) || [] }));
 }
