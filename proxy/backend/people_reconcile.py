@@ -300,6 +300,60 @@ def _membership_aliases(tool_names: list[str]) -> set[str]:
     return aliases
 
 
+def _stable_identifier_owner(s: Session, namespace: str, value: str) -> int | None:
+    clean_value = _clean(value)
+    if not clean_value:
+        return None
+    return s.execute(
+        select(PersonIdentifier.person_id).where(
+            PersonIdentifier.namespace == namespace,
+            PersonIdentifier.normalized_value == clean_value.casefold(),
+            PersonIdentifier.is_current.is_(True),
+        )
+    ).scalar_one_or_none()
+
+
+def _record_stable_identity_conflict(s: Session, run_id: int, identity: Any) -> bool:  # noqa: ANN401
+    """Queue a cross-system stable-id disagreement and refuse a target."""
+    toolhub_owner = _stable_identifier_owner(s, people_index.NS_TOOLHUB_USER_ID, identity.toolhub_user_id)
+    wikimedia_owner = _stable_identifier_owner(
+        s,
+        people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+        identity.wikimedia_global_user_id,
+    )
+    if toolhub_owner is None or wikimedia_owner is None or toolhub_owner == wikimedia_owner:
+        return False
+    value = f"toolhub:{identity.toolhub_user_id}|wikimedia:{identity.wikimedia_global_user_id}"
+    conflict = s.execute(
+        select(PersonReconciliationConflict).where(
+            PersonReconciliationConflict.conflict_type == people_policy.REASON_STABLE_CONFLICT,
+            PersonReconciliationConflict.value == value,
+            PersonReconciliationConflict.status == "pending",
+        )
+    ).scalar_one_or_none()
+    details = {
+        "reason": "Toolhub and Wikimedia stable identifiers currently resolve to different people.",
+        "identity": identity.evidence_payload(),
+        "toolhubPersonId": s.get(Person, toolhub_owner).public_id,
+        "wikimediaPersonId": s.get(Person, wikimedia_owner).public_id,
+    }
+    if conflict is None:
+        s.add(
+            PersonReconciliationConflict(
+                run_id=run_id,
+                person_id=toolhub_owner,
+                conflict_type=people_policy.REASON_STABLE_CONFLICT,
+                value=value,
+                details=details,
+            )
+        )
+    else:
+        conflict.run_id = run_id
+        conflict.details = details
+        conflict.last_seen_at = utcnow()
+    return True
+
+
 def discover_identity_candidates(
     s: Session,
     *,
@@ -307,16 +361,20 @@ def discover_identity_candidates(
     identity_provider: ToolhubIdentityProvider,
     membership_provider: ToolforgeMembershipProvider,
     label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
-) -> int:
+) -> dict[str, int]:
     """Persist exact Toolhub matches for review without merging display identities."""
     sources = _candidate_source_people(s)
     by_label: dict[str, list[Person]] = {}
     for person in sources:
         by_label.setdefault(person.display_name.casefold(), []).append(person)
     created = 0
+    conflicts = 0
     for people in list(by_label.values())[: max(1, min(int(label_limit), 100))]:
         identity = identity_provider.lookup_exact(people[0].display_name)
         if identity is None:
+            continue
+        if _record_stable_identity_conflict(s, run_id, identity):
+            conflicts += 1
             continue
         memberships = membership_provider.tool_names(identity.toolhub_username)
         target = people_index.ensure_person(
@@ -358,7 +416,7 @@ def discover_identity_candidates(
             s.add(mapping)
             created += 1
     s.flush()
-    return created
+    return {"created": created, "conflicts": conflicts}
 
 
 def build_plan(s: Session) -> dict[str, Any]:
@@ -397,7 +455,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             for name in before["toolNames"]:
                 _reconcile_tool(s, name)
             people_index.refresh_activity_summaries(s)
-            candidate_count = (
+            candidate_result = (
                 discover_identity_candidates(
                     s,
                     run_id=run_row.id,
@@ -406,10 +464,10 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                     label_limit=candidate_label_limit,
                 )
                 if discover_candidates
-                else 0
+                else {"created": 0, "conflicts": 0}
             )
         else:
-            candidate_count = 0
+            candidate_result = {"created": 0, "conflicts": 0}
         after = build_plan(s)
         for conflict in after["conflicts"]:
             existing = s.execute(
@@ -439,7 +497,8 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "relationships": after["relationshipsScanned"],
             "conflicts": len(after["conflicts"]),
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY else 0,
-            "identityCandidatesCreated": candidate_count,
+            "identityCandidatesCreated": candidate_result["created"],
+            "stableIdentityConflicts": candidate_result["conflicts"],
             "catalogAuthority": "toolhub",
         }
     except Exception as exc:

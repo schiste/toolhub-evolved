@@ -204,3 +204,50 @@ def test_apply_persists_exact_identity_candidates_without_merging_observations()
         )
         assert rerun["identityCandidatesCreated"] == 0
         assert s.query(PersonReconciliationMapping).count() == 2
+
+
+def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():
+    _configure()
+    with db.session_scope() as s:
+        toolhub_person = people_index.ensure_person(s, display_name="First", toolhub_user_id="152")
+        wikimedia_person = people_index.ensure_person(s, display_name="Second", wikimedia_global_user_id="160")
+        people_index.replace_source_evidence(
+            s,
+            "ambiguous-tool",
+            "source",
+            [{"display_name": "Magnus Manske", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        provider = ToolhubIdentityProvider(
+            fetcher=lambda _label: (
+                200,
+                {
+                    "results": [
+                        {
+                            "id": 152,
+                            "username": "Magnus Manske",
+                            "social_auth": [{"provider": "wikimedia", "uid": "160"}],
+                        }
+                    ]
+                },
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_provider=provider,
+            membership_provider=ToolforgeMembershipProvider(lookup=lambda _username: []),
+        )
+
+        assert summary["identityCandidatesCreated"] == 0
+        assert summary["stableIdentityConflicts"] == 1
+        assert s.query(PersonReconciliationMapping).count() == 0
+        conflict = (
+            s.query(PersonReconciliationConflict)
+            .filter_by(conflict_type="conflicting_stable_identifiers")
+            .one()
+        )
+        assert conflict.details["toolhubPersonId"] == toolhub_person.public_id
+        assert conflict.details["wikimediaPersonId"] == wikimedia_person.public_id
+        assert toolhub_person.id != wikimedia_person.id
