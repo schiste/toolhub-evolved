@@ -309,7 +309,11 @@ requests.
 
 The normalized people view is available from `GET /v1/people/tools/<name>/`.
 Person-centric reads use `GET /v1/people/<public_id>/` and `GET /v1/people/`.
-One
+The directory and person-detail route publish only identities backed by a
+current stable identifier, a current handle, or an Evolved profile. Display-only
+evidence remains scoped per observation and is returned separately as aggregated
+`unresolvedAttributions`; those entries deliberately have no person id or profile
+URL. One
 person may have several relationships to the same tool: `author` means the
 canonical Toolhub author field listed the person; `maintainer` means Evolved
 has operational evidence such as Toolforge membership or signed toolinfo;
@@ -328,6 +332,11 @@ and rebuild all typed relationships. The scheduled
 `people-reconcile` job uses `--apply` after the initial catalog cache exists;
 display-name-only candidates remain separate and are reported rather than
 silently merged.
+
+Admins use `GET /v1/moderation/people-conflicts/` to inspect pending identity
+ambiguities and `PUT /v1/moderation/people-conflicts/<id>/` to mark one pending,
+resolved, or dismissed with review notes. A disposition records operator review
+only: it never merges identities or grants Toolhub permissions.
 
 Canonical Toolhub fetches and local Toolinfo ingestion enqueue affected tool
 names in `person_reconciliation_queue` after their write transaction commits.
