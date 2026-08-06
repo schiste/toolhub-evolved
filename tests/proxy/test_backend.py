@@ -633,6 +633,18 @@ def test_init_schema_creates_people_evidence_and_activity_tables():
         "computed_at",
         "stale_at",
     }.issubset(rollup_cols)
+    mapping_cols = {
+        col["name"]
+        for col in inspect(db.engine()).get_columns(PersonReconciliationMapping.__tablename__)
+    }
+    assert {
+        "evidence",
+        "decision",
+        "reviewed_by_user_id",
+        "reviewed_at",
+        "review_notes",
+        "updated_at",
+    }.issubset(mapping_cols)
     conflict_cols = {
         col["name"] for col in inspect(db.engine()).get_columns(PersonReconciliationConflict.__tablename__)
     }
@@ -3352,6 +3364,7 @@ def test_operator_approval_moves_evidence_without_changing_role_and_survives_ref
         source_id = source.id
         target_id = target.id
 
+    assert client.get("/v1/moderation/people-candidates/").status_code == 401
     admin_id = add_user(username="Operator", wm_sub="operator", role=authz.ROLE_ADMIN)
     sign_in(client, admin_id)
     queued = client.get("/v1/moderation/people-candidates/").get_json()
@@ -3390,6 +3403,19 @@ def test_operator_approval_moves_evidence_without_changing_role_and_survives_ref
         people_index.resolve_tool_relationships(s, "mix-n-match")
         assert s.query(ToolRelationshipEvidence).filter_by(person_id=source_id).count() == 0
         assert s.query(ToolRelationshipEvidence).filter_by(person_id=target_id).count() == 1
+
+    directory = client.get("/v1/people/?q=Magnus%20Manske").get_json()
+    assert directory["count"] == 1
+    assert directory["unresolvedCount"] == 0
+    assert {item["namespace"] for item in directory["results"][0]["identifiers"]} == {
+        "toolhub_user_id",
+        "toolhub_username",
+        "wikimedia_global_user_id",
+    }
+    tool_people = client.get("/v1/people/tools/mix-n-match/").get_json()
+    assert len(tool_people["people"]) == 1
+    assert tool_people["unresolvedAttributions"] == []
+    assert {role["type"] for role in tool_people["people"][0]["relationships"]} == {sync.PERSON_REL_AUTHOR}
 
 
 def test_operator_split_decision_is_durable_and_does_not_move_evidence(client):

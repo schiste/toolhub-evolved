@@ -29,6 +29,7 @@ FIXED_TARGET_FETCHERS = {
     ("backend/toolhub.py", "refresh_grant"): "official Toolhub token endpoint via base_url()",
     ("backend/toolhub.py", "public_api_get"): "official Toolhub API via base_url()",
     ("backend/toolhub.py", "request_with_token"): "official Toolhub API via base_url()",
+    ("backend/people_identity.py", "_fetch"): "official Toolhub users API via base_url()",
     ("backend/author_claims.py", "_fetch"): "TOOLFORGE_BASE_URL constant (Toolsadmin)",
     ("backend/github_issues.py", "publish_issue"): "fixed api.github.com GitHub Issues API host",
     ("analyze_source.py", "_git_output"): "bounded local Git subprocess; no HTTP URL is fetched",
