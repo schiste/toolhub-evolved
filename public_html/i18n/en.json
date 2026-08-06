@@ -191,6 +191,7 @@
 	"authors.peopleIntro": "Discover authors, maintainers, record owners, and catalog contributors resolved from Toolhub and Evolved evidence.",
 	"authors.peoplePagination": "People pagination",
 	"authors.peoplePerPage": "{size} per page",
+	"authors.peopleSearchDocTitle": "{query} — People — Toolhub",
 	"authors.peopleSearchFailed": "People search could not be loaded. Try again.",
 	"authors.peopleTitle": "People",
 	"authors.possiblePeople": "Possible people",

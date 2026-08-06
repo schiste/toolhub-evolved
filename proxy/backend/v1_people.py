@@ -59,7 +59,9 @@ def _page_url(page: int | None) -> str | None:
     if page is None:
         return None
     args = request.args.to_dict(flat=True)
-    args.pop("limit", None)
+    legacy_size = args.pop("limit", None)
+    if legacy_size and "page_size" not in args:
+        args["page_size"] = legacy_size
     args["page"] = str(page)
     return f"{request.path}?{urlencode(args)}"
 

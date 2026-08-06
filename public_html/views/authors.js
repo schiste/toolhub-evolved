@@ -412,14 +412,14 @@ function directoryForm(state) {
 	).join("");
 	return `<form class="people-directory" data-people-search role="search">
 		<div class="searchbar people-page__search"><input class="searchbar__input" name="q" type="search" value="${esc(state.q)}" placeholder="${esc(t("authors.searchPeople", "Search people"))}" aria-label="${esc(t("authors.searchPeople", "Search people"))}" /><button class="btn btn--primary" type="submit">${icon("search")} ${t("authors.search", "Search")}</button></div>
-		<div class="people-directory__filters" aria-label="${esc(t("authors.directoryFilters", "Directory filters"))}">
+		<fieldset class="people-directory__filters"><legend class="skip-label">${t("authors.directoryFilters", "Directory filters")}</legend>
 			<label><span>${t("authors.roleFilter", "Role")}</span><select name="role" data-people-auto>${roleOptions}</select></label>
 			<label><span>${t("authors.verificationFilter", "Verification")}</span><select name="verification" data-people-auto>${verificationOptions}</select></label>
 			<label><span>${t("authors.activityFilter", "Activity")}</span><select name="activity" data-people-auto>${activityOptions}</select></label>
 			<label><span>${t("authors.projectFilter", "Project or wiki")}</span><input name="project" value="${esc(state.project)}" placeholder="wikidata.org" /></label>
 			<label><span>${t("authors.ordering", "Sort by")}</span><select name="ordering" data-people-auto>${orderingOptions}</select></label>
 			<label><span>${t("authors.resultsPerPage", "Results per page")}</span><select name="page_size" data-people-auto>${pageSizeOptions}</select></label>
-		</div>
+		</fieldset>
 	</form>`;
 }
 
@@ -447,7 +447,9 @@ export async function viewPeople() {
 			? attributionResult.value
 			: { attributions: [], count: 0, page: state.attributionPage, pageSize: 10, pageCount: 1, error: true };
 	return {
-		title: t("authors.peopleDocTitle", "People — Toolhub"),
+		title: state.q
+			? t("authors.peopleSearchDocTitle", "{query} — People — Toolhub", { query: state.q })
+			: t("authors.peopleDocTitle", "People — Toolhub"),
 		html: `<div class="container page people-page">
 			<header><h1 class="page__title">${t("authors.peopleTitle", "People")}</h1><p class="page__intro">${t("authors.peopleIntro", "Discover authors, maintainers, record owners, and catalog contributors resolved from Toolhub and Evolved evidence.")}</p></header>
 			${directoryForm(state)}

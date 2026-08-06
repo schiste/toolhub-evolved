@@ -33,6 +33,7 @@ export async function searchPeopleDirectory(search = {}) {
 	const options = typeof search === "string" ? { q: search } : search;
 	const params = directoryParams(options);
 	const data = await backendGetJson(`/v1/people/${params.size > 0 ? `?${params}` : ""}`);
+	if (!data) throw new Error("People directory unavailable");
 	const people = Array.isArray(data?.results) ? data.results : [];
 	return {
 		people,
@@ -50,6 +51,7 @@ export async function searchPeopleDirectory(search = {}) {
 export async function searchUnresolvedAttributions(search = {}) {
 	const params = directoryParams(search);
 	const data = await backendGetJson(`/v1/people/attributions/${params.size > 0 ? `?${params}` : ""}`);
+	if (!data) throw new Error("Unresolved attribution search unavailable");
 	const attributions = Array.isArray(data?.results) ? data.results : [];
 	return {
 		attributions,
