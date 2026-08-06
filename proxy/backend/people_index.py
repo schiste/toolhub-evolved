@@ -54,6 +54,7 @@ IDENTIFIER_HANDLE = "handle"
 NS_TOOLHUB_USER_ID = "toolhub_user_id"
 NS_WIKIMEDIA_GLOBAL_USER_ID = "wikimedia_global_user_id"
 NS_TOOLHUB_USERNAME = "toolhub_username"
+NS_TOOLFORGE_USERNAME = "toolforge_username"
 NS_WIKI_USERNAME = "wiki_username"
 PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
 PUBLIC_IDENTIFIER_KINDS = (IDENTIFIER_STABLE, IDENTIFIER_HANDLE)
@@ -71,11 +72,12 @@ def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrus
     return _clean(value).casefold()
 
 
-def _canonical_key(  # noqa: PLR0913 - explicit external identifiers define precedence
+def _canonical_key(  # noqa: PLR0911, PLR0913 - explicit identifiers define precedence
     *,
     toolhub_user_id: str = "",
     wikimedia_global_user_id: str = "",
     toolhub_username: str = "",
+    toolforge_username: str = "",
     wiki_username: str = "",
     display: str = "",
     display_scope: str = "",
@@ -86,6 +88,8 @@ def _canonical_key(  # noqa: PLR0913 - explicit external identifiers define prec
         return f"wikimedia-global-id:{clean_global_id}"
     if clean_username := _normalized(toolhub_username):
         return f"toolhub:{clean_username}"
+    if clean_toolforge := _normalized(toolforge_username):
+        return f"toolforge:{clean_toolforge}"
     if clean_wiki := _normalized(wiki_username):
         return f"wiki:{clean_wiki}"
     display_key = _normalized(display)
@@ -164,17 +168,19 @@ def _upsert_identifier(  # noqa: PLR0913 - explicit identity provenance fields
     return row
 
 
-def _retire_superseded_handles(
+def _retire_superseded_handles(  # noqa: PLR0913 - each namespace retires independently
     s: Session,
     person: Person,
     *,
     toolhub_username: str,
+    toolforge_username: str,
     wiki_username: str,
     retired_at: datetime,
 ) -> None:
     """Retire mutable handles superseded by a stable Toolhub identity."""
     for namespace, current_value in (
         (NS_TOOLHUB_USERNAME, toolhub_username),
+        (NS_TOOLFORGE_USERNAME, toolforge_username),
         (NS_WIKI_USERNAME, wiki_username),
     ):
         current_normalized = _normalized(current_value)
@@ -201,6 +207,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     toolhub_user_id: str = "",
     wikimedia_global_user_id: str = "",
     toolhub_username: str = "",
+    toolforge_username: str = "",
     wiki_username: str = "",
     source: str = SOURCE_LOCAL,
     checked_at: datetime | None = None,
@@ -218,16 +225,18 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         if _clean(toolhub_user_id, 64) or _clean(wikimedia_global_user_id, 64)
         else [
             _identifier_person(s, NS_TOOLHUB_USERNAME, toolhub_username),
+            _identifier_person(s, NS_TOOLFORGE_USERNAME, toolforge_username),
             _identifier_person(s, NS_WIKI_USERNAME, wiki_username),
         ]
     )
     person = next((candidate for candidate in candidates if candidate is not None), None)
-    display = _clean(display_name or toolhub_username or wiki_username)
+    display = _clean(display_name or toolhub_username or toolforge_username or wiki_username)
     if person is None:
         key = _canonical_key(
             toolhub_user_id=toolhub_user_id,
             wikimedia_global_user_id=wikimedia_global_user_id,
             toolhub_username=toolhub_username,
+            toolforge_username=toolforge_username,
             wiki_username=wiki_username,
             display=display,
             display_scope=display_scope,
@@ -237,6 +246,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         _clean(toolhub_user_id, 64)
         or _clean(wikimedia_global_user_id, 64)
         or _clean(toolhub_username)
+        or _clean(toolforge_username)
         or _clean(wiki_username)
     )
     if person is None and display and not display_scope and not has_identity_evidence:
@@ -255,6 +265,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
                 toolhub_user_id=toolhub_user_id,
                 wikimedia_global_user_id=wikimedia_global_user_id,
                 toolhub_username=toolhub_username,
+                toolforge_username=toolforge_username,
                 wiki_username=wiki_username,
                 display=display,
                 display_scope=display_scope,
@@ -262,7 +273,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             display_name=display,
             identity_quality="stable"
             if toolhub_user_id or wikimedia_global_user_id
-            else ("handle" if toolhub_username or wiki_username else "display_name"),
+            else ("handle" if toolhub_username or toolforge_username or wiki_username else "display_name"),
         )
         s.add(person)
         s.flush()
@@ -274,7 +285,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             toolhub_user_id=toolhub_user_id,
             wikimedia_global_user_id=wikimedia_global_user_id,
         )
-    elif person.identity_quality == "display_name" and (toolhub_username or wiki_username):
+    elif person.identity_quality == "display_name" and (toolhub_username or toolforge_username or wiki_username):
         person.identity_quality = "handle"
     person.updated_at = checked_at or utcnow()
     s.flush()
@@ -283,6 +294,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             s,
             person,
             toolhub_username=toolhub_username,
+            toolforge_username=toolforge_username,
             wiki_username=wiki_username,
             retired_at=checked_at or utcnow(),
         )
@@ -290,6 +302,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         (NS_TOOLHUB_USER_ID, toolhub_user_id),
         (NS_WIKIMEDIA_GLOBAL_USER_ID, wikimedia_global_user_id),
         (NS_TOOLHUB_USERNAME, toolhub_username),
+        (NS_TOOLFORGE_USERNAME, toolforge_username),
         (NS_WIKI_USERNAME, wiki_username),
     ):
         _upsert_identifier(
@@ -356,6 +369,7 @@ def replace_source_evidence(
             display_name=_clean(observation.get("display_name")),
             toolhub_user_id=_clean(observation.get("toolhub_user_id"), 64),
             toolhub_username=_clean(observation.get("toolhub_username")),
+            toolforge_username=_clean(observation.get("toolforge_username")),
             wiki_username=_clean(observation.get("wiki_username")),
             source=source,
             checked_at=observation.get("checked_at"),
@@ -367,7 +381,9 @@ def replace_source_evidence(
                 or _clean(observation.get("wikimedia_global_user_id"), 64)
             ),
             structured_handle=bool(
-                _clean(observation.get("toolhub_username")) or _clean(observation.get("wiki_username"))
+                _clean(observation.get("toolhub_username"))
+                or _clean(observation.get("toolforge_username"))
+                or _clean(observation.get("wiki_username"))
             ),
             authenticated_claim=bool(observation.get("authenticated_claim")),
         )

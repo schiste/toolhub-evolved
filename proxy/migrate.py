@@ -125,7 +125,10 @@ def _backfill_people_identity() -> int:
                 person.public_id = str(uuid4())
                 touched += 1
         for identifier in s.execute(select(PersonIdentifier).order_by(PersonIdentifier.id)).scalars():
-            namespace_map = {"toolhub": people_index.NS_TOOLHUB_USERNAME, "wiki": people_index.NS_WIKI_USERNAME}
+            namespace_map = {
+                "toolhub": people_index.NS_TOOLHUB_USERNAME,
+                "wiki": people_index.NS_WIKI_USERNAME,
+            }
             namespace = namespace_map.get(identifier.namespace, identifier.namespace)
             kind = (
                 people_index.IDENTIFIER_STABLE

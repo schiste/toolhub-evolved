@@ -54,12 +54,12 @@ def test_apply_links_account_by_immutable_toolhub_id_and_is_idempotent():
 
         apply_summary = people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
         assert apply_summary["toolsRebuilt"] == 1
-        assert s.query(Person).count() == 1
+        assert s.query(Person).count() == 2
         assert s.query(ToolPersonRelationship).count() == 2
-        person = s.query(Person).one()
-        public_id = person.public_id
-        assert user.person_id == person.id
+        public_ids = {person.public_id for person in s.query(Person)}
+        assert user.person_id is not None
         assert {row.namespace for row in s.query(PersonIdentifier)} == {
+            "toolforge_username",
             "toolhub_user_id",
             "toolhub_username",
             "wikimedia_global_user_id",
@@ -68,7 +68,7 @@ def test_apply_links_account_by_immutable_toolhub_id_and_is_idempotent():
 
         rerun_summary = people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
         assert rerun_summary["toolsRebuilt"] == 1
-        assert s.query(Person).one().public_id == public_id
+        assert {person.public_id for person in s.query(Person)} == public_ids
         assert s.query(ToolPersonRelationship).count() == 2
 
 
@@ -189,6 +189,7 @@ def test_apply_persists_exact_identity_candidates_without_merging_observations()
             for row in s.query(PersonIdentifier).filter(PersonIdentifier.person_id.in_(target_ids))
         }
         assert target_identifiers == {
+            ("toolforge_username", "Magnus Manske"),
             ("toolhub_user_id", "152"),
             ("toolhub_username", "Magnus Manske"),
             ("wikimedia_global_user_id", "160"),

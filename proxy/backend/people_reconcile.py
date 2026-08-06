@@ -318,15 +318,16 @@ def discover_identity_candidates(
         identity = identity_provider.lookup_exact(people[0].display_name)
         if identity is None:
             continue
+        memberships = membership_provider.tool_names(identity.toolhub_username)
         target = people_index.ensure_person(
             s,
             display_name=identity.toolhub_username,
             toolhub_user_id=identity.toolhub_user_id,
             wikimedia_global_user_id=identity.wikimedia_global_user_id,
             toolhub_username=identity.toolhub_username,
+            toolforge_username=identity.toolhub_username if memberships else "",
             source="toolhub_public_user",
         )
-        memberships = membership_provider.tool_names(identity.toolhub_username)
         membership_aliases = _membership_aliases(memberships)
         for source in people:
             tool_names, roles = _tool_names_for_person(s, source.id)

@@ -2946,13 +2946,17 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     assert {item["namespace"] for item in ada_person["identifiers"]} == {
         "toolhub_user_id",
         "toolhub_username",
+    }
+    author_person = next(item for item in data["people"] if item["displayName"] == "Ada Lovelace")
+    assert {item["namespace"] for item in author_person["identifiers"]} == {
+        "toolforge_username",
         "wiki_username",
     }
     assert {relationship["type"] for relationship in ada_person["relationships"]} == {
-        sync.PERSON_REL_AUTHOR,
         sync.PERSON_REL_MAINTAINER,
         sync.PERSON_REL_CATALOG_ACTOR,
     }
+    assert {relationship["type"] for relationship in author_person["relationships"]} == {sync.PERSON_REL_AUTHOR}
 
 
 def test_public_tool_people_endpoint_is_rate_limited(client, monkeypatch):
@@ -3105,10 +3109,19 @@ def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, m
     claim = created.get_json()["claims"][0]
     assert claim["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
     assert claim["isVerified"] is True
+    assert claim["evidencePayload"]["toolforgeUsername"] == "Schiste"
+    assert claim["evidencePayload"]["ldapServiceGroup"] == "tools.toolhub-evolved"
     with db.session_scope() as s:
         relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolhub-evolved").one()
         assert relationship.relationship_type == sync.PERSON_REL_MAINTAINER
         assert relationship.toolhub_canonical is False
+        assert (
+            s.query(PersonIdentifier)
+            .filter_by(namespace="toolforge_username", normalized_value="schiste")
+            .one()
+            .person_id
+            == relationship.person_id
+        )
 
 
 def test_multiple_evidence_rows_collapse_to_one_relationship():

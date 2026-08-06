@@ -418,6 +418,8 @@ class ToolforgeMaintainerProvider:
             evidence_url=self.evidence_url(toolforge_name),
             evidence_payload={
                 "toolforgeToolName": toolforge_name,
+                "toolforgeUsername": user.username,
+                "ldapServiceGroup": f"tools.{toolforge_name}",
                 "discoveryMethod": "toolforge_ldap_membership",
             },
             expires_at=utcnow() + TOOLFORGE_CLAIM_TTL,

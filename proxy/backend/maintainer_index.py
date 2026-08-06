@@ -158,11 +158,18 @@ def sync_author_claim_edges(
     for claim in claims:
         method = clean_author_claim_method(claim.verification_method)
         user = users_by_id.get(claim.user_id) if claim.user_id is not None else None
+        claim_payload = claim.evidence_payload if isinstance(claim.evidence_payload, dict) else {}
+        toolforge_username = (
+            clean_text(claim_payload.get("toolforgeUsername"))
+            if method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER and user is not None
+            else ""
+        )
         by_tool.setdefault(clean_text(claim.tool_name), []).append(
             {
                 "display_name": clean_text((user.username if user else claim.toolhub_username) or claim.author_name),
                 "toolhub_user_id": clean_text(user.wm_sub) if user else "",
                 "toolhub_username": clean_text(user.username if user else claim.toolhub_username),
+                "toolforge_username": toolforge_username,
                 "authenticated_claim": bool(user),
                 "relationship_type": _claim_role(claim),
                 "method": method,
@@ -201,7 +208,7 @@ def replace_toolforge_maintainer_edges(
             observations.append(
                 {
                     "display_name": display,
-                    "wiki_username": clean_text(maintainer.username),
+                    "toolforge_username": clean_text(maintainer.username),
                     "relationship_type": PERSON_REL_MAINTAINER,
                     "method": AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                     "evidence_key": clean_text(toolforge_name),
@@ -226,18 +233,18 @@ def _toolhub_observations(tool: dict[str, Any]) -> list[dict[str, Any]]:
     for index, author in enumerate(authors):
         if isinstance(author, dict):
             display = clean_text(author.get("name") or author.get("developer_username") or author.get("wiki_username"))
-            toolhub_username = clean_text(author.get("developer_username"))
+            toolforge_username = clean_text(author.get("developer_username"))
             wiki_username = clean_text(author.get("wiki_username"))
         else:
             display = clean_text(author)
-            toolhub_username = ""
+            toolforge_username = ""
             wiki_username = ""
         if display:
             observations.append(
                 {
                     "display_name": display,
                     "source": SOURCE_TOOLHUB_AUTHOR,
-                    "toolhub_username": toolhub_username,
+                    "toolforge_username": toolforge_username,
                     "wiki_username": wiki_username,
                     "relationship_type": PERSON_REL_AUTHOR,
                     "method": METHOD_TOOLHUB_AUTHOR,
