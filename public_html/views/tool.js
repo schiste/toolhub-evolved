@@ -672,29 +672,53 @@ function toolSyncUi(tool, name) {
 	return { provTags, syncPanels, reconciliationNotice };
 }
 
-/**
- * @param {Tool} tool
- * @param {boolean} canDeleteOfficialTool
- */
-function toolManagementActions(tool, canDeleteOfficialTool) {
+/** @param {any} viewerContext */
+function viewerActionAudience(viewerContext) {
+	return ["verified_maintainer", "record_authority"].includes(viewerContext?.audience)
+		? viewerContext.audience
+		: "contributor";
+}
+
+/** @param {Tool} tool @param {string} audience @param {boolean} canDeleteOfficialTool */
+function toolManagementActions(tool, audience, canDeleteOfficialTool) {
 	const historyAction = button(t("tool.viewHistory", "View history"), {
 		variant: "outline",
 		size: "md",
 		href: `${toolHref(tool.name)}/history`,
 		icon: "history"
 	});
+	const verifiedMaintainer = audience === "verified_maintainer";
+	const recordAuthority = audience === "record_authority";
+	const groupLabel = verifiedMaintainer
+		? t("tool.ownerActions", "Maintainer actions")
+		: recordAuthority
+			? t("tool.recordAuthorityActions", "Tool management")
+			: t("tool.contributeActions", "Contribute");
+	const claimLabel =
+		verifiedMaintainer || recordAuthority
+			? t("tool.manageRelationships", "Manage relationships")
+			: t("claim.toolAction", "Claim a relationship");
+	const editLabel = verifiedMaintainer
+		? t("tool.editTool", "Edit tool")
+		: recordAuthority
+			? t("tool.editToolhubRecord", "Edit Toolhub record")
+			: t("tool.suggestToolChanges", "Suggest tool changes");
+	const annotationLabel =
+		verifiedMaintainer || recordAuthority
+			? t("tool.editAnnotations", "Edit annotations")
+			: t("tool.contributeAnnotations", "Contribute annotations");
 	const managementLinks = signedIn()
-		? `<div class="toolpage__management" aria-label="${esc(t("tool.ownerActions", "Maintainer actions"))}">
-			<span class="toolpage__owner-label">${t("tool.ownerActions", "Maintainer actions")}</span>
-			${button(t("claim.toolAction", "Claim a relationship"), {
+		? `<div class="toolpage__management" aria-label="${esc(groupLabel)}">
+			<span class="toolpage__owner-label">${groupLabel}</span>
+			${button(claimLabel, {
 				variant: "outline",
 				size: "md",
 				icon: "group",
 				attrs: "data-tool-claim"
 			})}
 			${historyAction}
-			${button(t("tool.editTool", "Edit tool"), { variant: "outline", size: "md", href: `${toolHref(tool.name)}/edit`, icon: "edit" })}
-			${button(t("tool.editAnnotations", "Edit annotations"), { variant: "outline", size: "md", href: `${toolHref(tool.name)}/edit-annotations`, icon: "tag" })}
+			${button(editLabel, { variant: "outline", size: "md", href: `${toolHref(tool.name)}/edit`, icon: "edit" })}
+			${button(annotationLabel, { variant: "outline", size: "md", href: `${toolHref(tool.name)}/edit-annotations`, icon: "tag" })}
 			${
 				canDeleteOfficialTool
 					? button(t("tool.deleteOfficialTool", "Delete official tool"), {
@@ -730,6 +754,9 @@ export async function viewTool(name) {
 		view: SUMMARY_VIEW_FULL
 	}).catch(() => null);
 	const peopleReady = peopleForTool(name).catch(() => null);
+	const viewerContextReady = signedIn()
+		? backendGetJson(`/v1/tools/${encodeURIComponent(name)}/viewer-context/`).catch(() => null)
+		: Promise.resolve(null);
 	const tool =
 		/** @type {(Tool & { edited?: boolean, annotated?: boolean, endorsement?: { count?: number } }) | null} */ (
 			await getTool(name)
@@ -740,7 +767,7 @@ export async function viewTool(name) {
 	// canonical tool page render independent from their availability and let
 	// mount() hydrate their dedicated slots after the primary content exists.
 	await summaryReady;
-	const peopleSummary = await peopleReady;
+	const [peopleSummary, viewerContext] = await Promise.all([peopleReady, viewerContextReady]);
 	// Reads the cache the call above just filled; no further request.
 	await attachEvolvedSummaries([tool], { view: SUMMARY_VIEW_FULL });
 	const evolvedSummary = /** @type {{ evolvedSummary?: any }} */ (tool).evolvedSummary;
@@ -774,8 +801,10 @@ export async function viewTool(name) {
 
 	// Official Toolhub status flags stay visible alongside Evolved-local panels.
 	const realBadge = statusBadge(tool);
-	const canDeleteOfficialTool = signedIn() && officialWriteAvailable() && !isNewTool(tool.name);
-	const { managementLinks } = toolManagementActions(tool, canDeleteOfficialTool);
+	const actionAudience = viewerActionAudience(viewerContext);
+	const canDeleteOfficialTool =
+		actionAudience === "record_authority" && officialWriteAvailable() && !isNewTool(tool.name);
+	const { managementLinks } = toolManagementActions(tool, actionAudience, canDeleteOfficialTool);
 	const deleteResult = canDeleteOfficialTool
 		? `<p class="at__result" data-tool-delete-result aria-live="polite"></p>`
 		: "";
