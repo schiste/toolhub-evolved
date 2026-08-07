@@ -118,7 +118,7 @@ export function markAppBootStart() {
 	return markFrontendTimingOnce("app-boot-start", { path: location.pathname }, 0);
 }
 
-/** @param {unknown} value @param {number} [depth] */
+/** @param {unknown} value @param {number} [depth] @returns {string} */
 function diagnosticValue(value, depth = 0) {
 	if (value instanceof Error) return redact(`${value.name}: ${value.message}\n${value.stack || ""}`);
 	if (value === null || value === undefined) return String(value);
@@ -173,16 +173,20 @@ function recordConsole(level, args) {
 export function initPageDiagnostics() {
 	if (consoleCaptureReady) return;
 	consoleCaptureReady = true;
-	/* eslint-disable no-console -- diagnostics must preserve and wrap native console methods. */
+	// Diagnostics must preserve and wrap the native console methods. Going
+	// through a record view is what makes that type-check: `Console` has no
+	// string index signature, so the interface cannot be indexed by `level`.
+	// It also keeps `no-console` quiet without a disable directive, since the
+	// wrapping never touches a console member expression directly.
+	const methods = /** @type {Record<string, (...args: any[]) => void>} */ (/** @type {unknown} */ (console));
 	for (const level of ["debug", "info", "warn", "error"]) {
-		const original = console[level];
+		const original = methods[level];
 		if (typeof original !== "function") continue;
-		console[level] = (...args) => {
+		methods[level] = (/** @type {any[]} */ ...args) => {
 			recordConsole(level, args);
 			original.apply(console, args);
 		};
 	}
-	/* eslint-enable no-console */
 	if (typeof window === "object") {
 		window.addEventListener("error", (event) => {
 			PAGE_ERRORS.push({
@@ -204,8 +208,10 @@ export function markPageDiagnostics(path = typeof location === "object" ? locati
 }
 
 export function pageDiagnostics() {
-	const recent = (items) => items.filter((item) => item.at >= pageStartedAt);
-	const navigation = perf()?.getEntriesByType?.("navigation")?.[0];
+	const recent = (/** @type {any[]} */ items) => items.filter((/** @type {any} */ item) => item.at >= pageStartedAt);
+	const navigation = /** @type {PerformanceNavigationTiming | undefined} */ (
+		perf()?.getEntriesByType?.("navigation")?.[0]
+	);
 	return {
 		url: typeof location === "object" ? location.href : pagePath,
 		path: pagePath,

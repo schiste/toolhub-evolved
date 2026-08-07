@@ -4,6 +4,7 @@ export const WHATS_NEW_NEVER_KEY = "toolhub-whats-new-never";
 export const WHATS_NEW_SEEN_KEY = "toolhub-whats-new-seen";
 export const WHATS_NEW_COLLAPSED_KEY = "toolhub-whats-new-collapsed";
 
+/** @param {string} key @returns {string} */
 function read(key) {
 	try {
 		return globalThis.localStorage?.getItem(key) || "";

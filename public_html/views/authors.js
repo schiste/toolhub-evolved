@@ -276,13 +276,13 @@ function personCard(person) {
 			? t(
 					"authors.verifiedRelationshipRoles",
 					"Verified: $1",
-					verifiedTypes.map((role) => relationshipLabel(role)).join(", ")
+					verifiedTypes.map((/** @type {string} */ role) => relationshipLabel(role)).join(", ")
 				)
 			: types.length > 0
 				? t(
 						"authors.relationshipRoles",
 						"Relationships: $1",
-						types.map((role) => relationshipLabel(role)).join(", ")
+						types.map((/** @type {string} */ role) => relationshipLabel(role)).join(", ")
 					)
 				: t("authors.noRelationshipSummary", "No relationship summary");
 	const identityDetail = identityQualityLabel(person?.identityQuality || "");
@@ -404,7 +404,7 @@ function unresolvedDirectoryResults(directory) {
 		${
 			directory.error
 				? `<p class="empty" role="alert">${t("authors.attributionSearchFailed", "Unresolved attributions could not be loaded.")}</p>`
-				: `<ul class="people-attributions__list">${attributions.map((attribution) => unresolvedAttribution(attribution)).join("")}</ul><nav class="pager" data-attribution-pager aria-label="${esc(t("authors.attributionPagination", "Unresolved attribution pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>`
+				: `<ul class="people-attributions__list">${attributions.map((/** @type {any} */ attribution) => unresolvedAttribution(attribution)).join("")}</ul><nav class="pager" data-attribution-pager aria-label="${esc(t("authors.attributionPagination", "Unresolved attribution pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>`
 		}
 	</section>`;
 }
@@ -478,7 +478,7 @@ export async function viewPeople() {
 	]);
 	const directory =
 		directoryResult.status === "fulfilled"
-			? directoryResult.value
+			? { ...directoryResult.value, error: false }
 			: { people: [], count: 0, page: state.page, pageSize: state.pageSize, pageCount: 1, error: true };
 	const attributions =
 		attributionResult.status === "fulfilled"

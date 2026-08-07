@@ -266,8 +266,9 @@ function seedGroupedNodes(nodes, width, height) {
 	const groups = new Map();
 	for (const node of nodes) {
 		const group = node.group ?? "other";
-		if (!groups.has(group)) groups.set(group, []);
-		groups.get(group).push(node);
+		const bucket = groups.get(group) ?? [];
+		if (bucket.length === 0) groups.set(group, bucket);
+		bucket.push(node);
 	}
 	const ordered = [...groups.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 	const columns = Math.max(1, Math.ceil(Math.sqrt(ordered.length)));
@@ -907,14 +908,16 @@ export function forceGraph(container, data, opts = {}) {
 			layoutWorker = new Worker(layoutWorkerUrl(), { type: "module" });
 			layoutWorker.onmessage = (event) => {
 				if (stopped || requestId !== layoutRequest || !Array.isArray(event.data?.positions)) return;
-				event.data.positions.forEach((point, index) => {
-					const node = nodes[index];
-					if (!node || !Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return;
-					node.x = point.x;
-					node.y = point.y;
-					node.vx = 0;
-					node.vy = 0;
-				});
+				event.data.positions.forEach(
+					(/** @type {{ x: number, y: number }} */ point, /** @type {number} */ index) => {
+						const node = nodes[index];
+						if (!node || !Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return;
+						node.x = point.x;
+						node.y = point.y;
+						node.vx = 0;
+						node.vy = 0;
+					}
+				);
 				ticks = MAX_TICKS;
 				layoutWorker?.terminate();
 				layoutWorker = null;

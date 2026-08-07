@@ -7,6 +7,28 @@ export const $$ = (s, r) => /** @type {HTMLElement[]} */ ([...(r || document).qu
 /** @type {(selector: string, root?: ParentNode) => HTMLInputElement | null} */
 export const $input = (s, r) => /** @type {HTMLInputElement | null} */ ((r || document).querySelector(s));
 
+/**
+ * Wrap Tab focus inside an already-computed list, so a modal surface cannot
+ * leak focus to the page behind it. Each caller decides what counts as
+ * focusable — the selectors differ per surface — but the wrap-around is the
+ * same everywhere and easy to get subtly wrong.
+ * @param {KeyboardEvent} event
+ * @param {HTMLElement[]} focusable in DOM order
+ * @returns {void}
+ */
+export function wrapTabFocus(event, focusable) {
+	if (focusable.length === 0) return;
+	const first = focusable[0];
+	const last = focusable[focusable.length - 1];
+	if (event.shiftKey && document.activeElement === first) {
+		event.preventDefault();
+		last.focus();
+	} else if (!event.shiftKey && document.activeElement === last) {
+		event.preventDefault();
+		first.focus();
+	}
+}
+
 /** @param {string} str */
 export function hash(str) {
 	let h = 0;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, esc } from "../core/dom.js";
+import { $, $$, esc, wrapTabFocus } from "../core/dom.js";
 import { backendGetJson } from "../core/api.js";
 import { t } from "../core/i18n.js";
 import {
@@ -32,6 +32,7 @@ function latestDeployment() {
 	return releaseData?.deployments?.[0] || null;
 }
 
+/** @param {Deployment | null | undefined} deployment @returns {string} */
 function deploymentId(deployment) {
 	return String(deployment?.id || deployment?.sha || "");
 }
@@ -148,16 +149,7 @@ function trapTab(event) {
 	const focusable = $$('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])', element).filter(
 		(node) => !node.hidden && node.offsetParent !== null
 	);
-	if (focusable.length === 0) return;
-	const first = focusable[0];
-	const last = focusable[focusable.length - 1];
-	if (event.shiftKey && document.activeElement === first) {
-		event.preventDefault();
-		last.focus();
-	} else if (!event.shiftKey && document.activeElement === last) {
-		event.preventDefault();
-		first.focus();
-	}
+	wrapTabFocus(event, focusable);
 }
 
 export async function initWhatsNew() {

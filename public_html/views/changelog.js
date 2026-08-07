@@ -16,7 +16,7 @@ export async function viewChangelog() {
 	const commits = Array.isArray(data?.commits) ? data.commits : [];
 	const rows = commits
 		.map(
-			(commit) => `<li class="changelog__item">
+			(/** @type {any} */ commit) => `<li class="changelog__item">
 				<div><strong>${esc(commit.summary || commit.subject || t("changelog.unnamed", "Unlabelled change"))}</strong>
 				<span>${esc(dateLabel(commit.authoredAt))} · ${esc(commit.author || t("changelog.unknownAuthor", "Unknown author"))}</span></div>
 				<a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(commit.sha || "")}" target="_blank" rel="noopener nofollow">${esc(commit.shortSha || t("changelog.commit", "commit"))}</a>

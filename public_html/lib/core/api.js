@@ -944,7 +944,7 @@ export function backendErrorExplanation(error) {
 	const normalized = message.toLowerCase();
 	const validationErrors = Array.isArray(body.validationErrors)
 		? body.validationErrors
-				.map((item) => {
+				.map((/** @type {any} */ item) => {
 					if (typeof item === "string") return item.trim();
 					if (!item || typeof item !== "object") return "";
 					const field = item.field || item.name;

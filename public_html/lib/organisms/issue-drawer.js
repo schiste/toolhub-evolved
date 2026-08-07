@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, esc } from "../core/dom.js";
+import { $, $$, $input, esc } from "../core/dom.js";
 import { backendErrorExplanation } from "../core/api.js";
 import { pageDiagnostics } from "../core/diagnostics.js";
 import { t } from "../core/i18n.js";
@@ -7,11 +7,18 @@ import { signedIn } from "../core/session.js";
 import { oauthAvailable, serverWrite } from "../core/serversync.js";
 import { icon } from "../atoms/icon.js";
 
+/**
+ * A report being drafted: the form values plus the page context captured when
+ * the user moved to review.
+ * @typedef {{ title: string, description: string, includeConsole: boolean, context: Record<string, any>, clientId: string }} IssueDraft
+ */
+
 /** @type {(() => Record<string, any>) | null} */
 let contextProvider = null;
 /** @type {HTMLElement | null} */
 let lastFocus = null;
 /** @type {{ title: string, description: string, context: Record<string, any>, clientId: string } | null} */
+/** @type {IssueDraft | null} */
 let draft = null;
 
 /** @param {() => Record<string, any>} provider */
@@ -39,7 +46,7 @@ function body() {
 }
 
 function focusFirst() {
-	window.setTimeout(() => body()?.querySelector("input, textarea, button")?.focus(), 0);
+	window.setTimeout(() => $("input, textarea, button", body() ?? undefined)?.focus(), 0);
 }
 
 function contextSnapshot(includeConsole = true) {
@@ -52,6 +59,7 @@ function contextSnapshot(includeConsole = true) {
 	return custom && typeof custom === "object" ? { ...diagnostics, custom } : diagnostics;
 }
 
+/** @param {Record<string, any>} context @returns {string} */
 function contextSummary(context) {
 	const logCount = Array.isArray(context.console) ? context.console.length : 0;
 	const errorCount = Array.isArray(context.errors) ? context.errors.length : 0;
@@ -62,6 +70,7 @@ function contextSummary(context) {
 	</dl>`;
 }
 
+/** @param {{ title: string, description: string, includeConsole: boolean }} [values] @returns {string} */
 function formHTML(
 	values = { title: `Report from Toolhub Evolved: ${document.title}`, description: "", includeConsole: true }
 ) {
@@ -99,6 +108,7 @@ function loginHTML() {
 	</div>`;
 }
 
+/** @param {IssueDraft} report @returns {string} */
 function reviewHTML(report) {
 	return `<div class="issue-drawer__review">
 		<p class="issue-drawer__intro">${t("issueReport.reviewIntro", "Check the public issue before it is sent to GitHub.")}</p>
@@ -118,6 +128,7 @@ function reviewHTML(report) {
 	</div>`;
 }
 
+/** @param {{ url: string, number: number | string }} result @returns {string} */
 function successHTML(result) {
 	return `<div class="issue-drawer__success" role="status">
 		<div class="issue-drawer__success-icon">${icon("check")}</div>
@@ -167,8 +178,9 @@ function close() {
 	lastFocus = null;
 }
 
+/** @param {string} message @returns {void} */
 function setError(message) {
-	const node = body()?.querySelector("[data-issue-error]");
+	const node = $("[data-issue-error]", body() ?? undefined);
 	if (!node) return;
 	node.textContent = message;
 	node.hidden = !message;
@@ -178,7 +190,7 @@ async function publish() {
 	if (!draft) {
 		return;
 	}
-	const button = body()?.querySelector("[data-issue-publish]");
+	const button = /** @type {HTMLButtonElement | null} */ ($("[data-issue-publish]", body() ?? undefined));
 	if (button?.disabled) return;
 	if (button) button.disabled = true;
 	setError("");
@@ -196,7 +208,7 @@ async function publish() {
 }
 
 export function syncIssueReportTrigger() {
-	const triggers = document.querySelectorAll("[data-issue-trigger]");
+	const triggers = $$("[data-issue-trigger]");
 	const external = $("[data-issue-external]");
 	for (const trigger of triggers) {
 		trigger.hidden = !trigger.hasAttribute("data-issue-trigger-public") && !signedIn();
@@ -232,7 +244,7 @@ export function initIssueDrawer() {
 		}
 	});
 	root.addEventListener("submit", (event) => {
-		if (!event.target?.matches("[data-issue-form]")) return;
+		if (!(event.target instanceof Element) || !event.target.matches("[data-issue-form]")) return;
 		event.preventDefault();
 		const values = readForm();
 		if (!values.title || !values.description) return;
@@ -258,8 +270,8 @@ export function initIssueDrawer() {
 function readForm() {
 	const root = body();
 	return {
-		title: String(root?.querySelector("[name=title]")?.value || "").trim(),
-		description: String(root?.querySelector("[name=description]")?.value || "").trim(),
-		includeConsole: Boolean(root?.querySelector("[name=includeConsole]")?.checked)
+		title: String($input("[name=title]", root ?? undefined)?.value || "").trim(),
+		description: String($input("[name=description]", root ?? undefined)?.value || "").trim(),
+		includeConsole: Boolean($input("[name=includeConsole]", root ?? undefined)?.checked)
 	};
 }

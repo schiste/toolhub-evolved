@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, $$, esc } from "../core/dom.js";
+import { $, $$, esc, wrapTabFocus } from "../core/dom.js";
 import { fmt, t } from "../core/i18n.js";
 import { navigateTo } from "../core/routing.js";
 import { icon } from "../atoms/icon.js";
@@ -402,16 +402,7 @@ function trapTab(event) {
 		'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
 		root
 	).filter((el) => el.getAttribute("tabindex") !== "-1" && !el.hidden && el.offsetParent !== null);
-	if (focusable.length === 0) return;
-	const first = focusable[0];
-	const last = focusable[focusable.length - 1];
-	if (event.shiftKey && document.activeElement === first) {
-		event.preventDefault();
-		last.focus();
-	} else if (!event.shiftKey && document.activeElement === last) {
-		event.preventDefault();
-		first.focus();
-	}
+	wrapTabFocus(event, focusable);
 }
 
 /**

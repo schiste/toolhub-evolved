@@ -298,6 +298,19 @@ async function resolvePersonalHomeModel(key) {
 		ownToolsForHome().catch(() => ({ tools: [], error: true }))
 	]);
 	if (!ownTools.error) writePersonalToolsCache(key, ownTools.tools);
+	return attachAndCachePersonalHome(key, favorites, ownTools);
+}
+
+/**
+ * Attach signals to the combined tool set and cache the resulting model. Shared
+ * by the fresh-fetch and cached-tools paths, which differ only in where
+ * `ownTools` came from.
+ * @param {string} key
+ * @param {{ tools: Tool[], error?: boolean }} favorites
+ * @param {{ tools: Tool[], error?: boolean }} ownTools
+ * @returns {Promise<PersonalHomeModel>}
+ */
+async function attachAndCachePersonalHome(key, favorites, ownTools) {
 	const allTools = [...favorites.tools, ...ownTools.tools];
 	await Promise.all([
 		attachEndorsements(allTools, { defer: true }),
@@ -328,14 +341,7 @@ async function personalHomeModel() {
 	if (!stored) return { model: await startPersonalHomeRequest(key) };
 
 	const [favorites] = await Promise.all([favoriteToolsForHome().catch(() => ({ tools: [], error: true }))]);
-	const ownTools = { tools: stored.tools };
-	const allTools = [...favorites.tools, ...ownTools.tools];
-	await Promise.all([
-		attachEndorsements(allTools, { defer: true }),
-		attachEvolvedSummaries(allTools, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
-	]);
-	const model = { favorites, ownTools };
-	personalHomeCache.set(key, { model, expiresAt: Date.now() + PERSONAL_HOME_TTL_MS });
+	const model = await attachAndCachePersonalHome(key, favorites, { tools: stored.tools });
 	if (Date.now() - stored.updatedAt > PERSONAL_TOOLS_CACHE_TTL_MS) {
 		return { model, refresh: startPersonalHomeRequest(key) };
 	}

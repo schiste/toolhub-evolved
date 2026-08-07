@@ -609,7 +609,7 @@ function toolSyncUi(tool, name) {
 	const hasAnnotationSyncPanel =
 		Boolean(tool.annotated) ||
 		Boolean(tool.annotationLastError || tool.annotationValidationErrors?.length || tool.annotationReviewStatus);
-	const needsReconciliation = (meta) =>
+	const needsReconciliation = (/** @type {any} */ meta) =>
 		[SYNC_STATUS.localFallback, SYNC_STATUS.syncError].includes(String(meta?.syncStatus || "")) ||
 		Boolean(meta?.lastError || meta?.validationErrors?.length);
 	const hiddenReconciliation =

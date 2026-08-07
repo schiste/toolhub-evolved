@@ -77,9 +77,9 @@ function routeStyleKey(href) {
  */
 function findRouteStyle(href) {
 	return (
-		[...document.querySelectorAll('link[rel="stylesheet"][href], link[data-route-style][href]')].find(
-			(link) => link.getAttribute("href") === href
-		) || null
+		/** @type {HTMLLinkElement[]} */ ([
+			...document.querySelectorAll('link[rel="stylesheet"][href], link[data-route-style][href]')
+		]).find((link) => link.getAttribute("href") === href) || null
 	);
 }
 
@@ -111,24 +111,26 @@ function loadRouteStyle(href) {
 		link.dataset.routeStyle = routeStyleKey(href);
 	}
 
-	const promise = new Promise((resolve) => {
-		let settled = false;
-		/** @type {ReturnType<typeof setTimeout> | null} */
-		let timer = null;
-		const done = () => {
-			if (settled) return;
-			settled = true;
-			if (timer) window.clearTimeout(timer);
-			link.removeEventListener("load", done);
-			link.removeEventListener("error", done);
-			resolve();
-		};
-		timer = window.setTimeout(done, 2000);
-		link.addEventListener("load", done);
-		link.addEventListener("error", done);
-		if (!loaded) document.head.append(link);
-		if (styleLoaded(link)) done();
-	});
+	const promise = /** @type {Promise<void>} */ (
+		new Promise((resolve) => {
+			let settled = false;
+			/** @type {ReturnType<typeof setTimeout> | null} */
+			let timer = null;
+			const done = () => {
+				if (settled) return;
+				settled = true;
+				if (timer) window.clearTimeout(timer);
+				link.removeEventListener("load", done);
+				link.removeEventListener("error", done);
+				resolve();
+			};
+			timer = window.setTimeout(done, 2000);
+			link.addEventListener("load", done);
+			link.addEventListener("error", done);
+			if (!loaded) document.head.append(link);
+			if (styleLoaded(link)) done();
+		})
+	);
 	routeStyleLoads.set(href, promise);
 	return promise;
 }

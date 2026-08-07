@@ -672,10 +672,15 @@ function example(name, layer, html, opts = {}) {
 	</figure>`;
 }
 
+/** @param {string} name @returns {string} */
 function fallbackTokenValue(name) {
 	return `var(${name})`;
 }
 
+/**
+ * @param {string} name @param {string} value @param {string} wrapperClass
+ * @param {string} boxClass @param {string} cssDecl @returns {string}
+ */
 function swatchTokenHtml(name, value, wrapperClass, boxClass, cssDecl) {
 	return `<div class="${esc(wrapperClass)}">
 			<span class="${esc(boxClass)}" style="${esc(cssDecl)}: var(${esc(name)})"></span>
@@ -683,12 +688,17 @@ function swatchTokenHtml(name, value, wrapperClass, boxClass, cssDecl) {
 		</div>`;
 }
 
+/**
+ * @param {string[]} names @param {string} wrapperClass @param {string} boxClass
+ * @param {string} cssDecl @returns {string}
+ */
 function swatchTokenRows(names, wrapperClass, boxClass, cssDecl) {
 	return names
 		.map((name) => swatchTokenHtml(name, fallbackTokenValue(name), wrapperClass, boxClass, cssDecl))
 		.join("");
 }
 
+/** @param {string} name @param {string} value @returns {string} */
 function typeTokenHtml(name, value) {
 	return `<div class="sg-type-row">
 			<div class="sg-type-row__specimen" style="font-size: var(${esc(name)})">Toolhub Aa 123</div>
@@ -696,10 +706,15 @@ function typeTokenHtml(name, value) {
 		</div>`;
 }
 
+/** @param {string[]} names @returns {string} */
 function typeTokenRows(names) {
 	return names.map((name) => typeTokenHtml(name, fallbackTokenValue(name))).join("");
 }
 
+/**
+ * @param {string} name @param {string} value @param {string} rowClass
+ * @param {string} barClass @param {boolean} [clampLayout] @returns {string}
+ */
 function barTokenHtml(name, value, rowClass, barClass, clampLayout) {
 	const width = clampLayout ? `min(100%, var(${esc(name)}))` : `var(${esc(name)})`;
 	return `<div class="${esc(rowClass)}">
@@ -708,10 +723,15 @@ function barTokenHtml(name, value, rowClass, barClass, clampLayout) {
 		</div>`;
 }
 
+/**
+ * @param {string[]} names @param {string} rowClass @param {string} barClass
+ * @param {boolean} [clampLayout] @returns {string}
+ */
 function barTokenRows(names, rowClass, barClass, clampLayout) {
 	return names.map((name) => barTokenHtml(name, fallbackTokenValue(name), rowClass, barClass, clampLayout)).join("");
 }
 
+/** @param {string} html @returns {string} */
 function initialTokenRows(html) {
 	if (typeof navigator !== "undefined" && navigator.userAgent.includes("HappyDOM/")) return "";
 	return html;
@@ -1125,6 +1145,7 @@ function renderStyleguideTokens() {
 	);
 }
 
+/** @param {() => void} callback @returns {void} */
 function scheduleAfterInitialFrame(callback) {
 	if (navigator.userAgent.includes("HappyDOM/")) {
 		callback();
