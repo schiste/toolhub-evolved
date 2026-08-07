@@ -1283,7 +1283,7 @@ def _directory_contributor_summaries(
     return summaries
 
 
-def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/filter contract
+def search_people_directory(  # noqa: PLR0915 - explicit query/ranking/filter contract
     s: Session,
     search: PeopleDirectoryQuery,
 ) -> dict[str, Any]:
