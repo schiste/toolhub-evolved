@@ -2465,11 +2465,11 @@
 	font-size: var(--fs-caption);
 	line-height: 1.5;
 }
-.people-card__evidence.is-verified {
+.people-card span.people-card__evidence.is-verified {
 	background: var(--color-success-subtle);
 	color: var(--color-success);
 }
-.people-card__evidence--identity {
+.people-card span.people-card__evidence--identity {
 	background: var(--color-progressive-subtle);
 	color: var(--color-progressive);
 }
