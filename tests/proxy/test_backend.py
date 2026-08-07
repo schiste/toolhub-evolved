@@ -246,6 +246,7 @@ PUBLIC_V1_ROUTES = {
     "/v1/accounts/<toolhub_user_id>/": (
         "public official Toolhub account detail; local DB only and reads are rate limited"
     ),
+    "/v1/community/": "public unified directory over local projections; reads are rate limited",
     "/v1/people/": "public local people search; reads are rate limited",
     "/v1/people/attributions/": "public unresolved-label discovery over local evidence; reads are rate limited",
     "/v1/people/resolve/": "public exact-handle resolution over local public identities; reads are rate limited",
@@ -3109,6 +3110,138 @@ def test_account_directory_searches_projection_and_links_only_stable_identity(cl
     ):
         assert client.get(path).status_code == 400
     assert client.get("/v1/accounts/9999/").status_code == 404
+
+
+def test_community_search_collapses_stable_accounts_and_preserves_unresolved_labels(client, monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: pytest.fail("community search must remain local"),
+    )
+    now = utcnow()
+    with db.session_scope() as s:
+        magnus = Person(
+            canonical_key="toolhub_user_id:152",
+            display_name="Magnus Manske",
+            identity_quality="stable_id",
+        )
+        display_only = Person(
+            canonical_key="display:legacy-tool:author:magnus-manske",
+            display_name="Magnus Manske",
+            identity_quality="display_name",
+        )
+        s.add_all([magnus, display_only])
+        s.flush()
+        s.add_all(
+            [
+                PersonIdentifier(
+                    person_id=magnus.id,
+                    namespace=people_index.NS_TOOLHUB_USER_ID,
+                    value="152",
+                    normalized_value="152",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=magnus.id,
+                    namespace=people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+                    value="9001",
+                    normalized_value="9001",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonProfile(person_id=magnus.id, visibility="public"),
+                ToolPersonRelationship(
+                    tool_name="magnus-tool",
+                    person_id=magnus.id,
+                    relationship_type=sync.PERSON_REL_MAINTAINER,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=100,
+                    evidence_count=2,
+                    toolhub_canonical=True,
+                ),
+                ToolPersonRelationship(
+                    tool_name="legacy-tool",
+                    person_id=display_only.id,
+                    relationship_type=sync.PERSON_REL_AUTHOR,
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    confidence=20,
+                    evidence_count=1,
+                    toolhub_canonical=True,
+                ),
+                CanonicalToolCache(
+                    tool_name="magnus-tool",
+                    record={"name": "magnus-tool", "title": "Magnus Tool"},
+                    expires_at=now + timedelta(hours=1),
+                    stale_until=now + timedelta(days=1),
+                ),
+                ToolhubAccountProjection(
+                    toolhub_user_id="152",
+                    username="Magnus Manske",
+                    normalized_username="magnus manske",
+                    wikimedia_global_user_id="9001",
+                    generation=1,
+                ),
+                ToolhubAccountProjection(
+                    toolhub_user_id="999",
+                    username="Official Only",
+                    normalized_username="official only",
+                    generation=1,
+                ),
+                ToolhubAccountSyncState(
+                    key="official_accounts",
+                    active_generation=1,
+                    cycles_completed=1,
+                    total_count=2,
+                    status="complete",
+                    last_completed_at=now,
+                    last_success_at=now,
+                ),
+            ]
+        )
+
+    response = client.get("/v1/community/?q=Magnus%20Manske")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["counts"] == {"people": 1, "accounts": 0, "unresolvedAttributions": 1}
+    assert [item["kind"] for item in payload["results"]] == ["person", "unresolved_attribution"]
+    person = payload["results"][0]
+    assert person["person"]["id"] == magnus.public_id
+    assert person["matchBasis"] == ["account", "identity"]
+    assert person["identityEvidence"] == {
+        "officialToolhubAccount": True,
+        "toolforgeHandle": False,
+        "wikiHandle": False,
+        "wikimediaIdentity": True,
+    }
+    assert person["officialAccountMatches"] == [
+        {
+            "id": "152",
+            "identityLinkBasis": ["toolhub_user_id", "wikimedia_global_user_id"],
+            "username": "Magnus Manske",
+        }
+    ]
+    assert payload["results"][1]["attribution"]["label"] == "Magnus Manske"
+    assert payload["canonicalAuthority"] == {
+        "accounts": "toolhub",
+        "catalog": "toolhub",
+        "profiles": "toolhub-evolved",
+    }
+
+    by_tool = client.get("/v1/community/?q=magnus-tool").get_json()
+    assert [item["kind"] for item in by_tool["results"]] == ["person"]
+    assert by_tool["results"][0]["matchBasis"] == ["tool"]
+
+    account_only = client.get("/v1/community/?q=official%20only").get_json()
+    assert account_only["counts"] == {"people": 0, "accounts": 1, "unresolvedAttributions": 0}
+    assert account_only["results"][0]["account"]["identityLinkStatus"] == "unlinked"
+    assert client.get("/v1/community/?q=official%20only&contributor=observed").get_json()["count"] == 0
+
+    for path in (
+        "/v1/community/?page=0",
+        "/v1/community/?page_size=nope",
+        "/v1/community/?ordering=alphabetical",
+        "/v1/community/?contributor=registered",
+    ):
+        assert client.get(path).status_code == 400
 
 
 def test_people_directory_contributor_filter_reports_observed_activity_basis(client):

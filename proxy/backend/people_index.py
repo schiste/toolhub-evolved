@@ -83,6 +83,7 @@ class PeopleDirectoryQuery:
     project: str = ""
     ordering: str = "relevance"
     contributor: bool = False
+    public_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1300,6 +1301,8 @@ def search_people_directory(  # noqa: PLR0915 - explicit query/ranking/filter co
             _public_identity_clause(),
         )
     )
+    if search.public_ids:
+        statement = statement.where(Person.public_id.in_(search.public_ids))
     if clean_query:
         matching_ids = select(PersonIdentifier.person_id).where(
             PersonIdentifier.is_current.is_(True),
