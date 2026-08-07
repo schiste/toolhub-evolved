@@ -152,6 +152,54 @@ class CanonicalToolCache(Base):
         return record
 
 
+class ToolhubAccountProjection(Base):
+    """Rebuildable public projection of one official Toolhub account.
+
+    This is intentionally separate from ``User``. A projection row means the
+    account exists upstream; a User row means that account authorized Evolved.
+    Neither fact implies contribution activity or grants local permissions.
+    """
+
+    __tablename__ = "toolhub_account_projection"
+    toolhub_user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(String(255))
+    normalized_username: Mapped[str] = mapped_column(String(255), default="", index=True)
+    groups: Mapped[list] = mapped_column(JSON, default=list)
+    groups_search: Mapped[str] = mapped_column(String(1000), default="", index=True)
+    wikimedia_global_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    wikimedia_registered_at: Mapped[str] = mapped_column(String(32), default="")
+    date_joined: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    source_url: Mapped[str] = mapped_column(String(2000), default="")
+    generation: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolhubAccountSyncState(Base):
+    """Resumable generation state for the official Toolhub account mirror."""
+
+    __tablename__ = "toolhub_account_sync_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    next_page: Mapped[int] = mapped_column(Integer, default=1)
+    active_generation: Mapped[int] = mapped_column(Integer, default=0)
+    cycle_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cycles_completed: Mapped[int] = mapped_column(Integer, default=0)
+    pages_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    records_seen: Mapped[int] = mapped_column(Integer, default=0)
+    cycle_records_seen: Mapped[int] = mapped_column(Integer, default=0)
+    total_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+
+
 class GraphToolEnrichment(Base):
     """Versioned, provenance-aware facets derived for the public tool graph."""
 
