@@ -275,20 +275,22 @@ function personCard(person) {
 	const relationshipDetail =
 		verifiedTypes.length > 0
 			? t("authors.verifiedRelationshipRoles", "Verified: {roles}", {
-					roles: verifiedTypes.map((role) => relationshipLabel(role)).join(", ")
+					roles: verifiedTypes.map((/** @type {string} */ role) => relationshipLabel(role)).join(", ")
 				})
 			: types.length > 0
 				? t("authors.relationshipRoles", "Relationships: {roles}", {
-						roles: types.map((role) => relationshipLabel(role)).join(", ")
+						roles: types.map((/** @type {string} */ role) => relationshipLabel(role)).join(", ")
 					})
 				: t("authors.noRelationshipSummary", "No relationship summary");
 	const identityDetail = identityQualityLabel(person?.identityQuality || "");
-	const contributorBases = Array.isArray(person?.contributor?.bases) ? person.contributor.bases : [];
+	const contributorBases = /** @type {string[]} */ (
+		Array.isArray(person?.contributor?.bases) ? person.contributor.bases : []
+	);
 	const contributorDetail =
 		contributorBases.length > 0
 			? `<small class="people-card__contributor">${esc(
 					contributorBases
-						.map((basis) =>
+						.map((/** @type {string} */ basis) =>
 							basis === "canonical_catalog_actor"
 								? t("authors.canonicalCatalogActor", "Observed canonical Toolhub catalog activity")
 								: t("authors.approvedContribution", "Approved public contribution activity")
@@ -419,7 +421,7 @@ function unresolvedDirectoryResults(directory) {
 		${
 			directory.error
 				? `<p class="empty" role="alert">${t("authors.attributionSearchFailed", "Unresolved attributions could not be loaded.")}</p>`
-				: `<ul class="people-attributions__list">${attributions.map((attribution) => unresolvedAttribution(attribution)).join("")}</ul><nav class="pager" data-attribution-pager aria-label="${esc(t("authors.attributionPagination", "Unresolved attribution pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>`
+				: `<ul class="people-attributions__list">${attributions.map((/** @type {any} */ attribution) => unresolvedAttribution(attribution)).join("")}</ul><nav class="pager" data-attribution-pager aria-label="${esc(t("authors.attributionPagination", "Unresolved attribution pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>`
 		}
 	</section>`;
 }
@@ -493,6 +495,7 @@ export async function viewPeople() {
 				})
 			: Promise.resolve({ attributions: [], count: 0, page: 1, pageSize: 10, pageCount: 1 })
 	]);
+	const directoryFailed = directoryResult.status !== "fulfilled";
 	const directory =
 		directoryResult.status === "fulfilled"
 			? directoryResult.value
@@ -513,7 +516,7 @@ export async function viewPeople() {
 			${communityHeader(contributorView ? COMMUNITY_CONTRIBUTORS : COMMUNITY_PEOPLE)}
 			${directoryForm(state)}
 			${activeFilterSummary(state, activeView)}
-			<div data-people-results>${directory.error ? peopleSearchError() : resolvedDirectoryResults(directory, state, activeView)}</div>
+			<div data-people-results>${directoryFailed ? peopleSearchError() : resolvedDirectoryResults(directory, state, activeView)}</div>
 			<div data-attribution-results>${attributionsApplicable ? unresolvedDirectoryResults(attributions) : ""}</div>
 		</div>`,
 		mount() {

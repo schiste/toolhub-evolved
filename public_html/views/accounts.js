@@ -100,7 +100,7 @@ function accountResults(directory, state) {
 	const last = first + accounts.length - 1;
 	return `<section aria-labelledby="account-results-title">
 		<div class="section-head people-page__results-head"><div><h2 id="account-results-title" class="people-page__section-title">${t("accounts.officialAccounts", "Official Toolhub accounts")}</h2><p class="muted" aria-live="polite">${t("accounts.range", "Showing {first}–{last} of {count} accounts", { first, last, count: directory.count })}</p></div></div>
-		<div class="account-grid">${accounts.map((account) => accountCard(account, state)).join("")}</div>
+		<div class="account-grid">${accounts.map((/** @type {any} */ account) => accountCard(account, state)).join("")}</div>
 		<nav class="pager" data-account-pager aria-label="${esc(t("accounts.pagination", "Account pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>
 	</section>`;
 }
