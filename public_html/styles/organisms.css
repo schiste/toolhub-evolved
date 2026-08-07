@@ -2358,44 +2358,6 @@
 .community-directory__header :where(.page__title, .page__intro) {
 	margin-block-end: var(--space-0);
 }
-.community-directory__definitions {
-	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: var(--space-3);
-	margin: var(--space-1) var(--space-0);
-}
-.community-directory__definitions > div {
-	padding: var(--space-3);
-	border-inline-start: var(--border-heavy);
-	background: var(--color-surface-muted);
-}
-.community-directory__definitions dt {
-	font-weight: 700;
-}
-.community-directory__definitions dd {
-	margin: var(--space-1) var(--space-0) var(--space-0);
-	color: var(--color-text-secondary);
-	font-size: var(--fs-caption);
-}
-.community-tabs {
-	display: flex;
-	gap: var(--space-1);
-	overflow-x: auto;
-	border-block-end: var(--border-base);
-}
-.community-tabs__tab {
-	flex: 0 0 auto;
-	padding: var(--space-2) var(--space-3);
-	border-block-end: 3px solid transparent;
-	color: var(--color-text-secondary);
-	font-weight: 700;
-	text-decoration: none;
-}
-.community-tabs__tab:is(:hover, .is-active) {
-	border-block-end-color: var(--color-progressive);
-	color: var(--color-progressive);
-	text-decoration: none;
-}
 .people-directory {
 	margin-block-end: var(--space-5);
 }
@@ -2487,6 +2449,32 @@
 }
 .people-card__contributor {
 	font-weight: 700;
+}
+.people-card span.people-card__evidence-list {
+	display: flex;
+	flex-flow: row wrap;
+	gap: var(--space-1);
+}
+.people-card span.people-card__evidence {
+	display: inline-flex;
+	width: fit-content;
+	padding: var(--space-1) var(--space-2);
+	border-radius: var(--radius-pill);
+	background: var(--color-surface-muted);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+	line-height: 1.5;
+}
+.people-card__evidence.is-verified {
+	background: var(--color-success-subtle);
+	color: var(--color-success);
+}
+.people-card__evidence--identity {
+	background: var(--color-progressive-subtle);
+	color: var(--color-progressive);
+}
+.people-attribution--card {
+	min-width: 0;
 }
 .account-directory__notice {
 	display: grid;

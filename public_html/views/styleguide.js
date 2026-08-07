@@ -333,7 +333,7 @@ function footerExample() {
 					<h2>${t("styleguide.footer.discover", "Discover")}</h2>
 					<a href="/search">${t("styleguide.footer.browseTools", "Browse tools")}</a>
 					<a href="/lists">${t("styleguide.nav.lists", "Lists")}</a>
-					<a href="/people?view=accounts">${t("styleguide.footer.accounts", "Accounts")}</a>
+					<a href="/people">${t("styleguide.footer.people", "People")}</a>
 					<a href="/recent">${t("styleguide.footer.recentChanges", "Recent changes")}</a>
 				</nav>
 				<nav class="footer__col" aria-label="${esc(t("styleguide.footer.maintainLabel", "Maintain"))}">

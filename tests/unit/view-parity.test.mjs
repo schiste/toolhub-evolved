@@ -520,7 +520,7 @@ test("viewRecent: a response with no results array also shows the placeholder", 
 
 /* ---- legacy viewMembers alias ----------------------------------------- */
 
-test("viewMembers renders the canonical account directory and replaces the legacy URL", async () => {
+test("viewMembers renders the unified directory and replaces the legacy URL", async () => {
 	window.history.replaceState({}, "", "/members");
 	api.backendGetJson.mockResolvedValue({
 		count: 0,
@@ -528,16 +528,17 @@ test("viewMembers renders the canonical account directory and replaces the legac
 		pageSize: 24,
 		pageCount: 1,
 		results: [],
-		sync: { status: "ready", complete: true }
+		counts: { people: 0, accounts: 0, unresolvedAttributions: 0 },
+		accountSync: { status: "ready", complete: true }
 	});
 	const view = await viewMembers();
-	assert.equal(view.title, "Accounts — Toolhub");
-	assert.deepEqual(api.backendGetJson.mock.calls[0], ["/v1/accounts/?page_size=24&ordering=name"]);
+	assert.equal(view.title, "Community directory — Toolhub");
+	assert.deepEqual(api.backendGetJson.mock.calls[0], ["/v1/community/?page_size=24&ordering=relevance"]);
 	assert.match(view.html, /Community directory/);
-	assert.match(view.html, /Accounts registered with official Toolhub/);
+	assert.match(view.html, /Search people, usernames, and tools in one place/);
 	view.mount();
 	assert.equal(location.pathname, "/people");
-	assert.equal(new URLSearchParams(location.search).get("view"), "accounts");
+	assert.equal(new URLSearchParams(location.search).get("view"), null);
 });
 
 /* ---- viewCrawler ------------------------------------------------------- */

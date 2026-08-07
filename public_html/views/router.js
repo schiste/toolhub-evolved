@@ -310,7 +310,7 @@ export function dispatch() {
 	if (seg[0] === "search") return loadSearch().then((m) => m.viewSearch());
 	if (seg[0] === "by" && seg[1]) return loadAuthors().then((m) => m.viewAuthor(decodeURIComponent(seg[1])));
 	if (seg[0] === "people" && !seg[1]) {
-		return new URLSearchParams(location.search).get("view") === "accounts"
+		return new URLSearchParams(location.search).has("account")
 			? loadAccounts().then((m) => m.viewAccounts())
 			: loadAuthors().then((m) => m.viewPeople());
 	}

@@ -31,6 +31,30 @@ function directoryParams(search) {
 	return params;
 }
 
+/**
+ * Search the public community directory without exposing its backing projections.
+ * @param {PeopleDirectorySearch|string} [search]
+ */
+export async function searchCommunity(search = {}) {
+	const options = typeof search === "string" ? { q: search } : search;
+	const params = directoryParams(options);
+	const data = await backendGetJson(`/v1/community/${params.size > 0 ? `?${params}` : ""}`);
+	if (!data) throw new Error("Community directory unavailable");
+	const results = Array.isArray(data?.results) ? data.results : [];
+	return {
+		results,
+		count: Number.isFinite(Number(data?.count)) ? Number(data.count) : results.length,
+		counts: data?.counts || { people: 0, accounts: 0, unresolvedAttributions: 0 },
+		page: Number(data?.page) || 1,
+		pageSize: Number(data?.pageSize) || options.pageSize || 24,
+		pageCount: Number(data?.pageCount) || 1,
+		next: data?.next || null,
+		previous: data?.previous || null,
+		truncated: Boolean(data?.truncated),
+		accountSync: data?.accountSync || { status: "unavailable", complete: false }
+	};
+}
+
 /** @param {PeopleDirectorySearch|string} [search] */
 export async function searchPeopleDirectory(search = {}) {
 	const options = typeof search === "string" ? { q: search } : search;

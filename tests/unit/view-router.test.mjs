@@ -166,9 +166,10 @@ test("dispatch /by/<name> → viewAuthor with the decoded name", async () => {
 test("dispatch Community directory views and immutable person details", async () => {
 	assert.deepEqual(await at("/people"), { tag: "people" });
 	assert.deepEqual(await at("/people?view=contributors&q=Ada"), { tag: "people" });
-	assert.deepEqual(await at("/people?view=accounts&q=Ada"), { tag: "accounts" });
+	assert.deepEqual(await at("/people?view=accounts&q=Ada"), { tag: "people" });
+	assert.deepEqual(await at("/people?q=Ada&account=42"), { tag: "accounts" });
 	assert.deepEqual(await at("/people/person%2042"), { tag: "person", n: "person 42" });
-	assert.equal(authors.viewPeople.mock.calls.length, 2);
+	assert.equal(authors.viewPeople.mock.calls.length, 3);
 	assert.equal(accounts.viewAccounts.mock.calls.length, 1);
 });
 

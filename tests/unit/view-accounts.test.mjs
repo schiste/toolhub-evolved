@@ -58,7 +58,7 @@ test("account directory renders all-count pagination, links, and full names from
 	assert.equal(view.title, "Accounts — Toolhub");
 	assert.match(h.backendGetJson.mock.calls[0][0], /^\/v1\/accounts\//);
 	assert.match(view.html, /Showing 1–1 of 2313 accounts/);
-	assert.match(view.html, /href="\/people\?view=accounts&amp;account=42"/);
+	assert.match(view.html, /href="\/people\?account=42"/);
 	assert.match(view.html, /A very long official account name that must stay fully visible/);
 	assert.doesNotMatch(view.html, /text-overflow|title="A very long/);
 	assert.match(view.html, /Linked to a public person through a stable identifier/);
@@ -73,7 +73,7 @@ test("account search and pagination preserve filters in browser history", async 
 
 	document.querySelector('[data-account-pager] [data-page="2"]').click();
 	let params = new URLSearchParams(location.search);
-	assert.equal(params.get("view"), "accounts");
+	assert.equal(params.get("view"), null);
 	assert.equal(params.get("q"), "Ada");
 	assert.equal(params.get("group"), "admin");
 	assert.equal(params.get("page"), "2");
@@ -102,7 +102,7 @@ test("account detail exposes registration facts and only a backend-approved pers
 	assert.match(view.html, /Toolhub user ID/);
 	assert.match(view.html, /Wikimedia global user ID/);
 	assert.match(view.html, /href="\/people\/person-42"/);
-	assert.match(view.html, /href="\/people\?view=accounts&amp;q=Ada"/);
+	assert.match(view.html, /href="\/people\?q=Ada"/);
 });
 
 test("conflicted stable identifiers never produce an account-to-person link", async () => {
@@ -153,10 +153,10 @@ test("accountDirectoryHref retains account filters while adding and removing det
 	const state = { q: "Ada", page: 2, pageSize: 48, group: "admin", ordering: "recent", accountId: "" };
 	assert.equal(
 		accountDirectoryHref(state, { accountId: "42" }),
-		"/people?view=accounts&q=Ada&group=admin&ordering=recent&page_size=48&page=2&account=42"
+		"/people?q=Ada&group=admin&ordering=recent&page_size=48&page=2&account=42"
 	);
 	assert.equal(
 		accountDirectoryHref(state, { accountId: "", page: 1 }),
-		"/people?view=accounts&q=Ada&group=admin&ordering=recent&page_size=48"
+		"/people?q=Ada&group=admin&ordering=recent&page_size=48"
 	);
 });

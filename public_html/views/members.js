@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { viewAccounts } from "./accounts.js";
+import { viewPeople } from "./authors.js";
 
-// Backward-compatible alias. The canonical, shareable location is the Accounts
-// view inside the Community directory.
+// Backward-compatible alias. Account evidence now strengthens results inside
+// the unified Community directory.
 export async function viewMembers() {
-	return viewAccounts({ canonicalize: true });
+	const view = await viewPeople();
+	return {
+		...view,
+		mount() {
+			const params = new URLSearchParams(location.search);
+			params.delete("view");
+			history.replaceState({}, "", `/people${params.size > 0 ? `?${params}` : ""}`);
+			view.mount?.();
+		}
+	};
 }

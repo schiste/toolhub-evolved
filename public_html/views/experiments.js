@@ -93,8 +93,8 @@ export const EXPERIMENTS = [
 					"These parity views read official Toolhub endpoints and merge Evolved activity only for local write history where relevant."
 				),
 				need: t("experiments.operationalViewsNeed", "GET /api/users/, /api/crawler/runs/, and /api/auditlogs/"),
-				tryHref: "/people?view=accounts",
-				tryLabel: t("experiments.operationalViewsTry", "Open accounts")
+				tryHref: "/people",
+				tryLabel: t("experiments.operationalViewsTry", "Open community directory")
 			},
 			{
 				name: t("experiments.toolMapName", "Tool map and related tools"),

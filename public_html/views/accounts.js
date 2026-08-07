@@ -6,7 +6,7 @@ import { navigateTo, personHref } from "../lib/core/routing.js";
 import { avatar } from "../lib/atoms/avatar.js";
 import { icon } from "../lib/atoms/icon.js";
 import { renderPager } from "../lib/molecules/pager.js";
-import { COMMUNITY_ACCOUNTS, communityHeader } from "./community.js";
+import { communityHeader } from "./community.js";
 
 const ACCOUNT_PAGE_SIZES = [12, 24, 48, 96];
 const DEFAULT_ACCOUNT_PAGE_SIZE = 24;
@@ -41,14 +41,14 @@ export function accountDirectoryState(params = new URLSearchParams(globalThis.lo
 /** @param {ReturnType<typeof accountDirectoryState>} state @param {Partial<ReturnType<typeof accountDirectoryState>>} [changes] */
 export function accountDirectoryHref(state, changes = {}) {
 	const next = { ...state, ...changes };
-	const params = new URLSearchParams({ view: COMMUNITY_ACCOUNTS });
+	const params = new URLSearchParams();
 	if (next.q) params.set("q", next.q);
 	if (next.group) params.set("group", next.group);
 	if (next.ordering !== "name") params.set("ordering", next.ordering);
 	if (next.pageSize !== DEFAULT_ACCOUNT_PAGE_SIZE) params.set("page_size", String(next.pageSize));
 	if (next.page > 1) params.set("page", String(next.page));
 	if (next.accountId) params.set("account", next.accountId);
-	return `/people?${params}`;
+	return `/people${params.size > 0 ? `?${params}` : ""}`;
 }
 
 /** @param {string} value @param {string} current @param {string} label */
@@ -143,7 +143,7 @@ function accountDetail(account, state) {
 			? `<span>${t("accounts.identityConflict", "Stable identifiers point to different people; no automatic link is shown.")}</span>`
 			: `<span>${t("accounts.noPersonLink", "No public person is linked by a stable identifier.")}</span>`;
 	return `<section class="account-detail" aria-labelledby="account-detail-title">
-		<a class="back" href="${esc(accountDirectoryHref(state, { accountId: "" }))}">${t("accounts.back", "← Back to accounts")}</a>
+		<a class="back" href="${esc(accountDirectoryHref(state, { accountId: "" }))}">${t("accounts.backToDirectory", "← Back to community directory")}</a>
 		<div class="account-detail__head">${avatar(name, "account-card__avatar")}<div><h2 id="account-detail-title"${dirAttrs(name)}>${esc(name)}</h2><p class="muted">${t("accounts.officialProfile", "Official Toolhub account projection")}</p></div></div>
 		<dl class="account-detail__facts">
 			<div><dt>${t("accounts.toolhubId", "Toolhub user ID")}</dt><dd>${esc(account?.id || "")}</dd></div>
@@ -187,7 +187,7 @@ export async function viewAccounts(options = {}) {
 			state.accountId && detail?.username
 				? t("accounts.detailDocTitle", "{name} — Accounts — Toolhub", { name: detail.username })
 				: t("accounts.docTitle", "Accounts — Toolhub"),
-		html: `<div class="container page people-page community-directory account-directory">${communityHeader(COMMUNITY_ACCOUNTS)}${body}</div>`,
+		html: `<div class="container page people-page community-directory account-directory">${communityHeader()}${body}</div>`,
 		mount() {
 			if (options.canonicalize && location.pathname === "/members") {
 				history.replaceState({}, "", accountDirectoryHref(state));
