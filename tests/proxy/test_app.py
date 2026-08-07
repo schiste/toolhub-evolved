@@ -592,6 +592,22 @@ def test_serves_from_dist_build_when_present(client, monkeypatch, tmp_path):
     assert b"<title>min</title>" in client.get("/any/spa/route").data  # SPA fallback from dist
 
 
+def test_missing_locale_catalog_404s_instead_of_serving_the_spa_shell(client):
+    # The frontend fetches /i18n/<locale>.json and treats a null body as "not
+    # translated yet". Falling through to index.html would answer 200 with HTML,
+    # so a routine missing translation would reach JSON.parse and be recorded as
+    # a fetch error rather than an absent catalog.
+    missing = client.get("/i18n/zz.json")
+    assert missing.status_code == 404
+    assert b"main.js" not in missing.data, "a missing catalog must not return the SPA shell"
+    # The shipped catalog still serves normally.
+    shipped = client.get("/i18n/en.json")
+    assert shipped.status_code == 200
+    assert json.loads(shipped.data)["@metadata"]["message-documentation"] == "qqq"
+    # Non-catalog paths keep the SPA fallback.
+    assert client.get("/i18n/not-a-catalog").status_code == 200
+
+
 def test_path_traversal_falls_back_to_index_not_the_file():
     # A path that resolves OUTSIDE public_html must serve index.html, never the
     # target file — the containment guard, belt-and-suspenders to Werkzeug.

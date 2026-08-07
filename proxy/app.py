@@ -21,7 +21,7 @@ from threading import Lock
 from time import perf_counter
 
 import requests
-from flask import Flask, Response, g, request, send_from_directory
+from flask import Flask, Response, abort, g, request, send_from_directory
 
 import backend
 from backend import activity_privacy, api_cache, canonical_tools, security
@@ -506,6 +506,12 @@ def static_files(path: str) -> Response:
         resp = _send_static(root, path)
         resp.headers["Cache-Control"] = _VERSIONED_STATIC_CACHE if request.args.get("v") else _REVALIDATED_STATIC_CACHE
         return resp
+    # A locale catalog that is not shipped must 404 rather than fall through to
+    # the SPA shell. The frontend asks for /i18n/<locale>.json and treats a null
+    # body as "not translated yet"; an index.html body under a 200 would instead
+    # reach JSON.parse and surface a routine missing translation as a fetch error.
+    if path.startswith("i18n/") and path.endswith(".json"):
+        abort(404)
     resp = send_from_directory(root, "index.html")
     resp.headers["Cache-Control"] = _REVALIDATED_STATIC_CACHE
     return resp

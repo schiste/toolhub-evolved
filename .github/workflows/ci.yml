@@ -50,6 +50,11 @@ jobs:
               run: node tools/js-budget.mjs
             - name: i18n catalog in sync (en.json generated from t() calls)
               run: node tools/i18n-extract.mjs --check
+            # The format check translatewiki itself runs: every message documented
+            # in qqq.json, and $1..$n parity between en.json and each translation.
+            # Keys here are namespace.camelCase rather than MediaWiki's lowercase.
+            - name: i18n message files (banana-checker)
+              run: npm run lint:banana
             - name: Feature docs in sync (docs/FEATURES.md generated from experiments list)
               run: node tools/feature-docs.mjs --check
             - name: Unit tests + coverage gate
