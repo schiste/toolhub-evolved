@@ -94,6 +94,8 @@ from backend.models import (  # noqa: E402
     ToolRecord,
     ToolSummaryCache,
     ToolThanks,
+    ToolhubAccountProjection,
+    ToolhubAccountSyncState,
     User,
     UserToolResolverCache,
     utcnow,
@@ -240,6 +242,10 @@ PUBLIC_V1_ROUTES = {
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
+    "/v1/accounts/": "public official Toolhub account projection; local DB only and reads are rate limited",
+    "/v1/accounts/<toolhub_user_id>/": (
+        "public official Toolhub account detail; local DB only and reads are rate limited"
+    ),
     "/v1/people/": "public local people search; reads are rate limited",
     "/v1/people/attributions/": "public unresolved-label discovery over local evidence; reads are rate limited",
     "/v1/people/resolve/": "public exact-handle resolution over local public identities; reads are rate limited",
@@ -2986,6 +2992,177 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     assert detail_relationship["evidence"][0]["source"] == evidence["source"]
     assert detail_relationship["evidence"][0]["method"] == evidence["method"]
     assert detail_relationship["evidence"][0]["checkedAt"] == evidence["checkedAt"]
+
+
+def test_account_directory_searches_projection_and_links_only_stable_identity(client, monkeypatch):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: pytest.fail("account directory reads must remain local"),
+    )
+    now = utcnow()
+    with db.session_scope() as s:
+        linked = Person(canonical_key="toolhub_user_id:42", display_name="Magnus Manske", identity_quality="stable_id")
+        conflicting_toolhub = Person(
+            canonical_key="toolhub_user_id:43",
+            display_name="Conflicting Toolhub",
+            identity_quality="stable_id",
+        )
+        conflicting_wikimedia = Person(
+            canonical_key="wikimedia_global_user_id:100043",
+            display_name="Conflicting Wikimedia",
+            identity_quality="stable_id",
+        )
+        s.add_all([linked, conflicting_toolhub, conflicting_wikimedia])
+        s.flush()
+        s.add_all(
+            [
+                PersonIdentifier(
+                    person_id=linked.id,
+                    namespace=people_index.NS_TOOLHUB_USER_ID,
+                    value="42",
+                    normalized_value="42",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=linked.id,
+                    namespace=people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+                    value="100042",
+                    normalized_value="100042",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=conflicting_toolhub.id,
+                    namespace=people_index.NS_TOOLHUB_USER_ID,
+                    value="43",
+                    normalized_value="43",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=conflicting_wikimedia.id,
+                    namespace=people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+                    value="100043",
+                    normalized_value="100043",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+            ]
+        )
+        accounts = []
+        for index in range(1, 56):
+            username = "Magnus Manske" if index == 42 else ("Conflicted Account" if index == 43 else f"Account {index:03d}")
+            groups = ["admin"] if index == 42 else []
+            accounts.append(
+                ToolhubAccountProjection(
+                    toolhub_user_id=str(index),
+                    username=username,
+                    normalized_username=username.casefold(),
+                    groups=groups,
+                    groups_search="\nadmin\n" if groups else "",
+                    wikimedia_global_user_id=str(100_000 + index),
+                    date_joined=now - timedelta(days=index),
+                    generation=1,
+                )
+            )
+        s.add_all(accounts)
+        s.add(
+            ToolhubAccountSyncState(
+                key="official_accounts",
+                active_generation=1,
+                cycles_completed=1,
+                total_count=55,
+                status="error",
+                last_completed_at=now,
+                last_success_at=now,
+                last_error="upstream refresh failed",
+            )
+        )
+
+    first = client.get("/v1/accounts/?page_size=24&ordering=name").get_json()
+    assert first["count"] == 55
+    assert first["pageCount"] == 3
+    assert len(first["results"]) == 24
+    assert first["next"] == "/v1/accounts/?page_size=24&ordering=name&page=2"
+    assert first["sync"]["status"] == "stale"
+    assert first["canonicalAuthority"] == {"accounts": "toolhub"}
+
+    searched = client.get("/v1/accounts/?q=manske").get_json()
+    assert searched["count"] == 1
+    account = searched["results"][0]
+    assert account["id"] == "42"
+    assert account["personId"] == linked.public_id
+    assert account["identityLinkStatus"] == "linked"
+    assert account["identityLinkBasis"] == ["toolhub_user_id", "wikimedia_global_user_id"]
+    grouped = client.get("/v1/accounts/?group=ADMIN").get_json()
+    assert [row["id"] for row in grouped["results"]] == ["42"]
+    recent = client.get("/v1/accounts/?ordering=recent&page_size=1").get_json()
+    assert recent["results"][0]["id"] == "1"
+    detail = client.get("/v1/accounts/42/").get_json()
+    assert detail["username"] == "Magnus Manske"
+    conflict = client.get("/v1/accounts/43/").get_json()
+    assert conflict["personId"] is None
+    assert conflict["identityLinkStatus"] == "conflict"
+    assert client.get("/v1/accounts/?q=%25").get_json()["count"] == 0
+    for path in (
+        "/v1/accounts/?page=0",
+        "/v1/accounts/?page_size=nope",
+        "/v1/accounts/?ordering=relationship",
+    ):
+        assert client.get(path).status_code == 400
+    assert client.get("/v1/accounts/9999/").status_code == 404
+
+
+def test_people_directory_contributor_filter_reports_observed_activity_basis(client):
+    now = utcnow()
+    with db.session_scope() as s:
+        people = [
+            Person(canonical_key=f"toolhub_user_id:{index}", display_name=name, identity_quality="stable_id")
+            for index, name in ((1, "Canonical Actor"), (2, "Approved Contributor"), (3, "Registered Only"))
+        ]
+        s.add_all(people)
+        s.flush()
+        for index, person in enumerate(people, start=1):
+            s.add(
+                PersonIdentifier(
+                    person_id=person.id,
+                    namespace=people_index.NS_TOOLHUB_USER_ID,
+                    value=str(index),
+                    normalized_value=str(index),
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                )
+            )
+            s.add(PersonProfile(person_id=person.id, visibility="public"))
+        s.add(
+            ToolPersonRelationship(
+                tool_name="actor-tool",
+                person_id=people[0].id,
+                relationship_type=sync.PERSON_REL_CATALOG_ACTOR,
+                verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                confidence=55,
+                evidence_count=1,
+                toolhub_canonical=True,
+            )
+        )
+        s.add_all(
+            [
+                PersonActivitySummary(person_id=people[0].id, contribution_count=0, computed_at=now),
+                PersonActivitySummary(person_id=people[1].id, contribution_count=3, computed_at=now),
+                PersonActivitySummary(person_id=people[2].id, contribution_count=0, computed_at=now),
+            ]
+        )
+
+    data = client.get("/v1/people/?contributor=observed&ordering=name").get_json()
+
+    assert [row["displayName"] for row in data["results"]] == ["Approved Contributor", "Canonical Actor"]
+    by_name = {row["displayName"]: row["contributor"] for row in data["results"]}
+    assert by_name["Canonical Actor"] == {
+        "eligible": True,
+        "bases": ["canonical_catalog_actor"],
+        "catalogActorToolCount": 1,
+        "approvedPublicContributionCount": 0,
+    }
+    assert by_name["Approved Contributor"]["bases"] == ["approved_public_activity"]
+    assert by_name["Approved Contributor"]["approvedPublicContributionCount"] == 3
+    assert client.get("/v1/people/?contributor=registered").status_code == 400
 
 
 def test_public_tool_people_endpoint_is_rate_limited(client, monkeypatch):

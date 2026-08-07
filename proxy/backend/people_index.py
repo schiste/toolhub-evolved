@@ -82,6 +82,7 @@ class PeopleDirectoryQuery:
     activity: str = ""
     project: str = ""
     ordering: str = "relevance"
+    contributor: bool = False
 
 
 @dataclass(frozen=True)
@@ -1245,7 +1246,43 @@ def _directory_relationship_summaries(
     return summaries
 
 
-def search_people_directory(
+def _directory_contributor_summaries(
+    s: Session,
+    person_ids: set[int],
+    activities: dict[int, PersonActivitySummary],
+) -> dict[int, dict[str, Any]]:
+    actor_counts = dict(
+        s.execute(
+            select(
+                ToolPersonRelationship.person_id,
+                func.count(func.distinct(ToolPersonRelationship.tool_name)),
+            )
+            .where(
+                ToolPersonRelationship.person_id.in_(person_ids or {-1}),
+                ToolPersonRelationship.relationship_type == PERSON_REL_CATALOG_ACTOR,
+                ToolPersonRelationship.toolhub_canonical.is_(True),
+            )
+            .group_by(ToolPersonRelationship.person_id)
+        ).all()
+    )
+    summaries: dict[int, dict[str, Any]] = {}
+    for person_id in person_ids:
+        activity = activities.get(person_id)
+        bases = []
+        if actor_counts.get(person_id, 0) > 0:
+            bases.append("canonical_catalog_actor")
+        if activity is not None and activity.contribution_count > 0:
+            bases.append("approved_public_activity")
+        summaries[person_id] = {
+            "eligible": bool(bases),
+            "bases": bases,
+            "catalogActorToolCount": int(actor_counts.get(person_id, 0)),
+            "approvedPublicContributionCount": int(activity.contribution_count if activity is not None else 0),
+        }
+    return summaries
+
+
+def search_people_directory(  # noqa: PLR0915 - explicit query/ranking/filter contract
     s: Session,
     search: PeopleDirectoryQuery,
 ) -> dict[str, Any]:
@@ -1290,6 +1327,23 @@ def search_people_directory(
             )
         else:
             statement = statement.where(PersonActivitySummary.activity_status == search.activity)
+    if search.contributor:
+        canonical_actor = (
+            select(ToolPersonRelationship.id)
+            .where(
+                ToolPersonRelationship.person_id == Person.id,
+                ToolPersonRelationship.relationship_type == PERSON_REL_CATALOG_ACTOR,
+                ToolPersonRelationship.toolhub_canonical.is_(True),
+            )
+            .correlate(Person)
+            .exists()
+        )
+        statement = statement.where(
+            or_(
+                canonical_actor,
+                PersonActivitySummary.contribution_count > 0,
+            )
+        )
 
     total = int(s.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0)
     identity_rank = case(
@@ -1392,6 +1446,7 @@ def search_people_directory(
         ).scalars()
     }
     relationship_summaries = _directory_relationship_summaries(s, person_ids, checked_at=checked_at)
+    contributor_summaries = _directory_contributor_summaries(s, person_ids, activities)
     results = [
         _person_base_payload(person, identifiers.get(person.id, []), profiles.get(person.id), activities.get(person.id))
         | {
@@ -1405,7 +1460,8 @@ def search_people_directory(
                     "types": [],
                     "verifiedTypes": [],
                 },
-            )
+            ),
+            "contributor": contributor_summaries[person.id],
         }
         for person in people
     ]

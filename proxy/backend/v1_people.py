@@ -105,6 +105,7 @@ def v1_people() -> Response:
         verification = _choice_arg("verification", PEOPLE_VERIFICATION_FILTERS)
         activity = _choice_arg("activity", PEOPLE_ACTIVITY_FILTERS)
         ordering = _choice_arg("ordering", PEOPLE_ORDERINGS, "relevance")
+        contributor = _choice_arg("contributor", {"observed"}) == "observed"
     except InvalidPeopleQueryError as exc:
         return common.bad(str(exc))
     with db.session_scope() as s:
@@ -119,6 +120,7 @@ def v1_people() -> Response:
                 activity=activity,
                 project=project,
                 ordering=ordering,
+                contributor=contributor,
             ),
         )
     return jsonify(
