@@ -771,6 +771,39 @@ def test_static_files_serve_the_build_time_gzip_twin(tmp_path, monkeypatch):
         assert again.get_data() == b""
 
 
+def test_a_twin_with_no_plain_file_is_still_current(tmp_path):
+    """With nothing to compare against, the twin is all there is.
+
+    stat() on the missing plain file raises, and treating that as "stale" would
+    make an orphaned twin unservable rather than falling back to the only copy.
+    """
+    root = tmp_path / "dist"
+    root.mkdir()
+    packed = root / "orphan.json.gz"
+    packed.write_bytes(gzip.compress(b"{}", 9, mtime=0))
+    assert proxy_app._twin_is_current(packed, root / "orphan.json") is True
+
+
+def test_gzip_twin_of_an_unknown_extension_keeps_the_sent_content_type(tmp_path, monkeypatch):
+    """An extension mimetypes cannot guess must not blank the Content-Type.
+
+    The twin is sent as `<path>.gz`, so the header has to be corrected to the
+    type of the decoded body — but only when there is a type to correct it to.
+    """
+    root = tmp_path / "dist"
+    root.mkdir()
+    body = b"opaque payload" + b" " * 2000
+    (root / "blob.unknownext").write_bytes(body)
+    (root / "blob.unknownext.gz").write_bytes(gzip.compress(body, 9, mtime=0))
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+
+    with proxy_app.app.test_client() as c:
+        served = c.get("/blob.unknownext", headers={"Accept-Encoding": "gzip"})
+    assert served.status_code == 200
+    assert served.headers["Content-Encoding"] == "gzip"
+    assert gzip.decompress(served.data) == body
+
+
 def test_a_stale_gzip_twin_is_ignored(tmp_path, monkeypatch):
     """A twin older than its file must not be served.
 

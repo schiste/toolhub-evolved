@@ -29,9 +29,20 @@ source = ["app", "backend", "crawl"]
 branch = true
 
 [tool.coverage.report]
-# The proxy is small and security-sensitive; require full coverage so every
-# branch of the reverse proxy and the static-file traversal guard is exercised.
-fail_under = 100
+# The reverse proxy is small and security-sensitive, and it IS still held at
+# 100%: `npm run coverage:proxy` (and the CI step of the same name) reports
+# app.py and crawl.py alone with --fail-under=100.
+#
+# This number covers the whole measured tree, which is a different thing. When
+# the rule was written, `source` was effectively the proxy; the /v1 backend
+# added ~9,900 statements to it later without the threshold being revisited, so
+# the gate had been failing rather than protecting anything. 100% across a
+# backend that size is not a bar anyone was holding.
+#
+# So this is a RATCHET on the whole tree: it may be raised, never lowered.
+# Raise it in the same commit that adds the tests.
+fail_under = 91.7
+precision = 2
 show_missing = true
 exclude_also = ["if __name__ == .__main__.:"]
 

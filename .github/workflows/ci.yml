@@ -83,10 +83,17 @@ jobs:
               run: ruff format --check proxy
             - name: pip-audit
               run: pip-audit -r proxy/requirements.txt --strict
-            - name: Proxy tests + coverage gate (proxy/app.py at 100%)
+            - name: Proxy tests + whole-tree coverage ratchet
               run: |
                   pip install -r proxy/requirements.txt
                   PYTHONPATH=proxy pytest tests/proxy -q --cov --cov-report=term-missing
+            # Reported from the run above, so this costs no extra test time. The
+            # reverse proxy and the static-file traversal guard stay at 100%
+            # even though the tree as a whole is on a ratchet.
+            # (the npm script of the same name is the local shorthand; this job
+            # has no Node, so it calls coverage directly)
+            - name: Reverse proxy stays fully covered
+              run: coverage report --include='proxy/app.py,proxy/crawl.py' --fail-under=100
 
     secrets:
         name: Secret scan
