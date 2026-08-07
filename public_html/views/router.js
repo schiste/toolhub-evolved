@@ -33,6 +33,7 @@ const loadHome = () => loadRouteModule("./home.js", () => import("./home.js"));
 const loadSearch = () => loadRouteModule("./search.js", () => import("./search.js"));
 const loadTool = () => loadRouteModule("./tool.js", () => import("./tool.js"));
 const loadAuthors = () => loadRouteModule("./authors.js", () => import("./authors.js"));
+const loadAccounts = () => loadRouteModule("./accounts.js", () => import("./accounts.js"));
 const loadLists = () => loadRouteModule("./lists.js", () => import("./lists.js"));
 const loadToolForms = () => loadRouteModule("./toolforms.js", () => import("./toolforms.js"));
 const loadAccountSettings = () => loadRouteModule("./account-settings.js", () => import("./account-settings.js"));
@@ -308,7 +309,11 @@ export function dispatch() {
 	}
 	if (seg[0] === "search") return loadSearch().then((m) => m.viewSearch());
 	if (seg[0] === "by" && seg[1]) return loadAuthors().then((m) => m.viewAuthor(decodeURIComponent(seg[1])));
-	if (seg[0] === "people" && !seg[1]) return loadAuthors().then((m) => m.viewPeople());
+	if (seg[0] === "people" && !seg[1]) {
+		return new URLSearchParams(location.search).get("view") === "accounts"
+			? loadAccounts().then((m) => m.viewAccounts())
+			: loadAuthors().then((m) => m.viewPeople());
+	}
 	if (seg[0] === "people" && seg[1]) return loadAuthors().then((m) => m.viewPerson(decodeURIComponent(seg[1])));
 	if (seg[0] === "tools" && seg[1]) return dispatchToolRoute(seg);
 	if (seg[0] === "lists" && seg[1]) return dispatchListRoute(seg);

@@ -15,7 +15,7 @@ export function personById(publicId, options = {}) {
 }
 
 /**
- * @typedef {{q?: string, page?: number, pageSize?: number, role?: string, verification?: string, activity?: string, project?: string, ordering?: string}} PeopleDirectorySearch
+ * @typedef {{q?: string, page?: number, pageSize?: number, role?: string, verification?: string, activity?: string, project?: string, ordering?: string, contributor?: string}} PeopleDirectorySearch
  */
 
 /** @param {PeopleDirectorySearch} search */
@@ -24,7 +24,7 @@ function directoryParams(search) {
 	if (search.q) params.set("q", search.q);
 	if (search.page && search.page > 1) params.set("page", String(search.page));
 	if (search.pageSize) params.set("page_size", String(search.pageSize));
-	for (const key of ["role", "verification", "activity", "project", "ordering"]) {
+	for (const key of ["role", "verification", "activity", "project", "ordering", "contributor"]) {
 		const value = search[/** @type {keyof PeopleDirectorySearch} */ (key)];
 		if (value) params.set(key, String(value));
 	}

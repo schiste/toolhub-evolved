@@ -449,3 +449,36 @@ test("people directory renders retryable errors instead of remaining in a loadin
 	assert.match(view.html, /Unresolved attributions could not be loaded/);
 	assert.doesNotMatch(view.html, /Searching…/);
 });
+
+test("contributors view requests eligibility and explains each evidence basis", async () => {
+	window.history.replaceState({}, "", "/people?view=contributors&q=Ada");
+	h.backendGetJson.mockResolvedValueOnce({
+		count: 1,
+		page: 1,
+		pageSize: 24,
+		pageCount: 1,
+		results: [
+			{
+				id: "person-ada",
+				displayName: "Ada",
+				identityQuality: "stable_id",
+				profile: {},
+				activity: { relatedToolCount: 1 },
+				relationshipSummary: { types: ["catalog_actor"], verifiedTypes: [] },
+				contributor: {
+					eligible: true,
+					bases: ["canonical_catalog_actor", "approved_public_activity"]
+				}
+			}
+		]
+	});
+	const view = await viewPeople();
+
+	assert.equal(h.backendGetJson.mock.calls.length, 1, "contributors do not request unresolved labels");
+	assert.match(h.backendGetJson.mock.calls[0][0], /contributor=observed/);
+	assert.match(view.html, /Community directory/);
+	assert.match(view.html, /Observed contributors/);
+	assert.match(view.html, /Observed canonical Toolhub catalog activity/);
+	assert.match(view.html, /Approved public contribution activity/);
+	assert.match(view.html, /href="\/people\?view=contributors" aria-current="page"/);
+});

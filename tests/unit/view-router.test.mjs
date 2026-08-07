@@ -9,6 +9,7 @@ import * as home from "../../public_html/views/home.js";
 import * as search from "../../public_html/views/search.js";
 import * as tool from "../../public_html/views/tool.js";
 import * as authors from "../../public_html/views/authors.js";
+import * as accounts from "../../public_html/views/accounts.js";
 import * as lists from "../../public_html/views/lists.js";
 import * as toolforms from "../../public_html/views/toolforms.js";
 import * as accountSettingsView from "../../public_html/views/account-settings.js";
@@ -33,7 +34,12 @@ vi.mock("../../public_html/views/tool.js", () => ({
 	viewToolHistory: vi.fn((n) => ({ tag: "toolhistory", n })),
 	viewDiffStub: vi.fn((n) => ({ tag: "diff", n }))
 }));
-vi.mock("../../public_html/views/authors.js", () => ({ viewAuthor: vi.fn((n) => ({ tag: "author", n })) }));
+vi.mock("../../public_html/views/authors.js", () => ({
+	viewAuthor: vi.fn((n) => ({ tag: "author", n })),
+	viewPeople: vi.fn(() => ({ tag: "people" })),
+	viewPerson: vi.fn((n) => ({ tag: "person", n }))
+}));
+vi.mock("../../public_html/views/accounts.js", () => ({ viewAccounts: vi.fn(() => ({ tag: "accounts" })) }));
 vi.mock("../../public_html/views/lists.js", () => ({
 	viewLists: vi.fn(() => ({ tag: "lists" })),
 	viewList: vi.fn((n) => ({ tag: "list", n })),
@@ -155,6 +161,15 @@ test("dispatch /by/<name> → viewAuthor with the decoded name", async () => {
 	const v = await at("/by/Ada%20Lovelace");
 	assert.deepEqual(authors.viewAuthor.mock.calls[0], ["Ada Lovelace"]);
 	assert.deepEqual(v, { tag: "author", n: "Ada Lovelace" });
+});
+
+test("dispatch Community directory views and immutable person details", async () => {
+	assert.deepEqual(await at("/people"), { tag: "people" });
+	assert.deepEqual(await at("/people?view=contributors&q=Ada"), { tag: "people" });
+	assert.deepEqual(await at("/people?view=accounts&q=Ada"), { tag: "accounts" });
+	assert.deepEqual(await at("/people/person%2042"), { tag: "person", n: "person 42" });
+	assert.equal(authors.viewPeople.mock.calls.length, 2);
+	assert.equal(accounts.viewAccounts.mock.calls.length, 1);
 });
 
 /* ---- dispatch: tools --------------------------------------------------- */
