@@ -89,6 +89,12 @@ if [ -x "$VENV_PY" ]; then
 	# touched nothing real. --require-configured-db makes that fail loudly.
 	echo "Running data migrations ..."
 	run_with_tool_env "$REPO_DIR/proxy/migrate.py --require-configured-db"
+	# Publish a complete account projection before the new UI can serve it. The
+	# sync is resumable, and it retains the last complete generation if Toolhub
+	# fails or its reported count changes during the cycle. A failed initial
+	# refresh aborts before restart, leaving the previous release serving.
+	echo "Refreshing official Toolhub account projection ..."
+	run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
 	"$VENV_PY" "$REPO_DIR/tools/build_changelog.py"

@@ -86,15 +86,15 @@ export const EXPERIMENTS = [
 				name: t("experiments.operationalViewsName", "Members, crawler history, and audit logs"),
 				what: t(
 					"experiments.operationalViewsWhat",
-					"Read Toolhub members, crawler run history, and catalog audit activity."
+					"Read projected official Toolhub accounts, crawler run history, and catalog audit activity."
 				),
 				current: t(
 					"experiments.operationalViewsCurrent",
 					"These parity views read official Toolhub endpoints and merge Evolved activity only for local write history where relevant."
 				),
 				need: t("experiments.operationalViewsNeed", "GET /api/users/, /api/crawler/runs/, and /api/auditlogs/"),
-				tryHref: "/members",
-				tryLabel: t("experiments.operationalViewsTry", "Open members")
+				tryHref: "/people",
+				tryLabel: t("experiments.operationalViewsTry", "Open community directory")
 			},
 			{
 				name: t("experiments.toolMapName", "Tool map and related tools"),

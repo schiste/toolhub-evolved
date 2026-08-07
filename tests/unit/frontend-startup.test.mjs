@@ -21,6 +21,7 @@ test("router loads high-cost feature routes as their own chunks", () => {
 	for (const specifier of [
 		"./recent.js",
 		"./members.js",
+		"./accounts.js",
 		"./crawler.js",
 		"./audit.js",
 		"./account-settings.js",

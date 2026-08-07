@@ -299,37 +299,44 @@ test("viewAuthor explains unresolved labels without inventing a person link", as
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
-test("viewPeople separates resolved profiles from unresolved attributions", async () => {
+test("viewPeople unifies resolved people, official accounts, and unresolved attributions", async () => {
 	h.backendGetJson.mockResolvedValueOnce({
-		count: 1,
+		count: 3,
 		page: 1,
 		pageSize: 24,
 		pageCount: 1,
+		counts: { people: 1, accounts: 1, unresolvedAttributions: 1 },
+		accountSync: { status: "ready", complete: true },
 		results: [
 			{
-				id: "person-1",
-				displayName: "Ada",
-				identityQuality: "stable_id",
-				profile: {},
-				activity: { relatedToolCount: 3 },
-				relationshipSummary: {
-					types: ["author", "maintainer"],
-					verifiedTypes: ["maintainer"]
+				kind: "person",
+				person: {
+					id: "person-1",
+					displayName: "Ada",
+					identityQuality: "stable_id",
+					profile: {},
+					activity: { relatedToolCount: 3 },
+					relationshipSummary: {
+						types: ["author", "maintainer"],
+						verifiedTypes: ["maintainer"]
+					}
+				},
+				identityEvidence: { officialToolhubAccount: true, wikimediaIdentity: true },
+				officialAccountMatches: [{ id: "42", username: "AdaToolhub" }],
+				matchBasis: ["account", "identity"]
+			},
+			{
+				kind: "account",
+				account: { id: "99", username: "Official Only", identityLinkStatus: "unlinked" }
+			},
+			{
+				kind: "unresolved_attribution",
+				attribution: {
+					label: "Magnus Manske",
+					identityStatus: "unresolved_attribution",
+					toolCount: 50,
+					evidenceCount: 50
 				}
-			}
-		]
-	});
-	h.backendGetJson.mockResolvedValueOnce({
-		count: 1,
-		page: 1,
-		pageSize: 10,
-		pageCount: 1,
-		results: [
-			{
-				label: "Magnus Manske",
-				identityStatus: "unresolved_attribution",
-				toolCount: 50,
-				evidenceCount: 50
 			}
 		]
 	});
@@ -337,21 +344,23 @@ test("viewPeople separates resolved profiles from unresolved attributions", asyn
 	const view = await viewPeople();
 
 	assert.match(view.html, /href="\/people\/person-1"/);
-	assert.match(view.html, /Resolved profiles/);
-	assert.match(view.html, /Showing 1–1 of 1 people/);
-	assert.match(view.html, /Identity backed by a stable account ID/);
-	assert.match(view.html, /Verified: Maintainer/);
-	assert.match(view.html, /Attributions awaiting identity evidence/);
+	assert.match(view.html, /Showing 1–3 of 3 results/);
+	assert.match(view.html, /Official Toolhub account/);
+	assert.match(view.html, /Wikimedia identity matched by stable ID/);
+	assert.match(view.html, /Listed Author/);
+	assert.match(view.html, /Verified Maintainer relationship/);
+	assert.match(view.html, /href="\/people\?account=99"/);
+	assert.match(view.html, /No stable public person or tool relationship is linked yet/);
 	assert.match(view.html, /Magnus Manske/);
 	assert.match(view.html, /50 tools · 50 observations/);
-	assert.match(view.html, /Identity unresolved/);
+	assert.match(view.html, /Unverified attribution — name-only evidence/);
 	assert.doesNotMatch(view.html, /href="[^"]*Magnus/);
 });
 
 test("peopleDirectoryState validates and restores shareable URL state", () => {
 	const state = peopleDirectoryState(
 		new URLSearchParams(
-			"q=Magnus+Manske&page=3&page_size=48&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name&attribution_page=2"
+			"q=Magnus+Manske&page=3&page_size=48&role=maintainer&verification=verified&activity=active&project=wikidata.org&ordering=name&contributor=observed"
 		)
 	);
 
@@ -364,7 +373,8 @@ test("peopleDirectoryState validates and restores shareable URL state", () => {
 		activity: "active",
 		project: "wikidata.org",
 		ordering: "name",
-		attributionPage: 2
+		contributor: true,
+		accountId: ""
 	});
 	assert.deepEqual(peopleDirectoryState(new URLSearchParams("page=0&page_size=999&role=admin&ordering=random")), {
 		q: "",
@@ -375,7 +385,8 @@ test("peopleDirectoryState validates and restores shareable URL state", () => {
 		activity: "",
 		project: "",
 		ordering: "relevance",
-		attributionPage: 1
+		contributor: false,
+		accountId: ""
 	});
 });
 
@@ -396,7 +407,7 @@ test("viewPeople hydrates filters from the URL and sends the complete API query"
 	assert.match(view.html, /name="project" value="wikidata.org"/);
 	assert.match(view.html, /option value="name" selected/);
 	assert.equal(h.backendGetJson.mock.calls.length, 1);
-	assert.match(h.backendGetJson.mock.calls[0][0], /^\/v1\/people\/\?/);
+	assert.match(h.backendGetJson.mock.calls[0][0], /^\/v1\/community\/\?/);
 	assert.match(h.backendGetJson.mock.calls[0][0], /q=Magnus\+Manske/);
 	assert.match(h.backendGetJson.mock.calls[0][0], /page=2/);
 	assert.match(h.backendGetJson.mock.calls[0][0], /role=maintainer/);
@@ -444,8 +455,51 @@ test("people directory renders retryable errors instead of remaining in a loadin
 	const view = await viewPeople();
 
 	assert.match(view.html, /role="alert"/);
-	assert.match(view.html, /People search could not be loaded/);
+	assert.match(view.html, /Community search could not be loaded/);
 	assert.match(view.html, /Retry search/);
-	assert.match(view.html, /Unresolved attributions could not be loaded/);
 	assert.doesNotMatch(view.html, /Searching…/);
+});
+
+test("contributors view requests eligibility and explains each evidence basis", async () => {
+	window.history.replaceState({}, "", "/people?view=contributors&q=Ada");
+	h.backendGetJson.mockResolvedValueOnce({
+		count: 1,
+		page: 1,
+		pageSize: 24,
+		pageCount: 1,
+		counts: { people: 1, accounts: 0, unresolvedAttributions: 0 },
+		accountSync: { status: "ready", complete: true },
+		results: [
+			{
+				kind: "person",
+				person: {
+					id: "person-ada",
+					displayName: "Ada",
+					identityQuality: "stable_id",
+					profile: {},
+					activity: { relatedToolCount: 1 },
+					relationshipSummary: { types: ["catalog_actor"], verifiedTypes: [] },
+					contributor: {
+						eligible: true,
+						bases: ["canonical_catalog_actor", "approved_public_activity"]
+					}
+				},
+				identityEvidence: { officialToolhubAccount: true },
+				matchBasis: ["identity"]
+			}
+		]
+	});
+	const view = await viewPeople();
+
+	assert.equal(h.backendGetJson.mock.calls.length, 1, "contributors do not request unresolved labels");
+	assert.match(h.backendGetJson.mock.calls[0][0], /contributor=observed/);
+	assert.match(view.html, /Community directory/);
+	assert.match(view.html, /Observed contributors/);
+	assert.match(view.html, /Observed canonical Toolhub catalog activity/);
+	assert.match(view.html, /Approved public contribution activity/);
+	assert.match(view.html, /option value="observed" selected/);
+	document.body.innerHTML = view.html;
+	view.mount();
+	assert.equal(new URLSearchParams(location.search).get("view"), null);
+	assert.equal(new URLSearchParams(location.search).get("contributor"), "observed");
 });

@@ -403,6 +403,9 @@ def main(argv: list[str] | None = None) -> int:
         kwargs["pages_per_run"] = args.pages
     summary = runner(**kwargs)
     sys.stdout.write("account-sync: " + " ".join(f"{key}={value}" for key, value in summary.items()) + "\n")
+    if args.complete and not summary.get("completed"):
+        sys.stderr.write("account-sync: complete generation was not obtained\n")
+        return 1
     return 0
 
 

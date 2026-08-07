@@ -849,6 +849,16 @@ export async function viewApiDocs() {
 				<li><strong>${t("static.apiDocs.exampleCrawlerRuns", "Crawler runs")}</strong><br><code>GET /api/crawler/runs/?page_size=5</code></li>
 				<li><strong>${t("static.apiDocs.exampleAuditLog", "Audit log")}</strong><br><code>GET /api/auditlogs/?page_size=5</code></li>
 			</ul>
+			<h2 class="contribute__h2">${t("static.apiDocs.communityDirectory", "Community directory API")}</h2>
+			<div class="prose">
+				<p>${t("static.apiDocs.communityContract", "The public directory is one search over resolved people, official Toolhub accounts, related tools, and unresolved name-only attributions. Stable identifiers may connect evidence; usernames and display names never merge identities automatically.")}</p>
+				<ul>
+					<li>${tWithElements("static.apiDocs.unifiedCommunityEndpoint", "$1 is the product-facing ranked and paginated search. It accepts name, username, or tool text plus relationship, verification, activity, project, contributor, and ordering filters; each result states whether it is a person, an account-only match, or an unresolved attribution.", { html: code("GET /v1/community/") })}</li>
+					<li>${tWithElements("static.apiDocs.peopleEndpoint", "$1 searches public identities with pagination, relationship, verification, activity, project, and ordering filters. Add $2 to require contributor eligibility; each result explains its evidence basis.", { html: code("GET /v1/people/") }, { html: code("contributor=observed") })}</li>
+					<li>${tWithElements("static.apiDocs.accountsEndpoint", "$1 searches the complete local official-account projection by substring, exact group, name or recent ordering, and page. The response includes total count and projection sync state.", { html: code("GET /v1/accounts/") })}</li>
+					<li>${tWithElements("static.apiDocs.accountDetailEndpoint", "$1 returns official registration facts. A $2 appears only after an immutable Toolhub user id or Wikimedia global user id match; usernames never create that link.", { html: code("GET /v1/accounts/{toolhub_user_id}/") }, { html: code("personId") })}</li>
+				</ul>
+			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.liveProxyEndpoints", "Live proxy endpoints")}</h2>
 			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The live endpoint index is unavailable.")}</p>`}</div>
 		</div>`,

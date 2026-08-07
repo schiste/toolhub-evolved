@@ -518,51 +518,27 @@ test("viewRecent: a response with no results array also shows the placeholder", 
 	assert.match(view.html, /No recent changes\./);
 });
 
-/* ---- viewMembers ------------------------------------------------------- */
+/* ---- legacy viewMembers alias ----------------------------------------- */
 
-test("viewMembers: renders cards with groups, the Member fallback and a plural count", async () => {
-	api.apiGet.mockResolvedValue({
-		count: 2,
-		results: [
-			{ username: "Bob", groups: ["admin", "bots"], date_joined: ISO },
-			{ username: "Cleo", groups: [] }
-		]
+test("viewMembers renders the unified directory and replaces the legacy URL", async () => {
+	window.history.replaceState({}, "", "/members");
+	api.backendGetJson.mockResolvedValue({
+		count: 0,
+		page: 1,
+		pageSize: 24,
+		pageCount: 1,
+		results: [],
+		counts: { people: 0, accounts: 0, unresolvedAttributions: 0 },
+		accountSync: { status: "ready", complete: true }
 	});
 	const view = await viewMembers();
-	assert.equal(view.title, "Members — Toolhub");
-	assert.deepEqual(api.apiGet.mock.calls[0], ["/users/", { page_size: "60" }]);
-	assert.match(view.html, /<div class="mcard__n" dir="auto">Bob<\/div>/);
-	assert.match(view.html, /admin, bots · joined <time/);
-	// Cleo has an empty groups array → the "Member" fallback (kills && and length > 0).
-	assert.match(view.html, /<div class="mcard__n" dir="auto">Cleo<\/div>/);
-	assert.match(view.html, /Member · joined /);
-	assert.match(view.html, /<span class="avatar /);
-	assert.match(view.html, /<p class="page__intro">2 registered Wikimedians contribute to the catalog\.<\/p>/);
-	// Two cards joined with "" → Bob's card closes directly onto Cleo's (kills the .join("")).
-	assert.match(view.html, /<\/div><\/div><div class="mcard">/);
-});
-
-test("viewMembers: a response with no results array renders an empty grid", async () => {
-	// data.results is undefined here (not the [] from .catch) → the `|| []` fallback must
-	// stay empty; an injected non-empty array would render a phantom card.
-	api.apiGet.mockResolvedValue({ count: 0 });
-	const view = await viewMembers();
-	assert.match(view.html, /<div class="mgrid"><\/div>/);
-});
-
-test("viewMembers: an API failure shows zero members and an empty grid", async () => {
-	api.apiGet.mockRejectedValue(new Error("nope"));
-	const view = await viewMembers();
-	assert.match(view.html, /<p class="page__intro">0 registered Wikimedians contribute to the catalog\.<\/p>/);
-	assert.match(view.html, /<div class="mgrid"><\/div>/);
-});
-
-test("viewMembers: a single member uses the singular label", async () => {
-	api.apiGet.mockResolvedValue({ count: 1, results: [{ username: "Solo" }] });
-	const view = await viewMembers();
-	// The whole-message plural agrees the verb too; the old fragment join could
-	// only swap the noun, producing "1 registered Wikimedian contribute".
-	assert.match(view.html, /<p class="page__intro">1 registered Wikimedian contributes to the catalog\.<\/p>/);
+	assert.equal(view.title, "Community directory — Toolhub");
+	assert.deepEqual(api.backendGetJson.mock.calls[0], ["/v1/community/?page_size=24&ordering=relevance"]);
+	assert.match(view.html, /Community directory/);
+	assert.match(view.html, /Search people, usernames, and tools in one place/);
+	view.mount();
+	assert.equal(location.pathname, "/people");
+	assert.equal(new URLSearchParams(location.search).get("view"), null);
 });
 
 /* ---- viewCrawler ------------------------------------------------------- */

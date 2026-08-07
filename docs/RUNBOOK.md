@@ -218,6 +218,8 @@ names are:
 | `catalog_curations`                                | Pending/private review; approved evidence public | Reviewer-approved local corrections only. Proposals never mutate canonical Toolhub data and do not affect projections before approval.                                                 |
 | `tool_asset_cache`                                 | Anonymous public derived icon metadata           | Rebuildable index for size/type-checked icons stored under `$TOOLHUB_ASSET_CACHE_DIR`; web reads never fetch remote URLs and missing files fall back safely.                           |
 | `tool_catalog_sync_state`                          | Operational cursor state                         | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                                         |
+| `toolhub_account_projection`                       | Anonymous official account projection            | Complete local projection of accounts registered with official Toolhub, keyed by immutable Toolhub user id; it is deliberately separate from Evolved-authorized `users`.               |
+| `toolhub_account_sync_state`                       | Operational cursor state                         | Stores the account generation, next page, completed cycles, official count, and last error; partial generations never prune the last complete directory.                               |
 | `maintainer_backfill_state`                        | Operational cursor state                         | Stores the paced Toolsadmin maintainer backfill cursor, cycle counters, and failures; safe to reset to restart the derived maintainer projection.                                      |
 | `tool_owner_cache`                                 | Anonymous public derived owner cache             | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                                         |
 | `users`                                            | Private account mapping                          | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                                     |
@@ -332,6 +334,45 @@ the Wikimedia CentralAuth global user id are stable account links. Toolhub,
 Toolforge developer, and wiki usernames are case-insensitive mutable handles.
 Display-name observations are aggregated for discovery but do not receive a
 public person id.
+
+The Community directory presents one search contract over three evidence classes:
+
+- A **person** result is a public identity backed by stable evidence and
+  connected to a tool relationship or public profile. An official account is
+  folded into this result only through immutable Toolhub or Wikimedia ids.
+- An **account-only** result is registered with official Toolhub but has no
+  safely linked public person or tool relationship. Registration alone does
+  not demonstrate catalog contribution.
+- An **unresolved attribution** is a display label observed in tool metadata.
+  It remains searchable but never receives a public person id merely because
+  its text resembles a person or account name.
+
+`GET /v1/community/` is the product-facing composition endpoint. It searches
+person names and handles, official Toolhub usernames, related tool names, and
+unresolved labels in one ranked result stream. It supports relationship,
+verification, activity, project, contributor, ordering, and pagination
+parameters. `contributor=observed` filters rather than switching directories;
+eligible people include their canonical catalog-actor or approved public
+activity basis. Result badges remain scoped: account identity evidence does not
+verify a tool relationship, and a verified relationship does not certify every
+aspect of a person's identity.
+
+`GET /v1/accounts/` reads only the complete local account projection and
+supports `q`, `group`, `ordering=name|recent`, `page`, and `page_size`. Its
+`count` covers the filtered projection, and its `sync` object distinguishes a
+ready directory, a usable stale generation, an in-progress first build, and an
+unavailable projection. `GET /v1/accounts/<toolhub_user_id>/` returns account
+registration facts. An account includes `personId` only when its immutable
+Toolhub user id or Wikimedia CentralAuth global user id identifies exactly one
+public person. Usernames are never an automatic cross-link.
+
+The `account-sync` job walks official `/api/users/` pages ordered by immutable
+`id`, upserts every page under a generation, and checkpoints its next page.
+Only a final page whose distinct generation rows equal Toolhub's reported total
+may remove records absent from the new generation. Network failures,
+interruptions, count mismatches, and lock contention preserve the last complete
+generation. Deployments run `account_sync.py --complete` before restarting, and
+the six-hour Toolforge job repeats that complete, resumable refresh.
 
 Historical reconciliation is deterministic and rerunnable. Run
 `python proxy/people_reconcile.py` for a database-backed dry-run, inspect the

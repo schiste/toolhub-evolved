@@ -22,6 +22,7 @@ from backend.v1_accounts import v1_accounts_bp
 from backend.v1_author_keys import v1_author_keys_bp
 from backend.v1_catalog import v1_catalog_bp
 from backend.v1_claims import v1_claims_bp
+from backend.v1_community import v1_community_bp
 from backend.v1_crawler import v1_crawler_bp
 from backend.v1_me import v1_me_bp
 from backend.v1_moderation import v1_moderation_bp
@@ -90,6 +91,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(v1_write_bp)
     app.register_blueprint(v1_crawler_bp)
     app.register_blueprint(v1_claims_bp)
+    app.register_blueprint(v1_community_bp)
     app.register_blueprint(v1_accounts_bp)
     app.register_blueprint(v1_people_bp)
     app.register_blueprint(v1_user_bp)

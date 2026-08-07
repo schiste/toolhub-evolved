@@ -105,7 +105,7 @@ const S = {
 					<h2>Discover</h2>
 					<a href="/search">Browse tools</a>
 					<a href="/lists">Lists</a>
-					<a href="/members">Members</a>
+					<a href="/people">People</a>
 					<a href="/recent">Recent changes</a>
 				</nav>
 					<nav class="footer__col" aria-label="Maintain">

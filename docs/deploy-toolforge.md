@@ -72,10 +72,13 @@ It activates fully once configured:
    roles without granting them any additional official Toolhub rights.
 2. Load the scheduled jobs (hourly crawler, six-hourly Toolhub catalog
    `toolinfo.json` discovery, six-hourly official crawler source indexing,
-   minutely cache invalidator/prewarmer, nightly backup):
+   six-hourly complete official-account projection, minutely cache
+   invalidator/prewarmer, nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
-   Deploys also run one cache invalidation/prewarm pass before the webservice
-   restart, so the first user after a deploy should hit warmed shared cache.
+   Deploys also finish a safe account-projection generation and run one cache
+   invalidation/prewarm pass before the webservice restart. If the account
+   refresh fails, the deploy stops before restart and the last complete account
+   generation remains intact.
 
 Unconfigured, the site still runs — live read interface plus signed-out read-only
 mode, with `/oauth/login` answering 503 and official write endpoints returning
