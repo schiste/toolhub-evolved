@@ -165,3 +165,13 @@ def test_sync_limits_keep_requests_bounded_and_paced():
     assert account_sync._bounded_pages(999) == account_sync.MAX_PAGES_PER_RUN
     assert account_sync._bounded_page_size(999) == account_sync.MAX_PAGE_SIZE
     assert account_sync._bounded_interval(0) == account_sync.DEFAULT_MIN_INTERVAL_SECONDS
+
+
+def test_deploy_and_scheduled_job_require_a_complete_account_generation():
+    jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
+    deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")
+
+    assert "name: account-sync" in jobs
+    assert "proxy/account_sync.py --complete" in jobs
+    assert 'timeout: 300' in jobs
+    assert 'run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"' in deploy
