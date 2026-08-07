@@ -335,16 +335,27 @@ Toolforge developer, and wiki usernames are case-insensitive mutable handles.
 Display-name observations are aggregated for discovery but do not receive a
 public person id.
 
-The Community directory intentionally exposes three different contracts:
+The Community directory presents one search contract over three evidence classes:
 
-- **People** are public identities backed by stable evidence and connected to a
-  tool relationship or public profile.
-- **Accounts** are accounts registered with official Toolhub. Registration
-  alone does not demonstrate catalog contribution.
-- **Contributors** are People with observed canonical Toolhub catalog-actor
-  evidence or approved public Evolved contribution activity. The response
-  includes the evidence basis; this is not a claim that every historical
-  Toolhub contribution has been indexed.
+- A **person** result is a public identity backed by stable evidence and
+  connected to a tool relationship or public profile. An official account is
+  folded into this result only through immutable Toolhub or Wikimedia ids.
+- An **account-only** result is registered with official Toolhub but has no
+  safely linked public person or tool relationship. Registration alone does
+  not demonstrate catalog contribution.
+- An **unresolved attribution** is a display label observed in tool metadata.
+  It remains searchable but never receives a public person id merely because
+  its text resembles a person or account name.
+
+`GET /v1/community/` is the product-facing composition endpoint. It searches
+person names and handles, official Toolhub usernames, related tool names, and
+unresolved labels in one ranked result stream. It supports relationship,
+verification, activity, project, contributor, ordering, and pagination
+parameters. `contributor=observed` filters rather than switching directories;
+eligible people include their canonical catalog-actor or approved public
+activity basis. Result badges remain scoped: account identity evidence does not
+verify a tool relationship, and a verified relationship does not certify every
+aspect of a person's identity.
 
 `GET /v1/accounts/` reads only the complete local account projection and
 supports `q`, `group`, `ordering=name|recent`, `page`, and `page_size`. Its
