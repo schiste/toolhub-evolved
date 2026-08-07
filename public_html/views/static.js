@@ -899,6 +899,15 @@ export async function viewApiDocs() {
 				<li><strong>${t("static.apiDocs.exampleCrawlerRuns", "Crawler runs")}</strong><br><code>GET /api/crawler/runs/?page_size=5</code></li>
 				<li><strong>${t("static.apiDocs.exampleAuditLog", "Audit log")}</strong><br><code>GET /api/auditlogs/?page_size=5</code></li>
 			</ul>
+			<h2 class="contribute__h2">${t("static.apiDocs.communityDirectory", "Community directory API")}</h2>
+			<div class="prose">
+				<p>${t("static.apiDocs.communityContract", "People are stable-evidence public identities; Accounts are registrations in official Toolhub; Contributors are People with observed canonical catalog activity or approved public contribution activity. These sets deliberately overlap without being interchangeable.")}</p>
+				<ul>
+					<li>${tWithElements("static.apiDocs.peopleEndpoint", "{endpoint} searches public identities with pagination, relationship, verification, activity, project, and ordering filters. Add {contributor} to require contributor eligibility; each result explains its evidence basis.", { endpoint: code("GET /v1/people/"), contributor: code("contributor=observed") })}</li>
+					<li>${tWithElements("static.apiDocs.accountsEndpoint", "{endpoint} searches the complete local official-account projection by substring, exact group, name or recent ordering, and page. The response includes total count and projection sync state.", { endpoint: code("GET /v1/accounts/") })}</li>
+					<li>${tWithElements("static.apiDocs.accountDetailEndpoint", "{endpoint} returns official registration facts. A {personId} appears only after an immutable Toolhub user id or Wikimedia global user id match; usernames never create that link.", { endpoint: code("GET /v1/accounts/{toolhub_user_id}/"), personId: code("personId") })}</li>
+				</ul>
+			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.liveProxyEndpoints", "Live proxy endpoints")}</h2>
 			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The live endpoint index is unavailable.")}</p>`}</div>
 		</div>`,

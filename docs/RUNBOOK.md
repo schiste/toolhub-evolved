@@ -218,6 +218,8 @@ names are:
 | `catalog_curations`                                | Pending/private review; approved evidence public | Reviewer-approved local corrections only. Proposals never mutate canonical Toolhub data and do not affect projections before approval.                                                 |
 | `tool_asset_cache`                                 | Anonymous public derived icon metadata           | Rebuildable index for size/type-checked icons stored under `$TOOLHUB_ASSET_CACHE_DIR`; web reads never fetch remote URLs and missing files fall back safely.                           |
 | `tool_catalog_sync_state`                          | Operational cursor state                         | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                                         |
+| `toolhub_account_projection`                       | Anonymous official account projection            | Complete local projection of accounts registered with official Toolhub, keyed by immutable Toolhub user id; it is deliberately separate from Evolved-authorized `users`.               |
+| `toolhub_account_sync_state`                       | Operational cursor state                         | Stores the account generation, next page, completed cycles, official count, and last error; partial generations never prune the last complete directory.                               |
 | `maintainer_backfill_state`                        | Operational cursor state                         | Stores the paced Toolsadmin maintainer backfill cursor, cycle counters, and failures; safe to reset to restart the derived maintainer projection.                                      |
 | `tool_owner_cache`                                 | Anonymous public derived owner cache             | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                                         |
 | `users`                                            | Private account mapping                          | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                                     |
@@ -332,6 +334,34 @@ the Wikimedia CentralAuth global user id are stable account links. Toolhub,
 Toolforge developer, and wiki usernames are case-insensitive mutable handles.
 Display-name observations are aggregated for discovery but do not receive a
 public person id.
+
+The Community directory intentionally exposes three different contracts:
+
+- **People** are public identities backed by stable evidence and connected to a
+  tool relationship or public profile.
+- **Accounts** are accounts registered with official Toolhub. Registration
+  alone does not demonstrate catalog contribution.
+- **Contributors** are People with observed canonical Toolhub catalog-actor
+  evidence or approved public Evolved contribution activity. The response
+  includes the evidence basis; this is not a claim that every historical
+  Toolhub contribution has been indexed.
+
+`GET /v1/accounts/` reads only the complete local account projection and
+supports `q`, `group`, `ordering=name|recent`, `page`, and `page_size`. Its
+`count` covers the filtered projection, and its `sync` object distinguishes a
+ready directory, a usable stale generation, an in-progress first build, and an
+unavailable projection. `GET /v1/accounts/<toolhub_user_id>/` returns account
+registration facts. An account includes `personId` only when its immutable
+Toolhub user id or Wikimedia CentralAuth global user id identifies exactly one
+public person. Usernames are never an automatic cross-link.
+
+The `account-sync` job walks official `/api/users/` pages ordered by immutable
+`id`, upserts every page under a generation, and checkpoints its next page.
+Only a final page whose distinct generation rows equal Toolhub's reported total
+may remove records absent from the new generation. Network failures,
+interruptions, count mismatches, and lock contention preserve the last complete
+generation. Deployments run `account_sync.py --complete` before restarting, and
+the six-hour Toolforge job repeats that complete, resumable refresh.
 
 Historical reconciliation is deterministic and rerunnable. Run
 `python proxy/people_reconcile.py` for a database-backed dry-run, inspect the
