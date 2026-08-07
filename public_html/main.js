@@ -9,10 +9,10 @@ import {
 	measureFrontendTiming,
 	observeFirstContentPaint
 } from "./lib/core/diagnostics.js";
+import { AVAILABLE_LOCALES } from "./lib/core/available-locales.js";
 import {
 	appLocale,
 	applyLocaleAttrs,
-	AVAILABLE_LOCALES,
 	DEFAULT_LOCALE,
 	isPseudoLocale,
 	setLocale,
@@ -120,12 +120,16 @@ function localizeShell() {
 	}
 	setShellHtml(
 		".footer__legal",
-		tWithElements("shell.footer.legal", "Catalog content under {license} · {version}", {
-			license:
-				'<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>',
-			version:
-				'<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>'
-		})
+		tWithElements(
+			"shell.footer.legal",
+			"Catalog content under $1 · $2",
+			{
+				html: '<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>'
+			},
+			{
+				html: '<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>'
+			}
+		)
 	);
 	syncCommandPaletteChrome();
 }
@@ -173,9 +177,11 @@ function toggleFavorite(name) {
 		officialWrite(on ? "POST" : "DELETE", path, on ? { name } : undefined).catch((error) => {
 			// Keep the local overlay responsive, but explain that official sync failed.
 			showApiToast(
-				t("favorites.syncFailed", "Favorite saved locally, but official Toolhub sync failed: {msg}", {
-					msg: backendErrorExplanation(error)
-				}),
+				t(
+					"favorites.syncFailed",
+					"Favorite saved locally, but official Toolhub sync failed: $1",
+					backendErrorExplanation(error)
+				),
 				"warning"
 			);
 			hideApiToastSoon(6000);

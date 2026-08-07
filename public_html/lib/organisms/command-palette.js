@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, esc } from "../core/dom.js";
-import { countLabel, t } from "../core/i18n.js";
+import { fmt, t } from "../core/i18n.js";
 import { navigateTo } from "../core/routing.js";
 import { icon } from "../atoms/icon.js";
 
@@ -217,7 +217,7 @@ export function commandItems(query) {
 		? [
 				{
 					id: "search",
-					title: t("commandPalette.searchFor", "Search Toolhub for “{query}”", { query: clean }),
+					title: t("commandPalette.searchFor", "Search Toolhub for “$1”", clean),
 					description: t("commandPalette.searchForDesc", "Open full search results."),
 					href: `/search?q=${encodeURIComponent(clean)}`,
 					iconName: "search",
@@ -255,7 +255,7 @@ export function syncCommandPaletteChrome() {
 	$("[data-command-shortcut]")?.replaceChildren(shortcut);
 	$("[aria-controls='command-palette']")?.setAttribute(
 		"aria-label",
-		t("commandPalette.openWithShortcut", "Search tools and actions ({shortcut})", { shortcut })
+		t("commandPalette.openWithShortcut", "Search tools and actions ($1)", shortcut)
 	);
 }
 
@@ -296,10 +296,11 @@ function render() {
 		)
 		.join("");
 	if (live) {
-		live.textContent = countLabel(
-			currentItems.length,
-			t("commandPalette.resultOne", "result"),
-			t("commandPalette.resultOther", "results")
+		live.textContent = t(
+			"commandPalette.resultCount",
+			"$1 {{PLURAL:$2|result|results}}",
+			fmt(currentItems.length),
+			currentItems.length
 		);
 	}
 }

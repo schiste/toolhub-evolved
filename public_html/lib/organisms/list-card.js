@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc } from "../core/dom.js";
-import { countLabel, t } from "../core/i18n.js";
+import { fmt, t } from "../core/i18n.js";
 import { listHref } from "../core/routing.js";
 import { SYNC_STATUS } from "../core/store.js";
 import { avatar } from "../atoms/avatar.js";
@@ -27,10 +27,10 @@ export function listCardData(l) {
  * @returns {string}
  */
 export function listCard(l) {
-	const count = countLabel(l.toolCount, t("listCard.toolOne", "tool"), t("listCard.toolOther", "tools"));
+	const count = t("listCard.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(l.toolCount), l.toolCount);
 	const status = l.local ? syncBadge(l) : "";
 	return `
-	<a class="lcard" href="${listHref(l.id)}" aria-label="${t("listCard.linkLabel", "{title} list, {count}", { title: esc(l.title), count: esc(count) })}">
+	<a class="lcard" href="${listHref(l.id)}" aria-label="${t("listCard.linkLabel", "$1 list, $2", esc(l.title), esc(count))}">
 		${avatar(l.title)}
 		<div class="lcard__body">
 			<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span>${status ? ` ${status}` : ""}</div>

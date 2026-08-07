@@ -29,8 +29,8 @@ function maintainerByline(tool, evolvedSummary) {
 	const maintainer = tool.maintainer || t("toolCard.unknownMaintainer", "Unknown");
 	const hasOwner = Boolean(tool.maintainer) && maintainer !== t("toolCard.unknownMaintainer", "Unknown");
 	const label = confirmed
-		? t("toolCard.maintainerConfirmed", "{name}, confirmed maintainer", { name: maintainer })
-		: t("toolCard.maintainerUnconfirmed", "{name}, maintainer not confirmed yet", { name: maintainer });
+		? t("toolCard.maintainerConfirmed", "$1, confirmed maintainer", maintainer)
+		: t("toolCard.maintainerUnconfirmed", "$1, maintainer not confirmed yet", maintainer);
 	const owner = hasOwner
 		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-status">${t("toolCard.verifiedMaintainerRelationship", "verified maintainer relationship")}</span>` : ""}</a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;

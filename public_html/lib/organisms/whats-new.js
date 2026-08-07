@@ -69,7 +69,7 @@ function deploymentHTML(deployment) {
 		: "";
 	return `<section class="whats-new__deploy" aria-labelledby="whats-new-deploy-${esc(id)}">
 		<div class="whats-new__deploy-head">
-			<div><h3 id="whats-new-deploy-${esc(id)}">${esc(t("whatsNew.deployed", "Deployed {date}", { date: dateLabel(deployment.deployedAt) }))}</h3>
+			<div><h3 id="whats-new-deploy-${esc(id)}">${esc(t("whatsNew.deployed", "Deployed $1", dateLabel(deployment.deployedAt)))}</h3>
 			<p>${esc(t("whatsNew.commit", "Serving commit"))} ${commitLink}</p></div>
 			<span class="whats-new__badge">${esc(t("whatsNew.deploy", "Deploy"))}</span>
 		</div>${userNotes}${technicalNotes}${changeHTML}

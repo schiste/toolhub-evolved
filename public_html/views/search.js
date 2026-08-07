@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
-import { countLabel, fmt, t } from "../lib/core/i18n.js";
+import { fmt, t } from "../lib/core/i18n.js";
 import {
 	apiCached,
 	apiGet,
@@ -280,20 +280,26 @@ export async function viewSearch() {
 	const countHTML =
 		clientStatuses.size > 0
 			? results.length > 0
-				? t("search.showingOnPage", "Showing {count} on this page of {total}", {
-						count: esc(fmt(results.length)),
-						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
-					})
-				: t("search.noVisibleOnPage", "No visible tools on this page of {total}", {
-						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
-					})
+				? t(
+						"search.showingOnPage",
+						"Showing $1 on this page of $2",
+						esc(fmt(results.length)),
+						esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
+					)
+				: t(
+						"search.noVisibleOnPage",
+						"No visible tools on this page of $1",
+						esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
+					)
 			: results.length > 0
-				? t("search.showingRange", "Showing {first}-{last} of {total}", {
-						first: esc(fmt(firstResult)),
-						last: esc(fmt(lastResult)),
-						total: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")))
-					})
-				: esc(countLabel(total, t("search.toolOne", "tool"), t("search.toolOther", "tools")));
+				? t(
+						"search.showingRange",
+						"Showing $1-$2 of $3",
+						esc(fmt(firstResult)),
+						esc(fmt(lastResult)),
+						esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total))
+					)
+				: esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total));
 	const countNotes = [
 		clientStatuses.size > 0 ? t("search.filteredInBrowser", "filtered in your browser") : "",
 		canonicalFallback ? t("search.cachedCanonicalData", "showing saved Toolhub data") : "",
@@ -306,7 +312,7 @@ export async function viewSearch() {
 		"Name (A–Z)"
 	)}</option><option value="complete">${t("search.mostComplete", "Most complete")}</option>`;
 	const pageSizeOpts = PAGE_SIZE_OPTIONS.map(
-		(size) => `<option value="${size}">${t("search.perPage", "{size} per page", { size })}</option>`
+		(size) => `<option value="${size}">${t("search.perPage", "$1 per page", size)}</option>`
 	).join("");
 	const resultsHTML =
 		results.length > 0
@@ -389,7 +395,7 @@ export async function viewSearch() {
 		});
 	}
 	return {
-		title: q ? t("search.docTitleQuery", "“{q}” — Toolhub", { q }) : t("search.docTitle", "Browse tools — Toolhub"),
+		title: q ? t("search.docTitleQuery", "“$1” — Toolhub", q) : t("search.docTitle", "Browse tools — Toolhub"),
 		html,
 		mount
 	};

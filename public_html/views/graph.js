@@ -98,10 +98,7 @@ function updateGroupingOptions(graph, metadata) {
 		option.disabled = !item.enabled;
 		option.title = item.enabled
 			? ""
-			: t("graph.groupCoverage", "{covered} of {total} tools have this metadata", {
-					covered: String(item.covered),
-					total: String(item.total)
-				});
+			: t("graph.groupCoverage", "$1 of $2 tools have this metadata", String(item.covered), String(item.total));
 	}
 }
 
@@ -148,10 +145,7 @@ function graphFilters(nodes) {
 			<option value="">${esc(t("graph.allLanguages", "All languages"))}</option>${languageOptions}
 		</select></label>
 		<span class="graph__filter-count" data-graph-filter-count aria-live="polite">${esc(
-			t("graph.filterCount", "Showing {visible} of {total} tools", {
-				visible: String(nodes.length),
-				total: String(nodes.length)
-			})
+			t("graph.filterCount", "Showing $1 of $2 tools", String(nodes.length), String(nodes.length))
 		)}</span>
 	</div>`;
 }
@@ -200,9 +194,7 @@ export function viewGraph() {
 			const note = /** @type {HTMLElement | null} */ (graph.querySelector("[data-graph-note]"));
 			if (note) {
 				note.textContent = next.truncated
-					? t("graph.truncatedNote", "Showing the {count} best-documented tools.", {
-							count: String(next.nodes.length)
-						})
+					? t("graph.truncatedNote", "Showing the $1 best-documented tools.", String(next.nodes.length))
 					: "";
 				note.hidden = !next.truncated;
 			}

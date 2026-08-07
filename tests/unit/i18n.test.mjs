@@ -63,27 +63,37 @@ test("fmt and compactFmt format en numbers and coerce junk to 0", () => {
 	assert.equal(i18n.compactFmt(null), "0");
 });
 
-test("plural selects the en category and falls back through other/one/empty", () => {
-	assert.equal(i18n.plural(1, { one: "ONE", other: "OTHER" }), "ONE");
-	assert.equal(i18n.plural(2, { one: "ONE", other: "OTHER" }), "OTHER");
-	assert.equal(i18n.plural(-1, { one: "ONE", other: "OTHER" }), "ONE");
-	assert.equal(i18n.plural(2, { one: "ONE" }), "ONE"); // no other => one
-	assert.equal(i18n.plural(2, {}), ""); // nothing => empty
+test("{{PLURAL:}} selects the en category from the message's own forms", () => {
+	const msg = "$1 {{PLURAL:$1|view|views}}";
+	assert.equal(i18n.t("x.p", msg, 1), "1 view");
+	assert.equal(i18n.t("x.p", msg, 5), "5 views");
+	assert.equal(i18n.t("x.p", msg, 0), "0 views");
+	assert.equal(i18n.t("x.p", msg, -1), "-1 view"); // magnitude drives selection
 });
 
-test("countLabel pairs formatted count with the right plural form", () => {
-	assert.equal(i18n.countLabel(1, "view", "views"), "1 view");
-	assert.equal(i18n.countLabel(5, "view", "views"), "5 views");
-	assert.equal(i18n.countLabel(7, "view", "views"), "7 views");
-	assert.equal(i18n.countLabel(0, "view", "views"), "0 views");
-	assert.equal(i18n.countLabel("x", "view", "views"), "0 views");
+test("{{PLURAL:}} degrades to the last form when a message is short of forms", () => {
+	// An English source message read under a locale needing more forms keeps
+	// rendering text; the translation then supplies the missing categories.
+	assert.equal(i18n.t("x.short", "{{PLURAL:$1|only}}", 5), "only");
+	assert.equal(i18n.t("x.empty", "{{PLURAL:$1|}}", 5), "");
 });
 
-test("views combines compact count with the plural noun", () => {
-	assert.equal(i18n.views(1), "1 view");
-	assert.equal(i18n.views(5), "5 views");
-	assert.equal(i18n.views(0), "0 views");
-	assert.equal(i18n.views(1500), "1.5K views");
+test("{{PLURAL:}} honours an explicit N= form ahead of category selection", () => {
+	const msg = "{{PLURAL:$1|0=no views|$1 view|$1 views}}";
+	assert.equal(i18n.t("x.n", msg, 0), "no views");
+	assert.equal(i18n.t("x.n", msg, 1), "1 view");
+	assert.equal(i18n.t("x.n", msg, 9), "9 views");
+});
+
+test("{{bidi:}} isolates an interpolated value from surrounding direction", () => {
+	assert.equal(i18n.t("x.b", "{{bidi:$1}} tools", "עברית"), "⁨עברית⁩ tools");
+});
+
+test("a parameter value is never re-read as message syntax", () => {
+	// Values are substituted after parsing, so pipes and braces in live API data
+	// cannot corrupt a PLURAL or inject a magic word.
+	assert.equal(i18n.t("x.pipe", "$1 {{PLURAL:$2|item|items}}", "a|b", 2), "a|b items");
+	assert.equal(i18n.t("x.brace", "$1", "{{PLURAL:$1|x|y}}"), "{{PLURAL:$1|x|y}}");
 });
 
 test("relativeTime walks day/month/year tiers around a fixed now", () => {

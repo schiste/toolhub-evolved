@@ -130,7 +130,7 @@ export function viewDeveloperSettings() {
 		})}`;
 	const signedToolinfoBody = `<div class="prose account-keys__schema-note">
 		<h3>${t("developerSettings.toolinfoSchemaHeading", "toolinfo.json reference")}</h3>
-		<p>${tWithElements("developerSettings.toolinfoSchemaBody", "Toolhub validates crawler input against {version}. Start with the required fields, add _schema for the version marker, then build a signing payload from the exact object you publish.", { version: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
+		<p>${tWithElements("developerSettings.toolinfoSchemaBody", "Toolhub validates crawler input against $1. Start with the required fields, add _schema for the version marker, then build a signing payload from the exact object you publish.", { html: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
 		<pre tabindex="0" aria-label="${t("developerSettings.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
 		<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoSchema", "Open official schema source")} ${icon("external")}</a><br>
 		<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="noopener nofollow">${t("developerSettings.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>
@@ -200,9 +200,11 @@ export function viewDeveloperSettings() {
 				setDeveloperResult(t("developerSettings.keyRegistered", "Public key registered."), "ok");
 			} catch (error) {
 				setDeveloperResult(
-					t("developerSettings.keyRegisterFailed", "Key registration failed: {msg}", {
-						msg: backendErrorExplanation(error)
-					}),
+					t(
+						"developerSettings.keyRegisterFailed",
+						"Key registration failed: $1",
+						backendErrorExplanation(error)
+					),
 					"err"
 				);
 			}
@@ -219,9 +221,7 @@ export function viewDeveloperSettings() {
 				setDeveloperResult(t("developerSettings.keyRevokedOk", "Public key revoked."), "ok");
 			} catch (error) {
 				setDeveloperResult(
-					t("developerSettings.keyRevokeFailed", "Key revocation failed: {msg}", {
-						msg: backendErrorExplanation(error)
-					}),
+					t("developerSettings.keyRevokeFailed", "Key revocation failed: $1", backendErrorExplanation(error)),
 					"err"
 				);
 			}
@@ -248,9 +248,11 @@ export function viewDeveloperSettings() {
 				setDeveloperResult(t("developerSettings.payloadReady", "Canonical payload ready."), "ok");
 			} catch (error) {
 				setDeveloperResult(
-					t("developerSettings.payloadFailed", "Payload generation failed: {msg}", {
-						msg: backendErrorExplanation(error)
-					}),
+					t(
+						"developerSettings.payloadFailed",
+						"Payload generation failed: $1",
+						backendErrorExplanation(error)
+					),
 					"err"
 				);
 			}

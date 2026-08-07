@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc } from "../lib/core/dom.js";
-import { countLabel, t, timeTag } from "../lib/core/i18n.js";
+import { fmt, t, timeTag } from "../lib/core/i18n.js";
 import { apiGet } from "../lib/core/api.js";
 import { avatar } from "../lib/atoms/avatar.js";
 
@@ -21,7 +21,7 @@ export async function viewMembers() {
 		html: `
 		<div class="container page">
 			<h1 class="page__title">${t("parity.members", "Members")}</h1>
-			<p class="page__intro">${t("parity.membersCount", "{count} contribute to the catalog.", { count: esc(countLabel(data.count || 0, t("parity.registeredWikimedianOne", "registered Wikimedian"), t("parity.registeredWikimedianOther", "registered Wikimedians"))) })}</p>
+			<p class="page__intro">${t("parity.membersCount", "$1 {{PLURAL:$2|registered Wikimedian contributes|registered Wikimedians contribute}} to the catalog.", fmt(data.count || 0), data.count || 0)}</p>
 			<div class="mgrid">${cards}</div>
 		</div>`
 	};

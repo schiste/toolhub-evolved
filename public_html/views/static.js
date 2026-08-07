@@ -15,7 +15,7 @@ import { icon } from "../lib/atoms/icon.js";
 export function prosePage(title, bodyHtml, modifier = "") {
 	const className = modifier ? ` prose--${modifier}` : "";
 	return {
-		title: t("static.pageTitle", "{title} — Toolhub", { title }),
+		title: t("static.pageTitle", "$1 — Toolhub", title),
 		html: `<div class="container page"><article class="prose prose--page${className}"><h1>${esc(title)}</h1>${bodyHtml}</article></div>`
 	};
 }
@@ -113,11 +113,9 @@ function healthPublicDimensionsTable() {
 				),
 				tWithElements(
 					"static.healthScore.sourceHealthSource",
-					"Uses {field} from the latest approved {report} report.",
-					{
-						field: code("healthCore.score"),
-						report: code("SourceAnalysisReport")
-					}
+					"Uses $1 from the latest approved $2 report.",
+					{ html: code("healthCore.score") },
+					{ html: code("SourceAnalysisReport") }
 				)
 			],
 			[
@@ -131,10 +129,8 @@ function healthPublicDimensionsTable() {
 				),
 				tWithElements(
 					"static.healthScore.maintainerStatusSource",
-					"Starts from {bestConfidence}, then applies the activity and verification adjustments below.",
-					{
-						bestConfidence: code("bestConfidence")
-					}
+					"Starts from $1, then applies the activity and verification adjustments below.",
+					{ html: code("bestConfidence") }
 				)
 			],
 			[
@@ -148,10 +144,8 @@ function healthPublicDimensionsTable() {
 				),
 				tWithElements(
 					"static.healthScore.runtimeHealthSource",
-					"Uses the stored {lastStatus} for the approved health-check target.",
-					{
-						lastStatus: code("last_status")
-					}
+					"Uses the stored $1 for the approved health-check target.",
+					{ html: code("last_status") }
 				)
 			]
 		]
@@ -181,50 +175,42 @@ function healthMaintainerFormulaTable() {
 				esc(t("static.healthScore.maintainerBaseStep", "Base")),
 				tWithElements(
 					"static.healthScore.maintainerBaseRule",
-					"Start with {bestConfidence}, the highest resolved relationship confidence for the tool.",
-					{
-						bestConfidence: code("bestConfidence")
-					}
+					"Start with $1, the highest resolved relationship confidence for the tool.",
+					{ html: code("bestConfidence") }
 				)
 			],
 			[
 				esc(t("static.healthScore.maintainerActivityStep", "Activity adjustment")),
 				tWithElements(
 					"static.healthScore.maintainerActivityRule",
-					"{active}: +5; {quiet}: -5; {stale}: -25; {dormant}: -40; {unknown}: 0.",
-					{
-						active: code("active"),
-						quiet: code("quiet"),
-						stale: code("stale"),
-						dormant: code("dormant"),
-						unknown: code("unknown")
-					}
+					"$1: +5; $2: -5; $3: -25; $4: -40; $5: 0.",
+					{ html: code("active") },
+					{ html: code("quiet") },
+					{ html: code("stale") },
+					{ html: code("dormant") },
+					{ html: code("unknown") }
 				)
 			],
 			[
 				esc(t("static.healthScore.maintainerVerificationStep", "Verification adjustment")),
 				tWithElements(
 					"static.healthScore.maintainerVerificationRule",
-					"If {verifiedPeople} is greater than 0, add 5 points.",
-					{
-						verifiedPeople: code("healthCounts.verifiedPeople")
-					}
+					"If $1 is greater than 0, add 5 points.",
+					{ html: code("healthCounts.verifiedPeople") }
 				)
 			],
 			[
 				esc(t("static.healthScore.maintainerEmptyStep", "Empty people set")),
 				tWithElements(
 					"static.healthScore.maintainerEmptyRule",
-					"If {people} is 0, the dimension has no score and is excluded.",
-					{
-						people: code("healthCounts.people")
-					}
+					"If $1 is 0, the dimension has no score and is excluded.",
+					{ html: code("healthCounts.people") }
 				)
 			],
 			[
 				esc(t("static.healthScore.maintainerClampStep", "Clamp")),
-				tWithElements("static.healthScore.maintainerClampRule", "The final value is clamped to {range}.", {
-					range: code("0..100")
+				tWithElements("static.healthScore.maintainerClampRule", "The final value is clamped to $1.", {
+					html: code("0..100")
 				})
 			]
 		]
@@ -243,15 +229,13 @@ function healthSourceDimensionsTable() {
 			[
 				code("tool-health"),
 				code("1.25"),
-				tWithElements("static.healthScore.toolHealthComponents", "{operationalReadiness}", {
-					operationalReadiness: code("operational-readiness")
-				})
+				tWithElements("static.healthScore.toolHealthComponents", "$1", { html: code("operational-readiness") })
 			],
 			[
 				code("source-maintenance"),
 				code("1.0"),
-				tWithElements("static.healthScore.sourceMaintenanceComponents", "{maintenanceActivity}", {
-					maintenanceActivity: code("maintenance-activity")
+				tWithElements("static.healthScore.sourceMaintenanceComponents", "$1", {
+					html: code("maintenance-activity")
 				})
 			],
 			[
@@ -259,11 +243,9 @@ function healthSourceDimensionsTable() {
 				code("1.2"),
 				tWithElements(
 					"static.healthScore.sourceMaintainerActivityComponents",
-					"Computed directly from trusted {maintainerActivity} context; excluded when the status is {unknown}.",
-					{
-						maintainerActivity: code("maintainerActivity"),
-						unknown: code("unknown")
-					}
+					"Computed directly from trusted $1 context; excluded when the status is $2.",
+					{ html: code("maintainerActivity") },
+					{ html: code("unknown") }
 				)
 			],
 			[
@@ -271,11 +253,9 @@ function healthSourceDimensionsTable() {
 				code("1.0"),
 				tWithElements(
 					"static.healthScore.maintainabilityComponents",
-					"Mean of {maintenanceReadiness} and {dependencyHealth}.",
-					{
-						maintenanceReadiness: code("maintenance-readiness"),
-						dependencyHealth: code("dependency-health")
-					}
+					"Mean of $1 and $2.",
+					{ html: code("maintenance-readiness") },
+					{ html: code("dependency-health") }
 				)
 			],
 			[
@@ -283,18 +263,16 @@ function healthSourceDimensionsTable() {
 				code("1.15"),
 				tWithElements(
 					"static.healthScore.safetyComponents",
-					"Mean of {securityReview} and {permissionClarity}.",
-					{
-						securityReview: code("security-review"),
-						permissionClarity: code("permission-clarity")
-					}
+					"Mean of $1 and $2.",
+					{ html: code("security-review") },
+					{ html: code("permission-clarity") }
 				)
 			],
 			[
 				code("metadata-quality"),
 				code("0.65"),
-				tWithElements("static.healthScore.metadataQualityComponents", "{metadataCompleteness}", {
-					metadataCompleteness: code("metadata-completeness")
+				tWithElements("static.healthScore.metadataQualityComponents", "$1", {
+					html: code("metadata-completeness")
 				})
 			],
 			[
@@ -302,10 +280,8 @@ function healthSourceDimensionsTable() {
 				code("0.6"),
 				tWithElements(
 					"static.healthScore.accessibilityComponents",
-					"{frontendAccessibility}; not applicable when no web-facing frontend technology is detected.",
-					{
-						frontendAccessibility: code("frontend-accessibility")
-					}
+					"$1; not applicable when no web-facing frontend technology is detected.",
+					{ html: code("frontend-accessibility") }
 				)
 			]
 		]
@@ -356,12 +332,10 @@ function healthComponentRulesTable() {
 				code("85"),
 				tWithElements(
 					"static.healthScore.securityReviewRules",
-					"Warnings subtract points: {credential}: -35, {administrator}: -20, {writeWithoutAuth}: -20. Authentication evidence adds +5; security documentation adds +5.",
-					{
-						credential: code("credential-like-source"),
-						administrator: code("administrator-actions"),
-						writeWithoutAuth: code("write-without-auth-signal")
-					}
+					"Warnings subtract points: $1: -35, $2: -20, $3: -20. Authentication evidence adds +5; security documentation adds +5.",
+					{ html: code("credential-like-source") },
+					{ html: code("administrator-actions") },
+					{ html: code("write-without-auth-signal") }
 				)
 			],
 			[
@@ -379,13 +353,11 @@ function healthComponentRulesTable() {
 				code("50"),
 				tWithElements(
 					"static.healthScore.maintenanceActivityRules",
-					"Repository status from last commit age: {active} <= 90 days adds 30, {quiet} <= 365 days adds 10, {stale} <= 730 days subtracts 20, {dormant} > 730 days subtracts 35. Contributor count >= 2 adds 10; contributor count = 1 subtracts 10; commit count < 5 subtracts 10.",
-					{
-						active: code("active"),
-						quiet: code("quiet"),
-						stale: code("stale"),
-						dormant: code("dormant")
-					}
+					"Repository status from last commit age: $1 <= 90 days adds 30, $2 <= 365 days adds 10, $3 <= 730 days subtracts 20, $4 > 730 days subtracts 35. Contributor count >= 2 adds 10; contributor count = 1 subtracts 10; commit count < 5 subtracts 10.",
+					{ html: code("active") },
+					{ html: code("quiet") },
+					{ html: code("stale") },
+					{ html: code("dormant") }
 				)
 			],
 			[
@@ -413,14 +385,12 @@ function healthComponentRulesTable() {
 				esc(t("static.healthScore.statusMapStart", "status map")),
 				tWithElements(
 					"static.healthScore.sourceMaintainerActivityRules",
-					"{active}: 85, {quiet}: 70, {stale}: 40, {dormant}: 20, {unknown}: no score. Active maintainer count >= 2 adds 10; active maintainer count = 0 subtracts 15; maintainer count >= 2 adds 5; maintainer count = 0 subtracts 25; recent activity count > 0 adds 5.",
-					{
-						active: code("active"),
-						quiet: code("quiet"),
-						stale: code("stale"),
-						dormant: code("dormant"),
-						unknown: code("unknown")
-					}
+					"$1: 85, $2: 70, $3: 40, $4: 20, $5: no score. Active maintainer count >= 2 adds 10; active maintainer count = 0 subtracts 15; maintainer count >= 2 adds 5; maintainer count = 0 subtracts 25; recent activity count > 0 adds 5.",
+					{ html: code("active") },
+					{ html: code("quiet") },
+					{ html: code("stale") },
+					{ html: code("dormant") },
+					{ html: code("unknown") }
 				)
 			]
 		]
@@ -436,73 +406,59 @@ function healthThresholdsTable() {
 				esc(t("static.healthScore.publishableFindingName", "Publishable source finding")),
 				tWithElements(
 					"static.healthScore.publishableFindingValue",
-					"{confidence} >= 0.55 and {sourceWeight} >= 0.55.",
-					{
-						confidence: code("confidence"),
-						sourceWeight: code("maxSourceWeight")
-					}
+					"$1 >= 0.55 and $2 >= 0.55.",
+					{ html: code("confidence") },
+					{ html: code("maxSourceWeight") }
 				)
 			],
 			[
 				esc(t("static.healthScore.repositoryStatusName", "Repository and maintainer activity status")),
 				tWithElements(
 					"static.healthScore.repositoryStatusValue",
-					"{active}: age <= 90 days; {quiet}: age <= 365 days; {stale}: age <= 730 days; {dormant}: age > 730 days; {unknown}: no age.",
-					{
-						active: code("active"),
-						quiet: code("quiet"),
-						stale: code("stale"),
-						dormant: code("dormant"),
-						unknown: code("unknown")
-					}
+					"$1: age <= 90 days; $2: age <= 365 days; $3: age <= 730 days; $4: age > 730 days; $5: no age.",
+					{ html: code("active") },
+					{ html: code("quiet") },
+					{ html: code("stale") },
+					{ html: code("dormant") },
+					{ html: code("unknown") }
 				)
 			],
 			[
 				esc(t("static.healthScore.gradeName", "Grade")),
 				tWithElements(
 					"static.healthScore.gradeValue",
-					"Legendary ({strong}) >= 85; Great ({good}) >= 70; Needs attention ({needsAttention}) >= 50; Needs attention ({highRisk}) < 50; Unknown ({unknown}) when no score exists.",
-					{
-						strong: code("strong"),
-						good: code("good"),
-						needsAttention: code("needs-attention"),
-						highRisk: code("high-risk"),
-						unknown: code("unknown")
-					}
+					"Legendary ($1) >= 85; Great ($2) >= 70; Needs attention ($3) >= 50; Needs attention ($4) < 50; Unknown ($5) when no score exists.",
+					{ html: code("strong") },
+					{ html: code("good") },
+					{ html: code("needs-attention") },
+					{ html: code("high-risk") },
+					{ html: code("unknown") }
 				)
 			],
 			[
 				esc(t("static.healthScore.publicStatusName", "Public status")),
 				tWithElements(
 					"static.healthScore.publicStatusValue",
-					"{healthy} >= 85; {watch} >= 50; {atRisk} < 50; {unknown} when no score exists.",
-					{
-						healthy: code("healthy"),
-						watch: code("watch"),
-						atRisk: code("at-risk"),
-						unknown: code("unknown")
-					}
+					"$1 >= 85; $2 >= 50; $3 < 50; $4 when no score exists.",
+					{ html: code("healthy") },
+					{ html: code("watch") },
+					{ html: code("at-risk") },
+					{ html: code("unknown") }
 				)
 			],
 			[
 				esc(t("static.healthScore.roundingName", "Rounding")),
 				tWithElements(
 					"static.healthScore.roundingValue",
-					"The backend uses Python {round}; exact .5 ties follow Python's nearest-even behavior.",
-					{
-						round: code("round()")
-					}
+					"The backend uses Python $1; exact .5 ties follow Python's nearest-even behavior.",
+					{ html: code("round()") }
 				)
 			],
 			[
 				esc(t("static.healthScore.clampName", "Score bounds")),
-				tWithElements(
-					"static.healthScore.clampValue",
-					"Each component and dimension score is clamped to {range}.",
-					{
-						range: code("0..100")
-					}
-				)
+				tWithElements("static.healthScore.clampValue", "Each component and dimension score is clamped to $1.", {
+					html: code("0..100")
+				})
 			]
 		]
 	);
@@ -534,16 +490,14 @@ function viewHealthScoreStaticPage() {
 		title: t("static.healthScore.title", "Health score system"),
 		body: `
 		<p>${t("static.healthScore.intro", "This page is the reproducibility spec for Evolved health scores. A user should be able to take the public summary JSON for a tool, apply the formulas below, and arrive at the same score shown in the interface.")}</p>
-		<blockquote>${tWithElements("static.healthScore.summaryEndpoint", "Use {endpoint} to inspect the public calculation payload. The visible tooltip on each health score exposes the same dimensions.", { endpoint: code("/v1/tools/summaries/?name=TOOL_NAME") })}</blockquote>
+		<blockquote>${tWithElements("static.healthScore.summaryEndpoint", "Use $1 to inspect the public calculation payload. The visible tooltip on each health score exposes the same dimensions.", { html: code("/v1/tools/summaries/?name=TOOL_NAME") })}</blockquote>
 		<h2>${t("static.healthScore.publicScoreTitle", "1. Public score")}</h2>
 		<p>${tWithElements(
 			"static.healthScore.publicScoreBody",
-			"The public score is calculated from {healthDimensions}. Only dimensions where {included} is true and {score} is numeric are used in the numerator and denominator.",
-			{
-				healthDimensions: code("health.dimensions"),
-				included: code("includedInScore"),
-				score: code("score")
-			}
+			"The public score is calculated from $1. Only dimensions where $2 is true and $3 is numeric are used in the numerator and denominator.",
+			{ html: code("health.dimensions") },
+			{ html: code("includedInScore") },
+			{ html: code("score") }
 		)}</p>
 		${healthPublicFormula()}
 		${healthPublicDimensionsTable()}
@@ -552,10 +506,8 @@ function viewHealthScoreStaticPage() {
 		<h2>${t("static.healthScore.sourceScoreTitle", "2. Source-health score")}</h2>
 		<p>${tWithElements(
 			"static.healthScore.sourceScoreBody",
-			"{sourceHealth} is itself a weighted score from the latest approved deterministic source-analysis report. Component dimensions with more than one component first take the rounded mean of their component scores.",
-			{
-				sourceHealth: code("source-health")
-			}
+			"$1 is itself a weighted score from the latest approved deterministic source-analysis report. Component dimensions with more than one component first take the rounded mean of their component scores.",
+			{ html: code("source-health") }
 		)}</p>
 		${healthSourceFormula()}
 		${healthSourceDimensionsTable()}
@@ -568,7 +520,7 @@ function viewHealthScoreStaticPage() {
 		${healthSourceWeightsTable()}
 		<h2>${t("static.healthScore.variablesTitle", "5. Variables used")}</h2>
 		<ul>
-			<li>${tWithElements("static.healthScore.catalogVariablesItem", "Cached official Toolhub catalog data supplies tool identity and maintainer metadata such as {name}, authors, maintainers, tool type, repository URL, documentation URLs, keywords, license, deprecation state, and listing modified timestamp.", { name: code("tool.name") })}</li>
+			<li>${tWithElements("static.healthScore.catalogVariablesItem", "Cached official Toolhub catalog data supplies tool identity and maintainer metadata such as $1, authors, maintainers, tool type, repository URL, documentation URLs, keywords, license, deprecation state, and listing modified timestamp.", { html: code("tool.name") })}</li>
 			<li>${t("static.healthScore.maintainerVariablesItem", "Evolved people indexing supplies person count, verified person count, active person count, relationship evidence count, best confidence, last public contribution age, recent contribution count, related tool count, and verified tool count.")}</li>
 			<li>${t("static.healthScore.sourceVariablesItem", "Source analysis supplies detected Wikimedia projects, API actions, OAuth scopes, access-right classes, credential warnings, dependencies, lockfiles, manifests, CI evidence, tests, docs, frontend accessibility evidence, source file classes, and suggested toolinfo metadata.")}</li>
 			<li>${t("static.healthScore.repositoryVariablesItem", "Trusted repository context supplies repository URL, provider, branch, default branch, last commit timestamp, commit id, commit count, contributor count, tag, dirty state, and analysis timestamp.")}</li>
@@ -587,11 +539,9 @@ function viewHealthScoreStaticPage() {
 		<h2>${t("static.healthScore.codeReferenceTitle", "8. Code references")}</h2>
 		<p>${tWithElements(
 			"static.healthScore.codeReferenceBody",
-			"The public score is assembled in {publicFile}. Source-analysis health core and component scoring are implemented in {sourceFile}.",
-			{
-				publicFile: code("proxy/backend/v1.py"),
-				sourceFile: code("proxy/backend/source_analyzer.py")
-			}
+			"The public score is assembled in $1. Source-analysis health core and component scoring are implemented in $2.",
+			{ html: code("proxy/backend/v1.py") },
+			{ html: code("proxy/backend/source_analyzer.py") }
 		)}</p>`
 	};
 }
@@ -610,18 +560,18 @@ const rssPage = () => ({
 		<h2>${t("static.rss.historyFeedsTitle", "History feeds")}</h2>
 		<p>${t("static.rss.historyFeedsIntro", "Tool and list revision feeds are available by URL pattern. Replace the identifier with the encoded Toolhub tool name or list id.")}</p>
 		<ul>
-			<li>${tWithElements("static.rss.toolHistoryPattern", "Tool revisions: {pattern}", { pattern: code("/feeds/tools/TOOL_NAME/revisions.xml") })}</li>
-			<li>${tWithElements("static.rss.listHistoryPattern", "List revisions: {pattern}", { pattern: code("/feeds/lists/LIST_ID/revisions.xml") })}</li>
+			<li>${tWithElements("static.rss.toolHistoryPattern", "Tool revisions: $1", { html: code("/feeds/tools/TOOL_NAME/revisions.xml") })}</li>
+			<li>${tWithElements("static.rss.listHistoryPattern", "List revisions: $1", { html: code("/feeds/lists/LIST_ID/revisions.xml") })}</li>
 		</ul>
 		<h2>${t("static.rss.relatedPagesTitle", "Related pages")}</h2>
 		<p>${tWithElements(
 			"static.rss.relatedPagesBody",
-			"Browse the same data in the app on {recentPage}, {toolsPage}, or {listsPage}.",
+			"Browse the same data in the app on $1, $2, or $3.",
+			{ html: `<a href="/recent">${esc(t("static.rss.recentPage", "Recent changes"))}</a>` },
 			{
-				recentPage: `<a href="/recent">${esc(t("static.rss.recentPage", "Recent changes"))}</a>`,
-				toolsPage: `<a href="/search?sort=recent">${esc(t("static.rss.recentToolsPage", "recently updated tools"))}</a>`,
-				listsPage: `<a href="/lists">${esc(t("static.rss.listsPage", "lists"))}</a>`
-			}
+				html: `<a href="/search?sort=recent">${esc(t("static.rss.recentToolsPage", "recently updated tools"))}</a>`
+			},
+			{ html: `<a href="/lists">${esc(t("static.rss.listsPage", "lists"))}</a>` }
 		)}</p>`
 });
 
@@ -632,11 +582,11 @@ export const STATIC = {
 		<p>${t("static.about.catalogIntro", "Toolhub is a community-managed catalog of software tools used in the Wikimedia movement. Technical volunteers document the tools they build, and all Wikimedians can search the catalog, build lists, and share them.")}</p>
 		<p>${t("static.about.toolDefinition", 'A "tool" is defined inclusively: user scripts, gadgets, bots, templates, Lua modules, web applications and mobile apps that interact with Wikimedia projects. The catalog aims to be inclusive rather than exclusive, as long as an entry helps people work on the projects.')}</p>
 		<h2>${t("static.about.howToolsGetHere", "How tools get here")}</h2>
-		<p>${tWithElements("static.about.howToolsGetHereBody", "Tools enter the catalog three ways: by registering a {toolinfo} URL that Toolhub crawls roughly hourly, through the Toolhub UI, or via the API ({postTools}). All paths validate against the same versioned schema, so the data stays consistent.", { toolinfo: code("toolinfo.json"), postTools: code("POST /api/tools/") })}</p>
+		<p>${tWithElements("static.about.howToolsGetHereBody", "Tools enter the catalog three ways: by registering a $1 URL that Toolhub crawls roughly hourly, through the Toolhub UI, or via the API ($2). All paths validate against the same versioned schema, so the data stays consistent.", { html: code("toolinfo.json") }, { html: code("POST /api/tools/") })}</p>
 		<h2>${t("static.about.coreVsAnnotations", "Core information vs. annotations")}</h2>
 		<p>${t("static.about.coreVsAnnotationsBody", "Each tool has authoritative core information, editable only by its owner or administrators, plus community annotations that any logged-in Wikimedian can enrich. When both are set for a field, Toolhub shows the core value, balancing maintainer control with community contribution.")}</p>
 		<p>${t("static.about.cc0", "Structured data is released under CC0; attribution via links back is\n\t\tencouraged but not required. Sign in with Toolhub — no separate Evolved account\n\t\tor password is needed.")}</p>
-		<p>${tWithElements("static.about.helpBuildBody", "Want to help improve this beta or coordinate with upstream Toolhub? See {contribute}.", { contribute: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>
+		<p>${tWithElements("static.about.helpBuildBody", "Want to help improve this beta or coordinate with upstream Toolhub? See $1.", { html: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>
 		<blockquote>${t("static.about.prototypeNote", "This is a companion interface for Toolhub: it reads live catalog data from the public API, publishes official writes through Toolhub OAuth when you sign in, and keeps Evolved-only additions in its local overlay database.")}</blockquote>`
 	}),
 	help: () => ({
@@ -650,7 +600,7 @@ export const STATIC = {
 			<li>${t("static.help.browseByNeedItem", "Browse by need from the home-page shortcuts.")}</li>
 		</ul>
 		<h2>${t("static.help.shareTool", "Share a tool")}</h2>
-		<p>${tWithElements("static.help.shareToolBody", "Maintainers can publish a {toolinfo} file in their repository so volunteers can submit improvements over time, or create a record directly in the UI or API.", { toolinfo: code("toolinfo.json") })}</p>
+		<p>${tWithElements("static.help.shareToolBody", "Maintainers can publish a $1 file in their repository so volunteers can submit improvements over time, or create a record directly in the UI or API.", { html: code("toolinfo.json") })}</p>
 		<h2>${t("static.help.buildList", "Build a list")}</h2>
 		<p>${t("static.help.buildListBody", "Group useful tools into a list and share it — great for onboarding new editors\n\t\tor running an event.")}</p>
 		<p>${`<a href="/about">${esc(t("static.help.learnMore", "Learn more about Toolhub →"))}</a>`}</p>`
@@ -661,23 +611,23 @@ export const STATIC = {
 		<p>${t("static.community.intro", "Toolhub Evolved is an experimental companion interface for the Toolhub catalog. It is run as an individual beta project on Toolforge, built in the open, and designed to stay compatible with the Wikimedia Toolhub ecosystem rather than replace it.")}</p>
 		<h2>${t("static.community.evolvedChannels", "Evolved project channels")}</h2>
 		<ul>
-			<li>${tWithElements("static.community.evolvedIssuesItem", "Use {issues} for Evolved-specific bugs, interface feedback, and feature proposals.", { issues: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")) })}</li>
-			<li>${tWithElements("static.community.evolvedSourceItem", "Read the prototype source in {source}; changes should preserve the design system, accessibility expectations, deterministic scoring, and i18n-ready message boundaries.", { source: ext("https://github.com/schiste/toolhub-evolved", t("static.community.evolvedSource", "the Toolhub Evolved repository")) })}</li>
-			<li>${tWithElements("static.community.evolvedFeedsItem", "Follow local activity through {feeds} and the in-app feature status page.", { feeds: `<a href="/feeds">${esc(t("static.community.feeds", "RSS feeds"))}</a>` })}</li>
+			<li>${tWithElements("static.community.evolvedIssuesItem", "Use $1 for Evolved-specific bugs, interface feedback, and feature proposals.", { html: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")) })}</li>
+			<li>${tWithElements("static.community.evolvedSourceItem", "Read the prototype source in $1; changes should preserve the design system, accessibility expectations, deterministic scoring, and i18n-ready message boundaries.", { html: ext("https://github.com/schiste/toolhub-evolved", t("static.community.evolvedSource", "the Toolhub Evolved repository")) })}</li>
+			<li>${tWithElements("static.community.evolvedFeedsItem", "Follow local activity through $1 and the in-app feature status page.", { html: `<a href="/feeds">${esc(t("static.community.feeds", "RSS feeds"))}</a>` })}</li>
 		</ul>
 		<h2>${t("static.community.upstreamChannels", "Official Toolhub channels")}</h2>
 		<p>${t("static.community.upstreamIntro", "For official Toolhub policy, production catalog behavior, or upstream bugs that are not specific to this beta interface, use Wikimedia's canonical Toolhub channels.")}</p>
 		<ul>
-			<li>${tWithElements("static.community.talkItem", "Discuss official Toolhub on {talk} (Meta-Wiki).", { talk: ext("https://meta.wikimedia.org/wiki/Talk:Toolhub", "Talk:Toolhub") })}</li>
-			<li>${tWithElements("static.community.phabricatorItem", "File official Toolhub work on the {phabricator}.", { phabricator: ext("https://phabricator.wikimedia.org/tag/toolhub/", t("static.community.phabricatorBoard", "#toolhub Phabricator board")) })}</li>
-			<li>${tWithElements("static.community.translateItem", "Translate the official Toolhub interface on {translatewiki}. Evolved keeps strings i18n-ready, but full translatewiki integration is intentionally later.", { translatewiki: ext("https://translatewiki.net/wiki/Translating:Toolhub", "translatewiki.net") })}</li>
+			<li>${tWithElements("static.community.talkItem", "Discuss official Toolhub on $1 (Meta-Wiki).", { html: ext("https://meta.wikimedia.org/wiki/Talk:Toolhub", "Talk:Toolhub") })}</li>
+			<li>${tWithElements("static.community.phabricatorItem", "File official Toolhub work on the $1.", { html: ext("https://phabricator.wikimedia.org/tag/toolhub/", t("static.community.phabricatorBoard", "#toolhub Phabricator board")) })}</li>
+			<li>${tWithElements("static.community.translateItem", "Translate the official Toolhub interface on $1. Evolved keeps strings i18n-ready, but full translatewiki integration is intentionally later.", { html: ext("https://translatewiki.net/wiki/Translating:Toolhub", "translatewiki.net") })}</li>
 		</ul>
-		<p>${tWithElements("static.community.contributeBody", "For practical next steps on this beta, start at {contribute}.", { contribute: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>`
+		<p>${tWithElements("static.community.contributeBody", "For practical next steps on this beta, start at $1.", { html: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>`
 	}),
 	privacy: () => ({
 		title: t("static.privacy.title", "Privacy policy"),
 		body: `
-		<p>${tWithElements("static.privacy.betaDisclaimer", "Toolhub Evolved is an individual-run beta on Toolforge. It is not operated, endorsed, or maintained by the Wikimedia Foundation. The project tries to stay aligned with the {privacyPolicy}, and official Toolhub/Wikimedia interactions remain governed by Wikimedia's authoritative policy.", { privacyPolicy: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyLink", "Wikimedia Foundation Privacy Policy")) })}</p>
+		<p>${tWithElements("static.privacy.betaDisclaimer", "Toolhub Evolved is an individual-run beta on Toolforge. It is not operated, endorsed, or maintained by the Wikimedia Foundation. The project tries to stay aligned with the $1, and official Toolhub/Wikimedia interactions remain governed by Wikimedia's authoritative policy.", { html: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyLink", "Wikimedia Foundation Privacy Policy")) })}</p>
 		<h2>${t("static.privacy.localDataTitle", "What this beta handles locally")}</h2>
 		<ul>
 			<li>${t("static.privacy.oauthItem", "If you sign in, the beta uses official Toolhub OAuth and stores a local session plus a server-side OAuth grant. It never asks for or stores your Wikimedia password.")}</li>
@@ -687,12 +637,12 @@ export const STATIC = {
 		</ul>
 		<h2>${t("static.privacy.boundariesTitle", "Boundaries")}</h2>
 		<p>${t("static.privacy.boundariesBody", "Do not paste secrets, private credentials, or non-public personal data into Evolved-only forms. Source-analysis and tool metadata features are intended for public tool information.")}</p>
-		<p>${tWithElements("static.privacy.readFullPolicy", "For Wikimedia account, Toolhub, and Wikimedia project data, read the full {privacyPolicy}.", { privacyPolicy: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyShort", "Privacy Policy")) })}</p>`
+		<p>${tWithElements("static.privacy.readFullPolicy", "For Wikimedia account, Toolhub, and Wikimedia project data, read the full $1.", { html: ext("https://foundation.wikimedia.org/wiki/Policy:Privacy_policy", t("static.privacy.policyShort", "Privacy Policy")) })}</p>`
 	}),
 	terms: () => ({
 		title: t("static.terms.title", "Terms of Use"),
 		body: `
-		<p>${tWithElements("static.terms.betaDisclaimer", "Toolhub Evolved is an individual-run beta on Toolforge, not a Wikimedia Foundation-operated service. It aims to behave consistently with the {termsOfUse}, but the Wikimedia Foundation Terms of Use are the authoritative terms for official Toolhub, Wikimedia accounts, and Wikimedia project activity.", { termsOfUse: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.termsLink", "Wikimedia Foundation Terms of Use")) })}</p>
+		<p>${tWithElements("static.terms.betaDisclaimer", "Toolhub Evolved is an individual-run beta on Toolforge, not a Wikimedia Foundation-operated service. It aims to behave consistently with the $1, but the Wikimedia Foundation Terms of Use are the authoritative terms for official Toolhub, Wikimedia accounts, and Wikimedia project activity.", { html: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.termsLink", "Wikimedia Foundation Terms of Use")) })}</p>
 		<h2>${t("static.terms.betaUseTitle", "Using this beta")}</h2>
 		<ul>
 			<li>${t("static.terms.experimentalItem", "The interface is experimental and may change, fail, or remove Evolved-only data while features are being developed.")}</li>
@@ -700,13 +650,13 @@ export const STATIC = {
 			<li>${t("static.terms.officialActionsItem", "Actions that publish to official Toolhub are still subject to Toolhub permissions, audit history, validation, and Wikimedia account rules.")}</li>
 		</ul>
 		<h2>${t("static.terms.contentTitle", "Content and responsibility")}</h2>
-		<p>${tWithElements("static.terms.contributionTerms", "Structured Toolhub catalog data is made available under CC0. Evolved source code is published separately in {source}. Tools listed here are owned and operated by their respective maintainers; this beta catalogs and enriches metadata but does not host or endorse the tools.", { source: ext("https://github.com/schiste/toolhub-evolved", t("static.terms.evolvedSource", "the Toolhub Evolved repository")) })}</p>
-		<p>${tWithElements("static.terms.readFullTerms", "For authoritative Wikimedia legal terms, read the full {termsOfUse}.", { termsOfUse: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.title", "Terms of Use")) })}</p>`
+		<p>${tWithElements("static.terms.contributionTerms", "Structured Toolhub catalog data is made available under CC0. Evolved source code is published separately in $1. Tools listed here are owned and operated by their respective maintainers; this beta catalogs and enriches metadata but does not host or endorse the tools.", { html: ext("https://github.com/schiste/toolhub-evolved", t("static.terms.evolvedSource", "the Toolhub Evolved repository")) })}</p>
+		<p>${tWithElements("static.terms.readFullTerms", "For authoritative Wikimedia legal terms, read the full $1.", { html: ext("https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use", t("static.terms.title", "Terms of Use")) })}</p>`
 	}),
 	"code-of-conduct": () => ({
 		title: t("static.codeOfConduct.title", "Code of Conduct"),
 		body: `
-		<p>${tWithElements("static.codeOfConduct.intro", "Toolhub Evolved expects participation to follow the spirit of the {codeOfConduct}. This beta is not an official Wikimedia Foundation venue, but it is built for Wikimedia contributors and should stay compatible with Wikimedia technical-space norms.", { codeOfConduct: ext("https://www.mediawiki.org/wiki/Code_of_Conduct", t("static.codeOfConduct.cocLink", "Code of Conduct for Wikimedia technical spaces")) })}</p>
+		<p>${tWithElements("static.codeOfConduct.intro", "Toolhub Evolved expects participation to follow the spirit of the $1. This beta is not an official Wikimedia Foundation venue, but it is built for Wikimedia contributors and should stay compatible with Wikimedia technical-space norms.", { html: ext("https://www.mediawiki.org/wiki/Code_of_Conduct", t("static.codeOfConduct.cocLink", "Code of Conduct for Wikimedia technical spaces")) })}</p>
 		<h2>${t("static.codeOfConduct.expectedBehaviour", "Expected behaviour")}</h2>
 		<ul>
 			<li>${t("static.codeOfConduct.expectedGoodFaithItem", "Assume good faith, be specific in feedback, and separate critique of the interface from critique of contributors.")}</li>
@@ -714,17 +664,17 @@ export const STATIC = {
 			<li>${t("static.codeOfConduct.expectedNoHarassmentItem", "Harassment, personal attacks, discriminatory language, and pressure to expose private information are not acceptable.")}</li>
 		</ul>
 		<h2>${t("static.codeOfConduct.reporting", "Reporting")}</h2>
-		<p>${tWithElements("static.codeOfConduct.reportingBody", "For Evolved-specific project conduct in the GitHub repository, use {issues} when public reporting is appropriate. For Wikimedia technical spaces, follow the official reporting paths in the Code of Conduct. For threats of harm, contact local authorities first, then {emergency}.", { issues: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")), emergency: code("emergency@wikimedia.org") })}</p>`
+		<p>${tWithElements("static.codeOfConduct.reportingBody", "For Evolved-specific project conduct in the GitHub repository, use $1 when public reporting is appropriate. For Wikimedia technical spaces, follow the official reporting paths in the Code of Conduct. For threats of harm, contact local authorities first, then $2.", { html: ext("https://github.com/schiste/toolhub-evolved/issues", t("static.community.evolvedIssues", "Toolhub Evolved issues")) }, { html: code("emergency@wikimedia.org") })}</p>`
 	}),
 	api: () => ({
 		title: t("static.api.title", "API"),
 		body: `
 		<p>${t("static.api.intro", "Toolhub is built API-first: everything you can do in this interface is also available over a documented HTTP API, so anyone can build their own tools on top of the catalog.")}</p>
 		<ul>
-			<li>${tWithElements("static.api.interactiveDocsItem", "Browse the interactive documentation at {apiDocs}.", { apiDocs: ext("https://toolhub.wikimedia.org/api-docs", "toolhub.wikimedia.org/api-docs") })}</li>
-			<li>${tWithElements("static.api.evolvedApiDocsItem", "Use this prototype's {apiExplorer} for read-only examples, response inspection, and schema pointers.", { apiExplorer: `<a href="/api-docs">${esc(t("static.api.apiDocsPage", "API explorer"))}</a>` })}</li>
-			<li>${tWithElements("static.api.openApiItem", "The OpenAPI schema and endpoints live under {apiRoot}.", { apiRoot: ext("https://toolhub.wikimedia.org/api/", "/api/") })}</li>
-			<li>${tWithElements("static.api.writeAccessItem", "Read access is anonymous; creating or editing records uses your Wikimedia OAuth identity. For example, {postTools} adds a tool.", { postTools: code("POST /api/tools/") })}</li>
+			<li>${tWithElements("static.api.interactiveDocsItem", "Browse the interactive documentation at $1.", { html: ext("https://toolhub.wikimedia.org/api-docs", "toolhub.wikimedia.org/api-docs") })}</li>
+			<li>${tWithElements("static.api.evolvedApiDocsItem", "Use this prototype's $1 for read-only examples, response inspection, and schema pointers.", { html: `<a href="/api-docs">${esc(t("static.api.apiDocsPage", "API explorer"))}</a>` })}</li>
+			<li>${tWithElements("static.api.openApiItem", "The OpenAPI schema and endpoints live under $1.", { html: ext("https://toolhub.wikimedia.org/api/", "/api/") })}</li>
+			<li>${tWithElements("static.api.writeAccessItem", "Read access is anonymous; creating or editing records uses your Wikimedia OAuth identity. For example, $1 adds a tool.", { html: code("POST /api/tools/") })}</li>
 		</ul>`
 	}),
 	"rules-of-engagement": () => ({
@@ -732,7 +682,7 @@ export const STATIC = {
 		body: `
 		<p>${t("static.rulesOfEngagement.intro", "This is a companion interface on a separate domain, not the official Toolhub frontend. It exists to run next to Toolhub: live Toolhub data remains the base, while Evolved adds a local overlay for extra and fallback data.")}</p>
 		<h2>${t("static.rulesOfEngagement.whatsReal", "What's real")}</h2>
-		<p>${tWithElements("static.rulesOfEngagement.whatsRealBody", "The catalog itself is genuine: user-facing tools, search, facets, tool details, lists, members, recent changes, crawler history, and audit logs come from {toolhub} through the read proxy. Evolved also keeps a server-side canonical cache of official tool records for background enrichment and resilience; that cache is rebuildable, is not the source of truth, and never replaces live Toolhub authority. When you sign in with Toolhub, supported writes are sent back to the official Toolhub API using your OAuth grant.", { toolhub: ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org") })}</p>
+		<p>${tWithElements("static.rulesOfEngagement.whatsRealBody", "The catalog itself is genuine: user-facing tools, search, facets, tool details, lists, members, recent changes, crawler history, and audit logs come from $1 through the read proxy. Evolved also keeps a server-side canonical cache of official tool records for background enrichment and resilience; that cache is rebuildable, is not the source of truth, and never replaces live Toolhub authority. When you sign in with Toolhub, supported writes are sent back to the official Toolhub API using your OAuth grant.", { html: ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org") })}</p>
 		<h2>${t("static.rulesOfEngagement.catalogSync", "How the catalog cache is maintained")}</h2>
 		<ul>
 			<li>${t("static.rulesOfEngagement.catalogSyncBackfill", "The initial backfill processes at most five pages of 100 records every 15 minutes, with at least three seconds between upstream requests. A persistent cursor resumes after interruptions and advances until the first complete catalog cycle finishes.")}</li>
@@ -853,7 +803,7 @@ export async function viewApiDocs() {
 		html: `
 		<div class="container page api-docs-page">
 			<h1 class="page__title">${t("static.apiDocs.heading", "API documentation")}</h1>
-			<p class="page__intro">${tWithElements("static.apiDocs.intro", "Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own {writePath} official-first lifecycle after Toolhub OAuth sign-in.", { writePath: code("/v1/write/*") })}</p>
+			<p class="page__intro">${tWithElements("static.apiDocs.intro", "Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own $1 official-first lifecycle after Toolhub OAuth sign-in.", { html: code("/v1/write/*") })}</p>
 			<div class="linkgrid">
 				${linkCard(icon("code"), t("static.apiDocs.interactiveDocs", "Interactive API docs"), t("static.apiDocs.interactiveDocsDesc", "Open the canonical Toolhub API documentation."), "https://toolhub.wikimedia.org/api-docs")}
 				${proxyCard(icon("code"), t("static.apiDocs.openApiSchema", "OpenAPI schema"), t("static.apiDocs.openApiSchemaDesc", "Machine-readable schema served at GET /api/schema/."), "/api/schema/")}
@@ -865,29 +815,29 @@ export async function viewApiDocs() {
 			${renderApiExplorer()}
 			<h2 class="contribute__h2">${t("static.apiDocs.toolinfoSchemaHeading", "toolinfo.json schema")}</h2>
 			<div class="prose">
-				<p>${tWithElements("static.apiDocs.toolinfoSchemaBody", "Toolhub validates registered {toolinfo} files against schema version {version}. Required fields are name, title, description, and url; use _schema to identify the toolinfo schema version when you publish a file.", { toolinfo: "<code>toolinfo.json</code>", version: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
+				<p>${tWithElements("static.apiDocs.toolinfoSchemaBody", "Toolhub validates registered $1 files against schema version $2. Required fields are name, title, description, and url; use _schema to identify the toolinfo schema version when you publish a file.", { html: "<code>toolinfo.json</code>" }, { html: `<code>${esc(TOOLINFO_SCHEMA_VERSION)}</code>` })}</p>
 				<pre tabindex="0" aria-label="${t("static.apiDocs.toolinfoExampleLabel", "Minimal toolinfo JSON example")}"><code>${esc(TOOLINFO_EXAMPLE_JSON)}</code></pre>
 				<p><a href="${esc(TOOLINFO_SCHEMA_URL)}" target="_blank" rel="${EXTERNAL_REL}">${t("static.apiDocs.openToolinfoSchemaSource", "Open official schema source")} ${icon("external")}</a><br>
 				<a href="${esc(TOOLINFO_DATA_MODEL_URL)}" target="_blank" rel="${EXTERNAL_REL}">${t("static.apiDocs.openToolinfoFieldReference", "Open Toolhub field reference")} ${icon("external")}</a></p>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.schemaHeading", "OpenAPI schema for code generation")}</h2>
 			<div class="prose">
-				<p>${tWithElements("static.apiDocs.schemaBody", "{schemaEndpoint} returns Toolhub's OpenAPI document. Use the live {liveSchemaUrl} URL when generating a production client, or this prototype's proxied {proxiedSchemaEndpoint} when you want to inspect the same document without leaving this site.", { schemaEndpoint: code("GET /api/schema/"), liveSchemaUrl: code("https://toolhub.wikimedia.org/api/schema/"), proxiedSchemaEndpoint: code("/api/schema/") })}</p>
+				<p>${tWithElements("static.apiDocs.schemaBody", "$1 returns Toolhub's OpenAPI document. Use the live $2 URL when generating a production client, or this prototype's proxied $3 when you want to inspect the same document without leaving this site.", { html: code("GET /api/schema/") }, { html: code("https://toolhub.wikimedia.org/api/schema/") }, { html: code("/api/schema/") })}</p>
 				<pre tabindex="0" aria-label="${t("static.apiDocs.generatorCommandLabel", "OpenAPI Generator command")}"><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.readOnlyBoundary", "Read-only boundary")}</h2>
-			<p class="page__intro">${tWithElements("static.apiDocs.readOnlyBoundaryBody", "The public proxy exposes anonymous live Toolhub {get} responses for browsing and examples. Authenticated writes never go through that proxy; they use Evolved's CSRF-protected backend bridge so official OAuth tokens stay server-side.", { get: code("GET") })}</p>
+			<p class="page__intro">${tWithElements("static.apiDocs.readOnlyBoundaryBody", "The public proxy exposes anonymous live Toolhub $1 responses for browsing and examples. Authenticated writes never go through that proxy; they use Evolved's CSRF-protected backend bridge so official OAuth tokens stay server-side.", { html: code("GET") })}</p>
 			<h2 class="contribute__h2">${t("static.apiDocs.revisionDiffHeading", "Revision diffs and JSON Patch operations")}</h2>
 			<div class="prose">
-				<p>${tWithElements("static.apiDocs.revisionDiffBody", "Tool and list history endpoints expose revision rows, and their {diff} subresources return what older tickets may call {jsondiff} operations. In the live Toolhub OpenAPI schema these are standard RFC 6902 {jsonPatch} operations.", { diff: code("diff"), jsondiff: code("jsondiff"), jsonPatch: code("application/json-patch+json") })}</p>
+				<p>${tWithElements("static.apiDocs.revisionDiffBody", "Tool and list history endpoints expose revision rows, and their $1 subresources return what older tickets may call $2 operations. In the live Toolhub OpenAPI schema these are standard RFC 6902 $3 operations.", { html: code("diff") }, { html: code("jsondiff") }, { html: code("application/json-patch+json") })}</p>
 				<ul>
-					<li>${tWithElements("static.apiDocs.toolRevisionsItem", "{endpoint} lists tool revisions.", { endpoint: code("GET /api/tools/{name}/revisions/") })}</li>
-					<li>${tWithElements("static.apiDocs.toolRevisionDiffItem", "{endpoint} compares two tool revisions.", { endpoint: code("GET /api/tools/{name}/revisions/{id}/diff/{other_id}/") })}</li>
-					<li>${tWithElements("static.apiDocs.listRevisionDiffItem", "{endpoint} does the same for lists.", { endpoint: code("GET /api/lists/{id}/revisions/{revision_id}/diff/{other_id}/") })}</li>
+					<li>${tWithElements("static.apiDocs.toolRevisionsItem", "$1 lists tool revisions.", { html: code("GET /api/tools/{name}/revisions/") })}</li>
+					<li>${tWithElements("static.apiDocs.toolRevisionDiffItem", "$1 compares two tool revisions.", { html: code("GET /api/tools/{name}/revisions/{id}/diff/{other_id}/") })}</li>
+					<li>${tWithElements("static.apiDocs.listRevisionDiffItem", "$1 does the same for lists.", { html: code("GET /api/lists/{id}/revisions/{revision_id}/diff/{other_id}/") })}</li>
 				</ul>
-				<p>${tWithElements("static.apiDocs.diffResponseBody", "A diff response contains {original}, {operations}, and {result}. Apply the operations to {original} to obtain {result}; the URL order decides the direction of the comparison.", { original: code("original"), operations: code("operations"), result: code("result") })}</p>
+				<p>${tWithElements("static.apiDocs.diffResponseBody", "A diff response contains $1, $2, and $3. Apply the operations to $1 to obtain $3; the URL order decides the direction of the comparison.", { html: code("original") }, { html: code("operations") }, { html: code("result") })}</p>
 				<pre tabindex="0" aria-label="${t("static.apiDocs.revisionDiffExampleLabel", "Revision diff JSON Patch example")}"><code>${esc(REVISION_DIFF_EXAMPLE_JSON)}</code></pre>
-				<p>${tWithElements("static.apiDocs.operationBody", "Each operation has an {op} such as {operationNames}. The {path} field is a JSON Pointer inside the versioned document; {value} appears for add, replace, and test, while {from} appears for move and copy. These objects describe historical differences; they are not the payload format for creating or editing tools.", { op: code("op"), operationNames: `${code("add")}, ${code("remove")}, ${code("replace")}, ${code("move")}, ${code("copy")}, ${esc(t("static.apiDocs.or", "or"))} ${code("test")}`, path: code("path"), value: code("value"), from: code("from") })}</p>
+				<p>${tWithElements("static.apiDocs.operationBody", "Each operation has an $1 such as $2. The $3 field is a JSON Pointer inside the versioned document; $4 appears for add, replace, and test, while $5 appears for move and copy. These objects describe historical differences; they are not the payload format for creating or editing tools.", { html: code("op") }, { html: `${code("add")}, ${code("remove")}, ${code("replace")}, ${code("move")}, ${code("copy")}, ${esc(t("static.apiDocs.or", "or"))} ${code("test")}` }, { html: code("path") }, { html: code("value") }, { html: code("from") })}</p>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.endpointExamples", "Small endpoint examples")}</h2>
 			<ul class="page__intro">
@@ -929,7 +879,7 @@ export function signInPage(title, lead) {
 				"Toolhub Evolved signs you in with official Toolhub OAuth, then uses Toolhub's user API to identify you locally."
 			);
 	return {
-		title: t("static.pageTitle", "{title} — Toolhub", { title }),
+		title: t("static.pageTitle", "$1 — Toolhub", title),
 		html: `
 		<div class="container page"><article class="prose prose--page">
 			<h1>${esc(title)}</h1>

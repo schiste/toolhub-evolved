@@ -141,7 +141,7 @@ export function reviewBadge(status) {
  */
 export function fieldProvenance(fieldLabel, meta = {}) {
 	const state = syncState(meta);
-	const aria = esc(t("syncStatus.fieldProvenanceAria", "{field} provenance", { field: fieldLabel }));
+	const aria = esc(t("syncStatus.fieldProvenanceAria", "$1 provenance", fieldLabel));
 	const retry = state.retryAvailable
 		? ` <span class="sync-badge sync-badge--retry">${t("syncStatus.retryAvailable", "Retry available")}</span>`
 		: "";

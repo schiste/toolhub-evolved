@@ -571,7 +571,7 @@ async function submitAnalysis(event) {
 		await loadReports();
 	} catch (error) {
 		setSourceAnalysisStatus(
-			t("sourceAnalysis.failed", "Analysis failed: {msg}", { msg: backendErrorExplanation(error) }),
+			t("sourceAnalysis.failed", "Analysis failed: $1", backendErrorExplanation(error)),
 			"err"
 		);
 	} finally {
@@ -611,7 +611,7 @@ async function handleSourceAnalysisAction(event) {
 		await loadReports();
 	} catch (error) {
 		setSourceAnalysisStatus(
-			t("sourceAnalysis.reviewFailed", "Review failed: {msg}", { msg: backendErrorExplanation(error) }),
+			t("sourceAnalysis.reviewFailed", "Review failed: $1", backendErrorExplanation(error)),
 			"err"
 		);
 	}

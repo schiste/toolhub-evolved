@@ -41,15 +41,28 @@ test("i18n module loads with valid Intl config and a working en default", async 
 	localStorage.removeItem("toolhub-locale");
 });
 
-test("plural binds to the loaded locale's CLDR categories (ru few/many)", async () => {
+test("{{PLURAL:}} binds to the loaded locale's CLDR categories (ru one/few/many)", async () => {
 	const i18n = await loadI18n("ru");
-	const forms = { one: "ONE", few: "FEW", many: "MANY", other: "OTHER" };
+	const msg = "{{PLURAL:$1|ONE|FEW|MANY|OTHER}}";
 	// Russian: 1 → one, 2-4 → few, 5-20 → many (CLDR-stable across ICU versions).
-	assert.equal(i18n.plural(1, forms), "ONE");
-	assert.equal(i18n.plural(3, forms), "FEW");
-	assert.equal(i18n.plural(7, forms), "MANY");
-	// countLabel threads the same locale plural through a formatted count.
-	assert.equal(i18n.countLabel(3, "элемент", "элементов"), `${i18n.fmt(3)} элементов`);
+	assert.equal(i18n.t("x.ru", msg, 1), "ONE");
+	assert.equal(i18n.t("x.ru", msg, 3), "FEW");
+	assert.equal(i18n.t("x.ru", msg, 7), "MANY");
+	// A two-form English source read in Russian keeps rendering (last form) —
+	// the translation supplies few/many, which the old one/other pair could not.
+	assert.equal(i18n.t("x.ruEn", "{{PLURAL:$1|item|items}}", 3), "items");
+	localStorage.removeItem("toolhub-locale");
+});
+
+test("{{PLURAL:}} covers all six Arabic forms, which a one/other pair cannot", async () => {
+	const i18n = await loadI18n("ar");
+	const msg = "{{PLURAL:$1|ZERO|ONE|TWO|FEW|MANY|OTHER}}";
+	assert.equal(i18n.t("x.ar", msg, 0), "ZERO");
+	assert.equal(i18n.t("x.ar", msg, 1), "ONE");
+	assert.equal(i18n.t("x.ar", msg, 2), "TWO");
+	assert.equal(i18n.t("x.ar", msg, 3), "FEW");
+	assert.equal(i18n.t("x.ar", msg, 11), "MANY");
+	assert.equal(i18n.t("x.ar", msg, 100), "OTHER");
 	localStorage.removeItem("toolhub-locale");
 });
 
@@ -57,7 +70,7 @@ test("pseudolocale transforms chrome fallbacks without transforming params", asy
 	const i18n = await loadI18n("en-x-pseudo");
 	assert.equal(i18n.LOCALE, i18n.PSEUDO_LOCALE);
 	assert.equal(i18n.localeDir(i18n.LOCALE), "ltr");
-	assert.equal(i18n.t("x.greet", "Hello {name}", { name: "Ada" }), "[Ħḗļļǿ Ada~~]");
+	assert.equal(i18n.t("x.greet", "Hello $1", "Ada"), "[Ħḗļļǿ Ada~~]");
 	assert.equal(i18n.t("x.unknown"), "x.unknown");
 	localStorage.removeItem("toolhub-locale");
 });

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, safeHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { backendGetJson, normalizeTool } from "../lib/core/api.js";
-import { countLabel, relativeTime, t, timeTag } from "../lib/core/i18n.js";
+import { fmt, relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
@@ -167,21 +167,19 @@ function selfHostedDiscoveryLine(discovery, options = {}) {
 function toolinfoEvidenceCell(source, discovery) {
 	if (!source?.sourceUrl) return toolinfoDiscoveryCell(discovery);
 	const fetchedTime = relativeTime(source.lastFetchedAt);
-	const fetched = fetchedTime ? t("accountTools.sourceFetched", "fetched {time}", { time: fetchedTime }) : "";
+	const fetched = fetchedTime ? t("accountTools.sourceFetched", "fetched $1", fetchedTime) : "";
 	const count =
 		typeof source.itemCount === "number" && source.itemCount > 0
-			? countLabel(
-					source.itemCount,
-					t("accountTools.sourceToolOne", "tool"),
-					t("accountTools.sourceToolOther", "tools")
-				)
+			? t("accountTools.sourceToolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(source.itemCount), source.itemCount)
 			: "";
 	const sourceLabel = source.sourceLabel || t("accountTools.sourceUnknown", "Official crawler feed");
 	const sourceDetails = [source.sourceKind || "official", count, fetched].filter(Boolean).join(" · ");
-	const tooltip = t("accountTools.sourceTooltip", "{label}: {details}", {
-		label: sourceLabel,
-		details: sourceDetails || t("accountTools.sourceOfficial", "official")
-	});
+	const tooltip = t(
+		"accountTools.sourceTooltip",
+		"$1: $2",
+		sourceLabel,
+		sourceDetails || t("accountTools.sourceOfficial", "official")
+	);
 	return `<div class="account-tools__toolinfo">
 		<span class="sync-badge sync-badge--official account-tools__source-badge" title="${esc(tooltip)}" aria-label="${esc(tooltip)}">${t("accountTools.officialCrawlerSource", "Official crawler source")}</span>
 		${selfHostedDiscoveryLine(discovery, { hideFailures: true })}
@@ -292,10 +290,8 @@ export async function viewMyTools() {
 		title: t("accountTools.title", "My tools"),
 		intro: t(
 			"accountTools.intro",
-			"Review Toolhub tools where {username} is listed as author or maintainer, register toolinfo sources, and manage local submissions.",
-			{
-				username: USER.name
-			}
+			"Review Toolhub tools where $1 is listed as author or maintainer, register toolinfo sources, and manage local submissions.",
+			USER.name
 		),
 		className: "account-records account-tools at",
 		body: `${content}${registration.html}${sourceAnalysis.html}`

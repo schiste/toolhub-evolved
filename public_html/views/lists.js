@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
-import { countLabel, t } from "../lib/core/i18n.js";
+import { fmt, t } from "../lib/core/i18n.js";
 import {
 	ApiError,
 	apiGet,
@@ -109,8 +109,8 @@ function setupListRetry(work) {
 				out.className = "at__result at__result--err";
 				out.textContent = t(
 					"lists.officialWriteFailed",
-					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-					{ msg: backendErrorExplanation(res) }
+					"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+					backendErrorExplanation(res)
 				);
 				return;
 			}
@@ -122,10 +122,8 @@ function setupListRetry(work) {
 			out.className = "at__result at__result--err";
 			out.textContent = t(
 				"lists.officialWriteFailedNoDraft",
-				"Official Toolhub did not accept the write: {msg}",
-				{
-					msg: backendErrorExplanation(error)
-				}
+				"Official Toolhub did not accept the write: $1",
+				backendErrorExplanation(error)
 			);
 		}
 	});
@@ -152,8 +150,8 @@ function setupListDelete(work, officialEditing) {
 				out.className = "at__result at__result--err";
 				out.textContent = t(
 					"lists.officialWriteFailedNoDraft",
-					"Official Toolhub did not accept the write: {msg}",
-					{ msg: backendErrorExplanation(error) }
+					"Official Toolhub did not accept the write: $1",
+					backendErrorExplanation(error)
 				);
 				return;
 			}
@@ -165,8 +163,8 @@ function setupListDelete(work, officialEditing) {
 				out.className = "at__result at__result--err";
 				out.textContent = t(
 					"lists.officialWriteFailedNoDraft",
-					"Official Toolhub did not accept the write: {msg}",
-					{ msg: backendErrorExplanation(error) }
+					"Official Toolhub did not accept the write: $1",
+					backendErrorExplanation(error)
 				);
 				return;
 			}
@@ -254,11 +252,11 @@ export async function viewList(id) {
 	const html = `
 	<div class="container page">
 		<a class="back" href="/lists">${t("lists.allLists", "← All lists")}</a>
-		<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(countLabel(l.toolCount, t("lists.toolOne", "tool"), t("lists.toolOther", "tools")))}</span></h1>${editBtn}</div>
+		<div class="section-head"><h1 class="page__title"${dirAttrs(l.title)}>${esc(l.title)}${demoTag} <span class="lcard__count">${esc(t("lists.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(l.toolCount), l.toolCount))}</span></h1>${editBtn}</div>
 		<div class="prose page__intro"${dirAttrs(l.description)}>${esc(l.description)}</div>
 		${tools.length > 0 ? grid("grid-tools", tools, (/** @type {Tool} */ t) => toolCard(t)) : `<p class="empty">${t("lists.noToolsInList", "This list has no tools yet.")}</p>`}
 	</div>`;
-	return { title: t("lists.docTitle", "{title} — Toolhub", { title: l.title }), html };
+	return { title: t("lists.docTitle", "$1 — Toolhub", l.title), html };
 }
 // Evolved-local list drafts/fallbacks for the signed-in user.
 export function viewMyLists() {
@@ -444,10 +442,11 @@ function renderListEdit(src, { editing, officialEditing }) {
 			countEl = /** @type {HTMLElement} */ ($("[data-le-count]")),
 			resultsEl = /** @type {HTMLElement} */ ($("[data-le-results]"));
 		function renderTools() {
-			countEl.textContent = countLabel(
-				work.tools.length,
-				t("lists.toolOne", "tool"),
-				t("lists.toolOther", "tools")
+			countEl.textContent = t(
+				"lists.toolCount",
+				"$1 {{PLURAL:$2|tool|tools}}",
+				fmt(work.tools.length),
+				work.tools.length
 			);
 			toolsEl.innerHTML =
 				work.tools.length > 0
@@ -578,8 +577,8 @@ function renderListEdit(src, { editing, officialEditing }) {
 						out.className = "at__result at__result--err";
 						out.textContent = t(
 							"lists.officialWriteFailed",
-							"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-							{ msg: backendErrorExplanation(res) }
+							"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+							backendErrorExplanation(res)
 						);
 						return;
 					}
@@ -592,10 +591,8 @@ function renderListEdit(src, { editing, officialEditing }) {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"lists.officialWriteFailedNoDraft",
-						"Official Toolhub did not accept the write: {msg}",
-						{
-							msg
-						}
+						"Official Toolhub did not accept the write: $1",
+						msg
 					);
 					return;
 				}
@@ -607,9 +604,11 @@ function renderListEdit(src, { editing, officialEditing }) {
 		setupListDelete(work, officialEditing);
 	}
 	return {
-		title: t("lists.docTitle", "{title} — Toolhub", {
-			title: editing ? t("lists.editList", "Edit list") : t("lists.createAList", "Create a list")
-		}),
+		title: t(
+			"lists.docTitle",
+			"$1 — Toolhub",
+			editing ? t("lists.editList", "Edit list") : t("lists.createAList", "Create a list")
+		),
 		html,
 		mount
 	};

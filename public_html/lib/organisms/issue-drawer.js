@@ -123,7 +123,7 @@ function successHTML(result) {
 		<div class="issue-drawer__success-icon">${icon("check")}</div>
 		<h3>${t("issueReport.successTitle", "Issue published")}</h3>
 		<p>${t("issueReport.successBody", "Your report is now available on GitHub.")}</p>
-		<a class="btn btn--primary" href="${esc(result.url)}" target="_blank" rel="noopener nofollow">${icon("external")} ${t("issueReport.openIssue", "Open issue #{number}", { number: result.number })}</a>
+		<a class="btn btn--primary" href="${esc(result.url)}" target="_blank" rel="noopener nofollow">${icon("external")} ${t("issueReport.openIssue", "Open issue #$1", result.number)}</a>
 		<button class="btn btn--outline" type="button" data-issue-close>${t("issueReport.close", "Close")}</button>
 	</div>`;
 }

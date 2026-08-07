@@ -229,7 +229,7 @@ export function buildExplorerRequest(endpoint, values = {}) {
 		const value = fieldValue(field, values);
 		if (field.kind === "path") {
 			if (!value && field.required) {
-				throw new Error(t("apiExplorer.requiredField", "{label} is required.", { label: field.label }));
+				throw new Error(t("apiExplorer.requiredField", "$1 is required.", field.label));
 			}
 			path = path.replaceAll(`{${field.name}}`, encodeURIComponent(value));
 		} else if (value) {
@@ -434,13 +434,15 @@ function updateFormExamples(form) {
 
 /** @param {ApiExplorerResult} result */
 function resultStatus(result) {
-	if (result.error) return t("apiExplorer.requestFailed", "Request failed: {message}", { message: result.error });
+	if (result.error) return t("apiExplorer.requestFailed", "Request failed: $1", result.error);
 	const status = result.status === null ? "" : `${result.status} ${result.statusText}`.trim();
-	return t("apiExplorer.requestComplete", "GET {path} returned {status} in {duration} ms.", {
-		path: result.request.path,
+	return t(
+		"apiExplorer.requestComplete",
+		"GET $1 returned $2 in $3 ms.",
+		result.request.path,
 		status,
-		duration: result.durationMs
-	});
+		result.durationMs
+	);
 }
 
 /** @param {ApiExplorerResult} result */
@@ -471,7 +473,7 @@ async function runForm(form) {
 	const status = $("[data-api-status]");
 	if (status) {
 		status.classList.remove("api-result__status--error");
-		status.textContent = t("apiExplorer.loading", "Loading {title}...", { title: endpoint.title });
+		status.textContent = t("apiExplorer.loading", "Loading $1...", endpoint.title);
 	}
 	try {
 		updateFormExamples(form);
@@ -506,7 +508,7 @@ async function copyExample(buttonEl) {
 	const status = $("[data-api-status]");
 	try {
 		await navigator.clipboard.writeText(example.code);
-		if (status) status.textContent = t("apiExplorer.copied", "Copied {label}.", { label: example.label });
+		if (status) status.textContent = t("apiExplorer.copied", "Copied $1.", example.label);
 	} catch {
 		if (status) {
 			status.classList.add("api-result__status--error");

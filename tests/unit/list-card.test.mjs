@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { listCard, listCardData } from "../../public_html/lib/organisms/list-card.js";
 import { dirAttrs, esc } from "../../public_html/lib/core/dom.js";
-import { countLabel } from "../../public_html/lib/core/i18n.js";
+import { fmt, t } from "../../public_html/lib/core/i18n.js";
 import { listHref } from "../../public_html/lib/core/routing.js";
 import { avatar } from "../../public_html/lib/atoms/avatar.js";
 import { syncBadge } from "../../public_html/lib/molecules/sync-status.js";
 
 /** @param {any} l */
 function oracle(l) {
-	const count = countLabel(l.toolCount, "tool", "tools");
+	const count = t("listCard.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(l.toolCount), l.toolCount);
 	const status = l.local ? syncBadge(l) : "";
 	return `\n\t<a class="lcard" href="${listHref(l.id)}" aria-label="${esc(l.title)} list, ${esc(count)}">\n\t\t${avatar(l.title)}\n\t\t<div class="lcard__body">\n\t\t\t<div class="lcard__title"${dirAttrs(l.title)}>${esc(l.title)} <span class="lcard__count">${esc(count)}</span>${status ? ` ${status}` : ""}</div>\n\t\t\t<div class="lcard__desc"${dirAttrs(l.description)}>${esc(l.description)}</div>\n\t\t</div>\n\t</a>`;
 }

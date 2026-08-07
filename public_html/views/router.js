@@ -284,7 +284,7 @@ function dispatchListRoute(seg) {
 		return loadStatic().then((m) =>
 			m.prosePage(
 				t("router.listHistoryTitle", "List history"),
-				`<p>${tWithElements("router.listHistoryBody", "Revision history for this list is available on the {liveSite}.", { liveSite: `<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${esc(t("router.liveSite", "live site"))}</a>` })}</p>`
+				`<p>${tWithElements("router.listHistoryBody", "Revision history for this list is available on the $1.", { html: `<a href="https://toolhub.wikimedia.org/" target="_blank" rel="noopener nofollow">${esc(t("router.liveSite", "live site"))}</a>` })}</p>`
 			)
 		);
 	}
@@ -368,7 +368,7 @@ function redirectTo(href) {
 export const errorHTML = (
 	e
 ) => `<div class="container page errorpage"><h1>${t("router.loadErrorTitle", "Couldn't load live data")}</h1>
-	<p class="prose">${t("router.loadErrorBody", "The Toolhub API didn't respond ({msg}).", { msg: esc(String((e && /** @type {{ message?: unknown }} */ (e).message) || e)) })}</p>
+	<p class="prose">${t("router.loadErrorBody", "The Toolhub API didn't respond ($1).", esc(String((e && /** @type {{ message?: unknown }} */ (e).message) || e)))}</p>
 	${button(t("router.backToHome", "Back to home"), { variant: "primary", href: "/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
 // the current page stays on screen — fast/cached loads never flash a spinner.

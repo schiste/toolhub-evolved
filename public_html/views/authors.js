@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
-import { countLabel, t } from "../lib/core/i18n.js";
+import { fmt, t } from "../lib/core/i18n.js";
 import { identityQualityLabel, relationshipLabel } from "../lib/core/claims.js";
 import {
 	personById,
@@ -84,7 +84,7 @@ function relatedTools(tools, toolPage) {
 	const last = first + tools.length - 1;
 	const range =
 		tools.length > 0
-			? t("authors.showingRelatedTools", "Showing {first}–{last} of {count}", { first, last, count })
+			? t("authors.showingRelatedTools", "Showing $1–$2 of $3", first, last, count)
 			: t("authors.noToolsOnPage", "No related tools on this page.");
 	return `<section class="author-page__tools" aria-labelledby="author-related-tools">
 		<div class="section-head"><div><h2 id="author-related-tools">${t("authors.relatedTools", "Related tools")}</h2><p class="muted" aria-live="polite">${esc(range)}</p></div><span class="muted">${count}</span></div>
@@ -94,7 +94,7 @@ function relatedTools(tools, toolPage) {
 						"grid-tools author-page__tool-grid",
 						tools,
 						(/** @type {Tool} */ tool) =>
-							`<div class="author-tool-card">${toolCard(tool)}${/** @type {any} */ (tool).profileSummaryStatus === "missing" ? `<p class="author-tool-card__summary-note">${t("authors.toolMetadataUnavailable", "Tool metadata is unavailable; relationships are shown from local evidence.")}</p>` : ""}<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for {tool}", { tool: tool.title || tool.name }))}">${relationshipsForTool(
+							`<div class="author-tool-card">${toolCard(tool)}${/** @type {any} */ (tool).profileSummaryStatus === "missing" ? `<p class="author-tool-card__summary-note">${t("authors.toolMetadataUnavailable", "Tool metadata is unavailable; relationships are shown from local evidence.")}</p>` : ""}<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for $1", tool.title || tool.name))}">${relationshipsForTool(
 								tool
 							)
 								.map((relationship) => relationshipTrustMarkup(relationship))
@@ -145,7 +145,7 @@ function renderPerson(person, tools) {
 		? `<img class="author-page__avatar" src="${esc(avatarUrl)}" alt="" width="96" height="96" />`
 		: avatar(name, "avatar--lg author-page__avatar");
 	return {
-		title: t("authors.docTitle", "{name} — Toolhub", { name }),
+		title: t("authors.docTitle", "$1 — Toolhub", name),
 		html: `<div class="container page author-page">
 			<a class="back" href="/search">${t("authors.backToTools", "← Back to tools")}</a>
 			<div class="section-head author-page__head">
@@ -153,7 +153,7 @@ function renderPerson(person, tools) {
 					${profileAvatar}
 					<div>
 					<h1 class="page__title"${dirAttrs(name)}>${esc(name)}</h1>
-					<p class="page__intro">${esc(countLabel(toolCount, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))}</p>
+					<p class="page__intro">${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(toolCount), toolCount))}</p>
 					${meta ? `<p class="muted">${esc(meta)}</p>` : ""}
 					</div>
 				</div>
@@ -222,7 +222,7 @@ function renderDisambiguation(name, resolution) {
 			? `<section class="people-attributions" aria-labelledby="author-attributions-title"><div class="section-head"><div><h2 id="author-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.disambiguationUnresolved", "These tool attributions use this label but do not contain enough stable evidence to select a person.")}</p></div></div><ul class="people-attributions__list">${unresolved.map((/** @type {any} */ attribution) => unresolvedAttribution(attribution)).join("")}</ul></section>`
 			: "";
 	return {
-		title: t("authors.disambiguationDocTitle", "{name} — Choose a person", { name }),
+		title: t("authors.disambiguationDocTitle", "$1 — Choose a person", name),
 		html: `<div class="container page people-page author-disambiguation">
 			<a class="back" href="/people">${t("authors.backToPeople", "← Back to people")}</a>
 			<header><h1 class="page__title"${dirAttrs(name)}>${esc(name)}</h1><p class="page__intro">${t("authors.disambiguationIntro", "This name does not identify one unique person. Choose a verified identity below.")}</p></header>
@@ -273,17 +273,21 @@ function personCard(person) {
 	const types = Array.isArray(summary.types) ? summary.types : [];
 	const relationshipDetail =
 		verifiedTypes.length > 0
-			? t("authors.verifiedRelationshipRoles", "Verified: {roles}", {
-					roles: verifiedTypes.map((role) => relationshipLabel(role)).join(", ")
-				})
+			? t(
+					"authors.verifiedRelationshipRoles",
+					"Verified: $1",
+					verifiedTypes.map((role) => relationshipLabel(role)).join(", ")
+				)
 			: types.length > 0
-				? t("authors.relationshipRoles", "Relationships: {roles}", {
-						roles: types.map((role) => relationshipLabel(role)).join(", ")
-					})
+				? t(
+						"authors.relationshipRoles",
+						"Relationships: $1",
+						types.map((role) => relationshipLabel(role)).join(", ")
+					)
 				: t("authors.noRelationshipSummary", "No relationship summary");
 	const identityDetail = identityQualityLabel(person?.identityQuality || "");
 	return `<a class="people-card" href="${personHref(person.id)}" data-person-name="${esc(name.toLocaleLowerCase())}">
-		${picture}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(countLabel(count, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))} · ${esc(identityDetail)}</small><small>${esc(relationshipDetail)}</small></span>
+		${picture}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(count), count))} · ${esc(identityDetail)}</small><small>${esc(relationshipDetail)}</small></span>
 	</a>`;
 }
 
@@ -301,7 +305,7 @@ function unresolvedAttribution(attribution) {
 	const observations = Number(attribution?.evidenceCount) || Number(attribution?.attributionCount) || 0;
 	return `<li class="people-attribution">
 		<span class="people-attribution__mark" aria-hidden="true">?</span>
-		<span class="people-attribution__content"><strong${dirAttrs(label)}>${esc(label)}</strong><small>${esc(countLabel(tools, t("authors.toolOne", "tool"), t("authors.toolOther", "tools")))} · ${esc(countLabel(observations, t("authors.observationOne", "observation"), t("authors.observationOther", "observations")))}</small></span>
+		<span class="people-attribution__content"><strong${dirAttrs(label)}>${esc(label)}</strong><small>${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools))} · ${esc(t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations))}</small></span>
 		<span class="people-attribution__status">${t("authors.identityUnresolved", "Identity unresolved")}</span>
 	</li>`;
 }
@@ -366,8 +370,8 @@ function activeFilterSummary(state) {
 					renewal_needed: t("authors.filterRenewal", "Renewal needed")
 				}[state.verification]
 			: "",
-		state.activity ? t("authors.activityFilterValue", "Activity: {status}", { status: state.activity }) : "",
-		state.project ? t("authors.projectFilterValue", "Project: {project}", { project: state.project }) : ""
+		state.activity ? t("authors.activityFilterValue", "Activity: $1", state.activity) : "",
+		state.project ? t("authors.projectFilterValue", "Project: $1", state.project) : ""
 	].filter(Boolean);
 	return values.length > 0
 		? `<div class="people-directory__active"><span>${t("authors.activeFilters", "Active filters:")} ${values.map((value) => `<strong>${esc(value)}</strong>`).join(" · ")}</span><a href="/people">${t("authors.clearFilters", "Clear filters")}</a></div>`
@@ -382,8 +386,8 @@ function resolvedDirectoryResults(directory, state) {
 	const last = first + people.length - 1;
 	const summary =
 		people.length > 0
-			? t("authors.showingPeopleRange", "Showing {first}–{last} of {count} people", { first, last, count })
-			: t("authors.peopleCount", "{count} people", { count });
+			? t("authors.showingPeopleRange", "Showing $1–$2 of $3 people", first, last, count)
+			: t("authors.peopleCount", "$1 people", count);
 	return `<section aria-labelledby="people-profiles-title">
 		<div class="section-head people-page__results-head"><div><h2 id="people-profiles-title" class="people-page__section-title">${t("authors.resolvedProfiles", "Resolved profiles")}</h2><p class="muted" aria-live="polite">${esc(summary)}${state.q ? ` ${t("authors.forQuery", "for")} “<span${dirAttrs(state.q)}>${esc(state.q)}</span>”` : ""}</p></div></div>
 		${peopleResults(people)}
@@ -396,7 +400,7 @@ function unresolvedDirectoryResults(directory) {
 	const attributions = directory.attributions || [];
 	if (attributions.length === 0 && !directory.error) return "";
 	return `<section class="people-attributions" aria-labelledby="people-attributions-title">
-		<div class="section-head"><div><h2 id="people-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.unresolvedAttributionsIntro", "These labels appear in tool records, but there is not enough stable evidence to publish them as people.")}</p></div><span class="muted">${esc(countLabel(directory.count || 0, t("authors.labelOne", "label"), t("authors.labelOther", "labels")))}</span></div>
+		<div class="section-head"><div><h2 id="people-attributions-title">${t("authors.unresolvedAttributions", "Attributions awaiting identity evidence")}</h2><p class="muted people-attributions__intro">${t("authors.unresolvedAttributionsIntro", "These labels appear in tool records, but there is not enough stable evidence to publish them as people.")}</p></div><span class="muted">${esc(t("authors.labelCount", "$1 {{PLURAL:$2|label|labels}}", fmt(directory.count || 0), directory.count || 0))}</span></div>
 		${
 			directory.error
 				? `<p class="empty" role="alert">${t("authors.attributionSearchFailed", "Unresolved attributions could not be loaded.")}</p>`
@@ -442,7 +446,7 @@ function directoryForm(state) {
 		.map(([value, label]) => option(value, state.ordering, label))
 		.join("");
 	const pageSizeOptions = PEOPLE_PAGE_SIZES.map((size) =>
-		option(String(size), String(state.pageSize), t("authors.peoplePerPage", "{size} per page", { size }))
+		option(String(size), String(state.pageSize), t("authors.peoplePerPage", "$1 per page", size))
 	).join("");
 	return `<form class="people-directory" data-people-search role="search">
 		<div class="searchbar people-page__search"><input class="searchbar__input" name="q" type="search" value="${esc(state.q)}" placeholder="${esc(t("authors.searchPeople", "Search people"))}" aria-label="${esc(t("authors.searchPeople", "Search people"))}" /><button class="btn btn--primary" type="submit">${icon("search")} ${t("authors.search", "Search")}</button></div>
@@ -482,7 +486,7 @@ export async function viewPeople() {
 			: { attributions: [], count: 0, page: state.attributionPage, pageSize: 10, pageCount: 1, error: true };
 	return {
 		title: state.q
-			? t("authors.peopleSearchDocTitle", "{query} — People — Toolhub", { query: state.q })
+			? t("authors.peopleSearchDocTitle", "$1 — People — Toolhub", state.q)
 			: t("authors.peopleDocTitle", "People — Toolhub"),
 		html: `<div class="container page people-page">
 			<header><h1 class="page__title">${t("authors.peopleTitle", "People")}</h1><p class="page__intro">${t("authors.peopleIntro", "Discover authors, maintainers, record owners, and catalog contributors resolved from Toolhub and Evolved evidence.")}</p></header>

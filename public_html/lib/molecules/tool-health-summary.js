@@ -84,13 +84,9 @@ function dimensionRow(dimension) {
 	const weight = num(dimension?.weight);
 	const confidence = num(dimension?.confidence);
 	const meta = [
-		t("toolHealth.scoreValue", "score {score}", { score }),
-		weight === null ? "" : t("toolHealth.weightValue", "weight {weight}", { weight: String(weight) }),
-		confidence === null
-			? ""
-			: t("toolHealth.confidenceValue", "confidence {confidence}", {
-					confidence: `${Math.round(confidence * 100)}%`
-				})
+		t("toolHealth.scoreValue", "score $1", score),
+		weight === null ? "" : t("toolHealth.weightValue", "weight $1", String(weight)),
+		confidence === null ? "" : t("toolHealth.confidenceValue", "confidence $1", `${Math.round(confidence * 100)}%`)
 	]
 		.filter(Boolean)
 		.join(" · ");
@@ -155,12 +151,10 @@ function calculationText(summary) {
 	const weight = num(calc.includedWeight);
 	return t(
 		"toolHealth.calculation",
-		"Calculation: weighted average across {included} of {total} dimensions; included weight {weight}.",
-		{
-			included: String(included),
-			total: String(total),
-			weight: weight === null ? "0" : String(weight)
-		}
+		"Calculation: weighted average across $1 of $2 dimensions; included weight $3.",
+		String(included),
+		String(total),
+		weight === null ? "0" : String(weight)
 	);
 }
 
@@ -172,13 +166,11 @@ function scoreArithmeticText(summary) {
 	const raw = rawScore(health);
 	return t(
 		"toolHealth.scoreArithmetic",
-		"Weighted points {weightedSum} divided by total included weight {weight} gives {raw}; rounded score {score}.",
-		{
-			weightedSum: fixedText(sum),
-			weight: fixedText(weight),
-			raw: raw === null ? "—" : fixedText(raw),
-			score: scoreText(health.score)
-		}
+		"Weighted points $1 divided by total included weight $2 gives $3; rounded score $4.",
+		fixedText(sum),
+		fixedText(weight),
+		raw === null ? "—" : fixedText(raw),
+		scoreText(health.score)
 	);
 }
 
@@ -189,13 +181,9 @@ function dimensionTooltipLine(dimension) {
 	const weight = num(dimension?.weight);
 	const confidence = num(dimension?.confidence);
 	const parts = [
-		t("toolHealth.scoreValue", "score {score}", { score }),
-		weight === null ? "" : t("toolHealth.weightValue", "weight {weight}", { weight: String(weight) }),
-		confidence === null
-			? ""
-			: t("toolHealth.confidenceValue", "confidence {confidence}", {
-					confidence: `${Math.round(confidence * 100)}%`
-				}),
+		t("toolHealth.scoreValue", "score $1", score),
+		weight === null ? "" : t("toolHealth.weightValue", "weight $1", String(weight)),
+		confidence === null ? "" : t("toolHealth.confidenceValue", "confidence $1", `${Math.round(confidence * 100)}%`),
 		dimension?.includedInScore === false ? t("toolHealth.excluded", "excluded") : "",
 		dimension?.status ? String(dimension.status) : ""
 	].filter(Boolean);
@@ -210,7 +198,7 @@ function healthScoreTooltip(summary) {
 	const dimensions = Array.isArray(health.dimensions) ? health.dimensions : [];
 	const lines = [
 		t("toolHealth.scoreTitle", "Local Evolved health score"),
-		t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade })
+		t("toolHealth.scoreTooltipSummary", "Health $1 · $2", score, grade)
 	];
 	// Everything below is derived from the breakdown. While that is still
 	// loading, say so rather than reporting zeros and "none available" as if
@@ -248,11 +236,13 @@ function healthDimensionRow(dimension) {
 		</dl>
 		<p>${esc(
 			included
-				? t("toolHealth.dimensionEquation", "{score} × {weight} = {points} weighted points.", {
-						score: scoreText(score),
-						weight: fixedText(weight),
-						points: fixedText(contribution)
-					})
+				? t(
+						"toolHealth.dimensionEquation",
+						"$1 × $2 = $3 weighted points.",
+						scoreText(score),
+						fixedText(weight),
+						fixedText(contribution)
+					)
 				: t(
 						"toolHealth.dimensionExcluded",
 						"This dimension is shown for context but is not included in the score."
@@ -297,7 +287,7 @@ function healthScorePanelPending(summary) {
 	return `<div class="health-popover__panel health-score__panel" data-health-panel="pending">
 		<div class="health-popover__head">
 			<strong>${t("toolHealth.scoreTitle", "Local Evolved health score")}</strong>
-			<span>${t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade })}</span>
+			<span>${t("toolHealth.scoreTooltipSummary", "Health $1 · $2", score, grade)}</span>
 		</div>
 		<p class="health-popover__empty">${t("toolHealth.loadingBreakdown", "Loading the breakdown…")}</p>
 	</div>`;
@@ -316,19 +306,17 @@ export function healthScorePanel(summary) {
 	return `<div class="health-popover__panel health-score__panel">
 		<div class="health-popover__head">
 			<strong>${t("toolHealth.scoreTitle", "Local Evolved health score")}</strong>
-			<span>${t("toolHealth.scoreTooltipSummary", "Health {score} · {grade}", { score, grade })}</span>
+			<span>${t("toolHealth.scoreTooltipSummary", "Health $1 · $2", score, grade)}</span>
 		</div>
 		<p class="health-score__formula">${esc(calculationText(summary))}</p>
 		<p class="health-score__equation">${esc(
 			t(
 				"toolHealth.scoreEquation",
-				"{weightedSum} weighted points ÷ {weight} total weight = {raw}; rounded to {score}.",
-				{
-					weightedSum: fixedText(sum),
-					weight: fixedText(weight),
-					raw: raw === null ? "—" : fixedText(raw),
-					score
-				}
+				"$1 weighted points ÷ $2 total weight = $3; rounded to $4.",
+				fixedText(sum),
+				fixedText(weight),
+				raw === null ? "—" : fixedText(raw),
+				score
 			)
 		)}</p>
 		${
@@ -354,9 +342,9 @@ export function healthScoreChip(summary, opts = {}) {
 	const tooltip = healthScoreTooltip(summary);
 	const compactClass = opts.compact ? " health-popover--compact" : "";
 	const chipClass = opts.compact ? " health-score--compact" : "";
-	const visibleScore = opts.compact ? esc(score) : t("toolHealth.healthScore", "Health {score}", { score });
+	const visibleScore = opts.compact ? esc(score) : t("toolHealth.healthScore", "Health $1", score);
 	return `<details class="health-popover health-popover--score${compactClass}">
-		<summary class="status health-score health-score--${esc(tone)}${chipClass}" title="${esc(tooltip)}" aria-label="${esc(t("toolHealth.openScoreSignals", "Health {score} · {grade}; open calculation details", { score, grade: fullGrade }))}">
+		<summary class="status health-score health-score--${esc(tone)}${chipClass}" title="${esc(tooltip)}" aria-label="${esc(t("toolHealth.openScoreSignals", "Health $1 · $2; open calculation details", score, fullGrade))}">
 			${icon("analyze")} <span>${visibleScore}</span><span class="health-score__grade">${esc(grade)}</span>
 		</summary>
 		${healthScorePanel(summary)}
@@ -386,13 +374,13 @@ export function maintainerDisclosure(summary, opts = {}) {
 	const compact = opts.compact ? " health-popover--compact" : "";
 	const chipClass = opts.compact ? " health-chip--compact" : "";
 	return `<details class="health-popover${compact}">
-		<summary class="status health-chip health-chip--${esc(tone)}${chipClass}" title="${esc(label)}" aria-label="${esc(t("toolHealth.openMaintainerSignals", "{label}; open calculation signals", { label }))}">
+		<summary class="status health-chip health-chip--${esc(tone)}${chipClass}" title="${esc(label)}" aria-label="${esc(t("toolHealth.openMaintainerSignals", "$1; open calculation signals", label))}">
 			${icon("group")} <span class="health-chip__label">${esc(visibleLabel)}</span>
 		</summary>
 		<div class="health-popover__panel">
 			<div class="health-popover__head">
 				<strong>${esc(label)}</strong>
-				<span>${t("toolHealth.confidenceValue", "confidence {confidence}", { confidence: `${Math.round(confidence)}%` })}</span>
+				<span>${t("toolHealth.confidenceValue", "confidence $1", `${Math.round(confidence)}%`)}</span>
 			</div>
 			<dl class="health-popover__facts">
 				<div><dt>${t("toolHealth.maintainers", "Maintainers")}</dt><dd>${esc(String(counts.maintainers ?? 0))}</dd></div>

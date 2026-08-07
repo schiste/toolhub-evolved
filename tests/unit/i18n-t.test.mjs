@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { afterEach, test } from "vitest";
+import { AVAILABLE_LOCALES } from "../../public_html/lib/core/available-locales.js";
 import {
-	AVAILABLE_LOCALES,
 	BOOT_MESSAGES,
 	LOCALE_KEY,
 	localizedField,
@@ -30,17 +30,28 @@ test("t has tiny boot-critical English fallbacks when a caller has no catalog fa
 	assert.equal(t("x.unknown"), "x.unknown");
 });
 
-test("pseudoLocalize accents, brackets, expands, and preserves placeholders", () => {
-	assert.equal(pseudoLocalize("Open {count} tools"), "[Öƥḗƞ {count} ŧǿǿļş~~~~]");
-	assert.equal(pseudoLocalize("{name}"), "[{name}]");
+test("pseudoLocalize accents, brackets, expands, and preserves parameters", () => {
+	assert.equal(pseudoLocalize("Open $1 tools"), "[Öƥḗƞ $1 ŧǿǿļş~~~~]");
+	assert.equal(pseudoLocalize("$1"), "[$1]");
 	assert.equal(pseudoLocalize(""), "");
 });
 
 test("t prefers the installed catalog and fills params after lookup", () => {
-	setMessages({ "x.greet": "Bonjour {name} ({name})" });
-	assert.equal(t("x.greet", "Hello {name} ({name})", { name: "Ada" }), "Bonjour Ada (Ada)");
+	setMessages({ "x.greet": "Bonjour $1 ($1)" });
+	assert.equal(t("x.greet", "Hello $1 ($1)", "Ada"), "Bonjour Ada (Ada)");
 	// params also apply to the fallback path
-	assert.equal(t("x.missing", "{n} tools", { n: 3 }), "3 tools");
+	assert.equal(t("x.missing", "$1 tools", 3), "3 tools");
+	// translations control word order — the whole point of positional params
+	setMessages({ "x.order": "$2 before $1" });
+	assert.equal(t("x.order", "$1 before $2", "a", "b"), "b before a");
+});
+
+test("setMessages drops @metadata and non-string entries from a catalog", () => {
+	// translatewiki writes @metadata into every catalog it produces.
+	setMessages({ "@metadata": { authors: ["Ada"] }, "x.ok": "Bonjour", "x.bad": 42 });
+	assert.equal(t("@metadata", "fallback"), "fallback");
+	assert.equal(t("x.ok", "Hello"), "Bonjour");
+	assert.equal(t("x.bad", "Hello"), "Hello");
 });
 
 test("tData resolves markup-extracted shell messages", () => {
@@ -49,31 +60,22 @@ test("tData resolves markup-extracted shell messages", () => {
 	assert.equal(tData("shell.skipToContent", "Skip to content"), "Aller au contenu");
 });
 
-test("tWithElements escapes text and inserts caller-owned element placeholders", () => {
+test("tWithElements escapes text and inserts only caller-owned markup", () => {
+	const code = { html: "<code>toolinfo.json</code>" };
 	assert.equal(
-		tWithElements(
-			"x.inlineCode",
-			"Add {toolinfo} for {name}.",
-			{ toolinfo: "<code>toolinfo.json</code>" },
-			{
-				name: "Ada & Co"
-			}
-		),
+		tWithElements("x.inlineCode", "Add $1 for $2.", code, "Ada & Co"),
 		"Add <code>toolinfo.json</code> for Ada &amp; Co."
 	);
-	setMessages({ "x.inlineCode": "{name}: add {toolinfo}." });
+	// The translation reorders; the trusted/escaped split follows the parameter.
+	setMessages({ "x.inlineCode": "$2: add $1." });
 	assert.equal(
-		tWithElements(
-			"x.inlineCode",
-			"Add {toolinfo} for {name}.",
-			{ toolinfo: "<code>toolinfo.json</code>" },
-			{
-				name: "Ada & Co"
-			}
-		),
+		tWithElements("x.inlineCode", "Add $1 for $2.", code, "Ada & Co"),
 		"Ada &amp; Co: add <code>toolinfo.json</code>."
 	);
-	assert.equal(tWithElements("x.unknown", "Keep {missing}.", {}), "Keep {missing}.");
+	// A plain string is escaped even where an element was expected, so neither a
+	// translator nor live API data can introduce markup.
+	assert.equal(tWithElements("x.plain", "Add $1.", "<b>no</b>"), "Add &lt;b&gt;no&lt;/b&gt;.");
+	assert.equal(tWithElements("x.unknown", "Keep $1."), "Keep $1.");
 });
 
 test("setMessages ignores non-object catalogs", () => {

@@ -226,7 +226,7 @@ function listEditorControlsExample() {
 	const addBtn = button(t("styleguide.listEditor.add", "Add"), { variant: "outline" });
 	return `<div class="sg-control-stack">
 		<h2 class="le__h2">${t("styleguide.listEditor.tools", "Tools")} <span class="le__count">${t("styleguide.listEditor.twoTools", "2 tools")}</span></h2>
-		<p class="le__ro">${tWithElements("styleguide.listEditor.name", "Name: {name}", { name: "<code>commons-upload-helper</code>" })}</p>
+		<p class="le__ro">${tWithElements("styleguide.listEditor.name", "Name: $1", { html: "<code>commons-upload-helper</code>" })}</p>
 		<div class="le__add">
 			<input class="le__input" type="search" aria-label="${esc(t("styleguide.listEditor.searchToolsToAdd", "Search tools to add"))}" placeholder="${esc(t("styleguide.listEditor.searchToolsToAddPlaceholder", "Search tools to add..."))}" autocomplete="off" />
 			${addBtn}
@@ -274,8 +274,8 @@ function relatedToolsExample() {
 				<article class="related__item" data-tool="${esc(relatedTool.name)}">
 					${avatar(relatedTool.title)}
 					<div class="related__body">
-						<button class="related__title" type="button" data-tool="${esc(relatedTool.name)}" aria-label="${esc(t("styleguide.quickLookTool", "Quick look: {title}", { title: relatedTool.title }))}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(relatedTool.title)}>${esc(relatedTool.title)}</button>
-						<div class="related__maint">${tWithElements("styleguide.byMaintainer", "by {maintainer}", { maintainer: `<span${dirAttrs(relatedTool.maintainer)}>${esc(relatedTool.maintainer)}</span>` })}</div>
+						<button class="related__title" type="button" data-tool="${esc(relatedTool.name)}" aria-label="${esc(t("styleguide.quickLookTool", "Quick look: $1", relatedTool.title))}" style="${QUICK_VIEW_BUTTON_STYLE}"${dirAttrs(relatedTool.title)}>${esc(relatedTool.title)}</button>
+						<div class="related__maint">${tWithElements("styleguide.byMaintainer", "by $1", { html: `<span${dirAttrs(relatedTool.maintainer)}>${esc(relatedTool.maintainer)}</span>` })}</div>
 						<div class="related__chips">${chips}</div>
 					</div>
 				</article>
@@ -360,7 +360,7 @@ function footerExample() {
 			</div>
 			<div class="footer__bottom">
 				<a class="footer__maintain" href="/contribute">${icon("tools")} ${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved")}</a>
-				<span class="footer__legal">${tWithElements("styleguide.footer.legal", "Catalog content under {license} · {version}", { license: '<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>', version: '<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>' })}</span>
+				<span class="footer__legal">${tWithElements("styleguide.footer.legal", "Catalog content under $1 · $2", { html: '<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>' }, { html: '<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>' })}</span>
 				<span class="footer__note">${t("styleguide.footer.note", "Live Toolhub data · Evolved overlay")}</span>
 			</div>
 		</footer>
@@ -444,7 +444,7 @@ function proseExample() {
 	return `<article class="prose prose--page">
 		<h1>${t("styleguide.aboutToolhub", "About Toolhub")}</h1>
 		<p>${t("styleguide.proseBody", "Toolhub helps Wikimedians discover software used across editing, maintenance, analysis, and community workflows.")}</p>
-		<p>${tWithElements("styleguide.proseContribute", "{contribute} by improving listings or reporting gaps.", { contribute: `<a href="/contribute">${esc(t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved"))}</a>` })}</p>
+		<p>${tWithElements("styleguide.proseContribute", "$1 by improving listings or reporting gaps.", { html: `<a href="/contribute">${esc(t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved"))}</a>` })}</p>
 	</article>`;
 }
 
@@ -495,7 +495,7 @@ function panelVariantsExample() {
 		<div class="panel panel--cta">
 			<div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div>
 			<h3>${t("styleguide.ctaTitle", "Built a tool for Wikimedia?")}</h3>
-			<p>${tWithElements("styleguide.ctaBody", "Add a {toolinfo} to your repository so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>
+			<p>${tWithElements("styleguide.ctaBody", "Add a $1 to your repository so other Wikimedians can find it.", { html: "<code>toolinfo.json</code>" })}</p>
 			${myToolsBtn}
 		</div>
 	</div>`;

@@ -56,8 +56,8 @@ function activeEntry() {
 export function selectionNote(englishName) {
 	return t(
 		"langpicker.selectionNote",
-		"{name} isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.",
-		{ name: `<strong>${esc(englishName)}</strong>` }
+		"$1 isn’t available yet. In the real Toolhub, languages are translated through translatewiki.net — this prototype currently ships English and pseudolocalization only.",
+		`<strong>${esc(englishName)}</strong>`
 	);
 }
 

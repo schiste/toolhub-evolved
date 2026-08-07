@@ -25,9 +25,7 @@ export async function viewAudit() {
 	const rows = merged
 		.map((a) => {
 			const who = esc((a.user && a.user.username) || t("parity.systemCap", "System"));
-			const tgt = a.target
-				? t("parity.auditTarget", "{type} “{label}”", { type: esc(a.target.type), label: esc(a.target.label) })
-				: "";
+			const tgt = a.target ? t("parity.auditTarget", "$1 “$2”", esc(a.target.type), esc(a.target.label)) : "";
 			const inner = `${icon("edit", "feed__ic")}
 			<span class="feed__main"><span dir="auto">${who}</span> <em>${esc(a.action || t("parity.changed", "changed"))}</em> <span dir="auto">${tgt}</span></span>
 			${timeTag(a.timestamp, "feed__when")}`;

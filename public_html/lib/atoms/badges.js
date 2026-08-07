@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../core/dom.js";
-import { countLabel, t } from "../core/i18n.js";
+import { fmt, t } from "../core/i18n.js";
 import { completeness, endorsementOf, fitsContext, freshness, getUserContext } from "../core/signals.js";
 import { icon } from "./icon.js";
 
@@ -43,12 +43,11 @@ export function statusBadge(t) {
 export function endorsementChip(count, opts = {}) {
 	const n = Number(count) || 0;
 	if (!n) return "";
-	const label = n === 1 ? t("badges.listOne", "list") : t("badges.listOther", "lists");
 	const text = opts.compact
-		? t("badges.listCount", "{n} {label}", { n, label })
-		: t("badges.inLists", "In {n} {label}", { n, label });
+		? t("badges.listCount", "$1 {{PLURAL:$2|list|lists}}", fmt(n), n)
+		: t("badges.inLists", "In $1 {{PLURAL:$2|list|lists}}", fmt(n), n);
 	const cls = opts.compact ? " signal--compact signal--lists" : "";
-	return `<span class="signal${cls}" title="${esc(t("badges.appearsInLists", "Appears in {lists}", { lists: countLabel(n, t("badges.curatedListOne", "curated list"), t("badges.curatedListOther", "curated lists")) }))}">${icon("list")} ${text}</span>`;
+	return `<span class="signal${cls}" title="${esc(t("badges.appearsInLists", "Appears in $1 {{PLURAL:$2|curated list|curated lists}}", fmt(n), n))}">${icon("list")} ${text}</span>`;
 }
 /**
  * @param {{ total?: number; filled?: number; items?: { ok: boolean; label: string }[] }} c
@@ -85,14 +84,11 @@ export function completenessMeter(c, opts = {}) {
  * @param {{ details?: boolean }} opts
  */
 function completenessTitle(score, filled, total, opts) {
-	const headline = t("badges.fieldsComplete", "Listing {filled} of {total} fields complete", { filled, total });
+	const headline = t("badges.fieldsComplete", "Listing $1 of $2 fields complete", filled, total);
 	if (!opts.details || !Array.isArray(score.items) || score.items.length === 0) return headline;
 	const rows = score.items.map((item) => {
 		const state = item.ok ? t("badges.done", "Done") : t("badges.missing", "Missing");
-		return t("badges.fieldState", "{state}: {label}", {
-			state,
-			label: item.label
-		});
+		return t("badges.fieldState", "$1: $2", state, item.label);
 	});
 	return [headline, ...rows].join("\n");
 }

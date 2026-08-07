@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc, textAttrs } from "../lib/core/dom.js";
-import { countLabel, t, tWithElements, updatedTimeTag } from "../lib/core/i18n.js";
+import { fmt, t, tWithElements, updatedTimeTag } from "../lib/core/i18n.js";
 import {
 	apiGet,
 	backendGetJson,
@@ -595,7 +595,7 @@ export async function viewHome() {
 		<div class="hero__or" aria-hidden="true">${t("home.or", "or")}</div>
 		<form class="search" role="search" data-home-search>
 			<label for="home-q" class="skip-label">${t("home.searchTools", "Search tools")}</label>
-			<input id="home-q" class="search__input" type="search" aria-label="${t("home.searchTools", "Search tools")}" placeholder="${t("home.searchPlaceholder", "Search {count}…", { count: esc(countLabel(total, t("home.toolOne", "tool"), t("home.toolOther", "tools"))) })}" autocomplete="off" />
+			<input id="home-q" class="search__input" type="search" aria-label="${t("home.searchTools", "Search tools")}" placeholder="${t("home.searchPlaceholder", "Search $1 {{PLURAL:$2|tool|tools}}…", fmt(total), total)}" autocomplete="off" />
 			${button(t("home.search", "Search"), { variant: "primary", type: "submit", cls: "search__btn" })}
 		</form>
 	</section>
@@ -605,7 +605,7 @@ export async function viewHome() {
 		</div>
 		<aside class="layout__side">
 			<div class="panel"><h3 class="panel__title">${t("home.recentlyUpdated", "Recently updated")}</h3><ul class="recent" data-home-recent aria-live="polite">${recentToolsHTML(initialModel.recentTools)}</ul></div>
-			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${tWithElements("home.ctaBody", "Add a {toolinfo} to your repository, or register it from My tools so other Wikimedians can find it.", { toolinfo: "<code>toolinfo.json</code>" })}</p>${myToolsBtn}</div>
+			<div class="panel panel--cta"><div class="cta__icon" aria-hidden="true">${icon("idea", "icon--lg")}</div><h3>${t("home.ctaTitle", "Built a tool for Wikimedia?")}</h3><p>${tWithElements("home.ctaBody", "Add a $1 to your repository, or register it from My tools so other Wikimedians can find it.", { html: "<code>toolinfo.json</code>" })}</p>${myToolsBtn}</div>
 		</aside>
 	</div>`;
 	return {

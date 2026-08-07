@@ -124,9 +124,11 @@ export function relationshipTrust(relationship) {
 			};
 		}
 		return {
-			label: t("peopleEvidence.verifiedRelationship", "Verified {role} relationship", {
-				role: relationshipLabel(role).toLocaleLowerCase()
-			}),
+			label: t(
+				"peopleEvidence.verifiedRelationship",
+				"Verified $1 relationship",
+				relationshipLabel(role).toLocaleLowerCase()
+			),
 			tone: "verified"
 		};
 	}

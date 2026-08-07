@@ -164,7 +164,7 @@ export function viewCrawler() {
 		html: `
 		<div class="container page">
 			<h1 class="page__title">${t("parity.crawlerHistory", "Crawler history")}</h1>
-			<p class="page__intro">${tWithElements("parity.crawlerIntro", "Toolhub re-reads every registered {toolinfo} URL roughly hourly and updates the catalog with any changes.", { toolinfo: "<code>toolinfo.json</code>" })}</p>
+			<p class="page__intro">${tWithElements("parity.crawlerIntro", "Toolhub re-reads every registered $1 URL roughly hourly and updates the catalog with any changes.", { html: "<code>toolinfo.json</code>" })}</p>
 			<div data-crawler-history-content aria-live="polite" aria-busy="true">${crawlerLoadingContent()}</div>
 		</div>`,
 		mount() {

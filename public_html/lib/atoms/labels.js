@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, normalizeVcsUrl, safeHttpUrl } from "../core/dom.js";
-import { countLabel, t } from "../core/i18n.js";
+import { fmt, t } from "../core/i18n.js";
 import { button } from "./button.js";
 
 /**
@@ -17,7 +17,7 @@ export function metaItem(k, v) {
 export function invalidUrlNotice(label, url) {
 	const raw = String(url ?? "").trim();
 	if (!raw) return "";
-	const aria = t("labels.invalidUrlAria", "{label}: invalid URL", { label });
+	const aria = t("labels.invalidUrlAria", "$1: invalid URL", label);
 	const state = t("labels.invalidUrl", "Invalid URL");
 	return `<span class="linkout-bad" role="note" aria-label="${esc(aria)}" data-url-state="invalid"><span class="linkout-bad__label">${esc(label)}</span><span class="linkout-bad__state">${esc(state)}</span><span class="linkout-bad__url"${dirAttrs(raw)}>${esc(raw)}</span></span>`;
 }
@@ -59,8 +59,7 @@ export const wikiShort = (a) =>
 			? t("labels.allWikis", "All wikis")
 			: a.length === 1
 				? a[0]
-				: // Stryker disable next-line StringLiteral: this branch runs only when a.length >= 2, so countLabel() always selects the plural form; the singular "wiki" is unreachable (co-disables the asserted "wikis" literal on this line) — equivalent.
-					countLabel(a.length, t("labels.wikiOne", "wiki"), t("labels.wikiOther", "wikis"));
+				: t("labels.wikiCount", "$1 {{PLURAL:$2|wiki|wikis}}", fmt(a.length), a.length);
 /**
  * @param {Tool} t
  * @param {{ limit?: number | null; empty?: string }} [opts]
@@ -89,7 +88,7 @@ export function glanceChips(tool) {
 		`<span class="glance"${dirAttrs(wikiLabel(tool.forWikis))}>${esc(wikiLabel(tool.forWikis))}</span>`,
 		tool.uiLanguages &&
 			tool.uiLanguages.length > 0 &&
-			`<span class="glance">${esc(countLabel(tool.uiLanguages.length, t("labels.languageOne", "language"), t("labels.languageOther", "languages")))}</span>`
+			`<span class="glance">${esc(t("labels.languageCount", "$1 {{PLURAL:$2|language|languages}}", fmt(tool.uiLanguages.length), tool.uiLanguages.length))}</span>`
 	]
 		.filter(Boolean)
 		.join("");

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, dirAttrs, esc, isHttpUrl, textAttrs } from "../lib/core/dom.js";
-import { countLabel, t } from "../lib/core/i18n.js";
+import { fmt, t } from "../lib/core/i18n.js";
 import {
 	backendErrorExplanation,
 	backendErrorBody,
@@ -363,13 +363,15 @@ function withCatalogFieldProvenance(html, label, writeMeta, projection, field) {
 		effective.source ||
 		t("toolforms.sourceUnknown", "unknown source");
 	const note = [
-		t("toolforms.effectiveSource", "Effective source: {source}", { source }),
+		t("toolforms.effectiveSource", "Effective source: $1", source),
 		sources.size > 1
-			? t("toolforms.supportingSourceCount", "{count} supporting source types", { count: sources.size })
+			? t(
+					"toolforms.supportingSourceCount",
+					"$1 {{PLURAL:$1|supporting source type|supporting source types}}",
+					sources.size
+				)
 			: "",
-		invalid
-			? t("toolforms.invalidEvidenceCount", "{count} invalid value(s) retained as evidence", { count: invalid })
-			: "",
+		invalid ? t("toolforms.invalidEvidenceCount", "$1 invalid value(s) retained as evidence", invalid) : "",
 		reachability === false ? t("toolforms.effectiveUrlUnreachable", "effective URL currently unreachable") : ""
 	]
 		.filter(Boolean)
@@ -399,8 +401,9 @@ function crawlerAuthorField(tool, meta) {
 	const myToolsLink = `<a href="/my-tools">${esc(t("toolforms.myTools", "My tools"))}</a>`;
 	const hint = t(
 		"toolforms.fieldAuthorsCrawlerHint",
-		"Author data for crawled tools comes from the maintainer's toolinfo.json and official Toolhub. Update the source toolinfo.json to change it; Evolved verification is managed in {developerSettings} and {myTools}.",
-		{ developerSettings: developerSettingsLink, myTools: myToolsLink }
+		"Author data for crawled tools comes from the maintainer's toolinfo.json and official Toolhub. Update the source toolinfo.json to change it; Evolved verification is managed in $1 and $2.",
+		developerSettingsLink,
+		myToolsLink
 	);
 	const field = `<label class="le__label">${esc(label)}
 		 <span class="le__hint" id="${hintId}">${hint}</span>
@@ -525,8 +528,8 @@ function saveAnnotationFallbackResult(name, anno, res, out) {
 	out.className = "at__result at__result--err";
 	out.textContent = t(
 		"toolforms.officialWriteFailed",
-		"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-		{ msg: backendErrorExplanation(res) }
+		"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+		backendErrorExplanation(res)
 	);
 }
 
@@ -553,8 +556,8 @@ function setupToolCoreRetry(name) {
 				out.className = "at__result at__result--err";
 				out.textContent = t(
 					"toolforms.officialWriteFailed",
-					"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-					{ msg: backendErrorExplanation(res) }
+					"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+					backendErrorExplanation(res)
 				);
 				return;
 			}
@@ -565,10 +568,8 @@ function setupToolCoreRetry(name) {
 			out.className = "at__result at__result--err";
 			out.textContent = t(
 				"toolforms.officialWriteFailedNoDraft",
-				"Official Toolhub did not accept the write: {msg}",
-				{
-					msg: backendErrorExplanation(error)
-				}
+				"Official Toolhub did not accept the write: $1",
+				backendErrorExplanation(error)
 			);
 		}
 	});
@@ -597,10 +598,8 @@ function setupAnnotationRetry(name) {
 			out.className = "at__result at__result--err";
 			out.textContent = t(
 				"toolforms.officialWriteFailedNoDraft",
-				"Official Toolhub did not accept the write: {msg}",
-				{
-					msg: backendErrorExplanation(error)
-				}
+				"Official Toolhub did not accept the write: $1",
+				backendErrorExplanation(error)
 			);
 		}
 	});
@@ -669,9 +668,7 @@ function showOfficialWriteFailure(out, error, fieldMap) {
 	const msg = backendErrorExplanation(error);
 	if (fieldMap) applyBackendFieldErrors(error, fieldMap);
 	out.className = "at__result at__result--err";
-	out.textContent = t("toolforms.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: {msg}", {
-		msg
-	});
+	out.textContent = t("toolforms.officialWriteFailedNoDraft", "Official Toolhub did not accept the write: $1", msg);
 }
 
 function duplicateRegion() {
@@ -850,8 +847,8 @@ function setupToolCoreSubmit(form, { editing, name, current, changeReview }) {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailed",
-						"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-						{ msg: backendErrorExplanation(res) }
+						"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+						backendErrorExplanation(res)
 					);
 					return;
 				}
@@ -1070,10 +1067,8 @@ export async function viewToolForm(name) {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialDeleteFailed",
-						"Official Toolhub did not delete the tool: {msg}",
-						{
-							msg: backendErrorExplanation(error)
-						}
+						"Official Toolhub did not delete the tool: $1",
+						backendErrorExplanation(error)
 					);
 				}
 			});
@@ -1099,7 +1094,7 @@ function addToolDiscoveryRows(discoveryMisses) {
 				.map((attempt) => attempt.url)
 				.filter(Boolean)
 				.join(", ");
-			const suffix = checked ? ` ${t("toolforms.discoveryChecked", "Checked: {urls}", { urls: checked })}` : "";
+			const suffix = checked ? ` ${t("toolforms.discoveryChecked", "Checked: $1", checked)}` : "";
 			return `<li class="at__url-row at__url-row--not-found"><code class="at__url">${esc(miss.inputUrl)}</code> <span class="sync-badge sync-badge--sync-error">${t("toolforms.toolinfoNotFound", "toolinfo.json not found")}</span><span class="at__url-error">${esc(miss.message)}${esc(suffix)}</span></li>`;
 		})
 		.join("");
@@ -1151,12 +1146,10 @@ function addToolCrawlerRunRows(runs) {
 			const errors = Array.isArray(run.errors) && run.errors.length > 0 ? ` · ${esc(run.errors[0])}` : "";
 			return `<li><span>${status} · ${t(
 				"toolforms.crawlerRunCounts",
-				"{urls} URLs, {added} added, {updated} updated",
-				{
-					urls: String(run.urlsCount || 0),
-					added: String(run.added || 0),
-					updated: String(run.updated || 0)
-				}
+				"$1 URLs, $2 added, $3 updated",
+				String(run.urlsCount || 0),
+				String(run.added || 0),
+				String(run.updated || 0)
 			)}${errors}</span><span class="feed__when">${esc(run.endedAt || run.startedAt || "")}</span></li>`;
 		})
 		.join("")}</ol>`;
@@ -1179,8 +1172,8 @@ async function addToolRegisterCrawlerUrl(url, out) {
 			out.className = "at__result at__result--err";
 			out.textContent = t(
 				"toolforms.officialWriteFailed",
-				"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-				{ msg: backendErrorExplanation(res) }
+				"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+				backendErrorExplanation(res)
 			);
 		} else {
 			out.className = "at__result at__result--ok";
@@ -1356,7 +1349,7 @@ export function toolRegistrationWorkspace() {
 					"toolforms.yourToolsNote",
 					"Local submissions and pasted toolinfo records attached to this account workspace."
 				),
-				body: `<p class="le__count" data-sub-count>${countLabel(localToolCount, t("toolforms.toolOne", "tool"), t("toolforms.toolOther", "tools"))}</p>
+				body: `<p class="le__count" data-sub-count>${t("toolforms.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(localToolCount), localToolCount)}</p>
 				<div data-sub-grid>${addToolSubGrid()}</div>`
 			})}
 			${accountSection({
@@ -1439,10 +1432,8 @@ export function toolRegistrationWorkspace() {
 						res?.result === SYNC_STATUS.localFallback
 							? t(
 									"toolforms.officialWriteFailed",
-									"Official Toolhub did not accept the write. Saved locally in Evolved instead: {msg}",
-									{
-										msg: backendErrorExplanation(res)
-									}
+									"Official Toolhub did not accept the write. Saved locally in Evolved instead: $1",
+									backendErrorExplanation(res)
 								)
 							: t("toolforms.officialUrlRegistered", "Registered with official Toolhub.");
 					renderUrlList();
@@ -1450,10 +1441,8 @@ export function toolRegistrationWorkspace() {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailedNoDraft",
-						"Official Toolhub did not accept the write: {msg}",
-						{
-							msg: backendErrorExplanation(error)
-						}
+						"Official Toolhub did not accept the write: $1",
+						backendErrorExplanation(error)
 					);
 				}
 				return;
@@ -1470,10 +1459,8 @@ export function toolRegistrationWorkspace() {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialUrlDeleteFailed",
-						"Official Toolhub could not remove the URL: {msg}",
-						{
-							msg: backendErrorExplanation(error)
-						}
+						"Official Toolhub could not remove the URL: $1",
+						backendErrorExplanation(error)
 					);
 					return;
 				}
@@ -1484,10 +1471,8 @@ export function toolRegistrationWorkspace() {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialUrlDeleteFailed",
-						"Official Toolhub could not remove the URL: {msg}",
-						{
-							msg: backendErrorExplanation(error)
-						}
+						"Official Toolhub could not remove the URL: $1",
+						backendErrorExplanation(error)
 					);
 					return;
 				}
@@ -1505,8 +1490,8 @@ export function toolRegistrationWorkspace() {
 			}
 			const errors = res.errors || [];
 			const parts = [];
-			if (res.added) parts.push(t("toolforms.nAdded", "{n} added", { n: res.added }));
-			if (res.updated) parts.push(t("toolforms.nUpdated", "{n} updated", { n: res.updated }));
+			if (res.added) parts.push(t("toolforms.nAdded", "$1 added", res.added));
+			if (res.updated) parts.push(t("toolforms.nUpdated", "$1 updated", res.updated));
 			out.className = `at__result${errors.length > 0 && parts.length === 0 ? " at__result--err" : " at__result--ok"}`;
 			out.textContent =
 				(parts.join(", ") || t("toolforms.nothingIngested", "Nothing ingested")) +
@@ -1515,10 +1500,11 @@ export function toolRegistrationWorkspace() {
 			const c = $("[data-sub-count]");
 			// Stryker disable next-line ConditionalExpression: the [data-sub-count] element is always present in this view, so the guard is always true — defensive.
 			if (c) {
-				c.textContent = countLabel(
-					Object.keys(toolNewMap()).length,
-					t("toolforms.toolOne", "tool"),
-					t("toolforms.toolOther", "tools")
+				c.textContent = t(
+					"toolforms.toolCount",
+					"$1 {{PLURAL:$2|tool|tools}}",
+					fmt(Object.keys(toolNewMap()).length),
+					Object.keys(toolNewMap()).length
 				);
 			}
 		});
@@ -1562,7 +1548,7 @@ export async function viewAnnotationsEdit(name) {
 	});
 	const html = `
 	<div class="container page le">
-		<a class="back" href="${toolHref(name)}">${t("toolforms.backToName", "← Back to {title}", { title: esc(cur.title) })}</a>
+		<a class="back" href="${toolHref(name)}">${t("toolforms.backToName", "← Back to $1", esc(cur.title))}</a>
 		<h1 class="page__title">${t("toolforms.editAnnotations", "Edit annotations")} <span class="exp-badge">${t("toolforms.experimentalBadge", "Experimental")}</span></h1>
 		<p class="page__intro">${t("toolforms.annoIntro", "Community annotations enrich a tool without touching its core data. Signed-in changes publish to official Toolhub when permitted; rejected writes stay local to Evolved — see")} <a href="/rules-of-engagement">${t("toolforms.rulesOfEngagement", "Rules of Engagement")}</a>.</p>
 		<form data-anno-form>
@@ -1614,10 +1600,8 @@ ${iconDiagnostic ? `\t\t\t${iconDiagnostic}\n` : ""}\t\t\t<div class="le__action
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"toolforms.officialWriteFailedNoDraft",
-						"Official Toolhub did not accept the write: {msg}",
-						{
-							msg
-						}
+						"Official Toolhub did not accept the write: $1",
+						msg
 					);
 					return;
 				}

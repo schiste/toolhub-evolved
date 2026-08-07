@@ -560,7 +560,9 @@ test("viewMembers: an API failure shows zero members and an empty grid", async (
 test("viewMembers: a single member uses the singular label", async () => {
 	api.apiGet.mockResolvedValue({ count: 1, results: [{ username: "Solo" }] });
 	const view = await viewMembers();
-	assert.match(view.html, /<p class="page__intro">1 registered Wikimedian contribute to the catalog\.<\/p>/);
+	// The whole-message plural agrees the verb too; the old fragment join could
+	// only swap the noun, producing "1 registered Wikimedian contribute".
+	assert.match(view.html, /<p class="page__intro">1 registered Wikimedian contributes to the catalog\.<\/p>/);
 });
 
 /* ---- viewCrawler ------------------------------------------------------- */

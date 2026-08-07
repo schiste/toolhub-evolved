@@ -191,9 +191,11 @@ export function viewAccountSettings() {
 				out.textContent = t("accountData.profileSaved", "Profile saved.");
 			} catch (error) {
 				out.className = "at__result at__result--err";
-				out.textContent = t("accountData.profileSaveFailed", "Profile could not be saved: {msg}", {
-					msg: backendErrorExplanation(error)
-				});
+				out.textContent = t(
+					"accountData.profileSaveFailed",
+					"Profile could not be saved: $1",
+					backendErrorExplanation(error)
+				);
 			}
 		});
 		$("[data-export]")?.addEventListener("click", async () => {
@@ -208,9 +210,7 @@ export function viewAccountSettings() {
 				out.textContent = t("accountData.exportReady", "Export generated.");
 			} catch (error) {
 				out.className = "at__result at__result--err";
-				out.textContent = t("accountData.exportFailed", "Export failed: {msg}", {
-					msg: backendErrorExplanation(error)
-				});
+				out.textContent = t("accountData.exportFailed", "Export failed: $1", backendErrorExplanation(error));
 			}
 		});
 		$("[data-delete-evolved]")?.addEventListener("click", async () => {
@@ -222,14 +222,14 @@ export function viewAccountSettings() {
 				const data = await serverWrite("DELETE", "/v1/user/evolved-data/");
 				demoStore.clearAll();
 				out.className = "at__result at__result--ok";
-				out.textContent = t("accountData.deleted", "Deleted Evolved-local data: {count} rows.", {
-					count: String(Object.values(data?.deleted || {}).reduce((sum, n) => sum + Number(n || 0), 0))
-				});
+				out.textContent = t(
+					"accountData.deleted",
+					"Deleted Evolved-local data: $1 rows.",
+					String(Object.values(data?.deleted || {}).reduce((sum, n) => sum + Number(n || 0), 0))
+				);
 			} catch (error) {
 				out.className = "at__result at__result--err";
-				out.textContent = t("accountData.deleteFailed", "Delete failed: {msg}", {
-					msg: backendErrorExplanation(error)
-				});
+				out.textContent = t("accountData.deleteFailed", "Delete failed: $1", backendErrorExplanation(error));
 			}
 		});
 	}

@@ -609,7 +609,7 @@ export function viewExperiments() {
 		html: `
 		<div class="container page">
 			<h1 class="page__title">${t("experiments.title", "Feature status")}</h1>
-			<p class="page__intro">${t("experiments.introLead", "The {total} features below describe Toolhub Evolved's hybrid model:", { total: esc(String(total)) })}
+			<p class="page__intro">${t("experiments.introLead", "The $1 features below describe Toolhub Evolved's hybrid model:", esc(String(total)))}
 			<strong>${t("experiments.introLive", "live Toolhub data stays the base")}</strong>, ${t("experiments.introWrites", "supported signed-in writes publish to official Toolhub first, and")}
 			<strong>${t("experiments.introOverlay", "local overlays cover drafts, fallback data, and Evolved-owned data")}</strong>.
 			${t("experiments.introTail", "These features are visible by default; for the live-vs-local model and where your data goes, see")}

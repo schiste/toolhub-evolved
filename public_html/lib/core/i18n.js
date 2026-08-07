@@ -59,16 +59,33 @@ export function appLocale() {
 export const LOCALE = appLocale();
 
 /* ---- Message catalog (t) ------------------------------------------------
-   Chrome strings live in code as `t("key", "English…", params)`: the English
+   Chrome strings live in code as `t("key", "English…", ...params)`: the English
    source doubles as the fallback, and `i18n/en.json` is generated from the
-   sources (npm run i18n:extract) so translatewiki-style catalogs always match.
+   sources (npm run i18n:extract) so the shipped catalog can never drift.
+
+   Messages use the banana format translatewiki speaks, the same as upstream
+   Toolhub: positional `$1` parameters plus the `{{PLURAL:…}}` and `{{bidi:…}}`
+   magic words. That is why a message group needs no bespoke configuration, and
+   why banana-checker can validate parameter parity across every translation.
    Non-English catalogs are fetched at boot (main.js) and installed here. */
-/** Locales available to the switcher. `en-x-pseudo` is generated at runtime for QA. */
-export const AVAILABLE_LOCALES = ["en", PSEUDO_LOCALE];
+// The list of selectable locales lives in ./available-locales.js: this module is
+// in almost every module graph, so a dependency here shifts import timing app-wide.
 /** @type {Record<string, string>} */
 let messages = {};
-const ELEMENT_PLACEHOLDER = /\{([A-Za-z][A-Za-z0-9]*)}/g;
-const MESSAGE_PLACEHOLDER = /\{[A-Za-z][A-Za-z0-9]*}/g;
+const BANANA_PARAM = /\$(\d+)/g;
+/** `{{NAME:arg|arg…}}`; scanned rather than matched so nested braces survive. */
+const MAGIC_OPEN = "{{";
+const MAGIC_CLOSE = "}}";
+/** Unicode FSI/PDI: isolate interpolated text so its direction cannot leak. */
+const FIRST_STRONG_ISOLATE = "⁨";
+const POP_DIRECTIONAL_ISOLATE = "⁩";
+const pluralRules = new Intl.PluralRules(LOCALE);
+/**
+ * This locale's plural categories in CLDR order (`zero one two few many other`,
+ * filtered to the ones it uses) — the positional order banana PLURAL forms are
+ * written in. English has two, Russian four, Arabic six.
+ */
+const PLURAL_CATEGORIES = pluralRules.resolvedOptions().pluralCategories;
 const PSEUDO_MAP = Object.freeze(
 	/** @type {Record<string, string>} */ ({
 		A: "Å",
@@ -140,7 +157,8 @@ function pseudoSegment(segment) {
 }
 
 /**
- * Expand and accent a source message while leaving `{placeholders}` intact.
+ * Expand and accent a source message while leaving `$1` parameters intact.
+ * Runs after magic words are expanded, so only plain text and `$n` remain.
  * @param {unknown} text
  */
 export function pseudoLocalize(text) {
@@ -148,49 +166,191 @@ export function pseudoLocalize(text) {
 	if (!source) return "";
 	let out = "";
 	let lastIndex = 0;
-	for (const match of source.matchAll(MESSAGE_PLACEHOLDER)) {
+	for (const match of source.matchAll(BANANA_PARAM)) {
 		const index = match.index ?? 0;
 		out += pseudoSegment(source.slice(lastIndex, index));
 		out += match[0];
 		lastIndex = index + match[0].length;
 	}
 	out += pseudoSegment(source.slice(lastIndex));
-	const transformable = source.replaceAll(MESSAGE_PLACEHOLDER, "").trim();
+	const transformable = source.replaceAll(BANANA_PARAM, "").trim();
 	const expansion = transformable ? "~".repeat(Math.max(1, Math.ceil(transformable.length * 0.3))) : "";
 	return `[${out}${expansion}]`;
 }
 
-/** @param {unknown} catalog */
+/**
+ * Install a fetched catalog. translatewiki writes an `@metadata` block into
+ * every catalog it produces, and only string values are messages, so both are
+ * dropped here rather than leaking into `t()` lookups.
+ * @param {unknown} catalog
+ */
 export function setMessages(catalog) {
-	messages = catalog && typeof catalog === "object" ? /** @type {Record<string, string>} */ (catalog) : {};
+	messages = {};
+	if (!catalog || typeof catalog !== "object") return;
+	for (const [key, value] of Object.entries(catalog)) {
+		if (!key.startsWith("@") && typeof value === "string") messages[key] = value;
+	}
+}
+
+/** @param {unknown} value @returns {value is { html: string }} */
+function isHtmlParam(value) {
+	return Boolean(value) && typeof value === "object" && typeof (/** @type {any} */ (value).html) === "string";
+}
+
+/** @param {unknown} value */
+function paramText(value) {
+	return isHtmlParam(value) ? "" : String(value);
 }
 
 /**
- * @param {string} key
- * @param {string | undefined} fallback
- * @param {Record<string, string | number> | undefined} params
+ * Substitute `$1…$n`. An index with no parameter is left as written, so a
+ * message that outlives its call site degrades visibly instead of silently.
+ * @param {string} text
+ * @param {readonly unknown[]} params
  */
-function lookupMessage(key, fallback, params) {
-	const hasCatalogMessage = Object.prototype.hasOwnProperty.call(messages, key);
-	const hasBootMessage = Object.prototype.hasOwnProperty.call(BOOT_MESSAGES, key);
-	let out = hasCatalogMessage ? String(messages[key]) : (fallback ?? BOOT_MESSAGES[key] ?? key);
-	if (isPseudoLocale() && (hasCatalogMessage || hasBootMessage || fallback !== undefined)) out = pseudoLocalize(out);
-	if (params) {
-		for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v));
+function resolveParams(text, params) {
+	return text.replaceAll(BANANA_PARAM, (raw, index) => {
+		const value = params[Number(index) - 1];
+		return value === undefined ? raw : paramText(value);
+	});
+}
+
+/**
+ * Locate the balanced `{{…}}` span at or after `from`, so a magic word nested
+ * inside another one does not terminate the outer match early.
+ * @param {string} text
+ * @param {number} from
+ * @returns {{ open: number, close: number } | null} `close` is the index past `}}`
+ */
+function findMagicWord(text, from) {
+	const open = text.indexOf(MAGIC_OPEN, from);
+	if (open < 0) return null;
+	let depth = 0;
+	for (let i = open; i < text.length - 1; i++) {
+		if (text.startsWith(MAGIC_OPEN, i)) {
+			depth++;
+			i++;
+		} else if (text.startsWith(MAGIC_CLOSE, i)) {
+			depth--;
+			i++;
+			if (depth === 0) return { open, close: i + 1 };
+		}
+	}
+	return null;
+}
+
+/**
+ * Split magic-word arguments on top-level `|` only, so a form containing a
+ * nested magic word survives intact.
+ * @param {string} body
+ * @returns {string[]}
+ */
+function splitMagicArgs(body) {
+	const parts = [];
+	let depth = 0;
+	let start = 0;
+	for (let i = 0; i < body.length; i++) {
+		if (body.startsWith(MAGIC_OPEN, i)) {
+			depth++;
+			i++;
+		} else if (body.startsWith(MAGIC_CLOSE, i)) {
+			depth = Math.max(0, depth - 1);
+			i++;
+		} else if (body[i] === "|" && depth === 0) {
+			parts.push(body.slice(start, i));
+			start = i + 1;
+		}
+	}
+	parts.push(body.slice(start));
+	return parts;
+}
+
+/**
+ * Pick a banana PLURAL form. An explicit `N=form` wins for that exact count;
+ * otherwise forms are positional in this locale's CLDR category order, which is
+ * what `Intl.PluralRules(...).resolvedOptions().pluralCategories` returns. A
+ * message carrying fewer forms than the locale needs (an English source read in
+ * Arabic, say) falls back to its last form rather than dropping the text.
+ * @param {number} count
+ * @param {string[]} forms
+ */
+function selectPluralForm(count, forms) {
+	const positional = [];
+	for (const form of forms) {
+		const explicit = /^(\d+)\s*=([\s\S]*)$/.exec(form);
+		if (!explicit) {
+			positional.push(form);
+			continue;
+		}
+		if (Number(explicit[1]) === count) return explicit[2];
+	}
+	const index = PLURAL_CATEGORIES.indexOf(pluralRules.select(Math.abs(count)));
+	return positional[index] ?? positional.at(-1) ?? "";
+}
+
+/**
+ * Expand `{{PLURAL:…}}` and `{{bidi:…}}`. Parameters are resolved for the
+ * control argument only — `$n` inside the selected text stays a placeholder and
+ * is filled afterwards, so a parameter value containing `|` or `{{` can never
+ * be re-read as syntax.
+ * @param {string} text
+ * @param {readonly unknown[]} params
+ */
+function expandMagicWords(text, params) {
+	let out = text;
+	let cursor = 0;
+	// Bounded: a hostile or malformed catalog must not spin the render loop.
+	for (let pass = 0; pass < 100; pass++) {
+		const span = findMagicWord(out, cursor);
+		if (!span) break;
+		const body = out.slice(span.open + MAGIC_OPEN.length, span.close - MAGIC_CLOSE.length);
+		const colon = body.indexOf(":");
+		const name = colon < 0 ? "" : body.slice(0, colon).trim().toLowerCase();
+		const args = colon < 0 ? [] : splitMagicArgs(body.slice(colon + 1));
+		let replacement = null;
+		if (name === "plural" && args.length > 1) {
+			const count = Number(resolveParams(args[0], params));
+			replacement = selectPluralForm(Number.isFinite(count) ? count : 0, args.slice(1));
+		} else if (name === "bidi" && args.length > 0) {
+			replacement = `${FIRST_STRONG_ISOLATE}${args.join("|")}${POP_DIRECTIONAL_ISOLATE}`;
+		}
+		if (replacement === null) {
+			// Unknown magic word: leave it verbatim and keep scanning past it.
+			cursor = span.open + MAGIC_OPEN.length;
+			continue;
+		}
+		out = out.slice(0, span.open) + replacement + out.slice(span.close);
+		cursor = span.open;
 	}
 	return out;
 }
 
 /**
+ * Resolve a key to its message with magic words expanded and `$n` still in
+ * place, so callers decide how each parameter is escaped.
+ * @param {string} key
+ * @param {string | undefined} fallback
+ * @param {readonly unknown[]} params
+ */
+function resolveMessage(key, fallback, params) {
+	const hasCatalogMessage = Object.prototype.hasOwnProperty.call(messages, key);
+	const hasBootMessage = Object.prototype.hasOwnProperty.call(BOOT_MESSAGES, key);
+	let out = hasCatalogMessage ? String(messages[key]) : (fallback ?? BOOT_MESSAGES[key] ?? key);
+	out = expandMagicWords(out, params);
+	if (isPseudoLocale() && (hasCatalogMessage || hasBootMessage || fallback !== undefined)) out = pseudoLocalize(out);
+	return out;
+}
+
+/**
  * Translate a chrome string. `fallback` is the English source (also what the
- * catalog extractor collects); `params` fill `{name}` placeholders after
- * lookup, so translations control word order.
+ * catalog extractor collects); `params` fill `$1…$n` after lookup, so
+ * translations control word order and plural form.
  * @param {string} key
  * @param {string} [fallback]
- * @param {Record<string, string | number>} [params]
+ * @param {...(string | number)} params
  */
-export function t(key, fallback, params) {
-	return lookupMessage(key, fallback, params);
+export function t(key, fallback, ...params) {
+	return resolveParams(resolveMessage(key, fallback, params), params);
 }
 
 /**
@@ -198,28 +358,33 @@ export function t(key, fallback, params) {
  * such as `data-i18n` in the static shell.
  * @param {string} key
  * @param {string} fallback
- * @param {Record<string, string | number>} [params]
+ * @param {...(string | number)} params
  */
-export function tData(key, fallback, params) {
-	return lookupMessage(key, fallback, params);
+export function tData(key, fallback, ...params) {
+	// Resolves directly rather than delegating to t(): a t() call with a
+	// non-literal key is exactly what the catalog extractor refuses to see.
+	return resolveParams(resolveMessage(key, fallback, params), params);
 }
 
 /**
- * Translate compact UI text with caller-owned inline markup. Translated text
- * and params are escaped; only `elements` values are inserted as trusted HTML.
+ * Translate compact UI text with caller-owned inline markup. The translated
+ * text and every plain parameter are escaped; only a parameter wrapped as
+ * `{ html }` is inserted as trusted markup, so neither a translator nor live
+ * API data can introduce HTML.
  * @param {string} key
  * @param {string} fallback
- * @param {Record<string, string>} elements trusted HTML snippets keyed by `{name}`
- * @param {Record<string, string | number>} [params]
+ * @param {...(string | number | { html: string })} params positional `$1…$n`
  */
-export function tWithElements(key, fallback, elements, params) {
-	const message = lookupMessage(key, fallback, params);
+export function tWithElements(key, fallback, ...params) {
+	const message = resolveMessage(key, fallback, params);
 	let out = "";
 	let lastIndex = 0;
-	for (const match of message.matchAll(ELEMENT_PLACEHOLDER)) {
+	for (const match of message.matchAll(BANANA_PARAM)) {
 		const index = match.index ?? 0;
+		const value = params[Number(match[1]) - 1];
 		out += esc(message.slice(lastIndex, index));
-		out += Object.hasOwn(elements, match[1]) ? elements[match[1]] : esc(match[0]);
+		if (value === undefined) out += esc(match[0]);
+		else out += isHtmlParam(value) ? value.html : esc(String(value));
 		lastIndex = index + match[0].length;
 	}
 	return out + esc(message.slice(lastIndex));
@@ -273,7 +438,6 @@ const numberFmt = new Intl.NumberFormat(LOCALE);
 const compactNumberFmt = new Intl.NumberFormat(LOCALE, { notation: "compact", maximumFractionDigits: 1 });
 const relativeTimeFmt = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
 const dateTimeFmt = new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium", timeStyle: "short" });
-const pluralRules = new Intl.PluralRules(LOCALE);
 /** @param {string} locale */
 export function localeDir(locale) {
 	return RTL_LANGS.has(String(locale).split("-")[0].toLowerCase()) ? "rtl" : "ltr";
@@ -290,23 +454,6 @@ export function fmt(n) {
 export function compactFmt(n) {
 	return compactNumberFmt.format(Number(n) || 0);
 }
-/**
- * @param {unknown} n
- * @param {Record<string, string>} forms
- */
-export function plural(n, forms) {
-	const cat = pluralRules.select(Math.abs(Number(n) || 0));
-	return forms[cat] || forms.other || forms.one || "";
-}
-/**
- * @param {unknown} n
- * @param {string} one
- * @param {string} other
- */
-export function countLabel(n, one, other) {
-	const value = Number(n) || 0;
-	return `${fmt(value)} ${plural(value, { one, other })}`;
-}
 /** @param {string | null | undefined} iso */
 export function relativeTime(iso) {
 	if (!iso) return "";
@@ -322,7 +469,7 @@ export function relativeTime(iso) {
 /** @param {string | null | undefined} iso */
 export function relTime(iso) {
 	const rel = relativeTime(iso);
-	return rel ? t("time.updated", "Updated {rel}", { rel }) : "";
+	return rel ? t("time.updated", "Updated $1", rel) : "";
 }
 /**
  * @param {string | null | undefined} iso
@@ -343,8 +490,4 @@ export function timeTag(iso, cls, text) {
  */
 export function updatedTimeTag(iso, cls) {
 	return timeTag(iso, cls, relTime(iso));
-}
-/** @param {unknown} n */
-export function views(n) {
-	return `${compactFmt(n)} ${plural(n, { one: t("count.viewOne", "view"), other: t("count.viewOther", "views") })}`;
 }

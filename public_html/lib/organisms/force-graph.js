@@ -404,10 +404,12 @@ export function forceGraph(container, data, opts = {}) {
 		const visible = visibleNodes().length;
 		const readout = graph?.querySelector("[data-graph-filter-count]");
 		if (readout) {
-			readout.textContent = t("graph.filterCount", "Showing {visible} of {total} tools", {
-				visible: String(visible),
-				total: String(nodes.length)
-			});
+			readout.textContent = t(
+				"graph.filterCount",
+				"Showing $1 of $2 tools",
+				String(visible),
+				String(nodes.length)
+			);
 		}
 		const empty = /** @type {HTMLElement | null} */ (graph?.querySelector("[data-graph-filter-empty]"));
 		if (empty) empty.hidden = visible > 0 || nodes.length === 0;

@@ -59,7 +59,7 @@ function relatedToolRow(item) {
 			${avatar(tool.title)}
 			<div class="related__body">
 				<div class="related__titleline">
-					<button class="related__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("tool.quickLookAria", "Quick look: {title}", { title: esc(tool.title) })}" style="${QUICK_VIEW_BUTTON_STYLE}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</button>
+					<button class="related__title" type="button" data-tool="${esc(tool.name)}" aria-label="${t("tool.quickLookAria", "Quick look: $1", esc(tool.title))}" style="${QUICK_VIEW_BUTTON_STYLE}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</button>
 					${deprecated}
 				</div>
 				<div class="related__maint">${t("tool.by", "by")} <span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></div>
@@ -139,10 +139,12 @@ function catalogUpdatedSignal(tool) {
 	const iso = Number.isNaN(date.getTime()) ? "" : date.toISOString();
 	return freshnessSignal(
 		tool.modified,
-		t("tool.toolhubListingUpdated", "Toolhub listing updated {rel}", { rel }),
-		t("tool.toolhubListingUpdatedTooltip", "Toolhub catalog listing last modified: {date}", {
-			date: iso || String(tool.modified || "")
-		}),
+		t("tool.toolhubListingUpdated", "Toolhub listing updated $1", rel),
+		t(
+			"tool.toolhubListingUpdatedTooltip",
+			"Toolhub catalog listing last modified: $1",
+			iso || String(tool.modified || "")
+		),
 		"history"
 	);
 }
@@ -158,14 +160,14 @@ function repositoryUpdatedSignal(evolvedSummary) {
 	if (!rel || Number.isNaN(date.getTime())) return "";
 	const tooltipLines = [
 		commitSha
-			? t("tool.repositoryLastCommit", "Last known repository commit: {commit}", { commit: commitSha })
+			? t("tool.repositoryLastCommit", "Last known repository commit: $1", commitSha)
 			: t("tool.repositoryLastCommitUnknown", "Last known repository commit id unavailable."),
-		repository.branch ? t("tool.repositoryBranch", "Branch: {branch}", { branch: String(repository.branch) }) : "",
-		t("tool.repositoryUpdatedAt", "Repository updated at: {date}", { date: date.toISOString() })
+		repository.branch ? t("tool.repositoryBranch", "Branch: $1", String(repository.branch)) : "",
+		t("tool.repositoryUpdatedAt", "Repository updated at: $1", date.toISOString())
 	].filter(Boolean);
 	return freshnessSignal(
 		lastCommitAt,
-		t("tool.repositoryUpdated", "Repository updated {rel}", { rel }),
+		t("tool.repositoryUpdated", "Repository updated $1", rel),
 		tooltipLines.join("\n"),
 		"code"
 	);
@@ -182,7 +184,7 @@ function viewToolNotFound(name) {
 			<a class="back" href="/search">${t("tool.backToTools", "← Back to tools")}</a>
 			<h1 class="page__title">${t("tool.notFoundTitle", "Tool not found")}</h1>
 			<p class="page__intro">${t("tool.notFoundIntroLead", "The record for")} <code${dirAttrs(rawName)}>${esc(rawName)}</code> ${t("tool.notFoundIntroMid", "may have been")} <strong>${t("tool.notFoundIntroFates", "deleted, renamed, or never registered")}</strong>.</p>
-			<p><a href="${searchHref}">${t("tool.searchForName", 'Search for "{name}"', { name: esc(rawName) })}</a> · <a href="/search">${t("tool.browseAllTools", "Browse all tools")}</a></p>
+			<p><a href="${searchHref}">${t("tool.searchForName", 'Search for "$1"', esc(rawName))}</a> · <a href="/search">${t("tool.browseAllTools", "Browse all tools")}</a></p>
 		</div>`
 	};
 }
@@ -209,7 +211,7 @@ function authorEntries(t) {
 function authorExternalLink(entry) {
 	const url = safeUrl(authorProfileUrl(entry.profile));
 	if (!url) return "";
-	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="${t("tool.externalProfileAria", "External profile for {name}", { name: esc(entry.name) })}">${icon("external")}</a>`;
+	return `<a class="author-ref__external" href="${url}" target="_blank" rel="noopener nofollow" aria-label="${t("tool.externalProfileAria", "External profile for $1", esc(entry.name))}">${icon("external")}</a>`;
 }
 
 /** @param {AuthorEntry} entry */
@@ -461,9 +463,9 @@ function evolvedSignalsPanel(signals) {
 	return `<div class="panel" data-evolved-signals>
 		<h2 class="panel__title">${t("tool.evolvedSignals", "Evolved signals")}</h2>
 		<div class="toolpage__signal-list">
-			${thanksCount ? `<span class="signal">${t("tool.thanksCount", "{count} thanks on Evolved", { count: String(thanksCount) })}</span>` : ""}
-			${usageCount ? `<span class="signal">${t("tool.usageCount", "{count} Evolved interactions in 30 days", { count: String(usageCount) })}</span>` : ""}
-			${healthStatus ? `<span class="signal">${t("tool.healthStatus", "Evolved health: {status}", { status: esc(healthStatus) })}</span>` : ""}
+			${thanksCount ? `<span class="signal">${t("tool.thanksCount", "$1 thanks on Evolved", String(thanksCount))}</span>` : ""}
+			${usageCount ? `<span class="signal">${t("tool.usageCount", "$1 Evolved interactions in 30 days", String(usageCount))}</span>` : ""}
+			${healthStatus ? `<span class="signal">${t("tool.healthStatus", "Evolved health: $1", esc(healthStatus))}</span>` : ""}
 		</div>
 		${
 			signedIn()
@@ -961,16 +963,14 @@ export async function viewTool(name) {
 					out.className = "at__result at__result--err";
 					out.textContent = t(
 						"tool.officialDeleteFailed",
-						"Official Toolhub did not delete the tool: {msg}",
-						{
-							msg: backendErrorExplanation(error)
-						}
+						"Official Toolhub did not delete the tool: $1",
+						backendErrorExplanation(error)
 					);
 				}
 			}
 		});
 	}
-	return { title: t("tool.docTitle", "{title} — Toolhub", { title: tool.title }), html, mount };
+	return { title: t("tool.docTitle", "$1 — Toolhub", tool.title), html, mount };
 }
 
 // Tool revision history — live from /api/tools/{name}/revisions/.
@@ -996,10 +996,10 @@ export async function viewToolHistory(name) {
 		})
 		.join("");
 	return {
-		title: t("tool.historyDocTitle", "History: {title} — Toolhub", { title }),
+		title: t("tool.historyDocTitle", "History: $1 — Toolhub", title),
 		html: `
 		<div class="container page">
-			<a class="back" href="${toolHref(name)}">${t("tool.backToName", "← Back to {title}", { title: esc(title) })}</a>
+			<a class="back" href="${toolHref(name)}">${t("tool.backToName", "← Back to $1", esc(title))}</a>
 			<h1 class="page__title">${t("tool.revisionHistoryTitle", "Revision history")}</h1>
 			<ul class="feed">${rows || `<li><div class="feed__static">${t("tool.noRevisions", "No revisions recorded.")}</div></li>`}</ul>
 		</div>`
