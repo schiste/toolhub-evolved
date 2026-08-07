@@ -175,3 +175,17 @@ def test_deploy_and_scheduled_job_require_a_complete_account_generation():
     assert "proxy/account_sync.py --complete" in jobs
     assert 'timeout: 300' in jobs
     assert 'run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"' in deploy
+
+
+def test_complete_cli_fails_when_another_worker_holds_the_sync_lock(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("TOOLHUB_DB_URL", f"sqlite:///{tmp_path}/accounts.sqlite3")
+    monkeypatch.setattr(
+        account_sync,
+        "run_complete",
+        lambda **_kwargs: {"status": "locked", "pages": 0, "records": 0, "completed": False},
+    )
+
+    assert account_sync.main(["--complete", "--min-interval", "1"]) == 1
+    output = capsys.readouterr()
+    assert "status=locked" in output.out
+    assert "complete generation was not obtained" in output.err
