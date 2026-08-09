@@ -72,6 +72,7 @@ export function evidenceSourceLabel(source) {
 /** @param {string} quality */
 export function identityQualityLabel(quality) {
 	const labels = /** @type {Record<string, string>} */ ({
+		stable: t("peopleEvidence.identityStable", "Identity backed by a stable account ID"),
 		stable_id: t("peopleEvidence.identityStable", "Identity backed by a stable account ID"),
 		handle: t("peopleEvidence.identityHandle", "Identity backed by a public account handle")
 	});

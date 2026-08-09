@@ -8,6 +8,8 @@ import { navigateTo, personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
 import { icon } from "../lib/atoms/icon.js";
 import { avatar } from "../lib/atoms/avatar.js";
+import { button } from "../lib/atoms/button.js";
+import { entityCard } from "../lib/organisms/entity-card.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
 import { relationshipTrustMarkup } from "../lib/molecules/relationship-trust.js";
@@ -194,14 +196,7 @@ function identifierLabel(identifier) {
 
 /** @param {any} person */
 function disambiguationCard(person) {
-	const name = person?.displayName || t("authors.unknownPerson", "Unknown person");
-	const identifiers = (Array.isArray(person?.identifiers) ? person.identifiers : [])
-		.filter((/** @type {any} */ identifier) => identifier?.value)
-		.map((/** @type {any} */ identifier) => identifierLabel(identifier));
-	const detail = identifiers.join(" · ") || t("authors.verifiedIdentity", "Verified identity");
-	return `<a class="people-card" href="${personHref(person.id)}">
-		${avatar(name, "people-card__avatar")}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(detail)}</small></span>
-	</a>`;
+	return personCard({ kind: "person", person, identityEvidence: {}, matchBasis: ["identity"] });
 }
 
 /** @param {string} name @param {any} resolution */
@@ -210,7 +205,7 @@ function renderDisambiguation(name, resolution) {
 	const unresolved = Array.isArray(resolution?.unresolvedAttributions) ? resolution.unresolvedAttributions : [];
 	const choices =
 		candidates.length > 0
-			? `<section aria-labelledby="author-candidates-title"><h2 id="author-candidates-title" class="people-page__section-title">${t("authors.possiblePeople", "Possible people")}</h2><div class="people-grid">${candidates.map((/** @type {any} */ person) => disambiguationCard(person)).join("")}</div></section>`
+			? `<section aria-labelledby="author-candidates-title"><h2 id="author-candidates-title" class="people-page__section-title">${t("authors.possiblePeople", "Possible people")}</h2><ul class="card-grid grid-tools" role="list">${candidates.map((/** @type {any} */ person) => `<li>${disambiguationCard(person)}</li>`).join("")}</ul></section>`
 			: "";
 	const attributions =
 		unresolved.length > 0
@@ -269,18 +264,12 @@ function personCard(item) {
 	const name = person?.displayName || t("authors.unknownPerson", "Unknown person");
 	const avatarUrl = safeUrl(person?.profile?.avatarUrl);
 	const picture = avatarUrl
-		? `<img class="people-card__avatar" src="${esc(avatarUrl)}" alt="" width="56" height="56" loading="lazy" />`
-		: avatar(name, "people-card__avatar");
+		? `<img class="avatar avatar--img entity-card__avatar" src="${esc(avatarUrl)}" alt="" width="48" height="48" loading="lazy" />`
+		: avatar(name, "entity-card__avatar");
 	const count = Number(person?.activity?.relatedToolCount) || 0;
 	const summary = person?.relationshipSummary || {};
 	const verifiedTypes = Array.isArray(summary.verifiedTypes) ? summary.verifiedTypes : [];
 	const types = Array.isArray(summary.types) ? summary.types : [];
-	const relationshipChips = types
-		.map((/** @type {string} */ role) => {
-			const verified = verifiedTypes.includes(role);
-			return `<span class="people-card__evidence${verified ? " is-verified" : ""}">${esc(relationshipSummaryLabel(role, verified))}</span>`;
-		})
-		.join("");
 	const identityEvidence = item?.identityEvidence || {};
 	const account = Array.isArray(item?.officialAccountMatches) ? item.officialAccountMatches[0] : null;
 	const identityLabels = [
@@ -293,31 +282,52 @@ function personCard(item) {
 		identityEvidence.toolforgeHandle ? t("authors.toolforgeHandle", "Toolforge username") : "",
 		identityEvidence.wikiHandle ? t("authors.wikiHandle", "Wiki username") : ""
 	].filter(Boolean);
+	if (identityLabels.length === 0) {
+		identityLabels.push(
+			...(Array.isArray(person?.identifiers) ? person.identifiers : [])
+				.filter((/** @type {any} */ identifier) => identifier?.value)
+				.map((/** @type {any} */ identifier) => identifierLabel(identifier))
+		);
+	}
 	if (identityLabels.length === 0) identityLabels.push(identityQualityLabel(person?.identityQuality || ""));
 	const matchBasis = Array.isArray(item?.matchBasis) ? item.matchBasis : [];
 	const matchDetail = matchBasis.includes("tool")
-		? `<small>${t("authors.matchedByTool", "Matched through a related tool")}</small>`
+		? t("authors.matchedByTool", "Matched through a related tool")
 		: account?.username
-			? `<small${dirAttrs(account.username)}>${t("authors.accountUsername", "Toolhub username: $1", account.username)}</small>`
+			? t("authors.accountUsername", "Toolhub username: $1", account.username)
 			: "";
 	const contributorBases = /** @type {string[]} */ (
 		Array.isArray(person?.contributor?.bases) ? person.contributor.bases : []
 	);
 	const contributorDetail =
 		contributorBases.length > 0
-			? `<small class="people-card__contributor">${esc(
-					contributorBases
-						.map((/** @type {string} */ basis) =>
-							basis === "canonical_catalog_actor"
-								? t("authors.canonicalCatalogActor", "Observed canonical Toolhub catalog activity")
-								: t("authors.approvedContribution", "Approved public contribution activity")
-						)
-						.join(" · ")
-				)}</small>`
+			? contributorBases
+					.map((/** @type {string} */ basis) =>
+						basis === "canonical_catalog_actor"
+							? t("authors.canonicalCatalogActor", "Observed canonical Toolhub catalog activity")
+							: t("authors.approvedContribution", "Approved public contribution activity")
+					)
+					.join(" · ")
 			: "";
-	return `<a class="people-card" href="${personHref(person.id)}" data-person-name="${esc(name.toLocaleLowerCase())}">
-		${picture}<span><strong${dirAttrs(name)}>${esc(name)}</strong><small>${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(count), count))}</small><span class="people-card__evidence-list">${identityLabels.map((label) => `<span class="people-card__evidence people-card__evidence--identity">${esc(label)}</span>`).join("")}${relationshipChips}</span>${matchDetail}${contributorDetail}</span>
-	</a>`;
+	return entityCard({
+		kind: t("authors.personResult", "Person"),
+		kindDetail: identityQualityLabel(person?.identityQuality || ""),
+		title: name,
+		href: personHref(person.id),
+		visual: picture,
+		subtitle: t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(count), count),
+		description: [matchDetail, contributorDetail].filter(Boolean).join(" · "),
+		tags: identityLabels.map((label) => ({ label, className: "entity-card__tag--identity" })),
+		signals: types.map((/** @type {string} */ role) => {
+			const verified = verifiedTypes.includes(role);
+			return {
+				label: relationshipSummaryLabel(role, verified),
+				className: verified ? "status status--green" : "signal signal--compact"
+			};
+		}),
+		className: verifiedTypes.length > 0 ? "entity-card--verified" : "entity-card--stable",
+		dataName: name.toLocaleLowerCase()
+	});
 }
 
 /** @param {any} item @param {ReturnType<typeof peopleDirectoryState>} state */
@@ -325,10 +335,36 @@ function accountResultCard(item, state) {
 	const account = item?.account || {};
 	const name = String(account.username || t("accounts.unknown", "Unknown account"));
 	const href = peopleDirectoryHref({ ...state, accountId: String(account.id || "") });
-	return `<a class="people-card account-card" href="${esc(href)}">
-		${avatar(name, "people-card__avatar")}
-		<span><strong class="account-card__name"${dirAttrs(name)}>${esc(name)}</strong><span class="people-card__evidence-list"><span class="people-card__evidence people-card__evidence--identity">${t("authors.officialToolhubAccount", "Official Toolhub account")}</span></span><small>${t("authors.noPublicRelationship", "No stable public person or tool relationship is linked yet.")}</small></span>
-	</a>`;
+	const linked = Boolean(account.personId);
+	return entityCard({
+		kind: t("authors.accountResult", "Official account"),
+		kindDetail: linked
+			? t("accounts.linkedPersonShort", "Linked identity")
+			: t("authors.accountOnly", "Account only"),
+		title: name,
+		href,
+		visual: avatar(name, "entity-card__avatar"),
+		subtitle: account.id ? t("authors.toolhubAccountId", "Toolhub ID $1", account.id) : "",
+		description: linked
+			? t("accounts.linkedPerson", "Linked to a public person through a stable identifier")
+			: t("authors.noPublicRelationship", "No stable public person or tool relationship is linked yet."),
+		tags: [
+			{
+				label: t("authors.officialToolhubAccount", "Official Toolhub account"),
+				className: "entity-card__tag--identity"
+			},
+			...(account.wikimediaGlobalUserId
+				? [
+						{
+							label: t("authors.wikimediaStableId", "Wikimedia stable ID"),
+							className: "entity-card__tag--identity"
+						}
+					]
+				: [])
+		],
+		className: linked ? "entity-card--stable" : "entity-card--account",
+		dataName: name.toLocaleLowerCase()
+	});
 }
 
 /** @param {any} attribution */
@@ -336,13 +372,25 @@ function unresolvedAttribution(attribution, asCard = false) {
 	const label = attribution?.label || t("authors.unknownAttribution", "Unknown attribution");
 	const tools = Number(attribution?.toolCount) || 0;
 	const observations = Number(attribution?.evidenceCount) || Number(attribution?.attributionCount) || 0;
+	if (asCard) {
+		return entityCard({
+			kind: t("authors.unresolvedResult", "Unresolved attribution"),
+			kindDetail: t("authors.needsIdentityEvidence", "Needs identity evidence"),
+			title: label,
+			visual: `<span class="avatar entity-card__avatar entity-card__unknown" aria-hidden="true">?</span>`,
+			subtitle: `${t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools)} · ${t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations)}`,
+			description: t("authors.unverifiedAttribution", "Unverified attribution — name-only evidence"),
+			tags: [{ label: t("authors.nameOnlyEvidence", "Name-only evidence") }],
+			className: "entity-card--unresolved",
+			dataName: label.toLocaleLowerCase(),
+			static: true
+		});
+	}
 	const content = `
 		<span class="people-attribution__mark" aria-hidden="true">?</span>
 		<span class="people-attribution__content"><strong${dirAttrs(label)}>${esc(label)}</strong><small>${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools))} · ${esc(t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations))}</small></span>
 		<span class="people-attribution__status">${t("authors.unverifiedAttribution", "Unverified attribution — name-only evidence")}</span>`;
-	return asCard
-		? `<article class="people-attribution people-attribution--card">${content}</article>`
-		: `<li class="people-attribution">${content}</li>`;
+	return `<li class="people-attribution">${content}</li>`;
 }
 
 /** @param {string | null} value @param {Set<string>} allowed @param {string} fallback */
@@ -401,28 +449,8 @@ function option(value, current, label) {
 	return `<option value="${esc(value)}"${value === current ? " selected" : ""}>${esc(label)}</option>`;
 }
 
-/** @param {ReturnType<typeof peopleDirectoryState>} state */
-function activeFilterSummary(state) {
-	const values = [
-		state.role ? relationshipLabel(state.role) : "",
-		state.verification
-			? {
-					verified: t("authors.filterVerified", "Currently verified"),
-					unverified: t("authors.filterUnverified", "Unverified"),
-					renewal_needed: t("authors.filterRenewal", "Renewal needed")
-				}[state.verification]
-			: "",
-		state.activity ? t("authors.activityFilterValue", "Activity: $1", state.activity) : "",
-		state.project ? t("authors.projectFilterValue", "Project: $1", state.project) : "",
-		state.contributor ? t("authors.observedContributorFilter", "Observed contributors only") : ""
-	].filter(Boolean);
-	return values.length > 0
-		? `<div class="people-directory__active"><span>${t("authors.activeFilters", "Active filters:")} ${values.map((value) => `<strong>${esc(value)}</strong>`).join(" · ")}</span><a href="/people">${t("authors.clearFilters", "Clear filters")}</a></div>`
-		: "";
-}
-
 /** @param {any} directory @param {ReturnType<typeof peopleDirectoryState>} state */
-function communityDirectoryResults(directory, state) {
+function communityResultSummary(directory, state) {
 	const results = Array.isArray(directory?.results) ? directory.results : [];
 	const count = Number(directory?.count) || 0;
 	const first = results.length > 0 ? (directory.page - 1) * directory.pageSize + 1 : 0;
@@ -453,6 +481,12 @@ function communityDirectoryResults(directory, state) {
 		results.length > 0
 			? t("authors.showingCommunityRange", "Showing $1–$2 of $3 results", first, last, count)
 			: t("authors.communityCount", "$1 results", count);
+	return `${esc(range)}${state.q ? ` ${t("authors.forQuery", "for")} “<span${dirAttrs(state.q)}>${esc(state.q)}</span>”` : ""}${breakdown.length > 0 ? ` <span class="browse__count-note">${esc(breakdown.join(" · "))}</span>` : ""}`;
+}
+
+/** @param {any} directory @param {ReturnType<typeof peopleDirectoryState>} state */
+function communityDirectoryResults(directory, state) {
+	const results = Array.isArray(directory?.results) ? directory.results : [];
 	const cards = results
 		.map((/** @type {any} */ item) => {
 			if (item?.kind === "person") return personCard(item);
@@ -460,14 +494,16 @@ function communityDirectoryResults(directory, state) {
 			if (item?.kind === "unresolved_attribution") return unresolvedAttribution(item.attribution, true);
 			return "";
 		})
+		.filter(Boolean)
+		.map((/** @type {string} */ card) => `<li>${card}</li>`)
 		.join("");
 	const truncated = directory?.truncated
 		? `<p class="account-directory__notice account-directory__notice--warning" role="status">${t("authors.refineResults", "Many records matched. Refine the search to see the most relevant identities and evidence.")}</p>`
 		: "";
 	return `<section aria-labelledby="community-results-title">
-		<div class="section-head people-page__results-head"><div><h2 id="community-results-title" class="people-page__section-title">${t("authors.directoryResults", "Directory results")}</h2><p class="muted" aria-live="polite">${esc(range)}${breakdown.length > 0 ? ` · ${esc(breakdown.join(" · "))}` : ""}${state.q ? ` ${t("authors.forQuery", "for")} “<span${dirAttrs(state.q)}>${esc(state.q)}</span>”` : ""}</p></div></div>
+		<h2 id="community-results-title" class="skip-label">${t("authors.directoryResults", "Directory results")}</h2>
 		${truncated}
-		${results.length > 0 ? `<div class="people-grid community-results">${cards}</div>` : `<p class="empty">${t("authors.noCommunityMatches", "No people, official accounts, tools, or unresolved attributions match this search.")}</p>`}
+		${results.length > 0 ? `<ul class="card-grid grid-tools community-results" role="list">${cards}</ul>` : `<p class="empty">${t("authors.noCommunityMatches", "No people, official accounts, tools, or unresolved attributions match this search.")}</p>`}
 		<nav class="pager" data-people-pager aria-label="${esc(t("authors.peoplePagination", "Directory pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>
 	</section>`;
 }
@@ -490,7 +526,7 @@ function accountEvidenceNotice(sync) {
 }
 
 /** @param {ReturnType<typeof peopleDirectoryState>} state */
-function directoryForm(state) {
+function directorySidebar(state) {
 	const roleOptions = [
 		["", t("authors.anyRole", "Any role")],
 		...Array.from(PEOPLE_ROLES, (role) => [role, relationshipLabel(role)])
@@ -513,6 +549,33 @@ function directoryForm(state) {
 	]
 		.map(([value, label]) => option(value, state.activity, label))
 		.join("");
+	const contributorOptions = [
+		["", t("authors.anyContribution", "Any contribution evidence")],
+		["observed", t("authors.observedContributors", "Observed contributors only")]
+	]
+		.map(([value, label]) => option(value, state.contributor ? "observed" : "", label))
+		.join("");
+	const clearFilters = button(t("authors.clearFilters", "Clear filters"), {
+		variant: "outline",
+		href: "/people",
+		cls: "facets__reset"
+	});
+	return `<aside class="facets community-facets" aria-label="${esc(t("authors.directoryFilters", "Directory filters"))}">
+		<form data-people-search role="search">
+			<label for="people-q" class="skip-label">${t("authors.searchCommunity", "Search a person, username, or tool")}</label>
+			<input id="people-q" class="facets__search" name="q" type="search" value="${esc(state.q)}" placeholder="${esc(t("authors.searchCommunity", "Search a person, username, or tool"))}" autocomplete="off" />
+			<div class="facet-group"><label class="facet-group__title" for="people-role">${t("authors.roleFilter", "Role")}</label><select id="people-role" class="le__input community-facets__control" name="role" data-people-auto>${roleOptions}</select></div>
+			<div class="facet-group"><label class="facet-group__title" for="people-verification">${t("authors.verificationFilter", "Verification")}</label><select id="people-verification" class="le__input community-facets__control" name="verification" data-people-auto>${verificationOptions}</select></div>
+			<div class="facet-group"><label class="facet-group__title" for="people-activity">${t("authors.activityFilter", "Activity")}</label><select id="people-activity" class="le__input community-facets__control" name="activity" data-people-auto>${activityOptions}</select></div>
+			<div class="facet-group"><label class="facet-group__title" for="people-contributor">${t("authors.contributionFilter", "Contribution evidence")}</label><select id="people-contributor" class="le__input community-facets__control" name="contributor" data-people-auto>${contributorOptions}</select></div>
+			<div class="facet-group"><label class="facet-group__title" for="people-project">${t("authors.projectFilter", "Project or wiki")}</label><input id="people-project" class="le__input community-facets__control" name="project" value="${esc(state.project)}" placeholder="wikidata.org" /></div>
+			${clearFilters}
+		</form>
+	</aside>`;
+}
+
+/** @param {ReturnType<typeof peopleDirectoryState>} state */
+function directoryResultControls(state) {
 	const orderingOptions = [
 		["relevance", t("authors.orderRelevance", "Most relevant")],
 		["relationship", t("authors.orderRelationship", "Strongest relationships")],
@@ -524,24 +587,10 @@ function directoryForm(state) {
 	const pageSizeOptions = PEOPLE_PAGE_SIZES.map((size) =>
 		option(String(size), String(state.pageSize), t("authors.peoplePerPage", "$1 per page", size))
 	).join("");
-	const contributorOptions = [
-		["", t("authors.anyContribution", "Any contribution evidence")],
-		["observed", t("authors.observedContributors", "Observed contributors only")]
-	]
-		.map(([value, label]) => option(value, state.contributor ? "observed" : "", label))
-		.join("");
-	return `<form class="people-directory" data-people-search role="search">
-		<div class="searchbar people-page__search"><input class="searchbar__input" name="q" type="search" value="${esc(state.q)}" placeholder="${esc(t("authors.searchCommunity", "Search a person, username, or tool"))}" aria-label="${esc(t("authors.searchCommunity", "Search a person, username, or tool"))}" /><button class="btn btn--primary" type="submit">${icon("search")} ${t("authors.search", "Search")}</button></div>
-		<fieldset class="people-directory__filters"><legend class="skip-label">${t("authors.directoryFilters", "Directory filters")}</legend>
-			<label><span>${t("authors.roleFilter", "Role")}</span><select name="role" data-people-auto>${roleOptions}</select></label>
-			<label><span>${t("authors.verificationFilter", "Verification")}</span><select name="verification" data-people-auto>${verificationOptions}</select></label>
-			<label><span>${t("authors.activityFilter", "Activity")}</span><select name="activity" data-people-auto>${activityOptions}</select></label>
-			<label><span>${t("authors.contributionFilter", "Contribution evidence")}</span><select name="contributor" data-people-auto>${contributorOptions}</select></label>
-			<label><span>${t("authors.projectFilter", "Project or wiki")}</span><input name="project" value="${esc(state.project)}" placeholder="wikidata.org" /></label>
-			<label><span>${t("authors.ordering", "Sort by")}</span><select name="ordering" data-people-auto>${orderingOptions}</select></label>
-			<label><span>${t("authors.resultsPerPage", "Results per page")}</span><select name="page_size" data-people-auto>${pageSizeOptions}</select></label>
-		</fieldset>
-	</form>`;
+	return `<span class="browse__controls">
+		<label class="sort"><span class="skip-label">${t("authors.resultsPerPage", "Results per page")}</span><select id="people-page-size">${pageSizeOptions}</select></label>
+		<label class="sort"><span class="skip-label">${t("authors.ordering", "Sort by")}</span><select id="people-sort">${orderingOptions}</select></label>
+	</span>`;
 }
 
 export async function viewPeople() {
@@ -562,10 +611,17 @@ export async function viewPeople() {
 			: t("authors.communityDocTitle", "Community directory — Toolhub"),
 		html: `<div class="container page people-page community-directory">
 			${communityHeader()}
-			${directoryForm(state)}
-			${activeFilterSummary(state)}
-			${directoryFailed ? "" : accountEvidenceNotice(directory?.accountSync)}
-			<div data-people-results>${directoryFailed ? peopleSearchError() : communityDirectoryResults(directory, state)}</div>
+			<div class="browse">
+				${directorySidebar(state)}
+				<div class="browse__main">
+					<div class="browse__bar">
+						<span class="browse__count" aria-live="polite">${directoryFailed ? t("authors.directoryResults", "Directory results") : communityResultSummary(directory, state)}</span>
+						${directoryResultControls(state)}
+					</div>
+					${directoryFailed ? "" : accountEvidenceNotice(directory?.accountSync)}
+					<div data-people-results>${directoryFailed ? peopleSearchError() : communityDirectoryResults(directory, state)}</div>
+				</div>
+			</div>
 		</div>`,
 		mount() {
 			const legacyView = new URLSearchParams(location.search).get("view");
@@ -580,12 +636,14 @@ export async function viewPeople() {
 			const navigateFromForm = () => {
 				if (!form) return;
 				const data = new FormData(form);
+				const pageSize = /** @type {HTMLSelectElement | null} */ ($("#people-page-size"));
+				const ordering = /** @type {HTMLSelectElement | null} */ ($("#people-sort"));
 				showLoading();
 				navigateTo(
 					peopleDirectoryHref({
 						q: String(data.get("q") || "").trim(),
 						page: 1,
-						pageSize: positiveInteger(String(data.get("page_size") || ""), DEFAULT_PEOPLE_PAGE_SIZE),
+						pageSize: positiveInteger(pageSize?.value || "", DEFAULT_PEOPLE_PAGE_SIZE),
 						role: choice(String(data.get("role") || ""), PEOPLE_ROLES),
 						verification: choice(String(data.get("verification") || ""), PEOPLE_VERIFICATIONS),
 						activity: choice(String(data.get("activity") || ""), PEOPLE_ACTIVITIES),
@@ -593,7 +651,7 @@ export async function viewPeople() {
 						project: String(data.get("project") || "")
 							.trim()
 							.slice(0, 255),
-						ordering: choice(String(data.get("ordering") || ""), PEOPLE_ORDERINGS, "relevance"),
+						ordering: choice(ordering?.value || "", PEOPLE_ORDERINGS, "relevance"),
 						accountId: ""
 					})
 				);
@@ -605,6 +663,8 @@ export async function viewPeople() {
 			form?.querySelectorAll("[data-people-auto]").forEach((control) =>
 				control.addEventListener("change", navigateFromForm)
 			);
+			$("#people-sort")?.addEventListener("change", navigateFromForm);
+			$("#people-page-size")?.addEventListener("change", navigateFromForm);
 			$("[data-people-pager]")?.addEventListener("click", (event) => {
 				const button = /** @type {HTMLElement | null} */ (event.target?.closest?.("[data-page]"));
 				if (!button) return;

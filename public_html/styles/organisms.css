@@ -2358,6 +2358,64 @@
 .community-directory__header :where(.page__title, .page__intro) {
 	margin-block-end: var(--space-0);
 }
+.community-facets__control {
+	width: 100%;
+}
+.entity-card {
+	--tcard-corner-color: var(--color-border);
+	--tcard-corner-color-hover: var(--color-border-hover);
+	--tcard-corner-color-focus: var(--color-progressive);
+}
+.community-results .entity-card {
+	min-height: 260px;
+}
+.entity-card--stable {
+	--tcard-corner-color: var(--color-progressive);
+	--tcard-corner-color-hover: var(--color-progressive-hover);
+	--tcard-corner-color-focus: var(--color-progressive-hover);
+}
+.entity-card--verified {
+	--tcard-corner-color: var(--color-success);
+	--tcard-corner-color-hover: var(--color-success);
+	--tcard-corner-color-focus: var(--color-success);
+}
+.entity-card--unresolved {
+	--tcard-corner-color: var(--color-warning-text);
+	--tcard-corner-color-hover: var(--color-warning-text);
+	--tcard-corner-color-focus: var(--color-warning-text);
+}
+.entity-card--static {
+	cursor: default;
+}
+.entity-card--static:hover {
+	background-color: var(--color-surface);
+}
+.entity-card__avatar {
+	flex: 0 0 var(--avatar-md);
+}
+.entity-card__unknown {
+	display: grid;
+	place-items: center;
+	border: var(--border-base);
+	background: var(--color-surface-muted);
+	color: var(--color-text-secondary);
+	font-weight: 700;
+}
+.entity-card__subtitle {
+	white-space: normal;
+}
+.entity-card__tags .tag {
+	cursor: default;
+}
+.entity-card__tag--identity {
+	background: var(--color-progressive-subtle);
+	color: var(--color-progressive);
+}
+.entity-card__signal-row {
+	align-items: center;
+	justify-content: flex-start;
+	flex-wrap: wrap;
+}
 .people-directory {
 	margin-block-end: var(--space-5);
 }
@@ -2385,16 +2443,6 @@
 	background: var(--color-surface);
 	color: var(--color-text);
 }
-.people-directory__active {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--space-3);
-	margin-block-end: var(--space-4);
-	padding: var(--space-2) var(--space-3);
-	background: var(--color-progressive-subtle);
-	font-size: var(--fs-caption);
-}
 .people-directory__error {
 	display: grid;
 	justify-items: center;
@@ -2412,69 +2460,6 @@
 }
 .people-page :where([data-people-pager], [data-attribution-pager]) {
 	margin-block-start: var(--space-4);
-}
-.people-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
-	gap: var(--space-3);
-}
-.people-card {
-	display: flex;
-	align-items: center;
-	gap: var(--space-3);
-	padding: var(--space-3);
-	border: var(--border-base);
-	background: var(--color-surface);
-	color: var(--color-text);
-	text-decoration: none;
-}
-.people-card:hover {
-	border-color: var(--color-progressive);
-	text-decoration: none;
-}
-.people-card__avatar {
-	width: 56px;
-	height: 56px;
-	flex: 0 0 56px;
-	border-radius: 50%;
-	object-fit: cover;
-}
-.people-card span {
-	display: grid;
-	gap: var(--space-1);
-	min-width: 0;
-}
-.people-card small {
-	color: var(--color-text-secondary);
-}
-.people-card__contributor {
-	font-weight: 700;
-}
-.people-card span.people-card__evidence-list {
-	display: flex;
-	flex-flow: row wrap;
-	gap: var(--space-1);
-}
-.people-card span.people-card__evidence {
-	display: inline-flex;
-	width: fit-content;
-	padding: var(--space-1) var(--space-2);
-	border-radius: var(--radius-pill);
-	background: var(--color-surface-muted);
-	color: var(--color-text-secondary);
-	font-size: var(--fs-caption);
-	line-height: 1.5;
-}
-.people-card span.people-card__evidence.is-verified {
-	background: var(--color-success-subtle);
-	color: var(--color-success);
-}
-.people-card span.people-card__evidence--identity {
-	background: var(--color-progressive-subtle);
-	color: var(--color-progressive);
-}
-.people-attribution--card {
-	min-width: 0;
 }
 .account-directory__notice {
 	display: grid;
@@ -2638,10 +2623,6 @@
 	}
 	.people-directory__filters {
 		grid-template-columns: 1fr;
-	}
-	.people-directory__active {
-		align-items: flex-start;
-		flex-direction: column;
 	}
 	.community-directory__definitions,
 	.account-detail__facts {

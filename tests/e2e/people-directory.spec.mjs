@@ -46,6 +46,18 @@ test.describe("People directory", () => {
 		await expect(page.locator('[name="role"]')).toHaveValue("maintainer");
 		await expect(page.locator('[name="project"]')).toHaveValue("wikidata.org");
 		await expect(page.getByText("Verified Maintainer relationship", { exact: true })).toBeVisible();
+		await expect(page.locator(".community-facets")).toBeVisible();
+		await expect(page.locator(".community-results .tcard.entity-card")).toHaveCount(1);
+		await expect(page.locator(".people-card")).toHaveCount(0);
+		const desktopColumns = await page
+			.locator(".browse")
+			.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean));
+		expect(desktopColumns).toHaveLength(2);
+		await page.setViewportSize({ width: 800, height: 900 });
+		const mobileColumns = await page
+			.locator(".browse")
+			.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean));
+		expect(mobileColumns).toHaveLength(1);
 		await page.locator("[data-people-pager]").getByRole("button", { name: "2", exact: true }).click();
 		await expect(page).toHaveURL(
 			/\/people\?(?=.*q=Ada)(?=.*role=maintainer)(?=.*project=wikidata\.org)(?=.*page=2)/

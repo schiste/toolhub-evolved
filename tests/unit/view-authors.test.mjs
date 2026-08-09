@@ -343,6 +343,12 @@ test("viewPeople unifies resolved people, official accounts, and unresolved attr
 
 	const view = await viewPeople();
 
+	assert.match(view.html, /<div class="browse">/);
+	assert.match(view.html, /<aside class="facets community-facets"/);
+	assert.match(view.html, /class="browse__bar"/);
+	assert.match(view.html, /<ul class="card-grid grid-tools community-results" role="list">/);
+	assert.equal(view.html.match(/class="tcard entity-card/g)?.length, 3);
+	assert.doesNotMatch(view.html, /class="people-card/);
 	assert.match(view.html, /href="\/people\/person-1"/);
 	assert.match(view.html, /Showing 1–3 of 3 results/);
 	assert.match(view.html, /Official Toolhub account/);
