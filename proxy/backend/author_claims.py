@@ -51,29 +51,8 @@ except ImportError:  # pragma: no cover - local tests inject a verifier and do n
     Ed25519PublicKey = None
     load_pem_public_key = None
 
-try:  # pragma: no cover - exercised in production when ldap3 is installed.
-    from ldap3 import Connection, Server
-    from ldap3.core.exceptions import LDAPException
-    from ldap3.utils.conv import escape_filter_chars
-except ImportError:  # pragma: no cover - tests inject the membership lookup.
-    Connection = None
-    Server = None
-    escape_filter_chars = None
-
-    class LDAPException(Exception):  # noqa: N818 — mirrors the ldap3 name it stands in for
-        """Fallback exception type used when ldap3 is not installed."""
-
-
 TOOLFORGE_BASE_URL = "https://toolsadmin.wikimedia.org"
-# LDAPS, not cleartext 389: these memberships decide which Toolforge tools a
-# user is offered as authorship candidates, and the query itself names the user.
-# Over plain LDAP both the question and the answer are readable and rewritable
-# by anything on the path.
-TOOLFORGE_LDAP_URI = "ldaps://ldap-ro.eqiad.wikimedia.org:636"
-TOOLFORGE_LDAP_BASE_DN = "ou=people,dc=wikimedia,dc=org"
 TOOLFORGE_TIMEOUT = 5
-TOOLFORGE_LDAP_TIMEOUT = 5
-TOOLFORGE_MAX_MEMBERSHIP_TOOLS = 100
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
 TOOLFORGE_CLAIM_TTL = timedelta(days=1)
@@ -96,7 +75,6 @@ AUTHOR_CLAIM_STRONG_METHODS = {
 
 SignatureVerifier = Callable[[str, bytes, bytes], None]
 ToolforgeFetcher = Callable[[str], tuple[int, str]]
-ToolforgeMembershipLookup = Callable[[str], list[str]]
 
 
 @dataclass(frozen=True)
@@ -399,6 +377,7 @@ class ToolforgeMaintainerProvider:
         *,
         tool_name: str,
         toolforge_name: str,
+        toolforge_username: str,
     ) -> ToolAuthorClaim:
         """Record direct LDAP membership without requiring a page fetch.
 
@@ -418,7 +397,7 @@ class ToolforgeMaintainerProvider:
             evidence_url=self.evidence_url(toolforge_name),
             evidence_payload={
                 "toolforgeToolName": toolforge_name,
-                "toolforgeUsername": user.username,
+                "toolforgeUsername": clean_string(toolforge_username),
                 "ldapServiceGroup": f"tools.{toolforge_name}",
                 "discoveryMethod": "toolforge_ldap_membership",
             },
@@ -726,54 +705,6 @@ def parse_toolsadmin_maintainer_entries(html: str) -> list[ToolsadminMaintainer]
 def parse_toolsadmin_maintainers(html: str) -> list[str]:
     """Extract public maintainer names from a Toolsadmin tool detail page."""
     return [entry.display_name for entry in parse_toolsadmin_maintainer_entries(html)]
-
-
-def toolforge_tool_names_from_member_dns(member_dns: list[Any]) -> list[str]:
-    """Extract Toolforge tool account names from LDAP memberOf DNs."""
-    names: list[str] = []
-    for member_dn in member_dns:
-        match = re.search(r"(?:^|,)cn=tools\.([^,]+),ou=servicegroups,", str(member_dn), flags=re.IGNORECASE)
-        if match:
-            names.append(match.group(1))
-    return dedupe_strings(names)[:TOOLFORGE_MAX_MEMBERSHIP_TOOLS]
-
-
-class ToolforgeMembershipProvider:
-    """Discover Toolforge tool accounts maintained by a Toolhub/Wikimedia user."""
-
-    def __init__(self, lookup: ToolforgeMembershipLookup | None = None) -> None:
-        """Store an injectable LDAP lookup."""
-        self.lookup = lookup or self._lookup_ldap
-
-    def tool_names(self, username: str) -> list[str]:
-        """Return Toolforge tool names from public LDAP membership data."""
-        clean_username = clean_string(username)
-        if not clean_username:
-            return []
-        try:
-            return toolforge_tool_names_from_member_dns(self.lookup(clean_username))
-        except (LDAPException, OSError, TimeoutError, ValueError):
-            return []
-
-    def _lookup_ldap(self, username: str) -> list[str]:
-        if Connection is None or Server is None or escape_filter_chars is None:
-            return []
-        server = Server(TOOLFORGE_LDAP_URI, use_ssl=True, connect_timeout=TOOLFORGE_LDAP_TIMEOUT)
-        conn = Connection(server, receive_timeout=TOOLFORGE_LDAP_TIMEOUT, auto_bind=True)
-        try:
-            conn.search(
-                TOOLFORGE_LDAP_BASE_DN,
-                f"(uid={escape_filter_chars(username)})",
-                attributes=["memberOf"],
-                size_limit=1,
-            )
-            if not conn.entries:
-                return []
-            member_of = getattr(conn.entries[0], "memberOf", None)
-            values = getattr(member_of, "values", []) if member_of is not None else []
-            return list(values)
-        finally:
-            conn.unbind()
 
 
 def toolforge_names_from_toolhub_tool(tool_name: str, tool: dict) -> list[str]:

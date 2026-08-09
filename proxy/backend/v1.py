@@ -42,7 +42,6 @@ from backend.author_claims import (
     AuthorNameProvider,
     SignedToolinfoProvider,
     ToolforgeMaintainerProvider,
-    ToolforgeMembershipProvider,
 )
 from backend.models import (
     CatalogCuration,
@@ -56,6 +55,7 @@ from backend.models import (
 )
 from backend.oauth import configured as oauth_configured
 from backend.oauth import dev_login_available
+from backend.public_identity import PublicIdentityResolver
 from backend.security import current_user_id, login_required, write_guard
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
@@ -111,7 +111,7 @@ OFFICIAL_STATUS_DISCARDED = "discarded"
 AUTHOR_NAME_PROVIDER = AuthorNameProvider()
 SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
 TOOLFORGE_MAINTAINER_PROVIDER = ToolforgeMaintainerProvider()
-TOOLFORGE_MEMBERSHIP_PROVIDER = ToolforgeMembershipProvider()
+PUBLIC_IDENTITY_RESOLVER = PublicIdentityResolver()
 TOOLINFO_CREATE_MAX_ITEMS = 200
 TOOLINFO_CREATE_OPT_FIELDS = ("repository", "license", "toolType")
 TOOLINFO_CREATE_LIST_FIELDS = ("keywords", "forWikis", "uiLanguages")

@@ -116,7 +116,13 @@ def _add_candidate_tool(candidates: dict[str, dict], row: dict, term: str) -> No
     entry["claimAuthorNames"] = _dedupe_strings([*entry["claimAuthorNames"], *matched])
 
 
-def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_name: str, username: str) -> None:
+def _add_toolforge_candidate(
+    candidates: dict[str, dict],
+    row: dict,
+    toolforge_name: str,
+    username: str,
+    toolforge_username: str,
+) -> None:
     """Merge one exact Toolforge-derived Toolhub tool into the candidate map."""
     tool_name = common.clean_name(row.get("name"))
     if tool_name is None:
@@ -137,10 +143,12 @@ def _add_toolforge_candidate(candidates: dict[str, dict], row: dict, toolforge_n
     entry["matchedAuthorNames"] = _dedupe_strings([*entry["matchedAuthorNames"], username])
     entry["claimAuthorNames"] = _dedupe_strings([*entry["claimAuthorNames"], username])
     entry["toolforgeMembershipName"] = toolforge_name
+    entry["toolforgeUsername"] = toolforge_username
     entry["evidenceUrl"] = v1.TOOLFORGE_MAINTAINER_PROVIDER.evidence_url(toolforge_name)
     entry["evidencePayload"] = {
         **(entry.get("evidencePayload") if isinstance(entry.get("evidencePayload"), dict) else {}),
         "toolforgeToolName": toolforge_name,
+        "toolforgeUsername": toolforge_username,
         "discoveryMethod": "toolforge_ldap_membership",
     }
 
@@ -163,12 +171,15 @@ def _candidate_tools_for_terms(search_terms: list[str]) -> tuple[dict[str, dict]
     return candidates, errors
 
 
-def _candidate_tools_for_toolforge_memberships(username: str) -> tuple[dict[str, dict], list[dict], list[str]]:
+def _candidate_tools_for_toolforge_memberships(user: User) -> tuple[dict[str, dict], list[dict], list[str]]:
     """Fetch official Toolhub candidates from Toolforge tool-account memberships."""
     candidates: dict[str, dict] = {}
     errors: list[dict] = []
-    toolforge_names = v1.TOOLFORGE_MEMBERSHIP_PROVIDER.tool_names(username)
+    resolved = v1.PUBLIC_IDENTITY_RESOLVER.resolve(user.wikimedia_global_user_id or "")
+    toolforge_identity = resolved.toolforge if resolved is not None else None
+    toolforge_names = list(toolforge_identity.tool_names) if toolforge_identity else []
     for toolforge_name in toolforge_names:
+        assert toolforge_identity is not None  # noqa: S101 - names came from this identity
         official_name = f"toolforge-{toolforge_name}"
         try:
             row = common.toolhub_tool_detail(official_name)
@@ -180,7 +191,7 @@ def _candidate_tools_for_toolforge_memberships(username: str) -> tuple[dict[str,
             errors.append({"term": official_name, "status": 502, "details": {"message": str(exc)}})
             continue
         if row is not None:
-            _add_toolforge_candidate(candidates, row, toolforge_name, username)
+            _add_toolforge_candidate(candidates, row, toolforge_name, user.username, toolforge_identity.uid)
     return candidates, errors, toolforge_names
 
 
@@ -246,20 +257,14 @@ def _record_candidate_provider_claims(user: User, candidates: dict[str, dict]) -
                 evidence_payload=entry.get("evidencePayload") or {"searchTerms": entry["searchTerms"]},
             )
             membership_name = entry.get("toolforgeMembershipName")
-            if membership_name:
+            toolforge_username = entry.get("toolforgeUsername")
+            if membership_name and toolforge_username:
                 v1.TOOLFORGE_MAINTAINER_PROVIDER.record_membership(
                     s,
                     user,
                     tool_name=tool_name,
                     toolforge_name=membership_name,
-                )
-            else:
-                v1.TOOLFORGE_MAINTAINER_PROVIDER.verify(
-                    s,
-                    user,
-                    tool_name=tool_name,
-                    author_names=entry["matchedAuthorNames"],
-                    toolhub_tool=entry["tool"],
+                    toolforge_username=toolforge_username,
                 )
         rows = list(
             s.execute(
@@ -318,9 +323,7 @@ def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str,
         )
     search_terms = _search_terms_for_user(user.username, stored_claims)
     candidates, errors = _candidate_tools_for_terms(search_terms)
-    toolforge_candidates, toolforge_errors, toolforge_tool_names = _candidate_tools_for_toolforge_memberships(
-        user.username
-    )
+    toolforge_candidates, toolforge_errors, toolforge_tool_names = _candidate_tools_for_toolforge_memberships(user)
     for tool_name, entry in toolforge_candidates.items():
         existing = candidates.get(tool_name)
         if existing is None:
@@ -335,6 +338,8 @@ def _resolve_me_tools(user: User) -> tuple[dict[str, Any] | None, list[dict[str,
         )
         if entry.get("toolforgeMembershipName"):
             existing["toolforgeMembershipName"] = entry["toolforgeMembershipName"]
+        if entry.get("toolforgeUsername"):
+            existing["toolforgeUsername"] = entry["toolforgeUsername"]
         existing["searchTerms"] = _dedupe_strings([*existing["searchTerms"], *entry["searchTerms"]])
         if entry.get("evidenceUrl"):
             existing["evidenceUrl"] = entry["evidenceUrl"]

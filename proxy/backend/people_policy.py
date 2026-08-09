@@ -21,6 +21,7 @@ REASON_AUTHENTICATED = "authenticated_account_claim"
 REASON_REVIEWED = "operator_approved_mapping"
 REASON_EXACT_TOOLHUB = "exact_toolhub_username_candidate"
 REASON_TOOLFORGE_CORROBORATED = "exact_toolhub_username_and_toolforge_membership"
+REASON_SUL_TOOLFORGE_MEMBERSHIP = "wikimedia_identity_and_toolforge_sul_membership"
 REASON_DISPLAY_ONLY = "display_name_only"
 REASON_STABLE_CONFLICT = "conflicting_stable_identifiers"
 
@@ -46,6 +47,7 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
     operator_approved: bool = False,
     exact_toolhub_candidate: bool = False,
     same_tool_toolforge_membership: bool = False,
+    toolforge_sul_bound: bool = False,
     conflicting_stable_identifiers: bool = False,
 ) -> IdentityDecision:
     """Return the only allowed identity action for a set of evidence facts."""
@@ -59,6 +61,8 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
         return IdentityDecision(ACTION_AUTO_LINK, REASON_REVIEWED, 100)
     if structured_handle:
         return IdentityDecision(ACTION_AUTO_LINK, REASON_STRUCTURED_HANDLE, 90)
+    if exact_toolhub_candidate and toolforge_sul_bound and same_tool_toolforge_membership:
+        return IdentityDecision(ACTION_AUTO_LINK, REASON_SUL_TOOLFORGE_MEMBERSHIP, 95)
     if exact_toolhub_candidate and same_tool_toolforge_membership:
         return IdentityDecision(ACTION_CANDIDATE, REASON_TOOLFORGE_CORROBORATED, 90)
     if exact_toolhub_candidate:

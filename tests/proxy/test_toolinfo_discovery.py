@@ -15,8 +15,8 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import backend  # noqa: E402
 import backend.v1 as v1_api  # noqa: E402
 from backend import authz, db, outbound, security, toolhub, toolinfo_discovery  # noqa: E402
-from backend.author_claims import ToolforgeMembershipProvider  # noqa: E402
 from backend.models import ToolAuthorClaim, ToolinfoDiscovery, ToolinfoDiscoveryMeta, User, utcnow  # noqa: E402
+from backend.public_identity import PublicIdentityResolver, WikimediaIdentityProvider  # noqa: E402
 
 
 @pytest.fixture
@@ -35,7 +35,11 @@ def client(app):
 
 @pytest.fixture(autouse=True)
 def _offline_toolforge_ldap(monkeypatch):
-    monkeypatch.setattr(v1_api, "TOOLFORGE_MEMBERSHIP_PROVIDER", ToolforgeMembershipProvider(lookup=lambda _u: []))
+    monkeypatch.setattr(
+        v1_api,
+        "PUBLIC_IDENTITY_RESOLVER",
+        PublicIdentityResolver(wikimedia=WikimediaIdentityProvider(fetcher=lambda _id: (404, {}))),
+    )
 
 
 def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER):
@@ -105,7 +109,9 @@ def test_toolinfo_discovery_uses_origin_root(client, monkeypatch):
 
     monkeypatch.setattr(toolinfo_discovery, "fetch_toolinfo_json_once", fake_toolinfo)
     monkeypatch.setattr(
-        toolinfo_discovery, "fetch_sitemap_xml_once", lambda _url, _session=None: pytest.fail("sitemap should not be fetched")
+        toolinfo_discovery,
+        "fetch_sitemap_xml_once",
+        lambda _url, _session=None: pytest.fail("sitemap should not be fetched"),
     )
 
     resp = client.post(
@@ -169,7 +175,9 @@ def test_toolinfo_discovery_reports_not_found_when_root_and_sitemap_404(client, 
     sign_in(client, uid)
 
     monkeypatch.setattr(
-        toolinfo_discovery, "fetch_toolinfo_json_once", lambda _url, _session=None: (_ for _ in ()).throw(http_error(404))
+        toolinfo_discovery,
+        "fetch_toolinfo_json_once",
+        lambda _url, _session=None: (_ for _ in ()).throw(http_error(404)),
     )
     monkeypatch.setattr(
         toolinfo_discovery, "fetch_sitemap_xml_once", lambda _url, _session=None: (_ for _ in ()).throw(http_error(404))
@@ -196,15 +204,11 @@ def test_toolinfo_discovery_validates_url_and_session(client):
     assert client.post("/v1/crawler/toolinfo-discovery/", json={"url": "https://tool.example"}).status_code == 401
     uid = add_user("Schiste")
     sign_in(client, uid)
-    assert (
-        client.post(
-            "/v1/crawler/toolinfo-discovery/",
-            json={},
-            headers={"X-CSRF-Token": "tok"},
-        )
-        .get_json()["validationErrors"]
-        == [{"field": "url", "message": "tool URL is required."}]
-    )
+    assert client.post(
+        "/v1/crawler/toolinfo-discovery/",
+        json={},
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["validationErrors"] == [{"field": "url", "message": "tool URL is required."}]
     resp = client.post(
         "/v1/crawler/toolinfo-discovery/",
         json={"url": "https://"},
@@ -212,33 +216,21 @@ def test_toolinfo_discovery_validates_url_and_session(client):
     )
     assert resp.status_code == 400
     assert resp.get_json()["validationErrors"] == [{"field": "url", "message": "tool URL must include a host."}]
-    assert (
-        client.post(
-            "/v1/crawler/toolinfo-discovery/",
-            json={"url": "https://[broken"},
-            headers={"X-CSRF-Token": "tok"},
-        )
-        .get_json()["validationErrors"]
-        == [{"field": "url", "message": "tool URL is not a valid URL."}]
-    )
-    assert (
-        client.post(
-            "/v1/crawler/toolinfo-discovery/",
-            json={"url": f"https://example.org/{'x' * 2100}"},
-            headers={"X-CSRF-Token": "tok"},
-        )
-        .get_json()["validationErrors"]
-        == [{"field": "url", "message": "tool URL must be 2000 characters or fewer."}]
-    )
-    assert (
-        client.post(
-            "/v1/crawler/toolinfo-discovery/",
-            json={"url": "https://example.org/with space"},
-            headers={"X-CSRF-Token": "tok"},
-        )
-        .get_json()["validationErrors"]
-        == [{"field": "url", "message": "tool URL cannot contain spaces."}]
-    )
+    assert client.post(
+        "/v1/crawler/toolinfo-discovery/",
+        json={"url": "https://[broken"},
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["validationErrors"] == [{"field": "url", "message": "tool URL is not a valid URL."}]
+    assert client.post(
+        "/v1/crawler/toolinfo-discovery/",
+        json={"url": f"https://example.org/{'x' * 2100}"},
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["validationErrors"] == [{"field": "url", "message": "tool URL must be 2000 characters or fewer."}]
+    assert client.post(
+        "/v1/crawler/toolinfo-discovery/",
+        json={"url": "https://example.org/with space"},
+        headers={"X-CSRF-Token": "tok"},
+    ).get_json()["validationErrors"] == [{"field": "url", "message": "tool URL cannot contain spaces."}]
     assert (
         client.post(
             "/v1/crawler/toolinfo-discovery/",
@@ -252,7 +244,9 @@ def test_toolinfo_discovery_validates_url_and_session(client):
 def test_http_cloud_urls_are_upgraded_when_deriving_candidates():
     # Toolhub records some Cloud tools as http://; those hosts serve https, so the
     # candidate is built as https rather than the fetch policy learning to accept http.
-    assert toolinfo_discovery._root_toolinfo_url("http://tools.wmflabs.org") == "https://tools.wmflabs.org/toolinfo.json"
+    assert (
+        toolinfo_discovery._root_toolinfo_url("http://tools.wmflabs.org") == "https://tools.wmflabs.org/toolinfo.json"
+    )
     assert toolinfo_discovery._sitemap_url("http://magnustools.toolforge.org") == (
         "https://magnustools.toolforge.org/sitemap.xml"
     )
@@ -267,9 +261,7 @@ def test_http_cloud_urls_are_upgraded_when_deriving_candidates():
 
 def discovery_guard(url):
     """Apply discovery's fetch policy to one URL (the guard now lives in backend.outbound)."""
-    return outbound.require_allowed(
-        url, outbound.STRICT_PUBLIC, scheme_error="only public https URLs are discovered"
-    )
+    return outbound.require_allowed(url, outbound.STRICT_PUBLIC, scheme_error="only public https URLs are discovered")
 
 
 def test_discovery_guard_and_fetch_helpers(monkeypatch):
@@ -297,12 +289,19 @@ def test_discovery_guard_and_fetch_helpers(monkeypatch):
 
     monkeypatch.setattr(outbound, "require_allowed", lambda *_a, **_k: None)
     session = FakeSession(FakeResp(b'{"name":"ok"}'))
-    assert toolinfo_discovery.fetch_toolinfo_json_once("https://public.example/toolinfo.json", session) == {"name": "ok"}
+    assert toolinfo_discovery.fetch_toolinfo_json_once("https://public.example/toolinfo.json", session) == {
+        "name": "ok"
+    }
     assert session.calls[0][1]["allow_redirects"] is False
-    assert toolinfo_discovery.fetch_sitemap_xml_once("https://public.example/sitemap.xml", FakeSession(FakeResp(b"<x/>"))) == "<x/>"
+    assert (
+        toolinfo_discovery.fetch_sitemap_xml_once("https://public.example/sitemap.xml", FakeSession(FakeResp(b"<x/>")))
+        == "<x/>"
+    )
 
     with pytest.raises(ValueError, match="redirects"):
-        toolinfo_discovery.fetch_toolinfo_json_once("https://public.example/toolinfo.json", FakeSession(FakeResp(status=302)))
+        toolinfo_discovery.fetch_toolinfo_json_once(
+            "https://public.example/toolinfo.json", FakeSession(FakeResp(status=302))
+        )
     monkeypatch.setattr(outbound, "STRICT_PUBLIC", replace(outbound.STRICT_PUBLIC, max_body_bytes=1))
     with pytest.raises(ValueError, match="larger than"):
         toolinfo_discovery.fetch_toolinfo_json_once(
@@ -313,7 +312,12 @@ def test_discovery_guard_and_fetch_helpers(monkeypatch):
 
 def test_discovery_helpers_cover_filtering_and_payload_branches():
     assert toolinfo_discovery._toolinfo_names("bad") == []
-    assert toolinfo_discovery._sitemap_toolinfo_urls("<not xml", sitemap_url="https://tool.example/sitemap.xml", origin="https://tool.example") == []
+    assert (
+        toolinfo_discovery._sitemap_toolinfo_urls(
+            "<not xml", sitemap_url="https://tool.example/sitemap.xml", origin="https://tool.example"
+        )
+        == []
+    )
     long_url = f"https://tool.example/{'x' * 2100}/toolinfo.json"
     xml = (
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
@@ -330,8 +334,14 @@ def test_discovery_helpers_cover_filtering_and_payload_branches():
         sitemap_url="https://tool.example/sitemap.xml",
         origin="https://tool.example",
     ) == ["https://tool.example/ok/toolinfo.json"]
-    assert toolinfo_discovery.tool_discovery_candidate_url({"toolinfo_url": " https://t.example/toolinfo.json "}) == "https://t.example/toolinfo.json"
-    assert toolinfo_discovery.tool_discovery_candidate_url({"toolinfoUrl": "https://camel.example/toolinfo.json"}) == "https://camel.example/toolinfo.json"
+    assert (
+        toolinfo_discovery.tool_discovery_candidate_url({"toolinfo_url": " https://t.example/toolinfo.json "})
+        == "https://t.example/toolinfo.json"
+    )
+    assert (
+        toolinfo_discovery.tool_discovery_candidate_url({"toolinfoUrl": "https://camel.example/toolinfo.json"})
+        == "https://camel.example/toolinfo.json"
+    )
     assert toolinfo_discovery.tool_discovery_candidate_url({"url": 7}) == ""
     assert toolinfo_discovery.discovery_payload(None)["status"] == "pending"
     row = ToolinfoDiscovery(
@@ -571,7 +581,9 @@ def test_seed_from_toolhub_listing_records_no_url_cursor_wrap_and_errors(monkeyp
 def test_toolhub_detail_for_name_handles_failures_and_non_objects(monkeypatch):
     monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: ["not", "a", "dict"])
     assert toolinfo_discovery._toolhub_detail_for_name("list-payload") is None
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: (_ for _ in ()).throw(toolhub.ToolhubAPIError(503, {})))
+    monkeypatch.setattr(
+        toolhub, "public_api_get", lambda *_a, **_k: (_ for _ in ()).throw(toolhub.ToolhubAPIError(503, {}))
+    )
     assert toolinfo_discovery._toolhub_detail_for_name("busy") is None
 
 
@@ -591,7 +603,9 @@ def test_refresh_known_discoveries_seeds_from_author_claims(monkeypatch):
             )
         )
 
-    monkeypatch.setattr(toolinfo_discovery, "seed_from_toolhub_listing", lambda limit=100: {"seeded": 0, "skipped": 0, "errors": 0})
+    monkeypatch.setattr(
+        toolinfo_discovery, "seed_from_toolhub_listing", lambda limit=100: {"seeded": 0, "skipped": 0, "errors": 0}
+    )
     monkeypatch.setattr(
         toolinfo_discovery,
         "_toolhub_detail_for_name",
@@ -656,7 +670,9 @@ def test_refresh_known_discoveries_skips_queued_and_fresh_claims(monkeypatch):
                 )
             )
 
-    monkeypatch.setattr(toolinfo_discovery, "seed_from_toolhub_listing", lambda **_kwargs: {"seeded": 0, "skipped": 0, "errors": 0})
+    monkeypatch.setattr(
+        toolinfo_discovery, "seed_from_toolhub_listing", lambda **_kwargs: {"seeded": 0, "skipped": 0, "errors": 0}
+    )
     monkeypatch.setattr(
         toolinfo_discovery,
         "discover_toolinfo_url",
@@ -700,7 +716,9 @@ def test_refresh_known_discoveries_stops_claim_seeding_at_limit(monkeypatch):
             )
         )
 
-    monkeypatch.setattr(toolinfo_discovery, "seed_from_toolhub_listing", lambda **_kwargs: {"seeded": 0, "skipped": 0, "errors": 0})
+    monkeypatch.setattr(
+        toolinfo_discovery, "seed_from_toolhub_listing", lambda **_kwargs: {"seeded": 0, "skipped": 0, "errors": 0}
+    )
     monkeypatch.setattr(
         toolinfo_discovery,
         "discover_toolinfo_url",
@@ -737,7 +755,9 @@ def test_refresh_known_discoveries_handles_stale_rows_and_missing_urls(monkeypat
             )
         )
 
-    monkeypatch.setattr(toolinfo_discovery, "seed_from_toolhub_listing", lambda limit=100: {"seeded": 0, "skipped": 0, "errors": 0})
+    monkeypatch.setattr(
+        toolinfo_discovery, "seed_from_toolhub_listing", lambda limit=100: {"seeded": 0, "skipped": 0, "errors": 0}
+    )
     monkeypatch.setattr(toolinfo_discovery, "_toolhub_detail_for_name", lambda _name: {"name": "no-url-tool"})
     monkeypatch.setattr(
         toolinfo_discovery,

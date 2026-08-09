@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, or_, select
 
 from backend import db, maintainer_index, people_index, people_policy
-from backend.author_claims import ToolforgeMembershipProvider
 from backend.models import (
     CanonicalToolCache,
     Person,
@@ -19,12 +18,13 @@ from backend.models import (
     PersonReconciliationQueue,
     PersonReconciliationRun,
     ToolAuthorClaim,
+    ToolhubAccountProjection,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     User,
     utcnow,
 )
-from backend.people_identity import ToolhubIdentityProvider
+from backend.public_identity import PublicIdentityResolver
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -36,10 +36,13 @@ RUN_FAILED = "failed"
 DEFAULT_QUEUE_LIMIT = 100
 DEFAULT_CANDIDATE_LABEL_LIMIT = 25
 MAPPING_CANDIDATE = people_policy.ACTION_CANDIDATE
+MAPPING_AUTO_LINK = people_policy.ACTION_AUTO_LINK
 MAPPING_APPROVED = "approved"
 MAPPING_REJECTED = "rejected"
 MAPPING_SPLIT = "split"
-MAPPING_DECISIONS = {MAPPING_CANDIDATE, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
+MAPPING_DECISIONS = {MAPPING_CANDIDATE, MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
+MAPPING_APPLIED_DECISIONS = {MAPPING_AUTO_LINK, MAPPING_APPROVED}
+CANDIDATE_RETRY_AFTER = timedelta(days=1)
 
 
 class PersonReconciliationError(ValueError):
@@ -73,7 +76,7 @@ def _reconcile_tool(s: Session, name: str) -> None:
     if cache is not None and isinstance(cache.record, dict):
         maintainer_index.replace_toolhub_metadata_edges(s, name, cache.record)
     maintainer_index.sync_author_claim_edges(s, tool_names=[name])
-    apply_approved_mappings_for_tool(s, name)
+    apply_durable_mappings_for_tool(s, name)
     people_index.resolve_tool_relationships(s, name)
 
 
@@ -123,8 +126,8 @@ def _move_mapping_evidence(
 
 
 def apply_mapping(s: Session, mapping: PersonReconciliationMapping) -> int:
-    """Apply one operator-approved mapping and rebuild only affected tools."""
-    if mapping.decision != MAPPING_APPROVED:
+    """Apply one durable evidence-backed mapping and rebuild affected tools."""
+    if mapping.decision not in MAPPING_APPLIED_DECISIONS:
         return 0
     if mapping.source_person_id is None or mapping.target_person_id is None:
         msg = "mapping must name source and target people"
@@ -154,11 +157,13 @@ def apply_mapping(s: Session, mapping: PersonReconciliationMapping) -> int:
     return len(affected_tools)
 
 
-def apply_approved_mappings_for_tool(s: Session, tool_name: str) -> int:
-    """Reapply durable approvals after an upstream evidence refresh."""
+def apply_durable_mappings_for_tool(s: Session, tool_name: str) -> int:
+    """Reapply auto-linked or operator-approved mappings after an evidence refresh."""
     mappings = list(
         s.execute(
-            select(PersonReconciliationMapping).where(PersonReconciliationMapping.decision == MAPPING_APPROVED)
+            select(PersonReconciliationMapping).where(
+                PersonReconciliationMapping.decision.in_(MAPPING_APPLIED_DECISIONS)
+            )
         ).scalars()
     )
     applied = 0
@@ -259,24 +264,36 @@ def _ambiguous_display_names(s: Session) -> list[dict[str, Any]]:
 
 
 def _candidate_source_people(s: Session) -> list[Person]:
-    """Return unresolved people with active tool evidence and no prior decision."""
+    """Return non-stable evidence owners due for deterministic resolution."""
     related_ids = select(ToolPersonRelationship.person_id)
-    decided_ids = select(PersonReconciliationMapping.source_person_id).where(
-        PersonReconciliationMapping.source_person_id.is_not(None)
+    stable_ids = select(PersonIdentifier.person_id).where(
+        PersonIdentifier.identifier_kind == people_index.IDENTIFIER_STABLE,
+        PersonIdentifier.is_current.is_(True),
     )
-    people = list(
+    finalized_ids = select(PersonReconciliationMapping.source_person_id).where(
+        PersonReconciliationMapping.source_person_id.is_not(None),
+        PersonReconciliationMapping.decision.in_(
+            {MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
+        ),
+    )
+    deferred_candidate_ids = select(PersonReconciliationMapping.source_person_id).where(
+        PersonReconciliationMapping.source_person_id.is_not(None),
+        PersonReconciliationMapping.decision == MAPPING_CANDIDATE,
+        PersonReconciliationMapping.updated_at > utcnow() - CANDIDATE_RETRY_AFTER,
+    )
+    return list(
         s.execute(
             select(Person)
             .where(
                 Person.id.in_(related_ids),
-                Person.id.not_in(decided_ids),
+                Person.id.not_in(stable_ids),
+                Person.id.not_in(finalized_ids),
+                Person.id.not_in(deferred_candidate_ids),
                 Person.display_name != "",
             )
             .order_by(func.lower(Person.display_name), Person.id)
         ).scalars()
     )
-    public_ids = people_index.public_identity_ids(s, {person.id for person in people})
-    return [person for person in people if person.id not in public_ids]
 
 
 def _tool_names_for_person(s: Session, person_id: int) -> tuple[list[str], list[str]]:
@@ -309,17 +326,37 @@ def _stable_identifier_owner(s: Session, namespace: str, value: str) -> int | No
     ).scalar_one_or_none()
 
 
-def _record_stable_identity_conflict(s: Session, run_id: int, identity: Any) -> bool:  # noqa: ANN401
+def _account_evidence(account: ToolhubAccountProjection) -> dict[str, str]:
+    return {
+        "toolhubUserId": account.toolhub_user_id,
+        "toolhubUsername": account.username,
+        "wikimediaGlobalUserId": account.wikimedia_global_user_id or "",
+    }
+
+
+def _record_stable_identity_conflict(
+    s: Session,
+    run_id: int,
+    account: ToolhubAccountProjection,
+    *,
+    toolforge_uid_number: str = "",
+) -> bool:
     """Queue a cross-system stable-id disagreement and refuse a target."""
-    toolhub_owner = _stable_identifier_owner(s, people_index.NS_TOOLHUB_USER_ID, identity.toolhub_user_id)
-    wikimedia_owner = _stable_identifier_owner(
-        s,
-        people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
-        identity.wikimedia_global_user_id,
-    )
-    if toolhub_owner is None or wikimedia_owner is None or toolhub_owner == wikimedia_owner:
+    identifiers = {
+        people_index.NS_TOOLHUB_USER_ID: account.toolhub_user_id,
+        people_index.NS_WIKIMEDIA_GLOBAL_USER_ID: account.wikimedia_global_user_id or "",
+        people_index.NS_TOOLFORGE_UID_NUMBER: toolforge_uid_number,
+    }
+    owners = {
+        namespace: owner
+        for namespace, value in identifiers.items()
+        if value and (owner := _stable_identifier_owner(s, namespace, value)) is not None
+    }
+    if len(set(owners.values())) <= 1:
         return False
-    value = f"toolhub:{identity.toolhub_user_id}|wikimedia:{identity.wikimedia_global_user_id}"
+    value = "|".join(
+        f"{namespace}:{identifiers[namespace]}" for namespace in sorted(identifiers) if identifiers[namespace]
+    )
     conflict = s.execute(
         select(PersonReconciliationConflict).where(
             PersonReconciliationConflict.conflict_type == people_policy.REASON_STABLE_CONFLICT,
@@ -328,16 +365,22 @@ def _record_stable_identity_conflict(s: Session, run_id: int, identity: Any) -> 
         )
     ).scalar_one_or_none()
     details = {
-        "reason": "Toolhub and Wikimedia stable identifiers currently resolve to different people.",
-        "identity": identity.evidence_payload(),
-        "toolhubPersonId": s.get(Person, toolhub_owner).public_id,
-        "wikimediaPersonId": s.get(Person, wikimedia_owner).public_id,
+        "reason": "Cross-system stable identifiers currently resolve to different people.",
+        "identity": _account_evidence(account),
+        "toolforgeUidNumber": toolforge_uid_number,
+        "stableIdentifierOwners": {namespace: s.get(Person, owner).public_id for namespace, owner in owners.items()},
     }
+    if toolhub_owner := owners.get(people_index.NS_TOOLHUB_USER_ID):
+        details["toolhubPersonId"] = s.get(Person, toolhub_owner).public_id
+    if wikimedia_owner := owners.get(people_index.NS_WIKIMEDIA_GLOBAL_USER_ID):
+        details["wikimediaPersonId"] = s.get(Person, wikimedia_owner).public_id
+    if toolforge_owner := owners.get(people_index.NS_TOOLFORGE_UID_NUMBER):
+        details["toolforgePersonId"] = s.get(Person, toolforge_owner).public_id
     if conflict is None:
         s.add(
             PersonReconciliationConflict(
                 run_id=run_id,
-                person_id=toolhub_owner,
+                person_id=next(iter(owners.values())),
                 conflict_type=people_policy.REASON_STABLE_CONFLICT,
                 value=value,
                 details=details,
@@ -350,38 +393,89 @@ def _record_stable_identity_conflict(s: Session, run_id: int, identity: Any) -> 
     return True
 
 
+def _exact_account(s: Session, label: str) -> ToolhubAccountProjection | None:
+    rows = list(
+        s.execute(
+            select(ToolhubAccountProjection)
+            .where(ToolhubAccountProjection.normalized_username == label.casefold())
+            .order_by(ToolhubAccountProjection.toolhub_user_id)
+            .limit(2)
+        ).scalars()
+    )
+    return rows[0] if len(rows) == 1 else None
+
+
+def _mapping_for_source(s: Session, source_person_id: int) -> PersonReconciliationMapping | None:
+    return s.execute(
+        select(PersonReconciliationMapping)
+        .where(PersonReconciliationMapping.source_person_id == source_person_id)
+        .order_by(PersonReconciliationMapping.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _candidate_account_groups(
+    s: Session,
+    sources: list[Person],
+) -> list[tuple[ToolhubAccountProjection, list[Person]]]:
+    """Group source observations by labels that map to one exact local account."""
+    by_label: dict[str, list[Person]] = {}
+    for person in sources:
+        by_label.setdefault(person.display_name.casefold(), []).append(person)
+    matches = []
+    for people in by_label.values():
+        account = _exact_account(s, people[0].display_name)
+        if account is not None:
+            matches.append((account, people))
+    return matches
+
+
 def discover_identity_candidates(
     s: Session,
     *,
     run_id: int,
-    identity_provider: ToolhubIdentityProvider,
-    membership_provider: ToolforgeMembershipProvider,
+    identity_resolver: PublicIdentityResolver,
     label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
 ) -> dict[str, int]:
-    """Persist exact Toolhub matches for review without merging display identities."""
-    sources = _candidate_source_people(s)
-    by_label: dict[str, list[Person]] = {}
-    for person in sources:
-        by_label.setdefault(person.display_name.casefold(), []).append(person)
+    """Resolve exact public accounts and auto-link only SUL-backed tool evidence."""
     created = 0
+    linked = 0
     conflicts = 0
-    for people in list(by_label.values())[: max(1, min(int(label_limit), 100))]:
-        identity = identity_provider.lookup_exact(people[0].display_name)
-        if identity is None:
-            continue
-        if _record_stable_identity_conflict(s, run_id, identity):
+    account_limit = max(1, min(int(label_limit), 100))
+    candidates = _candidate_account_groups(s, _candidate_source_people(s))
+    for account, people in candidates[:account_limit]:
+        resolved = identity_resolver.resolve(account.wikimedia_global_user_id or "")
+        toolforge = resolved.toolforge if resolved is not None else None
+        if _record_stable_identity_conflict(
+            s,
+            run_id,
+            account,
+            toolforge_uid_number=toolforge.uid_number if toolforge else "",
+        ):
             conflicts += 1
             continue
-        memberships = membership_provider.tool_names(identity.toolhub_username)
-        target = people_index.ensure_person(
+        target = people_index.ensure_official_account_person(
             s,
-            display_name=identity.toolhub_username,
-            toolhub_user_id=identity.toolhub_user_id,
-            wikimedia_global_user_id=identity.wikimedia_global_user_id,
-            toolhub_username=identity.toolhub_username,
-            toolforge_username=identity.toolhub_username if memberships else "",
-            source="toolhub_public_user",
+            toolhub_user_id=account.toolhub_user_id,
+            username=account.username,
+            wikimedia_global_user_id=account.wikimedia_global_user_id or "",
         )
+        if target is None:
+            conflicts += 1
+            continue
+        if resolved is not None:
+            target = people_index.ensure_person(
+                s,
+                display_name=account.username,
+                toolhub_user_id=account.toolhub_user_id,
+                wikimedia_global_user_id=resolved.wikimedia.global_user_id,
+                toolforge_uid_number=toolforge.uid_number if toolforge else "",
+                toolhub_username=account.username,
+                toolforge_username=toolforge.uid if toolforge else "",
+                wiki_username=resolved.wikimedia.username,
+                source="wikimedia_toolforge_bridge",
+            )
+        memberships = list(toolforge.tool_names) if toolforge else []
         membership_aliases = _membership_aliases(memberships)
         for source in people:
             tool_names, roles = _tool_names_for_person(s, source.id)
@@ -389,30 +483,38 @@ def discover_identity_candidates(
             decision = people_policy.decide_identity_link(
                 exact_toolhub_candidate=True,
                 same_tool_toolforge_membership=bool(matched_memberships),
+                toolforge_sul_bound=toolforge is not None,
             )
-            mapping = PersonReconciliationMapping(
-                run_id=run_id,
-                source_person_id=source.id,
-                target_person_id=target.id,
-                source_key=source.canonical_key,
-                target_key=target.canonical_key,
-                decision=people_policy.ACTION_CANDIDATE,
-                reason=decision.reason,
-                confidence=decision.confidence,
-                evidence={
-                    "identity": identity.evidence_payload(),
-                    "sourcePublicId": source.public_id,
-                    "toolNames": tool_names,
-                    "relationshipTypes": roles,
-                    "toolforgeMemberships": memberships,
-                    "matchedToolforgeMemberships": matched_memberships,
-                },
-                updated_at=utcnow(),
-            )
-            s.add(mapping)
-            created += 1
+            mapping = _mapping_for_source(s, source.id)
+            if mapping is None:
+                mapping = PersonReconciliationMapping(source_person_id=source.id)
+                s.add(mapping)
+                created += 1
+            mapping.run_id = run_id
+            mapping.target_person_id = target.id
+            mapping.source_key = source.canonical_key
+            mapping.target_key = target.canonical_key
+            mapping.decision = decision.action
+            mapping.reason = decision.reason
+            mapping.confidence = decision.confidence
+            mapping.evidence = {
+                "resolutionVersion": 2,
+                "identity": _account_evidence(account),
+                "wikimediaUsername": resolved.wikimedia.username if resolved else "",
+                "toolforgeUsername": toolforge.uid if toolforge else "",
+                "toolforgeUidNumber": toolforge.uid_number if toolforge else "",
+                "sourcePublicId": source.public_id,
+                "toolNames": tool_names,
+                "relationshipTypes": roles,
+                "toolforgeMemberships": memberships,
+                "matchedToolforgeMemberships": matched_memberships,
+            }
+            mapping.updated_at = utcnow()
+            s.flush()
+            if mapping.decision == MAPPING_AUTO_LINK:
+                linked += int(bool(apply_mapping(s, mapping)))
     s.flush()
-    return {"created": created, "conflicts": conflicts}
+    return {"created": created, "linked": linked, "conflicts": conflicts}
 
 
 def build_plan(s: Session) -> dict[str, Any]:
@@ -433,9 +535,9 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     *,
     mode: str = MODE_DRY_RUN,
     discover_candidates: bool = False,
-    identity_provider: ToolhubIdentityProvider | None = None,
-    membership_provider: ToolforgeMembershipProvider | None = None,
+    identity_resolver: PublicIdentityResolver | None = None,
     candidate_label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+    rebuild_tools: bool = True,
 ) -> dict[str, Any]:
     """Audit or rebuild Toolhub-backed evidence and local people projections."""
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
@@ -448,22 +550,23 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
         if mode == MODE_APPLY:
             for user in s.execute(select(User).order_by(User.id)).scalars():
                 people_index.link_user(s, user)
-            for name in before["toolNames"]:
-                _reconcile_tool(s, name)
-            people_index.refresh_activity_summaries(s)
+            if rebuild_tools:
+                for name in before["toolNames"]:
+                    _reconcile_tool(s, name)
             candidate_result = (
                 discover_identity_candidates(
                     s,
                     run_id=run_row.id,
-                    identity_provider=identity_provider or ToolhubIdentityProvider(),
-                    membership_provider=membership_provider or ToolforgeMembershipProvider(),
+                    identity_resolver=identity_resolver or PublicIdentityResolver(),
                     label_limit=candidate_label_limit,
                 )
                 if discover_candidates
-                else {"created": 0, "conflicts": 0}
+                else {"created": 0, "linked": 0, "conflicts": 0}
             )
+            if rebuild_tools or candidate_result["linked"]:
+                people_index.refresh_activity_summaries(s)
         else:
-            candidate_result = {"created": 0, "conflicts": 0}
+            candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
         after = build_plan(s)
         for conflict in after["conflicts"]:
             existing = s.execute(
@@ -492,8 +595,9 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "evidenceScanned": after["evidenceScanned"],
             "relationships": after["relationshipsScanned"],
             "conflicts": len(after["conflicts"]),
-            "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY else 0,
+            "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY and rebuild_tools else 0,
             "identityCandidatesCreated": candidate_result["created"],
+            "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "catalogAuthority": "toolhub",
         }

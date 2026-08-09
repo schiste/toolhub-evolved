@@ -268,24 +268,26 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
             toolforge_names = toolforge_names_from_toolhub_tool(tool_name, tool)
             if not toolforge_names:
                 return common.deny(common.HTTP_CONFLICT, "this Toolhub record does not identify a Toolforge tool")
+            resolved = v1.PUBLIC_IDENTITY_RESOLVER.resolve(stored_user.wikimedia_global_user_id or "")
+            toolforge_identity = resolved.toolforge if resolved is not None else None
             memberships = {
-                value.casefold(): value for value in v1.TOOLFORGE_MEMBERSHIP_PROVIDER.tool_names(stored_user.username)
+                value.casefold(): value for value in (toolforge_identity.tool_names if toolforge_identity else ())
             }
             matched = next((value for value in toolforge_names if value.casefold() in memberships), None)
-            if matched:
-                rows = [
-                    v1.TOOLFORGE_MAINTAINER_PROVIDER.record_membership(
-                        s, stored_user, tool_name=tool_name, toolforge_name=matched
-                    )
-                ]
-            else:
-                rows = v1.TOOLFORGE_MAINTAINER_PROVIDER.verify(
+            if not matched or toolforge_identity is None:
+                return common.deny(
+                    common.HTTP_CONFLICT,
+                    "Toolforge membership could not be verified for this Wikimedia account",
+                )
+            rows = [
+                v1.TOOLFORGE_MAINTAINER_PROVIDER.record_membership(
                     s,
                     stored_user,
                     tool_name=tool_name,
-                    author_names=[stored_user.username],
-                    toolhub_tool=tool,
+                    toolforge_name=matched,
+                    toolforge_username=toolforge_identity.uid,
                 )
+            ]
         elif method == AUTHOR_CLAIM_TOOLINFO_URL_CONTROL:
             toolinfo_url = str(common.payload_value(body, "toolinfoUrl", "toolinfo_url") or "").strip()
             challenge, challenge_error = common.create_control_challenge(s, stored_user, tool_name, toolinfo_url)

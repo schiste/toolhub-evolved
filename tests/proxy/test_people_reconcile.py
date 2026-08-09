@@ -8,7 +8,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db, people_index, people_reconcile, sync  # noqa: E402
-from backend.author_claims import ToolforgeMembershipProvider  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     Person,
@@ -18,10 +17,36 @@ from backend.models import (  # noqa: E402
     PersonReconciliationQueue,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
+    ToolhubAccountProjection,
     User,
     utcnow,
 )
-from backend.people_identity import ToolhubIdentityProvider  # noqa: E402
+from backend.public_identity import (  # noqa: E402
+    PublicIdentityResolver,
+    ToolforgeIdentityProvider,
+    WikimediaIdentityProvider,
+)
+
+
+def _identity_resolver(*tool_names):
+    return PublicIdentityResolver(
+        wikimedia=WikimediaIdentityProvider(
+            fetcher=lambda _id: (
+                200,
+                {"query": {"globaluserinfo": {"id": 160, "name": "Magnus Manske"}}},
+            )
+        ),
+        toolforge=ToolforgeIdentityProvider(
+            lookup=lambda _username: [
+                {
+                    "uid": ["magnus"],
+                    "uidNumber": ["3067"],
+                    "sul": ["Magnus Manske"],
+                    "memberOf": [f"cn=tools.{name},ou=servicegroups,dc=wikimedia,dc=org" for name in tool_names],
+                }
+            ]
+        ),
+    )
 
 
 def _configure() -> None:
@@ -139,7 +164,66 @@ def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
     assert people_reconcile.process_queue(limit=1) == {"claimed": 0, "processed": 0, "failed": 0}
 
 
-def test_apply_persists_exact_identity_candidates_without_merging_observations():
+def test_identity_only_resolution_does_not_rebuild_canonical_tool_evidence():
+    _configure()
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="untouched-tool",
+                record={"name": "untouched-tool", "author": [{"name": "Ada"}]},
+                expires_at=utcnow(),
+                stale_until=utcnow(),
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver(),
+            rebuild_tools=False,
+        )
+
+        assert summary["toolsRebuilt"] == 0
+        assert s.query(ToolRelationshipEvidence).count() == 0
+
+
+def test_identity_batch_limit_counts_resolvable_accounts_not_unmatched_labels():
+    _configure()
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "unknown-tool",
+            "source",
+            [{"display_name": "A name without account", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        people_index.replace_source_evidence(
+            s,
+            "mix-n-match",
+            "source",
+            [{"display_name": "Magnus Manske", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver("mix-n-match"),
+            candidate_label_limit=1,
+        )
+
+        assert summary["identityMappingsApplied"] == 1
+
+
+def test_apply_links_only_same_tool_sul_membership_and_keeps_other_attribution_candidate():
     _configure()
     with db.session_scope() as s:
         for tool_name in ("mix-n-match", "other-tool"):
@@ -149,39 +233,28 @@ def test_apply_persists_exact_identity_candidates_without_merging_observations()
                 "toolhub_author_metadata",
                 [{"display_name": "Magnus Manske", "relationship_type": sync.PERSON_REL_AUTHOR}],
             )
-        identity_provider = ToolhubIdentityProvider(
-            fetcher=lambda _label: (
-                200,
-                {
-                    "results": [
-                        {
-                            "id": 152,
-                            "username": "Magnus Manske",
-                            "social_auth": [{"provider": "wikimedia", "uid": "160"}],
-                        }
-                    ]
-                },
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
             )
-        )
-        membership_provider = ToolforgeMembershipProvider(
-            lookup=lambda _username: ["cn=tools.mix-n-match,ou=servicegroups,dc=wikimedia,dc=org"]
         )
 
         summary = people_reconcile.run(
             s,
             mode=people_reconcile.MODE_APPLY,
             discover_candidates=True,
-            identity_provider=identity_provider,
-            membership_provider=membership_provider,
+            identity_resolver=_identity_resolver("mix-n-match"),
         )
 
         assert summary["identityCandidatesCreated"] == 2
+        assert summary["identityMappingsApplied"] == 1
         mappings = s.query(PersonReconciliationMapping).order_by(PersonReconciliationMapping.confidence.desc()).all()
-        assert [row.confidence for row in mappings] == [90, 70]
+        assert [row.confidence for row in mappings] == [95, 70]
+        assert [row.decision for row in mappings] == ["auto_link", "candidate"]
         assert mappings[0].evidence["matchedToolforgeMemberships"] == ["mix-n-match"]
-        assert {row.person_id for row in s.query(ToolRelationshipEvidence)} == {
-            row.source_person_id for row in mappings
-        }
         target_ids = {row.target_person_id for row in mappings}
         assert len(target_ids) == 1
         target_identifiers = {
@@ -189,18 +262,21 @@ def test_apply_persists_exact_identity_candidates_without_merging_observations()
             for row in s.query(PersonIdentifier).filter(PersonIdentifier.person_id.in_(target_ids))
         }
         assert target_identifiers == {
-            ("toolforge_username", "Magnus Manske"),
+            ("toolforge_uid_number", "3067"),
+            ("toolforge_username", "magnus"),
             ("toolhub_user_id", "152"),
             ("toolhub_username", "Magnus Manske"),
             ("wikimedia_global_user_id", "160"),
+            ("wiki_username", "Magnus Manske"),
         }
+        assert ("toolforge_username", "Magnus Manske") not in target_identifiers
+        assert s.query(ToolRelationshipEvidence).filter_by(tool_name="mix-n-match").one().person_id in target_ids
 
         rerun = people_reconcile.run(
             s,
             mode=people_reconcile.MODE_APPLY,
             discover_candidates=True,
-            identity_provider=identity_provider,
-            membership_provider=membership_provider,
+            identity_resolver=_identity_resolver("mix-n-match"),
         )
         assert rerun["identityCandidatesCreated"] == 0
         assert s.query(PersonReconciliationMapping).count() == 2
@@ -217,18 +293,12 @@ def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():
             "source",
             [{"display_name": "Magnus Manske", "relationship_type": sync.PERSON_REL_AUTHOR}],
         )
-        provider = ToolhubIdentityProvider(
-            fetcher=lambda _label: (
-                200,
-                {
-                    "results": [
-                        {
-                            "id": 152,
-                            "username": "Magnus Manske",
-                            "social_auth": [{"provider": "wikimedia", "uid": "160"}],
-                        }
-                    ]
-                },
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
             )
         )
 
@@ -236,18 +306,58 @@ def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():
             s,
             mode=people_reconcile.MODE_APPLY,
             discover_candidates=True,
-            identity_provider=provider,
-            membership_provider=ToolforgeMembershipProvider(lookup=lambda _username: []),
+            identity_resolver=_identity_resolver(),
         )
 
         assert summary["identityCandidatesCreated"] == 0
         assert summary["stableIdentityConflicts"] == 1
         assert s.query(PersonReconciliationMapping).count() == 0
-        conflict = (
-            s.query(PersonReconciliationConflict)
-            .filter_by(conflict_type="conflicting_stable_identifiers")
-            .one()
-        )
+        conflict = s.query(PersonReconciliationConflict).filter_by(conflict_type="conflicting_stable_identifiers").one()
         assert conflict.details["toolhubPersonId"] == toolhub_person.public_id
         assert conflict.details["wikimediaPersonId"] == wikimedia_person.public_id
         assert toolhub_person.id != wikimedia_person.id
+
+
+def test_conflicting_toolforge_uid_number_never_overwrites_a_stable_person():
+    _configure()
+    with db.session_scope() as s:
+        account_person = people_index.ensure_official_account_person(
+            s,
+            toolhub_user_id="152",
+            username="Magnus Manske",
+            wikimedia_global_user_id="160",
+        )
+        toolforge_person = people_index.ensure_person(
+            s,
+            display_name="Different developer",
+            toolforge_uid_number="3067",
+            toolforge_username="different",
+        )
+        people_index.replace_source_evidence(
+            s,
+            "mix-n-match",
+            "source",
+            [{"display_name": "Magnus Manske", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver("mix-n-match"),
+        )
+
+        assert summary["identityMappingsApplied"] == 0
+        assert summary["stableIdentityConflicts"] == 1
+        assert s.query(PersonReconciliationMapping).count() == 0
+        conflict = s.query(PersonReconciliationConflict).filter_by(conflict_type="conflicting_stable_identifiers").one()
+        assert conflict.details["toolhubPersonId"] == account_person.public_id
+        assert conflict.details["toolforgePersonId"] == toolforge_person.public_id

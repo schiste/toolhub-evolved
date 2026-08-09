@@ -38,6 +38,18 @@ def test_display_matches_are_candidates_never_automatic_links():
     assert display_only.action == people_policy.ACTION_UNRESOLVED
 
 
+def test_sul_bound_same_tool_membership_is_an_automatic_identity_link():
+    decision = people_policy.decide_identity_link(
+        exact_toolhub_candidate=True,
+        same_tool_toolforge_membership=True,
+        toolforge_sul_bound=True,
+    )
+
+    assert decision.action == people_policy.ACTION_AUTO_LINK
+    assert decision.reason == people_policy.REASON_SUL_TOOLFORGE_MEMBERSHIP
+    assert decision.confidence == 95
+
+
 def test_conflicting_stable_ids_override_every_merge_signal():
     decision = people_policy.decide_identity_link(
         conflicting_stable_identifiers=True,

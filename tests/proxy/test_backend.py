@@ -52,9 +52,12 @@ from backend.author_claims import (  # noqa: E402
     AuthorNameProvider,
     SignedToolinfoProvider,
     ToolforgeMaintainerProvider,
-    ToolforgeMembershipProvider,
     ToolhubWriteProvider,
-    toolforge_tool_names_from_member_dns,
+)
+from backend.public_identity import (  # noqa: E402
+    PublicIdentityResolver,
+    ToolforgeIdentityProvider,
+    WikimediaIdentityProvider,
 )
 from backend.models import (  # noqa: E402
     ActivityRow,
@@ -155,19 +158,43 @@ def client(app):
 
 @pytest.fixture(autouse=True)
 def _offline_toolforge_ldap(monkeypatch):
-    """Keep the suite off real Wikimedia LDAP.
+    """Keep identity tests off real CentralAuth and Wikimedia LDAP."""
+    monkeypatch.setattr(
+        v1_api,
+        "PUBLIC_IDENTITY_RESOLVER",
+        PublicIdentityResolver(
+            wikimedia=WikimediaIdentityProvider(fetcher=lambda _id: (404, {})),
+            toolforge=ToolforgeIdentityProvider(lookup=lambda _name: []),
+        ),
+    )
 
-    ToolforgeMembershipProvider() dials ldap-ro.eqiad.wikimedia.org when ldap3 is
-    installed, so any my-tools test that did not inject a lookup was making a
-    live query and waiting out the connect timeout. Tests that care about
-    memberships override this with their own lookup.
-    """
-    monkeypatch.setattr(v1_api, "TOOLFORGE_MEMBERSHIP_PROVIDER", ToolforgeMembershipProvider(lookup=lambda _u: []))
+
+def identity_resolver(username, *tools, global_id="160", toolforge_uid=None):
+    return PublicIdentityResolver(
+        wikimedia=WikimediaIdentityProvider(
+            fetcher=lambda _id: (200, {"query": {"globaluserinfo": {"id": global_id, "name": username}}})
+        ),
+        toolforge=ToolforgeIdentityProvider(
+            lookup=lambda _name: [
+                {
+                    "uid": [toolforge_uid or username.casefold()],
+                    "uidNumber": ["3067"],
+                    "sul": [username],
+                    "memberOf": [f"cn=tools.{tool},ou=servicegroups,dc=wikimedia,dc=org" for tool in tools],
+                }
+            ]
+        ),
+    )
 
 
-def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER):
+def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER, wikimedia_global_user_id=None):
     with db.session_scope() as s:
-        user = User(wm_sub=wm_sub, username=username, role=role)
+        user = User(
+            wm_sub=wm_sub,
+            username=username,
+            role=role,
+            wikimedia_global_user_id=wikimedia_global_user_id,
+        )
         s.add(user)
         s.flush()
         return user.id
@@ -645,10 +672,7 @@ def test_init_schema_creates_people_evidence_and_activity_tables():
         "computed_at",
         "stale_at",
     }.issubset(rollup_cols)
-    mapping_cols = {
-        col["name"]
-        for col in inspect(db.engine()).get_columns(PersonReconciliationMapping.__tablename__)
-    }
+    mapping_cols = {col["name"] for col in inspect(db.engine()).get_columns(PersonReconciliationMapping.__tablename__)}
     assert {
         "evidence",
         "decision",
@@ -743,9 +767,7 @@ def test_people_graph_deduplicates_stable_identity_and_keeps_roles_separate():
             if relationship["type"] == sync.PERSON_REL_AUTHOR
         )
         assert author["evidence"][0]["identityBasis"] == "handle"
-        assert (
-            author["evidence"][0]["relationshipBasis"] == "authorship_attribution"
-        )
+        assert author["evidence"][0]["relationshipBasis"] == "authorship_attribution"
 
 
 def test_init_schema_creates_toolinfo_discovery_table():
@@ -835,92 +857,6 @@ def test_init_schema_creates_source_analysis_report_table():
         assert row.review_status == sync.REVIEW_OPEN
         assert row.source == sync.SOURCE_LOCAL
         assert row.sync_status == sync.SYNC_EVOLVED_REAL
-
-
-def test_toolforge_membership_provider_extracts_tool_names_from_member_dns():
-    dns = [
-        "cn=project-tools,ou=groups,dc=wikimedia,dc=org",
-        "cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org",
-        "cn=tools.blybot,ou=servicegroups,dc=wikimedia,dc=org",
-        "cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org",
-    ]
-    assert toolforge_tool_names_from_member_dns(dns) == ["toolhub-evolved", "blybot"]
-    provider = ToolforgeMembershipProvider(lookup=lambda username: dns if username == "Schiste" else [])
-    assert provider.tool_names("Schiste") == ["toolhub-evolved", "blybot"]
-
-
-def test_toolforge_membership_provider_handles_empty_missing_and_failing_ldap(monkeypatch):
-    assert ToolforgeMembershipProvider(lookup=lambda _username: []).tool_names("") == []
-    assert (
-        ToolforgeMembershipProvider(lookup=lambda _username: (_ for _ in ()).throw(ValueError("bad"))).tool_names("Ada")
-        == []
-    )
-    monkeypatch.setattr(author_claims, "Connection", None)
-    monkeypatch.setattr(author_claims, "Server", None)
-    monkeypatch.setattr(author_claims, "escape_filter_chars", None)
-    assert ToolforgeMembershipProvider().tool_names("Ada") == []
-
-
-def test_toolforge_membership_provider_queries_ldap(monkeypatch):
-    calls = {}
-
-    class FakeServer:
-        def __init__(self, uri, *, use_ssl, connect_timeout):
-            calls["server"] = (uri, use_ssl, connect_timeout)
-
-    class FakeMemberOf:
-        values = ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
-
-    class FakeEntry:
-        memberOf = FakeMemberOf()
-
-    class FakeConnection:
-        def __init__(self, server, *, receive_timeout, auto_bind):
-            calls["connection"] = (server, receive_timeout, auto_bind)
-            self.entries = []
-
-        def search(self, base_dn, ldap_filter, *, attributes, size_limit):
-            calls["search"] = (base_dn, ldap_filter, attributes, size_limit)
-            self.entries = [FakeEntry()]
-
-        def unbind(self):
-            calls["unbind"] = True
-
-    monkeypatch.setattr(author_claims, "Server", FakeServer)
-    monkeypatch.setattr(author_claims, "Connection", FakeConnection)
-    monkeypatch.setattr(author_claims, "escape_filter_chars", lambda value: f"escaped:{value}")
-    assert ToolforgeMembershipProvider().tool_names("Schiste") == ["toolhub-evolved"]
-    assert calls["server"] == (author_claims.TOOLFORGE_LDAP_URI, True, author_claims.TOOLFORGE_LDAP_TIMEOUT)
-    assert author_claims.TOOLFORGE_LDAP_URI.startswith("ldaps://")  # never cleartext 389
-    assert calls["search"] == (
-        author_claims.TOOLFORGE_LDAP_BASE_DN,
-        "(uid=escaped:Schiste)",
-        ["memberOf"],
-        1,
-    )
-    assert calls["unbind"] is True
-
-
-def test_toolforge_membership_provider_handles_ldap_entries_without_member_of(monkeypatch):
-    class FakeConnection:
-        entries = []
-        next_entries = []
-
-        def __init__(self, *_args, **_kwargs):
-            self.entries = self.next_entries
-
-        def search(self, *_args, **_kwargs):
-            pass
-
-        def unbind(self):
-            pass
-
-    monkeypatch.setattr(author_claims, "Server", lambda *_args, **_kwargs: object())
-    monkeypatch.setattr(author_claims, "Connection", FakeConnection)
-    monkeypatch.setattr(author_claims, "escape_filter_chars", lambda value: value)
-    assert ToolforgeMembershipProvider().tool_names("Schiste") == []
-    FakeConnection.next_entries = [object()]
-    assert ToolforgeMembershipProvider().tool_names("Schiste") == []
 
 
 def test_api_cache_recent_poll_baselines_marker_without_invalidating(app, monkeypatch):
@@ -1250,9 +1186,7 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         "sync_status",
     }.issubset(catalog_columns)
     conflict_columns = {col["name"] for col in inspect(eng).get_columns("person_reconciliation_conflicts")}
-    assert {"status", "reviewed_by_user_id", "reviewed_at", "review_notes", "last_seen_at"}.issubset(
-        conflict_columns
-    )
+    assert {"status", "reviewed_by_user_id", "reviewed_at", "review_notes", "last_seen_at"}.issubset(conflict_columns)
     with eng.connect() as conn:
         assert conn.scalar(select(text("attempts")).select_from(text("repository_analysis_state"))) == 0
         assert conn.scalar(select(text("attempts")).select_from(text("person_reconciliation_queue"))) == 0
@@ -3050,7 +2984,9 @@ def test_account_directory_searches_projection_and_links_only_stable_identity(cl
         )
         accounts = []
         for index in range(1, 56):
-            username = "Magnus Manske" if index == 42 else ("Conflicted Account" if index == 43 else f"Account {index:03d}")
+            username = (
+                "Magnus Manske" if index == 42 else ("Conflicted Account" if index == 43 else f"Account {index:03d}")
+            )
             groups = ["admin"] if index == 42 else []
             accounts.append(
                 ToolhubAccountProjection(
@@ -3590,11 +3526,15 @@ def test_tool_viewer_context_uses_only_current_relationships_owned_by_the_signed
 
     with db.session_scope() as s:
         viewer = s.get(User, viewer_id)
-        relationship = s.query(ToolPersonRelationship).filter_by(
-            tool_name="viewer-tool",
-            person_id=viewer.person_id,
-            relationship_type=sync.PERSON_REL_MAINTAINER,
-        ).one()
+        relationship = (
+            s.query(ToolPersonRelationship)
+            .filter_by(
+                tool_name="viewer-tool",
+                person_id=viewer.person_id,
+                relationship_type=sync.PERSON_REL_MAINTAINER,
+            )
+            .one()
+        )
         relationship.verification_status = sync.AUTHOR_CLAIM_VERIFIED
         relationship.expires_at = utcnow() + timedelta(days=1)
 
@@ -3620,7 +3560,7 @@ def test_tool_viewer_context_uses_only_current_relationships_owned_by_the_signed
 
 
 def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, monkeypatch):
-    uid = add_user(username="Schiste", wm_sub="42")
+    uid = add_user(username="Schiste", wm_sub="42", wikimedia_global_user_id="160")
     sign_in(client, uid)
     canonical = {
         "name": "toolhub-evolved",
@@ -3629,12 +3569,7 @@ def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, m
         "url": "https://toolhub-evolved.toolforge.org",
     }
     monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: canonical)
-    member_dns = ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
-    monkeypatch.setattr(
-        v1_api,
-        "TOOLFORGE_MEMBERSHIP_PROVIDER",
-        ToolforgeMembershipProvider(lookup=lambda _username: member_dns),
-    )
+    monkeypatch.setattr(v1_api, "PUBLIC_IDENTITY_RESOLVER", identity_resolver("Schiste", "toolhub-evolved"))
 
     created = client.post(
         "/v1/tools/toolhub-evolved/claims/",
@@ -3645,7 +3580,7 @@ def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, m
     claim = created.get_json()["claims"][0]
     assert claim["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
     assert claim["isVerified"] is True
-    assert claim["evidencePayload"]["toolforgeUsername"] == "Schiste"
+    assert claim["evidencePayload"]["toolforgeUsername"] == "schiste"
     assert claim["evidencePayload"]["ldapServiceGroup"] == "tools.toolhub-evolved"
     with db.session_scope() as s:
         relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolhub-evolved").one()
@@ -4190,7 +4125,7 @@ def test_operator_approval_moves_evidence_without_changing_role_and_survives_ref
             ],
         )
         assert s.query(ToolRelationshipEvidence).filter_by(person_id=source_id).count() == 1
-        assert people_reconcile.apply_approved_mappings_for_tool(s, "mix-n-match") == 1
+        assert people_reconcile.apply_durable_mappings_for_tool(s, "mix-n-match") == 1
         people_index.resolve_tool_relationships(s, "mix-n-match")
         assert s.query(ToolRelationshipEvidence).filter_by(person_id=source_id).count() == 0
         assert s.query(ToolRelationshipEvidence).filter_by(person_id=target_id).count() == 1
@@ -4509,18 +4444,12 @@ def test_me_tools_uses_local_author_claims_as_verified_search_terms(client, monk
 
 
 def test_me_tools_discovers_toolforge_memberships_when_author_name_differs(client, monkeypatch):
-    uid = add_user(username="Schiste")
+    uid = add_user(username="Schiste", wikimedia_global_user_id="160")
     sign_in(client, uid)
     monkeypatch.setattr(
         v1_api,
-        "TOOLFORGE_MEMBERSHIP_PROVIDER",
-        ToolforgeMembershipProvider(
-            lookup=lambda username: [
-                "cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org",
-                "cn=tools.blybot,ou=servicegroups,dc=wikimedia,dc=org",
-                "cn=tools.missing,ou=servicegroups,dc=wikimedia,dc=org",
-            ]
-        ),
+        "PUBLIC_IDENTITY_RESOLVER",
+        identity_resolver("Schiste", "toolhub-evolved", "blybot", "missing"),
     )
     monkeypatch.setattr(
         v1_api,
@@ -4573,15 +4502,8 @@ def test_me_tools_discovers_toolforge_memberships_when_author_name_differs(clien
 def test_toolforge_membership_candidate_fetch_handles_invalid_and_failed_toolhub_rows(monkeypatch):
     monkeypatch.setattr(
         v1_api,
-        "TOOLFORGE_MEMBERSHIP_PROVIDER",
-        ToolforgeMembershipProvider(
-            lookup=lambda _username: [
-                "cn=tools.invalid,ou=servicegroups,dc=wikimedia,dc=org",
-                "cn=tools.busy,ou=servicegroups,dc=wikimedia,dc=org",
-                "cn=tools.down,ou=servicegroups,dc=wikimedia,dc=org",
-                "cn=tools.missing,ou=servicegroups,dc=wikimedia,dc=org",
-            ]
-        ),
+        "PUBLIC_IDENTITY_RESOLVER",
+        identity_resolver("Schiste", "invalid", "busy", "down", "missing"),
     )
 
     def fake_detail(name):
@@ -4596,25 +4518,25 @@ def test_toolforge_membership_candidate_fetch_handles_invalid_and_failed_toolhub
         raise AssertionError(name)
 
     monkeypatch.setattr(v1_common_api, "toolhub_tool_detail", fake_detail)
-    candidates, errors, names = v1_me_api._candidate_tools_for_toolforge_memberships("Schiste")
+    candidates, errors, names = v1_me_api._candidate_tools_for_toolforge_memberships(
+        User(wm_sub="42", username="Schiste", wikimedia_global_user_id="160")
+    )
     assert candidates == {}
     assert names == ["invalid", "busy", "down", "missing"]
     assert errors == [
         {"term": "toolforge-busy", "status": 503, "details": {"message": "busy"}},
         {"term": "toolforge-down", "status": 502, "details": {"message": "down"}},
     ]
-    v1_me_api._add_toolforge_candidate({}, {"title": "Nameless"}, "bad", "Schiste")
+    v1_me_api._add_toolforge_candidate({}, {"title": "Nameless"}, "bad", "Schiste", "schiste")
 
 
 def test_me_tools_merges_author_search_and_toolforge_membership_candidates(client, monkeypatch):
-    uid = add_user(username="Schiste")
+    uid = add_user(username="Schiste", wikimedia_global_user_id="160")
     sign_in(client, uid)
     monkeypatch.setattr(
         v1_api,
-        "TOOLFORGE_MEMBERSHIP_PROVIDER",
-        ToolforgeMembershipProvider(
-            lookup=lambda _username: ["cn=tools.toolhub-evolved,ou=servicegroups,dc=wikimedia,dc=org"]
-        ),
+        "PUBLIC_IDENTITY_RESOLVER",
+        identity_resolver("Schiste", "toolhub-evolved"),
     )
     monkeypatch.setattr(
         v1_api,
@@ -4667,6 +4589,7 @@ def test_me_tools_merges_toolforge_candidate_without_optional_evidence(client, m
                     "matchedAuthorNames": ["Ada"],
                     "searchTerms": ["toolforge:ada"],
                     "toolforgeMembershipName": "ada",
+                    "toolforgeUsername": "ada",
                 }
             },
             [],
