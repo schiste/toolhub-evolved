@@ -116,6 +116,17 @@
   timeout: 600
   emails: onfailure
 
+- name: people-identity-reconcile
+  # Resolve a bounded batch through Toolhub stable ids, CentralAuth, and
+  # Toolforge SUL membership without repeating the full relationship rebuild.
+  # Fresh unresolved candidates cool down for a day, so each run advances
+  # through the population while transient failures are retried later.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  image: python3.13
+  schedule: "43 * * * *"
+  timeout: 600
+  emails: onfailure
+
 - name: people-reconcile-incremental
   # Process canonical and newly ingested tool changes shortly after their
   # write transaction. The six-hour full pass remains the global backstop.

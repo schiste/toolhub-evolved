@@ -95,6 +95,11 @@ if [ -x "$VENV_PY" ]; then
 	# refresh aborts before restart, leaving the previous release serving.
 	echo "Refreshing official Toolhub account projection ..."
 	run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"
+	# Materialize a first bounded cross-system identity batch before the new
+	# directory is served. The hourly job continues through the remaining
+	# population and retries transient CentralAuth or LDAP failures.
+	echo "Resolving public identity projection ..."
+	run_with_tool_env "$REPO_DIR/proxy/people_reconcile.py --identities-only --candidate-label-limit 100"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
 	"$VENV_PY" "$REPO_DIR/tools/build_changelog.py"

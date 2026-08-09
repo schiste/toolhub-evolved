@@ -377,20 +377,25 @@ the six-hour Toolforge job repeats that complete, resumable refresh.
 Historical reconciliation is deterministic and rerunnable. Run
 `python proxy/people_reconcile.py` for a database-backed dry-run, inspect the
 recorded mappings and conflicts, then run it with `--apply` to materialize
-canonical Toolhub metadata evidence, link accounts through stable ids or
-structured handles, and rebuild all typed relationships. Apply runs check up
-to 25 unresolved labels against Toolhub's exact username endpoint by default
-(`PEOPLE_IDENTITY_CANDIDATE_LIMIT` or `--candidate-label-limit` changes the
-bound). An exact match is only a review candidate. Matching Toolforge LDAP
-membership raises its confidence but still does not auto-merge it. The scheduled
-`people-reconcile` job uses `--apply` after the initial catalog cache exists;
-display-name-only candidates remain separate and are reported rather than
-silently merged.
+canonical Toolhub metadata evidence and rebuild all typed relationships. The
+official account sync materializes stable public people from immutable Toolhub
+user ids and Wikimedia global user ids; OAuth remains a separate consent and
+write-authority concern.
+
+Apply runs inspect up to 25 unresolved labels against the complete local account
+projection by default (`PEOPLE_IDENTITY_CANDIDATE_LIMIT` or
+`--candidate-label-limit` changes the bound). An exact account-name match alone
+is only a review candidate. Automatic evidence movement additionally requires
+CentralAuth to confirm the global id, Toolforge LDAP to bind that Wikimedia name
+through its `sul` attribute to one developer uid, and the same tool to appear in
+that account's service groups. Roles are preserved: Toolhub author evidence
+remains authorship, while LDAP membership proves current Toolforge maintenance.
+Display-name-only observations without this chain remain unresolved.
 
 Admins use `GET /v1/moderation/people-conflicts/` to inspect pending identity
 ambiguities and `PUT /v1/moderation/people-conflicts/<id>/` to mark one pending,
 resolved, or dismissed with review notes. They use
-`GET /v1/moderation/people-candidates/` to inspect exact Toolhub candidates and
+`GET /v1/moderation/people-candidates/` to inspect exact public-account candidates and
 `PUT /v1/moderation/people-candidates/<id>/` with `decision` set to `approved`,
 `rejected`, or `split`. Approval moves the original provenance to the stable
 person without changing its relationship role; rejection and split decisions
@@ -402,12 +407,17 @@ bounded apply pass:
 ```sh
 .venv/bin/python proxy/people_reconcile.py
 .venv/bin/python proxy/people_reconcile.py --apply --candidate-label-limit 25
+.venv/bin/python proxy/people_reconcile.py --identities-only --candidate-label-limit 100
 ```
 
 The apply pass backfills OAuth account links, rebuilds canonical and claim
-evidence, reapplies approved mappings, refreshes activity summaries, and queues
-new exact-name candidates. A non-zero `stableIdentityConflicts` count requires
-operator review; the reconciler never chooses between disagreeing stable ids.
+evidence, reapplies approved or evidence-backed automatic mappings, refreshes
+activity summaries, and queues new exact-name candidates. `--identities-only`
+skips the expensive catalog-wide tool rebuild and is used by the hourly
+`people-identity-reconcile` job; candidate cooldown ensures each run advances
+through the population while retrying transient failures later. A non-zero
+`stableIdentityConflicts` count requires operator review; the reconciler never
+chooses between disagreeing stable ids.
 
 Canonical Toolhub fetches and local Toolinfo ingestion enqueue affected tool
 names in `person_reconciliation_queue` after their write transaction commits.

@@ -29,6 +29,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="process the bounded incremental queue instead of running a historical scan",
     )
+    parser.add_argument(
+        "--identities-only",
+        action="store_true",
+        help="resolve a bounded identity batch without rebuilding every tool",
+    )
     args = parser.parse_args(argv)
     db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
     db.init_schema()
@@ -36,18 +41,21 @@ def main(argv: list[str] | None = None) -> int:
         if not acquired:
             sys.stdout.write(json.dumps({"locked": True}, sort_keys=True) + "\n")
             return 0
+        if args.queue and args.identities_only:
+            parser.error("--queue and --identities-only are mutually exclusive")
         if args.queue:
             summary = people_reconcile.process_queue(
                 limit=int(os.environ.get("PEOPLE_RECONCILE_QUEUE_LIMIT", people_reconcile.DEFAULT_QUEUE_LIMIT))
             )
         else:
-            mode = people_reconcile.MODE_APPLY if args.apply else people_reconcile.MODE_DRY_RUN
+            mode = people_reconcile.MODE_APPLY if args.apply or args.identities_only else people_reconcile.MODE_DRY_RUN
             with db.session_scope() as session:
                 summary = people_reconcile.run(
                     session,
                     mode=mode,
-                    discover_candidates=args.apply,
+                    discover_candidates=args.apply or args.identities_only,
                     candidate_label_limit=args.candidate_label_limit,
+                    rebuild_tools=not args.identities_only,
                 )
     sys.stdout.write(json.dumps(summary, sort_keys=True) + "\n")
     return 0
