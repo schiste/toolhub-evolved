@@ -58,6 +58,7 @@ IDENTIFIER_STABLE = "stable_id"
 IDENTIFIER_HANDLE = "handle"
 NS_TOOLHUB_USER_ID = "toolhub_user_id"
 NS_WIKIMEDIA_GLOBAL_USER_ID = "wikimedia_global_user_id"
+NS_TOOLFORGE_UID_NUMBER = "toolforge_uid_number"
 NS_TOOLHUB_USERNAME = "toolhub_username"
 NS_TOOLFORGE_USERNAME = "toolforge_username"
 NS_WIKI_USERNAME = "wiki_username"
@@ -159,6 +160,7 @@ def _canonical_key(  # noqa: PLR0911, PLR0913 - explicit identifiers define prec
     *,
     toolhub_user_id: str = "",
     wikimedia_global_user_id: str = "",
+    toolforge_uid_number: str = "",
     toolhub_username: str = "",
     toolforge_username: str = "",
     wiki_username: str = "",
@@ -169,6 +171,8 @@ def _canonical_key(  # noqa: PLR0911, PLR0913 - explicit identifiers define prec
         return f"toolhub-id:{clean_id}"
     if clean_global_id := _clean(wikimedia_global_user_id, 64):
         return f"wikimedia-global-id:{clean_global_id}"
+    if clean_toolforge_id := _clean(toolforge_uid_number, 64):
+        return f"toolforge-uid-number:{clean_toolforge_id}"
     if clean_username := _normalized(toolhub_username):
         return f"toolhub:{clean_username}"
     if clean_toolforge := _normalized(toolforge_username):
@@ -183,7 +187,7 @@ def _canonical_key(  # noqa: PLR0911, PLR0913 - explicit identifiers define prec
 
 
 def _identifier_spec(namespace: str) -> tuple[str, bool]:
-    stable_namespaces = {NS_TOOLHUB_USER_ID, NS_WIKIMEDIA_GLOBAL_USER_ID}
+    stable_namespaces = {NS_TOOLHUB_USER_ID, NS_WIKIMEDIA_GLOBAL_USER_ID, NS_TOOLFORGE_UID_NUMBER}
     return (IDENTIFIER_STABLE, True) if namespace in stable_namespaces else (IDENTIFIER_HANDLE, False)
 
 
@@ -289,6 +293,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     display_name: str = "",
     toolhub_user_id: str = "",
     wikimedia_global_user_id: str = "",
+    toolforge_uid_number: str = "",
     toolhub_username: str = "",
     toolforge_username: str = "",
     wiki_username: str = "",
@@ -302,10 +307,11 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     stable_candidates = [
         _identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id),
         _identifier_person(s, NS_WIKIMEDIA_GLOBAL_USER_ID, wikimedia_global_user_id),
+        _identifier_person(s, NS_TOOLFORGE_UID_NUMBER, toolforge_uid_number),
     ]
     candidates = (
         stable_candidates
-        if _clean(toolhub_user_id, 64) or _clean(wikimedia_global_user_id, 64)
+        if _clean(toolhub_user_id, 64) or _clean(wikimedia_global_user_id, 64) or _clean(toolforge_uid_number, 64)
         else [
             _identifier_person(s, NS_TOOLHUB_USERNAME, toolhub_username),
             _identifier_person(s, NS_TOOLFORGE_USERNAME, toolforge_username),
@@ -318,6 +324,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         key = _canonical_key(
             toolhub_user_id=toolhub_user_id,
             wikimedia_global_user_id=wikimedia_global_user_id,
+            toolforge_uid_number=toolforge_uid_number,
             toolhub_username=toolhub_username,
             toolforge_username=toolforge_username,
             wiki_username=wiki_username,
@@ -328,6 +335,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     has_identity_evidence = bool(
         _clean(toolhub_user_id, 64)
         or _clean(wikimedia_global_user_id, 64)
+        or _clean(toolforge_uid_number, 64)
         or _clean(toolhub_username)
         or _clean(toolforge_username)
         or _clean(wiki_username)
@@ -347,6 +355,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             canonical_key=_canonical_key(
                 toolhub_user_id=toolhub_user_id,
                 wikimedia_global_user_id=wikimedia_global_user_id,
+                toolforge_uid_number=toolforge_uid_number,
                 toolhub_username=toolhub_username,
                 toolforge_username=toolforge_username,
                 wiki_username=wiki_username,
@@ -355,24 +364,25 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             ),
             display_name=display,
             identity_quality="stable"
-            if toolhub_user_id or wikimedia_global_user_id
+            if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number
             else ("handle" if toolhub_username or toolforge_username or wiki_username else "display_name"),
         )
         s.add(person)
         s.flush()
     if display and (not person.display_name or person.identity_quality == "display_name"):
         person.display_name = display
-    if toolhub_user_id or wikimedia_global_user_id:
+    if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number:
         person.identity_quality = "stable"
         person.canonical_key = _canonical_key(
             toolhub_user_id=toolhub_user_id,
             wikimedia_global_user_id=wikimedia_global_user_id,
+            toolforge_uid_number=toolforge_uid_number,
         )
     elif person.identity_quality == "display_name" and (toolhub_username or toolforge_username or wiki_username):
         person.identity_quality = "handle"
     person.updated_at = checked_at or utcnow()
     s.flush()
-    if toolhub_user_id or wikimedia_global_user_id:
+    if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number:
         _retire_superseded_handles(
             s,
             person,
@@ -384,6 +394,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     for namespace, value in (
         (NS_TOOLHUB_USER_ID, toolhub_user_id),
         (NS_WIKIMEDIA_GLOBAL_USER_ID, wikimedia_global_user_id),
+        (NS_TOOLFORGE_UID_NUMBER, toolforge_uid_number),
         (NS_TOOLHUB_USERNAME, toolhub_username),
         (NS_TOOLFORGE_USERNAME, toolforge_username),
         (NS_WIKI_USERNAME, wiki_username),
@@ -396,11 +407,38 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
             source=source,
             checked_at=checked_at,
             authoritative_reassignment=bool(
-                (toolhub_user_id or wikimedia_global_user_id)
-                and namespace not in {NS_TOOLHUB_USER_ID, NS_WIKIMEDIA_GLOBAL_USER_ID}
+                (toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number)
+                and namespace not in {NS_TOOLHUB_USER_ID, NS_WIKIMEDIA_GLOBAL_USER_ID, NS_TOOLFORGE_UID_NUMBER}
             ),
         )
     s.flush()
+    return person
+
+
+def ensure_official_account_person(
+    s: Session,
+    *,
+    toolhub_user_id: str,
+    username: str,
+    wikimedia_global_user_id: str = "",
+    checked_at: datetime | None = None,
+) -> Person | None:
+    """Materialize a public account identity unless its stable ids conflict."""
+    toolhub_owner = _identifier_person(s, NS_TOOLHUB_USER_ID, toolhub_user_id)
+    wikimedia_owner = _identifier_person(s, NS_WIKIMEDIA_GLOBAL_USER_ID, wikimedia_global_user_id)
+    if toolhub_owner is not None and wikimedia_owner is not None and toolhub_owner.id != wikimedia_owner.id:
+        return None
+    person = ensure_person(
+        s,
+        display_name=username,
+        toolhub_user_id=toolhub_user_id,
+        wikimedia_global_user_id=wikimedia_global_user_id,
+        toolhub_username=username,
+        source="toolhub_public_account",
+        checked_at=checked_at,
+    )
+    person.display_name = _clean(username)
+    person.updated_at = checked_at or utcnow()
     return person
 
 
@@ -1283,7 +1321,7 @@ def _directory_contributor_summaries(
     return summaries
 
 
-def search_people_directory(  # noqa: PLR0915 - explicit query/ranking/filter contract
+def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/filter contract
     s: Session,
     search: PeopleDirectoryQuery,
 ) -> dict[str, Any]:

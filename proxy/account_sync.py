@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import requests
 from sqlalchemy import delete, func, select
 
-from backend import DEFAULT_DB_URL, db, toolhub
+from backend import DEFAULT_DB_URL, db, people_index, toolhub
 from backend.models import ToolhubAccountProjection, ToolhubAccountSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -249,6 +249,13 @@ def _store_page(  # noqa: PLR0913, PLR0915 - explicit page transaction contract
             account.sync_status = SYNC_OFFICIAL
             account.last_seen_at = now
             account.updated_at = now
+            people_index.ensure_official_account_person(
+                s,
+                toolhub_user_id=item["toolhub_user_id"],
+                username=item["username"],
+                wikimedia_global_user_id=item["wikimedia_global_user_id"] or "",
+                checked_at=now,
+            )
         state.pages_fetched += 1
         state.records_seen += len(normalized)
         state.cycle_records_seen += len(normalized)

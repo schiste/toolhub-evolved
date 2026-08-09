@@ -24,7 +24,16 @@ from sqlalchemy import func, inspect, or_, select, text
 
 from backend import DEFAULT_DB_URL, api_cache, canonical_tools, catalog_projection, db, maintainer_index, people_index
 from backend.author_claims import claim_relationship_for_method
-from backend.models import Person, PersonIdentifier, ToolAuthorClaim, ToolAuthorKey, User, UserToolResolverCache, utcnow
+from backend.models import (
+    Person,
+    PersonIdentifier,
+    ToolAuthorClaim,
+    ToolAuthorKey,
+    ToolhubAccountProjection,
+    User,
+    UserToolResolverCache,
+    utcnow,
+)
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
     AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
@@ -132,7 +141,12 @@ def _backfill_people_identity() -> int:
             namespace = namespace_map.get(identifier.namespace, identifier.namespace)
             kind = (
                 people_index.IDENTIFIER_STABLE
-                if namespace in {people_index.NS_TOOLHUB_USER_ID, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID}
+                if namespace
+                in {
+                    people_index.NS_TOOLHUB_USER_ID,
+                    people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+                    people_index.NS_TOOLFORGE_UID_NUMBER,
+                }
                 else people_index.IDENTIFIER_HANDLE
             )
             if (
@@ -152,6 +166,24 @@ def _backfill_people_identity() -> int:
             old_person_id = user.person_id
             people_index.link_user(s, user)
             touched += int(old_person_id != user.person_id)
+        for account in s.execute(
+            select(ToolhubAccountProjection).order_by(ToolhubAccountProjection.toolhub_user_id)
+        ).scalars():
+            existing = s.execute(
+                select(PersonIdentifier.id).where(
+                    PersonIdentifier.namespace == people_index.NS_TOOLHUB_USER_ID,
+                    PersonIdentifier.normalized_value == account.toolhub_user_id.casefold(),
+                    PersonIdentifier.is_current.is_(True),
+                )
+            ).scalar_one_or_none()
+            person = people_index.ensure_official_account_person(
+                s,
+                toolhub_user_id=account.toolhub_user_id,
+                username=account.username,
+                wikimedia_global_user_id=account.wikimedia_global_user_id or "",
+                checked_at=account.last_seen_at,
+            )
+            touched += int(existing is None and person is not None)
         touched += _backfill_account_owned_records(s, users)
     inspector = inspect(db.engine())
 

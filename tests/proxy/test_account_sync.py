@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import account_sync  # noqa: E402
 from backend import db, toolhub  # noqa: E402
-from backend.models import ToolhubAccountProjection, ToolhubAccountSyncState  # noqa: E402
+from backend.models import Person, PersonIdentifier, ToolhubAccountProjection, ToolhubAccountSyncState  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -85,6 +85,23 @@ def test_sync_resumes_pages_and_materializes_official_identity_fields(monkeypatc
         assert rows[0].wikimedia_global_user_id == "100001"
         assert rows[0].wikimedia_registered_at == "20200102030405"
         assert rows[0].date_joined is not None
+        assert s.query(Person).count() == 2
+        first_person = (
+            s.query(Person)
+            .join(PersonIdentifier, PersonIdentifier.person_id == Person.id)
+            .filter_by(namespace="toolhub_user_id", value="1")
+            .one()
+        )
+        assert first_person.display_name == "Long Account Name"
+        assert first_person.identity_quality == "stable"
+        assert {
+            (row.namespace, row.value)
+            for row in s.query(PersonIdentifier).filter_by(person_id=first_person.id, is_current=True)
+        } == {
+            ("toolhub_user_id", "1"),
+            ("toolhub_username", "Long Account Name"),
+            ("wikimedia_global_user_id", "100001"),
+        }
         state = s.get(ToolhubAccountSyncState, account_sync.STATE_KEY)
         assert state.cycles_completed == 1
         assert state.cycle_started_at is None
@@ -115,6 +132,19 @@ def test_interrupted_generation_preserves_old_rows_until_retry_completes(monkeyp
     with db.session_scope() as s:
         assert {row.toolhub_user_id for row in s.query(ToolhubAccountProjection)} == {"1", "2"}
         assert s.get(ToolhubAccountProjection, "1").username == "Renamed"
+        renamed_person = (
+            s.query(Person)
+            .join(PersonIdentifier, PersonIdentifier.person_id == Person.id)
+            .filter_by(namespace="toolhub_user_id", value="1")
+            .one()
+        )
+        assert renamed_person.display_name == "Renamed"
+        assert {
+            (row.value, row.is_current)
+            for row in s.query(PersonIdentifier)
+            .filter_by(person_id=renamed_person.id, namespace="toolhub_username")
+            .order_by(PersonIdentifier.id)
+        } == {("Account 1", False), ("Renamed", True)}
         state = s.get(ToolhubAccountSyncState, account_sync.STATE_KEY)
         assert state.next_page == 2
         assert state.status == "error"
@@ -173,7 +203,7 @@ def test_deploy_and_scheduled_job_require_a_complete_account_generation():
 
     assert "name: account-sync" in jobs
     assert "proxy/account_sync.py --complete" in jobs
-    assert 'timeout: 300' in jobs
+    assert "timeout: 300" in jobs
     assert 'run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"' in deploy
 
 
