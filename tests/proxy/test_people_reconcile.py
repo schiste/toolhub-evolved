@@ -122,6 +122,37 @@ def test_display_names_remain_non_merging_conflicts():
         assert s.query(PersonReconciliationConflict).count() == 1
 
 
+def test_reconciliation_consolidates_duplicate_pending_conflict_rows():
+    _configure()
+    with db.session_scope() as s:
+        s.add_all(
+            [
+                Person(canonical_key="display:bob-one", display_name="Bob", identity_quality="display_name"),
+                Person(canonical_key="display:bob-two", display_name="Bob", identity_quality="display_name"),
+            ]
+        )
+        first_summary = people_reconcile.run(s, mode=people_reconcile.MODE_DRY_RUN)
+        assert first_summary["duplicateConflictsConsolidated"] == 0
+        canonical = s.query(PersonReconciliationConflict).one()
+        s.add(
+            PersonReconciliationConflict(
+                run_id=canonical.run_id,
+                conflict_type=canonical.conflict_type,
+                value=canonical.value,
+                details={"legacy": True},
+            )
+        )
+        s.flush()
+
+        summary = people_reconcile.run(s, mode=people_reconcile.MODE_DRY_RUN)
+
+        assert summary["duplicateConflictsConsolidated"] == 1
+        conflicts = s.query(PersonReconciliationConflict).order_by(PersonReconciliationConflict.id).all()
+        assert [row.status for row in conflicts] == ["pending", "dismissed"]
+        assert conflicts[0].details["candidateCount"] == 2
+        assert conflicts[1].review_notes == f"Automatically consolidated into pending conflict #{conflicts[0].id}."
+
+
 def test_stable_identity_never_adopts_a_unique_display_only_person():
     _configure()
     with db.session_scope() as s:

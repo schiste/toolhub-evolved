@@ -530,6 +530,46 @@ def build_plan(s: Session) -> dict[str, Any]:
     }
 
 
+def _record_conflict(
+    s: Session,
+    *,
+    run_id: int,
+    conflict: dict[str, Any],
+) -> int:
+    """Refresh one pending conflict and retire duplicate queue entries."""
+    now = utcnow()
+    pending = list(
+        s.execute(
+            select(PersonReconciliationConflict)
+            .where(
+                PersonReconciliationConflict.conflict_type == conflict["type"],
+                PersonReconciliationConflict.value == conflict["value"],
+                PersonReconciliationConflict.status == "pending",
+            )
+            .order_by(PersonReconciliationConflict.id)
+        ).scalars()
+    )
+    if not pending:
+        s.add(
+            PersonReconciliationConflict(
+                run_id=run_id,
+                conflict_type=conflict["type"],
+                value=conflict["value"],
+                details=conflict["details"],
+            )
+        )
+        return 0
+    canonical, *duplicates = pending
+    canonical.run_id = run_id
+    canonical.details = conflict["details"]
+    canonical.last_seen_at = now
+    for duplicate in duplicates:
+        duplicate.status = "dismissed"
+        duplicate.reviewed_at = now
+        duplicate.review_notes = f"Automatically consolidated into pending conflict #{canonical.id}."
+    return len(duplicates)
+
+
 def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic in tests
     s: Session,
     *,
@@ -568,33 +608,16 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
         else:
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
         after = build_plan(s)
-        for conflict in after["conflicts"]:
-            existing = s.execute(
-                select(PersonReconciliationConflict).where(
-                    PersonReconciliationConflict.conflict_type == conflict["type"],
-                    PersonReconciliationConflict.value == conflict["value"],
-                    PersonReconciliationConflict.status == "pending",
-                )
-            ).scalar_one_or_none()
-            if existing is None:
-                s.add(
-                    PersonReconciliationConflict(
-                        run_id=run_row.id,
-                        conflict_type=conflict["type"],
-                        value=conflict["value"],
-                        details=conflict["details"],
-                    )
-                )
-            else:
-                existing.run_id = run_row.id
-                existing.details = conflict["details"]
-                existing.last_seen_at = utcnow()
+        duplicate_conflicts_consolidated = sum(
+            _record_conflict(s, run_id=run_row.id, conflict=conflict) for conflict in after["conflicts"]
+        )
         summary = {
             "mode": mode,
             "peopleScanned": after["peopleScanned"],
             "evidenceScanned": after["evidenceScanned"],
             "relationships": after["relationshipsScanned"],
             "conflicts": len(after["conflicts"]),
+            "duplicateConflictsConsolidated": duplicate_conflicts_consolidated,
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY and rebuild_tools else 0,
             "identityCandidatesCreated": candidate_result["created"],
             "identityMappingsApplied": candidate_result["linked"],
