@@ -3775,6 +3775,15 @@ def test_display_only_observations_are_scoped_instead_of_globally_merged():
                 "evidenceCount": 2,
                 "bestConfidence": 0,
                 "relationshipTypes": [sync.PERSON_REL_AUTHOR],
+                "relationshipBreakdown": [
+                    {
+                        "type": sync.PERSON_REL_AUTHOR,
+                        "status": "unverified",
+                        "toolCount": 2,
+                        "evidenceCount": 2,
+                        "bestConfidence": 0,
+                    }
+                ],
             }
         ]
 
