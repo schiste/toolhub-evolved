@@ -15,6 +15,7 @@ from backend.models import (  # noqa: E402
     PersonReconciliationConflict,
     PersonReconciliationMapping,
     PersonReconciliationQueue,
+    PersonReconciliationRun,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     ToolhubAccountProjection,
@@ -98,7 +99,7 @@ def test_apply_links_account_by_immutable_toolhub_id_and_is_idempotent():
         assert s.query(ToolPersonRelationship).count() == 2
 
 
-def test_display_names_remain_non_merging_conflicts():
+def test_display_names_remain_non_merging_audit_clusters():
     _configure()
     with db.session_scope() as s:
         s.add_all(
@@ -111,19 +112,16 @@ def test_display_names_remain_non_merging_conflicts():
 
         summary = people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
 
-        assert summary["conflicts"] == 1
+        assert summary["conflicts"] == 0
+        assert summary["ambiguousDisplayNameClusters"] == 1
         assert s.query(Person).count() == 2
-        assert s.query(PersonReconciliationConflict).count() == 1
-        conflict = s.query(PersonReconciliationConflict).one()
-        assert conflict.status == "pending"
-        assert conflict.details["candidateCount"] == 2
-        assert conflict.details["unresolvedAttributionCount"] == 2
+        assert s.query(PersonReconciliationConflict).count() == 0
 
         people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
-        assert s.query(PersonReconciliationConflict).count() == 1
+        assert s.query(PersonReconciliationConflict).count() == 0
 
 
-def test_reconciliation_consolidates_duplicate_pending_conflict_rows():
+def test_reconciliation_retires_legacy_display_conflict_rows():
     _configure()
     with db.session_scope() as s:
         s.add_all(
@@ -132,26 +130,33 @@ def test_reconciliation_consolidates_duplicate_pending_conflict_rows():
                 Person(canonical_key="display:bob-two", display_name="Bob", identity_quality="display_name"),
             ]
         )
-        first_summary = people_reconcile.run(s, mode=people_reconcile.MODE_DRY_RUN)
-        assert first_summary["duplicateConflictsConsolidated"] == 0
-        canonical = s.query(PersonReconciliationConflict).one()
-        s.add(
-            PersonReconciliationConflict(
-                run_id=canonical.run_id,
-                conflict_type=canonical.conflict_type,
-                value=canonical.value,
-                details={"legacy": True},
-            )
-        )
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
         s.flush()
+        s.add_all(
+            [
+                PersonReconciliationConflict(
+                    run_id=run.id,
+                    conflict_type="ambiguous_display_name",
+                    value="bob",
+                    details={"legacy": True},
+                ),
+                PersonReconciliationConflict(
+                    run_id=run.id,
+                    conflict_type="ambiguous_display_name",
+                    value="bob",
+                    details={"legacy": True},
+                ),
+            ]
+        )
 
-        summary = people_reconcile.run(s, mode=people_reconcile.MODE_DRY_RUN)
+        summary = people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
 
-        assert summary["duplicateConflictsConsolidated"] == 1
+        assert summary["nonActionableConflictsRetired"] == 2
+        assert summary["conflicts"] == 0
         conflicts = s.query(PersonReconciliationConflict).order_by(PersonReconciliationConflict.id).all()
-        assert [row.status for row in conflicts] == ["pending", "dismissed"]
-        assert conflicts[0].details["candidateCount"] == 2
-        assert conflicts[1].review_notes == f"Automatically consolidated into pending conflict #{conflicts[0].id}."
+        assert [row.status for row in conflicts] == ["dismissed", "dismissed"]
+        assert all("evidence clusters" in row.review_notes for row in conflicts)
 
 
 def test_stable_identity_never_adopts_a_unique_display_only_person():

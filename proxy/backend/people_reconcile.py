@@ -213,55 +213,49 @@ def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
     return {"claimed": len(names), "processed": processed, "failed": failed}
 
 
-def _ambiguous_display_names(s: Session) -> list[dict[str, Any]]:
+def _ambiguous_display_name_count(s: Session) -> int:
+    """Count repeated labels for observability without creating review work."""
     rows = s.execute(
         select(func.lower(Person.display_name), func.count(Person.id))
         .where(Person.display_name != "")
         .group_by(func.lower(Person.display_name))
         .having(func.count(Person.id) > 1)
     ).all()
-    conflicts = []
-    for name, count in rows:
-        candidates = list(
-            s.execute(select(Person).where(func.lower(Person.display_name) == name).order_by(Person.id)).scalars()
+    return len(rows)
+
+
+def _retire_non_actionable_display_conflicts(s: Session) -> int:
+    """Dismiss legacy label-only conflicts that cannot support a safe decision."""
+    now = utcnow()
+    rows = list(
+        s.execute(
+            select(PersonReconciliationConflict).where(
+                PersonReconciliationConflict.conflict_type == "ambiguous_display_name",
+                PersonReconciliationConflict.status == "pending",
+            )
+        ).scalars()
+    )
+    for row in rows:
+        row.status = "dismissed"
+        row.reviewed_at = now
+        row.review_notes = (
+            "Automatically retired: repeated display labels are evidence clusters, not identity conflicts."
         )
-        candidate_ids = {person.id for person in candidates}
-        published_ids = people_index.public_identity_ids(s, candidate_ids)
-        identifier_rows = list(
-            s.execute(
-                select(PersonIdentifier).where(
-                    PersonIdentifier.person_id.in_(candidate_ids),
-                    PersonIdentifier.is_current.is_(True),
-                )
-            ).scalars()
+    return len(rows)
+
+
+def _pending_actionable_conflict_count(s: Session) -> int:
+    return (
+        s.scalar(
+            select(func.count())
+            .select_from(PersonReconciliationConflict)
+            .where(
+                PersonReconciliationConflict.status == "pending",
+                PersonReconciliationConflict.conflict_type != "ambiguous_display_name",
+            )
         )
-        stable_ids = {
-            identifier.person_id
-            for identifier in identifier_rows
-            if identifier.identifier_kind == people_index.IDENTIFIER_STABLE
-        }
-        handle_ids = {
-            identifier.person_id
-            for identifier in identifier_rows
-            if identifier.identifier_kind == people_index.IDENTIFIER_HANDLE
-        }
-        conflicts.append(
-            {
-                "type": "ambiguous_display_name",
-                "value": name,
-                "details": {
-                    "reason": "Display names are presentation data and are never automatic merge evidence.",
-                    "candidateCount": count,
-                    "resolvedCandidateCount": len(published_ids),
-                    "unresolvedAttributionCount": count - len(published_ids),
-                    "stableCandidateCount": len(stable_ids),
-                    "handleCandidateCount": len(handle_ids),
-                    "candidatePublicIds": [person.public_id for person in candidates],
-                    "stableEvidenceAvailable": bool(stable_ids),
-                },
-            }
-        )
-    return conflicts
+        or 0
+    )
 
 
 def _candidate_source_people(s: Session) -> list[Person]:
@@ -625,48 +619,8 @@ def build_plan(s: Session) -> dict[str, Any]:
         "peopleScanned": s.scalar(select(func.count()).select_from(Person)) or 0,
         "evidenceScanned": s.scalar(select(func.count()).select_from(ToolRelationshipEvidence)) or 0,
         "relationshipsScanned": s.scalar(select(func.count()).select_from(ToolPersonRelationship)) or 0,
-        "conflicts": _ambiguous_display_names(s),
+        "ambiguousDisplayNameClusters": _ambiguous_display_name_count(s),
     }
-
-
-def _record_conflict(
-    s: Session,
-    *,
-    run_id: int,
-    conflict: dict[str, Any],
-) -> int:
-    """Refresh one pending conflict and retire duplicate queue entries."""
-    now = utcnow()
-    pending = list(
-        s.execute(
-            select(PersonReconciliationConflict)
-            .where(
-                PersonReconciliationConflict.conflict_type == conflict["type"],
-                PersonReconciliationConflict.value == conflict["value"],
-                PersonReconciliationConflict.status == "pending",
-            )
-            .order_by(PersonReconciliationConflict.id)
-        ).scalars()
-    )
-    if not pending:
-        s.add(
-            PersonReconciliationConflict(
-                run_id=run_id,
-                conflict_type=conflict["type"],
-                value=conflict["value"],
-                details=conflict["details"],
-            )
-        )
-        return 0
-    canonical, *duplicates = pending
-    canonical.run_id = run_id
-    canonical.details = conflict["details"]
-    canonical.last_seen_at = now
-    for duplicate in duplicates:
-        duplicate.status = "dismissed"
-        duplicate.reviewed_at = now
-        duplicate.review_notes = f"Automatically consolidated into pending conflict #{canonical.id}."
-    return len(duplicates)
 
 
 def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic in tests
@@ -687,6 +641,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     try:
         before = build_plan(s)
         if mode == MODE_APPLY:
+            non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
             for user in s.execute(select(User).order_by(User.id)).scalars():
                 people_index.link_user(s, user)
             if rebuild_tools:
@@ -706,17 +661,16 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 people_index.refresh_activity_summaries(s)
         else:
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
+            non_actionable_conflicts_retired = 0
         after = build_plan(s)
-        duplicate_conflicts_consolidated = sum(
-            _record_conflict(s, run_id=run_row.id, conflict=conflict) for conflict in after["conflicts"]
-        )
         summary = {
             "mode": mode,
             "peopleScanned": after["peopleScanned"],
             "evidenceScanned": after["evidenceScanned"],
             "relationships": after["relationshipsScanned"],
-            "conflicts": len(after["conflicts"]),
-            "duplicateConflictsConsolidated": duplicate_conflicts_consolidated,
+            "conflicts": _pending_actionable_conflict_count(s),
+            "ambiguousDisplayNameClusters": after["ambiguousDisplayNameClusters"],
+            "nonActionableConflictsRetired": non_actionable_conflicts_retired,
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY and rebuild_tools else 0,
             "identityCandidatesCreated": candidate_result["created"],
             "identityMappingsApplied": candidate_result["linked"],
