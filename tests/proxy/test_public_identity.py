@@ -27,11 +27,19 @@ def wikimedia_provider(global_id="160", username="Magnus Manske"):
     )
 
 
-def toolforge_row(*, uid="magnus", sul="Magnus Manske", uid_number="3067", tools=("mix-n-match",)):
+def toolforge_row(
+    *,
+    uid="magnus",
+    global_id="160",
+    global_name="Magnus Manske",
+    uid_number="3067",
+    tools=("mix-n-match",),
+):
     return {
         "uid": [uid],
         "uidNumber": [uid_number],
-        "sul": [sul],
+        "wikimediaGlobalAccountId": [global_id],
+        "wikimediaGlobalAccountName": [global_name],
         "memberOf": [f"cn=tools.{tool},ou=servicegroups,dc=wikimedia,dc=org" for tool in tools],
     }
 
@@ -66,23 +74,32 @@ def test_wikimedia_lookup_rejects_missing_mismatched_and_failed_rows():
     assert public_identity.WikimediaIdentityProvider(fetcher=lambda _id: (200, {})).lookup("") is None
 
 
-def test_toolforge_lookup_requires_one_exact_sul_binding():
-    assert public_identity.ToolforgeIdentityProvider(lookup=lambda _name: []).lookup_sul("Magnus Manske") is None
+def test_toolforge_lookup_requires_one_exact_global_id_binding():
+    assert public_identity.ToolforgeIdentityProvider(lookup=lambda _id: []).lookup_global("160") is None
     assert (
-        public_identity.ToolforgeIdentityProvider(lookup=lambda _name: [toolforge_row(sul="Someone Else")]).lookup_sul(
-            "Magnus Manske"
+        public_identity.ToolforgeIdentityProvider(lookup=lambda _id: [toolforge_row(global_id="999")]).lookup_global(
+            "160"
         )
         is None
     )
     assert (
         public_identity.ToolforgeIdentityProvider(
-            lookup=lambda _name: [toolforge_row(), toolforge_row(uid="magnus-two", uid_number="9999")]
-        ).lookup_sul("Magnus Manske")
+            lookup=lambda _id: [toolforge_row(), toolforge_row(uid="magnus-two", uid_number="9999")]
+        ).lookup_global("160")
         is None
     )
 
 
-def test_toolforge_lookup_queries_sul_and_reads_stable_identity_fields(monkeypatch):
+def test_toolforge_lookup_uses_canonical_name_when_ldap_link_name_is_stale():
+    identity = public_identity.ToolforgeIdentityProvider(
+        lookup=lambda _id: [toolforge_row(global_name="Old Magnus Name")]
+    ).lookup_global("160", canonical_username="Magnus Manske")
+
+    assert identity is not None
+    assert identity.sul_username == "Magnus Manske"
+
+
+def test_toolforge_lookup_queries_global_id_and_reads_stable_identity_fields(monkeypatch):
     calls = {}
 
     class FakeServer:
@@ -108,14 +125,46 @@ def test_toolforge_lookup_queries_sul_and_reads_stable_identity_fields(monkeypat
     monkeypatch.setattr(public_identity, "Connection", FakeConnection)
     monkeypatch.setattr(public_identity, "escape_filter_chars", lambda value: f"escaped:{value}")
 
-    identity = public_identity.ToolforgeIdentityProvider().lookup_sul("Magnus Manske")
+    identity = public_identity.ToolforgeIdentityProvider().lookup_global(
+        "160",
+        canonical_username="Magnus Manske",
+    )
 
     assert identity is not None
     assert calls["server"] == (public_identity.TOOLFORGE_LDAP_URI, True, 5)
     assert calls["search"] == (
         public_identity.TOOLFORGE_LDAP_BASE_DN,
-        "(sul=escaped:Magnus Manske)",
-        ["uid", "uidNumber", "sul", "memberOf"],
+        "(&(objectClass=posixAccount)(wikimediaGlobalAccountId=escaped:160))",
+        ["uid", "uidNumber", "wikimediaGlobalAccountId", "wikimediaGlobalAccountName", "memberOf"],
         2,
     )
     assert calls["unbind"] is True
+
+
+def test_toolforge_schema_probe_uses_the_real_bridge_attributes(monkeypatch):
+    calls = {}
+
+    class FakeServer:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class FakeEntry:
+        entry_attributes_as_dict = toolforge_row()
+
+    class FakeConnection:
+        def __init__(self, *_args, **_kwargs):
+            self.entries = []
+
+        def search(self, base_dn, ldap_filter, *, attributes, size_limit):
+            calls["search"] = (base_dn, ldap_filter, attributes, size_limit)
+            self.entries = [FakeEntry()]
+
+        def unbind(self):
+            pass
+
+    monkeypatch.setattr(public_identity, "Server", FakeServer)
+    monkeypatch.setattr(public_identity, "Connection", FakeConnection)
+
+    assert public_identity.ToolforgeIdentityProvider().probe_schema() is True
+    assert calls["search"][1] == "(&(objectClass=posixAccount)(wikimediaGlobalAccountId=*))"
+    assert "wikimediaGlobalAccountId" in calls["search"][2]

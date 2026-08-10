@@ -41,7 +41,8 @@ def _identity_resolver(*tool_names):
                 {
                     "uid": ["magnus"],
                     "uidNumber": ["3067"],
-                    "sul": ["Magnus Manske"],
+                    "wikimediaGlobalAccountId": ["160"],
+                    "wikimediaGlobalAccountName": ["Magnus Manske"],
                     "memberOf": [f"cn=tools.{name},ou=servicegroups,dc=wikimedia,dc=org" for name in tool_names],
                 }
             ]

@@ -95,6 +95,10 @@ if [ -x "$VENV_PY" ]; then
 	# refresh aborts before restart, leaving the previous release serving.
 	echo "Refreshing official Toolhub account projection ..."
 	run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"
+	# Mocked provider tests cannot detect a renamed or invalid production LDAP
+	# attribute. Probe the real read-only schema before identity reconciliation.
+	echo "Checking Wikimedia LDAP identity schema ..."
+	run_with_tool_env "$REPO_DIR/proxy/public_identity_smoke.py"
 	# Materialize a first bounded cross-system identity batch before the new
 	# directory is served. The hourly job continues through the remaining
 	# population and retries transient CentralAuth or LDAP failures.

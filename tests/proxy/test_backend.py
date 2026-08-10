@@ -179,7 +179,8 @@ def identity_resolver(username, *tools, global_id="160", toolforge_uid=None):
                 {
                     "uid": [toolforge_uid or username.casefold()],
                     "uidNumber": ["3067"],
-                    "sul": [username],
+                    "wikimediaGlobalAccountId": [global_id],
+                    "wikimediaGlobalAccountName": [username],
                     "memberOf": [f"cn=tools.{tool},ou=servicegroups,dc=wikimedia,dc=org" for tool in tools],
                 }
             ]

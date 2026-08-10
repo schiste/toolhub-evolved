@@ -34,6 +34,7 @@ HTTP_OK = 200
 
 WikimediaFetcher = Callable[[str], tuple[int, object]]
 ToolforgeLookup = Callable[[str], list[Mapping[str, Any]]]
+ToolforgeSchemaProbe = Callable[[], bool]
 
 
 def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - external values are untrusted
@@ -137,40 +138,55 @@ class WikimediaIdentityProvider:
 
 
 class ToolforgeIdentityProvider:
-    """Resolve a Toolforge developer identity by its authoritative SUL binding."""
+    """Resolve a Toolforge developer identity by its immutable Wikimedia binding."""
 
-    def __init__(self, lookup: ToolforgeLookup | None = None) -> None:
+    def __init__(
+        self,
+        lookup: ToolforgeLookup | None = None,
+        schema_probe: ToolforgeSchemaProbe | None = None,
+    ) -> None:
         """Allow an injected LDAP lookup while retaining the production default."""
         self.lookup = lookup or self._lookup_ldap
+        self.schema_probe = schema_probe or self._probe_ldap_schema
 
-    def lookup_sul(self, wikimedia_username: str) -> ToolforgeIdentity | None:
-        """Return one exact SUL-bound developer account, rejecting ambiguity."""
-        expected_sul = _clean(wikimedia_username)
-        if not expected_sul:
+    def lookup_global(self, global_user_id: str, *, canonical_username: str = "") -> ToolforgeIdentity | None:
+        """Return one developer account bound to an immutable global account id."""
+        expected_id = _clean(global_user_id, 64)
+        if not expected_id:
             return None
         try:
-            rows = self.lookup(expected_sul)
+            rows = self.lookup(expected_id)
         except (LDAPException, OSError, TimeoutError, ValueError):
             return None
         exact = []
         for row in rows:
-            sul = _clean(_first(row.get("sul")))
+            resolved_id = _clean(_first(row.get("wikimediaGlobalAccountId")), 64)
+            linked_username = _clean(_first(row.get("wikimediaGlobalAccountName")))
             uid = _clean(_first(row.get("uid")))
-            if sul.casefold() != expected_sul.casefold() or not uid:
+            uid_number = _clean(_first(row.get("uidNumber")), 64)
+            if resolved_id != expected_id or not uid or not uid_number:
                 continue
             raw_memberships = row.get("memberOf")
             member_dns = list(raw_memberships) if isinstance(raw_memberships, (list, tuple)) else []
             exact.append(
                 ToolforgeIdentity(
                     uid=uid,
-                    uid_number=_clean(_first(row.get("uidNumber")), 64),
-                    sul_username=sul,
+                    uid_number=uid_number,
+                    sul_username=_clean(canonical_username) or linked_username,
                     tool_names=tool_names_from_member_dns(member_dns),
                 )
             )
         return exact[0] if len(exact) == 1 else None
 
-    def _lookup_ldap(self, wikimedia_username: str) -> list[Mapping[str, Any]]:
+    def probe_schema(self) -> bool:
+        """Confirm that production LDAP exposes the identity bridge we consume."""
+        try:
+            return bool(self.schema_probe())
+        except (LDAPException, OSError, TimeoutError, ValueError):
+            return False
+
+    @staticmethod
+    def _ldap_search(ldap_filter: str, *, size_limit: int) -> list[Mapping[str, Any]]:
         if Connection is None or Server is None or escape_filter_chars is None:
             return []
         server = Server(TOOLFORGE_LDAP_URI, use_ssl=True, connect_timeout=TOOLFORGE_LDAP_TIMEOUT)
@@ -178,13 +194,34 @@ class ToolforgeIdentityProvider:
         try:
             conn.search(
                 TOOLFORGE_LDAP_BASE_DN,
-                f"(sul={escape_filter_chars(wikimedia_username)})",
-                attributes=["uid", "uidNumber", "sul", "memberOf"],
-                size_limit=2,
+                ldap_filter,
+                attributes=[
+                    "uid",
+                    "uidNumber",
+                    "wikimediaGlobalAccountId",
+                    "wikimediaGlobalAccountName",
+                    "memberOf",
+                ],
+                size_limit=size_limit,
             )
             return [dict(entry.entry_attributes_as_dict) for entry in conn.entries]
         finally:
             conn.unbind()
+
+    def _lookup_ldap(self, global_user_id: str) -> list[Mapping[str, Any]]:
+        escaped_id = escape_filter_chars(global_user_id) if escape_filter_chars is not None else ""
+        return self._ldap_search(
+            f"(&(objectClass=posixAccount)(wikimediaGlobalAccountId={escaped_id}))",
+            size_limit=2,
+        )
+
+    def _probe_ldap_schema(self) -> bool:
+        return bool(
+            self._ldap_search(
+                "(&(objectClass=posixAccount)(wikimediaGlobalAccountId=*))",
+                size_limit=1,
+            )
+        )
 
 
 class PublicIdentityResolver:
@@ -207,5 +244,8 @@ class PublicIdentityResolver:
             return None
         return ResolvedPublicIdentity(
             wikimedia=wikimedia,
-            toolforge=self.toolforge.lookup_sul(wikimedia.username),
+            toolforge=self.toolforge.lookup_global(
+                wikimedia.global_user_id,
+                canonical_username=wikimedia.username,
+            ),
         )
