@@ -354,7 +354,9 @@ def test_centralauth_confirmed_wiki_handles_link_authorship_without_toolforge_me
         assert {mapping.decision for mapping in mappings} == {"auto_link"}
         assert {mapping.reason for mapping in mappings} == {"same_verified_structured_handle"}
         assert {mapping.confidence for mapping in mappings} == {90}
-        assert {mapping.evidence["resolutionVersion"] for mapping in mappings} == {3}
+        assert {mapping.evidence["resolutionVersion"] for mapping in mappings} == {
+            people_reconcile.IDENTITY_RESOLUTION_VERSION
+        }
         assert {mapping.evidence["verifiedWikimediaHandle"] for mapping in mappings} == {
             "Magnus Manske",
             "User:Magnus_Manske",
@@ -449,7 +451,52 @@ def test_recent_legacy_candidate_is_rechecked_when_it_has_a_wiki_handle():
 
         assert second["identityMappingsApplied"] == 1
         assert mapping.decision == "auto_link"
-        assert mapping.evidence["resolutionVersion"] == 3
+        assert mapping.evidence["resolutionVersion"] == people_reconcile.IDENTITY_RESOLUTION_VERSION
+
+
+def test_toolsadmin_tool_account_name_corroborates_a_differently_named_toolhub_record():
+    _configure()
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "mm_baglama",
+            "toolforge_toolsadmin",
+            [
+                {
+                    "display_name": "Magnus Manske",
+                    "relationship_type": sync.PERSON_REL_MAINTAINER,
+                    "method": sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    "verification_status": sync.AUTHOR_CLAIM_VERIFIED,
+                    "confidence": 95,
+                    "evidence_payload": {"toolforgeToolName": "glamtools", "profileUsername": ""},
+                }
+            ],
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver("glamtools"),
+        )
+
+        assert summary["identityMappingsApplied"] == 1
+        mapping = s.query(PersonReconciliationMapping).one()
+        assert mapping.decision == "auto_link"
+        assert mapping.evidence["toolNames"] == ["mm_baglama"]
+        assert mapping.evidence["toolforgeToolNames"] == ["glamtools"]
+        assert mapping.evidence["matchedToolforgeMemberships"] == ["glamtools"]
+        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="mm_baglama").one()
+        target = s.query(PersonIdentifier).filter_by(namespace="toolforge_uid_number", value="3067").one()
+        assert relationship.person_id == target.person_id
 
 
 def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():

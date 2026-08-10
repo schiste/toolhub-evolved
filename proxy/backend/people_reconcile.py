@@ -43,7 +43,7 @@ MAPPING_SPLIT = "split"
 MAPPING_DECISIONS = {MAPPING_CANDIDATE, MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
 MAPPING_APPLIED_DECISIONS = {MAPPING_AUTO_LINK, MAPPING_APPROVED}
 CANDIDATE_RETRY_AFTER = timedelta(days=1)
-IDENTITY_RESOLUTION_VERSION = 3
+IDENTITY_RESOLUTION_VERSION = 4
 
 
 class PersonReconciliationError(ValueError):
@@ -303,7 +303,7 @@ def _candidate_source_people(s: Session) -> list[Person]:
     ).scalars()
     for mapping in mappings:
         latest_mappings.setdefault(mapping.source_person_id, mapping)
-    wiki_handle_people = {
+    structured_evidence_people = {
         person_id
         for (person_id,) in s.execute(
             select(PersonIdentifier.person_id).where(
@@ -313,6 +313,16 @@ def _candidate_source_people(s: Session) -> list[Person]:
             )
         ).all()
     }
+    structured_evidence_people.update(
+        person_id
+        for (person_id,) in s.execute(
+            select(ToolRelationshipEvidence.person_id).where(
+                ToolRelationshipEvidence.person_id.in_(person_ids),
+                ToolRelationshipEvidence.source == maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+        ).all()
+    )
     retry_after = utcnow() - CANDIDATE_RETRY_AFTER
     due = []
     for person in people:
@@ -322,16 +332,32 @@ def _candidate_source_people(s: Session) -> list[Person]:
             continue
         evidence = mapping.evidence if isinstance(mapping.evidence, dict) else {}
         version = int(evidence.get("resolutionVersion") or 0)
-        if person.id in wiki_handle_people and version < IDENTITY_RESOLUTION_VERSION:
+        if person.id in structured_evidence_people and version < IDENTITY_RESOLUTION_VERSION:
             due.append(person)
     return due
 
 
-def _tool_names_for_person(s: Session, person_id: int) -> tuple[list[str], list[str]]:
-    rows = list(
+def _source_evidence_for_person(s: Session, person_id: int) -> tuple[list[str], list[str], list[str]]:
+    relationships = list(
         s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.person_id == person_id)).scalars()
     )
-    return sorted({row.tool_name for row in rows}), sorted({row.relationship_type for row in rows})
+    toolforge_names = set()
+    evidence_rows = s.execute(
+        select(ToolRelationshipEvidence).where(
+            ToolRelationshipEvidence.person_id == person_id,
+            ToolRelationshipEvidence.source == maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+        )
+    ).scalars()
+    for row in evidence_rows:
+        payload = row.evidence_payload if isinstance(row.evidence_payload, dict) else {}
+        if toolforge_name := _clean(payload.get("toolforgeToolName")):
+            toolforge_names.add(toolforge_name)
+    return (
+        sorted({row.tool_name for row in relationships}),
+        sorted(toolforge_names),
+        sorted({row.relationship_type for row in relationships}),
+    )
 
 
 def _membership_aliases(tool_names: list[str]) -> set[str]:
@@ -538,8 +564,10 @@ def discover_identity_candidates(
         memberships = list(toolforge.tool_names) if toolforge else []
         membership_aliases = _membership_aliases(memberships)
         for source in people:
-            tool_names, roles = _tool_names_for_person(s, source.id)
-            matched_memberships = sorted(_membership_aliases(tool_names) & membership_aliases)
+            tool_names, toolforge_names, roles = _source_evidence_for_person(s, source.id)
+            matched_memberships = sorted(
+                (_membership_aliases(toolforge_names) | _membership_aliases(tool_names)) & membership_aliases
+            )
             verified_wikimedia_handle = verified_wikimedia_handles.get(source.id, "")
             decision = people_policy.decide_identity_link(
                 structured_handle=bool(verified_wikimedia_handle),
@@ -568,6 +596,7 @@ def discover_identity_candidates(
                 "toolforgeUidNumber": toolforge.uid_number if toolforge else "",
                 "sourcePublicId": source.public_id,
                 "toolNames": tool_names,
+                "toolforgeToolNames": toolforge_names,
                 "relationshipTypes": roles,
                 "toolforgeMemberships": memberships,
                 "matchedToolforgeMemberships": matched_memberships,
