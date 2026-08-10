@@ -123,7 +123,7 @@ def _iso(value: datetime | None) -> str:
     return normalized.isoformat(timespec="seconds") + "Z"
 
 
-def _public_relationship_payload(
+def public_relationship_payload(
     person: Person,
     relationship: ToolPersonRelationship,
     supporting: list[ToolRelationshipEvidence],
@@ -1046,7 +1046,7 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
             | {"relationships": []},
         )
         supporting = evidence_by_key.get((person.id, relationship.relationship_type), [])
-        payload["relationships"].append(_public_relationship_payload(person, relationship, supporting))
+        payload["relationships"].append(public_relationship_payload(person, relationship, supporting))
     items = sorted(
         items_by_id.values(),
         key=lambda item: (-max((role["confidence"] for role in item["relationships"]), default=0), item["id"]),
@@ -1185,7 +1185,7 @@ def person_detail(
     roles_by_tool: dict[str, list[dict[str, Any]]] = {}
     for row in relationships:
         roles_by_tool.setdefault(row.tool_name, []).append(
-            _public_relationship_payload(
+            public_relationship_payload(
                 person,
                 row,
                 evidence_by_key.get((row.tool_name, row.relationship_type), []),
@@ -1347,9 +1347,7 @@ def relationship_summaries_by_public_id(
     checked_at: datetime | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Return count/trust summaries for safely linked public identities."""
-    people = dict(
-        s.execute(select(Person.id, Person.public_id).where(Person.public_id.in_(public_ids or {""}))).all()
-    )
+    people = dict(s.execute(select(Person.id, Person.public_id).where(Person.public_id.in_(public_ids or {""}))).all())
     summaries = _directory_relationship_summaries(
         s,
         set(people),

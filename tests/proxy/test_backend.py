@@ -3160,6 +3160,18 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     evidence_count=2,
                     toolhub_canonical=True,
                 ),
+                ToolRelationshipEvidence(
+                    tool_name="magnus-tool",
+                    person_id=magnus.id,
+                    relationship_type=sync.PERSON_REL_MAINTAINER,
+                    source="toolforge_toolsadmin",
+                    method="toolforge_maintainer",
+                    evidence_key="magnus-tool:magnus",
+                    observed_name="Magnus Manske",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=100,
+                    checked_at=now,
+                ),
                 ToolPersonRelationship(
                     tool_name="legacy-tool",
                     person_id=display_only.id,
@@ -3228,6 +3240,32 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                 ),
             ]
         )
+        # Magnus-scale regression: hundreds of label-only observations must
+        # remain one supporting evidence cluster, never hundreds of profiles.
+        extra_display_people = [
+            Person(
+                canonical_key=f"display:legacy-tool-{index}:author:magnus-manske",
+                display_name="Magnus Manske",
+                identity_quality="display_name",
+            )
+            for index in range(2, 324)
+        ]
+        s.add_all(extra_display_people)
+        s.flush()
+        s.add_all(
+            [
+                ToolPersonRelationship(
+                    tool_name=f"legacy-tool-{index}",
+                    person_id=person.id,
+                    relationship_type=sync.PERSON_REL_AUTHOR,
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    confidence=20,
+                    evidence_count=1,
+                    toolhub_canonical=True,
+                )
+                for index, person in enumerate(extra_display_people, start=2)
+            ]
+        )
 
     response = client.get("/v1/community/?q=Magnus%20Manske")
     assert response.status_code == 200
@@ -3262,9 +3300,9 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     assert person["supportingEvidence"][0]["relationshipBreakdown"] == [
         {
             "bestConfidence": 20,
-            "evidenceCount": 1,
+            "evidenceCount": 323,
             "status": "unverified",
-            "toolCount": 1,
+            "toolCount": 323,
             "type": "author",
         }
     ]
@@ -3276,6 +3314,7 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     assert [(row["type"], row["status"]) for row in related_tool["relationships"]] == [
         (sync.PERSON_REL_MAINTAINER, sync.AUTHOR_CLAIM_VERIFIED)
     ]
+    assert related_tool["relationships"][0]["evidence"][0]["method"] == "toolforge_maintainer"
     assert payload["otherMatches"]["count"] == 1
     assert payload["otherMatches"]["results"][0]["tool"]["name"] == "description-only"
     assert payload["otherMatches"]["results"][0]["match"] == {

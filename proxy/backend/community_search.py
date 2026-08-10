@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, or_, select
 
 from backend import account_directory, people_index
-from backend.models import CanonicalToolCache, Person, ToolPersonRelationship
+from backend.models import CanonicalToolCache, Person, ToolPersonRelationship, ToolRelationshipEvidence
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -122,7 +122,7 @@ def _tool_match(record: dict[str, Any], tool_name: str, query: str) -> tuple[int
     for rank, reason, field, candidates in tiers:
         matched = next(candidates, None)
         if matched is not None:
-            return rank, {"field": field, "reason": reason, "value": matched[0]}
+            return rank, {"field": field, "reason": reason, "value": _clean(matched[0], 240)}
     return None
 
 
@@ -148,8 +148,7 @@ def _text_tool_results(s: Session, query: str) -> dict[str, Any]:
             .where(predicate)
             .order_by(func.lower(CanonicalToolCache.tool_name))
             .limit(MAX_CANDIDATES)
-        )
-        .scalars()
+        ).scalars()
     )
     strong = []
     other = []
@@ -212,46 +211,59 @@ def _relationship_tool_results(s: Session, person_items: list[dict[str, Any]]) -
         return []
     rows = list(
         s.execute(
-            select(Person.public_id, Person.display_name, ToolPersonRelationship)
+            select(Person, ToolPersonRelationship)
             .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
             .where(Person.public_id.in_(public_ids))
             .order_by(ToolPersonRelationship.tool_name, Person.public_id, ToolPersonRelationship.relationship_type)
         ).all()
     )
-    tool_names = {relationship.tool_name for _public_id, _display_name, relationship in rows}
+    tool_names = {relationship.tool_name for _person, relationship in rows}
+    person_ids = {person.id for person, _relationship in rows}
     cache_by_name = {
         row.tool_name: row
         for row in s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(tool_names or {""})))
         .scalars()
         .all()
     }
+    evidence_by_relationship: dict[tuple[str, int, str], list[ToolRelationshipEvidence]] = {}
+    evidence_rows = (
+        s.execute(
+            select(ToolRelationshipEvidence)
+            .where(
+                ToolRelationshipEvidence.tool_name.in_(tool_names or {""}),
+                ToolRelationshipEvidence.person_id.in_(person_ids or {-1}),
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+            .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+    for evidence in evidence_rows:
+        key = (evidence.tool_name, evidence.person_id, evidence.relationship_type)
+        evidence_by_relationship.setdefault(key, []).append(evidence)
     by_tool: dict[str, dict[str, Any]] = {}
-    for public_id, display_name, relationship in rows:
+    for person, relationship in rows:
         item = by_tool.setdefault(
             relationship.tool_name,
             {
                 "kind": "tool",
                 "tool": _compact_tool(cache_by_name.get(relationship.tool_name), relationship.tool_name),
-                "match": {"field": "relationship", "reason": "person_relationship", "value": display_name},
+                "match": {"field": "relationship", "reason": "person_relationship", "value": person.display_name},
                 "matchBasis": ["relationship"],
                 "relationships": [],
             },
         )
-        item["relationships"].append(
-            {
-                "personId": public_id,
-                "personName": display_name,
-                "type": relationship.relationship_type,
-                "status": relationship.verification_status,
-                "confidence": relationship.confidence,
-                "evidenceCount": relationship.evidence_count,
-                "toolhubCanonical": relationship.toolhub_canonical,
-                "checkedAt": relationship.resolved_at.isoformat(timespec="seconds") + "Z",
-                "expiresAt": (
-                    relationship.expires_at.isoformat(timespec="seconds") + "Z" if relationship.expires_at else None
-                ),
-            }
+        payload = people_index.public_relationship_payload(
+            person,
+            relationship,
+            evidence_by_relationship.get(
+                (relationship.tool_name, person.id, relationship.relationship_type),
+                [],
+            ),
         )
+        payload.update({"personId": person.public_id, "personName": person.display_name})
+        item["relationships"].append(payload)
     status_rank = {"verified": 0, "stale": 1, "unverified": 2}
     role_rank = {role: index for index, role in enumerate(people_index.PUBLIC_ROLES)}
     for item in by_tool.values():
@@ -307,9 +319,7 @@ def _tool_sections(
 ) -> tuple[dict[str, Any], dict[str, Any], int]:
     relationship_tools = _relationship_tool_results(s, exact_people)
     text_tools = (
-        _text_tool_results(s, query)
-        if include_text_matches
-        else {"candidateCount": 0, "strong": [], "other": []}
+        _text_tool_results(s, query) if include_text_matches else {"candidateCount": 0, "strong": [], "other": []}
     )
     related_by_name = {item["tool"]["name"]: item for item in relationship_tools}
     for item in text_tools["strong"]:
@@ -497,9 +507,6 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
                 unresolved.get("count", 0),
                 tool_candidate_count,
             )
-        )
-        or related_section["truncated"]
-        or evidence_section["truncated"]
-        or other_section["truncated"],
+        ),
         "accountSync": accounts["sync"],
     }
