@@ -317,8 +317,10 @@ test("viewPeople unifies resolved people, official accounts, and unresolved attr
 					profile: {},
 					activity: { relatedToolCount: 3 },
 					relationshipSummary: {
-						types: ["author", "maintainer"],
-						verifiedTypes: ["maintainer"]
+						types: ["author", "maintainer", "record_owner"],
+						verifiedTypes: ["maintainer", "record_owner"],
+						toolCountsByType: { author: 1, maintainer: 2, record_owner: 1 },
+						verifiedToolCountsByType: { author: 0, maintainer: 1, record_owner: 1 }
 					}
 				},
 				identityEvidence: { officialToolhubAccount: true, wikimediaIdentity: true },
@@ -354,7 +356,8 @@ test("viewPeople unifies resolved people, official accounts, and unresolved attr
 	assert.match(view.html, /Official Toolhub account/);
 	assert.match(view.html, /Wikimedia identity matched by stable ID/);
 	assert.match(view.html, /Listed Author/);
-	assert.match(view.html, /Verified Maintainer relationship/);
+	assert.match(view.html, /Maintainer · 1 of 2 tools verified/);
+	assert.match(view.html, /Verified Toolhub record owner relationship · 1 tool/);
 	assert.match(view.html, /href="\/people\?account=99"/);
 	assert.match(view.html, /No stable public person or tool relationship is linked yet/);
 	assert.match(view.html, /Magnus Manske/);

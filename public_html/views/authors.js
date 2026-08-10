@@ -258,6 +258,43 @@ function relationshipSummaryLabel(role, verified) {
 		: t("authors.listedRelationship", "Listed $1", label);
 }
 
+/** @param {string} role @param {any} summary */
+function relationshipCardSignal(role, summary) {
+	const verifiedTypes = Array.isArray(summary?.verifiedTypes) ? summary.verifiedTypes : [];
+	const total = Number(summary?.toolCountsByType?.[role]) || 0;
+	if (!["maintainer", "record_owner"].includes(role) || total === 0) {
+		return relationshipSummaryLabel(role, verifiedTypes.includes(role));
+	}
+	const verified = Math.min(total, Number(summary?.verifiedToolCountsByType?.[role]) || 0);
+	const label = relationshipLabel(role);
+	if (verified === total) {
+		return t(
+			"authors.verifiedRelationshipToolCount",
+			"Verified $1 relationship · $2 {{PLURAL:$3|tool|tools}}",
+			label,
+			fmt(total),
+			total
+		);
+	}
+	if (verified > 0) {
+		return t(
+			"authors.partlyVerifiedRelationshipToolCount",
+			"$1 · $2 of $3 {{PLURAL:$4|tool|tools}} verified",
+			label,
+			fmt(verified),
+			fmt(total),
+			total
+		);
+	}
+	return t(
+		"authors.listedRelationshipToolCount",
+		"Listed $1 · $2 {{PLURAL:$3|tool|tools}}",
+		label,
+		fmt(total),
+		total
+	);
+}
+
 /** @param {any} item */
 function personCard(item) {
 	const person = item?.person || item;
@@ -321,7 +358,7 @@ function personCard(item) {
 		signals: types.map((/** @type {string} */ role) => {
 			const verified = verifiedTypes.includes(role);
 			return {
-				label: relationshipSummaryLabel(role, verified),
+				label: relationshipCardSignal(role, summary),
 				className: verified ? "status status--green" : "signal signal--compact"
 			};
 		}),

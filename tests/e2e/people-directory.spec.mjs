@@ -10,8 +10,10 @@ function person(index) {
 		profile: {},
 		activity: { relatedToolCount: 3 },
 		relationshipSummary: {
-			types: ["author", "maintainer"],
-			verifiedTypes: ["maintainer"]
+			types: ["author", "maintainer", "record_owner"],
+			verifiedTypes: ["maintainer", "record_owner"],
+			toolCountsByType: { author: 1, maintainer: 2, record_owner: 1 },
+			verifiedToolCountsByType: { author: 0, maintainer: 1, record_owner: 1 }
 		}
 	};
 }
@@ -45,7 +47,10 @@ test.describe("People directory", () => {
 		await expect(page.locator('[name="q"]')).toHaveValue("Ada");
 		await expect(page.locator('[name="role"]')).toHaveValue("maintainer");
 		await expect(page.locator('[name="project"]')).toHaveValue("wikidata.org");
-		await expect(page.getByText("Verified Maintainer relationship", { exact: true })).toBeVisible();
+		await expect(page.getByText("Maintainer · 1 of 2 tools verified", { exact: true })).toBeVisible();
+		await expect(
+			page.getByText("Verified Toolhub record owner relationship · 1 tool", { exact: true })
+		).toBeVisible();
 		await expect(page.locator(".community-facets")).toBeVisible();
 		await expect(page.locator(".community-results .tcard.entity-card")).toHaveCount(1);
 		await expect(page.locator(".people-card")).toHaveCount(0);
