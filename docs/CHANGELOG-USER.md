@@ -1,9 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..05729fb (124 commits) -->
+<!-- Source range: 828438f..56a6361 (129 commits) -->
 
 # What's New for Users
 
+- An exact person search now presents the stable person first, keeps same-name metadata in an expandable “not safely linked” disclosure, shows each related tool once with all known roles, and separates incidental description mentions from meaningful matches.
+- The operator review queue now contains only conflicts that can be acted on with stable identity evidence; repeated free-text names remain visible as evidence clusters without becoming merge suggestions.
 - Community search now combines people, official Toolhub accounts, contributors, matching tools, and unresolved name-only attributions in one URL-driven directory instead of asking visitors to choose an account type first.
 - Tool-text matches now show real tool cards instead of pulling every person related to every matching tool into the directory.
 - Name-only cards now separate unresolved identity from listed, currently verified, and renewal-needed tool relationships.

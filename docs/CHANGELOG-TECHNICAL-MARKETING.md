@@ -1,9 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..05729fb (124 commits) -->
+<!-- Source range: 828438f..56a6361 (129 commits) -->
 
 # Technical Release Notes
 
+- Restructures `/v1/community/` into primary identities/accounts, relationship-backed and structured tool matches, standalone unresolved evidence, and weak description-only matches while retaining a compatibility alias for primary results.
+- Folds exact same-label observations beneath a unique stable person as explicitly unlinked supporting evidence, returns each related tool once with every typed relationship and public provenance, and adds a 323-observation Magnus-scale regression.
+- Keeps repeated display-label clusters as reconciliation telemetry rather than actionable identity conflicts and dismisses legacy label-only queue entries during apply runs; stable-identifier conflicts remain reviewable.
 - Adds a unified `/v1/community/` projection over stable people, official accounts, catalog evidence, and unresolved attributions, with deterministic ranking, typed filters, real counts, pagination, and explicit canonical-authority metadata.
 - Returns matching canonical tools as first-class cards, globally ranks result types, and removes tool-match fan-out into every related person.
 - Separates unresolved identity status from per-role verified, stale, and unverified relationship evidence.
