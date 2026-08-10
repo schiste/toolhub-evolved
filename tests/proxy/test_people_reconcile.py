@@ -313,6 +313,144 @@ def test_apply_links_only_same_tool_sul_membership_and_keeps_other_attribution_c
         assert s.query(PersonReconciliationMapping).count() == 2
 
 
+def test_centralauth_confirmed_wiki_handles_link_authorship_without_toolforge_membership():
+    _configure()
+    with db.session_scope() as s:
+        for tool_name, wiki_username in (
+            ("hotcat", "Magnus Manske"),
+            ("glamorgan", "User:Magnus_Manske"),
+        ):
+            people_index.replace_source_evidence(
+                s,
+                tool_name,
+                "toolhub_author_metadata",
+                [
+                    {
+                        "display_name": "Magnus Manske",
+                        "wiki_username": wiki_username,
+                        "relationship_type": sync.PERSON_REL_AUTHOR,
+                    }
+                ],
+            )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver(),
+        )
+
+        assert summary["identityMappingsApplied"] == 2
+        mappings = s.query(PersonReconciliationMapping).order_by(PersonReconciliationMapping.id).all()
+        assert {mapping.decision for mapping in mappings} == {"auto_link"}
+        assert {mapping.reason for mapping in mappings} == {"same_verified_structured_handle"}
+        assert {mapping.confidence for mapping in mappings} == {90}
+        assert {mapping.evidence["resolutionVersion"] for mapping in mappings} == {3}
+        assert {mapping.evidence["verifiedWikimediaHandle"] for mapping in mappings} == {
+            "Magnus Manske",
+            "User:Magnus_Manske",
+        }
+        relationships = s.query(ToolPersonRelationship).order_by(ToolPersonRelationship.tool_name).all()
+        assert {row.relationship_type for row in relationships} == {sync.PERSON_REL_AUTHOR}
+        assert len({row.person_id for row in relationships}) == 1
+
+
+def test_unconfirmed_wiki_handle_remains_a_review_candidate():
+    _configure()
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "unrelated-tool",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Magnus Manske",
+                    "wiki_username": "Someone else",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                }
+            ],
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver(),
+        )
+
+        assert summary["identityMappingsApplied"] == 0
+        mapping = s.query(PersonReconciliationMapping).one()
+        assert mapping.decision == "candidate"
+        assert mapping.reason == "exact_toolhub_username_candidate"
+        assert mapping.evidence["verifiedWikimediaHandle"] == ""
+
+
+def test_recent_legacy_candidate_is_rechecked_when_it_has_a_wiki_handle():
+    _configure()
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "hotcat",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Magnus Manske",
+                    "wiki_username": "Magnus Manske",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                }
+            ],
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+        unavailable = PublicIdentityResolver(
+            wikimedia=WikimediaIdentityProvider(fetcher=lambda _id: (503, {})),
+            toolforge=ToolforgeIdentityProvider(lookup=lambda _username: []),
+        )
+        first = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=unavailable,
+        )
+        assert first["identityMappingsApplied"] == 0
+        mapping = s.query(PersonReconciliationMapping).one()
+        mapping.evidence = dict(mapping.evidence or {}) | {"resolutionVersion": 2}
+        s.flush()
+
+        second = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver(),
+        )
+
+        assert second["identityMappingsApplied"] == 1
+        assert mapping.decision == "auto_link"
+        assert mapping.evidence["resolutionVersion"] == 3
+
+
 def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():
     _configure()
     with db.session_scope() as s:

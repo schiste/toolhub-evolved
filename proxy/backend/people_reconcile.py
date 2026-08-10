@@ -43,6 +43,7 @@ MAPPING_SPLIT = "split"
 MAPPING_DECISIONS = {MAPPING_CANDIDATE, MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
 MAPPING_APPLIED_DECISIONS = {MAPPING_AUTO_LINK, MAPPING_APPROVED}
 CANDIDATE_RETRY_AFTER = timedelta(days=1)
+IDENTITY_RESOLUTION_VERSION = 3
 
 
 class PersonReconciliationError(ValueError):
@@ -276,24 +277,54 @@ def _candidate_source_people(s: Session) -> list[Person]:
             {MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
         ),
     )
-    deferred_candidate_ids = select(PersonReconciliationMapping.source_person_id).where(
-        PersonReconciliationMapping.source_person_id.is_not(None),
-        PersonReconciliationMapping.decision == MAPPING_CANDIDATE,
-        PersonReconciliationMapping.updated_at > utcnow() - CANDIDATE_RETRY_AFTER,
-    )
-    return list(
+    people = list(
         s.execute(
             select(Person)
             .where(
                 Person.id.in_(related_ids),
                 Person.id.not_in(stable_ids),
                 Person.id.not_in(finalized_ids),
-                Person.id.not_in(deferred_candidate_ids),
                 Person.display_name != "",
             )
             .order_by(func.lower(Person.display_name), Person.id)
         ).scalars()
     )
+    if not people:
+        return []
+    person_ids = {person.id for person in people}
+    latest_mappings: dict[int, PersonReconciliationMapping] = {}
+    mappings = s.execute(
+        select(PersonReconciliationMapping)
+        .where(
+            PersonReconciliationMapping.source_person_id.in_(person_ids),
+            PersonReconciliationMapping.decision == MAPPING_CANDIDATE,
+        )
+        .order_by(PersonReconciliationMapping.id.desc())
+    ).scalars()
+    for mapping in mappings:
+        latest_mappings.setdefault(mapping.source_person_id, mapping)
+    wiki_handle_people = {
+        person_id
+        for (person_id,) in s.execute(
+            select(PersonIdentifier.person_id).where(
+                PersonIdentifier.person_id.in_(person_ids),
+                PersonIdentifier.namespace == people_index.NS_WIKI_USERNAME,
+                PersonIdentifier.is_current.is_(True),
+            )
+        ).all()
+    }
+    retry_after = utcnow() - CANDIDATE_RETRY_AFTER
+    due = []
+    for person in people:
+        mapping = latest_mappings.get(person.id)
+        if mapping is None or mapping.updated_at <= retry_after:
+            due.append(person)
+            continue
+        evidence = mapping.evidence if isinstance(mapping.evidence, dict) else {}
+        version = int(evidence.get("resolutionVersion") or 0)
+        if person.id in wiki_handle_people and version < IDENTITY_RESOLUTION_VERSION:
+            due.append(person)
+    return due
 
 
 def _tool_names_for_person(s: Session, person_id: int) -> tuple[list[str], list[str]]:
@@ -332,6 +363,30 @@ def _account_evidence(account: ToolhubAccountProjection) -> dict[str, str]:
         "toolhubUsername": account.username,
         "wikimediaGlobalUserId": account.wikimedia_global_user_id or "",
     }
+
+
+def _normalized_wikimedia_username(value: str) -> str:
+    """Normalize Toolhub's common wiki-username forms for exact comparison."""
+    normalized = " ".join(_clean(value).replace("_", " ").split())
+    prefix, separator, remainder = normalized.partition(":")
+    if separator and prefix.casefold() == "user":
+        normalized = remainder.strip()
+    return normalized.casefold()
+
+
+def _verified_wikimedia_handle(s: Session, person_id: int, canonical_username: str) -> str:
+    """Return a stored wiki handle only when CentralAuth confirms the same name."""
+    expected = _normalized_wikimedia_username(canonical_username)
+    if not expected:
+        return ""
+    rows = s.execute(
+        select(PersonIdentifier).where(
+            PersonIdentifier.person_id == person_id,
+            PersonIdentifier.namespace == people_index.NS_WIKI_USERNAME,
+            PersonIdentifier.is_current.is_(True),
+        )
+    ).scalars()
+    return next((row.value for row in rows if _normalized_wikimedia_username(row.value) == expected), "")
 
 
 def _record_stable_identity_conflict(
@@ -446,6 +501,11 @@ def discover_identity_candidates(
     for account, people in candidates[:account_limit]:
         resolved = identity_resolver.resolve(account.wikimedia_global_user_id or "")
         toolforge = resolved.toolforge if resolved is not None else None
+        verified_wikimedia_handles = {
+            source.id: _verified_wikimedia_handle(s, source.id, resolved.wikimedia.username)
+            for source in people
+            if resolved is not None
+        }
         if _record_stable_identity_conflict(
             s,
             run_id,
@@ -480,7 +540,9 @@ def discover_identity_candidates(
         for source in people:
             tool_names, roles = _tool_names_for_person(s, source.id)
             matched_memberships = sorted(_membership_aliases(tool_names) & membership_aliases)
+            verified_wikimedia_handle = verified_wikimedia_handles.get(source.id, "")
             decision = people_policy.decide_identity_link(
+                structured_handle=bool(verified_wikimedia_handle),
                 exact_toolhub_candidate=True,
                 same_tool_toolforge_membership=bool(matched_memberships),
                 toolforge_sul_bound=toolforge is not None,
@@ -498,9 +560,10 @@ def discover_identity_candidates(
             mapping.reason = decision.reason
             mapping.confidence = decision.confidence
             mapping.evidence = {
-                "resolutionVersion": 2,
+                "resolutionVersion": IDENTITY_RESOLUTION_VERSION,
                 "identity": _account_evidence(account),
                 "wikimediaUsername": resolved.wikimedia.username if resolved else "",
+                "verifiedWikimediaHandle": verified_wikimedia_handle,
                 "toolforgeUsername": toolforge.uid if toolforge else "",
                 "toolforgeUidNumber": toolforge.uid_number if toolforge else "",
                 "sourcePublicId": source.public_id,
