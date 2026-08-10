@@ -161,6 +161,7 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         account_directory.AccountDirectoryQuery(query=query, page=1, page_size=MAX_CANDIDATES),
     )
     linked_public_ids = {row["personId"] for row in accounts["results"] if row.get("personId")}
+    linked_relationship_summaries = people_index.relationship_summaries_by_public_id(s, linked_public_ids)
     tool_public_ids = _tool_person_public_ids(s, query)
     related_public_ids = linked_public_ids | tool_public_ids
     related_people = (
@@ -188,7 +189,14 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         if person_id and person_id in people_by_id:
             accounts_by_person.setdefault(person_id, []).append(account)
         elif not filters_require_relationship:
-            account_only.append({"kind": "account", "account": account, "matchBasis": ["official_account"]})
+            account_only.append(
+                {
+                    "kind": "account",
+                    "account": account,
+                    "matchBasis": ["official_account"],
+                    "relationshipSummary": linked_relationship_summaries.get(person_id),
+                }
+            )
 
     normalized = query.casefold()
     person_items = [

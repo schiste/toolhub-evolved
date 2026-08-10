@@ -3066,7 +3066,12 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
             display_name="Magnus Manske",
             identity_quality="display_name",
         )
-        s.add_all([magnus, display_only])
+        linked_account_only = Person(
+            canonical_key="toolhub_user_id:153",
+            display_name="Linked Account Only",
+            identity_quality="stable_id",
+        )
+        s.add_all([magnus, display_only, linked_account_only])
         s.flush()
         s.add_all(
             [
@@ -3075,6 +3080,20 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     namespace=people_index.NS_TOOLHUB_USER_ID,
                     value="152",
                     normalized_value="152",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=linked_account_only.id,
+                    namespace=people_index.NS_TOOLHUB_USER_ID,
+                    value="153",
+                    normalized_value="153",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=linked_account_only.id,
+                    namespace=people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+                    value="9002",
+                    normalized_value="9002",
                     identifier_kind=people_index.IDENTIFIER_STABLE,
                 ),
                 PersonIdentifier(
@@ -3122,11 +3141,18 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     normalized_username="official only",
                     generation=1,
                 ),
+                ToolhubAccountProjection(
+                    toolhub_user_id="153",
+                    username="Linked Account Only",
+                    normalized_username="linked account only",
+                    wikimedia_global_user_id="9002",
+                    generation=1,
+                ),
                 ToolhubAccountSyncState(
                     key="official_accounts",
                     active_generation=1,
                     cycles_completed=1,
-                    total_count=2,
+                    total_count=3,
                     status="complete",
                     last_completed_at=now,
                     last_success_at=now,
@@ -3169,6 +3195,15 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     account_only = client.get("/v1/community/?q=official%20only").get_json()
     assert account_only["counts"] == {"people": 0, "accounts": 1, "unresolvedAttributions": 0}
     assert account_only["results"][0]["account"]["identityLinkStatus"] == "unlinked"
+    linked_only = client.get("/v1/community/?q=linked%20account%20only").get_json()
+    assert linked_only["results"][0]["kind"] == "account"
+    assert linked_only["results"][0]["account"]["personId"] == linked_account_only.public_id
+    assert linked_only["results"][0]["relationshipSummary"]["toolCountsByType"] == {
+        sync.PERSON_REL_AUTHOR: 0,
+        sync.PERSON_REL_MAINTAINER: 0,
+        sync.PERSON_REL_RECORD_OWNER: 0,
+        sync.PERSON_REL_CATALOG_ACTOR: 0,
+    }
     assert client.get("/v1/community/?q=official%20only&contributor=observed").get_json()["count"] == 0
 
     for path in (

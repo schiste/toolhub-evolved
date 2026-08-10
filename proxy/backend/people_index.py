@@ -1247,6 +1247,19 @@ def _relationship_directory_filter(
     return statement.exists()
 
 
+def _empty_directory_relationship_summary() -> dict[str, Any]:
+    return {
+        "relationshipCount": 0,
+        "verifiedRelationshipCount": 0,
+        "evidenceCount": 0,
+        "bestConfidence": 0,
+        "types": [],
+        "verifiedTypes": [],
+        "toolCountsByType": {role: 0 for role in PUBLIC_ROLES},
+        "verifiedToolCountsByType": {role: 0 for role in PUBLIC_ROLES},
+    }
+
+
 def _directory_relationship_summaries(
     s: Session,
     person_ids: set[int],
@@ -1260,16 +1273,7 @@ def _directory_relationship_summaries(
     for row in rows:
         summary = summaries.setdefault(
             row.person_id,
-            {
-                "relationshipCount": 0,
-                "verifiedRelationshipCount": 0,
-                "evidenceCount": 0,
-                "bestConfidence": 0,
-                "types": set(),
-                "verifiedTypes": set(),
-                "toolCountsByType": {role: 0 for role in PUBLIC_ROLES},
-                "verifiedToolCountsByType": {role: 0 for role in PUBLIC_ROLES},
-            },
+            _empty_directory_relationship_summary() | {"types": set(), "verifiedTypes": set()},
         )
         summary["relationshipCount"] += 1
         summary["evidenceCount"] += row.evidence_count
@@ -1287,6 +1291,27 @@ def _directory_relationship_summaries(
         summary["types"] = [role for role in PUBLIC_ROLES if role in summary["types"]]
         summary["verifiedTypes"] = [role for role in PUBLIC_ROLES if role in summary["verifiedTypes"]]
     return summaries
+
+
+def relationship_summaries_by_public_id(
+    s: Session,
+    public_ids: set[str],
+    *,
+    checked_at: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Return count/trust summaries for safely linked public identities."""
+    people = dict(
+        s.execute(select(Person.id, Person.public_id).where(Person.public_id.in_(public_ids or {""}))).all()
+    )
+    summaries = _directory_relationship_summaries(
+        s,
+        set(people),
+        checked_at=checked_at or utcnow(),
+    )
+    return {
+        public_id: summaries.get(person_id, _empty_directory_relationship_summary())
+        for person_id, public_id in people.items()
+    }
 
 
 def _directory_contributor_summaries(
@@ -1497,16 +1522,7 @@ def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/fil
         | {
             "relationshipSummary": relationship_summaries.get(
                 person.id,
-                {
-                    "relationshipCount": 0,
-                    "verifiedRelationshipCount": 0,
-                    "evidenceCount": 0,
-                    "bestConfidence": 0,
-                    "types": [],
-                    "verifiedTypes": [],
-                    "toolCountsByType": {role: 0 for role in PUBLIC_ROLES},
-                    "verifiedToolCountsByType": {role: 0 for role in PUBLIC_ROLES},
-                },
+                _empty_directory_relationship_summary(),
             ),
             "contributor": contributor_summaries[person.id],
         }
