@@ -9,12 +9,25 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, or_, select
 
 from backend import account_directory, people_index
-from backend.models import CanonicalToolCache, Person, ToolPersonRelationship
+from backend.models import CanonicalToolCache
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 MAX_CANDIDATES = 100
+TOOL_RESULT_FIELDS = (
+    "name",
+    "title",
+    "description",
+    "url",
+    "icon",
+    "keywords",
+    "tool_type",
+    "for_wikis",
+    "deprecated",
+    "experimental",
+    "author",
+)
 
 
 @dataclass(frozen=True)
@@ -70,40 +83,61 @@ def _identity_evidence(person: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def _tool_person_public_ids(s: Session, query: str) -> set[str]:
-    if not query:
-        return set()
+def _tool_results(s: Session, query: str) -> dict[str, Any]:
+    """Return matching tools directly instead of expanding every related person."""
     needle = f"%{_like_literal(query.casefold())}%"
-    rows = s.execute(
-        select(Person.public_id)
-        .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
-        .outerjoin(CanonicalToolCache, CanonicalToolCache.tool_name == ToolPersonRelationship.tool_name)
-        .where(
-            or_(
-                func.lower(ToolPersonRelationship.tool_name).like(needle, escape="\\"),
-                CanonicalToolCache.search_text.like(needle, escape="\\"),
-            )
+    predicate = or_(
+        func.lower(CanonicalToolCache.tool_name).like(needle, escape="\\"),
+        func.lower(CanonicalToolCache.search_text).like(needle, escape="\\"),
+    )
+    total = int(s.scalar(select(func.count()).select_from(CanonicalToolCache).where(predicate)) or 0)
+    rows = list(
+        s.execute(
+            select(CanonicalToolCache)
+            .where(predicate)
+            .order_by(func.lower(CanonicalToolCache.tool_name))
+            .limit(MAX_CANDIDATES)
         )
-        .distinct()
-        .limit(MAX_CANDIDATES)
-    ).all()
-    return {row[0] for row in rows}
+        .scalars()
+    )
+    results = []
+    for row in rows:
+        record = row.record if isinstance(row.record, dict) else {}
+        tool = {field: record[field] for field in TOOL_RESULT_FIELDS if field in record}
+        tool["name"] = row.tool_name
+        tool["origin"] = "canonical_cache"
+        results.append({"kind": "tool", "tool": tool, "matchBasis": ["tool"]})
+    return {"count": total, "results": results}
 
 
-def _person_rank(person: dict[str, Any], normalized: str, bases: set[str]) -> tuple[Any, ...]:
-    display = str(person.get("displayName") or "").casefold()
-    identifiers = [str(item.get("value") or "").casefold() for item in person.get("identifiers", [])]
-    exact = display == normalized or normalized in identifiers
-    prefix = display.startswith(normalized) or any(value.startswith(normalized) for value in identifiers)
-    basis_rank = 0 if "identity" in bases else (1 if "account" in bases else 2)
-    match_rank = 0 if exact else (1 if prefix else basis_rank + 2)
-    summary = person.get("relationshipSummary") or {}
+def _result_values(item: dict[str, Any]) -> list[str]:
+    kind = item.get("kind")
+    if kind == "person":
+        person = item.get("person") or {}
+        values = [person.get("displayName")]
+        values.extend(identifier.get("value") for identifier in person.get("identifiers", []))
+        values.extend(account.get("username") for account in item.get("officialAccountMatches", []))
+    elif kind == "account":
+        values = [(item.get("account") or {}).get("username")]
+    elif kind == "unresolved_attribution":
+        values = [(item.get("attribution") or {}).get("label")]
+    else:
+        tool = item.get("tool") or {}
+        values = [tool.get("name"), tool.get("title")]
+    return [str(value).casefold() for value in values if value]
+
+
+def _result_rank(item: dict[str, Any], normalized: str) -> tuple[Any, ...]:
+    values = _result_values(item)
+    text_rank = 0 if normalized in values else (1 if any(value.startswith(normalized) for value in values) else 2)
+    type_rank = {"person": 0, "account": 1, "unresolved_attribution": 2, "tool": 3}.get(item.get("kind"), 4)
+    summary = (item.get("person") or {}).get("relationshipSummary") or {}
     return (
-        match_rank,
+        text_rank,
+        type_rank,
         -int(summary.get("verifiedRelationshipCount") or 0),
         -int(summary.get("bestConfidence") or 0),
-        display,
-        str(person.get("id") or ""),
+        values[0] if values else "",
     )
 
 
@@ -146,7 +180,7 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         return {
             **people,
             "results": [_person_item(person, {"directory"}, []) for person in people["results"]],
-            "counts": {"people": people["count"], "accounts": 0, "unresolvedAttributions": 0},
+            "counts": {"people": people["count"], "accounts": 0, "tools": 0, "unresolvedAttributions": 0},
             "accountSync": account_directory._sync_payload(  # noqa: SLF001 - shared public projection state
                 s.get(account_directory.ToolhubAccountSyncState, account_directory.STATE_KEY)
             ),
@@ -162,8 +196,7 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
     )
     linked_public_ids = {row["personId"] for row in accounts["results"] if row.get("personId")}
     linked_relationship_summaries = people_index.relationship_summaries_by_public_id(s, linked_public_ids)
-    tool_public_ids = _tool_person_public_ids(s, query)
-    related_public_ids = linked_public_ids | tool_public_ids
+    related_public_ids = linked_public_ids
     related_people = (
         people_index.search_people_directory(s, _people_query(search, public_ids=related_public_ids))["results"]
         if related_public_ids
@@ -179,8 +212,6 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         bases = bases_by_id.setdefault(person["id"], set())
         if person["id"] in linked_public_ids:
             bases.add("account")
-        if person["id"] in tool_public_ids:
-            bases.add("tool")
 
     accounts_by_person: dict[str, list[dict[str, Any]]] = {}
     account_only = []
@@ -203,14 +234,6 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         _person_item(person, bases_by_id[public_id], accounts_by_person.get(public_id, []))
         for public_id, person in people_by_id.items()
     ]
-    person_items.sort(key=lambda item: _person_rank(item["person"], normalized, set(item["matchBasis"])))
-    account_only.sort(
-        key=lambda item: (
-            0 if str(item["account"].get("username") or "").casefold() == normalized else 1,
-            str(item["account"].get("username") or "").casefold(),
-            str(item["account"].get("id") or ""),
-        )
-    )
     unresolved = (
         people_index.search_unresolved_attributions(
             s,
@@ -223,13 +246,12 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         {"kind": "unresolved_attribution", "attribution": item, "matchBasis": ["display_only"]}
         for item in unresolved["results"]
     ]
-    unresolved_items.sort(
-        key=lambda item: (
-            0 if str(item["attribution"].get("label") or "").casefold() == normalized else 1,
-            str(item["attribution"].get("label") or "").casefold(),
-        )
-    )
-    combined = [*person_items, *account_only, *unresolved_items]
+    tools = _tool_results(s, query) if not filters_require_relationship else {"count": 0, "results": []}
+    combined = [*person_items, *account_only, *unresolved_items, *tools["results"]]
+    if search.ordering == "name":
+        combined.sort(key=lambda item: ((_result_values(item) or [""])[0], item.get("kind", "")))
+    else:
+        combined.sort(key=lambda item: _result_rank(item, normalized))
     total = len(combined)
     page_count = max(1, (total + page_size - 1) // page_size)
     safe_page = min(page, page_count)
@@ -245,11 +267,13 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         "counts": {
             "people": len(person_items),
             "accounts": len(account_only),
+            "tools": len(tools["results"]),
             "unresolvedAttributions": len(unresolved_items),
         },
         "candidateLimit": MAX_CANDIDATES,
         "truncated": any(
-            count > MAX_CANDIDATES for count in (text_people["count"], accounts["count"], unresolved.get("count", 0))
+            count > MAX_CANDIDATES
+            for count in (text_people["count"], accounts["count"], unresolved.get("count", 0), tools["count"])
         ),
         "accountSync": accounts["sync"],
     }

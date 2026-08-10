@@ -746,6 +746,71 @@ def unresolved_attributions(
     )["results"]
 
 
+def _unresolved_relationship_breakdown(
+    s: Session,
+    normalized_labels: set[str],
+    *,
+    tool_name: str,
+    project: str,
+    role: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Summarize relationship evidence without promoting labels to identities."""
+    if not normalized_labels:
+        return {}
+    normalized_label = func.lower(Person.display_name)
+    statement = (
+        select(
+            normalized_label,
+            ToolPersonRelationship.relationship_type,
+            ToolPersonRelationship.verification_status,
+            func.count(func.distinct(ToolPersonRelationship.tool_name)),
+            func.sum(ToolPersonRelationship.evidence_count),
+            func.max(ToolPersonRelationship.confidence),
+        )
+        .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
+        .where(~_public_identity_clause(), normalized_label.in_(normalized_labels))
+        .group_by(
+            normalized_label,
+            ToolPersonRelationship.relationship_type,
+            ToolPersonRelationship.verification_status,
+        )
+    )
+    if tool_name:
+        statement = statement.where(ToolPersonRelationship.tool_name == tool_name)
+    if project:
+        statement = statement.join(
+            CatalogFacetValue,
+            CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
+        ).where(
+            CatalogFacetValue.field == "wiki",
+            func.lower(CatalogFacetValue.value) == project.casefold(),
+        )
+    if role:
+        statement = statement.where(ToolPersonRelationship.relationship_type == role)
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for label, relationship_type, status, tool_count, evidence_count, confidence in s.execute(statement).all():
+        result.setdefault(label, []).append(
+            {
+                "type": relationship_type,
+                "status": status,
+                "toolCount": int(tool_count or 0),
+                "evidenceCount": int(evidence_count or 0),
+                "bestConfidence": int(confidence or 0),
+            }
+        )
+    status_order = {AUTHOR_CLAIM_VERIFIED: 0, AUTHOR_CLAIM_STALE: 1, AUTHOR_CLAIM_UNVERIFIED: 2}
+    role_order = {value: index for index, value in enumerate(PUBLIC_ROLES)}
+    for rows in result.values():
+        rows.sort(
+            key=lambda item: (
+                role_order.get(item["type"], len(role_order)),
+                status_order.get(item["status"], len(status_order)),
+            )
+        )
+    return result
+
+
 def search_unresolved_attributions(
     s: Session,
     search: UnresolvedAttributionQuery,
@@ -786,32 +851,13 @@ def search_unresolved_attributions(
     safe_page = max(1, search.page)
     safe_page_size = max(1, min(search.page_size, 100))
     rows = list(s.execute(statement.offset((safe_page - 1) * safe_page_size).limit(safe_page_size)).all())
-    normalized_labels = {row.normalized_label for row in rows}
-    roles_by_label: dict[str, set[str]] = {}
-    if normalized_labels:
-        roles = (
-            select(normalized_label, ToolPersonRelationship.relationship_type)
-            .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
-            .where(
-                ~_public_identity_clause(),
-                normalized_label.in_(normalized_labels),
-            )
-            .distinct()
-        )
-        if clean_tool:
-            roles = roles.where(ToolPersonRelationship.tool_name == clean_tool)
-        if search.project:
-            roles = roles.join(
-                CatalogFacetValue,
-                CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
-            ).where(
-                CatalogFacetValue.field == "wiki",
-                func.lower(CatalogFacetValue.value) == search.project.casefold(),
-            )
-        if search.role:
-            roles = roles.where(ToolPersonRelationship.relationship_type == search.role)
-        for label, role in s.execute(roles).all():
-            roles_by_label.setdefault(label, set()).add(role)
+    relationship_breakdown = _unresolved_relationship_breakdown(
+        s,
+        {row.normalized_label for row in rows},
+        tool_name=clean_tool,
+        project=search.project,
+        role=search.role,
+    )
     results = [
         {
             "label": row.label,
@@ -820,9 +866,10 @@ def search_unresolved_attributions(
             "toolCount": row.tool_count,
             "evidenceCount": row.evidence_count or 0,
             "bestConfidence": row.best_confidence or 0,
-            "relationshipTypes": [
-                role for role in PUBLIC_ROLES if role in roles_by_label.get(row.normalized_label, set())
-            ],
+            "relationshipTypes": list(
+                dict.fromkeys(item["type"] for item in relationship_breakdown.get(row.normalized_label, []))
+            ),
+            "relationshipBreakdown": relationship_breakdown.get(row.normalized_label, []),
         }
         for row in rows
     ]
@@ -1255,8 +1302,8 @@ def _empty_directory_relationship_summary() -> dict[str, Any]:
         "bestConfidence": 0,
         "types": [],
         "verifiedTypes": [],
-        "toolCountsByType": {role: 0 for role in PUBLIC_ROLES},
-        "verifiedToolCountsByType": {role: 0 for role in PUBLIC_ROLES},
+        "toolCountsByType": dict.fromkeys(PUBLIC_ROLES, 0),
+        "verifiedToolCountsByType": dict.fromkeys(PUBLIC_ROLES, 0),
     }
 
 

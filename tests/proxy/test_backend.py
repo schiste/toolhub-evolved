@@ -3106,7 +3106,12 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
             display_name="Linked Account Only",
             identity_quality="stable_id",
         )
-        s.add_all([magnus, display_only, linked_account_only])
+        toolhub_actor = Person(
+            canonical_key="toolhub_user_id:9",
+            display_name="Toolhub",
+            identity_quality="stable_id",
+        )
+        s.add_all([magnus, display_only, linked_account_only, toolhub_actor])
         s.flush()
         s.add_all(
             [
@@ -3115,6 +3120,13 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     namespace=people_index.NS_TOOLHUB_USER_ID,
                     value="152",
                     normalized_value="152",
+                    identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=toolhub_actor.id,
+                    namespace=people_index.NS_TOOLHUB_USER_ID,
+                    value="9",
+                    normalized_value="9",
                     identifier_kind=people_index.IDENTIFIER_STABLE,
                 ),
                 PersonIdentifier(
@@ -3157,9 +3169,19 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     evidence_count=1,
                     toolhub_canonical=True,
                 ),
+                ToolPersonRelationship(
+                    tool_name="magnus-tool",
+                    person_id=toolhub_actor.id,
+                    relationship_type=sync.PERSON_REL_CATALOG_ACTOR,
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    confidence=55,
+                    evidence_count=1,
+                    toolhub_canonical=True,
+                ),
                 CanonicalToolCache(
                     tool_name="magnus-tool",
                     record={"name": "magnus-tool", "title": "Magnus Tool"},
+                    search_text="magnus manske magnus tool",
                     expires_at=now + timedelta(hours=1),
                     stale_until=now + timedelta(days=1),
                 ),
@@ -3198,8 +3220,8 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     response = client.get("/v1/community/?q=Magnus%20Manske")
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["counts"] == {"people": 1, "accounts": 0, "unresolvedAttributions": 1}
-    assert [item["kind"] for item in payload["results"]] == ["person", "unresolved_attribution"]
+    assert payload["counts"] == {"people": 1, "accounts": 0, "tools": 1, "unresolvedAttributions": 1}
+    assert [item["kind"] for item in payload["results"]] == ["person", "unresolved_attribution", "tool"]
     person = payload["results"][0]
     assert person["person"]["id"] == magnus.public_id
     assert person["matchBasis"] == ["account", "identity"]
@@ -3217,6 +3239,17 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
         }
     ]
     assert payload["results"][1]["attribution"]["label"] == "Magnus Manske"
+    assert payload["results"][1]["attribution"]["relationshipBreakdown"] == [
+        {
+            "bestConfidence": 20,
+            "evidenceCount": 1,
+            "status": "unverified",
+            "toolCount": 1,
+            "type": "author",
+        }
+    ]
+    assert payload["results"][2]["tool"]["name"] == "magnus-tool"
+    assert all(item.get("person", {}).get("displayName") != "Toolhub" for item in payload["results"])
     assert payload["canonicalAuthority"] == {
         "accounts": "toolhub",
         "catalog": "toolhub",
@@ -3224,11 +3257,11 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     }
 
     by_tool = client.get("/v1/community/?q=magnus-tool").get_json()
-    assert [item["kind"] for item in by_tool["results"]] == ["person"]
+    assert [item["kind"] for item in by_tool["results"]] == ["tool"]
     assert by_tool["results"][0]["matchBasis"] == ["tool"]
 
     account_only = client.get("/v1/community/?q=official%20only").get_json()
-    assert account_only["counts"] == {"people": 0, "accounts": 1, "unresolvedAttributions": 0}
+    assert account_only["counts"] == {"people": 0, "accounts": 1, "tools": 0, "unresolvedAttributions": 0}
     assert account_only["results"][0]["account"]["identityLinkStatus"] == "unlinked"
     linked_only = client.get("/v1/community/?q=linked%20account%20only").get_json()
     assert linked_only["results"][0]["kind"] == "account"
