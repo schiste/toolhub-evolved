@@ -3861,6 +3861,26 @@ def test_people_directory_combines_role_verification_activity_and_project_filter
             activity="active",
             expires_at=now + timedelta(days=1),
         )
+        s.add_all(
+            [
+                ToolPersonRelationship(
+                    tool_name="matching-secondary-tool",
+                    person_id=matching.id,
+                    relationship_type=sync.PERSON_REL_MAINTAINER,
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    evidence_count=1,
+                ),
+                ToolPersonRelationship(
+                    tool_name="matching-tool",
+                    person_id=matching.id,
+                    relationship_type=sync.PERSON_REL_RECORD_OWNER,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=90,
+                    evidence_count=1,
+                    expires_at=now + timedelta(days=1),
+                ),
+            ]
+        )
         _add_directory_person(
             s,
             display_name="Wrong Project",
@@ -3899,7 +3919,22 @@ def test_people_directory_combines_role_verification_activity_and_project_filter
     renewal = client.get("/v1/people/?verification=renewal_needed").get_json()
 
     assert [person["id"] for person in filtered["results"]] == [matching_id]
-    assert filtered["results"][0]["relationshipSummary"]["verifiedTypes"] == [sync.PERSON_REL_MAINTAINER]
+    assert filtered["results"][0]["relationshipSummary"]["verifiedTypes"] == [
+        sync.PERSON_REL_MAINTAINER,
+        sync.PERSON_REL_RECORD_OWNER,
+    ]
+    assert filtered["results"][0]["relationshipSummary"]["toolCountsByType"] == {
+        sync.PERSON_REL_AUTHOR: 0,
+        sync.PERSON_REL_MAINTAINER: 2,
+        sync.PERSON_REL_RECORD_OWNER: 1,
+        sync.PERSON_REL_CATALOG_ACTOR: 0,
+    }
+    assert filtered["results"][0]["relationshipSummary"]["verifiedToolCountsByType"] == {
+        sync.PERSON_REL_AUTHOR: 0,
+        sync.PERSON_REL_MAINTAINER: 1,
+        sync.PERSON_REL_RECORD_OWNER: 1,
+        sync.PERSON_REL_CATALOG_ACTOR: 0,
+    }
     assert [person["id"] for person in renewal["results"]] == [expired_id]
 
 

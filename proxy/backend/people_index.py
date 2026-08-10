@@ -1267,18 +1267,22 @@ def _directory_relationship_summaries(
                 "bestConfidence": 0,
                 "types": set(),
                 "verifiedTypes": set(),
+                "toolCountsByType": {role: 0 for role in PUBLIC_ROLES},
+                "verifiedToolCountsByType": {role: 0 for role in PUBLIC_ROLES},
             },
         )
         summary["relationshipCount"] += 1
         summary["evidenceCount"] += row.evidence_count
         summary["bestConfidence"] = max(summary["bestConfidence"], row.confidence)
         summary["types"].add(row.relationship_type)
+        summary["toolCountsByType"][row.relationship_type] += 1
         is_current_verified = row.verification_status == AUTHOR_CLAIM_VERIFIED and (
             row.expires_at is None or row.expires_at > checked_at
         )
         if is_current_verified:
             summary["verifiedRelationshipCount"] += 1
             summary["verifiedTypes"].add(row.relationship_type)
+            summary["verifiedToolCountsByType"][row.relationship_type] += 1
     for summary in summaries.values():
         summary["types"] = [role for role in PUBLIC_ROLES if role in summary["types"]]
         summary["verifiedTypes"] = [role for role in PUBLIC_ROLES if role in summary["verifiedTypes"]]
@@ -1500,6 +1504,8 @@ def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/fil
                     "bestConfidence": 0,
                     "types": [],
                     "verifiedTypes": [],
+                    "toolCountsByType": {role: 0 for role in PUBLIC_ROLES},
+                    "verifiedToolCountsByType": {role: 0 for role in PUBLIC_ROLES},
                 },
             ),
             "contributor": contributor_summaries[person.id],
