@@ -1,6 +1,6 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..9bde089 (121 commits) -->
+<!-- Source range: 828438f..8541e5d (123 commits) -->
 
 # Technical Release Notes
 
@@ -9,6 +9,7 @@
 - Separates unresolved identity status from per-role verified, stale, and unverified relationship evidence.
 - Reconciles structured Toolhub wiki handles when they exactly match the canonical CentralAuth username behind an immutable global user id, while keeping Toolforge membership and Toolhub write authority as separate claims.
 - Queries Toolforge LDAP by `wikimediaGlobalAccountId`, validates the canonical global name, matches Toolsadmin's actual Toolforge tool name, and fails deployment early when the production LDAP schema probe fails.
+- Prioritizes bounded identity candidates by unresolved cluster size with deterministic account-name and immutable-ID tie-breakers.
 - Adds a resumable generation-based official Toolhub account projection; incomplete or count-mismatched refreshes cannot replace the last complete generation, and deploys require a complete refresh before restart.
 - Materializes stable people from immutable Toolhub and Wikimedia global user ids, reconciles global-ID-backed Toolforge identities without OAuth participation, and refreshes public links after account synchronization.
 - Adds deterministic dry-run/apply reconciliation, bounded identity batches, durable candidate/conflict review, stable-id conflict quarantine, and incremental changed-tool queue processing.
