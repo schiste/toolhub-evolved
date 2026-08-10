@@ -1,9 +1,17 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..402d4c2 (59 commits) -->
+<!-- Source range: 828438f..ecd870a (107 commits) -->
 
 # What's New for Users
 
+- Community search now combines people, official Toolhub accounts, contributors, related tools, and unresolved name-only attributions in one URL-driven directory instead of asking visitors to choose an account type first.
+- The community directory now uses the same search layout and result-card system as the tool catalog, with shareable filters, relevance sorting, real totals, pagination, retry states, and accessible full names.
+- Person and safely linked account cards now show distinct maintainer-tool and Toolhub-record-owner totals, including how many relationships are currently verified; name-only evidence is never counted as ownership.
+- Public profiles paginate compact related-tool summaries server-side, preventing prolific maintainers from triggering hundreds of simultaneous Toolhub requests.
+- Official Toolhub accounts are synchronized completely and safely, retain the last good directory during interrupted refreshes, and link to people only through immutable Toolhub or Wikimedia identifiers.
+- Relationship labels now distinguish listed authorship, verified Toolforge maintenance, Toolhub record authority, unverified attribution, and verification that needs renewal, with evidence source and date details.
+- Tool actions are labelled as maintainer actions only for a viewer with a verified maintainer relationship or confirmed write authority; other signed-in contributors see neutral contribution actions.
+- Interface messages now use Wikimedia-compatible Banana plural syntax and carry translator documentation for newly introduced community-directory text.
 - Older author-name links now open a choice page when a name could refer to several people, instead of selecting an arbitrary profile.
 - The people directory no longer presents every repeated free-text author or maintainer label as a different person; unresolved attributions stay visible as grouped evidence instead.
 - Verified people can now carry stable Toolhub and Wikimedia account identities plus Toolforge and wiki handles, while reviewed links retain the original author or maintainer role.
