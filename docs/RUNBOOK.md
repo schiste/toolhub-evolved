@@ -385,12 +385,16 @@ write-authority concern.
 Apply runs inspect up to 25 unresolved labels against the complete local account
 projection by default (`PEOPLE_IDENTITY_CANDIDATE_LIMIT` or
 `--candidate-label-limit` changes the bound). An exact account-name match alone
-is only a review candidate. Automatic evidence movement additionally requires
-CentralAuth to confirm the global id, Toolforge LDAP to bind that Wikimedia name
-through its `sul` attribute to one developer uid, and the same tool to appear in
-that account's service groups. Roles are preserved: Toolhub author evidence
-remains authorship, while LDAP membership proves current Toolforge maintenance.
-Display-name-only observations without this chain remain unresolved.
+is only a review candidate. Automatic identity reconciliation is allowed when
+CentralAuth confirms the account's global id and its canonical username exactly
+matches a structured Toolhub `wiki_username` observation; common `User:` prefixes,
+underscores, spacing, and case are normalized before the exact comparison. A
+second automatic path uses Toolforge LDAP to bind that Wikimedia name through its
+`sul` attribute to one developer uid and requires the same tool to appear in that
+account's service groups. Roles are preserved: Toolhub author evidence remains
+authorship, while LDAP membership proves current Toolforge access or maintenance.
+Neither identity path grants Toolhub write authority. Display-name-only
+observations without either evidence chain remain unresolved.
 
 Admins use `GET /v1/moderation/people-conflicts/` to inspect pending identity
 ambiguities and `PUT /v1/moderation/people-conflicts/<id>/` to mark one pending,

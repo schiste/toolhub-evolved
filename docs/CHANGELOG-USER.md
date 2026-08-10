@@ -1,10 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..910049f (111 commits) -->
+<!-- Source range: 828438f..e069940 (113 commits) -->
 
 # What's New for Users
 
 - Community search now combines people, official Toolhub accounts, contributors, related tools, and unresolved name-only attributions in one URL-driven directory instead of asking visitors to choose an account type first.
+- Canonical wiki usernames are now reconciled through their immutable Wikimedia identity, so repeated Toolhub author records such as Magnus Manske appear under one public person without requiring that person to sign in to Evolved.
 - The community directory now uses the same search layout and result-card system as the tool catalog, with shareable filters, relevance sorting, real totals, pagination, retry states, and accessible full names.
 - Person and safely linked account cards now show distinct maintainer-tool and Toolhub-record-owner totals, including how many relationships are currently verified; name-only evidence is never counted as ownership.
 - Public profiles paginate compact related-tool summaries server-side, preventing prolific maintainers from triggering hundreds of simultaneous Toolhub requests.

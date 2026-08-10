@@ -1,10 +1,11 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..910049f (111 commits) -->
+<!-- Source range: 828438f..e069940 (113 commits) -->
 
 # Technical Release Notes
 
 - Adds a unified `/v1/community/` projection over stable people, official accounts, catalog evidence, and unresolved attributions, with deterministic ranking, typed filters, real counts, pagination, and explicit canonical-authority metadata.
+- Reconciles structured Toolhub wiki handles when they exactly match the canonical CentralAuth username behind an immutable global user id, while keeping Toolforge membership and Toolhub write authority as separate claims.
 - Adds a resumable generation-based official Toolhub account projection; incomplete or count-mismatched refreshes cannot replace the last complete generation, and deploys require a complete refresh before restart.
 - Materializes stable people from immutable Toolhub and Wikimedia global user ids, reconciles SUL-backed Toolforge identities without OAuth participation, and refreshes public links after account synchronization.
 - Adds deterministic dry-run/apply reconciliation, bounded identity batches, durable candidate/conflict review, stable-id conflict quarantine, and incremental changed-tool queue processing.
