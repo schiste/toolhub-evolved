@@ -348,8 +348,9 @@ The Community directory presents one search contract over three evidence classes
   its text resembles a person or account name.
 
 `GET /v1/community/` is the product-facing composition endpoint. It searches
-person names and handles, official Toolhub usernames, related tool names, and
-unresolved labels in one ranked result stream. It supports relationship,
+person names and handles, official Toolhub usernames, catalog tools, and
+unresolved labels in one globally ranked result stream. A tool-text match returns
+the tool card itself; it does not fan out into every related person. It supports relationship,
 verification, activity, project, contributor, ordering, and pagination
 parameters. `contributor=observed` filters rather than switching directories;
 eligible people include their canonical catalog-actor or approved public
@@ -389,12 +390,20 @@ is only a review candidate. Automatic identity reconciliation is allowed when
 CentralAuth confirms the account's global id and its canonical username exactly
 matches a structured Toolhub `wiki_username` observation; common `User:` prefixes,
 underscores, spacing, and case are normalized before the exact comparison. A
-second automatic path uses Toolforge LDAP to bind that Wikimedia name through its
-`sul` attribute to one developer uid and requires the same tool to appear in that
-account's service groups. Roles are preserved: Toolhub author evidence remains
-authorship, while LDAP membership proves current Toolforge access or maintenance.
-Neither identity path grants Toolhub write authority. Display-name-only
-observations without either evidence chain remain unresolved.
+second automatic path queries Toolforge LDAP by immutable
+`wikimediaGlobalAccountId`, validates the canonical
+`wikimediaGlobalAccountName`, and binds it to one developer `uid`. The
+reconciler compares that account's `tools.*` service groups with the actual
+Toolforge tool name recorded in Toolsadmin evidence, retaining catalog-name
+matching only for older observations. Roles are preserved: Toolhub author
+evidence remains authorship, while LDAP membership proves current Toolforge
+access or maintenance. Neither identity path grants Toolhub write authority.
+Display-name-only observations without either evidence chain remain unresolved.
+
+Deployments run `proxy/public_identity_smoke.py` inside a Toolforge webservice
+environment before identity reconciliation. The probe requires a readable
+`posixAccount` carrying `wikimediaGlobalAccountId`; failure aborts the deploy
+before the serving process is restarted.
 
 Admins use `GET /v1/moderation/people-conflicts/` to inspect pending identity
 ambiguities and `PUT /v1/moderation/people-conflicts/<id>/` to mark one pending,

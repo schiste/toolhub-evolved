@@ -61,7 +61,13 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   is a verified per-tool operational-access signal for that authenticated
   Wikimedia identity; it is not canonical Toolhub authorship. Catalog-wide
   public maintainer evidence is backfilled by `proxy/maintainer_backfill.py`
-  from Toolsadmin maintainer pages into rebuildable local edges. Display-name
+  from Toolsadmin maintainer pages into rebuildable local edges. Public identity
+  reconciliation looks up LDAP accounts by immutable
+  `wikimediaGlobalAccountId`, retains the canonical
+  `wikimediaGlobalAccountName`, and compares `tools.*` memberships with the
+  actual Toolforge tool name stored in the Toolsadmin evidence. Deployments run
+  `proxy/public_identity_smoke.py` before reconciliation so an LDAP schema change
+  cannot silently publish an unreconciled release. Display-name
   matches remain unverified, and other claims upgrade only through successful
   official Toolhub writes or signed `toolinfo.json` records verified against
   active local public keys. Verification is per tool, never global to an author

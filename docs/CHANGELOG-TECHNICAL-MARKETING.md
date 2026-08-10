@@ -1,13 +1,16 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..6dfe38d (114 commits) -->
+<!-- Source range: 828438f..0de7f0c (120 commits) -->
 
 # Technical Release Notes
 
 - Adds a unified `/v1/community/` projection over stable people, official accounts, catalog evidence, and unresolved attributions, with deterministic ranking, typed filters, real counts, pagination, and explicit canonical-authority metadata.
+- Returns matching canonical tools as first-class cards, globally ranks result types, and removes tool-match fan-out into every related person.
+- Separates unresolved identity status from per-role verified, stale, and unverified relationship evidence.
 - Reconciles structured Toolhub wiki handles when they exactly match the canonical CentralAuth username behind an immutable global user id, while keeping Toolforge membership and Toolhub write authority as separate claims.
+- Queries Toolforge LDAP by `wikimediaGlobalAccountId`, validates the canonical global name, matches Toolsadmin's actual Toolforge tool name, and fails deployment early when the production LDAP schema probe fails.
 - Adds a resumable generation-based official Toolhub account projection; incomplete or count-mismatched refreshes cannot replace the last complete generation, and deploys require a complete refresh before restart.
-- Materializes stable people from immutable Toolhub and Wikimedia global user ids, reconciles SUL-backed Toolforge identities without OAuth participation, and refreshes public links after account synchronization.
+- Materializes stable people from immutable Toolhub and Wikimedia global user ids, reconciles global-ID-backed Toolforge identities without OAuth participation, and refreshes public links after account synchronization.
 - Adds deterministic dry-run/apply reconciliation, bounded identity batches, durable candidate/conflict review, stable-id conflict quarantine, and incremental changed-tool queue processing.
 - Replaces browser-side profile request fan-out with server-paginated compact tool summaries and clamps public page sizes.
 - Exposes relationship status, confidence, evidence source/count, authority, verification method/date, viewer-specific write context, and per-role total/verified tool counts without conflating identity and relationship verification.
