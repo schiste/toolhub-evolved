@@ -44,7 +44,7 @@ export async function searchCommunity(search = {}) {
 	return {
 		results,
 		count: Number.isFinite(Number(data?.count)) ? Number(data.count) : results.length,
-		counts: data?.counts || { people: 0, accounts: 0, unresolvedAttributions: 0 },
+		counts: data?.counts || { people: 0, accounts: 0, tools: 0, unresolvedAttributions: 0 },
 		page: Number(data?.page) || 1,
 		pageSize: Number(data?.pageSize) || options.pageSize || 24,
 		pageCount: Number(data?.pageCount) || 1,

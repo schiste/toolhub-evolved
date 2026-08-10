@@ -3,6 +3,7 @@ import { $, dirAttrs, esc, safeUrl } from "../lib/core/dom.js";
 import { authorProfileUrl, toolsByAuthor } from "../lib/core/author-index.js";
 import { fmt, t } from "../lib/core/i18n.js";
 import { identityQualityLabel, relationshipLabel } from "../lib/core/claims.js";
+import { normalizeTool } from "../lib/core/api.js";
 import { personById, resolvePersonHandle, searchCommunity, toolsForPerson } from "../lib/core/people.js";
 import { navigateTo, personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
@@ -430,6 +431,7 @@ function unresolvedAttribution(attribution, asCard = false) {
 	const label = attribution?.label || t("authors.unknownAttribution", "Unknown attribution");
 	const tools = Number(attribution?.toolCount) || 0;
 	const observations = Number(attribution?.evidenceCount) || Number(attribution?.attributionCount) || 0;
+	const breakdown = Array.isArray(attribution?.relationshipBreakdown) ? attribution.relationshipBreakdown : [];
 	if (asCard) {
 		return entityCard({
 			kind: t("authors.unresolvedResult", "Unresolved attribution"),
@@ -437,8 +439,52 @@ function unresolvedAttribution(attribution, asCard = false) {
 			title: label,
 			visual: `<span class="avatar entity-card__avatar entity-card__unknown" aria-hidden="true">?</span>`,
 			subtitle: `${t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools)} · ${t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations)}`,
-			description: t("authors.unverifiedAttribution", "Unverified attribution — name-only evidence"),
+			description:
+				breakdown.length > 0
+					? t(
+							"authors.identityUnresolved",
+							"Identity unresolved — relationship evidence is shown separately."
+						)
+					: t("authors.unverifiedAttribution", "Unverified attribution — name-only evidence"),
 			tags: [{ label: t("authors.nameOnlyEvidence", "Name-only evidence") }],
+			signals: breakdown.map((/** @type {any} */ relationship) => {
+				const role = relationshipLabel(relationship?.type || "");
+				const count = Number(relationship?.toolCount) || 0;
+				if (relationship?.status === "verified") {
+					return {
+						label: t(
+							"authors.verifiedRelationshipToolCount",
+							"Verified $1 relationship · $2 {{PLURAL:$3|tool|tools}}",
+							role,
+							fmt(count),
+							count
+						),
+						className: "status status--green"
+					};
+				}
+				if (relationship?.status === "stale") {
+					return {
+						label: t(
+							"authors.staleRelationshipToolCount",
+							"Previous $1 verification—renewal needed · $2 {{PLURAL:$3|tool|tools}}",
+							role,
+							fmt(count),
+							count
+						),
+						className: "status status--yellow"
+					};
+				}
+				return {
+					label: t(
+						"authors.listedRelationshipToolCount",
+						"Listed $1 · $2 {{PLURAL:$3|tool|tools}}",
+						role,
+						fmt(count),
+						count
+					),
+					className: "signal signal--compact"
+				};
+			}),
 			className: "entity-card--unresolved",
 			dataName: label.toLocaleLowerCase(),
 			static: true
@@ -526,6 +572,9 @@ function communityResultSummary(directory, state) {
 					counts.accounts
 				)
 			: "",
+		Number(counts.tools) > 0
+			? t("authors.toolResultCount", "$1 {{PLURAL:$2|tool result|tool results}}", fmt(counts.tools), counts.tools)
+			: "",
 		Number(counts.unresolvedAttributions) > 0
 			? t(
 					"authors.unresolvedCount",
@@ -550,6 +599,7 @@ function communityDirectoryResults(directory, state) {
 			if (item?.kind === "person") return personCard(item);
 			if (item?.kind === "account") return accountResultCard(item, state);
 			if (item?.kind === "unresolved_attribution") return unresolvedAttribution(item.attribution, true);
+			if (item?.kind === "tool" && item.tool?.name) return toolCard(normalizeTool(item.tool));
 			return "";
 		})
 		.filter(Boolean)

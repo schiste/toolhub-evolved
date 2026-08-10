@@ -299,13 +299,13 @@ test("viewAuthor explains unresolved labels without inventing a person link", as
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
-test("viewPeople unifies resolved people, official accounts, and unresolved attributions", async () => {
+test("viewPeople unifies resolved people, official accounts, tools, and unresolved attributions", async () => {
 	h.backendGetJson.mockResolvedValueOnce({
-		count: 3,
+		count: 4,
 		page: 1,
 		pageSize: 24,
 		pageCount: 1,
-		counts: { people: 1, accounts: 1, unresolvedAttributions: 1 },
+		counts: { people: 1, accounts: 1, tools: 1, unresolvedAttributions: 1 },
 		accountSync: { status: "ready", complete: true },
 		results: [
 			{
@@ -337,7 +337,23 @@ test("viewPeople unifies resolved people, official accounts, and unresolved attr
 					label: "Magnus Manske",
 					identityStatus: "unresolved_attribution",
 					toolCount: 50,
-					evidenceCount: 50
+					evidenceCount: 50,
+					relationshipBreakdown: [
+						{ type: "author", status: "unverified", toolCount: 30 },
+						{ type: "maintainer", status: "verified", toolCount: 12 },
+						{ type: "maintainer", status: "stale", toolCount: 8 }
+					]
+				}
+			},
+			{
+				kind: "tool",
+				tool: {
+					name: "magnus-tool",
+					title: "Magnus Tool",
+					description: "A directly matching catalog tool",
+					keywords: ["magnus"],
+					for_wikis: ["wikidata.org"],
+					author: [{ name: "Magnus Manske" }]
 				}
 			}
 		]
@@ -350,9 +366,11 @@ test("viewPeople unifies resolved people, official accounts, and unresolved attr
 	assert.match(view.html, /class="browse__bar"/);
 	assert.match(view.html, /<ul class="card-grid grid-tools community-results" role="list">/);
 	assert.equal(view.html.match(/class="tcard entity-card/g)?.length, 3);
+	assert.match(view.html, /data-tool="magnus-tool"/);
 	assert.doesNotMatch(view.html, /class="people-card/);
 	assert.match(view.html, /href="\/people\/person-1"/);
-	assert.match(view.html, /Showing 1–3 of 3 results/);
+	assert.match(view.html, /Showing 1–4 of 4 results/);
+	assert.match(view.html, /1 tool result/);
 	assert.match(view.html, /Official Toolhub account/);
 	assert.match(view.html, /Wikimedia identity matched by stable ID/);
 	assert.match(view.html, /Listed Author/);
@@ -362,8 +380,11 @@ test("viewPeople unifies resolved people, official accounts, and unresolved attr
 	assert.match(view.html, /No stable public person or tool relationship is linked yet/);
 	assert.match(view.html, /Magnus Manske/);
 	assert.match(view.html, /50 tools · 50 observations/);
-	assert.match(view.html, /Unverified attribution — name-only evidence/);
-	assert.doesNotMatch(view.html, /href="[^"]*Magnus/);
+	assert.match(view.html, /Identity unresolved — relationship evidence is shown separately/);
+	assert.match(view.html, /Listed Author · 30 tools/);
+	assert.match(view.html, /Verified Maintainer relationship · 12 tools/);
+	assert.match(view.html, /Previous Maintainer verification—renewal needed · 8 tools/);
+	assert.match(view.html, /href="\/tools\/magnus-tool"/);
 });
 
 test("peopleDirectoryState validates and restores shareable URL state", () => {
