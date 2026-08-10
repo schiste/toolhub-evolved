@@ -9,12 +9,13 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, or_, select
 
 from backend import account_directory, people_index
-from backend.models import CanonicalToolCache
+from backend.models import CanonicalToolCache, Person, ToolPersonRelationship
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 MAX_CANDIDATES = 100
+SECTION_TOOL_LIMIT = 12
 TOOL_RESULT_FIELDS = (
     "name",
     "title",
@@ -83,8 +84,58 @@ def _identity_evidence(person: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def _tool_results(s: Session, query: str) -> dict[str, Any]:
-    """Return matching tools directly instead of expanding every related person."""
+def _text_values(value: Any) -> list[str]:  # noqa: ANN401 - canonical JSON is untyped
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _text_values(item)]
+    if isinstance(value, list):
+        return [text for item in value for text in _text_values(item)]
+    return []
+
+
+def _normalized_values(value: Any) -> list[tuple[str, str]]:  # noqa: ANN401 - canonical JSON is untyped
+    return [(text, text.casefold()) for text in _text_values(value) if text.strip()]
+
+
+def _tool_match(record: dict[str, Any], tool_name: str, query: str) -> tuple[int, dict[str, Any]] | None:
+    """Explain the strongest canonical field that matched one tool."""
+    normalized = query.casefold()
+    names = [(tool_name, tool_name.casefold()), *_normalized_values(record.get("title"))]
+    authors = []
+    for author in record.get("author") or []:
+        if isinstance(author, str):
+            authors.append((author, author.casefold()))
+        elif isinstance(author, dict):
+            for key in ("name", "developer_username", "wiki_username"):
+                authors.extend(_normalized_values(author.get(key)))
+    keywords = _normalized_values(record.get("keywords"))
+    descriptions = _normalized_values(record.get("description"))
+    tiers = (
+        (0, "exact_name", "name", (item for item in names if item[1] == normalized)),
+        (1, "name_prefix", "name", (item for item in names if item[1].startswith(normalized))),
+        (2, "name_contains", "name", (item for item in names if normalized in item[1])),
+        (3, "structured_author", "author", (item for item in authors if normalized in item[1])),
+        (4, "keyword", "keyword", (item for item in keywords if normalized in item[1])),
+        (5, "description_mention", "description", (item for item in descriptions if normalized in item[1])),
+    )
+    for rank, reason, field, candidates in tiers:
+        matched = next(candidates, None)
+        if matched is not None:
+            return rank, {"field": field, "reason": reason, "value": matched[0]}
+    return None
+
+
+def _compact_tool(row: CanonicalToolCache | None, tool_name: str) -> dict[str, Any]:
+    record = row.record if row is not None and isinstance(row.record, dict) else {}
+    tool = {field: record[field] for field in TOOL_RESULT_FIELDS if field in record}
+    tool["name"] = tool_name
+    tool["origin"] = "canonical_cache"
+    return tool
+
+
+def _text_tool_results(s: Session, query: str) -> dict[str, Any]:
+    """Classify broad catalog hits so description mentions never look primary."""
     needle = f"%{_like_literal(query.casefold())}%"
     predicate = or_(
         func.lower(CanonicalToolCache.tool_name).like(needle, escape="\\"),
@@ -100,14 +151,27 @@ def _tool_results(s: Session, query: str) -> dict[str, Any]:
         )
         .scalars()
     )
-    results = []
+    strong = []
+    other = []
     for row in rows:
         record = row.record if isinstance(row.record, dict) else {}
-        tool = {field: record[field] for field in TOOL_RESULT_FIELDS if field in record}
-        tool["name"] = row.tool_name
-        tool["origin"] = "canonical_cache"
-        results.append({"kind": "tool", "tool": tool, "matchBasis": ["tool"]})
-    return {"count": total, "results": results}
+        match = _tool_match(record, row.tool_name, query)
+        if match is None:
+            continue
+        rank, explanation = match
+        item = {
+            "kind": "tool",
+            "tool": _compact_tool(row, row.tool_name),
+            "match": explanation,
+            "matchBasis": [explanation["field"]],
+            "_rank": rank,
+        }
+        (other if explanation["field"] == "description" else strong).append(item)
+    for items in (strong, other):
+        items.sort(key=lambda item: (item["_rank"], str(item["tool"]["name"]).casefold()))
+        for item in items:
+            item.pop("_rank", None)
+    return {"candidateCount": total, "strong": strong, "other": other}
 
 
 def _result_values(item: dict[str, Any]) -> list[str]:
@@ -130,7 +194,7 @@ def _result_values(item: dict[str, Any]) -> list[str]:
 def _result_rank(item: dict[str, Any], normalized: str) -> tuple[Any, ...]:
     values = _result_values(item)
     text_rank = 0 if normalized in values else (1 if any(value.startswith(normalized) for value in values) else 2)
-    type_rank = {"person": 0, "account": 1, "unresolved_attribution": 2, "tool": 3}.get(item.get("kind"), 4)
+    type_rank = {"person": 0, "account": 1}.get(item.get("kind"), 2)
     summary = (item.get("person") or {}).get("relationshipSummary") or {}
     return (
         text_rank,
@@ -139,6 +203,152 @@ def _result_rank(item: dict[str, Any], normalized: str) -> tuple[Any, ...]:
         -int(summary.get("bestConfidence") or 0),
         values[0] if values else "",
     )
+
+
+def _relationship_tool_results(s: Session, person_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return each related tool once with every relationship to exact people."""
+    public_ids = {item["person"]["id"] for item in person_items}
+    if not public_ids:
+        return []
+    rows = list(
+        s.execute(
+            select(Person.public_id, Person.display_name, ToolPersonRelationship)
+            .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
+            .where(Person.public_id.in_(public_ids))
+            .order_by(ToolPersonRelationship.tool_name, Person.public_id, ToolPersonRelationship.relationship_type)
+        ).all()
+    )
+    tool_names = {relationship.tool_name for _public_id, _display_name, relationship in rows}
+    cache_by_name = {
+        row.tool_name: row
+        for row in s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(tool_names or {""})))
+        .scalars()
+        .all()
+    }
+    by_tool: dict[str, dict[str, Any]] = {}
+    for public_id, display_name, relationship in rows:
+        item = by_tool.setdefault(
+            relationship.tool_name,
+            {
+                "kind": "tool",
+                "tool": _compact_tool(cache_by_name.get(relationship.tool_name), relationship.tool_name),
+                "match": {"field": "relationship", "reason": "person_relationship", "value": display_name},
+                "matchBasis": ["relationship"],
+                "relationships": [],
+            },
+        )
+        item["relationships"].append(
+            {
+                "personId": public_id,
+                "personName": display_name,
+                "type": relationship.relationship_type,
+                "status": relationship.verification_status,
+                "confidence": relationship.confidence,
+                "evidenceCount": relationship.evidence_count,
+                "toolhubCanonical": relationship.toolhub_canonical,
+                "checkedAt": relationship.resolved_at.isoformat(timespec="seconds") + "Z",
+                "expiresAt": (
+                    relationship.expires_at.isoformat(timespec="seconds") + "Z" if relationship.expires_at else None
+                ),
+            }
+        )
+    status_rank = {"verified": 0, "stale": 1, "unverified": 2}
+    role_rank = {role: index for index, role in enumerate(people_index.PUBLIC_ROLES)}
+    for item in by_tool.values():
+        item["relationships"].sort(
+            key=lambda relationship: (
+                status_rank.get(relationship["status"], 3),
+                role_rank.get(relationship["type"], len(role_rank)),
+            )
+        )
+    return sorted(
+        by_tool.values(),
+        key=lambda item: (
+            min(status_rank.get(relationship["status"], 3) for relationship in item["relationships"]),
+            str(item["tool"]["name"]).casefold(),
+        ),
+    )
+
+
+def _section(count: int, results: list[dict[str, Any]], *, limit: int | None = None) -> dict[str, Any]:
+    visible = results[:limit] if limit is not None else results
+    return {"count": count, "results": visible, "truncated": len(results) > len(visible)}
+
+
+def _fold_same_label_evidence(
+    person_items: list[dict[str, Any]],
+    attributions: list[dict[str, Any]],
+    normalized_query: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Attach same-label evidence to one exact person without merging records."""
+    exact_people = [item for item in person_items if normalized_query in _result_values(item)]
+    by_label: dict[str, list[dict[str, Any]]] = {}
+    for item in exact_people:
+        label = str(item["person"].get("displayName") or "").casefold()
+        by_label.setdefault(label, []).append(item)
+    standalone = []
+    folded = 0
+    for attribution in attributions:
+        matches = by_label.get(str(attribution.get("label") or "").casefold(), [])
+        if len(matches) == 1:
+            matches[0].setdefault("supportingEvidence", []).append(attribution)
+            folded += 1
+        else:
+            standalone.append(attribution)
+    return exact_people, standalone, folded
+
+
+def _tool_sections(
+    s: Session,
+    query: str,
+    exact_people: list[dict[str, Any]],
+    *,
+    include_text_matches: bool,
+) -> tuple[dict[str, Any], dict[str, Any], int]:
+    relationship_tools = _relationship_tool_results(s, exact_people)
+    text_tools = (
+        _text_tool_results(s, query)
+        if include_text_matches
+        else {"candidateCount": 0, "strong": [], "other": []}
+    )
+    related_by_name = {item["tool"]["name"]: item for item in relationship_tools}
+    for item in text_tools["strong"]:
+        name = item["tool"]["name"]
+        if name in related_by_name:
+            related_by_name[name]["textMatch"] = item["match"]
+            related_by_name[name]["matchBasis"] = ["relationship", item["match"]["field"]]
+        else:
+            related_by_name[name] = item
+    relationship_names = {item["tool"]["name"] for item in relationship_tools}
+    related_tools = sorted(
+        related_by_name.values(),
+        key=lambda item: (
+            0 if item["tool"]["name"] in relationship_names else 1,
+            str(item["tool"]["name"]).casefold(),
+        ),
+    )
+    other_matches = [item for item in text_tools["other"] if item["tool"]["name"] not in related_by_name]
+    return (
+        _section(len(related_tools), related_tools, limit=SECTION_TOOL_LIMIT),
+        _section(len(other_matches), other_matches, limit=SECTION_TOOL_LIMIT),
+        text_tools["candidateCount"],
+    )
+
+
+def _primary_page(primary: list[dict[str, Any]], page: int, page_size: int) -> dict[str, Any]:
+    count = len(primary)
+    page_count = max(1, (count + page_size - 1) // page_size)
+    safe_page = min(page, page_count)
+    start = (safe_page - 1) * page_size
+    return {
+        "count": count,
+        "page": safe_page,
+        "pageSize": page_size,
+        "pageCount": page_count,
+        "nextPage": safe_page + 1 if safe_page < page_count else None,
+        "previousPage": safe_page - 1 if safe_page > 1 else None,
+        "results": primary[start : start + page_size],
+    }
 
 
 def _person_item(person: dict[str, Any], bases: set[str], accounts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -177,9 +387,16 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
                 contributor=search.contributor,
             ),
         )
+        primary_results = [_person_item(person, {"directory"}, []) for person in people["results"]]
+        empty_section = _section(0, [])
         return {
             **people,
-            "results": [_person_item(person, {"directory"}, []) for person in people["results"]],
+            "results": primary_results,
+            "primaryResults": primary_results,
+            "relatedTools": empty_section,
+            "unresolvedEvidence": empty_section,
+            "otherMatches": empty_section,
+            "totalCount": people["count"],
             "counts": {"people": people["count"], "accounts": 0, "tools": 0, "unresolvedAttributions": 0},
             "accountSync": account_directory._sync_payload(  # noqa: SLF001 - shared public projection state
                 s.get(account_directory.ToolhubAccountSyncState, account_directory.STATE_KEY)
@@ -242,38 +459,47 @@ def search_community(s: Session, search: CommunitySearchQuery) -> dict[str, Any]
         if not filters_require_relationship
         else {"count": 0, "results": []}
     )
-    unresolved_items = [
-        {"kind": "unresolved_attribution", "attribution": item, "matchBasis": ["display_only"]}
-        for item in unresolved["results"]
-    ]
-    tools = _tool_results(s, query) if not filters_require_relationship else {"count": 0, "results": []}
-    combined = [*person_items, *account_only, *unresolved_items, *tools["results"]]
+    exact_people, standalone_evidence, folded_evidence_count = _fold_same_label_evidence(
+        person_items, unresolved["results"], normalized
+    )
+    primary = [*person_items, *account_only]
     if search.ordering == "name":
-        combined.sort(key=lambda item: ((_result_values(item) or [""])[0], item.get("kind", "")))
+        primary.sort(key=lambda item: ((_result_values(item) or [""])[0], item.get("kind", "")))
     else:
-        combined.sort(key=lambda item: _result_rank(item, normalized))
-    total = len(combined)
-    page_count = max(1, (total + page_size - 1) // page_size)
-    safe_page = min(page, page_count)
-    start = (safe_page - 1) * page_size
+        primary.sort(key=lambda item: _result_rank(item, normalized))
+    page_payload = _primary_page(primary, page, page_size)
+    related_section, other_section, tool_candidate_count = _tool_sections(
+        s, query, exact_people, include_text_matches=not filters_require_relationship
+    )
+    evidence_section = _section(len(standalone_evidence), standalone_evidence, limit=SECTION_TOOL_LIMIT)
+    total_count = page_payload["count"] + related_section["count"] + evidence_section["count"] + other_section["count"]
     return {
-        "count": total,
-        "page": safe_page,
-        "pageSize": page_size,
-        "pageCount": page_count,
-        "nextPage": safe_page + 1 if safe_page < page_count else None,
-        "previousPage": safe_page - 1 if safe_page > 1 else None,
-        "results": combined[start : start + page_size],
+        **page_payload,
+        "totalCount": total_count,
+        "primaryResults": page_payload["results"],
+        "relatedTools": related_section,
+        "unresolvedEvidence": evidence_section,
+        "otherMatches": other_section,
         "counts": {
             "people": len(person_items),
             "accounts": len(account_only),
-            "tools": len(tools["results"]),
-            "unresolvedAttributions": len(unresolved_items),
+            "tools": related_section["count"],
+            "otherToolMatches": other_section["count"],
+            "unresolvedAttributions": evidence_section["count"],
+            "foldedUnresolvedAttributions": folded_evidence_count,
         },
         "candidateLimit": MAX_CANDIDATES,
         "truncated": any(
             count > MAX_CANDIDATES
-            for count in (text_people["count"], accounts["count"], unresolved.get("count", 0), tools["count"])
-        ),
+            for count in (
+                text_people["count"],
+                accounts["count"],
+                unresolved.get("count", 0),
+                tool_candidate_count,
+            )
+        )
+        or related_section["truncated"]
+        or evidence_section["truncated"]
+        or other_section["truncated"],
         "accountSync": accounts["sync"],
     }

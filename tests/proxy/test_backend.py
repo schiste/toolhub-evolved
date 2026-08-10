@@ -3185,6 +3185,18 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     expires_at=now + timedelta(hours=1),
                     stale_until=now + timedelta(days=1),
                 ),
+                CanonicalToolCache(
+                    tool_name="description-only",
+                    record={
+                        "name": "description-only",
+                        "title": "Plantel Converter",
+                        "description": "Based on a script by Magnus Manske",
+                        "author": [{"name": "Someone Else"}],
+                    },
+                    search_text="plantel converter based on a script by magnus manske someone else",
+                    expires_at=now + timedelta(hours=1),
+                    stale_until=now + timedelta(days=1),
+                ),
                 ToolhubAccountProjection(
                     toolhub_user_id="152",
                     username="Magnus Manske",
@@ -3220,8 +3232,16 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     response = client.get("/v1/community/?q=Magnus%20Manske")
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["counts"] == {"people": 1, "accounts": 0, "tools": 1, "unresolvedAttributions": 1}
-    assert [item["kind"] for item in payload["results"]] == ["person", "unresolved_attribution", "tool"]
+    assert payload["counts"] == {
+        "people": 1,
+        "accounts": 0,
+        "tools": 1,
+        "otherToolMatches": 1,
+        "unresolvedAttributions": 0,
+        "foldedUnresolvedAttributions": 1,
+    }
+    assert [item["kind"] for item in payload["results"]] == ["person"]
+    assert payload["primaryResults"] == payload["results"]
     person = payload["results"][0]
     assert person["person"]["id"] == magnus.public_id
     assert person["matchBasis"] == ["account", "identity"]
@@ -3238,8 +3258,8 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
             "username": "Magnus Manske",
         }
     ]
-    assert payload["results"][1]["attribution"]["label"] == "Magnus Manske"
-    assert payload["results"][1]["attribution"]["relationshipBreakdown"] == [
+    assert person["supportingEvidence"][0]["label"] == "Magnus Manske"
+    assert person["supportingEvidence"][0]["relationshipBreakdown"] == [
         {
             "bestConfidence": 20,
             "evidenceCount": 1,
@@ -3248,7 +3268,21 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
             "type": "author",
         }
     ]
-    assert payload["results"][2]["tool"]["name"] == "magnus-tool"
+    assert payload["unresolvedEvidence"] == {"count": 0, "results": [], "truncated": False}
+    assert payload["relatedTools"]["count"] == 1
+    related_tool = payload["relatedTools"]["results"][0]
+    assert related_tool["tool"]["name"] == "magnus-tool"
+    assert related_tool["match"]["reason"] == "person_relationship"
+    assert [(row["type"], row["status"]) for row in related_tool["relationships"]] == [
+        (sync.PERSON_REL_MAINTAINER, sync.AUTHOR_CLAIM_VERIFIED)
+    ]
+    assert payload["otherMatches"]["count"] == 1
+    assert payload["otherMatches"]["results"][0]["tool"]["name"] == "description-only"
+    assert payload["otherMatches"]["results"][0]["match"] == {
+        "field": "description",
+        "reason": "description_mention",
+        "value": "Based on a script by Magnus Manske",
+    }
     assert all(item.get("person", {}).get("displayName") != "Toolhub" for item in payload["results"])
     assert payload["canonicalAuthority"] == {
         "accounts": "toolhub",
@@ -3257,11 +3291,19 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     }
 
     by_tool = client.get("/v1/community/?q=magnus-tool").get_json()
-    assert [item["kind"] for item in by_tool["results"]] == ["tool"]
-    assert by_tool["results"][0]["matchBasis"] == ["tool"]
+    assert by_tool["results"] == []
+    assert by_tool["relatedTools"]["results"][0]["matchBasis"] == ["name"]
+    assert by_tool["relatedTools"]["results"][0]["match"]["reason"] == "exact_name"
 
     account_only = client.get("/v1/community/?q=official%20only").get_json()
-    assert account_only["counts"] == {"people": 0, "accounts": 1, "tools": 0, "unresolvedAttributions": 0}
+    assert account_only["counts"] == {
+        "people": 0,
+        "accounts": 1,
+        "tools": 0,
+        "otherToolMatches": 0,
+        "unresolvedAttributions": 0,
+        "foldedUnresolvedAttributions": 0,
+    }
     assert account_only["results"][0]["account"]["identityLinkStatus"] == "unlinked"
     linked_only = client.get("/v1/community/?q=linked%20account%20only").get_json()
     assert linked_only["results"][0]["kind"] == "account"
