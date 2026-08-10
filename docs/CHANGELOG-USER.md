@@ -1,6 +1,6 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..26309de (109 commits) -->
+<!-- Source range: 828438f..910049f (111 commits) -->
 
 # What's New for Users
 
@@ -13,6 +13,7 @@
 - Tool actions are labelled as maintainer actions only for a viewer with a verified maintainer relationship or confirmed write authority; other signed-in contributors see neutral contribution actions.
 - Interface messages now use Wikimedia-compatible Banana plural syntax and carry translator documentation for newly introduced community-directory text.
 - Historical duplicate review-queue entries are consolidated automatically, so an old duplicate cannot stop the people directory cleanup.
+- Long reconciliation runs no longer report a false failure when MariaDB has already released their idle coordination connection after the work committed.
 - Older author-name links now open a choice page when a name could refer to several people, instead of selecting an arbitrary profile.
 - The people directory no longer presents every repeated free-text author or maintainer label as a different person; unresolved attributions stay visible as grouped evidence instead.
 - Verified people can now carry stable Toolhub and Wikimedia account identities plus Toolforge and wiki handles, while reviewed links retain the original author or maintainer role.

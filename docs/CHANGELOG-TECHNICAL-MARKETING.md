@@ -1,6 +1,6 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..26309de (109 commits) -->
+<!-- Source range: 828438f..910049f (111 commits) -->
 
 # Technical Release Notes
 
@@ -14,6 +14,7 @@
 - Moves frontend messages to Wikimedia Banana format, validates extracted English and qqq catalogs, serves missing locales correctly, and keeps the production JavaScript budget within its ratchet.
 - Adds regression coverage for 2,000-plus account pagination, interrupted synchronization, stable cross-links, contributor eligibility, directory history, prolific profiles, trust labels, action authorization boundaries, and linked-account relationship metrics.
 - Makes conflict recording tolerant of historical duplicate pending rows, preserves one canonical pending review item, dismisses redundant queue entries with an audit note, and reports the consolidation count.
+- Treats a failed explicit MariaDB `RELEASE_LOCK` after successful long-running work as connection cleanup rather than job failure; connection-scoped locks are already released when the server resets that connection.
 - Replaces the 50-result, first-match legacy author resolver with a server-side exact-handle decision API and explicit frontend disambiguation for display names, handle collisions, and unresolved labels.
 - Stops publishing display-only attribution records as people, aggregates them by label, and keeps their per-source identity scopes intact.
 - Adds Toolhub and Wikimedia stable identifiers, correctly namespaces Toolforge developer handles, and persists authenticated LDAP membership evidence without treating access as authorship.
