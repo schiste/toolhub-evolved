@@ -1219,6 +1219,40 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
     db.init_schema()
 
 
+def test_advisory_lock_does_not_mask_success_when_mariadb_resets_release_connection(monkeypatch):
+    from types import SimpleNamespace
+
+    from sqlalchemy.exc import SQLAlchemyError
+
+    class FakeConnection:
+        def __init__(self):
+            self.calls = 0
+            self.invalidated = False
+            self.closed = False
+
+        def scalar(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return 1
+            raise SQLAlchemyError("server reset idle advisory-lock connection")
+
+        def invalidate(self):
+            self.invalidated = True
+
+        def close(self):
+            self.closed = True
+
+    connection = FakeConnection()
+    fake_engine = SimpleNamespace(dialect=SimpleNamespace(name="mysql"), connect=lambda: connection)
+    monkeypatch.setattr(db, "engine", lambda: fake_engine)
+
+    with db.advisory_lock("long-job") as acquired:
+        assert acquired is True
+
+    assert connection.invalidated is True
+    assert connection.closed is True
+
+
 # ---- Evolved-local authorization ------------------------------------------
 
 

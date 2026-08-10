@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -332,8 +333,15 @@ def advisory_lock(name: str, *, timeout_seconds: int = 0) -> Iterator[bool]:
         )
         yield acquired
     finally:
-        if acquired:
-            connection.scalar(text("SELECT RELEASE_LOCK(:name)"), {"name": name})
+        try:
+            if acquired:
+                connection.scalar(text("SELECT RELEASE_LOCK(:name)"), {"name": name})
+        except SQLAlchemyError:
+            # MariaDB releases connection-scoped locks automatically when an
+            # idle connection is reset. A failed explicit release after a
+            # successful long-running job must not turn that job into a
+            # reported failure.
+            connection.invalidate()
         connection.close()
 
 
