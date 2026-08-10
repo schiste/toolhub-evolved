@@ -2369,6 +2369,53 @@
 .community-results .entity-card {
 	min-height: 260px;
 }
+.community-result-section {
+	display: grid;
+	gap: var(--space-3);
+	margin-block-end: var(--space-6);
+}
+.community-result-section > h2,
+.community-result-section .section-head,
+.community-result-section .section-head :where(h2, p) {
+	margin-block: var(--space-0);
+}
+.community-person-result,
+.community-tool-result {
+	display: grid;
+	gap: var(--space-2);
+	height: 100%;
+}
+.community-person-result > .entity-card,
+.community-tool-result > .tcard {
+	height: auto;
+}
+.community-supporting-evidence,
+.community-other-matches {
+	padding: var(--space-3);
+	border: var(--border-base);
+	background: var(--color-surface-muted);
+}
+.community-supporting-evidence__summary,
+.community-other-matches__summary {
+	cursor: pointer;
+	font-weight: 700;
+}
+.community-supporting-evidence > p,
+.community-tool-result__reason {
+	margin: var(--space-2) var(--space-0) var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-caption);
+}
+.community-tool-result__reason span {
+	display: block;
+	margin-block-start: var(--space-1);
+}
+.community-other-matches > .community-result-section {
+	margin-block: var(--space-4) var(--space-0);
+}
+.community-result-section.people-attributions {
+	margin-block-start: var(--space-0);
+}
 .entity-card--stable {
 	--tcard-corner-color: var(--color-progressive);
 	--tcard-corner-color-hover: var(--color-progressive-hover);
@@ -2627,6 +2674,11 @@
 	display: grid;
 	gap: var(--space-1);
 	min-width: 0;
+}
+.people-attribution__signals {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
 }
 .people-attribution small,
 .people-attribution__status {

@@ -41,10 +41,28 @@ export async function searchCommunity(search = {}) {
 	const data = await backendGetJson(`/v1/community/${params.size > 0 ? `?${params}` : ""}`);
 	if (!data) throw new Error("Community directory unavailable");
 	const results = Array.isArray(data?.results) ? data.results : [];
+	const primaryResults = Array.isArray(data?.primaryResults) ? data.primaryResults : results;
+	const section = (/** @type {any} */ value) => ({
+		count: Number(value?.count) || 0,
+		results: Array.isArray(value?.results) ? value.results : [],
+		truncated: Boolean(value?.truncated)
+	});
 	return {
-		results,
-		count: Number.isFinite(Number(data?.count)) ? Number(data.count) : results.length,
-		counts: data?.counts || { people: 0, accounts: 0, tools: 0, unresolvedAttributions: 0 },
+		results: primaryResults,
+		primaryResults,
+		relatedTools: section(data?.relatedTools),
+		unresolvedEvidence: section(data?.unresolvedEvidence),
+		otherMatches: section(data?.otherMatches),
+		count: Number.isFinite(Number(data?.count)) ? Number(data.count) : primaryResults.length,
+		totalCount: Number.isFinite(Number(data?.totalCount)) ? Number(data.totalCount) : primaryResults.length,
+		counts: data?.counts || {
+			people: 0,
+			accounts: 0,
+			tools: 0,
+			otherToolMatches: 0,
+			unresolvedAttributions: 0,
+			foldedUnresolvedAttributions: 0
+		},
 		page: Number(data?.page) || 1,
 		pageSize: Number(data?.pageSize) || options.pageSize || 24,
 		pageCount: Number(data?.pageCount) || 1,

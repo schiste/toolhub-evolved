@@ -67,13 +67,13 @@ test.describe("People directory", () => {
 		await expect(page).toHaveURL(
 			/\/people\?(?=.*q=Ada)(?=.*role=maintainer)(?=.*project=wikidata\.org)(?=.*page=2)/
 		);
-		await expect(page.getByText(/Showing 25–25 of 50 results/)).toBeVisible();
+		await expect(page.getByText(/Showing 25–25 of 50 primary matches/)).toBeVisible();
 
 		await page.goBack();
 		await expect(page).toHaveURL(
 			/\/people\?(?=.*q=Ada)(?=.*role=maintainer)(?=.*project=wikidata\.org)(?!.*page=2)/
 		);
-		await expect(page.getByText(/Showing 1–1 of 50 results/)).toBeVisible();
+		await expect(page.getByText(/Showing 1–1 of 50 primary matches/)).toBeVisible();
 	});
 
 	test("renders a retryable directory error and recovers in place", async ({ page }) => {
@@ -171,7 +171,7 @@ test.describe("Unified account evidence", () => {
 		await expect(page.getByText(/Search people, usernames, and tools in one place/)).toBeVisible();
 		await expect(page.locator('[name="q"]')).toHaveValue("official");
 		await expect(page).toHaveURL(/\/people\?(?=.*q=official)(?=.*page=2)(?!.*view=accounts)/);
-		await expect(page.getByText(/Showing 25–25 of 2313 results/)).toBeVisible();
+		await expect(page.getByText(/Showing 25–25 of 2313 primary matches/)).toBeVisible();
 		const name = page.getByText(longName, { exact: true });
 		await expect(name).toBeVisible();
 		await expect(name).toHaveCSS("white-space", "normal");

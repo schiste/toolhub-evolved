@@ -349,8 +349,16 @@ The Community directory presents one search contract over three evidence classes
 
 `GET /v1/community/` is the product-facing composition endpoint. It searches
 person names and handles, official Toolhub usernames, catalog tools, and
-unresolved labels in one globally ranked result stream. A tool-text match returns
-the tool card itself; it does not fan out into every related person. It supports relationship,
+unresolved labels without pretending those evidence classes have equal trust.
+The response separates `primaryResults` (people and account-only matches),
+`relatedTools` (relationship-backed or strong structured-field matches),
+`unresolvedEvidence` (standalone display-label clusters), and `otherMatches`
+(description-only mentions). The legacy `results` key aliases `primaryResults`
+for compatibility. An exact display label is folded into a stable person's
+`supportingEvidence` only when exactly one stable person has that exact label;
+the evidence is not merged into the identity. Each related tool appears once
+and carries every applicable typed relationship with its status and provenance.
+A tool-text match returns the tool card itself; it does not fan out into every related person. It supports relationship,
 verification, activity, project, contributor, ordering, and pagination
 parameters. `contributor=observed` filters rather than switching directories;
 eligible people include their canonical catalog-actor or approved public

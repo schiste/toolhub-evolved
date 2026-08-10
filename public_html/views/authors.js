@@ -387,6 +387,63 @@ function personCard(item) {
 	});
 }
 
+/** @param {any[]} evidence */
+function supportingEvidenceDisclosure(evidence) {
+	if (evidence.length === 0) return "";
+	const observations = evidence.reduce(
+		(total, item) => total + (Number(item?.evidenceCount) || Number(item?.attributionCount) || 0),
+		0
+	);
+	const tools = evidence.reduce((total, item) => total + (Number(item?.toolCount) || 0), 0);
+	return `<details class="community-supporting-evidence">
+		<summary class="community-supporting-evidence__summary">${esc(
+			t(
+				"authors.additionalUnlinkedEvidence",
+				"$1 additional {{PLURAL:$2|observation|observations}} across $3 {{PLURAL:$4|tool|tools}} are not safely linked",
+				fmt(observations),
+				observations,
+				fmt(tools),
+				tools
+			)
+		)}</summary>
+		<p>${t("authors.unlinkedEvidenceExplanation", "This evidence shares the displayed name but lacks enough stable identity data to attach it to this person.")}</p>
+		<ul class="people-attributions__list">${evidence.map((item) => unresolvedAttribution(item)).join("")}</ul>
+	</details>`;
+}
+
+/** @param {any} item */
+function personResult(item) {
+	const evidence = Array.isArray(item?.supportingEvidence) ? item.supportingEvidence : [];
+	return `<div class="community-person-result">${personCard(item)}${supportingEvidenceDisclosure(evidence)}</div>`;
+}
+
+/** @param {any} item */
+function toolMatchReason(item) {
+	const match = item?.match || {};
+	const value = String(match.value || item?.tool?.title || item?.tool?.name || "");
+	const labels = /** @type {Record<string, string>} */ ({
+		exact_name: t("authors.toolMatchExact", "Exact tool name or title match"),
+		name_prefix: t("authors.toolMatchPrefix", "Tool name or title starts with the search"),
+		name_contains: t("authors.toolMatchName", "Tool name or title contains the search"),
+		structured_author: t("authors.toolMatchAuthor", "Listed author metadata matches the search"),
+		keyword: t("authors.toolMatchKeyword", "Tool keyword matches the search"),
+		description_mention: t("authors.toolMatchDescription", "The name is mentioned only in the tool description"),
+		person_relationship: t("authors.toolMatchRelationship", "Related through this person's tool relationships")
+	});
+	return { label: labels[match.reason] || t("authors.toolMatch", "Tool match"), value };
+}
+
+/** @param {any} item */
+function directoryToolResult(item) {
+	const reason = toolMatchReason(item);
+	const relationships = Array.isArray(item?.relationships) ? item.relationships : [];
+	return `<div class="community-tool-result">
+		<p class="community-tool-result__reason"><strong>${esc(reason.label)}</strong>${reason.value ? ` <span${dirAttrs(reason.value)}>${esc(reason.value)}</span>` : ""}</p>
+		${toolCard(normalizeTool(item.tool))}
+		${relationships.length > 0 ? `<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for $1", item.tool?.title || item.tool?.name))}">${relationships.map((/** @type {any} */ relationship) => relationshipTrustMarkup(relationship)).join("")}</div>` : ""}
+	</div>`;
+}
+
 /** @param {any} item @param {ReturnType<typeof peopleDirectoryState>} state */
 function accountResultCard(item, state) {
 	const account = item?.account || {};
@@ -427,73 +484,49 @@ function accountResultCard(item, state) {
 }
 
 /** @param {any} attribution */
-function unresolvedAttribution(attribution, asCard = false) {
+function attributionSignals(attribution) {
+	const breakdown = Array.isArray(attribution?.relationshipBreakdown) ? attribution.relationshipBreakdown : [];
+	return breakdown.map((/** @type {any} */ relationship) => {
+		const role = relationshipLabel(relationship?.type || "");
+		const count = Number(relationship?.toolCount) || 0;
+		if (relationship?.status === "verified") {
+			return t(
+				"authors.verifiedRelationshipToolCount",
+				"Verified $1 relationship · $2 {{PLURAL:$3|tool|tools}}",
+				role,
+				fmt(count),
+				count
+			);
+		}
+		if (relationship?.status === "stale") {
+			return t(
+				"authors.staleRelationshipToolCount",
+				"Previous $1 verification—renewal needed · $2 {{PLURAL:$3|tool|tools}}",
+				role,
+				fmt(count),
+				count
+			);
+		}
+		return t(
+			"authors.listedRelationshipToolCount",
+			"Listed $1 · $2 {{PLURAL:$3|tool|tools}}",
+			role,
+			fmt(count),
+			count
+		);
+	});
+}
+
+/** @param {any} attribution */
+function unresolvedAttribution(attribution) {
 	const label = attribution?.label || t("authors.unknownAttribution", "Unknown attribution");
 	const tools = Number(attribution?.toolCount) || 0;
 	const observations = Number(attribution?.evidenceCount) || Number(attribution?.attributionCount) || 0;
-	const breakdown = Array.isArray(attribution?.relationshipBreakdown) ? attribution.relationshipBreakdown : [];
-	if (asCard) {
-		return entityCard({
-			kind: t("authors.unresolvedResult", "Unresolved attribution"),
-			kindDetail: t("authors.needsIdentityEvidence", "Needs identity evidence"),
-			title: label,
-			visual: `<span class="avatar entity-card__avatar entity-card__unknown" aria-hidden="true">?</span>`,
-			subtitle: `${t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools)} · ${t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations)}`,
-			description:
-				breakdown.length > 0
-					? t(
-							"authors.identityUnresolved",
-							"Identity unresolved — relationship evidence is shown separately."
-						)
-					: t("authors.unverifiedAttribution", "Unverified attribution — name-only evidence"),
-			tags: [{ label: t("authors.nameOnlyEvidence", "Name-only evidence") }],
-			signals: breakdown.map((/** @type {any} */ relationship) => {
-				const role = relationshipLabel(relationship?.type || "");
-				const count = Number(relationship?.toolCount) || 0;
-				if (relationship?.status === "verified") {
-					return {
-						label: t(
-							"authors.verifiedRelationshipToolCount",
-							"Verified $1 relationship · $2 {{PLURAL:$3|tool|tools}}",
-							role,
-							fmt(count),
-							count
-						),
-						className: "status status--green"
-					};
-				}
-				if (relationship?.status === "stale") {
-					return {
-						label: t(
-							"authors.staleRelationshipToolCount",
-							"Previous $1 verification—renewal needed · $2 {{PLURAL:$3|tool|tools}}",
-							role,
-							fmt(count),
-							count
-						),
-						className: "status status--yellow"
-					};
-				}
-				return {
-					label: t(
-						"authors.listedRelationshipToolCount",
-						"Listed $1 · $2 {{PLURAL:$3|tool|tools}}",
-						role,
-						fmt(count),
-						count
-					),
-					className: "signal signal--compact"
-				};
-			}),
-			className: "entity-card--unresolved",
-			dataName: label.toLocaleLowerCase(),
-			static: true
-		});
-	}
+	const signals = attributionSignals(attribution);
 	const content = `
 		<span class="people-attribution__mark" aria-hidden="true">?</span>
-		<span class="people-attribution__content"><strong${dirAttrs(label)}>${esc(label)}</strong><small>${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools))} · ${esc(t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations))}</small></span>
-		<span class="people-attribution__status">${t("authors.unverifiedAttribution", "Unverified attribution — name-only evidence")}</span>`;
+		<span class="people-attribution__content"><strong${dirAttrs(label)}>${esc(label)}</strong><small>${esc(t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(tools), tools))} · ${esc(t("authors.observationCount", "$1 {{PLURAL:$2|observation|observations}}", fmt(observations), observations))}</small>${signals.length > 0 ? `<span class="people-attribution__signals">${signals.map((/** @type {string} */ signal) => `<span class="signal signal--compact">${esc(signal)}</span>`).join("")}</span>` : ""}</span>
+		<span class="people-attribution__status">${t("authors.nameObservedNotPerson", "Name observed in metadata — not a resolved person")}</span>`;
 	return `<li class="people-attribution">${content}</li>`;
 }
 
@@ -557,6 +590,7 @@ function option(value, current, label) {
 function communityResultSummary(directory, state) {
 	const results = Array.isArray(directory?.results) ? directory.results : [];
 	const count = Number(directory?.count) || 0;
+	const totalCount = Number(directory?.totalCount) || count;
 	const first = results.length > 0 ? (directory.page - 1) * directory.pageSize + 1 : 0;
 	const last = first + results.length - 1;
 	const counts = directory?.counts || {};
@@ -573,7 +607,15 @@ function communityResultSummary(directory, state) {
 				)
 			: "",
 		Number(counts.tools) > 0
-			? t("authors.toolResultCount", "$1 {{PLURAL:$2|tool result|tool results}}", fmt(counts.tools), counts.tools)
+			? t("authors.relatedToolCount", "$1 related {{PLURAL:$2|tool|tools}}", fmt(counts.tools), counts.tools)
+			: "",
+		Number(counts.otherToolMatches) > 0
+			? t(
+					"authors.otherToolMatchCount",
+					"$1 other text {{PLURAL:$2|match|matches}}",
+					fmt(counts.otherToolMatches),
+					counts.otherToolMatches
+				)
 			: "",
 		Number(counts.unresolvedAttributions) > 0
 			? t(
@@ -586,9 +628,30 @@ function communityResultSummary(directory, state) {
 	].filter(Boolean);
 	const range =
 		results.length > 0
-			? t("authors.showingCommunityRange", "Showing $1–$2 of $3 results", first, last, count)
-			: t("authors.communityCount", "$1 results", count);
+			? t("authors.showingPrimaryRange", "Showing $1–$2 of $3 primary matches", first, last, count)
+			: t("authors.communityCount", "$1 results", totalCount);
 	return `${esc(range)}${state.q ? ` ${t("authors.forQuery", "for")} “<span${dirAttrs(state.q)}>${esc(state.q)}</span>”` : ""}${breakdown.length > 0 ? ` <span class="browse__count-note">${esc(breakdown.join(" · "))}</span>` : ""}`;
+}
+
+/** @param {any} section @param {string} title @param {string} intro @param {string} id */
+function directoryToolSection(section, title, intro, id) {
+	const results = Array.isArray(section?.results) ? section.results : [];
+	if (results.length === 0) return "";
+	return `<section class="community-result-section" aria-labelledby="${esc(id)}">
+		<div class="section-head"><div><h2 id="${esc(id)}">${esc(title)}</h2><p class="muted">${esc(intro)}</p></div><span class="muted">${fmt(section.count)}</span></div>
+		<ul class="card-grid grid-tools community-tool-results" role="list">${results.map((/** @type {any} */ item) => `<li>${directoryToolResult(item)}</li>`).join("")}</ul>
+		${section.truncated ? `<p class="muted">${t("authors.sectionLimited", "Showing the strongest $1 results. Open a person or refine the search for the complete set.", results.length)}</p>` : ""}
+	</section>`;
+}
+
+/** @param {any} section */
+function standaloneEvidenceSection(section) {
+	const results = Array.isArray(section?.results) ? section.results : [];
+	if (results.length === 0) return "";
+	return `<section class="people-attributions community-result-section" aria-labelledby="community-unresolved-title">
+		<div class="section-head"><div><h2 id="community-unresolved-title">${t("authors.namesObserved", "Names observed in metadata")}</h2><p class="muted">${t("authors.namesObservedIntro", "These labels do not identify a unique public person. They remain evidence, not profiles.")}</p></div><span class="muted">${fmt(section.count)}</span></div>
+		<ul class="people-attributions__list">${results.map((/** @type {any} */ attribution) => unresolvedAttribution(attribution)).join("")}</ul>
+	</section>`;
 }
 
 /** @param {any} directory @param {ReturnType<typeof peopleDirectoryState>} state */
@@ -596,10 +659,8 @@ function communityDirectoryResults(directory, state) {
 	const results = Array.isArray(directory?.results) ? directory.results : [];
 	const cards = results
 		.map((/** @type {any} */ item) => {
-			if (item?.kind === "person") return personCard(item);
+			if (item?.kind === "person") return personResult(item);
 			if (item?.kind === "account") return accountResultCard(item, state);
-			if (item?.kind === "unresolved_attribution") return unresolvedAttribution(item.attribution, true);
-			if (item?.kind === "tool" && item.tool?.name) return toolCard(normalizeTool(item.tool));
 			return "";
 		})
 		.filter(Boolean)
@@ -608,10 +669,28 @@ function communityDirectoryResults(directory, state) {
 	const truncated = directory?.truncated
 		? `<p class="account-directory__notice account-directory__notice--warning" role="status">${t("authors.refineResults", "Many records matched. Refine the search to see the most relevant identities and evidence.")}</p>`
 		: "";
+	const relatedTools = directoryToolSection(
+		directory?.relatedTools,
+		t("authors.relatedToolsAndMatches", "Related tools and strong matches"),
+		t(
+			"authors.relatedToolsAndMatchesIntro",
+			"Relationships are shown first. Other tools appear only when a structured catalog field matches."
+		),
+		"community-related-tools-title"
+	);
+	const otherResults = Array.isArray(directory?.otherMatches?.results) ? directory.otherMatches.results : [];
+	const otherMatches =
+		otherResults.length > 0
+			? `<details class="community-other-matches"><summary class="community-other-matches__summary">${esc(t("authors.otherTextMatches", "$1 other text {{PLURAL:$2|match|matches}}", fmt(directory.otherMatches.count), directory.otherMatches.count))}</summary>${directoryToolSection(directory.otherMatches, t("authors.otherTextMatchesTitle", "Tools mentioning this text"), t("authors.otherTextMatchesIntro", "These tools matched only in descriptive text and may not be maintained or authored by the person you searched for."), "community-other-tools-title")}</details>`
+			: "";
+	const evidence = standaloneEvidenceSection(directory?.unresolvedEvidence);
+	const hasAny = results.length > 0 || relatedTools || otherMatches || evidence;
 	return `<section aria-labelledby="community-results-title">
 		<h2 id="community-results-title" class="skip-label">${t("authors.directoryResults", "Directory results")}</h2>
 		${truncated}
-		${results.length > 0 ? `<ul class="card-grid grid-tools community-results" role="list">${cards}</ul>` : `<p class="empty">${t("authors.noCommunityMatches", "No people, official accounts, tools, or unresolved attributions match this search.")}</p>`}
+		${results.length > 0 ? `<section class="community-result-section" aria-labelledby="community-primary-title"><h2 id="community-primary-title">${t("authors.primaryMatches", "Primary matches")}</h2><ul class="card-grid grid-tools community-results" role="list">${cards}</ul></section>` : ""}
+		${relatedTools}${evidence}${otherMatches}
+		${hasAny ? "" : `<p class="empty">${t("authors.noCommunityMatches", "No people, official accounts, tools, or unresolved attributions match this search.")}</p>`}
 		<nav class="pager" data-people-pager aria-label="${esc(t("authors.peoplePagination", "Directory pagination"))}">${renderPager(directory.page, directory.pageCount)}</nav>
 	</section>`;
 }

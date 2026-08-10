@@ -301,13 +301,21 @@ test("viewAuthor explains unresolved labels without inventing a person link", as
 
 test("viewPeople unifies resolved people, official accounts, tools, and unresolved attributions", async () => {
 	h.backendGetJson.mockResolvedValueOnce({
-		count: 4,
+		count: 2,
+		totalCount: 5,
 		page: 1,
 		pageSize: 24,
 		pageCount: 1,
-		counts: { people: 1, accounts: 1, tools: 1, unresolvedAttributions: 1 },
+		counts: {
+			people: 1,
+			accounts: 1,
+			tools: 1,
+			otherToolMatches: 1,
+			unresolvedAttributions: 1,
+			foldedUnresolvedAttributions: 1
+		},
 		accountSync: { status: "ready", complete: true },
-		results: [
+		primaryResults: [
 			{
 				kind: "person",
 				person: {
@@ -325,38 +333,94 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 				},
 				identityEvidence: { officialToolhubAccount: true, wikimediaIdentity: true },
 				officialAccountMatches: [{ id: "42", username: "AdaToolhub" }],
-				matchBasis: ["account", "identity"]
+				matchBasis: ["account", "identity"],
+				supportingEvidence: [
+					{
+						label: "Ada",
+						identityStatus: "unresolved_attribution",
+						toolCount: 50,
+						evidenceCount: 50,
+						relationshipBreakdown: [
+							{ type: "author", status: "unverified", toolCount: 30 },
+							{ type: "maintainer", status: "verified", toolCount: 12 },
+							{ type: "maintainer", status: "stale", toolCount: 8 }
+						]
+					}
+				]
 			},
 			{
 				kind: "account",
 				account: { id: "99", username: "Official Only", identityLinkStatus: "unlinked" }
-			},
-			{
-				kind: "unresolved_attribution",
-				attribution: {
-					label: "Magnus Manske",
-					identityStatus: "unresolved_attribution",
-					toolCount: 50,
-					evidenceCount: 50,
-					relationshipBreakdown: [
-						{ type: "author", status: "unverified", toolCount: 30 },
-						{ type: "maintainer", status: "verified", toolCount: 12 },
-						{ type: "maintainer", status: "stale", toolCount: 8 }
+			}
+		],
+		relatedTools: {
+			count: 1,
+			truncated: false,
+			results: [
+				{
+					kind: "tool",
+					match: { field: "relationship", reason: "person_relationship", value: "Ada" },
+					tool: {
+						name: "magnus-tool",
+						title: "Magnus Tool",
+						description: "A directly matching catalog tool",
+						keywords: ["magnus"],
+						for_wikis: ["wikidata.org"],
+						author: [{ name: "Ada" }]
+					},
+					relationships: [
+						{
+							personName: "Ada",
+							type: "author",
+							status: "unverified",
+							evidenceCount: 1,
+							confidence: 45,
+							toolhubCanonical: true,
+							evidence: [
+								{
+									source: "toolhub_author_metadata",
+									method: "toolhub_author_metadata",
+									status: "unverified"
+								}
+							]
+						},
+						{
+							personName: "Ada",
+							type: "maintainer",
+							status: "verified",
+							evidenceCount: 2,
+							confidence: 95,
+							evidence: [
+								{ source: "toolforge_toolsadmin", method: "toolforge_maintainer", status: "verified" }
+							]
+						}
 					]
 				}
-			},
-			{
-				kind: "tool",
-				tool: {
-					name: "magnus-tool",
-					title: "Magnus Tool",
-					description: "A directly matching catalog tool",
-					keywords: ["magnus"],
-					for_wikis: ["wikidata.org"],
-					author: [{ name: "Magnus Manske" }]
+			]
+		},
+		unresolvedEvidence: {
+			count: 1,
+			truncated: false,
+			results: [{ label: "Shared Label", toolCount: 2, evidenceCount: 3, relationshipBreakdown: [] }]
+		},
+		otherMatches: {
+			count: 1,
+			truncated: false,
+			results: [
+				{
+					kind: "tool",
+					match: { field: "description", reason: "description_mention", value: "Based on a script by Ada" },
+					tool: {
+						name: "description-only",
+						title: "Description Only",
+						description: "Based on a script by Ada",
+						keywords: [],
+						for_wikis: [],
+						author: [{ name: "Someone Else" }]
+					}
 				}
-			}
-		]
+			]
+		}
 	});
 
 	const view = await viewPeople();
@@ -365,12 +429,14 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 	assert.match(view.html, /<aside class="facets community-facets"/);
 	assert.match(view.html, /class="browse__bar"/);
 	assert.match(view.html, /<ul class="card-grid grid-tools community-results" role="list">/);
-	assert.equal(view.html.match(/class="tcard entity-card/g)?.length, 3);
+	assert.equal(view.html.match(/class="tcard entity-card/g)?.length, 2);
 	assert.match(view.html, /data-tool="magnus-tool"/);
+	assert.match(view.html, /data-tool="description-only"/);
 	assert.doesNotMatch(view.html, /class="people-card/);
 	assert.match(view.html, /href="\/people\/person-1"/);
-	assert.match(view.html, /Showing 1–4 of 4 results/);
-	assert.match(view.html, /1 tool result/);
+	assert.match(view.html, /Showing 1–2 of 2 primary matches/);
+	assert.match(view.html, /1 related tool/);
+	assert.match(view.html, /1 other text match/);
 	assert.match(view.html, /Official Toolhub account/);
 	assert.match(view.html, /Wikimedia identity matched by stable ID/);
 	assert.match(view.html, /Listed Author/);
@@ -378,12 +444,18 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 	assert.match(view.html, /Verified Toolhub record owner relationship · 1 tool/);
 	assert.match(view.html, /href="\/people\?account=99"/);
 	assert.match(view.html, /No stable public person or tool relationship is linked yet/);
-	assert.match(view.html, /Magnus Manske/);
-	assert.match(view.html, /50 tools · 50 observations/);
-	assert.match(view.html, /Identity unresolved — relationship evidence is shown separately/);
+	assert.match(view.html, /50 additional observations across 50 tools are not safely linked/);
+	assert.match(view.html, /Name observed in metadata — not a resolved person/);
+	assert.match(view.html, /Shared Label/);
 	assert.match(view.html, /Listed Author · 30 tools/);
 	assert.match(view.html, /Verified Maintainer relationship · 12 tools/);
 	assert.match(view.html, /Previous Maintainer verification—renewal needed · 8 tools/);
+	assert.match(view.html, /Related tools and strong matches/);
+	assert.match(view.html, /Related through this person&#39;s tool relationships/);
+	assert.match(view.html, /Listed author/);
+	assert.match(view.html, /Verified Toolforge maintainer/);
+	assert.match(view.html, /Tools mentioning this text/);
+	assert.match(view.html, /The name is mentioned only in the tool description/);
 	assert.match(view.html, /href="\/tools\/magnus-tool"/);
 });
 
