@@ -120,6 +120,12 @@ test.describe("Unified account evidence", () => {
 		identityLinkStatus: "linked"
 	};
 	const sync = { status: "ready", complete: true, lastCompletedAt: "2026-08-07T00:00:00Z" };
+	const relationshipSummary = {
+		types: [],
+		verifiedTypes: [],
+		toolCountsByType: { author: 0, maintainer: 0, record_owner: 0, catalog_actor: 0 },
+		verifiedToolCountsByType: { author: 0, maintainer: 0, record_owner: 0, catalog_actor: 0 }
+	};
 
 	test("preserves unified search, account details, legacy URLs, history, and full names", async ({ page }) => {
 		await page.route("**/v1/accounts/**", (route) => {
@@ -154,7 +160,7 @@ test.describe("Unified account evidence", () => {
 					pageCount: 97,
 					counts: { people: 0, accounts: 2313, unresolvedAttributions: 0 },
 					accountSync: sync,
-					results: [{ kind: "account", account, matchBasis: ["official_account"] }]
+					results: [{ kind: "account", account, relationshipSummary, matchBasis: ["official_account"] }]
 				}
 			});
 		});
@@ -169,6 +175,9 @@ test.describe("Unified account evidence", () => {
 		const name = page.getByText(longName, { exact: true });
 		await expect(name).toBeVisible();
 		await expect(name).toHaveCSS("white-space", "normal");
+		await expect(page.getByText("Tools maintained", { exact: true })).toBeVisible();
+		await expect(page.getByText("Toolhub records owned", { exact: true })).toBeVisible();
+		await expect(page.locator(".entity-card__metric strong")).toHaveText(["0", "0"]);
 
 		await name.click();
 		await expect(page).toHaveURL(/\/people\?(?=.*q=official)(?=.*page=2)(?=.*account=42)/);
@@ -196,7 +205,7 @@ test.describe("Unified account evidence", () => {
 					pageCount: 1,
 					counts: { people: 0, accounts: 1, unresolvedAttributions: 0 },
 					accountSync: sync,
-					results: [{ kind: "account", account, matchBasis: ["official_account"] }]
+					results: [{ kind: "account", account, relationshipSummary, matchBasis: ["official_account"] }]
 				}
 			});
 		});

@@ -15,6 +15,7 @@ import { dirAttrs, esc } from "../core/dom.js";
  *  visual: string,
  *  subtitle?: string,
  *  description?: string,
+ *  metrics?: Array<{label: string, value: string, detail?: string}>,
  *  tags?: Array<{label: string, className?: string}>,
  *  signals?: Array<{label: string, className?: string}>,
  *  className?: string,
@@ -41,6 +42,12 @@ export function entityCard(card) {
 				`<span class="${esc(signal.className || "signal signal--compact")}"${dirAttrs(signal.label)}>${esc(signal.label)}</span>`
 		)
 		.join("");
+	const metrics = (card.metrics || [])
+		.map(
+			(metric) =>
+				`<div class="entity-card__metric"><dt${dirAttrs(metric.label)}>${esc(metric.label)}</dt><dd${dirAttrs(metric.value)}><strong>${esc(metric.value)}</strong>${metric.detail ? `<small${dirAttrs(metric.detail)}>${esc(metric.detail)}</small>` : ""}</dd></div>`
+		)
+		.join("");
 	return `<article class="${classes}"${card.dataName ? ` data-entity-name="${esc(card.dataName)}"` : ""}>
 		<div class="tcard__topline"><span class="tcard__meta">${esc(card.kind)}</span><span class="tcard__topmeta">${esc(card.kindDetail || "")}</span></div>
 		<div class="tcard__head">
@@ -48,6 +55,7 @@ export function entityCard(card) {
 			<div class="tcard__heading">${title}${card.subtitle ? `<div class="tcard__maint entity-card__subtitle"${dirAttrs(card.subtitle)}>${esc(card.subtitle)}</div>` : ""}</div>
 		</div>
 		<p class="tcard__desc"${dirAttrs(card.description || "")}>${esc(card.description || "")}</p>
+		${metrics ? `<dl class="entity-card__metrics">${metrics}</dl>` : ""}
 		<div class="tcard__tags entity-card__tags">${tags}</div>
 		<div class="tcard__signals entity-card__signals">${signals ? `<div class="tcard__signal-row entity-card__signal-row">${signals}</div>` : ""}</div>
 	</article>`;

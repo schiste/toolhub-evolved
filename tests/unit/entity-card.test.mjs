@@ -12,6 +12,10 @@ test("entityCard reuses the catalog card structure and escapes adapted data", ()
 		visual: '<span class="avatar">A</span>',
 		subtitle: "3 related tools",
 		description: "Toolhub username: Ada <admin>",
+		metrics: [
+			{ label: "Tools maintained", value: "2", detail: "1 verified" },
+			{ label: "Toolhub records owned", value: "1", detail: "1 verified" }
+		],
 		tags: [{ label: "Official Toolhub account", className: "entity-card__tag--identity" }],
 		signals: [{ label: "Verified maintainer relationship", className: "status status--green" }],
 		className: "entity-card--verified",
@@ -22,6 +26,11 @@ test("entityCard reuses the catalog card structure and escapes adapted data", ()
 	assert.match(html, /class="tcard__topline"/);
 	assert.match(html, /class="tcard__head"/);
 	assert.match(html, /class="tcard__tags entity-card__tags"/);
+	assert.match(html, /<dl class="entity-card__metrics">/);
+	assert.match(
+		html,
+		/<dt[^>]*>Tools maintained<\/dt><dd[^>]*><strong>2<\/strong><small[^>]*>1 verified<\/small><\/dd>/
+	);
 	assert.match(html, /class="tcard__signals entity-card__signals"/);
 	assert.match(html, /href="\/people\/ada"[^>]*>Ada &amp; Co<\/a>/);
 	assert.match(html, /Stable &lt;identity&gt;/);

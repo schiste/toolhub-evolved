@@ -295,6 +295,24 @@ function relationshipCardSignal(role, summary) {
 	);
 }
 
+/** @param {any} summary */
+function relationshipCardMetrics(summary) {
+	const counts = summary?.toolCountsByType || {};
+	const verifiedCounts = summary?.verifiedToolCountsByType || {};
+	return [
+		["maintainer", t("authors.maintainerToolsMetric", "Tools maintained")],
+		["record_owner", t("authors.recordOwnerToolsMetric", "Toolhub records owned")]
+	].map(([role, label]) => {
+		const total = Number(counts[role]) || 0;
+		const verified = Math.min(total, Number(verifiedCounts[role]) || 0);
+		return {
+			label,
+			value: fmt(total),
+			detail: total > 0 ? t("authors.verifiedToolCountMetric", "$1 verified", fmt(verified)) : ""
+		};
+	});
+}
+
 /** @param {any} item */
 function personCard(item) {
 	const person = item?.person || item;
@@ -354,6 +372,7 @@ function personCard(item) {
 		visual: picture,
 		subtitle: t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(count), count),
 		description: [matchDetail, contributorDetail].filter(Boolean).join(" · "),
+		metrics: relationshipCardMetrics(summary),
 		tags: identityLabels.map((label) => ({ label, className: "entity-card__tag--identity" })),
 		signals: types.map((/** @type {string} */ role) => {
 			const verified = verifiedTypes.includes(role);
@@ -370,6 +389,7 @@ function personCard(item) {
 /** @param {any} item @param {ReturnType<typeof peopleDirectoryState>} state */
 function accountResultCard(item, state) {
 	const account = item?.account || {};
+	const relationshipSummary = item?.relationshipSummary;
 	const name = String(account.username || t("accounts.unknown", "Unknown account"));
 	const href = peopleDirectoryHref({ ...state, accountId: String(account.id || "") });
 	const linked = Boolean(account.personId);
@@ -385,6 +405,7 @@ function accountResultCard(item, state) {
 		description: linked
 			? t("accounts.linkedPerson", "Linked to a public person through a stable identifier")
 			: t("authors.noPublicRelationship", "No stable public person or tool relationship is linked yet."),
+		metrics: linked && relationshipSummary ? relationshipCardMetrics(relationshipSummary) : [],
 		tags: [
 			{
 				label: t("authors.officialToolhubAccount", "Official Toolhub account"),
