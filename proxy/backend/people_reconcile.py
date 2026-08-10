@@ -508,7 +508,14 @@ def _candidate_account_groups(
         account = _exact_account(s, people[0].display_name)
         if account is not None:
             matches.append((account, people))
-    return matches
+    return sorted(
+        matches,
+        key=lambda match: (
+            -len(match[1]),
+            match[0].normalized_username,
+            match[0].toolhub_user_id,
+        ),
+    )
 
 
 def discover_identity_candidates(

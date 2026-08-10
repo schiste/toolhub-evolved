@@ -255,6 +255,37 @@ def test_identity_batch_limit_counts_resolvable_accounts_not_unmatched_labels():
         assert summary["identityMappingsApplied"] == 1
 
 
+def test_identity_batch_prioritizes_the_largest_unresolved_account_group():
+    _configure()
+    with db.session_scope() as s:
+        small = Person(canonical_key="display:alpha", display_name="Alpha", identity_quality="display_name")
+        large = [
+            Person(canonical_key=f"display:zulu-{index}", display_name="Zulu", identity_quality="display_name")
+            for index in range(3)
+        ]
+        s.add_all(
+            [
+                small,
+                *large,
+                ToolhubAccountProjection(
+                    toolhub_user_id="1",
+                    username="Alpha",
+                    normalized_username="alpha",
+                ),
+                ToolhubAccountProjection(
+                    toolhub_user_id="2",
+                    username="Zulu",
+                    normalized_username="zulu",
+                ),
+            ]
+        )
+        s.flush()
+
+        groups = people_reconcile._candidate_account_groups(s, [small, *large])
+
+        assert [(account.username, len(sources)) for account, sources in groups] == [("Zulu", 3), ("Alpha", 1)]
+
+
 def test_apply_links_only_same_tool_sul_membership_and_keeps_other_attribution_candidate():
     _configure()
     with db.session_scope() as s:
