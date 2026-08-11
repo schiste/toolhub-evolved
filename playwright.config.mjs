@@ -12,6 +12,9 @@ export default {
 	use: {
 		browserName: "chromium",
 		ignoreHTTPSErrors: false,
+		launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+			? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+			: {},
 		trace: "retain-on-failure"
 	}
 };
