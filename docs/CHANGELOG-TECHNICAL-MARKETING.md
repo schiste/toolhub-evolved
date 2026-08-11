@@ -1,9 +1,10 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..369553c (131 commits) -->
+<!-- Source range: 828438f..a222236 (132 commits) -->
 
 # Technical Release Notes
 
+- Makes SPA navigation idempotent: same-path-and-query requests no longer dispatch route renders, and directory loading feedback appears only after a real URL transition, preventing restored form controls from creating a render/remount loop.
 - Requires handle-only public identities to come from OAuth, Toolsadmin, the verified Wikimedia/Toolforge bridge, or an authenticated claim; canonical author metadata remains unresolved evidence, stronger provenance cannot be downgraded by refreshes, and reconciliation repairs stale identity-quality flags.
 - Restructures `/v1/community/` into primary identities/accounts, relationship-backed and structured tool matches, standalone unresolved evidence, and weak description-only matches while retaining a compatibility alias for primary results.
 - Folds exact same-label observations beneath a unique stable person as explicitly unlinked supporting evidence, returns each related tool once with every typed relationship and public provenance, and adds a 323-observation Magnus-scale regression.

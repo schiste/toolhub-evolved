@@ -1,9 +1,10 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..369553c (131 commits) -->
+<!-- Source range: 828438f..a222236 (132 commits) -->
 
 # What's New for Users
 
+- Community-directory filters no longer trigger an endless reload when a browser restores the same control value after the page renders; submitting an unchanged search also keeps the completed results visible.
 - Handle-shaped text in tool metadata no longer creates a second public person unless a trusted account or Toolsadmin source corroborates it; those observations stay visible beneath the real stable identity instead.
 - An exact person search now presents the stable person first, keeps same-name metadata in an expandable “not safely linked” disclosure, shows each related tool once with all known roles, and separates incidental description mentions from meaningful matches.
 - The operator review queue now contains only conflicts that can be acted on with stable identity evidence; repeated free-text names remain visible as evidence clusters without becoming merge suggestions.
