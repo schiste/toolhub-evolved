@@ -63,8 +63,13 @@ NS_TOOLHUB_USERNAME = "toolhub_username"
 NS_TOOLFORGE_USERNAME = "toolforge_username"
 NS_WIKI_USERNAME = "wiki_username"
 PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
-PUBLIC_IDENTIFIER_KINDS = (IDENTIFIER_STABLE, IDENTIFIER_HANDLE)
 PUBLIC_HANDLE_NAMESPACES = (NS_TOOLHUB_USERNAME, NS_TOOLFORGE_USERNAME, NS_WIKI_USERNAME)
+TRUSTED_PUBLIC_HANDLE_SOURCES = (
+    "evolved_author_claim",
+    "toolhub_oauth",
+    "toolforge_toolsadmin",
+    "wikimedia_toolforge_bridge",
+)
 RECENT_ACTIVITY_DAYS = 90
 ACTIVITY_STALE_DAYS = 1
 ACTIVE_CONTRIBUTION_DAYS = 30
@@ -247,7 +252,14 @@ def _upsert_identifier(  # noqa: PLR0913 - explicit identity provenance fields
         row.person_id = person.id
     row.value = clean_value
     row.identifier_kind = kind
-    row.source = source or row.source
+    if source and (
+        row.identifier_kind == IDENTIFIER_STABLE
+        or row.source not in TRUSTED_PUBLIC_HANDLE_SOURCES
+        or source in TRUSTED_PUBLIC_HANDLE_SOURCES
+    ):
+        # A canonical metadata refresh must not downgrade a handle previously
+        # established by OAuth, Toolsadmin, or the stable identity bridge.
+        row.source = source
     row.is_current = True
     row.last_seen_at = now
     row.retired_at = None
@@ -713,7 +725,13 @@ def _identifiers_by_person(s: Session, person_ids: set[int]) -> dict[int, list[d
 def _public_identity_clause() -> Any:  # noqa: ANN401 - SQLAlchemy boolean expression
     identifier_people = select(PersonIdentifier.person_id).where(
         PersonIdentifier.is_current.is_(True),
-        PersonIdentifier.identifier_kind.in_(PUBLIC_IDENTIFIER_KINDS),
+        or_(
+            PersonIdentifier.identifier_kind == IDENTIFIER_STABLE,
+            and_(
+                PersonIdentifier.identifier_kind == IDENTIFIER_HANDLE,
+                PersonIdentifier.source.in_(TRUSTED_PUBLIC_HANDLE_SOURCES),
+            ),
+        ),
     )
     profile_people = select(PersonProfile.person_id)
     return or_(Person.id.in_(identifier_people), Person.id.in_(profile_people))
@@ -725,6 +743,29 @@ def public_identity_ids(s: Session, person_ids: set[int] | None = None) -> set[i
     if person_ids is not None:
         statement = statement.where(Person.id.in_(person_ids or {-1}))
     return {row[0] for row in s.execute(statement).all()}
+
+
+def refresh_identity_qualities(s: Session) -> int:
+    """Repair denormalized quality labels from current identifier evidence."""
+    kinds_by_person: dict[int, set[str]] = {}
+    rows = s.execute(
+        select(PersonIdentifier.person_id, PersonIdentifier.identifier_kind).where(
+            PersonIdentifier.is_current.is_(True)
+        )
+    ).all()
+    for person_id, kind in rows:
+        kinds_by_person.setdefault(person_id, set()).add(kind)
+    touched = 0
+    for person in s.execute(select(Person).order_by(Person.id)).scalars():
+        kinds = kinds_by_person.get(person.id, set())
+        quality = (
+            "stable" if IDENTIFIER_STABLE in kinds else ("handle" if IDENTIFIER_HANDLE in kinds else "display_name")
+        )
+        if person.identity_quality != quality:
+            person.identity_quality = quality
+            person.updated_at = utcnow()
+            touched += 1
+    return touched
 
 
 def unresolved_attributions(
@@ -891,10 +932,19 @@ def _person_base_payload(
     profile: PersonProfile | None,
     activity: PersonActivitySummary | None,
 ) -> dict[str, Any]:
+    identity_quality = (
+        "stable"
+        if any(identifier.get("kind") == IDENTIFIER_STABLE for identifier in identifiers)
+        else (
+            IDENTIFIER_HANDLE
+            if any(identifier.get("kind") == IDENTIFIER_HANDLE for identifier in identifiers)
+            else "profile"
+        )
+    )
     return {
         "id": person.public_id,
         "displayName": person.display_name,
-        "identityQuality": person.identity_quality,
+        "identityQuality": identity_quality,
         "identifiers": identifiers,
         "profile": {
             "bio": profile.bio,

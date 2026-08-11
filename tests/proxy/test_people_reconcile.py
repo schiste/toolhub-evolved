@@ -159,6 +159,41 @@ def test_reconciliation_retires_legacy_display_conflict_rows():
         assert all("evidence clusters" in row.review_notes for row in conflicts)
 
 
+def test_reconciliation_repairs_stale_quality_without_publishing_untrusted_handles():
+    _configure()
+    with db.session_scope() as s:
+        person = Person(
+            canonical_key="toolforge:magnus-manske",
+            display_name="Magnus Manske",
+            identity_quality="stable",
+        )
+        s.add(person)
+        s.flush()
+        s.add(
+            PersonIdentifier(
+                person_id=person.id,
+                namespace=people_index.NS_WIKI_USERNAME,
+                value="User:Magnus Manske",
+                normalized_value="user:magnus manske",
+                identifier_kind=people_index.IDENTIFIER_HANDLE,
+                source="toolhub_author_metadata",
+            )
+        )
+        trusted = people_index.ensure_person(
+            s,
+            display_name="Trusted Toolforge maintainer",
+            toolforge_username="trusted-maintainer",
+            source="toolforge_toolsadmin",
+        )
+
+        summary = people_reconcile.run(s, mode=people_reconcile.MODE_APPLY)
+
+        assert summary["identityQualitiesRefreshed"] == 1
+        assert person.identity_quality == "handle"
+        assert person.id not in people_index.public_identity_ids(s, {person.id})
+        assert trusted.id in people_index.public_identity_ids(s, {trusted.id})
+
+
 def test_stable_identity_never_adopts_a_unique_display_only_person():
     _configure()
     with db.session_scope() as s:

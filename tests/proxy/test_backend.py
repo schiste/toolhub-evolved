@@ -2923,45 +2923,24 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     data = resp.get_json()
     assert resp.status_code == 200
     assert data["toolName"] == "ada-tool"
-    assert data["counts"][sync.PERSON_REL_AUTHOR] == 1
+    assert data["counts"][sync.PERSON_REL_AUTHOR] == 0
     assert data["counts"][sync.PERSON_REL_MAINTAINER] == 1
     assert data["counts"][sync.PERSON_REL_CATALOG_ACTOR] == 2
     assert data["counts"][sync.PERSON_REL_RECORD_OWNER] == 0
     assert data["canonicalAuthority"]["catalog"] == "toolhub"
     assert "private signature payload" not in dumps(data)
-    assert "Ada Lovelace" in {
-        evidence["observedName"]
-        for person in data["people"]
-        for relationship in person["relationships"]
-        for evidence in relationship["evidence"]
-    }
+    assert {item["label"] for item in data["unresolvedAttributions"]} == {"Ada Lovelace"}
     ada_person = next(item for item in data["people"] if item["displayName"] == "Ada")
     assert {item["namespace"] for item in ada_person["identifiers"]} == {
         "toolhub_user_id",
         "toolhub_username",
     }
-    author_person = next(item for item in data["people"] if item["displayName"] == "Ada Lovelace")
-    assert {item["namespace"] for item in author_person["identifiers"]} == {
-        "toolforge_username",
-        "wiki_username",
-    }
+    assert all(item["displayName"] != "Ada Lovelace" for item in data["people"])
     assert {relationship["type"] for relationship in ada_person["relationships"]} == {
         sync.PERSON_REL_MAINTAINER,
         sync.PERSON_REL_CATALOG_ACTOR,
     }
-    assert {relationship["type"] for relationship in author_person["relationships"]} == {sync.PERSON_REL_AUTHOR}
-    evidence = author_person["relationships"][0]["evidence"][0]
-    assert evidence["checkedAt"].endswith("Z")
-    assert "expiresAt" in evidence
-    assert "evidenceUrl" not in evidence
-
-    person_detail = client.get(f"/v1/people/{author_person['id']}/").get_json()
-    assert person_detail["tools"]["count"] == 1
-    assert person_detail["tools"]["results"][0]["summaryStatus"] == "missing"
-    detail_relationship = person_detail["tools"]["results"][0]["relationships"][0]
-    assert detail_relationship["evidence"][0]["source"] == evidence["source"]
-    assert detail_relationship["evidence"][0]["method"] == evidence["method"]
-    assert detail_relationship["evidence"][0]["checkedAt"] == evidence["checkedAt"]
+    assert data["unresolvedCounts"][sync.PERSON_REL_AUTHOR] == 1
 
 
 def test_account_directory_searches_projection_and_links_only_stable_identity(client, monkeypatch):
@@ -3101,6 +3080,13 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
             display_name="Magnus Manske",
             identity_quality="display_name",
         )
+        metadata_handle_only = Person(
+            canonical_key="toolforge:magnus-manske",
+            display_name="Magnus Manske",
+            # Reproduces a legacy stale quality flag after an immutable ID moved
+            # to the canonical account person.
+            identity_quality="stable",
+        )
         linked_account_only = Person(
             canonical_key="toolhub_user_id:153",
             display_name="Linked Account Only",
@@ -3111,7 +3097,7 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
             display_name="Toolhub",
             identity_quality="stable_id",
         )
-        s.add_all([magnus, display_only, linked_account_only, toolhub_actor])
+        s.add_all([magnus, display_only, metadata_handle_only, linked_account_only, toolhub_actor])
         s.flush()
         s.add_all(
             [
@@ -3121,6 +3107,22 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     value="152",
                     normalized_value="152",
                     identifier_kind=people_index.IDENTIFIER_STABLE,
+                ),
+                PersonIdentifier(
+                    person_id=metadata_handle_only.id,
+                    namespace=people_index.NS_TOOLFORGE_USERNAME,
+                    value="Magnus Manske",
+                    normalized_value="magnus manske",
+                    identifier_kind=people_index.IDENTIFIER_HANDLE,
+                    source="toolhub_author_metadata",
+                ),
+                PersonIdentifier(
+                    person_id=metadata_handle_only.id,
+                    namespace=people_index.NS_WIKI_USERNAME,
+                    value="User:Magnus Manske",
+                    normalized_value="user:magnus manske",
+                    identifier_kind=people_index.IDENTIFIER_HANDLE,
+                    source="toolhub_author_metadata",
                 ),
                 PersonIdentifier(
                     person_id=toolhub_actor.id,
@@ -3178,6 +3180,15 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     relationship_type=sync.PERSON_REL_AUTHOR,
                     verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
                     confidence=20,
+                    evidence_count=1,
+                    toolhub_canonical=True,
+                ),
+                ToolPersonRelationship(
+                    tool_name="metadata-handle-tool",
+                    person_id=metadata_handle_only.id,
+                    relationship_type=sync.PERSON_REL_AUTHOR,
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    confidence=45,
                     evidence_count=1,
                     toolhub_canonical=True,
                 ),
@@ -3299,10 +3310,10 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     assert person["supportingEvidence"][0]["label"] == "Magnus Manske"
     assert person["supportingEvidence"][0]["relationshipBreakdown"] == [
         {
-            "bestConfidence": 20,
-            "evidenceCount": 323,
+                "bestConfidence": 45,
+            "evidenceCount": 324,
             "status": "unverified",
-            "toolCount": 323,
+            "toolCount": 324,
             "type": "author",
         }
     ]
@@ -3875,7 +3886,7 @@ def test_display_only_observations_are_scoped_instead_of_globally_merged():
         assert summary["unresolvedAttributions"][0]["label"] == "Alex"
 
 
-def test_people_directory_publishes_evidence_backed_identities_not_display_observations():
+def test_people_directory_does_not_publish_unverified_metadata_handles():
     db.configure("sqlite://")
     db.init_schema()
     from backend import people_index
@@ -3901,8 +3912,11 @@ def test_people_directory_publishes_evidence_backed_identities_not_display_obser
             ],
         )
 
-        assert [person["displayName"] for person in people_index.find_people(s, "")] == ["Handle backed"]
-        assert people_index.unresolved_attributions(s)[0]["label"] == "Visible"
+        assert people_index.find_people(s, "") == []
+        assert {item["label"] for item in people_index.unresolved_attributions(s)} == {
+            "Handle backed",
+            "Visible",
+        }
 
 
 def test_people_directory_endpoint_separates_unresolved_attributions(client):
@@ -3929,13 +3943,13 @@ def test_people_directory_endpoint_separates_unresolved_attributions(client):
         )
 
     data = client.get("/v1/people/?q=alex").get_json()
-    assert data["count"] == 1
-    assert data["results"][0]["displayName"] == "Alex Maintainer"
+    assert data["count"] == 0
+    assert data["results"] == []
     assert "unresolvedAttributions" not in data
 
     unresolved = client.get("/v1/people/attributions/?q=alex").get_json()
-    assert unresolved["count"] == 1
-    assert unresolved["results"][0]["label"] == "Alex"
+    assert unresolved["count"] == 2
+    assert {item["label"] for item in unresolved["results"]} == {"Alex", "Alex Maintainer"}
 
 
 def _add_directory_person(

@@ -641,6 +641,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     try:
         before = build_plan(s)
         if mode == MODE_APPLY:
+            identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
             non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
             for user in s.execute(select(User).order_by(User.id)).scalars():
                 people_index.link_user(s, user)
@@ -661,6 +662,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 people_index.refresh_activity_summaries(s)
         else:
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
+            identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
         after = build_plan(s)
         summary = {
@@ -670,6 +672,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "relationships": after["relationshipsScanned"],
             "conflicts": _pending_actionable_conflict_count(s),
             "ambiguousDisplayNameClusters": after["ambiguousDisplayNameClusters"],
+            "identityQualitiesRefreshed": identity_qualities_refreshed,
             "nonActionableConflictsRetired": non_actionable_conflicts_retired,
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY and rebuild_tools else 0,
             "identityCandidatesCreated": candidate_result["created"],
