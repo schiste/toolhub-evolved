@@ -74,6 +74,19 @@ test("navigateTo pushes (or replaces) same-origin paths and dispatches the event
 	}
 });
 
+test("navigateTo compares equivalent query encodings and only starts pending UI for real transitions", () => {
+	window.history.replaceState({}, "", "/people?q=Magnus%20Manske&role=author");
+	let pending = 0;
+	const beforeNavigate = () => {
+		pending += 1;
+	};
+	assert.equal(routing.navigateTo("/people?role=author&q=Magnus+Manske", { beforeNavigate }), false);
+	assert.equal(pending, 0);
+
+	assert.equal(routing.navigateTo("/people?role=maintainer&q=Magnus+Manske", { beforeNavigate }), true);
+	assert.equal(pending, 1);
+});
+
 test("navigateTo to a cross-origin href hands off to location and does not dispatch", () => {
 	window.history.replaceState({}, "", "/start");
 	let fired = 0;

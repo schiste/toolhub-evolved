@@ -825,7 +825,7 @@ export async function viewPeople() {
 				const data = new FormData(form);
 				const pageSize = /** @type {HTMLSelectElement | null} */ ($("#people-page-size"));
 				const ordering = /** @type {HTMLSelectElement | null} */ ($("#people-sort"));
-				const navigated = navigateTo(
+				navigateTo(
 					peopleDirectoryHref({
 						q: String(data.get("q") || "").trim(),
 						page: 1,
@@ -839,9 +839,9 @@ export async function viewPeople() {
 							.slice(0, 255),
 						ordering: choice(ordering?.value || "", PEOPLE_ORDERINGS, "relevance"),
 						accountId: ""
-					})
+					}),
+					{ beforeNavigate: showLoading }
 				);
-				if (navigated) showLoading();
 			};
 			form?.addEventListener("submit", (event) => {
 				event.preventDefault();
@@ -855,13 +855,13 @@ export async function viewPeople() {
 			$("[data-people-pager]")?.addEventListener("click", (event) => {
 				const button = /** @type {HTMLElement | null} */ (event.target?.closest?.("[data-page]"));
 				if (!button) return;
-				const navigated = navigateTo(
+				navigateTo(
 					peopleDirectoryHref({
 						...state,
 						page: positiveInteger(button.getAttribute("data-page"), state.page)
-					})
+					}),
+					{ beforeNavigate: showLoading }
 				);
-				if (navigated) showLoading();
 			});
 			$("[data-people-retry]")?.addEventListener("click", () => {
 				showLoading();

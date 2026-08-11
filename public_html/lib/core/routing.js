@@ -50,20 +50,28 @@ export function normalizeLegacyHashRoute() {
 	return true;
 }
 
+/** @param {URL} url */
+function routeIdentity(url) {
+	const query = new URLSearchParams(url.search);
+	query.sort();
+	return `${url.pathname}${query.size > 0 ? `?${query}` : ""}`;
+}
+
 /**
  * @param {string} href
- * @param {{ replace?: boolean }} [opts]
+ * @param {{ replace?: boolean, beforeNavigate?: () => void }} [opts]
  * @returns {boolean} whether a navigation was started
  */
 export function navigateTo(href, opts = {}) {
 	const url = new URL(href, location.href);
 	if (url.origin !== location.origin) {
+		opts.beforeNavigate?.();
 		location.href = href;
 		return true;
 	}
 	const next = url.pathname + url.search;
-	const current = location.pathname + location.search;
-	if (next === current) return false;
+	if (routeIdentity(url) === routeIdentity(new URL(location.href))) return false;
+	opts.beforeNavigate?.();
 	// Stryker disable next-line StringLiteral: the 2nd arg is the legacy (ignored) history title; mutating it has no observable effect. (The method-name strings are exercised by the push/replace tests.)
 	history[opts.replace ? "replaceState" : "pushState"]({}, "", next);
 	window.dispatchEvent(new Event("toolhub:navigate"));

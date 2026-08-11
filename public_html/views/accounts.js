@@ -200,7 +200,6 @@ export async function viewAccounts(options = {}) {
 			const navigateFromForm = () => {
 				if (!form) return;
 				const data = new FormData(form);
-				showLoading();
 				navigateTo(
 					accountDirectoryHref(state, {
 						q: String(data.get("q") || "")
@@ -219,7 +218,8 @@ export async function viewAccounts(options = {}) {
 							: DEFAULT_ACCOUNT_PAGE_SIZE,
 						page: 1,
 						accountId: ""
-					})
+					}),
+					{ beforeNavigate: showLoading }
 				);
 			};
 			form?.addEventListener("submit", (event) => {
@@ -236,7 +236,8 @@ export async function viewAccounts(options = {}) {
 					accountDirectoryHref(state, {
 						page: positiveInteger(button.getAttribute("data-page"), state.page),
 						accountId: ""
-					})
+					}),
+					{ beforeNavigate: showLoading }
 				);
 			});
 			$("[data-account-retry]")?.addEventListener("click", () =>

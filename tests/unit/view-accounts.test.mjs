@@ -88,6 +88,26 @@ test("account search and pagination preserve filters in browser history", async 
 	assert.equal(params.has("page"), false);
 });
 
+test("unchanged account filters neither navigate nor leave the results busy", async () => {
+	window.history.replaceState({}, "", "/people?q=Ada");
+	h.backendGetJson.mockResolvedValue(readyDirectory);
+	const view = await viewAccounts();
+	document.body.innerHTML = view.html;
+	view.mount();
+	let navigations = 0;
+	const countNavigation = () => {
+		navigations += 1;
+	};
+	window.addEventListener("toolhub:navigate", countNavigation);
+	try {
+		document.querySelector("[data-account-search]").dispatchEvent(new Event("submit", { cancelable: true }));
+		assert.equal(navigations, 0);
+		assert.equal(document.querySelector("[data-account-results]").hasAttribute("aria-busy"), false);
+	} finally {
+		window.removeEventListener("toolhub:navigate", countNavigation);
+	}
+});
+
 test("account detail exposes registration facts and only a backend-approved person link", async () => {
 	window.history.replaceState({}, "", "/people?view=accounts&q=Ada&account=42");
 	h.backendGetJson.mockResolvedValue({
