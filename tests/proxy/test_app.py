@@ -34,6 +34,10 @@ from backend.models import ApiCache, CanonicalToolCache, PersonReconciliationQue
 @pytest.fixture(autouse=True)
 def _clear_cache(monkeypatch):
     """The proxy's API cache and read limiter are process-wide; isolate tests."""
+    # Keep executor work inside the fixture that owns its in-memory SQLite
+    # engine. Queue semantics are covered by tests that replace submit below;
+    # a real thread here could outlive teardown and race the next db.configure().
+    monkeypatch.setattr(proxy_app._BACKGROUND_REFRESH, "submit", lambda fn, *args: fn(*args))
     proxy_app.api_cache.clear()
     proxy_app.security.clear_rate_limits()
     with proxy_app._BACKGROUND_REFRESH_LOCK:
