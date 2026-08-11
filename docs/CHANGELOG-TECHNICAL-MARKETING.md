@@ -1,9 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Source range: 828438f..a222236 (132 commits) -->
+<!-- Source range: 828438f..04bfcf1 (139 commits) -->
 
 # Technical Release Notes
 
+- Normalizes SPA route identity across query ordering and equivalent encodings, runs pending-state callbacks only for real transitions, and separates navigation cleanup from same-route data repaints.
+- Skips the legacy relationship-evidence backfill after its source table has been retired, removing the full 13,750-row rebuild that consumed roughly 40 minutes of an otherwise frontend-only deployment.
+- Contains background cache work inside its owning SQLite test fixture and allows local Playwright runs to reuse an installed Chromium executable without changing CI's pinned-browser default.
 - Makes SPA navigation idempotent: same-path-and-query requests no longer dispatch route renders, and directory loading feedback appears only after a real URL transition, preventing restored form controls from creating a render/remount loop.
 - Requires handle-only public identities to come from OAuth, Toolsadmin, the verified Wikimedia/Toolforge bridge, or an authenticated claim; canonical author metadata remains unresolved evidence, stronger provenance cannot be downgraded by refreshes, and reconciliation repairs stale identity-quality flags.
 - Restructures `/v1/community/` into primary identities/accounts, relationship-backed and structured tool matches, standalone unresolved evidence, and weak description-only matches while retaining a compatibility alias for primary results.
