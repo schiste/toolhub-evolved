@@ -51,7 +51,8 @@ test.describe("RTL layout smoke", () => {
 			{ selector: ".tcard__flag", required: true }
 		]);
 
-		await page.getByRole("button", { name: /quick look: wikidata query helper/i }).click();
+		const queryHelper = page.locator(".tcard").filter({ hasText: "Wikidata Query Helper" });
+		await queryHelper.locator(".tcard__desc").click();
 		await expect(page.locator("#qv")).not.toHaveClass(/hidden/);
 		await expectNoDocumentOverflow(page, "quick-view");
 		await expectVisibleSelectorsInsideViewport(page, [

@@ -422,6 +422,8 @@ $("#qv")?.addEventListener("click", (e) => {
 });
 document.addEventListener("toolhub:route-render-start", () => {
 	markPageDiagnostics(`${location.pathname}${location.search}`);
+});
+document.addEventListener("toolhub:navigation-start", () => {
 	clearIssueContext();
 	closeAcctMenu();
 	closeWhatsNew();
@@ -505,6 +507,7 @@ document.addEventListener("click", (e) => {
 // Real navigation only — a refresh repaint calls render() directly and must not
 // top its own budget back up, which would defeat the cap.
 const renderForNavigation = () => {
+	document.dispatchEvent(new Event("toolhub:navigation-start"));
 	resetRefreshRenderBudget();
 	render();
 };

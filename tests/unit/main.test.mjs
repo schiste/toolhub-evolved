@@ -547,10 +547,15 @@ test("Escape closes the modal and menus; any other key feeds the focus trap", as
 	assert.equal(quickview.closeQuickView.mock.calls.length, 0);
 });
 
-test("route-render-start closes entrypoint-owned transient UI", async () => {
+test("refresh renders preserve transient UI while real navigation closes it", async () => {
 	await loadQuickViewForTest();
 	vi.clearAllMocks();
 	document.dispatchEvent(new window.Event("toolhub:route-render-start"));
+	await settleDynamicImports();
+	assert.equal(account.closeAcctMenu.mock.calls.length, 0);
+	assert.equal(quickview.closeQuickView.mock.calls.length, 0);
+
+	window.dispatchEvent(new window.Event("toolhub:navigate"));
 	await settleDynamicImports();
 	assert.equal(account.closeAcctMenu.mock.calls.length, 1);
 	assert.equal(quickview.closeQuickView.mock.calls.length, 1);
