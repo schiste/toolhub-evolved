@@ -248,11 +248,11 @@ def _legacy_role(source: str, method: str) -> str:
 
 def _backfill_relationship_evidence() -> int:
     """Backfill evidence from canonical Toolhub cache, claims, and old edges."""
+    if "tool_maintainer_edges" not in inspect(db.engine()).get_table_names():
+        return 0
     touched = 0
     with db.session_scope() as s:
-        legacy = []
-        if "tool_maintainer_edges" in inspect(db.engine()).get_table_names():
-            legacy = s.execute(text("SELECT * FROM tool_maintainer_edges ORDER BY tool_name, id")).mappings().all()
+        legacy = s.execute(text("SELECT * FROM tool_maintainer_edges ORDER BY tool_name, id")).mappings().all()
         grouped: dict[tuple[str, str], list[dict]] = {}
         for row in legacy:
             source = str(row.get("source") or "legacy_maintainer_edge")

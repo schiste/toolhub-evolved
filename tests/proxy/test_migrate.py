@@ -182,6 +182,20 @@ def test_relationship_backfill_prefers_current_canonical_metadata_over_legacy_sn
         assert [row.observed_name for row in active] == ["Current Author"]
 
 
+def test_relationship_backfill_skips_canonical_rebuild_after_legacy_table_is_retired(configured_db, monkeypatch):
+    canonical_tools.upsert_records(
+        [{"name": "current-tool", "author": [{"name": "Current Author"}]}],
+        source_url="https://toolhub.wikimedia.org/api/search/tools/",
+    )
+
+    def unexpected_rebuild(*_args, **_kwargs):
+        pytest.fail("canonical evidence must not be rebuilt after legacy edge retirement")
+
+    monkeypatch.setattr(maintainer_index, "replace_toolhub_metadata_edges", unexpected_rebuild)
+
+    assert migrate._backfill_relationship_evidence() == 0  # noqa: SLF001 - completion-marker regression
+
+
 def test_migrate_refuses_to_run_against_the_unconfigured_default(monkeypatch, capsys):
     """The guard for the mistake that matters: migrating a stale local database.
 
