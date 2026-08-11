@@ -535,6 +535,26 @@ test("people search submission navigates, resets paging, and announces loading",
 	assert.match(document.querySelector("[data-people-results]").textContent, /Searching/);
 });
 
+test("people search submission is stable when the form already represents the current URL", async () => {
+	window.history.replaceState({}, "", "/people?q=Ada");
+	h.backendGetJson.mockResolvedValueOnce({ count: 0, page: 1, pageSize: 24, pageCount: 1, results: [] });
+	const view = await viewPeople();
+	document.body.innerHTML = view.html;
+	view.mount();
+	let navigations = 0;
+	const countNavigation = () => {
+		navigations += 1;
+	};
+	window.addEventListener("toolhub:navigate", countNavigation);
+	try {
+		document.querySelector("[data-people-search]").dispatchEvent(new Event("submit", { cancelable: true }));
+		assert.equal(navigations, 0);
+		assert.doesNotMatch(document.querySelector("[data-people-results]").textContent, /Searching/);
+	} finally {
+		window.removeEventListener("toolhub:navigate", countNavigation);
+	}
+});
+
 test("people pagination preserves filters in the URL", async () => {
 	window.history.replaceState({}, "", "/people?q=Ada&role=maintainer");
 	h.backendGetJson

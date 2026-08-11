@@ -53,21 +53,21 @@ test("navigateTo pushes (or replaces) same-origin paths and dispatches the event
 	window.addEventListener("toolhub:navigate", handler);
 	try {
 		const len0 = history.length;
-		routing.navigateTo("/tools/abc");
+		assert.equal(routing.navigateTo("/tools/abc"), true);
 		assert.equal(location.pathname, "/tools/abc");
 		assert.equal(fired, 1);
 		const lenAfterPush = history.length;
 		assert.equal(lenAfterPush, len0 + 1); // pushState grows the stack
 
-		routing.navigateTo("/tools/def", { replace: true });
+		assert.equal(routing.navigateTo("/tools/def", { replace: true }), true);
 		assert.equal(location.pathname, "/tools/def");
 		assert.equal(fired, 2);
 		assert.equal(history.length, lenAfterPush); // replaceState does not grow it
 
-		// Navigating to the current path dispatches but does not push a new entry.
+		// Navigating to the current path is a complete no-op.
 		const lenBefore = history.length;
-		routing.navigateTo("/tools/def");
-		assert.equal(fired, 3);
+		assert.equal(routing.navigateTo("/tools/def"), false);
+		assert.equal(fired, 2);
 		assert.equal(history.length, lenBefore);
 	} finally {
 		window.removeEventListener("toolhub:navigate", handler);
