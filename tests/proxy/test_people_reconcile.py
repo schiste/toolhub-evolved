@@ -253,6 +253,39 @@ def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
     assert people_reconcile.process_queue(limit=1) == {"claimed": 0, "processed": 0, "failed": 0}
 
 
+def test_confirmed_catalog_retirement_withdraws_evidence_and_public_relationships():
+    _configure()
+    with db.session_scope() as s:
+        person = people_index.ensure_person(
+            s,
+            display_name="Retired Maintainer",
+            toolforge_username="retired-maintainer",
+        )
+        people_index.replace_source_evidence(
+            s,
+            "retired-tool",
+            maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+            [
+                {
+                    "display_name": "Retired Maintainer",
+                    "toolforge_username": "retired-maintainer",
+                    "relationship_type": sync.PERSON_REL_MAINTAINER,
+                }
+            ],
+        )
+        public_id = person.public_id
+
+    people_reconcile.enqueue_tool_names(["retired-tool"], reason="canonical_retired")
+    summary = people_reconcile.process_queue(limit=1)
+
+    assert summary == {"claimed": 1, "processed": 1, "failed": 0}
+    with db.session_scope() as s:
+        assert s.query(ToolPersonRelationship).filter_by(tool_name="retired-tool").count() == 0
+        evidence = s.query(ToolRelationshipEvidence).filter_by(tool_name="retired-tool").one()
+        assert evidence.withdrawn_at is not None
+        assert people_index.person_detail(s, public_id)["toolCount"] == 0
+
+
 def test_identity_only_resolution_does_not_rebuild_canonical_tool_evidence():
     _configure()
     with db.session_scope() as s:

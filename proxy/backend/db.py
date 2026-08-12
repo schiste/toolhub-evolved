@@ -161,6 +161,10 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "reconcile_next_page": "INTEGER NOT NULL DEFAULT 1",
             "reconcile_cycles_completed": "INTEGER NOT NULL DEFAULT 0",
             "reconcile_last_at": "DATETIME NULL",
+            "snapshot_generation": "INTEGER NOT NULL DEFAULT 0",
+            "snapshot_next_page": "INTEGER NOT NULL DEFAULT 1",
+            "snapshot_expected_count": "INTEGER NOT NULL DEFAULT 0",
+            "snapshot_started_at": "DATETIME NULL",
             "recent_latest_marker": "VARCHAR(255) NULL",
             "recent_pending_tools": f"{json_col} NULL",
             "recent_last_at": "DATETIME NULL",
@@ -176,6 +180,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         },
         "canonical_tool_cache": {
             "search_text": f"{text_col} NULL",
+            "generation": "INTEGER NOT NULL DEFAULT 0",
         },
         "people": {
             # Filled by the one-off data migration. UUID generation is kept out

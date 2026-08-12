@@ -55,25 +55,33 @@ def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - untrusted sto
     return str(value or "").strip()[:limit]
 
 
-def enqueue_tool_names(tool_names: list[str], *, reason: str = "data_ingestion") -> int:
+def enqueue_tool_names_in_session(s: Session, tool_names: list[str], *, reason: str = "data_ingestion") -> int:
+    """Upsert reconciliation work within the caller's transaction."""
     names = sorted({_clean(name) for name in tool_names if _clean(name)})
     if not names:
         return 0
     now = utcnow()
-    with db.session_scope() as s:
-        for name in names:
-            row = s.get(PersonReconciliationQueue, name)
-            if row is None:
-                s.add(PersonReconciliationQueue(tool_name=name, reason=_clean(reason, 64), enqueued_at=now))
-            else:
-                row.reason = _clean(reason, 64) or row.reason
-                row.enqueued_at = now
-                row.next_attempt_at = None
-                row.last_error = None
+    for name in names:
+        row = s.get(PersonReconciliationQueue, name)
+        if row is None:
+            s.add(PersonReconciliationQueue(tool_name=name, reason=_clean(reason, 64), enqueued_at=now))
+        else:
+            row.reason = _clean(reason, 64) or row.reason
+            row.enqueued_at = now
+            row.next_attempt_at = None
+            row.last_error = None
     return len(names)
 
 
-def _reconcile_tool(s: Session, name: str) -> None:
+def enqueue_tool_names(tool_names: list[str], *, reason: str = "data_ingestion") -> int:
+    with db.session_scope() as s:
+        return enqueue_tool_names_in_session(s, tool_names, reason=reason)
+
+
+def _reconcile_tool(s: Session, name: str, *, retired: bool = False) -> None:
+    if retired:
+        people_index.retire_tool_relationships(s, name)
+        return
     cache = s.get(CanonicalToolCache, name)
     if cache is not None and isinstance(cache.record, dict):
         maintainer_index.replace_toolhub_metadata_edges(s, name, cache.record)
@@ -200,7 +208,7 @@ def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
                 row = s.get(PersonReconciliationQueue, name)
                 if row is None:
                     continue
-                _reconcile_tool(s, name)
+                _reconcile_tool(s, name, retired=row.reason == "canonical_retired")
                 s.delete(row)
             processed += 1
         except Exception as exc:  # noqa: BLE001 - persisted bounded retry state
@@ -212,6 +220,19 @@ def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
                     row.next_attempt_at = utcnow() + timedelta(minutes=min(60, 2 ** min(row.attempts, 6)))
                     row.last_error = _clean(str(exc), 2000)
     return {"claimed": len(names), "processed": processed, "failed": failed}
+
+
+def drain_queue(*, max_batches: int = 100) -> dict[str, int]:
+    """Drain all currently actionable rows in bounded batches."""
+    totals = {"claimed": 0, "processed": 0, "failed": 0, "batches": 0}
+    for _batch in range(max(1, min(max_batches, 100))):
+        result = process_queue(limit=DEFAULT_QUEUE_LIMIT)
+        if result["claimed"] == 0:
+            break
+        totals["batches"] += 1
+        for key in ("claimed", "processed", "failed"):
+            totals[key] += result[key]
+    return totals
 
 
 def _ambiguous_display_name_count(s: Session) -> int:

@@ -93,6 +93,13 @@ if [ -x "$VENV_PY" ]; then
 	# attribute. Probe the real read-only schema before identity reconciliation.
 	echo "Checking Wikimedia LDAP identity schema ..."
 	run_with_tool_env identity-smoke "$REPO_DIR/proxy/public_identity_smoke.py"
+	# Complete catalog generations are the deletion boundary: only after every
+	# official page and the advertised distinct count agree may stale canonical
+	# rows disappear. Process the resulting queue before serving the new build so
+	# retired tools cannot survive through historical people evidence.
+	echo "Refreshing complete official Toolhub catalog projection ..."
+	run_with_tool_env catalog-sync "$REPO_DIR/proxy/catalog_sync.py --complete --page-size 100 --min-interval 3"
+	run_with_tool_env people-retire "$REPO_DIR/proxy/people_reconcile.py --queue-all"
 	# Materialize a first bounded cross-system identity batch before the new
 	# directory is served. The hourly job continues through the remaining
 	# population and retries transient CentralAuth or LDAP failures.

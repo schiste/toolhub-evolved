@@ -137,6 +137,10 @@ class CanonicalToolCache(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     stale_until: Mapped[datetime] = mapped_column(DateTime, index=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Full catalog snapshots mark every observed row with one generation.
+    # Rows from older generations are pruned only after the new snapshot has
+    # fetched every page and matched Toolhub's advertised distinct count.
+    generation: Mapped[int] = mapped_column(Integer, default=0, index=True)
 
     @validates("record")
     def _derive_search_text(self, _key: str, record: dict | None) -> dict | None:
@@ -361,6 +365,10 @@ class ToolCatalogSyncState(Base):
     reconcile_next_page: Mapped[int] = mapped_column(Integer, default=1)
     reconcile_cycles_completed: Mapped[int] = mapped_column(Integer, default=0)
     reconcile_last_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    snapshot_generation: Mapped[int] = mapped_column(Integer, default=0)
+    snapshot_next_page: Mapped[int] = mapped_column(Integer, default=1)
+    snapshot_expected_count: Mapped[int] = mapped_column(Integer, default=0)
+    snapshot_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     recent_latest_marker: Mapped[str | None] = mapped_column(String(255), nullable=True)
     recent_pending_tools: Mapped[list] = mapped_column(JSON, default=list)
     recent_last_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db, toolhub  # noqa: E402
-from backend.models import CanonicalToolCache, ToolCatalogSyncState  # noqa: E402
+from backend.models import CanonicalToolCache, PersonReconciliationQueue, ToolCatalogSyncState  # noqa: E402
 import catalog_sync  # noqa: E402
 
 
@@ -22,14 +22,26 @@ def database():
 def test_listing_page_validates_paginated_and_list_payloads(monkeypatch):
     payloads = iter(
         [
-            {"results": [{"name": "first"}], "next": "https://toolhub.example/api/tools/?page=2"},
+            {"count": 2, "results": [{"name": "first"}], "next": "https://toolhub.example/api/tools/?page=2"},
             [{"name": "last"}, "invalid"],
         ]
     )
     monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: next(payloads))
 
-    assert catalog_sync.listing_page(1, 100) == ([{"name": "first"}], True)
-    assert catalog_sync.listing_page(2, 100) == ([{"name": "last"}], False)
+    assert catalog_sync.listing_page(1, 100) == ([{"name": "first"}], True, 2)
+    assert catalog_sync.listing_page(2, 100) == ([{"name": "last"}], False, 1)
+
+
+@pytest.mark.parametrize("count", [None, "invalid", 0, -1])
+def test_listing_page_rejects_an_unusable_snapshot_count(monkeypatch, count):
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda *_args, **_kwargs: {"count": count, "results": [], "next": None},
+    )
+
+    with pytest.raises(catalog_sync.CatalogSyncError, match="valid count"):
+        catalog_sync.listing_page(1, 100)
 
 
 def test_run_upserts_pages_tracks_cursor_and_paces_requests(monkeypatch):
@@ -37,7 +49,7 @@ def test_run_upserts_pages_tracks_cursor_and_paces_requests(monkeypatch):
 
     def fake_page(page, page_size):
         calls.append((page, page_size))
-        return ([{"name": f"tool-{page}", "title": f"Tool {page}"}], page <= 3)
+        return ([{"name": f"tool-{page}", "title": f"Tool {page}"}], page <= 3, 4)
 
     sleeps = []
     monkeypatch.setattr(catalog_sync, "listing_page", fake_page)
@@ -57,7 +69,7 @@ def test_run_upserts_pages_tracks_cursor_and_paces_requests(monkeypatch):
 
 
 def test_run_wraps_cursor_after_last_page(monkeypatch):
-    monkeypatch.setattr(catalog_sync, "listing_page", lambda *_args: ([{"name": "last"}], False))
+    monkeypatch.setattr(catalog_sync, "listing_page", lambda *_args: ([{"name": "last"}], False, 1))
 
     summary = catalog_sync.run(pages_per_run=1, sleep_fn=lambda _seconds: None)
 
@@ -68,6 +80,100 @@ def test_run_wraps_cursor_after_last_page(monkeypatch):
         assert state is not None
         assert state.cycles_completed == 1
         assert state.last_completed_at is not None
+
+
+def test_complete_snapshot_prunes_only_names_absent_from_every_official_page(monkeypatch):
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="retired-tool",
+                record={"name": "retired-tool", "title": "Retired"},
+                source_url="https://toolhub.example/api/tools/?page=1",
+                expires_at=catalog_sync.utcnow(),
+                stale_until=catalog_sync.utcnow(),
+            )
+        )
+
+    pages = {
+        1: ([{"name": "active-one", "title": "One"}], True, 2),
+        2: ([{"name": "active-two", "title": "Two"}], False, 2),
+    }
+    monkeypatch.setattr(catalog_sync, "listing_page", lambda page, _page_size: pages[page])
+
+    summary = catalog_sync.run_complete(sleep_fn=lambda _seconds: None)
+
+    assert summary == {
+        "phase": "complete",
+        "pages": 2,
+        "records": 2,
+        "retired": 1,
+        "generation": 1,
+        "completed": True,
+    }
+    with db.session_scope() as s:
+        assert {row.tool_name for row in s.query(CanonicalToolCache)} == {"active-one", "active-two"}
+        assert {row.generation for row in s.query(CanonicalToolCache)} == {1}
+        assert s.get(PersonReconciliationQueue, "retired-tool").reason == "canonical_retired"
+
+
+def test_interrupted_complete_snapshot_preserves_last_known_good_catalog(monkeypatch):
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="keep-until-complete",
+                record={"name": "keep-until-complete", "title": "Keep"},
+                source_url="https://toolhub.example/api/tools/?page=1",
+                expires_at=catalog_sync.utcnow(),
+                stale_until=catalog_sync.utcnow(),
+            )
+        )
+
+    def page(number, _page_size):
+        if number == 1:
+            return ([{"name": "new-tool", "title": "New"}], True, 2)
+        raise toolhub.ToolhubAPIError(503, {"detail": "busy"})
+
+    monkeypatch.setattr(catalog_sync, "listing_page", page)
+
+    with pytest.raises(toolhub.ToolhubAPIError):
+        catalog_sync.run_complete(sleep_fn=lambda _seconds: None)
+
+    with db.session_scope() as s:
+        assert s.get(CanonicalToolCache, "keep-until-complete") is not None
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.snapshot_next_page == 2
+        assert state.snapshot_started_at is not None
+        assert state.status == "error"
+
+
+def test_changed_count_restarts_snapshot_without_pruning(monkeypatch):
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="last-known-good",
+                record={"name": "last-known-good"},
+                source_url="https://toolhub.example/api/tools/?page=1",
+                expires_at=catalog_sync.utcnow(),
+                stale_until=catalog_sync.utcnow(),
+            )
+        )
+
+    pages = {
+        1: ([{"name": "new-one"}], True, 2),
+        2: ([{"name": "new-two"}], False, 3),
+    }
+    monkeypatch.setattr(catalog_sync, "listing_page", lambda page, _page_size: pages[page])
+
+    with pytest.raises(catalog_sync.SnapshotConsistencyError, match="count changed"):
+        catalog_sync.run_complete(sleep_fn=lambda _seconds: None)
+
+    with db.session_scope() as s:
+        assert s.get(CanonicalToolCache, "last-known-good") is not None
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.snapshot_next_page == 1
+        assert state.snapshot_expected_count == 0
+        assert state.snapshot_started_at is None
+        assert state.status == "error"
 
 
 def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
@@ -91,7 +197,7 @@ def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
     monkeypatch.setattr(
         catalog_sync,
         "listing_page",
-        lambda _page, _page_size: ([{"name": "reconcile-tool", "title": "Reconcile"}], True),
+        lambda _page, _page_size: ([{"name": "reconcile-tool", "title": "Reconcile"}], True, 2),
     )
     monkeypatch.setattr(
         toolhub,

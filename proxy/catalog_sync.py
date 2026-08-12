@@ -32,6 +32,7 @@ RECENT_PATH = "/api/recent/"
 RECENT_PAGE_SIZE = 50
 MAX_RECENT_DETAILS_PER_RUN = 20
 MAX_GRAPH_DETAILS_PER_RUN = 20
+MAX_COMPLETE_PAGES = 100
 RECONCILE_INTERVAL = timedelta(hours=12)
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
@@ -41,6 +42,10 @@ CATALOG_PATH = "/api/tools/"
 
 class CatalogSyncError(RuntimeError):
     """Raised when an official catalog page cannot be consumed safely."""
+
+
+class SnapshotConsistencyError(CatalogSyncError):
+    """A full snapshot changed shape and must restart from page one."""
 
 
 def _catalog_error(message: str) -> CatalogSyncError:
@@ -63,6 +68,18 @@ def _invalid_detail_error(name: str) -> CatalogSyncError:
     return _catalog_error(f"Toolhub returned an invalid detail for {name}")
 
 
+def _invalid_count_error() -> CatalogSyncError:
+    return _catalog_error("Toolhub catalog response did not contain a valid count")
+
+
+def _changed_count_error(before: int, after: int) -> CatalogSyncError:
+    return SnapshotConsistencyError(f"Toolhub catalog count changed during snapshot: {before} to {after}")
+
+
+def _page_limit_error() -> CatalogSyncError:
+    return SnapshotConsistencyError(f"Toolhub catalog exceeded the {MAX_COMPLETE_PAGES}-page safety limit")
+
+
 def _state(s: Any) -> ToolCatalogSyncState:  # noqa: ANN401 - SQLAlchemy session
     row = s.get(ToolCatalogSyncState, STATE_KEY)
     if row is None:
@@ -71,19 +88,25 @@ def _state(s: Any) -> ToolCatalogSyncState:  # noqa: ANN401 - SQLAlchemy session
     return row
 
 
-def listing_page(page: int, page_size: int) -> tuple[list[dict[str, Any]], bool]:
+def listing_page(page: int, page_size: int) -> tuple[list[dict[str, Any]], bool, int]:
     """Fetch and validate one paginated official catalog response."""
     payload = toolhub.public_api_get(CATALOG_PATH, params={"page": page, "page_size": page_size})
     if isinstance(payload, list):
         rows = [row for row in payload if isinstance(row, dict)]
-        return rows, False
+        return rows, False, len(rows)
     if not isinstance(payload, dict):
         raise _invalid_catalog_shape_error()
     raw_rows = payload.get("results")
     if not isinstance(raw_rows, list):
         raise _missing_results_error()
     rows = [row for row in raw_rows if isinstance(row, dict)]
-    return rows, bool(payload.get("next"))
+    try:
+        total_count = int(payload.get("count"))
+    except (TypeError, ValueError):
+        raise _invalid_count_error() from None
+    if total_count <= 0:
+        raise _invalid_count_error()
+    return rows, bool(payload.get("next")), total_count
 
 
 def recent_page() -> list[dict[str, Any]]:
@@ -221,7 +244,7 @@ def _initial_backfill(
     for offset in range(pages_limit):
         if offset:
             sleep_fn(interval)
-        rows, has_next = listing_page(current_page, page_size)
+        rows, has_next, _total_count = listing_page(current_page, page_size)
         if not rows and has_next:
             raise _empty_page_error(current_page)
         records += _store_page(current_page, page_size, rows, has_next=has_next, reconcile=False)
@@ -345,11 +368,141 @@ def _reconcile_if_due(page_size: int) -> dict[str, int]:
         if state.reconcile_last_at is not None and now - state.reconcile_last_at < RECONCILE_INTERVAL:
             return {"reconcile_pages": 0, "reconcile_records": 0}
         page = max(1, state.reconcile_next_page)
-    rows, has_next = listing_page(page, page_size)
+    rows, has_next, _total_count = listing_page(page, page_size)
     if not rows and has_next:
         raise _empty_page_error(page)
     inserted = _store_page(page, page_size, rows, has_next=has_next, reconcile=True)
     return {"reconcile_pages": 1, "reconcile_records": inserted}
+
+
+def _begin_snapshot() -> tuple[int, int, int]:
+    """Start or resume one complete catalog generation."""
+    with db.session_scope() as s:
+        state = _state(s)
+        if state.snapshot_started_at is None:
+            state.snapshot_generation = int(state.snapshot_generation or 0) + 1
+            state.snapshot_next_page = 1
+            state.snapshot_expected_count = 0
+            state.snapshot_started_at = utcnow()
+        state.status = STATUS_RUNNING
+        state.last_started_at = utcnow()
+        state.last_error = None
+        return (
+            int(state.snapshot_next_page or 1),
+            int(state.snapshot_generation or 1),
+            int(state.snapshot_expected_count or 0),
+        )
+
+
+def _restart_snapshot() -> None:
+    """Discard only the incomplete cursor; last-known-good rows stay intact."""
+    with db.session_scope() as s:
+        state = _state(s)
+        state.snapshot_next_page = 1
+        state.snapshot_expected_count = 0
+        state.snapshot_started_at = None
+
+
+def _store_snapshot_page(
+    rows: list[dict[str, Any]], *, page: int, page_size: int, generation: int, expected_count: int
+) -> int:
+    """Persist one validated page and its resumable cursor."""
+    stored = canonical_tools.upsert_records(
+        rows,
+        source_url=listing_url(page, page_size),
+        detail=False,
+        generation=generation,
+        # Incremental and recent-detail syncs already enqueue changed records.
+        # A full snapshot exists to prove absence, so only retired names need a
+        # new reconciliation event.
+        enqueue_reconciliation=False,
+    )
+    with db.session_scope() as s:
+        state = _state(s)
+        state.snapshot_expected_count = expected_count
+        state.snapshot_next_page = page + 1
+        state.pages_fetched += 1
+        state.records_seen += stored
+        state.last_success_at = utcnow()
+    graph_enrichment.refresh_tool_names([str(row.get("name") or "") for row in rows])
+    return stored
+
+
+def _publish_snapshot(generation: int, expected_count: int) -> list[str]:
+    """Atomically prune a validated generation and publish its retirements."""
+    from backend.people_reconcile import enqueue_tool_names_in_session  # noqa: PLC0415
+
+    with db.session_scope() as s:
+        try:
+            retired = canonical_tools.prune_completed_generation(s, generation, expected_count)
+        except ValueError as exc:
+            raise SnapshotConsistencyError(str(exc)) from exc
+        enqueue_tool_names_in_session(s, retired, reason="canonical_retired")
+        state = _state(s)
+        state.snapshot_next_page = 1
+        state.snapshot_expected_count = 0
+        state.snapshot_started_at = None
+        state.cycles_completed += 1
+        state.last_completed_at = utcnow()
+        state.status = STATUS_IDLE
+    from backend import api_cache  # noqa: PLC0415 - avoid backend import cycle
+
+    for name in retired:
+        api_cache.invalidate_tool(name)
+    return retired
+
+
+def run_complete(
+    *,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    min_interval_seconds: float = DEFAULT_MIN_INTERVAL_SECONDS,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> dict[str, int | bool | str]:
+    """Publish one resumable full snapshot and retire confirmed missing tools."""
+    effective_page_size = _bounded_page_size(page_size)
+    interval = _bounded_interval(min_interval_seconds)
+    page, generation, expected_count = _begin_snapshot()
+    pages = records = 0
+    try:
+        while pages < MAX_COMPLETE_PAGES:
+            if pages:
+                sleep_fn(interval)
+            rows, has_next, total_count = listing_page(page, effective_page_size)
+            if not rows and has_next:
+                raise _empty_page_error(page)
+            if expected_count and total_count != expected_count:
+                raise _changed_count_error(expected_count, total_count)
+            expected_count = expected_count or total_count
+            stored = _store_snapshot_page(
+                rows,
+                page=page,
+                page_size=effective_page_size,
+                generation=generation,
+                expected_count=expected_count,
+            )
+            pages += 1
+            records += stored
+            if has_next:
+                page += 1
+                continue
+
+            retired = _publish_snapshot(generation, expected_count)
+            return {
+                "phase": "complete",
+                "pages": pages,
+                "records": records,
+                "retired": len(retired),
+                "generation": generation,
+                "completed": True,
+            }
+        raise _page_limit_error()
+    except SnapshotConsistencyError as exc:
+        _restart_snapshot()
+        _mark_error(exc)
+        raise
+    except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:
+        _mark_error(exc)
+        raise
 
 
 def run(
@@ -415,10 +568,19 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=_env_float("CATALOG_SYNC_MIN_INTERVAL_SECONDS", DEFAULT_MIN_INTERVAL_SECONDS),
     )
+    parser.add_argument(
+        "--complete", action="store_true", help="finish a validated full snapshot and prune retired tools"
+    )
     args = parser.parse_args(argv)
     db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
     db.init_schema()
-    summary = run(pages_per_run=args.pages, page_size=args.page_size, min_interval_seconds=args.min_interval)
+    with db.advisory_lock("toolhub-evolved:catalog-sync") as acquired:
+        if not acquired:
+            summary = {"status": "locked", "completed": False}
+        elif args.complete:
+            summary = run_complete(page_size=args.page_size, min_interval_seconds=args.min_interval)
+        else:
+            summary = run(pages_per_run=args.pages, page_size=args.page_size, min_interval_seconds=args.min_interval)
     sys.stdout.write("catalog-sync: " + " ".join(f"{key}={value}" for key, value in summary.items()) + "\n")
     return 0
 

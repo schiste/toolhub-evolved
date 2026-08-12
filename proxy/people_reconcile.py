@@ -30,6 +30,11 @@ def main(argv: list[str] | None = None) -> int:
         help="process the bounded incremental queue instead of running a historical scan",
     )
     parser.add_argument(
+        "--queue-all",
+        action="store_true",
+        help="drain all currently actionable queue rows in bounded batches",
+    )
+    parser.add_argument(
         "--identities-only",
         action="store_true",
         help="resolve a bounded identity batch without rebuilding every tool",
@@ -41,9 +46,11 @@ def main(argv: list[str] | None = None) -> int:
         if not acquired:
             sys.stdout.write(json.dumps({"locked": True}, sort_keys=True) + "\n")
             return 0
-        if args.queue and args.identities_only:
-            parser.error("--queue and --identities-only are mutually exclusive")
-        if args.queue:
+        if sum((args.queue, args.queue_all, args.identities_only)) > 1:
+            parser.error("--queue, --queue-all, and --identities-only are mutually exclusive")
+        if args.queue_all:
+            summary = people_reconcile.drain_queue()
+        elif args.queue:
             summary = people_reconcile.process_queue(
                 limit=int(os.environ.get("PEOPLE_RECONCILE_QUEUE_LIMIT", people_reconcile.DEFAULT_QUEUE_LIMIT))
             )
@@ -58,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
                     rebuild_tools=not args.identities_only,
                 )
     sys.stdout.write(json.dumps(summary, sort_keys=True) + "\n")
-    return 0
+    return 1 if int(summary.get("failed") or 0) else 0
 
 
 if __name__ == "__main__":  # pragma: no cover - operator entrypoint

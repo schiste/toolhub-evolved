@@ -5,16 +5,19 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
 from backend.api_cache import DETAIL_FRESH_SECONDS, SEARCH_FRESH_SECONDS, STALE_IF_ERROR_SECONDS
 from backend.models import CanonicalToolCache, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 MAX_INGEST_TOOLS = 100
 MAX_QUERY_NAMES = 50
@@ -100,7 +103,14 @@ def _merge_listing_record(existing: dict[str, Any], incoming: dict[str, Any]) ->
     return merged
 
 
-def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bool = False) -> int:
+def upsert_records(
+    records: list[dict[str, Any]],
+    *,
+    source_url: str,
+    detail: bool = False,
+    generation: int | None = None,
+    enqueue_reconciliation: bool = True,
+) -> int:
     """Persist canonical official tool records into the structured cache."""
     now = utcnow()
     fresh = DETAIL_FRESH_SECONDS if detail else SEARCH_FRESH_SECONDS
@@ -135,14 +145,46 @@ def upsert_records(records: list[dict[str, Any]], *, source_url: str, detail: bo
                 row.sync_status = SYNC_OFFICIAL
                 row.fetched_at = now
                 row.last_error = None
+                if generation is not None:
+                    row.generation = generation
     except SQLAlchemyError:
         return 0
     # Queue only after the canonical transaction succeeds. Processing is
     # asynchronous so anonymous API requests do not wait on derived indexes.
-    from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid backend startup cycles.
+    if enqueue_reconciliation:
+        from backend.people_reconcile import enqueue_tool_names  # noqa: PLC0415 - avoid backend startup cycles.
 
-    enqueue_tool_names([name for name, _record in clean_records], reason="canonical_fetch")
+        enqueue_tool_names([name for name, _record in clean_records], reason="canonical_fetch")
     return len(clean_records)
+
+
+def prune_completed_generation(s: Session, generation: int, expected_count: int) -> list[str]:
+    """Delete names absent from one fully validated official catalog snapshot.
+
+    A partial or internally inconsistent generation raises without deleting
+    anything. This is the same safety boundary used by the account projection:
+    upstream absence is authoritative only after every page agrees on the
+    snapshot size.
+    """
+    observed = int(
+        s.scalar(
+            select(func.count()).select_from(CanonicalToolCache).where(CanonicalToolCache.generation == generation)
+        )
+        or 0
+    )
+    if observed != expected_count:
+        msg = f"catalog generation {generation} saw {observed} distinct rows, expected {expected_count}"
+        raise ValueError(msg)
+    retired = list(
+        s.execute(
+            select(CanonicalToolCache.tool_name)
+            .where(CanonicalToolCache.generation != generation)
+            .order_by(CanonicalToolCache.tool_name)
+        ).scalars()
+    )
+    if retired:
+        s.execute(delete(CanonicalToolCache).where(CanonicalToolCache.generation != generation))
+    return retired
 
 
 def backfill_search_text(*, batch_size: int = 500) -> int:

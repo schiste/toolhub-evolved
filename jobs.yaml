@@ -40,6 +40,16 @@
   timeout: 300
   emails: onfailure
 
+- name: catalog-snapshot
+  # A complete, generation-marked catalog is the safe deletion boundary.
+  # Missing names are pruned only after all pages agree on Toolhub's count;
+  # interrupted cycles preserve and later resume from the last good page.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-snapshot -- /usr/bin/env CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py --complete
+  image: python3.13
+  schedule: "20 */6 * * *"
+  timeout: 600
+  emails: onfailure
+
 - name: account-sync
   # Mirror every official Toolhub account by immutable Toolhub user id. Each
   # page commits independently so interrupted runs resume, while old rows are

@@ -752,6 +752,44 @@ def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRel
     return resolved
 
 
+def retire_tool_relationships(s: Session, tool_name: str) -> int:
+    """Withdraw current evidence and public edges after canonical retirement.
+
+    Evidence rows remain available for audit/history; their withdrawal time is
+    the lifecycle boundary that prevents a deleted tool from being published.
+    """
+    clean_tool = _clean(tool_name)
+    now = utcnow()
+    evidence = list(
+        s.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == clean_tool,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    )
+    unresolved = list(
+        s.execute(
+            select(UnresolvedAttributionEvidence).where(
+                UnresolvedAttributionEvidence.tool_name == clean_tool,
+                UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    )
+    relationships = list(
+        s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.tool_name == clean_tool)).scalars()
+    )
+    affected_person_ids = {row.person_id for row in relationships}
+    for row in [*evidence, *unresolved]:
+        row.withdrawn_at = now
+        row.updated_at = now
+    for row in relationships:
+        s.delete(row)
+    s.flush()
+    refresh_activity_summaries(s, person_ids=affected_person_ids)
+    return len(relationships)
+
+
 def _contribution_dates(s: Session, user_id: int) -> list[datetime]:
     """Return dates of public, substantive Evolved contributions only."""
     queries = (
