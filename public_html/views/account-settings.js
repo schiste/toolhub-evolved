@@ -131,7 +131,7 @@ function accountChallengeHTML(challenge) {
 		<h3>${t("accountData.proveControl", "Prove control of $1", challenge.username || "")}</h3>
 		<ol>
 			<li>${t("accountData.runCommand", "Run this command in a terminal on a computer that has your Toolforge SSH private key:")}
-				<textarea class="le__input account-links__command" rows="7" readonly data-account-link-command>${esc(challenge.command || "")}</textarea>
+				<textarea class="le__input account-links__command" rows="7" readonly aria-label="${esc(t("accountData.signingCommand", "OpenSSH signing command"))}" data-account-link-command>${esc(challenge.command || "")}</textarea>
 				${button(t("accountData.copyCommand", "Copy command"), { variant: "outline", attrs: "data-account-link-copy" })}
 			</li>
 			<li>${t("accountData.pasteSignature", "Paste the complete SSH signature printed by the command:")}</li>

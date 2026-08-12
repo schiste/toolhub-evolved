@@ -68,6 +68,7 @@
 	"accountData.runCommand": "Run this command in a terminal on a computer that has your Toolforge SSH private key:",
 	"accountData.saveProfile": "Save profile",
 	"accountData.savingProfile": "Saving profile…",
+	"accountData.signingCommand": "OpenSSH signing command",
 	"accountData.sshSignature": "SSH signature",
 	"accountData.startingProof": "Preparing secure proof…",
 	"accountData.startProof": "Start secure proof",

@@ -68,6 +68,7 @@
 	"accountData.runCommand": "Instruction shown above the generated local OpenSSH signing command.",
 	"accountData.saveProfile": "TODO: document this message.",
 	"accountData.savingProfile": "TODO: document this message.",
+	"accountData.signingCommand": "TODO: document this message.",
 	"accountData.sshSignature": "Label for the OpenSSH signature input.",
 	"accountData.startingProof": "Progress message while an account-control challenge is created.",
 	"accountData.startProof": "Button label that creates a short-lived account-control challenge.",
