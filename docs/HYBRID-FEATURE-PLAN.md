@@ -61,9 +61,11 @@ Backend endpoints already implemented:
   Evolved fetches it once with the crawler safety rules, fills missing optional
   create fields, records local crawler/signed-toolinfo evidence, and still sends
   the canonical create to official Toolhub first
-- `GET /v1/me/tools/` resolver for signed-in users, combining official Toolhub
-  author search with Evolved-local `tool_author_claims` verification signals
-  and indexed official crawler source evidence
+- `GET /v1/me/tools/` canonical account view for signed-in users, reading the
+  same typed person/tool relationship graph as public profiles with no upstream
+  search fan-out
+- `GET /v1/me/account-links/` plus Toolforge challenge and verification writes
+  for optional OpenSSH account-control proofs against current LDAP public keys
 - `GET|POST /v1/author-keys/`, `DELETE /v1/author-keys/<key_id>/`, and
   `POST /v1/toolinfo/signing-payload/` for signed-toolinfo public-key
   registration and canonical signing payload generation

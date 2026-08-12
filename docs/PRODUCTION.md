@@ -54,12 +54,13 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   `/v1/search/tools/`, `/v1/moderation/public-data/`, `/healthz`, and the
   `/toolinfo.json` feeder feed. The lower level `/v1/toolhub/*` bridge remains
   available for compatibility and smoke checks.
-- **Author and maintainer verification**: `proxy/backend/author_claims.py` powers
-  the signed-in My tools resolver. It starts from the Toolhub OAuth username,
-  discovers Toolforge `tools.*` memberships through public LDAP, and links each
-  membership to the exact official `toolforge-*` Toolhub record. LDAP membership
-  is a verified per-tool operational-access signal for that authenticated
-  Wikimedia identity; it is not canonical Toolhub authorship. Catalog-wide
+- **Author and maintainer verification**: the complete Toolhub and Toolforge
+  account projections feed one immutable-id binding graph. Toolforge `tools.*`
+  memberships become verified maintainer relationships only after the developer
+  account is bound through an official Wikimedia global id or an authenticated
+  account-control proof. LDAP membership is not canonical Toolhub authorship.
+  My tools and public profiles read the same materialized relationship graph and
+  never perform request-time author searches. Catalog-wide
   public maintainer evidence is backfilled by `proxy/maintainer_backfill.py`
   from Toolsadmin maintainer pages into rebuildable local edges. Public identity
   reconciliation looks up LDAP accounts by immutable
@@ -71,7 +72,7 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   matches remain unverified, and other claims upgrade only through successful
   official Toolhub writes or signed `toolinfo.json` records verified against
   active local public keys. Verification is per tool, never global to an author
-  display name or Toolhub username. The resolver also reads
+  display name or Toolhub username. The workbench also reads
   `toolinfo_discovery` rows so owner accounts can see whether each official tool
   exposes root/sitemap `toolinfo.json` without manually submitting URLs; a
   Toolforge job walks official Toolhub tool-list pages to seed that cache.

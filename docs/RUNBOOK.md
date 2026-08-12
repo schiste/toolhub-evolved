@@ -208,50 +208,55 @@ names are:
 - `toolhub-evolved:stale-cache-served`
 - `toolhub-evolved:fresh-refresh-completed`
 
-| Data                                               | Visibility                                       | Operational note                                                                                                                                                                       |
-| -------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api_cache`                                        | Anonymous public Toolhub API payload cache       | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                                             |
-| `api_cache_meta`                                   | Anonymous cache coordination state               | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.                              |
-| `canonical_tool_cache`                             | Anonymous public canonical cache                 | Resumable mirror of official `/api/tools/` records used by local enrichment; rebuildable from Toolhub and never a replacement for live canonical reads.                                |
-| `graph_tool_enrichment`                            | Anonymous public derived graph facets            | Versioned materialization of graph-relevant metadata with per-value provenance; rebuilt from canonical, crawler, discovered toolinfo, and approved repository sources.                 |
-| `catalog_tool_projection` / `catalog_facet_values` | Anonymous public Evolved catalog projection      | Versioned effective records, per-field evidence, validation state, and indexed facets; canonical Toolhub rows remain untouched and the scheduled repair job rebuilds missing versions. |
-| `catalog_curations`                                | Pending/private review; approved evidence public | Reviewer-approved local corrections only. Proposals never mutate canonical Toolhub data and do not affect projections before approval.                                                 |
-| `tool_asset_cache`                                 | Anonymous public derived icon metadata           | Rebuildable index for size/type-checked icons stored under `$TOOLHUB_ASSET_CACHE_DIR`; web reads never fetch remote URLs and missing files fall back safely.                           |
-| `tool_catalog_sync_state`                          | Operational cursor state                         | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                                         |
-| `toolhub_account_projection`                       | Anonymous official account projection            | Complete local projection of accounts registered with official Toolhub, keyed by immutable Toolhub user id; it is deliberately separate from Evolved-authorized `users`.               |
-| `toolhub_account_sync_state`                       | Operational cursor state                         | Stores the account generation, next page, completed cycles, official count, and last error; partial generations never prune the last complete directory.                               |
-| `maintainer_backfill_state`                        | Operational cursor state                         | Stores the paced Toolsadmin maintainer backfill cursor, cycle counters, and failures; safe to reset to restart the derived maintainer projection.                                      |
-| `tool_owner_cache`                                 | Anonymous public derived owner cache             | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                                         |
-| `users`                                            | Private account mapping                          | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                                     |
-| `toolhub_tokens`                                   | Secret                                           | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                                              |
-| `favorites`                                        | Private per user                                 | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                                                 |
-| `lists`                                            | Private/user-visible fallback                    | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, sync status, Toolhub response details, and validation errors.                                 |
-| `tools`                                            | Local draft or public Evolved feed row           | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion.                                |
-| `tool_overlays`                                    | User-visible local delta                         | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and keep Toolhub validation metadata.                                       |
-| `activity`                                         | User-visible/admin-visible depending on event    | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.                                         |
-| `crawler_urls`                                     | Private until surfaced in local crawler UI/feed  | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.                                    |
-| `crawler_runs`                                     | Operational/user-visible history                 | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                                               |
-| `toolinfo_discovery`                               | Owner-facing Evolved cache                       | Per-tool automated root/sitemap `toolinfo.json` discovery state shown on My tools; seeded from official Toolhub listings and owner resolver candidates; not canonical.                 |
-| `toolinfo_discovery_meta`                          | Operational cursor state                         | Stores the official `/api/tools/` page cursor used by the automated discovery job; safe to reset to page 1 by clearing the row.                                                        |
-| `toolinfo_sources`                                 | Official crawler source evidence cache           | Mirrors official `/api/crawler/urls/` registrations and fetch status; safe to rebuild, not a canonical copy of tool records.                                                           |
-| `toolinfo_source_items`                            | Per-tool official feed source evidence           | Maps tool names to the official crawler feed item that declared them; stores compact feed payload evidence for My tools and future provenance features.                                |
-| `tool_events`                                      | Aggregate-only user-visible metrics              | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                                     |
-| `tool_thanks`                                      | Public aggregate, private user relation          | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.                              |
-| `tool_author_claims`                               | Public provenance label, private evidence cache  | Per-tool verification claims owned by stable local `user_id`; `toolhub_username` is only a mutable display snapshot. Never treat a claim as official Toolhub permission state.         |
-| `toolinfo_control_challenges`                      | Private, expiring verification workflow          | Short-lived challenges proving an account can change one exact external `toolinfo.json` URL; never a canonical Toolhub ownership or write grant.                                       |
-| `tool_author_keys`                                 | Public-key registry for signed toolinfo claims   | Stores Evolved-registered public keys owned by stable local `user_id`; never store private keys, and ignore revoked keys during verification.                                          |
-| `people` / `person_identifiers`                    | Public identity projection                       | People have immutable Evolved public ids. Toolhub and Wikimedia numeric ids are stable; Toolhub, Toolforge, and wiki usernames are mutable handles. Display-only rows are not people.  |
-| `person_profiles`                                  | Evolved-owned public profile                     | Bio, links, avatar, location, and visibility belong to Evolved. Toolhub remains canonical for catalog records and permissions.                                                         |
-| `tool_relationship_evidence`                       | Provenance ledger                                | Toolhub author/actor metadata, Toolsadmin observations, and Evolved claims remain separate evidence. Raw evidence payloads are private and no row grants Toolhub permissions.          |
-| `person_tool_relationships`                        | Public typed relationship projection             | One resolved current row per tool, person, and role; many evidence rows can support it. `catalog_actor` is never promoted to `record_owner` without explicit write-access evidence.    |
-| `person_activity_summaries`                        | Public contribution read model                   | Rebuildable, person-keyed summary of approved/public contributions only; registration and private account actions do not imply active maintenance.                                     |
-| `person_reconciliation_runs`                       | Operational audit                                | One dry-run or apply pass with deterministic counts, completion status, and error state.                                                                                               |
-| `person_reconciliation_mappings`                   | Operational review                               | Durable candidate, approved, rejected, or split source/target mappings with bounded evidence, confidence, reviewer, and notes. Approved mappings are reapplied after source refreshes. |
-| `person_reconciliation_conflicts`                  | Operational review                               | Ambiguities deliberately left unresolved, especially display-name collisions; never used as automatic merge evidence.                                                                  |
-| `person_reconciliation_queue`                      | Operational work queue                           | Deduplicated changed-tool names waiting for bounded incremental edge and relationship reconciliation, with retry state.                                                                |
-| `source_analysis_reports`                          | Private per user                                 | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.                    |
-| `tool_health_targets` / `tool_health_checks`       | Public checked status after approval             | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health.                 |
-| `tool_media`                                       | Public only after approval                       | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                                         |
+| Data                                                               | Visibility                                             | Operational note                                                                                                                                                                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_cache`                                                        | Anonymous public Toolhub API payload cache             | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                                                                |
+| `api_cache_meta`                                                   | Anonymous cache coordination state                     | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.                                                 |
+| `canonical_tool_cache`                                             | Anonymous public canonical cache                       | Resumable mirror of official `/api/tools/` records used by local enrichment; rebuildable from Toolhub and never a replacement for live canonical reads.                                                   |
+| `graph_tool_enrichment`                                            | Anonymous public derived graph facets                  | Versioned materialization of graph-relevant metadata with per-value provenance; rebuilt from canonical, crawler, discovered toolinfo, and approved repository sources.                                    |
+| `catalog_tool_projection` / `catalog_facet_values`                 | Anonymous public Evolved catalog projection            | Versioned effective records, per-field evidence, validation state, and indexed facets; canonical Toolhub rows remain untouched and the scheduled repair job rebuilds missing versions.                    |
+| `catalog_curations`                                                | Pending/private review; approved evidence public       | Reviewer-approved local corrections only. Proposals never mutate canonical Toolhub data and do not affect projections before approval.                                                                    |
+| `tool_asset_cache`                                                 | Anonymous public derived icon metadata                 | Rebuildable index for size/type-checked icons stored under `$TOOLHUB_ASSET_CACHE_DIR`; web reads never fetch remote URLs and missing files fall back safely.                                              |
+| `tool_catalog_sync_state`                                          | Operational cursor state                               | Stores the paginated catalog-sync cursor, pacing run status, completion cycles, and last error; safe to reset to page 1 to rebuild the mirror.                                                            |
+| `toolhub_account_projection`                                       | Anonymous official account projection                  | Complete local projection of accounts registered with official Toolhub, keyed by immutable Toolhub user id; it is deliberately separate from Evolved-authorized `users`.                                  |
+| `toolhub_account_sync_state`                                       | Operational cursor state                               | Stores the account generation, next page, completed cycles, official count, and last error; partial generations never prune the last complete directory.                                                  |
+| `toolforge_account_projection` / `toolforge_membership_projection` | Anonymous official infrastructure projection           | Complete LDAP projection keyed by immutable developer `uidNumber`; memberships retain all current `tools.*` service-group edges, including accounts not yet linked to a person.                           |
+| `toolforge_account_sync_state`                                     | Operational cursor state                               | Generation and completion state for the Toolforge account projection; failed generations retain the last complete account and membership set.                                                             |
+| `maintainer_backfill_state`                                        | Operational cursor state                               | Stores the paced Toolsadmin maintainer backfill cursor, cycle counters, and failures; safe to reset to restart the derived maintainer projection.                                                         |
+| `tool_owner_cache`                                                 | Anonymous public derived owner cache                   | Owner-by-tool labels for `/recent`; derived from official Toolhub tool details, safe to clear, never canonical authorship or permission state.                                                            |
+| `users`                                                            | Private account mapping                                | Local identity row derived from Toolhub OAuth and `GET /api/user/`; includes the Evolved-only `role`; delete with the user's Evolved account data.                                                        |
+| `toolhub_tokens`                                                   | Secret                                                 | Server-side Toolhub OAuth grant; never expose through `/v1`; rotate/delete on reconnect, logout-all, or account deletion.                                                                                 |
+| `favorites`                                                        | Private per user                                       | Cache/fallback only; official Toolhub favorite state wins after successful sync; new rows record `created_by_user_id`.                                                                                    |
+| `lists`                                                            | Private/user-visible fallback                          | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, sync status, Toolhub response details, and validation errors.                                                    |
+| `tools`                                                            | Local draft or public Evolved feed row                 | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion.                                                   |
+| `tool_overlays`                                                    | User-visible local delta                               | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and keep Toolhub validation metadata.                                                          |
+| `activity`                                                         | User-visible/admin-visible depending on event          | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.                                                            |
+| `crawler_urls`                                                     | Private until surfaced in local crawler UI/feed        | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.                                                       |
+| `crawler_runs`                                                     | Operational/user-visible history                       | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                                                                  |
+| `toolinfo_discovery`                                               | Owner-facing Evolved cache                             | Per-tool automated root/sitemap `toolinfo.json` discovery state shown on My tools; seeded from official Toolhub listings and owner resolver candidates; not canonical.                                    |
+| `toolinfo_discovery_meta`                                          | Operational cursor state                               | Stores the official `/api/tools/` page cursor used by the automated discovery job; safe to reset to page 1 by clearing the row.                                                                           |
+| `toolinfo_sources`                                                 | Official crawler source evidence cache                 | Mirrors official `/api/crawler/urls/` registrations and fetch status; safe to rebuild, not a canonical copy of tool records.                                                                              |
+| `toolinfo_source_items`                                            | Per-tool official feed source evidence                 | Maps tool names to the official crawler feed item that declared them; stores compact feed payload evidence for My tools and future provenance features.                                                   |
+| `tool_events`                                                      | Aggregate-only user-visible metrics                    | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                                                        |
+| `tool_thanks`                                                      | Public aggregate, private user relation                | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.                                                 |
+| `tool_author_claims`                                               | Public provenance label, private evidence cache        | Per-tool verification claims owned by stable local `user_id`; `toolhub_username` is only a mutable display snapshot. Never treat a claim as official Toolhub permission state.                            |
+| `toolinfo_control_challenges`                                      | Private, expiring verification workflow                | Short-lived challenges proving an account can change one exact external `toolinfo.json` URL; never a canonical Toolhub ownership or write grant.                                                          |
+| `tool_author_keys`                                                 | Public-key registry for signed toolinfo claims         | Stores Evolved-registered public keys owned by stable local `user_id`; never store private keys, and ignore revoked keys during verification.                                                             |
+| `people` / `person_identifiers`                                    | Public identity projection                             | People have immutable Evolved public ids. Toolhub and Wikimedia numeric ids are stable; Toolhub, Toolforge, and wiki usernames are mutable handles. Display-only rows are not people.                     |
+| `person_account_bindings`                                          | Public identity proof, private audit metadata          | One provider account keyed by its immutable external id, bound only through an official stable bridge, authenticated control proof, or operator decision. Candidate and conflict rows never merge people. |
+| `account_link_challenges`                                          | Private, expiring security state                       | Ten-minute, single-use, user-bound SSH-signature challenges. Challenge hashes and attempt state are stored; private keys and submitted signatures are not retained.                                       |
+| `person_profiles`                                                  | Evolved-owned public profile                           | Bio, links, avatar, location, and visibility belong to Evolved. Toolhub remains canonical for catalog records and permissions.                                                                            |
+| `tool_relationship_evidence`                                       | Provenance ledger                                      | Toolhub author/actor metadata, Toolsadmin observations, and Evolved claims remain separate evidence. Raw evidence payloads are private and no row grants Toolhub permissions.                             |
+| `unresolved_attribution_evidence`                                  | Public aggregated attribution, private evidence detail | Display-only labels retain tool, role, source, status, confidence, and freshness without receiving a person id. Current source refreshes withdraw obsolete observations.                                  |
+| `person_tool_relationships`                                        | Public typed relationship projection                   | One resolved current row per tool, person, and role; many evidence rows can support it. `catalog_actor` is never promoted to `record_owner` without explicit write-access evidence.                       |
+| `person_activity_summaries`                                        | Public contribution read model                         | Rebuildable, person-keyed summary of approved/public contributions only; registration and private account actions do not imply active maintenance.                                                        |
+| `person_reconciliation_runs`                                       | Operational audit                                      | One dry-run or apply pass with deterministic counts, completion status, and error state.                                                                                                                  |
+| `person_reconciliation_mappings`                                   | Operational review                                     | Durable candidate, approved, rejected, or split source/target mappings with bounded evidence, confidence, reviewer, and notes. Approved mappings are reapplied after source refreshes.                    |
+| `person_reconciliation_conflicts`                                  | Operational review                                     | Stable-identifier and provider-binding contradictions deliberately left unresolved; never used as automatic merge evidence.                                                                               |
+| `person_reconciliation_queue`                                      | Operational work queue                                 | Deduplicated changed-tool names waiting for bounded incremental edge and relationship reconciliation, with retry state.                                                                                   |
+| `source_analysis_reports`                                          | Private per user                                       | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.                                       |
+| `tool_health_targets` / `tool_health_checks`                       | Public checked status after approval                   | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health.                                    |
+| `tool_media`                                                       | Public only after approval                             | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                                                            |
 
 `tool_author_claims` is the account-owned relationship workflow, not a second
 relationship projection. Rows are scoped to one `(tool_name, author_name,
@@ -265,15 +270,14 @@ display metadata unless another method verifies the same per-tool claim.
 Verification is never global to an author display name or Toolhub username:
 `Christophe` verified on `toolhub-evolved` does not verify `Christophe` on any
 other tool without a separate verified claim row for that exact tool.
-`GET /v1/me/tools/` uses those rows as additional Toolhub author-search terms
-and also discovers Toolforge `tools.*` memberships for the signed-in username
-through public LDAP. Each discovered Toolforge account is linked to the exact
-official `toolforge-<name>` record. That LDAP membership is a verified
-per-tool operational-access claim for the authenticated Wikimedia identity; it
-does not assert canonical Toolhub authorship and does not require a second
-Toolsadmin request on the user request path. This means a user whose Toolhub
-records list a display author such as `Christophe` can still get verified
-`Schiste` Toolforge-owned tools without a manual alias. Successful official
+`GET /v1/me/tools/` performs no upstream author search and invents no aliases.
+It reads the same canonical `person_tool_relationships` graph as public People
+profiles, joins compact local Toolhub records, and returns every role on each
+tool. The six-hourly Toolforge projection preserves all developer memberships;
+verified `person_account_bindings` turn those memberships into per-tool
+maintainer evidence. This makes a signed-in user's workbench and public profile
+converge on one relationship contract instead of maintaining two resolvers.
+Successful official
 Toolhub tool writes add `toolhub_write_access` claims without affecting the
 write response if evidence recording fails. Crawler ingestion records
 `signed_toolinfo` claims before upstream-name de-dupe, so official Toolhub data
@@ -335,6 +339,27 @@ Toolforge developer, and wiki usernames are case-insensitive mutable handles.
 Display-name observations are aggregated for discovery but do not receive a
 public person id.
 
+External account binding does not require a person to authorize Evolved.
+Official Toolhub user ids bind Toolhub accounts; Toolhub and Toolforge both
+expose Wikimedia global ids that bridge accounts automatically; and Toolforge
+`uidNumber` identifies developer accounts across renames. Several Toolforge
+developer accounts may bind to one person when each carries the same official
+Wikimedia global id. One immutable provider id resolving to different people is
+a conflict and is copied into the operator review queue.
+
+Signed-in users can repair legacy accounts that lack the Wikimedia bridge via
+`GET /v1/me/account-links/`,
+`POST /v1/me/account-links/toolforge/challenges/`, and
+`POST /v1/me/account-links/toolforge/verify/`. Evolved issues a ten-minute
+challenge bound to the local user, person, and immutable Toolforge `uidNumber`.
+The user signs it locally with OpenSSH SSHSIG; Evolved verifies the signature
+against the account's current public `sshPublicKey` values read directly from
+LDAP. The private key never leaves the user's machine. A successful proof binds
+all current memberships for that developer account, and later syncs include new
+memberships automatically. Each additional legacy developer account is proven
+separately. The proof establishes account control and identity only: it grants
+neither Toolhub write access nor a global owner role.
+
 The Community directory presents one search contract over three evidence classes:
 
 - A **person** result is a public identity backed by stable evidence and
@@ -391,22 +416,13 @@ official account sync materializes stable public people from immutable Toolhub
 user ids and Wikimedia global user ids; OAuth remains a separate consent and
 write-authority concern.
 
-Apply runs inspect up to 25 unresolved labels against the complete local account
-projection by default (`PEOPLE_IDENTITY_CANDIDATE_LIMIT` or
-`--candidate-label-limit` changes the bound). An exact account-name match alone
-is only a review candidate. Automatic identity reconciliation is allowed when
-CentralAuth confirms the account's global id and its canonical username exactly
-matches a structured Toolhub `wiki_username` observation; common `User:` prefixes,
-underscores, spacing, and case are normalized before the exact comparison. A
-second automatic path queries Toolforge LDAP by immutable
-`wikimediaGlobalAccountId`, validates the canonical
-`wikimediaGlobalAccountName`, and binds it to one developer `uid`. The
-reconciler compares that account's `tools.*` service groups with the actual
-Toolforge tool name recorded in Toolsadmin evidence, retaining catalog-name
-matching only for older observations. Roles are preserved: Toolhub author
-evidence remains authorship, while LDAP membership proves current Toolforge
-access or maintenance. Neither identity path grants Toolhub write authority.
-Display-name-only observations without either evidence chain remain unresolved.
+Apply runs hydrate every complete Toolhub and Toolforge projection by immutable
+ids. Wikimedia global ids bridge provider accounts automatically. Exact
+cross-provider handles without that bridge remain candidates and never merge
+people; display-only evidence remains in `unresolved_attribution_evidence` and
+is not considered an identity candidate. Roles are preserved: Toolhub author
+evidence remains authorship, while a verified LDAP membership proves current
+Toolforge maintenance. Neither path grants Toolhub write authority.
 
 Deployments run `proxy/public_identity_smoke.py` inside a Toolforge webservice
 environment before identity reconciliation. The probe requires a readable

@@ -859,6 +859,15 @@ export async function viewApiDocs() {
 					<li>${tWithElements("static.apiDocs.accountDetailEndpoint", "$1 returns official registration facts. A $2 appears only after an immutable Toolhub user id or Wikimedia global user id match; usernames never create that link.", { html: code("GET /v1/accounts/{toolhub_user_id}/") }, { html: code("personId") })}</li>
 				</ul>
 			</div>
+			<h2 class="contribute__h2">${t("static.apiDocs.connectedIdentities", "Connected identity API")}</h2>
+			<div class="prose">
+				<p>${t("static.apiDocs.connectedIdentityContract", "These private endpoints let a signed-in user inspect stable account bindings and optionally prove control of legacy Toolforge developer accounts. Account proof establishes identity only; it grants no Toolhub write permission.")}</p>
+				<ul>
+					<li>${tWithElements("static.apiDocs.accountLinksEndpoint", "$1 returns verified bindings, safe handle-match candidates, proof capability, and upstream repair links. The response is private and never cached.", { html: code("GET /v1/me/account-links/") })}</li>
+					<li>${tWithElements("static.apiDocs.accountLinkChallengeEndpoint", "$1 creates a ten-minute, single-use challenge bound to the signed-in user, person, and immutable Toolforge uidNumber.", { html: code("POST /v1/me/account-links/toolforge/challenges/") })}</li>
+					<li>${tWithElements("static.apiDocs.accountLinkVerifyEndpoint", "$1 verifies an OpenSSH SSHSIG against current LDAP public keys, consumes the challenge, and rebuilds every Toolforge membership relationship for that account.", { html: code("POST /v1/me/account-links/toolforge/verify/") })}</li>
+				</ul>
+			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.liveProxyEndpoints", "Live proxy endpoints")}</h2>
 			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The live endpoint index is unavailable.")}</p>`}</div>
 		</div>`,

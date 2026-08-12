@@ -174,15 +174,15 @@ export const EXPERIMENTS = [
 				name: t("experiments.myToolsName", "My tools workspace"),
 				what: t(
 					"experiments.myToolsWhat",
-					"Review tools associated with your signed-in Toolhub identity, register toolinfo sources, and analyze source metadata from one place."
+					"Review tools connected to your stable identity, register toolinfo sources, and analyze source metadata from one place."
 				),
 				current: t(
 					"experiments.myToolsCurrent",
-					"Official Toolhub search provides tool candidates; Evolved adds per-tool evidence, indexed crawler feed sources, root/sitemap discovery, and source-analysis reports."
+					"The same canonical typed relationship graph powers My tools and public profiles; compact local Toolhub records add metadata without request fan-out."
 				),
 				need: t(
 					"experiments.myToolsNeed",
-					"Author-claim table, resolver endpoint, verification providers, official crawler source index, registration workflow, source-analysis reports, and discovery cache"
+					"Person account bindings, typed relationship projection, official crawler source index, registration workflow, source-analysis reports, and discovery cache"
 				),
 				tryHref: "/my-tools",
 				tryLabel: t("experiments.myToolsTry", "My tools")
@@ -239,18 +239,18 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.myToolsTry", "My tools")
 			},
 			{
-				name: t("experiments.accountDataName", "Preferences"),
+				name: t("experiments.accountDataName", "Preferences and connected identities"),
 				what: t(
 					"experiments.accountDataWhat",
-					"Manage Evolved-specific preferences and local data tied to your Toolhub sign-in."
+					"Manage Evolved-specific profile data and reconnect legacy Toolforge developer accounts."
 				),
 				current: t(
 					"experiments.accountDataCurrent",
-					"Users can edit Evolved-owned public profile content, review relationship-claim history, export local data, and delete it without touching official Toolhub."
+					"Official stable ids link accounts automatically; optional one-time OpenSSH proofs bind legacy developer accounts without uploading private keys or granting Toolhub write access."
 				),
 				need: t(
 					"experiments.accountDataNeed",
-					"GET/PUT /v1/me/profile/, GET /v1/me/claims/, GET /v1/user/export/, and DELETE /v1/user/evolved-data/"
+					"Profile, account-link challenge, relationship-claim, export, and delete APIs"
 				),
 				tryHref: "/preferences",
 				tryLabel: t("experiments.accountDataTry", "Preferences")
