@@ -99,6 +99,7 @@ from backend.models import (  # noqa: E402
     ToolThanks,
     ToolhubAccountProjection,
     ToolhubAccountSyncState,
+    UnresolvedAttributionEvidence,
     User,
     UserToolResolverCache,
     utcnow,
@@ -114,9 +115,7 @@ from backend.v1_common import (  # noqa: E402
     parse_optional_iso,
     string_payload_value,
 )
-from backend.v1_me import (  # noqa: E402
-    _toolhub_author_names,
-)
+from backend.author_claims import author_names_from_toolhub_tool as _toolhub_author_names  # noqa: E402
 from backend.v1_write import (  # noqa: E402
     _message_from_payload,
     _official_annotation_payload,
@@ -2923,24 +2922,24 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     data = resp.get_json()
     assert resp.status_code == 200
     assert data["toolName"] == "ada-tool"
-    assert data["counts"][sync.PERSON_REL_AUTHOR] == 0
+    assert data["counts"][sync.PERSON_REL_AUTHOR] == 1
     assert data["counts"][sync.PERSON_REL_MAINTAINER] == 1
     assert data["counts"][sync.PERSON_REL_CATALOG_ACTOR] == 2
     assert data["counts"][sync.PERSON_REL_RECORD_OWNER] == 0
     assert data["canonicalAuthority"]["catalog"] == "toolhub"
     assert "private signature payload" not in dumps(data)
-    assert {item["label"] for item in data["unresolvedAttributions"]} == {"Ada Lovelace"}
+    assert data["unresolvedAttributions"] == []
     ada_person = next(item for item in data["people"] if item["displayName"] == "Ada")
     assert {item["namespace"] for item in ada_person["identifiers"]} == {
         "toolhub_user_id",
         "toolhub_username",
     }
-    assert all(item["displayName"] != "Ada Lovelace" for item in data["people"])
+    assert any(item["displayName"] == "Ada Lovelace" for item in data["people"])
     assert {relationship["type"] for relationship in ada_person["relationships"]} == {
         sync.PERSON_REL_MAINTAINER,
         sync.PERSON_REL_CATALOG_ACTOR,
     }
-    assert data["unresolvedCounts"][sync.PERSON_REL_AUTHOR] == 1
+    assert data["unresolvedCounts"][sync.PERSON_REL_AUTHOR] == 0
 
 
 def test_account_directory_searches_projection_and_links_only_stable_identity(client, monkeypatch):
@@ -3111,18 +3110,18 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                 PersonIdentifier(
                     person_id=metadata_handle_only.id,
                     namespace=people_index.NS_TOOLFORGE_USERNAME,
-                    value="Magnus Manske",
-                    normalized_value="magnus manske",
-                    identifier_kind=people_index.IDENTIFIER_HANDLE,
-                    source="toolhub_author_metadata",
+                        value="Magnus Manske",
+                        normalized_value="magnus manske",
+                        identifier_kind=people_index.IDENTIFIER_HANDLE,
+                        source="legacy_untrusted_metadata",
                 ),
                 PersonIdentifier(
                     person_id=metadata_handle_only.id,
                     namespace=people_index.NS_WIKI_USERNAME,
-                    value="User:Magnus Manske",
-                    normalized_value="user:magnus manske",
-                    identifier_kind=people_index.IDENTIFIER_HANDLE,
-                    source="toolhub_author_metadata",
+                        value="User:Magnus Manske",
+                        normalized_value="user:magnus manske",
+                        identifier_kind=people_index.IDENTIFIER_HANDLE,
+                        source="legacy_untrusted_metadata",
                 ),
                 PersonIdentifier(
                     person_id=toolhub_actor.id,
@@ -3275,6 +3274,24 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                     toolhub_canonical=True,
                 )
                 for index, person in enumerate(extra_display_people, start=2)
+            ]
+        )
+        s.add_all(
+            [
+                UnresolvedAttributionEvidence(
+                    tool_name=f"legacy-attribution-{index}",
+                    observed_label="Magnus Manske",
+                    normalized_label="magnus manske",
+                    relationship_type=sync.PERSON_REL_AUTHOR,
+                    source="toolhub_author_metadata",
+                    method="toolhub_author_metadata",
+                    evidence_key=str(index),
+                    verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+                    confidence=45,
+                    toolhub_canonical=True,
+                    checked_at=now,
+                )
+                for index in range(324)
             ]
         )
 
@@ -3850,14 +3867,14 @@ def test_display_only_observations_are_scoped_instead_of_globally_merged():
     with db.session_scope() as s:
         people_index.replace_source_evidence(s, "first-tool", "toolhub_author_metadata", observation)
         people_index.replace_source_evidence(s, "second-tool", "toolhub_author_metadata", observation)
-        first_ids = {row.person_id for row in s.query(ToolRelationshipEvidence).all()}
+        first_ids = {row.id for row in s.query(UnresolvedAttributionEvidence).all()}
 
         assert len(first_ids) == 2
         people_index.replace_source_evidence(s, "first-tool", "toolhub_author_metadata", observation)
-        assert {row.person_id for row in s.query(ToolRelationshipEvidence).all()} == first_ids
+        assert {row.id for row in s.query(UnresolvedAttributionEvidence).all()} == first_ids
 
         assert people_index.find_people(s, "Alex") == []
-        assert people_index.person_detail(s, s.query(Person).first().public_id) is None
+        assert s.query(Person).count() == 0
         assert people_index.unresolved_attributions(s, "Alex") == [
             {
                 "label": "Alex",
@@ -3886,7 +3903,7 @@ def test_display_only_observations_are_scoped_instead_of_globally_merged():
         assert summary["unresolvedAttributions"][0]["label"] == "Alex"
 
 
-def test_people_directory_does_not_publish_unverified_metadata_handles():
+def test_people_directory_publishes_structured_handles_but_not_display_labels():
     db.configure("sqlite://")
     db.init_schema()
     from backend import people_index
@@ -3912,11 +3929,8 @@ def test_people_directory_does_not_publish_unverified_metadata_handles():
             ],
         )
 
-        assert people_index.find_people(s, "") == []
-        assert {item["label"] for item in people_index.unresolved_attributions(s)} == {
-            "Handle backed",
-            "Visible",
-        }
+        assert [item["displayName"] for item in people_index.find_people(s, "")] == ["Handle backed"]
+        assert {item["label"] for item in people_index.unresolved_attributions(s)} == {"Visible"}
 
 
 def test_people_directory_endpoint_separates_unresolved_attributions(client):
@@ -3943,13 +3957,13 @@ def test_people_directory_endpoint_separates_unresolved_attributions(client):
         )
 
     data = client.get("/v1/people/?q=alex").get_json()
-    assert data["count"] == 0
-    assert data["results"] == []
+    assert data["count"] == 1
+    assert [item["displayName"] for item in data["results"]] == ["Alex Maintainer"]
     assert "unresolvedAttributions" not in data
 
     unresolved = client.get("/v1/people/attributions/?q=alex").get_json()
-    assert unresolved["count"] == 2
-    assert {item["label"] for item in unresolved["results"]} == {"Alex", "Alex Maintainer"}
+    assert unresolved["count"] == 1
+    assert {item["label"] for item in unresolved["results"]} == {"Alex"}
 
 
 def _add_directory_person(
@@ -4295,16 +4309,17 @@ def test_operator_approval_moves_evidence_without_changing_role_and_survives_ref
         people_index.replace_source_evidence(
             s,
             "mix-n-match",
-            "toolhub_author_metadata",
+            "untrusted_structured_source",
             [
                 {
                     "display_name": "Magnus Manske",
+                    "wiki_username": "Magnus Manske",
                     "relationship_type": sync.PERSON_REL_AUTHOR,
                     "method": "toolhub_author_metadata",
                 }
             ],
         )
-        source = s.query(Person).filter_by(identity_quality="display_name").one()
+        source = s.query(Person).filter_by(identity_quality="handle").one()
         target = people_index.ensure_person(
             s,
             display_name="Magnus Manske",
@@ -4357,10 +4372,11 @@ def test_operator_approval_moves_evidence_without_changing_role_and_survives_ref
         people_index.replace_source_evidence(
             s,
             "mix-n-match",
-            "toolhub_author_metadata",
+            "untrusted_structured_source",
             [
                 {
                     "display_name": "Magnus Manske",
+                    "wiki_username": "Magnus Manske",
                     "relationship_type": sync.PERSON_REL_AUTHOR,
                     "method": "toolhub_author_metadata",
                 }
@@ -4394,7 +4410,13 @@ def test_operator_split_decision_is_durable_and_does_not_move_evidence(client):
             s,
             "same-label-tool",
             "source",
-            [{"display_name": "Alex", "relationship_type": sync.PERSON_REL_AUTHOR}],
+            [
+                {
+                    "display_name": "Alex",
+                    "wiki_username": "Alex",
+                    "relationship_type": sync.PERSON_REL_AUTHOR,
+                }
+            ],
         )
         source = s.query(Person).one()
         target = people_index.ensure_person(s, display_name="Alex", toolhub_user_id="77")
@@ -4512,454 +4534,47 @@ def test_me_tools_requires_login(client):
     assert client.get("/v1/me/tools/").status_code == 401
 
 
-def test_me_tools_returns_possible_display_author_matches(client, monkeypatch):
-    uid = add_user(username="Ada Lovelace")
-    sign_in(client, uid)
-    calls = []
-
-    def fake_public_api_get(path, *, params=None):
-        calls.append((path, params))
-        return {
-            "results": [
-                {
-                    "name": "ada-tool",
-                    "title": "Ada Tool",
-                    "author": "Ada Lovelace",
-                    "created_by": {"username": "Toolhub"},
-                    "modified_by": {"username": "Ada Lovelace"},
-                },
-                {"title": "Nameless", "author": [{"name": "Ada Lovelace"}]},
-            ]
-        }
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    resp = client.get("/v1/me/tools/")
-    data = resp.get_json()
-    assert resp.status_code == 200
-    assert calls == [
-        (
-            "/api/search/tools/",
-            {"author__term": "Ada Lovelace", "ordering": "-score", "page": 1, "page_size": 100},
-        )
-    ]
-    assert data["username"] == "Ada Lovelace"
-    assert data["counts"] == {"verified": 0, "possible": 1}
-    assert data["verified"] == []
-    item = data["possible"][0]
-    assert item["tool"]["name"] == "ada-tool"
-    assert item["matchedAuthorNames"] == ["Ada Lovelace"]
-    assert item["claims"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
-    assert item["claims"][0]["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
-    assert item["claims"][0]["isVerified"] is False
-    assert item["toolinfoDiscovery"]["status"] == "no_url"
-    assert data["cache"]["status"] == "miss"
-
-    calls.clear()
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: pytest.fail("cache miss"))
-    cached = client.get("/v1/me/tools/")
-    assert cached.status_code == 200
-    assert cached.get_json()["cache"]["status"] == "fresh"
-    assert calls == []
-
-
-def test_me_tools_reports_a_cold_fill_in_progress_without_calling_upstream(client, monkeypatch):
-    uid = add_user(username="Ada Lovelace")
-    sign_in(client, uid)
-
-    @contextmanager
-    def unavailable_lock(_name, *, timeout_seconds=0):
-        assert timeout_seconds == 10
-        yield False
-
-    monkeypatch.setattr(db, "advisory_lock", unavailable_lock)
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: pytest.fail("upstream call"))
-
-    resp = client.get("/v1/me/tools/")
-
-    assert resp.status_code == 503
-    assert resp.headers["Retry-After"] == "3"
-    assert resp.get_json() == {
-        "error": "resolver fill in progress",
-        "detail": "Your private Toolhub data is being refreshed. Retry shortly.",
-    }
-
-
-def test_me_tools_records_pending_toolinfo_discovery_for_owned_candidates(client, monkeypatch):
-    uid = add_user(username="Ada Lovelace")
+def test_me_tools_reads_the_canonical_relationship_graph_without_upstream_search(client, monkeypatch):
+    uid = add_user(username="Ada", wikimedia_global_user_id="160")
     sign_in(client, uid)
     with db.session_scope() as s:
-        source = ToolinfoSource(
-            official_id=7,
-            url="https://toolsadmin.wikimedia.org/tools/toolinfo/v1.2/toolinfo.json",
-            source_kind="toolsadmin",
-            status="valid",
-            valid=True,
-            item_count=2880,
-        )
-        s.add(source)
-        s.flush()
+        user = s.get(User, uid)
+        person = people_index.link_user(s, user)
+        now = utcnow()
         s.add(
-            ToolinfoSourceItem(
+            CanonicalToolCache(
                 tool_name="ada-tool",
-                source_id=source.id,
-                source_url=source.url,
-                title="Ada Tool",
-                tool_url="https://ada.example/tool",
+                record={"name": "ada-tool", "title": "Ada Tool"},
+                fetched_at=now,
+                expires_at=now,
+                stale_until=now,
             )
         )
-
-    def fake_public_api_get(path, *, params=None):
-        assert path == "/api/search/tools/"
-        return {
-            "results": [
-                {
-                    "name": "ada-tool",
-                    "title": "Ada Tool",
-                    "url": "https://ada.example/tool",
-                    "author": "Ada Lovelace",
-                }
-            ]
-        }
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    data = client.get("/v1/me/tools/").get_json()
-    discovery = data["possible"][0]["toolinfoDiscovery"]
-    assert discovery["status"] == "pending"
-    assert discovery["toolName"] == "ada-tool"
-    assert discovery["toolUrl"] == "https://ada.example/tool"
-    assert data["toolinfoDiscovery"]["ada-tool"]["status"] == "pending"
-    assert data["possible"][0]["toolinfoSource"]["sourceLabel"] == "Toolsadmin feed"
-    assert data["toolinfoSources"]["ada-tool"]["sourceUrl"] == source.url
-    with db.session_scope() as s:
-        row = s.query(ToolinfoDiscovery).one()
-        assert row.tool_name == "ada-tool"
-        assert row.tool_url == "https://ada.example/tool"
-        assert row.status == "pending"
-
-
-def test_me_tools_uses_local_author_claims_as_verified_search_terms(client, monkeypatch):
-    uid = add_user(username="schiste")
-    sign_in(client, uid)
-    with db.session_scope() as s:
         s.add(
-            ToolAuthorClaim(
-                tool_name="toolhub-evolved",
-                author_name="Christophe",
-                toolhub_username="schiste",
-                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
-                verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-                evidence_url="https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
-                evidence_payload={"maintainer": "Schiste"},
-            )
-        )
-    calls = []
-
-    def fake_public_api_get(path, *, params=None):
-        calls.append(params["author__term"])
-        if params["author__term"] == "schiste":
-            raise toolhub.ToolhubAPIError(503, {"message": "busy"})
-        if params["author__term"] == "Christophe":
-            return {
-                "results": [
-                    {
-                        "name": "toolhub-evolved",
-                        "title": "Toolhub Evolved",
-                        "author": [{"name": "Christophe"}],
-                    }
-                ]
-            }
-        return {"results": []}
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    data = client.get("/v1/me/tools/").get_json()
-    assert calls == ["schiste", "Christophe"]
-    assert data["searchTerms"] == ["schiste", "Christophe"]
-    assert data["counts"] == {"verified": 1, "possible": 0}
-    assert data["errors"] == [{"term": "schiste", "status": 503, "details": {"message": "busy"}}]
-    item = data["verified"][0]
-    assert item["tool"]["name"] == "toolhub-evolved"
-    assert item["matchedAuthorNames"] == ["Christophe"]
-    assert any(
-        claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER and claim["isVerified"]
-        for claim in item["claims"]
-    )
-
-
-def test_me_tools_discovers_toolforge_memberships_when_author_name_differs(client, monkeypatch):
-    uid = add_user(username="Schiste", wikimedia_global_user_id="160")
-    sign_in(client, uid)
-    monkeypatch.setattr(
-        v1_api,
-        "PUBLIC_IDENTITY_RESOLVER",
-        identity_resolver("Schiste", "toolhub-evolved", "blybot", "missing"),
-    )
-    monkeypatch.setattr(
-        v1_api,
-        "TOOLFORGE_MAINTAINER_PROVIDER",
-        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, TOOLSADMIN_MAINTAINERS_TABLE_HTML)),
-    )
-    calls = []
-
-    def fake_public_api_get(path, *, params=None):
-        calls.append((path, params))
-        if path == "/api/search/tools/":
-            assert params["author__term"] == "Schiste"
-            return {"results": []}
-        if path == "/api/tools/toolforge-toolhub-evolved/":
-            return {
-                "name": "toolforge-toolhub-evolved",
-                "title": "Toolhub Evolved",
-                "url": "https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
-                "author": [{"name": "Christophe"}],
-            }
-        if path == "/api/tools/toolforge-blybot/":
-            return {
-                "name": "toolforge-blybot",
-                "title": "Bly bot",
-                "url": "https://toolsadmin.wikimedia.org/tools/id/blybot",
-                "author": [{"name": "Christophe"}],
-            }
-        if path == "/api/tools/toolforge-missing/":
-            raise toolhub.ToolhubAPIError(404, {"detail": "not found"})
-        raise AssertionError(path)
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    data = client.get("/v1/me/tools/").get_json()
-    assert data["searchTerms"] == ["Schiste"]
-    assert data["toolforgeToolNames"] == ["toolhub-evolved", "blybot", "missing"]
-    assert data["counts"] == {"verified": 2, "possible": 0}
-    assert [item["tool"]["name"] for item in data["verified"]] == ["toolforge-toolhub-evolved", "toolforge-blybot"]
-    assert data["verified"][0]["matchedAuthorNames"] == ["Schiste"]
-    assert "toolforge:toolhub-evolved" in data["verified"][0]["searchTerms"]
-    assert data["verified"][0]["evidenceUrl"].endswith("/tools/id/toolhub-evolved")
-    assert any(
-        claim["authorName"] == "Schiste"
-        and claim["verificationMethod"] == sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
-        and claim["isVerified"]
-        for claim in data["verified"][0]["claims"]
-    )
-    assert ("/api/tools/toolforge-missing/", None) in calls
-
-
-def test_toolforge_membership_candidate_fetch_handles_invalid_and_failed_toolhub_rows(monkeypatch):
-    monkeypatch.setattr(
-        v1_api,
-        "PUBLIC_IDENTITY_RESOLVER",
-        identity_resolver("Schiste", "invalid", "busy", "down", "missing"),
-    )
-
-    def fake_detail(name):
-        if name == "toolforge-invalid":
-            return None
-        if name == "toolforge-busy":
-            raise toolhub.ToolhubAPIError(503, {"message": "busy"})
-        if name == "toolforge-down":
-            raise toolhub.requests.ConnectionError("down")
-        if name == "toolforge-missing":
-            raise toolhub.ToolhubAPIError(404, {"message": "missing"})
-        raise AssertionError(name)
-
-    monkeypatch.setattr(v1_common_api, "toolhub_tool_detail", fake_detail)
-    candidates, errors, names = v1_me_api._candidate_tools_for_toolforge_memberships(
-        User(wm_sub="42", username="Schiste", wikimedia_global_user_id="160")
-    )
-    assert candidates == {}
-    assert names == ["invalid", "busy", "down", "missing"]
-    assert errors == [
-        {"term": "toolforge-busy", "status": 503, "details": {"message": "busy"}},
-        {"term": "toolforge-down", "status": 502, "details": {"message": "down"}},
-    ]
-    v1_me_api._add_toolforge_candidate({}, {"title": "Nameless"}, "bad", "Schiste", "schiste")
-
-
-def test_me_tools_merges_author_search_and_toolforge_membership_candidates(client, monkeypatch):
-    uid = add_user(username="Schiste", wikimedia_global_user_id="160")
-    sign_in(client, uid)
-    monkeypatch.setattr(
-        v1_api,
-        "PUBLIC_IDENTITY_RESOLVER",
-        identity_resolver("Schiste", "toolhub-evolved"),
-    )
-    monkeypatch.setattr(
-        v1_api,
-        "TOOLFORGE_MAINTAINER_PROVIDER",
-        ToolforgeMaintainerProvider(fetcher=lambda _name: (200, TOOLSADMIN_MAINTAINERS_TABLE_HTML)),
-    )
-
-    def fake_public_api_get(path, *, params=None):
-        if path == "/api/search/tools/":
-            return {
-                "results": [
-                    {
-                        "name": "toolforge-toolhub-evolved",
-                        "title": "Toolhub Evolved",
-                        "url": "https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
-                        "author": [{"name": "Schiste"}],
-                    }
-                ]
-            }
-        if path == "/api/tools/toolforge-toolhub-evolved/":
-            return {
-                "name": "toolforge-toolhub-evolved",
-                "title": "Toolhub Evolved",
-                "url": "https://toolsadmin.wikimedia.org/tools/id/toolhub-evolved",
-                "author": [{"name": "Christophe"}],
-            }
-        raise AssertionError(path)
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    data = client.get("/v1/me/tools/").get_json()
-    assert data["counts"] == {"verified": 1, "possible": 0}
-    item = data["verified"][0]
-    assert item["matchedAuthorNames"] == ["Schiste"]
-    assert item["searchTerms"] == ["Schiste", "toolforge:toolhub-evolved"]
-    assert item["evidenceUrl"].endswith("/tools/id/toolhub-evolved")
-
-
-def test_me_tools_merges_toolforge_candidate_without_optional_evidence(client, monkeypatch):
-    uid = add_user(username="Ada")
-    sign_in(client, uid)
-    row = {"name": "toolforge-ada", "title": "Ada", "author": [{"name": "Ada"}]}
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *args, **kwargs: {"results": [row]})
-    monkeypatch.setattr(
-        v1_me_api,
-        "_candidate_tools_for_toolforge_memberships",
-        lambda _username: (
-            {
-                "toolforge-ada": {
-                    "tool": row,
-                    "matchedAuthorNames": ["Ada"],
-                    "searchTerms": ["toolforge:ada"],
-                    "toolforgeMembershipName": "ada",
-                    "toolforgeUsername": "ada",
-                }
-            },
-            [],
-            ["ada"],
-        ),
-    )
-    data = client.get("/v1/me/tools/").get_json()
-    assert data["counts"] == {"verified": 1, "possible": 0}
-    assert data["verified"][0]["searchTerms"] == ["Ada", "toolforge:ada"]
-
-
-def test_me_tools_verified_author_claims_are_per_tool_not_global(client, monkeypatch):
-    uid = add_user(username="schiste")
-    sign_in(client, uid)
-    with db.session_scope() as s:
-        s.add(
-            ToolAuthorClaim(
-                tool_name="toolhub-evolved",
-                author_name="Christophe",
-                toolhub_username="schiste",
-                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
-                verification_method=sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
-                evidence_url="https://toolhub.wikimedia.org/tools/toolhub-evolved",
-                evidence_payload={"method": "PUT"},
-            )
-        )
-
-    def fake_public_api_get(path, *, params=None):
-        if params["author__term"] == "schiste":
-            return {"results": []}
-        return {
-            "results": [
-                {
-                    "name": "toolhub-evolved",
-                    "title": "Toolhub Evolved",
-                    "author": [{"name": "Christophe"}],
-                },
-                {
-                    "name": "same-author-other-tool",
-                    "title": "Same Author Other Tool",
-                    "author": [{"name": "Christophe"}],
-                },
-            ]
-        }
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    data = client.get("/v1/me/tools/").get_json()
-    assert data["searchTerms"] == ["schiste", "Christophe"]
-    assert data["counts"] == {"verified": 1, "possible": 1}
-    assert data["verified"][0]["tool"]["name"] == "toolhub-evolved"
-    possible = data["possible"][0]
-    assert possible["tool"]["name"] == "same-author-other-tool"
-    assert all(claim["verificationMethod"] != sync.AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS for claim in possible["claims"])
-    assert any(
-        claim["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME and not claim["isVerified"]
-        for claim in possible["claims"]
-    )
-
-
-def test_me_tools_does_not_reuse_unverified_display_name_claim_as_alias(client, monkeypatch):
-    uid = add_user(username="schiste")
-    sign_in(client, uid)
-    with db.session_scope() as s:
-        s.add(
-            ToolAuthorClaim(
-                tool_name="toolhub-evolved",
-                author_name="Christophe",
-                toolhub_username="schiste",
-                verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
-                verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
-            )
-        )
-
-    calls = []
-
-    def fake_public_api_get(path, *, params=None):
-        calls.append(params["author__term"])
-        return {"results": []}
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
-    data = client.get("/v1/me/tools/").get_json()
-    assert calls == ["schiste"]
-    assert data["searchTerms"] == ["schiste"]
-    assert data["counts"] == {"verified": 0, "possible": 0}
-
-
-def test_me_tools_never_treats_display_author_claim_as_verified(client, monkeypatch):
-    uid = add_user(username="Ada")
-    sign_in(client, uid)
-    with db.session_scope() as s:
-        s.add(
-            ToolAuthorClaim(
+            ToolPersonRelationship(
                 tool_name="ada-tool",
-                author_name="Ada",
-                toolhub_username="Ada",
+                person_id=person.id,
+                relationship_type=sync.PERSON_REL_MAINTAINER,
                 verification_status=sync.AUTHOR_CLAIM_VERIFIED,
-                verification_method=sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
+                confidence=100,
+                evidence_count=1,
             )
         )
 
     monkeypatch.setattr(
         toolhub,
         "public_api_get",
-        lambda *args, **kwargs: {"results": [{"name": "ada-tool", "author": [{"name": "Ada"}]}]},
+        lambda *_args, **_kwargs: pytest.fail("account tool reads must not search upstream"),
     )
-    data = client.get("/v1/me/tools/").get_json()
-    assert data["counts"] == {"verified": 0, "possible": 1}
-    assert data["possible"][0]["claims"][0]["verificationStatus"] == sync.AUTHOR_CLAIM_UNVERIFIED
-    assert data["possible"][0]["claims"][0]["verificationMethod"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME
-    assert data["possible"][0]["claims"][0]["isVerified"] is False
+    response = client.get("/v1/me/tools/")
+    data = response.get_json()
 
-
-def test_me_tools_reports_upstream_failure_when_all_searches_fail(client, monkeypatch):
-    uid = add_user(username="Ada")
-    sign_in(client, uid)
-
-    def fail_public_api_get(*args, **kwargs):
-        raise toolhub.requests.ConnectionError("down")
-
-    monkeypatch.setattr(toolhub, "public_api_get", fail_public_api_get)
-    resp = client.get("/v1/me/tools/")
-    assert resp.status_code == 502
-    data = resp.get_json()
-    assert data["error"] == "official Toolhub is unavailable"
-    assert data["username"] == "Ada"
-    assert data["errors"][0]["status"] == 502
-
-
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert data["counts"] == {"verified": 1, "possible": 0}
+    assert data["verified"][0]["tool"]["name"] == "ada-tool"
+    assert data["verified"][0]["relationships"][0]["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
+    assert data["searchTerms"] == ["canonical-relationship-graph"]
 def test_overlay_get_requires_login(client):
     assert client.get("/v1/overlay/").status_code == 401
 
@@ -7969,21 +7584,29 @@ def test_me_tools_carries_materialized_summaries_without_queueing_builds(client,
     """
     uid = add_user(username="Ada Lovelace")
     sign_in(client, uid)
-    monkeypatch.setattr(
-        toolhub,
-        "public_api_get",
-        lambda *_args, **_kwargs: {
-            "results": [
-                {
-                    "name": "ada-tool",
-                    "title": "Ada Tool",
-                    "author": "Ada Lovelace",
-                    "created_by": {"username": "Toolhub"},
-                    "modified_by": {"username": "Ada Lovelace"},
-                }
-            ]
-        },
-    )
+    with db.session_scope() as s:
+        user = s.get(User, uid)
+        person = people_index.link_user(s, user)
+        now = utcnow()
+        s.add(
+            CanonicalToolCache(
+                tool_name="ada-tool",
+                record={"name": "ada-tool", "title": "Ada Tool"},
+                fetched_at=now,
+                expires_at=now,
+                stale_until=now,
+            )
+        )
+        s.add(
+            ToolPersonRelationship(
+                tool_name="ada-tool",
+                person_id=person.id,
+                relationship_type=sync.PERSON_REL_MAINTAINER,
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                confidence=100,
+                evidence_count=1,
+            )
+        )
     queued = []
     monkeypatch.setattr(tool_summaries, "queue_refresh", lambda names, _build: queued.extend(names))
     seen = {}

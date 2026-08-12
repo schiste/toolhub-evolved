@@ -68,6 +68,7 @@ PUBLIC_HANDLE_NAMESPACES = (NS_TOOLHUB_USERNAME, NS_TOOLFORGE_USERNAME, NS_WIKI_
 TRUSTED_PUBLIC_HANDLE_SOURCES = (
     "evolved_author_claim",
     "toolhub_oauth",
+    "toolhub_author_metadata",
     "toolforge_toolsadmin",
     "wikimedia_toolforge_bridge",
 )
@@ -552,7 +553,7 @@ def _store_unresolved_observation(  # noqa: PLR0913 - source evidence fields sta
         )
         s.add(row)
     row.observed_label = display_name
-    row.verification_status = _clean(observation.get("verification_status"), 32)
+    row.verification_status = _clean(observation.get("verification_status"), 32) or AUTHOR_CLAIM_UNVERIFIED
     row.confidence = int(observation.get("confidence") or 0)
     row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
     row.evidence_url = observation.get("evidence_url")
