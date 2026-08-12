@@ -101,7 +101,6 @@ from backend.models import (  # noqa: E402
     ToolhubAccountSyncState,
     UnresolvedAttributionEvidence,
     User,
-    UserToolResolverCache,
     utcnow,
 )
 from backend.v1 import (  # noqa: E402
@@ -545,20 +544,6 @@ def test_init_schema_creates_tool_summary_cache_table():
         "summary",
         "source",
         "sync_status",
-        "computed_at",
-        "expires_at",
-        "stale_until",
-        "last_error",
-    }.issubset(cols)
-
-
-def test_init_schema_creates_private_user_tool_resolver_cache_table():
-    db.configure("sqlite://")
-    db.init_schema()
-    cols = {col["name"] for col in inspect(db.engine()).get_columns(UserToolResolverCache.__tablename__)}
-    assert {
-        "user_id",
-        "payload",
         "computed_at",
         "expires_at",
         "stale_until",

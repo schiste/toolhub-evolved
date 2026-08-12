@@ -22,7 +22,6 @@ from backend.models import (  # noqa: E402
     ToolAuthorKey,
     UnresolvedAttributionEvidence,
     User,
-    UserToolResolverCache,
     utcnow,
 )
 from backend import sync  # noqa: E402
@@ -101,6 +100,26 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
         user = User(wm_sub="schiste", username="Schiste")
         s.add(user)
         s.flush()
+        s.execute(
+            db.text(
+                "CREATE TABLE user_tool_resolver_cache "
+                "(user_id INTEGER PRIMARY KEY, payload TEXT, computed_at DATETIME, "
+                "expires_at DATETIME, stale_until DATETIME, last_error TEXT)"
+            )
+        )
+        s.execute(
+            db.text(
+                "INSERT INTO user_tool_resolver_cache "
+                "(user_id, payload, computed_at, expires_at, stale_until) "
+                "VALUES (:user_id, '{}', :computed_at, :expires_at, :stale_until)"
+            ),
+            {
+                "user_id": user.id,
+                "computed_at": now,
+                "expires_at": now + timedelta(minutes=5),
+                "stale_until": now + timedelta(days=1),
+            },
+        )
         s.add_all(
             [
                 ToolAuthorClaim(
@@ -126,13 +145,6 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
                     requested_relationship=sync.PERSON_REL_CATALOG_ACTOR,
                 ),
                 ToolAuthorKey(toolhub_username="Schiste", key_id="legacy-key", public_key="pk"),
-                UserToolResolverCache(
-                    user_id=user.id,
-                    payload={"possible": [{"tool": {"name": "wrong-tool"}}]},
-                    computed_at=now,
-                    expires_at=now + timedelta(minutes=5),
-                    stale_until=now + timedelta(days=1),
-                ),
             ]
         )
 
@@ -147,7 +159,7 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
         assert signed_claim.user_id == migrated_user.id
         assert signed_claim.requested_relationship == sync.PERSON_REL_MAINTAINER
         assert s.query(ToolAuthorKey).one().user_id == migrated_user.id
-        assert s.query(UserToolResolverCache).count() == 0
+        assert s.execute(db.text("SELECT count(*) FROM user_tool_resolver_cache")).scalar() == 0
 
     second = {result.name: result.rows for result in migrate.run_once()}
     assert second["resolver identity cleanup"] == 0

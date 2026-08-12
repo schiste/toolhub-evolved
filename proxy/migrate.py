@@ -43,7 +43,6 @@ from backend.models import (
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     User,
-    UserToolResolverCache,
     utcnow,
 )
 from backend.sync import (
@@ -141,7 +140,9 @@ def _clean_resolver_identity_claims() -> int:
                     or 0
                 )
         maintainer_index.sync_author_claim_edges(s, tool_names=sorted(affected_tools))
-        cache_count = s.query(UserToolResolverCache).delete(synchronize_session=False)
+        cache_count = 0
+        if "user_tool_resolver_cache" in inspect(db.engine()).get_table_names():
+            cache_count = int(s.execute(text("DELETE FROM user_tool_resolver_cache")).rowcount or 0)
         return len(rows) + legacy_edge_count + int(cache_count or 0)
 
 
