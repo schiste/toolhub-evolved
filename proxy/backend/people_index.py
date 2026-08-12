@@ -470,6 +470,53 @@ def link_user(s: Session, user: User) -> Person:
     return person
 
 
+def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers and provenance stay explicit
+    s: Session,
+    person: Person,
+    *,
+    stable_namespace: str,
+    stable_id: str,
+    handle_namespace: str = "",
+    handle: str = "",
+    source: str,
+    checked_at: datetime | None = None,
+) -> bool:
+    """Attach one proven provider account without merging conflicting people."""
+    clean_stable = _clean(stable_id, 64)
+    if not clean_stable or stable_namespace not in {
+        NS_TOOLHUB_USER_ID,
+        NS_WIKIMEDIA_GLOBAL_USER_ID,
+        NS_TOOLFORGE_UID_NUMBER,
+    }:
+        return False
+    owner = _identifier_person(s, stable_namespace, clean_stable)
+    if owner is not None and owner.id != person.id:
+        return False
+    now = checked_at or utcnow()
+    _upsert_identifier(
+        s,
+        person,
+        namespace=stable_namespace,
+        value=clean_stable,
+        source=source,
+        checked_at=now,
+    )
+    if handle_namespace and handle:
+        _upsert_identifier(
+            s,
+            person,
+            namespace=handle_namespace,
+            value=handle,
+            source=source,
+            checked_at=now,
+            authoritative_reassignment=True,
+        )
+    person.identity_quality = "stable"
+    person.updated_at = now
+    s.flush()
+    return True
+
+
 def replace_source_evidence(
     s: Session,
     tool_name: str,
@@ -501,6 +548,8 @@ def replace_source_evidence(
             s,
             display_name=_clean(observation.get("display_name")),
             toolhub_user_id=_clean(observation.get("toolhub_user_id"), 64),
+            wikimedia_global_user_id=_clean(observation.get("wikimedia_global_user_id"), 64),
+            toolforge_uid_number=_clean(observation.get("toolforge_uid_number"), 64),
             toolhub_username=_clean(observation.get("toolhub_username")),
             toolforge_username=_clean(observation.get("toolforge_username")),
             wiki_username=_clean(observation.get("wiki_username")),

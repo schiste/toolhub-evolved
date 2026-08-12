@@ -787,6 +787,27 @@ class PersonIdentifier(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class PersonAccountBinding(Base):
+    """Audited proof that one immutable provider account belongs to a person."""
+
+    __tablename__ = "person_account_bindings"
+    __table_args__ = (UniqueConstraint("provider", "external_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    external_id: Mapped[str] = mapped_column(String(64), index=True)
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("people.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="candidate", index=True)
+    proof_method: Mapped[str] = mapped_column(String(64), default="")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    verified_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class PersonProfile(Base):
     """Evolved-owned public profile content for a resolved person."""
 

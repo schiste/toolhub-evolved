@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from backend import db, maintainer_index, people_index, people_policy
+from backend import db, identity_graph, maintainer_index, people_index, people_policy
 from backend.models import (
     CanonicalToolCache,
     Person,
@@ -641,6 +641,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     try:
         before = build_plan(s)
         if mode == MODE_APPLY:
+            account_bindings = identity_graph.synchronize(s)
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
             non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
             for user in s.execute(select(User).order_by(User.id)).scalars():
@@ -661,6 +662,14 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             if rebuild_tools or candidate_result["linked"]:
                 people_index.refresh_activity_summaries(s)
         else:
+            account_bindings = {
+                "toolhubBindings": 0,
+                "usersHydrated": 0,
+                "verified": 0,
+                "candidate": 0,
+                "conflict": 0,
+                "unresolved": 0,
+            }
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
@@ -678,6 +687,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "identityCandidatesCreated": candidate_result["created"],
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
+            "accountBindings": account_bindings,
             "catalogAuthority": "toolhub",
         }
     except Exception as exc:
