@@ -32,6 +32,7 @@ FIXED_TARGET_FETCHERS = {
     ("backend/public_identity.py", "_fetch"): "fixed official CentralAuth API URL",
     ("backend/author_claims.py", "_fetch"): "TOOLFORGE_BASE_URL constant (Toolsadmin)",
     ("backend/github_issues.py", "publish_issue"): "fixed api.github.com GitHub Issues API host",
+    ("backend/account_linking.py", "verify_ssh_signature"): "fixed local OpenSSH subprocess; no HTTP URL is fetched",
     ("analyze_source.py", "_git_output"): "bounded local Git subprocess; no HTTP URL is fetched",
     ("repository_scan.py", "_git"): "bounded non-interactive Git subprocess with an explicit public-host allowlist",
 }

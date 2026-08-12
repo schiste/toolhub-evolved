@@ -176,7 +176,7 @@ def test_reconciliation_repairs_stale_quality_without_publishing_untrusted_handl
                 value="User:Magnus Manske",
                 normalized_value="user:magnus manske",
                 identifier_kind=people_index.IDENTIFIER_HANDLE,
-                source="toolhub_author_metadata",
+                source="legacy_untrusted_metadata",
             )
         )
         trusted = people_index.ensure_person(
