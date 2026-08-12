@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,6 +19,8 @@ MARKETING_FILES = {
     "technical": ROOT / "docs/CHANGELOG-TECHNICAL-MARKETING.md",
     "user": ROOT / "docs/CHANGELOG-USER.md",
 }
+RELEASE_ID_RE = re.compile(r"<!--\s*Release id:\s*(?P<value>[a-z0-9][a-z0-9-]*)\s*-->")
+RELEASE_TITLE_RE = re.compile(r"<!--\s*Release title:\s*(?P<value>[^<]+?)\s*-->")
 
 
 def git(*args: str) -> str:
@@ -58,6 +61,21 @@ def marketing_notes() -> dict[str, str]:
     return notes
 
 
+def release_metadata() -> dict[str, str]:
+    """Read the stable public release identity shared by both note layers."""
+    found: list[dict[str, str]] = []
+    for path in MARKETING_FILES.values():
+        value = path.read_text(encoding="utf-8")
+        release_id = RELEASE_ID_RE.search(value)
+        title = RELEASE_TITLE_RE.search(value)
+        if not release_id or not title:
+            raise RuntimeError(f"{path.name} must declare Release id and Release title headers")
+        found.append({"id": release_id.group("value"), "title": title.group("value").strip()})
+    if any(item != found[0] for item in found[1:]):
+        raise RuntimeError("user and technical changelogs must describe the same public release")
+    return found[0]
+
+
 def validate_marketing(notes: dict[str, str]) -> None:
     """Require concise reviewed bullets; never synthesize user copy from commits."""
     for audience, value in notes.items():
@@ -70,31 +88,34 @@ def validate_marketing(notes: dict[str, str]) -> None:
 
 def staged_history(history_path: Path) -> list[dict[str, object]]:
     head = git("rev-parse", "HEAD").strip()
-    short_head = git("rev-parse", "--short=12", "HEAD").strip()
-    history = load_history(history_path)
+    # Schema-v2 rows represented deployments, not curated product releases.
+    # Retire them once rather than surfacing every historical fix as a version.
+    history = [item for item in load_history(history_path) if item.get("releaseId")]
     marketing = marketing_notes()
+    release = release_metadata()
     validate_marketing(marketing)
-    if not history or history[0].get("sha") != head:
-        if history and history[0].get("marketing") == marketing:
-            raise RuntimeError("new deployment reuses the previous release notes; review and summarize this release")
-        record = {
-            "id": short_head,
-            "sha": head,
-            "deployedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "marketing": marketing,
-        }
-        history = [record, *history]
-    else:
-        if history[0].get("marketing") != marketing:
-            history[0]["marketing"] = marketing
+    deployed_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    existing = next((item for item in history if item.get("releaseId") == release["id"]), None)
+    if existing is None and any(item.get("marketing") == marketing for item in history):
+        raise RuntimeError("a new release id reuses previous release notes; review and summarize the release")
+    record = {
+        "id": release["id"],
+        "releaseId": release["id"],
+        "title": release["title"],
+        "sha": head,
+        "deployedAt": deployed_at,
+        "releasedAt": existing.get("releasedAt", existing.get("deployedAt")) if existing else deployed_at,
+        "marketing": marketing,
+    }
+    history = [record, *(item for item in history if item.get("releaseId") != release["id"])]
     return history[:MAX_DEPLOYMENTS]
 
 
 def prepare(public_output: Path, history_path: Path) -> None:
     """Write a candidate manifest without claiming the deployment succeeded."""
     history = staged_history(history_path)
-    write_json(public_output, {"schemaVersion": 2, "deployments": history})
-    print(f"deployments: staged {public_output} ({len(history)} deploys)")
+    write_json(public_output, {"schemaVersion": 3, "deployments": history})
+    print(f"releases: staged {public_output} ({len(history)} curated releases)")
 
 
 def promote(prepared_path: Path, history_path: Path) -> None:

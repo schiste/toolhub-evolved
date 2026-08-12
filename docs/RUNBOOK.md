@@ -566,9 +566,12 @@ Every deploy stages a bounded 50-release manifest in `dist/data/deployments.json
 then promotes that exact manifest to durable history only after the restarted
 webservice passes its smoke check. The history is retained outside the checkout
 so a `git pull --ff-only` remains clean. The What's New panel shows the latest two
-deployments; the Changelog page uses the retained history. The deploy is the
-publication point because it is the first place that knows which commit actually
-reached production.
+curated releases; the Changelog page uses the retained history. A stable
+`Release id` in both reviewed note files defines the public release: repeated
+deployments with that ID update its serving commit without creating another
+visible version. Change the ID and title only when intentionally starting a new
+product release. The deploy is the publication point because it is the first
+place that knows which commit actually reached production.
 
 To rebuild the human-readable repository history locally, run
 `npm run changelog:generate`. It groups conventional commits by date and change
