@@ -152,7 +152,7 @@ test("developer settings reports invalid signing JSON", async () => {
 	assert.equal(document.querySelector("[data-developer-result]").textContent, "Toolinfo must be valid JSON.");
 });
 
-test("viewMyTools lists official Toolhub tools owned by the signed-in user", async () => {
+test("viewMyTools lists official Toolhub tools related to the signed-in user", async () => {
 	h.backendGetJson.mockResolvedValue({
 		verified: [
 			{
@@ -180,6 +180,10 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 						verificationStatus: "verified",
 						isVerified: true
 					}
+				],
+				relationships: [
+					{ requestedRelationship: "maintainer", verificationStatus: "verified", isVerified: true },
+					{ requestedRelationship: "author", verificationStatus: "unverified", isVerified: false }
 				],
 				toolinfoDiscovery: {
 					status: "found",
@@ -214,6 +218,9 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 						isVerified: false
 					}
 				],
+				relationships: [
+					{ requestedRelationship: "author", verificationStatus: "unverified", isVerified: false }
+				],
 				toolinfoDiscovery: { status: "pending" }
 			}
 		]
@@ -224,6 +231,11 @@ test("viewMyTools lists official Toolhub tools owned by the signed-in user", asy
 	assert.equal(h.paginate.mock.calls.length, 0);
 	assert.ok(r.html.includes("Ada Tool"));
 	assert.ok(r.html.includes("Ada Developer Tool"));
+	assert.ok(r.html.includes("Your relationship"));
+	assert.ok(r.html.includes(">Maintainer</span>"));
+	assert.ok(r.html.includes(">Author</span>"));
+	assert.ok(!r.html.includes(">Owner</th>"));
+	assert.ok(!r.html.includes("Relationship unavailable"));
 	assert.ok(r.html.includes("ada-tool"));
 	assert.ok(r.html.includes("web app"));
 	assert.ok(r.html.includes("https://example.org/ada"));

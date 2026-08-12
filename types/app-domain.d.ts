@@ -18,6 +18,14 @@ interface AuthorVerificationBadge {
 	className: string;
 }
 
+/** One canonical relationship between the signed-in person and a tool. */
+interface AccountToolRelationship {
+	requestedRelationship?: "author" | "maintainer";
+	type?: "author" | "maintainer";
+	verificationStatus?: string;
+	isVerified?: boolean;
+}
+
 /** Cached automated discovery state for an owned Toolhub tool. */
 interface ToolinfoDiscovery {
 	status: string;
@@ -138,6 +146,7 @@ interface Tool {
 	authorVerified?: boolean;
 	authorVerificationLabel?: string;
 	authorVerificationBadges?: AuthorVerificationBadge[];
+	accountRelationships?: AccountToolRelationship[];
 	toolinfoDiscovery?: ToolinfoDiscovery;
 	toolinfoSource?: ToolinfoSource;
 }

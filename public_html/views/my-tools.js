@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { dirAttrs, esc, safeHttpUrl, textAttrs } from "../lib/core/dom.js";
+import { esc, safeHttpUrl, textAttrs } from "../lib/core/dom.js";
 import { backendGetJson, normalizeTool } from "../lib/core/api.js";
+import { relationshipLabel } from "../lib/core/claims.js";
 import { fmt, relativeTime, t, timeTag } from "../lib/core/i18n.js";
 import { toolHref } from "../lib/core/routing.js";
 import { USER } from "../lib/core/session.js";
@@ -71,11 +72,29 @@ function resolvedTools(items, verified, sourcesByTool = {}) {
 			const tool = normalizeTool(item.tool);
 			tool.authorVerified = verified;
 			tool.authorVerificationBadges = [strongestAuthorClaimBadge(item.claims, verified)];
+			tool.accountRelationships = Array.isArray(item.relationships) ? item.relationships : [];
 			tool.toolinfoDiscovery = item.toolinfoDiscovery || { status: "pending" };
 			tool.toolinfoSource = item.toolinfoSource || sourcesByTool[tool.name];
 			return tool;
 		})
 		.filter((tool) => tool !== null);
+}
+
+/** @param {Tool} tool */
+function accountRelationshipCell(tool) {
+	/** @type {Set<"author" | "maintainer">} */
+	const roles = new Set();
+	for (const relationship of tool.accountRelationships || []) {
+		const role = relationship?.requestedRelationship || relationship?.type || "";
+		if (role === "author" || role === "maintainer") roles.add(role);
+	}
+	const ordered = /** @type {const} */ (["maintainer", "author"]).filter((role) => roles.has(role));
+	if (ordered.length === 0) {
+		return `<span class="recent-table__muted">${t("accountTools.relationshipUnavailable", "Relationship unavailable")}</span>`;
+	}
+	return `<div class="account-tools__badges">${ordered
+		.map((role) => `<span class="sync-badge">${esc(relationshipLabel(role))}</span>`)
+		.join("")}</div>`;
 }
 
 /** @param {Tool} tool */
@@ -193,7 +212,7 @@ function toolRow(tool) {
 				<span class="recent-table__id">${esc(tool.name)}</span>
 			</a>
 		</td>
-		<td data-label="${t("accountTools.owner", "Owner")}"><span${dirAttrs(tool.maintainer)}>${esc(tool.maintainer)}</span></td>
+		<td data-label="${t("accountTools.yourRelationship", "Your relationship")}">${accountRelationshipCell(tool)}</td>
 		<td data-label="${t("accountTools.verification", "Verification")}">${toolVerificationBadges(tool)}</td>
 		<td data-label="${t("accountTools.metadataSource", "Metadata source")}">${toolinfoEvidenceCell(tool.toolinfoSource, tool.toolinfoDiscovery)}</td>
 		<td data-label="${t("accountTools.type", "Type")}">${hasType ? esc(type) : `<span class="recent-table__muted">${esc(type)}</span>`}</td>
@@ -231,7 +250,7 @@ function toolsTable(tools, actions = "") {
 			</colgroup>
 			<thead><tr>
 				<th scope="col">${t("accountTools.tool", "Tool")}</th>
-				<th scope="col">${t("accountTools.owner", "Owner")}</th>
+				<th scope="col">${t("accountTools.yourRelationship", "Your relationship")}</th>
 				<th scope="col">${t("accountTools.verification", "Verification")}</th>
 				<th scope="col">${t("accountTools.metadataSource", "Metadata source")}</th>
 				<th scope="col">${t("accountTools.type", "Type")}</th>
