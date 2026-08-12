@@ -211,6 +211,47 @@ def test_reconciliation_repairs_stale_quality_without_publishing_untrusted_handl
         assert trusted.id in people_index.public_identity_ids(s, {trusted.id})
 
 
+def test_applied_mapping_hides_only_non_stable_source_identity():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        target = people_index.ensure_person(s, display_name="Canonical", toolhub_user_id="42")
+        source = people_index.ensure_person(
+            s,
+            display_name="Alias",
+            toolforge_username="alias",
+            source="toolforge_toolsadmin",
+        )
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=source.id,
+            target_person_id=target.id,
+            decision=people_reconcile.MAPPING_CANDIDATE,
+        )
+        s.add(mapping)
+        s.flush()
+
+        assert people_index.public_identity_ids(s, {source.id}) == {source.id}
+        mapping.decision = people_reconcile.MAPPING_APPROVED
+        s.flush()
+        assert people_index.public_identity_ids(s, {source.id}) == set()
+
+        s.add(
+            PersonIdentifier(
+                person_id=source.id,
+                namespace=people_index.NS_TOOLFORGE_UID_NUMBER,
+                value="99",
+                normalized_value="99",
+                identifier_kind=people_index.IDENTIFIER_STABLE,
+                source="wikimedia_toolforge_bridge",
+            )
+        )
+        s.flush()
+        assert people_index.public_identity_ids(s, {source.id}) == {source.id}
+
+
 def test_stable_identity_never_adopts_a_unique_display_only_person():
     _configure()
     with db.session_scope() as s:
@@ -488,6 +529,7 @@ def test_centralauth_confirmed_wiki_handles_link_authorship_without_toolforge_me
             "Magnus Manske",
             "User:Magnus_Manske",
         }
+        assert people_index.public_identity_ids(s, {mapping.source_person_id for mapping in mappings}) == set()
         relationships = s.query(ToolPersonRelationship).order_by(ToolPersonRelationship.tool_name).all()
         assert {row.relationship_type for row in relationships} == {sync.PERSON_REL_AUTHOR}
         assert len({row.person_id for row in relationships}) == 1

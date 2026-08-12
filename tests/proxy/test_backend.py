@@ -4191,9 +4191,12 @@ def test_people_directory_rejects_invalid_parameters(client, path):
 
 
 def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
-    from backend import people_index
+    from backend import people_index, people_reconcile
 
     with db.session_scope() as s:
+        reconciliation_run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(reconciliation_run)
+        s.flush()
         resolved = people_index.ensure_person(
             s,
             display_name="Ada Lovelace",
@@ -4224,6 +4227,30 @@ def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
             toolhub_user_id="5",
             wiki_username="shared-handle",
         )
+        canonical_magnus = people_index.ensure_person(
+            s,
+            display_name="Magnus Manske",
+            toolhub_user_id="152",
+            toolhub_username="Magnus Manske",
+        )
+        mapped_magnus_source = people_index.ensure_person(
+            s,
+            display_name="Magnus Manske",
+            toolforge_username="Magnus Manske",
+            source="toolforge_toolsadmin",
+        )
+        s.add(
+            PersonReconciliationMapping(
+                run_id=reconciliation_run.id,
+                source_person_id=mapped_magnus_source.id,
+                target_person_id=canonical_magnus.id,
+                source_key=mapped_magnus_source.canonical_key,
+                target_key=canonical_magnus.canonical_key,
+                decision=people_reconcile.MAPPING_AUTO_LINK,
+                reason="same_verified_structured_handle",
+                confidence=90,
+            )
+        )
         people_index.replace_source_evidence(
             s,
             "unresolved-tool",
@@ -4233,6 +4260,7 @@ def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
         resolved_public_id = resolved.public_id
         same_name_ids = {first_same_name.public_id, second_same_name.public_id}
         cross_namespace_ids = {cross_namespace_one.public_id, cross_namespace_two.public_id}
+        canonical_magnus_id = canonical_magnus.public_id
 
     exact = client.get("/v1/people/resolve/?handle=ada").get_json()
     assert exact["status"] == "resolved"
@@ -4250,10 +4278,11 @@ def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
     assert cross_namespace["matchType"] == "handle"
     assert {person["id"] for person in cross_namespace["candidates"]} == cross_namespace_ids
 
-    unresolved = client.get("/v1/people/resolve/?handle=Magnus%20Manske").get_json()
-    assert unresolved["status"] == "ambiguous"
-    assert unresolved["candidates"] == []
-    assert unresolved["unresolvedAttributions"][0]["label"] == "Magnus Manske"
+    canonicalized = client.get("/v1/people/resolve/?handle=Magnus%20Manske").get_json()
+    assert canonicalized["status"] == "resolved"
+    assert canonicalized["person"]["id"] == canonical_magnus_id
+    assert [candidate["id"] for candidate in canonicalized["candidates"]] == [canonical_magnus_id]
+    assert canonicalized["unresolvedAttributions"][0]["label"] == "Magnus Manske"
 
     assert client.get("/v1/people/resolve/?handle=Nobody").get_json()["status"] == "not_found"
     assert client.get("/v1/people/resolve/").status_code == 400

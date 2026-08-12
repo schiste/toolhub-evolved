@@ -26,6 +26,7 @@ from backend.models import (
     PersonActivitySummary,
     PersonIdentifier,
     PersonProfile,
+    PersonReconciliationMapping,
     SourceAnalysisReport,
     ToolAssetCache,
     ToolOverlay,
@@ -899,6 +900,10 @@ def _identifiers_by_person(s: Session, person_ids: set[int]) -> dict[int, list[d
 
 
 def _public_identity_clause() -> Any:  # noqa: ANN401 - SQLAlchemy boolean expression
+    stable_identifier_people = select(PersonIdentifier.person_id).where(
+        PersonIdentifier.is_current.is_(True),
+        PersonIdentifier.identifier_kind == IDENTIFIER_STABLE,
+    )
     identifier_people = select(PersonIdentifier.person_id).where(
         PersonIdentifier.is_current.is_(True),
         or_(
@@ -910,7 +915,15 @@ def _public_identity_clause() -> Any:  # noqa: ANN401 - SQLAlchemy boolean expre
         ),
     )
     profile_people = select(PersonProfile.person_id)
-    return or_(Person.id.in_(identifier_people), Person.id.in_(profile_people))
+    mapped_sources = select(PersonReconciliationMapping.source_person_id).where(
+        PersonReconciliationMapping.source_person_id.is_not(None),
+        PersonReconciliationMapping.source_person_id.not_in(stable_identifier_people),
+        PersonReconciliationMapping.decision.in_(people_policy.APPLIED_IDENTITY_MAPPING_DECISIONS),
+    )
+    return and_(
+        or_(Person.id.in_(identifier_people), Person.id.in_(profile_people)),
+        Person.id.not_in(mapped_sources),
+    )
 
 
 def public_identity_ids(s: Session, person_ids: set[int] | None = None) -> set[int]:

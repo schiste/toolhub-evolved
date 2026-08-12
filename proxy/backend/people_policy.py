@@ -14,6 +14,8 @@ ACTION_AUTO_LINK = "auto_link"
 ACTION_CANDIDATE = "candidate"
 ACTION_UNRESOLVED = "unresolved"
 ACTION_CONFLICT = "conflict"
+MAPPING_APPROVED = "approved"
+APPLIED_IDENTITY_MAPPING_DECISIONS = frozenset({ACTION_AUTO_LINK, MAPPING_APPROVED})
 
 REASON_STABLE_ID = "same_stable_identifier"
 REASON_STRUCTURED_HANDLE = "same_verified_structured_handle"
