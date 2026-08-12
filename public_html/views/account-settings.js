@@ -66,14 +66,14 @@ function accountProviderLabel(provider) {
 
 /** @param {any} state */
 function accountLinksHTML(state) {
-	const verified = (Array.isArray(state?.bindings) ? state.bindings : []).filter(
-		(binding) => binding.status === "verified"
+	const verified = /** @type {any[]} */ (Array.isArray(state?.bindings) ? state.bindings : []).filter(
+		(/** @type {any} */ binding) => binding.status === "verified"
 	);
-	const candidates = Array.isArray(state?.candidates) ? state.candidates : [];
+	const candidates = /** @type {any[]} */ (Array.isArray(state?.candidates) ? state.candidates : []);
 	const connected =
 		verified.length > 0
 			? `<ul class="account-links__list">${verified
-					.map((binding) => {
+					.map((/** @type {any} */ binding) => {
 						const name = binding.username || binding.externalId;
 						const tools =
 							binding.provider === "toolforge"
@@ -84,7 +84,7 @@ function accountLinksHTML(state) {
 					.join("")}</ul>`
 			: `<p class="empty">${t("accountData.noLinkedAccounts", "No external accounts are linked yet.")}</p>`;
 	const candidateOptions = candidates
-		.map((candidate) => `<option value="${esc(candidate.username || "")}"></option>`)
+		.map((/** @type {any} */ candidate) => `<option value="${esc(candidate.username || "")}"></option>`)
 		.join("");
 	const profileUrl = safeUrl(state?.upstreamRepair?.profileUrl);
 	const sshKeysUrl = safeUrl(state?.upstreamRepair?.sshKeysUrl);
@@ -98,7 +98,7 @@ function accountLinksHTML(state) {
 			)}</p>
 			${
 				candidates.length > 0
-					? `<p class="signin-note">${t("accountData.suggestedAccounts", "Suggested from an exact cross-system username match: $1", candidates.map((candidate) => candidate.username).join(", "))}</p>`
+					? `<p class="signin-note">${t("accountData.suggestedAccounts", "Suggested from an exact cross-system username match: $1", candidates.map((/** @type {any} */ candidate) => candidate.username).join(", "))}</p>`
 					: ""
 			}
 			<form class="account-links__start" data-account-link-start>
