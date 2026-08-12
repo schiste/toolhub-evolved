@@ -144,6 +144,11 @@ virtualenv inside the runtime image, and start the webservice.
 
 Every push runs the full suite in CI (`.github/workflows/ci.yml`):
 
+Run `npm run preflight` before the expensive suites. It executes independent
+static, hygiene, secret, and available Python checks concurrently, reports all
+deterministic failures together, and leaves Vitest/pytest/Playwright for one
+final verification pass after those issues are fixed.
+
 - **Formatting / lint** — Prettier, ESLint (architecture-boundary rules + license
   headers, zero warnings), Stylelint (design-token enforcement), cspell.
 - **Types** — `tsc --checkJs` in **full strict mode** across the whole app.
