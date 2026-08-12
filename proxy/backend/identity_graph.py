@@ -352,7 +352,8 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
         if person is None:
             unbound += 1
             continue
-        by_tool.setdefault(membership.tool_name, []).append(
+        catalog_tool_name = f"toolforge-{membership.tool_name}"
+        by_tool.setdefault(catalog_tool_name, []).append(
             {
                 "display_name": person.display_name or account.uid,
                 "toolforge_uid_number": account.uid_number,

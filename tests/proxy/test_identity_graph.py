@@ -68,7 +68,7 @@ def test_sul_bound_toolforge_account_joins_the_toolhub_person():
         assert (people_index.NS_TOOLFORGE_UID_NUMBER, "9001") in identifiers
         assert (people_index.NS_TOOLFORGE_USERNAME, "alice") in identifiers
         relationship = session.query(ToolPersonRelationship).one()
-        assert relationship.tool_name == "example-tool"
+        assert relationship.tool_name == "toolforge-example-tool"
         assert relationship.relationship_type == "maintainer"
         assert relationship.verification_status == "verified"
         assert relationship.confidence == 100
