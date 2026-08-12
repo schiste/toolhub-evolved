@@ -182,20 +182,23 @@ def apply_durable_mappings_for_tool(s: Session, tool_name: str) -> int:
     return applied
 
 
-def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
+def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT, reason: str | None = None) -> dict[str, int]:
     capped = max(1, min(DEFAULT_QUEUE_LIMIT, int(limit or DEFAULT_QUEUE_LIMIT)))
     now = utcnow()
     with db.session_scope() as s:
+        filters = [
+            or_(
+                PersonReconciliationQueue.next_attempt_at.is_(None),
+                PersonReconciliationQueue.next_attempt_at <= now,
+            )
+        ]
+        if reason:
+            filters.append(PersonReconciliationQueue.reason == _clean(reason, 64))
         names = [
             row[0]
             for row in s.execute(
                 select(PersonReconciliationQueue.tool_name)
-                .where(
-                    or_(
-                        PersonReconciliationQueue.next_attempt_at.is_(None),
-                        PersonReconciliationQueue.next_attempt_at <= now,
-                    )
-                )
+                .where(*filters)
                 .order_by(PersonReconciliationQueue.enqueued_at, PersonReconciliationQueue.tool_name)
                 .limit(capped)
             ).all()
@@ -222,11 +225,11 @@ def process_queue(*, limit: int = DEFAULT_QUEUE_LIMIT) -> dict[str, int]:
     return {"claimed": len(names), "processed": processed, "failed": failed}
 
 
-def drain_queue(*, max_batches: int = 100) -> dict[str, int]:
+def drain_queue(*, reason: str | None = None, max_batches: int = 100) -> dict[str, int]:
     """Drain all currently actionable rows in bounded batches."""
     totals = {"claimed": 0, "processed": 0, "failed": 0, "batches": 0}
     for _batch in range(max(1, min(max_batches, 100))):
-        result = process_queue(limit=DEFAULT_QUEUE_LIMIT)
+        result = process_queue(limit=DEFAULT_QUEUE_LIMIT, reason=reason)
         if result["claimed"] == 0:
             break
         totals["batches"] += 1

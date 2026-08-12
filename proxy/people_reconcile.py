@@ -30,9 +30,9 @@ def main(argv: list[str] | None = None) -> int:
         help="process the bounded incremental queue instead of running a historical scan",
     )
     parser.add_argument(
-        "--queue-all",
+        "--retirements",
         action="store_true",
-        help="drain all currently actionable queue rows in bounded batches",
+        help="drain confirmed canonical-retirement rows before deployment",
     )
     parser.add_argument(
         "--identities-only",
@@ -46,10 +46,10 @@ def main(argv: list[str] | None = None) -> int:
         if not acquired:
             sys.stdout.write(json.dumps({"locked": True}, sort_keys=True) + "\n")
             return 0
-        if sum((args.queue, args.queue_all, args.identities_only)) > 1:
-            parser.error("--queue, --queue-all, and --identities-only are mutually exclusive")
-        if args.queue_all:
-            summary = people_reconcile.drain_queue()
+        if sum((args.queue, args.retirements, args.identities_only)) > 1:
+            parser.error("--queue, --retirements, and --identities-only are mutually exclusive")
+        if args.retirements:
+            summary = people_reconcile.drain_queue(reason="canonical_retired")
         elif args.queue:
             summary = people_reconcile.process_queue(
                 limit=int(os.environ.get("PEOPLE_RECONCILE_QUEUE_LIMIT", people_reconcile.DEFAULT_QUEUE_LIMIT))

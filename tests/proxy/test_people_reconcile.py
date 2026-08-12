@@ -286,6 +286,19 @@ def test_confirmed_catalog_retirement_withdraws_evidence_and_public_relationship
         assert people_index.person_detail(s, public_id)["toolCount"] == 0
 
 
+def test_retirement_drain_leaves_ordinary_reconciliation_work_queued():
+    _configure()
+    people_reconcile.enqueue_tool_names(["changed-tool"], reason="canonical_fetch")
+    people_reconcile.enqueue_tool_names(["retired-tool"], reason="canonical_retired")
+
+    summary = people_reconcile.drain_queue(reason="canonical_retired")
+
+    assert summary == {"claimed": 1, "processed": 1, "failed": 0, "batches": 1}
+    with db.session_scope() as s:
+        assert s.get(PersonReconciliationQueue, "retired-tool") is None
+        assert s.get(PersonReconciliationQueue, "changed-tool") is not None
+
+
 def test_identity_only_resolution_does_not_rebuild_canonical_tool_evidence():
     _configure()
     with db.session_scope() as s:
