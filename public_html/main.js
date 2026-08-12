@@ -161,7 +161,7 @@ setAuthRender(() => {
 	renderAccount();
 	syncIssueReportTrigger();
 	syncSubmitButton();
-	if (wasSignedIn !== isSignedInNow || routeNeedsAuthResolution()) render();
+	if (wasSignedIn !== isSignedInNow || routeNeedsAuthResolution()) runRender();
 });
 applyLocaleAttrs();
 if (bootLocale === DEFAULT_LOCALE || isPseudoLocale(bootLocale)) {
@@ -254,6 +254,7 @@ let apiToastTimer = null;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let apiRefreshRenderTimer = null;
 let pendingApiRefreshRender = false;
+let rendersInFlight = 0;
 function toastRegion() {
 	let region = $("#toast-region");
 	if (region) return region;
@@ -299,19 +300,38 @@ const MAX_REFRESH_RENDERS_PER_ROUTE = 4;
 let refreshRendersThisRoute = 0;
 export function resetRefreshRenderBudget() {
 	refreshRendersThisRoute = 0;
+	pendingApiRefreshRender = false;
+	if (apiRefreshRenderTimer) clearTimeout(apiRefreshRenderTimer);
+	apiRefreshRenderTimer = null;
 }
 function scheduleApiRefreshRender() {
-	if ($("#view")?.getAttribute("aria-busy") === "true") {
+	if (rendersInFlight > 0) {
 		pendingApiRefreshRender = true;
 		return;
 	}
 	if (refreshRendersThisRoute >= MAX_REFRESH_RENDERS_PER_ROUTE) return;
-	refreshRendersThisRoute += 1;
 	if (apiRefreshRenderTimer) clearTimeout(apiRefreshRenderTimer);
 	apiRefreshRenderTimer = setTimeout(() => {
 		apiRefreshRenderTimer = null;
-		render();
+		if (refreshRendersThisRoute >= MAX_REFRESH_RENDERS_PER_ROUTE) return;
+		refreshRendersThisRoute += 1;
+		runRender();
 	}, 150);
+}
+
+/** Start a tracked render and release at most one coalesced refresh afterwards. */
+function runRender() {
+	rendersInFlight += 1;
+	const task = Promise.resolve(render());
+	task.then(finishRender, finishRender);
+	return task;
+}
+
+function finishRender() {
+	rendersInFlight = Math.max(0, rendersInFlight - 1);
+	if (rendersInFlight > 0 || !pendingApiRefreshRender) return;
+	pendingApiRefreshRender = false;
+	scheduleApiRefreshRender();
 }
 document.addEventListener("toolhub:api-cache-refresh", (e) => {
 	const detail = /** @type {{ url?: string, state?: string }} */ (/** @type {CustomEvent} */ (e).detail || {});
@@ -342,11 +362,6 @@ document.addEventListener("toolhub:evolved-summaries-refresh", () => {
 	scheduleApiRefreshRender();
 });
 document.addEventListener("toolhub:endorsements-refresh", () => {
-	scheduleApiRefreshRender();
-});
-document.addEventListener("toolhub:route-render-end", () => {
-	if (!pendingApiRefreshRender) return;
-	pendingApiRefreshRender = false;
 	scheduleApiRefreshRender();
 });
 
@@ -509,12 +524,12 @@ document.addEventListener("click", (e) => {
 const renderForNavigation = () => {
 	document.dispatchEvent(new Event("toolhub:navigation-start"));
 	resetRefreshRenderBudget();
-	render();
+	runRender();
 };
 window.addEventListener("popstate", renderForNavigation);
 window.addEventListener("toolhub:navigate", renderForNavigation);
 normalizeLegacyHashRoute();
-Promise.resolve(render()).finally(() => {
+runRender().finally(() => {
 	if (!observedFirstContentPaint) {
 		markFrontendTimingOnce("first-content-paint", { source: "route-render-fallback" });
 	}
@@ -534,7 +549,7 @@ if (bootLocale !== DEFAULT_LOCALE && !isPseudoLocale(bootLocale)) {
 					renderWhatsNew();
 					renderAccount();
 					syncSubmitButton();
-					render();
+					runRender();
 				} else {
 					markFrontendTimingOnce("labels-loaded", {
 						locale: DEFAULT_LOCALE,

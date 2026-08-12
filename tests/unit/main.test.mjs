@@ -263,25 +263,30 @@ test("API cache refresh events show a toast and repaint once fresh data arrives"
 	}
 });
 
-test("API cache refresh waits for a busy route to finish before repainting", () => {
+test("API cache refresh coalesces behind an in-flight route render", async () => {
 	vi.useFakeTimers();
 	try {
 		vi.clearAllMocks();
-		const viewEl = $("#view");
-		viewEl.setAttribute("aria-busy", "true");
+		let finish;
+		router.render.mockReturnValueOnce(
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+		);
+		window.dispatchEvent(new window.Event("popstate"));
+		assert.equal(router.render.mock.calls.length, 1);
 
 		document.dispatchEvent(
 			new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/tools/example/", state: "success" } })
 		);
 		vi.advanceTimersByTime(150);
-		assert.equal(router.render.mock.calls.length, 0);
-
-		viewEl.setAttribute("aria-busy", "false");
-		document.dispatchEvent(new Event("toolhub:route-render-end"));
-		vi.advanceTimersByTime(150);
 		assert.equal(router.render.mock.calls.length, 1);
+
+		finish();
+		await Promise.resolve();
+		vi.advanceTimersByTime(150);
+		assert.equal(router.render.mock.calls.length, 2);
 	} finally {
-		$("#view")?.removeAttribute("aria-busy");
 		vi.useRealTimers();
 	}
 });

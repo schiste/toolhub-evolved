@@ -63,7 +63,7 @@ test("logged out: learns oauth availability from /v1/config/", async () => {
 	assert.equal(serversync.devLoginAvailable(), true);
 	assert.equal(serversync.officialWriteAvailable(), false);
 	assert.equal(session.serverUserName(), null);
-	assert.equal(rendered, 1); // the account UI was told to re-render
+	assert.equal(rendered, 2); // auth resolves before optional sign-in capabilities, then the account UI upgrades
 });
 
 test("logged out with config unavailable → oauth treated as unconfigured", async () => {

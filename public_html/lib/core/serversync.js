@@ -121,6 +121,9 @@ export async function initServerSync() {
 	if (!me || !me.authenticated) {
 		csrf = "";
 		officialWriteReady = false;
+		// Authentication is resolved now. Protected routes and the shared header
+		// must not wait for the optional sign-in-capability request below.
+		setServerUser(null);
 		// Logged out: learn whether real sign-in is configured, then let the
 		// account UI re-render with (or without) the Toolhub OAuth button.
 		try {

@@ -50,17 +50,16 @@ test("renderAccount no-ops when #account is absent", () => {
 	assert.equal(document.body.innerHTML, "");
 });
 
-test("renderAccount shows account loading while Toolhub session is unresolved", () => {
+test("renderAccount keeps login usable while Toolhub session is unresolved", () => {
 	oauthOn = true;
 	setServerSessionPending();
 	document.body.innerHTML = `<div id="account"></div>`;
 	renderAccount();
 	const el = /** @type {HTMLElement} */ (document.querySelector("#account"));
-	assert.ok(el.querySelector(".acct__loading"));
-	assert.ok(el.querySelector(".acct__spinner"));
-	assert.ok(el.textContent.includes("Account"));
+	assert.equal(el.querySelector(".spinner"), null);
+	assert.ok(el.textContent.includes("Log in"));
 	assert.equal(el.querySelector('a[href="/oauth/login"]'), null);
-	assert.equal(el.querySelector('a[href="/login"]'), null);
+	assert.ok(el.querySelector('a[href="/login"]'));
 });
 
 test("renderAccount shows Log in when signed out and OAuth is unavailable", () => {

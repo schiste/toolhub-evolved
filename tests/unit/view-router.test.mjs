@@ -114,6 +114,24 @@ beforeEach(() => {
 	session.signedIn.mockReturnValue(false);
 });
 
+test("route module loading retries and rejects when both attempts stall", async () => {
+	vi.useFakeTimers();
+	try {
+		const first = vi.fn(() => new Promise(() => {}));
+		const retry = vi.fn(() => new Promise(() => {}));
+		const pending = router.loadRouteModule("./stalled.js", first, retry);
+
+		await vi.advanceTimersByTimeAsync(router.ROUTE_MODULE_TIMEOUT_MS);
+		assert.equal(first.mock.calls.length, 1);
+		assert.equal(retry.mock.calls.length, 1);
+		const rejection = assert.rejects(pending, /Route module load timed out/);
+		await vi.advanceTimersByTimeAsync(router.ROUTE_MODULE_TIMEOUT_MS);
+		await rejection;
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 /* ---- dispatch: simple routes ------------------------------------------- */
 
 test('dispatch "/" → viewHome', async () => {

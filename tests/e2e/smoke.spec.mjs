@@ -10,6 +10,8 @@ const routes = [
 	{ path: "/tools/toolforge-admin", title: /toolforge admin/i },
 	{ path: "/by/Bryan%20Davis", title: /bryan davis/i },
 	{ path: "/lists", title: /curated lists/i },
+	{ path: "/people", title: /community directory/i },
+	{ path: "/changelog", title: /changelog/i },
 	{ path: "/recent?show=unpatrolled", title: /recent changes/i },
 	{ path: "/api-docs", title: /api documentation/i },
 	{ path: "/user/login/?next=/", title: /sign in/i },
@@ -20,6 +22,23 @@ test.describe("deterministic app smoke", () => {
 	const smoke = useSmokeServer();
 
 	for (const route of routes) registerSmokeCase(route);
+
+	test("cold enrichment settles without a render loop or shared account spinner", async ({ page }) => {
+		await page.addInitScript(() => {
+			window.__routeRenderStarts = 0;
+			document.addEventListener("toolhub:route-render-start", () => {
+				window.__routeRenderStarts += 1;
+			});
+		});
+		await page.goto(new URL("/search", smoke.url).href);
+		await expect(page.getByRole("heading", { name: "Browse tools" })).toBeVisible();
+		await page.waitForTimeout(1000);
+
+		expect(await page.evaluate(() => window.__routeRenderStarts)).toBeLessThanOrEqual(2);
+		await expect(page.locator("#view")).toHaveAttribute("aria-busy", "false");
+		await expect(page.locator("#view .route-loading")).toHaveCount(0);
+		await expect(page.locator("#account .spinner")).toHaveCount(0);
+	});
 
 	function registerSmokeCase(route) {
 		test(`${route.path} renders, stays clean, and passes axe`, async ({ page }) => {
@@ -38,6 +57,9 @@ async function smokeRoute(page, route, smokeUrl) {
 	await page.goto(new URL(route.path, smokeUrl).href);
 	await expect(page.locator("#view")).toBeVisible();
 	await expect(page.locator("h1").first()).toContainText(route.title);
+	await expect(page.locator("#view")).toHaveAttribute("aria-busy", "false");
+	await expect(page.locator("#view .route-loading")).toHaveCount(0);
+	await expect(page.locator("#account .spinner")).toHaveCount(0);
 	await expect(page).not.toHaveURL(/\/#\//);
 	await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
 

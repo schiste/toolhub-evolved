@@ -126,6 +126,26 @@ test("attachEndorsements decorates each tool with its endorsement", async () => 
 	assert.equal(out[2].endorsement.count, 0);
 });
 
+test("deferred endorsements emit only when the visible counts change", async () => {
+	const events = [];
+	const onRefresh = () => events.push("refresh");
+	document.addEventListener("toolhub:endorsements-refresh", onRefresh);
+	try {
+		const first = [{ name: "alpha" }];
+		await signals.attachEndorsements(first, { defer: true });
+		await Promise.resolve();
+		assert.equal(first[0].endorsement.count, 2);
+
+		const second = [{ name: "alpha" }];
+		await signals.attachEndorsements(second, { defer: true });
+		await Promise.resolve();
+		assert.equal(second[0].endorsement.count, 2);
+		assert.deepEqual(events, [], "an unchanged memoized map must not request another route render");
+	} finally {
+		document.removeEventListener("toolhub:endorsements-refresh", onRefresh);
+	}
+});
+
 test("attachEvolvedSummaries can wait for fresh local summaries without emitting a rerender", async () => {
 	const events = [];
 	const onRefresh = (event) => events.push(event.detail);

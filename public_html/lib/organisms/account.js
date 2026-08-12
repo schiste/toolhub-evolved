@@ -27,10 +27,7 @@ export function renderAccount() {
 	const el = $("#account");
 	if (!el) return;
 	if (!serverSessionResolved()) {
-		el.innerHTML = `<span class="acct__loading" role="status" aria-live="polite">
-			<span class="spinner acct__spinner" aria-hidden="true"></span>
-			<span>${t("account.loading", "Account")}</span>
-		</span>`;
+		el.innerHTML = button(t("account.logIn", "Log in"), { variant: "outline", href: "/login" });
 		return;
 	}
 	if (!signedIn()) {

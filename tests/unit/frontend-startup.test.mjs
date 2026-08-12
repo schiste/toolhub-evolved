@@ -58,17 +58,14 @@ test("critical shell CSS hides deferred dialogs and stabilizes account chrome", 
 	assert.match(css, /\.acct__btn \.avatar\s*{/);
 	assert.match(css, /\.lang__btn/);
 	assert.match(css, /\.theme-toggle__opt\s*{/);
-	assert.match(
-		html,
-		/<div class="acct" id="account">\s*<span class="acct__loading" role="status" aria-live="polite">/
-	);
+	assert.match(html, /<div class="acct" id="account">\s*<a class="btn btn--outline btn--md" href="\/login"/);
 	assert.ok(html.indexOf("<style data-critical-css>") < html.indexOf('<div class="command-palette hidden"'));
 });
 
 test("main.js activates deferred styles before the first route render", () => {
 	const main = read("public_html/main.js");
 	assert.match(main, /function activateDeferredStyles\(\)/);
-	assert.ok(main.indexOf("activateDeferredStyles();") < main.lastIndexOf("render();"));
+	assert.ok(main.indexOf("activateDeferredStyles();") < main.lastIndexOf("runRender().finally("));
 });
 
 test("styleguide CSS is owned by the styleguide route", () => {

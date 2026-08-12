@@ -164,7 +164,9 @@ test("backendGetJson dedupes public search and graph reads without caching priva
 // ----------------------------------------------------------------- fetchJson retries
 test("apiGet retries network errors with exact backoff and rethrows after the cap", async () => {
 	const sleeps = [];
+	const realSetTimeout = globalThis.setTimeout;
 	vi.stubGlobal("setTimeout", (fn, ms) => {
+		if (ms === api.READ_TIMEOUT_MS) return realSetTimeout(fn, ms);
 		sleeps.push(ms);
 		fn();
 		return 0;
@@ -185,7 +187,9 @@ test("apiGet retries network errors with exact backoff and rethrows after the ca
 
 test("apiGet retries 502/503/504 with exact backoff and rethrows API <status>", async () => {
 	const sleeps = [];
+	const realSetTimeout = globalThis.setTimeout;
 	vi.stubGlobal("setTimeout", (fn, ms) => {
+		if (ms === api.READ_TIMEOUT_MS) return realSetTimeout(fn, ms);
 		sleeps.push(ms);
 		fn();
 		return 0;
@@ -213,7 +217,8 @@ test("fetchJson sends the JSON Accept header to the proxied /api URL", async () 
 	};
 	await api.apiGet("/hdr-probe/", { a: "b" });
 	assert.equal(seenUrl, "/api/hdr-probe/?a=b");
-	assert.deepEqual(seenOpts, { headers: { Accept: "application/json" } });
+	assert.deepEqual(seenOpts.headers, { Accept: "application/json" });
+	assert.ok(seenOpts.signal instanceof AbortSignal);
 
 	// Without params there is no query string.
 	await api.apiGet("/hdr-noparams/");
@@ -232,10 +237,48 @@ test("apiGetResponse exposes raw API responses with the JSON Accept header", asy
 	};
 	const raw = await api.apiGetResponse("/api/schema/");
 	assert.equal(seenUrl, "/api/schema/");
-	assert.deepEqual(seenOpts, { headers: { Accept: "application/json" } });
+	assert.deepEqual(seenOpts.headers, { Accept: "application/json" });
+	assert.ok(seenOpts.signal instanceof AbortSignal);
 	assert.equal(raw.status, 202);
 	assert.equal(raw.headers.get("x-toolhub-evolved-cache"), "hit");
 	assert.deepEqual(await raw.json(), { ok: true });
+});
+
+test("read timeout aborts a stalled API request without retrying", async () => {
+	vi.useFakeTimers();
+	let calls = 0;
+	globalThis.fetch = (_url, opts) => {
+		calls += 1;
+		return new Promise((_resolve, reject) => {
+			opts.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+				once: true
+			});
+		});
+	};
+	try {
+		const pending = api.apiGet("/stalled/");
+		const rejection = assert.rejects(pending, (error) => error?.name === "TimeoutError");
+		await vi.advanceTimersByTimeAsync(api.READ_TIMEOUT_MS);
+		await rejection;
+		assert.equal(calls, 1);
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+test("read timeout composes with caller cancellation", async () => {
+	const caller = new AbortController();
+	let receivedSignal;
+	globalThis.fetch = (_url, opts) => {
+		receivedSignal = opts.signal;
+		return new Promise((_resolve, reject) => {
+			opts.signal.addEventListener("abort", () => reject(opts.signal.reason), { once: true });
+		});
+	};
+	const pending = api.apiGetResponse("/api/stalled/", { signal: caller.signal });
+	caller.abort(new DOMException("Caller stopped", "AbortError"));
+	await assert.rejects(pending, (error) => error?.name === "AbortError");
+	assert.equal(receivedSignal.aborted, true);
 });
 
 // ----------------------------------------------------------------- SWR cache

@@ -13,6 +13,38 @@ import {
 	toolNewMap
 } from "./store.js";
 
+export const READ_TIMEOUT_MS = 12_000;
+
+/**
+ * Bound every read that can gate route or account rendering. Timeout failures
+ * reject through the existing error paths, so the UI can recover instead of
+ * leaving its initial busy state in place forever.
+ * @param {RequestInfo | URL} input
+ * @param {RequestInit} [init]
+ * @returns {Promise<Response>}
+ */
+export function fetchRead(input, init = {}) {
+	const controller = new AbortController();
+	const callerSignal = init.signal;
+	let timedOut = false;
+	const abortFromCaller = () => controller.abort(callerSignal?.reason);
+	if (callerSignal?.aborted) abortFromCaller();
+	else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+	const timer = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, READ_TIMEOUT_MS);
+	return fetch(input, { ...init, signal: controller.signal })
+		.catch((error) => {
+			if (timedOut) throw new DOMException("Read timed out", "TimeoutError");
+			throw error;
+		})
+		.finally(() => {
+			clearTimeout(timer);
+			callerSignal?.removeEventListener("abort", abortFromCaller);
+		});
+}
+
 /* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
    as live data arrives (search results, lists, tool pages). No snapshot. */
 /** @type {Record<string, Tool>} */
@@ -451,7 +483,7 @@ async function fetchJson(url, attempts = API_RETRIES) {
 	for (let attempt = 1; attempt <= attempts; attempt += 1) {
 		let res;
 		try {
-			res = await fetch(url, { headers: { Accept: "application/json" } });
+			res = await fetchRead(url, { headers: { Accept: "application/json" } });
 			markFrontendTimingOnce("first-api-response", {
 				url,
 				status: res.status,
@@ -459,6 +491,13 @@ async function fetchJson(url, attempts = API_RETRIES) {
 			});
 		} catch (error) {
 			lastError = error; // network-layer failure → retry
+			if (
+				error &&
+				typeof error === "object" &&
+				/** @type {{ name?: unknown }} */ (error).name === "TimeoutError"
+			) {
+				throw error;
+			}
 			if (attempt >= attempts) throw error;
 			await sleep(200 * 2 ** (attempt - 1));
 			continue;
@@ -551,10 +590,11 @@ export function apiCached(path, params) {
  * headers that apiGet intentionally abstracts away.
  *
  * @param {string} url
+ * @param {RequestInit} [init]
  * @returns {Promise<Response>}
  */
-export function apiGetResponse(url) {
-	return fetch(url, { headers: { Accept: "application/json" } });
+export function apiGetResponse(url, init = {}) {
+	return fetchRead(url, { ...init, headers: { ...init.headers, Accept: "application/json" } });
 }
 export function clearApiCache() {
 	apiCache.clear();
@@ -1011,7 +1051,7 @@ export async function backendGetJson(path) {
 		const inflight = backendGetInflight.get(path);
 		if (inflight) return inflight;
 	}
-	const request = fetch(path, { headers: { Accept: "application/json" } })
+	const request = fetchRead(path, { headers: { Accept: "application/json" } })
 		.then((res) => (res.ok ? res.json() : null))
 		.then((data) => {
 			if (freshMs > 0) backendGetCache.set(path, { data, ts: Date.now() });

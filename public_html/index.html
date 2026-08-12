@@ -661,12 +661,9 @@
 						<span class="command-trigger__label" data-i18n="commandPalette.triggerLabel">Search</span>
 						<kbd class="command-trigger__shortcut" data-command-shortcut>Ctrl K</kbd>
 					</button>
-					<!-- Account control fallback; main.js resolves the server session and replaces it. -->
+					<!-- Useful before JavaScript/session discovery; main.js upgrades this when signed in. -->
 					<div class="acct" id="account">
-						<span class="acct__loading" role="status" aria-live="polite">
-							<span class="spinner acct__spinner" aria-hidden="true"></span>
-							<span data-i18n="account.loading">Account</span>
-						</span>
+						<a class="btn btn--outline btn--md" href="/login" data-i18n="account.logIn">Log in</a>
 					</div>
 					<!-- Language picker (button + dropdown) rendered by main.js -->
 					<div class="lang" id="langpicker"></div>

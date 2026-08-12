@@ -284,6 +284,66 @@ test("a deferred refresh keeps the view it was asked for", async () => {
 	assert.ok(calls[0].includes("view=full"), `deferred request downgraded the view: ${calls[0]}`);
 });
 
+test("wait-for-fresh mode loads every summary across bounded batches", async () => {
+	const calls = [];
+	globalThis.fetch = async (url) => {
+		calls.push(String(url));
+		const parsed = new URL(String(url), "https://example.test");
+		const names = (parsed.searchParams.get("names") || "").split(",").filter(Boolean);
+		return {
+			ok: true,
+			json: async () => ({ results: Object.fromEntries(names.map((name) => [name, { health: { score: 70 } }])) })
+		};
+	};
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+	const tools = Array.from({ length: 50 }, (_, index) => ({ name: `batch-tool-${index}` }));
+
+	await signals.attachEvolvedSummaries(tools, { waitForFresh: true });
+
+	assert.equal(calls.length, 3);
+	assert.deepEqual(
+		calls.map((url) => new URL(url, "https://example.test").searchParams.get("names").split(",").length),
+		[24, 24, 2]
+	);
+	assert.equal(tools.filter((tool) => tool.evolvedSummary?.health?.score === 70).length, 50);
+});
+
+test("concurrent card and full summary reads keep separate in-flight work", async () => {
+	const releases = new Map();
+	const calls = [];
+	globalThis.fetch = (url) => {
+		const view = new URL(String(url), "https://example.test").searchParams.get("view");
+		calls.push(view);
+		return new Promise((resolve) => releases.set(view, resolve));
+	};
+	vi.resetModules();
+	const signals = await import(SIGNALS);
+	const cardTools = [{ name: "concurrent-tool" }];
+	const fullTools = [{ name: "concurrent-tool" }];
+	const cardPending = signals.attachEvolvedSummaries(cardTools, { waitForFresh: true });
+	const fullPending = signals.attachEvolvedSummaries(fullTools, {
+		waitForFresh: true,
+		view: signals.SUMMARY_VIEW_FULL
+	});
+	await Promise.resolve();
+
+	assert.deepEqual(calls.sort(), ["card", "full"]);
+	releases.get("card")({
+		ok: true,
+		json: async () => ({ results: { "concurrent-tool": { health: { score: 10 } } } })
+	});
+	releases.get("full")({
+		ok: true,
+		json: async () => ({
+			results: { "concurrent-tool": { health: { score: 10 }, maintainer: { people: ["Ada"] } } }
+		})
+	});
+	await Promise.all([cardPending, fullPending]);
+
+	assert.deepEqual(fullTools[0].evolvedSummary.maintainer.people, ["Ada"]);
+});
+
 test("a card response never downgrades a stored full summary", async () => {
 	const CARD = { health: { score: 50 } };
 	const FULL = { health: { score: 50, dimensions: [{ key: "d" }] } };

@@ -109,7 +109,12 @@ async function buildMemberships() {
 // browser map is returned immediately while a background rebuild updates the
 // next page load, keeping derived badges non-blocking after deploys.
 /** @type {Map<string, Array<{ id: string, title: string }>> | null} */
-let seededMemberships = null;
+let resolvedMemberships = null;
+/** @param {Map<string, Array<{ id: string, title: string }>>} map */
+function rememberMemberships(map) {
+	resolvedMemberships = map;
+	return map;
+}
 /**
  * Prime the membership map from a payload the server already composed.
  *
@@ -127,10 +132,10 @@ export function seedListMemberships(endorsements) {
 	writeMembershipCache(map);
 	// listMemberships() is memoized for the session, so the seed has to be what
 	// that memo resolves to — otherwise the deferred crawl still runs.
-	seededMemberships = map;
+	rememberMemberships(map);
 }
 export const listMemberships = memoizeAsync(async () => {
-	if (seededMemberships) return seededMemberships;
+	if (resolvedMemberships) return resolvedMemberships;
 	const cached = readMembershipCache();
 	if (cached) {
 		if (cached.ageMs > LIST_MEMBERSHIPS_FRESH_MS) {
@@ -138,11 +143,11 @@ export const listMemberships = memoizeAsync(async () => {
 				.then(writeMembershipCache)
 				.catch(() => {});
 		}
-		return cached.map;
+		return rememberMemberships(cached.map);
 	}
 	const map = await buildMemberships().catch(() => new Map());
 	if (map.size > 0) writeMembershipCache(map);
-	return map;
+	return rememberMemberships(map);
 });
 /**
  * @param {string} name
@@ -151,6 +156,11 @@ export const listMemberships = memoizeAsync(async () => {
 export function endorsementOf(name, map) {
 	const lists = (map && map.get(name)) || [];
 	return { count: lists.length, lists };
+}
+
+/** @param {{ id: string, title: string }[]} lists */
+function endorsementFingerprint(lists) {
+	return JSON.stringify(lists.map((list) => [String(list.id), list.title]).sort((a, b) => a[0].localeCompare(b[0])));
 }
 
 /* ---- Fit to your context --------------------------------------------------
@@ -226,14 +236,22 @@ export function rankFitsFirst(tools) {
 export async function attachEndorsements(tools, opts = {}) {
 	if (opts.defer) {
 		const cached = readMembershipCache();
-		const lm = cached ? cached.map : new Map();
-		for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, lm);
+		const initial = resolvedMemberships || cached?.map || new Map();
+		for (const tool of tools) /** @type {any} */ (tool).endorsement = endorsementOf(tool.name, initial);
 		// A cold membership cache must never hold up a route. listMemberships()
-		// deduplicates the crawl; the event lets the active view repaint counts.
+		// deduplicates the crawl; repaint only if a badge visible on this route
+		// actually changed. Unconditional events made each repaint request another
+		// repaint even though the memoized membership map was already current.
 		listMemberships()
 			.then((fresh) => {
-				for (const t of tools) /** @type {any} */ (t).endorsement = endorsementOf(t.name, fresh);
-				if (typeof document !== "undefined") {
+				let changed = false;
+				for (const tool of tools) {
+					const before = endorsementOf(tool.name, initial);
+					const after = endorsementOf(tool.name, fresh);
+					if (endorsementFingerprint(before.lists) !== endorsementFingerprint(after.lists)) changed = true;
+					/** @type {any} */ (tool).endorsement = after;
+				}
+				if (changed && typeof document !== "undefined") {
 					document.dispatchEvent(new CustomEvent("toolhub:endorsements-refresh"));
 				}
 			})
@@ -381,16 +399,27 @@ function refreshEvolvedSummaries(names, opts = {}) {
 	/** @type {Array<Promise<void>>} */
 	const pending = [];
 	/** @type {string[]} */
-	const batch = [];
-	for (const name of names) {
-		if (!name) continue;
-		const inflight = evolvedSummaryInflight.get(name);
-		if (inflight) pending.push(inflight);
-		else batch.push(name);
-		if (batch.length >= EVOLVED_SUMMARY_BATCH_SIZE) break;
-	}
-	if (batch.length === 0) return Promise.allSettled(pending).then(() => undefined);
+	const queued = [];
 	const view = opts.view === SUMMARY_VIEW_FULL ? SUMMARY_VIEW_FULL : SUMMARY_VIEW_CARD;
+	for (const name of new Set(names)) {
+		if (!name) continue;
+		const inflight = evolvedSummaryInflight.get(`${view}:${name}`);
+		if (inflight) pending.push(inflight);
+		else queued.push(name);
+	}
+	for (let offset = 0; offset < queued.length; offset += EVOLVED_SUMMARY_BATCH_SIZE) {
+		pending.push(refreshEvolvedSummaryBatch(queued.slice(offset, offset + EVOLVED_SUMMARY_BATCH_SIZE), view, opts));
+	}
+	return Promise.allSettled(pending).then(() => undefined);
+}
+
+/**
+ * @param {string[]} batch
+ * @param {string} view
+ * @param {{ emit?: boolean, emitWhen?: () => boolean }} opts
+ * @returns {Promise<void>}
+ */
+function refreshEvolvedSummaryBatch(batch, view, opts) {
 	const params = new URLSearchParams({ names: batch.join(","), view });
 	const request = backendGetJson(`/v1/tools/summaries/?${params.toString()}`)
 		.then((data) => {
@@ -428,12 +457,12 @@ function refreshEvolvedSummaries(names, opts = {}) {
 		})
 		.finally(() => {
 			for (const name of batch) {
-				if (evolvedSummaryInflight.get(name) === request) evolvedSummaryInflight.delete(name);
+				const key = `${view}:${name}`;
+				if (evolvedSummaryInflight.get(key) === request) evolvedSummaryInflight.delete(key);
 			}
 		});
-	for (const name of batch) evolvedSummaryInflight.set(name, request);
-	pending.push(request);
-	return Promise.allSettled(pending).then(() => undefined);
+	for (const name of batch) evolvedSummaryInflight.set(`${view}:${name}`, request);
+	return request;
 }
 
 /** @param {() => void} callback */

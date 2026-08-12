@@ -150,8 +150,7 @@ test("mounted explorer submits forms, announces output, and updates examples", a
 	assert.match(status.textContent, /returned 200 OK/);
 	assert.equal(output.getAttribute("tabindex"), "0");
 	assert.match(output.textContent, /"ok": true/);
-	assert.deepEqual(fetcher.mock.calls[0], [
-		"/api/tools/Tool%2FWith%20Space/",
-		{ headers: { Accept: "application/json" } }
-	]);
+	assert.equal(fetcher.mock.calls[0][0], "/api/tools/Tool%2FWith%20Space/");
+	assert.deepEqual(fetcher.mock.calls[0][1].headers, { Accept: "application/json" });
+	assert.ok(fetcher.mock.calls[0][1].signal instanceof AbortSignal);
 });

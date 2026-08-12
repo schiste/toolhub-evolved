@@ -15,6 +15,31 @@ import { isStaticSlug } from "./static-routes.js";
 /** @typedef {{ title: string, html: string, mount?: () => void, styles?: string[] }} View */
 /** @typedef {View | Promise<View>} ViewResult */
 /** @template T @typedef {Promise<T>} ModuleResult */
+export const ROUTE_MODULE_TIMEOUT_MS = 10_000;
+
+/**
+ * A dynamic import can remain pending indefinitely when a static response is
+ * interrupted. Turn that browser-level stall into a normal rejected load so
+ * the router can retry once and ultimately render its error boundary.
+ * @template T
+ * @param {() => ModuleResult<T>} loader
+ * @returns {ModuleResult<T>}
+ */
+function loadModuleAttempt(loader) {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error("Route module load timed out")), ROUTE_MODULE_TIMEOUT_MS);
+		loader().then(
+			(module) => {
+				clearTimeout(timer);
+				resolve(module);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			}
+		);
+	});
+}
 
 /**
  * Retry a failed dynamic import with a unique query string. Browsers may cache a
@@ -24,10 +49,13 @@ import { isStaticSlug } from "./static-routes.js";
  * @template T
  * @param {string} specifier
  * @param {() => ModuleResult<T>} loader
+ * @param {(() => ModuleResult<T>) | undefined} [retryLoader]
  * @returns {ModuleResult<T>}
  */
-function loadRouteModule(specifier, loader) {
-	return loader().catch(() => import(`${specifier}?retry=${Date.now().toString(36)}`));
+export function loadRouteModule(specifier, loader, retryLoader = undefined) {
+	return loadModuleAttempt(loader).catch(() =>
+		loadModuleAttempt(retryLoader || (() => import(`${specifier}?retry=${Date.now().toString(36)}`)))
+	);
 }
 const loadHome = () => loadRouteModule("./home.js", () => import("./home.js"));
 const loadSearch = () => loadRouteModule("./search.js", () => import("./search.js"));
