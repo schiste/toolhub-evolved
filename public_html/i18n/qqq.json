@@ -1872,6 +1872,7 @@
 	"toolforms.crawlerRunCounts": "TODO: document this message.\n\nParameters:\n* $1 - TODO\n* $2 - TODO\n* $3 - TODO",
 	"toolforms.crawlerRunErrors": "TODO: document this message.",
 	"toolforms.crawlerRunOk": "TODO: document this message.",
+	"toolforms.crawlerRunSkipped": "Count of names the local crawler deliberately did not ingest.\n\nParameters:\n* $1 - number of skipped names",
 	"toolforms.deleteOfficialTool": "TODO: document this message.",
 	"toolforms.developerSettings": "TODO: document this message.",
 	"toolforms.discardLocalAnnotations": "TODO: document this message.",

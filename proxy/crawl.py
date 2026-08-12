@@ -6,7 +6,9 @@ the records, and upserts them as locally-registered tools attributed to the
 user who registered the URL. Per the resolved data architecture
 (docs/PRODUCTION.md §0), a name that already exists upstream on Toolhub is
 skipped: the live API stays that record's source of truth — we never store a
-shadow copy of upstream data.
+shadow copy of upstream data. That skip is a successful outcome, so it is
+reported separately from `errors`, which alone decides the run verdict and the
+exit code the job guard counts failures from.
 """
 
 import json
@@ -23,7 +25,7 @@ from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED
 
 UPSTREAM_TOOL = "https://toolhub.wikimedia.org/api/tools/"
 UA = "toolhub-evolved-crawler/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
-TIMEOUT = 20  # exists_upstream only; registered-URL fetches use outbound.STRICT_PUBLIC
+TIMEOUT = 20  # upstream_state only; registered-URL fetches use outbound.STRICT_PUBLIC
 MAX_ITEMS_PER_URL = 200
 _CALLER = outbound.Caller(
     user_agent=UA,
@@ -32,6 +34,13 @@ _CALLER = outbound.Caller(
 )
 HTTP_NOT_FOUND = 404
 SIGNED_TOOLINFO_PROVIDER = SignedToolinfoProvider()
+
+# What the official Toolhub told us about a name, and how we report the outcome.
+UPSTREAM_PRESENT = "present"
+UPSTREAM_ABSENT = "absent"
+UPSTREAM_UNREACHABLE = "unreachable"
+BUCKET_SKIPPED = "skipped"  # healthy no-op: leaves run.ok True, exit 0
+BUCKET_ERROR = "error"  # fails the run, and counts toward the job guard's streak
 
 
 def _fetch_json(session: requests.Session, url: str) -> object:
@@ -45,17 +54,42 @@ def _fetch_json(session: requests.Session, url: str) -> object:
     return json.loads(body.decode("utf-8"))
 
 
-def exists_upstream(session: requests.Session, name: str) -> bool:
-    """Report whether the official Toolhub already has this tool name.
+def upstream_state(session: requests.Session, name: str) -> str:
+    """Ask the official Toolhub whether it already has this tool name.
 
-    Errors count as "exists" so a Toolhub outage can never cause us to shadow
-    an upstream record; the URL is simply retried on the next scheduled run.
+    Three answers, not two: a confirmed hit, a confirmed miss, and "we could not
+    ask". Only a confirmed miss may be ingested — that is what stops a Toolhub
+    outage from making us shadow an upstream record — but the two non-miss cases
+    are not equally healthy, so classify_upstream() reports them separately.
     """
     try:
         resp = session.get(f"{UPSTREAM_TOOL}{name}/", headers={"User-Agent": UA}, timeout=TIMEOUT)
     except requests.RequestException:
-        return True
-    return resp.status_code != HTTP_NOT_FOUND
+        return UPSTREAM_UNREACHABLE
+    return UPSTREAM_ABSENT if resp.status_code == HTTP_NOT_FOUND else UPSTREAM_PRESENT
+
+
+def classify_upstream(state: str, name: str) -> tuple[str, str] | None:
+    """Decide how one upstream answer is reported: (bucket, message), or None to ingest.
+
+    Return None only for UPSTREAM_ABSENT — the sole state where storing a local
+    record is correct. For the other two, return BUCKET_SKIPPED for an outcome
+    that should leave the run green, or BUCKET_ERROR for one that should fail the
+    run and count toward the job guard's three-strike disable.
+
+    TODO(christophe): UPSTREAM_UNREACHABLE is the judgement call. Treating it as
+    BUCKET_SKIPPED keeps a Toolhub outage from disabling the crawler again, but
+    an extended outage then reads as a permanently green, permanently idle job.
+    Treating it as BUCKET_ERROR surfaces the outage loudly at the cost of the
+    same disable behaviour we are fixing here — bounded, since an outage is
+    transient where "exists upstream" was permanent. The interim default below
+    is the conservative one; change it if you want the outage to shout.
+    """
+    if state == UPSTREAM_ABSENT:
+        return None
+    if state == UPSTREAM_PRESENT:
+        return BUCKET_SKIPPED, f"{name}: exists upstream on Toolhub — skipped (live API is source of truth)"
+    return BUCKET_SKIPPED, f"{name}: upstream check unavailable — skipped (never shadow an upstream record)"
 
 
 def normalize_record(item: dict) -> dict | None:
@@ -88,6 +122,7 @@ def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source 
     session: requests.Session,
     counts: dict[str, int],
     errors: list[str],
+    skipped: list[str],
 ) -> None:
     affected_names: set[str] = set()
     with db.session_scope() as s:
@@ -101,8 +136,10 @@ def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source 
             if owner is not None:
                 SIGNED_TOOLINFO_PROVIDER.verify(s, owner, toolinfo=item, evidence_url=toolinfo_url)
                 affected_names.add(name)
-            if exists_upstream(session, name):
-                errors.append(f"{name}: exists upstream on Toolhub — skipped (live API is source of truth)")
+            verdict = classify_upstream(upstream_state(session, name), name)
+            if verdict is not None:
+                bucket, message = verdict
+                (errors if bucket == BUCKET_ERROR else skipped).append(message)
                 continue
             existing = s.execute(
                 select(ToolRecord).where(ToolRecord.tool_name == name, ToolRecord.user_id == owner_id)
@@ -144,6 +181,7 @@ def run_crawl() -> CrawlerRun:
     session = requests.Session()
     counts = {"added": 0, "updated": 0}
     errors: list[str] = []
+    skipped: list[str] = []
     with db.session_scope() as s:
         targets = [(c.id, c.url, c.user_id) for c in s.execute(select(CrawlerUrl).where(CrawlerUrl.enabled)).scalars()]
     for url_id, url, owner_id in targets:
@@ -159,13 +197,14 @@ def run_crawl() -> CrawlerRun:
                     row.last_status = SYNC_ERROR
                     row.last_error = str(exc)[:2000]
             continue
-        _ingest_items(data if isinstance(data, list) else [data], owner_id, url, session, counts, errors)
+        _ingest_items(data if isinstance(data, list) else [data], owner_id, url, session, counts, errors, skipped)
         with db.session_scope() as s:
             row = s.get(CrawlerUrl, url_id)
             if row:
+                failed = len(errors) != error_count  # skips leave the URL healthy
                 row.last_checked_at = utcnow()
-                row.last_status = SYNC_EVOLVED_REAL if len(errors) == error_count else SYNC_ERROR
-                row.last_error = None if len(errors) == error_count else errors[-1][:2000]
+                row.last_status = SYNC_ERROR if failed else SYNC_EVOLVED_REAL
+                row.last_error = errors[-1][:2000] if failed else None
     run = CrawlerRun(
         started_at=utcnow(),
         ended_at=utcnow(),
@@ -174,6 +213,7 @@ def run_crawl() -> CrawlerRun:
         updated=counts["updated"],
         ok=not errors,
         errors=errors,
+        skipped=skipped,
         source=SOURCE_LOCAL,
         sync_status=SYNC_EVOLVED_REAL if not errors else SYNC_ERROR,
     )
@@ -188,7 +228,8 @@ def main() -> int:
     db.init_schema()
     run = run_crawl()
     sys.stdout.write(
-        f"crawl: {run.urls_count} urls, +{run.added} added, ~{run.updated} updated, {len(run.errors)} errors\n"
+        f"crawl: {run.urls_count} urls, +{run.added} added, ~{run.updated} updated, "
+        f"{len(run.skipped)} skipped, {len(run.errors)} errors\n"
     )
     return 0 if run.ok else 1
 

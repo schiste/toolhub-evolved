@@ -1872,6 +1872,7 @@
 	"toolforms.crawlerRunCounts": "$1 URLs, $2 added, $3 updated",
 	"toolforms.crawlerRunErrors": "Errors",
 	"toolforms.crawlerRunOk": "OK",
+	"toolforms.crawlerRunSkipped": "$1 skipped",
 	"toolforms.deleteOfficialTool": "Delete official tool",
 	"toolforms.developerSettings": "Developer settings",
 	"toolforms.discardLocalAnnotations": "Discard local annotations",

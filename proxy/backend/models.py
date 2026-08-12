@@ -574,6 +574,7 @@ class CrawlerRun(Base):
     updated: Mapped[int] = mapped_column(Integer, default=0)
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     errors: Mapped[list] = mapped_column(JSON, default=list)
+    skipped: Mapped[list] = mapped_column(JSON, default=list)  # healthy no-ops; never affects `ok`
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 

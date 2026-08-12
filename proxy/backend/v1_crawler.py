@@ -59,6 +59,7 @@ def v1_crawler_runs() -> Response:
                 "updated": row.updated,
                 "ok": row.ok,
                 "errors": row.errors if isinstance(row.errors, list) else [],
+                "skipped": row.skipped if isinstance(row.skipped, list) else [],
                 "source": row.source or SOURCE_LOCAL,
                 "syncStatus": row.sync_status or SYNC_EVOLVED_REAL,
             }

@@ -161,3 +161,13 @@
   image: mariadb
   schedule: "45 2 * * *"
   emails: onfailure
+
+- name: rotate-logs
+  # Copy-truncate rotation for ~/uwsgi.log and every per-job .out/.err
+  # (tools/rotate-logs.sh). Runs after db-backup so the two never contend for
+  # the same disk window. Rotation cannot rename: uwsgi and the jobs framework
+  # hold these files open and would keep writing to the rotated inode.
+  command: sh $HOME/repo/tools/job_guard.sh --job-name rotate-logs -- sh $HOME/repo/tools/rotate-logs.sh
+  image: python3.13
+  schedule: "5 3 * * *"
+  emails: onfailure

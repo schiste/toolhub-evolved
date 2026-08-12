@@ -1144,13 +1144,16 @@ function addToolCrawlerRunRows(runs) {
 		.map((run) => {
 			const status = run.ok ? t("toolforms.crawlerRunOk", "OK") : t("toolforms.crawlerRunErrors", "Errors");
 			const errors = Array.isArray(run.errors) && run.errors.length > 0 ? ` · ${esc(run.errors[0])}` : "";
+			// Without this, a run that skipped every name reads as "0 added" with no reason given.
+			const skips = Array.isArray(run.skipped) ? run.skipped.length : 0;
+			const skipped = skips > 0 ? ` · ${t("toolforms.crawlerRunSkipped", "$1 skipped", String(skips))}` : "";
 			return `<li><span>${status} · ${t(
 				"toolforms.crawlerRunCounts",
 				"$1 URLs, $2 added, $3 updated",
 				String(run.urlsCount || 0),
 				String(run.added || 0),
 				String(run.updated || 0)
-			)}${errors}</span><span class="feed__when">${esc(run.endedAt || run.startedAt || "")}</span></li>`;
+			)}${skipped}${errors}</span><span class="feed__when">${esc(run.endedAt || run.startedAt || "")}</span></li>`;
 		})
 		.join("")}</ol>`;
 }

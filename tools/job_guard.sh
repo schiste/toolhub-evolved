@@ -55,7 +55,10 @@ LOCK_DIR="$STATE_DIR/.$JOB_NAME.lock"
 mkdir -p "$STATE_DIR"
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-	echo "job-guard: another $JOB_NAME invocation is already running; skipping" >&2
+	# stdout, not stderr: a skipped overlap is a deliberate non-run with a zero
+	# exit, like --reset and the disabled branch below. Minute-scheduled jobs
+	# overlap routinely, and routing that to <job>.err buries real failures.
+	printf '%s\n' "job-guard: another $JOB_NAME invocation is already running; skipping"
 	exit 0
 fi
 cleanup() {

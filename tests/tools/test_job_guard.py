@@ -34,6 +34,20 @@ def test_guard_disables_after_three_failures_and_skips_child(tmp_path):
     assert marker.read_text().splitlines() == ["run", "run", "run"]
 
 
+def test_guard_reports_a_skipped_overlap_on_stdout_without_running_the_child(tmp_path):
+    """An overlap is a deliberate non-run, so it must not pollute the job's .err file."""
+    marker = tmp_path / "runs"
+    (tmp_path / "guard").mkdir()
+    (tmp_path / "guard" / ".example.lock").mkdir()  # a previous run still holds it
+
+    result = run_guard(tmp_path, "sh", "-c", f"echo run >> {marker}")
+
+    assert result.returncode == 0
+    assert "already running; skipping" in result.stdout
+    assert result.stderr == ""
+    assert not marker.exists()
+
+
 def test_guard_reset_allows_success_and_success_clears_streak(tmp_path):
     failing = run_guard(tmp_path, "sh", "-c", "exit 3")
     assert failing.returncode == 3

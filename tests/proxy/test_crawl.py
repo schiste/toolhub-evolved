@@ -23,7 +23,7 @@ from backend.models import (  # noqa: E402
     User,
     utcnow,
 )
-from backend.sync import AUTHOR_CLAIM_SIGNED_TOOLINFO, AUTHOR_CLAIM_VERIFIED  # noqa: E402
+from backend.sync import AUTHOR_CLAIM_SIGNED_TOOLINFO, AUTHOR_CLAIM_VERIFIED, SYNC_ERROR  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -118,9 +118,37 @@ def test_crawl_skips_upstream_names(monkeypatch):
     add_url()
     run = run_with(monkeypatch, FakeSession(feed_body=json.dumps([ITEM]).encode(), upstream_status=200))
     assert run.added == 0
-    assert "exists upstream" in run.errors[0]
+    # The skip is a successful no-op: it must stay out of `errors`, which alone
+    # sets the exit code the job guard disables the crawler from.
+    assert run.errors == []
+    assert run.ok is True
+    assert "exists upstream" in run.skipped[0]
     run = run_with(monkeypatch, FakeSession(feed_body=json.dumps([ITEM]).encode(), raises="upstream"))
-    assert run.added == 0  # upstream check erring counts as "exists" (never shadow)
+    assert run.added == 0  # upstream check erring never shadows an upstream record
+
+
+def test_crawl_skipped_run_keeps_url_and_exit_status_healthy(monkeypatch, capsys):
+    """A registered URL whose only name exists upstream must not fail the job."""
+    add_url()
+    session = FakeSession(feed_body=json.dumps([ITEM]).encode(), upstream_status=200)
+    monkeypatch.setattr(crawl.requests, "Session", lambda: session)
+    monkeypatch.setattr(outbound, "require_allowed", lambda *_a, **_k: None)
+    monkeypatch.setattr(crawl.db, "configure", lambda *_a, **_k: None)
+    monkeypatch.setattr(crawl.db, "init_schema", lambda: None)
+    assert crawl.main() == 0  # job guard counts any non-zero exit as a failure
+    assert "1 skipped, 0 errors" in capsys.readouterr().out
+    with db.session_scope() as s:
+        row = s.query(CrawlerUrl).one()
+        assert row.last_status != SYNC_ERROR
+        assert row.last_error is None
+
+
+def test_classify_upstream_routes_each_state():
+    assert crawl.classify_upstream(crawl.UPSTREAM_ABSENT, "t") is None  # only state we ingest
+    present = crawl.classify_upstream(crawl.UPSTREAM_PRESENT, "t")
+    assert present is not None and present[0] == crawl.BUCKET_SKIPPED
+    unreachable = crawl.classify_upstream(crawl.UPSTREAM_UNREACHABLE, "t")
+    assert unreachable is not None and unreachable[0] in {crawl.BUCKET_SKIPPED, crawl.BUCKET_ERROR}
 
 
 def test_crawl_records_signed_toolinfo_claim_even_when_upstream_exists(monkeypatch):
@@ -245,7 +273,7 @@ def test_crawl_tolerates_url_deleted_before_status_update(monkeypatch):
 
     monkeypatch.setattr(crawl, "_fetch_json", lambda _session, _url: ITEM)
 
-    def ingest_and_delete(_items, _owner_id, _toolinfo_url, _session, _counts, _errors):
+    def ingest_and_delete(_items, _owner_id, _toolinfo_url, _session, _counts, _errors, _skipped):
         with db.session_scope() as s:
             s.delete(s.get(CrawlerUrl, second_id))
 

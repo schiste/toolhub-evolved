@@ -133,6 +133,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "crawler_runs": {
             "source": "VARCHAR(32) NOT NULL DEFAULT 'local'",
             "sync_status": "VARCHAR(32) NOT NULL DEFAULT 'evolved_real'",
+            "skipped": f"{json_col} NULL",
         },
         "tool_events": {
             "created_by_user_id": "INTEGER NULL",

@@ -615,9 +615,17 @@ endpoint has no retained stream, inspect the paths shown by
 Every scheduled job is wrapped by `tools/job_guard.sh`. A non-zero child exit
 increments that job's consecutive-failure streak; the third consecutive failure
 disables the child on subsequent schedules while preserving the failure email.
-A successful run resets the streak. The guard state is stored in
-`~/.toolhub-job-guard/` on the tool account's shared home, and an operator can
-resume one job explicitly after fixing the cause:
+A successful run resets the streak.
+
+The guard also holds a per-job lock, so a run that is still going when the next
+one is due causes the newcomer to skip rather than overlap — routine for the
+minute-scheduled jobs. Deliberate non-runs (a skipped overlap, `--reset`, an
+already-disabled job) report on **stdout** and exit zero, so `<job>.err` carries
+only real failures and is the file to read first.
+
+The guard state is stored in `~/.toolhub-job-guard/` on the tool account's
+shared home, and an operator can resume one job explicitly after fixing the
+cause:
 
 ```sh
 sh ~/repo/tools/job_guard.sh --job-name catalog-sync --reset
@@ -627,7 +635,10 @@ The reset only clears the guard; it does not run the job immediately. Use
 `toolforge jobs run` for a controlled manual run.
 
 The crawler exits non-zero (→ failure email) when any URL errored; per-run
-results are also stored in the `crawler_runs` table.
+results are also stored in the `crawler_runs` table. A name that already exists
+upstream on Toolhub is a successful no-op, recorded in that table's `skipped`
+column rather than `errors`, so a feed of entirely-canonical tools keeps
+reporting green instead of walking the guard into a disable.
 
 Every Python job calls `db.init_schema()` before doing work. Existing Toolforge
 databases receive idempotent additive repairs there, including the catalog
@@ -773,6 +784,32 @@ incremental queue share a MariaDB advisory lock so they cannot concurrently
 replace the same Toolsadmin relationship evidence; a locked invocation exits cleanly and
 the next scheduled run retries it.
 
+## Logs
+
+`~/uwsgi.log` and the per-job `~/<job>.out` / `~/<job>.err` files are appended
+to indefinitely — successful runs, old tracebacks, and the guard's harmless
+"already running; skipping" notices all accumulate. The nightly `rotate-logs`
+job (`tools/rotate-logs.sh`, 03:05 UTC) caps them, keeping five gzipped
+generations of anything past 8 MiB:
+
+```sh
+toolforge jobs logs rotate-logs          # what was rotated last night
+ls -lh ~/uwsgi.log ~/uwsgi.log.*.gz      # live file plus archives
+zcat ~/uwsgi.log.1.gz | less             # read the most recent archive
+sh ~/repo/tools/rotate-logs.sh           # force a rotation now
+```
+
+Thresholds are `TOOLHUB_LOG_MAX_BYTES` and `TOOLHUB_LOG_KEEP`; point
+`TOOLHUB_LOG_DIR` elsewhere to rehearse against a scratch directory.
+
+Rotation copies and then truncates in place rather than renaming, because
+uwsgi and the jobs framework hold these files open — a rename leaves them
+writing to the rotated inode while the live path stays empty. The trade-off is
+that log lines written during the copy are lost, which is why the job runs at
+night rather than during a deploy. Rotation is a size cap, not retention: an
+incident older than five generations of an 8 MiB file is gone, so pull what you
+need out of `~/uwsgi.log` before the next nightly run.
+
 ## Backups & restore
 
 Nightly `mariadb-dump` to `~/backups`, 14 dumps kept (`tools/backup-db.sh`).
@@ -792,7 +829,7 @@ then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
   `https://<toolname>.toolforge.org/healthz` — it verifies DB reachability,
   not just the webservice.
 - `webservice status` / `toolforge jobs list` for platform state;
-  `~/uwsgi.log` for application errors.
+  `~/uwsgi.log` for application errors (rotated nightly — see § Logs).
 - The deploy script's post-restart smoke loop is the first line of defence —
   a deploy that doesn't serve the app fails the deploy, not the users.
 
@@ -806,4 +843,4 @@ then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
 | Official writes return 401       | The user's stored grant is absent/expired — ask them to sign in with Toolhub again                                                                      |
 | Official writes return 4xx       | Toolhub rejected validation or permissions; check the response `details` from `/v1/write/*` and revise the payload                                      |
 | Crawler failure emails           | `toolforge jobs logs crawler`; bad registered URL errors are recorded per-run in `crawler_runs`                                                         |
-| Disk quota                       | `du -sh ~/backups ~/repo`; prune old backups; `git -C ~/repo gc`                                                                                        |
+| Disk quota                       | `du -sh ~/backups ~/repo ~/*.log ~/*.out ~/*.err`; prune old backups; `sh ~/repo/tools/rotate-logs.sh`; `git -C ~/repo gc`                              |

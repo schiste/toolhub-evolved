@@ -24,7 +24,7 @@ FIXED_TARGET_FETCHERS = {
     ("app.py", "_fetch_upstream"): "UPSTREAM constant; the read-only Toolhub proxy",
     ("cache_invalidation.py", "fetch_recent_change_rows"): "fixed RECENT_INVALIDATION_URL constant",
     ("cache_prewarm.py", "prewarm_endpoint"): "built from the static hot-endpoint list",
-    ("crawl.py", "exists_upstream"): "UPSTREAM_TOOL constant",
+    ("crawl.py", "upstream_state"): "UPSTREAM_TOOL constant",
     ("backend/toolhub.py", "exchange_code"): "official Toolhub token endpoint via base_url()",
     ("backend/toolhub.py", "refresh_grant"): "official Toolhub token endpoint via base_url()",
     ("backend/toolhub.py", "public_api_get"): "official Toolhub API via base_url()",
