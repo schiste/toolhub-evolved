@@ -22,7 +22,7 @@ let releaseData = null;
 let lastFocus = null;
 let initialized = false;
 
-/** @typedef {{ id?: string, sha?: string, deployedAt?: string, marketing?: { technical?: string, user?: string } }} Deployment */
+/** @typedef {{ id?: string, releaseId?: string, title?: string, sha?: string, releasedAt?: string, deployedAt?: string, marketing?: { technical?: string, user?: string } }} Deployment */
 
 function root() {
 	return $(`#${ROOT_ID}`);
@@ -48,8 +48,9 @@ function dateLabel(value) {
 /** @param {Deployment} deployment */
 function deploymentHTML(deployment) {
 	const id = deploymentId(deployment);
+	const title = deployment.title || t("whatsNew.releaseFallback", "Product update");
 	const commitLink = deployment.sha
-		? `<a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(deployment.sha)}" target="_blank" rel="noopener nofollow">${esc(id)}</a>`
+		? `<a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(deployment.sha)}" target="_blank" rel="noopener nofollow">${esc(deployment.sha.slice(0, 12))}</a>`
 		: esc(id);
 	const userNotes = deployment.marketing?.user
 		? `<div class="whats-new__summary"><h4>${esc(t("whatsNew.forUsers", "For users"))}</h4>${releaseNotesHTML(deployment.marketing.user, "whats-new__notes")}</div>`
@@ -59,9 +60,10 @@ function deploymentHTML(deployment) {
 		: "";
 	return `<section class="whats-new__deploy" aria-labelledby="whats-new-deploy-${esc(id)}">
 		<div class="whats-new__deploy-head">
-			<div><h3 id="whats-new-deploy-${esc(id)}">${esc(t("whatsNew.deployed", "Deployed $1", dateLabel(deployment.deployedAt)))}</h3>
-			<p>${esc(t("whatsNew.commit", "Serving commit"))} ${commitLink}</p></div>
-			<span class="whats-new__badge">${esc(t("whatsNew.deploy", "Deploy"))}</span>
+			<div><h3 id="whats-new-deploy-${esc(id)}">${esc(title)}</h3>
+			<p>${esc(t("whatsNew.released", "Released $1", dateLabel(deployment.releasedAt || deployment.deployedAt)))}</p>
+			<p>${esc(t("whatsNew.build", "Serving build"))} ${commitLink}</p></div>
+			<span class="whats-new__badge">${esc(t("whatsNew.release", "Release"))}</span>
 		</div>${userNotes}${technicalNotes}
 	</section>`;
 }
@@ -73,7 +75,7 @@ export function renderWhatsNew() {
 	body.innerHTML =
 		deployments.length > 0
 			? deployments.map((deployment) => deploymentHTML(deployment)).join("")
-			: `<p class="whats-new__empty">${esc(t("whatsNew.noDeployments", "No deployment notes are available yet."))}</p>`;
+			: `<p class="whats-new__empty">${esc(t("whatsNew.noReleases", "No release notes are available yet."))}</p>`;
 }
 
 /** @param {boolean} [remember] */

@@ -17,15 +17,16 @@ export async function viewChangelog() {
 	const deployments = Array.isArray(data?.deployments) ? data.deployments : [];
 	const rows = deployments
 		.map((/** @type {any} */ deployment) => {
-			const releaseId = deployment.id || t("changelog.commit", "commit");
-			const commit = deployment.sha
-				? `<a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(deployment.sha)}" target="_blank" rel="noopener nofollow">${esc(releaseId)}</a>`
-				: `<span class="changelog__commit">${esc(releaseId)}</span>`;
+			const title = deployment.title || t("changelog.releaseFallback", "Product update");
+			const buildId = deployment.sha?.slice(0, 12) || t("changelog.unknownBuild", "unavailable");
+			const build = deployment.sha
+				? `<a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(deployment.sha)}" target="_blank" rel="noopener nofollow">${esc(buildId)}</a>`
+				: `<span>${esc(buildId)}</span>`;
 			const userNotes = releaseNotesHTML(deployment.marketing?.user, "changelog__notes");
 			return `<section class="changelog__release">
-				<header class="changelog__release-head"><div><h2>${esc(dateLabel(deployment.deployedAt))}</h2>
-				<p>${esc(t("changelog.releaseIntro", "Changes shipped together in this deployment."))}</p></div>
-				${commit}</header>
+				<header class="changelog__release-head"><div><h2>${esc(title)}</h2>
+				<p>${esc(t("changelog.released", "Released $1", dateLabel(deployment.releasedAt || deployment.deployedAt)))}</p></div>
+				<span class="changelog__commit">${esc(t("changelog.servingBuild", "Serving build"))} ${build}</span></header>
 				${userNotes ? `<div class="changelog__audience"><h3>${esc(t("changelog.forUsers", "For users"))}</h3>${userNotes}</div>` : ""}
 				${deployment.marketing?.technical ? `<details class="changelog__technical"><summary class="changelog__technical-summary">${esc(t("changelog.technicalDetails", "Technical details"))}</summary>${releaseNotesHTML(deployment.marketing.technical, "changelog__notes")}</details>` : ""}
 			</section>`;
@@ -35,7 +36,7 @@ export async function viewChangelog() {
 		title: t("changelog.title", "Changelog"),
 		html: `<div class="container page"><article class="prose prose--page changelog">
 		<h1>${esc(t("changelog.title", "Changelog"))}</h1>
-		<p>${esc(t("changelog.intro", "Product changes are grouped by deployment so related fixes appear as one coherent release. Each release links to the exact serving commit for the full engineering history."))}</p>
+		<p>${esc(t("changelog.intro", "Product changes are grouped into curated releases. Maintenance deployments update the serving build without creating another version."))}</p>
 		${rows || `<p class="empty">${esc(t("changelog.empty", "No changelog entries are available yet."))}</p>`}
 	</article></div>`
 	};

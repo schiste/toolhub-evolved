@@ -20,12 +20,14 @@ test("release notes normalize reviewed bullets and escape their content", () => 
 	);
 });
 
-test("changelog groups curated notes by deployment without exposing raw commit rows", async () => {
+test("changelog groups curated notes by release without exposing raw commit rows", async () => {
 	h.backendGetJson.mockResolvedValue({
 		deployments: [
 			{
-				id: "abc123",
+				id: "community-directory",
+				title: "Community directory",
 				sha: "abc123def",
+				releasedAt: "2026-08-11T08:00:00Z",
 				deployedAt: "2026-08-12T08:00:00Z",
 				changes: [{ subject: "fix: internal detail", shortSha: "deadbee" }],
 				marketing: { user: "- Loading now settles", technical: "- Refresh notifications converge" }
@@ -36,18 +38,21 @@ test("changelog groups curated notes by deployment without exposing raw commit r
 
 	assert.deepEqual(h.backendGetJson.mock.calls.at(-1), ["/data/deployments.json"]);
 	assert.match(view.html, /class="changelog__release"/);
+	assert.match(view.html, /Community directory/);
+	assert.match(view.html, /Serving build/);
 	assert.match(view.html, /Loading now settles/);
 	assert.match(view.html, /<details class="changelog__technical">/);
 	assert.doesNotMatch(view.html, /internal detail|deadbee|changelog__item/);
 });
 
-test("What's New shows two curated deployments without raw commit rows", async () => {
+test("What's New shows two curated releases without raw commit rows", async () => {
 	document.body.innerHTML = `<div id="whats-new" class="hidden" aria-hidden="true">
 		<button data-whats-new-close>Close</button><div id="whats-new-body"></div>
 	</div>`;
 	h.backendGetJson.mockResolvedValue({
 		deployments: Array.from({ length: 3 }, (_, index) => ({
 			id: `release-${index}`,
+			title: `Release ${index}`,
 			sha: `${index}`.repeat(40),
 			deployedAt: "2026-08-12T08:00:00Z",
 			changes: [{ subject: `raw commit ${index}` }],
@@ -63,4 +68,5 @@ test("What's New shows two curated deployments without raw commit rows", async (
 	assert.match(body.textContent, /Outcome 0/);
 	assert.match(body.textContent, /Outcome 1/);
 	assert.doesNotMatch(body.textContent, /Outcome 2|raw commit/);
+	assert.doesNotMatch(body.textContent, /\bDeploy\b/);
 });
