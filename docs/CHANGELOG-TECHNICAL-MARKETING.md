@@ -2,12 +2,12 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..ab38374 (171 commits) -->
+<!-- Source range: 828438f..0067f89 (175 commits) -->
 
 # Technical Release Notes
 
 - Replaces display-only public identities with a unified community projection over stable people, official accounts, canonical tools, contribution evidence, and unresolved attribution clusters; immutable Toolhub/Wikimedia IDs and verified Toolforge data drive reconciliation and conflict quarantine.
-- Materializes typed relationship evidence with status, confidence, provenance, authority, verification method/date, viewer write context, and per-role totals; legacy author resolution is server-side, stable-handle-only, and explicitly disambiguated.
+- Materializes typed relationship evidence with status, confidence, provenance, verification method/date, and viewer write context; public projections expose only author and maintainer roles while retaining record authority and catalog activity internally.
 - Uses generation-based account synchronization, deterministic bounded reconciliation, actionable conflict review, compact paginated person-tool summaries, and first-class tool matches without browser request fan-out.
 - Projects immutable Toolforge LDAP accounts and memberships into the canonical relationship graph, supports multiple verified accounts per person, and adds bounded single-use OpenSSH SSHSIG challenges for user-initiated account repair without creating a parallel relationship cache.
 - Makes SPA navigation and refresh rendering convergent through normalized route identity, tracked/coalesced background repaints, view-specific summary batching, bounded reads and lazy imports, and separation of navigation cleanup from data refresh.
