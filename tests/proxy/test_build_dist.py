@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for the production static build helper."""
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -52,6 +53,7 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     (src / "lib" / "core").mkdir(parents=True)
     (src / "lib" / "workers").mkdir(parents=True)
     (src / "views").mkdir(parents=True)
+    (src / "data").mkdir(parents=True)
     (src / "index.html").write_text(
         """<!doctype html>
 <link rel="stylesheet" href="/styles/base.css">
@@ -68,6 +70,10 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     (src / "lib" / "core" / "dom.js").write_text("export const $ = () => null;\n", encoding="utf-8")
     (src / "lib" / "workers" / "graph-layout-worker.js").write_text("self.onmessage = () => {};\n", encoding="utf-8")
     (src / "views" / "graph.js").write_text("export function viewGraph() {}\n", encoding="utf-8")
+    (src / "data" / "changelog.json").write_text('{"retired": true}\n', encoding="utf-8")
+    (src / "data" / "deployments.json").write_text('{"stale": true}\n', encoding="utf-8")
+    staged_manifest = tmp_path / "staged-deployments.json"
+    staged_manifest.write_text('{"deployments": [{"id": "current"}]}\n', encoding="utf-8")
 
     monkeypatch.setattr(build_dist, "SRC", src)
     monkeypatch.setattr(build_dist, "DIST", dist)
@@ -76,7 +82,7 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     monkeypatch.setattr(build_dist, "_minify_js", lambda text: text)
     monkeypatch.setattr(build_dist, "_minify_css", lambda text: text)
 
-    build_dist.build()
+    build_dist.build(staged_manifest)
 
     html = (dist / "index.html").read_text(encoding="utf-8")
     assert 'href="/styles/base.css?v=abc123"' in html
@@ -87,6 +93,11 @@ def test_build_versions_html_assets_and_js_imports(monkeypatch, tmp_path):
     assert 'from "./lib/core/dom.js?v=abc123"' in main
     assert 'import("./views/graph.js?v=abc123")' in main
     assert (dist / "lib" / "workers" / "graph-layout-worker.js").is_file()
+    assert not (dist / "data" / "changelog.json").exists()
+    assert (
+        json.loads((dist / "data" / "deployments.json").read_text(encoding="utf-8"))["deployments"][0]["id"]
+        == "current"
+    )
 
 
 def test_js_build_preserves_template_literal_class_spacing():

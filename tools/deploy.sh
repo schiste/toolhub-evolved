@@ -22,6 +22,13 @@ ln -sfn "$REPO_DIR/proxy/uwsgi.ini" "$HOME/www/python/uwsgi.ini"
 # source is served (still gzipped at the edge) — never a broken deploy. Toolforge
 # has no Node, so we minify CSS with pure-Python rcssmin in the webservice venv.
 VENV_PY="$HOME/www/python/venv/bin/python"
+release_stage=""
+cleanup_release_stage() {
+	if [ -n "$release_stage" ]; then
+		rm -f "$release_stage"
+	fi
+}
+trap cleanup_release_stage EXIT
 
 # Run a python script with the tool's environment (TOOLHUB_DB_URL, OAuth
 # secrets, ...). Those are injected into webservice/job pods only, never into
@@ -106,9 +113,9 @@ if [ -x "$VENV_PY" ]; then
 	run_with_tool_env "$REPO_DIR/proxy/people_reconcile.py --identities-only --candidate-label-limit 100"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
-	"$VENV_PY" "$REPO_DIR/tools/build_changelog.py"
-	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py"
-	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" || echo "  dist build skipped — serving raw source"
+	release_stage="$(mktemp /tmp/toolhub-evolved-deployment.XXXXXX)"
+	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py" --prepare --public-output "$release_stage"
+	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" --deployment-manifest "$release_stage"
 	"$VENV_PY" -c "from pathlib import Path; import sys; path = (Path('$REPO_DIR') / 'dist/data/deployments.json').resolve(); print(f'  release manifest: {path}'); sys.exit('release manifest missing after dist build') if not path.is_file() or path.stat().st_size == 0 else None"
 	# Same reason as the migration above: without the tool environment this
 	# warmed a repo-local SQLite file and reported "warmed=13" while the
@@ -161,6 +168,11 @@ if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/graph/"; then
 fi
 if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/tools/summaries/?names=toolforge-toolhub-evolved"; then
 	echo "  tool summary prewarm skipped" >&2
+fi
+
+if [ -n "$release_stage" ]; then
+	echo "Recording successful deployment ..."
+	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py" --promote "$release_stage"
 fi
 
 echo "Done. $BASE_URL/"

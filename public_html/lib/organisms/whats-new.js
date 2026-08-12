@@ -2,6 +2,7 @@
 import { $, $$, esc, wrapTabFocus } from "../core/dom.js";
 import { backendGetJson } from "../core/api.js";
 import { t } from "../core/i18n.js";
+import { releaseNotesHTML } from "../molecules/release-notes.js";
 import {
 	clearWhatsNewCollapsed,
 	disableWhatsNewAutoOpen,
@@ -21,8 +22,7 @@ let releaseData = null;
 let lastFocus = null;
 let initialized = false;
 
-/** @typedef {{ id?: string, sha?: string, deployedAt?: string, changes?: Change[], marketing?: { technical?: string, user?: string } }} Deployment */
-/** @typedef {{ sha?: string, shortSha?: string, authoredAt?: string, subject?: string }} Change */
+/** @typedef {{ id?: string, sha?: string, deployedAt?: string, marketing?: { technical?: string, user?: string } }} Deployment */
 
 function root() {
 	return $(`#${ROOT_ID}`);
@@ -48,32 +48,21 @@ function dateLabel(value) {
 /** @param {Deployment} deployment */
 function deploymentHTML(deployment) {
 	const id = deploymentId(deployment);
-	const changes = Array.isArray(deployment.changes) ? deployment.changes : [];
 	const commitLink = deployment.sha
 		? `<a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(deployment.sha)}" target="_blank" rel="noopener nofollow">${esc(id)}</a>`
 		: esc(id);
-	const changeHTML =
-		changes.length > 0
-			? `<ul class="whats-new__changes">${changes
-					.slice(0, 12)
-					.map(
-						(change) =>
-							`<li><span>${esc(change.subject || t("whatsNew.unnamedChange", "Unlabelled change"))}</span> <a href="https://github.com/schiste/toolhub-evolved/commit/${encodeURIComponent(change.sha || "")}" target="_blank" rel="noopener nofollow">${esc(change.shortSha || "commit")}</a></li>`
-					)
-					.join("")}</ul>`
-			: `<p class="whats-new__empty">${esc(t("whatsNew.noChanges", "No individual changes were recorded for this deploy."))}</p>`;
 	const userNotes = deployment.marketing?.user
-		? `<div class="whats-new__summary"><h4>${esc(t("whatsNew.forUsers", "For users"))}</h4><div class="whats-new__markdown">${esc(deployment.marketing.user)}</div></div>`
+		? `<div class="whats-new__summary"><h4>${esc(t("whatsNew.forUsers", "For users"))}</h4>${releaseNotesHTML(deployment.marketing.user, "whats-new__notes")}</div>`
 		: "";
 	const technicalNotes = deployment.marketing?.technical
-		? `<details class="whats-new__technical"><summary class="whats-new__technical-summary">${esc(t("whatsNew.technicalDetails", "Technical details"))}</summary><div class="whats-new__markdown">${esc(deployment.marketing.technical)}</div></details>`
+		? `<details class="whats-new__technical"><summary class="whats-new__technical-summary">${esc(t("whatsNew.technicalDetails", "Technical details"))}</summary>${releaseNotesHTML(deployment.marketing.technical, "whats-new__notes")}</details>`
 		: "";
 	return `<section class="whats-new__deploy" aria-labelledby="whats-new-deploy-${esc(id)}">
 		<div class="whats-new__deploy-head">
 			<div><h3 id="whats-new-deploy-${esc(id)}">${esc(t("whatsNew.deployed", "Deployed $1", dateLabel(deployment.deployedAt)))}</h3>
 			<p>${esc(t("whatsNew.commit", "Serving commit"))} ${commitLink}</p></div>
 			<span class="whats-new__badge">${esc(t("whatsNew.deploy", "Deploy"))}</span>
-		</div>${userNotes}${technicalNotes}${changeHTML}
+		</div>${userNotes}${technicalNotes}
 	</section>`;
 }
 

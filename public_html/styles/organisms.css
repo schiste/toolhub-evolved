@@ -3379,8 +3379,7 @@ html[dir="rtl"] .recent-table {
 	color: var(--color-text-muted);
 	font-size: var(--fs-caption);
 }
-.whats-new__deploy-head :where(a),
-.whats-new__changes :where(a) {
+.whats-new__deploy-head :where(a) {
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
 }
@@ -3394,14 +3393,6 @@ html[dir="rtl"] .recent-table {
 	font-weight: 700;
 	text-transform: uppercase;
 }
-.whats-new__changes {
-	margin: var(--space-3) var(--space-0) var(--space-0);
-	padding-inline-start: var(--space-5);
-	font-size: var(--fs-body-small);
-}
-.whats-new__changes li + li {
-	margin-top: var(--space-2);
-}
 .whats-new__summary {
 	margin-top: var(--space-4);
 	padding: var(--space-3);
@@ -3412,8 +3403,9 @@ html[dir="rtl"] .recent-table {
 	margin: var(--space-0) var(--space-0) var(--space-2);
 	font-size: var(--fs-body-small);
 }
-.whats-new__markdown {
-	white-space: pre-line;
+.whats-new__notes {
+	margin: var(--space-0);
+	padding-inline-start: var(--space-4);
 	font-size: var(--fs-body-small);
 }
 .whats-new__technical {
@@ -3425,9 +3417,10 @@ html[dir="rtl"] .recent-table {
 	font-weight: 700;
 	cursor: pointer;
 }
-.whats-new__technical .whats-new__markdown {
+.whats-new__technical .whats-new__notes {
 	margin-top: var(--space-2);
 	padding: var(--space-2) var(--space-3);
+	padding-inline-start: var(--space-5);
 	border: var(--border-muted);
 	color: var(--color-text-muted);
 }
@@ -3444,33 +3437,51 @@ html[dir="rtl"] .recent-table {
 	border-top: var(--border-muted);
 }
 
-/* Public commit history. */
-.changelog__list {
+/* Public deployment history. */
+.changelog {
 	max-width: 78ch;
-	margin: var(--space-5) var(--space-0) var(--space-0);
-	padding: var(--space-0);
-	list-style: none;
 }
-.changelog__item {
+.changelog__release {
+	margin-top: var(--space-5);
+	padding-top: var(--space-4);
+	border-top: var(--border-muted);
+}
+.changelog__release-head {
 	display: flex;
 	align-items: flex-start;
 	justify-content: space-between;
 	gap: var(--space-4);
-	padding: var(--space-3) var(--space-0);
-	border-top: var(--border-muted);
 }
-.changelog__item :where(strong, span) {
-	display: block;
+.changelog__release-head :where(h2, p) {
+	margin: var(--space-0);
 }
-.changelog__item span {
+.changelog__release-head p {
 	margin-top: var(--space-1);
 	color: var(--color-text-muted);
 	font-size: var(--fs-caption);
 }
-.changelog__item > :where(a) {
+.changelog__release-head > :where(a, .changelog__commit) {
 	flex: 0 0 auto;
 	font-family: var(--font-mono);
 	font-size: var(--fs-caption);
+}
+.changelog__audience {
+	margin-top: var(--space-4);
+}
+.changelog__audience h3 {
+	margin-bottom: var(--space-2);
+}
+.changelog__notes {
+	margin: var(--space-0);
+	padding-inline-start: var(--space-4);
+}
+.changelog__technical {
+	margin-top: var(--space-4);
+}
+.changelog__technical-summary {
+	color: var(--color-progressive);
+	font-weight: 700;
+	cursor: pointer;
 }
 
 .command-palette {

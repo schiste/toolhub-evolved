@@ -13,6 +13,7 @@ Run from anywhere: `python tools/build_dist.py`.
 """
 
 import gzip
+import argparse
 import os
 import re
 import shutil
@@ -188,6 +189,7 @@ _PRECOMPRESS_SUFFIXES = {".js", ".css", ".html", ".json", ".svg", ".xml", ".txt"
 #: compressing.
 _PRECOMPRESS_MIN_BYTES = 1400
 _PRECOMPRESS_LEVEL = 9
+_STAGED_DATA = {Path("data/changelog.json"), Path("data/deployments.json")}
 
 
 def _write_precompressed(out: Path) -> int:
@@ -214,7 +216,7 @@ def _write_precompressed(out: Path) -> int:
     return len(packed)
 
 
-def build() -> tuple[int, int]:
+def build(deployment_manifest: Path | None = None) -> tuple[int, int, int]:
     """Mirror SRC into DIST, preserving JS, minifying CSS, and copying everything else.
 
     Builds into a temp dir and swaps it in atomically, so an interrupted build
@@ -228,6 +230,8 @@ def build() -> tuple[int, int]:
         if path.is_dir():
             continue
         rel = path.relative_to(SRC)
+        if rel in _STAGED_DATA:
+            continue
         out = TMP / rel
         out.parent.mkdir(parents=True, exist_ok=True)
         data = path.read_bytes()
@@ -249,6 +253,11 @@ def build() -> tuple[int, int]:
         else:
             out.write_bytes(data)
         packed += _write_precompressed(out)
+    if deployment_manifest is not None:
+        release_out = TMP / "data" / "deployments.json"
+        release_out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(deployment_manifest, release_out)
+        packed += _write_precompressed(release_out)
     if DIST.exists():
         shutil.rmtree(DIST)
     TMP.rename(DIST)  # swap the freshly-built tree in
@@ -256,7 +265,10 @@ def build() -> tuple[int, int]:
 
 
 if __name__ == "__main__":
-    raw_bytes, mini_bytes, packed_bytes = build()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--deployment-manifest", type=Path)
+    args = parser.parse_args()
+    raw_bytes, mini_bytes, packed_bytes = build(args.deployment_manifest)
     pct = 0 if raw_bytes == 0 else round((raw_bytes - mini_bytes) * 100 / raw_bytes)
     sys.stdout.write(
         f"Built {DIST} — JS preserved, CSS minified; JS/CSS {raw_bytes} -> {mini_bytes} bytes "

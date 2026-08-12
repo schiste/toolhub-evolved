@@ -4,41 +4,10 @@
 
 # Technical Release Notes
 
-- Normalizes SPA route identity across query ordering and equivalent encodings, runs pending-state callbacks only for real transitions, and separates navigation cleanup from same-route data repaints.
-- Skips the legacy relationship-evidence backfill after its source table has been retired, removing the full 13,750-row rebuild that consumed roughly 40 minutes of an otherwise frontend-only deployment.
-- Contains background cache work inside its owning SQLite test fixture and allows local Playwright runs to reuse an installed Chromium executable without changing CI's pinned-browser default.
-- Makes SPA navigation idempotent: same-path-and-query requests no longer dispatch route renders, and directory loading feedback appears only after a real URL transition, preventing restored form controls from creating a render/remount loop.
-- Requires handle-only public identities to come from OAuth, Toolsadmin, the verified Wikimedia/Toolforge bridge, or an authenticated claim; canonical author metadata remains unresolved evidence, stronger provenance cannot be downgraded by refreshes, and reconciliation repairs stale identity-quality flags.
-- Restructures `/v1/community/` into primary identities/accounts, relationship-backed and structured tool matches, standalone unresolved evidence, and weak description-only matches while retaining a compatibility alias for primary results.
-- Folds exact same-label observations beneath a unique stable person as explicitly unlinked supporting evidence, returns each related tool once with every typed relationship and public provenance, and adds a 323-observation Magnus-scale regression.
-- Keeps repeated display-label clusters as reconciliation telemetry rather than actionable identity conflicts and dismisses legacy label-only queue entries during apply runs; stable-identifier conflicts remain reviewable.
-- Adds a unified `/v1/community/` projection over stable people, official accounts, catalog evidence, and unresolved attributions, with deterministic ranking, typed filters, real counts, pagination, and explicit canonical-authority metadata.
-- Returns matching canonical tools as first-class cards, globally ranks result types, and removes tool-match fan-out into every related person.
-- Separates unresolved identity status from per-role verified, stale, and unverified relationship evidence.
-- Reconciles structured Toolhub wiki handles when they exactly match the canonical CentralAuth username behind an immutable global user id, while keeping Toolforge membership and Toolhub write authority as separate claims.
-- Queries Toolforge LDAP by `wikimediaGlobalAccountId`, validates the canonical global name, matches Toolsadmin's actual Toolforge tool name, and fails deployment early when the production LDAP schema probe fails.
-- Prioritizes bounded identity candidates by unresolved cluster size with deterministic account-name and immutable-ID tie-breakers.
-- Adds a resumable generation-based official Toolhub account projection; incomplete or count-mismatched refreshes cannot replace the last complete generation, and deploys require a complete refresh before restart.
-- Materializes stable people from immutable Toolhub and Wikimedia global user ids, reconciles global-ID-backed Toolforge identities without OAuth participation, and refreshes public links after account synchronization.
-- Adds deterministic dry-run/apply reconciliation, bounded identity batches, durable candidate/conflict review, stable-id conflict quarantine, and incremental changed-tool queue processing.
-- Replaces browser-side profile request fan-out with server-paginated compact tool summaries and clamps public page sizes.
-- Exposes relationship status, confidence, evidence source/count, authority, verification method/date, viewer-specific write context, and per-role total/verified tool counts without conflating identity and relationship verification.
-- Aligns community search with the catalog `browse`, `facets`, and `tcard` primitives and adds a reusable escaped entity-card adapter with metric, evidence, and trust-signal slots.
-- Moves frontend messages to Wikimedia Banana format, validates extracted English and qqq catalogs, serves missing locales correctly, and keeps the production JavaScript budget within its ratchet.
-- Adds regression coverage for 2,000-plus account pagination, interrupted synchronization, stable cross-links, contributor eligibility, directory history, prolific profiles, trust labels, action authorization boundaries, and linked-account relationship metrics.
-- Makes conflict recording tolerant of historical duplicate pending rows, preserves one canonical pending review item, dismisses redundant queue entries with an audit note, and reports the consolidation count.
-- Treats a failed explicit MariaDB `RELEASE_LOCK` after successful long-running work as connection cleanup rather than job failure; connection-scoped locks are already released when the server resets that connection.
-- Replaces the 50-result, first-match legacy author resolver with a server-side exact-handle decision API and explicit frontend disambiguation for display names, handle collisions, and unresolved labels.
-- Stops publishing display-only attribution records as people, aggregates them by label, and keeps their per-source identity scopes intact.
-- Adds Toolhub and Wikimedia stable identifiers, correctly namespaces Toolforge developer handles, and persists authenticated LDAP membership evidence without treating access as authorship.
-- Adds bounded exact-Toolhub identity discovery, durable approve/reject/split review decisions, stable-id conflict quarantine, and automatic reapplication after catalog refreshes.
-- Adds person-centric APIs, Evolved profile storage, and a unified relationship-claim workflow with evidence reconciliation over canonical Toolhub reads.
-- Serves tool cards a projected health summary — score, grade and maintainer counts — instead of the whole record, and fetches the popover breakdown after the route has rendered.
-- Persists health summaries in the browser, so a cached score paints with its card and revalidates in the background instead of arriving in a later repaint.
-- Cuts the composed landing payload from about 340KB to about 82KB, and a card's summary from roughly 8KB to under 1KB.
-- Splits backend/v1.py from 5,707 lines and 83 routes into fifteen per-family blueprints over a shared backend/v1_common; URL paths and methods are unchanged.
-- Gzips static text assets at build time rather than once per request, which removed the compression cost from a CPU-capped pod.
-- Clears every ruff finding across proxy/ with no new suppressions, and brings ruff format back to passing.
-- Ignores a build-time gzipped twin older than the file it represents, so correcting a generated artifact in place is not silently overridden by the stale compressed copy.
-- Fails the push when the checked-in release notes do not describe the commits being pushed, which is how they went unnoticed for 34 commits while the hook reported them as skipped.
-- Ignores output/, where Playwright runs leave screenshots and storage-state files containing the signed-in session's cookies.
+- Replaces display-only public identities with a unified community projection over stable people, official accounts, canonical tools, contribution evidence, and unresolved attribution clusters; immutable Toolhub/Wikimedia IDs and verified Toolforge data drive reconciliation and conflict quarantine.
+- Materializes typed relationship evidence with status, confidence, provenance, authority, verification method/date, viewer write context, and per-role totals; legacy author resolution is server-side, stable-handle-only, and explicitly disambiguated.
+- Uses generation-based account synchronization, deterministic bounded reconciliation, actionable conflict review, compact paginated person-tool summaries, and first-class tool matches without browser request fan-out.
+- Makes SPA navigation and refresh rendering convergent through normalized route identity, tracked/coalesced background repaints, view-specific summary batching, bounded reads and lazy imports, and separation of navigation cleanup from data refresh.
+- Reduces landing/card payloads, persists projected health summaries, lazily loads full breakdowns, skips retired evidence backfills, precompresses static assets, and keeps cache/reconciliation failure modes bounded and recoverable.
+- Consolidates the frontend around reusable catalog cards, Wikimedia-compatible localization, explicit accessibility/failure states, and regression coverage for large directories, identity trust, action authorization, history, RTL, keyboard focus, and loading settlement.
+- Stages release manifests before restart, promotes deployment history only after a successful smoke check, retains a bounded full release history, and validates reviewed release notes as three to eight bundled entries.

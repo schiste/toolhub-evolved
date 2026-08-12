@@ -539,19 +539,20 @@ surface.
 
 ```sh
 become <toolname>
-sh ~/repo/tools/deploy.sh          # pull → publish changelog/deploy history → build dist → restart → smoke-check
+sh ~/repo/tools/deploy.sh          # pull → stage release → build → restart → smoke-check → promote history
 ```
 
 Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
 followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
 if the webservice doesn't come back healthy.
 
-Every deploy generates `public_html/data/changelog.json` from the serving Git
-checkout and records the latest two successful deploys in
-`public_html/data/deployments.json`. The deploy history is retained outside the
-checkout so a `git pull --ff-only` remains clean. The pre-push hook runs the same
-changelog generator as a parse check; the deploy is the publication point because
-it is the first place that knows which commit actually reached production.
+Every deploy stages a bounded 50-release manifest in `dist/data/deployments.json`,
+then promotes that exact manifest to durable history only after the restarted
+webservice passes its smoke check. The history is retained outside the checkout
+so a `git pull --ff-only` remains clean. The What's New panel shows the latest two
+deployments; the Changelog page uses the retained history. The deploy is the
+publication point because it is the first place that knows which commit actually
+reached production.
 
 To rebuild the human-readable repository history locally, run
 `npm run changelog:generate`. It groups conventional commits by date and change
