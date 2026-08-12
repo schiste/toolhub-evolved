@@ -155,6 +155,29 @@ function localStrip(candidates, live) {
 		.map((/** @type {any} */ rec) => localToolBase(rec.name, rec));
 }
 
+/**
+ * Keep Toolhub search-index lag from publishing records that are absent from
+ * the last complete canonical catalog snapshot. If the local projection is
+ * unavailable, preserve the live response: an outage is not evidence that
+ * every tool was deleted.
+ * @param {Tool[]} results
+ * @returns {Promise<{ results: Tool[], retiredOnPage: number }>}
+ */
+async function retainCanonicalResults(results) {
+	if (results.length === 0) return { results, retiredOnPage: 0 };
+	try {
+		const canonical = await cachedCanonicalTools({
+			names: results.map((tool) => tool.name),
+			limit: results.length
+		});
+		const active = new Set(canonical.map((tool) => tool.name));
+		const visible = results.filter((tool) => active.has(tool.name));
+		return { results: visible, retiredOnPage: results.length - visible.length };
+	} catch {
+		return { results, retiredOnPage: 0 };
+	}
+}
+
 export async function viewSearch() {
 	// Stryker disable next-line StringLiteral: when location.search is empty the fallback feeds URLSearchParams; "" yields no params and any sentinel yields a single unread key, so reads (q, page, *__term, …) are unaffected — equivalent.
 	const usp = new URLSearchParams(location.search || "");
@@ -184,9 +207,15 @@ export async function viewSearch() {
 		(async () => {
 			try {
 				const liveData = await apiGet("/search/tools/", apiParams);
+				const canonical = await retainCanonicalResults(
+					(liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool))
+				);
 				return {
-					data: liveData,
-					results: (liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool)),
+					data: {
+						...liveData,
+						count: Math.max(0, Number(liveData.count || 0) - canonical.retiredOnPage)
+					},
+					results: canonical.results,
 					canonicalFallback: false
 				};
 			} catch (error) {

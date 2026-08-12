@@ -339,7 +339,9 @@ beforeEach(() => {
 	h.apiCached.mockReset();
 	h.paginate.mockResolvedValue([]);
 	h.backendGetJson.mockRejectedValue(new Error("backend offline")); // default: no local strip
-	h.cachedCanonicalTools.mockResolvedValue([]);
+	h.cachedCanonicalTools.mockImplementation(async (options = {}) =>
+		(options.names || []).map((name) => cachedTool(name, { title: name }))
+	);
 	// Default to a warm live cache so existing tests exercise the live path;
 	// the local-first tests opt in by leaving the canonical cache populated.
 	h.apiCached.mockReturnValue(true);
@@ -406,10 +408,33 @@ test("search empty results, no facets (response is {} → exercises `data.result
 	expect("empty", r.html);
 });
 
+test("search hides an upstream index hit absent from the canonical snapshot", async () => {
+	setUrl("q=Bryan+Davis");
+	h.apiGet.mockResolvedValue({
+		results: [
+			rawTool("active-tool", { title: "Active" }),
+			rawTool("toolforge-bd808-pywikibot", { title: "Deleted Pywikibot" })
+		],
+		count: 2,
+		facets: {}
+	});
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("active-tool", { title: "Active" })]);
+
+	const result = await search.viewSearch();
+
+	assert.ok(result.html.includes('data-tool="active-tool"'));
+	assert.ok(!result.html.includes("toolforge-bd808-pywikibot"));
+	assert.ok(result.html.includes("Showing 1-1 of 1 tool"));
+});
+
 test("search serves local canonical results first on a cold query, then upgrades to live", async () => {
 	setUrl("q=cite");
 	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
-	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
+	h.cachedCanonicalTools.mockImplementation(async (options = {}) =>
+		options.names
+			? options.names.map((name) => cachedTool(name, { title: name }))
+			: [cachedTool("cached-cite", { title: "Cached Cite" })]
+	);
 	// Live is slow; the local answer must not wait for it.
 	let resolveLive;
 	h.apiGet.mockReturnValue(
