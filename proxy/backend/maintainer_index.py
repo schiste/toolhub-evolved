@@ -234,6 +234,11 @@ def _toolhub_observations(tool: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(author, dict):
             display = clean_text(author.get("name") or author.get("developer_username") or author.get("wiki_username"))
             toolforge_username = clean_text(author.get("developer_username"))
+            if any(character.isspace() for character in toolforge_username) or ":" in toolforge_username:
+                # Historical structured fields sometimes contain display names
+                # or wiki titles. They are attribution evidence, not valid
+                # Toolforge developer-account handles.
+                toolforge_username = ""
             wiki_username = clean_text(author.get("wiki_username"))
         else:
             display = clean_text(author)

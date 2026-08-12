@@ -268,9 +268,7 @@ def _candidate_source_people(s: Session) -> list[Person]:
     )
     finalized_ids = select(PersonReconciliationMapping.source_person_id).where(
         PersonReconciliationMapping.source_person_id.is_not(None),
-        PersonReconciliationMapping.decision.in_(
-            {MAPPING_AUTO_LINK, MAPPING_APPROVED, MAPPING_REJECTED, MAPPING_SPLIT}
-        ),
+        PersonReconciliationMapping.decision.in_({MAPPING_REJECTED, MAPPING_SPLIT}),
     )
     people = list(
         s.execute(
@@ -292,7 +290,7 @@ def _candidate_source_people(s: Session) -> list[Person]:
         select(PersonReconciliationMapping)
         .where(
             PersonReconciliationMapping.source_person_id.in_(person_ids),
-            PersonReconciliationMapping.decision == MAPPING_CANDIDATE,
+            PersonReconciliationMapping.decision.in_({MAPPING_CANDIDATE, MAPPING_AUTO_LINK, MAPPING_APPROVED}),
         )
         .order_by(PersonReconciliationMapping.id.desc())
     ).scalars()
@@ -322,6 +320,12 @@ def _candidate_source_people(s: Session) -> list[Person]:
     due = []
     for person in people:
         mapping = latest_mappings.get(person.id)
+        if mapping is not None and mapping.decision in MAPPING_APPLIED_DECISIONS:
+            # Applied evidence should no longer resolve to the source person.
+            # If an upstream refresh recreated it, immediately reapply the
+            # durable decision instead of treating the old mapping as final.
+            due.append(person)
+            continue
         if mapping is None or mapping.updated_at <= retry_after:
             due.append(person)
             continue

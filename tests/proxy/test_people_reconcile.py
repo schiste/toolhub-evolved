@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import db, people_index, people_reconcile, sync  # noqa: E402
+from backend import db, maintainer_index, people_index, people_reconcile, sync  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     Person,
@@ -54,6 +54,23 @@ def _identity_resolver(*tool_names):
 def _configure() -> None:
     db.configure("sqlite://")
     db.init_schema()
+
+
+def test_toolhub_display_values_are_not_projected_as_toolforge_handles():
+    observations = maintainer_index._toolhub_observations(  # noqa: SLF001 - adapter contract regression
+        {
+            "author": [
+                {
+                    "name": "Magnus Manske",
+                    "developer_username": "Magnus Manske",
+                    "wiki_username": "User:Magnus_Manske",
+                }
+            ]
+        }
+    )
+
+    assert observations[0]["toolforge_username"] == ""
+    assert observations[0]["wiki_username"] == "User:Magnus_Manske"
 
 
 def test_apply_links_account_by_immutable_toolhub_id_and_is_idempotent():
@@ -428,6 +445,62 @@ def test_centralauth_confirmed_wiki_handles_link_authorship_without_toolforge_me
         relationships = s.query(ToolPersonRelationship).order_by(ToolPersonRelationship.tool_name).all()
         assert {row.relationship_type for row in relationships} == {sync.PERSON_REL_AUTHOR}
         assert len({row.person_id for row in relationships}) == 1
+
+
+def test_auto_link_repairs_structured_evidence_recreated_on_its_source():
+    _configure()
+    with db.session_scope() as s:
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="152",
+                username="Magnus Manske",
+                normalized_username="magnus manske",
+                wikimedia_global_user_id="160",
+            )
+        )
+        observation = {
+            "display_name": "Magnus Manske",
+            "wiki_username": "User:Magnus_Manske",
+            "relationship_type": sync.PERSON_REL_AUTHOR,
+        }
+        people_index.replace_source_evidence(
+            s,
+            "hotcat",
+            "toolhub_author_metadata",
+            [observation],
+        )
+        first = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver(),
+        )
+        mapping = s.query(PersonReconciliationMapping).one()
+        source = s.get(Person, mapping.source_person_id)
+        target = s.get(Person, mapping.target_person_id)
+        assert first["identityMappingsApplied"] == 1
+
+        people_index.replace_source_evidence(
+            s,
+            "hotcat",
+            "toolhub_author_metadata",
+            [observation],
+        )
+        assert s.query(ToolPersonRelationship).filter_by(person_id=source.id).count() == 1
+        assert [person.id for person in people_reconcile._candidate_source_people(s)] == [source.id]  # noqa: SLF001
+
+        second = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            identity_resolver=_identity_resolver(),
+            rebuild_tools=False,
+        )
+
+        assert second["identityCandidatesCreated"] == 0
+        assert second["identityMappingsApplied"] == 1
+        assert s.query(ToolPersonRelationship).filter_by(person_id=source.id).count() == 0
+        assert s.query(ToolPersonRelationship).filter_by(person_id=target.id).count() == 1
 
 
 def test_unconfirmed_wiki_handle_remains_a_review_candidate():
