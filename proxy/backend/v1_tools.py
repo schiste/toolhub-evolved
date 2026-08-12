@@ -36,7 +36,6 @@ from backend.models import (
     ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
-    ToolhubToken,
     ToolMedia,
     ToolPersonRelationship,
     ToolThanks,
@@ -53,7 +52,6 @@ from backend.sync import (
     AUTHOR_CLAIM_UNVERIFIED,
     PERSON_REL_AUTHOR,
     PERSON_REL_MAINTAINER,
-    PERSON_REL_RECORD_OWNER,
     REVIEW_APPROVED,
     REVIEW_PENDING,
     SOURCE_LOCAL,
@@ -108,9 +106,11 @@ def v1_tool_viewer_context(name: str) -> Response:
                 "expiresAt": common.iso(row.expires_at),
             }
             for row in rows
-            if row.verification_status == "verified" and (row.expires_at is None or row.expires_at > now)
+            if row.relationship_type in people_index.PUBLIC_ROLES
+            and row.verification_status == "verified"
+            and (row.expires_at is None or row.expires_at > now)
         ]
-        audience = people_policy.viewer_action_audience(
+        internal_audience = people_policy.viewer_action_audience(
             [
                 {
                     "type": row.relationship_type,
@@ -121,6 +121,7 @@ def v1_tool_viewer_context(name: str) -> Response:
             ],
             checked_at=now,
         )
+        audience = "tool_manager" if internal_audience == "record_authority" else internal_audience
         response = jsonify(
             {
                 "toolName": tool_name,
@@ -184,15 +185,10 @@ def _claim_options(s: Any, user: User, tool: dict) -> dict[str, Any]:  # noqa: A
                 "requires": ["authorName"],
                 "authorNames": author_names,
             },
-            {
-                "method": AUTHOR_CLAIM_TOOLHUB_WRITE_ACCESS,
-                "relationship": PERSON_REL_RECORD_OWNER,
-                "available": s.get(ToolhubToken, user.id) is not None,
-                "automatic": True,
-                "requires": [],
-            },
         ],
-        "claims": [common.claim_payload(row) for row in claims],
+        "claims": [
+            common.claim_payload(row) for row in claims if row.requested_relationship in people_index.PUBLIC_ROLES
+        ],
         "canonicalAuthority": {"catalog": "toolhub", "claims": "toolhub-evolved"},
     }
 

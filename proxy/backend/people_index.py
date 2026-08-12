@@ -43,8 +43,7 @@ from backend.sync import (
     AUTHOR_CLAIM_VERIFIED,
     PERSON_REL_AUTHOR,
     PERSON_REL_CATALOG_ACTOR,
-    PERSON_REL_MAINTAINER,
-    PERSON_REL_RECORD_OWNER,
+    PUBLIC_PERSON_REL_VALUES,
     REVIEW_APPROVED,
     SOURCE_LOCAL,
     SYNC_OFFICIAL,
@@ -63,7 +62,7 @@ NS_TOOLFORGE_UID_NUMBER = "toolforge_uid_number"
 NS_TOOLHUB_USERNAME = "toolhub_username"
 NS_TOOLFORGE_USERNAME = "toolforge_username"
 NS_WIKI_USERNAME = "wiki_username"
-PUBLIC_ROLES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER, PERSON_REL_RECORD_OWNER, PERSON_REL_CATALOG_ACTOR)
+PUBLIC_ROLES = PUBLIC_PERSON_REL_VALUES
 PUBLIC_HANDLE_NAMESPACES = (NS_TOOLHUB_USERNAME, NS_TOOLFORGE_USERNAME, NS_WIKI_USERNAME)
 TRUSTED_PUBLIC_HANDLE_SOURCES = (
     "evolved_author_claim",
@@ -803,7 +802,12 @@ def refresh_activity_summaries(s: Session, *, person_ids: set[int] | None = None
         users = list(s.execute(select(User).where(User.person_id == person_id)).scalars())
         dates = [date for user in users for date in _contribution_dates(s, user.id)]
         relationships = list(
-            s.execute(select(ToolPersonRelationship).where(ToolPersonRelationship.person_id == person_id)).scalars()
+            s.execute(
+                select(ToolPersonRelationship).where(
+                    ToolPersonRelationship.person_id == person_id,
+                    ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+                )
+            ).scalars()
         )
         row = s.get(PersonActivitySummary, person_id)
         if row is None:
@@ -944,6 +948,7 @@ def _unresolved_relationship_breakdown(
         .where(
             UnresolvedAttributionEvidence.withdrawn_at.is_(None),
             UnresolvedAttributionEvidence.normalized_label.in_(normalized_labels),
+            UnresolvedAttributionEvidence.relationship_type.in_(PUBLIC_ROLES),
         )
         .group_by(
             UnresolvedAttributionEvidence.normalized_label,
@@ -1003,7 +1008,10 @@ def search_unresolved_attributions(
             func.count(UnresolvedAttributionEvidence.id).label("evidence_count"),
             func.max(UnresolvedAttributionEvidence.confidence).label("best_confidence"),
         )
-        .where(UnresolvedAttributionEvidence.withdrawn_at.is_(None))
+        .where(
+            UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            UnresolvedAttributionEvidence.relationship_type.in_(PUBLIC_ROLES),
+        )
         .group_by(UnresolvedAttributionEvidence.normalized_label)
         .order_by(UnresolvedAttributionEvidence.normalized_label)
     )
@@ -1185,7 +1193,10 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
     relationships = list(
         s.execute(
             select(ToolPersonRelationship)
-            .where(ToolPersonRelationship.tool_name == clean_tool)
+            .where(
+                ToolPersonRelationship.tool_name == clean_tool,
+                ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+            )
             .order_by(ToolPersonRelationship.confidence.desc(), ToolPersonRelationship.id)
         ).scalars()
     )
@@ -1208,6 +1219,7 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
             select(ToolRelationshipEvidence)
             .where(
                 ToolRelationshipEvidence.tool_name == clean_tool,
+                ToolRelationshipEvidence.relationship_type.in_(PUBLIC_ROLES),
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
             )
             .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
@@ -1328,7 +1340,10 @@ def person_detail(
     activity = s.get(PersonActivitySummary, person.id)
     tool_names_statement = (
         select(ToolPersonRelationship.tool_name)
-        .where(ToolPersonRelationship.person_id == person.id)
+        .where(
+            ToolPersonRelationship.person_id == person.id,
+            ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+        )
         .group_by(ToolPersonRelationship.tool_name)
     )
     tool_count = int(s.scalar(select(func.count()).select_from(tool_names_statement.order_by(None).subquery())) or 0)
@@ -1347,6 +1362,7 @@ def person_detail(
             .where(
                 ToolPersonRelationship.person_id == person.id,
                 ToolPersonRelationship.tool_name.in_(tool_names or {""}),
+                ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
             )
             .order_by(ToolPersonRelationship.tool_name, ToolPersonRelationship.relationship_type)
         ).scalars()
@@ -1357,6 +1373,7 @@ def person_detail(
             .where(
                 ToolRelationshipEvidence.person_id == person.id,
                 ToolRelationshipEvidence.tool_name.in_(tool_names or {""}),
+                ToolRelationshipEvidence.relationship_type.in_(PUBLIC_ROLES),
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
             )
             .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
@@ -1446,7 +1463,10 @@ def _relationship_directory_filter(
     project: str,
     checked_at: datetime,
 ) -> Any:  # noqa: ANN401 - correlated SQL expression
-    statement = select(ToolPersonRelationship.id).where(ToolPersonRelationship.person_id == Person.id)
+    statement = select(ToolPersonRelationship.id).where(
+        ToolPersonRelationship.person_id == Person.id,
+        ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+    )
     if project:
         statement = statement.join(
             CatalogFacetValue,
@@ -1498,7 +1518,10 @@ def _directory_relationship_summaries(
 ) -> dict[int, dict[str, Any]]:
     summaries: dict[int, dict[str, Any]] = {}
     rows = s.execute(
-        select(ToolPersonRelationship).where(ToolPersonRelationship.person_id.in_(person_ids or {-1}))
+        select(ToolPersonRelationship).where(
+            ToolPersonRelationship.person_id.in_(person_ids or {-1}),
+            ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+        )
     ).scalars()
     for row in rows:
         summary = summaries.setdefault(
@@ -1571,8 +1594,7 @@ def _directory_contributor_summaries(
             bases.append("approved_public_activity")
         summaries[person_id] = {
             "eligible": bool(bases),
-            "bases": bases,
-            "catalogActorToolCount": int(actor_counts.get(person_id, 0)),
+            "bases": ["observed_public_contribution"] if bases else [],
             "approvedPublicContributionCount": int(activity.contribution_count if activity is not None else 0),
         }
     return summaries
@@ -1586,7 +1608,9 @@ def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/fil
     clean_query = _clean(search.query)
     normalized_query = _normalized(clean_query)
     checked_at = utcnow()
-    related_people = select(ToolPersonRelationship.person_id)
+    related_people = select(ToolPersonRelationship.person_id).where(
+        ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES)
+    )
     profile_people = select(PersonProfile.person_id)
     statement = (
         select(Person)
@@ -1653,6 +1677,7 @@ def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/fil
         select(func.max(ToolPersonRelationship.confidence))
         .where(
             ToolPersonRelationship.person_id == Person.id,
+            ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
             _current_verified_clause(checked_at=checked_at),
         )
         .correlate(Person)

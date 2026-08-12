@@ -2907,10 +2907,10 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     data = resp.get_json()
     assert resp.status_code == 200
     assert data["toolName"] == "ada-tool"
-    assert data["counts"][sync.PERSON_REL_AUTHOR] == 1
-    assert data["counts"][sync.PERSON_REL_MAINTAINER] == 1
-    assert data["counts"][sync.PERSON_REL_CATALOG_ACTOR] == 2
-    assert data["counts"][sync.PERSON_REL_RECORD_OWNER] == 0
+    assert data["counts"] == {
+        sync.PERSON_REL_AUTHOR: 1,
+        sync.PERSON_REL_MAINTAINER: 1,
+    }
     assert data["canonicalAuthority"]["catalog"] == "toolhub"
     assert "private signature payload" not in dumps(data)
     assert data["unresolvedAttributions"] == []
@@ -2921,10 +2921,21 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     }
     assert any(item["displayName"] == "Ada Lovelace" for item in data["people"])
     assert {relationship["type"] for relationship in ada_person["relationships"]} == {
-        sync.PERSON_REL_MAINTAINER,
-        sync.PERSON_REL_CATALOG_ACTOR,
+        sync.PERSON_REL_MAINTAINER
     }
     assert data["unresolvedCounts"][sync.PERSON_REL_AUTHOR] == 0
+    assert sync.PERSON_REL_RECORD_OWNER not in dumps(data)
+    assert sync.PERSON_REL_CATALOG_ACTOR not in dumps(data)
+
+    with db.session_scope() as s:
+        internal_roles = set(
+            s.execute(
+                select(ToolPersonRelationship.relationship_type).where(
+                    ToolPersonRelationship.tool_name == "ada-tool"
+                )
+            ).scalars()
+        )
+    assert sync.PERSON_REL_CATALOG_ACTOR in internal_roles
 
 
 def test_account_directory_searches_projection_and_links_only_stable_identity(client, monkeypatch):
@@ -3363,8 +3374,6 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     assert linked_only["results"][0]["relationshipSummary"]["toolCountsByType"] == {
         sync.PERSON_REL_AUTHOR: 0,
         sync.PERSON_REL_MAINTAINER: 0,
-        sync.PERSON_REL_RECORD_OWNER: 0,
-        sync.PERSON_REL_CATALOG_ACTOR: 0,
     }
     assert client.get("/v1/community/?q=official%20only&contributor=observed").get_json()["count"] == 0
 
@@ -3422,11 +3431,10 @@ def test_people_directory_contributor_filter_reports_observed_activity_basis(cli
     by_name = {row["displayName"]: row["contributor"] for row in data["results"]}
     assert by_name["Canonical Actor"] == {
         "eligible": True,
-        "bases": ["canonical_catalog_actor"],
-        "catalogActorToolCount": 1,
+        "bases": ["observed_public_contribution"],
         "approvedPublicContributionCount": 0,
     }
-    assert by_name["Approved Contributor"]["bases"] == ["approved_public_activity"]
+    assert by_name["Approved Contributor"]["bases"] == ["observed_public_contribution"]
     assert by_name["Approved Contributor"]["approvedPublicContributionCount"] == 3
     assert client.get("/v1/people/?contributor=registered").status_code == 400
 
@@ -3642,6 +3650,10 @@ def test_unified_claim_api_preserves_history_and_withdraws_revoked_evidence(clie
     assert options.status_code == 200
     payload = options.get_json()
     assert payload["canonicalAuthority"] == {"catalog": "toolhub", "claims": "toolhub-evolved"}
+    assert {row["relationship"] for row in payload["options"]} == {
+        sync.PERSON_REL_AUTHOR,
+        sync.PERSON_REL_MAINTAINER,
+    }
     assert next(row for row in payload["options"] if row["method"] == sync.AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME)[
         "authorNames"
     ] == ["Ada Lovelace"]
@@ -3753,7 +3765,10 @@ def test_tool_viewer_context_uses_only_current_relationships_owned_by_the_signed
         )
 
     authority = client.get("/v1/tools/viewer-tool/viewer-context/").get_json()
-    assert authority["audience"] == people_policy.VIEWER_AUDIENCE_RECORD_AUTHORITY
+    assert authority["audience"] == "tool_manager"
+    assert authority["qualifyingRelationships"] == [
+        maintainer["qualifyingRelationships"][0]
+    ]
 
 
 def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, monkeypatch):
@@ -4125,23 +4140,17 @@ def test_people_directory_combines_role_verification_activity_and_project_filter
     renewal = client.get("/v1/people/?verification=renewal_needed").get_json()
 
     assert [person["id"] for person in filtered["results"]] == [matching_id]
-    assert filtered["results"][0]["relationshipSummary"]["verifiedTypes"] == [
-        sync.PERSON_REL_MAINTAINER,
-        sync.PERSON_REL_RECORD_OWNER,
-    ]
+    assert filtered["results"][0]["relationshipSummary"]["verifiedTypes"] == [sync.PERSON_REL_MAINTAINER]
     assert filtered["results"][0]["relationshipSummary"]["toolCountsByType"] == {
         sync.PERSON_REL_AUTHOR: 0,
         sync.PERSON_REL_MAINTAINER: 2,
-        sync.PERSON_REL_RECORD_OWNER: 1,
-        sync.PERSON_REL_CATALOG_ACTOR: 0,
     }
     assert filtered["results"][0]["relationshipSummary"]["verifiedToolCountsByType"] == {
         sync.PERSON_REL_AUTHOR: 0,
         sync.PERSON_REL_MAINTAINER: 1,
-        sync.PERSON_REL_RECORD_OWNER: 1,
-        sync.PERSON_REL_CATALOG_ACTOR: 0,
     }
     assert [person["id"] for person in renewal["results"]] == [expired_id]
+    assert client.get("/v1/people/?role=record_owner").status_code == 400
 
 
 def test_unresolved_attributions_have_independent_pagination(client):

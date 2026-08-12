@@ -39,7 +39,10 @@ def v1_me_claims() -> Response:
         rows = list(
             session.execute(
                 select(ToolAuthorClaim)
-                .where(common.author_claim_owned_by(user))
+                .where(
+                    common.author_claim_owned_by(user),
+                    ToolAuthorClaim.requested_relationship.in_(people_index.PUBLIC_ROLES),
+                )
                 .order_by(ToolAuthorClaim.updated_at.desc(), ToolAuthorClaim.id.desc())
             ).scalars()
         )
@@ -74,7 +77,10 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
         relationships = list(
             session.execute(
                 select(ToolPersonRelationship)
-                .where(ToolPersonRelationship.person_id == person.id)
+                .where(
+                    ToolPersonRelationship.person_id == person.id,
+                    ToolPersonRelationship.relationship_type.in_(people_index.PUBLIC_ROLES),
+                )
                 .order_by(ToolPersonRelationship.tool_name, ToolPersonRelationship.relationship_type)
             ).scalars()
         )
@@ -92,6 +98,7 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
                     common.author_claim_owned_by(stored_user),
                     ToolAuthorClaim.revoked_at.is_(None),
                     ToolAuthorClaim.tool_name.in_(names or {""}),
+                    ToolAuthorClaim.requested_relationship.in_(people_index.PUBLIC_ROLES),
                 )
             ).scalars()
         )

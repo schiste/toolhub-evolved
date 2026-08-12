@@ -42,6 +42,10 @@ PERSON_REL_VALUES = {
     PERSON_REL_RECORD_OWNER,
     PERSON_REL_CATALOG_ACTOR,
 }
+# Public product relationships are deliberately narrower than the internal
+# evidence graph. Record authority and catalog activity remain available to
+# authorization, contributor eligibility, reconciliation, and audit code.
+PUBLIC_PERSON_REL_VALUES = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)
 
 SOURCE_VALUES = {SOURCE_OFFICIAL, SOURCE_LOCAL, SOURCE_REPOSITORY_SCAN}
 SYNC_VALUES = {SYNC_OFFICIAL, SYNC_LOCAL_DRAFT, SYNC_LOCAL_FALLBACK, SYNC_EVOLVED_REAL, SYNC_ERROR}

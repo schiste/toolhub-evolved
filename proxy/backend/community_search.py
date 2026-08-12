@@ -213,7 +213,10 @@ def _relationship_tool_results(s: Session, person_items: list[dict[str, Any]]) -
         s.execute(
             select(Person, ToolPersonRelationship)
             .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
-            .where(Person.public_id.in_(public_ids))
+            .where(
+                Person.public_id.in_(public_ids),
+                ToolPersonRelationship.relationship_type.in_(people_index.PUBLIC_ROLES),
+            )
             .order_by(ToolPersonRelationship.tool_name, Person.public_id, ToolPersonRelationship.relationship_type)
         ).all()
     )
@@ -232,6 +235,7 @@ def _relationship_tool_results(s: Session, person_items: list[dict[str, Any]]) -
             .where(
                 ToolRelationshipEvidence.tool_name.in_(tool_names or {""}),
                 ToolRelationshipEvidence.person_id.in_(person_ids or {-1}),
+                ToolRelationshipEvidence.relationship_type.in_(people_index.PUBLIC_ROLES),
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
             )
             .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id.desc())
