@@ -2,7 +2,7 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..b02b1c8 (164 commits) -->
+<!-- Source range: 828438f..ac82162 (167 commits) -->
 
 # Technical Release Notes
 
@@ -13,4 +13,4 @@
 - Makes SPA navigation and refresh rendering convergent through normalized route identity, tracked/coalesced background repaints, view-specific summary batching, bounded reads and lazy imports, and separation of navigation cleanup from data refresh.
 - Reduces landing/card payloads, persists projected health summaries, lazily loads full breakdowns, skips retired evidence backfills, precompresses static assets, and keeps cache/reconciliation failure modes bounded and recoverable.
 - Consolidates the frontend around reusable catalog cards, Wikimedia-compatible localization, explicit accessibility/failure states, and regression coverage for large directories, identity trust, action authorization, history, RTL, keyboard focus, and loading settlement.
-- Stages release manifests before restart, promotes deployment history only after a successful smoke check, retains a bounded full release history, and validates reviewed release notes as three to eight bundled entries.
+- Stages release manifests before restart, promotes them only after a successful smoke check, and groups repeated deployments under stable curated release IDs; legacy per-fix rows are retired and reviewed notes remain bounded to three to eight entries.
