@@ -2,7 +2,7 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..19b5ec2 (176 commits) -->
+<!-- Source range: 828438f..d4a05a2 (179 commits) -->
 
 # What's New for Users
 
@@ -13,3 +13,4 @@
 - Public profiles show each related tool once with every known role and compact paginated summaries; legacy name links disambiguate safely, and maintainer-only actions appear only for people with verified authority.
 - Pages and health information load with smaller payloads, bounded background refreshes, stable quick views, and loading states that settle instead of repeatedly remounting the current route.
 - Deployment reconciliation, account synchronization, translation checks, and release publication now fail safely while preserving the last known-good public data; maintenance fixes stay inside one named product release instead of appearing as separate versions.
+- Registered toolinfo sources now report names that already exist on official Toolhub as skipped rather than failed, so a feed of tools that are all already listed reads as a clean run and background discovery keeps running instead of switching itself off.
