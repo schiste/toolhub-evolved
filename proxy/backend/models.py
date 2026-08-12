@@ -215,6 +215,9 @@ class ToolforgeAccountProjection(Base):
     normalized_uid: Mapped[str] = mapped_column(String(255), default="", index=True)
     wikimedia_global_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     wikimedia_global_name: Mapped[str] = mapped_column(String(255), default="")
+    # Store capability, not credentials. Verification re-reads the current
+    # public keys from LDAP so removed/rotated keys cannot survive in cache.
+    ssh_key_count: Mapped[int] = mapped_column(Integer, default=0)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     generation: Mapped[int] = mapped_column(Integer, default=0, index=True)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)

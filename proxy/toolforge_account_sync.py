@@ -29,6 +29,7 @@ LDAP_ATTRIBUTES = [
     "uidNumber",
     "wikimediaGlobalAccountId",
     "wikimediaGlobalAccountName",
+    "sshPublicKey",
     "memberOf",
     "pwdPolicySubentry",
 ]
@@ -95,6 +96,7 @@ def _normalized(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "normalized_uid": uid.casefold(),
             "wikimedia_global_user_id": _first(row.get("wikimediaGlobalAccountId"))[:64] or None,
             "wikimedia_global_name": _first(row.get("wikimediaGlobalAccountName"))[:255],
+            "ssh_key_count": len(_values(row.get("sshPublicKey"))),
             "disabled": DISABLED_POLICY.casefold() in policies,
         },
         memberships,

@@ -24,12 +24,20 @@ def database():
     db.init_schema()
 
 
-def account(uid: str, uid_number: str, *, global_id: str = "", tools: tuple[str, ...] = ()) -> dict:
+def account(
+    uid: str,
+    uid_number: str,
+    *,
+    global_id: str = "",
+    tools: tuple[str, ...] = (),
+    ssh_keys: tuple[str, ...] = (),
+) -> dict:
     return {
         "uid": [uid],
         "uidNumber": [uid_number],
         "wikimediaGlobalAccountId": [global_id] if global_id else [],
         "wikimediaGlobalAccountName": [uid.title()] if global_id else [],
+        "sshPublicKey": list(ssh_keys),
         "memberOf": [f"cn=tools.{tool},ou=servicegroups,dc=wikimedia,dc=org" for tool in tools],
         "pwdPolicySubentry": [],
     }
@@ -39,7 +47,7 @@ def test_sync_projects_bound_and_unbound_accounts_and_memberships():
     result = toolforge_account_sync.run(
         loader=lambda: [
             account("magnus", "3067", global_id="160", tools=("mix-n-match", "magnustools")),
-            account("legacy", "9001", tools=("old-tool",)),
+            account("legacy", "9001", tools=("old-tool",), ssh_keys=("ssh-ed25519 AAAA",)),
         ]
     )
 
@@ -52,6 +60,7 @@ def test_sync_projects_bound_and_unbound_accounts_and_memberships():
         legacy = session.get(ToolforgeAccountProjection, "9001")
         assert legacy is not None
         assert legacy.wikimedia_global_user_id is None
+        assert legacy.ssh_key_count == 1
         assert {(row.uid_number, row.tool_name) for row in session.query(ToolforgeMembershipProjection)} == {
             ("3067", "magnustools"),
             ("3067", "mix-n-match"),

@@ -2,6 +2,8 @@
 """Tests for replay-safe Toolforge account reconnection."""
 
 import sys
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -42,6 +44,7 @@ def seed() -> int:
                 uid_number="9001",
                 uid="alice-dev",
                 normalized_uid="alice-dev",
+                ssh_key_count=1,
             )
         )
         session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="alice-tool"))
@@ -129,3 +132,39 @@ def test_link_state_exposes_candidates_and_upstream_repair_paths():
     assert payload["proofMethods"]["toolforgeSshSignature"] is True
     assert payload["upstreamRepair"]["profileUrl"].startswith("https://toolsadmin.wikimedia.org/")
     assert payload["candidates"][0]["externalId"] == "9001"
+    assert payload["candidates"][0]["toolCount"] == 1
+    assert payload["candidates"][0]["sshSignatureAvailable"] is True
+
+
+def test_account_without_a_published_ssh_key_cannot_start_a_challenge():
+    user_id = seed()
+    with db.session_scope() as session:
+        session.get(ToolforgeAccountProjection, "9001").ssh_key_count = 0
+        with pytest.raises(account_linking.AccountLinkError, match="no public SSH key"):
+            account_linking.start_toolforge_challenge(session, session.get(User, user_id), "alice-dev")
+
+
+def test_real_openssh_signature_verifier_accepts_only_the_signed_challenge(tmp_path, monkeypatch):
+    keygen = shutil.which("ssh-keygen")
+    if keygen is None:
+        pytest.skip("OpenSSH is unavailable")
+    private_key = tmp_path / "identity"
+    subprocess.run(
+        [keygen, "-q", "-t", "ed25519", "-N", "", "-f", str(private_key)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    challenge = "toolhub-evolved-account-link-v1\nnonce:test"
+    signed = subprocess.run(
+        [keygen, "-Y", "sign", "-f", str(private_key), "-n", account_linking.SIGNATURE_NAMESPACE],
+        input=challenge,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    monkeypatch.setattr(account_linking, "SSH_KEYGEN", keygen)
+    public_key = private_key.with_suffix(".pub").read_text(encoding="utf-8").strip()
+
+    assert account_linking.verify_ssh_signature(challenge, signed.stdout, [public_key]) is True
+    assert account_linking.verify_ssh_signature(challenge + "tampered", signed.stdout, [public_key]) is False

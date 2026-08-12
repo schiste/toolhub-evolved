@@ -13,10 +13,17 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from backend import identity_graph, people_index, public_identity
-from backend.models import AccountLinkChallenge, PersonAccountBinding, ToolforgeAccountProjection, User, utcnow
+from backend.models import (
+    AccountLinkChallenge,
+    PersonAccountBinding,
+    ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
+    User,
+    utcnow,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -38,6 +45,7 @@ ERROR_TOO_MANY_ATTEMPTS = "Account-link challenge has too many failed attempts"
 ERROR_CHALLENGE_MISMATCH = "Account-link challenge does not match"
 ERROR_SIGNATURE_INVALID = "SSH signature was not valid for this Toolforge account"
 ERROR_ACCOUNT_UNAVAILABLE = "Toolforge account is no longer available"
+ERROR_NO_SSH_KEY = "This Toolforge account has no public SSH key available for verification"
 
 KeyLoader = Callable[[str], list[str]]
 SignatureVerifier = Callable[[str, str, list[str]], bool]
@@ -59,6 +67,25 @@ def _person_for_user(session: Session, user: User):  # noqa: ANN202 - SQLAlchemy
     return people_index.link_user(session, user)
 
 
+def _toolforge_account_summary(session: Session, external_id: str) -> dict[str, Any]:
+    account = session.get(ToolforgeAccountProjection, external_id)
+    if account is None:
+        return {}
+    tool_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(ToolforgeMembershipProjection)
+            .where(ToolforgeMembershipProjection.uid_number == external_id)
+        )
+        or 0
+    )
+    return {
+        "username": account.uid,
+        "toolCount": tool_count,
+        "sshSignatureAvailable": account.ssh_key_count > 0,
+    }
+
+
 def link_state(session: Session, user: User) -> dict[str, Any]:
     """Describe verified and candidate accounts for the signed-in person."""
     person = _person_for_user(session, user)
@@ -70,17 +97,24 @@ def link_state(session: Session, user: User) -> dict[str, Any]:
             )
         ).scalars()
     )
-    bindings = [
-        {
-            "provider": row.provider,
-            "externalId": row.external_id,
-            "status": row.status,
-            "proofMethod": row.proof_method,
-            "confidence": row.confidence,
-            "verifiedAt": row.verified_at.isoformat() + "Z" if row.verified_at else None,
-        }
-        for row in rows
-    ]
+    bindings = []
+    for row in rows:
+        provider_data = (
+            _toolforge_account_summary(session, row.external_id)
+            if row.provider == identity_graph.PROVIDER_TOOLFORGE
+            else {}
+        )
+        bindings.append(
+            {
+                "provider": row.provider,
+                "externalId": row.external_id,
+                "status": row.status,
+                "proofMethod": row.proof_method,
+                "confidence": row.confidence,
+                "verifiedAt": row.verified_at.isoformat() + "Z" if row.verified_at else None,
+                **provider_data,
+            }
+        )
     candidates = []
     for row in rows:
         if row.provider != identity_graph.PROVIDER_TOOLFORGE or row.status != identity_graph.STATUS_CANDIDATE:
@@ -94,6 +128,7 @@ def link_state(session: Session, user: User) -> dict[str, Any]:
                     "username": account.uid,
                     "status": row.status,
                     "proofMethod": row.proof_method,
+                    **_toolforge_account_summary(session, account.uid_number),
                 }
             )
     return {
@@ -106,7 +141,14 @@ def link_state(session: Session, user: User) -> dict[str, Any]:
         },
         "proofMethods": {
             "toolforgeSul": True,
-            "toolforgeSshSignature": True,
+            "toolforgeSshSignature": Path(SSH_KEYGEN).is_file()
+            and bool(
+                session.scalar(
+                    select(func.count())
+                    .select_from(ToolforgeAccountProjection)
+                    .where(ToolforgeAccountProjection.ssh_key_count > 0)
+                )
+            ),
             "toolControl": False,
         },
     }
@@ -130,6 +172,8 @@ def _account_by_username(session: Session, username: str) -> ToolforgeAccountPro
 def start_toolforge_challenge(session: Session, user: User, username: str) -> dict[str, Any]:
     """Issue one challenge bound to this user and immutable Toolforge account."""
     account = _account_by_username(session, username)
+    if account.ssh_key_count <= 0 or not Path(SSH_KEYGEN).is_file():
+        raise _error(ERROR_NO_SSH_KEY)
     person = _person_for_user(session, user)
     existing = identity_graph.verified_person_for_account(
         session, identity_graph.PROVIDER_TOOLFORGE, account.uid_number
