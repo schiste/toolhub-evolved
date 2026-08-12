@@ -123,10 +123,7 @@ function actions() {
 		{
 			id: "people",
 			title: t("commandPalette.people", "People"),
-			description: t(
-				"commandPalette.peopleDesc",
-				"Find authors, maintainers, record owners, and catalog contributors."
-			),
+			description: t("commandPalette.peopleDesc", "Find tool authors and maintainers."),
 			href: "/people",
 			iconName: "group",
 			keywords: ["people", "authors", "maintainers", "profiles", "contributors"]

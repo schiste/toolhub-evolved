@@ -207,7 +207,7 @@ export function viewAccountSettings() {
 				title: t("accountData.claimsTitle", "Relationship claims"),
 				intro: t(
 					"accountData.claimsIntro",
-					"A history of the evidence you submitted for author, maintainer, and Toolhub record-authority relationships."
+					"A history of the evidence you submitted for author and maintainer relationships."
 				),
 				body: `<div data-claim-history><p class="signin-note">${t("accountData.claimsLoading", "Loading claims…")}</p></div>`
 			})}

@@ -676,7 +676,7 @@ function toolSyncUi(tool, name) {
 
 /** @param {any} viewerContext */
 function viewerActionAudience(viewerContext) {
-	return ["verified_maintainer", "record_authority"].includes(viewerContext?.audience)
+	return ["verified_maintainer", "tool_manager"].includes(viewerContext?.audience)
 		? viewerContext.audience
 		: "contributor";
 }
@@ -690,23 +690,23 @@ function toolManagementActions(tool, audience, canDeleteOfficialTool) {
 		icon: "history"
 	});
 	const verifiedMaintainer = audience === "verified_maintainer";
-	const recordAuthority = audience === "record_authority";
+	const toolManager = audience === "tool_manager";
 	const groupLabel = verifiedMaintainer
 		? t("tool.ownerActions", "Maintainer actions")
-		: recordAuthority
+		: toolManager
 			? t("tool.recordAuthorityActions", "Tool management")
 			: t("tool.contributeActions", "Contribute");
 	const claimLabel =
-		verifiedMaintainer || recordAuthority
+		verifiedMaintainer || toolManager
 			? t("tool.manageRelationships", "Manage relationships")
 			: t("claim.toolAction", "Claim a relationship");
 	const editLabel = verifiedMaintainer
 		? t("tool.editTool", "Edit tool")
-		: recordAuthority
+		: toolManager
 			? t("tool.editToolhubRecord", "Edit Toolhub record")
 			: t("tool.suggestToolChanges", "Suggest tool changes");
 	const annotationLabel =
-		verifiedMaintainer || recordAuthority
+		verifiedMaintainer || toolManager
 			? t("tool.editAnnotations", "Edit annotations")
 			: t("tool.contributeAnnotations", "Contribute annotations");
 	const managementLinks = signedIn()
@@ -805,7 +805,7 @@ export async function viewTool(name) {
 	const realBadge = statusBadge(tool);
 	const actionAudience = viewerActionAudience(viewerContext);
 	const canDeleteOfficialTool =
-		actionAudience === "record_authority" && officialWriteAvailable() && !isNewTool(tool.name);
+		actionAudience === "tool_manager" && officialWriteAvailable() && !isNewTool(tool.name);
 	const { managementLinks } = toolManagementActions(tool, actionAudience, canDeleteOfficialTool);
 	const deleteResult = canDeleteOfficialTool
 		? `<p class="at__result" data-tool-delete-result aria-live="polite"></p>`

@@ -250,7 +250,7 @@ test("viewMyTools prefers verified rows when the same tool appears in possible m
 		verified: [
 			{
 				tool: { name: "shared-tool", title: "Shared Tool", url: "https://shared.example", author: [] },
-				claims: [{ verificationMethod: "toolhub_write_access", verificationStatus: "verified" }]
+				claims: [{ verificationMethod: "toolforge_maintainer", verificationStatus: "verified" }]
 			}
 		],
 		possible: [
@@ -264,7 +264,7 @@ test("viewMyTools prefers verified rows when the same tool appears in possible m
 	const r = await viewMyTools();
 
 	assert.equal((r.html.match(/Shared Tool/g) || []).length, 1);
-	assert.ok(r.html.includes("Verified: Toolhub write access"));
+	assert.ok(r.html.includes("Verified: Toolforge maintainer"));
 	assert.ok(!r.html.includes("Unverified author name"));
 });
 

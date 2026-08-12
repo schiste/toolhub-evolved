@@ -934,7 +934,7 @@ test("viewTool reports thanks and media write failures", async () => {
 test("viewTool signed-in detail delete publishes official Toolhub delete", async () => {
 	setServerUser("Grace Hopper");
 	h.officialWriteAvailable.mockReturnValue(true);
-	respondWithViewerAudience("record_authority");
+	respondWithViewerAudience("tool_manager");
 	h.getTool.mockResolvedValue(toolFixture("delete-me", { title: "Delete Me", origin: "api" }));
 	const r = await tool.viewTool("delete-me");
 	assert.ok(r.html.includes("data-tool-delete"), "delete action is rendered on the detail page");
@@ -951,7 +951,7 @@ test("viewTool signed-in detail delete publishes official Toolhub delete", async
 test("viewTool signed-in detail delete reports official failure and stays put", async () => {
 	setServerUser("Grace Hopper");
 	h.officialWriteAvailable.mockReturnValue(true);
-	respondWithViewerAudience("record_authority");
+	respondWithViewerAudience("tool_manager");
 	h.officialWrite.mockRejectedValue(new Error("permission denied"));
 	h.getTool.mockResolvedValue(toolFixture("delete-fail", { title: "Delete Fail", origin: "api" }));
 	const r = await tool.viewTool("delete-fail");
@@ -969,7 +969,7 @@ test("viewTool signed-in detail delete reports official failure and stays put", 
 test("viewTool does not render official delete for local-only tool records", async () => {
 	setServerUser("Grace Hopper");
 	h.officialWriteAvailable.mockReturnValue(true);
-	respondWithViewerAudience("record_authority");
+	respondWithViewerAudience("tool_manager");
 	h.isNewTool.mockReturnValue(true);
 	h.getTool.mockResolvedValue(toolFixture("local-only", { title: "Local Only" }));
 	const r = await tool.viewTool("local-only");
@@ -991,10 +991,10 @@ test("viewTool reserves maintainer wording for a verified maintainer audience", 
 	assert.ok(!r.html.includes("data-tool-delete"), "maintainership does not imply Toolhub record deletion");
 });
 
-test("viewTool labels record authority separately and allows capability-gated deletion", async () => {
+test("viewTool labels tool management separately and allows capability-gated deletion", async () => {
 	setServerUser("Record Owner");
 	h.officialWriteAvailable.mockReturnValue(true);
-	respondWithViewerAudience("record_authority");
+	respondWithViewerAudience("tool_manager");
 	h.getTool.mockResolvedValue(toolFixture("record-actions", { title: "Record Actions", origin: "api" }));
 
 	const r = await tool.viewTool("record-actions");

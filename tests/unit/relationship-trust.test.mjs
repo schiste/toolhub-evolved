@@ -30,14 +30,6 @@ test("relationship trust names the authority verified by each method", () => {
 	);
 	assert.equal(
 		relationshipTrust({
-			type: "record_owner",
-			status: "verified",
-			evidence: [{ method: "toolhub_write_access", status: "verified" }]
-		}).label,
-		"Verified Toolhub record authority"
-	);
-	assert.equal(
-		relationshipTrust({
 			type: "maintainer",
 			status: "verified",
 			evidence: [{ method: "signed_toolinfo", status: "verified" }]

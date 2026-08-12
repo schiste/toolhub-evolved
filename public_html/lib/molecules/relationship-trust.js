@@ -27,6 +27,7 @@ function evidenceRow(evidence) {
 
 /** @param {any} relationship */
 export function relationshipTrustMarkup(relationship) {
+	if (!["author", "maintainer"].includes(relationship?.type)) return "";
 	const presentation = relationshipTrust(relationship);
 	const evidence = Array.isArray(relationship?.evidence) ? relationship.evidence : [];
 	const evidenceCount = Number(relationship?.evidenceCount) || evidence.length;

@@ -208,11 +208,11 @@ export const EXPERIMENTS = [
 				name: t("experiments.publicProfilesName", "People, profiles, and relationship claims"),
 				what: t(
 					"experiments.publicProfilesWhat",
-					"Discover people, publish an Evolved profile, and prove author, maintainer, or Toolhub record-authority relationships."
+					"Discover people, publish an Evolved profile, and prove author or maintainer relationships."
 				),
 				current: t(
 					"experiments.publicProfilesCurrent",
-					"Public profiles use immutable person ids and role-grouped Toolhub tools. Signed-in users can claim through listed-author association, Toolforge membership, URL control, signed toolinfo, or automatic official-write evidence."
+					"Public profiles use immutable person ids and show author and maintainer tools. Signed-in users can establish those relationships through listed-author association, Toolforge membership, URL control, or signed toolinfo; official-write evidence remains an internal capability signal."
 				),
 				need: t(
 					"experiments.publicProfilesNeed",

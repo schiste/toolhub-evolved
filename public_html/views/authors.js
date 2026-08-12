@@ -19,7 +19,7 @@ import { communityHeader } from "./community.js";
 
 const PEOPLE_PAGE_SIZES = [12, 24, 48];
 const DEFAULT_PEOPLE_PAGE_SIZE = 24;
-const PEOPLE_ROLES = new Set(["author", "maintainer", "record_owner", "catalog_actor"]);
+const PEOPLE_ROLES = new Set(["author", "maintainer"]);
 const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified", "renewal_needed"]);
 const PEOPLE_ACTIVITIES = new Set(["active", "quiet", "unknown"]);
 const PEOPLE_ORDERINGS = new Set(["relevance", "relationship", "recent", "name"]);
@@ -263,7 +263,7 @@ function relationshipSummaryLabel(role, verified) {
 function relationshipCardSignal(role, summary) {
 	const verifiedTypes = Array.isArray(summary?.verifiedTypes) ? summary.verifiedTypes : [];
 	const total = Number(summary?.toolCountsByType?.[role]) || 0;
-	if (!["maintainer", "record_owner"].includes(role) || total === 0) {
+	if (role !== "maintainer" || total === 0) {
 		return relationshipSummaryLabel(role, verifiedTypes.includes(role));
 	}
 	const verified = Math.min(total, Number(summary?.verifiedToolCountsByType?.[role]) || 0);
@@ -301,8 +301,8 @@ function relationshipCardMetrics(summary) {
 	const counts = summary?.toolCountsByType || {};
 	const verifiedCounts = summary?.verifiedToolCountsByType || {};
 	return [
-		["maintainer", t("authors.maintainerToolsMetric", "Tools maintained")],
-		["record_owner", t("authors.recordOwnerToolsMetric", "Toolhub records owned")]
+		["author", t("authors.authorToolsMetric", "Tools authored")],
+		["maintainer", t("authors.maintainerToolsMetric", "Tools maintained")]
 	].map(([role, label]) => {
 		const total = Number(counts[role]) || 0;
 		const verified = Math.min(total, Number(verifiedCounts[role]) || 0);
@@ -352,19 +352,9 @@ function personCard(item) {
 		: account?.username
 			? t("authors.accountUsername", "Toolhub username: $1", account.username)
 			: "";
-	const contributorBases = /** @type {string[]} */ (
-		Array.isArray(person?.contributor?.bases) ? person.contributor.bases : []
-	);
-	const contributorDetail =
-		contributorBases.length > 0
-			? contributorBases
-					.map((/** @type {string} */ basis) =>
-						basis === "canonical_catalog_actor"
-							? t("authors.canonicalCatalogActor", "Observed canonical Toolhub catalog activity")
-							: t("authors.approvedContribution", "Approved public contribution activity")
-					)
-					.join(" · ")
-			: "";
+	const contributorDetail = person?.contributor?.eligible
+		? t("authors.observedContribution", "Observed public contribution activity")
+		: "";
 	return entityCard({
 		kind: t("authors.personResult", "Person"),
 		kindDetail: identityQualityLabel(person?.identityQuality || ""),

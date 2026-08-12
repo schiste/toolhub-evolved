@@ -131,7 +131,7 @@ test("viewPerson renders every role with distinct provenance on one tool", async
 	assert.match(view.html, /Identity backed by a stable account ID/);
 	assert.match(view.html, /Listed author/);
 	assert.match(view.html, /Verified Toolforge maintainer/);
-	assert.match(view.html, /Verified Toolhub record authority/);
+	assert.doesNotMatch(view.html, /record authority/i);
 	assert.match(view.html, /Toolhub author field/);
 	assert.match(view.html, /datetime="2026-08-01T12:00:00\.000Z"/);
 	assert.match(view.html, /<dt>Tools with a verified relationship<\/dt><dd>1<\/dd>/);
@@ -441,7 +441,7 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 	assert.match(view.html, /Wikimedia identity matched by stable ID/);
 	assert.match(view.html, /Listed Author/);
 	assert.match(view.html, /Maintainer · 1 of 2 tools verified/);
-	assert.match(view.html, /Verified Toolhub record owner relationship · 1 tool/);
+	assert.doesNotMatch(view.html, /record owner/i);
 	assert.match(view.html, /href="\/people\?account=99"/);
 	assert.match(view.html, /No stable public person or tool relationship is linked yet/);
 	assert.match(view.html, /50 additional observations across 50 tools are not safely linked/);
@@ -600,10 +600,10 @@ test("contributors view requests eligibility and explains each evidence basis", 
 					identityQuality: "stable_id",
 					profile: {},
 					activity: { relatedToolCount: 1 },
-					relationshipSummary: { types: ["catalog_actor"], verifiedTypes: [] },
+					relationshipSummary: { types: [], verifiedTypes: [] },
 					contributor: {
 						eligible: true,
-						bases: ["canonical_catalog_actor", "approved_public_activity"]
+						bases: ["observed_public_contribution"]
 					}
 				},
 				identityEvidence: { officialToolhubAccount: true },
@@ -617,8 +617,8 @@ test("contributors view requests eligibility and explains each evidence basis", 
 	assert.match(h.backendGetJson.mock.calls[0][0], /contributor=observed/);
 	assert.match(view.html, /Community directory/);
 	assert.match(view.html, /Observed contributors/);
-	assert.match(view.html, /Observed canonical Toolhub catalog activity/);
-	assert.match(view.html, /Approved public contribution activity/);
+	assert.match(view.html, /Observed public contribution activity/);
+	assert.doesNotMatch(view.html, /catalog actor/i);
 	assert.match(view.html, /option value="observed" selected/);
 	document.body.innerHTML = view.html;
 	view.mount();

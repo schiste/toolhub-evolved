@@ -25,12 +25,6 @@ function options(claims = []) {
 				relationship: "author",
 				available: true,
 				authorNames: ["Ada Lovelace"]
-			},
-			{
-				method: "toolhub_write_access",
-				relationship: "record_owner",
-				available: true,
-				automatic: true
 			}
 		]
 	};
@@ -43,14 +37,14 @@ beforeEach(() => {
 	vi.clearAllMocks();
 });
 
-test("claim drawer creates a listed-author association and explains automatic record authority", async () => {
+test("claim drawer creates a listed-author association without internal relationship options", async () => {
 	h.backendGetJson.mockResolvedValue(options());
 	h.serverWrite.mockResolvedValue({ claims: [{ id: 1 }] });
 	await openClaimDrawer("ada-tool");
 	assert.ok(document.body.classList.contains("claim-drawer-open"));
 	assert.ok(document.body.textContent.includes("I am a listed author"));
 	assert.ok(document.body.textContent.includes("Associate this name"));
-	assert.ok(document.body.textContent.includes("Recorded automatically after a successful official write"));
+	assert.ok(!document.body.textContent.includes("record authority"));
 
 	const form = document.querySelector('[data-claim-method="author_display_name"]');
 	form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));

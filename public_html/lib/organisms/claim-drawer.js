@@ -38,14 +38,6 @@ const METHODS = {
 				"claim.signedBody",
 				"Verify a matching toolinfo record signed with one of the public keys registered in Developer settings."
 			)
-	},
-	toolhub_write_access: {
-		title: () => t("claim.recordOwnerTitle", "Toolhub record authority"),
-		body: () =>
-			t(
-				"claim.recordOwnerBody",
-				"This relationship is recorded automatically after your account successfully writes the official Toolhub record. It cannot be self-asserted here."
-			)
 	}
 };
 
@@ -101,7 +93,7 @@ function claimRow(claim) {
 		METHODS[/** @type {keyof typeof METHODS} */ (claim?.verificationMethod)] || METHODS.author_display_name;
 	const evidenceUrl = safeUrl(claim?.evidenceUrl);
 	const active = claim?.verificationStatus !== "revoked";
-	const canVerify = active && !["author_display_name", "toolhub_write_access"].includes(claim?.verificationMethod);
+	const canVerify = active && claim?.verificationMethod !== "author_display_name";
 	return `<article class="claim-record">
 		<div class="claim-record__head"><strong>${esc(meta.title())}</strong><span class="claim-status claim-status--${esc(claim?.verificationStatus || "unverified")}">${esc(claimStatusLabel(String(claim?.verificationStatus || "unverified")))}</span></div>
 		<p>${esc(relationshipLabel(claim?.requestedRelationship))} · ${esc(claim?.authorName || "")}</p>

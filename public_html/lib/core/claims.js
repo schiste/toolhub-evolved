@@ -17,9 +17,7 @@ export function claimStatusLabel(status) {
 export function relationshipLabel(role) {
 	const labels = /** @type {Record<string, string>} */ ({
 		author: t("claim.roleAuthor", "Author"),
-		maintainer: t("claim.roleMaintainer", "Maintainer"),
-		record_owner: t("claim.roleRecordOwner", "Toolhub record owner"),
-		catalog_actor: t("claim.roleCatalogActor", "Catalog contributor")
+		maintainer: t("claim.roleMaintainer", "Maintainer")
 	});
 	return labels[role] || t("claim.roleRelationship", "Relationship");
 }
@@ -30,8 +28,7 @@ export function claimMethodLabel(method) {
 		author_display_name: t("claim.authorTitle", "I am a listed author"),
 		toolforge_maintainer: t("claim.toolforgeTitle", "Verify Toolforge maintenance"),
 		toolinfo_url_control: t("claim.urlTitle", "Prove control of a toolinfo URL"),
-		signed_toolinfo: t("claim.signedTitle", "Verify signed toolinfo"),
-		toolhub_write_access: t("claim.recordOwnerTitle", "Toolhub record authority")
+		signed_toolinfo: t("claim.signedTitle", "Verify signed toolinfo")
 	});
 	return labels[method] || method;
 }
@@ -47,10 +44,7 @@ export function primaryRelationshipEvidence(relationship) {
 export function evidenceMethodLabel(method) {
 	const labels = /** @type {Record<string, string>} */ ({
 		toolhub_author_metadata: t("peopleEvidence.methodToolhubAuthor", "Toolhub author metadata"),
-		toolhub_created_by: t("peopleEvidence.methodToolhubCreated", "Toolhub record creator"),
-		toolhub_modified_by: t("peopleEvidence.methodToolhubModified", "Toolhub record editor"),
 		toolforge_maintainer: t("peopleEvidence.methodToolforgeMaintainer", "Toolforge Toolsadmin maintainer"),
-		toolhub_write_access: t("peopleEvidence.methodToolhubWrite", "Toolhub write access"),
 		signed_toolinfo: t("peopleEvidence.methodSignedToolinfo", "Signed toolinfo"),
 		toolinfo_url_control: t("peopleEvidence.methodToolinfoControl", "Toolinfo URL control"),
 		author_display_name: t("peopleEvidence.methodDisplayName", "Author display-name match")
@@ -62,7 +56,6 @@ export function evidenceMethodLabel(method) {
 export function evidenceSourceLabel(source) {
 	const labels = /** @type {Record<string, string>} */ ({
 		toolhub_author_metadata: t("peopleEvidence.sourceToolhubAuthor", "Toolhub author field"),
-		toolhub_catalog_actor: t("peopleEvidence.sourceToolhubHistory", "Toolhub catalog history"),
 		toolforge_toolsadmin: t("peopleEvidence.sourceToolsadmin", "Toolforge Toolsadmin"),
 		evolved_author_claim: t("peopleEvidence.sourceClaim", "Toolhub Evolved claim")
 	});
@@ -118,12 +111,6 @@ export function relationshipTrust(relationship) {
 				tone: "verified"
 			};
 		}
-		if (role === "record_owner" || method === "toolhub_write_access") {
-			return {
-				label: t("peopleEvidence.verifiedRecordAuthority", "Verified Toolhub record authority"),
-				tone: "verified"
-			};
-		}
 		return {
 			label: t(
 				"peopleEvidence.verifiedRelationship",
@@ -135,12 +122,6 @@ export function relationshipTrust(relationship) {
 	}
 	if (role === "author" && (relationship?.toolhubCanonical || method === "toolhub_author_metadata")) {
 		return { label: t("peopleEvidence.listedAuthor", "Listed author"), tone: "canonical" };
-	}
-	if (role === "catalog_actor" && relationship?.toolhubCanonical) {
-		return {
-			label: t("peopleEvidence.listedCatalogActor", "Recorded Toolhub catalog contributor"),
-			tone: "canonical"
-		};
 	}
 	return { label: t("peopleEvidence.unverifiedAttribution", "Unverified attribution"), tone: "unverified" };
 }

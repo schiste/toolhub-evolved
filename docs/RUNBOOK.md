@@ -328,12 +328,13 @@ current stable identifier, a current handle, or an Evolved profile. Display-only
 evidence remains scoped per observation and is returned separately as aggregated
 `unresolvedAttributions`; those entries deliberately have no person id or profile
 URL. One
-person may have several relationships to the same tool: `author` means the
-canonical Toolhub author field listed the person; `maintainer` means Evolved
-has operational evidence such as Toolforge membership or signed toolinfo;
-`record_owner` means explicit evidence concerns authority over the official
-Toolhub record; and `catalog_actor` is only an observed catalog activity actor. These roles
-are intentionally not interchangeable. Toolhub's immutable numeric user id and
+person may have two public relationships to the same tool: `author` means the
+canonical Toolhub author field listed the person, while `maintainer` means
+Evolved has operational evidence such as Toolforge membership or signed
+toolinfo. The graph also retains `record_owner` for authorization and
+`catalog_actor` for contribution eligibility and auditing, but those internal
+signals are not returned as public person–tool relationships, filters, counts,
+or badges. Toolhub's immutable numeric user id and
 the Wikimedia CentralAuth global user id are stable account links. Toolhub,
 Toolforge developer, and wiki usernames are case-insensitive mutable handles.
 Display-name observations are aggregated for discovery but do not receive a

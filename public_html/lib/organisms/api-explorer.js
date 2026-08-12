@@ -101,7 +101,7 @@ export const API_EXPLORER_ENDPOINTS = /** @type {ApiExplorerEndpoint[]} */ ([
 		title: t("apiExplorer.toolPeople", "People and relationships"),
 		description: t(
 			"apiExplorer.toolPeopleDesc",
-			"Read deduplicated people and typed author, maintainer, and record-owner relationships for one tool."
+			"Read deduplicated people and typed author and maintainer relationships for one tool."
 		),
 		pathTemplate: "/v1/people/tools/{name}/",
 		origin: "same-origin",
