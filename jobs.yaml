@@ -50,6 +50,15 @@
   timeout: 300
   emails: onfailure
 
+- name: toolforge-account-sync
+  # Mirror developer accounts by immutable uidNumber and their tool-account
+  # memberships. A failed LDAP read retains the last complete generation.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name toolforge-account-sync -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolforge_account_sync.py
+  image: python3.13
+  schedule: "7 */6 * * *"
+  timeout: 300
+  emails: onfailure
+
 - name: maintainer-backfill
   # Backfill public Toolsadmin maintainer evidence for cached Toolforge tools.
   # One request is spaced at least three seconds from the previous request;

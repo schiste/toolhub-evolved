@@ -200,6 +200,62 @@ class ToolhubAccountSyncState(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
 
 
+class ToolforgeAccountProjection(Base):
+    """Rebuildable projection of one Wikimedia developer account.
+
+    ``uid_number`` is the immutable LDAP/POSIX identifier. ``uid`` is a
+    mutable login handle and must never be used as a person identifier on its
+    own. The Wikimedia binding is nullable because many legacy developer
+    accounts have not connected their SUL identity.
+    """
+
+    __tablename__ = "toolforge_account_projection"
+    uid_number: Mapped[str] = mapped_column(String(64), primary_key=True)
+    uid: Mapped[str] = mapped_column(String(255), index=True)
+    normalized_uid: Mapped[str] = mapped_column(String(255), default="", index=True)
+    wikimedia_global_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    wikimedia_global_name: Mapped[str] = mapped_column(String(255), default="")
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolforgeMembershipProjection(Base):
+    """One current Toolforge tool-account membership for a developer account."""
+
+    __tablename__ = "toolforge_membership_projection"
+    uid_number: Mapped[str] = mapped_column(ForeignKey("toolforge_account_projection.uid_number"), primary_key=True)
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    generation: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolforgeAccountSyncState(Base):
+    """Generation state for the authoritative LDAP account/membership mirror."""
+
+    __tablename__ = "toolforge_account_sync_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    active_generation: Mapped[int] = mapped_column(Integer, default=0)
+    cycles_completed: Mapped[int] = mapped_column(Integer, default=0)
+    accounts_seen: Mapped[int] = mapped_column(Integer, default=0)
+    memberships_seen: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="idle", index=True)
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+
+
 class GraphToolEnrichment(Base):
     """Versioned, provenance-aware facets derived for the public tool graph."""
 

@@ -85,6 +85,10 @@ if [ -x "$VENV_PY" ]; then
 	# refresh aborts before restart, leaving the previous release serving.
 	echo "Refreshing official Toolhub account projection ..."
 	run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"
+	# Mirror authoritative Toolforge accounts and memberships before resolving
+	# people. A failed full LDAP cycle does not prune the last good generation.
+	echo "Refreshing Toolforge account and membership projection ..."
+	run_with_tool_env toolforge-account-sync "$REPO_DIR/proxy/toolforge_account_sync.py"
 	# Mocked provider tests cannot detect a renamed or invalid production LDAP
 	# attribute. Probe the real read-only schema before identity reconciliation.
 	echo "Checking Wikimedia LDAP identity schema ..."
