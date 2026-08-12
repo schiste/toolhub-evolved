@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
@@ -156,10 +155,35 @@ def bind_toolforge_account(  # noqa: PLR0913 - proof metadata is part of the sec
     )
 
 
-def _sync_toolhub_bindings(session: Session) -> int:
-    touched = 0
+def _sync_toolhub_bindings(session: Session) -> dict[str, int]:
+    stats = {"verified": 0, "conflict": 0}
     accounts = list(session.execute(select(ToolhubAccountProjection)).scalars())
     for account in accounts:
+        toolhub_owner = person_for_identifier(session, people_index.NS_TOOLHUB_USER_ID, account.toolhub_user_id)
+        wikimedia_owner = person_for_identifier(
+            session,
+            people_index.NS_WIKIMEDIA_GLOBAL_USER_ID,
+            account.wikimedia_global_user_id or "",
+        )
+        if toolhub_owner is not None and wikimedia_owner is not None and toolhub_owner.id != wikimedia_owner.id:
+            _set_binding(
+                session,
+                provider=PROVIDER_TOOLHUB,
+                external_id=account.toolhub_user_id,
+                person_id=None,
+                status=STATUS_CONFLICT,
+                proof_method=PROOF_TOOLHUB_WIKIMEDIA,
+                confidence=100,
+                evidence={
+                    "reason": "stable_identifier_conflict",
+                    "toolhubUserId": account.toolhub_user_id,
+                    "wikimediaGlobalUserId": account.wikimedia_global_user_id,
+                    "toolhubPersonId": toolhub_owner.public_id,
+                    "wikimediaPersonId": wikimedia_owner.public_id,
+                },
+            )
+            stats["conflict"] += 1
+            continue
         person = people_index.ensure_official_account_person(
             session,
             toolhub_user_id=account.toolhub_user_id,
@@ -168,6 +192,7 @@ def _sync_toolhub_bindings(session: Session) -> int:
             checked_at=account.last_seen_at,
         )
         if person is None:
+            stats["conflict"] += 1
             continue
         _set_binding(
             session,
@@ -179,7 +204,7 @@ def _sync_toolhub_bindings(session: Session) -> int:
             confidence=100,
             evidence={"toolhubUserId": account.toolhub_user_id},
         )
-        touched += 1
+        stats["verified"] += 1
         if account.wikimedia_global_user_id:
             _set_binding(
                 session,
@@ -194,8 +219,8 @@ def _sync_toolhub_bindings(session: Session) -> int:
                     "wikimediaGlobalUserId": account.wikimedia_global_user_id,
                 },
             )
-            touched += 1
-    return touched
+            stats["verified"] += 1
+    return stats
 
 
 def _unique_toolhub_handle_candidate(
@@ -217,25 +242,9 @@ def _unique_toolhub_handle_candidate(
 
 def _sync_toolforge_bindings(session: Session) -> dict[str, int]:
     accounts = list(session.execute(select(ToolforgeAccountProjection)).scalars())
-    global_counts = Counter(
-        account.wikimedia_global_user_id for account in accounts if account.wikimedia_global_user_id
-    )
     stats = {"verified": 0, "candidate": 0, "conflict": 0, "unresolved": 0}
     for account in accounts:
         global_id = account.wikimedia_global_user_id or ""
-        if global_id and global_counts[global_id] > 1:
-            _set_binding(
-                session,
-                provider=PROVIDER_TOOLFORGE,
-                external_id=account.uid_number,
-                person_id=None,
-                status=STATUS_CONFLICT,
-                proof_method=PROOF_TOOLFORGE_SUL,
-                confidence=100,
-                evidence={"wikimediaGlobalUserId": global_id, "reason": "duplicate_global_id"},
-            )
-            stats["conflict"] += 1
-            continue
         if global_id:
             person = person_for_identifier(session, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, global_id)
             if person is None:
@@ -399,7 +408,13 @@ def synchronize(session: Session) -> dict[str, int]:
     toolforge = _sync_toolforge_bindings(session)
     users = _hydrate_local_users(session)
     relationships = _sync_toolforge_relationships(session)
-    return {"toolhubBindings": toolhub, "usersHydrated": users, **toolforge, **relationships}
+    return {
+        "toolhubBindings": toolhub["verified"],
+        "toolhubConflicts": toolhub["conflict"],
+        "usersHydrated": users,
+        **toolforge,
+        **relationships,
+    }
 
 
 def verified_person_for_account(session: Session, provider: str, external_id: str) -> Person | None:

@@ -12,6 +12,7 @@ from backend import db, identity_graph, maintainer_index, people_index, people_p
 from backend.models import (
     CanonicalToolCache,
     Person,
+    PersonAccountBinding,
     PersonIdentifier,
     PersonReconciliationConflict,
     PersonReconciliationMapping,
@@ -468,6 +469,50 @@ def _record_stable_identity_conflict(
     return True
 
 
+def _record_account_binding_conflicts(s: Session, run_id: int) -> int:
+    """Project durable provider-binding conflicts into the operator queue."""
+    rows = list(
+        s.execute(
+            select(PersonAccountBinding).where(
+                PersonAccountBinding.status == identity_graph.STATUS_CONFLICT,
+                PersonAccountBinding.revoked_at.is_(None),
+            )
+        ).scalars()
+    )
+    now = utcnow()
+    for row in rows:
+        value = f"{row.provider}:{row.external_id}"
+        conflict = s.execute(
+            select(PersonReconciliationConflict).where(
+                PersonReconciliationConflict.conflict_type == "account_binding_conflict",
+                PersonReconciliationConflict.value == value,
+                PersonReconciliationConflict.status == "pending",
+            )
+        ).scalar_one_or_none()
+        details = {
+            "reason": "Immutable provider identifiers currently resolve to different people.",
+            "provider": row.provider,
+            "externalId": row.external_id,
+            "proofMethod": row.proof_method,
+            "evidence": row.evidence if isinstance(row.evidence, dict) else {},
+        }
+        if conflict is None:
+            s.add(
+                PersonReconciliationConflict(
+                    run_id=run_id,
+                    person_id=row.person_id,
+                    conflict_type="account_binding_conflict",
+                    value=value,
+                    details=details,
+                )
+            )
+        else:
+            conflict.run_id = run_id
+            conflict.details = details
+            conflict.last_seen_at = now
+    return len(rows)
+
+
 def _exact_account(s: Session, label: str) -> ToolhubAccountProjection | None:
     rows = list(
         s.execute(
@@ -642,6 +687,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
         before = build_plan(s)
         if mode == MODE_APPLY:
             account_bindings = identity_graph.synchronize(s)
+            account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
             non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
             for user in s.execute(select(User).order_by(User.id)).scalars():
@@ -664,12 +710,14 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
         else:
             account_bindings = {
                 "toolhubBindings": 0,
+                "toolhubConflicts": 0,
                 "usersHydrated": 0,
                 "verified": 0,
                 "candidate": 0,
                 "conflict": 0,
                 "unresolved": 0,
             }
+            account_binding_conflicts_queued = 0
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
@@ -688,6 +736,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "accountBindings": account_bindings,
+            "accountBindingConflictsQueued": account_binding_conflicts_queued,
             "catalogAuthority": "toolhub",
         }
     except Exception as exc:

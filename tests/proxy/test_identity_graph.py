@@ -95,7 +95,7 @@ def test_unbound_matching_handle_is_only_a_candidate():
         )
 
 
-def test_duplicate_global_id_is_a_conflict_and_never_attaches_identifiers():
+def test_multiple_developer_accounts_with_one_global_id_join_the_same_person():
     with db.session_scope() as session:
         session.add(toolhub_account())
         session.add(toolforge_account(uid_number="1", uid="one"))
@@ -104,12 +104,39 @@ def test_duplicate_global_id_is_a_conflict_and_never_attaches_identifiers():
     with db.session_scope() as session:
         result = identity_graph.synchronize(session)
 
-    assert result["conflict"] == 2
+    assert result["verified"] == 2
     with db.session_scope() as session:
-        assert {row.status for row in session.query(PersonAccountBinding).filter_by(provider="toolforge")} == {
-            "conflict"
-        }
-        assert session.query(PersonIdentifier).filter_by(namespace=people_index.NS_TOOLFORGE_UID_NUMBER).count() == 0
+        bindings = session.query(PersonAccountBinding).filter_by(provider="toolforge").all()
+        assert {row.status for row in bindings} == {"verified"}
+        assert len({row.person_id for row in bindings}) == 1
+        assert {
+            row.value
+            for row in session.query(PersonIdentifier).filter_by(namespace=people_index.NS_TOOLFORGE_UID_NUMBER)
+        } == {"1", "2"}
+
+
+def test_conflicting_toolhub_and_wikimedia_owners_create_an_account_binding_conflict():
+    with db.session_scope() as session:
+        toolhub_person = people_index.ensure_person(session, display_name="Toolhub", toolhub_user_id="42")
+        wikimedia_person = people_index.ensure_person(
+            session,
+            display_name="Wikimedia",
+            wikimedia_global_user_id="160",
+        )
+        session.add(toolhub_account())
+        toolhub_public_id = toolhub_person.public_id
+        wikimedia_public_id = wikimedia_person.public_id
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["toolhubConflicts"] == 1
+    with db.session_scope() as session:
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolhub", external_id="42").one()
+        assert binding.status == "conflict"
+        assert binding.person_id is None
+        assert binding.evidence["toolhubPersonId"] == toolhub_public_id
+        assert binding.evidence["wikimediaPersonId"] == wikimedia_public_id
 
 
 def test_official_projection_hydrates_local_oauth_user_identity():
@@ -157,3 +184,18 @@ def test_reconciliation_runs_account_binding_service_for_all_projections():
         summary = people_reconcile.run(session, mode=people_reconcile.MODE_APPLY)
 
     assert summary["accountBindings"]["verified"] == 1
+
+
+def test_reconciliation_queues_stable_account_binding_conflicts_for_operator_review():
+    from backend import people_reconcile  # noqa: PLC0415 - isolated integration assertion
+
+    with db.session_scope() as session:
+        people_index.ensure_person(session, display_name="Toolhub", toolhub_user_id="42")
+        people_index.ensure_person(session, display_name="Wikimedia", wikimedia_global_user_id="160")
+        session.add(toolhub_account())
+
+    with db.session_scope() as session:
+        summary = people_reconcile.run(session, mode=people_reconcile.MODE_APPLY)
+
+    assert summary["accountBindingConflictsQueued"] == 1
+    assert summary["conflicts"] == 1
