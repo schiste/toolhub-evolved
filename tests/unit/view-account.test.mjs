@@ -41,6 +41,7 @@ test("viewAccountSettings renders export, delete, and OAuth controls", () => {
 	assert.ok(!r.html.includes("Configurable Evolved-only settings will appear here as they become available."));
 	assert.ok(r.html.includes("Generate export"));
 	assert.ok(r.html.includes("Delete Evolved-local data"));
+	assert.ok(r.html.includes("Connected identities"));
 	assert.ok(r.html.includes('href="/oauth/login"'));
 	assert.ok(r.html.includes('method="post" action="/oauth/logout"'));
 });
@@ -509,6 +510,7 @@ test("preferences edits the immutable-person profile and renders claim history",
 	h.backendGetJson.mockReset();
 	h.serverWrite.mockReset();
 	h.backendGetJson
+		.mockResolvedValueOnce({ bindings: [], candidates: [], proofMethods: { toolforgeSshSignature: true } })
 		.mockResolvedValueOnce({
 			profile: {
 				personId: "3d6fdd39-b090-4c19-919f-7753b45e1046",
@@ -568,4 +570,78 @@ test("preferences edits the immutable-person profile and renders claim history",
 		}
 	]);
 	assert.ok(document.querySelector("[data-account-result]").textContent.includes("Profile saved"));
+});
+
+test("preferences reconnects a Toolforge account with a one-time SSH signature", async () => {
+	let connected = false;
+	h.backendGetJson.mockImplementation((path) => {
+		if (path === "/v1/me/account-links/") {
+			return Promise.resolve({
+				bindings: connected
+					? [
+							{
+								provider: "toolforge",
+								externalId: "9001",
+								username: "ada-dev",
+								status: "verified",
+								toolCount: 4
+							}
+						]
+					: [{ provider: "toolhub", externalId: "42", status: "verified" }],
+				candidates: connected
+					? []
+					: [{ username: "ada-dev", externalId: "9001", toolCount: 4, sshSignatureAvailable: true }],
+				proofMethods: { toolforgeSshSignature: true },
+				upstreamRepair: {
+					profileUrl: "https://toolsadmin.wikimedia.org/profile/",
+					sshKeysUrl: "https://toolsadmin.wikimedia.org/profile/settings/ssh-keys/"
+				}
+			});
+		}
+		if (path === "/v1/me/profile/") return Promise.resolve({ profile: {} });
+		return Promise.resolve({ claims: [] });
+	});
+	h.serverWrite.mockImplementation((method, path) => {
+		if (path.endsWith("/challenges/")) {
+			return Promise.resolve({
+				challengeId: "challenge-1",
+				challenge: "toolhub-evolved-account-link-v1\nnonce:test",
+				username: "ada-dev",
+				command: "printf challenge | ssh-keygen -Y sign"
+			});
+		}
+		connected = true;
+		return Promise.resolve({ ok: true });
+	});
+
+	const view = viewAccountSettings();
+	document.body.innerHTML = view.html;
+	view.mount();
+	await tick();
+	await tick();
+	assert.ok(document.querySelector("[data-account-links]").textContent.includes("ada-dev"));
+	document.querySelector('[name="username"]').value = "ada-dev";
+	document.querySelector("[data-account-link-start]").dispatchEvent(new Event("submit", { bubbles: true }));
+	await tick();
+	assert.equal(document.querySelector("[data-account-link-command]").value, "printf challenge | ssh-keygen -Y sign");
+	document.querySelector('[name="signature"]').value = "-----BEGIN SSH SIGNATURE-----\ntest";
+	document.querySelector("[data-account-link-verify]").dispatchEvent(new Event("submit", { bubbles: true }));
+	await tick();
+	await tick();
+
+	assert.deepEqual(h.serverWrite.mock.calls[0], [
+		"POST",
+		"/v1/me/account-links/toolforge/challenges/",
+		{ username: "ada-dev" }
+	]);
+	assert.deepEqual(h.serverWrite.mock.calls[1], [
+		"POST",
+		"/v1/me/account-links/toolforge/verify/",
+		{
+			challengeId: "challenge-1",
+			challenge: "toolhub-evolved-account-link-v1\nnonce:test",
+			signature: "-----BEGIN SSH SIGNATURE-----\ntest"
+		}
+	]);
+	assert.ok(document.querySelector("[data-account-links]").textContent.includes("4 Toolforge tools"));
 });

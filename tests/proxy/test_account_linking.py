@@ -7,10 +7,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from flask import Flask
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
+import backend  # noqa: E402
 from backend import account_linking, db, identity_graph  # noqa: E402
 from backend.models import (  # noqa: E402
     AccountLinkChallenge,
@@ -168,3 +170,50 @@ def test_real_openssh_signature_verifier_accepts_only_the_signed_challenge(tmp_p
 
     assert account_linking.verify_ssh_signature(challenge, signed.stdout, [public_key]) is True
     assert account_linking.verify_ssh_signature(challenge + "tampered", signed.stdout, [public_key]) is False
+
+
+def test_account_link_routes_are_private_csrf_protected_and_return_challenges(monkeypatch):
+    application = Flask(__name__)
+    backend.register(application, db_url="sqlite://", secret_key="test-secret")
+    application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
+    user_id = seed()
+    client = application.test_client()
+
+    assert client.get("/v1/me/account-links/").status_code == 401
+    with client.session_transaction() as browser_session:
+        browser_session["uid"] = user_id
+        browser_session["csrf"] = "token"
+        browser_session["epoch"] = 0
+    state = client.get("/v1/me/account-links/")
+    assert state.status_code == 200
+    assert state.headers["Cache-Control"] == "private, no-store"
+    assert client.post(
+        "/v1/me/account-links/toolforge/challenges/",
+        json={"username": "alice-dev"},
+    ).status_code == 403
+    started = client.post(
+        "/v1/me/account-links/toolforge/challenges/",
+        json={"username": "alice-dev"},
+        headers={"X-CSRF-Token": "token"},
+    )
+    assert started.status_code == 201
+    assert started.get_json()["externalId"] == "9001"
+
+    monkeypatch.setattr(
+        account_linking,
+        "complete_toolforge_challenge",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "provider": "toolforge",
+            "externalId": "9001",
+            "status": "verified",
+            "proofMethod": identity_graph.PROOF_AUTHENTICATED,
+        },
+    )
+    verified = client.post(
+        "/v1/me/account-links/toolforge/verify/",
+        json={"challengeId": "challenge", "challenge": "value", "signature": "signature"},
+        headers={"X-CSRF-Token": "token"},
+    )
+    assert verified.status_code == 200
+    assert verified.get_json()["status"] == "verified"

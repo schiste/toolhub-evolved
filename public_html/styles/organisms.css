@@ -1288,6 +1288,59 @@
 .account-data__links {
 	margin-top: var(--space-3);
 }
+.account-links__list {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-0) var(--space-0) var(--space-4);
+	padding: var(--space-0);
+	list-style: none;
+}
+.account-links__list li {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: var(--space-2) var(--space-4);
+	padding-block: var(--space-2);
+	border-bottom: var(--border-muted);
+}
+.account-links__list span {
+	color: var(--color-text-secondary);
+}
+.account-links__connect,
+.account-links__challenge,
+.account-links__challenge form {
+	display: grid;
+	gap: var(--space-3);
+}
+.account-links__connect {
+	max-width: 760px;
+}
+.account-links__connect h3,
+.account-links__connect p,
+.account-links__challenge ol {
+	margin: var(--space-0);
+}
+.account-links__start-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: var(--space-2);
+	align-items: center;
+}
+.account-links__challenge {
+	margin-top: var(--space-2);
+	padding: var(--space-4);
+	border-inline-start: var(--border-progressive-strong);
+	background: var(--color-progressive-subtle);
+}
+.account-links__challenge ol {
+	display: grid;
+	gap: var(--space-3);
+}
+.account-links__command {
+	margin-block: var(--space-2);
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+}
 .account-keys__layout {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
@@ -3069,6 +3122,9 @@ html[dir="rtl"] .recent-table {
 		grid-template-columns: 1fr;
 	}
 	.account-profile__fields {
+		grid-template-columns: 1fr;
+	}
+	.account-links__start-row {
 		grid-template-columns: 1fr;
 	}
 	.recent-controls__filters {

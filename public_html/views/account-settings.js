@@ -53,6 +53,97 @@ function claimHistory(claims) {
 		.join("")}</div>`;
 }
 
+/** @param {string} provider */
+function accountProviderLabel(provider) {
+	return (
+		{
+			toolhub: t("accountData.providerToolhub", "Toolhub account"),
+			wikimedia: t("accountData.providerWikimedia", "Wikimedia account"),
+			toolforge: t("accountData.providerToolforge", "Toolforge developer account")
+		}[provider] || provider
+	);
+}
+
+/** @param {any} state */
+function accountLinksHTML(state) {
+	const verified = (Array.isArray(state?.bindings) ? state.bindings : []).filter(
+		(binding) => binding.status === "verified"
+	);
+	const candidates = Array.isArray(state?.candidates) ? state.candidates : [];
+	const connected =
+		verified.length > 0
+			? `<ul class="account-links__list">${verified
+					.map((binding) => {
+						const name = binding.username || binding.externalId;
+						const tools =
+							binding.provider === "toolforge"
+								? ` · ${t("accountData.linkedToolCount", "$1 Toolforge tools", String(binding.toolCount || 0))}`
+								: "";
+						return `<li><strong>${esc(accountProviderLabel(binding.provider))}</strong><span><span dir="auto">${esc(name)}</span>${esc(tools)}</span></li>`;
+					})
+					.join("")}</ul>`
+			: `<p class="empty">${t("accountData.noLinkedAccounts", "No external accounts are linked yet.")}</p>`;
+	const candidateOptions = candidates
+		.map((candidate) => `<option value="${esc(candidate.username || "")}"></option>`)
+		.join("");
+	const profileUrl = safeUrl(state?.upstreamRepair?.profileUrl);
+	const sshKeysUrl = safeUrl(state?.upstreamRepair?.sshKeysUrl);
+	const unavailable = state?.proofMethods?.toolforgeSshSignature === false;
+	return `${connected}
+		<div class="account-links__connect">
+			<h3>${t("accountData.connectToolforge", "Connect another Toolforge account")}</h3>
+			<p class="signin-note">${t(
+				"accountData.connectToolforgeIntro",
+				"Enter each developer username you control. One proof reconnects all of that account's current and future Toolforge tool memberships."
+			)}</p>
+			${
+				candidates.length > 0
+					? `<p class="signin-note">${t("accountData.suggestedAccounts", "Suggested from an exact cross-system username match: $1", candidates.map((candidate) => candidate.username).join(", "))}</p>`
+					: ""
+			}
+			<form class="account-links__start" data-account-link-start>
+				<label class="le__label" for="toolforge-account-username">${t("accountData.toolforgeUsername", "Toolforge developer username")}</label>
+				<div class="account-links__start-row">
+					<input class="le__input" id="toolforge-account-username" name="username" list="toolforge-account-candidates" required autocomplete="username" />
+					<datalist id="toolforge-account-candidates">${candidateOptions}</datalist>
+					${button(t("accountData.startProof", "Start secure proof"), { variant: "primary", type: "submit", attrs: unavailable ? "disabled" : "" })}
+				</div>
+			</form>
+			${
+				unavailable
+					? `<p class="at__result at__result--err">${t("accountData.proofUnavailable", "SSH account proof is temporarily unavailable.")}</p>`
+					: ""
+			}
+			<p class="signin-note">${t("accountData.privateKeySafety", "Evolved never receives your private key. You sign a one-time challenge locally with OpenSSH.")}</p>
+			${
+				profileUrl || sshKeysUrl
+					? `<p class="signin-note">${t("accountData.upstreamRepair", "Need to reconnect Wikimedia identity or add an SSH key upstream?")} ${profileUrl ? `<a href="${profileUrl}" target="_blank" rel="noopener">${t("accountData.toolsadminProfile", "Toolsadmin profile")}</a>` : ""}${profileUrl && sshKeysUrl ? " · " : ""}${sshKeysUrl ? `<a href="${sshKeysUrl}" target="_blank" rel="noopener">${t("accountData.toolsadminKeys", "SSH keys")}</a>` : ""}</p>`
+					: ""
+			}
+			<div data-account-link-challenge hidden></div>
+			<p class="at__result" data-account-link-result aria-live="polite"></p>
+		</div>`;
+}
+
+/** @param {any} challenge */
+function accountChallengeHTML(challenge) {
+	return `<div class="account-links__challenge">
+		<h3>${t("accountData.proveControl", "Prove control of $1", challenge.username || "")}</h3>
+		<ol>
+			<li>${t("accountData.runCommand", "Run this command in a terminal on a computer that has your Toolforge SSH private key:")}
+				<textarea class="le__input account-links__command" rows="7" readonly data-account-link-command>${esc(challenge.command || "")}</textarea>
+				${button(t("accountData.copyCommand", "Copy command"), { variant: "outline", attrs: "data-account-link-copy" })}
+			</li>
+			<li>${t("accountData.pasteSignature", "Paste the complete SSH signature printed by the command:")}</li>
+		</ol>
+		<form data-account-link-verify>
+			<label class="le__label" for="toolforge-account-signature">${t("accountData.sshSignature", "SSH signature")}</label>
+			<textarea class="le__input" id="toolforge-account-signature" name="signature" rows="8" required spellcheck="false" placeholder="-----BEGIN SSH SIGNATURE-----"></textarea>
+			${button(t("accountData.verifyAccount", "Verify and connect account"), { variant: "primary", type: "submit" })}
+		</form>
+	</div>`;
+}
+
 /** @param {any} profile */
 function populateProfile(profile) {
 	const form = /** @type {HTMLFormElement | null} */ ($("[data-profile-form]"));
@@ -103,6 +194,15 @@ export function viewAccountSettings() {
 				body: profileForm()
 			})}
 			${accountSection({
+				id: "account-links-title",
+				title: t("accountData.accountLinksTitle", "Connected identities"),
+				intro: t(
+					"accountData.accountLinksIntro",
+					"Stable account links let Evolved reconcile public identities and Toolforge maintainer relationships without requiring every person to sign in."
+				),
+				body: `<div data-account-links><p class="signin-note">${t("accountData.accountLinksLoading", "Loading connected identities…")}</p></div>`
+			})}
+			${accountSection({
 				id: "account-claims-title",
 				title: t("accountData.claimsTitle", "Relationship claims"),
 				intro: t(
@@ -148,7 +248,87 @@ export function viewAccountSettings() {
 	});
 	function mount() {
 		const out = /** @type {HTMLElement} */ ($("[data-account-result]"));
+		async function loadAccountLinks() {
+			try {
+				const state = await backendGetJson("/v1/me/account-links/");
+				const target = $("[data-account-links]");
+				if (!target) return;
+				target.innerHTML = accountLinksHTML(state);
+				const result = /** @type {HTMLElement | null} */ (target.querySelector("[data-account-link-result]"));
+				const startForm = /** @type {HTMLFormElement | null} */ (
+					target.querySelector("[data-account-link-start]")
+				);
+				startForm?.addEventListener("submit", async (event) => {
+					event.preventDefault();
+					const username = String(new FormData(startForm).get("username") || "").trim();
+					if (result) {
+						result.className = "at__result";
+						result.textContent = t("accountData.startingProof", "Preparing secure proof…");
+					}
+					try {
+						const challenge = await serverWrite("POST", "/v1/me/account-links/toolforge/challenges/", {
+							username
+						});
+						const challengeNode = /** @type {HTMLElement | null} */ (
+							target.querySelector("[data-account-link-challenge]")
+						);
+						if (!challengeNode) return;
+						challengeNode.hidden = false;
+						challengeNode.innerHTML = accountChallengeHTML(challenge);
+						challengeNode.querySelector("[data-account-link-copy]")?.addEventListener("click", async () => {
+							const command = /** @type {HTMLTextAreaElement | null} */ (
+								challengeNode.querySelector("[data-account-link-command]")
+							)?.value;
+							if (command && navigator.clipboard) await navigator.clipboard.writeText(command);
+						});
+						const verifyForm = /** @type {HTMLFormElement | null} */ (
+							challengeNode.querySelector("[data-account-link-verify]")
+						);
+						verifyForm?.addEventListener("submit", async (verifyEvent) => {
+							verifyEvent.preventDefault();
+							const signature = String(new FormData(verifyForm).get("signature") || "");
+							if (result) result.textContent = t("accountData.verifyingAccount", "Verifying account…");
+							try {
+								await serverWrite("POST", "/v1/me/account-links/toolforge/verify/", {
+									challengeId: challenge.challengeId,
+									challenge: challenge.challenge,
+									signature
+								});
+								await loadAccountLinks();
+								out.className = "at__result at__result--ok";
+								out.textContent = t(
+									"accountData.accountConnected",
+									"Toolforge account connected. Its maintainer relationships are now reconciled."
+								);
+							} catch (error) {
+								if (result) {
+									result.className = "at__result at__result--err";
+									result.textContent = backendErrorExplanation(error);
+								}
+							}
+						});
+						if (result) {
+							result.textContent = t(
+								"accountData.challengeReady",
+								"Challenge ready. It expires in 10 minutes."
+							);
+						}
+					} catch (error) {
+						if (result) {
+							result.className = "at__result at__result--err";
+							result.textContent = backendErrorExplanation(error);
+						}
+					}
+				});
+			} catch (error) {
+				const currentTarget = $("[data-account-links]");
+				if (currentTarget) {
+					currentTarget.innerHTML = `<p class="at__result at__result--err">${esc(backendErrorExplanation(error))}</p>`;
+				}
+			}
+		}
 		window.setTimeout(() => {
+			loadAccountLinks();
 			Promise.all([backendGetJson("/v1/me/profile/"), backendGetJson("/v1/me/claims/")])
 				.then(([profileData, claimData]) => {
 					populateProfile(profileData?.profile);
