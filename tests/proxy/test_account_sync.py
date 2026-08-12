@@ -207,6 +207,7 @@ def test_deploy_and_scheduled_job_require_a_complete_account_generation():
     assert "toolforge jobs run --wait 900" in deploy
     assert 'run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"' in deploy
     assert "webservice python3.13 shell" not in deploy
+    assert 'exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"' in deploy
 
 
 def test_complete_cli_fails_when_another_worker_holds_the_sync_lock(monkeypatch, capsys, tmp_path):

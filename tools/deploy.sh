@@ -8,7 +8,13 @@ set -eu
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Updating $REPO_DIR ..."
+deploy_head_before="$(git -C "$REPO_DIR" rev-parse HEAD)"
 git -C "$REPO_DIR" pull --ff-only
+deploy_head_after="$(git -C "$REPO_DIR" rev-parse HEAD)"
+if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEXECUTED:-0}" != "1" ]; then
+	echo "Restarting deploy with the updated script ..."
+	exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"
+fi
 
 # The python webservice runs ~/www/python/src/app.py (symlinked to proxy/).
 mkdir -p "$HOME/www/python"
