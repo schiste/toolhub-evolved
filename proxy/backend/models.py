@@ -808,6 +808,22 @@ class PersonAccountBinding(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class AccountLinkChallenge(Base):
+    """Short-lived single-use proof challenge for reconnecting an account."""
+
+    __tablename__ = "account_link_challenges"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    external_id: Mapped[str] = mapped_column(String(64), index=True)
+    challenge_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class PersonProfile(Base):
     """Evolved-owned public profile content for a resolved person."""
 
@@ -842,6 +858,35 @@ class ToolRelationshipEvidence(Base):
     confidence: Mapped[int] = mapped_column(Integer, default=0)
     # True only when the observation is a projection of canonical Toolhub
     # catalog data. It never implies Evolved owns that upstream fact.
+    toolhub_canonical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UnresolvedAttributionEvidence(Base):
+    """A relationship observation whose label is not a proven person identity."""
+
+    __tablename__ = "unresolved_attribution_evidence"
+    __table_args__ = (
+        UniqueConstraint("tool_name", "normalized_label", "relationship_type", "source", "method", "evidence_key"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    observed_label: Mapped[str] = mapped_column(String(255), default="")
+    normalized_label: Mapped[str] = mapped_column(String(255), index=True)
+    relationship_type: Mapped[str] = mapped_column(String(32), index=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    method: Mapped[str] = mapped_column(String(64), default="")
+    evidence_key: Mapped[str] = mapped_column(String(255), default="")
+    verification_status: Mapped[str] = mapped_column(String(32), default=AUTHOR_CLAIM_UNVERIFIED)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
     toolhub_canonical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     evidence_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     evidence_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
