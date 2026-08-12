@@ -32,6 +32,7 @@ from backend.models import (
     ToolPersonRelationship,
     ToolRecord,
     ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
     User,
     utcnow,
 )
@@ -517,6 +518,52 @@ def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers an
     return True
 
 
+def _store_unresolved_observation(  # noqa: PLR0913 - source evidence fields stay explicit
+    s: Session,
+    *,
+    tool_name: str,
+    source: str,
+    role: str,
+    method: str,
+    evidence_key: str,
+    display_name: str,
+    observation: dict[str, Any],
+    now: datetime,
+) -> None:
+    row = s.execute(
+        select(UnresolvedAttributionEvidence).where(
+            UnresolvedAttributionEvidence.tool_name == tool_name,
+            UnresolvedAttributionEvidence.normalized_label == display_name.casefold(),
+            UnresolvedAttributionEvidence.relationship_type == role,
+            UnresolvedAttributionEvidence.source == source,
+            UnresolvedAttributionEvidence.method == method,
+            UnresolvedAttributionEvidence.evidence_key == evidence_key,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = UnresolvedAttributionEvidence(
+            tool_name=tool_name,
+            normalized_label=display_name.casefold(),
+            relationship_type=role,
+            source=source,
+            method=method,
+            evidence_key=evidence_key,
+            first_seen_at=observation.get("first_seen_at") or now,
+        )
+        s.add(row)
+    row.observed_label = display_name
+    row.verification_status = _clean(observation.get("verification_status"), 32)
+    row.confidence = int(observation.get("confidence") or 0)
+    row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
+    row.evidence_url = observation.get("evidence_url")
+    row.evidence_payload = observation.get("evidence_payload")
+    row.checked_at = observation.get("checked_at") or now
+    row.expires_at = observation.get("expires_at")
+    row.withdrawn_at = None
+    row.last_error = observation.get("last_error")
+    row.updated_at = now
+
+
 def replace_source_evidence(
     s: Session,
     tool_name: str,
@@ -538,15 +585,52 @@ def replace_source_evidence(
     for row in existing:
         row.withdrawn_at = now
         row.updated_at = now
+    unresolved_existing = list(
+        s.execute(
+            select(UnresolvedAttributionEvidence).where(
+                UnresolvedAttributionEvidence.tool_name == clean_tool,
+                UnresolvedAttributionEvidence.source == source,
+                UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    )
+    for row in unresolved_existing:
+        row.withdrawn_at = now
+        row.updated_at = now
     rows = []
     for observation in observations:
         role = _clean(observation.get("relationship_type"), 32) or PERSON_REL_AUTHOR
         method = _clean(observation.get("method"), 64)
         evidence_key = _clean(observation.get("evidence_key"), 255)
+        display_name = _clean(observation.get("display_name"))
+        has_identity = bool(
+            _clean(observation.get("toolhub_user_id"), 64)
+            or _clean(observation.get("wikimedia_global_user_id"), 64)
+            or _clean(observation.get("toolforge_uid_number"), 64)
+            or _clean(observation.get("toolhub_username"))
+            or _clean(observation.get("toolforge_username"))
+            or _clean(observation.get("wiki_username"))
+            or observation.get("authenticated_claim")
+        )
+        if not has_identity:
+            if not display_name:
+                continue
+            _store_unresolved_observation(
+                s,
+                tool_name=clean_tool,
+                source=source,
+                role=role,
+                method=method,
+                evidence_key=evidence_key,
+                display_name=display_name,
+                observation=observation,
+                now=now,
+            )
+            continue
         display_scope = f"{clean_tool}\x1f{source}\x1f{role}\x1f{method}\x1f{evidence_key}"
         person = ensure_person(
             s,
-            display_name=_clean(observation.get("display_name")),
+            display_name=display_name,
             toolhub_user_id=_clean(observation.get("toolhub_user_id"), 64),
             wikimedia_global_user_id=_clean(observation.get("wikimedia_global_user_id"), 64),
             toolforge_uid_number=_clean(observation.get("toolforge_uid_number"), 64),
@@ -847,36 +931,37 @@ def _unresolved_relationship_breakdown(
     """Summarize relationship evidence without promoting labels to identities."""
     if not normalized_labels:
         return {}
-    normalized_label = func.lower(Person.display_name)
     statement = (
         select(
-            normalized_label,
-            ToolPersonRelationship.relationship_type,
-            ToolPersonRelationship.verification_status,
-            func.count(func.distinct(ToolPersonRelationship.tool_name)),
-            func.sum(ToolPersonRelationship.evidence_count),
-            func.max(ToolPersonRelationship.confidence),
+            UnresolvedAttributionEvidence.normalized_label,
+            UnresolvedAttributionEvidence.relationship_type,
+            UnresolvedAttributionEvidence.verification_status,
+            func.count(func.distinct(UnresolvedAttributionEvidence.tool_name)),
+            func.count(UnresolvedAttributionEvidence.id),
+            func.max(UnresolvedAttributionEvidence.confidence),
         )
-        .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
-        .where(~_public_identity_clause(), normalized_label.in_(normalized_labels))
+        .where(
+            UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            UnresolvedAttributionEvidence.normalized_label.in_(normalized_labels),
+        )
         .group_by(
-            normalized_label,
-            ToolPersonRelationship.relationship_type,
-            ToolPersonRelationship.verification_status,
+            UnresolvedAttributionEvidence.normalized_label,
+            UnresolvedAttributionEvidence.relationship_type,
+            UnresolvedAttributionEvidence.verification_status,
         )
     )
     if tool_name:
-        statement = statement.where(ToolPersonRelationship.tool_name == tool_name)
+        statement = statement.where(UnresolvedAttributionEvidence.tool_name == tool_name)
     if project:
         statement = statement.join(
             CatalogFacetValue,
-            CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
+            CatalogFacetValue.tool_name == UnresolvedAttributionEvidence.tool_name,
         ).where(
             CatalogFacetValue.field == "wiki",
             func.lower(CatalogFacetValue.value) == project.casefold(),
         )
     if role:
-        statement = statement.where(ToolPersonRelationship.relationship_type == role)
+        statement = statement.where(UnresolvedAttributionEvidence.relationship_type == role)
 
     result: dict[str, list[dict[str, Any]]] = {}
     for label, relationship_type, status, tool_count, evidence_count, confidence in s.execute(statement).all():
@@ -908,35 +993,33 @@ def search_unresolved_attributions(
     """Search unresolved labels with totals independent from public people."""
     clean_query = _clean(search.query)
     clean_tool = _clean(search.tool_name)
-    normalized_label = func.lower(Person.display_name)
     statement = (
         select(
-            normalized_label.label("normalized_label"),
-            func.min(Person.display_name).label("label"),
-            func.count(func.distinct(Person.id)).label("attribution_count"),
-            func.count(func.distinct(ToolPersonRelationship.tool_name)).label("tool_count"),
-            func.sum(ToolPersonRelationship.evidence_count).label("evidence_count"),
-            func.max(ToolPersonRelationship.confidence).label("best_confidence"),
+            UnresolvedAttributionEvidence.normalized_label,
+            func.min(UnresolvedAttributionEvidence.observed_label).label("label"),
+            func.count(UnresolvedAttributionEvidence.id).label("attribution_count"),
+            func.count(func.distinct(UnresolvedAttributionEvidence.tool_name)).label("tool_count"),
+            func.count(UnresolvedAttributionEvidence.id).label("evidence_count"),
+            func.max(UnresolvedAttributionEvidence.confidence).label("best_confidence"),
         )
-        .join(ToolPersonRelationship, ToolPersonRelationship.person_id == Person.id)
-        .where(~_public_identity_clause(), Person.display_name != "")
-        .group_by(normalized_label)
-        .order_by(normalized_label)
+        .where(UnresolvedAttributionEvidence.withdrawn_at.is_(None))
+        .group_by(UnresolvedAttributionEvidence.normalized_label)
+        .order_by(UnresolvedAttributionEvidence.normalized_label)
     )
     if search.project:
         statement = statement.join(
             CatalogFacetValue,
-            CatalogFacetValue.tool_name == ToolPersonRelationship.tool_name,
+            CatalogFacetValue.tool_name == UnresolvedAttributionEvidence.tool_name,
         ).where(
             CatalogFacetValue.field == "wiki",
             func.lower(CatalogFacetValue.value) == search.project.casefold(),
         )
     if search.role:
-        statement = statement.where(ToolPersonRelationship.relationship_type == search.role)
+        statement = statement.where(UnresolvedAttributionEvidence.relationship_type == search.role)
     if clean_query:
-        statement = statement.where(normalized_label.like(f"%{clean_query.casefold()}%"))
+        statement = statement.where(UnresolvedAttributionEvidence.normalized_label.like(f"%{clean_query.casefold()}%"))
     if clean_tool:
-        statement = statement.where(ToolPersonRelationship.tool_name == clean_tool)
+        statement = statement.where(UnresolvedAttributionEvidence.tool_name == clean_tool)
     total = int(s.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0)
     safe_page = max(1, search.page)
     safe_page_size = max(1, min(search.page_size, 100))

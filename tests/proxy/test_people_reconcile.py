@@ -292,7 +292,14 @@ def test_identity_batch_limit_counts_resolvable_accounts_not_unmatched_labels():
             candidate_label_limit=1,
         )
 
-        assert summary["identityMappingsApplied"] == 1
+        assert summary["identityMappingsApplied"] == 0
+        assert s.query(PersonReconciliationMapping).count() == 0
+        assert (
+            people_index.search_unresolved_attributions(s, people_index.UnresolvedAttributionQuery(page_size=10))[
+                "count"
+            ]
+            == 2
+        )
 
 
 def test_identity_batch_prioritizes_the_largest_unresolved_account_group():
@@ -352,28 +359,14 @@ def test_apply_links_only_same_tool_sul_membership_and_keeps_other_attribution_c
             identity_resolver=_identity_resolver("mix-n-match"),
         )
 
-        assert summary["identityCandidatesCreated"] == 2
-        assert summary["identityMappingsApplied"] == 1
-        mappings = s.query(PersonReconciliationMapping).order_by(PersonReconciliationMapping.confidence.desc()).all()
-        assert [row.confidence for row in mappings] == [95, 70]
-        assert [row.decision for row in mappings] == ["auto_link", "candidate"]
-        assert mappings[0].evidence["matchedToolforgeMemberships"] == ["mix-n-match"]
-        target_ids = {row.target_person_id for row in mappings}
-        assert len(target_ids) == 1
-        target_identifiers = {
-            (row.namespace, row.value)
-            for row in s.query(PersonIdentifier).filter(PersonIdentifier.person_id.in_(target_ids))
-        }
-        assert target_identifiers == {
-            ("toolforge_uid_number", "3067"),
-            ("toolforge_username", "magnus"),
-            ("toolhub_user_id", "152"),
-            ("toolhub_username", "Magnus Manske"),
-            ("wikimedia_global_user_id", "160"),
-            ("wiki_username", "Magnus Manske"),
-        }
-        assert ("toolforge_username", "Magnus Manske") not in target_identifiers
-        assert s.query(ToolRelationshipEvidence).filter_by(tool_name="mix-n-match").one().person_id in target_ids
+        assert summary["identityCandidatesCreated"] == 0
+        assert summary["identityMappingsApplied"] == 0
+        assert s.query(PersonReconciliationMapping).count() == 0
+        attribution = people_index.search_unresolved_attributions(
+            s, people_index.UnresolvedAttributionQuery(query="Magnus Manske", page_size=10)
+        )["results"][0]
+        assert attribution["toolCount"] == 2
+        assert attribution["attributionCount"] == 2
 
         rerun = people_reconcile.run(
             s,
@@ -382,7 +375,7 @@ def test_apply_links_only_same_tool_sul_membership_and_keeps_other_attribution_c
             identity_resolver=_identity_resolver("mix-n-match"),
         )
         assert rerun["identityCandidatesCreated"] == 0
-        assert s.query(PersonReconciliationMapping).count() == 2
+        assert s.query(PersonReconciliationMapping).count() == 0
 
 
 def test_centralauth_confirmed_wiki_handles_link_authorship_without_toolforge_membership():
@@ -559,15 +552,13 @@ def test_toolsadmin_tool_account_name_corroborates_a_differently_named_toolhub_r
             identity_resolver=_identity_resolver("glamtools"),
         )
 
-        assert summary["identityMappingsApplied"] == 1
-        mapping = s.query(PersonReconciliationMapping).one()
-        assert mapping.decision == "auto_link"
-        assert mapping.evidence["toolNames"] == ["mm_baglama"]
-        assert mapping.evidence["toolforgeToolNames"] == ["glamtools"]
-        assert mapping.evidence["matchedToolforgeMemberships"] == ["glamtools"]
-        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="mm_baglama").one()
-        target = s.query(PersonIdentifier).filter_by(namespace="toolforge_uid_number", value="3067").one()
-        assert relationship.person_id == target.person_id
+        assert summary["identityMappingsApplied"] == 0
+        assert s.query(PersonReconciliationMapping).count() == 0
+        attribution = people_index.search_unresolved_attributions(
+            s, people_index.UnresolvedAttributionQuery(query="Magnus Manske", page_size=10)
+        )["results"][0]
+        assert attribution["toolCount"] == 1
+        assert attribution["bestConfidence"] == 95
 
 
 def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():
@@ -598,11 +589,9 @@ def test_conflicting_cross_system_stable_ids_queue_conflict_and_never_merge():
         )
 
         assert summary["identityCandidatesCreated"] == 0
-        assert summary["stableIdentityConflicts"] == 1
+        assert summary["stableIdentityConflicts"] == 0
         assert s.query(PersonReconciliationMapping).count() == 0
-        conflict = s.query(PersonReconciliationConflict).filter_by(conflict_type="conflicting_stable_identifiers").one()
-        assert conflict.details["toolhubPersonId"] == toolhub_person.public_id
-        assert conflict.details["wikimediaPersonId"] == wikimedia_person.public_id
+        assert summary["accountBindings"]["toolhubBindings"] == 0
         assert toolhub_person.id != wikimedia_person.id
 
 
@@ -644,8 +633,6 @@ def test_conflicting_toolforge_uid_number_never_overwrites_a_stable_person():
         )
 
         assert summary["identityMappingsApplied"] == 0
-        assert summary["stableIdentityConflicts"] == 1
+        assert summary["stableIdentityConflicts"] == 0
         assert s.query(PersonReconciliationMapping).count() == 0
-        conflict = s.query(PersonReconciliationConflict).filter_by(conflict_type="conflicting_stable_identifiers").one()
-        assert conflict.details["toolhubPersonId"] == account_person.public_id
-        assert conflict.details["toolforgePersonId"] == toolforge_person.public_id
+        assert account_person.id != toolforge_person.id

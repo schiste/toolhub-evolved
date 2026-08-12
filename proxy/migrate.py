@@ -39,6 +39,9 @@ from backend.models import (
     ToolAuthorClaim,
     ToolAuthorKey,
     ToolhubAccountProjection,
+    ToolPersonRelationship,
+    ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
     User,
     UserToolResolverCache,
     utcnow,
@@ -78,6 +81,7 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("people immutable ids and account links", _backfill_people_identity()),
         MigrationResult("external account bindings", _backfill_account_bindings()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
+        MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
 
@@ -261,6 +265,75 @@ def _legacy_role(source: str, method: str) -> str:
     if method == AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME:
         return PERSON_REL_AUTHOR
     return PERSON_REL_MAINTAINER
+
+
+def _migrate_display_attributions() -> int:
+    """Move legacy display-only person edges into non-identity attribution rows."""
+    touched = 0
+    now = utcnow()
+    with db.session_scope() as s:
+        identified_people = select(PersonIdentifier.person_id).where(PersonIdentifier.is_current.is_(True))
+        evidence = list(
+            s.execute(
+                select(ToolRelationshipEvidence)
+                .join(Person, Person.id == ToolRelationshipEvidence.person_id)
+                .where(
+                    ~Person.id.in_(identified_people),
+                    Person.display_name != "",
+                )
+            ).scalars()
+        )
+        affected_person_ids = {row.person_id for row in evidence}
+        people = {
+            row.id: row for row in s.execute(select(Person).where(Person.id.in_(affected_person_ids or {-1}))).scalars()
+        }
+        for row in evidence:
+            person = people[row.person_id]
+            unresolved = s.execute(
+                select(UnresolvedAttributionEvidence).where(
+                    UnresolvedAttributionEvidence.tool_name == row.tool_name,
+                    UnresolvedAttributionEvidence.normalized_label == person.display_name.casefold(),
+                    UnresolvedAttributionEvidence.relationship_type == row.relationship_type,
+                    UnresolvedAttributionEvidence.source == row.source,
+                    UnresolvedAttributionEvidence.method == row.method,
+                    UnresolvedAttributionEvidence.evidence_key == row.evidence_key,
+                )
+            ).scalar_one_or_none()
+            if unresolved is None:
+                unresolved = UnresolvedAttributionEvidence(
+                    tool_name=row.tool_name,
+                    normalized_label=person.display_name.casefold(),
+                    relationship_type=row.relationship_type,
+                    source=row.source,
+                    method=row.method,
+                    evidence_key=row.evidence_key,
+                    first_seen_at=row.first_seen_at,
+                    created_at=row.created_at,
+                )
+                s.add(unresolved)
+            unresolved.observed_label = row.observed_name or person.display_name
+            unresolved.verification_status = row.verification_status
+            unresolved.confidence = row.confidence
+            unresolved.toolhub_canonical = row.toolhub_canonical
+            unresolved.evidence_url = row.evidence_url
+            unresolved.evidence_payload = row.evidence_payload
+            unresolved.checked_at = row.checked_at
+            unresolved.expires_at = row.expires_at
+            unresolved.withdrawn_at = row.withdrawn_at
+            unresolved.last_error = row.last_error
+            unresolved.updated_at = now
+            s.delete(row)
+            touched += 1
+        if affected_person_ids:
+            relationships = list(
+                s.execute(
+                    select(ToolPersonRelationship).where(ToolPersonRelationship.person_id.in_(affected_person_ids))
+                ).scalars()
+            )
+            for relationship in relationships:
+                s.delete(relationship)
+                touched += 1
+    return touched
 
 
 def _backfill_relationship_evidence() -> int:

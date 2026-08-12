@@ -20,7 +20,7 @@ from backend.models import (  # noqa: E402
     ApiCache,
     ToolAuthorClaim,
     ToolAuthorKey,
-    ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
     User,
     UserToolResolverCache,
     utcnow,
@@ -174,12 +174,12 @@ def test_relationship_backfill_prefers_current_canonical_metadata_over_legacy_sn
     migrate._backfill_relationship_evidence()  # noqa: SLF001 - migration-order regression coverage
 
     with db.session_scope() as s:
-        active = s.query(ToolRelationshipEvidence).filter_by(
+        active = s.query(UnresolvedAttributionEvidence).filter_by(
             tool_name="identity-tool",
             source="toolhub_author_metadata",
             withdrawn_at=None,
         )
-        assert [row.observed_name for row in active] == ["Current Author"]
+        assert [row.observed_label for row in active] == ["Current Author"]
 
 
 def test_relationship_backfill_skips_canonical_rebuild_after_legacy_table_is_retired(configured_db, monkeypatch):
