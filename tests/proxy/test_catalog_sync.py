@@ -116,6 +116,33 @@ def test_complete_snapshot_prunes_only_names_absent_from_every_official_page(mon
         assert s.get(PersonReconciliationQueue, "retired-tool").reason == "canonical_retired"
 
 
+def test_deploy_reuses_a_recent_completed_snapshot(monkeypatch):
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                snapshot_generation=7,
+                last_completed_at=catalog_sync.utcnow(),
+            )
+        )
+    monkeypatch.setattr(
+        catalog_sync,
+        "listing_page",
+        lambda *_args: pytest.fail("a fresh deployment snapshot should be reused"),
+    )
+
+    summary = catalog_sync.run_complete(max_age_seconds=21600)
+
+    assert summary == {
+        "phase": "complete_cached",
+        "pages": 0,
+        "records": 0,
+        "retired": 0,
+        "generation": 7,
+        "completed": True,
+    }
+
+
 def test_interrupted_complete_snapshot_preserves_last_known_good_catalog(monkeypatch):
     with db.session_scope() as s:
         s.add(

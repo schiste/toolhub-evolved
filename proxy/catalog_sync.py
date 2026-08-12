@@ -456,11 +456,29 @@ def run_complete(
     *,
     page_size: int = DEFAULT_PAGE_SIZE,
     min_interval_seconds: float = DEFAULT_MIN_INTERVAL_SECONDS,
+    max_age_seconds: int = 0,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> dict[str, int | bool | str]:
     """Publish one resumable full snapshot and retire confirmed missing tools."""
     effective_page_size = _bounded_page_size(page_size)
     interval = _bounded_interval(min_interval_seconds)
+    if max_age_seconds > 0:
+        with db.session_scope() as s:
+            state = _state(s)
+            recent_cutoff = utcnow() - timedelta(seconds=max_age_seconds)
+            if (
+                state.snapshot_started_at is None
+                and state.last_completed_at is not None
+                and state.last_completed_at >= recent_cutoff
+            ):
+                return {
+                    "phase": "complete_cached",
+                    "pages": 0,
+                    "records": 0,
+                    "retired": 0,
+                    "generation": int(state.snapshot_generation or 0),
+                    "completed": True,
+                }
     page, generation, expected_count = _begin_snapshot()
     pages = records = 0
     try:
@@ -571,6 +589,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--complete", action="store_true", help="finish a validated full snapshot and prune retired tools"
     )
+    parser.add_argument(
+        "--max-age-seconds",
+        type=int,
+        default=0,
+        help="with --complete, reuse a snapshot completed within this many seconds",
+    )
     args = parser.parse_args(argv)
     db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
     db.init_schema()
@@ -578,7 +602,11 @@ def main(argv: list[str] | None = None) -> int:
         if not acquired:
             summary = {"status": "locked", "completed": False}
         elif args.complete:
-            summary = run_complete(page_size=args.page_size, min_interval_seconds=args.min_interval)
+            summary = run_complete(
+                page_size=args.page_size,
+                min_interval_seconds=args.min_interval,
+                max_age_seconds=max(0, args.max_age_seconds),
+            )
         else:
             summary = run(pages_per_run=args.pages, page_size=args.page_size, min_interval_seconds=args.min_interval)
     sys.stdout.write("catalog-sync: " + " ".join(f"{key}={value}" for key, value in summary.items()) + "\n")
