@@ -76,6 +76,28 @@ run_with_tool_env() {
 	return 0
 }
 
+# Complete account synchronization can span dozens of upstream pages. Run it
+# as a bounded Toolforge Job instead of an interactive webservice shell: the
+# latter may lose its attach stream and completion marker while the pod keeps
+# working. A stable job name also prevents two deploys from racing the same
+# resumable generation.
+run_account_sync() {
+	_out="$HOME/account-sync-deploy.out"
+	_err="$HOME/account-sync-deploy.err"
+	rm -f "$_out" "$_err"
+	if toolforge jobs run --wait 900 --image python3.13 --filelog \
+		-o "$_out" -e "$_err" \
+		--command "$VENV_PY $REPO_DIR/proxy/account_sync.py --complete" \
+		account-sync-deploy; then
+		cat "$_out" 2>/dev/null || true
+		cat "$_err" 2>/dev/null >&2 || true
+		return 0
+	fi
+	cat "$_out" 2>/dev/null || true
+	cat "$_err" 2>/dev/null >&2 || true
+	return 1
+}
+
 if [ -x "$VENV_PY" ]; then
 	# Keep the venv in sync with requirements BEFORE restarting: a pull that adds
 	# a dependency (e.g. SQLAlchemy) would otherwise restart into ImportError.
@@ -101,7 +123,7 @@ if [ -x "$VENV_PY" ]; then
 	# fails or its reported count changes during the cycle. A failed initial
 	# refresh aborts before restart, leaving the previous release serving.
 	echo "Refreshing official Toolhub account projection ..."
-	run_with_tool_env "$REPO_DIR/proxy/account_sync.py --complete"
+	run_account_sync
 	# Mocked provider tests cannot detect a renamed or invalid production LDAP
 	# attribute. Probe the real read-only schema before identity reconciliation.
 	echo "Checking Wikimedia LDAP identity schema ..."
