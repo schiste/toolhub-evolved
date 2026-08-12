@@ -68,6 +68,21 @@ test("main.js activates deferred styles before the first route render", () => {
 	assert.ok(main.indexOf("activateDeferredStyles();") < main.lastIndexOf("runRender().finally("));
 });
 
+test("optional command palette cannot block the application module graph", () => {
+	const main = read("public_html/main.js");
+	assert.doesNotMatch(main, /from\s+["']\.\/lib\/organisms\/command-palette\.js["']/);
+	assert.match(main, /import\(["']\.\/lib\/organisms\/command-palette\.js["']\)/);
+	assert.match(main, /\.catch\(\(\) => undefined\)/);
+});
+
+test("boot watchdog is bounded and renders an explicit retry state", () => {
+	const html = read("public_html/index.html");
+	assert.match(html, /function showBootFailure\(\)/);
+	assert.match(html, /Toolhub could not finish loading/);
+	assert.match(html, /sessionStorage\.removeItem\(RELOAD_KEY\);\s*location\.reload\(\)/);
+	assert.match(html, /setTimeout\(recoverBoot, 15000\)/);
+});
+
 test("styleguide CSS is owned by the styleguide route", () => {
 	const styleguide = read("public_html/views/styleguide.js");
 	assert.match(styleguide, /STYLEGUIDE_STYLESHEET = "\/styles\/styleguide\.css"/);

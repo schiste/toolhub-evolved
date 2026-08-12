@@ -31,31 +31,52 @@
 					}
 				} catch (e) {}
 				/* Boot watchdog. The app is native ES modules, so a single failed
-				   module request fails the whole graph and leaves a blank page —
-				   and Toolforge does return transient 503s, most reliably while a
-				   deploy restarts the webservice. Route modules already retry
-				   themselves (views/router.js); the entry graph cannot, because by
-				   the time it fails there is no app running to notice.
+				   request can prevent the whole entry graph from running. Toolforge
+				   can return transient 503s while a webservice is reconnecting.
 
-				   main.js marks the document booted; if that has not happened in
-				   time, reload once. Guarded by sessionStorage so a persistent
-				   failure shows the blank page rather than reloading forever. */
+				   main.js marks the document booted once its static graph resolves.
+				   Reload once for a transient failure, then render a local recovery
+				   state. This script deliberately has no module dependency: it must
+				   still work when every application module is unavailable. */
 				try {
 					var RELOAD_KEY = "toolhub-boot-retry";
-					window.addEventListener("load", function () {
-						/* Module scripts execute before load fires, so if main.js
-						   had run the attribute would already be set. The delay is
-						   only slack for a slow device, not for the network. */
-						setTimeout(function () {
-							if (document.documentElement.hasAttribute("data-booted")) {
-								sessionStorage.removeItem(RELOAD_KEY);
-								return;
-							}
-							if (sessionStorage.getItem(RELOAD_KEY)) return;
-							sessionStorage.setItem(RELOAD_KEY, "1");
+					var bootFailureShown = false;
+					function showBootFailure() {
+						if (bootFailureShown) return;
+						bootFailureShown = true;
+						var view = document.getElementById("view");
+						if (!view) return;
+						view.setAttribute("aria-busy", "false");
+						view.innerHTML =
+							'<div class="container page route-loading" role="alert">' +
+							'<div class="route-loading__panel boot-failure">' +
+							'<div><h1 class="page__title">Toolhub could not finish loading</h1>' +
+							"<p>The service may be temporarily unavailable. Retry when you are ready.</p></div>" +
+							'<button class="boot-failure__retry" type="button">Retry</button>' +
+							"</div></div>";
+						view.querySelector(".boot-failure__retry").addEventListener("click", function () {
+							sessionStorage.removeItem(RELOAD_KEY);
 							location.reload();
-						}, 3000);
+						});
+					}
+					function recoverBoot() {
+						if (document.documentElement.hasAttribute("data-booted")) {
+							sessionStorage.removeItem(RELOAD_KEY);
+							return;
+						}
+						if (sessionStorage.getItem(RELOAD_KEY)) {
+							showBootFailure();
+							return;
+						}
+						sessionStorage.setItem(RELOAD_KEY, "1");
+						location.reload();
+					}
+					window.addEventListener("load", function () {
+						setTimeout(recoverBoot, 3000);
 					});
+					/* A module request that never settles also prevents `load`.
+					   Keep a separate upper bound for that rarer failure mode. */
+					setTimeout(recoverBoot, 15000);
 				} catch (e) {}
 			})();
 		</script>
@@ -431,6 +452,28 @@
 				padding: var(--space-4);
 				border: var(--border-base);
 				background: var(--color-surface);
+			}
+			.boot-failure {
+				align-items: flex-start;
+				flex-direction: column;
+			}
+			.boot-failure p {
+				margin: var(--space-2) 0 0;
+				font-weight: 400;
+			}
+			.boot-failure__retry {
+				min-height: 44px;
+				padding: 0 var(--space-4);
+				border: 0;
+				border-radius: var(--radius-sm);
+				background: var(--color-progressive);
+				color: var(--color-surface);
+				font: inherit;
+				cursor: pointer;
+			}
+			.boot-failure__retry:focus-visible {
+				outline: 2px solid var(--color-progressive);
+				outline-offset: 2px;
 			}
 			.spinner {
 				width: 34px;

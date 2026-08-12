@@ -30,7 +30,6 @@ import { icon } from "./lib/atoms/icon.js";
 import { syncFavButtons } from "./lib/molecules/favbtn.js";
 import { initLazyHealthPopovers } from "./lib/molecules/health-popover-lazy.js";
 import { closeAcctMenu, renderAccount, syncSubmitButton, toggleAcctMenu } from "./lib/organisms/account.js";
-import { initCommandPalette, syncCommandPaletteChrome } from "./lib/organisms/command-palette.js";
 import { initIconFallbacks } from "./lib/organisms/icon-fallbacks.js";
 import { clearIssueContext, initIssueDrawer, syncIssueReportTrigger } from "./lib/organisms/issue-drawer.js";
 import { closeWhatsNew, initWhatsNew, renderWhatsNew } from "./lib/organisms/whats-new.js";
@@ -95,6 +94,20 @@ function afterFirstPaint(task) {
 	}
 }
 
+/** @type {Promise<typeof import("./lib/organisms/command-palette.js")> | null} */
+let commandPaletteModule = null;
+function loadCommandPalette() {
+	commandPaletteModule ||= import("./lib/organisms/command-palette.js").catch((error) => {
+		commandPaletteModule = null;
+		throw error;
+	});
+	return commandPaletteModule;
+}
+function syncCommandPaletteIfLoaded() {
+	if (!commandPaletteModule) return;
+	commandPaletteModule.then((m) => m.syncCommandPaletteChrome()).catch(() => undefined);
+}
+
 const SHELL_I18N_ATTRS = [
 	["aria-label", "data-i18n-aria-label"],
 	["placeholder", "data-i18n-placeholder"],
@@ -131,7 +144,7 @@ function localizeShell() {
 			}
 		)
 	);
-	syncCommandPaletteChrome();
+	syncCommandPaletteIfLoaded();
 }
 
 let lastKnownSignedIn = signedIn();
@@ -473,7 +486,17 @@ document.addEventListener("click", (e) => {
 });
 renderAccount();
 syncSubmitButton();
-initCommandPalette({ beforeOpen: closeQuickViewIfLoaded });
+// The command palette is an enhancement, not a prerequisite for routing. A
+// transient failure of this chunk must never prevent the rest of the app from
+// rendering; a later document load can fetch it again.
+afterFirstPaint(() => {
+	loadCommandPalette()
+		.then((m) => {
+			m.initCommandPalette({ beforeOpen: closeQuickViewIfLoaded });
+			m.syncCommandPaletteChrome();
+		})
+		.catch(() => undefined);
+});
 
 /* Language picker: open/close the dropdown; picking an available language
    reloads into it, while future translatewiki languages show a not-yet note. */

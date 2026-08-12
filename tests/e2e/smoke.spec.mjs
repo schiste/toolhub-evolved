@@ -40,6 +40,29 @@ test.describe("deterministic app smoke", () => {
 		await expect(page.locator("#account .spinner")).toHaveCount(0);
 	});
 
+	test("a failed optional command-palette chunk does not block the route", async ({ page }) => {
+		await page.route("**/lib/organisms/command-palette.js*", (route) => route.fulfill({ status: 503 }));
+		await page.goto(new URL("/people", smoke.url).href);
+		await expect(page.getByRole("heading", { name: "Community directory" })).toBeVisible();
+		await expect(page.locator("#view")).toHaveAttribute("aria-busy", "false");
+	});
+
+	test("a persistent entry-module failure stops at a visible retry state", async ({ page }) => {
+		let failedRequests = 0;
+		await page.route("**/main.js*", (route) => {
+			failedRequests += 1;
+			return route.fulfill({ status: 503 });
+		});
+		await page.goto(new URL("/people", smoke.url).href);
+		const recovery = page.getByRole("heading", { name: "Toolhub could not finish loading" });
+		await expect(recovery).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+		await expect(page.locator("#view")).toHaveAttribute("aria-busy", "false");
+		expect(failedRequests).toBeGreaterThanOrEqual(2);
+		await page.waitForTimeout(3500);
+		await expect(recovery).toBeVisible();
+	});
+
 	function registerSmokeCase(route) {
 		test(`${route.path} renders, stays clean, and passes axe`, async ({ page }) => {
 			await smokeRoute(page, route, smoke.url);
