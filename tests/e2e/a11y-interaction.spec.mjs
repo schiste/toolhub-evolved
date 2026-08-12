@@ -10,16 +10,22 @@ test.describe("accessibility interactions", () => {
 	async function open(page, path = "/") {
 		await page.goto(new URL(path, smoke.url).href);
 		await expect(page.locator("#view")).toBeVisible();
+		await expect(page.locator("#view")).toHaveAttribute("aria-busy", "false");
+		await expect(page.locator("#view .route-loading")).toHaveCount(0);
+		await expect(page.locator("#account .spinner")).toHaveCount(0);
 	}
 
 	test("skip link is the first stop and shows a focus ring", async ({ page }) => {
 		await open(page);
 		const skip = page.locator(".skip");
 		await expect(skip).toHaveAttribute("href", "#view");
-		// Seed focus, step off, then Tab back via the keyboard: proves .skip is the
-		// first tabbable AND engages :focus-visible (which programmatic focus won't).
-		await skip.focus();
-		await page.keyboard.press("Shift+Tab");
+		// Start from a non-tabbable document focus target, then use the keyboard:
+		// this proves .skip is first and engages :focus-visible without relying on
+		// headless Chromium moving focus into browser chrome during parallel runs.
+		await page.locator("body").evaluate((body) => {
+			body.tabIndex = -1;
+			body.focus();
+		});
 		await page.keyboard.press("Tab");
 		await expect(skip).toBeFocused();
 		expect(await skip.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
