@@ -30,65 +30,20 @@ cleanup_release_stage() {
 }
 trap cleanup_release_stage EXIT
 
-# Run a python script with the tool's environment (TOOLHUB_DB_URL, OAuth
-# secrets, ...). Those are injected into webservice/job pods only, never into
-# the `become` shell this script runs in, so any step that talks to the
-# configured database has to go through here. Output is captured to a file
-# because the shell pod does not reliably stream back, then relayed.
+# Run a Python script with the tool's environment (TOOLHUB_DB_URL, OAuth
+# secrets, ...). One-off Jobs provide a bounded lifecycle and durable logs;
+# interactive webservice shells can lose their attach stream while the pod
+# continues, leaving a deploy unable to determine the real exit status.
 run_with_tool_env() {
-	_out="$HOME/.deploy-step.out"
-	rm -f "$_out"
-	# The pod records its own exit status in the file. `webservice shell` does
-	# not reliably propagate one (it falls back to streaming logs), so reading
-	# the marker is exact where trusting $? or grepping for error text is not.
-	webservice python3.13 shell -- \
-		sh -c "$VENV_PY $1 > $_out 2>&1; echo \"__EXIT=\$?\" >> $_out" >/dev/null 2>&1 || true
-
-	# The file is written in the pod and read here over NFS, so it can take a
-	# moment to become visible. Wait for the marker rather than racing it.
-	#
-	# Generous on purpose. This budget covers pod scheduling as well as the step
-	# itself, and giving up early is worse than waiting: the step keeps running
-	# after the deploy aborts, so a schema migration can land while the old code
-	# is still being served. A migration that dropped retired tables did exactly
-	# that and 500ed the maintainer endpoints until the restart caught up.
-	_waited=0
-	while [ "$_waited" -lt 600 ]; do
-		if grep -q '^__EXIT=' "$_out" 2>/dev/null; then
-			break
-		fi
-		sleep 1
-		_waited=$((_waited + 1))
-	done
-
-	if [ -f "$_out" ]; then
-		grep -v '^__EXIT=' "$_out" | sed 's/^/  /'
-	fi
-	_status="$(sed -n 's/^__EXIT=//p' "$_out" 2>/dev/null | tail -1)"
-	if [ -z "$_status" ]; then
-		echo "  step did not report an exit status after ${_waited}s" >&2
-		return 1
-	fi
-	if [ "$_status" -ne 0 ]; then
-		echo "  step exited $_status" >&2
-		return 1
-	fi
-	return 0
-}
-
-# Complete account synchronization can span dozens of upstream pages. Run it
-# as a bounded Toolforge Job instead of an interactive webservice shell: the
-# latter may lose its attach stream and completion marker while the pod keeps
-# working. A stable job name also prevents two deploys from racing the same
-# resumable generation.
-run_account_sync() {
-	_out="$HOME/account-sync-deploy.out"
-	_err="$HOME/account-sync-deploy.err"
+	_step="$1"
+	_command="$2"
+	_out="$HOME/${_step}-deploy.out"
+	_err="$HOME/${_step}-deploy.err"
 	rm -f "$_out" "$_err"
 	if toolforge jobs run --wait 900 --image python3.13 --filelog \
 		-o "$_out" -e "$_err" \
-		--command "$VENV_PY $REPO_DIR/proxy/account_sync.py --complete" \
-		account-sync-deploy; then
+		--command "$VENV_PY $_command" \
+		"${_step}-deploy"; then
 		cat "$_out" 2>/dev/null || true
 		cat "$_err" 2>/dev/null >&2 || true
 		return 0
@@ -117,22 +72,22 @@ if [ -x "$VENV_PY" ]; then
 	# falls back to the repo-local SQLite file, and reports success having
 	# touched nothing real. --require-configured-db makes that fail loudly.
 	echo "Running data migrations ..."
-	run_with_tool_env "$REPO_DIR/proxy/migrate.py --require-configured-db"
+	run_with_tool_env migrate "$REPO_DIR/proxy/migrate.py --require-configured-db"
 	# Publish a complete account projection before the new UI can serve it. The
 	# sync is resumable, and it retains the last complete generation if Toolhub
 	# fails or its reported count changes during the cycle. A failed initial
 	# refresh aborts before restart, leaving the previous release serving.
 	echo "Refreshing official Toolhub account projection ..."
-	run_account_sync
+	run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"
 	# Mocked provider tests cannot detect a renamed or invalid production LDAP
 	# attribute. Probe the real read-only schema before identity reconciliation.
 	echo "Checking Wikimedia LDAP identity schema ..."
-	run_with_tool_env "$REPO_DIR/proxy/public_identity_smoke.py"
+	run_with_tool_env identity-smoke "$REPO_DIR/proxy/public_identity_smoke.py"
 	# Materialize a first bounded cross-system identity batch before the new
 	# directory is served. The hourly job continues through the remaining
 	# population and retries transient CentralAuth or LDAP failures.
 	echo "Resolving public identity projection ..."
-	run_with_tool_env "$REPO_DIR/proxy/people_reconcile.py --identities-only --candidate-label-limit 100"
+	run_with_tool_env people-reconcile "$REPO_DIR/proxy/people_reconcile.py --identities-only --candidate-label-limit 100"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
 	release_stage="$(mktemp /tmp/toolhub-evolved-deployment.XXXXXX)"
@@ -143,7 +98,7 @@ if [ -x "$VENV_PY" ]; then
 	# warmed a repo-local SQLite file and reported "warmed=13" while the
 	# configured shared cache stayed cold.
 	echo "Prewarming shared API cache ..."
-	run_with_tool_env "$REPO_DIR/proxy/cache_invalidation.py" || echo "  prewarm skipped"
+	run_with_tool_env cache-prewarm "$REPO_DIR/proxy/cache_invalidation.py" || echo "  prewarm skipped"
 else
 	echo "Webservice venv not found; serving raw source (dist/ not built)."
 fi
