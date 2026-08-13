@@ -18,6 +18,7 @@ from backend.models import (
     FACET_DEPENDENCY,
     FACET_TECHNOLOGY,
     FACET_TOOL_TYPE,
+    FACET_TYPES,
     FACET_WIKIMEDIA_API,
     SourceAnalysisReport,
     ToolSignalFacet,
@@ -159,9 +160,15 @@ def tools_matching_facets(
 
     Filters AND across facet types and OR within one type's value list,
     which is the "tools like mine" question: uses this library AND that API.
+
+    Facet types must match the known vocabulary (FACET_TYPES); unknown types
+    are rejected and return no matches.
     """
     clean: dict[str, list[str]] = {}
     for facet_type, values in (filters or {}).items():
+        if facet_type not in FACET_TYPES:
+            # Unknown facet type matches nothing
+            return []
         wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
         if not wanted:
             # A filter the caller asked for that carries no known value
@@ -208,7 +215,13 @@ def tools_matching_facets(
         matched_by_tool[row.tool_name].append(
             {"facet": row.facet_type, "value": row.value, "confidence": row.confidence}
         )
-    return [FacetMatch(tool_name=name, matched=sorted(matched_by_tool[name], key=str)) for name in names_in_order]
+    return [
+        FacetMatch(
+            tool_name=name,
+            matched=sorted(matched_by_tool[name], key=lambda m: (m["facet"], m["value"])),
+        )
+        for name in names_in_order
+    ]
 
 
 MAX_VALUE_RESULTS = 500
@@ -221,11 +234,17 @@ def facet_value_counts(s: Session, facet_type: str, *, limit: int = DEFAULT_VALU
     Bounded: `dependency` alone spans every package across six ecosystems,
     and this feeds unauthenticated responses and LLM context windows. Callers
     display "top N by adoption"; count_facet_values reports the true total.
+
+    Facet types must match the known vocabulary (FACET_TYPES); unknown types
+    return an empty list.
     """
+    clean = str(facet_type or "").strip()
+    if clean not in FACET_TYPES:
+        return []
     capped = max(1, min(MAX_VALUE_RESULTS, int(limit or DEFAULT_VALUE_RESULTS)))
     rows = s.execute(
         select(ToolSignalFacet.value, func.count(func.distinct(ToolSignalFacet.tool_name)))
-        .where(ToolSignalFacet.facet_type == str(facet_type or "").strip().casefold())
+        .where(ToolSignalFacet.facet_type == clean)
         .group_by(ToolSignalFacet.value)
         .order_by(
             func.count(func.distinct(ToolSignalFacet.tool_name)).desc(),
@@ -237,21 +256,33 @@ def facet_value_counts(s: Session, facet_type: str, *, limit: int = DEFAULT_VALU
 
 
 def count_facet_values(s: Session, facet_type: str) -> int:
-    """Count distinct values for one facet type, so callers can report truncation."""
+    """Count distinct values for one facet type, so callers can report truncation.
+
+    Facet types must match the known vocabulary (FACET_TYPES); unknown types
+    return 0.
+    """
+    clean = str(facet_type or "").strip()
+    if clean not in FACET_TYPES:
+        return 0
     return int(
         s.execute(
-            select(func.count(func.distinct(ToolSignalFacet.value))).where(
-                ToolSignalFacet.facet_type == str(facet_type or "").strip().casefold()
-            )
+            select(func.count(func.distinct(ToolSignalFacet.value))).where(ToolSignalFacet.facet_type == clean)
         ).scalar()
         or 0
     )
 
 
 def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
-    """Count tools matching the filters, independent of any page size."""
+    """Count tools matching the filters, independent of any page size.
+
+    Facet types must match the known vocabulary (FACET_TYPES); unknown types
+    are rejected and return 0.
+    """
     clean: dict[str, list[str]] = {}
     for facet_type, values in (filters or {}).items():
+        if facet_type not in FACET_TYPES:
+            # Unknown facet type matches nothing
+            return 0
         wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
         if not wanted:
             # Mirror tools_matching_facets: an asked-for filter with no
