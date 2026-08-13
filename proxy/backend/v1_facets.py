@@ -37,6 +37,13 @@ DECLARED_PARAMS = {
     "keyword": "keywords",
     "wiki": "wiki",
     "license": "license",
+    # Toolhub's structured PURPOSE annotations — the only fields that say what
+    # a tool is FOR rather than what it is built from, which is the question
+    # most discovery actually starts with. Sparsely filled (~12% of a 100-tool
+    # sample in Aug 2026, against ~58% for keywords), so they narrow a search
+    # well but can never establish that nothing does a thing.
+    "task": "tasks",
+    "audience": "audiences",
 }
 FILTER_PARAMS = {**DETECTED_PARAMS, **DECLARED_PARAMS}
 DEFAULT_LIMIT = 25

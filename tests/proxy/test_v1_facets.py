@@ -157,6 +157,26 @@ def test_facets_tools_rejects_no_filters_and_bad_limit(client):
     assert resp.get_json()["tools"] == []  # clamped, empty, still carries coverage
 
 
+def test_facets_tools_purpose_filters(client):
+    """tasks/audiences are exposed: what a tool is FOR, not what it is built from."""
+    with db.session_scope() as s:
+        _seed(s)
+        _facet(s, "sfedits", "tasks", "monitoring", "monitoring", 10000)
+        _facet(s, "cite-checker", "audiences", "editors", "editors", 10000)
+
+    by_task = client.get("/v1/facets/tools/?task=monitoring").get_json()
+    assert [t["name"] for t in by_task["tools"]] == ["sfedits"]
+    assert by_task["appliedFilters"] == {"task": ["monitoring"]}
+
+    by_audience = client.get("/v1/facets/tools/?audience=editors").get_json()
+    assert [t["name"] for t in by_audience["tools"]] == ["cite-checker"]
+
+    # Purpose filters AND with detected ones like any other field.
+    combined = client.get("/v1/facets/tools/?task=monitoring&dependency=pywikibot").get_json()
+    assert [t["name"] for t in combined["tools"]] == ["sfedits"]
+    assert client.get("/v1/facets/tools/?task=monitoring&audience=editors").get_json()["tools"] == []
+
+
 def test_facets_tools_unknown_values_match_nothing(client):
     """Seeded, so these assertions can fail for the right reason."""
     with db.session_scope() as s:
