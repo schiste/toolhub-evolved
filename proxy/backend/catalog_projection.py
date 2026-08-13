@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -392,15 +393,19 @@ def _analyzer_facets(report: dict | None) -> list[tuple[str, str, str, int]]:
             if not raw_value:
                 continue
 
-            # Casefold and truncate value to 255
-            value = raw_value.casefold()[:255]
+            # Sanitize value and label for valid UTF-8, casefold and truncate to 255
+            value = raw_value.encode("utf-8", "ignore").decode("utf-8").casefold()[:255]
 
-            # Label from finding's label else value, truncated to 255
-            label = _clean_text(entry.get("label") or entry.get("value"))[:255]
+            # Label from finding's label else value, sanitized and truncated to 255
+            label = (
+                _clean_text(entry.get("label") or entry.get("value")).encode("utf-8", "ignore").decode("utf-8")[:255]
+            )
 
-            # Coerce confidence with try/except, clamp to [0.0, 1.0], convert to basis points
+            # Coerce confidence with try/except, reject non-finite, clamp to [0.0, 1.0], convert to basis points
             try:
                 confidence_float = float(entry.get("confidence", 0.0))
+                if not math.isfinite(confidence_float):
+                    continue
                 confidence_float = max(0.0, min(1.0, confidence_float))
             except (TypeError, ValueError):
                 confidence_float = 0.0
@@ -427,13 +432,11 @@ def _emit_analyzer_facets(
 ) -> None:
     """Emit analyzer-derived facets for one tool from its latest report.
 
-    Wraps analyzer emission in its own try/except so malformed reports
+    Wraps analyzer emission in its own savepoint so malformed reports
     cannot cost a tool its declared facets or fail the batch.
     """
-    if not isinstance(report.report, dict):
-        return
     try:
-        for field, value, label, confidence_basis_points in _analyzer_facets(report.report):
+        with s.begin_nested():
             facet_provenance = [
                 {
                     "source": SOURCE_REPOSITORY,
@@ -441,27 +444,30 @@ def _emit_analyzer_facets(
                     "observed": _iso(report.reviewed_at or report.created_at),
                 }
             ]
-            s.add(
-                CatalogFacetValue(
-                    tool_name=name,
-                    field=field,
-                    value=value,
-                    label=label,
-                    provenance=facet_provenance,
-                    confidence_basis_points=confidence_basis_points,
-                    refreshed_at=now,
+            for field, value, label, confidence_basis_points in _analyzer_facets(report.report):
+                s.add(
+                    CatalogFacetValue(
+                        tool_name=name,
+                        field=field,
+                        value=value,
+                        label=label,
+                        provenance=facet_provenance,
+                        confidence_basis_points=confidence_basis_points,
+                        refreshed_at=now,
+                    )
                 )
-            )
-    except (TypeError, ValueError):
+            s.flush()
+    except (SQLAlchemyError, TypeError, ValueError):
         # Malformed report must not cost the tool its declared facets or fail the batch
         _log.warning("Failed to emit analyzer facets for %s report %s", name, report.id)
 
 
 def _replace_facets(s: Any, name: str, record: dict, provenance: dict, now: datetime) -> None:  # noqa: ANN401
-    """Emit both declared and analyzer-derived facets for the tool.
+    """Emit declared facets for the tool from the merged effective record.
 
-    Declared facets come from the merged effective record; analyzer facets come
-    from the latest SourceAnalysisReport if available.
+    Analyzer facets are emitted separately via _emit_analyzer_facets.
+    This separation allows containment: a malformed report cannot cost the tool
+    its declared facets because emission failures roll back within a savepoint.
     """
     s.execute(delete(CatalogFacetValue).where(CatalogFacetValue.tool_name == name))
 
@@ -531,6 +537,13 @@ def _mark_failures(names: list[str], error: BaseException) -> None:
 
 
 def _refresh_batch(names: list[str]) -> dict[str, int]:
+    """Refresh a batch of tools' catalog projections.
+
+    Per-batch row budget: with analyzer facets, inserts per batch include both
+    declared and analyzer facets. Analyzer rows cap at ~120/tool (source_analyzer's
+    MAX_FINDINGS_PER_BUCKET), so a 500-tool batch can insert ~60k analyzer rows
+    plus declared facets in one transaction.
+    """
     if not names:
         return {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
     now = utcnow()
@@ -590,6 +603,8 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
     with db.session_scope() as s:
         canonical = list(s.execute(select(CanonicalToolCache.tool_name)).scalars())
         existing = {row.tool_name: row for row in s.execute(select(CatalogToolProjection)).scalars()}
+        # Fetch latest reports to detect newly-analyzed tools
+        latest_reports = _latest_reports(s, canonical)
     candidates = []
     for name in canonical:
         row = existing.get(name)
@@ -597,6 +612,11 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
             continue
         if row is None or row.projection_version != PROJECTION_VERSION or row.status == STATUS_ERROR:
             candidates.append(name)
+        elif report := latest_reports.get(name):
+            # Include tools whose latest report is newer than their projection
+            report_timestamp = report.reviewed_at or report.created_at
+            if report_timestamp and row.refreshed_at and report_timestamp > row.refreshed_at:
+                candidates.append(name)
     names = sorted(candidates)[:bounded]
     return {"candidates": len(candidates), **refresh_tool_names(names)}
 

@@ -252,7 +252,10 @@ def test_tools_matching_facets_ranking_by_matched_confidence() -> None:
         # Query for shared dependency should rank by matched confidence, not by all facets
         result = tool_facets.tools_matching_facets(s, {"dependency": ["pypi:shared"]})
         names = [m.tool_name for m in result]
-        assert names == ["high-match", "low-match"], f"Expected high-match first due to higher matched confidence, got {names}"
+        expected = ["high-match", "low-match"]
+        assert names == expected, (
+            f"Expected high-match first due to higher matched confidence, got {names}"
+        )
 
 
 def test_facet_match_detail_full_equality() -> None:
@@ -382,9 +385,10 @@ def test_facet_value_counts_result_caps() -> None:
 def test_unknown_facet_type_consistency() -> None:
     """Test that unknown facet types are handled consistently across all functions.
 
-    This is IMPORTANT 5: facet_type validation must be consistent across
+    This is IMPORTANT 4: facet_type validation must be consistent across
     tools_matching_facets, facet_value_counts, count_matching, and count_facet_values.
-    All should reject unknown types and return no matches.
+    All should reject unknown types and return no matches. Also test that
+    whitespace-padded VALID field names are normalized consistently.
     """
     _seed_facets()
     with db.session_scope() as s:
@@ -394,6 +398,12 @@ def test_unknown_facet_type_consistency() -> None:
         assert tool_facets.count_matching(s, {unknown_type: ["value"]}) == 0
         assert tool_facets.facet_value_counts(s, unknown_type) == []
         assert tool_facets.count_facet_values(s, unknown_type) == 0
+
+        # Test that whitespace-padded VALID field names are accepted and normalized
+        assert tool_facets.tools_matching_facets(s, {" dependency ": ["pypi:pywikibot"]}) != []
+        assert tool_facets.count_matching(s, {" dependency ": ["pypi:pywikibot"]}) > 0
+        assert tool_facets.facet_value_counts(s, " dependency ") != []
+        assert tool_facets.count_facet_values(s, " dependency ") > 0
 
 
 def test_tools_matching_facets_declared_only_filter() -> None:
@@ -677,3 +687,70 @@ def test_count_matching_declared_filters() -> None:
 
         # Declared OR within one field (bot or library)
         assert tool_facets.count_matching(s, {"tool_type": ["bot", "library"]}) == 2
+
+
+def test_mixed_declared_and_analyzer_facets_ordering() -> None:
+    """Pin current ordering behavior when mixing declared and analyzer facets.
+
+    This test documents the current decision (phases 1-2 output): when both
+    declared facets (confidence = 1.0) and analyzer facets (confidence < 1.0)
+    match the same query, they rank by matched confidence, not by source.
+    Declared facets tie at 1.0, then analyzer facets sort by their confidence.
+
+    This behavior is NOT ideal (phases 3-4 may change it to prefer declared
+    facets regardless), but this test pins the phase 1-2 behavior so phases
+    3-4 inherit a documented decision rather than an accident.
+    """
+    with db.session_scope() as s:
+        user = User(wm_sub="mixed-order-user", username="User")
+        s.add(user)
+        s.flush()
+        uid = user.id
+
+        # Tool A: declared technology=python (10000), analyzer technology=python (9500)
+        s.add(
+            CatalogFacetValue(
+                tool_name="tool-a",
+                field="detected_technology",
+                value="python",
+                label="Python (declared)",
+                confidence_basis_points=10000,  # Declared: source authority
+                provenance=[{"source": "official_toolhub"}],
+            )
+        )
+        s.add(SourceAnalysisReport(tool_name="tool-a", report={}, user_id=uid))
+
+        # Tool B: analyzer technology=python (8000)
+        s.add(
+            CatalogFacetValue(
+                tool_name="tool-b",
+                field="detected_technology",
+                value="python",
+                label="Python (detected)",
+                confidence_basis_points=8000,  # Analyzer: detection certainty
+                provenance=[{"source": "repository_analysis"}],
+            )
+        )
+        s.add(SourceAnalysisReport(tool_name="tool-b", report={}, user_id=uid))
+
+        # Tool C: analyzer technology=python (9200)
+        s.add(
+            CatalogFacetValue(
+                tool_name="tool-c",
+                field="detected_technology",
+                value="python",
+                label="Python (detected)",
+                confidence_basis_points=9200,  # Analyzer: detection certainty
+                provenance=[{"source": "repository_analysis"}],
+            )
+        )
+        s.add(SourceAnalysisReport(tool_name="tool-c", report={}, user_id=uid))
+
+    with db.session_scope() as s:
+        # Query: detected_technology=python
+        # Expected order: A (10000), C (9200), B (8000) — by matched confidence descending
+        result = tool_facets.tools_matching_facets(s, {"detected_technology": ["python"]})
+        names = [m.tool_name for m in result]
+        assert names == ["tool-a", "tool-c", "tool-b"], (
+            f"Expected order [tool-a:10000, tool-c:9200, tool-b:8000] by matched confidence, got {names}"
+        )

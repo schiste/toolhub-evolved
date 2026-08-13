@@ -1,6 +1,7 @@
 """Integration tests for the Evolved-local catalog projection."""
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import catalog_projection, catalog_validation, db, outbound  # noqa: E402
+from backend import catalog_projection, catalog_validation, db, graph_enrichment, outbound  # noqa: E402
+from backend.catalog_projection import STATUS_READY  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     CatalogCuration,
@@ -357,21 +359,28 @@ def test_analyzer_facets_declared_facets_unchanged():
 
 
 def test_analyzer_facets_no_report_projects_only_declared_facets():
-    """Tool with no analysis report should have only declared facets."""
+    """Tool with no analysis report should have only declared facets, no analyzer facets."""
     with db.session_scope() as s:
         s.add(_canonical("iota", keywords=["search", "analysis"]))
 
     catalog_projection.refresh_tool_names(["iota"])
 
     with db.session_scope() as s:
-        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="iota").all()}
+        facets = [(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="iota").all()]
     # Should have declared facets from keywords
     assert ("keywords", "search") in facets
     assert ("keywords", "analysis") in facets
+    # Should NOT have analyzer facets since there was no report
+    analyzer_facets = [f for f in facets if f[0] in {"dependency", "wikimedia_api", "detected_technology"}]
+    assert not analyzer_facets, "Tools without reports should not have analyzer facets"
 
 
 def test_analyzer_facets_reprojecting_twice_is_idempotent():
-    """Reprojecting twice should produce identical rows, no duplicates."""
+    """Reprojecting twice should produce identical rows, no duplicates.
+
+    This ensures the delete-then-rebuild pattern in _replace_facets works
+    correctly and doesn't create duplicates on re-projection.
+    """
     now = utcnow()
     user = None
     with db.session_scope() as s:
@@ -407,6 +416,10 @@ def test_analyzer_facets_reprojecting_twice_is_idempotent():
              for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()]
         )
 
+    # Verify first run produced expected content
+    assert len(first_facets) > 0, "First projection should produce facets"
+    assert ("dependency", "cargo:serde", "Serde", 9100) in first_facets
+
     catalog_projection.refresh_tool_names(["kappa"])
     second_facets = []
     with db.session_scope() as s:
@@ -415,11 +428,17 @@ def test_analyzer_facets_reprojecting_twice_is_idempotent():
              for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()]
         )
 
+    # Second run should produce identical result
     assert first_facets == second_facets
+    assert len(second_facets) == len(first_facets), "No duplicates should be created"
 
 
 def test_analyzer_facets_malformed_report_does_not_error():
-    """Malformed reports should not error or cost tool declared facets."""
+    """Malformed reports should not error or cost tool declared facets.
+
+    Analyzer facets (dependency, wikimedia_api, detected_technology) should not
+    appear when the report is malformed, but declared facets must survive.
+    """
     now = utcnow()
     user = None
     with db.session_scope() as s:
@@ -436,7 +455,7 @@ def test_analyzer_facets_malformed_report_does_not_error():
                 source_label="https://code.example/lambda",
                 report={
                     "dependencies": "not a list",  # Should be skipped
-                    "apis": [{"value": "valid-api", "confidence": "not a number"}],  # Bad confidence
+                    "apis": ["not-a-dict"],  # List with non-dict entry
                     "technology": [
                         {"value": "", "label": "Empty"},  # Empty value
                         {"value": "Rust", "confidence": float('nan')},  # NaN confidence
@@ -451,9 +470,12 @@ def test_analyzer_facets_malformed_report_does_not_error():
     catalog_projection.refresh_tool_names(["lambda"])
 
     with db.session_scope() as s:
-        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="lambda").all()}
+        facets = [(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="lambda").all()]
     # Declared facets should be present
     assert ("technology", "ruby") in facets
+    # No analyzer facets should be produced from malformed report
+    analyzer_rows = [f for f in facets if f[0] in {"dependency", "wikimedia_api", "detected_technology"}]
+    assert not analyzer_rows
 
 
 def test_analyzer_facets_dedupe_keeps_max_confidence():
@@ -497,3 +519,177 @@ def test_analyzer_facets_dedupe_keeps_max_confidence():
     # Should have exactly one row with the max confidence
     assert len(rows) == 1
     assert rows[0].confidence_basis_points == 9500  # max(0.80 * 10000, 0.95 * 10000)
+
+
+def test_scan_produces_analyzer_facets_via_graph_enrichment():
+    """Verify the full pipeline: scan -> graph_enrichment -> catalog_projection produces facets.
+
+    This tests the scenario: repository_scan.py creates a SourceAnalysisReport,
+    then calls graph_enrichment.refresh_tool_names, which should trigger
+    catalog_projection.refresh_tool_names, resulting in analyzer facets in
+    catalog_facet_values.
+    """
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        # Create a canonical tool (as would exist from Toolhub)
+        s.add(_canonical("omega"))
+        # Create a SourceAnalysisReport (as would be created by repository_scan)
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="omega",
+                source_label="https://code.example/omega",
+                report={
+                    "dependencies": [
+                        {"value": "npm:lodash", "label": "Lodash", "confidence": 0.87}
+                    ],
+                    "technology": [
+                        {"value": "JavaScript", "label": "JavaScript", "confidence": 0.95}
+                    ],
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    # Call graph_enrichment.refresh_tool_names as repository_scan.py would
+    graph_enrichment.refresh_tool_names(["omega"])
+
+    # Verify analyzer facets were produced in the catalog projection
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="omega").all()}
+
+    # Should have analyzer facets from the report
+    assert ("dependency", "npm:lodash") in facets
+    assert ("detected_technology", "javascript") in facets
+
+
+def test_analyzer_facets_containment_preserves_healthy_tool_in_batch():
+    """Malformed report in a batch must not cost healthy tools their declared facets.
+
+    This exercises the savepoint containment in _emit_analyzer_facets: co-batch
+    a poisoned tool with a healthy one and verify both behave correctly.
+    """
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        # Healthy tool with declared facets
+        s.add(_canonical("healthy", technology_used=["Python"]))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="healthy",
+                source_label="https://code.example/healthy",
+                report={
+                    "dependencies": [
+                        {"value": "pypi:requests", "label": "requests", "confidence": 0.90}
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+        # Poisoned tool that will fail analyzer emission
+        s.add(_canonical("poison"))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="poison",
+                source_label="https://code.example/poison",
+                report={
+                    # This will cause a failure in _analyzer_facets emission
+                    # because the facet provenance rebuild would fail
+                    "dependencies": [
+                        {
+                            "value": "bad",
+                            "label": None,
+                            "confidence": float('inf'),  # Non-finite confidence
+                        }
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    # Refresh both tools in the same batch
+    summary = catalog_projection.refresh_tool_names(["healthy", "poison"])
+    # Both should be refreshed, poison should not fail the batch
+    assert summary["refreshed"] == 2
+    assert summary["errors"] == 0
+
+    with db.session_scope() as s:
+        # Healthy tool must keep its declared facets and status
+        healthy_proj = s.get(CatalogToolProjection, "healthy")
+        assert healthy_proj.status == STATUS_READY
+        healthy_facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="healthy").all()}
+        assert ("technology", "python") in healthy_facets
+        # Healthy tool should have analyzer facets from its good report
+        assert ("dependency", "pypi:requests") in healthy_facets
+
+        # Poison tool should also have status ready but no analyzer facets
+        poison_proj = s.get(CatalogToolProjection, "poison")
+        assert poison_proj.status == STATUS_READY
+        poison_facets = [(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="poison").all()]
+        # No analyzer facets should be present
+        analyzer_facets = [f for f in poison_facets if f[0] in {"dependency", "wikimedia_api", "detected_technology"}]
+        assert not analyzer_facets
+
+
+def test_refresh_candidates_includes_tools_with_newer_reports():
+    """Verify candidate selection includes tools with newer analysis reports.
+
+    A tool that is status=ready, at current version, but whose latest
+    SourceAnalysisReport is newer than its projection's refreshed_at
+    should be a candidate for re-projection (C3 fix).
+    """
+    now = utcnow()
+    older_time = now - timedelta(hours=1)
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("outdated"))
+
+    # First projection at older_time
+    catalog_projection.refresh_tool_names(["outdated"])
+
+    # Manually update the projection's refreshed_at to simulate older projection
+    with db.session_scope() as s:
+        proj = s.get(CatalogToolProjection, "outdated")
+        proj.refreshed_at = older_time
+        s.flush()
+
+    # Add a new report at current time (newer than the projection)
+    with db.session_scope() as s:
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="outdated",
+                source_label="https://code.example/outdated",
+                report={"dependencies": [{"value": "npm:axios", "label": "axios", "confidence": 0.88}]},
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,  # Newer than projection's refreshed_at
+            )
+        )
+
+    # refresh_candidates should pick up this tool because report is newer
+    candidates = catalog_projection.refresh_candidates()
+    assert candidates["candidates"] >= 1, "Tool with newer report should be a candidate"
+    assert candidates["refreshed"] >= 1, "Tool should be refreshed"
+
+    # Verify the new analyzer facet was projected
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="outdated").all()}
+    assert ("dependency", "npm:axios") in facets, "Analyzer facet should be present after re-projection"

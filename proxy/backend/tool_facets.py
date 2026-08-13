@@ -5,6 +5,24 @@ CatalogFacetValue stores both declared facets (tool_type, keywords, wiki,
 technology, tasks, audiences, ui_language, license) from the catalog projection
 and analyzer-derived facets (dependency, wikimedia_api, detected_technology)
 from analysis reports. This module provides indexed search across the union.
+
+CONFIDENCE SEMANTICS:
+
+confidence_basis_points (0-10000) has two distinct meanings depending on facet family:
+
+- DECLARED facets: SOURCE AUTHORITY. All declared facets are pinned at 10000
+  (SOURCE_CONFIDENCE values from catalog_projection.py converted to basis points).
+  A declared field always comes from an official or curated source.
+
+- ANALYZER facets: DETECTION CERTAINTY. Analyzer facets are converted from the
+  analyzer report's confidence (0.0-1.0) to basis points: round(confidence * 10000).
+  These represent how certain the source code analyzer is about the finding.
+
+This dual semantics means queries mixing both families will rank analyzer facets
+lower than declared facets when confidence scores are equivalent. This is correct:
+declared metadata (e.g. "technology: Python") carries more weight than a detector
+finding. However, if you modify the ranking algorithm in future phases, account
+for this difference — the two families are NOT directly comparable.
 """
 
 from dataclasses import dataclass, field
@@ -35,7 +53,15 @@ MAX_FACET_RESULTS = 100
 
 @dataclass(frozen=True)
 class FacetMatch:
-    """One tool matching a facet query, with the rows that matched."""
+    """One tool matching a facet query, with the rows that matched.
+
+    The `matched` list contains only facets from the filter query.
+    Each facet's confidence is: 0.0-1.0 (confidence_basis_points / 10000).
+
+    Confidence semantics (see module docstring for details):
+    - Declared facets have confidence = 1.0 (source authority)
+    - Analyzer facets have confidence = detection certainty (0.0-1.0)
+    """
 
     tool_name: str
     matched: list[dict[str, Any]] = field(default_factory=list)
@@ -53,21 +79,25 @@ def tools_matching_facets(
     which is the "tools like mine" question: uses this library AND that API.
 
     Field names in `filters` must match the known vocabulary (_VALID_FIELDS);
-    unknown fields are rejected and return no matches. Values are compared
-    against the casefolded CatalogFacetValue.value.
+    unknown fields are rejected and return no matches. Field names are normalized
+    by stripping whitespace. Values are compared against the casefolded
+    CatalogFacetValue.value.
     """
     clean_filters: dict[str, list[str]] = {}
     for field_name, values in (filters or {}).items():
-        if field_name not in _VALID_FIELDS:
+        clean_field = str(field_name or "").strip()
+        if clean_field not in _VALID_FIELDS:
             # Unknown field matches nothing
             return []
-        wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
+        # Coerce non-list values (None, strings) to [] for fail-closed behavior
+        value_list = values if isinstance(values, (list, tuple)) else []
+        wanted = sorted({str(v or "").strip().casefold() for v in value_list if str(v or "").strip()})
         if not wanted:
             # A filter the caller asked for that carries no known value
             # matches nothing; dropping it instead would silently widen
             # the AND across fields to the remaining filters.
             return []
-        clean_filters[field_name] = wanted
+        clean_filters[clean_field] = wanted
 
     if not clean_filters:
         return []
@@ -143,7 +173,7 @@ def facet_value_counts(s: Session, field_name: str, *, limit: int = DEFAULT_VALU
     display "top N by adoption"; count_facet_values reports the true total.
 
     Field names must match the known vocabulary (_VALID_FIELDS); unknown names
-    return an empty list.
+    return an empty list. Field names are normalized by stripping whitespace.
     """
     clean = str(field_name or "").strip()
     if clean not in _VALID_FIELDS:
@@ -166,7 +196,7 @@ def count_facet_values(s: Session, field_name: str) -> int:
     """Count distinct values for one field, so callers can report truncation.
 
     Field names must match the known vocabulary (_VALID_FIELDS); unknown names
-    return 0.
+    return 0. Field names are normalized by stripping whitespace.
     """
     clean = str(field_name or "").strip()
     if clean not in _VALID_FIELDS:
@@ -185,20 +215,24 @@ def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
     Filters AND across fields and OR within one field's value list.
 
     Field names in `filters` must match the known vocabulary (_VALID_FIELDS);
-    unknown fields are rejected and return 0. Values are compared against the
-    casefolded CatalogFacetValue.value.
+    unknown fields are rejected and return 0. Field names are normalized by
+    stripping whitespace. Values are compared against the casefolded
+    CatalogFacetValue.value.
     """
     clean_filters: dict[str, list[str]] = {}
     for field_name, values in (filters or {}).items():
-        if field_name not in _VALID_FIELDS:
+        clean_field = str(field_name or "").strip()
+        if clean_field not in _VALID_FIELDS:
             # Unknown field matches nothing
             return 0
-        wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
+        # Coerce non-list values (None, strings) to [] for fail-closed behavior
+        value_list = values if isinstance(values, (list, tuple)) else []
+        wanted = sorted({str(v or "").strip().casefold() for v in value_list if str(v or "").strip()})
         if not wanted:
             # An asked-for filter with no known value matches nothing,
             # it does not vanish from the AND.
             return 0
-        clean_filters[field_name] = wanted
+        clean_filters[clean_field] = wanted
 
     if not clean_filters:
         return 0
