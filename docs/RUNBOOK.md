@@ -625,6 +625,30 @@ must be present.
 
 ## Scheduled jobs
 
+Every scheduled entrypoint goes through `backend.job_runner.run_job()`, which
+configures the database from `TOOLHUB_DB_URL`, optionally takes the shared
+`toolhub-evolved:<job>` advisory lock, prints one summary format, and returns
+the exit code defined in `backend.job_contract`. A job that loses the lock
+prints `{"locked": true}` and exits zero, because losing a race with the run
+already doing the work is a successful no-op. Three jobs whose flow genuinely
+differs call `job_runner.configure()` and keep their own summary and exit code.
+
+**Exit codes are instructions, not reports.** `tools/job_guard.sh` counts
+consecutive non-zero exits and trips a breaker, so a job exits non-zero only
+when the sweep itself could not run or complete. Per-item failures — an
+unreachable feed, an icon that would not fetch — are durable observations and
+must not fail the run: `crawl.py` did exactly that, and one flaky URL retired
+the crawler for ten days. Deviations are allowed but must state their reason
+at the `return`.
+
+**Duplication gates.** JavaScript is held at a strict zero
+(`.jscpd.json`). Python runs against a ratchet in `.jscpd.python.json`,
+currently **1%** against a measured 0.98% across 94 files. That gate had never
+run at all — the original config listed only `format: ["javascript"]`, so the
+whole Python job and backend layer was invisible to it, which is how the
+entrypoint duplication accumulated unseen. The number may be **lowered, never
+raised**; lower it in the same commit that removes the clones.
+
 ```sh
 toolforge jobs load ~/repo/jobs.yaml       # crawler + source/discovery indexers + cache + backup
 toolforge jobs list                        # status

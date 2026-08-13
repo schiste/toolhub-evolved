@@ -12,6 +12,7 @@
 		"types": "tsc -p jsconfig.json",
 		"dead:check": "knip --production",
 		"dup:check": "jscpd --config .jscpd.json",
+		"dup:check:py": "jscpd --config .jscpd.python.json",
 		"checks": "node tools/checks.mjs",
 		"clean:prod": "node tools/production-clean-check.mjs",
 		"features:docs": "node tools/feature-docs.mjs",
