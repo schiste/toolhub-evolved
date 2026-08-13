@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -29,6 +30,8 @@ from backend.sync import REVIEW_APPROVED
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+_log = logging.getLogger(__name__)
 
 PROJECTION_VERSION = 1
 MAX_REFRESH_TOOLS = 500
@@ -93,6 +96,16 @@ SOURCE_CONFIDENCE = {
     SOURCE_REPOSITORY: 75,
     SOURCE_CURATION: 100,
 }
+
+# Report section -> CatalogFacetValue.field for signals detected in source.
+# Named apart from the declared FACET_FIELDS vocabulary: "detected_technology"
+# is what the analyzer found in the code, "technology" is what the toolinfo
+# record claims. They are different assertions and must stay distinguishable.
+ANALYZER_FACET_FIELDS = (
+    ("dependencies", "dependency"),
+    ("apis", "wikimedia_api"),
+    ("technology", "detected_technology"),
+)
 
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - job/API input
@@ -350,8 +363,109 @@ def _search_text(record: dict[str, Any]) -> str:
     return "\n".join(part for part in (_clean_text(value) for value in parts) if part).casefold()[:12000]
 
 
+def _analyzer_facets(report: dict | None) -> list[tuple[str, str, str, int]]:
+    """Return (field, value, label, confidence_basis_points) per detected signal.
+
+    Pure so it can be exercised without a database. Duplicate values keep the
+    highest confidence: the analyzer emits one finding per evidence source.
+
+    Confidence convention: for detected facets, confidence_basis_points means
+    DETECTION CERTAINTY (finding confidence x 10000), as opposed to the
+    DECLARED facets where it means SOURCE AUTHORITY.
+    """
+    if not isinstance(report, dict):
+        return []
+
+    # Collect all findings, indexed by (field, value) for deduplication
+    findings: dict[tuple[str, str], tuple[str, int]] = {}
+
+    for report_section, facet_field in ANALYZER_FACET_FIELDS:
+        section_data = report.get(report_section)
+        if not isinstance(section_data, list):
+            continue
+
+        for entry in section_data:
+            if not isinstance(entry, dict):
+                continue
+
+            raw_value = _clean_text(entry.get("value"))
+            if not raw_value:
+                continue
+
+            # Casefold and truncate value to 255
+            value = raw_value.casefold()[:255]
+
+            # Label from finding's label else value, truncated to 255
+            label = _clean_text(entry.get("label") or entry.get("value"))[:255]
+
+            # Coerce confidence with try/except, clamp to [0.0, 1.0], convert to basis points
+            try:
+                confidence_float = float(entry.get("confidence", 0.0))
+                confidence_float = max(0.0, min(1.0, confidence_float))
+            except (TypeError, ValueError):
+                confidence_float = 0.0
+
+            confidence_basis_points = round(confidence_float * 10000)
+
+            # Keep max confidence for (field, value)
+            key = (facet_field, value)
+            if key not in findings or findings[key][1] < confidence_basis_points:
+                findings[key] = (label, confidence_basis_points)
+
+    # Return as list of tuples
+    return [
+        (field, value, label, confidence_basis_points)
+        for (field, value), (label, confidence_basis_points) in findings.items()
+    ]
+
+
+def _emit_analyzer_facets(
+    s: Any,  # noqa: ANN401
+    name: str,
+    report: SourceAnalysisReport,
+    now: datetime,
+) -> None:
+    """Emit analyzer-derived facets for one tool from its latest report.
+
+    Wraps analyzer emission in its own try/except so malformed reports
+    cannot cost a tool its declared facets or fail the batch.
+    """
+    if not isinstance(report.report, dict):
+        return
+    try:
+        for field, value, label, confidence_basis_points in _analyzer_facets(report.report):
+            facet_provenance = [
+                {
+                    "source": SOURCE_REPOSITORY,
+                    "reportId": report.id,
+                    "observed": _iso(report.reviewed_at or report.created_at),
+                }
+            ]
+            s.add(
+                CatalogFacetValue(
+                    tool_name=name,
+                    field=field,
+                    value=value,
+                    label=label,
+                    provenance=facet_provenance,
+                    confidence_basis_points=confidence_basis_points,
+                    refreshed_at=now,
+                )
+            )
+    except (TypeError, ValueError):
+        # Malformed report must not cost the tool its declared facets or fail the batch
+        _log.warning("Failed to emit analyzer facets for %s report %s", name, report.id)
+
+
 def _replace_facets(s: Any, name: str, record: dict, provenance: dict, now: datetime) -> None:  # noqa: ANN401
+    """Emit both declared and analyzer-derived facets for the tool.
+
+    Declared facets come from the merged effective record; analyzer facets come
+    from the latest SourceAnalysisReport if available.
+    """
     s.execute(delete(CatalogFacetValue).where(CatalogFacetValue.tool_name == name))
+
+    # Emit declared facets from the effective merged record
     for record_field, facet_field in FACET_FIELDS.items():
         for value in _values(record.get(record_field)):
             label = _clean_text(value)[:255]
@@ -424,6 +538,8 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
     try:
         with db.session_scope() as s:
             source_map = _sources_by_tool(s, names)
+            # Fetch reports once per batch before the per-tool loop
+            reports = _latest_reports(s, names)
             for name in names:
                 effective, provenance, validation, timestamps = _assemble(name, source_map.get(name, []))
                 row = s.get(CatalogToolProjection, name)
@@ -450,6 +566,8 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
                 row.attempts = 0
                 row.last_error = None
                 _replace_facets(s, name, effective, provenance, now)
+                if report := reports.get(name):
+                    _emit_analyzer_facets(s, name, report, now)
     except (SQLAlchemyError, TypeError, ValueError) as exc:
         _mark_failures(names, exc)
         return {"requested": len(names), "refreshed": 0, "changed": 0, "errors": len(names)}

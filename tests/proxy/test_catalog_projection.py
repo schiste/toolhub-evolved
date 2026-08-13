@@ -14,6 +14,7 @@ from backend.models import (  # noqa: E402
     CatalogCuration,
     CatalogFacetValue,
     CatalogToolProjection,
+    SourceAnalysisReport,
     ToolinfoDiscovery,
     ToolinfoSource,
     ToolinfoSourceItem,
@@ -161,3 +162,338 @@ def test_background_url_validation_survives_unchanged_projection_refresh(monkeyp
     payload = catalog_projection.projection_payload("alpha")
     assert payload["validation"]["url"]["reachable"] is True
     assert payload["validation"]["url"]["checkedValue"] == "https://alpha.example"
+
+
+def test_analyzer_facets_dependency_row_emitted_with_preserved_label():
+    """Analyzer dependencies should be emitted as facet rows."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("beta", technology_used=["Python"]))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="beta",
+                source_label="https://code.example/beta",
+                report={
+                    "dependencies": [
+                        {
+                            "value": "pypi:pywikibot",
+                            "label": "PyWikiBot",
+                            "confidence": 0.95,
+                        }
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["beta"])
+
+    with db.session_scope() as s:
+        facets = {(row.field, row.value, row.label, row.confidence_basis_points)
+                  for row in s.query(CatalogFacetValue).filter_by(tool_name="beta").all()}
+    assert ("dependency", "pypi:pywikibot", "PyWikiBot", 9500) in facets
+
+
+def test_analyzer_facets_wikimedia_api_row_emitted():
+    """Analyzer APIs should be emitted as wikimedia_api facet rows."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("gamma"))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="gamma",
+                source_label="https://code.example/gamma",
+                report={
+                    "apis": [
+                        {
+                            "value": "wikidata-query-service",
+                            "label": "Wikidata Query Service",
+                            "confidence": 0.85,
+                        }
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["gamma"])
+
+    with db.session_scope() as s:
+        facets = {(row.field, row.value, row.label, row.confidence_basis_points)
+                  for row in s.query(CatalogFacetValue).filter_by(tool_name="gamma").all()}
+    assert ("wikimedia_api", "wikidata-query-service", "Wikidata Query Service", 8500) in facets
+
+
+def test_analyzer_facets_detected_technology_casefolded():
+    """Analyzer technology should be casefolded, label preserved."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("delta"))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="delta",
+                source_label="https://code.example/delta",
+                report={
+                    "technology": [
+                        {
+                            "value": "Python",
+                            "label": "Python",
+                            "confidence": 0.92,
+                        }
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["delta"])
+
+    with db.session_scope() as s:
+        facets = {(row.field, row.value, row.label)
+                  for row in s.query(CatalogFacetValue).filter_by(tool_name="delta").all()}
+    assert ("detected_technology", "python", "Python") in facets
+
+
+def test_analyzer_facets_provenance_identifies_repository_analysis_and_report_id():
+    """Analyzer facet provenance should identify the report."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("epsilon"))
+        report = SourceAnalysisReport(
+            user_id=user,
+            tool_name="epsilon",
+            source_label="https://code.example/epsilon",
+            report={
+                "dependencies": [
+                    {
+                        "value": "npm:lodash",
+                        "label": "Lodash",
+                        "confidence": 0.88,
+                    }
+                ]
+            },
+            review_status=REVIEW_APPROVED,
+            reviewed_at=now,
+        )
+        s.add(report)
+        s.flush()
+        report_id = report.id
+
+    catalog_projection.refresh_tool_names(["epsilon"])
+
+    with db.session_scope() as s:
+        row = s.query(CatalogFacetValue).filter_by(tool_name="epsilon", field="dependency").first()
+    assert row is not None
+    assert len(row.provenance) > 0
+    assert any(item.get("source") == "repository_analysis" for item in row.provenance)
+    assert any(item.get("reportId") == report_id for item in row.provenance)
+
+
+def test_analyzer_facets_declared_facets_unchanged():
+    """Declared facets should be present alongside analyzer facets."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("zeta", technology_used=["Java", "JavaScript"]))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="zeta",
+                source_label="https://code.example/zeta",
+                report={
+                    "technology": [
+                        {
+                            "value": "Go",
+                            "label": "Go",
+                            "confidence": 0.75,
+                        }
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["zeta"])
+
+    with db.session_scope() as s:
+        facets = s.query(CatalogFacetValue).filter_by(tool_name="zeta").all()
+        fields = {(row.field, row.value) for row in facets}
+    # Declared facets from technology_used should be present
+    assert ("technology", "java") in fields
+    assert ("technology", "javascript") in fields
+    # Analyzer detected_technology facet should also be present
+    assert ("detected_technology", "go") in fields
+
+
+def test_analyzer_facets_no_report_projects_only_declared_facets():
+    """Tool with no analysis report should have only declared facets."""
+    with db.session_scope() as s:
+        s.add(_canonical("iota", keywords=["search", "analysis"]))
+
+    catalog_projection.refresh_tool_names(["iota"])
+
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="iota").all()}
+    # Should have declared facets from keywords
+    assert ("keywords", "search") in facets
+    assert ("keywords", "analysis") in facets
+
+
+def test_analyzer_facets_reprojecting_twice_is_idempotent():
+    """Reprojecting twice should produce identical rows, no duplicates."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("kappa"))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="kappa",
+                source_label="https://code.example/kappa",
+                report={
+                    "dependencies": [
+                        {
+                            "value": "cargo:serde",
+                            "label": "Serde",
+                            "confidence": 0.91,
+                        }
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["kappa"])
+    first_facets = []
+    with db.session_scope() as s:
+        first_facets = sorted(
+            [(row.field, row.value, row.label, row.confidence_basis_points)
+             for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()]
+        )
+
+    catalog_projection.refresh_tool_names(["kappa"])
+    second_facets = []
+    with db.session_scope() as s:
+        second_facets = sorted(
+            [(row.field, row.value, row.label, row.confidence_basis_points)
+             for row in s.query(CatalogFacetValue).filter_by(tool_name="kappa").all()]
+        )
+
+    assert first_facets == second_facets
+
+
+def test_analyzer_facets_malformed_report_does_not_error():
+    """Malformed reports should not error or cost tool declared facets."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("lambda", technology_used=["Ruby"]))
+        # Report with various malformations
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="lambda",
+                source_label="https://code.example/lambda",
+                report={
+                    "dependencies": "not a list",  # Should be skipped
+                    "apis": [{"value": "valid-api", "confidence": "not a number"}],  # Bad confidence
+                    "technology": [
+                        {"value": "", "label": "Empty"},  # Empty value
+                        {"value": "Rust", "confidence": float('nan')},  # NaN confidence
+                    ],
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    # Should not raise, should still project declared facets
+    catalog_projection.refresh_tool_names(["lambda"])
+
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="lambda").all()}
+    # Declared facets should be present
+    assert ("technology", "ruby") in facets
+
+
+def test_analyzer_facets_dedupe_keeps_max_confidence():
+    """Two findings with same value but different confidence should produce one row with max confidence."""
+    now = utcnow()
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("mu"))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="mu",
+                source_label="https://code.example/mu",
+                report={
+                    "dependencies": [
+                        {
+                            "value": "npm:express",
+                            "label": "Express",
+                            "confidence": 0.80,
+                        },
+                        {
+                            "value": "npm:express",
+                            "label": "Express.js",
+                            "confidence": 0.95,
+                        },
+                    ]
+                },
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["mu"])
+
+    with db.session_scope() as s:
+        rows = s.query(CatalogFacetValue).filter_by(tool_name="mu", field="dependency", value="npm:express").all()
+    # Should have exactly one row with the max confidence
+    assert len(rows) == 1
+    assert rows[0].confidence_basis_points == 9500  # max(0.80 * 10000, 0.95 * 10000)
