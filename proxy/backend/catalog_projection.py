@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-PROJECTION_VERSION = 1
+PROJECTION_VERSION = 2
 MAX_REFRESH_TOOLS = 500
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
@@ -199,11 +199,22 @@ def _report_patch(row: SourceAnalysisReport | None) -> dict[str, Any]:
 
 
 def _latest_reports(s: Any, names: list[str]) -> dict[str, SourceAnalysisReport]:  # noqa: ANN401
+    """Get the newest report per tool, handling NULL timestamps correctly.
+
+    Uses NULLs-last ordering to prefer reviewed_at over created_at,
+    with id tiebreak for determinism. Matches graph_enrichment._latest_reports.
+    """
     rows = list(
         s.execute(
             select(SourceAnalysisReport)
             .where(SourceAnalysisReport.tool_name.in_(names), SourceAnalysisReport.review_status == REVIEW_APPROVED)
-            .order_by(SourceAnalysisReport.reviewed_at.desc(), SourceAnalysisReport.created_at.desc())
+            .order_by(
+                SourceAnalysisReport.tool_name,
+                SourceAnalysisReport.reviewed_at.is_(None),  # NULLs last
+                SourceAnalysisReport.reviewed_at.desc(),
+                SourceAnalysisReport.created_at.desc(),
+                SourceAnalysisReport.id.desc(),
+            )
         ).scalars()
     )
     out: dict[str, SourceAnalysisReport] = {}
@@ -216,9 +227,9 @@ def _latest_reports(s: Any, names: list[str]) -> dict[str, SourceAnalysisReport]
 def _latest_report_times(s: Session) -> dict[str, datetime]:
     """Get the newest report timestamp for each tool without loading full report rows.
 
-    Returns a dict mapping tool_name -> max(coalesce(reviewed_at, created_at))
-    for all REVIEW_APPROVED reports. Groups over the entire table to avoid
-    building a large IN clause with all canonical tool names.
+    Returns a dict mapping tool_name -> timestamp of the newest report, preferring
+    reviewed_at over created_at (via coalesce). Filters to REVIEW_APPROVED reports.
+    Uses the same coalesce logic as _latest_reports to ensure consistency.
     """
     rows = list(
         s.execute(
@@ -236,7 +247,7 @@ def _latest_report_times(s: Session) -> dict[str, datetime]:
 
 
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
-    s: Session, names: list[str]
+    s: Session, names: list[str], reports: dict[str, SourceAnalysisReport] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     sources: dict[str, list[dict[str, Any]]] = defaultdict(list)
     canonical = s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(names))).scalars()
@@ -277,7 +288,8 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
                 }
             )
 
-    reports = _latest_reports(s, names)
+    if reports is None:
+        reports = _latest_reports(s, names)
     repository_rows = {
         row.tool_name: row
         for row in s.execute(
@@ -479,8 +491,9 @@ def _emit_analyzer_facets(
                     )
                 )
             s.flush()
-    except (SQLAlchemyError, TypeError, ValueError):
-        # Malformed report must not cost the tool its declared facets or fail the batch
+    except (SQLAlchemyError, TypeError, ValueError, OverflowError, ArithmeticError):
+        # Malformed report must not cost the tool its declared facets or fail the batch.
+        # OverflowError/ArithmeticError can be raised by round(x*10000) if confidence is extreme.
         _log.warning("Failed to emit analyzer facets for %s report %s", name, report.id)
 
 
@@ -572,9 +585,9 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
     changed = 0
     try:
         with db.session_scope() as s:
-            source_map = _sources_by_tool(s, names)
             # Fetch reports once per batch before the per-tool loop
             reports = _latest_reports(s, names)
+            source_map = _sources_by_tool(s, names, reports)
             for name in names:
                 effective, provenance, validation, timestamps = _assemble(name, source_map.get(name, []))
                 row = s.get(CatalogToolProjection, name)
@@ -638,8 +651,10 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
             (report_timestamp := latest_report_times.get(name))
             and row.refreshed_at
             and report_timestamp > row.refreshed_at
+            and report_timestamp <= now
         ):
-            # Include tools whose latest report is newer than their projection
+            # Include tools whose latest report is newer than their projection,
+            # but clamp to now() to avoid perpetual-candidate issue with future-dated reports.
             candidates.append(name)
     names = sorted(candidates)[:bounded]
     return {"candidates": len(candidates), **refresh_tool_names(names)}

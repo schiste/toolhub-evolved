@@ -10,19 +10,24 @@ CONFIDENCE SEMANTICS:
 
 confidence_basis_points (0-10000) has two distinct meanings depending on facet family:
 
-- DECLARED facets: SOURCE AUTHORITY. All declared facets are pinned at 10000
-  (SOURCE_CONFIDENCE values from catalog_projection.py converted to basis points).
-  A declared field always comes from an official or curated source.
+- DECLARED facets: SOURCE AUTHORITY. Declared facets carry confidence values from
+  SOURCE_CONFIDENCE in catalog_projection.py (0-10000 basis points): 10000 for
+  official/curated sources (SOURCE_CANONICAL, SOURCE_CURATION), 9500 for official
+  crawlers (SOURCE_CRAWLER), 8000 for self-hosted discovery (SOURCE_DISCOVERY).
+  Malformed or missing provenance rows result in 0 confidence.
 
 - ANALYZER facets: DETECTION CERTAINTY. Analyzer facets are converted from the
   analyzer report's confidence (0.0-1.0) to basis points: round(confidence * 10000).
   These represent how certain the source code analyzer is about the finding.
+  Non-finite or missing confidence values drop the finding entirely.
 
-This dual semantics means queries mixing both families will rank analyzer facets
-lower than declared facets when confidence scores are equivalent. This is correct:
-declared metadata (e.g. "technology: Python") carries more weight than a detector
-finding. However, if you modify the ranking algorithm in future phases, account
-for this difference — the two families are NOT directly comparable.
+This dual semantics means queries mixing both families will have different
+confidence distributions. When ranking by confidence across both families, be aware
+that SOURCE_AUTHORITY and DETECTION_CERTAINTY measure different things — a 9500
+declared facet is "came from an official source" while a 9500 analyzer facet is
+"90.5% detection confidence", which are not directly comparable.
+If you modify the ranking algorithm in future phases, either normalize the two
+families to a common confidence scale or rank them separately.
 """
 
 from dataclasses import dataclass, field
@@ -59,8 +64,9 @@ class FacetMatch:
     Each facet's confidence is: 0.0-1.0 (confidence_basis_points / 10000).
 
     Confidence semantics (see module docstring for details):
-    - Declared facets have confidence = 1.0 (source authority)
-    - Analyzer facets have confidence = detection certainty (0.0-1.0)
+    - Declared facets have confidence = SOURCE_AUTHORITY / 10000 (0.8-1.0)
+    - Analyzer facets have confidence = DETECTION_CERTAINTY (0.0-1.0)
+    These measure different things; see module docstring for cross-family comparison.
     """
 
     tool_name: str
