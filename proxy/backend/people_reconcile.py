@@ -168,11 +168,27 @@ def apply_mapping(s: Session, mapping: PersonReconciliationMapping) -> int:
 
 
 def apply_durable_mappings_for_tool(s: Session, tool_name: str) -> int:
-    """Reapply auto-linked or operator-approved mappings after an evidence refresh."""
+    """Reapply auto-linked or operator-approved mappings after an evidence refresh.
+
+    Only a mapping whose source person already holds evidence on this tool can
+    move anything; every other one loads its evidence, finds none, and returns
+    an empty set. Selecting them all did that about 2,100 times per tool, which
+    was over 90% of the ~4.5s each queued tool cost and the reason a backlog
+    took hours rather than minutes to drain.
+    """
+    evidence_people = {
+        row[0]
+        for row in s.execute(
+            select(ToolRelationshipEvidence.person_id).where(ToolRelationshipEvidence.tool_name == tool_name).distinct()
+        ).all()
+    }
+    if not evidence_people:
+        return 0
     mappings = list(
         s.execute(
             select(PersonReconciliationMapping).where(
-                PersonReconciliationMapping.decision.in_(MAPPING_APPLIED_DECISIONS)
+                PersonReconciliationMapping.decision.in_(MAPPING_APPLIED_DECISIONS),
+                PersonReconciliationMapping.source_person_id.in_(evidence_people),
             )
         ).scalars()
     )
