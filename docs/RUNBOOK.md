@@ -425,6 +425,16 @@ is not considered an identity candidate. Roles are preserved: Toolhub author
 evidence remains authorship, while a verified LDAP membership proves current
 Toolforge maintenance. Neither path grants Toolhub write authority.
 
+LDAP memberships are projected onto canonical Toolhub records through a
+case-insensitive Toolforge project alias index. The conventional
+`toolforge-<project>` catalog name, a `<project>.toolforge.org` deployment URL,
+or a Toolsadmin `/tools/id/<project>` API URL can establish that alias. This
+also covers older canonical names such as `mix-n-match` and duplicate Toolhub
+records pointing to the same deployment. When no canonical alias exists, the
+relationship remains available under the conventional fallback key; a later
+catalog sync moves it to every proven canonical record and withdraws the old
+fallback evidence. Titles and display-name similarity are never alias proof.
+
 Deployments run `proxy/public_identity_smoke.py` inside a Toolforge webservice
 environment before identity reconciliation. The probe requires a readable
 `posixAccount` carrying `wikimediaGlobalAccountId`; failure aborts the deploy
