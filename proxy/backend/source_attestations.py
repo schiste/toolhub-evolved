@@ -346,7 +346,7 @@ def _structured_people(
     return people
 
 
-def _record_conflict(  # noqa: PLR0913 - conflict provenance remains explicit
+def _record_conflict(  # noqa: PLR0913, PLR0917 - conflict provenance remains explicit
     s: Session,
     run_id: int,
     source: ToolinfoSource,
@@ -385,7 +385,7 @@ def _record_conflict(  # noqa: PLR0913 - conflict provenance remains explicit
         row.last_seen_at = utcnow()
 
 
-def _refresh_bindings(  # noqa: C901, PLR0913, PLR0915 - one pass applies the ordered binding trust policy
+def _refresh_bindings(  # noqa: C901, PLR0913, PLR0915, PLR0917 - one pass applies the ordered binding trust policy
     s: Session,
     source: ToolinfoSource,
     attestation: ToolinfoSourceAttestation,
@@ -468,7 +468,7 @@ def _refresh_bindings(  # noqa: C901, PLR0913, PLR0915 - one pass applies the or
     return stats
 
 
-def _observations_for_tool(  # noqa: PLR0913 - preloaded indexes prevent per-tool queries
+def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes prevent per-tool queries
     tool_name: str,
     items: list[tuple[ToolinfoSourceItem, ToolinfoSource]],
     bindings: dict[tuple[int, str], ToolinfoAuthorBinding],

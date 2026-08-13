@@ -676,7 +676,7 @@ def _source_class_from_runtime_shape(path: str, name: str, suffix: str) -> str |
         return "runtime"
     if path.startswith("public_html/") or suffix in FRONTEND_SOURCE_EXTENSIONS:
         return "frontend"
-    if name in {"makefile"} or suffix in CONFIG_SOURCE_EXTENSIONS:
+    if name == "makefile" or suffix in CONFIG_SOURCE_EXTENSIONS:
         return "config"
     if suffix in RUNTIME_SOURCE_EXTENSIONS:
         return "runtime"
@@ -2102,7 +2102,7 @@ def _assessment_signal(
     return signal
 
 
-def _assessment(  # noqa: PLR0913 - assessment payload fields are clearer as explicit arguments.
+def _assessment(  # noqa: PLR0913, PLR0917 - assessment payload fields are clearer as explicit arguments.
     key: str,
     label: str,
     score: int,

@@ -473,7 +473,7 @@ def _store_tool_record_fallback(s: Any, user: User, name: str, fields: dict, fai
     return common.tool_record_payload(row)
 
 
-def _store_tool_overlay_fallback(  # noqa: PLR0913 - fallback persistence keeps route semantics explicit
+def _store_tool_overlay_fallback(  # noqa: PLR0913, PLR0917 - fallback persistence keeps route semantics explicit
     s: Any,  # noqa: ANN401
     user: User,
     name: str,
