@@ -241,3 +241,20 @@ def test_source_binding_outcomes_are_reported_and_withdrawn_rows_are_excluded():
 
     assert funnel["sourceBindings"] == {"resolved": 1, "unresolved": 1}
     assert funnel["sourceBindingMethods"] == {"display_only": 1, "toolinfo_structured_author_handle": 1}
+
+
+def test_the_ceiling_is_split_by_whether_a_registry_could_resolve_the_label():
+    with db.session_scope() as session:
+        _tool(session, "t", {"title": "T"})
+        # Neither matches anything locally, so both land in noLocalMatch; only
+        # the first could ever be looked up in a public registry.
+        _label(session, "0xDeadbeef")
+        _label(session, "Aaron Liu")
+        session.flush()
+        funnel = catalog_statistics.build_snapshot(session)["attribution"]
+
+    assert funnel["noLocalMatch"] == 2
+    assert funnel["noLocalMatchHandleShaped"] == 1
+    assert funnel["noLocalMatchNameShaped"] == 1
+    # The split is a partition of the ceiling, not a third bucket beside it.
+    assert funnel["noLocalMatchHandleShaped"] + funnel["noLocalMatchNameShaped"] == funnel["noLocalMatch"]

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from backend import db, people_index
+from backend import db, people_index, people_policy
 from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
@@ -143,6 +143,13 @@ def _attribution_funnel(
             counts["verifiedHandleOnly"] += 1
         else:
             counts["noLocalMatch"] += 1
+            # Split the ceiling by whether a label could ever be resolved
+            # against a public registry, so the size of that option is a
+            # measured number rather than an estimate.
+            if people_policy.is_handle_shaped(label):
+                counts["noLocalMatchHandleShaped"] += 1
+            else:
+                counts["noLocalMatchNameShaped"] += 1
     bindings = list(
         session.execute(select(ToolinfoAuthorBinding).where(ToolinfoAuthorBinding.withdrawn_at.is_(None))).scalars()
     )
@@ -152,6 +159,8 @@ def _attribution_funnel(
         "ambiguousToolhubAccount": counts["ambiguousToolhubAccount"],
         "verifiedHandleOnly": counts["verifiedHandleOnly"],
         "noLocalMatch": counts["noLocalMatch"],
+        "noLocalMatchHandleShaped": counts["noLocalMatchHandleShaped"],
+        "noLocalMatchNameShaped": counts["noLocalMatchNameShaped"],
         "sourceBindings": dict(sorted(Counter(row.status for row in bindings).items())),
         "sourceBindingMethods": dict(sorted(Counter(row.method for row in bindings if row.method).items())),
     }
@@ -320,6 +329,8 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
             "noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
             "exactToolhubAccount": "Unresolved labels matching exactly one official Toolhub username.",
+            "handleShaped": "Unreachable labels shaped like a chosen handle, which a public registry could resolve.",
+            "nameShaped": "Unreachable labels indistinguishable from a person name, never resolved from text alone.",
         },
     }
 

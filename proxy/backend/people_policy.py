@@ -17,6 +17,52 @@ ACTION_CONFLICT = "conflict"
 MAPPING_APPROVED = "approved"
 APPLIED_IDENTITY_MAPPING_DECISIONS = frozenset({ACTION_AUTO_LINK, MAPPING_APPROVED})
 
+# A MediaWiki username is at most 85 bytes and cannot contain these, so a
+# label carrying one is not a username no matter what else it looks like.
+MAX_USERNAME_LENGTH = 85
+MIN_HANDLE_LENGTH = 2
+ILLEGAL_USERNAME_CHARACTERS = frozenset("#<>[]|{}/@:")
+# Tokens that only appear in prose, never inside a username someone chose.
+PROSE_TOKENS = frozenset(
+    {"a", "an", "and", "at", "by", "for", "from", "in", "of", "or", "the", "to", "with", "et", "al", "user", "users"}
+)
+# Non-alphabetic characters a person puts in a handle but not in their name.
+HANDLE_SYMBOLS = frozenset("_-~.+*!?^$0123456789")
+
+
+def is_handle_shaped(label: str) -> bool:
+    """Return True when a label is safe to resolve against a public registry.
+
+    Free-text author values mix two populations. Handles are self-chosen and
+    high-entropy (``0xDeadbeef``, ``1234qwer1234qwer4``, ``-jem-``); human
+    names are low-entropy and collide (``Aaron Liu`` matches a real account
+    belonging to someone with no connection to the tool). Resolving the first
+    kind is nearly free of risk; resolving the second attaches a real, named
+    person to software they may not have written.
+
+    So this fails closed, and the asymmetry is deliberate: a rejected handle
+    costs one unresolved label, while a wrongly accepted name misattributes a
+    real individual. Multi-word purely alphabetic labels are refused even
+    though MediaWiki allows spaces in usernames, because at that point a real
+    username and a real name are genuinely indistinguishable.
+    """
+    text = " ".join(str(label or "").split())
+    if not MIN_HANDLE_LENGTH <= len(text) <= MAX_USERNAME_LENGTH:
+        return False
+    if ILLEGAL_USERNAME_CHARACTERS & set(text):
+        return False
+    tokens = text.split(" ")
+    if any(token.casefold().strip(".,;") in PROSE_TOKENS for token in tokens):
+        return False
+    if len(tokens) == 1:
+        # Single-token labels are overwhelmingly handles here: someone writing
+        # their real name almost always writes more than one word.
+        return True
+    # Several words only look like a handle when something in them is not
+    # name-like, such as a digit or a symbol nobody puts in their own name.
+    return bool(HANDLE_SYMBOLS & set(text))
+
+
 REASON_STABLE_ID = "same_stable_identifier"
 REASON_STRUCTURED_HANDLE = "same_verified_structured_handle"
 REASON_AUTHENTICATED = "authenticated_account_claim"
