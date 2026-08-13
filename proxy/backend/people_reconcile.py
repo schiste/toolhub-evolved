@@ -613,6 +613,11 @@ def _candidate_account_groups(
 
 DEFAULT_REGISTRY_LABEL_LIMIT = 25
 REGISTRY_MIN_INTERVAL_SECONDS = 1.0
+# Provenance for people minted from a registry lookup rather than from an
+# account that registered with Toolhub or Toolforge. Deliberately not a
+# trusted handle source: the stable id makes them publishable, and nothing
+# about the label should lend authority to the handle.
+REGISTRY_SOURCE = "wikimedia_centralauth"
 
 
 def _registry_corroborated(s: Session, *, target_person_id: int, tool_names: list[str]) -> bool:
@@ -693,6 +698,7 @@ def discover_registry_candidates(
     linked = 0
     resolved = 0
     checked = 0
+    people_created = 0
     candidates = [
         person for person in _candidate_source_people(s) if people_policy.is_handle_shaped(person.display_name)
     ]
@@ -705,9 +711,23 @@ def discover_registry_candidates(
             continue
         resolved += 1
         owner_id = _stable_identifier_owner(s, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, identity.global_user_id)
-        # Only an account already in the graph can be linked to. Creating a
-        # person from a catalog label is exactly the invention this avoids.
         target = s.get(Person, owner_id) if owner_id else None
+        if target is None:
+            # A CentralAuth global id is an immutable stable identifier, the
+            # same class the account syncs already mint people from, so this
+            # records a real account rather than inventing one. It creates the
+            # identity only; the relationship still has to be earned, and a
+            # person with no tool relationship stays out of the public
+            # directory, which is what keeps a mistaken lookup invisible.
+            target = people_index.ensure_person(
+                s,
+                display_name=identity.username,
+                wikimedia_global_user_id=identity.global_user_id,
+                wiki_username=identity.username,
+                source=REGISTRY_SOURCE,
+            )
+            if target is not None:
+                people_created += 1
         if target is None or target.id == source.id:
             continue
         tool_names, _toolforge_names, _roles = _source_evidence_for_person(s, source.id)
@@ -733,7 +753,13 @@ def discover_registry_candidates(
             _move_mapping_evidence(s, mapping)
             linked += 1
         s.flush()
-    return {"checked": checked, "resolved": resolved, "created": created, "linked": linked}
+    return {
+        "checked": checked,
+        "resolved": resolved,
+        "peopleCreated": people_created,
+        "created": created,
+        "linked": linked,
+    }
 
 
 def discover_identity_candidates(
@@ -907,7 +933,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             registry_result = (
                 discover_registry_candidates(s, run_id=run_row.id, label_limit=registry_label_limit)
                 if discover_candidates and registry_label_limit
-                else {"checked": 0, "resolved": 0, "created": 0, "linked": 0}
+                else {"checked": 0, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
             )
             source_attestation_summary = (
                 source_attestations.refresh_incremental(s, identity_changed_since=identity_changed_since)
@@ -928,7 +954,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             }
             account_binding_conflicts_queued = 0
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
-            registry_result = {"checked": 0, "resolved": 0, "created": 0, "linked": 0}
+            registry_result = {"checked": 0, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
             source_attestation_summary = {
@@ -951,6 +977,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "identityCandidatesCreated": candidate_result["created"],
             "registryChecked": registry_result["checked"],
             "registryResolved": registry_result["resolved"],
+            "registryPeopleCreated": registry_result["peopleCreated"],
             "registryCandidatesCreated": registry_result["created"],
             "registryMappingsApplied": registry_result["linked"],
             "identityMappingsApplied": candidate_result["linked"],

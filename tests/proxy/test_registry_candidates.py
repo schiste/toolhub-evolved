@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db, people_index, people_policy, people_reconcile  # noqa: E402
 from backend.models import (  # noqa: E402
+    PersonIdentifier,
     PersonReconciliationMapping,
     PersonReconciliationRun,
     ToolPersonRelationship,
@@ -155,15 +156,49 @@ def test_an_unknown_account_resolves_nothing():
         assert _mapping(session, source.id) is None
 
 
-def test_a_resolved_account_absent_from_the_graph_is_not_invented():
+def test_a_resolved_account_absent_from_the_graph_is_created_as_a_person():
     with db.session_scope() as session:
         source = _label_person(session, "0xDeadbeef", "toolx")
-        # CentralAuth knows the account, but no person here holds that id.
+        # CentralAuth knows the account and no person here holds that id yet.
         result = _discover(session, FakeRegistry({"0xDeadbeef": "9999"}))
+        created = (
+            session.query(PersonIdentifier)
+            .filter_by(namespace=people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, value="9999")
+            .one_or_none()
+        )
 
         assert result["resolved"] == 1
-        assert result["created"] == 0
-        assert _mapping(session, source.id) is None
+        assert result["peopleCreated"] == 1
+        # The identity is recorded from an immutable global id, but the tool
+        # relationship still has to be earned: the mapping is a candidate and
+        # the label's evidence has not moved.
+        assert _mapping(session, source.id).decision == people_reconcile.MAPPING_CANDIDATE
+        assert session.query(ToolRelationshipEvidence).filter_by(person_id=source.id).count() == 1
+        assert created is not None
+
+
+def test_a_person_created_this_way_stays_out_of_the_public_directory():
+    with db.session_scope() as session:
+        _label_person(session, "0xDeadbeef", "toolx")
+        _discover(session, FakeRegistry({"0xDeadbeef": "9999"}))
+        session.flush()
+        listed = people_index.search_people_directory(session, people_index.PeopleDirectoryQuery(query="0xDeadbeef"))
+
+    # Publishable by stable identity, but with no tool relationship it is not
+    # listed, so a mistaken lookup never becomes a visible claim about anyone.
+    assert listed["count"] == 0
+
+
+def test_creating_the_same_account_twice_does_not_duplicate_it():
+    with db.session_scope() as session:
+        _label_person(session, "0xDeadbeef", "toolx")
+        _label_person(session, "0xdeadbeef2", "tooly")
+        registry = FakeRegistry({"0xDeadbeef": "9999", "0xdeadbeef2": "9999"})
+
+        result = _discover(session, registry)
+
+        assert result["resolved"] == 2
+        assert result["peopleCreated"] == 1
 
 
 def test_lookups_are_bounded_per_run():

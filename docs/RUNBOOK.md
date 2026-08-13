@@ -652,9 +652,14 @@ individual. Set the limit to `0` to disable the path entirely.
 A registry hit proves the account exists, never that its owner wrote the tool,
 so it is recorded as a `candidate` mapping and moves no evidence. It is promoted
 to `auto_link` only when the resolved person already holds verified,
-independently sourced evidence on a tool the label appears on. A resolved
-account with no person in the graph creates nothing. Run summaries report
-`registryChecked`, `registryResolved`, `registryCandidatesCreated`, and
+independently sourced evidence on a tool the label appears on. A resolved account with no person in the graph now creates one, keyed on the
+immutable CentralAuth global user id -- the same class of identifier the account
+syncs already mint people from, so it records a real account rather than inventing
+one. Creation grants identity only: with no tool relationship such a person is
+not listed in the public directory, so a mistaken lookup never becomes a visible
+claim about anyone. Their handle provenance is `wikimedia_centralauth`, which is
+deliberately not a trusted handle source. Run summaries report `registryChecked`,
+`registryResolved`, `registryPeopleCreated`, `registryCandidatesCreated`, and
 `registryMappingsApplied`.
 
 **Duplication gates.** JavaScript is held at a strict zero
