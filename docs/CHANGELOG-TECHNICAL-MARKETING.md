@@ -2,7 +2,7 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..989574a (206 commits) -->
+<!-- Source range: 828438f..fbd39fe (207 commits) -->
 
 # Technical Release Notes
 
