@@ -519,10 +519,12 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "Find tools by verified technical signals extracted from their source code: "
             "dependency (package name, optionally ecosystem-prefixed like 'pypi:pywikibot'), "
             "api (one of: mediawiki-action-api, wikibase-api, wikidata-query-service, "
-            "mediawiki-rest-api, toolforge, commons-upload), technology (e.g. 'python'), "
-            "tool_type (e.g. 'bot', 'web app'). Filters AND together. IMPORTANT: covers only "
-            "tools with scanned repositories — check the returned coverage field; an empty "
-            "result is not proof that no such tool exists."
+            "mediawiki-rest-api, toolforge, commons-upload), technology (a language detected "
+            "in the source, e.g. 'python'). Filters AND together. These three are DETECTED "
+            "from source code, so they cover only tools with a scanned repository — check the "
+            "returned coverage field; an empty result is not proof that no such tool exists. "
+            "You can also filter on DECLARED catalog metadata, which covers every tool: "
+            "tool_type (e.g. 'bot', 'web app'), keyword, wiki, license."
         ),
         "inputSchema": {
             "type": "object",
@@ -531,6 +533,9 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
                 "api": {"type": "array", "items": {"type": "string"}},
                 "technology": {"type": "array", "items": {"type": "string"}},
                 "tool_type": {"type": "array", "items": {"type": "string"}},
+                "keyword": {"type": "array", "items": {"type": "string"}},
+                "wiki": {"type": "array", "items": {"type": "string"}},
+                "license": {"type": "array", "items": {"type": "string"}},
                 "limit": {"type": "integer", "minimum": 1, "maximum": _MAX_TOOL_RESULTS, "default": 25},
             },
         },
@@ -540,8 +545,9 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "description": (
             "List the distinct values of one facet type ranked by how many tools carry "
             "each — the ecosystem's actual adoption ranking. Call before facet_tools to "
-            "learn what values exist. type is one of: dependency, wikimedia_api, "
-            "technology, tool_type."
+            "learn what values exist. Detected types (scanned repos only): dependency, "
+            "wikimedia_api, detected_technology. Declared types (whole catalog): tool_type, "
+            "keywords, wiki, license. The response says which family a type belongs to."
         ),
         "inputSchema": {
             "type": "object",
@@ -582,6 +588,14 @@ def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
     with db.session_scope() as s:
         filters: dict[str, list[str]] = {}
+        declared: dict[str, list[str]] = {}
+        for param, field in v1_facets.DECLARED_FILTER_PARAMS.items():
+            raw_values = arguments.get(param)
+            if not isinstance(raw_values, list):
+                continue
+            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
+            if requested:
+                declared[field] = requested
         for param, facet_type in v1_facets.FILTER_PARAMS.items():
             raw_values = arguments.get(param)
             if not isinstance(raw_values, list):
@@ -601,14 +615,15 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
             filters[facet_type] = sorted(
                 {str(v).strip().casefold() for v in values if str(v).strip()}
             )
-        if not filters:
+        if not filters and not declared:
             raise _ToolError(
-                "supply at least one filter: dependency, api, technology, or tool_type"
+                "supply at least one filter: dependency, api, technology (detected), "
+                "or tool_type, keyword, wiki, license (declared)"
             )
         matches = facets_backend.tools_matching_facets(
-            s, filters, limit=_limit_from(arguments, 25)
+            s, filters, declared_filters=declared, limit=_limit_from(arguments, 25)
         )
-        total = facets_backend.count_matching(s, filters)
+        total = facets_backend.count_matching(s, filters, declared_filters=declared)
         disclosed = v1_facets.coverage(s)
     matched_by_tool = {m.tool_name: m.matched for m in matches}
     return {

@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use ed3d-plan-and-execute:executing-an-implementation-plan to implement this plan task-by-task.
 
-**Goal:** Make the signals already collected in `SourceAnalysisReport` JSON (dependencies, Wikimedia APIs, technologies) plus canonical `tool_type` queryable via a `ToolSignalFacet` table.
+**Goal:** Make the analyzer signals already collected in `SourceAnalysisReport` JSON (dependencies, Wikimedia APIs, detected technologies) queryable via a `ToolSignalFacet` table.
 
-**Architecture:** New `tool_signal_facets` table; pure extraction functions in a new `proxy/backend/tool_facets.py`; idempotent backfill wired into `proxy/migrate.py`; incremental updates hooked into the hourly `proxy/repository_scan.py` job (analyzer facets) and catalog sync (`tool_type` facets).
+**Architecture:** New `tool_signal_facets` table; pure extraction functions in a new `proxy/backend/tool_facets.py`; idempotent backfill wired into `proxy/migrate.py`; incremental updates hooked into the hourly `proxy/repository_scan.py` job. Declared metadata (`tool_type`, keywords, license…) is deliberately NOT stored here — `catalog_facet_values` already indexes it from the effective merged record.
 
 **Tech Stack:** Python 3.11+/3.13, Flask 3, SQLAlchemy 2 (Mapped/mapped_column style), pytest with in-memory SQLite (`db.configure("sqlite://")`, `db.init_schema()`).
 
@@ -22,7 +22,9 @@
 - Dependency `value` format is `"{ecosystem}:{name.lower()}"`; ecosystems emitted: `npm`, `pypi`, `composer`, `cargo`, `go`, `rubygems`.
 - API detector `value` strings (complete list, from `API_RULES` at `source_analyzer.py:339-382`): `mediawiki-action-api`, `wikibase-api`, `wikidata-query-service`, `mediawiki-rest-api`, `toolforge`, `commons-upload`.
 - Technology findings: `value` is the technology name (e.g. `"Python"`); `category` is `"language"` or `"framework"`.
-- `CanonicalToolCache` (`proxy/backend/models.py:123-156`): PK `tool_name`, JSON `record`; a canonical record's tool type is `record.get("tool_type")`.
+- `CanonicalToolCache` (`proxy/backend/models.py:123-156`): PK `tool_name`, JSON `record`.
+- **`CatalogFacetValue` already exists and owns all DECLARED-metadata facets** (`models.py:333-346`, populated by `catalog_projection._replace_facets` at `catalog_projection.py:355-378`, refreshed by the hourly `catalog-projection` job in `jobs.yaml:110-116`; verified populated in production 2026-08-13). Schema `(tool_name, field, value)` unique, `value` casefolded, `label` original, plus `provenance` and `confidence_basis_points`. Its `FACET_FIELDS` (`catalog_projection.py:79-88`) cover `tool_type`, `keywords`, `wiki`, `technology` (from declared `technology_used`), `tasks`, `audiences`, `ui_language`, `license` — and it projects the **effective merged** record, including curation patches.
+  **Design decision (2026-08-13, plan owner):** `ToolSignalFacet` therefore holds ONLY analyzer-derived signals that have no existing home — `dependency`, `wikimedia_api`, `detected_technology`. It does NOT store `tool_type`; discovery queries read that from `catalog_facet_values`, which has strictly better provenance. Our detected-language facet is named `detected_technology` precisely so it never collides with `CatalogFacetValue.field == "technology"`, which means something different (declared, not detected).
 - Schema management: SQLAlchemy `create_all` via `db.init_schema()` (schema setup plus cheap idempotent upgrades, runs per worker at startup); **row-count-proportional work must go in `proxy/migrate.py`** (see its module docstring), which `tools/deploy.sh:81` runs per deploy. Migration functions there return `int` row counts; `run_once()` (`migrate.py:70-85`) wraps them in `MigrationResult`.
 - Reports are persisted in `proxy/repository_scan.py:283-295` (created + flushed; `report.id` linked to `RepositoryAnalysisState` at line 301) — the incremental hook point.
 - Tests: `PYTHONPATH=proxy pytest tests/proxy -q --cov --cov-report=term-missing`; coverage ratchet `fail-under=91.7` (pyproject.toml); ruff `select = ALL` and `ruff format` are CI-enforced, so new files need SPDX header, module/class/function docstrings, and full type annotations. Match the commenting style of `models.py` (comments explain *why*, not *what*).
@@ -94,15 +96,20 @@ Expected: FAIL — `ImportError: cannot import name 'ToolSignalFacet'`
 In `proxy/backend/models.py`, immediately after the `SourceAnalysisReport` class (~line 1071), add:
 
 ```python
-# Facet vocabulary for ToolSignalFacet.facet_type. Analyzer-derived types are
-# rebuilt per tool from its latest SourceAnalysisReport; tool_type comes from
-# the canonical record and is rebuilt by catalog-wide sync instead.
+# Facet vocabulary for ToolSignalFacet.facet_type: analyzer-DERIVED signals
+# only, all rebuilt per tool from its latest SourceAnalysisReport. Declared
+# metadata (tool_type, keywords, license, declared technology_used, …) is not
+# here — catalog_facet_values already indexes it from the effective merged
+# record, so duplicating it would create two copies that diverge on curation.
+# "detected_technology" is named apart from CatalogFacetValue's "technology"
+# because they mean different things: detected from source vs declared.
 FACET_DEPENDENCY = "dependency"
 FACET_WIKIMEDIA_API = "wikimedia_api"
-FACET_TECHNOLOGY = "technology"
-FACET_TOOL_TYPE = "tool_type"
-ANALYZER_FACET_TYPES = (FACET_DEPENDENCY, FACET_WIKIMEDIA_API, FACET_TECHNOLOGY)
-FACET_TYPES = (*ANALYZER_FACET_TYPES, FACET_TOOL_TYPE)
+FACET_DETECTED_TECHNOLOGY = "detected_technology"
+FACET_TYPES = (FACET_DEPENDENCY, FACET_WIKIMEDIA_API, FACET_DETECTED_TECHNOLOGY)
+# Retained name for "every type this table stores", now that they are all
+# analyzer-derived; kept so call sites reading either name stay honest.
+ANALYZER_FACET_TYPES = FACET_TYPES
 
 
 class ToolSignalFacet(Base):
@@ -122,8 +129,7 @@ class ToolSignalFacet(Base):
     # "python", "web app". Casefolded on write so lookups never need LOWER().
     value: Mapped[str] = mapped_column(String(255))
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    # Provenance: the analysis report this row came from; NULL for facets
-    # derived from the canonical record (tool_type) rather than a scan.
+    # Provenance: the analysis report this row came from.
     source_report_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -229,7 +235,7 @@ from backend.models import (
     ANALYZER_FACET_TYPES,
     FACET_DEPENDENCY,
     FACET_TECHNOLOGY,
-    FACET_TOOL_TYPE,
+    FACET_DETECTED_TECHNOLOGY,
     FACET_WIKIMEDIA_API,
     ToolSignalFacet,
     utcnow,
@@ -240,7 +246,7 @@ from backend.models import (
 _REPORT_SECTIONS = (
     ("dependencies", FACET_DEPENDENCY),
     ("apis", FACET_WIKIMEDIA_API),
-    ("technology", FACET_TECHNOLOGY),
+    ("technology", FACET_DETECTED_TECHNOLOGY),
 )
 
 Facet = tuple[str, str, float]
@@ -311,46 +317,9 @@ def replace_analyzer_facets(
     return len(facets)
 
 
-def set_tool_type_facet(s: Session, tool_name: str, record: dict[str, Any] | None) -> None:
-    """Sync the single tool_type facet for one canonical record.
-
-    No-ops when the stored facet already matches: the catalog sync calls this
-    for every tool every 15 minutes, and an unconditional delete+insert would
-    be ~9k pointless writes per run on ToolsDB.
-    """
-    clean = str(tool_name or "").strip()
-    if not clean:
-        return
-    source = record if isinstance(record, dict) else {}
-    tool_type = str(source.get("tool_type") or "").strip().casefold()[:255]
-    existing = list(
-        s.execute(
-            select(ToolSignalFacet.value).where(
-                ToolSignalFacet.tool_name == clean,
-                ToolSignalFacet.facet_type == FACET_TOOL_TYPE,
-            )
-        ).scalars()
-    )
-    if existing == ([tool_type] if tool_type else []):
-        return
-    s.execute(
-        delete(ToolSignalFacet).where(
-            ToolSignalFacet.tool_name == clean,
-            ToolSignalFacet.facet_type == FACET_TOOL_TYPE,
-        )
-    )
-    if tool_type:
-        s.add(
-            ToolSignalFacet(
-                tool_name=clean,
-                facet_type=FACET_TOOL_TYPE,
-                value=tool_type,
-                confidence=1.0,
-                source_report_id=None,
-                updated_at=utcnow(),
-            )
-        )
 ```
+
+**No `set_tool_type_facet`.** An earlier draft of this plan had one; it was removed on 2026-08-13 after review found `catalog_facet_values` already stores `tool_type` from the effective merged record (see Verified facts above). Declared metadata is not this table's job.
 
 **Step 4: Run tests to verify they pass**
 
@@ -359,7 +328,7 @@ Expected: PASS
 
 **Step 5: Add storage tests, run, commit**
 
-Append tests covering `replace_analyzer_facets` (twice with changed report → old rows gone, new present; empty tool name → 0) and `set_tool_type_facet` (set, change, clear when record has no tool_type, and the no-op path: calling twice with the same record leaves `updated_at` untouched — read the row's `updated_at` before and after). Then:
+Append tests covering `replace_analyzer_facets` (twice with changed report → old rows gone, new present; empty tool name → 0). Then:
 
 ```bash
 PYTHONPATH=proxy pytest tests/proxy/test_tool_facets.py -q
@@ -414,7 +383,6 @@ def _seed_facets():
             {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}]},
             source_report_id=2,
         )
-        tool_facets.set_tool_type_facet(s, "sfedits", {"tool_type": "bot"})
 
 
 def test_tools_matching_facets_intersects_filters():
@@ -635,6 +603,46 @@ git commit -m "feat: add facet query helpers for tool discovery"
 
 ---
 
+### Task 3b: Declared-facet filters (cross-table)
+
+**Added 2026-08-13** with the decision to keep declared metadata in `catalog_facet_values`. Discovery still has to answer "Python bots that use pywikibot", so the helpers must intersect both tables.
+
+**Files:** `proxy/backend/tool_facets.py`, `tests/proxy/test_tool_facets.py`
+
+**Contract:** both query helpers gain an optional keyword argument:
+
+```python
+def tools_matching_facets(
+    s: Session,
+    filters: dict[str, list[str]],
+    *,
+    declared_filters: dict[str, list[str]] | None = None,
+    limit: int = MAX_FACET_RESULTS,
+) -> list[FacetMatch]: ...
+
+def count_matching(
+    s: Session,
+    filters: dict[str, list[str]],
+    *,
+    declared_filters: dict[str, list[str]] | None = None,
+) -> int: ...
+```
+
+`declared_filters` keys are `CatalogFacetValue.field` values (`tool_type`, `keywords`, `wiki`, `technology`, `license`, …); values are compared against `CatalogFacetValue.value`, which is already casefolded on write (`catalog_projection.py:358-370`).
+
+**Rules (identical semantics to the analyzer filters):**
+- Declared filters AND with the analyzer filters and with each other; values within one field OR.
+- The same fail-closed rule: an asked-for declared filter whose cleaned value list is empty returns `[]`/`0` immediately.
+- Filtering on declared facets ALONE (no analyzer filters) is valid — "every tool typed `bot`" is a legitimate discovery query and must not require a scanned repository.
+- A declared match appears in `FacetMatch.matched` as `{"facet": "<field>", "value": …, "confidence": confidence_basis_points / 10000}`, so callers cannot tell which table a match came from — that is deliberate, the provenance distinction is ours, not the caller's.
+- Ranking is unchanged (max confidence among matched facets, then tool name); declared-only matches rank by their own confidence.
+
+Implement by building the `CatalogFacetValue` name-selects the same way as the analyzer ones and folding them into the same `INTERSECT` chain — both tables key on `tool_name`, so no join is needed.
+
+**Tests:** declared-only filter; declared AND analyzer combined (a tool matching one but not the other is excluded); empty declared filter fails closed; `matched` carries the declared entry with its converted confidence; a tool with NO analysis report at all is still findable by a declared filter (this is the coverage-independence guarantee).
+
+---
+
 ### Task 4: Backfill migration
 
 **Files:**
@@ -660,14 +668,6 @@ def test_backfill_tool_signal_facets_is_idempotent():
                 user_id=uid,
             )
         )
-        s.add(
-            CanonicalToolCache(
-                tool_name="sfedits",
-                record={"name": "sfedits", "tool_type": "bot"},
-                expires_at=utcnow(),
-                stale_until=utcnow(),
-            )
-        )
     import migrate
 
     first = migrate.backfill_tool_signal_facets()
@@ -676,10 +676,9 @@ def test_backfill_tool_signal_facets_is_idempotent():
         values = {
             (f.facet_type, f.value) for f in s.query(ToolSignalFacet).all()
         }
-    # Latest report wins; canonical record contributes tool_type.
+    # Latest report wins.
     assert ("dependency", "pypi:mwclient") in values
     assert ("dependency", "pypi:pywikibot") not in values
-    assert ("tool_type", "bot") in values
     assert second == 0
 ```
 
@@ -687,7 +686,7 @@ Migration functions in this repo return a plain `int`; `MigrationResult` is cons
 
 **Step 3: Implement the migration** in `proxy/migrate.py`, following the file's existing migration pattern:
 
-- `backfill_tool_signal_facets()`: batched (500/tool batch) loop over distinct `tool_name`s in `SourceAnalysisReport`; for each, load the **latest** report (`order_by(SourceAnalysisReport.created_at.desc(), SourceAnalysisReport.id.desc()).limit(1)`) and call `tool_facets.replace_analyzer_facets(...)` with its id; skip tools whose facets already carry that `source_report_id` (that is the idempotency check — count them as untouched). Then loop canonical records in batches calling `tool_facets.set_tool_type_facet(...)` only when the stored facet differs (query existing tool_type facets per batch first).
+- `backfill_tool_signal_facets()`: batched (500/tool batch) loop over distinct `tool_name`s in `SourceAnalysisReport`; for each, load the **latest** report (`order_by(SourceAnalysisReport.created_at.desc(), SourceAnalysisReport.id.desc()).limit(1)`) and call `tool_facets.replace_analyzer_facets(...)` with its id; skip tools whose facets already carry that `source_report_id` (that is the idempotency check — count them as untouched). No canonical-record pass: this table stores analyzer signals only.
 - Register it in the migration run list exactly like its neighbors.
 
 **Step 4: Run tests** — expect PASS. Run the full suite: `PYTHONPATH=proxy pytest tests/proxy -q` (coverage ratchet must hold).
@@ -702,14 +701,13 @@ git commit -m "feat: backfill tool signal facets from stored analysis reports"
 
 ---
 
-### Task 5: Incremental hooks (hourly scan + canonical upsert)
+### Task 5: Incremental hook (hourly scan)
 
 **Files:**
 - Modify: `proxy/repository_scan.py` (report-persist path, lines 283-301; session variable there is `s`)
-- Modify: `proxy/backend/canonical_tools.py` (`upsert_records`, lines 155-208)
-- Test: extend the existing tests that cover those two paths (grep `tests/proxy` for `repository_scan` and `upsert_records` and follow their fixtures)
+- Test: extend the existing tests covering that path (grep `tests/proxy` for `repository_scan` and follow its fixtures)
 
-**Step 1: The two hook points (both verified — mind the variable names).**
+**Step 1: The hook point (verified — mind the variable names).**
 - In `proxy/repository_scan.py`, the analyzer output dict is named `report` (`report = analyze_source_files(...)` at line 275) and the ORM row is named `stored` (`stored = SourceAnalysisReport(..., report=report, ...)` at line 283, flushed at line 295, `state.report_id = stored.id` at line 301). Immediately after the `s.flush()` at line 295 (so `stored.id` is populated, same session `s`), add:
 
 ```python
@@ -723,16 +721,7 @@ except SQLAlchemyError:
 
 with the `tool_facets` import added at the top of the file (use the module's existing logger name if one exists; otherwise add the standard `logging.getLogger(__name__)`).
 
-- Canonical rows are written by `canonical_tools.upsert_records` (`proxy/backend/canonical_tools.py:155-208`) — NOT by the `proxy/catalog_sync.py` job script, which merely drives fetches. Inside the per-record loop at line 180 (`for name, record in clean_records:`), after the row's `record` has been assigned, add the same-shaped guarded call — **passing the stored `row.record`, not the incoming `record`**: listing upserts merge into the existing record via `_merge_listing_record` (`canonical_tools.py:146-152,188`), which preserves detail-only fields like `tool_type` that the listing payload omits; passing the pre-merge payload would clear the facet on every listing sync and restore it on the next detail fetch, thrashing forever and defeating the no-op guard:
-
-```python
-try:
-    tool_facets.set_tool_type_facet(s, name, row.record)
-except SQLAlchemyError:
-    _log.exception("tool_type facet update failed for %s", name)
-```
-
-Import `tool_facets` locally inside the function, matching the local-import idiom already used at `canonical_tools.py:204` to avoid the backend startup import cycle. The no-op guard inside `set_tool_type_facet` (Task 2) keeps this cheap on the 15-minute sync. Deliberate trade-off, stated for reviewers: `upsert_records` swallows `SQLAlchemyError` for the whole page (`canonical_tools.py:176-200`), so an unguarded facet failure would silently shorten a catalog sync; the per-call guard keeps facet trouble visible in logs without growing the blast radius.
+- **No canonical-sync hook.** An earlier draft added one to `canonical_tools.upsert_records` for `tool_type`; it was dropped on 2026-08-13 with the tool_type facet itself (see Verified facts). The catalog sync path stays untouched, which also keeps its error-swallowing block (`canonical_tools.py:176-200`) free of derived-index work.
 
 **Step 2: Write failing tests first.** Extend the existing test for each path: after the existing assertions that a report/canonical row was stored, assert the corresponding `ToolSignalFacet` rows exist (and for `upsert_records`, that re-upserting the same record adds nothing). Follow each test file's existing fixture/monkeypatch style exactly.
 

@@ -60,7 +60,8 @@ From the user's description derive, without asking unless truly blocked:
 - **Predicted data access**: which APIs it will plausibly touch, chosen from
   the facet vocabulary: `mediawiki-action-api`, `wikibase-api`,
   `wikidata-query-service`, `mediawiki-rest-api`, `toolforge`,
-  `commons-upload`; plus likely `technology` (language) and `tool_type`.
+  `commons-upload`; plus likely `technology` (a language detected in source)
+  and `tool_type` (declared in the catalog).
 - If the description is too thin to predict data access, ask ONE clarifying
   question, then proceed.
 
@@ -93,9 +94,14 @@ https://toolhub.wikimedia.org:
 
 ### Mandatory caveats
 
-- Facet ("pattern") results cover ONLY scanned tools. Always restate the
-  returned `coverage` numbers; phrase absences as "no *scanned* tool
-  matches", never "no tool does this".
+- Facet filters come in two families and the caveat applies to only one:
+  **detected** filters (`dependency`, `api`, `technology`) are read from
+  scanned source code and cover ONLY tools with a scanned repository;
+  **declared** filters (`tool_type`, `keyword`, `wiki`, `license`) come from
+  catalog metadata and cover every tool. When a query used a detected
+  filter, always restate the returned `coverage` numbers and phrase absences
+  as "no *scanned* tool matches", never "no tool does this". Do not attach
+  the coverage caveat to a declared-only result — that would understate it.
 - `search_tools` covers the full catalog but matches text, not behavior —
   absence there is also not proof of novelty (wiki-internal scripts and
   unregistered tools exist).

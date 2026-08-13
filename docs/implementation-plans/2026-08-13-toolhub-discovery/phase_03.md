@@ -19,7 +19,11 @@
 - Blueprint pattern: `proxy/backend/v1_statistics.py:9` creates `Blueprint("v1_statistics", __name__)`; routes decorate with `@..._bp.route("/v1/...")`; `proxy/backend/__init__.py:91-110` registers each blueprint. Follow exactly.
 - Canonical payloads come from `canonical_tools.tools_by_name(names)` → `{name: {"toolName", "record", ...}}` (`canonical_tools.py:270-301`). The canonical `record` holds `title`, `description`, `url`, `tool_type`, `repository`, `deprecated`, `keywords`.
 - Total-tool count: count of `CanonicalToolCache` rows. Scanned-tool count: `tool_facets.scanned_tool_count(s)` (Phase 1).
-- Facet type vocabulary: `FACET_TYPES` in `models.py` (Phase 1): `dependency`, `wikimedia_api`, `technology`, `tool_type`.
+- Facet vocabulary spans TWO tables (design decision 2026-08-13, see phase_01's Verified facts):
+  - **Detected** (`ToolSignalFacet`, `FACET_TYPES` in `models.py`): `dependency`, `wikimedia_api`, `detected_technology` — analyzer-derived, only for tools with a scanned repo.
+  - **Declared** (`CatalogFacetValue`, `catalog_projection.FACET_FIELDS`): `tool_type`, `keywords`, `wiki`, `technology`, `license`, `tasks`, `audiences`, `ui_language` — projected from the effective merged record, available for the whole catalog.
+  `tool_facets.tools_matching_facets` / `count_matching` take `declared_filters=` for the second family (phase_01 Task 3b) and intersect both.
+  **Coverage nuance this creates:** declared filters are NOT coverage-limited, detected ones are. A response's `coverage` block therefore describes only the detected side; say so rather than implying the whole query was coverage-limited.
 - Response envelope conventions: see `/v1/canonical/tools/` (`v1.py:525-550`) — jsonify'd dict, camelCase keys for derived metadata.
 
 ---
@@ -167,11 +171,21 @@ v1_facets_bp = Blueprint("v1_facets", __name__)
 
 # Query parameter name -> facet_type. Kept explicit so URL surface and DB
 # vocabulary can evolve independently.
+# Query parameter -> ToolSignalFacet.facet_type (analyzer-detected signals).
 FILTER_PARAMS = {
     "dependency": "dependency",
     "api": "wikimedia_api",
-    "technology": "technology",
+    "technology": "detected_technology",
+}
+# Query parameter -> CatalogFacetValue.field (declared catalog metadata).
+# Separate map because these live in a different table with different
+# coverage: every tool has declared metadata, only scanned tools have
+# detected signals.
+DECLARED_FILTER_PARAMS = {
     "tool_type": "tool_type",
+    "keyword": "keywords",
+    "wiki": "wiki",
+    "license": "license",
 }
 DEFAULT_LIMIT = 25
 # Hard-capped by the canonical serializer: tools_by_name truncates its input
@@ -377,7 +391,16 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
         capped = DEFAULT_LIMIT
     with db.session_scope() as s:
         filters: dict[str, list[str]] = {}
+        declared: dict[str, list[str]] = {}
         applied: dict[str, list[str]] = {}
+        # Declared filters first; same emptiness rule, different table.
+        for param, field in DECLARED_FILTER_PARAMS.items():
+            raw_values = [v for raw in request.args.getlist(param) for v in raw.split(",")]
+            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
+            if not requested:
+                continue
+            declared[field] = requested
+            applied[param] = requested
         for param, facet_type in FILTER_PARAMS.items():
             raw_values = [v for raw in request.args.getlist(param) for v in raw.split(",")]
             requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
@@ -397,11 +420,13 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
             # Echo under the caller's parameter name so responses round-trip
             # into new requests without knowing internal facet-type names.
             applied[param] = cleaned or requested
-        if not filters:
+        if not filters and not declared:
             return jsonify({"error": "at least one facet filter is required"}), 400
-        matches = tool_facets.tools_matching_facets(s, filters, limit=capped)
+        matches = tool_facets.tools_matching_facets(
+            s, filters, declared_filters=declared, limit=capped
+        )
         # True total, not page size: 50-of-50 and 50-of-800 must differ.
-        total = tool_facets.count_matching(s, filters)
+        total = tool_facets.count_matching(s, filters, declared_filters=declared)
         disclosed_coverage = coverage(s)
     matched_by_tool = {m.tool_name: m.matched for m in matches}
     return jsonify(
@@ -497,6 +522,8 @@ In `docs/deploy-toolforge.md`, document the procedure: open `https://toolhub-evo
 ```
 
 Test: monkeypatch `facet_rate_limited` to `True`, assert 429 from both routes (the fixture already calls `security.clear_rate_limits()`).
+
+**Note on `/v1/facets/values/?type=`:** the accepted vocabulary is the union of the detected types (`FACET_TYPES`) and the declared fields (`DECLARED_FILTER_PARAMS` values); dispatch to `tool_facets.facet_value_counts` or an equivalent `CatalogFacetValue` counter accordingly, and label each response with which family it came from (add `"family": "detected" | "declared"`) so a caller can tell whether the coverage caveat applies to it. The 400-on-unknown-type behavior and the bounded-plus-`totalValues` contract are unchanged.
 
 **Step 3: Cached value counts.** Add a cached accessor to `v1_facets.py` that both the REST route and Phase 4's MCP tool call:
 
