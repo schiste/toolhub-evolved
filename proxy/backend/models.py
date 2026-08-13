@@ -14,9 +14,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
-    Index,
     Integer,
     LargeBinary,
     String,
@@ -1081,50 +1079,6 @@ class SourceAnalysisReport(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
-
-
-# Facet vocabulary for ToolSignalFacet.facet_type: analyzer-DERIVED signals
-# only, all rebuilt per tool from its latest SourceAnalysisReport. Declared
-# metadata (tool_type, keywords, license, declared technology_used, …) is not
-# here — catalog_facet_values already indexes it from the effective merged
-# record, so duplicating it would create two copies that diverge on curation.
-# "detected_technology" is named apart from CatalogFacetValue's "technology"
-# because they mean different things: detected from source vs declared.
-FACET_DEPENDENCY = "dependency"
-FACET_WIKIMEDIA_API = "wikimedia_api"
-FACET_DETECTED_TECHNOLOGY = "detected_technology"
-FACET_TYPES = (FACET_DEPENDENCY, FACET_WIKIMEDIA_API, FACET_DETECTED_TECHNOLOGY)
-# Retained name for "every type this table stores", now that they are all
-# analyzer-derived; kept so call sites reading either name stay honest.
-ANALYZER_FACET_TYPES = FACET_TYPES
-
-
-class ToolSignalFacet(Base):
-    """One queryable signal about one tool.
-
-    SourceAnalysisReport stores the analyzer's findings as one JSON blob per
-    report, which nothing can filter on in SQL. This table denormalizes the
-    few finding kinds discovery queries need ("which tools depend on X",
-    "which tools call API Y") into indexed rows, one per (tool, type, value).
-    """
-
-    __tablename__ = "tool_signal_facets"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tool_name: Mapped[str] = mapped_column(String(255), index=True)
-    facet_type: Mapped[str] = mapped_column(String(32))
-    # Normalized, casefolded value: "pypi:pywikibot", "wikidata-query-service",
-    # "python", "web app". Casefolded on write so lookups never need LOWER().
-    value: Mapped[str] = mapped_column(String(255))
-    confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    # Provenance: the analysis report this row came from; NULL for facets
-    # derived from the canonical record (tool_type) rather than a scan.
-    source_report_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("tool_name", "facet_type", "value", name="uq_tool_signal_facet"),
-        Index("ix_tool_signal_facets_type_value", "facet_type", "value"),
-    )
 
 
 class RepositoryAnalysisState(Base):

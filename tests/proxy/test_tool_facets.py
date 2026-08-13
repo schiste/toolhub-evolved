@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Facet extraction, storage, and query behavior for tool signal facets."""
+"""Query behavior for faceted discovery over CatalogFacetValue."""
 
 import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,124 +12,13 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db  # noqa: E402
 from backend import tool_facets  # noqa: E402
-from backend.models import CatalogFacetValue, SourceAnalysisReport, ToolSignalFacet, User, utcnow  # noqa: E402
+from backend.models import CatalogFacetValue, SourceAnalysisReport, User, utcnow  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def database() -> None:
     db.configure("sqlite://")
     db.init_schema()
-
-
-def test_tool_signal_facet_roundtrip_and_uniqueness() -> None:
-    with db.session_scope() as s:
-        s.add(
-            ToolSignalFacet(
-                tool_name="sfedits",
-                facet_type="dependency",
-                value="pypi:pywikibot",
-                confidence=0.9,
-                source_report_id=1,
-                updated_at=utcnow(),
-            )
-        )
-    with db.session_scope() as s:
-        row = s.query(ToolSignalFacet).one()
-        assert row.tool_name == "sfedits"
-        assert row.value == "pypi:pywikibot"
-    with pytest.raises(IntegrityError), db.session_scope() as s:
-        s.add(
-            ToolSignalFacet(
-                tool_name="sfedits",
-                facet_type="dependency",
-                value="pypi:pywikibot",
-            )
-        )
-
-
-# Shape mirrors source_analyzer.py:2801-2832 finding payloads; only the keys
-# extraction reads are included.
-SAMPLE_REPORT = {
-    "toolName": "sfedits",
-    "dependencies": [
-        {"value": "pypi:pywikibot", "label": "pywikibot (pypi)", "confidence": 0.95},
-        {"value": "npm:vue", "label": "vue (npm)", "confidence": 0.9},
-        {"value": "pypi:pywikibot", "label": "pywikibot (pypi)", "confidence": 0.5},
-    ],
-    "apis": [
-        {"value": "wikidata-query-service", "label": "Wikidata Query Service", "confidence": 0.94},
-        {"value": "", "label": "broken", "confidence": 0.9},
-    ],
-    "technology": [
-        {"value": "Python", "label": "Python", "confidence": 0.64},
-    ],
-    "warnings": [{"value": "ignored-kind", "confidence": 1.0}],
-}
-
-
-def test_extract_facets_normalizes_and_dedupes() -> None:
-    facets = tool_facets.extract_facets(SAMPLE_REPORT)
-    assert ("dependency", "pypi:pywikibot", 0.95) in facets
-    assert ("dependency", "npm:vue", 0.9) in facets
-    assert ("wikimedia_api", "wikidata-query-service", 0.94) in facets
-    assert ("detected_technology", "python", 0.64) in facets
-    # Duplicate value keeps the highest confidence; empty values are dropped;
-    # kinds outside the facet vocabulary are ignored.
-    assert len([f for f in facets if f[1] == "pypi:pywikibot"]) == 1
-    assert all(value for _, value, _ in facets)
-    assert not [f for f in facets if f[0] == "warnings"]
-
-
-def test_extract_facets_tolerates_malformed_report() -> None:
-    assert tool_facets.extract_facets({}) == []
-    assert (
-        tool_facets.extract_facets({"dependencies": "nope", "apis": [None, 7]}) == []
-    )
-    # Test bad confidence values (non-numeric)
-    result = tool_facets.extract_facets({"dependencies": [{"value": "pypi:test", "confidence": "not-a-number"}]})
-    assert result == [("dependency", "pypi:test", 0.0)]
-
-
-def test_replace_analyzer_facets_replaces_prior_rows() -> None:
-    """Verify replace_analyzer_facets replaces old rows with new ones."""
-    with db.session_scope() as s:
-        # Insert initial facets for sfedits
-        count1 = tool_facets.replace_analyzer_facets(s, "sfedits", SAMPLE_REPORT, source_report_id=1)
-        assert count1 == 4
-
-    with db.session_scope() as s:
-        rows1 = s.query(ToolSignalFacet).all()
-        assert len(rows1) == 4
-        values1 = {(r.facet_type, r.value) for r in rows1}
-        assert ("dependency", "pypi:pywikibot") in values1
-        assert ("dependency", "npm:vue") in values1
-
-    # Replace with a new report that only has one dependency
-    with db.session_scope() as s:
-        count2 = tool_facets.replace_analyzer_facets(
-            s,
-            "sfedits",
-            {"dependencies": [{"value": "pypi:mwclient", "confidence": 0.9}]},
-            source_report_id=2,
-        )
-        assert count2 == 1
-
-    with db.session_scope() as s:
-        rows2 = s.query(ToolSignalFacet).all()
-        assert len(rows2) == 1
-        assert rows2[0].value == "pypi:mwclient"
-        assert rows2[0].source_report_id == 2
-
-
-def test_replace_analyzer_facets_empty_tool_name() -> None:
-    """Verify replace_analyzer_facets returns 0 for empty tool name."""
-    with db.session_scope() as s:
-        count = tool_facets.replace_analyzer_facets(s, "", SAMPLE_REPORT, source_report_id=1)
-        assert count == 0
-
-    with db.session_scope() as s:
-        rows = s.query(ToolSignalFacet).all()
-        assert len(rows) == 0
 
 
 def test_tools_matching_facets_empty_filters() -> None:
@@ -145,10 +33,14 @@ def test_tools_matching_facets_empty_filters() -> None:
         result = tool_facets.tools_matching_facets(s, {"dependency": []})
         assert result == []
         # Multiple empty filters
-        result = tool_facets.tools_matching_facets(s, {"dependency": [], "wikimedia_api": [], "detected_technology": []})
+        result = tool_facets.tools_matching_facets(
+            s, {"dependency": [], "wikimedia_api": [], "detected_technology": []}
+        )
         assert result == []
         # Mixed dict: one empty filter alongside one populated filter must empty the result
-        result = tool_facets.tools_matching_facets(s, {"dependency": [], "wikimedia_api": ["wikidata-query-service"]})
+        result = tool_facets.tools_matching_facets(
+            s, {"dependency": [], "wikimedia_api": ["wikidata-query-service"]}
+        )
         assert result == []
 
 
@@ -181,26 +73,67 @@ def _report_user(s: Session) -> int:
 
 
 def _seed_facets() -> None:
-    from backend.models import SourceAnalysisReport  # noqa: E402
-
+    """Seed both analysis reports (for coverage) and CatalogFacetValue rows."""
     with db.session_scope() as s:
         # Coverage is defined as "tools with at least one analysis report",
         # so the reports themselves must exist, not just derived facets.
         uid = _report_user(s)
-        s.add(SourceAnalysisReport(tool_name="sfedits", report=SAMPLE_REPORT, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=uid))
+
+        # Seed CatalogFacetValue rows directly (simulating projection output)
+        # sfedits: pywikibot (0.95), npm:vue (0.90), wikidata-query-service (0.94), python (0.64)
         s.add(
-            SourceAnalysisReport(
-                tool_name="cite-checker",
-                report={"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}]},
-                user_id=uid,
+            CatalogFacetValue(
+                tool_name="sfedits",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot (pypi)",
+                confidence_basis_points=9500,
+                provenance=[{"source": "repository_analysis"}],
             )
         )
-        tool_facets.replace_analyzer_facets(s, "sfedits", SAMPLE_REPORT, source_report_id=1)
-        tool_facets.replace_analyzer_facets(
-            s,
-            "cite-checker",
-            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}]},
-            source_report_id=2,
+        s.add(
+            CatalogFacetValue(
+                tool_name="sfedits",
+                field="dependency",
+                value="npm:vue",
+                label="vue (npm)",
+                confidence_basis_points=9000,
+                provenance=[{"source": "repository_analysis"}],
+            )
+        )
+        s.add(
+            CatalogFacetValue(
+                tool_name="sfedits",
+                field="wikimedia_api",
+                value="wikidata-query-service",
+                label="Wikidata Query Service",
+                confidence_basis_points=9400,
+                provenance=[{"source": "repository_analysis"}],
+            )
+        )
+        s.add(
+            CatalogFacetValue(
+                tool_name="sfedits",
+                field="detected_technology",
+                value="python",
+                label="Python",
+                confidence_basis_points=6400,
+                provenance=[{"source": "repository_analysis"}],
+            )
+        )
+
+        # cite-checker: pywikibot (0.80)
+        s.add(
+            CatalogFacetValue(
+                tool_name="cite-checker",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot (pypi)",
+                confidence_basis_points=8000,
+                provenance=[{"source": "repository_analysis"}],
+            )
         )
 
 
@@ -286,22 +219,32 @@ def test_tools_matching_facets_ranking_by_matched_confidence() -> None:
         s.flush()
         uid = user1.id
 
-        tool_facets.replace_analyzer_facets(
-            s,
-            "high-match",
-            {
-                "dependencies": [{"value": "pypi:shared", "confidence": 0.90}],
-            },
-            source_report_id=10,
+        s.add(
+            CatalogFacetValue(
+                tool_name="high-match",
+                field="dependency",
+                value="pypi:shared",
+                label="shared",
+                confidence_basis_points=9000,
+            )
         )
-        tool_facets.replace_analyzer_facets(
-            s,
-            "low-match",
-            {
-                "dependencies": [{"value": "pypi:shared", "confidence": 0.10}],
-                "technology": [{"value": "python", "confidence": 0.99}],  # High but unrelated
-            },
-            source_report_id=11,
+        s.add(
+            CatalogFacetValue(
+                tool_name="low-match",
+                field="dependency",
+                value="pypi:shared",
+                label="shared",
+                confidence_basis_points=1000,
+            )
+        )
+        s.add(
+            CatalogFacetValue(
+                tool_name="low-match",
+                field="detected_technology",
+                value="python",
+                label="Python",
+                confidence_basis_points=9900,  # High but unrelated
+            )
         )
         s.add(SourceAnalysisReport(tool_name="high-match", report={}, user_id=uid))
         s.add(SourceAnalysisReport(tool_name="low-match", report={}, user_id=uid))
@@ -327,19 +270,32 @@ def test_facet_match_detail_full_equality() -> None:
         uid = user2.id
 
         # Tool with multiple unrelated facets
-        tool_facets.replace_analyzer_facets(
-            s,
-            "multi-facet",
-            {
-                "dependencies": [
-                    {"value": "pypi:target", "confidence": 0.95},
-                    {"value": "pypi:other", "confidence": 0.85},
-                ],
-                "technology": [
-                    {"value": "python", "confidence": 0.90},
-                ],
-            },
-            source_report_id=20,
+        s.add(
+            CatalogFacetValue(
+                tool_name="multi-facet",
+                field="dependency",
+                value="pypi:target",
+                label="target",
+                confidence_basis_points=9500,
+            )
+        )
+        s.add(
+            CatalogFacetValue(
+                tool_name="multi-facet",
+                field="dependency",
+                value="pypi:other",
+                label="other",
+                confidence_basis_points=8500,
+            )
+        )
+        s.add(
+            CatalogFacetValue(
+                tool_name="multi-facet",
+                field="detected_technology",
+                value="python",
+                label="Python",
+                confidence_basis_points=9000,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="multi-facet", report={}, user_id=uid))
 
@@ -366,11 +322,14 @@ def test_tools_matching_facets_result_caps() -> None:
 
         # Create more tools than MAX_FACET_RESULTS
         for i in range(tool_facets.MAX_FACET_RESULTS + 10):
-            tool_facets.replace_analyzer_facets(
-                s,
-                f"tool-{i}",
-                {"dependencies": [{"value": "pypi:common", "confidence": 0.5 + (i % 10) * 0.01}]},
-                source_report_id=100 + i,
+            s.add(
+                CatalogFacetValue(
+                    tool_name=f"tool-{i}",
+                    field="dependency",
+                    value="pypi:common",
+                    label="common",
+                    confidence_basis_points=5000 + (i % 10) * 100,
+                )
             )
             s.add(SourceAnalysisReport(tool_name=f"tool-{i}", report={}, user_id=uid))
         s.flush()
@@ -398,11 +357,14 @@ def test_facet_value_counts_result_caps() -> None:
 
         # Create more distinct dependency values than MAX_VALUE_RESULTS
         for i in range(tool_facets.MAX_VALUE_RESULTS + 10):
-            tool_facets.replace_analyzer_facets(
-                s,
-                f"tool-deps-{i}",
-                {"dependencies": [{"value": f"pypi:pkg-{i}", "confidence": 0.5}]},
-                source_report_id=200 + i,
+            s.add(
+                CatalogFacetValue(
+                    tool_name=f"tool-deps-{i}",
+                    field="dependency",
+                    value=f"pypi:pkg-{i}",
+                    label=f"pkg-{i}",
+                    confidence_basis_points=5000,
+                )
             )
             s.add(SourceAnalysisReport(tool_name=f"tool-deps-{i}", report={}, user_id=uid))
         s.flush()
@@ -464,13 +426,13 @@ def test_tools_matching_facets_declared_only_filter() -> None:
 
     with db.session_scope() as s:
         # Query for tools with tool_type="web app"
-        result = tool_facets.tools_matching_facets(s, declared_filters={"tool_type": ["web app"]})
+        result = tool_facets.tools_matching_facets(s, {"tool_type": ["web app"]})
         assert len(result) == 1
         assert result[0].tool_name == "web-tool"
 
     with db.session_scope() as s:
         # Query for tools with tool_type="bot"
-        result = tool_facets.tools_matching_facets(s, {}, declared_filters={"tool_type": ["bot"]})
+        result = tool_facets.tools_matching_facets(s, {"tool_type": ["bot"]})
         assert len(result) == 1
         assert result[0].tool_name == "bot-tool"
 
@@ -497,11 +459,14 @@ def test_tools_matching_facets_declared_and_analyzer_combined() -> None:
                 confidence_basis_points=10000,
             )
         )
-        tool_facets.replace_analyzer_facets(
-            s,
-            "bot-with-lib",
-            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}]},
-            source_report_id=1,
+        s.add(
+            CatalogFacetValue(
+                tool_name="bot-with-lib",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot",
+                confidence_basis_points=9500,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="bot-with-lib", report={}, user_id=uid))
 
@@ -515,11 +480,14 @@ def test_tools_matching_facets_declared_and_analyzer_combined() -> None:
                 confidence_basis_points=10000,
             )
         )
-        tool_facets.replace_analyzer_facets(
-            s,
-            "library-with-lib",
-            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}]},
-            source_report_id=2,
+        s.add(
+            CatalogFacetValue(
+                tool_name="library-with-lib",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot",
+                confidence_basis_points=9500,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="library-with-lib", report={}, user_id=uid))
 
@@ -533,31 +501,38 @@ def test_tools_matching_facets_declared_and_analyzer_combined() -> None:
                 confidence_basis_points=10000,
             )
         )
-        tool_facets.replace_analyzer_facets(
-            s,
-            "bot-no-lib",
-            {"dependencies": [{"value": "pypi:mwclient", "confidence": 0.9}]},
-            source_report_id=3,
+        s.add(
+            CatalogFacetValue(
+                tool_name="bot-no-lib",
+                field="dependency",
+                value="pypi:mwclient",
+                label="mwclient",
+                confidence_basis_points=9000,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="bot-no-lib", report={}, user_id=uid))
 
     with db.session_scope() as s:
-        # Query: declared=bot AND analyzer=pywikibot
+        # Query: tool_type=bot AND dependency=pywikibot
         # Should match only bot-with-lib (has both)
         result = tool_facets.tools_matching_facets(
             s,
-            filters={"dependency": ["pypi:pywikibot"]},
-            declared_filters={"tool_type": ["bot"]},
+            {
+                "dependency": ["pypi:pywikibot"],
+                "tool_type": ["bot"],
+            },
         )
         names = [m.tool_name for m in result]
         assert names == ["bot-with-lib"], f"Expected only bot-with-lib, got {names}"
 
-        # Query: declared=library AND analyzer=pywikibot
+        # Query: tool_type=library AND dependency=pywikibot
         # Should match only library-with-lib
         result = tool_facets.tools_matching_facets(
             s,
-            filters={"dependency": ["pypi:pywikibot"]},
-            declared_filters={"tool_type": ["library"]},
+            {
+                "dependency": ["pypi:pywikibot"],
+                "tool_type": ["library"],
+            },
         )
         names = [m.tool_name for m in result]
         assert names == ["library-with-lib"], f"Expected only library-with-lib, got {names}"
@@ -576,11 +551,14 @@ def test_tools_matching_facets_declared_empty_fails_closed() -> None:
         uid = user.id
 
         # Add a tool with analyzer facet
-        tool_facets.replace_analyzer_facets(
-            s,
-            "some-tool",
-            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}]},
-            source_report_id=1,
+        s.add(
+            CatalogFacetValue(
+                tool_name="some-tool",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot",
+                confidence_basis_points=9500,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="some-tool", report={}, user_id=uid))
 
@@ -589,18 +567,16 @@ def test_tools_matching_facets_declared_empty_fails_closed() -> None:
         # should return empty result (fail closed)
         result = tool_facets.tools_matching_facets(
             s,
-            filters={"dependency": ["pypi:pywikibot"]},
-            declared_filters={"tool_type": []},
+            {"dependency": ["pypi:pywikibot"], "tool_type": []},
         )
-        assert result == [], f"Expected empty result due to empty declared_filters, got {result}"
+        assert result == [], f"Expected empty result due to empty filter, got {result}"
 
         # Same with count_matching
         count = tool_facets.count_matching(
             s,
-            filters={"dependency": ["pypi:pywikibot"]},
-            declared_filters={"tool_type": []},
+            {"dependency": ["pypi:pywikibot"], "tool_type": []},
         )
-        assert count == 0, f"Expected 0 due to empty declared_filters, got {count}"
+        assert count == 0, f"Expected 0 due to empty filter, got {count}"
 
 
 def test_tools_matching_facets_declared_matched_detail() -> None:
@@ -624,7 +600,7 @@ def test_tools_matching_facets_declared_matched_detail() -> None:
     with db.session_scope() as s:
         result = tool_facets.tools_matching_facets(
             s,
-            declared_filters={"tool_type": ["bot"]},
+            {"tool_type": ["bot"]},
         )
         assert len(result) == 1
         match = result[0]
@@ -637,7 +613,7 @@ def test_tools_matching_facets_declared_matched_detail() -> None:
 
 
 def test_count_matching_declared_filters() -> None:
-    """Test count_matching with declared_filters parameter."""
+    """Test count_matching with declared filters."""
     with db.session_scope() as s:
         user = User(wm_sub="count-declared-user", username="User")
         s.add(user)
@@ -654,11 +630,14 @@ def test_count_matching_declared_filters() -> None:
                 confidence_basis_points=10000,
             )
         )
-        tool_facets.replace_analyzer_facets(
-            s,
-            "bot1",
-            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}]},
-            source_report_id=1,
+        s.add(
+            CatalogFacetValue(
+                tool_name="bot1",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot",
+                confidence_basis_points=9500,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="bot1", report={}, user_id=uid))
 
@@ -672,30 +651,29 @@ def test_count_matching_declared_filters() -> None:
                 confidence_basis_points=10000,
             )
         )
-        tool_facets.replace_analyzer_facets(
-            s,
-            "lib1",
-            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}]},
-            source_report_id=2,
+        s.add(
+            CatalogFacetValue(
+                tool_name="lib1",
+                field="dependency",
+                value="pypi:pywikibot",
+                label="pywikibot",
+                confidence_basis_points=9500,
+            )
         )
         s.add(SourceAnalysisReport(tool_name="lib1", report={}, user_id=uid))
 
     with db.session_scope() as s:
         # Just declared filter
-        assert tool_facets.count_matching(s, {}, declared_filters={"tool_type": ["bot"]}) == 1
+        assert tool_facets.count_matching(s, {"tool_type": ["bot"]}) == 1
 
         # Declared AND analyzer
         assert (
             tool_facets.count_matching(
                 s,
-                filters={"dependency": ["pypi:pywikibot"]},
-                declared_filters={"tool_type": ["bot"]},
+                {"dependency": ["pypi:pywikibot"], "tool_type": ["bot"]},
             )
             == 1
         )
 
         # Declared OR within one field (bot or library)
-        assert (
-            tool_facets.count_matching(s, {}, declared_filters={"tool_type": ["bot", "library"]})
-            == 2
-        )
+        assert tool_facets.count_matching(s, {"tool_type": ["bot", "library"]}) == 2
