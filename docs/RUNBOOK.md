@@ -678,7 +678,7 @@ reset is required after a deploy.
 `projection-refresh` is the six-hour projection coordinator. It reuses input
 generations completed within six hours, runs stale Toolhub, Toolforge, and
 catalog inputs concurrently, then performs one account/identity graph pass and
-precomputes `/v1/statistics/`. Toolinfo source reconciliation is content-hash
+computes `/v1/statistics/` ahead of user traffic. Toolinfo source reconciliation is content-hash
 incremental; a changed reconciliation rules version forces one full pass, and
 `source-attestations-full` provides an additional weekly full-audit backstop.
 The full-source jobs have a 900-second timeout while the normal incremental
