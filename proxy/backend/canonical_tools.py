@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
@@ -301,113 +301,21 @@ def tools_by_name(names: list[str]) -> dict[str, dict[str, Any]]:
     return {row.tool_name: _payload(row) for row in rows}
 
 
-def _fts_match_expression(term: str) -> str:
-    """Convert raw user input into safe FTS5 phrase tokens.
-
-    FTS5 MATCH has operator syntax ("-", ":", quotes) that raises on arbitrary
-    input; quoting every whitespace token as a phrase makes any input legal
-    and means multi-word queries require all words (implicit AND). The
-    trailing token gets a prefix star because interactive callers send
-    partial words ("citat") that must still match.
-    """
-    tokens = [t.replace('"', '""') for t in term.split() if t]
-    if not tokens:
-        return ""
-    quoted = [f'"{t}"' for t in tokens]
-    quoted[-1] = f"{quoted[-1]}*"
-    return " ".join(quoted)
-
-
-def _boolean_match_expression(term: str) -> str:
-    """MariaDB BOOLEAN MODE expression: every token required, prefix-matched.
-
-    Boolean mode (unlike natural-language mode) supports the trailing "*",
-    which is what keeps partial-word queries working; operator characters in
-    user input are stripped rather than escaped because none of them occur in
-    tool vocabulary.
-    """
-    tokens = ["".join(ch for ch in t if ch not in '+-<>()~*"@') for t in term.split()]
-    return " ".join(f"+{t}*" for t in tokens if t)
-
-
-def _search_ranked(s: Session, term: str, capped: int) -> list[dict[str, Any]] | None:
-    """Relevance-ordered payloads via the dialect's ranked index, or None.
-
-    Takes the caller's session: one search must not cost three transactions.
-    """
-    match = _fts_match_expression(term)
-    if not match:
-        return None
-    try:
-        dialect = s.get_bind().dialect.name
-        if dialect == "sqlite":
-            names = [
-                row[0]
-                for row in s.execute(
-                    text(
-                        "SELECT tool_name FROM canonical_tool_search "
-                        "WHERE canonical_tool_search MATCH :match "
-                        "ORDER BY rank LIMIT :limit"
-                    ),
-                    {"match": match, "limit": capped},
-                )
-            ]
-        elif dialect in ("mysql", "mariadb"):
-            boolean = _boolean_match_expression(term)
-            if not boolean:
-                return None
-            names = [
-                row[0]
-                for row in s.execute(
-                    text(
-                        "SELECT tool_name FROM canonical_tool_cache "
-                        "WHERE MATCH(search_text) AGAINST(:q IN BOOLEAN MODE) "
-                        "ORDER BY MATCH(search_text) AGAINST(:q IN BOOLEAN MODE) DESC "
-                        "LIMIT :limit"
-                    ),
-                    {"q": boolean, "limit": capped},
-                )
-            ]
-        else:
-            return None
-        rows = {
-            row.tool_name: row
-            for row in s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(names))).scalars()
-        }
-        return [_payload(rows[name]) for name in names if name in rows]
-    except SQLAlchemyError:
-        # Missing index (fresh DB before migrate has run): degrade to LIKE
-        # rather than failing reads.
-        return None
-
-
 def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS) -> list[dict[str, Any]]:
-    """Search cached canonical records, best matches first.
+    """Search cached canonical records locally with simple deterministic matching.
 
-    Relevance-ranked via the dialect's full-text index when available,
-    topped up by the deterministic substring path so partial-word recall
-    ("citat", "sf") never regresses; recency-ordered listing when the query
-    is empty. Filtering and limiting happen in SQL.
+    Filtering and limiting happen in SQL. Reading the whole table to keep at
+    most `limit` rows meant transferring every cached record's JSON — the full
+    catalog — for a query that returns a page of results.
     """
     term = str(query or "").strip().casefold()
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
     statement = select(CanonicalToolCache).order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
+    if term:
+        statement = statement.where(CanonicalToolCache.search_text.like(f"%{_escape_like(term)}%", escape="\\"))
     with db.session_scope() as s:
-        if not term:
-            return [_payload(row) for row in s.execute(statement.limit(capped)).scalars()]
-        ranked = _search_ranked(s, term, capped) or []
-        if len(ranked) >= capped:
-            return ranked
-        # Top up from the substring path: token/prefix matching cannot see
-        # mid-word fragments ("dits"), and MariaDB drops sub-3-char tokens
-        # and stopwords entirely. Ranked hits keep their order and lead.
-        # Over-fetch by the ranked count so dedup can't shrink a full page.
-        found = {payload["toolName"] for payload in ranked}
-        like_statement = statement.where(
-            CanonicalToolCache.search_text.like(f"%{_escape_like(term)}%", escape="\\")
-        ).limit(capped + len(found))
-        extras = [_payload(row) for row in s.execute(like_statement).scalars() if row.tool_name not in found]
-    return (ranked + extras)[:capped]
+        rows = list(s.execute(statement.limit(capped)).scalars())
+    return [_payload(row) for row in rows]
 
 
 def records(*, limit: int = MAX_RECORD_RESULTS) -> list[dict[str, Any]]:

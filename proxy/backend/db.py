@@ -319,9 +319,6 @@ def init_schema() -> None:
     """Create any missing tables (idempotent; see docs/RUNBOOK.md for changes)."""
     Base.metadata.create_all(engine())
     _upgrade_schema()
-    from backend import search_index  # noqa: PLC0415 - avoid backend startup cycles
-
-    search_index.ensure_search_index(engine())
 
 
 @contextmanager
