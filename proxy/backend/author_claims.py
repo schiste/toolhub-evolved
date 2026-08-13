@@ -20,7 +20,7 @@ from urllib.parse import quote, unquote, urlparse
 import requests
 from sqlalchemy import and_, or_, select
 
-from backend import canonical_tools, toolhub
+from backend import canonical_tools, toolhub, toolinfo_authors
 from backend.models import ToolAuthorClaim, ToolAuthorKey, User, utcnow
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
@@ -162,28 +162,12 @@ def dedupe_strings(values: list[Any]) -> list[str]:
 
 def author_names_from_toolhub_tool(tool: dict) -> list[str]:
     """Return declared author display and identity names from one official Toolhub tool."""
-    raw_authors = tool.get("author")
-    authors = raw_authors if isinstance(raw_authors, list) else [raw_authors]
-    names: list[Any] = []
-    for author in authors:
-        if isinstance(author, dict):
-            names.extend([author.get("name"), author.get("wiki_username"), author.get("developer_username")])
-        elif isinstance(author, str | int | float):
-            names.append(author)
-    return dedupe_strings(names)
+    return toolinfo_authors.author_names(tool)
 
 
 def author_names_from_toolinfo(toolinfo: dict) -> list[str]:
     """Return author names from a toolinfo.json item."""
-    raw_authors = toolinfo.get("author")
-    authors = raw_authors if isinstance(raw_authors, list) else [raw_authors]
-    names: list[Any] = []
-    for author in authors:
-        if isinstance(author, dict):
-            names.extend([author.get("name"), author.get("wiki_username"), author.get("developer_username")])
-        elif isinstance(author, str | int | float):
-            names.append(author)
-    return dedupe_strings(names)
+    return toolinfo_authors.author_names(toolinfo)
 
 
 def claim_is_verified(status: str, method: str, *, expires_at: Any = None) -> bool:  # noqa: ANN401

@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
-from backend import people_index
+from backend import people_index, toolinfo_authors
 from backend.models import (
     PersonActivitySummary,
     ToolAuthorClaim,
@@ -227,23 +227,16 @@ def replace_toolforge_maintainer_edges(
 
 
 def _toolhub_observations(tool: dict[str, Any]) -> list[dict[str, Any]]:
-    raw_authors = tool.get("author")
-    authors = raw_authors if isinstance(raw_authors, list) else [raw_authors]
     observations: list[dict[str, Any]] = []
-    for index, author in enumerate(authors):
-        if isinstance(author, dict):
-            display = clean_text(author.get("name") or author.get("developer_username") or author.get("wiki_username"))
-            toolforge_username = clean_text(author.get("developer_username"))
-            if any(character.isspace() for character in toolforge_username) or ":" in toolforge_username:
-                # Historical structured fields sometimes contain display names
-                # or wiki titles. They are attribution evidence, not valid
-                # Toolforge developer-account handles.
-                toolforge_username = ""
-            wiki_username = clean_text(author.get("wiki_username"))
-        else:
-            display = clean_text(author)
+    for assertion in toolinfo_authors.author_assertions(tool):
+        display = clean_text(assertion.display_name)
+        toolforge_username = clean_text(assertion.developer_username)
+        if any(character.isspace() for character in toolforge_username) or ":" in toolforge_username:
+            # Historical structured fields sometimes contain display names
+            # or wiki titles. They are attribution evidence, not valid
+            # Toolforge developer-account handles.
             toolforge_username = ""
-            wiki_username = ""
+        wiki_username = clean_text(assertion.wiki_username)
         if display:
             observations.append(
                 {
@@ -253,11 +246,15 @@ def _toolhub_observations(tool: dict[str, Any]) -> list[dict[str, Any]]:
                     "wiki_username": wiki_username,
                     "relationship_type": PERSON_REL_AUTHOR,
                     "method": METHOD_TOOLHUB_AUTHOR,
-                    "evidence_key": str(index),
+                    "evidence_key": str(assertion.position),
                     "verification_status": AUTHOR_CLAIM_UNVERIFIED,
                     "confidence": 45,
                     "toolhub_canonical": True,
-                    "evidence_payload": {"toolhubField": "author"},
+                    "evidence_payload": {
+                        "toolhubField": "author",
+                        "rawAuthor": assertion.raw_value,
+                        "legacyDelimited": assertion.legacy_delimited,
+                    },
                 }
             )
     for field, method in (("created_by", METHOD_TOOLHUB_CREATED_BY), ("modified_by", METHOD_TOOLHUB_MODIFIED_BY)):

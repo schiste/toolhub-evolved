@@ -1485,6 +1485,11 @@ def test_author_claim_provider_parsers_cover_malformed_public_shapes():
     assert author_claims.parse_toolsadmin_maintainers('<a href="/profile/blank/"> </a>') == []
     assert author_claims.parse_toolsadmin_maintainers("<p>No maintainers here</p>") == []
     assert author_claims.author_names_from_toolinfo({"author": "Ada"}) == ["Ada"]
+    assert author_claims.author_names_from_toolinfo({"author": "Magnus Manske, JoanJoc"}) == [
+        "Magnus Manske",
+        "JoanJoc",
+    ]
+    assert author_claims.author_names_from_toolinfo({"author": "Lovelace, Ada"}) == ["Lovelace, Ada"]
     assert author_claims.author_names_from_toolinfo({"author": [None]}) == []
     assert author_claims.toolforge_names_from_toolhub_tool(
         "plain",
