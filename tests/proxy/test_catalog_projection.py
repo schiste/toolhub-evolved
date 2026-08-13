@@ -626,50 +626,24 @@ def test_analyzer_facets_containment_preserves_healthy_tool_in_batch(monkeypatch
         s.flush()
         poison_report_id = poison_report.id
 
-    # Monkeypatch _analyzer_facets to return duplicate entries only for poison tool
-    # This causes a unique constraint violation when both entries are inserted
+    # Patch the PURE EXTRACTOR, never _emit_analyzer_facets itself: the
+    # savepoint under test lives inside _emit_analyzer_facets, so replacing
+    # that function would exercise the test's own code instead of the
+    # production containment (which is exactly how an earlier version of
+    # this test passed while the savepoint was deleted).
     original_analyzer_facets = catalog_projection._analyzer_facets
 
-    # Track which tool we're processing by monkeypatching _analyzer_facets to inspect the report's tool
-    # We'll use a different approach: monkeypatch the _emit_analyzer_facets to inject duplicates
-    original_emit = catalog_projection._emit_analyzer_facets
+    def poisoned_analyzer_facets(report):
+        facets = original_analyzer_facets(report)
+        # The poison tool's findings are returned twice, so production code
+        # inserts two rows with the same (tool_name, field, value) and the
+        # UniqueConstraint fails at FLUSH time — the failure mode the
+        # savepoint exists to contain.
+        if any(value == "pypi:bad" for _, value, _, _ in facets):
+            return facets + facets
+        return facets
 
-    def poisoned_emit(s, name, report, now):
-        """Wrapper that injects duplicate facets for the poison tool to trigger constraint violation."""
-        if name == "poison":
-            # For poison, manually add duplicate facets that will violate the unique constraint
-            from sqlalchemy.exc import IntegrityError
-            facet_provenance = [
-                {
-                    "source": "repository_analysis",
-                    "reportId": report.id,
-                    "observed": catalog_projection._iso(report.reviewed_at or report.created_at),
-                }
-            ]
-            try:
-                with s.begin_nested():
-                    # Insert the same facet twice (duplicate value) to trigger constraint violation
-                    for _ in range(2):
-                        s.add(
-                            CatalogFacetValue(
-                                tool_name="poison",
-                                field="dependency",
-                                value="pypi:bad",
-                                label="bad",
-                                provenance=facet_provenance,
-                                confidence_basis_points=5000,
-                                refreshed_at=now,
-                            )
-                        )
-                    s.flush()
-            except (SQLAlchemyError, TypeError, ValueError, OverflowError, ArithmeticError):
-                # Savepoint caught the constraint violation, as expected
-                pass
-        else:
-            # For healthy tool, use the original implementation
-            original_emit(s, name, report, now)
-
-    monkeypatch.setattr(catalog_projection, "_emit_analyzer_facets", poisoned_emit)
+    monkeypatch.setattr(catalog_projection, "_analyzer_facets", poisoned_analyzer_facets)
 
     # Refresh both tools in the same batch
     summary = catalog_projection.refresh_tool_names(["healthy", "poison"])
