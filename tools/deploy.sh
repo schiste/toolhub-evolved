@@ -11,6 +11,7 @@ echo "Updating $REPO_DIR ..."
 deploy_head_before="$(git -C "$REPO_DIR" rev-parse HEAD)"
 git -C "$REPO_DIR" pull --ff-only
 deploy_head_after="$(git -C "$REPO_DIR" rev-parse HEAD)"
+deploy_id="$deploy_head_after"
 if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEXECUTED:-0}" != "1" ]; then
 	echo "Restarting deploy with the updated script ..."
 	exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"
@@ -28,11 +29,21 @@ ln -sfn "$REPO_DIR/proxy/uwsgi.ini" "$HOME/www/python/uwsgi.ini"
 # source is served (still gzipped at the edge) — never a broken deploy. Toolforge
 # has no Node, so we minify CSS with pure-Python rcssmin in the webservice venv.
 VENV_PY="$HOME/www/python/venv/bin/python"
+deployment_diagnostics="$HOME/deployment-diagnostics.jsonl"
+deploy_started="$(date +%s.%N)"
+failure_phase="bootstrap"
 release_stage=""
 cleanup_release_stage() {
+	exit_status=$?
+	trap - EXIT
 	if [ -n "$release_stage" ]; then
 		rm -f "$release_stage"
 	fi
+	if [ "$exit_status" -ne 0 ] && [ -x "$VENV_PY" ]; then
+		deploy_finished="$(date +%s.%N)"
+		"$VENV_PY" "$REPO_DIR/tools/deployment_diagnostics.py" --output "$deployment_diagnostics" --deployment "$deploy_id" --stage deploy --status failed --started "$deploy_started" --finished "$deploy_finished" --failure-phase "$failure_phase" || true
+	fi
+	exit "$exit_status"
 }
 trap cleanup_release_stage EXIT
 
@@ -45,6 +56,7 @@ run_with_tool_env() {
 	_command="$2"
 	_out="$HOME/${_step}-deploy.out"
 	_err="$HOME/${_step}-deploy.err"
+	_started="$(date +%s.%N)"
 	rm -f "$_out" "$_err"
 	if toolforge jobs run --wait 900 --image python3.13 --filelog \
 		-o "$_out" -e "$_err" \
@@ -52,10 +64,14 @@ run_with_tool_env() {
 		"${_step}-deploy"; then
 		cat "$_out" 2>/dev/null || true
 		cat "$_err" 2>/dev/null >&2 || true
+		_finished="$(date +%s.%N)"
+		"$VENV_PY" "$REPO_DIR/tools/deployment_diagnostics.py" --output "$deployment_diagnostics" --deployment "$deploy_id" --stage "$_step" --status completed --started "$_started" --finished "$_finished" --metrics-file "$_out" || true
 		return 0
 	fi
 	cat "$_out" 2>/dev/null || true
 	cat "$_err" 2>/dev/null >&2 || true
+	_finished="$(date +%s.%N)"
+	"$VENV_PY" "$REPO_DIR/tools/deployment_diagnostics.py" --output "$deployment_diagnostics" --deployment "$deploy_id" --stage "$_step" --status failed --started "$_started" --finished "$_finished" --metrics-file "$_err" --failure-phase "$_step" || true
 	return 1
 }
 
@@ -78,44 +94,18 @@ if [ -x "$VENV_PY" ]; then
 	# falls back to the repo-local SQLite file, and reports success having
 	# touched nothing real. --require-configured-db makes that fail loudly.
 	echo "Running data migrations ..."
+	failure_phase="migrate"
 	run_with_tool_env migrate "$REPO_DIR/proxy/migrate.py --require-configured-db"
-	# Publish a complete account projection before the new UI can serve it. The
-	# sync is resumable, and it retains the last complete generation if Toolhub
-	# fails or its reported count changes during the cycle. A failed initial
-	# refresh aborts before restart, leaving the previous release serving.
-	echo "Refreshing official Toolhub account projection ..."
-	run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"
-	# Mirror authoritative Toolforge accounts and memberships before resolving
-	# people. A failed full LDAP cycle does not prune the last good generation.
-	echo "Refreshing Toolforge account and membership projection ..."
-	run_with_tool_env toolforge-account-sync "$REPO_DIR/proxy/toolforge_account_sync.py"
-	# Mocked provider tests cannot detect a renamed or invalid production LDAP
-	# attribute. Probe the real read-only schema before identity reconciliation.
-	echo "Checking Wikimedia LDAP identity schema ..."
-	run_with_tool_env identity-smoke "$REPO_DIR/proxy/public_identity_smoke.py"
-	# Complete catalog generations are the deletion boundary: only after every
-	# official page and the advertised distinct count agree may stale canonical
-	# rows disappear. Process the resulting queue before serving the new build so
-	# retired tools cannot survive through historical people evidence.
-	echo "Refreshing complete official Toolhub catalog projection ..."
-	run_with_tool_env catalog-sync "$REPO_DIR/proxy/catalog_sync.py --complete --page-size 100 --min-interval 3 --max-age-seconds 21600"
-	run_with_tool_env people-retire "$REPO_DIR/proxy/people_reconcile.py --retirements"
-	# Materialize a first bounded cross-system identity batch before the new
-	# directory is served. The hourly job continues through the remaining
-	# population and retries transient CentralAuth or LDAP failures.
-	echo "Resolving public identity projection ..."
-	run_with_tool_env people-reconcile "$REPO_DIR/proxy/people_reconcile.py --identities-only --candidate-label-limit 100"
-	# Re-evaluate every indexed feed against the freshly synchronized stable
-	# account graph. This is local-only; the six-hour source-index job performs
-	# the network refresh and invokes the same projection for changed sources.
-	echo "Reconciling toolinfo source identities ..."
-	run_with_tool_env source-attestations "$REPO_DIR/proxy/source_attestations.py"
 	echo "Building production dist/ ..."
+	failure_phase="build"
+	_build_started="$(date +%s.%N)"
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
 	release_stage="$(mktemp /tmp/toolhub-evolved-deployment.XXXXXX)"
 	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py" --prepare --public-output "$release_stage"
 	"$VENV_PY" "$REPO_DIR/tools/build_dist.py" --deployment-manifest "$release_stage"
 	"$VENV_PY" -c "from pathlib import Path; import sys; path = (Path('$REPO_DIR') / 'dist/data/deployments.json').resolve(); print(f'  release manifest: {path}'); sys.exit('release manifest missing after dist build') if not path.is_file() or path.stat().st_size == 0 else None"
+	_build_finished="$(date +%s.%N)"
+	"$VENV_PY" "$REPO_DIR/tools/deployment_diagnostics.py" --output "$deployment_diagnostics" --deployment "$deploy_id" --stage build --status completed --started "$_build_started" --finished "$_build_finished" || true
 	# Same reason as the migration above: without the tool environment this
 	# warmed a repo-local SQLite file and reported "warmed=13" while the
 	# configured shared cache stayed cold.
@@ -126,10 +116,20 @@ else
 fi
 
 echo "Restarting webservice ..."
+failure_phase="restart"
+restart_started="$(date +%s.%N)"
+restart_status=0
+set +e
 if webservice status >/dev/null 2>&1; then
 	webservice restart
+	restart_status=$?
 else
 	webservice python3.13 start
+	restart_status=$?
+fi
+set -e
+if [ "$restart_status" -ne 0 ]; then
+	echo "Restart command returned $restart_status; checking actual service health before failing ..." >&2
 fi
 
 TOOL_NAME="$(whoami | sed 's/^tools\.//')"
@@ -141,6 +141,7 @@ ready=0
 while [ "$attempt" -le 30 ]; do
 	if curl -fsS -o /dev/null "$BASE_URL/" \
 		&& curl -fsS -o /dev/null "$BASE_URL/main.js" \
+		&& curl -fsS -o /dev/null "$BASE_URL/views/statistics.js" \
 		&& curl -fsS -o /dev/null "$BASE_URL/views/experiments.js" \
 		&& curl -fsS -o /dev/null "$BASE_URL/lib/atoms/badges.js"; then
 		ready=1
@@ -155,8 +156,17 @@ if [ "$ready" -ne 1 ]; then
 	webservice status >&2 || true
 	exit 1
 fi
+restart_finished="$(date +%s.%N)"
+restart_result="completed"
+if [ "$restart_status" -ne 0 ]; then
+	restart_result="recovered"
+fi
+if [ -x "$VENV_PY" ]; then
+	"$VENV_PY" "$REPO_DIR/tools/deployment_diagnostics.py" --output "$deployment_diagnostics" --deployment "$deploy_id" --stage restart --status "$restart_result" --started "$restart_started" --finished "$restart_finished" || true
+fi
 
 echo "Prewarming derived Evolved endpoints ..."
+failure_phase="prewarm"
 # The landing page is one composed payload; warm it so the first visitor after a
 # deploy reads a cached row instead of paying for the composition.
 if ! curl -fsS --max-time 60 -o /dev/null "$BASE_URL/v1/home/"; then
@@ -170,8 +180,32 @@ if ! curl -fsS --max-time 30 -o /dev/null "$BASE_URL/v1/tools/summaries/?names=t
 fi
 
 if [ -n "$release_stage" ]; then
+	failure_phase="promote"
 	echo "Recording successful deployment ..."
 	"$VENV_PY" "$REPO_DIR/tools/record_deployment.py" --promote "$release_stage"
 fi
 
+echo "Loading scheduled jobs ..."
+failure_phase="jobs"
+toolforge jobs load "$REPO_DIR/jobs.yaml"
+for retired_job in account-sync toolforge-account-sync catalog-snapshot; do
+	if toolforge jobs show "$retired_job" >/dev/null 2>&1; then
+		echo "Retiring superseded schedule $retired_job ..."
+		toolforge jobs delete "$retired_job"
+	fi
+done
+
+if [ -x "$VENV_PY" ]; then
+	echo "Queuing last-good projection refresh ..."
+	toolforge jobs run --image python3.13 --filelog \
+		-o "$HOME/projection-refresh-deploy.out" -e "$HOME/projection-refresh-deploy.err" \
+		--command "$VENV_PY $REPO_DIR/proxy/projection_refresh.py" \
+		projection-refresh-deploy \
+		|| echo "  projection refresh could not be queued; the scheduled job will retry" >&2
+fi
+
+if [ -x "$VENV_PY" ]; then
+	deploy_finished="$(date +%s.%N)"
+	"$VENV_PY" "$REPO_DIR/tools/deployment_diagnostics.py" --output "$deployment_diagnostics" --deployment "$deploy_id" --stage deploy --status completed --started "$deploy_started" --finished "$deploy_finished" || true
+fi
 echo "Done. $BASE_URL/"
