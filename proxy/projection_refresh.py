@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import account_sync
 import catalog_sync
 import toolforge_account_sync
-from backend import DEFAULT_DB_URL, catalog_statistics, db, identity_graph, people_reconcile, source_attestations
+from backend import catalog_statistics, db, identity_graph, job_runner, people_reconcile, source_attestations
 from backend.models import (
     ApiCacheMeta,
     ToolCatalogSyncState,
@@ -212,8 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         default=int(os.environ.get("PROJECTION_MAX_AGE_SECONDS", DEFAULT_MAX_AGE_SECONDS)),
     )
     args = parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
+    job_runner.configure()
     report = run(force=args.force, full_sources=args.full_sources, max_age_seconds=args.max_age_seconds)
     sys.stdout.write("projection-refresh: " + json.dumps(report, sort_keys=True) + "\n")
     return 0

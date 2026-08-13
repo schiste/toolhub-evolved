@@ -4,15 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import sys
 import time
 from typing import TYPE_CHECKING, Any
 
 import requests
 
-from backend import DEFAULT_DB_URL, canonical_tools, db, maintainer_index
+from backend import canonical_tools, db, job_runner, maintainer_index
 from backend.author_claims import (
     TOOLFORGE_CLAIM_TTL,
     ToolforgeMaintainerProvider,
@@ -182,15 +180,11 @@ def main(argv: list[str] | None = None) -> int:
         default=float(os.environ.get("MAINTAINER_BACKFILL_MIN_INTERVAL_SECONDS", DEFAULT_MIN_INTERVAL_SECONDS)),
     )
     args = parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
-    with db.advisory_lock("toolhub-evolved:maintainer-backfill") as acquired:
-        if not acquired:
-            sys.stdout.write(json.dumps({"locked": True}, sort_keys=True) + "\n")
-            return 0
-        summary = run(limit=args.limit, min_interval_seconds=args.min_interval_seconds)
-    sys.stdout.write(json.dumps(summary, sort_keys=True) + "\n")
-    return 0
+    return job_runner.run_job(
+        "maintainer-backfill",
+        lambda: run(limit=args.limit, min_interval_seconds=args.min_interval_seconds),
+        lock=True,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - operator entrypoint

@@ -7,14 +7,13 @@ backend.api_cache, invalidates only affected anonymous GET cache rows, then
 prewarms high-traffic rows so the next user request can hit shared cache.
 """
 
-import os
 import sys
 from typing import Any
 
 import requests
 
 import cache_prewarm
-from backend import DEFAULT_DB_URL, api_cache, db, recent_owners
+from backend import api_cache, job_runner, recent_owners
 
 UPSTREAM = "https://toolhub.wikimedia.org"
 RECENT_INVALIDATION_URL = f"{UPSTREAM}/api/recent/?page_size=50"
@@ -53,13 +52,14 @@ def run_once(session: requests.Session | None = None) -> int:
 
 def main() -> int:
     """Jobs-framework entrypoint: invalidate changed rows, then prewarm hot reads."""
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
-    removed = run_once()
-    purged = recent_owners.purge_expired()
-    sys.stdout.write(f"cache-invalidation: {removed} rows invalidated, {purged} owner rows purged\n")
-    sys.stdout.write(f"{cache_prewarm.run_once().log_line()}\n")
-    return 0
+
+    def body() -> None:
+        removed = run_once()
+        purged = recent_owners.purge_expired()
+        sys.stdout.write(f"cache-invalidation: {removed} rows invalidated, {purged} owner rows purged\n")
+        sys.stdout.write(f"{cache_prewarm.run_once().log_line()}\n")
+
+    return job_runner.run_job("api-cache-invalidator", body)
 
 
 if __name__ == "__main__":  # pragma: no cover - job entrypoint, exercised via main() in tests

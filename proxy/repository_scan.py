@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from analyze_source import _local_git_context, _read_tree
-from backend import DEFAULT_DB_URL, db, graph_enrichment, tool_summaries
+from backend import db, graph_enrichment, job_runner, tool_summaries
 from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport, User, utcnow
 from backend.source_analyzer import SourceAnalysisError, analyze_source_files
 from backend.sync import REVIEW_APPROVED, SOURCE_REPOSITORY_SCAN, SYNC_ERROR, SYNC_EVOLVED_REAL, clean_error
@@ -368,13 +368,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", default=os.environ.get("REPOSITORY_SCAN_FORCE") == "1")
     parser.add_argument("--tool-name", default=os.environ.get("REPOSITORY_SCAN_TOOL_NAME", ""))
     args = parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
     if args.limit <= 0:
         parser.error("--limit must be positive")
-    results = run(args.limit, force=args.force, tool_name=args.tool_name.strip() or None)
-    sys.stdout.write("repository-scan: " + " ".join(f"{key}={value}" for key, value in results.items()) + "\n")
-    return 0
+    return job_runner.run_job(
+        "repository-analysis",
+        lambda: run(args.limit, force=args.force, tool_name=args.tool_name.strip() or None),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - operator entrypoint

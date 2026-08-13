@@ -12,13 +12,12 @@ exit code the job guard counts failures from.
 """
 
 import json
-import os
 import sys
 
 import requests
 from sqlalchemy import select
 
-from backend import DEFAULT_DB_URL, db, job_contract, outbound
+from backend import db, job_runner, outbound
 from backend.author_claims import SignedToolinfoProvider
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, User, utcnow
 from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
@@ -224,18 +223,19 @@ def run_crawl() -> CrawlerRun:
 
 def main() -> int:
     """Jobs-framework entrypoint: configure the DB, crawl, report."""
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
-    run = run_crawl()
-    sys.stdout.write(
-        f"crawl: {run.urls_count} urls, +{run.added} added, ~{run.updated} updated, "
-        f"{len(run.skipped)} skipped, {len(run.errors)} errors\n"
-    )
+
+    def body() -> None:
+        run = run_crawl()
+        sys.stdout.write(
+            f"crawl: {run.urls_count} urls, +{run.added} added, ~{run.updated} updated, "
+            f"{len(run.skipped)} skipped, {len(run.errors)} errors\n"
+        )
+
     # Per backend.job_contract: the sweep completed. Unreachable feeds are
     # already durable observations on CrawlerRun and on each URL row, and this
     # job has so few registered URLs that one flaky feed used to exit non-zero
     # for the whole run -- which tripped the breaker for ten days in August.
-    return job_contract.EXIT_OK
+    return job_runner.run_job("crawler", body)
 
 
 if __name__ == "__main__":  # pragma: no cover - job entrypoint, exercised via main() in tests
