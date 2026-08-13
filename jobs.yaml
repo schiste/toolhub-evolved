@@ -31,12 +31,12 @@
   emails: onfailure
 
 - name: source-attestations
-  # Local repair pass for controller/binding rule upgrades and identity changes.
-  # Successful source crawls also refresh only their changed tools immediately.
+  # Cheap local incremental repair for content and stable-identity changes.
+  # A rules-version change automatically promotes the next run to a full audit.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py
   image: python3.13
   schedule: "29 */6 * * *"
-  timeout: 300
+  timeout: 900
   emails: onfailure
 
 - name: catalog-sync
@@ -49,33 +49,23 @@
   timeout: 300
   emails: onfailure
 
-- name: catalog-snapshot
-  # A complete, generation-marked catalog is the safe deletion boundary.
-  # Missing names are pruned only after all pages agree on Toolhub's count;
-  # interrupted cycles preserve and later resume from the last good page.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-snapshot -- /usr/bin/env CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py --complete
+- name: projection-refresh
+  # Refresh independent official inputs concurrently, then publish one atomic
+  # identity/source projection and precompute catalog statistics. Fresh inputs
+  # are reused, so a scheduled run can be a cheap verified no-op.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name projection-refresh -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/projection_refresh.py
   image: python3.13
-  schedule: "20 */6 * * *"
-  timeout: 600
+  schedule: "41 */6 * * *"
+  timeout: 1800
   emails: onfailure
 
-- name: account-sync
-  # Mirror every official Toolhub account by immutable Toolhub user id. Each
-  # page commits independently so interrupted runs resume, while old rows are
-  # pruned only after a complete generation matches Toolhub's reported count.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name account-sync -- /usr/bin/env ACCOUNT_SYNC_PAGE_SIZE=100 ACCOUNT_SYNC_MIN_INTERVAL_SECONDS=1 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/account_sync.py --complete
+- name: source-attestations-full
+  # Weekly full audit is the backstop for rule/dependency bugs; ordinary feed
+  # and identity changes use the incremental content-hash path above.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations-full -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py --full
   image: python3.13
-  schedule: "31 */6 * * *"
-  timeout: 300
-  emails: onfailure
-
-- name: toolforge-account-sync
-  # Mirror developer accounts by immutable uidNumber and their tool-account
-  # memberships. A failed LDAP read retains the last complete generation.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name toolforge-account-sync -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/toolforge_account_sync.py
-  image: python3.13
-  schedule: "7 */6 * * *"
-  timeout: 300
+  schedule: "19 4 * * 0"
+  timeout: 900
   emails: onfailure
 
 - name: maintainer-backfill
@@ -140,8 +130,8 @@
   # Toolhub identity candidates. A dry run performs no external lookups.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
   image: python3.13
-  schedule: "23 */6 * * *"
-  timeout: 600
+  schedule: "13 5 * * 0"
+  timeout: 1800
   emails: onfailure
 
 - name: people-identity-reconcile
