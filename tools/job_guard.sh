@@ -6,6 +6,13 @@ set -eu
 JOB_NAME=""
 MAX_FAILURES=3
 RESET=0
+# A lock is released by the EXIT trap, which never runs when the pod is killed
+# (SIGKILL on a job timeout or an eviction). The lock then blocks every later
+# invocation forever, and because a skip exits 0 the failure mail never fires:
+# one killed run silently retires the job. Reclaiming a lock older than any
+# legitimate run makes that self-healing. Keep this above the job's own
+# timeout so a slow run is never mistaken for an abandoned one.
+STALE_AFTER=3600
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
@@ -17,6 +24,11 @@ while [ "$#" -gt 0 ]; do
 		--max-failures)
 			[ "$#" -ge 2 ] || { echo "job-guard: --max-failures needs a value" >&2; exit 2; }
 			MAX_FAILURES="$2"
+			shift 2
+			;;
+		--stale-after)
+			[ "$#" -ge 2 ] || { echo "job-guard: --stale-after needs a value" >&2; exit 2; }
+			STALE_AFTER="$2"
 			shift 2
 			;;
 		--reset)
@@ -49,17 +61,41 @@ case "$MAX_FAILURES" in
 esac
 [ "$MAX_FAILURES" -gt 0 ] || { echo "job-guard: max failures must be positive" >&2; exit 2; }
 
+case "$STALE_AFTER" in
+	''|*[!0-9]*)
+		echo "job-guard: stale-after must be a non-negative integer number of seconds" >&2
+		exit 2
+		;;
+esac
+
 STATE_DIR="${TOOLHUB_JOB_GUARD_DIR:-$HOME/.toolhub-job-guard}"
 STATE_FILE="$STATE_DIR/$JOB_NAME.state"
 LOCK_DIR="$STATE_DIR/.$JOB_NAME.lock"
 mkdir -p "$STATE_DIR"
 
+lock_age_seconds() {
+	lock_started="$(stat -c %Y "$LOCK_DIR" 2>/dev/null || stat -f %m "$LOCK_DIR" 2>/dev/null || echo '')"
+	[ -n "$lock_started" ] || return 1
+	echo $(($(date +%s) - lock_started))
+}
+
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-	# stdout, not stderr: a skipped overlap is a deliberate non-run with a zero
-	# exit, like --reset and the disabled branch below. Minute-scheduled jobs
-	# overlap routinely, and routing that to <job>.err buries real failures.
-	printf '%s\n' "job-guard: another $JOB_NAME invocation is already running; skipping"
-	exit 0
+	reclaimed=0
+	if [ "$STALE_AFTER" -gt 0 ] && lock_age="$(lock_age_seconds)" && [ "$lock_age" -ge "$STALE_AFTER" ]; then
+		# Abandoned, not overlapping: stderr so the failure mail reports that a
+		# previous run died without releasing its lock.
+		echo "job-guard: reclaiming $JOB_NAME lock abandoned ${lock_age}s ago" >&2
+		rmdir "$LOCK_DIR" 2>/dev/null || true
+		mkdir "$LOCK_DIR" 2>/dev/null && reclaimed=1
+	fi
+	if [ "$reclaimed" -eq 0 ]; then
+		# stdout, not stderr: a skipped overlap is a deliberate non-run with a
+		# zero exit, like --reset and the disabled branch below. Minute-scheduled
+		# jobs overlap routinely, and routing that to <job>.err buries real
+		# failures.
+		printf '%s\n' "job-guard: another $JOB_NAME invocation is already running; skipping"
+		exit 0
+	fi
 fi
 cleanup() {
 	rmdir "$LOCK_DIR" 2>/dev/null || true
