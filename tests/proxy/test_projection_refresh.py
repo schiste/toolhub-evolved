@@ -94,3 +94,31 @@ def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
     assert "webservice restart" in deploy
     assert "Restart command returned" in deploy
     assert "deployment-diagnostics.jsonl" in deploy
+
+
+def test_identity_publication_does_not_repeat_network_candidate_discovery(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        projection_refresh.people_reconcile,
+        "run",
+        lambda _session, **kwargs: captured.update(kwargs) or {"sourceAttestations": {}},
+    )
+    monkeypatch.setattr(projection_refresh.db, "advisory_lock", lambda *_args, **_kwargs: AcquiredLock())
+
+    with db.session_scope() as session:
+        session.add(ApiCacheMeta(key=projection_refresh.IDENTITY_META_KEY, value="old"))
+    result = projection_refresh._publish_identity_projection(
+        "new",
+        changed_since=projection_refresh.EARLIEST_IDENTITY_CHANGE,
+    )
+
+    assert result["published"] is True
+    assert captured["discover_candidates"] is False
+
+
+class AcquiredLock:
+    def __enter__(self):
+        return True
+
+    def __exit__(self, *_args):
+        return False

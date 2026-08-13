@@ -117,7 +117,10 @@ def _publish_identity_projection(fingerprint: str, *, changed_since: datetime) -
             people = people_reconcile.run(
                 session,
                 mode=people_reconcile.MODE_APPLY,
-                discover_candidates=True,
+                # Network-backed unresolved-label discovery has its own hourly
+                # bounded job. Projection publication uses stable local inputs
+                # only, keeping this transaction deterministic and short.
+                discover_candidates=False,
                 candidate_label_limit=people_reconcile.DEFAULT_CANDIDATE_LABEL_LIMIT,
                 rebuild_tools=False,
                 sync_accounts=True,
