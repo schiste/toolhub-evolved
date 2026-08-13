@@ -2,7 +2,7 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..bf45bdb (193 commits) -->
+<!-- Source range: 828438f..e2ea76b (195 commits) -->
 
 # What's New for Users
 
@@ -12,5 +12,5 @@
 - Public tool relationships now focus on authors and maintainers; cards show every author through a compact clickable list and use a bold green name as the sole visual cue for a verified maintainer, while detailed evidence, catalog-edit history, and record permissions stay on detail pages or in backend signals.
 - Public profiles show each related tool once with every known role and compact paginated summaries; legacy name links disambiguate safely, and maintainer-only actions appear only for people with verified authority.
 - Pages and health information load with smaller payloads, bounded background refreshes, stable quick views, and loading states that settle instead of repeatedly remounting the current route.
-- Deployment reconciliation, account and catalog synchronization, translation checks, and release publication now fail safely while preserving the last known-good public data; tools confirmed absent from a complete official catalog no longer linger in search or people relationships, and maintenance fixes stay inside one named product release instead of appearing as separate versions.
+- Deployment reconciliation, account and catalog synchronization, translation checks, and release publication now fail safely while preserving the last known-good public data; fresh catalog snapshots never mix independently cached pages, tools confirmed absent from a complete official catalog no longer linger in search or people relationships, and maintenance fixes stay inside one named product release instead of appearing as separate versions.
 - Registered toolinfo sources now report names that already exist on official Toolhub as skipped rather than failed, so a feed of tools that are all already listed reads as a clean run and background discovery keeps running instead of switching itself off.
