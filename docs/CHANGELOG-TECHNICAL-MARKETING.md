@@ -2,11 +2,11 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..91cd14e (201 commits) -->
+<!-- Source range: 828438f..989574a (206 commits) -->
 
 # Technical Release Notes
 
-- Replaces display-only public identities with a unified community projection over stable people, official accounts, canonical tools, contribution evidence, source-scoped toolinfo author bindings, and unresolved attribution clusters; immutable Toolhub/Wikimedia IDs, verified Toolforge data, complete feed generations, conservative multi-author normalization, and source-control or same-feed anchors drive reconciliation and conflict quarantine.
+- Replaces display-only public identities with a unified community projection over stable people, official accounts, canonical tools, contribution evidence, source-scoped toolinfo author bindings, and unresolved attribution clusters; immutable Toolhub/Wikimedia IDs, verified Toolforge data, complete feed generations, conservative multi-author normalization, and source-control or same-feed anchors drive reconciliation and conflict quarantine. A shared cached statistics projection reports explicit catalog, relationship, identity, source, metadata, lifecycle, and date-distribution denominators without browser fan-out.
 - Materializes typed relationship evidence with status, confidence, provenance, verification method/date, and viewer write context; public projections expose only author and maintainer roles while retaining record authority and catalog activity internally.
 - Uses generation-based account synchronization, deterministic bounded reconciliation, actionable conflict review, compact paginated person-tool summaries, and first-class tool matches without browser request fan-out.
 - Projects immutable Toolforge LDAP accounts and memberships through a canonical project-alias index built from conventional names, deployment hosts, and Toolsadmin URLs; it supports legacy non-prefixed and duplicate Toolhub records, withdraws obsolete fallback edges, supports multiple verified accounts per person, and adds bounded single-use OpenSSH SSHSIG challenges for user-initiated account repair.
