@@ -24,6 +24,7 @@ REASON_REVIEWED = "operator_approved_mapping"
 REASON_EXACT_TOOLHUB = "exact_toolhub_username_candidate"
 REASON_TOOLFORGE_CORROBORATED = "exact_toolhub_username_and_toolforge_membership"
 REASON_SUL_TOOLFORGE_MEMBERSHIP = "wikimedia_identity_and_toolforge_sul_membership"
+REASON_HANDLE_CORROBORATED = "verified_handle_and_independent_tool_edge"
 REASON_DISPLAY_ONLY = "display_name_only"
 REASON_STABLE_CONFLICT = "conflicting_stable_identifiers"
 
@@ -47,6 +48,7 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
     structured_handle: bool = False,
     authenticated_claim: bool = False,
     operator_approved: bool = False,
+    corroborated_handle: bool = False,
     exact_toolhub_candidate: bool = False,
     same_tool_toolforge_membership: bool = False,
     toolforge_sul_bound: bool = False,
@@ -63,6 +65,13 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
         return IdentityDecision(ACTION_AUTO_LINK, REASON_REVIEWED, 100)
     if structured_handle:
         return IdentityDecision(ACTION_AUTO_LINK, REASON_STRUCTURED_HANDLE, 90)
+    # A label that is a current verified handle of exactly one publishable
+    # person, on a tool that person is already independently tied to. The
+    # handle is inferred rather than declared, so it ranks below a structured
+    # field, but the independent edge is what carries it: neither the label
+    # nor the edge alone links anything.
+    if corroborated_handle:
+        return IdentityDecision(ACTION_AUTO_LINK, REASON_HANDLE_CORROBORATED, 90)
     if exact_toolhub_candidate and toolforge_sul_bound and same_tool_toolforge_membership:
         return IdentityDecision(ACTION_AUTO_LINK, REASON_SUL_TOOLFORGE_MEMBERSHIP, 95)
     if exact_toolhub_candidate and same_tool_toolforge_membership:
