@@ -23,6 +23,12 @@ def main(argv: list[str] | None = None) -> int:
         help="maximum unresolved labels to check against Toolhub during an apply run",
     )
     parser.add_argument(
+        "--registry-label-limit",
+        type=int,
+        default=int(os.environ.get("PEOPLE_REGISTRY_LABEL_LIMIT", "0")),
+        help="handle-shaped labels to resolve against CentralAuth per run (0 disables)",
+    )
+    parser.add_argument(
         "--queue",
         action="store_true",
         help="process the bounded incremental queue instead of running a historical scan",
@@ -57,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode=mode,
                 discover_candidates=args.apply or args.identities_only,
                 candidate_label_limit=args.candidate_label_limit,
+                registry_label_limit=args.registry_label_limit,
                 rebuild_tools=not args.identities_only,
                 sync_accounts=not args.identities_only,
             )

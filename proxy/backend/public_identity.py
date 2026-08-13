@@ -87,9 +87,14 @@ class ResolvedPublicIdentity:
 class WikimediaIdentityProvider:
     """Resolve rename-safe CentralAuth identities through the official API."""
 
-    def __init__(self, fetcher: WikimediaFetcher | None = None) -> None:
+    def __init__(
+        self,
+        fetcher: WikimediaFetcher | None = None,
+        username_fetcher: WikimediaFetcher | None = None,
+    ) -> None:
         """Allow deterministic provider substitution in tests and offline jobs."""
         self.fetcher = fetcher or self._fetch
+        self.username_fetcher = username_fetcher or self._fetch_username
 
     def lookup(self, global_user_id: str) -> WikimediaIdentity | None:
         """Return the exact global identity, rejecting malformed or mismatched rows."""
@@ -115,6 +120,61 @@ class WikimediaIdentityProvider:
             username=username,
             registration=_clean(row.get("registration"), 32),
         )
+
+    def lookup_username(self, username: str) -> WikimediaIdentity | None:
+        """Return the global identity a current username resolves to.
+
+        This is the only lookup that starts from text rather than an immutable
+        id, so it is the one that can be wrong about *who* is meant: a catalog
+        label matching a real account proves the account exists, not that its
+        owner wrote the tool. Callers must corroborate before publishing, and
+        the shape gate decides which labels are even worth asking about.
+
+        CentralAuth resolves the current name, so the answer is a stable global
+        id and later renames do not strand it.
+        """
+        wanted = _clean(username)
+        if not wanted:
+            return None
+        try:
+            status, payload = self.username_fetcher(wanted)
+        except (OSError, TimeoutError, ValueError, requests.RequestException):
+            return None
+        if status != HTTP_OK or not isinstance(payload, dict):
+            return None
+        query = payload.get("query")
+        row = query.get("globaluserinfo") if isinstance(query, dict) else None
+        if not isinstance(row, dict) or row.get("missing") is not None:
+            return None
+        resolved_id = _clean(row.get("id"), 64)
+        resolved_name = _clean(row.get("name"))
+        if not resolved_id or not resolved_name:
+            return None
+        return WikimediaIdentity(
+            global_user_id=resolved_id,
+            username=resolved_name,
+            registration=_clean(row.get("registration"), 32),
+        )
+
+    @staticmethod
+    def _fetch_username(username: str) -> tuple[int, object]:
+        response = requests.get(
+            CENTRALAUTH_API_URL,
+            params={
+                "action": "query",
+                "meta": "globaluserinfo",
+                "guiuser": username,
+                "format": "json",
+                "formatversion": 2,
+            },
+            headers={"User-Agent": toolhub.USER_AGENT, "Accept": "application/json"},
+            timeout=toolhub.REQUEST_TIMEOUT,
+        )
+        try:
+            payload: object = response.json()
+        except ValueError:
+            payload = None
+        return response.status_code, payload
 
     @staticmethod
     def _fetch(global_user_id: str) -> tuple[int, object]:

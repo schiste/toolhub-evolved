@@ -71,6 +71,7 @@ REASON_EXACT_TOOLHUB = "exact_toolhub_username_candidate"
 REASON_TOOLFORGE_CORROBORATED = "exact_toolhub_username_and_toolforge_membership"
 REASON_SUL_TOOLFORGE_MEMBERSHIP = "wikimedia_identity_and_toolforge_sul_membership"
 REASON_HANDLE_CORROBORATED = "verified_handle_and_independent_tool_edge"
+REASON_REGISTRY_HANDLE = "public_registry_handle_candidate"
 REASON_DISPLAY_ONLY = "display_name_only"
 REASON_STABLE_CONFLICT = "conflicting_stable_identifiers"
 
@@ -88,7 +89,7 @@ class IdentityDecision:
     confidence: int
 
 
-def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document precedence
+def decide_identity_link(  # noqa: C901, PLR0911, PLR0913 - the ordered branches are the trust policy
     *,
     same_stable_identifier: bool = False,
     structured_handle: bool = False,
@@ -96,6 +97,7 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
     operator_approved: bool = False,
     corroborated_handle: bool = False,
     exact_toolhub_candidate: bool = False,
+    registry_handle: bool = False,
     same_tool_toolforge_membership: bool = False,
     toolforge_sul_bound: bool = False,
     conflicting_stable_identifiers: bool = False,
@@ -124,6 +126,12 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
         return IdentityDecision(ACTION_CANDIDATE, REASON_TOOLFORGE_CORROBORATED, 90)
     if exact_toolhub_candidate:
         return IdentityDecision(ACTION_CANDIDATE, REASON_EXACT_TOOLHUB, 70)
+    # A public registry confirmed the label names a real account. That is an
+    # existence proof, not an authorship one: anyone can type any name into a
+    # catalog field. It therefore never links on its own -- it becomes a
+    # durable candidate, and only corroboration above promotes it.
+    if registry_handle:
+        return IdentityDecision(ACTION_CANDIDATE, REASON_REGISTRY_HANDLE, 60)
     return IdentityDecision(ACTION_UNRESOLVED, REASON_DISPLAY_ONLY, 0)
 
 

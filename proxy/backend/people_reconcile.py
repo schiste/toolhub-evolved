@@ -3,12 +3,21 @@
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from backend import db, identity_graph, maintainer_index, people_index, people_policy, source_attestations
+from backend import (
+    db,
+    identity_graph,
+    maintainer_index,
+    people_index,
+    people_policy,
+    public_identity,
+    source_attestations,
+)
 from backend.models import (
     CanonicalToolCache,
     Person,
@@ -26,6 +35,7 @@ from backend.models import (
     utcnow,
 )
 from backend.public_identity import PublicIdentityResolver
+from backend.sync import AUTHOR_CLAIM_VERIFIED
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -601,6 +611,131 @@ def _candidate_account_groups(
     )
 
 
+DEFAULT_REGISTRY_LABEL_LIMIT = 25
+REGISTRY_MIN_INTERVAL_SECONDS = 1.0
+
+
+def _registry_corroborated(s: Session, *, target_person_id: int, tool_names: list[str]) -> bool:
+    """Return True when the target already holds verified evidence on a shared tool.
+
+    The registry only proved the account exists. This is the independent fact
+    that makes the label about *this* tool, and it must come from evidence the
+    registry lookup did not create.
+    """
+    if not tool_names:
+        return False
+    return (
+        s.execute(
+            select(ToolRelationshipEvidence.id)
+            .where(
+                ToolRelationshipEvidence.person_id == target_person_id,
+                ToolRelationshipEvidence.tool_name.in_(tool_names),
+                ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _upsert_mapping(  # noqa: PLR0913 - the mapping's audit fields stay explicit
+    s: Session,
+    *,
+    run_id: int,
+    source: Person,
+    target: Person,
+    decision: people_policy.IdentityDecision,
+    evidence: dict[str, Any],
+) -> tuple[PersonReconciliationMapping, bool]:
+    """Record one durable mapping from a policy decision, reusing any existing row.
+
+    Both discovery passes reach the same shape once they have a decision, and
+    the mapping is the audit trail for it, so the fields must not drift apart
+    between them.
+    """
+    mapping = _mapping_for_source(s, source.id)
+    created = mapping is None
+    if mapping is None:
+        mapping = PersonReconciliationMapping(source_person_id=source.id)
+        s.add(mapping)
+    mapping.run_id = run_id
+    mapping.target_person_id = target.id
+    mapping.source_key = source.canonical_key
+    mapping.target_key = target.canonical_key
+    mapping.decision = decision.action
+    mapping.reason = decision.reason
+    mapping.confidence = decision.confidence
+    mapping.evidence = evidence
+    mapping.updated_at = utcnow()
+    return mapping, created
+
+
+def discover_registry_candidates(
+    s: Session,
+    *,
+    run_id: int,
+    provider: public_identity.WikimediaIdentityProvider | None = None,
+    label_limit: int = DEFAULT_REGISTRY_LABEL_LIMIT,
+    sleep: Any = time.sleep,  # noqa: ANN401 - injected for deterministic tests
+) -> dict[str, int]:
+    """Resolve handle-shaped labels against CentralAuth as durable candidates.
+
+    Every other path starts from an immutable id we already hold. This one
+    starts from catalog text, so it is the only one that can be wrong about
+    who is meant, and it is bounded accordingly: the shape gate decides which
+    labels are asked about at all, one label is looked up at a time with
+    spacing between requests, and the result is a candidate that publishes
+    nothing until corroboration promotes it.
+    """
+    resolver = provider or public_identity.WikimediaIdentityProvider()
+    created = 0
+    linked = 0
+    resolved = 0
+    checked = 0
+    candidates = [
+        person for person in _candidate_source_people(s) if people_policy.is_handle_shaped(person.display_name)
+    ]
+    for index, source in enumerate(candidates[: max(1, min(int(label_limit), 100))]):
+        if index:
+            sleep(REGISTRY_MIN_INTERVAL_SECONDS)
+        checked += 1
+        identity = resolver.lookup_username(source.display_name)
+        if identity is None:
+            continue
+        resolved += 1
+        owner_id = _stable_identifier_owner(s, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, identity.global_user_id)
+        # Only an account already in the graph can be linked to. Creating a
+        # person from a catalog label is exactly the invention this avoids.
+        target = s.get(Person, owner_id) if owner_id else None
+        if target is None or target.id == source.id:
+            continue
+        tool_names, _toolforge_names, _roles = _source_evidence_for_person(s, source.id)
+        decision = people_policy.decide_identity_link(
+            registry_handle=True,
+            corroborated_handle=_registry_corroborated(s, target_person_id=target.id, tool_names=tool_names),
+        )
+        mapping, was_created = _upsert_mapping(
+            s,
+            run_id=run_id,
+            source=source,
+            target=target,
+            decision=decision,
+            evidence={
+                "observedLabel": source.display_name,
+                "wikimediaGlobalUserId": identity.global_user_id,
+                "wikimediaUsername": identity.username,
+                "sharedToolNames": sorted(tool_names)[:20],
+            },
+        )
+        created += int(was_created)
+        if mapping.decision == MAPPING_AUTO_LINK:
+            _move_mapping_evidence(s, mapping)
+            linked += 1
+        s.flush()
+    return {"checked": checked, "resolved": resolved, "created": created, "linked": linked}
+
+
 def discover_identity_candidates(
     s: Session,
     *,
@@ -719,6 +854,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     discover_candidates: bool = False,
     identity_resolver: PublicIdentityResolver | None = None,
     candidate_label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+    registry_label_limit: int = 0,
     rebuild_tools: bool = True,
     sync_accounts: bool = True,
     refresh_sources: bool = True,
@@ -765,6 +901,14 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 if discover_candidates
                 else {"created": 0, "linked": 0, "conflicts": 0}
             )
+            # Bounded and last: it is the only pass that starts from catalog
+            # text, so it runs a small number of external lookups per pass and
+            # its results publish nothing without corroboration.
+            registry_result = (
+                discover_registry_candidates(s, run_id=run_row.id, label_limit=registry_label_limit)
+                if discover_candidates and registry_label_limit
+                else {"checked": 0, "resolved": 0, "created": 0, "linked": 0}
+            )
             source_attestation_summary = (
                 source_attestations.refresh_incremental(s, identity_changed_since=identity_changed_since)
                 if refresh_sources
@@ -784,6 +928,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             }
             account_binding_conflicts_queued = 0
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
+            registry_result = {"checked": 0, "resolved": 0, "created": 0, "linked": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
             source_attestation_summary = {
@@ -804,6 +949,10 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "nonActionableConflictsRetired": non_actionable_conflicts_retired,
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY and rebuild_tools else 0,
             "identityCandidatesCreated": candidate_result["created"],
+            "registryChecked": registry_result["checked"],
+            "registryResolved": registry_result["resolved"],
+            "registryCandidatesCreated": registry_result["created"],
+            "registryMappingsApplied": registry_result["linked"],
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "accountBindings": account_bindings,
