@@ -693,3 +693,169 @@ def test_refresh_candidates_includes_tools_with_newer_reports():
     with db.session_scope() as s:
         facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="outdated").all()}
     assert ("dependency", "npm:axios") in facets, "Analyzer facet should be present after re-projection"
+
+
+def test_refresh_candidates_uses_max_report_timestamp_with_multiple_reports():
+    """Verify that with multiple reports per tool, only the newest determines candidacy.
+
+    When a tool has multiple SourceAnalysisReports, the aggregate query should
+    pick the max(coalesce(reviewed_at, created_at)) and compare that to refreshed_at.
+    An older report should not trigger candidacy if a newer report is not newer than
+    the projection.
+    """
+    now = utcnow()
+    older_time = now - timedelta(hours=2)
+    mid_time = now - timedelta(hours=1)
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("multiversion"))
+
+    # First projection at mid_time
+    catalog_projection.refresh_tool_names(["multiversion"])
+
+    # Manually update the projection's refreshed_at
+    with db.session_scope() as s:
+        proj = s.get(CatalogToolProjection, "multiversion")
+        proj.refreshed_at = mid_time
+        s.flush()
+
+    # Add multiple reports: older one and then a newer one
+    with db.session_scope() as s:
+        # Older report (should not cause candidacy)
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="multiversion",
+                source_label="https://code.example/multiversion",
+                report={"dependencies": []},
+                review_status=REVIEW_APPROVED,
+                reviewed_at=older_time,
+            )
+        )
+        # Newer report (should cause candidacy because it's newer than refreshed_at)
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="multiversion",
+                source_label="https://code.example/multiversion",
+                report={"dependencies": [{"value": "npm:lodash", "label": "lodash", "confidence": 0.95}]},
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    # refresh_candidates should pick up this tool because the MAX report (now) is newer
+    candidates = catalog_projection.refresh_candidates()
+    assert candidates["candidates"] >= 1, "Tool with newer report should be a candidate"
+    assert candidates["refreshed"] >= 1, "Tool should be refreshed"
+
+    # Verify the new analyzer facet was projected (from the newest report)
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="multiversion").all()}
+    assert ("dependency", "npm:lodash") in facets, "Analyzer facet from newest report should be present"
+
+
+def test_refresh_candidates_uses_created_at_when_reviewed_at_is_none():
+    """Verify that coalesce(reviewed_at, created_at) works in the aggregate.
+
+    When a report has reviewed_at=None, the created_at should be used for comparison.
+    """
+    now = utcnow()
+    older_time = now - timedelta(hours=1)
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("unreviewed"))
+
+    # First projection at older_time
+    catalog_projection.refresh_tool_names(["unreviewed"])
+
+    # Manually update the projection's refreshed_at
+    with db.session_scope() as s:
+        proj = s.get(CatalogToolProjection, "unreviewed")
+        proj.refreshed_at = older_time
+        s.flush()
+
+    # Add a report with reviewed_at=None but created_at newer than refreshed_at
+    with db.session_scope() as s:
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="unreviewed",
+                source_label="https://code.example/unreviewed",
+                report={"dependencies": [{"value": "npm:uuid", "label": "uuid", "confidence": 0.90}]},
+                review_status=REVIEW_APPROVED,
+                created_at=now,  # Newer than projection's refreshed_at
+                reviewed_at=None,  # Not reviewed yet
+            )
+        )
+
+    # refresh_candidates should pick up this tool because created_at is newer
+    candidates = catalog_projection.refresh_candidates()
+    assert candidates["candidates"] >= 1, "Tool with newer created_at should be a candidate"
+    assert candidates["refreshed"] >= 1, "Tool should be refreshed"
+
+    # Verify the analyzer facet was projected
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="unreviewed").all()}
+    assert ("dependency", "npm:uuid") in facets, "Analyzer facet should be present after re-projection"
+
+
+def test_refresh_candidates_excludes_tools_with_older_reports():
+    """Verify that tools with reports older than refreshed_at are NOT candidates.
+
+    This proves that the comparison works correctly: a tool with old reports
+    should not trigger re-projection.
+    """
+    now = utcnow()
+    newer_time = now + timedelta(hours=1)
+    old_report_time = now - timedelta(hours=2)
+    user = None
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        user = user_obj.id
+        s.add(_canonical("oldreport"))
+
+    # First projection at newer_time (future, to simulate old report)
+    catalog_projection.refresh_tool_names(["oldreport"])
+
+    # Manually update the projection's refreshed_at to a future time
+    with db.session_scope() as s:
+        proj = s.get(CatalogToolProjection, "oldreport")
+        proj.refreshed_at = newer_time
+        s.flush()
+
+    # Add a report with old timestamp (older than refreshed_at)
+    with db.session_scope() as s:
+        s.add(
+            SourceAnalysisReport(
+                user_id=user,
+                tool_name="oldreport",
+                source_label="https://code.example/oldreport",
+                report={"dependencies": []},
+                review_status=REVIEW_APPROVED,
+                reviewed_at=old_report_time,
+            )
+        )
+
+    # refresh_candidates should NOT include this tool
+    candidates = catalog_projection.refresh_candidates()
+    # The tool is already at current version and has no retry backoff,
+    # so it shouldn't be in candidates (or only from backoff logic, not report comparison)
+    with db.session_scope() as s:
+        proj = s.get(CatalogToolProjection, "oldreport")
+        # Verify refreshed_at is still the newer time and next_attempt_at is None (no backoff)
+        assert proj.refreshed_at == newer_time
+        assert proj.next_attempt_at is None
+
+    # The tool should not have been re-projected due to the old report
+    # (We can infer this because if it were a candidate, it would have been refreshed)

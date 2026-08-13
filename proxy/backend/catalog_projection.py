@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
@@ -211,6 +211,28 @@ def _latest_reports(s: Any, names: list[str]) -> dict[str, SourceAnalysisReport]
         if row.tool_name:
             out.setdefault(row.tool_name, row)
     return out
+
+
+def _latest_report_times(s: Session) -> dict[str, datetime]:
+    """Get the newest report timestamp for each tool without loading full report rows.
+
+    Returns a dict mapping tool_name -> max(coalesce(reviewed_at, created_at))
+    for all REVIEW_APPROVED reports. Groups over the entire table to avoid
+    building a large IN clause with all canonical tool names.
+    """
+    rows = list(
+        s.execute(
+            select(
+                SourceAnalysisReport.tool_name,
+                func.max(func.coalesce(SourceAnalysisReport.reviewed_at, SourceAnalysisReport.created_at)).label(
+                    "latest_timestamp"
+                ),
+            )
+            .where(SourceAnalysisReport.review_status == REVIEW_APPROVED)
+            .group_by(SourceAnalysisReport.tool_name)
+        )
+    )
+    return {row.tool_name: row.latest_timestamp for row in rows if row.tool_name}
 
 
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
@@ -603,8 +625,8 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
     with db.session_scope() as s:
         canonical = list(s.execute(select(CanonicalToolCache.tool_name)).scalars())
         existing = {row.tool_name: row for row in s.execute(select(CatalogToolProjection)).scalars()}
-        # Fetch latest reports to detect newly-analyzed tools
-        latest_reports = _latest_reports(s, canonical)
+        # Fetch latest report timestamps to detect newly-analyzed tools (lightweight query)
+        latest_report_times = _latest_report_times(s)
     candidates = []
     for name in canonical:
         row = existing.get(name)
@@ -612,11 +634,13 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
             continue
         if row is None or row.projection_version != PROJECTION_VERSION or row.status == STATUS_ERROR:
             candidates.append(name)
-        elif report := latest_reports.get(name):
+        elif (
+            (report_timestamp := latest_report_times.get(name))
+            and row.refreshed_at
+            and report_timestamp > row.refreshed_at
+        ):
             # Include tools whose latest report is newer than their projection
-            report_timestamp = report.reviewed_at or report.created_at
-            if report_timestamp and row.refreshed_at and report_timestamp > row.refreshed_at:
-                candidates.append(name)
+            candidates.append(name)
     names = sorted(candidates)[:bounded]
     return {"candidates": len(candidates), **refresh_tool_names(names)}
 
