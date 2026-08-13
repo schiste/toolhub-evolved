@@ -56,7 +56,12 @@ From the user's description derive, without asking unless truly blocked:
 
 - **Phrasings** (2–4): different vocabularies for the same idea. Toolhub
   descriptions are terse and inconsistent ("cite checker" vs "reference
-  verifier" vs "citation hunt"); one phrasing misses tools.
+  verifier" vs "citation hunt"); one phrasing misses tools. Keep each query
+  SHORT and distinctive — 2–3 content words. Search scores terms
+  independently, so a full sentence dilutes precision: measured against the
+  live index, "citation checker" returned 90 tightly relevant hits while
+  "check citations for accuracy on wikipedia articles" returned 2,653 with
+  unrelated username- and credit-checkers in the top results.
 - **Predicted data access**: which APIs it will plausibly touch, chosen from
   the facet vocabulary: `mediawiki-action-api`, `wikibase-api`,
   `wikidata-query-service`, `mediawiki-rest-api`, `toolforge`,

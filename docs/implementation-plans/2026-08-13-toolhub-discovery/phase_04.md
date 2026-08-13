@@ -502,11 +502,13 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "name": "search_tools",
         "description": (
             "Relevance-ranked search over all ~4,500 Wikimedia tools in the Toolhub "
-            "catalog, served by Toolhub's own search index. Handles sentence-shaped "
-            "concept queries as well as keywords, so describe the idea rather than "
-            "guessing keywords; still worth trying 2-3 phrasings. Covers the full "
-            "catalog. If the response has degraded=true, upstream search was "
-            "unavailable and these are weaker substring matches - say so in your report."
+            "catalog, served by Toolhub's own search index. Covers the full catalog. "
+            "Keep queries SHORT and distinctive (2-3 content words): terms are matched "
+            "independently and scored, so extra common words ('wikipedia', 'check', "
+            "'tool') pull in unrelated results and push good ones down. Prefer several "
+            "narrow queries with different vocabulary over one long descriptive one. "
+            "If the response has degraded=true, upstream search was unavailable and "
+            "these are weaker local substring matches - say so in your report."
         ),
         "inputSchema": {
             "type": "object",

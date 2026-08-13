@@ -190,6 +190,12 @@ def test_facets_tools_limit_never_exceeds_serializer_cap(client):
     data = client.get("/v1/facets/tools/?dependency=pywikibot&limit=9999").get_json()
     assert len(data["tools"]) <= ct.MAX_QUERY_NAMES
     assert all(t["title"] for t in data["tools"])  # no husk records
+    # `total` is the TRUE match count, not the page size: a client must be
+    # able to tell 50-of-50 from 50-of-55. (Seeded with cap+5 precisely so
+    # the two numbers differ; asserting only the page size would let
+    # `total = len(matches)` pass.)
+    assert data["total"] == ct.MAX_QUERY_NAMES + 5
+    assert data["total"] > len(data["tools"])
 
 
 def test_facets_values_listing_and_validation(client):
