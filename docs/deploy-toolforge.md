@@ -84,6 +84,37 @@ Unconfigured, the site still runs — live read interface plus signed-out read-o
 mode, with `/oauth/login` answering 503 and official write endpoints returning
 `reauth: true` until the user has a stored Toolhub grant.
 
+## Configuring ProxyFix for rate limiting
+
+Rate limiting on faceted discovery endpoints (`/v1/facets/tools/` and
+`/v1/facets/values/`) uses `request.remote_addr` to identify clients. Behind
+Toolforge's ingress, this is always the proxy's address unless ProxyFix is
+configured — without it, one global bucket limits the entire tool to 120 requests
+per minute.
+
+**To measure and enable ProxyFix:**
+
+1. Open `https://toolhub-evolved.toolforge.org/v1/debug/forwarded/` **from a
+   signed-in browser session** on a machine whose public IP you know (the route is
+   `@login_required`, so an unauthenticated curl gets a redirect and a misleading
+   result). The response shows `candidates` — possible hop counts.
+
+2. Look for the row where `address` matches your known public IP (the route's
+   docstring explains which column each hop count produces). Note that row's `hops`
+   value.
+
+3. Set the environment variable `TOOLHUB_PROXYFIX_X_FOR=<hops>` in the tool
+   account's env file via `toolforge envvars edit` (see `RUNBOOK.md`).
+
+4. Delete `/v1/debug/forwarded/` to remove the temporary debug route (see its
+   docstring for the `@app.route` line to remove from `proxy/backend/v1.py`).
+
+5. Restart the webservice: `webservice restart`.
+
+Test: after restart, visit `/v1/debug/forwarded/` again from the same IP. It
+should now show `403 Forbidden` (the route is no longer registered). The rate
+limiter is now active.
+
 ## Updating after a change
 
 ```sh

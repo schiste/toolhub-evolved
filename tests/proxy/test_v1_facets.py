@@ -7,7 +7,7 @@ import pytest
 from flask import Flask
 
 import backend
-from backend import db, security
+from backend import db, security, tool_facets
 from backend.models import CanonicalToolCache, CatalogFacetValue, SourceAnalysisReport, User, utcnow
 
 
@@ -209,3 +209,50 @@ def test_facets_values_listing_and_validation(client):
     assert client.get("/v1/facets/values/?type=bogus").status_code == 400
     assert client.get("/v1/facets/values/").status_code == 400
     assert client.get("/v1/facets/tools/?dependency=").status_code == 400  # empty value ≠ filter
+
+
+def test_facets_tools_rate_limited(client, monkeypatch):
+    with db.session_scope() as s:
+        _seed(s)
+    monkeypatch.setattr(security, "facet_rate_limited", lambda _: True)
+    resp = client.get("/v1/facets/tools/?dependency=pywikibot")
+    assert resp.status_code == 429
+
+
+def test_facets_values_rate_limited(client, monkeypatch):
+    with db.session_scope() as s:
+        _seed(s)
+    monkeypatch.setattr(security, "facet_rate_limited", lambda _: True)
+    resp = client.get("/v1/facets/values/?type=dependency")
+    assert resp.status_code == 429
+
+
+def test_cached_facet_values_clamping_and_expiry(app, monkeypatch):
+    with db.session_scope() as s:
+        _seed(s)
+    # First call should execute the query and cache
+    result1 = v1_facets.cached_facet_values("dependency", limit=100)
+    assert result1["totalValues"] >= 0
+
+    # Mock facet_value_counts to count invocations
+    original_count = tool_facets.facet_value_counts
+    call_count = 0
+
+    def mock_count(s, field_name, *, limit):
+        nonlocal call_count
+        call_count += 1
+        return original_count(s, field_name, limit=limit)
+
+    monkeypatch.setattr(tool_facets, "facet_value_counts", mock_count)
+
+    # Second call should hit cache
+    result2 = v1_facets.cached_facet_values("dependency", limit=100)
+    assert call_count == 0  # No new query
+    assert result1 == result2
+
+    # Clear cache
+    v1_facets.clear_cache()
+
+    # Third call should query again
+    result3 = v1_facets.cached_facet_values("dependency", limit=100)
+    assert call_count == 1  # One new query

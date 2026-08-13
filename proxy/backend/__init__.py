@@ -14,6 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend import db, token_crypto
 from backend.oauth import oauth_bp
@@ -89,6 +90,12 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     token_crypto.configure(app.secret_key)
     db.configure(url)
     db.init_schema()
+    proxy_hops = int(os.environ.get("TOOLHUB_PROXYFIX_X_FOR", "0") or 0)
+    if proxy_hops:
+        # N is measured per deployment via /v1/debug/forwarded/ (see
+        # docs/deploy-toolforge.md); trusting more hops than the ingress
+        # actually appends lets clients forge their address.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops)
     app.register_blueprint(oauth_bp)
     app.register_blueprint(v1_bp)
     app.register_blueprint(v1_write_bp)

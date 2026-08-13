@@ -8,13 +8,15 @@ repository has been scanned, so an empty result must never read as "no tool
 does this."
 """
 
+from datetime import timedelta
+from time import time
 from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend import canonical_tools, db, tool_facets
+from backend import canonical_tools, db, security, tool_facets
 from backend.models import CanonicalToolCache, CatalogFacetValue
 
 v1_facets_bp = Blueprint("v1_facets", __name__)
@@ -48,6 +50,42 @@ def coverage(s: Session) -> dict[str, int]:
     """Scanned-vs-total tool counts every facet answer must disclose."""
     total = int(s.execute(select(func.count(CanonicalToolCache.tool_name))).scalar() or 0)
     return {"scannedTools": tool_facets.scanned_tool_count(s), "totalTools": total}
+
+
+# In-memory per-worker cache for facet value counts: (field_name, limit) -> (timestamp, values, total)
+_value_cache: dict[tuple[str, int], tuple[float, list[dict[str, Any]], int]] = {}
+VALUES_MAX_AGE = timedelta(minutes=15)
+
+
+def clear_cache() -> None:
+    """Clear the value-count cache (tests)."""
+    _value_cache.clear()
+
+
+def cached_facet_values(facet_type: str, *, limit: int) -> dict[str, Any]:
+    """Value counts + truncation info, cached per worker for 15 minutes.
+
+    Clamps limit to [1, MAX_VALUE_RESULTS] BEFORE the cache lookup so
+    hostile ?limit= values cannot mint unbounded cache entries.
+    """
+    clamped = max(1, min(tool_facets.MAX_VALUE_RESULTS, int(limit or tool_facets.DEFAULT_VALUE_RESULTS)))
+    key = (facet_type, clamped)
+    now = time()
+
+    # Check cache
+    if key in _value_cache:
+        cached_time, cached_values, cached_total = _value_cache[key]
+        if now - cached_time < VALUES_MAX_AGE.total_seconds():
+            return {"values": cached_values, "totalValues": cached_total}
+
+    # Cache miss or expired: query
+    with db.session_scope() as s:
+        values = tool_facets.facet_value_counts(s, facet_type, limit=clamped)
+        total = tool_facets.count_facet_values(s, facet_type)
+
+    # Store in cache
+    _value_cache[key] = (now, values, total)
+    return {"values": values, "totalValues": total}
 
 
 def tool_summaries(names: list[str], *, matched_by_tool: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -112,6 +150,8 @@ def dependency_values(s: Session, raw: list[str]) -> list[str]:
 @v1_facets_bp.route("/v1/facets/tools/")
 def v1_facets_tools() -> Response | tuple[Response, int]:
     """Tools matching every supplied facet filter (AND across types)."""
+    if security.facet_rate_limited(request.remote_addr):
+        return jsonify({"error": "rate limited, retry later"}), 429
     limit = request.args.get("limit", "")
     try:
         capped = max(1, min(MAX_LIMIT, int(limit))) if limit else DEFAULT_LIMIT
@@ -159,6 +199,8 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
 @v1_facets_bp.route("/v1/facets/values/")
 def v1_facets_values() -> Response | tuple[Response, int]:
     """Top distinct values for one facet type, ranked by tool adoption."""
+    if security.facet_rate_limited(request.remote_addr):
+        return jsonify({"error": "rate limited, retry later"}), 429
     facet_type = str(request.args.get("type") or "").strip().casefold()
     if facet_type not in set(FILTER_PARAMS.values()):
         return jsonify({"error": f"type must be one of {sorted(FILTER_PARAMS.values())}"}), 400
@@ -167,15 +209,14 @@ def v1_facets_values() -> Response | tuple[Response, int]:
         limit = int(raw_limit) if raw_limit else tool_facets.DEFAULT_VALUE_RESULTS
     except ValueError:
         limit = tool_facets.DEFAULT_VALUE_RESULTS
+    listing = cached_facet_values(facet_type, limit=limit)
     with db.session_scope() as s:
-        values = tool_facets.facet_value_counts(s, facet_type, limit=limit)
-        total = tool_facets.count_facet_values(s, facet_type)
         disclosed_coverage = coverage(s)
     return jsonify(
         {
             "type": facet_type,
-            "values": [{"value": v["value"], "toolCount": v["toolCount"]} for v in values],
-            "totalValues": total,
+            "values": listing["values"],
+            "totalValues": listing["totalValues"],
             "coverage": disclosed_coverage,
         }
     )
