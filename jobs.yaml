@@ -30,6 +30,15 @@
   schedule: "11 */6 * * *"
   emails: onfailure
 
+- name: source-attestations
+  # Local repair pass for controller/binding rule upgrades and identity changes.
+  # Successful source crawls also refresh only their changed tools immediately.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py
+  image: python3.13
+  schedule: "29 */6 * * *"
+  timeout: 300
+  emails: onfailure
+
 - name: catalog-sync
   # Initial backfill: five 100-record pages every 15 minutes. After the first
   # cycle, consume recent changes, hydrate up to twenty graph candidates, and

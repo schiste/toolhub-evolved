@@ -6,7 +6,7 @@
 
 # Technical Release Notes
 
-- Replaces display-only public identities with a unified community projection over stable people, official accounts, canonical tools, contribution evidence, and unresolved attribution clusters; immutable Toolhub/Wikimedia IDs and verified Toolforge data drive reconciliation and conflict quarantine.
+- Replaces display-only public identities with a unified community projection over stable people, official accounts, canonical tools, contribution evidence, source-scoped toolinfo author bindings, and unresolved attribution clusters; immutable Toolhub/Wikimedia IDs, verified Toolforge data, complete feed generations, conservative multi-author normalization, and source-control or same-feed anchors drive reconciliation and conflict quarantine.
 - Materializes typed relationship evidence with status, confidence, provenance, verification method/date, and viewer write context; public projections expose only author and maintainer roles while retaining record authority and catalog activity internally.
 - Uses generation-based account synchronization, deterministic bounded reconciliation, actionable conflict review, compact paginated person-tool summaries, and first-class tool matches without browser request fan-out.
 - Projects immutable Toolforge LDAP accounts and memberships through a canonical project-alias index built from conventional names, deployment hosts, and Toolsadmin URLs; it supports legacy non-prefixed and duplicate Toolhub records, withdraws obsolete fallback edges, supports multiple verified accounts per person, and adds bounded single-use OpenSSH SSHSIG challenges for user-initiated account repair.

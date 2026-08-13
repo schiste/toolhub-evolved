@@ -105,6 +105,11 @@ if [ -x "$VENV_PY" ]; then
 	# population and retries transient CentralAuth or LDAP failures.
 	echo "Resolving public identity projection ..."
 	run_with_tool_env people-reconcile "$REPO_DIR/proxy/people_reconcile.py --identities-only --candidate-label-limit 100"
+	# Re-evaluate every indexed feed against the freshly synchronized stable
+	# account graph. This is local-only; the six-hour source-index job performs
+	# the network refresh and invokes the same projection for changed sources.
+	echo "Reconciling toolinfo source identities ..."
+	run_with_tool_env source-attestations "$REPO_DIR/proxy/source_attestations.py"
 	echo "Building production dist/ ..."
 	"$VENV_PY" -m pip install -q rcssmin==1.2.2 >/dev/null 2>&1 || true
 	release_stage="$(mktemp /tmp/toolhub-evolved-deployment.XXXXXX)"

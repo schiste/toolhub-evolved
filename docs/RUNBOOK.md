@@ -237,6 +237,8 @@ names are:
 | `toolinfo_discovery_meta`                                          | Operational cursor state                               | Stores the official `/api/tools/` page cursor used by the automated discovery job; safe to reset to page 1 by clearing the row.                                                                           |
 | `toolinfo_sources`                                                 | Official crawler source evidence cache                 | Mirrors official `/api/crawler/urls/` registrations and fetch status; safe to rebuild, not a canonical copy of tool records.                                                                              |
 | `toolinfo_source_items`                                            | Per-tool official feed source evidence                 | Maps tool names to the official crawler feed item that declared them; stores compact feed payload evidence for My tools and future provenance features.                                                   |
+| `toolinfo_source_generations`                                      | Operational source audit history                       | Records every completely fetched feed document by content hash. Failed reads never create a deletion generation or replace the last good item projection.                                                 |
+| `toolinfo_source_attestations` / `toolinfo_author_bindings`        | Rebuildable identity evidence                          | Classifies feed control and binds each source-local author token only through stable handles, verified source control, or an independently verified same-source tool anchor. Conflicts fail closed.       |
 | `tool_events`                                                      | Aggregate-only user-visible metrics                    | Signed-in Evolved interactions; use only for privacy-limited aggregates and delete per-user rows on data deletion.                                                                                        |
 | `tool_thanks`                                                      | Public aggregate, private user relation                | One active thanks per user/tool; counts include only `review_status = approved`, are labeled as Evolved data, and are deleted with the user's local data.                                                 |
 | `tool_author_claims`                                               | Public provenance label, private evidence cache        | Per-tool verification claims owned by stable local `user_id`; `toolhub_username` is only a mutable display snapshot. Never treat a claim as official Toolhub permission state.                            |
@@ -721,6 +723,30 @@ URLs, the source indexer allows public `*.toolforge.org`, `*.wmcloud.org`, and
 `*.wmflabs.org` ingress hosts even when they resolve to internal service IPs
 from Toolforge, and it follows redirects only after validating each hop.
 Arbitrary private hosts are still refused.
+
+Source identity reconciliation runs after every successful source-index batch
+and as a six-hour local repair pass. A Toolforge-hosted feed is classified from
+the complete LDAP membership projection: a single member is usable only when
+its immutable account is already bound to a stable person; a multi-member
+project remains group-controlled. Wikimedia user-page sources and explicit
+URL-control challenges provide equivalent source-scoped proofs. Toolhub's
+`created_by` value proves who registered a crawler URL, not who controls it.
+
+Each toolinfo author becomes an independent assertion. The current schema's
+author array and structured `wiki_username` / `developer_username` fields are
+preferred. Legacy scalar values such as `Ada, Grace` are split for compatibility
+but retain their raw value and a `legacyDelimited` audit flag; splitting alone
+never verifies either identity. Once a source-local token is bound through a
+verified controller or one independently verified tool edge, the same token can
+produce author evidence for the source's other current canonical tools. A
+target tool's Toolforge URL is evaluated separately against current LDAP
+membership, so feed publication never implies operational maintenance.
+
+Complete successful feed reads create generation rows and may withdraw missing
+items and their derived evidence. Timeouts, invalid responses, and other failed
+reads mark the source errored while preserving the last complete item and
+relationship projection. Identity disagreements create
+`toolinfo_source_identity` entries in the normal reconciliation conflict queue.
 
 The `catalog-sync` job is the complete official catalog mirror. During the
 initial backfill it walks `/api/tools/` with a resumable page cursor and upserts
