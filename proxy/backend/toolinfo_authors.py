@@ -9,6 +9,9 @@ from typing import Any
 
 LEGACY_AUTHOR_SEPARATOR = re.compile(r"\s*[,;]\s*")
 MIN_MULTI_AUTHOR_PARTS = 2
+# ``[[User:Name]]`` and ``[[User:Name|shown]]``. The link target is the identity;
+# the pipe alias is display text and is deliberately discarded.
+WIKI_USER_LINK = re.compile(r"\[\[\s*user\s*:\s*([^\]|#]+?)\s*(?:\|[^\]]*)?\]\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,36 @@ def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - external JSON
     return " ".join(str(value or "").split()).strip()[:limit]
 
 
+def _wiki_link_assertions(raw: str, position: int) -> list[AuthorAssertion]:
+    """Return one assertion per explicit wiki user link in a free-text value.
+
+    A ``[[User:Name]]`` link is the publisher naming a wiki account outright,
+    so it carries the same structured handle the schema's ``wiki_username``
+    field would, and reaches the same verified-handle binding path. No
+    delimiter guessing is involved, so these are not marked legacy-delimited.
+
+    When a value contains any link, the links are the author list: text
+    around them is connective prose rather than a further attribution. That
+    only ever discards an unlinked label, which could not have resolved to a
+    person anyway.
+    """
+    names: list[str] = []
+    for match in WIKI_USER_LINK.finditer(raw):
+        # Subpages and underscores are MediaWiki title syntax, not identity.
+        name = _clean(match.group(1).replace("_", " ")).split("/", 1)[0].strip()
+        if name and name not in names:
+            names.append(name)
+    return [
+        AuthorAssertion(
+            display_name=name,
+            wiki_username=name,
+            raw_value=raw,
+            position=position + offset,
+        )
+        for offset, name in enumerate(names)
+    ]
+
+
 def _legacy_string_assertions(value: str, position: int) -> list[AuthorAssertion]:
     """Split legacy delimiter syntax while retaining its lower-trust origin.
 
@@ -41,6 +74,8 @@ def _legacy_string_assertions(value: str, position: int) -> list[AuthorAssertion
     identity proof by itself.
     """
     raw = _clean(value)
+    if linked := _wiki_link_assertions(raw, position):
+        return linked
     parts = [_clean(part) for part in LEGACY_AUTHOR_SEPARATOR.split(raw)]
     parts = [part for part in parts if part]
     # A two-token ``Surname, Given`` value is indistinguishable from two
@@ -72,7 +107,20 @@ def author_assertions(payload: dict[str, Any]) -> list[AuthorAssertion]:
             developer = _clean(author.get("developer_username"))
             wiki = _clean(author.get("wiki_username"))
             display = _clean(author.get("name") or developer or wiki)
-            if display:
+            if not wiki and (linked := _wiki_link_assertions(display, position)):
+                # A structured entry whose name is still wikitext names the
+                # account as plainly as the dedicated field would.
+                assertions.extend(
+                    AuthorAssertion(
+                        display_name=assertion.display_name,
+                        developer_username=developer,
+                        wiki_username=assertion.wiki_username,
+                        raw_value=display,
+                        position=assertion.position,
+                    )
+                    for assertion in linked
+                )
+            elif display:
                 assertions.append(
                     AuthorAssertion(
                         display_name=display,
