@@ -422,6 +422,54 @@ def test_discovery_reports_not_found_when_sitemap_candidates_404(monkeypatch):
     assert calls == ["https://empty.example/toolinfo.json", "https://empty.example/meta/toolinfo.json"]
 
 
+def test_matching_record_and_found_payload_include_matched_tool_record():
+    data = [
+        {"name": "other-tool", "for_wikis": ["enwiki"]},
+        {"name": "Target-Tool", "for_wikis": ["wikidatawiki"]},
+    ]
+    assert toolinfo_discovery._matching_record(data, "") is None
+    matched = toolinfo_discovery._matching_record(data, "target-tool")
+    assert matched == {"name": "Target-Tool", "for_wikis": ["wikidatawiki"]}
+    assert toolinfo_discovery._matching_record({"name": "solo-tool"}, "solo-tool") == {"name": "solo-tool"}
+    assert toolinfo_discovery._matching_record("not-a-record", "target-tool") is None
+    assert toolinfo_discovery._matching_record(data, "missing-tool") is None
+
+    payload = toolinfo_discovery._found_payload(
+        "https://tool.example",
+        "https://tool.example/toolinfo.json",
+        "root",
+        data,
+        [],
+        tool_name="target-tool",
+    )
+    assert payload["toolRecord"] == {"name": "Target-Tool", "for_wikis": ["wikidatawiki"]}
+
+    payload_no_match = toolinfo_discovery._found_payload(
+        "https://tool.example",
+        "https://tool.example/toolinfo.json",
+        "root",
+        data,
+        [],
+        tool_name="absent-tool",
+    )
+    assert "toolRecord" not in payload_no_match
+
+
+def test_ensure_pending_records_candidates_with_urls():
+    db.configure("sqlite://")
+    db.init_schema()
+
+    payloads = toolinfo_discovery.ensure_pending_for_candidates(
+        {"has-url": {"tool": {"name": "has-url", "url": "https://has-url.example/tool"}}}
+    )
+
+    assert payloads["has-url"]["status"] == "pending"
+    assert payloads["has-url"]["toolUrl"] == "https://has-url.example/tool"
+    with db.session_scope() as s:
+        row = s.query(ToolinfoDiscovery).filter_by(tool_name="has-url").one()
+        assert row.tool_url == "https://has-url.example/tool"
+
+
 def test_ensure_pending_records_no_url_candidates():
     db.configure("sqlite://")
     db.init_schema()

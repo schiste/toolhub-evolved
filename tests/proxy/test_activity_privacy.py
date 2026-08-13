@@ -24,6 +24,32 @@ def test_private_preference_activity_recognizes_backend_and_upstream_shapes() ->
     )
 
 
+def test_is_private_preference_activity_rejects_non_dict_rows() -> None:
+    assert not activity_privacy.is_private_preference_activity(["not", "a", "dict"])
+    assert not activity_privacy.is_private_preference_activity(None)
+
+
+def test_is_private_preference_activity_matches_exact_action_key() -> None:
+    # "favorited" matches PRIVATE_ACTION_KEYS directly, without needing the
+    # object-key or add/remove-word heuristics that other tests exercise.
+    assert activity_privacy.is_private_preference_activity({"action": "favorited"})
+
+
+def test_public_activity_rows_rejects_non_list_input() -> None:
+    assert activity_privacy.public_activity_rows({"not": "a-list"}) == []
+    assert activity_privacy.public_activity_rows(None) == []
+
+
+def test_filtered_json_tolerates_invalid_and_non_object_payloads() -> None:
+    assert activity_privacy.sanitize_overlay_payload(b"not json") == b"not json"
+    assert activity_privacy.sanitize_overlay_payload(b"[]") == b"[]"
+
+
+def test_filtered_json_skips_non_list_key_values() -> None:
+    payload = json.dumps({"revisions": "not-a-list", "auditlogs": []}).encode()
+    assert activity_privacy.sanitize_overlay_payload(payload) == payload
+
+
 def test_overlay_sanitizer_removes_private_rows_from_both_shared_feeds() -> None:
     private_revision = {"content_type": "favorite", "content_id": "secret"}
     private_audit = {"action": "unfavorited", "target": {"type": "favorite", "id": "secret"}}

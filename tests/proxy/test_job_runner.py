@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import DEFAULT_DB_URL, db, job_contract, job_runner  # noqa: E402
+from backend import DEFAULT_DB_URL, db, job_catalog, job_contract, job_runner  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -77,6 +77,17 @@ def test_the_lock_name_keeps_the_shared_prefix(monkeypatch):
     monkeypatch.setattr(db, "advisory_lock", record)
     job_runner.run_job("people-reconcile", lambda: None, lock=True)
     assert seen == ["toolhub-evolved:people-reconcile"]
+
+
+def test_interval_minutes_returns_zero_for_an_unclassifiable_cron_shape():
+    # Specific minute, specific non-"*/" hour, specific day-of-month, and a
+    # wildcard day-of-week does not match any of the coarse buckets this
+    # reader distinguishes, so it falls through to the explicit 0.
+    assert job_catalog._interval_minutes("30 5 15 * *") == 0
+
+
+def test_load_returns_no_jobs_when_the_file_is_missing():
+    assert job_catalog.load(Path("/nonexistent/toolhub-evolved-jobs.yaml")) == []
 
 
 def test_no_scheduled_job_entrypoint_still_configures_the_database_by_hand():

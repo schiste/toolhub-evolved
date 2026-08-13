@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import account_sync  # noqa: E402
-from backend import db, toolhub  # noqa: E402
+from backend import account_directory, db, toolhub  # noqa: E402
 from backend.models import Person, PersonIdentifier, ToolhubAccountProjection, ToolhubAccountSyncState  # noqa: E402
 
 
@@ -232,6 +232,17 @@ def test_projection_refresh_owns_complete_account_generation_outside_deploy():
     assert "projection-refresh-deploy" in deploy
     assert "webservice python3.13 shell" not in deploy
     assert 'exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"' in deploy
+
+
+def test_sync_payload_reports_unavailable_before_any_sync_state_exists():
+    payload = account_directory._sync_payload(None)
+    assert payload == {
+        "status": "unavailable",
+        "complete": False,
+        "lastCompletedAt": "",
+        "lastSuccessAt": "",
+        "error": "Account projection has not been synchronized yet.",
+    }
 
 
 def test_complete_cli_fails_when_another_worker_holds_the_sync_lock(monkeypatch, capsys, tmp_path):

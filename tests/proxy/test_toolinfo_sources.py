@@ -299,6 +299,28 @@ def test_index_official_crawler_sources_stores_valid_invalid_and_error_rows(monk
         assert item.payload["description"] == "Valid"
 
 
+def test_index_official_crawler_sources_skips_attestation_when_content_is_unchanged(monkeypatch):
+    monkeypatch.setattr(
+        toolinfo_sources,
+        "official_crawler_url_rows",
+        lambda: [{"id": 1, "url": "https://stable.example/feed.json"}],
+    )
+    feed = [{"name": "stable-tool", "title": "Stable", "description": "Stable", "url": "https://stable.example"}]
+    monkeypatch.setattr(toolinfo_sources, "fetch_toolinfo_feed_once", lambda url, _session=None: feed)
+    monkeypatch.setattr(toolinfo_sources.graph_enrichment, "refresh_tool_names", lambda names: None)
+
+    first = toolinfo_sources.index_official_crawler_sources(limit=1)
+    assert first["attestedSources"] == 1
+
+    # Second run over an unchanged feed: _store_source_items short-circuits on
+    # the matching content hash (source_names stays empty) and the source was
+    # already attested by the first run, so neither disjunct on the "does
+    # this source need re-attestation" check is true.
+    second = toolinfo_sources.index_official_crawler_sources(limit=1)
+    assert second["attestedSources"] == 0
+    assert second["valid"] == 1
+
+
 def test_store_and_error_helpers_tolerate_missing_sources():
     assert toolinfo_sources._mark_source_error(404, "missing") == []
     assert toolinfo_sources._store_source_items(
