@@ -507,8 +507,8 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "independently and scored, so extra common words ('wikipedia', 'check', "
             "'tool') pull in unrelated results and push good ones down. Prefer several "
             "narrow queries with different vocabulary over one long descriptive one. "
-            "If the response has degraded=true, upstream search was unavailable and "
-            "these are weaker local substring matches - say so in your report."
+            "If this tool reports search is unavailable, say so plainly rather than "
+            "substituting weaker evidence - facet_tools and get_tool still work."
         ),
         "inputSchema": {
             "type": "object",
@@ -594,26 +594,23 @@ def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
     if not query:
         raise _ToolError("query must be a non-empty string")
     limit = _limit_from(arguments, 10)
-    degraded = False
     try:
         payload = toolhub.public_api_get(
             "/api/search/tools/", params={"q": query, "page_size": limit}
         )
-        results = payload.get("results") if isinstance(payload, dict) else None
-        names = [str(r.get("name")) for r in (results or []) if isinstance(r, dict) and r.get("name")]
-    except (OSError, requests.RequestException, toolhub.ToolhubAPIError):
-        degraded = True
-        names = [row["toolName"] for row in canonical_tools.search(query, limit=limit)]
+    except (OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:
+        # Deliberately no local fallback. canonical_tools.search is substring
+        # matching ordered by cache-fetch time; for prior art a weak answer is
+        # WORSE than none, because the caller acts on it and builds a tool that
+        # already exists. Fail loudly so the report says "search unavailable"
+        # instead of silently under-reporting. facet_tools and get_tool are
+        # unaffected - they read local data and still work.
+        raise _ToolError(f"Toolhub search is unavailable right now ({exc}); retry shortly") from exc
+    results = payload.get("results") if isinstance(payload, dict) else None
+    names = [str(r.get("name")) for r in (results or []) if isinstance(r, dict) and r.get("name")]
     # "returned", not "total": a capped page labeled "total" reads as
     # "only N tools exist" to an LLM.
-    return {
-        "tools": v1_facets.tool_summaries(names, matched_by_tool={}),
-        "returned": len(names),
-        # True when upstream search was unreachable and this fell back to
-        # local substring matching, which ranks far worse. The prior-art
-        # report must disclose it rather than present degraded hits as ranked.
-        "degraded": degraded,
-    }
+    return {"tools": v1_facets.tool_summaries(names, matched_by_tool={}), "returned": len(names)}
 
 
 def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:

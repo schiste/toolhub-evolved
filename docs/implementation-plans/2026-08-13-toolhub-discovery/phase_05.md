@@ -112,6 +112,10 @@ https://toolhub.wikimedia.org:
   unregistered tools exist).
 - Do not present adoption counts as quality judgments; a widely used library
   is evidence of ecosystem fit, not of being the best choice.
+- If `search_tools` reports that search is unavailable, say so and stop the
+  idea-similarity half of the review. Do not substitute facet results for it
+  and do not present a pattern-only report as a full prior-art review — an
+  incomplete search that reads as complete is what causes duplicated work.
 ````
 
 **Step 2: Bring the new directory under the prose checks**
