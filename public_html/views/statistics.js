@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../lib/core/dom.js";
-import { backendGetJson } from "../lib/core/api.js";
+import { mountJsonReport } from "../lib/organisms/json-report.js";
 import { t } from "../lib/core/i18n.js";
 import { button } from "../lib/atoms/button.js";
 
@@ -163,32 +163,23 @@ export function statisticsHTML(data) {
 	</div>`;
 }
 
+const loadingHTML = () =>
+	`<div class="statistics-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("statistics.loading", "Calculating catalog quality"))}</span></div>`;
+
+const errorHTML = () =>
+	`<div class="statistics-error" role="alert"><h1>${esc(t("statistics.errorTitle", "Statistics are temporarily unavailable"))}</h1><p>${esc(t("statistics.errorBody", "The last quality snapshot could not be loaded."))}</p>${button(t("statistics.retry", "Try again"), { attrs: "data-statistics-retry" })}</div>`;
+
 export function viewStatistics() {
-	const html = `<div class="container page statistics-page" data-statistics-root>
-		<div class="statistics-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("statistics.loading", "Calculating catalog quality"))}</span></div>
-	</div>`;
-	function mount() {
-		const root = document.querySelector("[data-statistics-root]");
-		if (!(root instanceof HTMLElement)) return;
-		const target = root;
-		async function load() {
-			target.setAttribute("aria-busy", "true");
-			target.innerHTML = `<div class="statistics-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("statistics.loading", "Calculating catalog quality"))}</span></div>`;
-			try {
-				const payload = await backendGetJson("/v1/statistics/");
-				if (!target.isConnected) return;
-				target.innerHTML = statisticsHTML(payload);
-			} catch {
-				if (!target.isConnected) return;
-				target.innerHTML = `<div class="statistics-error" role="alert"><h1>${esc(t("statistics.errorTitle", "Statistics are temporarily unavailable"))}</h1><p>${esc(t("statistics.errorBody", "The last quality snapshot could not be loaded."))}</p>${button(t("statistics.retry", "Try again"), { attrs: "data-statistics-retry" })}</div>`;
-			} finally {
-				target.removeAttribute("aria-busy");
-			}
-		}
-		target.addEventListener("click", (event) => {
-			if (event.target instanceof Element && event.target.closest("[data-statistics-retry]")) void load();
-		});
-		void load();
-	}
-	return { title: t("statistics.docTitle", "Statistics — Toolhub"), html, mount, styles: [STYLESHEET] };
+	return {
+		title: t("statistics.docTitle", "Statistics — Toolhub"),
+		html: `<div class="container page statistics-page" data-statistics-root>${loadingHTML()}</div>`,
+		mount: mountJsonReport({
+			name: "statistics",
+			endpoint: "/v1/statistics/",
+			render: statisticsHTML,
+			renderLoading: loadingHTML,
+			renderError: errorHTML
+		}),
+		styles: [STYLESHEET]
+	};
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { esc } from "../lib/core/dom.js";
-import { backendGetJson } from "../lib/core/api.js";
+import { mountJsonReport } from "../lib/organisms/json-report.js";
 import { t } from "../lib/core/i18n.js";
 import { button } from "../lib/atoms/button.js";
 
@@ -146,32 +146,23 @@ function workersHTML(payload) {
 	</div>`;
 }
 
+const loadingHTML = () =>
+	`<div class="workers-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("workers.loading", "Checking background workers"))}</span></div>`;
+
+const errorHTML = () =>
+	`<div class="workers-error" role="alert"><h1>${esc(t("workers.errorTitle", "Worker status is temporarily unavailable"))}</h1><p>${esc(t("workers.errorBody", "The background job report could not be loaded."))}</p>${button(t("workers.retry", "Try again"), { attrs: "data-workers-retry" })}</div>`;
+
 export function viewWorkers() {
-	const html = `<div class="container page workers-page" data-workers-root>
-		<div class="workers-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("workers.loading", "Checking background workers"))}</span></div>
-	</div>`;
-	function mount() {
-		const root = document.querySelector("[data-workers-root]");
-		if (!(root instanceof HTMLElement)) return;
-		const target = root;
-		async function load() {
-			target.setAttribute("aria-busy", "true");
-			target.innerHTML = `<div class="workers-loading" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(t("workers.loading", "Checking background workers"))}</span></div>`;
-			try {
-				const payload = await backendGetJson("/v1/workers/");
-				if (!target.isConnected) return;
-				target.innerHTML = workersHTML(payload);
-			} catch {
-				if (!target.isConnected) return;
-				target.innerHTML = `<div class="workers-error" role="alert"><h1>${esc(t("workers.errorTitle", "Worker status is temporarily unavailable"))}</h1><p>${esc(t("workers.errorBody", "The background job report could not be loaded."))}</p>${button(t("workers.retry", "Try again"), { attrs: "data-workers-retry" })}</div>`;
-			} finally {
-				target.removeAttribute("aria-busy");
-			}
-		}
-		target.addEventListener("click", (event) => {
-			if (event.target instanceof Element && event.target.closest("[data-workers-retry]")) void load();
-		});
-		void load();
-	}
-	return { title: t("workers.docTitle", "Background workers — Toolhub"), html, mount, styles: [STYLESHEET] };
+	return {
+		title: t("workers.docTitle", "Background workers — Toolhub"),
+		html: `<div class="container page workers-page" data-workers-root>${loadingHTML()}</div>`,
+		mount: mountJsonReport({
+			name: "workers",
+			endpoint: "/v1/workers/",
+			render: workersHTML,
+			renderLoading: loadingHTML,
+			renderError: errorHTML
+		}),
+		styles: [STYLESHEET]
+	};
 }
