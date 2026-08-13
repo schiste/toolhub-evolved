@@ -4,6 +4,7 @@
 import sys
 import shutil
 import subprocess
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import account_linking, db, identity_graph  # noqa: E402
+from backend import account_linking, db, identity_graph, people_index  # noqa: E402
 from backend.models import (  # noqa: E402
     AccountLinkChallenge,
     PersonAccountBinding,
@@ -21,6 +22,7 @@ from backend.models import (  # noqa: E402
     ToolforgeMembershipProjection,
     ToolhubAccountProjection,
     User,
+    utcnow,
 )
 
 
@@ -217,3 +219,270 @@ def test_account_link_routes_are_private_csrf_protected_and_return_challenges(mo
     )
     assert verified.status_code == 200
     assert verified.get_json()["status"] == "verified"
+
+
+# ---------------------------------------------------------------------------
+# _toolforge_account_summary / link_state edge cases
+
+
+def test_toolforge_account_summary_returns_empty_dict_for_missing_account():
+    with db.session_scope() as session:
+        assert account_linking._toolforge_account_summary(session, "does-not-exist") == {}
+
+
+def test_link_state_skips_candidate_row_with_missing_toolforge_account():
+    user_id = seed()
+    with db.session_scope() as session:
+        user = session.get(User, user_id)
+        person = people_index.link_user(session, user)
+        session.add(
+            PersonAccountBinding(
+                provider=identity_graph.PROVIDER_TOOLFORGE,
+                external_id="ghost-uid",
+                person_id=person.id,
+                status=identity_graph.STATUS_CANDIDATE,
+                proof_method=identity_graph.PROOF_EXACT_HANDLE,
+                confidence=50,
+            )
+        )
+        session.flush()
+        payload = account_linking.link_state(session, user)
+    assert payload["candidates"] == []
+
+
+# ---------------------------------------------------------------------------
+# _account_by_username / start_toolforge_challenge edge cases
+
+
+def test_start_toolforge_challenge_unknown_username_raises_account_not_found():
+    user_id = seed()
+    with db.session_scope() as session:
+        with pytest.raises(account_linking.AccountLinkError, match="not found or is ambiguous"):
+            account_linking.start_toolforge_challenge(session, session.get(User, user_id), "no-such-user")
+
+
+def test_start_toolforge_challenge_already_connected_to_same_person():
+    user_id = seed()
+    with db.session_scope() as session:
+        user = session.get(User, user_id)
+        person = people_index.link_user(session, user)
+        session.add(
+            PersonAccountBinding(
+                provider=identity_graph.PROVIDER_TOOLFORGE,
+                external_id="9001",
+                person_id=person.id,
+                status=identity_graph.STATUS_VERIFIED,
+                proof_method=identity_graph.PROOF_AUTHENTICATED,
+                confidence=100,
+            )
+        )
+        session.flush()
+        with pytest.raises(account_linking.AccountLinkError, match="already connected"):
+            account_linking.start_toolforge_challenge(session, user, "alice-dev")
+
+
+def test_start_toolforge_challenge_connected_to_another_person():
+    user_id = seed()
+    with db.session_scope() as session:
+        session.add(User(wm_sub="99", username="Bob", wikimedia_global_user_id="161"))
+        session.flush()
+        other_user = session.query(User).filter_by(wm_sub="99").one()
+        other_person = people_index.link_user(session, other_user)
+        session.add(
+            PersonAccountBinding(
+                provider=identity_graph.PROVIDER_TOOLFORGE,
+                external_id="9001",
+                person_id=other_person.id,
+                status=identity_graph.STATUS_VERIFIED,
+                proof_method=identity_graph.PROOF_AUTHENTICATED,
+                confidence=100,
+            )
+        )
+        session.flush()
+        user = session.get(User, user_id)
+        with pytest.raises(account_linking.AccountLinkError, match="connected to another person"):
+            account_linking.start_toolforge_challenge(session, user, "alice-dev")
+
+
+# ---------------------------------------------------------------------------
+# load_toolforge_ssh_keys
+
+
+class _FakeLdapEntry:
+    def __init__(self, attrs):
+        self.entry_attributes_as_dict = attrs
+
+
+class _FakeLdapConnection:
+    def __init__(self, entries):
+        self._entries = entries
+        self.unbound = False
+        self.last_search = None
+
+    def search(self, base_dn, ldap_filter, attributes=None, size_limit=None):
+        self.last_search = (base_dn, ldap_filter, attributes, size_limit)
+
+    @property
+    def entries(self):
+        return self._entries
+
+    def unbind(self):
+        self.unbound = True
+
+
+def _install_fake_ldap(monkeypatch, entries):
+    connection = _FakeLdapConnection(entries)
+    monkeypatch.setattr(account_linking.public_identity, "Connection", lambda *_a, **_k: connection)
+    monkeypatch.setattr(account_linking.public_identity, "Server", lambda *_a, **_k: object())
+    monkeypatch.setattr(account_linking.public_identity, "escape_filter_chars", lambda value: value)
+    return connection
+
+
+def test_load_toolforge_ssh_keys_returns_empty_when_ldap_client_unavailable(monkeypatch):
+    monkeypatch.setattr(account_linking.public_identity, "Connection", None)
+    assert account_linking.load_toolforge_ssh_keys("9001") == []
+
+
+def test_load_toolforge_ssh_keys_returns_empty_for_non_unique_match(monkeypatch):
+    connection = _install_fake_ldap(monkeypatch, [])
+    assert account_linking.load_toolforge_ssh_keys("9001") == []
+    assert connection.unbound is True
+
+
+def test_load_toolforge_ssh_keys_returns_empty_when_resolved_uid_mismatches(monkeypatch):
+    entry = _FakeLdapEntry({"uidNumber": ["9002"], "sshPublicKey": ["ssh-ed25519 AAAA"]})
+    _install_fake_ldap(monkeypatch, [entry])
+    assert account_linking.load_toolforge_ssh_keys("9001") == []
+
+
+def test_load_toolforge_ssh_keys_returns_cleaned_keys_for_exact_match(monkeypatch):
+    entry = _FakeLdapEntry({"uidNumber": ["9001"], "sshPublicKey": ["ssh-ed25519 AAAA", "  ", "ssh-rsa BBBB"]})
+    connection = _install_fake_ldap(monkeypatch, [entry])
+    keys = account_linking.load_toolforge_ssh_keys("9001")
+    assert keys == ["ssh-ed25519 AAAA", "ssh-rsa BBBB"]
+    assert connection.unbound is True
+
+
+def test_load_toolforge_ssh_keys_returns_empty_when_keys_attribute_is_not_a_list(monkeypatch):
+    entry = _FakeLdapEntry({"uidNumber": "9001", "sshPublicKey": "not-a-list"})
+    _install_fake_ldap(monkeypatch, [entry])
+    assert account_linking.load_toolforge_ssh_keys("9001") == []
+
+
+# ---------------------------------------------------------------------------
+# verify_ssh_signature edge cases
+
+
+def test_verify_ssh_signature_rejects_missing_safe_keys_or_bad_prefix():
+    assert account_linking.verify_ssh_signature("challenge", "not-a-signature", []) is False
+    assert account_linking.verify_ssh_signature("challenge", "not-a-signature", ["ssh-ed25519 AAAA"]) is False
+
+
+def test_verify_ssh_signature_rejects_oversized_signature_and_missing_ssh_keygen(monkeypatch):
+    oversized = "-----BEGIN SSH SIGNATURE-----" + ("A" * account_linking.MAX_SIGNATURE_BYTES)
+    assert account_linking.verify_ssh_signature("challenge", oversized, ["ssh-ed25519 AAAA"]) is False
+
+    monkeypatch.setattr(account_linking, "SSH_KEYGEN", "/no/such/ssh-keygen")
+    assert (
+        account_linking.verify_ssh_signature(
+            "challenge", "-----BEGIN SSH SIGNATURE-----short", ["ssh-ed25519 AAAA"]
+        )
+        is False
+    )
+
+
+# ---------------------------------------------------------------------------
+# complete_toolforge_challenge edge cases
+
+
+def test_complete_toolforge_challenge_unknown_challenge_id_raises():
+    user_id = seed()
+    with db.session_scope() as session:
+        with pytest.raises(account_linking.AccountLinkError, match="was not found"):
+            account_linking.complete_toolforge_challenge(
+                session,
+                session.get(User, user_id),
+                challenge_id="does-not-exist",
+                challenge="x",
+                signature="y",
+                key_loader=lambda _uid: [],
+                verifier=lambda *_args: True,
+            )
+
+
+def test_complete_toolforge_challenge_expired_raises():
+    user_id = seed()
+    with db.session_scope() as session:
+        started = account_linking.start_toolforge_challenge(session, session.get(User, user_id), "alice-dev")
+    with db.session_scope() as session:
+        session.get(AccountLinkChallenge, started["challengeId"]).expires_at = utcnow() - timedelta(minutes=1)
+    with db.session_scope() as session:
+        with pytest.raises(account_linking.AccountLinkError, match="expired"):
+            account_linking.complete_toolforge_challenge(
+                session,
+                session.get(User, user_id),
+                challenge_id=started["challengeId"],
+                challenge=started["challenge"],
+                signature="sig",
+                key_loader=lambda _uid: ["key"],
+                verifier=lambda *_args: True,
+            )
+
+
+def test_complete_toolforge_challenge_too_many_attempts_raises():
+    user_id = seed()
+    with db.session_scope() as session:
+        started = account_linking.start_toolforge_challenge(session, session.get(User, user_id), "alice-dev")
+    with db.session_scope() as session:
+        session.get(AccountLinkChallenge, started["challengeId"]).attempts = account_linking.MAX_ATTEMPTS
+    with db.session_scope() as session:
+        with pytest.raises(account_linking.AccountLinkError, match="too many failed attempts"):
+            account_linking.complete_toolforge_challenge(
+                session,
+                session.get(User, user_id),
+                challenge_id=started["challengeId"],
+                challenge=started["challenge"],
+                signature="sig",
+                key_loader=lambda _uid: ["key"],
+                verifier=lambda *_args: True,
+            )
+
+
+def test_complete_toolforge_challenge_invalid_signature_increments_attempts():
+    user_id = seed()
+    with db.session_scope() as session:
+        started = account_linking.start_toolforge_challenge(session, session.get(User, user_id), "alice-dev")
+    with db.session_scope() as session:
+        with pytest.raises(account_linking.AccountLinkError, match="was not valid"):
+            account_linking.complete_toolforge_challenge(
+                session,
+                session.get(User, user_id),
+                challenge_id=started["challengeId"],
+                challenge=started["challenge"],
+                signature="sig",
+                key_loader=lambda _uid: ["key"],
+                verifier=lambda *_args: False,
+            )
+    with db.session_scope() as session:
+        row = session.get(AccountLinkChallenge, started["challengeId"])
+        assert row.attempts == 1
+        assert row.last_error == "signature_invalid"
+
+
+def test_complete_toolforge_challenge_account_unavailable_raises():
+    user_id = seed()
+    with db.session_scope() as session:
+        started = account_linking.start_toolforge_challenge(session, session.get(User, user_id), "alice-dev")
+    with db.session_scope() as session:
+        session.get(ToolforgeAccountProjection, "9001").disabled = True
+    with db.session_scope() as session:
+        with pytest.raises(account_linking.AccountLinkError, match="no longer available"):
+            account_linking.complete_toolforge_challenge(
+                session,
+                session.get(User, user_id),
+                challenge_id=started["challengeId"],
+                challenge=started["challenge"],
+                signature="sig",
+                key_loader=lambda _uid: ["key"],
+                verifier=lambda *_args: True,
+            )

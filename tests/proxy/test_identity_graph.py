@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db, identity_graph, people_index  # noqa: E402
 from backend.models import (  # noqa: E402
+    ApiCacheMeta,
     CanonicalToolCache,
     Person,
     PersonAccountBinding,
@@ -363,3 +364,215 @@ def test_reconciliation_queues_stable_account_binding_conflicts_for_operator_rev
 
     assert summary["accountBindingConflictsQueued"] == 1
     assert summary["conflicts"] == 1
+
+
+def test_person_for_identifier_returns_none_for_a_blank_value():
+    with db.session_scope() as session:
+        assert identity_graph.person_for_identifier(session, people_index.NS_TOOLHUB_USER_ID, "   ") is None
+
+
+def test_set_binding_rejects_reassigning_a_verified_account_directly():
+    with db.session_scope() as session:
+        person_a = people_index.ensure_person(session, display_name="A")
+        person_b = people_index.ensure_person(session, display_name="B")
+        identity_graph._set_binding(
+            session,
+            provider="toolhub",
+            external_id="direct-1",
+            person_id=person_a.id,
+            status=identity_graph.STATUS_VERIFIED,
+            proof_method="test",
+            confidence=100,
+            evidence={},
+        )
+        with pytest.raises(identity_graph.IdentityBindingConflictError):
+            identity_graph._set_binding(
+                session,
+                provider="toolhub",
+                external_id="direct-1",
+                person_id=person_b.id,
+                status=identity_graph.STATUS_CANDIDATE,
+                proof_method="test",
+                confidence=50,
+                evidence={},
+            )
+
+
+def test_seed_relationship_fingerprint_seeds_once_from_an_existing_projection():
+    with db.session_scope() as session:
+        person = people_index.ensure_person(session, display_name="Seed", toolforge_uid_number="5001")
+        session.add(
+            ToolRelationshipEvidence(
+                tool_name="seed-tool",
+                person_id=person.id,
+                relationship_type="maintainer",
+                source=identity_graph.SOURCE_TOOLFORGE_LDAP,
+                method="toolforge_ldap_membership",
+                evidence_key="5001",
+            )
+        )
+
+    with db.session_scope() as session:
+        created = identity_graph.seed_relationship_fingerprint(session)
+
+    assert created == 1
+    with db.session_scope() as session:
+        assert session.get(ApiCacheMeta, identity_graph.TOOLFORGE_RELATIONSHIP_META_KEY) is not None
+        skipped = identity_graph.seed_relationship_fingerprint(session)
+
+    assert skipped == 0
+
+
+def test_seed_relationship_fingerprint_is_a_noop_with_no_projection():
+    with db.session_scope() as session:
+        assert identity_graph.seed_relationship_fingerprint(session) == 0
+
+
+def test_bind_toolforge_account_raises_when_identifier_attachment_fails(monkeypatch):
+    with db.session_scope() as session:
+        person = people_index.ensure_person(session, display_name="Attach Fail")
+        account = toolforge_account(uid_number="7777", global_id="")
+        session.add(account)
+        session.flush()
+        monkeypatch.setattr(identity_graph.people_index, "attach_verified_external_account", lambda *_a, **_k: False)
+        with pytest.raises(identity_graph.IdentityBindingConflictError):
+            identity_graph.bind_toolforge_account(
+                session,
+                account=account,
+                person=person,
+                proof_method=identity_graph.PROOF_TOOLFORGE_SUL,
+                confidence=100,
+                evidence={},
+            )
+
+
+def test_toolhub_sync_repairs_a_drifted_display_name():
+    with db.session_scope() as session:
+        session.add(toolhub_account(username="Alice"))
+        identity_graph.synchronize(session)
+    with db.session_scope() as session:
+        person = session.query(Person).one()
+        person.display_name = "Drifted"
+
+    with db.session_scope() as session:
+        identity_graph.synchronize(session)
+
+    with db.session_scope() as session:
+        assert session.query(Person).one().display_name == "Alice"
+
+
+def test_toolhub_sync_verifies_an_account_without_a_global_id():
+    with db.session_scope() as session:
+        session.add(toolhub_account(username="Solo", global_id=""))
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["toolhubBindings"] == 1
+    with db.session_scope() as session:
+        assert session.query(PersonAccountBinding).filter_by(provider="wikimedia").count() == 0
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolhub").one()
+        assert binding.status == "verified"
+
+
+def test_toolhub_sync_flags_conflict_when_official_person_cannot_be_created(monkeypatch):
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+    monkeypatch.setattr(identity_graph.people_index, "ensure_official_account_person", lambda *_a, **_k: None)
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["toolhubConflicts"] == 1
+    with db.session_scope() as session:
+        assert session.query(PersonAccountBinding).filter_by(provider="toolhub").count() == 0
+
+
+def test_toolforge_sync_creates_a_person_for_an_unmatched_global_id():
+    with db.session_scope() as session:
+        session.add(toolforge_account(uid_number="7001", uid="orphan", global_id="999"))
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["verified"] == 1
+    with db.session_scope() as session:
+        assert (
+            session.query(PersonIdentifier)
+            .filter_by(namespace=people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, value="999")
+            .count()
+            == 1
+        )
+
+
+def test_toolforge_sync_flags_conflict_when_uid_is_reassigned_to_a_new_global_id():
+    with db.session_scope() as session:
+        session.add(toolforge_account(uid_number="9001", uid="alice", global_id="160"))
+    with db.session_scope() as session:
+        identity_graph.synchronize(session)
+    with db.session_scope() as session:
+        account = session.get(ToolforgeAccountProjection, "9001")
+        account.wikimedia_global_user_id = "260"
+        account.wikimedia_global_name = "Alice2"
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["conflict"] == 1
+    with db.session_scope() as session:
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolforge", external_id="9001").one()
+        assert binding.status == "conflict"
+        assert binding.person_id is None
+
+
+def test_toolforge_handle_candidate_skips_when_already_verified():
+    with db.session_scope() as session:
+        session.add(toolhub_account(username="Alice", global_id="160"))
+        session.add(toolforge_account(uid_number="9001", uid="Alice", global_id="160"))
+    with db.session_scope() as session:
+        identity_graph.synchronize(session)
+    with db.session_scope() as session:
+        account = session.get(ToolforgeAccountProjection, "9001")
+        account.wikimedia_global_user_id = None
+        account.wikimedia_global_name = ""
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["verified"] == 1
+    assert result["candidate"] == 0
+
+
+def test_toolforge_relationships_treat_a_dangling_person_binding_as_unbound():
+    with db.session_scope() as session:
+        session.add(ToolforgeAccountProjection(uid_number="1", uid="ghost", normalized_uid="ghost"))
+        session.add(
+            PersonAccountBinding(
+                provider="toolforge",
+                external_id="1",
+                person_id=999999,
+                status="verified",
+                proof_method="test",
+                confidence=100,
+            )
+        )
+        session.add(ToolforgeMembershipProjection(uid_number="1", tool_name="orphan-tool"))
+
+    with db.session_scope() as session:
+        result = identity_graph._sync_toolforge_relationships(session)
+
+    assert result["unboundMemberships"] == 1
+
+
+def test_candidate_count_for_person_counts_pending_candidates():
+    with db.session_scope() as session:
+        session.add(toolhub_account(username="Alice", global_id="160"))
+        session.add(toolforge_account(uid="Alice", global_id=""))
+    with db.session_scope() as session:
+        identity_graph.synchronize(session)
+
+    with db.session_scope() as session:
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolforge").one()
+        count = identity_graph.candidate_count_for_person(session, binding.person_id)
+
+    assert count == 1
