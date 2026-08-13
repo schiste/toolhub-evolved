@@ -114,6 +114,23 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.toolMapTry", "Open map")
 			},
 			{
+				name: t("experiments.catalogStatisticsName", "Catalog statistics"),
+				what: t(
+					"experiments.catalogStatisticsWhat",
+					"Measure verified authorship, unresolved attribution, metadata completeness, identity resolution, source control, and catalog freshness."
+				),
+				current: t(
+					"experiments.catalogStatisticsCurrent",
+					"A cached local quality ledger keeps missing records and unavailable dates visible in every denominator and histogram."
+				),
+				need: t(
+					"experiments.catalogStatisticsNeed",
+					"Canonical and evidence projections plus public GET /v1/statistics/"
+				),
+				tryHref: "/statistics",
+				tryLabel: t("experiments.catalogStatisticsTry", "Open statistics")
+			},
+			{
 				name: t("experiments.docsPagesName", "API explorer, toolinfo, and project docs"),
 				what: t(
 					"experiments.docsPagesWhat",

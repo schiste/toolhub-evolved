@@ -857,6 +857,7 @@ export async function viewApiDocs() {
 					<li>${tWithElements("static.apiDocs.peopleEndpoint", "$1 searches public identities with pagination, relationship, verification, activity, project, and ordering filters. Add $2 to require contributor eligibility; each result explains its evidence basis.", { html: code("GET /v1/people/") }, { html: code("contributor=observed") })}</li>
 					<li>${tWithElements("static.apiDocs.accountsEndpoint", "$1 searches the complete local official-account projection by substring, exact group, name or recent ordering, and page. The response includes total count and projection sync state.", { html: code("GET /v1/accounts/") })}</li>
 					<li>${tWithElements("static.apiDocs.accountDetailEndpoint", "$1 returns official registration facts. A $2 appears only after an immutable Toolhub user id or Wikimedia global user id match; usernames never create that link.", { html: code("GET /v1/accounts/{toolhub_user_id}/") }, { html: code("personId") })}</li>
+					<li>${tWithElements("static.apiDocs.statisticsEndpoint", "$1 returns a cached local snapshot of catalog coverage, relationship verification, identity resolution, metadata completeness, source control, and date distributions.", { html: code("GET /v1/statistics/") })}</li>
 				</ul>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.connectedIdentities", "Connected identity API")}</h2>

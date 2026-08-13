@@ -26,7 +26,8 @@ test("router loads high-cost feature routes as their own chunks", () => {
 		"./audit.js",
 		"./account-settings.js",
 		"./developer-settings.js",
-		"./my-tools.js"
+		"./my-tools.js",
+		"./statistics.js"
 	]) {
 		assert.ok(router.includes(`loadRouteModule("${specifier}"`));
 	}

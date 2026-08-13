@@ -75,6 +75,7 @@ const loadGraph = () => loadRouteModule("./graph.js", () => import("./graph.js")
 const loadExperiments = () => loadRouteModule("./experiments.js", () => import("./experiments.js"));
 const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./styleguide.js"));
 const loadChangelog = () => loadRouteModule("./changelog.js", () => import("./changelog.js"));
+const loadStatistics = () => loadRouteModule("./statistics.js", () => import("./statistics.js"));
 // The prose pages, the sign-in page and the 404 all live in static.js — the
 // largest module in the app. Loading it on demand like any other route keeps it
 // out of the first paint; every use below is a render, reached only when that
@@ -220,6 +221,7 @@ export const ROUTES = {
 	graph: () => loadGraph().then((m) => m.viewGraph()),
 	"published-lists": () => loadLists().then((m) => m.viewLists()),
 	changelog: () => loadChangelog().then((m) => m.viewChangelog()),
+	statistics: () => loadStatistics().then((m) => m.viewStatistics()),
 	"my-lists": () =>
 		requireSignIn(
 			() => loadLists().then((m) => m.viewMyLists()),
