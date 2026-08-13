@@ -2,7 +2,7 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..7cc41a0 (227 commits) -->
+<!-- Source range: 828438f..4e59f7f (231 commits) -->
 
 # Technical Release Notes
 
@@ -13,4 +13,4 @@
 - Makes SPA navigation and refresh rendering convergent through normalized route identity, tracked/coalesced background repaints, view-specific summary batching, bounded reads and lazy imports, and separation of navigation cleanup from data refresh.
 - Reduces landing/card payloads, persists projected health summaries, lazily loads full breakdowns, skips retired evidence backfills, precompresses static assets, and keeps cache/reconciliation failure modes bounded and recoverable; last-good projections move data maintenance outside the release critical path, stale upstream inputs refresh concurrently, identity bindings use preloaded maps, source attestations follow content hashes with a weekly full audit, statistics precompute after publication, and durable stage diagnostics distinguish restart-command failures from actual health failures.
 - Consolidates the frontend around reusable catalog cards, including bounded multi-author disclosure and a single accessible verified-maintainer cue without duplicated relationship panels, alongside Wikimedia-compatible localization, explicit accessibility/failure states, and regression coverage for large directories, identity trust, action authorization, history, RTL, keyboard focus, and loading settlement.
-- Stages release manifests before restart, promotes them only after a successful smoke check, and groups repeated deployments under stable curated release IDs; legacy per-fix rows are retired and reviewed notes remain bounded to three to eight entries.
+- Stages release manifests before restart, promotes them only after a successful smoke check, and groups repeated deployments under stable curated release IDs; legacy per-fix rows are retired and reviewed notes remain bounded to three to eight entries. The scheduled-job guard reclaims locks abandoned by a killed run, so a timeout no longer retires a job silently behind a zero exit.
