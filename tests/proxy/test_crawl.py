@@ -213,7 +213,12 @@ def test_main_exit_codes(monkeypatch, capsys, tmp_path):
     assert "0 urls" in capsys.readouterr().out
     add_url()  # lands in the file-backed DB main() just configured
     monkeypatch.setattr(crawl.requests, "Session", lambda: FakeSession(raises="feed"))
-    assert crawl.main() == 1
+    # An unreachable feed is a recorded observation, not a failed sweep: this
+    # job has one registered URL, so exiting non-zero here tripped the guard's
+    # breaker after three flaky hours and stopped the job for ten days.
+    assert crawl.main() == 0
+    with db.session_scope() as s:
+        assert s.query(CrawlerRun).order_by(CrawlerRun.id.desc()).first().ok is False
 
 
 def guard(url):

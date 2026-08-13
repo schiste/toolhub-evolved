@@ -18,7 +18,7 @@ import sys
 import requests
 from sqlalchemy import select
 
-from backend import DEFAULT_DB_URL, db, outbound
+from backend import DEFAULT_DB_URL, db, job_contract, outbound
 from backend.author_claims import SignedToolinfoProvider
 from backend.models import CrawlerRun, CrawlerUrl, ToolRecord, User, utcnow
 from backend.sync import REVIEW_APPROVED, SOURCE_LOCAL, SYNC_ERROR, SYNC_EVOLVED_REAL
@@ -231,7 +231,11 @@ def main() -> int:
         f"crawl: {run.urls_count} urls, +{run.added} added, ~{run.updated} updated, "
         f"{len(run.skipped)} skipped, {len(run.errors)} errors\n"
     )
-    return 0 if run.ok else 1
+    # Per backend.job_contract: the sweep completed. Unreachable feeds are
+    # already durable observations on CrawlerRun and on each URL row, and this
+    # job has so few registered URLs that one flaky feed used to exit non-zero
+    # for the whole run -- which tripped the breaker for ten days in August.
+    return job_contract.EXIT_OK
 
 
 if __name__ == "__main__":  # pragma: no cover - job entrypoint, exercised via main() in tests
