@@ -89,8 +89,17 @@ def _state(s: Any) -> ToolCatalogSyncState:  # noqa: ANN401 - SQLAlchemy session
 
 
 def listing_page(page: int, page_size: int) -> tuple[list[dict[str, Any]], bool, int]:
-    """Fetch and validate one paginated official catalog response."""
-    payload = toolhub.public_api_get(CATALOG_PATH, params={"page": page, "page_size": page_size})
+    """Fetch and validate one fresh paginated official catalog response.
+
+    Catalog pages are reconciliation input, not ordinary browsing responses.
+    Reading independently cached pages can combine different catalog moments
+    and makes a complete deletion-safe snapshot impossible to validate.
+    """
+    payload = toolhub.public_api_get(
+        CATALOG_PATH,
+        params={"page": page, "page_size": page_size},
+        read_cache=False,
+    )
     if isinstance(payload, list):
         rows = [row for row in payload if isinstance(row, dict)]
         return rows, False, len(rows)

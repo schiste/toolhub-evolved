@@ -282,12 +282,24 @@ def _cached_json_payload(hit: api_cache.CachedResponse) -> object:
     return loads(hit.body.decode("utf-8"))
 
 
-def public_api_get(path: str, *, params: dict[str, object] | None = None) -> object:
-    """GET anonymous official Toolhub API JSON through the shared persistent cache."""
+def public_api_get(
+    path: str,
+    *,
+    params: dict[str, object] | None = None,
+    read_cache: bool = True,
+) -> object:
+    """GET anonymous official Toolhub API JSON, optionally bypassing cached reads.
+
+    Fresh successful responses still update the shared cache. Callers that
+    establish a cross-page consistency boundary, such as a complete catalog
+    snapshot, must set ``read_cache=False`` so independently cached pages are
+    never mistaken for one atomic upstream view.
+    """
     url = _public_api_url(path, params)
-    cached = api_cache.get(url)
-    if cached is not None:
-        return _cached_json_payload(cached)
+    if read_cache:
+        cached = api_cache.get(url)
+        if cached is not None:
+            return _cached_json_payload(cached)
 
     resp = requests.get(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}, timeout=REQUEST_TIMEOUT)
     payload = _json_or_text(resp)

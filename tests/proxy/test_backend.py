@@ -5738,6 +5738,38 @@ def test_toolhub_public_api_get_uses_shared_cache(client, monkeypatch):
     assert len(calls) == 1
 
 
+def test_toolhub_public_api_get_can_bypass_cached_reads_and_refresh_them(client, monkeypatch):
+    monkeypatch.setenv("TOOLHUB_API_BASE", "https://toolhub.example")
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResp({"count": 2, "results": [{"name": "fresh"}]})
+
+    url = "https://toolhub.example/api/tools/?page=1&page_size=100"
+    api_cache.put_success(
+        url,
+        api_cache.CacheableResponse(
+            status=200,
+            content_type="application/json",
+            body=b'{"count":3,"results":[{"name":"stale"}]}',
+        ),
+    )
+    monkeypatch.setattr(toolhub.requests, "get", fake_get)
+
+    assert toolhub.public_api_get(
+        "/api/tools/",
+        params={"page": 1, "page_size": 100},
+        read_cache=False,
+    ) == {"count": 2, "results": [{"name": "fresh"}]}
+    assert len(calls) == 1
+    assert toolhub.public_api_get("/api/tools/", params={"page": 1, "page_size": 100}) == {
+        "count": 2,
+        "results": [{"name": "fresh"}],
+    }
+    assert len(calls) == 1
+
+
 def test_toolhub_public_api_get_rejects_non_api_paths():
     with pytest.raises(ValueError, match="/api/"):
         toolhub.public_api_get("/oauth/login")

@@ -26,10 +26,17 @@ def test_listing_page_validates_paginated_and_list_payloads(monkeypatch):
             [{"name": "last"}, "invalid"],
         ]
     )
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_args, **_kwargs: next(payloads))
+    calls = []
+
+    def get(*args, **kwargs):
+        calls.append((args, kwargs))
+        return next(payloads)
+
+    monkeypatch.setattr(toolhub, "public_api_get", get)
 
     assert catalog_sync.listing_page(1, 100) == ([{"name": "first"}], True, 2)
     assert catalog_sync.listing_page(2, 100) == ([{"name": "last"}], False, 1)
+    assert [kwargs["read_cache"] for _args, kwargs in calls] == [False, False]
 
 
 @pytest.mark.parametrize("count", [None, "invalid", 0, -1])
