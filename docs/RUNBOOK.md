@@ -575,6 +575,22 @@ Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
 followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
 if the webservice doesn't come back healthy.
 
+The release path deliberately serves the last successfully published account,
+catalog, and identity projections. After smoke and manifest promotion, the
+deploy queues `projection-refresh`, which refreshes Toolhub accounts, Toolforge
+LDAP accounts, and the complete catalog concurrently when their last complete
+generation is stale. Only after all required inputs succeed does one people
+reconciliation publish the derived identity/source graph. A failed refresh
+therefore leaves the prior public graph serving and is retried by the six-hour
+schedule; it does not roll back otherwise healthy application code.
+
+Each deploy stage appends structured JSON to
+`~/deployment-diagnostics.jsonl`, including commit, timestamps, duration,
+status, parsed row/cache metrics, and the failure phase. A non-zero
+`webservice restart` result is provisional: the deploy still runs the bounded
+HTTP readiness checks and records `recovered` when the replacement service is
+actually healthy.
+
 Every deploy stages a bounded 50-release manifest in `dist/data/deployments.json`,
 then promotes that exact manifest to durable history only after the restarted
 webservice passes its smoke check. The history is retained outside the checkout
@@ -615,6 +631,8 @@ toolforge jobs list                        # status
 toolforge jobs logs crawler                # last local crawl output
 toolforge jobs logs toolinfo-discovery     # last root/sitemap discovery output
 toolforge jobs logs toolinfo-source-index  # last official crawler source index output
+toolforge jobs logs projection-refresh
+toolforge jobs logs source-attestations
 toolforge jobs logs api-cache-invalidator
 toolforge jobs logs maintainer-backfill
 ```
@@ -656,6 +674,15 @@ Every Python job calls `db.init_schema()` before doing work. Existing Toolforge
 databases receive idempotent additive repairs there, including the catalog
 reconciliation cursor columns and null retry-counter normalization. No database
 reset is required after a deploy.
+
+`projection-refresh` is the six-hour projection coordinator. It reuses input
+generations completed within six hours, runs stale Toolhub, Toolforge, and
+catalog inputs concurrently, then performs one account/identity graph pass and
+precomputes `/v1/statistics/`. Toolinfo source reconciliation is content-hash
+incremental; a changed reconciliation rules version forces one full pass, and
+`source-attestations-full` provides an additional weekly full-audit backstop.
+The full-source jobs have a 900-second timeout while the normal incremental
+path should ordinarily be a fast no-op.
 
 The crawler reads every enabled `crawler_urls` row hourly. For each toolinfo item
 it first records valid `signed_toolinfo` author-claim evidence when the URL
