@@ -20,19 +20,19 @@ The current spec revision is **2026-07-28** (https://modelcontextprotocol.io/spe
 
 Because that revision is two weeks old, essentially all deployed clients (including current Claude clients) still speak the **legacy revisions 2025-03-26 / 2025-06-18 / 2025-11-25** with the `initialize` handshake — which is also stateless-compatible (a server that never issues `Mcp-Session-Id` is a valid stateless server there). Therefore this endpoint speaks BOTH, which is cheap because the tools/prompts method shapes are identical across revisions and the new response fields are additive (legacy clients ignore unknown fields):
 
-| Concern | Behavior |
-| --- | --- |
-| `initialize` (legacy) | Answer with negotiated legacy `protocolVersion`, `capabilities: {tools: {}, prompts: {}}`, `serverInfo`. Never issue `Mcp-Session-Id`. |
-| `notifications/*` | 202, empty body. |
-| `ping` (legacy) | `{}`. |
-| `server/discover` (2026-07-28) | `protocolVersion: "2026-07-28"`, `capabilities: {tools: {"listChanged": false}, prompts: {"listChanged": false}}`, `serverInfo`, `resultType: "complete"`. |
-| `tools/list`, `tools/call`, `prompts/list`, `prompts/get` | One handler each, shared across revisions; responses carry the additive 2026-07-28 fields (`resultType`, `ttlMs`, `cacheScope` on lists; `resultType` + `structuredContent` on calls). |
-| `_meta` / protocol-version negotiation | Lenient acceptance: missing `_meta` (legacy clients) is fine; an unknown declared version is served anyway with our fields — rejecting would break older/newer minor clients for no protective benefit on a read-only server. |
-| `MCP-Protocol-Version` HTTP header | If present and recognized, fine; if present and unrecognized, still serve (log at debug). Strict rejection is for stateful servers guarding session semantics we don't have. |
-| `Origin` header | **MUST validate** (DNS-rebinding defense, both revisions). Policy for this public read-only API: requests without `Origin` (CLI/server-side clients, including Claude) are allowed; any browser `Origin` not in the allowlist (default: the tool's own origin) → 403. |
-| Top-level JSON array (legacy batch) | 400 with a JSON-RPC `-32600` error object. |
-| GET/DELETE `/mcp` | 405. |
-| Error codes | -32700 parse, -32600 invalid request, -32601 method not found, -32602 invalid params (including unknown tool/prompt names). |
+| Concern                                                   | Behavior                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialize` (legacy)                                     | Answer with negotiated legacy `protocolVersion`, `capabilities: {tools: {}, prompts: {}}`, `serverInfo`. Never issue `Mcp-Session-Id`.                                                                                                                                |
+| `notifications/*`                                         | 202, empty body.                                                                                                                                                                                                                                                      |
+| `ping` (legacy)                                           | `{}`.                                                                                                                                                                                                                                                                 |
+| `server/discover` (2026-07-28)                            | `protocolVersion: "2026-07-28"`, `capabilities: {tools: {"listChanged": false}, prompts: {"listChanged": false}}`, `serverInfo`, `resultType: "complete"`.                                                                                                            |
+| `tools/list`, `tools/call`, `prompts/list`, `prompts/get` | One handler each, shared across revisions; responses carry the additive 2026-07-28 fields (`resultType`, `ttlMs`, `cacheScope` on lists; `resultType` + `structuredContent` on calls).                                                                                |
+| `_meta` / protocol-version negotiation                    | Lenient acceptance: missing `_meta` (legacy clients) is fine; an unknown declared version is served anyway with our fields — rejecting would break older/newer minor clients for no protective benefit on a read-only server.                                         |
+| `MCP-Protocol-Version` HTTP header                        | If present and recognized, fine; if present and unrecognized, still serve (log at debug). Strict rejection is for stateful servers guarding session semantics we don't have.                                                                                          |
+| `Origin` header                                           | **MUST validate** (DNS-rebinding defense, both revisions). Policy for this public read-only API: requests without `Origin` (CLI/server-side clients, including Claude) are allowed; any browser `Origin` not in the allowlist (default: the tool's own origin) → 403. |
+| Top-level JSON array (legacy batch)                       | 400 with a JSON-RPC `-32600` error object.                                                                                                                                                                                                                            |
+| GET/DELETE `/mcp`                                         | 405.                                                                                                                                                                                                                                                                  |
+| Error codes                                               | -32700 parse, -32600 invalid request, -32601 method not found, -32602 invalid params (including unknown tool/prompt names).                                                                                                                                           |
 
 Conformance is independently checked with `npx @modelcontextprotocol/inspector --cli` (Task 5), not only with our own test client.
 
@@ -41,6 +41,7 @@ Conformance is independently checked with `npx @modelcontextprotocol/inspector -
 ### Task 1: MCP rate limiter in `security.py`
 
 **Files:**
+
 - Modify: `proxy/backend/security.py`
 - Test: `tests/proxy/test_mcp_server.py` (create; limiter test only for now)
 
@@ -154,6 +155,7 @@ git commit -m "feat: rate-limit the MCP endpoint"
 ### Task 2: JSON-RPC envelope, transport rules, and lifecycle methods
 
 **Files:**
+
 - Create: `proxy/backend/mcp_server.py`
 - Modify: `proxy/backend/__init__.py` (register blueprint beside the v1 blueprints)
 - Test: `tests/proxy/test_mcp_server.py` (extend)
@@ -377,6 +379,7 @@ git commit -m "feat: add dual-revision stateless MCP endpoint"
 ### Task 3: The four tools
 
 **Files:**
+
 - Modify: `proxy/backend/mcp_server.py`
 - Test: `tests/proxy/test_mcp_server.py` (extend; `_seed` is already local to this file)
 
@@ -745,6 +748,7 @@ git commit -m "feat: expose catalog discovery tools over MCP"
 ### Task 4: The `prior-art-review` prompt
 
 **Files:**
+
 - Modify: `proxy/backend/mcp_server.py`
 - Test: `tests/proxy/test_mcp_server.py` (extend)
 
@@ -813,6 +817,7 @@ git commit -m "feat: ship the prior-art-review workflow as an MCP prompt"
 ### Task 5: Conformance check, documentation, deploy
 
 **Files:**
+
 - Modify: `docs/deploy-toolforge.md` (document `/mcp`; note `tools/deploy.sh` already runs `proxy/migrate.py` per `tools/deploy.sh:81`)
 - Modify: `README.md` (short "MCP server" section: endpoint URL, `claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolforge.org/mcp`, the four tools, the prompt)
 - Do NOT touch `docs/FEATURES.md` — it is generated from `public_html/views/experiments.js` by `tools/feature-docs.mjs`; backend-only changes need no edit there.

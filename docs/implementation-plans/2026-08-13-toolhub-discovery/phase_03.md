@@ -20,10 +20,10 @@
 - Canonical payloads come from `canonical_tools.tools_by_name(names)` → `{name: {"toolName", "record", ...}}` (`canonical_tools.py:270-301`). The canonical `record` holds `title`, `description`, `url`, `tool_type`, `repository`, `deprecated`, `keywords`.
 - Total-tool count: count of `CanonicalToolCache` rows. Scanned-tool count: `tool_facets.scanned_tool_count(s)` (Phase 1).
 - **One facet table** (`CatalogFacetValue`), holding two families of `field` values (design revised 2026-08-13 — see phase_01's "Design history"):
-  - **Detected** (emitted from the latest analysis report by `catalog_projection`): `dependency`, `wikimedia_api`, `detected_technology` — only present for tools with a scanned repo.
-  - **Declared** (projected from the effective merged record, `catalog_projection.FACET_FIELDS`): `tool_type`, `keywords`, `wiki`, `technology`, `license`, `tasks`, `audiences`, `ui_language` — present for the whole catalog.
-  `tool_facets.tools_matching_facets` / `count_matching` take ONE `filters` dict spanning both families; there is no cross-table query and no `declared_filters=` parameter.
-  **Coverage nuance this creates:** declared filters are NOT coverage-limited, detected ones are. A response's `coverage` block therefore describes only the detected side; say so rather than implying the whole query was coverage-limited.
+    - **Detected** (emitted from the latest analysis report by `catalog_projection`): `dependency`, `wikimedia_api`, `detected_technology` — only present for tools with a scanned repo.
+    - **Declared** (projected from the effective merged record, `catalog_projection.FACET_FIELDS`): `tool_type`, `keywords`, `wiki`, `technology`, `license`, `tasks`, `audiences`, `ui_language` — present for the whole catalog.
+      `tool_facets.tools_matching_facets` / `count_matching` take ONE `filters` dict spanning both families; there is no cross-table query and no `declared_filters=` parameter.
+      **Coverage nuance this creates:** declared filters are NOT coverage-limited, detected ones are. A response's `coverage` block therefore describes only the detected side; say so rather than implying the whole query was coverage-limited.
 - Response envelope conventions: see `/v1/canonical/tools/` (`v1.py:525-550`) — jsonify'd dict, camelCase keys for derived metadata.
 
 ---
@@ -31,6 +31,7 @@
 ### Task 1: Tool summary serializer + coverage helper
 
 **Files:**
+
 - Create: `proxy/backend/v1_facets.py` (serializer + coverage only; routes come in Task 2)
 - Test: `tests/proxy/test_v1_facets.py` (create)
 
@@ -254,6 +255,7 @@ git commit -m "feat: shared tool summary and coverage for facet discovery"
 ### Task 2: `/v1/facets/tools/` and `/v1/facets/values/` routes
 
 **Files:**
+
 - Modify: `proxy/backend/v1_facets.py` (add routes)
 - Modify: `proxy/backend/__init__.py:91-110` (register blueprint alongside its peers)
 - Test: `tests/proxy/test_v1_facets.py` (extend)
@@ -481,6 +483,7 @@ git commit -m "feat: add facet discovery endpoints"
 Design Phase 4 requires rate limiting on `/v1/facets/*` (shipped here, where the routes are born, not deferred), and the design's Existing Patterns section requires `facets/values/` counts to reuse the `catalog_statistics` snapshot idiom (`SNAPSHOT_MAX_AGE`, 15 minutes) — these are unauthenticated aggregate queries the MCP server will fan out to.
 
 **Files:**
+
 - Modify: `proxy/backend/__init__.py` (`register()`, line 67 — ProxyFix, guarded by env var)
 - Modify: `proxy/backend/security.py` (facet read limiter)
 - Modify: `proxy/backend/v1_facets.py` (limiter checks; cached value counts)

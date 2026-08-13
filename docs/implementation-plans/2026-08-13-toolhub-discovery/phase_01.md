@@ -20,12 +20,12 @@ The first draft of this phase created a separate `ToolSignalFacet` table. That w
 
 With that corrected, the single-table design wins on every axis that matters:
 
-| Concern | Separate table | Facets in the projection |
-| --- | --- | --- |
-| Freshness after a scan | new hook in `repository_scan.py` | free — `repository_scan.py:309` already calls `graph_enrichment.refresh_tool_names([tool_name])` → `catalog_projection.refresh_tool_names` (`graph_enrichment.py:242`) |
-| Backfill | new batched migration | free — `migrate.py:77` already calls `catalog_projection.refresh_candidates` per deploy, plus the hourly 500-tool sweep (`jobs.yaml:110-116`) |
-| Query shape | cross-table `INTERSECT`, two vocabularies | one table, one vocabulary |
-| Rebuild invariant | second rebuild path to maintain | `catalog_facet_values` stays "everything rebuildable from this tool's projection inputs" — and analysis reports are ALREADY an input (`_report_patch`, `catalog_projection.py:180-184`) |
+| Concern                | Separate table                            | Facets in the projection                                                                                                                                                                |
+| ---------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Freshness after a scan | new hook in `repository_scan.py`          | free — `repository_scan.py:309` already calls `graph_enrichment.refresh_tool_names([tool_name])` → `catalog_projection.refresh_tool_names` (`graph_enrichment.py:242`)                  |
+| Backfill               | new batched migration                     | free — `migrate.py:77` already calls `catalog_projection.refresh_candidates` per deploy, plus the hourly 500-tool sweep (`jobs.yaml:110-116`)                                           |
+| Query shape            | cross-table `INTERSECT`, two vocabularies | one table, one vocabulary                                                                                                                                                               |
+| Rebuild invariant      | second rebuild path to maintain           | `catalog_facet_values` stays "everything rebuildable from this tool's projection inputs" — and analysis reports are ALREADY an input (`_report_patch`, `catalog_projection.py:180-184`) |
 
 **Verified facts this phase relies on:**
 
@@ -38,19 +38,20 @@ With that corrected, the single-table design wins on every axis that matters:
 
 **Facet vocabulary added by this phase** (new `CatalogFacetValue.field` values, chosen not to collide with the declared eight):
 
-| field | source | meaning |
-| --- | --- | --- |
-| `dependency` | report `dependencies` | `pypi:pywikibot` etc. |
-| `wikimedia_api` | report `apis` | the six detector ids |
-| `detected_technology` | report `technology` | language/framework detected in source — deliberately NOT `technology`, which is the DECLARED `technology_used` field |
+| field                 | source                | meaning                                                                                                              |
+| --------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `dependency`          | report `dependencies` | `pypi:pywikibot` etc.                                                                                                |
+| `wikimedia_api`       | report `apis`         | the six detector ids                                                                                                 |
+| `detected_technology` | report `technology`   | language/framework detected in source — deliberately NOT `technology`, which is the DECLARED `technology_used` field |
 
-**Confidence convention (must be documented in code):** for declared facets `confidence_basis_points` means *source authority* (`SOURCE_CONFIDENCE`). For these three analyzer fields it means *detection certainty*: `round(finding_confidence * 10000)`. Both are "how much to trust this row", which is why one column is acceptable, but the derivation differs and a reader must be told.
+**Confidence convention (must be documented in code):** for declared facets `confidence_basis_points` means _source authority_ (`SOURCE_CONFIDENCE`). For these three analyzer fields it means _detection certainty_: `round(finding_confidence * 10000)`. Both are "how much to trust this row", which is why one column is acceptable, but the derivation differs and a reader must be told.
 
 ---
 
 ### Task 1: Emit analyzer facets from the projection
 
 **Files:**
+
 - Modify: `proxy/backend/catalog_projection.py`
 - Test: `tests/proxy/test_catalog_projection.py` (exists — follow its fixtures)
 
@@ -104,6 +105,7 @@ Containment requirement: wrap the analyzer emission in its own `try/except (Type
 ### Task 2: Query helpers over `CatalogFacetValue`
 
 **Files:**
+
 - Rewrite: `proxy/backend/tool_facets.py` (exists from the reverted design — retarget it, do not start over)
 - Modify: `tests/proxy/test_tool_facets.py` (exists — the semantics tests below are already written and mutation-verified; keep them)
 
@@ -122,6 +124,7 @@ def scanned_tool_count(s: Session) -> int: ...
 ```
 
 **Behaviour that must survive the retarget unchanged** (each is already pinned by a test; two are mutation-verified):
+
 - filters AND across fields, OR within a field;
 - **fail closed**: an asked-for filter whose cleaned value list is empty returns `[]`/`0` immediately, never dropped (dropping silently widens the AND);
 - `count_matching` counts DISTINCT tool names;
@@ -130,6 +133,7 @@ def scanned_tool_count(s: Session) -> int: ...
 - `facet_value_counts` bounded, `count_facet_values` reports the true total.
 
 Changes required by the retarget:
+
 - `ToolSignalFacet.facet_type` → `CatalogFacetValue.field`; `confidence` (float 0-1) → `confidence_basis_points` (int 0-10000). `FacetMatch.matched` entries keep the float shape (`confidence_basis_points / 10000`) so the API contract in phases 3-4 is unchanged.
 - `filters` keys are now the union vocabulary: the three analyzer fields plus the declared eight. Validate against that union; an unknown field behaves identically in all helpers (see the existing consistency test).
 - `declared_filters=` is DELETED — one table, one dict. Update the Task 3b tests to the single-dict form; keep their coverage-independence assertion (a tool with no analysis report is still findable by a declared filter).

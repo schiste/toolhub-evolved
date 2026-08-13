@@ -92,6 +92,8 @@ claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolfo
 
 The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and earlier) and the newer 2026-07-28 stateless revision. Rate-limited to 60 requests per rolling minute per client IP; no session cookies. See [`docs/deploy-toolforge.md`](docs/deploy-toolforge.md) for deployment notes and conformance testing with the official MCP inspector.
 
+**Claude skill** — [`skills/toolhub-discovery/`](skills/toolhub-discovery/) holds an optional skill for Claude Code and claude.ai. It is deliberately thin: the review methodology lives in the `prior-art-review` prompt above, so it reaches every MCP client and has one place to be corrected. What the skill adds is the part a prompt cannot do — it fires on its own when someone starts describing a tool idea, rather than waiting to be invoked by a user who already knows to check. Copy the directory into `~/.claude/skills/` to install it; the MCP server must be configured first.
+
 ## Repository layout
 
 ```

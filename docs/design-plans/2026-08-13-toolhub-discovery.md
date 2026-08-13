@@ -146,10 +146,15 @@ All retrieval routes (REST and MCP) return one tool-record shape:
 
 ```json
 {
-  "name": "…", "title": "…", "description": "…", "url": "…",
-  "tool_type": "…", "repository": null, "deprecated": false,
-  "keywords": ["…"],
-  "matched": [{"facet": "dependency", "value": "pypi:pywikibot", "confidence": 0.9}]
+	"name": "…",
+	"title": "…",
+	"description": "…",
+	"url": "…",
+	"tool_type": "…",
+	"repository": null,
+	"deprecated": false,
+	"keywords": ["…"],
+	"matched": [{ "facet": "dependency", "value": "pypi:pywikibot", "confidence": 0.9 }]
 }
 ```
 
@@ -171,7 +176,7 @@ GET /v1/search/tools/?q=…          (existing shape; gains relevance ordering)
 MCP server (streamable HTTP at `/mcp`, read-only, no auth):
 
 - Tools: `search_tools(query, limit)`, `facet_tools(dependency?, api?,
-  technology?, tool_type?, limit)`, `list_facet_values(type)`,
+technology?, tool_type?, limit)`, `list_facet_values(type)`,
   `get_tool(name)` — thin wrappers over the same handlers as REST.
 - Prompt: `prior-art-review(project_description)` — ships the workflow
   (characterize idea → dual retrieval → judged report) so the methodology
@@ -237,6 +242,7 @@ REST endpoints remain the primary contract; MCP wraps the same handlers.
 **Goal:** Analyzer output becomes queryable.
 
 **Components:** (revised 2026-08-13 — see the Facet index note above)
+
 - `ANALYZER_FACET_FIELDS` + `_analyzer_facets` + a separately-contained
   `_emit_analyzer_facets` pass in `proxy/backend/catalog_projection.py`
 - Query helpers over `CatalogFacetValue` in `proxy/backend/tool_facets.py`
@@ -254,6 +260,7 @@ declared facets nor fail its batch; unit tests cover extraction, normalization
 **Goal:** Relevance-ordered tool search on both database backends.
 
 **Components:**
+
 - Dialect-aware ranking inside `proxy/backend/canonical_tools.py` (FTS5 index
   for SQLite; FULLTEXT index for MariaDB), same `search()` interface
 - `search_text` derivation extended with canonical `keywords`
@@ -269,6 +276,7 @@ existing consumers unaffected (contract tests on response shape).
 **Goal:** "Which tools use X" answerable over HTTP.
 
 **Components:**
+
 - `proxy/backend/v1_facets.py` — `/v1/facets/tools/` and `/v1/facets/values/`
   per the contracts above, including `coverage` metadata
 - Shared tool-record serializer used by search and facet responses
@@ -283,6 +291,7 @@ filters, empty results carrying `coverage`, and input validation.
 **Goal:** Any MCP client can query the catalog and receive the workflow.
 
 **Components:**
+
 - `proxy/backend/mcp_server.py` — streamable-HTTP endpoint at `/mcp` exposing
   the four tools and the `prior-art-review` prompt, wrapping Phase 2/3 handlers
 - Rate limiting on `/mcp` and `/v1/facets/*` (per-IP, modest defaults)
@@ -303,6 +312,7 @@ end-to-end against a local server; deployed endpoint answers the same from
 **Goal:** Shareable methodology layer, validated against real projects.
 
 **Components:**
+
 - `skills/toolhub-discovery/SKILL.md` in this repo (installable by copy):
   when to invoke (greenfield ideation), idea characterization (multiple
   phrasings; predicted data access; one clarifying question if too thin),

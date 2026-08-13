@@ -17,6 +17,7 @@
 ### Task 1: `skills/toolhub-discovery/SKILL.md`
 
 **Files:**
+
 - Create: `skills/toolhub-discovery/SKILL.md`
 
 **Step 1: Create the skill file** with this content (adjust only if the MCP tool names changed during Phase 4):
@@ -105,7 +106,7 @@ https://toolhub.wikimedia.org:
   **declared** filters (`tool_type`, `keyword`, `wiki`, `license`) come from
   catalog metadata and cover every tool. When a query used a detected
   filter, always restate the returned `coverage` numbers and phrase absences
-  as "no *scanned* tool matches", never "no tool does this". Do not attach
+  as "no _scanned_ tool matches", never "no tool does this". Do not attach
   the coverage caveat to a declared-only result — that would understate it.
 - `search_tools` covers the full catalog but matches text, not behavior —
   absence there is also not proof of novelty (wiki-internal scripts and
@@ -137,11 +138,12 @@ git commit -m "feat: add toolhub-discovery skill (prior-art review methodology)"
 ### Task 2: Regression probes file
 
 **Files:**
+
 - Create: `skills/toolhub-discovery/PROBES.md`
 
 **Step 1: Create** `skills/toolhub-discovery/PROBES.md`:
 
-````markdown
+```markdown
 # Retrieval regression probes
 
 Known clusters of overlapping tools. After any change to search ranking,
@@ -152,8 +154,8 @@ How to run: in a Claude session with the toolhub-discovery MCP server
 configured, call `search_tools` with the probe query and check the expected
 tools appear in the top 10.
 
-| Probe query | Must retrieve | Why |
-| --- | --- | --- |
+| Probe query     | Must retrieve                       | Why                                                             |
+| --------------- | ----------------------------------- | --------------------------------------------------------------- |
 | "link analysis" | linkdata, linkrecnext, findlinkfast | Documented overlapping cluster (the tools describe each other). |
 
 Probe queries are deliberately short: search scores terms independently, so
@@ -166,8 +168,8 @@ ground truth this file accumulates.
 ## Recorded validation runs
 
 | Date | Project probed | Top hits relevant? | Surprises (unknown tools/libs surfaced) |
-| --- | --- | --- | --- |
-````
+| ---- | -------------- | ------------------ | --------------------------------------- |
+```
 
 **Step 2: Prose checks, commit**
 
@@ -182,6 +184,7 @@ git commit -m "docs: add retrieval regression probes for discovery"
 ### Task 3: README pointer
 
 **Files:**
+
 - Modify: `README.md` — in or near the section documenting the MCP server (added in Phase 4 Task 5), add a short paragraph pointing to `skills/toolhub-discovery/` : what the skill is, that it is installable by copying the directory into `~/.claude/skills/`, and that the MCP server must be configured first.
 
 **Steps:** edit, run `npx prettier --check . && npm run spell` plus the docs-sync check if it covers README, commit `docs: point to the toolhub-discovery skill`.

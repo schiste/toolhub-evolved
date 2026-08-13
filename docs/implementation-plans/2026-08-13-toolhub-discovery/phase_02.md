@@ -6,11 +6,11 @@
 
 **Why it was reverted (2026-08-13):** the MCP's `search_tools` exists to answer prior-art questions, and **upstream Toolhub already provides relevance-ranked search that is better at exactly those queries.** Verified against the live API:
 
-| Query | Upstream `/api/search/tools/` | Our planned local implementation |
-| --- | --- | --- |
-| `citation` | 58 hits, all genuinely citation tools, ranked | LIKE match set, ordered by cache-fetch date |
-| `find unsourced statements needing references` | reference validators + Citation Needed tools | implicit AND across tokens → ~nothing |
-| `citat` (partial word) | 58 hits | needed bespoke prefix-token handling |
+| Query                                          | Upstream `/api/search/tools/`                 | Our planned local implementation            |
+| ---------------------------------------------- | --------------------------------------------- | ------------------------------------------- |
+| `citation`                                     | 58 hits, all genuinely citation tools, ranked | LIKE match set, ordered by cache-fetch date |
+| `find unsourced statements needing references` | reference validators + Citation Needed tools  | implicit AND across tokens → ~nothing       |
+| `citat` (partial word)                         | 58 hits                                       | needed bespoke prefix-token handling        |
 
 The concept-query row is decisive: an LLM composing a prior-art search sends sentences, not keywords, and our token-AND design would have returned almost nothing for them.
 
