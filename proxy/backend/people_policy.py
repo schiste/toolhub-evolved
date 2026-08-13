@@ -74,12 +74,17 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
 
 def relationship_basis(role: str, method: str) -> str:
     """Describe what a source proves without upgrading one role into another."""
-    if method == "toolforge_maintainer":
-        return "toolforge_access_or_maintainership"
-    if method in {"signed_toolinfo", "toolinfo_url_control"}:
-        return "maintainer_control"
-    if method == "toolhub_write_access":
-        return "toolhub_record_authority"
+    method_basis = {
+        "toolforge_maintainer": "toolforge_access_or_maintainership",
+        "toolinfo_target_ldap_membership": "toolforge_access_or_maintainership",
+        "toolinfo_source_controller": "source_attested_authorship",
+        "toolinfo_verified_author_anchor": "source_attested_authorship",
+        "signed_toolinfo": "maintainer_control",
+        "toolinfo_url_control": "maintainer_control",
+        "toolhub_write_access": "toolhub_record_authority",
+    }
+    if basis := method_basis.get(method):
+        return basis
     if role == "author":
         return "authorship_attribution"
     if role == "catalog_actor":

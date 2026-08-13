@@ -675,6 +675,61 @@ class ToolinfoSourceItem(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
 
 
+class ToolinfoSourceGeneration(Base):
+    """One completed fetch of an official toolinfo source.
+
+    Item rows intentionally remain a last-good projection.  Generations are
+    the audit trail that proves which complete document produced that
+    projection without making a failed fetch an authoritative deletion.
+    """
+
+    __tablename__ = "toolinfo_source_generations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("toolinfo_sources.id"), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    item_count: Mapped[int] = mapped_column(Integer, default=0)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+
+
+class ToolinfoSourceAttestation(Base):
+    """Current generic control classification for one indexed feed."""
+
+    __tablename__ = "toolinfo_source_attestations"
+    source_id: Mapped[int] = mapped_column(ForeignKey("toolinfo_sources.id"), primary_key=True)
+    classification: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="unverified", index=True)
+    controller_person_id: Mapped[int | None] = mapped_column(ForeignKey("people.id"), nullable=True, index=True)
+    controller_count: Mapped[int] = mapped_column(Integer, default=0)
+    method: Mapped[str] = mapped_column(String(64), default="")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ToolinfoAuthorBinding(Base):
+    """Source-scoped binding from an author token to one stable person."""
+
+    __tablename__ = "toolinfo_author_bindings"
+    __table_args__ = (UniqueConstraint("source_id", "normalized_label"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("toolinfo_sources.id"), index=True)
+    normalized_label: Mapped[str] = mapped_column(String(255), index=True)
+    observed_label: Mapped[str] = mapped_column(String(255), default="")
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("people.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="unresolved", index=True)
+    method: Mapped[str] = mapped_column(String(64), default="")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class ToolEvent(Base):
     """Privacy-limited interaction event used for Evolved aggregate metrics."""
 

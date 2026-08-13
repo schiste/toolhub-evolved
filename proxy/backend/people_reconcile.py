@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from backend import db, identity_graph, maintainer_index, people_index, people_policy
+from backend import db, identity_graph, maintainer_index, people_index, people_policy, source_attestations
 from backend.models import (
     CanonicalToolCache,
     Person,
@@ -715,6 +715,11 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
         before = build_plan(s)
         if mode == MODE_APPLY:
             account_bindings = identity_graph.synchronize(s)
+            source_attestation_summary = (
+                source_attestations.refresh_all(s)
+                if rebuild_tools
+                else {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
+            )
             account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
             non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
@@ -749,6 +754,12 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
+            source_attestation_summary = {
+                "sources": 0,
+                "tools": 0,
+                "authorEvidence": 0,
+                "maintainerEvidence": 0,
+            }
         after = build_plan(s)
         summary = {
             "mode": mode,
@@ -764,6 +775,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "accountBindings": account_bindings,
+            "sourceAttestations": source_attestation_summary,
             "accountBindingConflictsQueued": account_binding_conflicts_queued,
             "catalogAuthority": "toolhub",
         }

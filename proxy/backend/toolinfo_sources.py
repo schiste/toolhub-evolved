@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Index official Toolhub crawler sources into the local evidence database."""
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from urllib.parse import unquote, urlparse
@@ -9,9 +10,9 @@ import requests
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from backend import db, graph_enrichment, outbound, toolhub
+from backend import db, graph_enrichment, outbound, source_attestations, toolhub
 from backend.author_claims import dedupe_strings
-from backend.models import ToolinfoSource, ToolinfoSourceItem, utcnow
+from backend.models import ToolinfoSource, ToolinfoSourceGeneration, ToolinfoSourceItem, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_ERROR, SYNC_OFFICIAL, clean_error, clean_int
 
 UA = "toolhub-evolved-source-indexer/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -216,7 +217,9 @@ def _mark_source_error(source_id: int, error: str) -> list[str]:
         )
         source.last_fetched_at = utcnow()
         source.status = SOURCE_STATUS_ERROR
-        source.valid = False
+        # A failed fetch is not an authoritative empty generation. Preserve
+        # the last complete item projection and mark it stale/error instead.
+        source.valid = bool(affected_names)
         source.last_error = clean_error(error)
         source.sync_status = SYNC_ERROR
     return affected_names
@@ -239,6 +242,21 @@ def _store_source_items(source_id: int, items: list[dict]) -> tuple[int, list[st
         source.last_error = None if items else "no valid named toolinfo items"
         source.source = SOURCE_OFFICIAL
         source.sync_status = SYNC_OFFICIAL if items else SYNC_ERROR
+        content = json.dumps(
+            [item["payload"] for item in items],
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        content_hash = hashlib.sha256(content).hexdigest()
+        s.add(
+            ToolinfoSourceGeneration(
+                source_id=source_id,
+                content_hash=content_hash,
+                item_count=len(items),
+                fetched_at=now,
+            )
+        )
         for item in items:
             s.add(
                 ToolinfoSourceItem(
@@ -279,6 +297,7 @@ def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
     registry = sync_registered_sources()
     fetched = valid = invalid = errors = items = 0
     changed_names: list[str] = []
+    changed_source_ids: list[int] = []
     session = requests.Session()
     for source_id, url in _source_targets(max(1, limit)):
         try:
@@ -293,10 +312,17 @@ def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
         fetched += 1
         items += item_count
         changed_names.extend(source_names)
+        changed_source_ids.append(source_id)
         if item_count:
             valid += 1
         else:
             invalid += 1
+    with db.session_scope() as s:
+        attestation_summary = source_attestations.refresh_source_ids(
+            s,
+            changed_source_ids,
+            affected_tool_names=changed_names,
+        )
     graph_enrichment.refresh_tool_names(changed_names)
     return {
         "registered": registry["registered"],
@@ -306,6 +332,11 @@ def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
         "invalid": invalid,
         "errors": errors,
         "items": items,
+        "attestedSources": attestation_summary["sources"],
+        "verifiedAuthorBindings": attestation_summary["verified"],
+        "sourceConflicts": attestation_summary["conflicts"],
+        "sourceAuthorEvidence": attestation_summary["authorEvidence"],
+        "sourceMaintainerEvidence": attestation_summary["maintainerEvidence"],
     }
 
 

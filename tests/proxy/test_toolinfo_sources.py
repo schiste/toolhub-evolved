@@ -277,6 +277,11 @@ def test_index_official_crawler_sources_stores_valid_invalid_and_error_rows(monk
         "invalid": 1,
         "errors": 1,
         "items": 1,
+        "attestedSources": 2,
+        "verifiedAuthorBindings": 0,
+        "sourceConflicts": 0,
+        "sourceAuthorEvidence": 0,
+        "sourceMaintainerEvidence": 0,
     }
     assert refreshed == ["valid-tool"]
 
