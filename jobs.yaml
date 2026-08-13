@@ -139,7 +139,10 @@
   # Toolforge SUL membership without repeating the full relationship rebuild.
   # Fresh unresolved candidates cool down for a day, so each run advances
   # through the population while transient failures are retried later.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  # PEOPLE_REGISTRY_LABEL_LIMIT additionally resolves that many handle-shaped
+  # labels against CentralAuth per run, spaced one second apart. Those become
+  # candidates only; corroboration on a shared tool is what publishes them.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=25 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "43 * * * *"
   timeout: 600

@@ -641,6 +641,22 @@ must not fail the run: `crawl.py` did exactly that, and one flaky URL retired
 the crawler for ten days. Deviations are allowed but must state their reason
 at the `return`.
 
+**Public-registry candidates.** The hourly `people-identity-reconcile` job
+resolves up to `PEOPLE_REGISTRY_LABEL_LIMIT` handle-shaped labels per run
+against CentralAuth, one second apart. `backend.people_policy.is_handle_shaped`
+decides which labels are asked about: self-chosen handles are admitted,
+multi-word purely alphabetic labels are refused, because there a username and a
+person's name are indistinguishable and a wrong bind misattributes a real
+individual. Set the limit to `0` to disable the path entirely.
+
+A registry hit proves the account exists, never that its owner wrote the tool,
+so it is recorded as a `candidate` mapping and moves no evidence. It is promoted
+to `auto_link` only when the resolved person already holds verified,
+independently sourced evidence on a tool the label appears on. A resolved
+account with no person in the graph creates nothing. Run summaries report
+`registryChecked`, `registryResolved`, `registryCandidatesCreated`, and
+`registryMappingsApplied`.
+
 **Duplication gates.** JavaScript is held at a strict zero
 (`.jscpd.json`). Python runs against a ratchet in `.jscpd.python.json`,
 currently **1%** against a measured 0.98% across 94 files. That gate had never
