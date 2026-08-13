@@ -150,7 +150,10 @@ tools appear in the top 10.
 
 | Probe query | Must retrieve | Why |
 | --- | --- | --- |
-| "link analysis find links between articles" | linkdata, linkrecnext, findlinkfast | Documented overlapping cluster (the tools describe each other). |
+| "link analysis" | linkdata, linkrecnext, findlinkfast | Documented overlapping cluster (the tools describe each other). |
+
+Probe queries are deliberately short: search scores terms independently, so
+a long probe would pass or fail for reasons unrelated to what it is pinning.
 
 Add a row whenever a validation run (see SKILL.md) surfaces a
 previously-unknown duplicate cluster: those discoveries are exactly the
