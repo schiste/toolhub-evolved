@@ -178,3 +178,95 @@ def test_set_tool_type_facet_no_op_path() -> None:
     with db.session_scope() as s:
         row = s.query(ToolSignalFacet).one()
         assert row.updated_at == first_updated_at  # noqa: S101
+
+
+def _report_user(s: object) -> int:
+    """SourceAnalysisReport.user_id is NOT NULL (models.py:1061); seed a user.
+
+    Same pattern as tests/proxy/test_graph_enrichment.py:72-79.
+    """
+    from backend.models import User  # noqa: E402
+
+    user = User(wm_sub="42", username="Seeder")
+    s.add(user)  # type: ignore[attr-defined]
+    s.flush()  # type: ignore[attr-defined]
+    return user.id  # type: ignore[return-value]
+
+
+def _seed_facets() -> None:
+    from backend.models import SourceAnalysisReport  # noqa: E402
+
+    with db.session_scope() as s:
+        # Coverage is defined as "tools with at least one analysis report",
+        # so the reports themselves must exist, not just derived facets.
+        uid = _report_user(s)
+        s.add(SourceAnalysisReport(tool_name="sfedits", report=SAMPLE_REPORT, user_id=uid))
+        s.add(
+            SourceAnalysisReport(
+                tool_name="cite-checker",
+                report={"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}]},
+                user_id=uid,
+            )
+        )
+        tool_facets.replace_analyzer_facets(s, "sfedits", SAMPLE_REPORT, source_report_id=1)
+        tool_facets.replace_analyzer_facets(
+            s,
+            "cite-checker",
+            {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}]},
+            source_report_id=2,
+        )
+        tool_facets.set_tool_type_facet(s, "sfedits", {"tool_type": "bot"})
+
+
+def test_tools_matching_facets_intersects_filters() -> None:
+    _seed_facets()
+    with db.session_scope() as s:
+        both = tool_facets.tools_matching_facets(s, {"dependency": ["pypi:pywikibot"]}, limit=10)
+        assert sorted(m.tool_name for m in both) == ["cite-checker", "sfedits"]  # noqa: S101
+        narrowed = tool_facets.tools_matching_facets(
+            s,
+            {"dependency": ["pypi:pywikibot"], "wikimedia_api": ["wikidata-query-service"]},
+            limit=10,
+        )
+        assert [m.tool_name for m in narrowed] == ["sfedits"]  # noqa: S101
+        # Matched facet detail rides along for the API layer.
+        assert {  # noqa: S101
+            "facet": "dependency",
+            "value": "pypi:pywikibot",
+            "confidence": 0.95,
+        } in narrowed[0].matched
+
+
+def test_facet_value_counts_and_coverage() -> None:
+    _seed_facets()
+    with db.session_scope() as s:
+        counts = tool_facets.facet_value_counts(s, "dependency")
+        assert counts[0] == {"value": "pypi:pywikibot", "toolCount": 2}  # noqa: S101
+        assert (  # noqa: S101
+            tool_facets.facet_value_counts(s, "dependency", limit=1) == counts[:1]
+        )
+        assert tool_facets.count_facet_values(s, "dependency") == len(counts)  # noqa: S101
+        assert tool_facets.scanned_tool_count(s) == 2  # noqa: S101
+
+
+def test_count_matching_reports_true_total() -> None:
+    _seed_facets()
+    with db.session_scope() as s:
+        filters = {"dependency": ["pypi:pywikibot"]}
+        assert tool_facets.count_matching(s, filters) == 2  # noqa: S101
+        limited = tool_facets.tools_matching_facets(s, filters, limit=1)
+        assert len(limited) == 1  # noqa: S101  # page smaller than the true total
+        # One tool matching TWO values of one type is still one tool:
+        # sfedits carries both pypi:pywikibot and npm:vue.
+        both_values = {"dependency": ["pypi:pywikibot", "npm:vue"]}
+        assert tool_facets.count_matching(s, both_values) == 2  # noqa: S101
+        # Two-type INTERSECT path: only sfedits has the API facet too.
+        two_types = {
+            "dependency": ["pypi:pywikibot"],
+            "wikimedia_api": ["wikidata-query-service"],
+        }
+        assert tool_facets.count_matching(s, two_types) == 1  # noqa: S101
+        # An asked-for-but-empty filter must empty the result, not widen it.
+        widened = {"dependency": [], "wikimedia_api": ["wikidata-query-service"]}
+        assert tool_facets.count_matching(s, widened) == 0  # noqa: S101
+        assert tool_facets.tools_matching_facets(s, widened, limit=10) == []  # noqa: S101

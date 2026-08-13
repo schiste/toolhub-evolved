@@ -7,9 +7,10 @@ pure function so it can be exercised without a database; storage helpers are
 idempotent (replace-per-tool) so re-running any producer converges.
 """
 
+from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.models import (
@@ -18,6 +19,7 @@ from backend.models import (
     FACET_TECHNOLOGY,
     FACET_TOOL_TYPE,
     FACET_WIKIMEDIA_API,
+    SourceAnalysisReport,
     ToolSignalFacet,
     utcnow,
 )
@@ -137,3 +139,146 @@ def set_tool_type_facet(s: Session, tool_name: str, record: dict[str, Any] | Non
                 updated_at=utcnow(),
             )
         )
+
+
+MAX_FACET_RESULTS = 100
+
+
+@dataclass(frozen=True)
+class FacetMatch:
+    """One tool matching a facet query, with the rows that matched."""
+
+    tool_name: str
+    matched: list[dict[str, Any]] = field(default_factory=list)
+
+
+def tools_matching_facets(
+    s: Session, filters: dict[str, list[str]], *, limit: int = MAX_FACET_RESULTS
+) -> list[FacetMatch]:
+    """Return tools having at least one matching value for EVERY filter type.
+
+    Filters AND across facet types and OR within one type's value list,
+    which is the "tools like mine" question: uses this library AND that API.
+    """
+    clean: dict[str, list[str]] = {}
+    for facet_type, values in (filters or {}).items():
+        wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
+        if not wanted:
+            # A filter the caller asked for that carries no known value
+            # matches nothing; dropping it instead would silently widen
+            # the AND across types to the remaining filters.
+            return []
+        clean[facet_type] = wanted
+    if not clean:
+        return []
+    capped = max(1, min(MAX_FACET_RESULTS, int(limit or MAX_FACET_RESULTS)))
+
+    matching = None
+    for facet_type, values in clean.items():
+        names = select(ToolSignalFacet.tool_name).where(
+            ToolSignalFacet.facet_type == facet_type,
+            ToolSignalFacet.value.in_(values),
+        )
+        matching = names if matching is None else matching.intersect(names)
+
+    # Rank by the confidence of the facets that actually matched the filters,
+    # not the tool's best unrelated signal.
+    matched_condition = or_(
+        *(
+            and_(ToolSignalFacet.facet_type == facet_type, ToolSignalFacet.value.in_(values))
+            for facet_type, values in clean.items()
+        )
+    )
+    names_in_order = list(
+        s.execute(
+            select(ToolSignalFacet.tool_name)
+            .where(ToolSignalFacet.tool_name.in_(matching), matched_condition)
+            .group_by(ToolSignalFacet.tool_name)
+            .order_by(func.max(ToolSignalFacet.confidence).desc(), ToolSignalFacet.tool_name)
+            .limit(capped)
+        ).scalars()
+    )
+    if not names_in_order:
+        return []
+    rows = s.execute(
+        select(ToolSignalFacet).where(ToolSignalFacet.tool_name.in_(names_in_order), matched_condition)
+    ).scalars()
+    matched_by_tool: dict[str, list[dict[str, Any]]] = {name: [] for name in names_in_order}
+    for row in rows:
+        matched_by_tool[row.tool_name].append(
+            {"facet": row.facet_type, "value": row.value, "confidence": row.confidence}
+        )
+    return [FacetMatch(tool_name=name, matched=sorted(matched_by_tool[name], key=str)) for name in names_in_order]
+
+
+MAX_VALUE_RESULTS = 500
+DEFAULT_VALUE_RESULTS = 100
+
+
+def facet_value_counts(s: Session, facet_type: str, *, limit: int = DEFAULT_VALUE_RESULTS) -> list[dict[str, Any]]:
+    """Top values of one facet type by tool adoption.
+
+    Bounded: `dependency` alone spans every package across six ecosystems,
+    and this feeds unauthenticated responses and LLM context windows. Callers
+    display "top N by adoption"; count_facet_values reports the true total.
+    """
+    capped = max(1, min(MAX_VALUE_RESULTS, int(limit or DEFAULT_VALUE_RESULTS)))
+    rows = s.execute(
+        select(ToolSignalFacet.value, func.count(func.distinct(ToolSignalFacet.tool_name)))
+        .where(ToolSignalFacet.facet_type == str(facet_type or "").strip().casefold())
+        .group_by(ToolSignalFacet.value)
+        .order_by(
+            func.count(func.distinct(ToolSignalFacet.tool_name)).desc(),
+            ToolSignalFacet.value,
+        )
+        .limit(capped)
+    ).all()
+    return [{"value": value, "toolCount": count} for value, count in rows]
+
+
+def count_facet_values(s: Session, facet_type: str) -> int:
+    """True number of distinct values for one facet type (for truncation info)."""
+    return int(
+        s.execute(
+            select(func.count(func.distinct(ToolSignalFacet.value))).where(
+                ToolSignalFacet.facet_type == str(facet_type or "").strip().casefold()
+            )
+        ).scalar()
+        or 0
+    )
+
+
+def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
+    """True number of tools matching the filters, independent of page size."""
+    clean: dict[str, list[str]] = {}
+    for facet_type, values in (filters or {}).items():
+        wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
+        if not wanted:
+            # Mirror tools_matching_facets: an asked-for filter with no
+            # known value matches nothing, it does not vanish from the AND.
+            return 0
+        clean[facet_type] = wanted
+    if not clean:
+        return 0
+    matching = None
+    for facet_type, values in clean.items():
+        names = select(ToolSignalFacet.tool_name).where(
+            ToolSignalFacet.facet_type == facet_type,
+            ToolSignalFacet.value.in_(values),
+        )
+        matching = names if matching is None else matching.intersect(names)
+    # COUNT(DISTINCT ...): a tool matching two values of one type is one
+    # tool. (INTERSECT dedupes on its own, but the single-filter path has no
+    # INTERSECT — without DISTINCT it counts rows, not tools.)
+    sub = matching.subquery()
+    return int(s.execute(select(func.count(func.distinct(sub.c.tool_name)))).scalar() or 0)
+
+
+def scanned_tool_count(s: Session) -> int:
+    """Count tools with at least one stored analysis report (coverage basis).
+
+    Counts reports, not facets: a scanned repository that yielded zero
+    findings is still scanned, and the coverage number is what discovery
+    clients repeat to users — it must not silently undercount.
+    """
+    return int(s.execute(select(func.count(func.distinct(SourceAnalysisReport.tool_name)))).scalar() or 0)
