@@ -341,3 +341,24 @@ rate limiting ships in Phase 4, not later. All endpoints are read-only.
 
 **Spec churn.** MCP streamable HTTP is young; pinning the SDK version and
 keeping the endpoint stateless minimizes exposure.
+
+## Amendments from implementation planning (2026-08-13)
+
+Codebase verification during implementation planning (see
+`docs/implementation-plans/2026-08-13-toolhub-discovery/`) corrected three
+assumptions in this design; the implementation plan is authoritative where
+they conflict:
+
+- **Ranked search surfaces through `/v1/canonical/tools/?q=`**, not
+  `/v1/search/tools/`. The latter is a separate federated search over
+  locally-registered tools, consumed by `public_html/views/search.js`, and
+  is unchanged. The canonical-catalog search this design describes lives in
+  `canonical_tools.search()` behind `/v1/canonical/tools/`.
+- **The MCP endpoint is implemented natively in Flask** (stateless JSON-RPC,
+  dual-revision: legacy `initialize` handshake plus the 2026-07-28
+  `server/discover` revision) rather than via the official MCP Python SDK,
+  which emits ASGI-only apps while Toolforge's webservice is WSGI/uWSGI.
+- **The facet backfill runs from `proxy/migrate.py`** (idempotent, batched,
+  executed by `tools/deploy.sh` on every deploy) rather than as a
+  `jobs.yaml` one-shot job — migrate.py is the repo's established home for
+  exactly this kind of row-proportional backfill.
