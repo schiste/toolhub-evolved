@@ -237,7 +237,7 @@ def facet_value_counts(s: Session, facet_type: str, *, limit: int = DEFAULT_VALU
 
 
 def count_facet_values(s: Session, facet_type: str) -> int:
-    """True number of distinct values for one facet type (for truncation info)."""
+    """Count distinct values for one facet type, so callers can report truncation."""
     return int(
         s.execute(
             select(func.count(func.distinct(ToolSignalFacet.value))).where(
@@ -249,7 +249,7 @@ def count_facet_values(s: Session, facet_type: str) -> int:
 
 
 def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
-    """True number of tools matching the filters, independent of page size."""
+    """Count tools matching the filters, independent of any page size."""
     clean: dict[str, list[str]] = {}
     for facet_type, values in (filters or {}).items():
         wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
