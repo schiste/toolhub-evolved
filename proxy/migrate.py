@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, or_, select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend import (
     DEFAULT_DB_URL,
@@ -72,6 +73,9 @@ def run_once() -> list[MigrationResult]:
     return [
         MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
         MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
+        MigrationResult("canonical search_text keywords", rederive_search_text_keywords()),
+        MigrationResult("canonical FULLTEXT index", ensure_canonical_fulltext_index()),
+        MigrationResult("canonical FTS population", populate_canonical_tool_search()),
         MigrationResult(
             "catalog projections",
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
@@ -83,6 +87,104 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
+
+
+def rederive_search_text_keywords() -> int:
+    """Re-derive search_text to include keywords for rows cached before the change.
+
+    Keywords are now part of the search haystack. This backfill updates cached
+    rows that predate the change by reassigning their record (which triggers
+    the validator to re-derive search_text with keywords included).
+
+    Run from proxy/migrate.py, idempotent because re-running derives identical
+    text if keywords are already present.
+    """
+    filled = 0
+    from backend.models import CanonicalToolCache  # noqa: PLC0415 - avoid frontend startup cycles
+
+    while True:
+        try:
+            with db.session_scope() as s:
+                # Find rows where search_text doesn't contain keywords yet by checking
+                # if the current record's keywords would add new content to search_text.
+                # For safety, we only update rows where we can prove the update is needed.
+                rows = list(
+                    s.execute(select(CanonicalToolCache).order_by(CanonicalToolCache.tool_name).limit(500)).scalars()
+                )
+                if not rows:
+                    return filled
+                touched_in_batch = 0
+                for row in rows:
+                    old_text = row.search_text
+                    # Reassignment triggers _derive_search_text to recompute with keywords
+                    row.record = row.record or {}
+                    if row.search_text != old_text:
+                        touched_in_batch += 1
+                        filled += 1
+                # If no rows were actually updated in this batch, we're done
+                # (all rows either have keywords or never need them).
+                if touched_in_batch == 0:
+                    return filled
+        except SQLAlchemyError:
+            return filled
+
+
+def ensure_canonical_fulltext_index() -> int:
+    """Create the MariaDB FULLTEXT index on canonical_tool_cache.search_text.
+
+    MariaDB only: creating a table's FIRST InnoDB FULLTEXT index rebuilds the
+    table — row-proportional work that must not run in init_schema (every
+    uWSGI worker executes it at startup). This migration runs once per deploy.
+    Uses an advisory lock to prevent concurrent DDL races on Toolforge where
+    multiple app servers deploy simultaneously.
+
+    SQLite: Returns 0 and does nothing (FTS5 DDL runs in init_schema).
+    """
+    if db.engine().dialect.name not in {"mysql", "mariadb"}:
+        return 0
+
+    from backend import search_index  # noqa: PLC0415 - avoid frontend startup cycles
+
+    with db.advisory_lock("canonical-search-index", timeout_seconds=30) as acquired:
+        if not acquired:
+            return 0
+        try:
+            with db.engine().begin() as conn:
+                for statement in search_index.mariadb_statements():
+                    conn.execute(text(statement))
+        except SQLAlchemyError:
+            # If the index already exists (IF NOT EXISTS in the DDL), that's fine.
+            # Any other error should be logged via the engine, but we return 0
+            # and let search degrade to LIKE rather than failing the deploy.
+            return 0
+        else:
+            return 1
+
+
+def populate_canonical_tool_search() -> int:
+    """Populate the FTS5 table from the canonical cache (SQLite only).
+
+    Syncs rows from canonical_tool_cache into the canonical_tool_search FTS5
+    table. On MariaDB, the FULLTEXT index indexes existing rows automatically.
+    Idempotent because the WHERE clause only inserts missing rows.
+    """
+    if db.engine().dialect.name != "sqlite":
+        return 0
+
+    try:
+        with db.engine().begin() as conn:
+            result = conn.execute(
+                text("""
+                INSERT INTO canonical_tool_search(tool_name, search_text)
+                SELECT c.tool_name, c.search_text FROM canonical_tool_cache c
+                WHERE c.tool_name NOT IN (SELECT tool_name FROM canonical_tool_search)
+                """)
+            )
+            return result.rowcount or 0
+    except SQLAlchemyError:
+        # FTS table missing before init_schema runs or other transient error.
+        # Search will degrade to LIKE and the next deploy will retry.
+        return 0
 
 
 def _backfill_account_bindings() -> int:

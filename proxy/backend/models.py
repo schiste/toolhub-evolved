@@ -136,7 +136,7 @@ class CanonicalToolCache(Base):
     __tablename__ = "canonical_tool_cache"
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     record: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Lowercased name/title/description, denormalized out of `record` so a search
+    # Lowercased name/title/description/keywords, denormalized out of `record` so a search
     # can filter and limit in SQL. Matching inside the JSON column would mean
     # shipping every record to Python to test a substring.
     search_text: Mapped[str] = mapped_column(Text, default="")
@@ -158,10 +158,13 @@ class CanonicalToolCache(Base):
 
         Deriving it here rather than at the call site means a row inserted by
         any path is searchable; a caller that forgot would otherwise write a
-        row that simply never matches, with nothing to indicate why.
+        row that simply never matches, with nothing to indicate why. Keywords
+        are included for discovery-ranked search.
         """
         source = record or {}
-        parts = (source.get("name"), source.get("title"), source.get("description"))
+        raw_keywords = source.get("keywords")
+        keywords = " ".join(str(k or "") for k in raw_keywords) if isinstance(raw_keywords, list) else ""
+        parts = (source.get("name"), source.get("title"), source.get("description"), keywords)
         self.search_text = "\n".join(str(part or "") for part in parts).casefold()[:SEARCH_TEXT_MAX_CHARS]
         return record
 
