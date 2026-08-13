@@ -266,6 +266,7 @@ PUBLIC_V1_ROUTES = {
         "exactly the data the signed-out homepage already fetched one endpoint at a time"
     ),
     "/v1/search/tools/": "public search over local records; local DB only",
+    "/v1/statistics/": "public cached quality snapshot derived only from local public catalog evidence",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/accounts/": "public official Toolhub account projection; local DB only and reads are rate limited",

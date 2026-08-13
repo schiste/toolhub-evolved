@@ -30,6 +30,7 @@ from backend.v1_moderation import v1_moderation_bp
 from backend.v1_overlay import v1_overlay_bp
 from backend.v1_people import v1_people_bp
 from backend.v1_source_analysis import v1_source_analysis_bp
+from backend.v1_statistics import v1_statistics_bp
 from backend.v1_toolhub import v1_toolhub_bp
 from backend.v1_toolinfo import v1_toolinfo_bp
 from backend.v1_tools import v1_tools_bp
@@ -101,6 +102,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(v1_tools_bp)
     app.register_blueprint(v1_toolinfo_bp)
     app.register_blueprint(v1_source_analysis_bp)
+    app.register_blueprint(v1_statistics_bp)
     app.register_blueprint(v1_moderation_bp)
     app.register_blueprint(v1_author_keys_bp)
     app.register_blueprint(v1_toolhub_bp)
