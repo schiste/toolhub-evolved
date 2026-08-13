@@ -315,6 +315,21 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
         return "analyzed"
 
 
+def _scan_order(state: RepositoryAnalysisState | None) -> tuple[bool, datetime]:
+    """Order never-recorded tools first, then the least recently checked.
+
+    A state row can legitimately exist with no ``checked_at``. The first
+    transaction in scan_tool() commits a pending row before the scan itself
+    runs, so any run that dies between the two -- which is exactly what a job
+    timeout does -- leaves one behind. Sorting that None against a datetime
+    raised TypeError on every later run, so one killed run permanently broke
+    the job: the same SIGKILL that leaked the guard lock also planted this.
+    """
+    if state is None:
+        return (False, EARLIEST_CHECK)
+    return (True, state.checked_at or EARLIEST_CHECK)
+
+
 def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str, dict[str, Any]]]:
     with db.session_scope() as s:
         rows = list(s.execute(select(CanonicalToolCache).order_by(CanonicalToolCache.tool_name)).scalars())
@@ -332,14 +347,7 @@ def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str,
         if (not tool_name or row.tool_name == tool_name)
         and _raw_tool_repository(row.record if isinstance(row.record, dict) else {})
     ]
-    return sorted(
-        candidates,
-        key=lambda item: (
-            states.get(item[0]) is not None,
-            states.get(item[0]).checked_at if states.get(item[0]) is not None else EARLIEST_CHECK,
-            item[0],
-        ),
-    )[: max(1, limit)]
+    return sorted(candidates, key=lambda item: (*_scan_order(states.get(item[0])), item[0]))[: max(1, limit)]
 
 
 def run(limit: int = 100, *, force: bool = False, tool_name: str | None = None) -> dict[str, int]:

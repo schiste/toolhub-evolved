@@ -2,6 +2,7 @@
 """Tests for deterministic repository acquisition and incremental scanning."""
 
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import repository_scan  # noqa: E402
 from backend import db  # noqa: E402
-from backend.models import RepositoryAnalysisState, SourceAnalysisReport  # noqa: E402
+from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -141,3 +142,50 @@ def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
         "error": 1,
     }
     assert failures == ["bad-tool"]
+
+
+def _cached_tool(session, name):
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    session.add(
+        CanonicalToolCache(
+            tool_name=name,
+            record={"name": name, "repository": f"https://github.com/example/{name}"},
+            source_url=f"https://toolhub.example/{name}",
+            expires_at=now + timedelta(days=1),
+            stale_until=now + timedelta(days=2),
+        )
+    )
+
+
+def test_a_pending_state_row_with_no_checked_at_does_not_break_ordering():
+    """scan_tool() commits a pending row before scanning, so a run killed
+    between the two leaves checked_at NULL. Sorting that against a datetime
+    raised TypeError on every later run, which is how one job timeout took
+    repository-analysis down for twelve days."""
+    with db.session_scope() as s:
+        _cached_tool(s, "killed-midscan")
+        _cached_tool(s, "never-seen")
+        _cached_tool(s, "checked-recently")
+        s.add(RepositoryAnalysisState(tool_name="killed-midscan", status="pending", checked_at=None))
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="checked-recently",
+                status="analyzed",
+                checked_at=datetime.now(tz=UTC).replace(tzinfo=None),
+            )
+        )
+
+    names = [name for name, _record in repository_scan.candidate_tools(10)]
+
+    # No state row at all still comes first, then the never-checked row, then
+    # the recently checked one.
+    assert names == ["never-seen", "killed-midscan", "checked-recently"]
+
+
+def test_the_limit_still_applies_when_a_null_checked_at_is_present():
+    with db.session_scope() as s:
+        for index in range(4):
+            _cached_tool(s, f"tool-{index}")
+        s.add(RepositoryAnalysisState(tool_name="tool-0", status="pending", checked_at=None))
+
+    assert len(repository_scan.candidate_tools(2)) == 2
