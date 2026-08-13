@@ -2,13 +2,13 @@
 <!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
 <!-- Release id: community-directory-identities -->
 <!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..6ea6b6e (214 commits) -->
+<!-- Source range: 828438f..670c24d (219 commits) -->
 
 # What's New for Users
 
 - The Community directory now searches people, official Toolhub accounts, contributors, matching tools, and unresolved name-only evidence together, with shareable filters, useful ranking, pagination, retry states, and accessible cards.
-- A new Statistics ledger makes catalog quality measurable, including verified and unresolved authorship, maintainer coverage, metadata completeness, identity and source resolution, tool types, creation years, and update recency; missing data stays visible in every denominator and chart.
-- Stable Toolhub, Wikimedia, wiki, Toolforge, and verified toolinfo-source evidence now bring duplicate catalog records under one public person when the evidence is safe; multi-author feeds create one relationship per author, while unsupported or conflicting labels stay grouped and explicitly unresolved instead of becoming fake people.
+- A new Statistics ledger makes catalog quality measurable, including verified and unresolved authorship, maintainer coverage, metadata completeness, identity and source resolution, tool types, creation years, and update recency; missing data stays visible in every denominator and chart, and unresolved names are now broken down by whether any known account could still match them, so remaining gaps are visibly a limit rather than a backlog.
+- Stable Toolhub, Wikimedia, wiki, Toolforge, and verified toolinfo-source evidence now bring duplicate catalog records under one public person when the evidence is safe; multi-author feeds create one relationship per author, an author credit written as a wiki user link is read as the account it names, and a name-only credit is connected to a person only when that same tool already carries separate verified evidence for them, while unsupported or conflicting labels stay grouped and explicitly unresolved instead of becoming fake people.
 - Connected identities let signed-in users securely reconnect each legacy Toolforge developer account with an SSH-key proof, restoring its current and future tool relationships without uploading a private key or granting catalog write access.
 - Public tool relationships now focus on authors and maintainers; verified Toolforge memberships follow strong project aliases even when older Toolhub records lack the usual `toolforge-` prefix, cards show every author through a compact clickable list, and a bold green name remains the sole visual maintainer cue while detailed evidence and internal permissions stay elsewhere.
 - Public profiles show each related tool once with every known role and compact paginated summaries; legacy name links disambiguate safely, and maintainer-only actions appear only for people with verified authority.
