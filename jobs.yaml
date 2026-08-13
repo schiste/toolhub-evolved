@@ -151,8 +151,12 @@
   # A kill at the timeout cannot release the guard lock, so reclaim it well
   # inside the next tick rather than losing the job until a human notices:
   # this drain died on 2026-08-03 and no run happened for the next ten days.
-  # The batch is sized to finish inside the timeout even from a cold backlog.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile-incremental --stale-after 300 -- /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=50 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
+  # The batch is sized to finish inside the timeout even from a cold backlog,
+  # and small enough that its row locks do not sit across other identity
+  # jobs: at 50 it held them for ~212s per run and deadlocked the source
+  # audit and the maintainer backfill. Per-tool cost is unchanged, so
+  # halving the batch halves the lock window at the same drain rate.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile-incremental --stale-after 300 -- /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=25 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
   image: python3.13
   schedule: "* * * * *"
   timeout: 300
