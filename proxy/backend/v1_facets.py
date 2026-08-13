@@ -10,12 +10,12 @@ does this."
 
 from typing import Any
 
-from flask import Blueprint
+from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend import canonical_tools, tool_facets
-from backend.models import CanonicalToolCache
+from backend import canonical_tools, db, tool_facets
+from backend.models import CanonicalToolCache, CatalogFacetValue
 
 v1_facets_bp = Blueprint("v1_facets", __name__)
 
@@ -79,3 +79,103 @@ def tool_summaries(names: list[str], *, matched_by_tool: dict[str, list[dict[str
             }
         )
     return summaries
+
+
+def dependency_values(s: Session, raw: list[str]) -> list[str]:
+    """Expand bare package names to every ecosystem-prefixed stored value.
+
+    Stored dependency values are "{ecosystem}:{name}" (source_analyzer.py);
+    requiring callers to know the ecosystem would make the obvious query
+    ("pywikibot") silently return nothing.
+    """
+    expanded: list[str] = []
+    for value in raw:
+        clean = str(value or "").strip().casefold()
+        if not clean:
+            continue
+        if ":" in clean:
+            expanded.append(clean)
+            continue
+        expanded.extend(
+            s.execute(
+                select(CatalogFacetValue.value)
+                .where(
+                    CatalogFacetValue.field == "dependency",
+                    CatalogFacetValue.value.like(f"%:{clean}"),
+                )
+                .distinct()
+            ).scalars()
+        )
+    return expanded
+
+
+@v1_facets_bp.route("/v1/facets/tools/")
+def v1_facets_tools() -> Response | tuple[Response, int]:
+    """Tools matching every supplied facet filter (AND across types)."""
+    limit = request.args.get("limit", "")
+    try:
+        capped = max(1, min(MAX_LIMIT, int(limit))) if limit else DEFAULT_LIMIT
+    except ValueError:
+        capped = DEFAULT_LIMIT
+    with db.session_scope() as s:
+        filters: dict[str, list[str]] = {}
+        applied: dict[str, list[str]] = {}
+        for param, facet_type in FILTER_PARAMS.items():
+            raw_values = [v for raw in request.args.getlist(param) for v in raw.split(",")]
+            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
+            if not requested:
+                # `?dependency=` (no value at all) is not a filter and must
+                # not bypass the at-least-one-filter check below.
+                continue
+            values = dependency_values(s, requested) if facet_type == "dependency" else requested
+            cleaned = sorted({str(v).strip().casefold() for v in values if str(v).strip()})
+            # An UNKNOWN value is still a filter: it legitimately matches
+            # nothing (200 + empty tools), it does not invalidate the request.
+            # Emptiness is decided on the raw request value above, never on
+            # the expansion result — tools_matching_facets/count_matching
+            # treat an asked-for-but-empty value list as matching nothing
+            # (they must never drop it, which would widen the AND).
+            filters[facet_type] = cleaned
+            # Echo under the caller's parameter name so responses round-trip
+            # into new requests without knowing internal facet-type names.
+            applied[param] = cleaned or requested
+        if not filters:
+            return jsonify({"error": "at least one facet filter is required"}), 400
+        matches = tool_facets.tools_matching_facets(s, filters, limit=capped)
+        # True total, not page size: 50-of-50 and 50-of-800 must differ.
+        total = tool_facets.count_matching(s, filters)
+        disclosed_coverage = coverage(s)
+    matched_by_tool = {m.tool_name: m.matched for m in matches}
+    return jsonify(
+        {
+            "tools": tool_summaries([m.tool_name for m in matches], matched_by_tool=matched_by_tool),
+            "total": total,
+            "appliedFilters": applied,
+            "coverage": disclosed_coverage,
+        }
+    )
+
+
+@v1_facets_bp.route("/v1/facets/values/")
+def v1_facets_values() -> Response | tuple[Response, int]:
+    """Top distinct values for one facet type, ranked by tool adoption."""
+    facet_type = str(request.args.get("type") or "").strip().casefold()
+    if facet_type not in set(FILTER_PARAMS.values()):
+        return jsonify({"error": f"type must be one of {sorted(FILTER_PARAMS.values())}"}), 400
+    raw_limit = request.args.get("limit", "")
+    try:
+        limit = int(raw_limit) if raw_limit else tool_facets.DEFAULT_VALUE_RESULTS
+    except ValueError:
+        limit = tool_facets.DEFAULT_VALUE_RESULTS
+    with db.session_scope() as s:
+        values = tool_facets.facet_value_counts(s, facet_type, limit=limit)
+        total = tool_facets.count_facet_values(s, facet_type)
+        disclosed_coverage = coverage(s)
+    return jsonify(
+        {
+            "type": facet_type,
+            "values": [{"value": v["value"], "toolCount": v["toolCount"]} for v in values],
+            "totalValues": total,
+            "coverage": disclosed_coverage,
+        }
+    )

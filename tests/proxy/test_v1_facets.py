@@ -121,3 +121,91 @@ def test_coverage_counts(app):
         _seed(s)
     with db.session_scope() as s:
         assert v1_facets.coverage(s) == {"scannedTools": 2, "totalTools": 2}
+
+
+def test_facets_tools_intersection_and_shape(client):
+    with db.session_scope() as s:
+        _seed(s)
+    resp = client.get("/v1/facets/tools/?dependency=pywikibot&api=wikidata-query-service")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert set(data) == {"tools", "total", "appliedFilters", "coverage"}
+    assert [t["name"] for t in data["tools"]] == ["sfedits"]
+    # Keyed by the query-parameter names the caller sent, so a response can
+    # be round-tripped straight back into a new request.
+    assert data["appliedFilters"] == {
+        "dependency": ["pypi:pywikibot"],
+        "api": ["wikidata-query-service"],
+    }
+    assert data["coverage"] == {"scannedTools": 2, "totalTools": 2}
+
+
+def test_facets_tools_dependency_shorthand(client):
+    """A bare package name matches any ecosystem; an explicit prefix pins one."""
+    with db.session_scope() as s:
+        _seed(s)
+    bare = client.get("/v1/facets/tools/?dependency=pywikibot").get_json()
+    pinned = client.get("/v1/facets/tools/?dependency=pypi:pywikibot").get_json()
+    assert {t["name"] for t in bare["tools"]} == {"cite-checker", "sfedits"}
+    assert {t["name"] for t in pinned["tools"]} == {"cite-checker", "sfedits"}
+
+
+def test_facets_tools_rejects_no_filters_and_bad_limit(client):
+    assert client.get("/v1/facets/tools/").status_code == 400
+    resp = client.get("/v1/facets/tools/?dependency=x&limit=9999")
+    assert resp.status_code == 200
+    assert resp.get_json()["tools"] == []  # clamped, empty, still carries coverage
+
+
+def test_facets_tools_unknown_values_match_nothing(client):
+    """Seeded, so these assertions can fail for the right reason."""
+    with db.session_scope() as s:
+        _seed(s)
+    solo = client.get("/v1/facets/tools/?dependency=nosuchpkg").get_json()
+    assert solo["tools"] == [] and solo["total"] == 0
+    # An unknown value combined with a valid filter must EMPTY the result,
+    # never silently widen the AND to just the valid filter.
+    mixed = client.get(
+        "/v1/facets/tools/?dependency=nosuchpkg&api=wikidata-query-service"
+    ).get_json()
+    assert mixed["tools"] == [] and mixed["total"] == 0
+
+
+def test_facets_tools_limit_never_exceeds_serializer_cap(client):
+    """Every returned tool must carry real record data, even at the cap."""
+    from backend import canonical_tools as ct
+
+    with db.session_scope() as s:
+        for i in range(ct.MAX_QUERY_NAMES + 5):
+            name = f"tool-{i:03d}"
+            s.add(
+                CanonicalToolCache(
+                    tool_name=name,
+                    record={"name": name, "title": f"Tool {i}"},
+                    expires_at=utcnow() + timedelta(hours=1),
+                    stale_until=utcnow() + timedelta(hours=2),
+                )
+            )
+            _facet(s, name, "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9000)
+    data = client.get("/v1/facets/tools/?dependency=pywikibot&limit=9999").get_json()
+    assert len(data["tools"]) <= ct.MAX_QUERY_NAMES
+    assert all(t["title"] for t in data["tools"])  # no husk records
+
+
+def test_facets_values_listing_and_validation(client):
+    with db.session_scope() as s:
+        _seed(s)
+    resp = client.get("/v1/facets/values/?type=dependency")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert set(data) == {"type", "values", "totalValues", "coverage"}
+    assert data["values"][0] == {"value": "pypi:pywikibot", "toolCount": 2}
+    assert data["totalValues"] == len(data["values"])
+    limited = client.get("/v1/facets/values/?type=detected_technology&limit=1").get_json()
+    # _seed gives sfedits "python" and cite-checker "javascript", so
+    # len(values) == 1 while totalValues == 2 discloses the truncation.
+    assert len(limited["values"]) == 1
+    assert limited["totalValues"] == 2
+    assert client.get("/v1/facets/values/?type=bogus").status_code == 400
+    assert client.get("/v1/facets/values/").status_code == 400
+    assert client.get("/v1/facets/tools/?dependency=").status_code == 400  # empty value ≠ filter

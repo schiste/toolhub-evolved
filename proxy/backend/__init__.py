@@ -25,6 +25,7 @@ from backend.v1_catalog import v1_catalog_bp
 from backend.v1_claims import v1_claims_bp
 from backend.v1_community import v1_community_bp
 from backend.v1_crawler import v1_crawler_bp
+from backend.v1_facets import v1_facets_bp
 from backend.v1_me import v1_me_bp
 from backend.v1_moderation import v1_moderation_bp
 from backend.v1_overlay import v1_overlay_bp
@@ -102,6 +103,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(v1_tools_bp)
     app.register_blueprint(v1_toolinfo_bp)
     app.register_blueprint(v1_source_analysis_bp)
+    app.register_blueprint(v1_facets_bp)
     app.register_blueprint(v1_statistics_bp)
     app.register_blueprint(v1_moderation_bp)
     app.register_blueprint(v1_author_keys_bp)
