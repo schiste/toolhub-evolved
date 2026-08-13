@@ -83,9 +83,14 @@ const pluralRules = new Intl.PluralRules(LOCALE);
 /**
  * This locale's plural categories in CLDR order (`zero one two few many other`,
  * filtered to the ones it uses) — the positional order banana PLURAL forms are
- * written in. English has two, Russian four, Arabic six.
+ * written in. English has two, Russian four, Arabic six. The order is imposed
+ * here because engines disagree about `resolvedOptions().pluralCategories`:
+ * newer V8 returns CLDR order, older V8 (Node ≤22, older browsers) returns it
+ * alphabetically, which would misindex every positional form.
  */
-const PLURAL_CATEGORIES = pluralRules.resolvedOptions().pluralCategories;
+const PLURAL_CATEGORIES = ["zero", "one", "two", "few", "many", "other"].filter((category) =>
+	pluralRules.resolvedOptions().pluralCategories.includes(category)
+);
 const PSEUDO_MAP = Object.freeze(
 	/** @type {Record<string, string>} */ ({
 		A: "Å",
@@ -267,8 +272,8 @@ function splitMagicArgs(body) {
 
 /**
  * Pick a banana PLURAL form. An explicit `N=form` wins for that exact count;
- * otherwise forms are positional in this locale's CLDR category order, which is
- * what `Intl.PluralRules(...).resolvedOptions().pluralCategories` returns. A
+ * otherwise forms are positional in this locale's CLDR category order
+ * (`PLURAL_CATEGORIES`, normalized above — engine order is not trusted). A
  * message carrying fewer forms than the locale needs (an English source read in
  * Arabic, say) falls back to its last form rather than dropping the text.
  * @param {number} count
