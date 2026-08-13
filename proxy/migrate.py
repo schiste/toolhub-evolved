@@ -40,7 +40,6 @@ from backend.models import (
     PersonIdentifier,
     ToolAuthorClaim,
     ToolAuthorKey,
-    ToolhubAccountProjection,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
@@ -196,28 +195,22 @@ def _backfill_people_identity() -> int:
                 identifier.updated_at = now
                 touched += 1
         users = list(s.execute(select(User).order_by(User.id)).scalars())
+        current_ids = {
+            (row.namespace, row.normalized_value): row.person_id
+            for row in s.execute(select(PersonIdentifier).where(PersonIdentifier.is_current.is_(True))).scalars()
+        }
         for user in users:
+            toolhub_owner = current_ids.get((people_index.NS_TOOLHUB_USER_ID, user.wm_sub.casefold()))
+            wikimedia_owner = current_ids.get(
+                (people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, (user.wikimedia_global_user_id or "").casefold())
+            )
+            if user.person_id == toolhub_owner and (
+                not user.wikimedia_global_user_id or user.person_id == wikimedia_owner
+            ):
+                continue
             old_person_id = user.person_id
             people_index.link_user(s, user)
             touched += int(old_person_id != user.person_id)
-        for account in s.execute(
-            select(ToolhubAccountProjection).order_by(ToolhubAccountProjection.toolhub_user_id)
-        ).scalars():
-            existing = s.execute(
-                select(PersonIdentifier.id).where(
-                    PersonIdentifier.namespace == people_index.NS_TOOLHUB_USER_ID,
-                    PersonIdentifier.normalized_value == account.toolhub_user_id.casefold(),
-                    PersonIdentifier.is_current.is_(True),
-                )
-            ).scalar_one_or_none()
-            person = people_index.ensure_official_account_person(
-                s,
-                toolhub_user_id=account.toolhub_user_id,
-                username=account.username,
-                wikimedia_global_user_id=account.wikimedia_global_user_id or "",
-                checked_at=account.last_seen_at,
-            )
-            touched += int(existing is None and person is not None)
         touched += _backfill_account_owned_records(s, users)
     inspector = inspect(db.engine())
 
