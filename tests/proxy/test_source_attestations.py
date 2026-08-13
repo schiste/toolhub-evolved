@@ -16,6 +16,7 @@ from backend.models import (  # noqa: E402
     CanonicalToolCache,
     PersonAccountBinding,
     PersonReconciliationConflict,
+    PersonReconciliationRun,
     ToolRelationshipEvidence,
     ToolforgeAccountProjection,
     ToolforgeMembershipProjection,
@@ -150,6 +151,10 @@ def test_single_source_controller_propagates_only_matching_author_tokens():
             ],
         )
         result = source_attestations.refresh_source_ids(session, [source.id])
+
+        run = session.execute(select(PersonReconciliationRun)).scalar_one()
+        assert run.mode == source_attestations.RECONCILIATION_RUN_MODE
+        assert len(run.mode) <= PersonReconciliationRun.mode.type.length
 
         attestation = session.get(ToolinfoSourceAttestation, source.id)
         bindings = {

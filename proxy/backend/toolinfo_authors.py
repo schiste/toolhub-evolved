@@ -103,8 +103,6 @@ def author_names(payload: dict[str, Any]) -> list[str]:
     values: list[str] = []
     for assertion in author_assertions(payload):
         values.extend(
-            value
-            for value in (assertion.display_name, assertion.wiki_username, assertion.developer_username)
-            if value
+            value for value in (assertion.display_name, assertion.wiki_username, assertion.developer_username) if value
         )
     return list(dict.fromkeys(values))

@@ -55,6 +55,7 @@ STATUS_VERIFIED = "verified"
 STATUS_RESOLVED = "resolved"
 STATUS_UNRESOLVED = "unresolved"
 STATUS_CONFLICT = "conflict"
+RECONCILIATION_RUN_MODE = "source-evidence"
 
 # A per-record signature anchors that record's signer through the ordinary
 # relationship graph. It does not prove control of sibling feed records.
@@ -582,9 +583,7 @@ def refresh_tool_names(s: Session, tool_names: list[str]) -> dict[str, int]:
         ).scalars()
     }
     members_by_project = _verified_members_by_project(s)
-    person_ids = {
-        row.person_id for row in bindings.values() if row.person_id is not None
-    } | {
+    person_ids = {row.person_id for row in bindings.values() if row.person_id is not None} | {
         binding.person_id
         for members in members_by_project.values()
         for _account, binding in members
@@ -609,9 +608,7 @@ def refresh_tool_names(s: Session, tool_names: list[str]) -> dict[str, int]:
             if tool_name in canonical
             else ([], [])
         )
-        author_count += len(
-            people_index.replace_source_evidence(s, tool_name, SOURCE_AUTHOR_ATTESTATION, authors)
-        )
+        author_count += len(people_index.replace_source_evidence(s, tool_name, SOURCE_AUTHOR_ATTESTATION, authors))
         maintainer_count += len(
             people_index.replace_source_evidence(s, tool_name, SOURCE_TARGET_MEMBERSHIP, maintainers)
         )
@@ -626,7 +623,7 @@ def refresh_source_ids(
 ) -> dict[str, int]:
     """Resolve changed feeds, update bindings, and project all affected tools."""
     ids = sorted({int(source_id) for source_id in source_ids})
-    run = PersonReconciliationRun(mode="source-attestation", status="running", started_at=utcnow())
+    run = PersonReconciliationRun(mode=RECONCILIATION_RUN_MODE, status="running", started_at=utcnow())
     s.add(run)
     s.flush()
     totals = {
@@ -640,15 +637,11 @@ def refresh_source_ids(
         "maintainerEvidence": 0,
     }
     affected_names = {_clean(name) for name in (affected_tool_names or []) if _clean(name)} | set(
-        s.execute(
-            select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id.in_(ids or {-1}))
-        ).scalars()
+        s.execute(select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id.in_(ids or {-1}))).scalars()
     )
     handle_index = _verified_handle_index(s)
     for source in s.execute(select(ToolinfoSource).where(ToolinfoSource.id.in_(ids or {-1}))).scalars():
-        items = list(
-            s.execute(select(ToolinfoSourceItem).where(ToolinfoSourceItem.source_id == source.id)).scalars()
-        )
+        items = list(s.execute(select(ToolinfoSourceItem).where(ToolinfoSourceItem.source_id == source.id)).scalars())
         attestation = _resolve_attestation(s, source)
         if attestation.status == STATUS_CONFLICT:
             controller_ids = {
