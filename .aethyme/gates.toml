@@ -1,0 +1,34 @@
+# Reviewed from the `aethyme init` draft.
+# Rules: commands run with cwd = the worktree under test (bare —
+# no venv/node_modules); gate outputs must be gitignored.
+
+# js-lint (drafted as `npm run lint`) was removed: it resolves to
+# `eslint . --max-warnings 0`, a node_modules/.bin binary that does not
+# exist in a bare worktree. JS/CSS linting stays with .githooks/pre-commit
+# -> lint-staged, which runs in the main checkout where deps are installed.
+
+# The draft guessed `python3 -m ruff check .`. Three corrections, each of
+# which independently made the gate wrong:
+#   scope   — pyproject sets select = ["ALL"], which only proxy/ is held to.
+#             Repo-wide `.` reports 5817 errors; CI runs `ruff check proxy`.
+#   version — CI pins ruff==0.14.9 (tools/python-quality-requirements.txt).
+#             The PATH ruff here is 0.15.21, which fires FURB171 on
+#             proxy/backend/source_analyzer.py:679 while 0.14.9 passes.
+#             An unpinned gate blocks commits for findings CI never reports.
+#   binary  — `python3 -m ruff` resolves to a different version per
+#             environment (0.6.9 / 0.14.9 / 0.15.21 all seen on this machine).
+# uvx pins the version, needs no venv (works in a bare worktree), and runs
+# in ~28ms once the version is cached.
+# Mirrors .github/workflows/ci.yml lines 81 and 83.
+
+[[gate]]
+name = "ruff-check"
+command = "uvx ruff@0.14.9 check proxy"
+cost = 1
+triggers = ["proxy/**/*.py", "pyproject.toml"]
+
+[[gate]]
+name = "ruff-format"
+command = "uvx ruff@0.14.9 format --check proxy"
+cost = 1
+triggers = ["proxy/**/*.py", "pyproject.toml"]
