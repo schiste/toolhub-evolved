@@ -201,6 +201,9 @@ def test_tools_matching_facets_empty_filters() -> None:
         assert result == []  # noqa: S101
         result = tool_facets.tools_matching_facets(s, {"dependency": []})
         assert result == []  # noqa: S101
+        # Multiple empty filters
+        result = tool_facets.tools_matching_facets(s, {"dependency": [], "wikimedia_api": [], "technology": []})
+        assert result == []  # noqa: S101
 
 
 def test_count_matching_empty_filters() -> None:
@@ -209,6 +212,10 @@ def test_count_matching_empty_filters() -> None:
     with db.session_scope() as s:
         assert tool_facets.count_matching(s, {}) == 0  # noqa: S101
         assert tool_facets.count_matching(s, {"dependency": []}) == 0  # noqa: S101
+        # Multiple empty filters
+        assert (  # noqa: S101
+            tool_facets.count_matching(s, {"dependency": [], "wikimedia_api": []}) == 0
+        )
 
 
 def _report_user(s: object) -> int:
