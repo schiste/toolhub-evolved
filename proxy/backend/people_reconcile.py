@@ -704,6 +704,9 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     identity_resolver: PublicIdentityResolver | None = None,
     candidate_label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
     rebuild_tools: bool = True,
+    sync_accounts: bool = True,
+    refresh_sources: bool = True,
+    source_changes_since: Any | None = None,  # noqa: ANN401 - persisted naive datetime
 ) -> dict[str, Any]:
     """Audit or rebuild Toolhub-backed evidence and local people projections."""
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
@@ -711,14 +714,22 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     run_row = PersonReconciliationRun(mode=mode, status="running", started_at=utcnow())
     s.add(run_row)
     s.flush()
+    identity_changed_since = source_changes_since or utcnow()
     try:
         before = build_plan(s)
         if mode == MODE_APPLY:
-            account_bindings = identity_graph.synchronize(s)
-            source_attestation_summary = (
-                source_attestations.refresh_all(s)
-                if rebuild_tools
-                else {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
+            account_bindings = (
+                identity_graph.synchronize(s)
+                if sync_accounts
+                else {
+                    "toolhubBindings": 0,
+                    "toolhubConflicts": 0,
+                    "usersHydrated": 0,
+                    "verified": 0,
+                    "candidate": 0,
+                    "conflict": 0,
+                    "unresolved": 0,
+                }
             )
             account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
@@ -738,7 +749,12 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 if discover_candidates
                 else {"created": 0, "linked": 0, "conflicts": 0}
             )
-            if rebuild_tools or candidate_result["linked"]:
+            source_attestation_summary = (
+                source_attestations.refresh_incremental(s, identity_changed_since=identity_changed_since)
+                if refresh_sources
+                else {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
+            )
+            if rebuild_tools or candidate_result["linked"] or source_attestation_summary["tools"]:
                 people_index.refresh_activity_summaries(s)
         else:
             account_bindings = {

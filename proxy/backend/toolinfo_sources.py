@@ -12,7 +12,13 @@ from sqlalchemy.orm import Session
 
 from backend import db, graph_enrichment, outbound, source_attestations, toolhub
 from backend.author_claims import dedupe_strings
-from backend.models import ToolinfoSource, ToolinfoSourceGeneration, ToolinfoSourceItem, utcnow
+from backend.models import (
+    ToolinfoSource,
+    ToolinfoSourceAttestation,
+    ToolinfoSourceGeneration,
+    ToolinfoSourceItem,
+    utcnow,
+)
 from backend.sync import SOURCE_OFFICIAL, SYNC_ERROR, SYNC_OFFICIAL, clean_error, clean_int
 
 UA = "toolhub-evolved-source-indexer/1.0 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
@@ -231,17 +237,6 @@ def _store_source_items(source_id: int, items: list[dict]) -> tuple[int, list[st
         source = s.get(ToolinfoSource, source_id)
         if source is None:
             return 0, []
-        previous_names = list(
-            s.execute(select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)).scalars()
-        )
-        s.execute(delete(ToolinfoSourceItem).where(ToolinfoSourceItem.source_id == source_id))
-        source.last_fetched_at = now
-        source.status = SOURCE_STATUS_VALID if items else SOURCE_STATUS_INVALID
-        source.valid = bool(items)
-        source.item_count = len(items)
-        source.last_error = None if items else "no valid named toolinfo items"
-        source.source = SOURCE_OFFICIAL
-        source.sync_status = SYNC_OFFICIAL if items else SYNC_ERROR
         content = json.dumps(
             [item["payload"] for item in items],
             sort_keys=True,
@@ -249,6 +244,22 @@ def _store_source_items(source_id: int, items: list[dict]) -> tuple[int, list[st
             ensure_ascii=False,
         ).encode("utf-8")
         content_hash = hashlib.sha256(content).hexdigest()
+        previous_generation = s.execute(
+            select(ToolinfoSourceGeneration)
+            .where(ToolinfoSourceGeneration.source_id == source_id)
+            .order_by(ToolinfoSourceGeneration.fetched_at.desc(), ToolinfoSourceGeneration.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        previous_names = list(
+            s.execute(select(ToolinfoSourceItem.tool_name).where(ToolinfoSourceItem.source_id == source_id)).scalars()
+        )
+        source.last_fetched_at = now
+        source.status = SOURCE_STATUS_VALID if items else SOURCE_STATUS_INVALID
+        source.valid = bool(items)
+        source.item_count = len(items)
+        source.last_error = None if items else "no valid named toolinfo items"
+        source.source = SOURCE_OFFICIAL
+        source.sync_status = SYNC_OFFICIAL if items else SYNC_ERROR
         s.add(
             ToolinfoSourceGeneration(
                 source_id=source_id,
@@ -257,6 +268,9 @@ def _store_source_items(source_id: int, items: list[dict]) -> tuple[int, list[st
                 fetched_at=now,
             )
         )
+        if previous_generation is not None and previous_generation.content_hash == content_hash:
+            return len(items), []
+        s.execute(delete(ToolinfoSourceItem).where(ToolinfoSourceItem.source_id == source_id))
         for item in items:
             s.add(
                 ToolinfoSourceItem(
@@ -292,6 +306,11 @@ def _source_targets(limit: int) -> list[tuple[int, str]]:
         return [(row.id, row.url) for row in rows]
 
 
+def _source_needs_attestation(source_id: int) -> bool:
+    with db.session_scope() as s:
+        return s.get(ToolinfoSourceAttestation, source_id) is None
+
+
 def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
     """Fetch official registered feeds and persist per-tool source mappings."""
     registry = sync_registered_sources()
@@ -311,8 +330,9 @@ def index_official_crawler_sources(limit: int = 150) -> dict[str, int]:
             continue
         fetched += 1
         items += item_count
-        changed_names.extend(source_names)
-        changed_source_ids.append(source_id)
+        if source_names or _source_needs_attestation(source_id):
+            changed_names.extend(source_names)
+            changed_source_ids.append(source_id)
         if item_count:
             valid += 1
         else:

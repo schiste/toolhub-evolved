@@ -63,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
                     discover_candidates=args.apply or args.identities_only,
                     candidate_label_limit=args.candidate_label_limit,
                     rebuild_tools=not args.identities_only,
+                    sync_accounts=not args.identities_only,
                 )
     sys.stdout.write(json.dumps(summary, sort_keys=True) + "\n")
     return 1 if int(summary.get("failed") or 0) else 0

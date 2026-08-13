@@ -30,9 +30,11 @@ from backend import (
     db,
     maintainer_index,
     people_index,
+    source_attestations,
 )
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
+    ApiCacheMeta,
     Person,
     PersonIdentifier,
     ToolAuthorClaim,
@@ -76,11 +78,22 @@ def run_once() -> list[MigrationResult]:
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
         ),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
+        MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
         MigrationResult("people immutable ids and account links", _backfill_people_identity()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
+
+
+def _initialize_source_attestation_rules() -> int:
+    """Mark the already-audited projection for the first incremental release."""
+    with db.session_scope() as s:
+        row = s.get(ApiCacheMeta, source_attestations.RULES_META_KEY)
+        if row is not None:
+            return 0
+        s.add(ApiCacheMeta(key=source_attestations.RULES_META_KEY, value=source_attestations.RULES_VERSION))
+        return 1
 
 
 def _clean_resolver_identity_claims() -> int:
