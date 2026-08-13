@@ -262,6 +262,6 @@ def scanned_tool_count(s: Session) -> int:
 
     Counts reports, not facets: a scanned repository that yielded zero
     findings is still scanned, and the coverage number is what discovery
-    clients repeat to users — it must not silently undercount.
+    clients repeat to users — it must not report fewer than were scanned.
     """
     return int(s.execute(select(func.count(func.distinct(SourceAnalysisReport.tool_name)))).scalar() or 0)
