@@ -141,3 +141,60 @@ def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
         "error": 1,
     }
     assert failures == ["bad-tool"]
+
+
+def test_scan_tool_produces_analyzer_facets_end_to_end(monkeypatch):
+    """Pin the one path that delivers analyzer facets between deploys.
+
+    scan_tool -> graph_enrichment.refresh_tool_names (repository_scan.py:309)
+    -> catalog_projection. This link is easy to sever by accident and the
+    projection's own tests start downstream of it, so drive the real
+    scan_tool with only the network/filesystem boundary stubbed.
+    """
+    from datetime import timedelta
+
+    from backend.models import CanonicalToolCache, CatalogFacetValue, utcnow
+
+    record = {
+        "name": "omega",
+        "title": "Omega",
+        "description": "scans things",
+        "repository": "https://github.com/example/omega",
+        "technology_used": ["Python"],
+    }
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="omega",
+                record=record,
+                expires_at=utcnow() + timedelta(hours=1),
+                stale_until=utcnow() + timedelta(hours=2),
+            )
+        )
+
+    monkeypatch.setattr(repository_scan, "repository_head", lambda url: "abc123")
+    monkeypatch.setattr(repository_scan, "checkout_repository", lambda url, dest: "abc123")
+    monkeypatch.setattr(repository_scan, "_read_tree", lambda paths: [])
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda paths: {})
+    monkeypatch.setattr(
+        repository_scan,
+        "analyze_source_files",
+        lambda files, **kwargs: {
+            "dependencies": [{"value": "pypi:pywikibot", "label": "pywikibot (pypi)", "confidence": 0.95}],
+            "apis": [{"value": "wikidata-query-service", "label": "WDQS", "confidence": 0.94}],
+            "technology": [{"value": "Python", "label": "Python", "confidence": 0.64}],
+        },
+    )
+
+    assert repository_scan.scan_tool("omega", record) == "analyzed"
+
+    with db.session_scope() as s:
+        facets = {
+            (row.field, row.value)
+            for row in s.execute(select(CatalogFacetValue).where(CatalogFacetValue.tool_name == "omega")).scalars()
+        }
+    assert ("dependency", "pypi:pywikibot") in facets
+    assert ("wikimedia_api", "wikidata-query-service") in facets
+    assert ("detected_technology", "python") in facets
+    # The declared pass still ran in the same projection.
+    assert ("technology", "python") in facets
