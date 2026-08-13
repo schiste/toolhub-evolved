@@ -133,8 +133,8 @@ def _set_binding(  # noqa: PLR0913 - audited proof fields are intentionally expl
     elif status != STATUS_VERIFIED:
         row.verified_at = None
     row.revoked_at = None
-    row.last_seen_at = now
     if changed:
+        row.last_seen_at = now
         row.updated_at = now
     return row
 
@@ -361,8 +361,9 @@ def _sync_toolhub_bindings(
             and handle_owner is person
         )
         if identifiers_complete:
-            person.display_name = account.username
-            person.updated_at = account.last_seen_at
+            if person.display_name != account.username:
+                person.display_name = account.username
+                person.updated_at = account.last_seen_at
         else:
             person = people_index.ensure_official_account_person(
                 session,
@@ -459,7 +460,6 @@ def _sync_toolforge_bindings(
                 and stable_owner is person
                 and handle_owner is person
             ):
-                existing.last_seen_at = utcnow()
                 stats["verified"] += 1
                 continue
             try:

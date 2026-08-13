@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 from backend import db, identity_graph, people_index  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
+    Person,
     PersonAccountBinding,
     PersonIdentifier,
     ToolforgeAccountProjection,
@@ -216,6 +217,25 @@ def test_identity_input_fingerprint_ignores_freshness_timestamps():
 
     assert second == first
     assert third != first
+
+
+def test_unchanged_binding_does_not_refresh_audit_timestamps():
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        identity_graph.synchronize(session)
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolhub").one()
+        person = session.get(Person, binding.person_id)
+        binding_seen_at = binding.last_seen_at
+        binding_updated_at = binding.updated_at
+        person_updated_at = person.updated_at
+
+    with db.session_scope() as session:
+        identity_graph.synchronize(session)
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolhub").one()
+        person = session.get(Person, binding.person_id)
+        assert binding.last_seen_at == binding_seen_at
+        assert binding.updated_at == binding_updated_at
+        assert person.updated_at == person_updated_at
 
 
 def test_unbound_matching_handle_is_only_a_candidate():
