@@ -17,6 +17,7 @@ from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend import db, token_crypto
+from backend.mcp_server import mcp_bp
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
 from backend.v1_account_links import v1_account_links_bp
@@ -97,6 +98,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
         # actually appends lets clients forge their address.
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops)
     app.register_blueprint(oauth_bp)
+    app.register_blueprint(mcp_bp)
     app.register_blueprint(v1_bp)
     app.register_blueprint(v1_write_bp)
     app.register_blueprint(v1_crawler_bp)
