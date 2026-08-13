@@ -16,10 +16,10 @@ from sqlalchemy.orm import Session
 from backend.models import (
     ANALYZER_FACET_TYPES,
     FACET_DEPENDENCY,
-    FACET_TECHNOLOGY,
-    FACET_TOOL_TYPE,
+    FACET_DETECTED_TECHNOLOGY,
     FACET_TYPES,
     FACET_WIKIMEDIA_API,
+    CatalogFacetValue,
     SourceAnalysisReport,
     ToolSignalFacet,
     utcnow,
@@ -30,7 +30,7 @@ from backend.models import (
 _REPORT_SECTIONS = (
     ("dependencies", FACET_DEPENDENCY),
     ("apis", FACET_WIKIMEDIA_API),
-    ("technology", FACET_TECHNOLOGY),
+    ("technology", FACET_DETECTED_TECHNOLOGY),
 )
 
 Facet = tuple[str, str, float]
@@ -101,47 +101,6 @@ def replace_analyzer_facets(
     return len(facets)
 
 
-def set_tool_type_facet(s: Session, tool_name: str, record: dict[str, Any] | None) -> None:
-    """Sync the single tool_type facet for one canonical record.
-
-    No-ops when the stored facet already matches: the catalog sync calls this
-    for every tool every 15 minutes, and an unconditional delete+insert would
-    be ~9k pointless writes per run on ToolsDB.
-    """
-    clean = str(tool_name or "").strip()
-    if not clean:
-        return
-    source = record if isinstance(record, dict) else {}
-    tool_type = str(source.get("tool_type") or "").strip().casefold()[:255]
-    existing = list(
-        s.execute(
-            select(ToolSignalFacet.value).where(
-                ToolSignalFacet.tool_name == clean,
-                ToolSignalFacet.facet_type == FACET_TOOL_TYPE,
-            )
-        ).scalars()
-    )
-    if existing == ([tool_type] if tool_type else []):
-        return
-    s.execute(
-        delete(ToolSignalFacet).where(
-            ToolSignalFacet.tool_name == clean,
-            ToolSignalFacet.facet_type == FACET_TOOL_TYPE,
-        )
-    )
-    if tool_type:
-        s.add(
-            ToolSignalFacet(
-                tool_name=clean,
-                facet_type=FACET_TOOL_TYPE,
-                value=tool_type,
-                confidence=1.0,
-                source_report_id=None,
-                updated_at=utcnow(),
-            )
-        )
-
-
 MAX_FACET_RESULTS = 100
 
 
@@ -153,18 +112,26 @@ class FacetMatch:
     matched: list[dict[str, Any]] = field(default_factory=list)
 
 
-def tools_matching_facets(
-    s: Session, filters: dict[str, list[str]], *, limit: int = MAX_FACET_RESULTS
+def tools_matching_facets(  # noqa: C901, PLR0912 - handles both analyzer and declared tables
+    s: Session,
+    filters: dict[str, list[str]] | None = None,
+    *,
+    declared_filters: dict[str, list[str]] | None = None,
+    limit: int = MAX_FACET_RESULTS,
 ) -> list[FacetMatch]:
     """Return tools having at least one matching value for EVERY filter type.
 
     Filters AND across facet types and OR within one type's value list,
     which is the "tools like mine" question: uses this library AND that API.
+    Declared filters (from CatalogFacetValue) AND with analyzer filters;
+    either family can be used alone.
 
-    Facet types must match the known vocabulary (FACET_TYPES); unknown types
-    are rejected and return no matches.
+    Facet types in `filters` must match the known vocabulary (FACET_TYPES);
+    unknown types are rejected and return no matches. Declared filter keys
+    are CatalogFacetValue.field names; values are compared against the
+    casefolded CatalogFacetValue.value.
     """
-    clean: dict[str, list[str]] = {}
+    clean_analyzer: dict[str, list[str]] = {}
     for facet_type, values in (filters or {}).items():
         if facet_type not in FACET_TYPES:
             # Unknown facet type matches nothing
@@ -175,46 +142,115 @@ def tools_matching_facets(
             # matches nothing; dropping it instead would silently widen
             # the AND across types to the remaining filters.
             return []
-        clean[facet_type] = wanted
-    if not clean:
+        clean_analyzer[facet_type] = wanted
+
+    clean_declared: dict[str, list[str]] = {}
+    for declared_field, values in (declared_filters or {}).items():
+        wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
+        if not wanted:
+            # Mirror analyzer filter semantics: an asked-for declared filter
+            # with no known values matches nothing.
+            return []
+        clean_declared[declared_field] = wanted
+
+    if not clean_analyzer and not clean_declared:
         return []
     capped = max(1, min(MAX_FACET_RESULTS, int(limit or MAX_FACET_RESULTS)))
 
     matching = None
-    for facet_type, values in clean.items():
+    # Build INTERSECT chain from analyzer filters
+    for facet_type, values in clean_analyzer.items():
         names = select(ToolSignalFacet.tool_name).where(
             ToolSignalFacet.facet_type == facet_type,
             ToolSignalFacet.value.in_(values),
         )
         matching = names if matching is None else matching.intersect(names)
 
-    # Rank by the confidence of the facets that actually matched the filters,
-    # not the tool's best unrelated signal.
-    matched_condition = or_(
-        *(
-            and_(ToolSignalFacet.facet_type == facet_type, ToolSignalFacet.value.in_(values))
-            for facet_type, values in clean.items()
+    # Build INTERSECT chain from declared filters
+    for declared_field, values in clean_declared.items():
+        names = select(CatalogFacetValue.tool_name).where(
+            CatalogFacetValue.field == declared_field,
+            CatalogFacetValue.value.in_(values),
         )
+        matching = names if matching is None else matching.intersect(names)
+
+    # Rank by the confidence of the facets that actually matched the filters,
+    # not the tool's best unrelated signal. Combine both table conditions.
+    analyzer_condition = (
+        or_(
+            *(
+                and_(ToolSignalFacet.facet_type == facet_type, ToolSignalFacet.value.in_(values))
+                for facet_type, values in clean_analyzer.items()
+            )
+        )
+        if clean_analyzer
+        else None
     )
-    names_in_order = list(
-        s.execute(
-            select(ToolSignalFacet.tool_name)
-            .where(ToolSignalFacet.tool_name.in_(matching), matched_condition)
-            .group_by(ToolSignalFacet.tool_name)
-            .order_by(func.max(ToolSignalFacet.confidence).desc(), ToolSignalFacet.tool_name)
-            .limit(capped)
-        ).scalars()
+    declared_condition = (
+        or_(
+            *(
+                and_(CatalogFacetValue.field == declared_field, CatalogFacetValue.value.in_(values))
+                for declared_field, values in clean_declared.items()
+            )
+        )
+        if clean_declared
+        else None
     )
+
+    # Rank using analyzer table when available (has confidence); fall back to declared
+    if analyzer_condition is not None:
+        names_in_order = list(
+            s.execute(
+                select(ToolSignalFacet.tool_name)
+                .where(ToolSignalFacet.tool_name.in_(matching), analyzer_condition)
+                .group_by(ToolSignalFacet.tool_name)
+                .order_by(func.max(ToolSignalFacet.confidence).desc(), ToolSignalFacet.tool_name)
+                .limit(capped)
+            ).scalars()
+        )
+    else:
+        # Declared-only: rank by confidence_basis_points
+        names_in_order = list(
+            s.execute(
+                select(CatalogFacetValue.tool_name)
+                .where(CatalogFacetValue.tool_name.in_(matching), declared_condition)
+                .group_by(CatalogFacetValue.tool_name)
+                .order_by(
+                    func.max(CatalogFacetValue.confidence_basis_points).desc(),
+                    CatalogFacetValue.tool_name,
+                )
+                .limit(capped)
+            ).scalars()
+        )
+
     if not names_in_order:
         return []
-    rows = s.execute(
-        select(ToolSignalFacet).where(ToolSignalFacet.tool_name.in_(names_in_order), matched_condition)
-    ).scalars()
+
+    # Collect matched facets from both tables
     matched_by_tool: dict[str, list[dict[str, Any]]] = {name: [] for name in names_in_order}
-    for row in rows:
-        matched_by_tool[row.tool_name].append(
-            {"facet": row.facet_type, "value": row.value, "confidence": row.confidence}
-        )
+
+    if analyzer_condition is not None:
+        rows = s.execute(
+            select(ToolSignalFacet).where(ToolSignalFacet.tool_name.in_(names_in_order), analyzer_condition)
+        ).scalars()
+        for row in rows:
+            matched_by_tool[row.tool_name].append(
+                {"facet": row.facet_type, "value": row.value, "confidence": row.confidence}
+            )
+
+    if declared_condition is not None:
+        rows = s.execute(
+            select(CatalogFacetValue).where(CatalogFacetValue.tool_name.in_(names_in_order), declared_condition)
+        ).scalars()
+        for row in rows:
+            matched_by_tool[row.tool_name].append(
+                {
+                    "facet": row.field,
+                    "value": row.value,
+                    "confidence": row.confidence_basis_points / 10000.0,
+                }
+            )
+
     return [
         FacetMatch(
             tool_name=name,
@@ -272,13 +308,23 @@ def count_facet_values(s: Session, facet_type: str) -> int:
     )
 
 
-def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
+def count_matching(
+    s: Session,
+    filters: dict[str, list[str]] | None = None,
+    *,
+    declared_filters: dict[str, list[str]] | None = None,
+) -> int:
     """Count tools matching the filters, independent of any page size.
 
-    Facet types must match the known vocabulary (FACET_TYPES); unknown types
-    are rejected and return 0.
+    Declared filters (from CatalogFacetValue) AND with analyzer filters;
+    either family can be used alone.
+
+    Facet types in `filters` must match the known vocabulary (FACET_TYPES);
+    unknown types are rejected and return 0. Declared filter keys are
+    CatalogFacetValue.field names; values are compared against the
+    casefolded CatalogFacetValue.value.
     """
-    clean: dict[str, list[str]] = {}
+    clean_analyzer: dict[str, list[str]] = {}
     for facet_type, values in (filters or {}).items():
         if facet_type not in FACET_TYPES:
             # Unknown facet type matches nothing
@@ -288,19 +334,38 @@ def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
             # Mirror tools_matching_facets: an asked-for filter with no
             # known value matches nothing, it does not vanish from the AND.
             return 0
-        clean[facet_type] = wanted
-    if not clean:
+        clean_analyzer[facet_type] = wanted
+
+    clean_declared: dict[str, list[str]] = {}
+    for declared_field, values in (declared_filters or {}).items():
+        wanted = sorted({str(v or "").strip().casefold() for v in values if str(v or "").strip()})
+        if not wanted:
+            # Mirror analyzer filter semantics: an asked-for declared filter
+            # with no known values matches nothing.
+            return 0
+        clean_declared[declared_field] = wanted
+
+    if not clean_analyzer and not clean_declared:
         return 0
+
     matching = None
-    for facet_type, values in clean.items():
+    # Build INTERSECT chain from analyzer filters
+    for facet_type, values in clean_analyzer.items():
         names = select(ToolSignalFacet.tool_name).where(
             ToolSignalFacet.facet_type == facet_type,
             ToolSignalFacet.value.in_(values),
         )
         matching = names if matching is None else matching.intersect(names)
-    # COUNT(DISTINCT ...): a tool matching two values of one type is one
-    # tool. (INTERSECT dedupes on its own, but the single-filter path has no
-    # INTERSECT — without DISTINCT it counts rows, not tools.)
+
+    # Build INTERSECT chain from declared filters
+    for declared_field, values in clean_declared.items():
+        names = select(CatalogFacetValue.tool_name).where(
+            CatalogFacetValue.field == declared_field,
+            CatalogFacetValue.value.in_(values),
+        )
+        matching = names if matching is None else matching.intersect(names)
+
+    # COUNT(DISTINCT ...): a tool matching two values of one type is one tool.
     sub = matching.subquery()
     return int(s.execute(select(func.count(func.distinct(sub.c.tool_name)))).scalar() or 0)
 

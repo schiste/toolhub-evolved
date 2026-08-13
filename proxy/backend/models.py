@@ -1083,15 +1083,20 @@ class SourceAnalysisReport(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 
 
-# Facet vocabulary for ToolSignalFacet.facet_type. Analyzer-derived types are
-# rebuilt per tool from its latest SourceAnalysisReport; tool_type comes from
-# the canonical record and is rebuilt by catalog-wide sync instead.
+# Facet vocabulary for ToolSignalFacet.facet_type: analyzer-DERIVED signals
+# only, all rebuilt per tool from its latest SourceAnalysisReport. Declared
+# metadata (tool_type, keywords, license, declared technology_used, …) is not
+# here — catalog_facet_values already indexes it from the effective merged
+# record, so duplicating it would create two copies that diverge on curation.
+# "detected_technology" is named apart from CatalogFacetValue's "technology"
+# because they mean different things: detected from source vs declared.
 FACET_DEPENDENCY = "dependency"
 FACET_WIKIMEDIA_API = "wikimedia_api"
-FACET_TECHNOLOGY = "technology"
-FACET_TOOL_TYPE = "tool_type"
-ANALYZER_FACET_TYPES = (FACET_DEPENDENCY, FACET_WIKIMEDIA_API, FACET_TECHNOLOGY)
-FACET_TYPES = (*ANALYZER_FACET_TYPES, FACET_TOOL_TYPE)
+FACET_DETECTED_TECHNOLOGY = "detected_technology"
+FACET_TYPES = (FACET_DEPENDENCY, FACET_WIKIMEDIA_API, FACET_DETECTED_TECHNOLOGY)
+# Retained name for "every type this table stores", now that they are all
+# analyzer-derived; kept so call sites reading either name stay honest.
+ANALYZER_FACET_TYPES = FACET_TYPES
 
 
 class ToolSignalFacet(Base):
