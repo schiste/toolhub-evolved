@@ -197,15 +197,39 @@ def test_sync_limits_keep_requests_bounded_and_paced():
     assert account_sync._bounded_interval(0) == account_sync.DEFAULT_MIN_INTERVAL_SECONDS
 
 
-def test_deploy_and_scheduled_job_require_a_complete_account_generation():
+def test_unchanged_generation_does_not_rewrite_identity_rows(monkeypatch):
+    monkeypatch.setattr(
+        account_sync,
+        "listing_page",
+        lambda _page, _size: ([account("42", "Stable Account")], False, 1),
+    )
+    account_sync.run_complete(sleep_fn=lambda _seconds: None)
+    with db.session_scope() as session:
+        person = session.query(Person).one()
+        identifier = session.query(PersonIdentifier).filter_by(namespace="toolhub_user_id").one()
+        person_updated_at = person.updated_at
+        identifier_updated_at = identifier.updated_at
+
+    account_sync.run_complete(sleep_fn=lambda _seconds: None)
+
+    with db.session_scope() as session:
+        assert session.query(Person).one().updated_at == person_updated_at
+        assert (
+            session.query(PersonIdentifier).filter_by(namespace="toolhub_user_id").one().updated_at
+            == identifier_updated_at
+        )
+
+
+def test_projection_refresh_owns_complete_account_generation_outside_deploy():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")
+    refresh = (ROOT / "proxy" / "projection_refresh.py").read_text(encoding="utf-8")
 
-    assert "name: account-sync" in jobs
-    assert "proxy/account_sync.py --complete" in jobs
-    assert "timeout: 300" in jobs
+    assert "name: projection-refresh" in jobs
+    assert "account_sync.run_complete" in refresh
     assert "toolforge jobs run --wait 900" in deploy
-    assert 'run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"' in deploy
+    assert 'run_with_tool_env account-sync "$REPO_DIR/proxy/account_sync.py --complete"' not in deploy
+    assert "projection-refresh-deploy" in deploy
     assert "webservice python3.13 shell" not in deploy
     assert 'exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"' in deploy
 

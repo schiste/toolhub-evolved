@@ -369,6 +369,39 @@ def test_failed_fetch_retains_last_good_generation_and_relationship_evidence():
         assert session.query(ToolinfoSourceGeneration).count() == 1
 
 
+def test_unchanged_feed_generation_skips_item_rewrite_and_attestation_work():
+    item = {
+        "tool_name": "stable-tool",
+        "title": "Stable",
+        "tool_url": "https://stable.example",
+        "payload": {
+            "name": "stable-tool",
+            "title": "Stable",
+            "description": "Stable",
+            "url": "https://stable.example",
+        },
+    }
+    with db.session_scope() as session:
+        source = _source(session, "https://stable.example/toolinfo.json", [item["payload"]])
+        source_id = source.id
+    _count, first_changed = toolinfo_sources._store_source_items(source_id, [item])
+    with db.session_scope() as session:
+        source_attestations.refresh_full(session)
+        item_id = session.execute(select(ToolinfoSourceItem.id)).scalar_one()
+
+    count, second_changed = toolinfo_sources._store_source_items(source_id, [item])
+    with db.session_scope() as session:
+        incremental = source_attestations.refresh_incremental(session)
+        assert session.execute(select(ToolinfoSourceItem.id)).scalar_one() == item_id
+        assert session.query(ToolinfoSourceGeneration).count() == 2
+
+    assert first_changed == ["stable-tool"]
+    assert count == 1
+    assert second_changed == []
+    assert incremental["sources"] == 0
+    assert incremental["tools"] == 0
+
+
 def test_complete_empty_generation_withdraws_items_bindings_and_attributions():
     with db.session_scope() as session:
         _canonical(session, "removed-tool")

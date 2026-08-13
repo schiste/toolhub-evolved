@@ -178,6 +178,29 @@ def test_canonical_alias_replaces_old_fallback_and_invalidates_tool_summaries():
         assert session.query(ToolSummaryCache).count() == 0
 
 
+def test_existing_identity_graph_uses_preloaded_fast_path(monkeypatch):
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        session.add(toolforge_account())
+        identity_graph.synchronize(session)
+
+    monkeypatch.setattr(
+        identity_graph.people_index,
+        "ensure_official_account_person",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected per-account rebuild")),
+    )
+    monkeypatch.setattr(
+        identity_graph,
+        "bind_toolforge_account",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected per-account rebuild")),
+    )
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["toolhubBindings"] == 2
+    assert result["verified"] == 1
+
+
 def test_unbound_matching_handle_is_only_a_candidate():
     with db.session_scope() as session:
         session.add(toolhub_account(username="Alice", global_id="160"))
