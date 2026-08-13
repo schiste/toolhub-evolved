@@ -135,3 +135,66 @@ def test_a_non_numeric_stale_threshold_is_rejected(tmp_path):
     result = run_guard_with(tmp_path, "--stale-after", "soon", "--", "true")
     assert result.returncode == 2
     assert "stale-after must be a non-negative integer" in result.stderr
+
+
+def _tripped(tmp_path: Path, *, last_failure_age: int) -> None:
+    """Leave the breaker tripped, as three consecutive failures would."""
+    guard_dir = tmp_path / "guard"
+    guard_dir.mkdir(parents=True, exist_ok=True)
+    (guard_dir / "example.state").write_text(
+        "failure_streak=3\ndisabled=1\nlast_exit=7\n"
+        f"last_failure_at={int(time.time()) - last_failure_age}\n"
+    )
+
+
+def test_a_tripped_breaker_retries_once_after_its_cooldown(tmp_path):
+    marker = tmp_path / "runs"
+    _tripped(tmp_path, last_failure_age=7200)
+
+    result = run_guard_with(tmp_path, "--retry-after", "3600", "--", "sh", "-c", f"echo run >> {marker}")
+
+    assert "one trial run" in result.stderr
+    assert marker.read_text().splitlines() == ["run"]
+
+
+def test_a_successful_trial_run_clears_the_breaker(tmp_path):
+    _tripped(tmp_path, last_failure_age=7200)
+
+    run_guard_with(tmp_path, "--retry-after", "3600", "--", "true")
+    state = (tmp_path / "guard" / "example.state").read_text()
+
+    assert "failure_streak=0" in state
+    assert "disabled=0" in state
+
+
+def test_a_failed_trial_run_rearms_the_cooldown_instead_of_retrying_every_tick(tmp_path):
+    marker = tmp_path / "runs"
+    _tripped(tmp_path, last_failure_age=7200)
+
+    first = run_guard_with(tmp_path, "--retry-after", "3600", "--", "sh", "-c", f"echo run >> {marker}; exit 7")
+    second = run_guard_with(tmp_path, "--retry-after", "3600", "--", "sh", "-c", f"echo run >> {marker}; exit 7")
+
+    assert first.returncode == 7
+    assert "is disabled after" in second.stdout
+    # The failure reset the clock, so the very next tick does not retry.
+    assert marker.read_text().splitlines() == ["run"]
+
+
+def test_a_tripped_breaker_stays_shut_before_the_cooldown_elapses(tmp_path):
+    marker = tmp_path / "runs"
+    _tripped(tmp_path, last_failure_age=60)
+
+    result = run_guard_with(tmp_path, "--retry-after", "3600", "--", "sh", "-c", f"echo run >> {marker}")
+
+    assert "is disabled after" in result.stdout
+    assert not marker.exists()
+
+
+def test_retrying_can_be_disabled_with_a_zero_cooldown(tmp_path):
+    marker = tmp_path / "runs"
+    _tripped(tmp_path, last_failure_age=999999)
+
+    result = run_guard_with(tmp_path, "--retry-after", "0", "--", "sh", "-c", f"echo run >> {marker}")
+
+    assert "is disabled after" in result.stdout
+    assert not marker.exists()
