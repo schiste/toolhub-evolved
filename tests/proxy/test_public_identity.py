@@ -141,6 +141,228 @@ def test_toolforge_lookup_queries_global_id_and_reads_stable_identity_fields(mon
     assert calls["unbind"] is True
 
 
+def test_tool_names_from_member_dns_dedupes_case_insensitively_and_skips_non_matching():
+    names = public_identity.tool_names_from_member_dns(
+        [
+            "cn=tools.mix-n-match,ou=servicegroups,dc=wikimedia,dc=org",
+            "cn=tools.Mix-N-Match,ou=servicegroups,dc=wikimedia,dc=org",  # duplicate, different case
+            "cn=some-other-group,ou=groups,dc=wikimedia,dc=org",  # does not match at all
+        ]
+    )
+
+    assert names == ("mix-n-match",)
+
+
+def test_toolforge_lookup_global_accepts_scalar_ldap_attributes():
+    row = {
+        "uid": "magnus",
+        "uidNumber": "3067",
+        "wikimediaGlobalAccountId": "160",
+        "wikimediaGlobalAccountName": "Magnus Manske",
+    }
+
+    identity = public_identity.ToolforgeIdentityProvider(lookup=lambda _id: [row]).lookup_global("160")
+
+    assert identity is not None
+    assert identity.uid == "magnus"
+    assert identity.uid_number == "3067"
+    assert identity.tool_names == ()
+
+
+def test_wikimedia_lookup_returns_none_when_fetcher_raises():
+    def raising_fetcher(_global_id):
+        raise OSError("network down")
+
+    assert public_identity.WikimediaIdentityProvider(fetcher=raising_fetcher).lookup("160") is None
+
+
+def test_wikimedia_lookup_rejects_a_row_that_is_not_a_dict():
+    provider = public_identity.WikimediaIdentityProvider(fetcher=lambda _global_id: (200, {"query": {}}))
+    assert provider.lookup("160") is None
+
+
+def test_wikimedia_lookup_username_rejects_empty_missing_and_incomplete_rows():
+    assert public_identity.WikimediaIdentityProvider(username_fetcher=lambda _u: (200, {})).lookup_username("") is None
+
+    payloads = [
+        (503, {}),
+        (200, []),
+        (200, {"query": {"globaluserinfo": {"missing": True}}}),
+        (200, {"query": {}}),
+        (200, {"query": {"globaluserinfo": {"name": "Magnus Manske"}}}),  # no id
+        (200, {"query": {"globaluserinfo": {"id": 160}}}),  # no name
+    ]
+    for status, payload in payloads:
+        provider = public_identity.WikimediaIdentityProvider(
+            username_fetcher=lambda _u, value=(status, payload): value
+        )
+        assert provider.lookup_username("Magnus Manske") is None
+
+
+def test_wikimedia_lookup_username_returns_none_when_fetcher_raises():
+    def raising_fetcher(_username):
+        raise ValueError("boom")
+
+    assert public_identity.WikimediaIdentityProvider(username_fetcher=raising_fetcher).lookup_username("Magnus") is None
+
+
+def test_wikimedia_lookup_username_resolves_current_global_identity():
+    provider = public_identity.WikimediaIdentityProvider(
+        username_fetcher=lambda _u: (
+            200,
+            {
+                "query": {
+                    "globaluserinfo": {
+                        "id": 160,
+                        "name": "Magnus Manske",
+                        "registration": "2008-03-25T09:03:23Z",
+                    }
+                }
+            },
+        )
+    )
+
+    identity = provider.lookup_username("Magnus Manske")
+
+    assert identity is not None
+    assert identity.global_user_id == "160"
+    assert identity.username == "Magnus Manske"
+
+
+class _FakeCentralAuthResponse:
+    def __init__(self, status_code, payload=None, *, raise_on_json=False):
+        self.status_code = status_code
+        self._payload = payload
+        self._raise_on_json = raise_on_json
+
+    def json(self):
+        if self._raise_on_json:
+            raise ValueError("not json")
+        return self._payload
+
+
+def test_default_fetch_username_calls_centralauth_api_with_guiuser(monkeypatch):
+    calls = {}
+
+    def fake_get(url, params, headers, timeout):
+        calls["args"] = (url, params, headers, timeout)
+        return _FakeCentralAuthResponse(
+            200,
+            {
+                "query": {
+                    "globaluserinfo": {
+                        "id": 160,
+                        "name": "Magnus Manske",
+                        "registration": "2008-03-25T09:03:23Z",
+                    }
+                }
+            },
+        )
+
+    monkeypatch.setattr(public_identity.requests, "get", fake_get)
+
+    identity = public_identity.WikimediaIdentityProvider().lookup_username("Magnus Manske")
+
+    assert identity is not None
+    assert identity.global_user_id == "160"
+    url, params, headers, timeout = calls["args"]
+    assert url == public_identity.CENTRALAUTH_API_URL
+    assert params["guiuser"] == "Magnus Manske"
+    assert params["meta"] == "globaluserinfo"
+    assert headers["User-Agent"] == public_identity.toolhub.USER_AGENT
+    assert timeout == public_identity.toolhub.REQUEST_TIMEOUT
+
+
+def test_default_fetch_username_treats_unparsable_json_as_no_payload(monkeypatch):
+    monkeypatch.setattr(
+        public_identity.requests,
+        "get",
+        lambda url, params, headers, timeout: _FakeCentralAuthResponse(200, raise_on_json=True),
+    )
+
+    assert public_identity.WikimediaIdentityProvider().lookup_username("Magnus Manske") is None
+
+
+def test_default_fetch_calls_centralauth_api_with_guiid(monkeypatch):
+    calls = {}
+
+    def fake_get(url, params, headers, timeout):
+        calls["args"] = (url, params, headers, timeout)
+        return _FakeCentralAuthResponse(
+            200,
+            {
+                "query": {
+                    "globaluserinfo": {
+                        "id": 160,
+                        "name": "Magnus Manske",
+                        "registration": "2008-03-25T09:03:23Z",
+                    }
+                }
+            },
+        )
+
+    monkeypatch.setattr(public_identity.requests, "get", fake_get)
+
+    identity = public_identity.WikimediaIdentityProvider().lookup("160")
+
+    assert identity is not None
+    assert identity.username == "Magnus Manske"
+    url, params, headers, timeout = calls["args"]
+    assert url == public_identity.CENTRALAUTH_API_URL
+    assert params["guiid"] == "160"
+    assert headers["Accept"] == "application/json"
+    assert timeout == public_identity.toolhub.REQUEST_TIMEOUT
+
+
+def test_default_fetch_treats_unparsable_json_as_no_payload(monkeypatch):
+    monkeypatch.setattr(
+        public_identity.requests,
+        "get",
+        lambda url, params, headers, timeout: _FakeCentralAuthResponse(200, raise_on_json=True),
+    )
+
+    assert public_identity.WikimediaIdentityProvider().lookup("160") is None
+
+
+def test_toolforge_lookup_global_short_circuits_on_empty_id():
+    calls = []
+
+    def lookup(global_id):
+        calls.append(global_id)
+        return []
+
+    assert public_identity.ToolforgeIdentityProvider(lookup=lookup).lookup_global("") is None
+    assert calls == []
+
+
+def test_toolforge_lookup_global_returns_none_when_lookup_raises():
+    def raising_lookup(_global_id):
+        raise OSError("ldap down")
+
+    assert public_identity.ToolforgeIdentityProvider(lookup=raising_lookup).lookup_global("160") is None
+
+
+def test_probe_schema_returns_false_when_probe_raises():
+    def raising_probe():
+        raise TimeoutError("ldap timeout")
+
+    assert public_identity.ToolforgeIdentityProvider(schema_probe=raising_probe).probe_schema() is False
+
+
+def test_ldap_search_returns_empty_when_ldap3_is_unavailable(monkeypatch):
+    monkeypatch.setattr(public_identity, "Connection", None)
+
+    assert public_identity.ToolforgeIdentityProvider().lookup_global("160") is None
+
+
+def test_resolver_returns_none_when_wikimedia_lookup_fails():
+    resolver = public_identity.PublicIdentityResolver(
+        wikimedia=public_identity.WikimediaIdentityProvider(fetcher=lambda _global_id: (404, {})),
+    )
+
+    assert resolver.resolve("160") is None
+
+
 def test_toolforge_schema_probe_uses_the_real_bridge_attributes(monkeypatch):
     calls = {}
 

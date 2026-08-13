@@ -590,3 +590,141 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._tool_type_suggestion([{"value": "React"}], []) == "web app"
     assert source_analyzer._tool_type_suggestion([{"value": "Pywikibot"}], [{"value": "mediawiki-action-api"}]) == "bot"
     assert source_analyzer._tool_type_suggestion([], []) is None
+
+
+def test_source_class_covers_fixture_example_and_unknown_paths():
+    assert source_analyzer._source_class("src/fixtures/data.json") == "fixture"
+    assert source_analyzer._source_class("src/examples/demo.js") == "example"
+    assert source_analyzer._source_class("data.csv") == "unknown"
+    assert source_analyzer._source_weight("data.csv") == source_analyzer.SOURCE_CLASS_WEIGHTS["unknown"]
+
+
+def test_local_python_import_roots_skips_case_mismatched_python_suffix():
+    roots = source_analyzer._local_python_import_roots([source_analyzer.SourceFile("Weird.PY", "")])
+    assert "Weird" not in roots
+    assert "weird" not in roots
+
+
+def test_parse_iso_datetime_handles_explicit_offsets_and_malformed_text():
+    parsed = source_analyzer._parse_iso_datetime("2026-07-30T12:00:00+00:00")
+    assert parsed is not None
+    assert parsed.tzinfo is not None
+    assert source_analyzer._parse_iso_datetime("not-a-date") is None
+
+
+def test_int_context_value_rejects_booleans():
+    assert source_analyzer._int_context_value(True) is None
+    assert source_analyzer._int_context_value(False) is None
+
+
+def test_last_commit_age_days_uses_provided_age_when_present():
+    assert source_analyzer._last_commit_age_days({"lastCommitAgeDays": 5}) == 5
+    assert source_analyzer._last_commit_age_days({"lastCommitAgeDays": -5}) == 0
+
+
+def test_activity_and_maintainer_status_cover_every_band():
+    assert source_analyzer._activity_status(200) == "quiet"
+    assert source_analyzer._maintainer_status(None) == "unknown"
+    assert source_analyzer._maintainer_status(200) == "quiet"
+    assert source_analyzer._maintainer_status(500) == "stale"
+    assert source_analyzer._maintainer_status(800) == "dormant"
+
+
+def test_repository_maintenance_context_flags_dirty_checkout():
+    context = source_analyzer._repository_maintenance_context({"dirty": True})
+    assert {"kind": "dirty-checkout", "value": True} in context["signals"]
+
+
+def test_maintainer_activity_context_falls_back_to_repository_analyzed_at():
+    context = source_analyzer._maintainer_activity_context(
+        {"lastActivityAt": "2026-07-30T00:00:00Z"},
+        {"analyzedAt": "2026-08-01T00:00:00Z"},
+    )
+    assert context["lastActivityAgeDays"] == 2
+
+
+def test_maintainer_activity_context_prefers_its_own_analyzed_at_over_repository():
+    context = source_analyzer._maintainer_activity_context(
+        {"lastActivityAt": "2026-07-30T00:00:00Z", "analyzedAt": "2026-08-01T00:00:00Z"},
+        {"analyzedAt": "2026-09-01T00:00:00Z"},
+    )
+    assert context["lastActivityAgeDays"] == 2
+
+
+def test_maintainer_activity_context_leaves_age_unknown_without_any_dates():
+    context = source_analyzer._maintainer_activity_context({"source": "toolhub"}, {})
+    assert context["lastActivityAgeDays"] is None
+    assert context["status"] == "unknown"
+    assert "last-maintainer-activity-age" not in {item["kind"] for item in context["signals"]}
+
+
+def test_maintainer_activity_context_handles_missing_counts():
+    context = source_analyzer._maintainer_activity_context({"lastActivityAgeDays": 10}, {})
+    signal_kinds = {item["kind"] for item in context["signals"]}
+    assert context["maintainerCount"] is None
+    assert context["activeMaintainerCount"] is None
+    assert context["recentActivityCount"] is None
+    assert "maintainer-count" not in signal_kinds
+    assert "active-maintainer-count" not in signal_kinds
+    assert "recent-maintainer-activity-count" not in signal_kinds
+
+
+def test_security_review_assessment_flags_admin_actions_and_unauthenticated_writes():
+    report = {
+        "warnings": [
+            {"value": "administrator-actions", "confidence": 0.9, "maxSourceWeight": 1.0},
+            {"value": "write-without-auth-signal", "confidence": 0.9, "maxSourceWeight": 1.0},
+        ],
+        "authentication": [],
+    }
+    result = source_analyzer._security_review_assessment(report, {})
+    labels = {signal["label"] for signal in result["signals"]}
+    assert "Administrator or suppressive actions need review" in labels
+    assert "Write action without authentication evidence" in labels
+    assert "Document why elevated wiki rights are necessary." in result["recommendations"]
+    assert "Add explicit authentication/token handling or document why it is external." in result["recommendations"]
+
+
+def test_maintenance_activity_assessment_flags_quiet_status_and_dirty_checkout():
+    result = source_analyzer._maintenance_activity_assessment(
+        {
+            "maintenance": {"status": "quiet", "lastCommitAgeDays": 200},
+            "repository": {"dirty": True},
+        }
+    )
+    labels = {signal["label"] for signal in result["signals"]}
+    assert "Repository activity is quiet" in labels
+    assert "Local checkout had uncommitted changes" in labels
+    assert "Confirm the repository still reflects the deployed tool." in result["recommendations"]
+
+
+def test_maintenance_activity_assessment_flags_dormant_status():
+    result = source_analyzer._maintenance_activity_assessment(
+        {"maintenance": {"status": "dormant", "lastCommitAgeDays": 900}}
+    )
+    labels = {signal["label"] for signal in result["signals"]}
+    assert "Repository appears dormant" in labels
+    assert "Flag the tool for maintainer outreach or archival review." in result["recommendations"]
+
+
+def test_maintainer_activity_score_covers_every_count_branch():
+    assert source_analyzer._maintainer_activity_score({"status": "quiet"}) == 70
+    assert source_analyzer._maintainer_activity_score({"status": "active", "activeMaintainerCount": 5}) == 95
+    assert source_analyzer._maintainer_activity_score({"status": "active", "activeMaintainerCount": 0}) == 70
+    assert source_analyzer._maintainer_activity_score({"status": "active", "maintainerCount": 0}) == 60
+    assert source_analyzer._maintainer_activity_score({"status": "active", "maintainerCount": 1}) == 85
+
+
+def test_stewardship_status_covers_at_risk_and_outreach_branches():
+    assert (
+        source_analyzer._stewardship_status(
+            {"maintenance": {"status": "stale"}, "maintainerActivity": {"status": "dormant"}}
+        )
+        == "at-risk"
+    )
+    assert (
+        source_analyzer._stewardship_status(
+            {"maintenance": {"status": "active"}, "maintainerActivity": {"status": "stale"}}
+        )
+        == "maintainer-outreach-needed"
+    )
