@@ -131,6 +131,20 @@ export const EXPERIMENTS = [
 				tryLabel: t("experiments.catalogStatisticsTry", "Open statistics")
 			},
 			{
+				name: t("experiments.backgroundWorkersName", "Background workers"),
+				what: t(
+					"experiments.backgroundWorkersWhat",
+					"Show every scheduled fetcher, cleaner, and reconciler, and when each one last actually ran."
+				),
+				current: t(
+					"experiments.backgroundWorkersCurrent",
+					"Only executed runs are recorded, and each worker is judged late or stalled against its own schedule rather than one global threshold."
+				),
+				need: t("experiments.backgroundWorkersNeed", "Guard-recorded job runs plus public GET /v1/workers/"),
+				tryHref: "/workers",
+				tryLabel: t("experiments.backgroundWorkersTry", "Open workers")
+			},
+			{
 				name: t("experiments.docsPagesName", "API explorer, toolinfo, and project docs"),
 				what: t(
 					"experiments.docsPagesWhat",

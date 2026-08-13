@@ -102,10 +102,14 @@ def test_duplicate_uid_number_rejects_the_generation():
         toolforge_account_sync.run(loader=lambda: [account("one", "1"), account("two", "1")])
 
 
-def test_deploy_and_schedule_refresh_toolforge_before_people_reconciliation():
+def test_projection_refresh_joins_toolforge_before_people_reconciliation():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")
+    refresh = (ROOT / "proxy" / "projection_refresh.py").read_text(encoding="utf-8")
 
-    assert "name: toolforge-account-sync" in jobs
-    assert "proxy/toolforge_account_sync.py" in jobs
-    assert deploy.index("toolforge_account_sync.py") < deploy.index("public_identity_smoke.py")
+    assert "name: projection-refresh" in jobs
+    assert "toolforge_account_sync.run" in refresh
+    assert refresh.index('report["failurePhase"] = "parallel-sync"') < refresh.index(
+        'report["failurePhase"] = "identity-publication"'
+    )
+    assert "toolforge_account_sync.py" not in deploy

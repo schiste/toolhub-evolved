@@ -580,6 +580,25 @@ class CrawlerUrl(Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class JobRun(Base):
+    """One scheduled-job invocation that actually executed its child command.
+
+    Deliberately not a log of every tick. A skipped overlap is routine and
+    would bury the signal under thousands of rows a day; what matters is when
+    a job last really ran, which is exactly what silently stopped being true
+    for ten days when a killed run leaked its guard lock.
+    """
+
+    __tablename__ = "job_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_name: Mapped[str] = mapped_column(String(64), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    finished_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    exit_code: Mapped[int] = mapped_column(Integer, default=0)
+    succeeded: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+
 class CrawlerRun(Base):
     """One recorded run of the server-side crawler job."""
 

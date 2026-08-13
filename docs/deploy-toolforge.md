@@ -72,13 +72,14 @@ It activates fully once configured:
    roles without granting them any additional official Toolhub rights.
 2. Load the scheduled jobs (hourly crawler, six-hourly Toolhub catalog
    `toolinfo.json` discovery, six-hourly official crawler source indexing,
-   six-hourly complete official-account projection, minutely cache
+   six-hourly coordinated official-account/catalog projection, minutely cache
    invalidator/prewarmer, nightly backup):
    `toolforge jobs load ~/repo/jobs.yaml`.
-   Deploys also finish a safe account-projection generation and run one cache
-   invalidation/prewarm pass before the webservice restart. If the account
-   refresh fails, the deploy stops before restart and the last complete account
-   generation remains intact.
+   Deploys restart and smoke against the last complete projections, then queue
+   the same freshness-gated coordinator. It refreshes independent upstream
+   inputs concurrently and publishes the derived identity graph only after all
+   required generations succeed. Failed maintenance therefore preserves the
+   last-good public data without delaying an otherwise healthy code release.
 
 Unconfigured, the site still runs — live read interface plus signed-out read-only
 mode, with `/oauth/login` answering 503 and official write endpoints returning

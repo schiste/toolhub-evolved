@@ -30,6 +30,9 @@ FIXED_TARGET_FETCHERS = {
     ("backend/toolhub.py", "public_api_get"): "official Toolhub API via base_url()",
     ("backend/toolhub.py", "request_with_token"): "official Toolhub API via base_url()",
     ("backend/public_identity.py", "_fetch"): "fixed official CentralAuth API URL",
+    ("backend/public_identity.py", "_fetch_username"): (
+        "fixed official CentralAuth API URL; the label is an encoded query parameter, never the host"
+    ),
     ("backend/author_claims.py", "_fetch"): "TOOLFORGE_BASE_URL constant (Toolsadmin)",
     ("backend/github_issues.py", "publish_issue"): "fixed api.github.com GitHub Issues API host",
     ("backend/account_linking.py", "verify_ssh_signature"): "fixed local OpenSSH subprocess; no HTTP URL is fetched",

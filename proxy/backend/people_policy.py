@@ -17,6 +17,52 @@ ACTION_CONFLICT = "conflict"
 MAPPING_APPROVED = "approved"
 APPLIED_IDENTITY_MAPPING_DECISIONS = frozenset({ACTION_AUTO_LINK, MAPPING_APPROVED})
 
+# A MediaWiki username is at most 85 bytes and cannot contain these, so a
+# label carrying one is not a username no matter what else it looks like.
+MAX_USERNAME_LENGTH = 85
+MIN_HANDLE_LENGTH = 2
+ILLEGAL_USERNAME_CHARACTERS = frozenset("#<>[]|{}/@:")
+# Tokens that only appear in prose, never inside a username someone chose.
+PROSE_TOKENS = frozenset(
+    {"a", "an", "and", "at", "by", "for", "from", "in", "of", "or", "the", "to", "with", "et", "al", "user", "users"}
+)
+# Non-alphabetic characters a person puts in a handle but not in their name.
+HANDLE_SYMBOLS = frozenset("_-~.+*!?^$0123456789")
+
+
+def is_handle_shaped(label: str) -> bool:
+    """Return True when a label is safe to resolve against a public registry.
+
+    Free-text author values mix two populations. Handles are self-chosen and
+    high-entropy (``0xDeadbeef``, ``1234qwer1234qwer4``, ``-jem-``); human
+    names are low-entropy and collide (``Aaron Liu`` matches a real account
+    belonging to someone with no connection to the tool). Resolving the first
+    kind is nearly free of risk; resolving the second attaches a real, named
+    person to software they may not have written.
+
+    So this fails closed, and the asymmetry is deliberate: a rejected handle
+    costs one unresolved label, while a wrongly accepted name misattributes a
+    real individual. Multi-word purely alphabetic labels are refused even
+    though MediaWiki allows spaces in usernames, because at that point a real
+    username and a real name are genuinely indistinguishable.
+    """
+    text = " ".join(str(label or "").split())
+    if not MIN_HANDLE_LENGTH <= len(text) <= MAX_USERNAME_LENGTH:
+        return False
+    if ILLEGAL_USERNAME_CHARACTERS & set(text):
+        return False
+    tokens = text.split(" ")
+    if any(token.casefold().strip(".,;") in PROSE_TOKENS for token in tokens):
+        return False
+    if len(tokens) == 1:
+        # Single-token labels are overwhelmingly handles here: someone writing
+        # their real name almost always writes more than one word.
+        return True
+    # Several words only look like a handle when something in them is not
+    # name-like, such as a digit or a symbol nobody puts in their own name.
+    return bool(HANDLE_SYMBOLS & set(text))
+
+
 REASON_STABLE_ID = "same_stable_identifier"
 REASON_STRUCTURED_HANDLE = "same_verified_structured_handle"
 REASON_AUTHENTICATED = "authenticated_account_claim"
@@ -24,6 +70,8 @@ REASON_REVIEWED = "operator_approved_mapping"
 REASON_EXACT_TOOLHUB = "exact_toolhub_username_candidate"
 REASON_TOOLFORGE_CORROBORATED = "exact_toolhub_username_and_toolforge_membership"
 REASON_SUL_TOOLFORGE_MEMBERSHIP = "wikimedia_identity_and_toolforge_sul_membership"
+REASON_HANDLE_CORROBORATED = "verified_handle_and_independent_tool_edge"
+REASON_REGISTRY_HANDLE = "public_registry_handle_candidate"
 REASON_DISPLAY_ONLY = "display_name_only"
 REASON_STABLE_CONFLICT = "conflicting_stable_identifiers"
 
@@ -41,13 +89,15 @@ class IdentityDecision:
     confidence: int
 
 
-def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document precedence
+def decide_identity_link(  # noqa: C901, PLR0911, PLR0913 - the ordered branches are the trust policy
     *,
     same_stable_identifier: bool = False,
     structured_handle: bool = False,
     authenticated_claim: bool = False,
     operator_approved: bool = False,
+    corroborated_handle: bool = False,
     exact_toolhub_candidate: bool = False,
+    registry_handle: bool = False,
     same_tool_toolforge_membership: bool = False,
     toolforge_sul_bound: bool = False,
     conflicting_stable_identifiers: bool = False,
@@ -63,12 +113,25 @@ def decide_identity_link(  # noqa: PLR0911, PLR0913 - explicit flags document pr
         return IdentityDecision(ACTION_AUTO_LINK, REASON_REVIEWED, 100)
     if structured_handle:
         return IdentityDecision(ACTION_AUTO_LINK, REASON_STRUCTURED_HANDLE, 90)
+    # A label that is a current verified handle of exactly one publishable
+    # person, on a tool that person is already independently tied to. The
+    # handle is inferred rather than declared, so it ranks below a structured
+    # field, but the independent edge is what carries it: neither the label
+    # nor the edge alone links anything.
+    if corroborated_handle:
+        return IdentityDecision(ACTION_AUTO_LINK, REASON_HANDLE_CORROBORATED, 90)
     if exact_toolhub_candidate and toolforge_sul_bound and same_tool_toolforge_membership:
         return IdentityDecision(ACTION_AUTO_LINK, REASON_SUL_TOOLFORGE_MEMBERSHIP, 95)
     if exact_toolhub_candidate and same_tool_toolforge_membership:
         return IdentityDecision(ACTION_CANDIDATE, REASON_TOOLFORGE_CORROBORATED, 90)
     if exact_toolhub_candidate:
         return IdentityDecision(ACTION_CANDIDATE, REASON_EXACT_TOOLHUB, 70)
+    # A public registry confirmed the label names a real account. That is an
+    # existence proof, not an authorship one: anyone can type any name into a
+    # catalog field. It therefore never links on its own -- it becomes a
+    # durable candidate, and only corroboration above promotes it.
+    if registry_handle:
+        return IdentityDecision(ACTION_CANDIDATE, REASON_REGISTRY_HANDLE, 60)
     return IdentityDecision(ACTION_UNRESOLVED, REASON_DISPLAY_ONLY, 0)
 
 

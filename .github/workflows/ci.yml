@@ -42,6 +42,11 @@ jobs:
               run: npx knip --production
             - name: Duplication (jscpd)
               run: npx jscpd --config .jscpd.json
+            # Separate config so JavaScript keeps its strict zero while Python
+            # runs against a ratchet. See docs/RUNBOOK.md for the number and
+            # why it may only be lowered.
+            - name: Duplication, Python (jscpd)
+              run: npx jscpd --config .jscpd.python.json
             - name: Link/route + XSS + a11y + dead-code + floating-promise + HTML-balance checks
               run: node tools/checks.mjs
             - name: Production cleanliness checks

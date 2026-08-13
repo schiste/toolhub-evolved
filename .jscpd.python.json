@@ -1,0 +1,9 @@
+{
+	"threshold": 1,
+	"minLines": 8,
+	"minTokens": 60,
+	"format": ["python"],
+	"reporters": ["console", "json"],
+	"output": ".quality/jscpd-python",
+	"ignore": ["node_modules/**", ".quality/**", ".venv/**", "proxy/var/**", "tests/**", "**/__pycache__/**"]
+}

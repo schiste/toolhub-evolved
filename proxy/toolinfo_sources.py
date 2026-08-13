@@ -4,7 +4,7 @@
 import os
 import sys
 
-from backend import DEFAULT_DB_URL, db, toolinfo_sources
+from backend import job_runner, toolinfo_sources
 
 
 def _int_env(name: str, default: int) -> int:
@@ -16,22 +16,23 @@ def _int_env(name: str, default: int) -> int:
 
 def main() -> int:
     """Refresh official crawler source mappings in the local DB."""
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
     limit = _int_env("TOOLINFO_SOURCE_INDEX_LIMIT", 150)
-    summary = toolinfo_sources.index_official_crawler_sources(limit=limit)
-    sys.stdout.write(
-        "toolinfo-sources: "
-        f"limit={limit} "
-        f"registered={summary['registered']} "
-        f"skipped={summary['skipped']} "
-        f"fetched={summary['fetched']} "
-        f"valid={summary['valid']} "
-        f"invalid={summary['invalid']} "
-        f"errors={summary['errors']} "
-        f"items={summary['items']}\n"
-    )
-    return 0
+
+    def body() -> None:
+        summary = toolinfo_sources.index_official_crawler_sources(limit=limit)
+        sys.stdout.write(
+            "toolinfo-sources: "
+            f"limit={limit} "
+            f"registered={summary['registered']} "
+            f"skipped={summary['skipped']} "
+            f"fetched={summary['fetched']} "
+            f"valid={summary['valid']} "
+            f"invalid={summary['invalid']} "
+            f"errors={summary['errors']} "
+            f"items={summary['items']}\n"
+        )
+
+    return job_runner.run_job("toolinfo-source-index", body)
 
 
 if __name__ == "__main__":  # pragma: no cover - job entrypoint, exercised via main() in tests

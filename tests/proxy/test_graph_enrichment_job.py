@@ -66,7 +66,7 @@ def test_main_repairs_locally_and_emits_taxonomy_audit(monkeypatch, capsys):
     assert audit["status"] == {"enriched": 2}
 
 
-def test_main_fails_when_materialization_reports_errors(monkeypatch, capsys):
+def test_main_reports_materialization_errors_without_failing_the_sweep(monkeypatch, capsys):
     monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
     monkeypatch.setattr(
         job.enrichment,
@@ -76,8 +76,11 @@ def test_main_fails_when_materialization_reports_errors(monkeypatch, capsys):
     monkeypatch.setattr(job.enrichment, "status_summary", lambda: {"error": 1})
     monkeypatch.setattr(job.graph_payload, "build", lambda **_kwargs: _graph_payload())
 
-    assert job.main() == 1
-    assert '"errors":1' in capsys.readouterr().out
+    # Per backend.job_contract: rows this pass could not enrich are reported
+    # and retried next pass, so the sweep itself succeeded and must not count
+    # toward the guard's breaker.
+    assert job.main() == 0
+    assert '"errors": 1' in capsys.readouterr().out
 
 
 def test_jobs_manifest_runs_graph_enrichment_under_job_guard():

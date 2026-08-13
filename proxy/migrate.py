@@ -31,14 +31,15 @@ from backend import (
     identity_graph,
     maintainer_index,
     people_index,
+    source_attestations,
 )
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
+    ApiCacheMeta,
     Person,
     PersonIdentifier,
     ToolAuthorClaim,
     ToolAuthorKey,
-    ToolhubAccountProjection,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
@@ -77,19 +78,29 @@ def run_once() -> list[MigrationResult]:
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
         ),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
+        MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
+        MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker()),
         MigrationResult("people immutable ids and account links", _backfill_people_identity()),
-        MigrationResult("external account bindings", _backfill_account_bindings()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
 
 
-def _backfill_account_bindings() -> int:
-    """Hydrate local users and materialize every safely provable account binding."""
+def _initialize_source_attestation_rules() -> int:
+    """Mark the already-audited projection for the first incremental release."""
     with db.session_scope() as s:
-        result = identity_graph.synchronize(s)
-        return int(result["toolhubBindings"]) + int(result["verified"]) + int(result["usersHydrated"])
+        row = s.get(ApiCacheMeta, source_attestations.RULES_META_KEY)
+        if row is not None:
+            return 0
+        s.add(ApiCacheMeta(key=source_attestations.RULES_META_KEY, value=source_attestations.RULES_VERSION))
+        return 1
+
+
+def _initialize_toolforge_relationship_marker() -> int:
+    """Avoid reprojecting unchanged LDAP memberships after this upgrade."""
+    with db.session_scope() as s:
+        return identity_graph.seed_relationship_fingerprint(s)
 
 
 def _clean_resolver_identity_claims() -> int:
@@ -184,28 +195,22 @@ def _backfill_people_identity() -> int:
                 identifier.updated_at = now
                 touched += 1
         users = list(s.execute(select(User).order_by(User.id)).scalars())
+        current_ids = {
+            (row.namespace, row.normalized_value): row.person_id
+            for row in s.execute(select(PersonIdentifier).where(PersonIdentifier.is_current.is_(True))).scalars()
+        }
         for user in users:
+            toolhub_owner = current_ids.get((people_index.NS_TOOLHUB_USER_ID, user.wm_sub.casefold()))
+            wikimedia_owner = current_ids.get(
+                (people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, (user.wikimedia_global_user_id or "").casefold())
+            )
+            if user.person_id == toolhub_owner and (
+                not user.wikimedia_global_user_id or user.person_id == wikimedia_owner
+            ):
+                continue
             old_person_id = user.person_id
             people_index.link_user(s, user)
             touched += int(old_person_id != user.person_id)
-        for account in s.execute(
-            select(ToolhubAccountProjection).order_by(ToolhubAccountProjection.toolhub_user_id)
-        ).scalars():
-            existing = s.execute(
-                select(PersonIdentifier.id).where(
-                    PersonIdentifier.namespace == people_index.NS_TOOLHUB_USER_ID,
-                    PersonIdentifier.normalized_value == account.toolhub_user_id.casefold(),
-                    PersonIdentifier.is_current.is_(True),
-                )
-            ).scalar_one_or_none()
-            person = people_index.ensure_official_account_person(
-                s,
-                toolhub_user_id=account.toolhub_user_id,
-                username=account.username,
-                wikimedia_global_user_id=account.wikimedia_global_user_id or "",
-                checked_at=account.last_seen_at,
-            )
-            touched += int(existing is None and person is not None)
         touched += _backfill_account_owned_records(s, users)
     inspector = inspect(db.engine())
 

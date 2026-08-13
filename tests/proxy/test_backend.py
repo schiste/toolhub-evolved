@@ -269,6 +269,7 @@ PUBLIC_V1_ROUTES = {
     "/v1/statistics/": "public cached quality snapshot derived only from local public catalog evidence",
     "/v1/facets/tools/": "public faceted discovery by analyzer signals and declared metadata; rate limited",
     "/v1/facets/values/": "public facet value listing and adoption counts; rate limited",
+    "/v1/workers/": "public scheduled-job health; job names, schedules, and run outcomes carry no user data",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
     "/v1/accounts/": "public official Toolhub account projection; local DB only and reads are rate limited",

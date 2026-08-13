@@ -1,0 +1,259 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* stylelint-disable no-descending-specificity -- descendants stay within this route-owned report. */
+
+.workers-page {
+	max-width: var(--container-wide);
+}
+
+.workers-loading,
+.workers-error {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	min-height: 22rem;
+	color: var(--color-text-secondary);
+}
+
+.workers-error {
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+}
+
+.workers-error :where(h1, p) {
+	margin: var(--space-0);
+}
+
+.workers-page__inner {
+	display: grid;
+	gap: var(--space-6);
+}
+
+.workers-hero {
+	display: grid;
+	gap: var(--space-2);
+	padding-block-end: var(--space-4);
+	border-bottom: var(--border-heavy);
+}
+
+.workers-hero h1 {
+	margin: var(--space-0);
+}
+
+.workers-hero > p {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+}
+
+.workers-hero__eyebrow {
+	font-size: var(--fs-small);
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-text-muted);
+}
+
+.workers-hero__alert,
+.workers-hero__ok {
+	padding: var(--space-2) var(--space-3);
+	border-radius: var(--radius-sm);
+	font-weight: 600;
+}
+
+.workers-hero__alert {
+	color: var(--color-destructive);
+	background: var(--color-destructive-subtle);
+}
+
+.workers-hero__ok {
+	color: var(--color-success);
+	background: var(--color-success-subtle);
+}
+
+.workers-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-3);
+	margin: var(--space-0);
+	padding: var(--space-0);
+	list-style: none;
+}
+
+.workers-summary li {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-2);
+	padding: var(--space-2) var(--space-3);
+	border: var(--border-base);
+	border-radius: var(--radius-md);
+}
+
+.workers-summary strong {
+	font-size: var(--fs-title);
+}
+
+.workers-summary span {
+	color: var(--color-text-muted);
+	font-size: var(--fs-small);
+}
+
+.workers-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+	gap: var(--space-4);
+}
+
+.workers-card {
+	display: grid;
+	gap: var(--space-3);
+	align-content: start;
+	padding: var(--space-4);
+
+	/* The status is carried by the start border, the badge text, and the run
+	   ticks, so it never depends on colour alone. */
+	border: var(--border-base);
+	border-inline-start-width: var(--border-width-heavy);
+	border-radius: var(--radius-md);
+	background: var(--color-surface);
+}
+
+.workers-card--healthy {
+	border-inline-start-color: var(--color-success);
+}
+
+.workers-card--late {
+	border-inline-start-color: var(--color-warning);
+}
+
+.workers-card--stalled,
+.workers-card--failing {
+	border-inline-start-color: var(--color-destructive);
+}
+
+.workers-card__head {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	align-items: flex-start;
+	justify-content: space-between;
+}
+
+.workers-card__head h2 {
+	margin: var(--space-0);
+	font-size: var(--fs-body);
+	overflow-wrap: anywhere;
+}
+
+.workers-card__schedule {
+	margin: var(--space-1) var(--space-0) var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-small);
+	overflow-wrap: anywhere;
+}
+
+.workers-card__status {
+	margin: var(--space-0);
+	padding: var(--space-0-5) var(--space-2);
+	border-radius: var(--radius-pill);
+	font-size: var(--fs-small);
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.workers-card__status[data-status="healthy"] {
+	color: var(--color-success);
+	background: var(--color-success-subtle);
+}
+
+.workers-card__status[data-status="late"] {
+	color: var(--color-warning-text);
+	background: var(--color-warning-subtle);
+}
+
+.workers-card__status[data-status="stalled"],
+.workers-card__status[data-status="failing"] {
+	color: var(--color-destructive);
+	background: var(--color-destructive-subtle);
+}
+
+.workers-card__status[data-status="unknown"] {
+	color: var(--color-text-muted);
+	background: var(--color-surface-muted);
+}
+
+.workers-card__description {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+	font-size: var(--fs-small);
+}
+
+.workers-card__facts {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: var(--space-2);
+	margin: var(--space-0);
+}
+
+.workers-card__facts dt {
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.workers-card__facts dd {
+	margin: var(--space-0-5) var(--space-0) var(--space-0);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.workers-runs {
+	display: flex;
+	gap: var(--space-px);
+	margin: var(--space-0);
+	padding: var(--space-0);
+	list-style: none;
+}
+
+.workers-runs__tick {
+	flex: 1 1 auto;
+	min-width: var(--space-1);
+	height: var(--space-4);
+	border-radius: var(--radius-sm);
+}
+
+.workers-runs__tick--ok {
+	background: var(--color-success);
+}
+
+.workers-runs__tick--failed {
+	background: var(--color-destructive);
+}
+
+.workers-runs__empty {
+	margin: var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-small);
+}
+
+.workers-method dl {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-3) var(--space-0) var(--space-0);
+}
+
+.workers-method dt {
+	font-weight: 600;
+}
+
+.workers-method dd {
+	margin: var(--space-0);
+	color: var(--color-text-secondary);
+}
+
+@media (width <= 30rem) {
+	.workers-card__facts {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}

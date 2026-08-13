@@ -11,6 +11,7 @@ from sqlalchemy import and_, func, or_, select
 
 from backend import canonical_tools, identity_graph, people_index, toolinfo_authors
 from backend.models import (
+    ApiCacheMeta,
     CanonicalToolCache,
     Person,
     PersonAccountBinding,
@@ -23,6 +24,7 @@ from backend.models import (
     ToolinfoAuthorBinding,
     ToolinfoSource,
     ToolinfoSourceAttestation,
+    ToolinfoSourceGeneration,
     ToolinfoSourceItem,
     ToolRelationshipEvidence,
     User,
@@ -56,6 +58,9 @@ STATUS_RESOLVED = "resolved"
 STATUS_UNRESOLVED = "unresolved"
 STATUS_CONFLICT = "conflict"
 RECONCILIATION_RUN_MODE = "source-evidence"
+RULES_VERSION = "2"
+RULES_META_KEY = "source_attestation_rules_version"
+GENERATION_COMPARISON_DEPTH = 2
 
 # A per-record signature anchors that record's signer through the ordinary
 # relationship graph. It does not prove control of sibling feed records.
@@ -673,3 +678,117 @@ def refresh_source_ids(
 def refresh_all(s: Session) -> dict[str, int]:
     """Re-evaluate every indexed source after identity or rule changes."""
     return refresh_source_ids(s, list(s.execute(select(ToolinfoSource.id)).scalars()))
+
+
+def refresh_full(s: Session) -> dict[str, int]:
+    """Run a complete audit and publish the rules version only after success."""
+    totals = refresh_all(s)
+    rules = s.get(ApiCacheMeta, RULES_META_KEY)
+    if rules is None:
+        s.add(ApiCacheMeta(key=RULES_META_KEY, value=RULES_VERSION))
+    else:
+        rules.value = RULES_VERSION
+        rules.updated_at = utcnow()
+    totals["fullAudit"] = 1
+    return totals
+
+
+def _content_changed_source_ids(s: Session) -> set[int]:
+    """Return sources whose latest complete feed is newer than its projection."""
+    attestations = {row.source_id: row for row in s.execute(select(ToolinfoSourceAttestation)).scalars()}
+    ranked = select(
+        ToolinfoSourceGeneration.source_id.label("source_id"),
+        ToolinfoSourceGeneration.content_hash.label("content_hash"),
+        ToolinfoSourceGeneration.fetched_at.label("fetched_at"),
+        func.row_number()
+        .over(
+            partition_by=ToolinfoSourceGeneration.source_id,
+            order_by=(ToolinfoSourceGeneration.fetched_at.desc(), ToolinfoSourceGeneration.id.desc()),
+        )
+        .label("generation_rank"),
+    ).subquery()
+    generations: dict[int, list[Any]] = defaultdict(list)
+    for row in s.execute(
+        select(ranked.c.source_id, ranked.c.content_hash, ranked.c.fetched_at)
+        .where(ranked.c.generation_rank <= GENERATION_COMPARISON_DEPTH)
+        .order_by(ranked.c.source_id, ranked.c.generation_rank)
+    ):
+        generations[int(row.source_id)].append(row)
+    changed: set[int] = set()
+    for source_id in s.execute(select(ToolinfoSource.id)).scalars():
+        recent = generations.get(source_id, [])
+        attestation = attestations.get(source_id)
+        if attestation is None or (
+            recent
+            and recent[0].fetched_at > attestation.checked_at
+            and (len(recent) == 1 or recent[0].content_hash != recent[1].content_hash)
+        ):
+            changed.add(source_id)
+    return changed
+
+
+def _identity_changed_source_ids(s: Session, changed_since: Any | None) -> set[int]:  # noqa: ANN401
+    if changed_since is None:
+        return set()
+    identifiers = list(
+        s.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.updated_at >= changed_since,
+                PersonIdentifier.is_current.is_(True),
+            )
+        ).scalars()
+    )
+    person_ids = {row.person_id for row in identifiers}
+    labels = {row.normalized_value for row in identifiers if row.normalized_value}
+    binding_person_ids = set(
+        s.execute(
+            select(PersonAccountBinding.person_id).where(
+                PersonAccountBinding.updated_at >= changed_since,
+                PersonAccountBinding.person_id.is_not(None),
+            )
+        ).scalars()
+    )
+    person_ids.update(int(person_id) for person_id in binding_person_ids if person_id is not None)
+    source_ids = set(
+        s.execute(
+            select(ToolinfoAuthorBinding.source_id).where(
+                ToolinfoAuthorBinding.normalized_label.in_(labels or {"<none>"})
+            )
+        ).scalars()
+    )
+    source_ids.update(
+        source.id
+        for source in s.execute(select(ToolinfoSource)).scalars()
+        if source.created_by_username.casefold() in labels
+    )
+    source_ids.update(
+        s.execute(
+            select(ToolinfoSourceAttestation.source_id).where(
+                ToolinfoSourceAttestation.controller_person_id.in_(person_ids or {-1})
+            )
+        ).scalars()
+    )
+    return source_ids
+
+
+def refresh_incremental(s: Session, *, identity_changed_since: Any | None = None) -> dict[str, int]:  # noqa: ANN401
+    """Refresh only changed feeds and sources affected by new stable identities."""
+    rules = s.get(ApiCacheMeta, RULES_META_KEY)
+    if rules is None or rules.value != RULES_VERSION:
+        return refresh_full(s)
+    source_ids = _content_changed_source_ids(s) | _identity_changed_source_ids(s, identity_changed_since)
+    if not source_ids:
+        return {
+            "sources": 0,
+            "verified": 0,
+            "resolved": 0,
+            "unresolved": 0,
+            "conflicts": 0,
+            "tools": 0,
+            "authorEvidence": 0,
+            "maintainerEvidence": 0,
+            "fullAudit": 0,
+        }
+    totals = refresh_source_ids(s, sorted(source_ids))
+    totals["fullAudit"] = 0
+    return totals

@@ -14,7 +14,7 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-from backend import DEFAULT_DB_URL, canonical_tools, db, graph_enrichment, toolhub
+from backend import canonical_tools, db, graph_enrichment, job_runner, toolhub
 from backend.models import ToolCatalogSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -605,8 +605,7 @@ def main(argv: list[str] | None = None) -> int:
         help="with --complete, reuse a snapshot completed within this many seconds",
     )
     args = parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
+    job_runner.configure()
     with db.advisory_lock("toolhub-evolved:catalog-sync") as acquired:
         if not acquired:
             summary = {"status": "locked", "completed": False}

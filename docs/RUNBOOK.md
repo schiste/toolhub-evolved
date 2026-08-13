@@ -575,6 +575,22 @@ Rollback = `git -C ~/repo revert <sha>` (or `git reset --hard <good-sha>`)
 followed by `sh ~/repo/tools/deploy.sh` again. The deploy script fails loudly
 if the webservice doesn't come back healthy.
 
+The release path deliberately serves the last successfully published account,
+catalog, and identity projections. After smoke and manifest promotion, the
+deploy queues `projection-refresh`, which refreshes Toolhub accounts, Toolforge
+LDAP accounts, and the complete catalog concurrently when their last complete
+generation is stale. Only after all required inputs succeed does one people
+reconciliation publish the derived identity/source graph. A failed refresh
+therefore leaves the prior public graph serving and is retried by the six-hour
+schedule; it does not roll back otherwise healthy application code.
+
+Each deploy stage appends structured JSON to
+`~/deployment-diagnostics.jsonl`, including commit, timestamps, duration,
+status, parsed row/cache metrics, and the failure phase. A non-zero
+`webservice restart` result is provisional: the deploy still runs the bounded
+HTTP readiness checks and records `recovered` when the replacement service is
+actually healthy.
+
 Every deploy stages a bounded 50-release manifest in `dist/data/deployments.json`,
 then promotes that exact manifest to durable history only after the restarted
 webservice passes its smoke check. The history is retained outside the checkout
@@ -609,12 +625,59 @@ must be present.
 
 ## Scheduled jobs
 
+Every scheduled entrypoint goes through `backend.job_runner.run_job()`, which
+configures the database from `TOOLHUB_DB_URL`, optionally takes the shared
+`toolhub-evolved:<job>` advisory lock, prints one summary format, and returns
+the exit code defined in `backend.job_contract`. A job that loses the lock
+prints `{"locked": true}` and exits zero, because losing a race with the run
+already doing the work is a successful no-op. Three jobs whose flow genuinely
+differs call `job_runner.configure()` and keep their own summary and exit code.
+
+**Exit codes are instructions, not reports.** `tools/job_guard.sh` counts
+consecutive non-zero exits and trips a breaker, so a job exits non-zero only
+when the sweep itself could not run or complete. Per-item failures — an
+unreachable feed, an icon that would not fetch — are durable observations and
+must not fail the run: `crawl.py` did exactly that, and one flaky URL retired
+the crawler for ten days. Deviations are allowed but must state their reason
+at the `return`.
+
+**Public-registry candidates.** The hourly `people-identity-reconcile` job
+resolves up to `PEOPLE_REGISTRY_LABEL_LIMIT` handle-shaped labels per run
+against CentralAuth, one second apart. `backend.people_policy.is_handle_shaped`
+decides which labels are asked about: self-chosen handles are admitted,
+multi-word purely alphabetic labels are refused, because there a username and a
+person's name are indistinguishable and a wrong bind misattributes a real
+individual. Set the limit to `0` to disable the path entirely.
+
+A registry hit proves the account exists, never that its owner wrote the tool,
+so it is recorded as a `candidate` mapping and moves no evidence. It is promoted
+to `auto_link` only when the resolved person already holds verified,
+independently sourced evidence on a tool the label appears on. A resolved account with no person in the graph now creates one, keyed on the
+immutable CentralAuth global user id -- the same class of identifier the account
+syncs already mint people from, so it records a real account rather than inventing
+one. Creation grants identity only: with no tool relationship such a person is
+not listed in the public directory, so a mistaken lookup never becomes a visible
+claim about anyone. Their handle provenance is `wikimedia_centralauth`, which is
+deliberately not a trusted handle source. Run summaries report `registryChecked`,
+`registryResolved`, `registryPeopleCreated`, `registryCandidatesCreated`, and
+`registryMappingsApplied`.
+
+**Duplication gates.** JavaScript is held at a strict zero
+(`.jscpd.json`). Python runs against a ratchet in `.jscpd.python.json`,
+currently **1%** against a measured 0.98% across 94 files. That gate had never
+run at all — the original config listed only `format: ["javascript"]`, so the
+whole Python job and backend layer was invisible to it, which is how the
+entrypoint duplication accumulated unseen. The number may be **lowered, never
+raised**; lower it in the same commit that removes the clones.
+
 ```sh
 toolforge jobs load ~/repo/jobs.yaml       # crawler + source/discovery indexers + cache + backup
 toolforge jobs list                        # status
 toolforge jobs logs crawler                # last local crawl output
 toolforge jobs logs toolinfo-discovery     # last root/sitemap discovery output
 toolforge jobs logs toolinfo-source-index  # last official crawler source index output
+toolforge jobs logs projection-refresh
+toolforge jobs logs source-attestations
 toolforge jobs logs api-cache-invalidator
 toolforge jobs logs maintainer-backfill
 ```
@@ -656,6 +719,15 @@ Every Python job calls `db.init_schema()` before doing work. Existing Toolforge
 databases receive idempotent additive repairs there, including the catalog
 reconciliation cursor columns and null retry-counter normalization. No database
 reset is required after a deploy.
+
+`projection-refresh` is the six-hour projection coordinator. It reuses input
+generations completed within six hours, runs stale Toolhub, Toolforge, and
+catalog inputs concurrently, then performs one account/identity graph pass and
+computes `/v1/statistics/` ahead of user traffic. Toolinfo source reconciliation is content-hash
+incremental; a changed reconciliation rules version forces one full pass, and
+`source-attestations-full` provides an additional weekly full-audit backstop.
+The full-source jobs have a 900-second timeout while the normal incremental
+path should ordinarily be a fast no-op.
 
 The crawler reads every enabled `crawler_urls` row hourly. For each toolinfo item
 it first records valid `signed_toolinfo` author-claim evidence when the URL

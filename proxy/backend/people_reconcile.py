@@ -3,12 +3,21 @@
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from backend import db, identity_graph, maintainer_index, people_index, people_policy, source_attestations
+from backend import (
+    db,
+    identity_graph,
+    maintainer_index,
+    people_index,
+    people_policy,
+    public_identity,
+    source_attestations,
+)
 from backend.models import (
     CanonicalToolCache,
     Person,
@@ -26,6 +35,7 @@ from backend.models import (
     utcnow,
 )
 from backend.public_identity import PublicIdentityResolver
+from backend.sync import AUTHOR_CLAIM_VERIFIED
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -168,11 +178,27 @@ def apply_mapping(s: Session, mapping: PersonReconciliationMapping) -> int:
 
 
 def apply_durable_mappings_for_tool(s: Session, tool_name: str) -> int:
-    """Reapply auto-linked or operator-approved mappings after an evidence refresh."""
+    """Reapply auto-linked or operator-approved mappings after an evidence refresh.
+
+    Only a mapping whose source person already holds evidence on this tool can
+    move anything; every other one loads its evidence, finds none, and returns
+    an empty set. Selecting them all did that about 2,100 times per tool, which
+    was over 90% of the ~4.5s each queued tool cost and the reason a backlog
+    took hours rather than minutes to drain.
+    """
+    evidence_people = {
+        row[0]
+        for row in s.execute(
+            select(ToolRelationshipEvidence.person_id).where(ToolRelationshipEvidence.tool_name == tool_name).distinct()
+        ).all()
+    }
+    if not evidence_people:
+        return 0
     mappings = list(
         s.execute(
             select(PersonReconciliationMapping).where(
-                PersonReconciliationMapping.decision.in_(MAPPING_APPLIED_DECISIONS)
+                PersonReconciliationMapping.decision.in_(MAPPING_APPLIED_DECISIONS),
+                PersonReconciliationMapping.source_person_id.in_(evidence_people),
             )
         ).scalars()
     )
@@ -585,6 +611,157 @@ def _candidate_account_groups(
     )
 
 
+DEFAULT_REGISTRY_LABEL_LIMIT = 25
+REGISTRY_MIN_INTERVAL_SECONDS = 1.0
+# Provenance for people minted from a registry lookup rather than from an
+# account that registered with Toolhub or Toolforge. Deliberately not a
+# trusted handle source: the stable id makes them publishable, and nothing
+# about the label should lend authority to the handle.
+REGISTRY_SOURCE = "wikimedia_centralauth"
+
+
+def _registry_corroborated(s: Session, *, target_person_id: int, tool_names: list[str]) -> bool:
+    """Return True when the target already holds verified evidence on a shared tool.
+
+    The registry only proved the account exists. This is the independent fact
+    that makes the label about *this* tool, and it must come from evidence the
+    registry lookup did not create.
+    """
+    if not tool_names:
+        return False
+    return (
+        s.execute(
+            select(ToolRelationshipEvidence.id)
+            .where(
+                ToolRelationshipEvidence.person_id == target_person_id,
+                ToolRelationshipEvidence.tool_name.in_(tool_names),
+                ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _upsert_mapping(  # noqa: PLR0913 - the mapping's audit fields stay explicit
+    s: Session,
+    *,
+    run_id: int,
+    source: Person,
+    target: Person,
+    decision: people_policy.IdentityDecision,
+    evidence: dict[str, Any],
+) -> tuple[PersonReconciliationMapping, bool]:
+    """Record one durable mapping from a policy decision, reusing any existing row.
+
+    Both discovery passes reach the same shape once they have a decision, and
+    the mapping is the audit trail for it, so the fields must not drift apart
+    between them.
+    """
+    mapping = _mapping_for_source(s, source.id)
+    created = mapping is None
+    if mapping is None:
+        mapping = PersonReconciliationMapping(source_person_id=source.id)
+        s.add(mapping)
+    mapping.run_id = run_id
+    mapping.target_person_id = target.id
+    mapping.source_key = source.canonical_key
+    mapping.target_key = target.canonical_key
+    mapping.decision = decision.action
+    mapping.reason = decision.reason
+    mapping.confidence = decision.confidence
+    mapping.evidence = evidence
+    mapping.updated_at = utcnow()
+    return mapping, created
+
+
+def discover_registry_candidates(
+    s: Session,
+    *,
+    run_id: int,
+    provider: public_identity.WikimediaIdentityProvider | None = None,
+    label_limit: int = DEFAULT_REGISTRY_LABEL_LIMIT,
+    sleep: Any = time.sleep,  # noqa: ANN401 - injected for deterministic tests
+) -> dict[str, int]:
+    """Resolve handle-shaped labels against CentralAuth as durable candidates.
+
+    Every other path starts from an immutable id we already hold. This one
+    starts from catalog text, so it is the only one that can be wrong about
+    who is meant, and it is bounded accordingly: the shape gate decides which
+    labels are asked about at all, one label is looked up at a time with
+    spacing between requests, and the result is a candidate that publishes
+    nothing until corroboration promotes it.
+    """
+    resolver = provider or public_identity.WikimediaIdentityProvider()
+    created = 0
+    linked = 0
+    resolved = 0
+    checked = 0
+    people_created = 0
+    candidates = [
+        person for person in _candidate_source_people(s) if people_policy.is_handle_shaped(person.display_name)
+    ]
+    for index, source in enumerate(candidates[: max(1, min(int(label_limit), 100))]):
+        if index:
+            sleep(REGISTRY_MIN_INTERVAL_SECONDS)
+        checked += 1
+        identity = resolver.lookup_username(source.display_name)
+        if identity is None:
+            continue
+        resolved += 1
+        owner_id = _stable_identifier_owner(s, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, identity.global_user_id)
+        target = s.get(Person, owner_id) if owner_id else None
+        if target is None:
+            # A CentralAuth global id is an immutable stable identifier, the
+            # same class the account syncs already mint people from, so this
+            # records a real account rather than inventing one. It creates the
+            # identity only; the relationship still has to be earned, and a
+            # person with no tool relationship stays out of the public
+            # directory, which is what keeps a mistaken lookup invisible.
+            target = people_index.ensure_person(
+                s,
+                display_name=identity.username,
+                wikimedia_global_user_id=identity.global_user_id,
+                wiki_username=identity.username,
+                source=REGISTRY_SOURCE,
+            )
+            if target is not None:
+                people_created += 1
+        if target is None or target.id == source.id:
+            continue
+        tool_names, _toolforge_names, _roles = _source_evidence_for_person(s, source.id)
+        decision = people_policy.decide_identity_link(
+            registry_handle=True,
+            corroborated_handle=_registry_corroborated(s, target_person_id=target.id, tool_names=tool_names),
+        )
+        mapping, was_created = _upsert_mapping(
+            s,
+            run_id=run_id,
+            source=source,
+            target=target,
+            decision=decision,
+            evidence={
+                "observedLabel": source.display_name,
+                "wikimediaGlobalUserId": identity.global_user_id,
+                "wikimediaUsername": identity.username,
+                "sharedToolNames": sorted(tool_names)[:20],
+            },
+        )
+        created += int(was_created)
+        if mapping.decision == MAPPING_AUTO_LINK:
+            _move_mapping_evidence(s, mapping)
+            linked += 1
+        s.flush()
+    return {
+        "checked": checked,
+        "resolved": resolved,
+        "peopleCreated": people_created,
+        "created": created,
+        "linked": linked,
+    }
+
+
 def discover_identity_candidates(
     s: Session,
     *,
@@ -703,7 +880,11 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     discover_candidates: bool = False,
     identity_resolver: PublicIdentityResolver | None = None,
     candidate_label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+    registry_label_limit: int = 0,
     rebuild_tools: bool = True,
+    sync_accounts: bool = True,
+    refresh_sources: bool = True,
+    source_changes_since: Any | None = None,  # noqa: ANN401 - persisted naive datetime
 ) -> dict[str, Any]:
     """Audit or rebuild Toolhub-backed evidence and local people projections."""
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
@@ -711,14 +892,22 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     run_row = PersonReconciliationRun(mode=mode, status="running", started_at=utcnow())
     s.add(run_row)
     s.flush()
+    identity_changed_since = source_changes_since or utcnow()
     try:
         before = build_plan(s)
         if mode == MODE_APPLY:
-            account_bindings = identity_graph.synchronize(s)
-            source_attestation_summary = (
-                source_attestations.refresh_all(s)
-                if rebuild_tools
-                else {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
+            account_bindings = (
+                identity_graph.synchronize(s)
+                if sync_accounts
+                else {
+                    "toolhubBindings": 0,
+                    "toolhubConflicts": 0,
+                    "usersHydrated": 0,
+                    "verified": 0,
+                    "candidate": 0,
+                    "conflict": 0,
+                    "unresolved": 0,
+                }
             )
             account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
@@ -738,7 +927,20 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 if discover_candidates
                 else {"created": 0, "linked": 0, "conflicts": 0}
             )
-            if rebuild_tools or candidate_result["linked"]:
+            # Bounded and last: it is the only pass that starts from catalog
+            # text, so it runs a small number of external lookups per pass and
+            # its results publish nothing without corroboration.
+            registry_result = (
+                discover_registry_candidates(s, run_id=run_row.id, label_limit=registry_label_limit)
+                if discover_candidates and registry_label_limit
+                else {"checked": 0, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
+            )
+            source_attestation_summary = (
+                source_attestations.refresh_incremental(s, identity_changed_since=identity_changed_since)
+                if refresh_sources
+                else {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
+            )
+            if rebuild_tools or candidate_result["linked"] or source_attestation_summary["tools"]:
                 people_index.refresh_activity_summaries(s)
         else:
             account_bindings = {
@@ -752,6 +954,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             }
             account_binding_conflicts_queued = 0
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
+            registry_result = {"checked": 0, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
             source_attestation_summary = {
@@ -772,6 +975,11 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "nonActionableConflictsRetired": non_actionable_conflicts_retired,
             "toolsRebuilt": len(after["toolNames"]) if mode == MODE_APPLY and rebuild_tools else 0,
             "identityCandidatesCreated": candidate_result["created"],
+            "registryChecked": registry_result["checked"],
+            "registryResolved": registry_result["resolved"],
+            "registryPeopleCreated": registry_result["peopleCreated"],
+            "registryCandidatesCreated": registry_result["created"],
+            "registryMappingsApplied": registry_result["linked"],
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "accountBindings": account_bindings,

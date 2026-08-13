@@ -3,4 +3,18 @@
 # Fast pre-commit: lint + format only the staged files. The full suite
 # (tests, e2e, mutation, types) runs in CI.
 set -eu
+
+# aethyme-broker:begin (managed block — do not edit inside)
+# `aethyme broker hooks install` refuses to write here because this repo
+# routes hooks through core.hooksPath, so the shim is wired by hand.
+# Runs the cost<=1 gates whose triggers match the staged files; a gate
+# failure blocks the commit.
+# Resolved from PATH rather than hardcoded, so this hook is portable to
+# any clone; contributors without aethyme installed are simply skipped.
+if command -v aethyme >/dev/null 2>&1; then
+  aethyme broker hooks pre-commit || exit $?
+fi
+# aethyme-broker:end
+
+# Must stay last: exec replaces the shell, so nothing after it runs.
 exec npx lint-staged

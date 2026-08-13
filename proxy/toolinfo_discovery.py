@@ -4,7 +4,7 @@
 import os
 import sys
 
-from backend import DEFAULT_DB_URL, db, toolinfo_discovery
+from backend import job_runner, toolinfo_discovery
 
 
 def _int_env(name: str, default: int) -> int:
@@ -16,21 +16,22 @@ def _int_env(name: str, default: int) -> int:
 
 def main() -> int:
     """Refresh cached toolinfo discovery rows for official Toolhub tools."""
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
     limit = _int_env("TOOLINFO_DISCOVERY_LIMIT", 100)
-    summary = toolinfo_discovery.refresh_known_discoveries(limit=limit)
-    sys.stdout.write(
-        "toolinfo-discovery: "
-        f"limit={limit} "
-        f"refreshed={summary['refreshed']} "
-        f"seeded={summary['seeded']} "
-        f"found={summary['found']} "
-        f"missing={summary['missing']} "
-        f"errors={summary['errors']} "
-        f"skipped={summary['skipped']}\n"
-    )
-    return 0
+
+    def body() -> None:
+        summary = toolinfo_discovery.refresh_known_discoveries(limit=limit)
+        sys.stdout.write(
+            "toolinfo-discovery: "
+            f"limit={limit} "
+            f"refreshed={summary['refreshed']} "
+            f"seeded={summary['seeded']} "
+            f"found={summary['found']} "
+            f"missing={summary['missing']} "
+            f"errors={summary['errors']} "
+            f"skipped={summary['skipped']}\n"
+        )
+
+    return job_runner.run_job("toolinfo-discovery", body)
 
 
 if __name__ == "__main__":  # pragma: no cover - job entrypoint, exercised via main() in tests

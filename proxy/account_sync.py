@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import requests
 from sqlalchemy import delete, func, select
 
-from backend import DEFAULT_DB_URL, db, people_index, toolhub
+from backend import db, job_runner, people_index, toolhub
 from backend.models import ToolhubAccountProjection, ToolhubAccountSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -207,7 +207,7 @@ def _mark_error(error: BaseException) -> None:
         state.sync_status = SYNC_OFFICIAL
 
 
-def _store_page(  # noqa: PLR0913, PLR0915 - explicit page transaction contract
+def _store_page(  # noqa: C901, PLR0913, PLR0915 - explicit page transaction contract
     page: int,
     page_size: int,
     generation: int,
@@ -237,9 +237,18 @@ def _store_page(  # noqa: PLR0913, PLR0915 - explicit page transaction contract
         source_url = listing_url(page, page_size)
         for item in normalized:
             account = existing.get(item["toolhub_user_id"])
+            created = account is None
             if account is None:
                 account = ToolhubAccountProjection(toolhub_user_id=item["toolhub_user_id"], first_seen_at=now)
                 s.add(account)
+            identity_changed = (
+                created
+                or account.username != item["username"]
+                or (account.wikimedia_global_user_id != item["wikimedia_global_user_id"])
+            )
+            projection_changed = created or any(
+                getattr(account, field) != value for field, value in item.items() if field != "toolhub_user_id"
+            )
             for field, value in item.items():
                 if field != "toolhub_user_id":
                     setattr(account, field, value)
@@ -248,14 +257,16 @@ def _store_page(  # noqa: PLR0913, PLR0915 - explicit page transaction contract
             account.source = SOURCE_OFFICIAL
             account.sync_status = SYNC_OFFICIAL
             account.last_seen_at = now
-            account.updated_at = now
-            people_index.ensure_official_account_person(
-                s,
-                toolhub_user_id=item["toolhub_user_id"],
-                username=item["username"],
-                wikimedia_global_user_id=item["wikimedia_global_user_id"] or "",
-                checked_at=now,
-            )
+            if projection_changed:
+                account.updated_at = now
+            if identity_changed:
+                people_index.ensure_official_account_person(
+                    s,
+                    toolhub_user_id=item["toolhub_user_id"],
+                    username=item["username"],
+                    wikimedia_global_user_id=item["wikimedia_global_user_id"] or "",
+                    checked_at=now,
+                )
         state.pages_fetched += 1
         state.records_seen += len(normalized)
         state.cycle_records_seen += len(normalized)
@@ -402,8 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         default=_env_float("ACCOUNT_SYNC_MIN_INTERVAL_SECONDS", DEFAULT_MIN_INTERVAL_SECONDS),
     )
     args = parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
+    job_runner.configure()
     runner = run_complete if args.complete else run
     kwargs = {"page_size": args.page_size, "min_interval_seconds": args.min_interval}
     if not args.complete:

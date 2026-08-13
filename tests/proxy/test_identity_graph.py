@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 from backend import db, identity_graph, people_index  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
+    Person,
     PersonAccountBinding,
     PersonIdentifier,
     ToolforgeAccountProjection,
@@ -176,6 +177,65 @@ def test_canonical_alias_replaces_old_fallback_and_invalidates_tool_summaries():
             for row in session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None)
         } == {"mix-n-match"}
         assert session.query(ToolSummaryCache).count() == 0
+
+
+def test_existing_identity_graph_uses_preloaded_fast_path(monkeypatch):
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        session.add(toolforge_account())
+        identity_graph.synchronize(session)
+
+    monkeypatch.setattr(
+        identity_graph.people_index,
+        "ensure_official_account_person",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected per-account rebuild")),
+    )
+    monkeypatch.setattr(
+        identity_graph,
+        "bind_toolforge_account",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected per-account rebuild")),
+    )
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["toolhubBindings"] == 2
+    assert result["verified"] == 1
+    assert result["relationshipCacheHit"] == 1
+
+
+def test_identity_input_fingerprint_ignores_freshness_timestamps():
+    with db.session_scope() as session:
+        account = toolhub_account()
+        session.add(account)
+        session.flush()
+        first = identity_graph.input_fingerprint(session)
+        account.last_seen_at = utcnow()
+        account.updated_at = utcnow()
+        second = identity_graph.input_fingerprint(session)
+        account.username = "Renamed account"
+        third = identity_graph.input_fingerprint(session)
+
+    assert second == first
+    assert third != first
+
+
+def test_unchanged_binding_does_not_refresh_audit_timestamps():
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        identity_graph.synchronize(session)
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolhub").one()
+        person = session.get(Person, binding.person_id)
+        binding_seen_at = binding.last_seen_at
+        binding_updated_at = binding.updated_at
+        person_updated_at = person.updated_at
+
+    with db.session_scope() as session:
+        identity_graph.synchronize(session)
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolhub").one()
+        person = session.get(Person, binding.person_id)
+        assert binding.last_seen_at == binding_seen_at
+        assert binding.updated_at == binding_updated_at
+        assert person.updated_at == person_updated_at
 
 
 def test_unbound_matching_handle_is_only_a_candidate():

@@ -520,6 +520,54 @@ def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers an
     return True
 
 
+def corroborated_handle_person(s: Session, *, tool_name: str, display_name: str, source: str) -> Person | None:
+    """Resolve a bare label only when an independent edge already ties it here.
+
+    Most catalog author values are free text, so a label matching a handle
+    proves nothing on its own: anyone can type any name. What makes it
+    evidence is corroboration — the same person already holds a verified,
+    independently sourced relationship to this exact tool, whether from
+    Toolforge membership, a signed feed, or a control challenge.
+
+    Both halves must hold, and both are deliberately narrow. The label must
+    be a current handle of exactly one publishable person, so an ambiguous
+    or retired handle resolves nothing. The corroborating edge must come
+    from another source, so this can never confirm itself on a rerun.
+
+    This is the canonical-catalog counterpart of the anchoring that source
+    attestation already applies to indexed feeds.
+    """
+    normalized = _normalized(display_name)
+    if not normalized:
+        return None
+    person_ids = {
+        row[0]
+        for row in s.execute(
+            select(PersonIdentifier.person_id).where(
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.identifier_kind == IDENTIFIER_HANDLE,
+                PersonIdentifier.namespace.in_((NS_WIKI_USERNAME, NS_TOOLFORGE_USERNAME, NS_TOOLHUB_USERNAME)),
+                PersonIdentifier.normalized_value == normalized,
+            )
+        ).all()
+    }
+    if len(person_ids) != 1 or not public_identity_ids(s, person_ids):
+        return None
+    person_id = next(iter(person_ids))
+    corroborated = s.execute(
+        select(ToolRelationshipEvidence.id)
+        .where(
+            ToolRelationshipEvidence.tool_name == _clean(tool_name),
+            ToolRelationshipEvidence.person_id == person_id,
+            ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+            ToolRelationshipEvidence.source != source,
+        )
+        .limit(1)
+    ).scalar_one_or_none()
+    return s.get(Person, person_id) if corroborated is not None else None
+
+
 def _store_unresolved_observation(  # noqa: PLR0913 - source evidence fields stay explicit
     s: Session,
     *,
@@ -614,7 +662,12 @@ def replace_source_evidence(
             or _clean(observation.get("wiki_username"))
             or observation.get("authenticated_claim")
         )
-        if not has_identity:
+        corroborated = (
+            corroborated_handle_person(s, tool_name=clean_tool, display_name=display_name, source=source)
+            if not has_identity and display_name
+            else None
+        )
+        if not has_identity and corroborated is None:
             if not display_name:
                 continue
             _store_unresolved_observation(
@@ -630,7 +683,7 @@ def replace_source_evidence(
             )
             continue
         display_scope = f"{clean_tool}\x1f{source}\x1f{role}\x1f{method}\x1f{evidence_key}"
-        person = ensure_person(
+        person = corroborated or ensure_person(
             s,
             display_name=display_name,
             toolhub_user_id=_clean(observation.get("toolhub_user_id"), 64),
@@ -654,6 +707,7 @@ def replace_source_evidence(
                 or _clean(observation.get("wiki_username"))
             ),
             authenticated_claim=bool(observation.get("authenticated_claim")),
+            corroborated_handle=corroborated is not None,
         )
         row = s.execute(
             select(ToolRelationshipEvidence).where(

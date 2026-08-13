@@ -3,12 +3,10 @@
 
 from __future__ import annotations
 
-import json
 import os
-import sys
 
-from backend import DEFAULT_DB_URL, db, graph_payload
 from backend import graph_enrichment as enrichment
+from backend import graph_payload, job_runner
 
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 1000
@@ -49,12 +47,9 @@ def audit_payload(repair: dict[str, int]) -> dict:
 
 
 def main() -> int:
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
-    repair = enrichment.refresh_candidates(limit=_limit())
-    audit = audit_payload(repair)
-    sys.stdout.write("graph-enrichment: " + json.dumps(audit, sort_keys=True, separators=(",", ":")) + "\n")
-    return 1 if repair.get("errors") else 0
+    # Per backend.job_contract: rows this pass could not enrich are reported in
+    # the audit and retried by the next one, so they are not a failed sweep.
+    return job_runner.run_job("graph-enrichment", lambda: audit_payload(enrichment.refresh_candidates(limit=_limit())))
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised through main() tests and Toolforge Jobs
