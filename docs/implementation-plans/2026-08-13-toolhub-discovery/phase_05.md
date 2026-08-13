@@ -174,7 +174,7 @@ git commit -m "docs: add retrieval regression probes for discovery"
 
 Not executable by CI; the executing agent should present this as a checklist to the operator and record outcomes in `PROBES.md`:
 
-0. Confirm the deployed instance's User-Agent contact reaches whoever actually operates the Toolforge tool (`proxy/app.py:40` currently names `christophe@aeptus.com`). The skill's whole compliance argument — "the server carries the upstream identity, clients need none" — rests on that contact being the real operator's; if operation has changed hands, fix the UA before publicizing the endpoint (per the wikimedia-api operator rule).
+0. ~~Confirm the deployed instance's User-Agent contact reaches the actual operator.~~ **Resolved 2026-08-13:** Christophe operates the Toolforge deployment and runs the deploys; `christophe@aeptus.com` (`proxy/app.py:40`) is his address, so the UA correctly identifies the operator and the skill's compliance argument holds. Re-check only if operation changes hands.
 1. Configure the MCP server in a fresh Claude session (command in SKILL.md).
 2. Run the cluster probe from `PROBES.md`; record pass/fail. **Done when** all expected tools retrieved.
 3. Run a full prior-art review (via the skill or the server's `prior-art-review` prompt) for two existing operator projects — suggested: `sfedits` (SF-area edit stream bot) and `alex-cite-checker` — pretending each is a new idea. Judge: are the top idea-similarity hits relevant? Did the pattern side recommend a stack consistent with what those projects actually use? Record both rows in the validation table, including any tool or library the operator did not previously know (the surprise-yield success signal from the design's Definition of Done).
