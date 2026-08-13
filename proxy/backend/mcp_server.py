@@ -124,7 +124,10 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "from source code, so they cover only tools with a scanned repository — check the "
             "returned coverage field; an empty result is not proof that no such tool exists. "
             "You can also filter on DECLARED catalog metadata, which covers every tool: "
-            "tool_type (e.g. 'bot', 'web app'), keyword, wiki, license."
+            "tool_type (e.g. 'bot', 'web app'), keyword, wiki, license, and — for what a "
+            "tool is FOR rather than what it is built from — task and audience. Those two "
+            "are only filled in for a small minority of tools, so use them to narrow a "
+            "search, never to conclude that nothing does a thing."
         ),
         "inputSchema": {
             "type": "object",
@@ -136,6 +139,8 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
                 "keyword": {"type": "array", "items": {"type": "string"}},
                 "wiki": {"type": "array", "items": {"type": "string"}},
                 "license": {"type": "array", "items": {"type": "string"}},
+                "task": {"type": "array", "items": {"type": "string"}},
+                "audience": {"type": "array", "items": {"type": "string"}},
                 "limit": {"type": "integer", "minimum": 1, "maximum": _MAX_TOOL_RESULTS, "default": 25},
             },
         },

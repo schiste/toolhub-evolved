@@ -193,6 +193,44 @@ def test_search_tools_call(client, monkeypatch):
     assert result["structuredContent"] == payload  # additive 2026-07-28 field
 
 
+def test_facet_tools_schema_advertises_purpose_filters(client):
+    """An LLM can only use filters it can see in the schema."""
+    tools = _rpc(client, "tools/list").get_json()["result"]["tools"]
+    facet = next(t for t in tools if t["name"] == "facet_tools")
+    props = set(facet["inputSchema"]["properties"])
+    assert {"task", "audience"} <= props
+    # Every server-side filter param must be advertised, or it is unusable.
+    from backend import v1_facets
+
+    assert set(v1_facets.FILTER_PARAMS) <= props
+
+
+def test_search_tools_fails_loudly_when_upstream_is_down(client, monkeypatch):
+    """No local fallback: a weak answer is worse than none for prior art.
+
+    Substring-matching the local cache would quietly under-report existing
+    tools, and the caller acts on that by building something that already
+    exists - the exact failure this product prevents. Stub the pure upstream
+    boundary so the production handler still runs.
+    """
+    import requests
+
+    from backend import toolhub
+
+    def boom(path, params=None):
+        raise requests.RequestException("upstream unreachable")
+
+    monkeypatch.setattr(toolhub, "public_api_get", boom)
+    with db.session_scope() as s:
+        _seed(s)
+    result = _call_tool(client, "search_tools", {"query": "citations"})["result"]
+    assert result["isError"] is True
+    text = result["content"][0]["text"].casefold()
+    assert "unavailable" in text and "retry" in text
+    # Must NOT have silently degraded to local results.
+    assert "cite-checker" not in text
+
+
 def test_facet_tools_call_includes_coverage(client):
     with db.session_scope() as s:
         _seed(s)
