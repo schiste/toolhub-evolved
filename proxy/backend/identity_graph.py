@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
 from backend import canonical_tools, people_index
 from backend.models import (
+    ApiCacheMeta,
     Person,
     PersonAccountBinding,
     PersonIdentifier,
@@ -39,6 +42,7 @@ PROOF_EXACT_HANDLE = "exact_cross_provider_handle_candidate"
 PROOF_AUTHENTICATED = "authenticated_account_control"
 PROOF_OPERATOR = "operator_approved"
 SOURCE_TOOLFORGE_LDAP = "toolforge_ldap"
+TOOLFORGE_RELATIONSHIP_META_KEY = "toolforge_relationship_input_v1"
 
 
 class IdentityBindingConflictError(RuntimeError):
@@ -155,6 +159,120 @@ def _indexed_person(identifiers: dict[tuple[str, str], Person], namespace: str, 
 
 def _binding_rows(session: Session) -> dict[tuple[str, str], PersonAccountBinding]:
     return {(row.provider, row.external_id): row for row in session.execute(select(PersonAccountBinding)).scalars()}
+
+
+def _update_digest(digest: Any, label: str, rows: Any) -> None:  # noqa: ANN401 - hash and SQL row iterables
+    digest.update(label.encode())
+    for row in rows:
+        digest.update(json.dumps(list(row), default=str, separators=(",", ":")).encode())
+
+
+def _canonical_alias_rows(canonical_names: dict[str, tuple[str, ...]]) -> list[tuple[str, str]]:
+    return [
+        (project, tool_name)
+        for project, tool_names in sorted(canonical_names.items())
+        for tool_name in sorted(tool_names)
+    ]
+
+
+def input_fingerprint(session: Session) -> str:
+    """Hash identity-relevant projection values, never cache timestamps."""
+    digest = hashlib.sha256()
+    _update_digest(
+        digest,
+        "toolhub",
+        session.execute(
+            select(
+                ToolhubAccountProjection.toolhub_user_id,
+                ToolhubAccountProjection.username,
+                ToolhubAccountProjection.wikimedia_global_user_id,
+            ).order_by(ToolhubAccountProjection.toolhub_user_id)
+        ),
+    )
+    _update_digest(
+        digest,
+        "toolforge",
+        session.execute(
+            select(
+                ToolforgeAccountProjection.uid_number,
+                ToolforgeAccountProjection.uid,
+                ToolforgeAccountProjection.wikimedia_global_user_id,
+                ToolforgeAccountProjection.disabled,
+            ).order_by(ToolforgeAccountProjection.uid_number)
+        ),
+    )
+    _update_digest(
+        digest,
+        "memberships",
+        session.execute(
+            select(ToolforgeMembershipProjection.uid_number, ToolforgeMembershipProjection.tool_name).order_by(
+                ToolforgeMembershipProjection.uid_number,
+                ToolforgeMembershipProjection.tool_name,
+            )
+        ),
+    )
+    _update_digest(digest, "aliases", _canonical_alias_rows(canonical_tools.names_by_toolforge_project(session)))
+    return digest.hexdigest()
+
+
+def _relationship_fingerprint(
+    session: Session,
+    canonical_names: dict[str, tuple[str, ...]],
+) -> str:
+    digest = hashlib.sha256()
+    _update_digest(
+        digest,
+        "bindings",
+        session.execute(
+            select(
+                PersonAccountBinding.external_id,
+                PersonAccountBinding.person_id,
+                PersonAccountBinding.proof_method,
+            )
+            .where(
+                PersonAccountBinding.provider == PROVIDER_TOOLFORGE,
+                PersonAccountBinding.status == STATUS_VERIFIED,
+                PersonAccountBinding.revoked_at.is_(None),
+            )
+            .order_by(PersonAccountBinding.external_id)
+        ),
+    )
+    _update_digest(
+        digest,
+        "memberships",
+        session.execute(
+            select(ToolforgeMembershipProjection.uid_number, ToolforgeMembershipProjection.tool_name).order_by(
+                ToolforgeMembershipProjection.uid_number,
+                ToolforgeMembershipProjection.tool_name,
+            )
+        ),
+    )
+    _update_digest(digest, "aliases", _canonical_alias_rows(canonical_names))
+    return digest.hexdigest()
+
+
+def seed_relationship_fingerprint(session: Session) -> int:
+    """Mark an existing LDAP relationship projection as current during migration."""
+    if session.get(ApiCacheMeta, TOOLFORGE_RELATIONSHIP_META_KEY) is not None:
+        return 0
+    has_projection = session.scalar(
+        select(func.count())
+        .select_from(ToolRelationshipEvidence)
+        .where(
+            ToolRelationshipEvidence.source == SOURCE_TOOLFORGE_LDAP,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+        )
+    )
+    if not has_projection:
+        return 0
+    canonical_names = canonical_tools.names_by_toolforge_project(session)
+    session.add(
+        ApiCacheMeta(
+            key=TOOLFORGE_RELATIONSHIP_META_KEY,
+            value=_relationship_fingerprint(session, canonical_names),
+        )
+    )
+    return 1
 
 
 def _stable_owner_conflict(session: Session, person: Person, uid_number: str) -> bool:
@@ -444,6 +562,16 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
         ).scalars()
     }
     canonical_names = canonical_tools.names_by_toolforge_project(session)
+    relationship_fingerprint = _relationship_fingerprint(session, canonical_names)
+    relationship_marker = session.get(ApiCacheMeta, TOOLFORGE_RELATIONSHIP_META_KEY)
+    if relationship_marker is not None and relationship_marker.value == relationship_fingerprint:
+        return {
+            "membershipRelationships": 0,
+            "canonicalMembershipRelationships": 0,
+            "fallbackMembershipRelationships": 0,
+            "unboundMemberships": 0,
+            "relationshipCacheHit": 1,
+        }
     by_tool: dict[str, list[dict[str, Any]]] = {}
     unbound = 0
     canonical_relationships = 0
@@ -507,11 +635,17 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
                 by_tool.get(tool_name, []),
             )
         )
+    if relationship_marker is None:
+        session.add(ApiCacheMeta(key=TOOLFORGE_RELATIONSHIP_META_KEY, value=relationship_fingerprint))
+    else:
+        relationship_marker.value = relationship_fingerprint
+        relationship_marker.updated_at = utcnow()
     return {
         "membershipRelationships": projected,
         "canonicalMembershipRelationships": canonical_relationships,
         "fallbackMembershipRelationships": fallback_relationships,
         "unboundMemberships": unbound,
+        "relationshipCacheHit": 0,
     }
 
 

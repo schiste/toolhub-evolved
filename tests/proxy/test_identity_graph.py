@@ -199,6 +199,23 @@ def test_existing_identity_graph_uses_preloaded_fast_path(monkeypatch):
 
     assert result["toolhubBindings"] == 2
     assert result["verified"] == 1
+    assert result["relationshipCacheHit"] == 1
+
+
+def test_identity_input_fingerprint_ignores_freshness_timestamps():
+    with db.session_scope() as session:
+        account = toolhub_account()
+        session.add(account)
+        session.flush()
+        first = identity_graph.input_fingerprint(session)
+        account.last_seen_at = utcnow()
+        account.updated_at = utcnow()
+        second = identity_graph.input_fingerprint(session)
+        account.username = "Renamed account"
+        third = identity_graph.input_fingerprint(session)
+
+    assert second == first
+    assert third != first
 
 
 def test_unbound_matching_handle_is_only_a_candidate():

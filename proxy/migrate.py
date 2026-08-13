@@ -28,6 +28,7 @@ from backend import (
     canonical_tools,
     catalog_projection,
     db,
+    identity_graph,
     maintainer_index,
     people_index,
     source_attestations,
@@ -79,6 +80,7 @@ def run_once() -> list[MigrationResult]:
         ),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
         MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
+        MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker()),
         MigrationResult("people immutable ids and account links", _backfill_people_identity()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
@@ -94,6 +96,12 @@ def _initialize_source_attestation_rules() -> int:
             return 0
         s.add(ApiCacheMeta(key=source_attestations.RULES_META_KEY, value=source_attestations.RULES_VERSION))
         return 1
+
+
+def _initialize_toolforge_relationship_marker() -> int:
+    """Avoid reprojecting unchanged LDAP memberships after this upgrade."""
+    with db.session_scope() as s:
+        return identity_graph.seed_relationship_fingerprint(s)
 
 
 def _clean_resolver_identity_claims() -> int:

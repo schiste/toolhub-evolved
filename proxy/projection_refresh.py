@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -16,10 +15,9 @@ from typing import TYPE_CHECKING, Any
 import account_sync
 import catalog_sync
 import toolforge_account_sync
-from backend import DEFAULT_DB_URL, catalog_statistics, db, people_reconcile, source_attestations
+from backend import DEFAULT_DB_URL, catalog_statistics, db, identity_graph, people_reconcile, source_attestations
 from backend.models import (
     ApiCacheMeta,
-    CanonicalToolCache,
     ToolCatalogSyncState,
     ToolforgeAccountSyncState,
     ToolhubAccountSyncState,
@@ -95,24 +93,7 @@ def _parallel_sync(plan: dict[str, bool], max_age_seconds: int) -> dict[str, dic
 
 def _identity_fingerprint() -> str:
     with db.session_scope() as session:
-        toolhub = session.get(ToolhubAccountSyncState, account_sync.STATE_KEY)
-        toolforge = session.get(ToolforgeAccountSyncState, toolforge_account_sync.STATE_KEY)
-        catalog = session.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
-        latest_catalog = (
-            session.query(CanonicalToolCache.fetched_at)
-            .order_by(CanonicalToolCache.fetched_at.desc())
-            .limit(1)
-            .scalar()
-        )
-        inputs = {
-            "rules": IDENTITY_RULES_VERSION,
-            "toolhubGeneration": int(toolhub.active_generation if toolhub else 0),
-            "toolforgeGeneration": int(toolforge.active_generation if toolforge else 0),
-            "catalogGeneration": int(catalog.snapshot_generation if catalog else 0),
-            "catalogFetchedAt": _iso(latest_catalog),
-        }
-    encoded = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
+        return f"{IDENTITY_RULES_VERSION}:{identity_graph.input_fingerprint(session)}"
 
 
 def _identity_marker() -> ApiCacheMeta | None:
