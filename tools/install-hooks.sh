@@ -13,5 +13,5 @@ PYTHON_BIN="${PYTHON_BIN:-python3.11}"
 .quality/python/bin/python -m pip install --upgrade pip
 .quality/python/bin/python -m pip install -r tools/python-quality-requirements.txt
 
-echo "Git hooks installed: pre-commit runs lint-staged; pre-push runs eslint + prettier + checks + feature-doc freshness."
+echo "Git hooks installed: pre-commit runs the aethyme broker gates (skipped when aethyme is not on PATH) then lint-staged; pre-push runs eslint + prettier + checks + feature-doc freshness."
 echo "The full quality suite runs in CI (.github/workflows/ci.yml)."

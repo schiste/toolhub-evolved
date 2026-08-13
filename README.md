@@ -166,6 +166,46 @@ at a **literal 100 % score** over `public_html/**`. The handful of genuinely
 equivalent mutants carry documented `// Stryker disable` comments — the project's
 only in-code suppressions — indexed in [EQUIVALENTS.md](EQUIVALENTS.md).
 
+## Local hooks
+
+The hooks live in `.githooks/`, not `.git/hooks/`, so git has to be pointed at
+them once per clone:
+
+```sh
+npm run hooks:install
+```
+
+That sets `core.hooksPath`, installs the npm and Playwright dependencies, and
+builds `.quality/python` from the same pinned requirements CI uses. Afterwards
+`pre-commit` runs lint-staged over the staged files and `pre-push` runs eslint,
+prettier, the AST checks, and the feature-doc freshness check.
+
+### Aethyme broker (optional)
+
+Several AI agent sessions sometimes share this working tree. The Aethyme broker
+coordinates them, and two pieces of it are committed: the policy in
+`.aethyme/config.toml` and `.aethyme/gates.toml`, and a shim in
+`.githooks/pre-commit` that runs the gates matching your staged files and blocks
+the commit when one fails. The shim resolves `aethyme` from `PATH`, so
+contributors without it installed are skipped entirely — nothing to opt out of.
+
+The agent-facing half is deliberately **not** committed. `aethyme enhance deploy`
+bakes an absolute path to your local Aethyme checkout into `AGENTS.md`,
+`CLAUDE.md`, and the `.claude/`/`.codex/` skills, and `aethyme enhance verify`
+rejects hand-edits to them, so they cannot be made portable. They are gitignored;
+generate your own instead:
+
+```sh
+aethyme init                      # idempotent: writes/validates broker policy
+aethyme enhance deploy --repo .   # generates AGENTS.md + the agent skills
+aethyme certify                   # read-only: reports whether setup is intact
+```
+
+Agents then take an isolated worktree with
+`aethyme broker start --task "<task>"` and merge it back through the gates with
+`aethyme broker submit --session <id>`, rather than editing this checkout
+directly.
+
 ## License
 
 GNU General Public License v3.0 or later (GPL-3.0-or-later). See [LICENSE](LICENSE).

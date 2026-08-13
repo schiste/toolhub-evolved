@@ -17,6 +17,7 @@
 	"ignoreRegExpList": ["/\\\\[bBwWdDsSnrtfvuU]/g"],
 	"words": [
 		"activedescendant",
+		"aethyme",
 		"affordances",
 		"allk",
 		"Amina",
@@ -290,6 +291,7 @@
 		"wbsetreference",
 		"wbsetsitelink",
 		"wikibase",
+		"worktree",
 		"zcat",
 		"Čeština",
 		"Ελληνικά",
