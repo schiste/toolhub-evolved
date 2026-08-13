@@ -35,6 +35,7 @@ from backend.v1_toolhub import v1_toolhub_bp
 from backend.v1_toolinfo import v1_toolinfo_bp
 from backend.v1_tools import v1_tools_bp
 from backend.v1_user import v1_user_bp
+from backend.v1_workers import v1_workers_bp
 from backend.v1_write import v1_write_bp
 
 DEFAULT_DB_URL = f"sqlite:///{Path(__file__).resolve().parent.parent / 'var' / 'app.sqlite3'}"
@@ -103,6 +104,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(v1_toolinfo_bp)
     app.register_blueprint(v1_source_analysis_bp)
     app.register_blueprint(v1_statistics_bp)
+    app.register_blueprint(v1_workers_bp)
     app.register_blueprint(v1_moderation_bp)
     app.register_blueprint(v1_author_keys_bp)
     app.register_blueprint(v1_toolhub_bp)
