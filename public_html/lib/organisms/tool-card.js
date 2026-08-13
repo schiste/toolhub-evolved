@@ -76,7 +76,7 @@ function singleAuthorByline(tool, evolvedSummary, author) {
 		? t("toolCard.maintainerConfirmed", "$1, confirmed maintainer", maintainer)
 		: t("toolCard.maintainerUnconfirmed", "$1, maintainer not confirmed yet", maintainer);
 	const owner = hasOwner
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? `<span class="tcard__maint-status">${t("toolCard.verifiedMaintainerRelationship", "verified maintainer relationship")}</span>` : ""}</a>`
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">${t("toolCard.by", "by")} ${owner}</div>`;
 }

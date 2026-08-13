@@ -58,7 +58,7 @@ test("viewAuthor renders the author name, count, back link and a tools grid", as
 	);
 	assert.ok(view.html.includes(`example.org ${icon("external")}</a>`));
 	assert.match(view.html, /<h2 id="author-related-tools">Related tools<\/h2>/);
-	assert.match(view.html, /Listed author/);
+	assert.doesNotMatch(view.html, /author-tool-card__relationships/);
 	assert.match(view.html, /<dt>Public contributions<\/dt><dd>0<\/dd>/);
 });
 
@@ -129,11 +129,8 @@ test("viewPerson renders every role with distinct provenance on one tool", async
 	assert.equal(view.html.match(/data-tool="trust-tool"/g)?.length, 1);
 	assert.match(view.html, /Trust Tool/);
 	assert.match(view.html, /Identity backed by a stable account ID/);
-	assert.match(view.html, /Listed author/);
-	assert.match(view.html, /Verified Toolforge maintainer/);
+	assert.doesNotMatch(view.html, /author-tool-card__relationships/);
 	assert.doesNotMatch(view.html, /record authority/i);
-	assert.match(view.html, /Toolhub author field/);
-	assert.match(view.html, /datetime="2026-08-01T12:00:00\.000Z"/);
 	assert.match(view.html, /<dt>Tools with a verified relationship<\/dt><dd>1<\/dd>/);
 	assert.equal(h.getToolsByName.mock.calls.length, 0);
 });
@@ -452,8 +449,7 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 	assert.match(view.html, /Previous Maintainer verification—renewal needed · 8 tools/);
 	assert.match(view.html, /Related tools and strong matches/);
 	assert.match(view.html, /Related through this person&#39;s tool relationships/);
-	assert.match(view.html, /Listed author/);
-	assert.match(view.html, /Verified Toolforge maintainer/);
+	assert.doesNotMatch(view.html, /author-tool-card__relationships/);
 	assert.match(view.html, /Tools mentioning this text/);
 	assert.match(view.html, /The name is mentioned only in the tool description/);
 	assert.match(view.html, /href="\/tools\/magnus-tool"/);

@@ -34,7 +34,7 @@ function maintainerByline(t, evolvedSummary) {
 	const label = confirmed ? `${maintainer}, confirmed maintainer` : `${maintainer}, maintainer not confirmed yet`;
 	const known = Boolean(t.maintainer) && maintainer !== "Unknown";
 	const owner = known
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span>${confirmed ? '<span class="tcard__maint-status">verified maintainer relationship</span>' : ""}</a>`
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">by ${owner}</div>`;
 }
@@ -260,7 +260,8 @@ test("toolCard renders attached health score and confirmed maintainer byline", (
 	assert.ok(!html.includes("Maintained"));
 	assert.ok(html.includes("tcard__maint-name--confirmed"));
 	assert.ok(html.includes("Jane &amp; Co, confirmed maintainer"));
-	assert.ok(html.includes('<span class="tcard__maint-status">verified maintainer relationship</span>'));
+	assert.ok(!html.includes("verified maintainer relationship"));
+	assert.ok(!html.includes("tcard__maint-status"));
 	assert.ok(!html.includes("tcard__maint-check"));
 	assert.ok(html.includes("Calculation: weighted average across 1 of 1 dimensions"));
 });

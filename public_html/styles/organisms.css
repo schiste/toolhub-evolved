@@ -997,12 +997,6 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.tcard__maint-status {
-	flex: 0 0 auto;
-	color: currentColor;
-	font-size: var(--fs-micro);
-	font-weight: 600;
-}
 .tcard__authors {
 	display: block;
 	min-width: 0;
@@ -2455,10 +2449,6 @@
 }
 .author-tool-card > .tcard {
 	height: auto;
-}
-.author-tool-card__relationships {
-	display: grid;
-	gap: var(--space-2);
 }
 .author-tool-card__summary-note {
 	margin: var(--space-0);

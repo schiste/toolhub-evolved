@@ -13,7 +13,6 @@ import { button } from "../lib/atoms/button.js";
 import { entityCard } from "../lib/organisms/entity-card.js";
 import { grid } from "../lib/organisms/grid.js";
 import { toolCard } from "../lib/organisms/tool-card.js";
-import { relationshipTrustMarkup } from "../lib/molecules/relationship-trust.js";
 import { renderPager } from "../lib/molecules/pager.js";
 import { communityHeader } from "./community.js";
 
@@ -51,26 +50,9 @@ function profileLinks(person) {
 		.join("");
 }
 
-/** @param {Tool} tool */
-function relationshipsForTool(tool) {
-	const relationships = Array.isArray(/** @type {any} */ (tool).personRelationships)
-		? /** @type {any[]} */ (/** @type {any} */ (tool).personRelationships)
-		: [];
-	if (relationships.length > 0) return relationships;
-	return [
-		{
-			type: "author",
-			status: "unverified",
-			confidence: 0,
-			evidenceCount: 1,
-			toolhubCanonical: true,
-			evidence: [{ source: "toolhub_author_metadata", method: "toolhub_author_metadata", status: "unverified" }]
-		}
-	];
-}
-
 /**
- * Render one tool once while preserving every relationship carried by that tool.
+ * Render each related tool once. Relationship evidence remains available on the
+ * person and tool detail pages instead of being repeated beneath every card.
  * @param {Tool[]} tools
  * @param {{count?: number, page?: number, pageSize?: number, pageCount?: number}} toolPage
  */
@@ -92,11 +74,7 @@ function relatedTools(tools, toolPage) {
 						"grid-tools author-page__tool-grid",
 						tools,
 						(/** @type {Tool} */ tool) =>
-							`<div class="author-tool-card">${toolCard(tool)}${/** @type {any} */ (tool).profileSummaryStatus === "missing" ? `<p class="author-tool-card__summary-note">${t("authors.toolMetadataUnavailable", "Tool metadata is unavailable; relationships are shown from local evidence.")}</p>` : ""}<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for $1", tool.title || tool.name))}">${relationshipsForTool(
-								tool
-							)
-								.map((relationship) => relationshipTrustMarkup(relationship))
-								.join("")}</div></div>`
+							`<div class="author-tool-card">${toolCard(tool)}${/** @type {any} */ (tool).profileSummaryStatus === "missing" ? `<p class="author-tool-card__summary-note">${t("authors.toolMetadataUnavailable", "Tool metadata is unavailable; relationships are shown from local evidence.")}</p>` : ""}</div>`
 					)
 				: `<p class="empty">${t("authors.noToolsOnPage", "No related tools on this page.")}</p>`
 		}
@@ -426,11 +404,9 @@ function toolMatchReason(item) {
 /** @param {any} item */
 function directoryToolResult(item) {
 	const reason = toolMatchReason(item);
-	const relationships = Array.isArray(item?.relationships) ? item.relationships : [];
 	return `<div class="community-tool-result">
 		<p class="community-tool-result__reason"><strong>${esc(reason.label)}</strong>${reason.value ? ` <span${dirAttrs(reason.value)}>${esc(reason.value)}</span>` : ""}</p>
 		${toolCard(normalizeTool(item.tool))}
-		${relationships.length > 0 ? `<div class="author-tool-card__relationships" aria-label="${esc(t("authors.relationshipsForTool", "Relationships for $1", item.tool?.title || item.tool?.name))}">${relationships.map((/** @type {any} */ relationship) => relationshipTrustMarkup(relationship)).join("")}</div>` : ""}
 	</div>`;
 }
 
