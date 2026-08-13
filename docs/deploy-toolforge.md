@@ -115,6 +115,35 @@ Test: after restart, visit `/v1/debug/forwarded/` again from the same IP. It
 should now show `403 Forbidden` (the route is no longer registered). The rate
 limiter is now active.
 
+## MCP server
+
+The `/mcp` endpoint (POST only) exposes catalog discovery as a stateless HTTP MCP
+server for use in LLM workflows. It requires the same ProxyFix configuration as
+the facets endpoints, but uses its own rate limit of 60 requests per rolling
+minute per client IP (separate from the 120-per-minute facets limit).
+
+**Testing conformance locally:**
+
+1. Run the Flask app locally with `export TOOLHUB_INSECURE_COOKIES=1 && python
+proxy/app.py`.
+2. Run the official MCP inspector client (node 18+):
+
+```bash
+npx @modelcontextprotocol/inspector --cli --transport http \
+  --method tools/list http://localhost:8000/mcp
+npx @modelcontextprotocol/inspector --cli --transport http \
+  --method tools/call --tool-name search_tools --tool-arg query=citation \
+  http://localhost:8000/mcp
+npx @modelcontextprotocol/inspector --cli --transport http \
+  --method prompts/list http://localhost:8000/mcp
+```
+
+3. Verify valid JSON-RPC responses with the correct protocol version
+   (`2026-07-28` or legacy `2025-*-*` depending on the client).
+
+After deploy, re-run these commands against `https://toolhub-evolved.toolforge.org/mcp`
+to verify it is live.
+
 ## Updating after a change
 
 ```sh

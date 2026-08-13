@@ -69,6 +69,29 @@ technology, repository context, and review warnings, then emits deterministic
 assessment scores with evidence-backed recommendations. Raw source files are not
 stored.
 
+## MCP server
+
+Toolhub Evolved exposes catalog discovery as a stateless HTTP MCP server for use
+in LLM-based workflows. Any MCP-capable client can add the endpoint and access
+four tools plus a prior-art-review prompt.
+
+```bash
+claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolforge.org/mcp
+```
+
+**Tools** — all read-only, no authentication:
+
+- **`search_tools(query, limit=10)`** — relevance-ranked search across ~4,500 tools via upstream Toolhub (elasticsearch-backed). Keep queries short (2-3 content words).
+- **`facet_tools(...)`** — filter tools by technical signals (scanned dependencies, APIs, detected technology) or catalog metadata (type, keywords, wikis, licenses). Results include adoption counts.
+- **`list_facet_values(type)`** — list distinct values of one facet type, adoption-ranked. Call before `facet_tools` to learn what values exist.
+- **`get_tool(name)`** — fetch one tool's full canonical Toolhub record by exact name.
+
+**Prompt**:
+
+- **`prior-art-review`** — guided workflow to evaluate greenfield tool ideas. The prompt characterizes the idea, retrieves via search and facets, and reports findings in three sections: build/reuse/differentiate, adjacent tools, and recommended stack (ranked by adoption). Includes caveat instructions about coverage and facet limitations.
+
+The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and earlier) and the newer 2026-07-28 stateless revision. Rate-limited to 60 requests per rolling minute per client IP; no session cookies. See [`docs/deploy-toolforge.md`](docs/deploy-toolforge.md) for deployment notes and conformance testing with the official MCP inspector.
+
 ## Repository layout
 
 ```
