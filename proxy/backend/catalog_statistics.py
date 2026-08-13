@@ -15,6 +15,9 @@ from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
     Person,
+    PersonIdentifier,
+    ToolhubAccountProjection,
+    ToolinfoAuthorBinding,
     ToolinfoSource,
     ToolinfoSourceAttestation,
     ToolPersonRelationship,
@@ -97,6 +100,61 @@ def _recency_histogram(values: list[Any], now: datetime) -> list[dict[str, Any]]
         )
     )
     return rows
+
+
+def _attribution_funnel(
+    session: Session,
+    labels: set[str],
+    publishable_person_ids: set[int],
+) -> dict[str, Any]:
+    """Classify unresolved labels by the rule that could still resolve them.
+
+    Outcome counts say how many labels are unresolved. They cannot say
+    whether the reconciler is merely behind or has reached the limit of its
+    rules, which are different problems with different fixes. This partitions
+    every label by the strongest local match available, so a large
+    ``noLocalMatch`` reads as a rule ceiling rather than a backlog.
+
+    Matching mirrors the reconciler's own precedence and normalization: an
+    exact Toolhub username is what ``discover_identity_candidates`` tries
+    first, and a current handle on a publishable person is what source
+    attestation binds through. No external lookups happen here.
+    """
+    account_counts: Counter[str] = Counter(
+        session.execute(select(ToolhubAccountProjection.normalized_username)).scalars()
+    )
+    handle_people: dict[str, set[int]] = {}
+    for person_id, normalized in session.execute(
+        select(PersonIdentifier.person_id, PersonIdentifier.normalized_value).where(
+            PersonIdentifier.is_current.is_(True),
+            PersonIdentifier.namespace.in_((people_index.NS_WIKI_USERNAME, people_index.NS_TOOLFORGE_USERNAME)),
+        )
+    ):
+        if person_id in publishable_person_ids and normalized:
+            handle_people.setdefault(normalized, set()).add(person_id)
+    counts = Counter()
+    for label in labels:
+        accounts = account_counts.get(label, 0)
+        if accounts == 1:
+            counts["exactToolhubAccount"] += 1
+        elif accounts > 1:
+            counts["ambiguousToolhubAccount"] += 1
+        elif len(handle_people.get(label, ())) == 1:
+            counts["verifiedHandleOnly"] += 1
+        else:
+            counts["noLocalMatch"] += 1
+    bindings = list(
+        session.execute(select(ToolinfoAuthorBinding).where(ToolinfoAuthorBinding.withdrawn_at.is_(None))).scalars()
+    )
+    return {
+        "distinctLabels": len(labels),
+        "exactToolhubAccount": counts["exactToolhubAccount"],
+        "ambiguousToolhubAccount": counts["ambiguousToolhubAccount"],
+        "verifiedHandleOnly": counts["verifiedHandleOnly"],
+        "noLocalMatch": counts["noLocalMatch"],
+        "sourceBindings": dict(sorted(Counter(row.status for row in bindings).items())),
+        "sourceBindingMethods": dict(sorted(Counter(row.method for row in bindings if row.method).items())),
+    }
 
 
 def _coverage(count: int, total: int) -> dict[str, int]:
@@ -234,6 +292,7 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "unresolvedLabels": len(unresolved_labels),
             "unresolvedTools": len({row.tool_name for row in unresolved_rows if row.tool_name in tool_names}),
         },
+        "attribution": _attribution_funnel(session, unresolved_labels, publishable_person_ids),
         "sources": {
             "total": len(sources),
             "validFeeds": sum(source.valid for source in sources),
@@ -259,6 +318,8 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "verifiedMaintainer": "A current maintainer relationship backed by confirmed access evidence.",
             "coreMetadata": "Title, description, tool URL, and at least one listed author are present.",
             "dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
+            "noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
+            "exactToolhubAccount": "Unresolved labels matching exactly one official Toolhub username.",
         },
     }
 
