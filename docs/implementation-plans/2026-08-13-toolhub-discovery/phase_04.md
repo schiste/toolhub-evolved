@@ -62,7 +62,7 @@ from flask import Flask
 
 import backend
 from backend import db, security, tool_facets, v1_facets
-from backend.models import CanonicalToolCache, SourceAnalysisReport, User, utcnow
+from backend.models import CanonicalToolCache, CatalogFacetValue, SourceAnalysisReport, User, utcnow
 
 
 @pytest.fixture
@@ -81,6 +81,21 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+def _facet(s, tool, field, value, label, bp):
+    """Seed a facet row the way catalog_projection writes them."""
+    s.add(
+        CatalogFacetValue(
+            tool_name=tool,
+            field=field,
+            value=value.casefold(),
+            label=label,
+            provenance=[{"source": "repository_analysis"}],
+            confidence_basis_points=bp,
+            refreshed_at=utcnow(),
+        )
+    )
 
 
 def _seed(s):
@@ -106,19 +121,9 @@ def _seed(s):
                 stale_until=utcnow() + timedelta(hours=2),
             )
         )
-    tool_facets.replace_analyzer_facets(
-        s,
-        "sfedits",
-        {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}],
-         "apis": [{"value": "wikidata-query-service", "confidence": 0.94}]},
-        source_report_id=1,
-    )
-    tool_facets.replace_analyzer_facets(
-        s,
-        "cite-checker",
-        {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}]},
-        source_report_id=2,
-    )
+    _facet(s, "sfedits", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9500)
+    _facet(s, "sfedits", "wikimedia_api", "wikidata-query-service", "Wikidata Query Service", 9400)
+    _facet(s, "cite-checker", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 8000)
 
 
 def test_mcp_rate_limiter_trips_and_clears():
@@ -451,10 +456,7 @@ def test_facet_tools_limit_never_exceeds_serializer_cap(client):
                 )
             )
             s.add(SourceAnalysisReport(tool_name=name, report={}, user_id=user.id))
-            tool_facets.replace_analyzer_facets(
-                s, name, {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.9}]},
-                source_report_id=i + 10,
-            )
+            _facet(s, name, "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9000)
     payload = json.loads(
         _call_tool(client, "facet_tools", {"dependency": ["pywikibot"], "limit": 9999})["result"]["content"][0]["text"]
     )
@@ -489,7 +491,6 @@ def test_tool_call_errors(client):
 ```python
 from backend import canonical_tools, db, v1_facets
 from backend import tool_facets as facets_backend
-from backend.models import FACET_TYPES
 
 # The serializer truncates at canonical_tools.MAX_QUERY_NAMES (=50 today,
 # canonical_tools.py:23,294); exceeding it yields husk records with empty
@@ -588,14 +589,6 @@ def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
     with db.session_scope() as s:
         filters: dict[str, list[str]] = {}
-        declared: dict[str, list[str]] = {}
-        for param, field in v1_facets.DECLARED_FILTER_PARAMS.items():
-            raw_values = arguments.get(param)
-            if not isinstance(raw_values, list):
-                continue
-            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
-            if requested:
-                declared[field] = requested
         for param, facet_type in v1_facets.FILTER_PARAMS.items():
             raw_values = arguments.get(param)
             if not isinstance(raw_values, list):
@@ -615,15 +608,15 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
             filters[facet_type] = sorted(
                 {str(v).strip().casefold() for v in values if str(v).strip()}
             )
-        if not filters and not declared:
+        if not filters:
             raise _ToolError(
                 "supply at least one filter: dependency, api, technology (detected), "
                 "or tool_type, keyword, wiki, license (declared)"
             )
         matches = facets_backend.tools_matching_facets(
-            s, filters, declared_filters=declared, limit=_limit_from(arguments, 25)
+            s, filters, limit=_limit_from(arguments, 25)
         )
-        total = facets_backend.count_matching(s, filters, declared_filters=declared)
+        total = facets_backend.count_matching(s, filters)
         disclosed = v1_facets.coverage(s)
     matched_by_tool = {m.tool_name: m.matched for m in matches}
     return {
@@ -637,7 +630,7 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
     facet_type = str(arguments.get("type") or "").strip().casefold()
-    if facet_type not in FACET_TYPES:
+    if facet_type not in set(v1_facets.FILTER_PARAMS.values()):
         raise _ToolError(f"type must be one of: {', '.join(sorted(FACET_TYPES))}")
     # Through the same cached accessor as the REST route (Phase 3 Task 3) —
     # this tool is the fan-out surface the cache exists for.

@@ -19,10 +19,10 @@
 - Blueprint pattern: `proxy/backend/v1_statistics.py:9` creates `Blueprint("v1_statistics", __name__)`; routes decorate with `@..._bp.route("/v1/...")`; `proxy/backend/__init__.py:91-110` registers each blueprint. Follow exactly.
 - Canonical payloads come from `canonical_tools.tools_by_name(names)` → `{name: {"toolName", "record", ...}}` (`canonical_tools.py:270-301`). The canonical `record` holds `title`, `description`, `url`, `tool_type`, `repository`, `deprecated`, `keywords`.
 - Total-tool count: count of `CanonicalToolCache` rows. Scanned-tool count: `tool_facets.scanned_tool_count(s)` (Phase 1).
-- Facet vocabulary spans TWO tables (design decision 2026-08-13, see phase_01's Verified facts):
-  - **Detected** (`ToolSignalFacet`, `FACET_TYPES` in `models.py`): `dependency`, `wikimedia_api`, `detected_technology` — analyzer-derived, only for tools with a scanned repo.
-  - **Declared** (`CatalogFacetValue`, `catalog_projection.FACET_FIELDS`): `tool_type`, `keywords`, `wiki`, `technology`, `license`, `tasks`, `audiences`, `ui_language` — projected from the effective merged record, available for the whole catalog.
-  `tool_facets.tools_matching_facets` / `count_matching` take `declared_filters=` for the second family (phase_01 Task 3b) and intersect both.
+- **One facet table** (`CatalogFacetValue`), holding two families of `field` values (design revised 2026-08-13 — see phase_01's "Design history"):
+  - **Detected** (emitted from the latest analysis report by `catalog_projection`): `dependency`, `wikimedia_api`, `detected_technology` — only present for tools with a scanned repo.
+  - **Declared** (projected from the effective merged record, `catalog_projection.FACET_FIELDS`): `tool_type`, `keywords`, `wiki`, `technology`, `license`, `tasks`, `audiences`, `ui_language` — present for the whole catalog.
+  `tool_facets.tools_matching_facets` / `count_matching` take ONE `filters` dict spanning both families; there is no cross-table query and no `declared_filters=` parameter.
   **Coverage nuance this creates:** declared filters are NOT coverage-limited, detected ones are. A response's `coverage` block therefore describes only the detected side; say so rather than implying the whole query was coverage-limited.
 - Response envelope conventions: see `/v1/canonical/tools/` (`v1.py:525-550`) — jsonify'd dict, camelCase keys for derived metadata.
 
@@ -49,7 +49,7 @@ from flask import Flask
 
 import backend
 from backend import db, security, tool_facets
-from backend.models import CanonicalToolCache, utcnow
+from backend.models import CanonicalToolCache, CatalogFacetValue, utcnow
 
 
 @pytest.fixture
@@ -64,6 +64,21 @@ def app():
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+def _facet(s, tool, field, value, label, bp):
+    """Seed a facet row the way catalog_projection writes them."""
+    s.add(
+        CatalogFacetValue(
+            tool_name=tool,
+            field=field,
+            value=value.casefold(),
+            label=label,
+            provenance=[{"source": "repository_analysis"}],
+            confidence_basis_points=bp,
+            refreshed_at=utcnow(),
+        )
+    )
 
 
 def _seed(s):
@@ -93,21 +108,12 @@ def _seed(s):
                 stale_until=utcnow() + timedelta(hours=2),
             )
         )
-    tool_facets.replace_analyzer_facets(
-        s,
-        "sfedits",
-        {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.95}],
-         "apis": [{"value": "wikidata-query-service", "confidence": 0.94}],
-         "technology": [{"value": "Python", "confidence": 0.64}]},
-        source_report_id=1,
-    )
-    tool_facets.replace_analyzer_facets(
-        s,
-        "cite-checker",
-        {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.8}],
-         "technology": [{"value": "JavaScript", "confidence": 0.64}]},
-        source_report_id=2,
-    )
+    _facet(s, "sfedits", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9500)
+    _facet(s, "sfedits", "wikimedia_api", "wikidata-query-service", "Wikidata Query Service", 9400)
+    _facet(s, "sfedits", "detected_technology", "python", "Python", 6400)
+    _facet(s, "sfedits", "tool_type", "bot", "bot", 10000)
+    _facet(s, "cite-checker", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 8000)
+    _facet(s, "cite-checker", "detected_technology", "javascript", "JavaScript", 6400)
 
 
 from backend import v1_facets
@@ -152,7 +158,7 @@ Create `proxy/backend/v1_facets.py`:
 """Public read-only facet discovery endpoints.
 
 Answers "which tools carry signal X" (dependencies, Wikimedia APIs,
-technologies, tool types) from the ToolSignalFacet index. Every response
+technologies) plus declared metadata, from the catalog_facet_values index. Every response
 carries coverage metadata: analyzer facets exist only for tools whose source
 repository has been scanned, so an empty result must never read as "no tool
 does this."
@@ -169,24 +175,24 @@ from backend.models import FACET_TYPES, CanonicalToolCache
 
 v1_facets_bp = Blueprint("v1_facets", __name__)
 
-# Query parameter name -> facet_type. Kept explicit so URL surface and DB
+# Query parameter name -> CatalogFacetValue.field. Kept explicit so URL surface and DB
 # vocabulary can evolve independently.
-# Query parameter -> ToolSignalFacet.facet_type (analyzer-detected signals).
-FILTER_PARAMS = {
+# Query parameter -> CatalogFacetValue.field. One table, but two families
+# with different coverage: every tool has declared metadata, only scanned
+# tools have detected signals. DETECTED_PARAMS is the subset the coverage
+# caveat applies to.
+DETECTED_PARAMS = {
     "dependency": "dependency",
     "api": "wikimedia_api",
     "technology": "detected_technology",
 }
-# Query parameter -> CatalogFacetValue.field (declared catalog metadata).
-# Separate map because these live in a different table with different
-# coverage: every tool has declared metadata, only scanned tools have
-# detected signals.
-DECLARED_FILTER_PARAMS = {
+DECLARED_PARAMS = {
     "tool_type": "tool_type",
     "keyword": "keywords",
     "wiki": "wiki",
     "license": "license",
 }
+FILTER_PARAMS = {**DETECTED_PARAMS, **DECLARED_PARAMS}
 DEFAULT_LIMIT = 25
 # Hard-capped by the canonical serializer: tools_by_name truncates its input
 # to MAX_QUERY_NAMES (canonical_tools.py:23,294), so asking for more would
@@ -318,10 +324,7 @@ def test_facets_tools_limit_never_exceeds_serializer_cap(client):
                     stale_until=utcnow() + timedelta(hours=2),
                 )
             )
-            tool_facets.replace_analyzer_facets(
-                s, name, {"dependencies": [{"value": "pypi:pywikibot", "confidence": 0.9}]},
-                source_report_id=i,
-            )
+            _facet(s, name, "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9000)
     data = client.get(f"/v1/facets/tools/?dependency=pywikibot&limit=9999").get_json()
     assert len(data["tools"]) <= ct.MAX_QUERY_NAMES
     assert all(t["title"] for t in data["tools"])  # no husk records
@@ -370,10 +373,10 @@ def dependency_values(s: Session, raw: list[str]) -> list[str]:
             continue
         expanded.extend(
             s.execute(
-                select(tool_facets.ToolSignalFacet.value)
+                select(CatalogFacetValue.value)
                 .where(
-                    tool_facets.ToolSignalFacet.facet_type == "dependency",
-                    tool_facets.ToolSignalFacet.value.like(f"%:{clean}"),
+                    CatalogFacetValue.field == "dependency",
+                    CatalogFacetValue.value.like(f"%:{clean}"),
                 )
                 .distinct()
             ).scalars()
@@ -391,16 +394,7 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
         capped = DEFAULT_LIMIT
     with db.session_scope() as s:
         filters: dict[str, list[str]] = {}
-        declared: dict[str, list[str]] = {}
         applied: dict[str, list[str]] = {}
-        # Declared filters first; same emptiness rule, different table.
-        for param, field in DECLARED_FILTER_PARAMS.items():
-            raw_values = [v for raw in request.args.getlist(param) for v in raw.split(",")]
-            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
-            if not requested:
-                continue
-            declared[field] = requested
-            applied[param] = requested
         for param, facet_type in FILTER_PARAMS.items():
             raw_values = [v for raw in request.args.getlist(param) for v in raw.split(",")]
             requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
@@ -420,13 +414,11 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
             # Echo under the caller's parameter name so responses round-trip
             # into new requests without knowing internal facet-type names.
             applied[param] = cleaned or requested
-        if not filters and not declared:
+        if not filters:
             return jsonify({"error": "at least one facet filter is required"}), 400
-        matches = tool_facets.tools_matching_facets(
-            s, filters, declared_filters=declared, limit=capped
-        )
+        matches = tool_facets.tools_matching_facets(s, filters, limit=capped)
         # True total, not page size: 50-of-50 and 50-of-800 must differ.
-        total = tool_facets.count_matching(s, filters, declared_filters=declared)
+        total = tool_facets.count_matching(s, filters)
         disclosed_coverage = coverage(s)
     matched_by_tool = {m.tool_name: m.matched for m in matches}
     return jsonify(
@@ -443,7 +435,7 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
 def v1_facets_values() -> Response | tuple[Response, int]:
     """Top distinct values for one facet type, ranked by tool adoption."""
     facet_type = str(request.args.get("type") or "").strip().casefold()
-    if facet_type not in FACET_TYPES:
+    if facet_type not in set(FILTER_PARAMS.values()):
         return jsonify({"error": f"type must be one of {sorted(FACET_TYPES)}"}), 400
     raw_limit = request.args.get("limit", "")
     try:
@@ -465,7 +457,7 @@ def v1_facets_values() -> Response | tuple[Response, int]:
 
 (Before Task 3 lands the caching, implement `cached_facet_values` as a thin uncached wrapper with the same signature so this route's contract doesn't change when caching arrives.)
 
-In `dependency_values`, import `ToolSignalFacet` from `backend.models` directly (add it to the module's import block) rather than reaching through `tool_facets`. The name is deliberately public: Phase 4's MCP `facet_tools` handler calls it too.
+In `dependency_values`, import `CatalogFacetValue` from `backend.models` directly (add it to the module's import block). The name is deliberately public: Phase 4's MCP `facet_tools` handler calls it too.
 
 Register the blueprint in `proxy/backend/__init__.py`: add the import and `app.register_blueprint(v1_facets_bp)` next to the existing `v1_statistics` registration (match its exact style, lines 91-110).
 
@@ -523,7 +515,7 @@ In `docs/deploy-toolforge.md`, document the procedure: open `https://toolhub-evo
 
 Test: monkeypatch `facet_rate_limited` to `True`, assert 429 from both routes (the fixture already calls `security.clear_rate_limits()`).
 
-**Note on `/v1/facets/values/?type=`:** the accepted vocabulary is the union of the detected types (`FACET_TYPES`) and the declared fields (`DECLARED_FILTER_PARAMS` values); dispatch to `tool_facets.facet_value_counts` or an equivalent `CatalogFacetValue` counter accordingly, and label each response with which family it came from (add `"family": "detected" | "declared"`) so a caller can tell whether the coverage caveat applies to it. The 400-on-unknown-type behavior and the bounded-plus-`totalValues` contract are unchanged.
+**Note on `/v1/facets/values/?type=`:** the accepted vocabulary is `FILTER_PARAMS`' values (detected plus declared); all served by `tool_facets.facet_value_counts`; label each response with which family it came from (add `"family": "detected" | "declared"`) so a caller can tell whether the coverage caveat applies to it. The 400-on-unknown-type behavior and the bounded-plus-`totalValues` contract are unchanged.
 
 **Step 3: Cached value counts.** Add a cached accessor to `v1_facets.py` that both the REST route and Phase 4's MCP tool call:
 
@@ -532,7 +524,7 @@ def cached_facet_values(facet_type: str, *, limit: int) -> dict[str, Any]:
     """Value counts + truncation info, cached per worker for 15 minutes."""
 ```
 
-The function's FIRST action clamps `limit` to `[1, tool_facets.MAX_VALUE_RESULTS]` — before the cache lookup — so hostile `?limit=` values cannot mint one cache entry per distinct integer on a public route. Deliberate simplification, stated for reviewers: this is a **per-worker module dict** (keyed by `(facet_type, clamped_limit)` — a bounded keyspace of 4 types × 500 limits, timestamped, `VALUES_MAX_AGE = timedelta(minutes=15)`, plus a `clear_cache()` helper for tests) — NOT `catalog_statistics.py`'s cross-worker `ApiCacheMeta`-row-plus-advisory-lock machinery. The underlying query is one bounded GROUP BY over an indexed table; N workers each refreshing it every 15 minutes is fine, and the DB-row idiom's complexity buys nothing here. The returned dict carries `values` (from `tool_facets.facet_value_counts(s, facet_type, limit=limit)`) and `totalValues` (from `tool_facets.count_facet_values`), so responses disclose truncation. Tests call `clear_cache()` in the fixture (alongside `clear_rate_limits()`) and cover the cached path (second call returns the same object without a query — monkeypatch `facet_value_counts` to count invocations) and the expiry path (monkeypatch the module's clock source).
+The function's FIRST action clamps `limit` to `[1, tool_facets.MAX_VALUE_RESULTS]` — before the cache lookup — so hostile `?limit=` values cannot mint one cache entry per distinct integer on a public route. Deliberate simplification, stated for reviewers: this is a **per-worker module dict** (keyed by `(facet_type, clamped_limit)` — a bounded keyspace of ~11 fields × 500 limits, timestamped, `VALUES_MAX_AGE = timedelta(minutes=15)`, plus a `clear_cache()` helper for tests) — NOT `catalog_statistics.py`'s cross-worker `ApiCacheMeta`-row-plus-advisory-lock machinery. The underlying query is one bounded GROUP BY over an indexed table; N workers each refreshing it every 15 minutes is fine, and the DB-row idiom's complexity buys nothing here. The returned dict carries `values` (from `tool_facets.facet_value_counts(s, facet_type, limit=limit)`) and `totalValues` (from `tool_facets.count_facet_values`), so responses disclose truncation. Tests call `clear_cache()` in the fixture (alongside `clear_rate_limits()`) and cover the cached path (second call returns the same object without a query — monkeypatch `facet_value_counts` to count invocations) and the expiry path (monkeypatch the module's clock source).
 
 **Step 4: Run the touched tests, then the full suite + coverage. Lint and commit:**
 
