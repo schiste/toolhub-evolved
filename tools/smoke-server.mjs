@@ -15,7 +15,11 @@ const tools = [
 		title: "Toolforge admin",
 		description: "Administrative interface for Toolforge maintainers.",
 		url: "https://admin.toolforge.org/",
-		author: [{ name: "Bryan Davis", url: "https://www.mediawiki.org/wiki/User:BD808" }],
+		author: [
+			{ name: "Bryan Davis", url: "https://www.mediawiki.org/wiki/User:BD808" },
+			{ name: "Grace Hopper" },
+			{ name: "Katherine Johnson with an exceptionally long display name" }
+		],
 		keywords: ["toolforge", "admin", "cloud"],
 		audiences: ["developer", "admin"],
 		tasks: ["manage", "deploy"],

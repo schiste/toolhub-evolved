@@ -40,6 +40,35 @@ test.describe("deterministic app smoke", () => {
 		await expect(page.locator("#account .spinner")).toHaveCount(0);
 	});
 
+	test("multi-author cards disclose every linked author without opening quick view", async ({ page }) => {
+		await page.addInitScript(() => localStorage.setItem("toolhub-whats-new-never", "1"));
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto(new URL("/search", smoke.url).href);
+		const card = page.locator('[data-tool="toolforge-admin"]');
+		const authors = card.locator(".tcard__authors");
+		const summary = authors.locator("summary");
+
+		await expect(summary).toContainText("by Bryan Davis, Grace Hopper +1");
+		await expect(authors.locator(".tcard__authors-panel")).not.toBeVisible();
+		await summary.click();
+		await expect(authors).toHaveJSProperty("open", true);
+		await expect(page.locator("#qv")).not.toBeVisible();
+		const links = authors.locator(".tcard__authors-panel a");
+		await expect(links).toHaveCount(3);
+		await expect(links.nth(0)).toHaveAttribute("href", "/by/Bryan%20Davis");
+		await expect(links.nth(1)).toHaveAttribute("href", "/by/Grace%20Hopper");
+		await expect(links.nth(2)).toHaveAttribute(
+			"href",
+			"/by/Katherine%20Johnson%20with%20an%20exceptionally%20long%20display%20name"
+		);
+		const panelBox = await authors.locator(".tcard__authors-panel").boundingBox();
+		expect(panelBox).not.toBeNull();
+		expect(panelBox.x).toBeGreaterThanOrEqual(0);
+		expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(390);
+		const { violations } = await new AxeBuilder({ page }).include('[data-tool="toolforge-admin"]').analyze();
+		expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
+	});
+
 	test("a failed optional command-palette chunk does not block the route", async ({ page }) => {
 		await page.route("**/lib/organisms/command-palette.js*", (route) => route.fulfill({ status: 503 }));
 		await page.goto(new URL("/people", smoke.url).href);

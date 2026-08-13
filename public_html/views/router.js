@@ -415,7 +415,20 @@ const SPINNER_DELAY = 250;
  * @returns {void}
  */
 function commitView(viewEl, view, path) {
+	const openDisclosures =
+		path === lastPath
+			? new Set(
+					$$(`[data-route-disclosure][open]`, viewEl)
+						.map((element) => element.getAttribute("data-route-disclosure"))
+						.filter(Boolean)
+				)
+			: new Set();
 	viewEl.innerHTML = view.html;
+	for (const disclosure of $$(`[data-route-disclosure]`, viewEl)) {
+		if (openDisclosures.has(disclosure.getAttribute("data-route-disclosure"))) {
+			/** @type {HTMLDetailsElement} */ (disclosure).open = true;
+		}
+	}
 	viewEl.setAttribute("aria-busy", "false");
 	document.body.classList.toggle("on-home", path === "/");
 	document.title = view.title || "Toolhub";

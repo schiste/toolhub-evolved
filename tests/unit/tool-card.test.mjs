@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { toolCard, CARD_TAG_LIMIT } from "../../public_html/lib/organisms/tool-card.js";
+import { toolCard, CARD_AUTHOR_TEXT_LIMIT, CARD_TAG_LIMIT } from "../../public_html/lib/organisms/tool-card.js";
 import { dirAttrs, esc } from "../../public_html/lib/core/dom.js";
 import { updatedTimeTag } from "../../public_html/lib/core/i18n.js";
 import { completeness } from "../../public_html/lib/core/signals.js";
@@ -178,6 +178,36 @@ test("toolCard exposes separate navigation targets for title, owner, and tags", 
 	assert.ok(html.includes('class="tag" href="/search?keywords__term=alpha"'));
 });
 
+test("toolCard discloses every linked author without overflowing the byline", () => {
+	const html = toolCard({
+		...base,
+		authors: ["Ada Lovelace", "Grace Hopper", "Katherine Johnson with an exceptionally long display name"]
+	});
+	assert.ok(
+		html.includes('<details class="tcard__authors health-popover" data-route-disclosure="tool-authors:my tool">')
+	);
+	assert.ok(html.includes('aria-label="Show all 3 authors"'));
+	assert.ok(html.includes('<span class="tcard__authors-text" dir="auto">Ada Lovelace, Grace Hopper +1</span>'));
+	assert.ok(html.includes('<a href="/by/Ada%20Lovelace" dir="auto">Ada Lovelace</a>'));
+	assert.ok(html.includes('<a href="/by/Grace%20Hopper" dir="auto">Grace Hopper</a>'));
+	assert.ok(
+		html.includes(
+			'<a href="/by/Katherine%20Johnson%20with%20an%20exceptionally%20long%20display%20name" dir="auto">Katherine Johnson with an exceptionally long display name</a>'
+		)
+	);
+	assert.equal((html.match(/<li><a href="\/by\//g) || []).length, 3);
+});
+
+test("toolCard keeps a single author as a direct link and removes duplicate author labels", () => {
+	const single = toolCard({ ...base, authors: ["Ada Lovelace"] });
+	assert.ok(!single.includes('class="tcard__authors"'));
+	assert.ok(single.includes('href="/by/Ada%20Lovelace"'));
+
+	const deduplicated = toolCard({ ...base, authors: ["Ada Lovelace", "ada lovelace", "Grace Hopper"] });
+	assert.ok(deduplicated.includes('aria-label="Show all 2 authors"'));
+	assert.equal((deduplicated.match(/<li><a href="\/by\//g) || []).length, 2);
+});
+
 test("toolCard renders unknown health as a dash in the metric row", () => {
 	const html = toolCard(base);
 	assert.ok(
@@ -237,4 +267,5 @@ test("toolCard renders attached health score and confirmed maintainer byline", (
 
 test("CARD_TAG_LIMIT export value", () => {
 	assert.equal(CARD_TAG_LIMIT, 2);
+	assert.equal(CARD_AUTHOR_TEXT_LIMIT, 42);
 });

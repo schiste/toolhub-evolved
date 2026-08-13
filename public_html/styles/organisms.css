@@ -1003,6 +1003,78 @@
 	font-size: var(--fs-micro);
 	font-weight: 600;
 }
+.tcard__authors {
+	display: block;
+	min-width: 0;
+	margin-top: var(--space-0-75);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.tcard__authors-summary {
+	display: flex;
+	align-items: center;
+	gap: var(--space-1);
+	min-width: 0;
+	color: var(--color-text-muted);
+	cursor: pointer;
+	list-style: none;
+}
+.tcard__authors-summary::-webkit-details-marker {
+	display: none;
+}
+.tcard__authors-summary::after {
+	content: "▾";
+	flex: 0 0 auto;
+	font-size: var(--fs-micro);
+	transition: transform 0.15s ease;
+}
+.tcard__authors[open] .tcard__authors-summary::after {
+	transform: rotate(180deg);
+}
+.tcard__authors-summary > span {
+	display: flex;
+	min-width: 0;
+	gap: var(--space-1);
+}
+.tcard__authors-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.tcard__authors-summary:hover,
+.tcard__authors-summary:focus-visible {
+	color: var(--color-progressive);
+}
+.tcard__authors-summary:focus-visible {
+	outline: 2px solid var(--color-progressive);
+	outline-offset: 2px;
+}
+.tcard__authors-panel {
+	width: min(300px, calc(100vw - var(--space-6)));
+}
+.tcard__authors-panel strong {
+	display: block;
+	margin-bottom: var(--space-2);
+	font-size: var(--fs-caption);
+}
+.tcard__authors-panel ul {
+	display: grid;
+	gap: var(--space-1);
+	max-height: 240px;
+	margin: var(--space-0);
+	padding: var(--space-0);
+	overflow-y: auto;
+	list-style: none;
+}
+.tcard__authors-panel :where(a) {
+	display: block;
+	padding: var(--space-1) var(--space-2);
+	overflow-wrap: anywhere;
+}
+.tcard__authors-panel :where(a:hover, a:focus-visible) {
+	background: var(--color-surface-muted);
+}
 .tcard__desc {
 	color: var(--color-text-secondary);
 	font-size: var(--fs-caption);

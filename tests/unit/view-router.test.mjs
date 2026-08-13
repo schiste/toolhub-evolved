@@ -624,8 +624,9 @@ test("render: first load shows the spinner, then commits, sets on-home and focus
 	}
 });
 
-test("render: re-rendering the same path keeps the current page (no spinner) and a missing title/mount/h1 are tolerated", async () => {
-	document.body.innerHTML = '<main id="view" aria-busy="false">PREV</main>';
+test("render: a same-path repaint preserves open disclosures without a spinner or refocus", async () => {
+	document.body.innerHTML =
+		'<main id="view" aria-busy="false"><details data-route-disclosure="tool-authors:demo" open><summary>Old authors</summary></details></main>';
 	window.history.replaceState({}, "", "/"); // same as lastPath "/"
 	const d = deferred();
 	home.viewHome.mockReturnValue(d.promise);
@@ -634,14 +635,18 @@ test("render: re-rendering the same path keeps the current page (no spinner) and
 	const p = router.render();
 	// path === lastPath → the busy/loading block is skipped entirely: the old content stays
 	// and aria-busy is never flipped to "true" (kills `if (path !== lastPath)` → `if (true)`).
-	assert.equal(viewEl.innerHTML, "PREV");
+	assert.match(viewEl.innerHTML, /Old authors/);
 	assert.equal(viewEl.getAttribute("aria-busy"), "false");
 
 	// title "" → falls back to "Toolhub"; no mount; no <h1> → focus falls back to the view element.
 	await settleDynamicImports();
-	d.resolve({ title: "", html: "<p>no heading</p>" });
+	d.resolve({
+		title: "",
+		html: '<details data-route-disclosure="tool-authors:demo"><summary>New authors</summary></details><details data-route-disclosure="tool-authors:other"><summary>Other</summary></details>'
+	});
 	await p;
-	assert.equal(viewEl.innerHTML, "<p>no heading</p>");
+	assert.equal(document.querySelector('[data-route-disclosure="tool-authors:demo"]').open, true);
+	assert.equal(document.querySelector('[data-route-disclosure="tool-authors:other"]').open, false);
 	assert.equal(document.title, "Toolhub");
 	assert.equal(viewEl.getAttribute("tabindex"), null); // path === lastPath → no re-focus
 });
