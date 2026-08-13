@@ -86,6 +86,9 @@ def test_extract_facets_tolerates_malformed_report() -> None:
     assert (  # noqa: S101
         tool_facets.extract_facets({"dependencies": "nope", "apis": [None, 7]}) == []
     )
+    # Test bad confidence values (non-numeric)
+    result = tool_facets.extract_facets({"dependencies": [{"value": "pypi:test", "confidence": "not-a-number"}]})
+    assert result == [("dependency", "pypi:test", 0.0)]  # noqa: S101
 
 
 def test_replace_analyzer_facets_replaces_prior_rows() -> None:
@@ -180,6 +183,34 @@ def test_set_tool_type_facet_no_op_path() -> None:
         assert row.updated_at == first_updated_at  # noqa: S101
 
 
+def test_set_tool_type_facet_empty_tool_name() -> None:
+    """Verify set_tool_type_facet handles empty tool name gracefully."""
+    with db.session_scope() as s:
+        tool_facets.set_tool_type_facet(s, "", {"tool_type": "bot"})
+
+    with db.session_scope() as s:
+        rows = s.query(ToolSignalFacet).all()
+        assert len(rows) == 0  # noqa: S101
+
+
+def test_tools_matching_facets_empty_filters() -> None:
+    """Verify tools_matching_facets handles empty filter dict."""
+    _seed_facets()
+    with db.session_scope() as s:
+        result = tool_facets.tools_matching_facets(s, {})
+        assert result == []  # noqa: S101
+        result = tool_facets.tools_matching_facets(s, {"dependency": []})
+        assert result == []  # noqa: S101
+
+
+def test_count_matching_empty_filters() -> None:
+    """Verify count_matching handles empty filter dict."""
+    _seed_facets()
+    with db.session_scope() as s:
+        assert tool_facets.count_matching(s, {}) == 0  # noqa: S101
+        assert tool_facets.count_matching(s, {"dependency": []}) == 0  # noqa: S101
+
+
 def _report_user(s: object) -> int:
     """SourceAnalysisReport.user_id is NOT NULL (models.py:1061); seed a user.
 
@@ -270,3 +301,6 @@ def test_count_matching_reports_true_total() -> None:
         widened = {"dependency": [], "wikimedia_api": ["wikidata-query-service"]}
         assert tool_facets.count_matching(s, widened) == 0  # noqa: S101
         assert tool_facets.tools_matching_facets(s, widened, limit=10) == []  # noqa: S101
+        # No matches for a non-existent value
+        assert tool_facets.count_matching(s, {"dependency": ["nonexistent"]}) == 0  # noqa: S101
+        assert tool_facets.tools_matching_facets(s, {"dependency": ["nonexistent"]}) == []  # noqa: S101
