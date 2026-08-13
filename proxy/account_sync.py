@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 import requests
 from sqlalchemy import delete, func, select
 
-from backend import DEFAULT_DB_URL, db, people_index, toolhub
+from backend import db, job_runner, people_index, toolhub
 from backend.models import ToolhubAccountProjection, ToolhubAccountSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -413,8 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         default=_env_float("ACCOUNT_SYNC_MIN_INTERVAL_SECONDS", DEFAULT_MIN_INTERVAL_SECONDS),
     )
     args = parser.parse_args(argv)
-    db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    db.init_schema()
+    job_runner.configure()
     runner = run_complete if args.complete else run
     kwargs = {"page_size": args.page_size, "min_interval_seconds": args.min_interval}
     if not args.complete:
