@@ -20,7 +20,7 @@ from urllib.parse import quote, unquote, urlparse
 import requests
 from sqlalchemy import and_, or_, select
 
-from backend import toolhub
+from backend import canonical_tools, toolhub
 from backend.models import ToolAuthorClaim, ToolAuthorKey, User, utcnow
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
@@ -708,21 +708,8 @@ def parse_toolsadmin_maintainers(html: str) -> list[str]:
 
 
 def toolforge_names_from_toolhub_tool(tool_name: str, tool: dict) -> list[str]:
-    """Infer possible Toolforge tool names from a Toolhub record."""
-    names: list[Any] = []
-    if tool_name.startswith("toolforge-"):
-        names.append(tool_name.removeprefix("toolforge-"))
-    for url_key in ("url", "api_url"):
-        url = clean_string(tool.get(url_key))
-        host = urlparse(url).hostname or ""
-        if host.endswith(".toolforge.org"):
-            names.append(host.removesuffix(".toolforge.org"))
-        path_parts = [part for part in urlparse(url).path.split("/") if part]
-        if "tools" in path_parts and "id" in path_parts:
-            id_index = path_parts.index("id") + 1
-            if id_index < len(path_parts):
-                names.append(path_parts[id_index])
-    return dedupe_strings(names)
+    """Compatibility wrapper for canonical Toolforge project inference."""
+    return canonical_tools.toolforge_project_names(tool_name, tool)
 
 
 def tool_name_from_official_write(

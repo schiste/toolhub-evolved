@@ -25,6 +25,7 @@ MAX_SEARCH_RESULTS = 50
 MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
 MAX_RECORD_RESULTS = 5000
+TOOLSADMIN_HOST = "toolsadmin.wikimedia.org"
 
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - untrusted official API JSON
@@ -37,6 +38,54 @@ def _path(url: str) -> str:
 
 def _path_parts(url: str) -> list[str]:
     return [unquote(part) for part in _path(url).strip("/").split("/") if part]
+
+
+def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> list[str]:
+    """Return Toolforge projects proven by one canonical Toolhub record.
+
+    Toolhub names are user-supplied catalog identifiers, so the conventional
+    ``toolforge-`` prefix is useful but not universal. Toolforge deployment
+    hosts and Toolsadmin project URLs provide equally strong project aliases.
+    """
+    candidates: list[str] = []
+    clean_tool_name = _clean_name(tool_name)
+    if clean_tool_name.casefold().startswith("toolforge-"):
+        candidates.append(clean_tool_name[len("toolforge-") :])
+    source = record if isinstance(record, dict) else {}
+    for key in ("url", "api_url"):
+        raw_url = str(source.get(key) or "").strip()
+        parsed = urlparse(raw_url)
+        host = (parsed.hostname or "").casefold()
+        if host.endswith(".toolforge.org"):
+            candidates.append(host.removesuffix(".toolforge.org"))
+        if host == TOOLSADMIN_HOST:
+            parts = [unquote(part) for part in parsed.path.split("/") if part]
+            for index in range(len(parts) - 2):
+                if parts[index : index + 2] == ["tools", "id"]:
+                    candidates.append(parts[index + 2])
+                    break
+    names: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        clean = _clean_name(candidate)
+        normalized = clean.casefold()
+        if clean and normalized not in seen:
+            seen.add(normalized)
+            names.append(clean)
+    return names
+
+
+def names_by_toolforge_project(s: Session) -> dict[str, tuple[str, ...]]:
+    """Index canonical Toolhub names by strongly inferred Toolforge project."""
+    index: dict[str, set[str]] = {}
+    rows = s.execute(select(CanonicalToolCache.tool_name, CanonicalToolCache.record)).all()
+    for tool_name, record in rows:
+        for project in toolforge_project_names(tool_name, record):
+            index.setdefault(project.casefold(), set()).add(tool_name)
+    return {
+        project: tuple(sorted(tool_names, key=lambda value: (value.casefold(), value)))
+        for project, tool_names in index.items()
+    }
 
 
 def _is_tool_record(value: Any) -> bool:  # noqa: ANN401 - untrusted official API JSON

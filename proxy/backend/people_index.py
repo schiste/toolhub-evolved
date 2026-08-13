@@ -33,6 +33,7 @@ from backend.models import (
     ToolPersonRelationship,
     ToolRecord,
     ToolRelationshipEvidence,
+    ToolSummaryCache,
     UnresolvedAttributionEvidence,
     User,
     utcnow,
@@ -695,6 +696,9 @@ def replace_source_evidence(
         rows.append(row)
     s.flush()
     resolve_tool_relationships(s, clean_tool)
+    summary = s.get(ToolSummaryCache, clean_tool)
+    if summary is not None:
+        s.delete(summary)
     return rows
 
 

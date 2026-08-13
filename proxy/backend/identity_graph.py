@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
-from backend import people_index
+from backend import canonical_tools, people_index
 from backend.models import (
     Person,
     PersonAccountBinding,
@@ -349,8 +349,11 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
             )
         ).scalars()
     }
+    canonical_names = canonical_tools.names_by_toolforge_project(session)
     by_tool: dict[str, list[dict[str, Any]]] = {}
     unbound = 0
+    canonical_relationships = 0
+    fallback_relationships = 0
     for membership in session.execute(select(ToolforgeMembershipProjection)).scalars():
         account = accounts.get(membership.uid_number)
         binding = bindings.get(membership.uid_number)
@@ -361,26 +364,32 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
         if person is None:
             unbound += 1
             continue
-        catalog_tool_name = f"toolforge-{membership.tool_name}"
-        by_tool.setdefault(catalog_tool_name, []).append(
-            {
-                "display_name": person.display_name or account.uid,
-                "toolforge_uid_number": account.uid_number,
-                "toolforge_username": account.uid,
-                "relationship_type": "maintainer",
-                "method": "toolforge_ldap_membership",
-                "evidence_key": account.uid_number,
-                "verification_status": "verified",
-                "confidence": 100,
-                "evidence_payload": {
-                    "toolforgeUid": account.uid,
-                    "toolforgeUidNumber": account.uid_number,
-                    "toolforgeToolName": membership.tool_name,
-                    "identityBindingMethod": binding.proof_method,
-                },
-                "checked_at": membership.last_seen_at,
-            }
-        )
+        matched_names = canonical_names.get(membership.tool_name.casefold(), ())
+        catalog_tool_names = matched_names or (f"toolforge-{membership.tool_name}",)
+        canonical_relationships += len(matched_names)
+        fallback_relationships += int(not matched_names)
+        for catalog_tool_name in catalog_tool_names:
+            by_tool.setdefault(catalog_tool_name, []).append(
+                {
+                    "display_name": person.display_name or account.uid,
+                    "toolforge_uid_number": account.uid_number,
+                    "toolforge_username": account.uid,
+                    "relationship_type": "maintainer",
+                    "method": "toolforge_ldap_membership",
+                    "evidence_key": account.uid_number,
+                    "verification_status": "verified",
+                    "confidence": 100,
+                    "evidence_payload": {
+                        "toolforgeUid": account.uid,
+                        "toolforgeUidNumber": account.uid_number,
+                        "toolforgeToolName": membership.tool_name,
+                        "canonicalToolName": catalog_tool_name,
+                        "toolMappingMethod": "canonical_project_alias" if matched_names else "conventional_fallback",
+                        "identityBindingMethod": binding.proof_method,
+                    },
+                    "checked_at": membership.last_seen_at,
+                }
+            )
     previous_tools = set(
         session.execute(
             select(ToolRelationshipEvidence.tool_name).where(
@@ -399,7 +408,12 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
                 by_tool.get(tool_name, []),
             )
         )
-    return {"membershipRelationships": projected, "unboundMemberships": unbound}
+    return {
+        "membershipRelationships": projected,
+        "canonicalMembershipRelationships": canonical_relationships,
+        "fallbackMembershipRelationships": fallback_relationships,
+        "unboundMemberships": unbound,
+    }
 
 
 def synchronize(session: Session) -> dict[str, int]:
