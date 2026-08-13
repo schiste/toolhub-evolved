@@ -28,7 +28,6 @@ from backend import (
     canonical_tools,
     catalog_projection,
     db,
-    identity_graph,
     maintainer_index,
     people_index,
 )
@@ -78,18 +77,10 @@ def run_once() -> list[MigrationResult]:
         ),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
         MigrationResult("people immutable ids and account links", _backfill_people_identity()),
-        MigrationResult("external account bindings", _backfill_account_bindings()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
-
-
-def _backfill_account_bindings() -> int:
-    """Hydrate local users and materialize every safely provable account binding."""
-    with db.session_scope() as s:
-        result = identity_graph.synchronize(s)
-        return int(result["toolhubBindings"]) + int(result["verified"]) + int(result["usersHydrated"])
 
 
 def _clean_resolver_identity_claims() -> int:
