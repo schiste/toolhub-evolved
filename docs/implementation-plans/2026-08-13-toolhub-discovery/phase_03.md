@@ -8,7 +8,7 @@
 
 **Tech Stack:** Flask 3 blueprints, pytest via Flask `test_client` (pattern: `tests/proxy/test_backend.py:143-154`).
 
-**Scope:** Phase 3 of 5 from `docs/design-plans/2026-08-13-toolhub-discovery.md`. Depends on Phase 1 (and benefits from Phase 2's keyword-rich records, but does not require it).
+**Scope:** Phase 3 from `docs/design-plans/2026-08-13-toolhub-discovery.md`. Depends on Phase 1 only — Phase 2 was superseded (see phase_02.md); idea-search is delegated to upstream Toolhub in Phase 4.
 
 **Codebase verified:** 2026-08-13.
 

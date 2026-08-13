@@ -501,9 +501,12 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "name": "search_tools",
         "description": (
-            "Relevance-ranked full-text search over all ~4,500 Wikimedia tools in the "
-            "Toolhub catalog (titles, descriptions, keywords). Use several phrasings for "
-            "concept searches; results cover the full catalog."
+            "Relevance-ranked search over all ~4,500 Wikimedia tools in the Toolhub "
+            "catalog, served by Toolhub's own search index. Handles sentence-shaped "
+            "concept queries as well as keywords, so describe the idea rather than "
+            "guessing keywords; still worth trying 2-3 phrasings. Covers the full "
+            "catalog. If the response has degraded=true, upstream search was "
+            "unavailable and these are weaker substring matches - say so in your report."
         ),
         "inputSchema": {
             "type": "object",
@@ -576,14 +579,39 @@ def _limit_from(arguments: dict[str, Any], default: int) -> int:
 
 
 def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Idea-similarity search, delegated to upstream Toolhub.
+
+    Upstream is Elasticsearch-backed and handles the sentence-shaped queries
+    an LLM composes ("find unsourced statements needing references"); the
+    local canonical search is substring matching and cannot. public_api_get
+    carries the compliant User-Agent and the shared ApiCache (same path as
+    catalog_sync.py:292). Falls back to the local cache only when upstream
+    is unavailable, and says so in the payload so the caller can caveat it.
+    """
     query = str(arguments.get("query") or "").strip()
     if not query:
         raise _ToolError("query must be a non-empty string")
-    results = canonical_tools.search(query, limit=_limit_from(arguments, 10))
-    names = [payload["toolName"] for payload in results]
-    # "returned", not "total": search has no cheap true-total and a capped
-    # page labeled "total" reads as "only N tools exist" to an LLM.
-    return {"tools": v1_facets.tool_summaries(names, matched_by_tool={}), "returned": len(names)}
+    limit = _limit_from(arguments, 10)
+    degraded = False
+    try:
+        payload = toolhub.public_api_get(
+            "/api/search/tools/", params={"q": query, "page_size": limit}
+        )
+        results = payload.get("results") if isinstance(payload, dict) else None
+        names = [str(r.get("name")) for r in (results or []) if isinstance(r, dict) and r.get("name")]
+    except (OSError, requests.RequestException, toolhub.ToolhubAPIError):
+        degraded = True
+        names = [row["toolName"] for row in canonical_tools.search(query, limit=limit)]
+    # "returned", not "total": a capped page labeled "total" reads as
+    # "only N tools exist" to an LLM.
+    return {
+        "tools": v1_facets.tool_summaries(names, matched_by_tool={}),
+        "returned": len(names),
+        # True when upstream search was unreachable and this fell back to
+        # local substring matching, which ranks far worse. The prior-art
+        # report must disclose it rather than present degraded hits as ranked.
+        "degraded": degraded,
+    }
 
 
 def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
