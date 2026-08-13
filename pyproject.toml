@@ -21,6 +21,12 @@ ignore = [
   "ISC001"
 ]
 
+# This repo deliberately uses bare SPDX license tags, not per-file copyright
+# notices (see LICENSE for the license text). Point CPY001 at that convention
+# so it enforces the header every file actually carries.
+[tool.ruff.lint.flake8-copyright]
+notice-rgx = 'SPDX-License-Identifier: GPL-3\.0-or-later'
+
 [tool.ruff.format]
 line-ending = "lf"
 

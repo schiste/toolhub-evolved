@@ -419,7 +419,7 @@ class ToolforgeMaintainerProvider:
         fresh = {string_key(row.author_name): row for row in rows if not _is_expired(row.expires_at)}
         return [fresh[key] for name in author_names if (key := string_key(name)) in fresh]
 
-    def _record_verified(  # noqa: PLR0913 - claim evidence is clearer as named arguments.
+    def _record_verified(  # noqa: PLR0913, PLR0917 - claim evidence is clearer as named arguments.
         self,
         s: Session,
         user: User,
@@ -451,7 +451,7 @@ class ToolforgeMaintainerProvider:
             for author_name in author_names
         ]
 
-    def _record_failed(  # noqa: PLR0913 - claim evidence is clearer as named arguments.
+    def _record_failed(  # noqa: PLR0913, PLR0917 - claim evidence is clearer as named arguments.
         self,
         s: Session,
         user: User,
@@ -605,7 +605,7 @@ class SignedToolinfoProvider:
             key.toolhub_username = user.username
         return key
 
-    def _record_failure(  # noqa: PLR0913 - claim evidence is clearer as named arguments.
+    def _record_failure(  # noqa: PLR0913, PLR0917 - claim evidence is clearer as named arguments.
         self,
         s: Session,
         user: User,
