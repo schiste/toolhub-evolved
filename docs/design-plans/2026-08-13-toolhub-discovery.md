@@ -183,21 +183,22 @@ and there is no per-deployment identity to configure client-side.
 
 ### Facet index
 
-New table `ToolSignalFacet` in `proxy/backend/models.py`:
+**Superseded 2026-08-13 — no new table.** This design originally specified a
+`ToolSignalFacet` table; implementation found `catalog_facet_values` already
+exists (`CatalogFacetValue`, `(tool_name, field, value)`), materialized per
+tool by `catalog_projection._replace_facets` from the effective merged record,
+and that analysis reports are ALREADY one of the projection's inputs. Analyzer
+signals are therefore emitted into that table as three new `field` values —
+`dependency`, `wikimedia_api`, `detected_technology` — by a second, separately
+contained pass in the projection. See
+`docs/implementation-plans/2026-08-13-toolhub-discovery/phase_01.md`
+("Design history") for the disproof of the original rationale.
 
-```python
-tool_name: str            # matches CanonicalToolCache.tool_name
-facet_type: str           # 'dependency' | 'wikimedia_api' | 'technology' | 'tool_type'
-value: str                # normalized: 'pypi:pywikibot', 'wdqs', 'python', 'bot'
-confidence: float         # from analyzer; 1.0 for canonical-record facets
-source_report_id: int | None
-updated_at: datetime
-# unique (tool_name, facet_type, value); index (facet_type, value)
-```
-
-Populated two ways: an idempotent backfill over stored `SourceAnalysisReport`
-rows plus canonical `tool_type` values, and an incremental hook when
-`repository_scan.py` stores a new report. Dependency values are namespaced by
+Consequences for the rest of this design: there is no bespoke backfill job and
+no incremental hook — a completed scan already triggers reprojection
+(`repository_scan.py:309`), and `migrate.py` already refreshes projections on
+deploy; a `PROJECTION_VERSION` bump forces the one-time sweep. Queries are
+single-table. Dependency values are namespaced by
 ecosystem (`pypi:`, `npm:`, …); `wikimedia_api` values reuse the analyzer's
 detector names.
 
@@ -235,18 +236,18 @@ REST endpoints remain the primary contract; MCP wraps the same handlers.
 
 **Goal:** Analyzer output becomes queryable.
 
-**Components:**
-- `ToolSignalFacet` model in `proxy/backend/models.py`
-- Extraction/normalization from `SourceAnalysisReport` JSON + canonical
-  `tool_type`, in a new `proxy/backend/tool_facets.py`
-- Idempotent backfill entry point (Toolforge one-shot job in `jobs.yaml`)
-- Incremental hook in `proxy/repository_scan.py` report-store path
+**Components:** (revised 2026-08-13 — see the Facet index note above)
+- `ANALYZER_FACET_FIELDS` + `_analyzer_facets` + a separately-contained
+  `_emit_analyzer_facets` pass in `proxy/backend/catalog_projection.py`
+- Query helpers over `CatalogFacetValue` in `proxy/backend/tool_facets.py`
+- `PROJECTION_VERSION` bump to force the one-time catalog sweep
 
 **Dependencies:** none.
 
-**Done when:** backfill on a copy of production data populates facets for all
-stored reports; re-running changes nothing; unit tests cover extraction,
-normalization (ecosystem prefixes, API detector names), and idempotency.
+**Done when:** a previously-projected tool with a stored report gains analyzer
+facets after a projection refresh; a malformed report cannot cost a tool its
+declared facets nor fail its batch; unit tests cover extraction, normalization
+(ecosystem prefixes, API detector names), and idempotency.
 
 ### Phase 2: Ranked search
 
