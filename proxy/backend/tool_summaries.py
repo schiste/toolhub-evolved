@@ -45,6 +45,43 @@ MAINTAINER_COUNT_KEYS = ("counts", "healthCounts")
 HEALTH_POPOVER_KEYS = ("dimensions", "calculation", "sourceHealth")
 
 
+def _card_people(value: Any) -> list[dict[str, Any]]:  # noqa: ANN401 - materialized JSON input
+    """Project compact public relationship identities for card links."""
+    people = value if isinstance(value, list) else []
+    projected: list[dict[str, Any]] = []
+    for person in people:
+        if not isinstance(person, dict) or not str(person.get("id") or "").strip():
+            continue
+        relationships: list[dict[str, Any]] = []
+        for relationship in person.get("relationships") or []:
+            if not isinstance(relationship, dict) or relationship.get("type") not in {"author", "maintainer"}:
+                continue
+            observed_names = list(
+                dict.fromkeys(
+                    str(evidence.get("observedName") or "").strip()
+                    for evidence in relationship.get("evidence") or []
+                    if isinstance(evidence, dict) and str(evidence.get("observedName") or "").strip()
+                )
+            )
+            relationships.append(
+                {
+                    "type": relationship["type"],
+                    "status": str(relationship.get("status") or "unverified"),
+                    "observedNames": observed_names,
+                }
+            )
+        if not relationships:
+            continue
+        projected.append(
+            {
+                "id": str(person["id"]),
+                "displayName": str(person.get("displayName") or ""),
+                "relationships": relationships,
+            }
+        )
+    return projected
+
+
 def card_view(summary: dict[str, Any]) -> dict[str, Any]:
     """Project a stored summary down to what a tool card paints immediately.
 
@@ -53,9 +90,8 @@ def card_view(summary: dict[str, Any]) -> dict[str, Any]:
     never open — so that part is fetched after the route has rendered and
     patched into the panel in place.
 
-    What is left is the score, the grade, and the maintainer counts behind the
-    byline. The maintainer record and the popover payload are both dropped; the
-    people list alone is the largest block in a summary and no card reads it.
+    What is left is the score, the grade, the maintainer counts behind the
+    byline, and a compact identity projection used for author/maintainer links.
     """
     projected: dict[str, Any] = {key: value for key, value in summary.items() if key != "maintainer"}
     health = summary.get("health")
@@ -66,11 +102,15 @@ def card_view(summary: dict[str, Any]) -> dict[str, Any]:
         # hasConfirmedMaintainer() reads only the count block. Carry every count
         # block that exists, under its own name: the field is mid-rename from
         # `counts` to `healthCounts`, and a card that keeps the wrong one silently
-        # loses its confirmed-maintainer byline. Both are small; the bulk of a
-        # maintainer record is the people list, which no card reads.
+        # loses its confirmed-maintainer byline. Both are small. The full people
+        # and evidence records remain detail-only; cards get a compact identity
+        # projection with observed names for safe person links.
         projected["maintainer"] = {
             key: maintainer[key] for key in MAINTAINER_COUNT_KEYS if isinstance(maintainer.get(key), dict)
         }
+        people = _card_people(maintainer.get("people"))
+        if people:
+            projected["maintainer"]["people"] = people
     return projected
 
 
