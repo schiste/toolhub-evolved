@@ -160,11 +160,50 @@ def test_model_editorial_requires_exact_frozen_fact_evidence():
             },
             facts,
         )
+
+
+def test_model_editorial_resolves_only_unique_exact_tool_titles():
+    facts = [
+        {"name": "toolforge-example", "title": "Example Tool", "description": "Helps editors."},
+        {"name": "other", "title": "Shared title", "description": "First."},
+        {"name": "another", "title": "Shared title", "description": "Second."},
+    ]
+    accepted = digests.validate_editorial(
+        {
+            "introduction": "One useful tool arrived.",
+            "highlights": [
+                {
+                    "tool_name": "Example Tool",
+                    "blurb": "It helps editors.",
+                    "evidence_field": "description",
+                    "evidence": "Helps editors.",
+                }
+            ],
+        },
+        facts,
+    )
+    assert accepted["highlights"][0]["tool_name"] == "toolforge-example"
+
+    with pytest.raises(ValueError, match="unknown"):
+        digests.validate_editorial(
+            {
+                "introduction": "Ambiguous tool.",
+                "highlights": [
+                    {
+                        "tool_name": "Shared title",
+                        "blurb": "It does something.",
+                        "evidence_field": "description",
+                        "evidence": "First.",
+                    }
+                ],
+            },
+            facts,
+        )
     with pytest.raises(ValueError, match="links"):
         digests.validate_editorial(
             {
                 "introduction": "New tools.",
-                "highlights": [{"tool_name": "known", "blurb": "See https://malicious.invalid"}],
+                "highlights": [{"tool_name": "toolforge-example", "blurb": "See https://malicious.invalid"}],
             },
             facts,
         )
