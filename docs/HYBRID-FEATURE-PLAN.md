@@ -90,8 +90,10 @@ Author verification now uses provider-specific evidence rows rather than
 treating Toolhub author display names as proof. `AuthorNameProvider` records
 display-name matches as unverified candidates; `ToolforgeMembershipProvider`
 discovers Toolforge `tools.*` memberships through public LDAP so Evolved can
-fetch exact official `toolforge-*` Toolhub records; `ToolforgeMaintainerProvider`
-checks public Toolsadmin maintainer pages; `ToolhubWriteProvider` records
+map memberships to canonical Toolhub records; `ToolforgeMaintainerProvider`
+verifies only an exact SUL-bound LDAP account membership, while the paced
+Toolsadmin job retains public page labels as unresolved attribution unless the
+same complete LDAP proof independently resolves them; `ToolhubWriteProvider` records
 verification after a successful official Toolhub tool write by the same user;
 and `SignedToolinfoProvider` verifies signed `toolinfo.json` records against
 active `tool_author_keys` public keys. These claims improve Evolved provenance

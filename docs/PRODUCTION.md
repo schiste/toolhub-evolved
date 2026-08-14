@@ -59,14 +59,22 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   memberships become verified maintainer relationships only after the developer
   account is bound through an official Wikimedia global id or an authenticated
   account-control proof. LDAP membership is not canonical Toolhub authorship.
+  The projection stores LDAP `cn` as the Developer account name used by
+  `toolinfo.json`, LDAP `uid` as the distinct Unix shell login, and `uidNumber`
+  as the stable account key. One Wikimedia person may bind multiple Developer
+  accounts.
   My tools and public profiles read the same materialized relationship graph and
   never perform request-time author searches. Catalog-wide
   public maintainer evidence is backfilled by `proxy/maintainer_backfill.py`
-  from Toolsadmin maintainer pages into rebuildable local edges. Public identity
+  from Toolsadmin maintainer pages as unresolved attribution labels; a page label
+  becomes a verified edge only when it uniquely matches a projected LDAP account,
+  exact `tools.*` membership, and verified person binding. Public identity
   reconciliation looks up LDAP accounts by immutable
   `wikimediaGlobalAccountId`, retains the canonical
   `wikimediaGlobalAccountName`, and compares `tools.*` memberships with the
-  actual Toolforge tool name stored in the Toolsadmin evidence. Deployments run
+  canonical Toolhub tool aliases inferred from its name and URLs. Unmapped LDAP
+  memberships remain observable but never create invented `toolforge-*` catalog
+  records. Deployments run
   `proxy/public_identity_smoke.py` before reconciliation so an LDAP schema change
   cannot silently publish an unreconciled release. Display-name
   matches remain unverified, and other claims upgrade only through successful
