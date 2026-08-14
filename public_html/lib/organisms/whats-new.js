@@ -167,8 +167,16 @@ export async function initWhatsNew() {
 	});
 	releaseData = await backendGetJson("/data/deployments.json");
 	if (!releaseData) return;
-	if (whatsNewForced() || (!whatsNewNever() && !whatsNewCollapsed())) openWhatsNew();
-	else if (!whatsNewNever()) showCollapsedWhatsNew();
+	// A manifest with no releases is still a truthy object, so the guard above
+	// never caught it: a first visit opened a panel whose only content was
+	// "no release notes are available yet", and moved focus into it. The
+	// manifest ships empty in the repo and is filled in at deploy
+	// (tools/record_deployment.py), so that is the state of every checkout and
+	// every local run. Announce nothing until there is something to announce;
+	// an explicit ?whats-new=1 still opens the panel, empty state included.
+	const hasRelease = Boolean(latestDeployment());
+	if (whatsNewForced() || (hasRelease && !whatsNewNever() && !whatsNewCollapsed())) openWhatsNew();
+	else if (hasRelease && !whatsNewNever()) showCollapsedWhatsNew();
 }
 
 export function resetWhatsNewForTests() {
