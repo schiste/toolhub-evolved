@@ -30,6 +30,7 @@ def wikimedia_provider(global_id="160", username="Magnus Manske"):
 def toolforge_row(
     *,
     uid="magnus",
+    developer_username="Magnus",
     global_id="160",
     global_name="Magnus Manske",
     uid_number="3067",
@@ -38,6 +39,7 @@ def toolforge_row(
     return {
         "uid": [uid],
         "uidNumber": [uid_number],
+        "cn": [developer_username],
         "wikimediaGlobalAccountId": [global_id],
         "wikimediaGlobalAccountName": [global_name],
         "memberOf": [f"cn=tools.{tool},ou=servicegroups,dc=wikimedia,dc=org" for tool in tools],
@@ -58,6 +60,7 @@ def test_resolver_joins_global_identity_to_sul_bound_toolforge_account():
     assert resolved.toolforge is not None
     assert resolved.toolforge.uid == "magnus"
     assert resolved.toolforge.uid_number == "3067"
+    assert resolved.toolforge.developer_username == "Magnus"
     assert resolved.toolforge.tool_names == ("mix-n-match",)
 
 
@@ -135,7 +138,7 @@ def test_toolforge_lookup_queries_global_id_and_reads_stable_identity_fields(mon
     assert calls["search"] == (
         public_identity.TOOLFORGE_LDAP_BASE_DN,
         "(&(objectClass=posixAccount)(wikimediaGlobalAccountId=escaped:160))",
-        ["uid", "uidNumber", "wikimediaGlobalAccountId", "wikimediaGlobalAccountName", "memberOf"],
+        ["uid", "uidNumber", "cn", "wikimediaGlobalAccountId", "wikimediaGlobalAccountName", "memberOf"],
         2,
     )
     assert calls["unbind"] is True
@@ -157,6 +160,7 @@ def test_toolforge_lookup_global_accepts_scalar_ldap_attributes():
     row = {
         "uid": "magnus",
         "uidNumber": "3067",
+        "cn": "Magnus",
         "wikimediaGlobalAccountId": "160",
         "wikimediaGlobalAccountName": "Magnus Manske",
     }
@@ -166,6 +170,7 @@ def test_toolforge_lookup_global_accepts_scalar_ldap_attributes():
     assert identity is not None
     assert identity.uid == "magnus"
     assert identity.uid_number == "3067"
+    assert identity.developer_username == "Magnus"
     assert identity.tool_names == ()
 
 

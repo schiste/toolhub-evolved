@@ -27,6 +27,8 @@ TOOLFORGE_MEMBER_FILTER = "(&(objectClass=posixAccount)(memberOf=cn=project-tool
 LDAP_ATTRIBUTES = [
     "uid",
     "uidNumber",
+    "cn",
+    "createTimestamp",
     "wikimediaGlobalAccountId",
     "wikimediaGlobalAccountName",
     "sshPublicKey",
@@ -50,7 +52,7 @@ def _sync_error(message: str) -> ToolforgeAccountSyncError:
 
 
 def _invalid_account_error() -> ToolforgeAccountSyncError:
-    return _sync_error("Toolforge LDAP row lacked uid or uidNumber")
+    return _sync_error("Toolforge LDAP row lacked uid, uidNumber, or developer account name (cn)")
 
 
 def _ldap_unavailable_error() -> ToolforgeAccountSyncError:
@@ -85,7 +87,8 @@ def _values(value: Any) -> list[str]:  # noqa: ANN401 - LDAP values may be scala
 def _normalized(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     uid = _first(row.get("uid"))[:255]
     uid_number = _first(row.get("uidNumber"))[:64]
-    if not uid or not uid_number:
+    developer_username = _first(row.get("cn"))[:255]
+    if not uid or not uid_number or not developer_username:
         raise _invalid_account_error()
     memberships = sorted(set(public_identity.tool_names_from_member_dns(_values(row.get("memberOf")))))
     policies = {value.casefold() for value in _values(row.get("pwdPolicySubentry"))}
@@ -94,8 +97,11 @@ def _normalized(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
             "uid_number": uid_number,
             "uid": uid,
             "normalized_uid": uid.casefold(),
+            "developer_username": developer_username,
+            "normalized_developer_username": developer_username.casefold(),
             "wikimedia_global_user_id": _first(row.get("wikimediaGlobalAccountId"))[:64] or None,
             "wikimedia_global_name": _first(row.get("wikimediaGlobalAccountName"))[:255],
+            "ldap_created_at": _first(row.get("createTimestamp"))[:32],
             "ssh_key_count": len(_values(row.get("sshPublicKey"))),
             "disabled": DISABLED_POLICY.casefold() in policies,
         },
