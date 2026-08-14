@@ -150,6 +150,22 @@ def _url_validation(value: Any) -> dict[str, Any]:  # noqa: ANN401 - public meta
     return {"valid": True, "state": "syntax_valid"}
 
 
+def _casefold_deduped_list(raw: list[Any]) -> list[str]:
+    """Bound a curated list value, deduping casefolded but keeping the first spelling.
+
+    Facet rows are unique on the casefolded value, so "OCR" and "ocr" would
+    collide at projection time.
+    """
+    seen: set[str] = set()
+    clean: list[str] = []
+    for item in raw:
+        text = _clean_text(item)[:255]
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            clean.append(text)
+    return clean[:50]
+
+
 def validate_curation_patch(value: Any) -> tuple[dict[str, Any], list[dict[str, str]]]:  # noqa: ANN401
     """Bound and validate a proposed public correction before persistence."""
     if not isinstance(value, dict):
@@ -164,8 +180,7 @@ def validate_curation_patch(value: Any) -> tuple[dict[str, Any], list[dict[str, 
             if not isinstance(raw, list):
                 errors.append({"field": field, "message": "value must be a list"})
                 continue
-            clean = list(dict.fromkeys(_clean_text(item)[:255] for item in raw if _clean_text(item)))[:50]
-            patch[field] = clean
+            patch[field] = _casefold_deduped_list(raw)
             continue
         clean_value = _clean_text(raw)[:4000]
         if field in URL_FIELDS:
@@ -509,12 +524,17 @@ def _replace_facets(s: Any, name: str, record: dict, provenance: dict, now: date
     """
     s.execute(delete(CatalogFacetValue).where(CatalogFacetValue.tool_name == name))
 
-    # Emit declared facets from the effective merged record
+    # Emit declared facets from the effective merged record. Guard the
+    # (tool_name, field, value) unique constraint here too: values reach this
+    # point from several sources and a single case-variant pair would fail
+    # the whole refresh batch with an IntegrityError.
+    seen: set[tuple[str, str]] = set()
     for record_field, facet_field in FACET_FIELDS.items():
         for value in _values(record.get(record_field)):
             label = _clean_text(value)[:255]
-            if not label:
+            if not label or (facet_field, label.casefold()) in seen:
                 continue
+            seen.add((facet_field, label.casefold()))
             source_rows = [
                 item
                 for item in provenance.get(record_field, [])

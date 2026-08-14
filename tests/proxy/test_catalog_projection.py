@@ -135,6 +135,38 @@ def test_validate_curation_patch_bounds_fields_and_urls():
     assert {item["field"] for item in errors} == {"name", "url"}
 
 
+def test_case_variant_curated_keywords_do_not_break_the_refresh_batch():
+    """Facet rows are unique on the casefolded value; "OCR"/"ocr" must not collide."""
+    patch, errors = catalog_projection.validate_curation_patch({"keywords": ["OCR", "ocr", "maps"]})
+    assert patch == {"keywords": ["OCR", "maps"]} and errors == []
+
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add(_canonical("alpha"))
+        user = User(wm_sub="reviewer", username="Reviewer")
+        s.add(user)
+        s.flush()
+        s.add(
+            CatalogCuration(
+                tool_name="alpha",
+                created_by_user_id=user.id,
+                reviewed_by_user_id=user.id,
+                # Bypasses validate_curation_patch on purpose: rows persisted
+                # before that dedup existed still project through this path.
+                patch={"keywords": ["OCR", "ocr"]},
+                rationale="Case variants.",
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    summary = catalog_projection.refresh_tool_names(["alpha"])
+    assert summary["errors"] == 0
+    with db.session_scope() as s:
+        rows = s.query(CatalogFacetValue).filter_by(tool_name="alpha", field="keywords").all()
+    assert [(row.value, row.label) for row in rows] == [("ocr", "OCR")]
+
+
 def test_candidate_repair_is_versioned_and_idempotent():
     with db.session_scope() as s:
         s.add(_canonical("alpha"))
