@@ -295,13 +295,14 @@ def test_recent_cursor_scans_all_pages_until_previous_marker(monkeypatch):
     }
     monkeypatch.setattr(catalog_sync, "recent_page", lambda page=1: pages[page])
 
-    rows, latest = catalog_sync._recent_rows_since(previous)
+    scan = catalog_sync._recent_rows_since(previous)
 
-    assert [row["id"] for row in rows] == [3, 2]
-    assert latest == catalog_sync._marker({"id": 3, "timestamp": "newest"})
+    assert [row["id"] for row in scan.rows] == [3, 2]
+    assert scan.latest_marker == catalog_sync._marker({"id": 3, "timestamp": "newest"})
+    assert scan.complete is True
 
 
-def test_recent_cursor_gap_fails_without_advancing_marker(monkeypatch):
+def test_recent_cursor_backlog_checkpoints_without_advancing_marker(monkeypatch):
     previous = catalog_sync._marker({"id": 1, "timestamp": "old"})
     with db.session_scope() as s:
         s.add(
@@ -309,6 +310,7 @@ def test_recent_cursor_gap_fails_without_advancing_marker(monkeypatch):
                 key=catalog_sync.STATE_KEY,
                 cycles_completed=1,
                 recent_latest_marker=previous,
+                reconcile_last_at=catalog_sync.utcnow(),
             )
         )
     calls = []
@@ -318,14 +320,39 @@ def test_recent_cursor_gap_fails_without_advancing_marker(monkeypatch):
         lambda page=1: calls.append(page) or ([{"id": 1000 - page, "timestamp": str(page)}], True),
     )
 
-    with pytest.raises(catalog_sync.CatalogSyncError, match="safety limit"):
-        catalog_sync.run(sleep_fn=lambda _seconds: None)
+    summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
 
     assert calls == list(range(1, catalog_sync.MAX_RECENT_PAGES_PER_RUN + 1))
     with db.session_scope() as s:
         state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
         assert state.recent_latest_marker == previous
-        assert state.status == "error"
+        assert state.recent_scan_page == catalog_sync.MAX_RECENT_PAGES_PER_RUN
+        assert state.recent_scan_latest_marker == catalog_sync._marker({"id": 999, "timestamp": "1"})
+        assert state.recent_scan_boundary_marker == catalog_sync._marker({"id": 980, "timestamp": "20"})
+        assert state.status == "idle"
+    assert summary["recent_scan_complete"] == 0
+
+
+def test_recent_cursor_resumes_from_checkpoint_with_overlap(monkeypatch):
+    previous = catalog_sync._marker({"id": 1, "timestamp": "old"})
+    boundary = catalog_sync._marker({"id": 101, "timestamp": "boundary"})
+    latest = catalog_sync._marker({"id": 200, "timestamp": "latest"})
+    pages = {
+        4: ([{"id": 150, "timestamp": "overlap"}, {"id": 101, "timestamp": "boundary"}], True),
+        5: ([{"id": 100, "timestamp": "next"}, {"id": 1, "timestamp": "old"}], False),
+    }
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda page=1: pages[page])
+
+    scan = catalog_sync._recent_rows_since(
+        previous,
+        resume_page=5,
+        scan_latest_marker=latest,
+        boundary_marker=boundary,
+    )
+
+    assert [row["id"] for row in scan.rows] == [100]
+    assert scan.latest_marker == latest
+    assert scan.complete is True
 
 
 def test_steady_state_defers_reconciliation_until_interval(monkeypatch):
