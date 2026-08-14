@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 
 import requests
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend import api_cache, canonical_tools, db, token_crypto
 from backend.models import ToolhubToken, utcnow
@@ -149,22 +150,27 @@ def _expires_at(token_payload: dict[str, object]) -> datetime | None:
     return datetime.now(tz=UTC).replace(tzinfo=None) + timedelta(seconds=seconds)
 
 
-def save_grant(user_id: int, token_payload: dict[str, object]) -> None:
-    """Store or replace the official Toolhub OAuth grant for a local user."""
+def store_grant(s: Session, user_id: int, token_payload: dict[str, object]) -> None:
+    """Store or replace a grant inside the caller's account transaction."""
     access_token = token_crypto.encrypt(str(token_payload["access_token"]))
     refresh = token_payload.get("refresh_token")
+    row = s.get(ToolhubToken, user_id)
+    if row is None:
+        row = ToolhubToken(user_id=user_id, access_token=access_token)
+        s.add(row)
+    row.access_token = access_token
+    if refresh:
+        row.refresh_token = token_crypto.encrypt(str(refresh))
+    row.token_type = str(token_payload.get("token_type") or "Bearer")
+    row.scope = str(token_payload.get("scope") or SCOPES)
+    row.expires_at = _expires_at(token_payload)
+    row.updated_at = utcnow()
+
+
+def save_grant(user_id: int, token_payload: dict[str, object]) -> None:
+    """Store or replace the official Toolhub OAuth grant for a local user."""
     with db.session_scope() as s:
-        row = s.get(ToolhubToken, user_id)
-        if row is None:
-            row = ToolhubToken(user_id=user_id, access_token=access_token)
-            s.add(row)
-        row.access_token = access_token
-        if refresh:
-            row.refresh_token = token_crypto.encrypt(str(refresh))
-        row.token_type = str(token_payload.get("token_type") or "Bearer")
-        row.scope = str(token_payload.get("scope") or SCOPES)
-        row.expires_at = _expires_at(token_payload)
-        row.updated_at = utcnow()
+        store_grant(s, user_id, token_payload)
 
 
 def revoke_local_grant(user_id: int) -> None:

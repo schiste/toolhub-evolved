@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: toolhub-digests -->
 <!-- Release title: Toolhub Digests -->
-<!-- Source range: 0cd2a68..cc4f003 (24 commits) -->
+<!-- Source range: 0cd2a68..842d01e (42 commits) -->
 
 # Technical Release Notes
 
@@ -12,5 +12,5 @@
 - Exposes public edition APIs, local blog routes, per-cadence RSS feeds, authenticated subscription/status APIs, seven-day confirmation links, lifetime unsubscribe links, stable Wikimedia identity checks, bounded delivery retries, and per-subscription suspension without cross-channel impact.
 - Adds a compact responsive archive and human-scale edition layout, summary-only archive payloads, accessible subscription controls, localized English strings with translator documentation, immutable permalink and feed discovery metadata, and regression coverage for routes, rendering, confirmation, delivery, RSS, outbound guards, identity trust, and UTC period behavior.
 - Schedules publication at 06:15 UTC, delivery every five minutes, and an hourly audit. Job locks reclaim at twice each timeout; audit failures cover missing configuration, recent Qwen fallback, overdue generation, Meta/archive failure, exhausted delivery, and stale validated or queued work.
-- Supports operator-selected historical editions through an internal website-only publication state. These rows are visible to the local archive/detail API but remain excluded from Meta publication, RSS selection, and subscriber outbox creation; no preview workflow or automatic historical selector is exposed.
-- Freezes canonical author labels and current verified author/maintainer identities into each edition, exposes only grounded name arrays to Qwen, and renders Toolhub, direct-tool, author-index, and stable person links deterministically across HTML, wikitext, RSS content, email, and talk-page output. Unverified or expired relationship edges are filtered in the database query; malformed URLs, unsafe schemes, raw MediaWiki delimiters, whitespace, and non-publishable identities are excluded before the immutable snapshot is rendered.
+- Supports operator-selected historical editions through an internal website-only publication state excluded from Meta, RSS, and subscriber delivery, with no preview or automatic selector. Editions freeze canonical author labels and current verified author/maintainer identities, expose only grounded name arrays to Qwen, and render Toolhub, direct-tool, author-index, and stable-person links deterministically across every output; unverified or expired edges and unsafe identity/link data are excluded before the immutable snapshot is rendered.
+- Keeps OAuth account and encrypted-grant persistence atomic and independent from the derived people index. Transient database locks retry or return a controlled login error rather than HTTP 500, while the hourly identity-only worker completes remote registry requests before acquiring shared people/user row locks.

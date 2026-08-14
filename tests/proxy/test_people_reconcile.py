@@ -1483,6 +1483,34 @@ def test_run_rejects_an_unknown_mode():
             people_reconcile.run(s, mode="bogus-mode")
 
 
+def test_identities_only_run_resolves_remote_batch_before_people_writes(monkeypatch):
+    _configure()
+    events = []
+    monkeypatch.setattr(
+        people_reconcile,
+        "_resolve_identity_candidate_batch",
+        lambda *_args, **_kwargs: events.append("remote") or [],
+    )
+    monkeypatch.setattr(
+        people_index,
+        "refresh_identity_qualities",
+        lambda _session: events.append("people-write") or 0,
+    )
+
+    with db.session_scope() as s:
+        people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            registry_label_limit=0,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=False,
+        )
+
+    assert events == ["remote", "people-write"]
+
+
 def test_run_marks_the_row_failed_and_reraises_on_an_unexpected_error(monkeypatch):
     _configure()
     with db.session_scope() as s:
