@@ -11,12 +11,24 @@ from urllib.parse import quote, urlparse
 
 import requests
 
-from backend import digests
+from backend import digests, outbound
 from digest_regenerate import edition_argument
 
 DEFAULT_PUBLIC_BASE = "https://toolhub-evolved.toolforge.org"
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 SOURCE_TIMEOUT_SECONDS = 30
+SOURCE_POLICY = outbound.FetchPolicy(
+    schemes=frozenset({"https"}),
+    max_body_bytes=MAX_SOURCE_BYTES,
+    follow_redirects=True,
+    max_redirects=3,
+    timeout=SOURCE_TIMEOUT_SECONDS,
+)
+SOURCE_CALLER = outbound.Caller(
+    user_agent="toolhub-evolved/0.2 (LiftWing digest preflight)",
+    accept="application/json",
+    scheme_error="digest source must use HTTPS",
+)
 
 
 def clean_public_base(value: str) -> str:
@@ -46,12 +58,8 @@ def fetch_edition_facts(
     """Fetch one immutable public edition's frozen facts with a response bound."""
     client = session or requests.Session()
     url = f"{clean_public_base(public_base)}/v1/digests/{period.cadence}/{quote(period.key, safe='-')}/"
-    response = client.get(url, timeout=SOURCE_TIMEOUT_SECONDS)
-    response.raise_for_status()
-    if len(response.content) > MAX_SOURCE_BYTES:
-        message = f"public digest response exceeded {MAX_SOURCE_BYTES} bytes"
-        raise ValueError(message)
-    payload = response.json()
+    body = outbound.fetch_bounded(client, url, policy=SOURCE_POLICY, caller=SOURCE_CALLER)
+    payload = json.loads(body)
     tools = payload.get("tools") if isinstance(payload, dict) else None
     if not isinstance(tools, list) or not tools:
         message = f"public digest {period.cadence}:{period.key} contained no tools"
