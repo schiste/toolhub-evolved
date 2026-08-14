@@ -45,9 +45,16 @@ the frozen facts. The prompt asks Qwen for one concrete thematic introduction
 and active-voice highlights that explain what a tool lets someone do, avoiding
 title repetition, cadence boilerplate, vague praise, and promotional language.
 Daily editions require one validated entry for every supplied tool and label
-the section “Every new tool”; an omission, duplicate, or invented identifier rejects the model response. Weekly
-and monthly editions curate at most five highlights and retain every other tool
-in the complete compact index.
+the section “Every new tool”; an omission, duplicate, or invented identifier
+rejects the model response. Weekly and monthly editions curate at most five
+highlights and retain every other tool in the complete compact index. Daily
+inference therefore receives every tool in the closed UTC day. For busy weekly
+and monthly periods, inference receives a bounded set selected from evenly
+spaced period buckets, preferring records with richer citable metadata; the
+trusted renderer still includes every tool in the edition. Model input contains
+only bounded citation fields—never renderer-only URLs or person objects—and
+generation failures retain their sanitized HTTP or validation reason in the
+audit payload and operator error.
 Canonical author names and publishable resolved author and
 maintainer identities are frozen alongside the tool metadata. Qwen may mention
 those supplied names but never emits URLs. The deterministic renderer adds the

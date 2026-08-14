@@ -40,8 +40,13 @@ DEFAULT_LANGUAGE = "en"
 WEBSITE_ONLY_STATUS = "website_only"
 WEBSITE_VISIBLE_STATUSES = ("published", WEBSITE_ONLY_STATUS)
 LIFTWING_AUTHOR = "LiftWing Qwen"
-PROMPT_VERSION = "toolhub-digest-v4-editorial"
+PROMPT_VERSION = "toolhub-digest-v5-bounded-editorial"
 MAX_HIGHLIGHTS = 5
+MAX_MODEL_CANDIDATES = 24
+MAX_MODEL_FACTS_BYTES = 32_000
+MAX_MODEL_TEXT = 800
+MAX_MODEL_LIST_ITEMS = 6
+MAX_MODEL_LIST_ITEM = 120
 MAX_INTRODUCTION = 280
 MAX_INTRODUCTION_WORDS = 32
 MAX_BLURB = 220
@@ -466,11 +471,64 @@ def _fallback_editorial(facts: list[dict[str, Any]], cadence: str) -> dict[str, 
     }
 
 
-def _model_payload(facts: list[dict[str, Any]], cadence: str, model: str) -> dict[str, Any]:
+def _compact_model_fact(fact: dict[str, Any]) -> dict[str, Any]:
+    """Expose only bounded fields Qwen may cite; renderer-only links stay local."""
+    compact: dict[str, Any] = {"name": str(fact["name"])[:255]}
+    for field in EVIDENCE_FIELDS:
+        value = fact.get(field)
+        if isinstance(value, list):
+            items = [str(item).strip()[:MAX_MODEL_LIST_ITEM] for item in value if str(item).strip()]
+            if items:
+                compact[field] = items[:MAX_MODEL_LIST_ITEMS]
+        elif str(value or "").strip():
+            compact[field] = str(value).strip()[:MAX_MODEL_TEXT]
+    return compact
+
+
+def _fact_richness(fact: dict[str, Any]) -> tuple[int, int]:
+    """Rank candidates by usable evidence without making editorial judgments."""
+    populated = sum(bool(fact.get(field)) for field in EVIDENCE_FIELDS)
+    return populated, len(str(fact.get("description") or ""))
+
+
+def _period_candidates(facts: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+    """Choose metadata-rich representatives from evenly spaced period buckets."""
+    if len(facts) <= count:
+        return facts
+    candidates: list[dict[str, Any]] = []
+    for index in range(count):
+        start = index * len(facts) // count
+        end = (index + 1) * len(facts) // count
+        bucket = facts[start:end]
+        candidates.append(max(bucket, key=_fact_richness))
+    return candidates
+
+
+def _model_facts(facts: list[dict[str, Any]], cadence: str) -> list[dict[str, Any]]:
+    """Build a bounded inference set while daily retains every supplied tool."""
+    if cadence == "daily":
+        return [_compact_model_fact(fact) for fact in facts]
+    candidate_count = min(MAX_MODEL_CANDIDATES, len(facts))
+    while candidate_count > MAX_HIGHLIGHTS:
+        candidates = [_compact_model_fact(fact) for fact in _period_candidates(facts, candidate_count)]
+        encoded = json.dumps(candidates, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        if len(encoded) <= MAX_MODEL_FACTS_BYTES:
+            return candidates
+        candidate_count -= 1
+    return [_compact_model_fact(fact) for fact in _period_candidates(facts, candidate_count)]
+
+
+def _model_payload(
+    facts: list[dict[str, Any]], cadence: str, model: str, *, total_tool_count: int | None = None
+) -> dict[str, Any]:
+    supplied_facts = _model_facts(facts, cadence)
     highlight_contract = (
         "For a daily edition, highlights MUST contain exactly one object for every supplied tool; omit none. "
         if cadence == "daily"
-        else "For a weekly or monthly edition, highlights contains at most five objects. "
+        else (
+            "For a weekly or monthly edition, supplied tools are representative candidates selected across the full "
+            "period; highlights contains at most five objects and may name only supplied candidates. "
+        )
     )
     system = (
         "You are the concise human editor of the Toolhub digest for Wikimedia contributors scanning in under a minute. "
@@ -490,12 +548,22 @@ def _model_payload(facts: list[dict[str, Any]], cadence: str, model: str) -> dic
         "claims, names, links, popularity, or endorsement. Never emit URLs: the trusted renderer adds the supplied "
         "Toolhub page, direct-tool, author, and maintainer links. Do not include analysis or think tags."
     )
-    user = json.dumps({"cadence": cadence, "language": "en", "tools": facts}, ensure_ascii=False, sort_keys=True)
+    user = json.dumps(
+        {
+            "cadence": cadence,
+            "language": "en",
+            "period_tool_count": total_tool_count if total_tool_count is not None else len(facts),
+            "candidate_count": len(supplied_facts),
+            "tools": supplied_facts,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     return {
         "model": model,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         "temperature": 0.2,
-        "max_tokens": min(4000, max(900, len(facts) * 180 if cadence == "daily" else 900)),
+        "max_tokens": min(4000, max(900, len(supplied_facts) * 180 if cadence == "daily" else 900)),
     }
 
 
@@ -623,7 +691,7 @@ def generate_editorial(facts: list[dict[str, Any]], cadence: str) -> tuple[dict[
         endpoint = clean_liftwing_endpoint(raw_endpoint, model=model)
         response = requests.post(
             endpoint,
-            json=_model_payload(facts, cadence, model),
+            json=_model_payload(facts, cadence, model, total_tool_count=len(facts)),
             headers=headers,
             timeout=max(1, int(os.environ.get("LIFTWING_TIMEOUT_SECONDS", MODEL_TIMEOUT_SECONDS))),
         )
@@ -635,7 +703,12 @@ def generate_editorial(facts: list[dict[str, Any]], cadence: str) -> tuple[dict[
             False,
             response_payload,
         )
-    except (OSError, TypeError, ValueError, requests.RequestException):
+    except (OSError, TypeError, ValueError, requests.RequestException) as exc:
+        diagnostic = clean_error(f"{type(exc).__name__}: {exc}")
+        if isinstance(response_payload, dict):
+            response_payload = {**response_payload, "_toolhub_generation_error": diagnostic}
+        else:
+            response_payload = {"_toolhub_generation_error": diagnostic}
         return _fallback_editorial(facts, cadence), model, True, response_payload
 
 
@@ -834,7 +907,10 @@ def _draft_edition(period: Period, *, require_model: bool) -> EditionDraft | Non
     source_hash = hashlib.sha256(source_json.encode()).hexdigest()
     editorial, model, used_fallback, response_payload = generate_editorial(facts, period.cadence)
     if require_model and used_fallback:
-        message = f"LiftWing Qwen did not produce valid editorial copy for {period.cadence}:{period.key}"
+        detail = (
+            response_payload.get("_toolhub_generation_error") if isinstance(response_payload, dict) else None
+        ) or "unknown generation failure"
+        message = f"LiftWing Qwen did not produce valid editorial copy for {period.cadence}:{period.key}: {detail}"
         raise RuntimeError(message)
     rendered_html, rendered_wikitext, rendered_text = _render(period, editorial, facts, used_fallback=used_fallback)
     return EditionDraft(
