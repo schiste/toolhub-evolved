@@ -306,6 +306,26 @@
 	font-size: 1.05rem;
 	line-height: 1.65;
 }
+.digest-tool__links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem 1rem;
+	margin: 0.75rem 0 0;
+}
+.digest-tool__links a {
+	font-size: 0.82rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.digest-entry .digest-tool__people {
+	font-size: 0.9rem;
+	margin: 0.35rem 0 0;
+}
+.digest-entry li > .digest-tool__links,
+.digest-entry li > .digest-tool__people {
+	margin-inline-start: 0;
+}
 .digest-entry footer {
 	color: var(--digest-muted);
 	font-size: 0.8rem;

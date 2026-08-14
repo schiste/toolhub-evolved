@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: toolhub-digests -->
 <!-- Release title: Toolhub Digests -->
-<!-- Source range: 0cd2a68..0f74dde (10 commits) -->
+<!-- Source range: 0cd2a68..7127e9b (12 commits) -->
 
 # What's New for Users
 
@@ -12,3 +12,4 @@
 - LiftWing's public Qwen 3.6 27B model writes the short editorial introduction and highlights from bounded Toolhub facts. Every highlight must retain verbatim supporting evidence—either the full metadata value or a substantial exact excerpt—and an exact unambiguous tool title is safely resolved to its canonical Toolhub id; invalid or unavailable model output falls back to deterministic factual copy instead of inventing claims.
 - Publication and delivery are restart-safe and observable: missed non-empty periods are recovered, deliveries retry without duplication, permanent recipient failures suspend only that subscription, and an hourly audit makes stalled publication or fallback generation visible to operators.
 - Three explicitly selected historical editions can be published as ordinary website entries to demonstrate the daily, weekly, and monthly formats. They credit LiftWing Qwen transparently and are not sent to Meta, RSS, email subscribers, or talk pages.
+- New digest editions identify catalog authors and verified maintainers when known, link each person to the appropriate Toolhub Evolved author or person page, and provide both the official Toolhub record and safe direct-tool link.
