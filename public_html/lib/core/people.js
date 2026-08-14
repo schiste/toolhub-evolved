@@ -118,9 +118,12 @@ export async function searchPeople(query) {
 /**
  * Ask the backend to resolve a legacy /by/{name} route under identity policy.
  * @param {string} query
+ * @param {{context?: "attribution"}} [options]
  */
-export function resolvePersonHandle(query) {
-	return backendGetJson(`/v1/people/resolve/?handle=${encodeURIComponent(query)}`);
+export function resolvePersonHandle(query, options = {}) {
+	const params = new URLSearchParams({ handle: query });
+	if (options.context) params.set("context", options.context);
+	return backendGetJson(`/v1/people/resolve/?${params}`);
 }
 
 /**

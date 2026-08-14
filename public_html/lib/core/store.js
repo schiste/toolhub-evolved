@@ -197,7 +197,7 @@ export function recentOwnerCacheDelete(name) {
 /**
  * Read a username-scoped browser copy of the account's resolved tools.
  * @param {string} username
- * @returns {{ tools: any[], updatedAt: number } | null}
+ * @returns {{ tools: any[], person?: AccountPerson, updatedAt: number } | null}
  */
 export function personalToolsCacheGet(username) {
 	try {
@@ -205,18 +205,22 @@ export function personalToolsCacheGet(username) {
 		const entry = all && typeof all === "object" ? all[username] : null;
 		if (!entry || !Array.isArray(entry.tools) || typeof entry.updatedAt !== "number") return null;
 		if (Date.now() - entry.updatedAt > PERSONAL_TOOLS_CACHE_MAX_AGE_MS) return null;
-		return { tools: entry.tools, updatedAt: entry.updatedAt };
+		const person =
+			entry.person && typeof entry.person.id === "string" && typeof entry.person.displayName === "string"
+				? entry.person
+				: undefined;
+		return { tools: entry.tools, person, updatedAt: entry.updatedAt };
 	} catch {
 		return null;
 	}
 }
 
-/** @param {string} username @param {any[]} tools */
-export function personalToolsCacheSet(username, tools) {
+/** @param {string} username @param {any[]} tools @param {AccountPerson | undefined} [person] */
+export function personalToolsCacheSet(username, tools, person) {
 	try {
 		const raw = JSON.parse(localStorage.getItem(PERSONAL_TOOLS_CACHE_KEY) || "{}");
 		const all = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-		all[username] = { tools: tools.slice(0, 200), updatedAt: Date.now() };
+		all[username] = { tools: tools.slice(0, 200), person, updatedAt: Date.now() };
 		const bounded = Object.fromEntries(
 			Object.entries(all)
 				.sort(([, a], [, b]) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))

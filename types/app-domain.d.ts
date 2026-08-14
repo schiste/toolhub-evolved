@@ -26,6 +26,12 @@ interface AccountToolRelationship {
 	isVerified?: boolean;
 }
 
+/** Stable public person identity attached to account-scoped tool results. */
+interface AccountPerson {
+	id: string;
+	displayName: string;
+}
+
 /** Cached automated discovery state for an owned Toolhub tool. */
 interface ToolinfoDiscovery {
 	status: string;

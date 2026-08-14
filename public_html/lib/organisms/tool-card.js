@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
-import { authorHref, toolHref } from "../core/routing.js";
+import { authorAttributionHref, authorHref, personHref, toolHref } from "../core/routing.js";
 import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
@@ -25,6 +25,18 @@ function authorNames(tool) {
 			seen.add(key);
 			return true;
 		});
+}
+
+/** @param {Tool} tool @param {string} name */
+function authorLink(tool, name) {
+	const record = (tool.authorObjs || []).find(
+		(author) =>
+			String(author?.name || "")
+				.trim()
+				.toLowerCase() === name.toLowerCase()
+	);
+	const handle = String(record?.wikiUsername || record?.developerUsername || "").trim();
+	return handle ? authorHref(handle) : authorAttributionHref(name);
 }
 
 /** @param {string} value */
@@ -76,7 +88,7 @@ function singleAuthorByline(tool, evolvedSummary, author) {
 		? t("toolCard.maintainerConfirmed", "$1, confirmed maintainer", maintainer)
 		: t("toolCard.maintainerUnconfirmed", "$1, maintainer not confirmed yet", maintainer);
 	const owner = hasOwner
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorHref(maintainer))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorLink(tool, maintainer))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">${t("toolCard.by", "by")} ${owner}</div>`;
 }
@@ -88,12 +100,25 @@ function authorByline(tool, evolvedSummary) {
 	const count = names.length;
 	const compact = compactAuthorNames(names);
 	const links = names
-		.map((name) => `<li><a href="${esc(authorHref(name))}"${dirAttrs(name)}>${esc(name)}</a></li>`)
+		.map((name) => `<li><a href="${esc(authorLink(tool, name))}"${dirAttrs(name)}>${esc(name)}</a></li>`)
 		.join("");
 	return `<details class="tcard__authors health-popover" data-route-disclosure="tool-authors:${esc(tool.name)}">
 		<summary class="tcard__authors-summary" aria-label="${esc(t("toolCard.showAllAuthors", "Show all $1 authors", count))}"><span>${t("toolCard.by", "by")} <span class="tcard__authors-text"${dirAttrs(compact)}>${esc(compact)}</span></span></summary>
 		<div class="tcard__authors-panel health-popover__panel"><strong>${t("toolCard.authors", "Authors")}</strong><ul role="list">${links}</ul></div>
 	</details>`;
+}
+
+/** @param {Tool} tool @param {{id: string, displayName: string}} person */
+function relationshipByline(tool, person) {
+	const roles = new Set(
+		(tool.accountRelationships || []).map(
+			(relationship) => relationship?.requestedRelationship || relationship?.type
+		)
+	);
+	const label = roles.has("maintainer")
+		? t("toolCard.maintainedBy", "Maintained by")
+		: t("toolCard.authoredBy", "Authored by");
+	return `<div class="tcard__maint">${label} <a class="tcard__maint-name tcard__maint-name--confirmed" href="${esc(personHref(person.id))}"><span class="tcard__maint-text"${dirAttrs(person.displayName)}>${esc(person.displayName)}</span></a></div>`;
 }
 
 /** @param {any} summary */
@@ -119,7 +144,7 @@ function healthCornerClass(summary) {
 
 /**
  * @param {Tool} tool
- * @param {{ rank?: number; popular?: boolean }} [opts]
+ * @param {{ rank?: number; popular?: boolean; relationshipPerson?: {id: string, displayName: string} }} [opts]
  * @returns {string}
  */
 export function toolCard(tool, opts = {}) {
@@ -167,7 +192,7 @@ export function toolCard(tool, opts = {}) {
 			${rank}${toolIcon(tool)}
 			<div class="tcard__heading">
 				<a class="tcard__title" href="${esc(toolHref(tool.name))}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</a>
-				${authorByline(tool, evolvedSummary)}
+				${opts.relationshipPerson?.id ? relationshipByline(tool, opts.relationshipPerson) : authorByline(tool, evolvedSummary)}
 			</div>
 		</div>
 		<p class="tcard__desc"${textAttrs(tool.description, tool.descriptionLanguage)}>${esc(tool.description)}</p>

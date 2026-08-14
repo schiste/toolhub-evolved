@@ -11,6 +11,10 @@ export function listHref(id) {
 export function authorHref(name) {
 	return `/by/${encodeURIComponent(name)}`;
 }
+/** A catalog author label, explicitly not asserted to be an account handle. @param {string} name */
+export function authorAttributionHref(name) {
+	return `${authorHref(name)}?context=attribution`;
+}
 /** @param {string} publicId */
 export function personHref(publicId) {
 	return `/people/${encodeURIComponent(publicId)}`;
