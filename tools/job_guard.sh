@@ -11,7 +11,11 @@ RESET=0
 # invocation forever, and because a skip exits 0 the failure mail never fires:
 # one killed run silently retires the job. Reclaiming a lock older than any
 # legitimate run makes that self-healing. Keep this above the job's own
-# timeout so a slow run is never mistaken for an abandoned one.
+# timeout so a slow run is never mistaken for an abandoned one: jobs.yaml sets
+# --stale-after to twice each job's timeout, since the platform kills at the
+# timeout and nothing alive can hold a lock past twice it. A value at or below
+# the timeout would be worse than none, reclaiming a lock from a run still
+# doing work. This default covers jobs that declare no timeout.
 STALE_AFTER=3600
 # Tripping the breaker used to be permanent: a transient upstream blip that
 # failed three runs retired the job until someone ran --reset by hand, and the

@@ -633,6 +633,14 @@ prints `{"locked": true}` and exits zero, because losing a race with the run
 already doing the work is a successful no-op. Three jobs whose flow genuinely
 differs call `job_runner.configure()` and keep their own summary and exit code.
 
+**Lock reclamation is derived, not guessed.** A pod killed at its timeout cannot
+run the trap that releases its guard lock, so every guarded job sets
+`--stale-after` to twice its own timeout: past that, no live run can still hold
+the lock. A value at or below the timeout is worse than none, since it would
+reclaim a lock from a run still working. Jobs declaring no timeout keep the
+one-hour default. A test asserts the doubling for every job in `jobs.yaml`, so
+a job added later cannot quietly inherit a wrong threshold.
+
 **Exit codes are instructions, not reports.** `tools/job_guard.sh` counts
 consecutive non-zero exits and trips a breaker, so a job exits non-zero only
 when the sweep itself could not run or complete. Per-item failures — an

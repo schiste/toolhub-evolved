@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Worker status is judged against each job's own schedule, not a global one."""
 
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -215,3 +216,31 @@ def test_the_recorder_stores_a_run_and_keeps_history_bounded(tmp_path):
     assert len(rows) == 3
     assert {row.duration_seconds for row in rows} == {4}
     assert all(row.succeeded for row in rows)
+
+
+def test_every_job_with_a_timeout_reclaims_its_lock_at_twice_that_timeout():
+    """A killed pod cannot release its guard lock, so the threshold is derived.
+
+    Below the job's own timeout it would reclaim a lock from a run still doing
+    work; far above it, one killed run costs hours of silence. Twice the
+    timeout is the smallest value that cannot be a live run.
+    """
+    text = (ROOT / "jobs.yaml").read_text()
+    timeouts = {job.name: job.timeout_seconds for job in job_catalog.load()}
+    wrong = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("command:") or "--job-name" not in stripped:
+            continue
+        name_match = re.search(r"--job-name (\S+)", stripped)
+        if name_match is None:
+            continue
+        name = name_match.group(1)
+        timeout = timeouts.get(name) or 0
+        stale_match = re.search(r"--stale-after (\d+)", stripped)
+        declared = int(stale_match.group(1)) if stale_match else None
+        if timeout and declared != timeout * 2:
+            wrong.append(f"{name}: timeout={timeout} stale-after={declared} (expected {timeout * 2})")
+        if timeout and declared is not None and declared <= timeout:
+            wrong.append(f"{name}: stale-after {declared} would reclaim a live run")
+    assert wrong == [], wrong

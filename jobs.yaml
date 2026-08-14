@@ -33,7 +33,7 @@
 - name: source-attestations
   # Cheap local incremental repair for content and stable-identity changes.
   # A rules-version change automatically promotes the next run to a full audit.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations --stale-after 1800 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py
   image: python3.13
   schedule: "29 */6 * * *"
   timeout: 900
@@ -43,7 +43,7 @@
   # Initial backfill: five 100-record pages every 15 minutes. After the first
   # cycle, consume recent changes, hydrate up to twenty graph candidates, and
   # reconcile one page every 12 hours, with three seconds between requests.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-sync -- /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-sync --stale-after 600 -- /usr/bin/env CATALOG_SYNC_PAGES=5 CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py
   image: python3.13
   schedule: "*/15 * * * *"
   timeout: 300
@@ -53,7 +53,7 @@
   # Refresh independent official inputs concurrently, then publish one atomic
   # identity/source projection and precompute catalog statistics. Fresh inputs
   # are reused, so a scheduled run can be a cheap verified no-op.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name projection-refresh -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/projection_refresh.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name projection-refresh --stale-after 3600 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/projection_refresh.py
   image: python3.13
   schedule: "41 */6 * * *"
   timeout: 1800
@@ -62,7 +62,7 @@
 - name: source-attestations-full
   # Weekly full audit is the backstop for rule/dependency bugs; ordinary feed
   # and identity changes use the incremental content-hash path above.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations-full -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py --full
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name source-attestations-full --stale-after 1800 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/source_attestations.py --full
   image: python3.13
   schedule: "19 4 * * 0"
   timeout: 900
@@ -72,7 +72,7 @@
   # Backfill public Toolsadmin maintainer evidence for cached Toolforge tools.
   # One request is spaced at least three seconds from the previous request;
   # the cursor advances after every tool and retries failures next cycle.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name maintainer-backfill -- /usr/bin/env MAINTAINER_BACKFILL_LIMIT=60 MAINTAINER_BACKFILL_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/maintainer_backfill.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name maintainer-backfill --stale-after 600 -- /usr/bin/env MAINTAINER_BACKFILL_LIMIT=60 MAINTAINER_BACKFILL_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/maintainer_backfill.py
   image: python3.13
   schedule: "13 * * * *"
   timeout: 300
@@ -81,7 +81,7 @@
 - name: repository-analysis
   # Deterministically analyze up to 100 newly added or changed public repositories
   # per hour. The initial catalog backfill can be run manually with a larger limit.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name repository-analysis -- /usr/bin/env REPOSITORY_SCAN_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name repository-analysis --stale-after 1800 -- /usr/bin/env REPOSITORY_SCAN_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py
   image: python3.13
   schedule: "47 * * * *"
   timeout: 900
@@ -91,7 +91,7 @@
   # Local-only repair and quality audit. Producer jobs materialize affected
   # tools immediately; this hourly sweep catches missed rows and rule-version
   # upgrades, then logs facet coverage and taxonomy regressions.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name graph-enrichment -- /usr/bin/env GRAPH_ENRICHMENT_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/graph_enrichment.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name graph-enrichment --stale-after 600 -- /usr/bin/env GRAPH_ENRICHMENT_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/graph_enrichment.py
   image: python3.13
   schedule: "55 * * * *"
   timeout: 300
@@ -100,7 +100,7 @@
 - name: catalog-projection
   # Repair/version-upgrade the Evolved-local provenance projection. Producer
   # jobs refresh changed tools immediately; this bounded sweep is the backstop.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-projection -- /usr/bin/env CATALOG_PROJECTION_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_projection.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-projection --stale-after 600 -- /usr/bin/env CATALOG_PROJECTION_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_projection.py
   image: python3.13
   schedule: "58 * * * *"
   timeout: 300
@@ -109,7 +109,7 @@
 - name: tool-assets
   # Fetch icons only in the background under outbound URL, type, and size
   # limits. The webservice serves cached bytes and never fetches on a read.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name tool-assets -- /usr/bin/env TOOL_ASSET_LIMIT=100 TOOLHUB_ASSET_CACHE_DIR=/data/project/toolhub-evolved/data/icon-cache /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/tool_assets.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name tool-assets --stale-after 1200 -- /usr/bin/env TOOL_ASSET_LIMIT=100 TOOLHUB_ASSET_CACHE_DIR=/data/project/toolhub-evolved/data/icon-cache /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/tool_assets.py
   image: python3.13
   schedule: "7 * * * *"
   timeout: 600
@@ -118,7 +118,7 @@
 - name: catalog-validation
   # Probe effective public URLs under the shared SSRF/redirect guard. Results
   # are observations only; invalid official evidence remains preserved.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation -- /usr/bin/env CATALOG_VALIDATION_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-validation --stale-after 1200 -- /usr/bin/env CATALOG_VALIDATION_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_validation.py
   image: python3.13
   schedule: "3 * * * *"
   timeout: 600
@@ -128,7 +128,7 @@
   # Rebuild the deterministic people graph and typed relationships, reapply
   # durable approvals, and check a bounded set of unresolved labels for exact
   # Toolhub identity candidates. A dry run performs no external lookups.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile --stale-after 3600 -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
   image: python3.13
   schedule: "13 5 * * 0"
   timeout: 1800
@@ -143,10 +143,11 @@
   # labels against CentralAuth per run, four a second and serialized, walking a
   # cursor so every label gets a turn and unknown ones are retried once per
   # sweep. The fetcher sends maxlag and obeys Retry-After, so the service sets
-  # the ceiling rather than a guessed delay. 1000 costs ~250s of a run measured
-  # at 154-423s, sweeping the ~900-label population in a single run. It records
-  # identity only; corroboration on a shared tool is what publishes anything.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=1000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  # the ceiling rather than a guessed delay. 1000 swept the 904-label backlog in
+  # one 851s run, which left only 49s of the timeout; 500 is the steady-state
+  # size now that only new labels arrive. It records identity only;
+  # corroboration on a shared tool is what publishes anything.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile --stale-after 1800 -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "43 * * * *"
   timeout: 900
@@ -155,15 +156,16 @@
 - name: people-reconcile-incremental
   # Process canonical and newly ingested tool changes shortly after their
   # write transaction. The six-hour full pass remains the global backstop.
-  # A kill at the timeout cannot release the guard lock, so reclaim it well
-  # inside the next tick rather than losing the job until a human notices:
-  # this drain died on 2026-08-03 and no run happened for the next ten days.
+  # A kill at the timeout cannot release the guard lock, so every guarded job
+  # sets --stale-after to twice its own timeout: past that, no live run can
+  # still hold it. This drain died on 2026-08-03 that way and no run happened
+  # for the next ten days.
   # The batch is sized to finish inside the timeout even from a cold backlog,
   # and small enough that its row locks do not sit across other identity
   # jobs: at 50 it held them for ~212s per run and deadlocked the source
   # audit and the maintainer backfill. Per-tool cost is unchanged, so
   # halving the batch halves the lock window at the same drain rate.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile-incremental --stale-after 300 -- /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=25 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile-incremental --stale-after 600 -- /usr/bin/env PEOPLE_RECONCILE_QUEUE_LIMIT=25 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --queue
   image: python3.13
   schedule: "* * * * *"
   timeout: 300
