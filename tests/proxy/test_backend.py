@@ -2190,7 +2190,11 @@ def test_maintainer_index_builds_public_safe_summary_from_claims():
                 verification_status=sync.AUTHOR_CLAIM_VERIFIED,
                 verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 evidence_url="https://toolsadmin.wikimedia.org/tools/id/ada-tool",
-                evidence_payload={"rawMaintainerPage": "private evidence"},
+                evidence_payload={
+                    "discoveryMethod": "toolforge_ldap_membership",
+                    "toolforgeUidNumber": "1001",
+                    "toolforgeToolName": "ada-tool",
+                },
             )
         )
         s.flush()
@@ -2224,6 +2228,11 @@ def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
                     verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                     checked_at=now - timedelta(days=30),
                     expires_at=now - timedelta(days=1),
+                    evidence_payload={
+                        "discoveryMethod": "toolforge_ldap_membership",
+                        "toolforgeUidNumber": "1001",
+                        "toolforgeToolName": "toolhub-evolved",
+                    },
                 ),
                 ToolAuthorClaim(
                     tool_name="toolforge-toolhub-evolved",
@@ -2233,6 +2242,11 @@ def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
                     verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                     checked_at=now,
                     expires_at=now + timedelta(days=1),
+                    evidence_payload={
+                        "discoveryMethod": "toolforge_ldap_membership",
+                        "toolforgeUidNumber": "1001",
+                        "toolforgeToolName": "toolhub-evolved",
+                    },
                 ),
             ]
         )
@@ -2365,6 +2379,11 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
                 verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 checked_at=now,
                 expires_at=now + timedelta(days=1),
+                evidence_payload={
+                    "discoveryMethod": "toolforge_ldap_membership",
+                    "toolforgeUidNumber": "1001",
+                    "toolforgeToolName": "ada-tool",
+                },
             )
         )
         s.add(
