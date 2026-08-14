@@ -68,7 +68,7 @@
 		"knip": "6.29.0",
 		"lint-staged": "17.0.8",
 		"prettier": "3.8.4",
-		"stylelint": "17.14.0",
+		"stylelint": "17.14.1",
 		"stylelint-config-standard": "40.0.0",
 		"stylelint-declaration-strict-value": "1.11.1",
 		"ts-api-utils": "2.5.0",
