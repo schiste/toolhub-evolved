@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: toolhub-digests -->
 <!-- Release title: Toolhub Digests -->
-<!-- Source range: 0cd2a68..842d01e (42 commits) -->
+<!-- Source range: 0cd2a68..dce248b (50 commits) -->
 
 # Technical Release Notes
 
@@ -13,4 +13,4 @@
 - Adds a compact responsive archive and human-scale edition layout, summary-only archive payloads, accessible subscription controls, localized English strings with translator documentation, immutable permalink and feed discovery metadata, and regression coverage for routes, rendering, confirmation, delivery, RSS, outbound guards, identity trust, and UTC period behavior.
 - Schedules publication at 06:15 UTC, delivery every five minutes, and an hourly audit. Job locks reclaim at twice each timeout; audit failures cover missing configuration, recent Qwen fallback, overdue generation, Meta/archive failure, exhausted delivery, and stale validated or queued work.
 - Supports operator-selected historical editions through an internal website-only publication state excluded from Meta, RSS, and subscriber delivery, with no preview or automatic selector. Editions freeze canonical author labels and current verified author/maintainer identities, expose only grounded name arrays to Qwen, and render Toolhub, direct-tool, author-index, and stable-person links deterministically across every output; unverified or expired edges and unsafe identity/link data are excluded before the immutable snapshot is rendered.
-- Keeps OAuth account and encrypted-grant persistence atomic and independent from the derived people index. Transient database locks retry or return a controlled login error rather than HTTP 500, while the hourly identity-only worker completes remote registry requests before acquiring shared people/user row locks.
+- Keeps OAuth account and encrypted-grant persistence atomic and independent from the derived people index. Transient database locks retry or return a controlled login error rather than HTTP 500, while the hourly identity-only worker completes remote registry requests before acquiring shared people/user row locks. Card summaries now retain a compact projection of every public author/maintainer identity and observed label while excluding full profiles and raw evidence; a shared ambiguity-safe resolver consumes that projection across normalized tools, personal caches, tool details, people profiles, directory results, and all card surfaces without per-tool API requests or user-specific exceptions.
