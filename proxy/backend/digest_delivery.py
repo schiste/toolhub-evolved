@@ -279,7 +279,7 @@ def _deliver_one(
     if not subscription.active:
         with db.session_scope() as session:
             stale = session.get(DigestDelivery, delivery_id)
-            if stale is not None:
+            if stale is not None:  # pragma: no branch - delete-mid-cancellation operator race
                 stale.status = "cancelled"
         return "cancelled"
     try:
