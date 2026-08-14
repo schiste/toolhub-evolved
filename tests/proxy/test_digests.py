@@ -30,7 +30,10 @@ from backend.models import (  # noqa: E402
     DigestEditionTool,
     DigestOperationalState,
     DigestSubscription,
+    Person,
+    PersonProfile,
     ToolActivityEvent,
+    ToolPersonRelationship,
     User,
 )
 from backend.wikimedia_delivery import WikimediaClient, WikiEditResult, WikimediaAPIError, clean_wiki_domain  # noqa: E402
@@ -96,9 +99,91 @@ def test_create_edition_freezes_facts_and_uses_deterministic_fallback(monkeypatc
         session.add(
             CanonicalToolCache(
                 tool_name="example",
-                record={"name": "example", "title": "Example", "description": "Helps editors review changes."},
+                record={
+                    "name": "example",
+                    "title": "Example",
+                    "description": "Helps editors review changes.",
+                    "url": "https://example.toolforge.org/",
+                    "author": [
+                        {"name": "Ada Lovelace", "developer_username": "ada-one"},
+                        {"name": "Ada Lovelace", "developer_username": "ada-two"},
+                        {"name": "Unresolved Author"},
+                    ],
+                },
                 expires_at=datetime(2026, 8, 14),
                 stale_until=datetime(2026, 8, 15),
+            )
+        )
+        maintainer = Person(canonical_key="maintainer:grace", public_id="grace-id", display_name="Grace Hopper")
+        session.add(maintainer)
+        session.flush()
+        session.add(PersonProfile(person_id=maintainer.id, visibility="public"))
+        session.add(
+            ToolPersonRelationship(
+                tool_name="example",
+                person_id=maintainer.id,
+                relationship_type="maintainer",
+                verification_status="verified",
+                confidence=100,
+            )
+        )
+        resolved_catalog_author = Person(
+            canonical_key="author:ada",
+            public_id="ada-id",
+            display_name="Ada Lovelace",
+        )
+        session.add(resolved_catalog_author)
+        session.flush()
+        session.add(PersonProfile(person_id=resolved_catalog_author.id, visibility="public"))
+        session.add(
+            ToolPersonRelationship(
+                tool_name="example",
+                person_id=resolved_catalog_author.id,
+                relationship_type="author",
+                verification_status="verified",
+                confidence=100,
+            )
+        )
+        author = Person(canonical_key="author:margaret", public_id="margaret-id", display_name="Margaret Hamilton")
+        session.add(author)
+        session.flush()
+        session.add(PersonProfile(person_id=author.id, visibility="public"))
+        session.add(
+            ToolPersonRelationship(
+                tool_name="example",
+                person_id=author.id,
+                relationship_type="author",
+                verification_status="verified",
+                confidence=100,
+            )
+        )
+        second_author = Person(
+            canonical_key="author:katherine",
+            public_id="katherine-id",
+            display_name="Katherine Johnson",
+        )
+        session.add(second_author)
+        session.flush()
+        session.add(PersonProfile(person_id=second_author.id, visibility="public"))
+        session.add(
+            ToolPersonRelationship(
+                tool_name="example",
+                person_id=second_author.id,
+                relationship_type="author",
+                verification_status="verified",
+                confidence=100,
+            )
+        )
+        hidden = Person(canonical_key="hidden", public_id="hidden-id", display_name="Hidden Person")
+        session.add(hidden)
+        session.flush()
+        session.add(
+            ToolPersonRelationship(
+                tool_name="example",
+                person_id=hidden.id,
+                relationship_type="maintainer",
+                verification_status="verified",
+                confidence=100,
             )
         )
     period = digests.period_for("daily", datetime(2026, 8, 12, 12))
@@ -116,7 +201,43 @@ def test_create_edition_freezes_facts_and_uses_deterministic_fallback(monkeypatc
         assert len(list(session.execute(select(DigestEdition)).scalars())) == 1
         tool = session.execute(select(DigestEditionTool)).scalar_one()
         assert tool.facts["description"] == "Helps editors review changes."
+        assert tool.facts["authors"] == [
+            {"name": "Ada Lovelace", "url": "https://toolhub-evolved.toolforge.org/people/ada-id"},
+            {
+                "name": "Unresolved Author",
+                "url": "https://toolhub-evolved.toolforge.org/by/Unresolved%20Author",
+            },
+            {"name": "Katherine Johnson", "url": "https://toolhub-evolved.toolforge.org/people/katherine-id"},
+            {"name": "Margaret Hamilton", "url": "https://toolhub-evolved.toolforge.org/people/margaret-id"},
+        ]
+        assert tool.facts["maintainers"] == [
+            {"name": "Grace Hopper", "url": "https://toolhub-evolved.toolforge.org/people/grace-id"}
+        ]
         assert tool.highlighted is True
+    assert "https://example.toolforge.org/" in edition.rendered_html
+    assert "Ada Lovelace" in edition.rendered_wikitext
+    assert "Grace Hopper" in edition.rendered_text
+
+
+def test_model_prompt_requests_grounded_people_names_but_forbids_model_links():
+    facts = [
+        {
+            "name": "known",
+            "author_names": ["Ada Lovelace"],
+            "maintainer_names": ["Grace Hopper"],
+            "toolhub_url": "https://toolhub.wikimedia.org/tools/known",
+            "url": "https://known.toolforge.org/",
+        }
+    ]
+
+    payload = digests._model_payload(facts, "daily", "llm-qwen36-27b")
+
+    system = payload["messages"][0]["content"]
+    supplied = json.loads(payload["messages"][1]["content"])["tools"][0]
+    assert "author_names or maintainer_names" in system
+    assert "Never emit URLs" in system
+    assert supplied["author_names"] == ["Ada Lovelace"]
+    assert supplied["toolhub_url"] == "https://toolhub.wikimedia.org/tools/known"
 
 
 def test_model_editorial_rejects_unknown_tools_and_links():
@@ -1147,8 +1268,20 @@ def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
     assert "to" in digests._edition_title(weekly)
     assert digests._edition_title(monthly) == "Toolhub Monthly — August 2026"
     facts = [
-        {"name": "featured", "title": "Featured", "toolhub_url": "https://tool/featured"},
-        {"name": "other", "title": "Other", "toolhub_url": "https://tool/other"},
+        {
+            "name": "featured",
+            "title": "Featured",
+            "toolhub_url": "https://tool/featured",
+            "url": "https://featured.example/",
+            "authors": [{"name": "Ada", "url": "https://people.example/ada"}],
+            "maintainers": [{"name": "Grace", "url": "https://people.example/grace"}],
+        },
+        {
+            "name": "other",
+            "title": "Other",
+            "toolhub_url": "https://tool/other",
+            "authors": [None, {"name": "Unsafe", "url": "javascript:alert(1)"}],
+        },
     ]
     editorial = {
         "introduction": "Two tools arrived.",
@@ -1156,7 +1289,13 @@ def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
     }
     rendered = digests._render(weekly, editorial, facts, used_fallback=False)
     assert "Also added" in rendered[0]
+    assert "Open tool" in rendered[0]
+    assert "https://people.example/ada" in rendered[0]
+    assert "Authors:" in rendered[1]
+    assert "Maintainers: Grace" in rendered[2]
+    assert "Unsafe" not in rendered[0]
     assert "Lift Wing" in rendered[2]
+    assert digests._safe_http_url("javascript:alert(1)") == ""
     assert digests.create_edition(digests.period_for("daily", datetime(2020, 1, 1))) is None
 
     periods = [digests.period_for("daily", datetime(2026, 8, day)) for day in (10, 11, 12)]

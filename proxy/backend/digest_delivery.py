@@ -6,14 +6,13 @@ from __future__ import annotations
 import os
 from collections import Counter
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
 
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from backend import db
-from backend.digests import edition_marker, wiki_plaintext
+from backend.digests import edition_marker, public_base_url, wiki_plaintext
 from backend.models import DigestDelivery, DigestEdition, DigestSubscription, User, utcnow
 from backend.public_identity import WikimediaIdentity, WikimediaIdentityProvider
 from backend.sync import clean_error
@@ -56,26 +55,6 @@ def read_subscription_token(token: str, action: str) -> tuple[int, int]:
     except (KeyError, TypeError, ValueError) as exc:
         message = "subscription link payload is invalid"
         raise ValueError(message) from exc
-
-
-def public_base_url() -> str:
-    """Return the configured public origin used in email action links."""
-    value = os.environ.get("DIGEST_PUBLIC_BASE_URL", "https://toolhub-evolved.toolforge.org").strip().rstrip("/")
-    parsed = urlparse(value)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.port not in (None, 443)
-        or parsed.path not in ("", "/")
-        or parsed.params
-        or parsed.query
-        or parsed.fragment
-    ):
-        message = "DIGEST_PUBLIC_BASE_URL must be an HTTPS origin"
-        raise ValueError(message)
-    return value
 
 
 def confirmation_url(subscription: DigestSubscription) -> str:
