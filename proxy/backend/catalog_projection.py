@@ -640,6 +640,13 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
         existing = {row.tool_name: row for row in s.execute(select(CatalogToolProjection)).scalars()}
         # Fetch latest report timestamps to detect newly-analyzed tools (lightweight query)
         latest_report_times = _latest_report_times(s)
+        analyzer_facet_tools = set(
+            s.execute(
+                select(CatalogFacetValue.tool_name)
+                .where(CatalogFacetValue.field.in_(field for _, field in ANALYZER_FACET_FIELDS))
+                .distinct()
+            ).scalars()
+        )
     candidates = []
     for name in canonical:
         row = existing.get(name)
@@ -655,6 +662,11 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
         ):
             # Include tools whose latest report is newer than their projection,
             # but clamp to now() to avoid perpetual-candidate issue with future-dated reports.
+            candidates.append(name)
+        elif name in analyzer_facet_tools and name not in latest_report_times:
+            # Serving analyzer facets with no approved report left behind them:
+            # the report was rejected or reopened after projection. Re-project
+            # so the moderated-away facets stop being served.
             candidates.append(name)
     names = sorted(candidates)[:bounded]
     return {"candidates": len(candidates), **refresh_tool_names(names)}

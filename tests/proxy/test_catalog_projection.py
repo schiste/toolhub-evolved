@@ -720,6 +720,49 @@ def test_refresh_candidates_includes_tools_with_newer_reports():
     assert ("dependency", "npm:axios") in facets, "Analyzer facet should be present after re-projection"
 
 
+def test_refresh_candidates_purges_facets_after_report_rejection():
+    """Rejecting the only approved report must stop its facets being served.
+
+    After moderation flips the report away from approved, the tool no longer
+    appears in the approved-report timestamp map, so the newer-report branch
+    can never fire — the analyzer-facets-without-approved-report branch must
+    catch it instead.
+    """
+    now = utcnow()
+    with db.session_scope() as s:
+        user_obj = User(wm_sub="scanner", username="Scanner")
+        s.add(user_obj)
+        s.flush()
+        s.add(_canonical("moderated"))
+        s.add(
+            SourceAnalysisReport(
+                user_id=user_obj.id,
+                tool_name="moderated",
+                source_label="https://code.example/moderated",
+                report={"dependencies": [{"value": "npm:leftpad", "label": "leftpad", "confidence": 0.9}]},
+                review_status=REVIEW_APPROVED,
+                reviewed_at=now,
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["moderated"])
+    with db.session_scope() as s:
+        facets = {row.field for row in s.query(CatalogFacetValue).filter_by(tool_name="moderated").all()}
+        assert "dependency" in facets, "Approved report should project analyzer facets"
+        report = s.query(SourceAnalysisReport).filter_by(tool_name="moderated").one()
+        report.review_status = "rejected"
+        report.reviewed_at = utcnow()
+
+    result = catalog_projection.refresh_candidates()
+    assert result["refreshed"] >= 1, "Tool with rejected report should be re-projected"
+    with db.session_scope() as s:
+        facets = {row.field for row in s.query(CatalogFacetValue).filter_by(tool_name="moderated").all()}
+    assert "dependency" not in facets, "Rejected report's facets must be purged"
+
+    # And the purge converges: a second sweep finds nothing left to redo.
+    assert catalog_projection.refresh_candidates()["candidates"] == 0
+
+
 def test_refresh_candidates_uses_max_report_timestamp_with_multiple_reports():
     """Verify that with multiple reports per tool, only the newest determines candidacy.
 
