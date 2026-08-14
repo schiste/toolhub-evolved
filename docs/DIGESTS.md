@@ -38,9 +38,17 @@ generation snapshots the corresponding canonical cache facts into
 Lift Wing receives only those verified public facts. Configure the Qwen
 inference URL and model with `LIFTWING_API_URL` and `LIFTWING_MODEL`. Its JSON
 response is accepted only when every named tool exists in the snapshot, the
-number and length of highlights are bounded, editorial blurbs contain no links,
+number and length of highlights are bounded, the introduction stays within 32
+words, each highlight stays within 28 words, editorial blurbs contain no links,
 and every highlight cites an exact supporting value from an allowed field in
-the frozen facts. Canonical author names and publishable resolved author and
+the frozen facts. The prompt asks Qwen for one concrete thematic introduction
+and active-voice highlights that explain what a tool lets someone do, avoiding
+title repetition, cadence boilerplate, vague praise, and promotional language.
+Daily editions require one validated entry for every supplied tool and label
+the section “Every new tool”; an omission, duplicate, or invented identifier rejects the model response. Weekly
+and monthly editions curate at most five highlights and retain every other tool
+in the complete compact index.
+Canonical author names and publishable resolved author and
 maintainer identities are frozen alongside the tool metadata. Qwen may mention
 those supplied names but never emits URLs. The deterministic renderer adds the
 official Toolhub page, safe direct-tool URL, author index or resolved person
@@ -160,6 +168,17 @@ toolforge jobs logs digest-deliver
 toolforge jobs logs digest-audit
 toolforge jobs run digest-publish
 toolforge jobs run digest-deliver
+```
+
+The three explicitly selected website examples can be regenerated after an
+editorial or renderer change without creating a preview channel or touching
+Meta, RSS, email, or talk pages. The operator command drafts and validates every
+requested Qwen edition before opening its replacement transaction, preserves
+the edition IDs and generation-attempt history, and refuses any edition carrying
+published or delivery state:
+
+```sh
+toolforge jobs run --wait 900 --image python3.13 --filelog -o "$HOME/digest-regenerate.out" -e "$HOME/digest-regenerate.err" --command "$HOME/www/python/venv/bin/python $HOME/repo/proxy/digest_regenerate.py --edition daily:2026-08-13 --edition weekly:2026-W32 --edition monthly:2026-07" digest-regenerate
 ```
 
 The signed-in `/v1/digests/status/` endpoint gives bounded status counts. The
