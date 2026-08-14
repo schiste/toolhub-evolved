@@ -3,14 +3,604 @@
 All notable Toolhub Evolved changes, grouped from the repository's Git history.
 This file is generated with `npm run changelog:generate`; do not edit it by hand.
 
+## 2026-08-14
+
+### Features
+
+- separate ownership metric units ([91b1192](https://github.com/schiste/toolhub-evolved/commit/91b1192fd668125851bf7a8d639bd848d68bb08a))
+- project relationship identities to cards ([e7e5fbd](https://github.com/schiste/toolhub-evolved/commit/e7e5fbd052705c52a72f34222aeed3484eb7d8ae))
+- compact the archive reading layout ([bf37130](https://github.com/schiste/toolhub-evolved/commit/bf37130b0ecf5126de38dd95cd69e5012de9a995))
+- enforce complete concise editions ([3b7bb6d](https://github.com/schiste/toolhub-evolved/commit/3b7bb6d7b9a32128e507e7aa5229275856b040fc))
+- add verified tool attribution links ([2051d6c](https://github.com/schiste/toolhub-evolved/commit/2051d6c0520465f333d5f1ef0ec252515aeebc00))
+- publish historical website examples ([4205d7b](https://github.com/schiste/toolhub-evolved/commit/4205d7ba00b6c967c77e79a0dc65021845e50659))
+- ship complete Toolhub Digests ([bba5e08](https://github.com/schiste/toolhub-evolved/commit/bba5e08f45be03d92e1ce7b470552f73d1e8a535))
+
+### Fixes
+
+- resolve remote identities outside DB sessions ([00b7f5a](https://github.com/schiste/toolhub-evolved/commit/00b7f5adb595688db788f2a52c6b11d2d26faf85))
+- resume deep recent-event backlogs ([4099a90](https://github.com/schiste/toolhub-evolved/commit/4099a90804e596999ba30285921ca67a1914fa6e))
+- invalidate caches from policy source ([048c0d1](https://github.com/schiste/toolhub-evolved/commit/048c0d18407b48a6259730b1e2bce27b73bae5ea))
+- make LDAP maintainer evidence authoritative ([fe265a5](https://github.com/schiste/toolhub-evolved/commit/fe265a5604281eb8049e43a0c4bd3fc9bf64e3e6))
+- link proven identities on every tool card ([970fe16](https://github.com/schiste/toolhub-evolved/commit/970fe1668f309711e75656e9db920310b0dfeb86))
+- link owned tools to proven people ([5204e9e](https://github.com/schiste/toolhub-evolved/commit/5204e9ee983cddf0778ebcee307e5e18b3608003))
+- preserve canonical account identity ([a1a3655](https://github.com/schiste/toolhub-evolved/commit/a1a365518a670efddc9d6d67277398bb2c85e05c))
+- release locks before remote lookups ([842d01e](https://github.com/schiste/toolhub-evolved/commit/842d01e933dda8b928c244b9540d8db79d6b8e54))
+- decouple login from identity projection ([f7862cd](https://github.com/schiste/toolhub-evolved/commit/f7862cd70620b2e40af97b64050c89751cec5dd6))
+- preflight exact LiftWing selections ([2897097](https://github.com/schiste/toolhub-evolved/commit/2897097a3b0837dac79f84cd0923b2418ce0d5d9))
+- widen digest render bodies ([a9823bf](https://github.com/schiste/toolhub-evolved/commit/a9823bf9a667d2655c464d5d4318213787e9e663))
+- bound busy-period LiftWing prompts ([cca1c32](https://github.com/schiste/toolhub-evolved/commit/cca1c32712618203d9c7dd989f412c35605f956a))
+- recover concurrent catalog maintenance ([81cd429](https://github.com/schiste/toolhub-evolved/commit/81cd429805e5eacb79e15b1cee9dc083b219cef4))
+- isolate projection refresh logs ([d5eb7da](https://github.com/schiste/toolhub-evolved/commit/d5eb7da3e56c7976aaa1d8efa1b8b039276a2f46))
+- bundle technical digest notes ([2e60c45](https://github.com/schiste/toolhub-evolved/commit/2e60c450055fd4e4480a87dc977581936ab3ea22))
+- harden published attribution ([cc4f003](https://github.com/schiste/toolhub-evolved/commit/cc4f003df07859c6e06c137a3bd4f02266e614e5))
+- use RTL-safe attribution spacing ([7127e9b](https://github.com/schiste/toolhub-evolved/commit/7127e9b282ca931468a9d7cc6b6ae71e14037ff7))
+- validate verbatim evidence excerpts ([0f74dde](https://github.com/schiste/toolhub-evolved/commit/0f74dde45b5a05ac8272acc08aa91419ed0edf7f))
+- normalize unique LiftWing tool titles ([ead4a3a](https://github.com/schiste/toolhub-evolved/commit/ead4a3a2dfc7ef6d6a1d57eb4b005fa97ae5a194))
+- retry work a lock conflict undid ([522cc86](https://github.com/schiste/toolhub-evolved/commit/522cc869c1f74d5a4adc6edb0dfd8d873948828b))
+- reconcile the merged work with the retargeted registry pass ([4f092ac](https://github.com/schiste/toolhub-evolved/commit/4f092acb5b6702944025236e3917fdfb505bfbff))
+- satisfy the type and spell gates on the new plural code ([d46248f](https://github.com/schiste/toolhub-evolved/commit/d46248f081e9c317e0d8526bd5c6cfa007650d1c))
+- aim registry lookups at the labels that need them ([efc7656](https://github.com/schiste/toolhub-evolved/commit/efc765605337185f9d31aeef8980b0bb281596cc))
+- count only approved reports in scanned-tool coverage ([4958850](https://github.com/schiste/toolhub-evolved/commit/495885001d98ff535baa42bb893fe4d50e58f2eb))
+- tolerate case-variant curated list values ([1c119e5](https://github.com/schiste/toolhub-evolved/commit/1c119e5da2d9013cd5cc08863e9d3b01ac41a6ed))
+- drop analyzer findings that carry no usable confidence ([f2c27be](https://github.com/schiste/toolhub-evolved/commit/f2c27be8a6175945e8eb1d95093f305244456919))
+- re-project tools whose approved report was moderated away ([dbec50e](https://github.com/schiste/toolhub-evolved/commit/dbec50edf8950205c583f682d888f0b9f0017360))
+- escape LIKE wildcards in dependency shorthand expansion ([3f4957f](https://github.com/schiste/toolhub-evolved/commit/3f4957fee45239716f0ac25bce5758e07489bfc2))
+- surface unexpected handler failures as JSON-RPC errors ([bcd068a](https://github.com/schiste/toolhub-evolved/commit/bcd068a4068b1aab449b06bbd7ae333459a83079))
+- treat a scalar filter argument as a one-item list ([b5d22bb](https://github.com/schiste/toolhub-evolved/commit/b5d22bb10aebcab181c17a30452ee429e3694485))
+
+### Performance
+
+- let the registry set the pace instead of guessing it ([797ccaf](https://github.com/schiste/toolhub-evolved/commit/797ccafb860936fcce80c76a449dee37a5af0987))
+- cache coverage counts alongside facet values ([9e1ac34](https://github.com/schiste/toolhub-evolved/commit/9e1ac34e3b8eca6f4d5e37cb65c838224c504561))
+
+### Documentation
+
+- describe canonical people links ([ddcb990](https://github.com/schiste/toolhub-evolved/commit/ddcb9904f9b85c2db44c4bc64e3abba159fda530))
+- explain authentication lock fix ([787e941](https://github.com/schiste/toolhub-evolved/commit/787e941e6a4dc82ffb0af005a1813f30cf5b4fc3))
+- record attribution hardening ([05a32b5](https://github.com/schiste/toolhub-evolved/commit/05a32b5c3ee192cf8030c9f60c4b37387461c208))
+- align attribution source range ([bbf98aa](https://github.com/schiste/toolhub-evolved/commit/bbf98aaa0762cb799b38e3c7d563e698afa28404))
+- include RTL digest correction ([b7de77d](https://github.com/schiste/toolhub-evolved/commit/b7de77d3582e28ad7c33a91c4d4481fe3878282c))
+- document attribution links ([f1b6ab5](https://github.com/schiste/toolhub-evolved/commit/f1b6ab59a24c22afad23465a0adf0eed7f4cb592))
+- record evidence excerpt validation ([5a3c967](https://github.com/schiste/toolhub-evolved/commit/5a3c967b43a74cd8b6b85409bb73c1f7fb11359a))
+- record LiftWing title normalization ([c718d77](https://github.com/schiste/toolhub-evolved/commit/c718d77aba8f502dc5114aea42704c3568026bae))
+- record historical digest examples ([871bc75](https://github.com/schiste/toolhub-evolved/commit/871bc7581dced982d155351e39df1b76ddba2d0c))
+- record stabilized browser gate ([5b76bec](https://github.com/schiste/toolhub-evolved/commit/5b76bec4a2f31c511217f27d00c5127a1b6860b9))
+- record browser validation ([929fa2f](https://github.com/schiste/toolhub-evolved/commit/929fa2f0c0c21655db8071148d6d3f725deffebb))
+- record digest coverage validation ([b69aab7](https://github.com/schiste/toolhub-evolved/commit/b69aab7cece8d4ec8403a6e2932bf3724523a8a9))
+- announce Toolhub Digests ([087bb5d](https://github.com/schiste/toolhub-evolved/commit/087bb5d4fa5c0eb72df8f57297fe058c3bdfea3c))
+- note lock-conflict retries ([0cd2a68](https://github.com/schiste/toolhub-evolved/commit/0cd2a6890cee07dc0a099e42ed1c13d4900a5cb3))
+- extend range over the merge reconciliation ([025697b](https://github.com/schiste/toolhub-evolved/commit/025697b15293884266786e522d63f1ed6fc03ac3))
+- note derived lock reclamation ([8c31870](https://github.com/schiste/toolhub-evolved/commit/8c31870792061202875e5e735f4041577ea6c3db))
+- note upstream-driven lookup pacing ([da02cc6](https://github.com/schiste/toolhub-evolved/commit/da02cc665397da78c893d8874f7ab3e7fdb52796))
+- note cursor-bounded registry lookups ([ca20756](https://github.com/schiste/toolhub-evolved/commit/ca20756a42e8ef2d6a4cfd49e5b81aebeb0d8793))
+- advertise the task and audience facets everywhere they work ([ba36fde](https://github.com/schiste/toolhub-evolved/commit/ba36fdef1a90738a4ac1ccad5c40de55b8ab9b91))
+
+### Operations
+
+- derive lock reclamation from each job's own timeout ([459eae4](https://github.com/schiste/toolhub-evolved/commit/459eae41e6c1906075e6195e5014a1479c23c388))
+
+### Refactoring
+
+- one request-normalization path for REST and MCP ([c38942b](https://github.com/schiste/toolhub-evolved/commit/c38942bdb991875062288b3a62782662d6b07d29))
+- share filter cleaning and INTERSECT building ([47b17b2](https://github.com/schiste/toolhub-evolved/commit/47b17b2919520a4688c8a5a7f9852e216c10939a))
+
+### Tests
+
+- wait for enrichment before geometry ([7ad1c73](https://github.com/schiste/toolhub-evolved/commit/7ad1c73bd703173edf301057e184855e9eff03da))
+- align cards and await author panel ([b912ba5](https://github.com/schiste/toolhub-evolved/commit/b912ba533b90cda7a5984e6b1e20b778f7fde0c7))
+- cover production delivery boundaries ([bb1b92d](https://github.com/schiste/toolhub-evolved/commit/bb1b92d3428e167147f965c031743ed6c584ae7e))
+- reset the JS thresholds to a working ratchet ([f327bbd](https://github.com/schiste/toolhub-evolved/commit/f327bbdd8f1b6140a904e8ec800e453cec3d3e71))
+- close the coverage gaps on the new discovery code ([4f04cd5](https://github.com/schiste/toolhub-evolved/commit/4f04cd5d4bb51c41f8c387ae5c1f43572d844094))
+
+### Maintenance
+
+- align review branch with integration ([3ba4005](https://github.com/schiste/toolhub-evolved/commit/3ba40058a5044f94d0a6fb9f284b0750d38a386b))
+
+### Other
+
+- promote session 20 (Generalize proven person links across all tool cards) ([dce248b](https://github.com/schiste/toolhub-evolved/commit/dce248b287fca1b9d5d428b1ff2d1e9ee2681914))
+- promote session 19 (Fix owner identity matching and by-person tool listings) ([1cb1f01](https://github.com/schiste/toolhub-evolved/commit/1cb1f0165c92bc5ab05507e34b7b6239236e1300))
+- promote session 18 (Decouple OAuth login from long-running identity reconciliation locks and handle transient database contention) ([6eab247](https://github.com/schiste/toolhub-evolved/commit/6eab247dd841f863f5791f3eda9c03d2a50a1805))
+- promote session 17 (Fix large digest storage and add live LiftWing preflight) ([d1ed4de](https://github.com/schiste/toolhub-evolved/commit/d1ed4de70ff662aee022fb55f820134978f6402c))
+- promote session 16 (Bound LiftWing digest requests and expose generation failures) ([51504be](https://github.com/schiste/toolhub-evolved/commit/51504be753a1fd3f0bd1bf658aaf6852e235b82c))
+- promote session 15 (Harden digest operations and redesign digest reading experience) ([cd99b1a](https://github.com/schiste/toolhub-evolved/commit/cd99b1ab3e14eeaedb32685a609c3f61af8695c3))
+- promote session 14 (Reduce technical release notes to deployment contract limit) ([e7ad3d3](https://github.com/schiste/toolhub-evolved/commit/e7ad3d3016cbc1310381e8c1a47af8cffdc501d2))
+- Merge pull request #142 from schiste/agent/digest-attribution-release ([e5a9e2d](https://github.com/schiste/toolhub-evolved/commit/e5a9e2d8eba1184371122b809c316bf8f091f00f))
+- reconcile pending queue entry 13 (session 12) ([f0fa162](https://github.com/schiste/toolhub-evolved/commit/f0fa162d25397b0626d1db87f00dbbda2ea00289))
+- Merge pull request #141 from schiste/fix/historical-digest-examples ([7033b70](https://github.com/schiste/toolhub-evolved/commit/7033b70ec0241a9f01ab7ac5577dd74039b53e38))
+- Merge pull request #140 from schiste/fix/historical-digest-examples ([f4b571f](https://github.com/schiste/toolhub-evolved/commit/f4b571fc9487f0bc5a50292bc1df63c671681074))
+- Merge pull request #139 from schiste/fix/historical-digest-examples ([e245005](https://github.com/schiste/toolhub-evolved/commit/e24500507e5e0e1faa02d05f2261a98a08661e3e))
+- Merge pull request #138 from schiste/agent/reconcile-validate-and-release-toolhub-d ([2195881](https://github.com/schiste/toolhub-evolved/commit/2195881245f0c557ea600b3f4098f899c81d94b2))
+- Merge pull request #134 from schiste/feat/toolhub-discovery-facets ([f5e5254](https://github.com/schiste/toolhub-evolved/commit/f5e52544c123c7e96b8bb932c912725a1695a08b))
+- Merge remote-tracking branch 'origin/main' into feat/toolhub-discovery-facets ([ebea8da](https://github.com/schiste/toolhub-evolved/commit/ebea8da20d8ed9c208cd8ee67a21302b78ef3b9c))
+
+## 2026-08-13
+
+### Features
+
+- add thin toolhub-discovery skill, fix prose CI on plan docs ([0078262](https://github.com/schiste/toolhub-evolved/commit/0078262321e6b6fd7ee12d12d65ab97c017cebc2))
+- advertise purpose filters to MCP clients, pin fail-loud search ([4db6169](https://github.com/schiste/toolhub-evolved/commit/4db616986769a5887cc6a12b8054b68ec5740c50))
+- implement MCP server for catalog discovery (Phase 4 Tasks 1-4) ([e80e590](https://github.com/schiste/toolhub-evolved/commit/e80e590cfb88f042068701ffad1e6c33ca71fa14))
+- expose tasks and audiences as discovery filters ([f9aff6e](https://github.com/schiste/toolhub-evolved/commit/f9aff6e4c5b665c6bcaa713a2c0eb176c54275c1))
+- mint people from verified CentralAuth global ids ([41d4ff6](https://github.com/schiste/toolhub-evolved/commit/41d4ff6124b5826f9c845bbd65664461b2d454f1))
+- rate-limit and cache facet discovery reads ([8a2c9a0](https://github.com/schiste/toolhub-evolved/commit/8a2c9a0154426410ad4dd28938542dc35df5db11))
+- add facet discovery endpoints ([947987d](https://github.com/schiste/toolhub-evolved/commit/947987d99a53c77e11b0a8276daf41c23b3c098f))
+- shared tool summary and coverage for facet discovery ([8a2d40e](https://github.com/schiste/toolhub-evolved/commit/8a2d40ea07d7b9303bd8dcde2d777dc18029881f))
+- ranked canonical tool search with FTS and keyword indexing ([506568f](https://github.com/schiste/toolhub-evolved/commit/506568f50fa9bd35485a94112a8c7abc38a3466d))
+- resolve handle-shaped labels as registry candidates ([47607b7](https://github.com/schiste/toolhub-evolved/commit/47607b759b7ff456d15aaa4601de4cfacb89a8eb))
+- add the label shape gate and measure what it admits ([438220c](https://github.com/schiste/toolhub-evolved/commit/438220c6cd045580fb6489d10cc980376c69d8b0))
+- retarget facet queries to unified CatalogFacetValue table ([8f198fe](https://github.com/schiste/toolhub-evolved/commit/8f198fe9a69a36eaf4eae79d7caf7a0b1352c37e))
+- emit analyzer-derived facets into catalog projection ([871dde9](https://github.com/schiste/toolhub-evolved/commit/871dde93f165c49bcf2d14b3c4639581ccdd2552))
+- add declared-facet filters to tool discovery helpers ([6cde93a](https://github.com/schiste/toolhub-evolved/commit/6cde93a15747cc07395c01a266ad2835f8925a9b))
+- add facet query helpers for tool discovery ([15ed8b7](https://github.com/schiste/toolhub-evolved/commit/15ed8b78ea5178e669ff8882b4fd2c49a9daf73f))
+- extract analyzer findings into tool signal facets ([e7b080b](https://github.com/schiste/toolhub-evolved/commit/e7b080b1ce3ba6f9569638085002e926a151cc97))
+- add ToolSignalFacet model for queryable tool signals ([3c5a083](https://github.com/schiste/toolhub-evolved/commit/3c5a083d52659e722e776733b5b491dcc4875071))
+- publish background job health at /workers ([a568851](https://github.com/schiste/toolhub-evolved/commit/a5688511de69c417f952458bc9929fbdc0350cdc))
+- resolve labels an independent edge corroborates ([670c24d](https://github.com/schiste/toolhub-evolved/commit/670c24d9b2a4523c375dd8832b3af00c102705f2))
+- measure the attribution resolution funnel ([b5edca3](https://github.com/schiste/toolhub-evolved/commit/b5edca34f3105b2ef667c25feb7ee8bfdcd33b92))
+- bind wiki user links as structured handles ([faba4c5](https://github.com/schiste/toolhub-evolved/commit/faba4c517d781662df117eb14e73dda136245669))
+- surface catalog quality statistics ([989574a](https://github.com/schiste/toolhub-evolved/commit/989574a9a462eefd7bc67f7f9111b74b8fefea4a))
+- add catalog quality statistics API ([8afd33d](https://github.com/schiste/toolhub-evolved/commit/8afd33d93da598d88ec65e34bf700672a013b505))
+- reconcile identities across toolinfo sources ([221b507](https://github.com/schiste/toolhub-evolved/commit/221b507853db6f243417a58fb92a2b89d5f94e27))
+- normalize multi-author tool metadata ([b8def7d](https://github.com/schiste/toolhub-evolved/commit/b8def7d9e076005ba835c1e6ac16dc37f71da1d1))
+- disclose all tool authors ([2022cbc](https://github.com/schiste/toolhub-evolved/commit/2022cbcf5d0745b569f1159e6602335e6dabc081))
+
+### Fixes
+
+- stop trusting the engine's pluralCategories order ([f1a1260](https://github.com/schiste/toolhub-evolved/commit/f1a1260345fb1e0a6f138c46504d27967c32d25e))
+- assert true total, and correct search-query guidance ([ac005dc](https://github.com/schiste/toolhub-evolved/commit/ac005dc4e5d1bdb9300939bcb9c16acadd195430))
+- address code review feedback for Phase 1 ([c9c0579](https://github.com/schiste/toolhub-evolved/commit/c9c057907473396247a795a94da6325d21cfbd8a))
+- optimize refresh_candidates query performance ([e9b7cd2](https://github.com/schiste/toolhub-evolved/commit/e9b7cd28211f0c2e77ddec4a9298a168794d15fd))
+- address code review feedback for toolhub-discovery phase 1 ([342a9ee](https://github.com/schiste/toolhub-evolved/commit/342a9ee78a6d6439ea5b42a3ea7b1a82946b89e0))
+- address mutation testing issues in tool facets module ([807d195](https://github.com/schiste/toolhub-evolved/commit/807d1952a217d10d56adf536377340907bbb752b))
+- tolerate a pending scan row with no checked_at ([bb29294](https://github.com/schiste/toolhub-evolved/commit/bb29294616c7bea97a25dcdcede5ab85803a04bb))
+- state what a job's exit code means to the guard ([841ba52](https://github.com/schiste/toolhub-evolved/commit/841ba52243545e6b2c6543c732c8eb4d75d4d937))
+- retry a tripped breaker after a cooldown ([8a670df](https://github.com/schiste/toolhub-evolved/commit/8a670df7e67ce132cd90c2f7b651b8b069f14d40))
+- reclaim guard locks a killed run abandoned ([4e59f7f](https://github.com/schiste/toolhub-evolved/commit/4e59f7f65e6dab79f394cae1d4d059687d83e01a))
+- keep source reconciliation runs schema-safe ([462d44c](https://github.com/schiste/toolhub-evolved/commit/462d44c9be68b25410f9b79f22cc6c3a1e56b826))
+- map Toolforge projects to canonical tools ([5a9d023](https://github.com/schiste/toolhub-evolved/commit/5a9d0233816716d258d5b0b272ea752454e2ea2b))
+- bypass cache for catalog snapshots ([e2ea76b](https://github.com/schiste/toolhub-evolved/commit/e2ea76b5a6312405859ab805a23836abb3ab9b1e))
+
+### Performance
+
+- scope durable mapping reapply to the tool's own people ([b232d28](https://github.com/schiste/toolhub-evolved/commit/b232d280591b93dbfe1497213ba032866b657e6a))
+- shrink the incremental drain's lock window ([31686a4](https://github.com/schiste/toolhub-evolved/commit/31686a4401dc2c68519c85a76d179dc8f1568d3b))
+- avoid unchanged identity audit writes ([7cc41a0](https://github.com/schiste/toolhub-evolved/commit/7cc41a0badd7d0e5ce29eafce50587c0d4afb36b))
+- isolate candidate identity discovery ([231831f](https://github.com/schiste/toolhub-evolved/commit/231831fba66f375fc2cfe2efdacf4980cd93d570))
+- skip complete identity migration rows ([4b8047d](https://github.com/schiste/toolhub-evolved/commit/4b8047dcbbedc7920fb870697b675b0cc3ac2818))
+- fingerprint semantic identity inputs ([d7d9922](https://github.com/schiste/toolhub-evolved/commit/d7d99227ad548ad608d37d88276f69dd5b9c42a8))
+- reconcile changed identity sources only ([ac0cc09](https://github.com/schiste/toolhub-evolved/commit/ac0cc0983aa0aea8b05ff5a6b155394c4ae00116))
+- batch stable identity synchronization ([541a49e](https://github.com/schiste/toolhub-evolved/commit/541a49e25ecc3b596d3335ad09acbd31f9d69f76))
+
+### Interface and accessibility
+
+- use imperative mood in facet counter docstrings ([20f58a1](https://github.com/schiste/toolhub-evolved/commit/20f58a17a5dda8000216a6bf9a067ca46f3d42bc))
+
+### Documentation
+
+- document MCP server endpoint (Phase 4 Task 5) ([8f4d548](https://github.com/schiste/toolhub-evolved/commit/8f4d548e55ef362b786faedc6280947828c860d2))
+- note people minted from registry ids ([5139341](https://github.com/schiste/toolhub-evolved/commit/5139341e1d342d68f825956f767a66568c18b2f3))
+- fail loudly when Toolhub search is unavailable ([0badecc](https://github.com/schiste/toolhub-evolved/commit/0badecc106714aa177cbea66cf882b613a9861c0))
+- keep probe queries short for the same reason as tool queries ([68dac76](https://github.com/schiste/toolhub-evolved/commit/68dac7601d0951fd464f791fb54d02d72d7fc5a2))
+- delegate search_tools to upstream Toolhub search ([9b29302](https://github.com/schiste/toolhub-evolved/commit/9b29302df593811e0d6186f8c0d86cf2c4b66860))
+- record Phase 2 supersession and rationale ([578c363](https://github.com/schiste/toolhub-evolved/commit/578c363d2ae7c96b5341263f0e51681f5cd5cbd2))
+- describe registry candidate resolution ([30e31a0](https://github.com/schiste/toolhub-evolved/commit/30e31a0a86f9d00d9d679f261c85d070aa6400f8))
+- align design plan with the implemented facet design ([8d1dc42](https://github.com/schiste/toolhub-evolved/commit/8d1dc4284a54fa6eca83d30f677b13d475429109))
+- note the label shape classification ([39c01e1](https://github.com/schiste/toolhub-evolved/commit/39c01e1cc074872f926e71a7a1f54652b254b58b))
+- extend range over the shared setup change ([c4016ed](https://github.com/schiste/toolhub-evolved/commit/c4016ed1c10f5ede6f1466c4c72c057e7209fc01))
+- revert to one facet table, emitted by the projection ([ec50a74](https://github.com/schiste/toolhub-evolved/commit/ec50a748370b6f35f12cc2e473ec2b507291e8a8))
+- record why facet signals warrant a separate table ([0f2e6a5](https://github.com/schiste/toolhub-evolved/commit/0f2e6a54dbce79ac20fd43d9fd791d4dc887856a))
+- scope ToolSignalFacet to analyzer-derived signals only ([ee64741](https://github.com/schiste/toolhub-evolved/commit/ee64741e617a36bfd6da2672b0011244f5304a74))
+- note the mapping reapply optimization ([54d0cfd](https://github.com/schiste/toolhub-evolved/commit/54d0cfd6b66a550d434ba54349d3bb0d12b64c38))
+- record operator confirmation in phase 5 checklist ([53f90b6](https://github.com/schiste/toolhub-evolved/commit/53f90b6ccbc7710dca90f5f9224aece82e86afbd))
+- add toolhub-discovery implementation plan (5 phases) ([a3162cd](https://github.com/schiste/toolhub-evolved/commit/a3162cd6317e58deef46b3fb7dc68cdfba7a817e))
+- note the drain lock-window change ([ebc158b](https://github.com/schiste/toolhub-evolved/commit/ebc158bb080dda0d03aad538a51a527bf5ec0493))
+- note the repository analysis crash fix ([2eca844](https://github.com/schiste/toolhub-evolved/commit/2eca84412145b216844bdff031933f84ae82e73f))
+- describe the job scaffold and duplication gate ([0fc0586](https://github.com/schiste/toolhub-evolved/commit/0fc05864a0184312c2fed58433387fb27d572e7c))
+- document local hooks and the aethyme broker ([adeb0a9](https://github.com/schiste/toolhub-evolved/commit/adeb0a96bc8e813ce741c2195f75127d2b217a8f))
+- add toolhub-discovery prior-art search design plan ([b769de7](https://github.com/schiste/toolhub-evolved/commit/b769de72213bf385451ecf95be07a139b1f41059))
+- describe the background workers page ([daa8e38](https://github.com/schiste/toolhub-evolved/commit/daa8e384cf240f3142e3b3d57ed854b1495c2866))
+- describe scheduled-job lock recovery ([932209a](https://github.com/schiste/toolhub-evolved/commit/932209a8a4633ea5cca8651d4b73a0dbc29825f7))
+- extend community release source range ([c6a1f4b](https://github.com/schiste/toolhub-evolved/commit/c6a1f4b8d9c640250fdb72572b7b20d88788007d))
+- extend community release source range ([39b4c98](https://github.com/schiste/toolhub-evolved/commit/39b4c98e1c7234396a3ac6481a192215193e0f0f))
+- extend community release source range ([784f3d3](https://github.com/schiste/toolhub-evolved/commit/784f3d36447909cc1fc14094d464947ee1415b9c))
+- extend community release source range ([d966e5b](https://github.com/schiste/toolhub-evolved/commit/d966e5b3e0d7dfa0c3cf7ed5a74c652afecf65ef))
+- extend community release source range ([4c73f68](https://github.com/schiste/toolhub-evolved/commit/4c73f68c3ae351e6c8dabe5232f40e844fb433a0))
+- describe identity resolution improvements ([7112be0](https://github.com/schiste/toolhub-evolved/commit/7112be0fc484f0d99eafa25bba9517078f149c3c))
+- extend community release source range ([fdccb37](https://github.com/schiste/toolhub-evolved/commit/fdccb3704b415eb5efc04f31cd3c37031875922b))
+- clarify statistics cache warming ([6ea6b6e](https://github.com/schiste/toolhub-evolved/commit/6ea6b6ef5c50a3e26764826d0bdec23ee0bbbfcc))
+- document last-good projection operations ([70545ab](https://github.com/schiste/toolhub-evolved/commit/70545ab20c7f348cb55d1e5816c685ef50d929d9))
+- extend community release source range ([176a39d](https://github.com/schiste/toolhub-evolved/commit/176a39d2407ae26cc3f30ac0e1af5aa555253dad))
+- include catalog quality statistics ([fbd39fe](https://github.com/schiste/toolhub-evolved/commit/fbd39fe5d4ddda198eadde2e69f75bade9c1111c))
+- extend community release source range ([b73622f](https://github.com/schiste/toolhub-evolved/commit/b73622fc8a0d95c59780ebdcdade2bbb920a6660))
+- include canonical Toolforge aliases ([862157b](https://github.com/schiste/toolhub-evolved/commit/862157bcc02b66be13a4b742af9491e933670a9a))
+- document Toolforge project aliases ([17037e4](https://github.com/schiste/toolhub-evolved/commit/17037e4dbf485573bdf93b3d2ae251c2366f96ce))
+- include fresh catalog snapshots ([868f78a](https://github.com/schiste/toolhub-evolved/commit/868f78a722bdd2d9d51ac3de02cbe4d3117cfcdd))
+- fold card updates into community release ([4dfa744](https://github.com/schiste/toolhub-evolved/commit/4dfa7441961e8dfb4876a7046d133b22fde4a313))
+
+### Operations
+
+- enable registry candidate discovery hourly ([5cd83c4](https://github.com/schiste/toolhub-evolved/commit/5cd83c4c64983c568e39edcae30376301cbfc2f9))
+- shorten and instrument production deploys ([905724f](https://github.com/schiste/toolhub-evolved/commit/905724f2e582dba0ad501e8abb38504c9d6a3aca))
+- coordinate last-good projection refreshes ([040a90d](https://github.com/schiste/toolhub-evolved/commit/040a90d88de1378df41e694e00ced19aa74ed191))
+- schedule source identity reconciliation ([91cd14e](https://github.com/schiste/toolhub-evolved/commit/91cd14e607418177b8efa032773e82f9dc3b1f56))
+
+### Refactoring
+
+- use the shared setup in account sync too ([7ff2c72](https://github.com/schiste/toolhub-evolved/commit/7ff2c72785e7a98210e2f364e2c2c4bcd3c68eab))
+- share the JSON report load cycle ([5b1e2b0](https://github.com/schiste/toolhub-evolved/commit/5b1e2b06ced45d1b4ae11336d18247a74ebb728e))
+- share one entrypoint scaffold across the jobs ([f656a0c](https://github.com/schiste/toolhub-evolved/commit/f656a0c2d97076f5a1956f08624977c2828ab37a))
+- simplify maintainer trust cues ([bf45bdb](https://github.com/schiste/toolhub-evolved/commit/bf45bdb996b9d4c03307935520ab812c20b14ea5))
+
+### Tests
+
+- hold the whole measured tree at 100% and ratchet to it ([49cb3f6](https://github.com/schiste/toolhub-evolved/commit/49cb3f600746fd956846ac50baed146561b2619a))
+- cover the eight largest backend coverage gaps ([6d67a59](https://github.com/schiste/toolhub-evolved/commit/6d67a59498b0850e7e0837345665bff2ac78e0c4))
+- pin scan -> projection facet delivery end to end ([37c6556](https://github.com/schiste/toolhub-evolved/commit/37c65562a8e8f6ff2012381a73c7d2beb0379042))
+- make the containment test exercise the real savepoint ([fd30279](https://github.com/schiste/toolhub-evolved/commit/fd30279856c904816d3b5fa970bfc93827ac36d8))
+- add multi-empty-filter edge case tests ([a03b03f](https://github.com/schiste/toolhub-evolved/commit/a03b03facdadc19089b8e70f076b44917afefbc5))
+- add edge case coverage for tool_facets ([a283df5](https://github.com/schiste/toolhub-evolved/commit/a283df54c4d750555268e633f146a508455ef6c9))
+- cover incremental projection maintenance ([ea0f035](https://github.com/schiste/toolhub-evolved/commit/ea0f03529f37d1a470137c45024d94889d140746))
+
+### Maintenance
+
+- move to ruff 0.16.3 and satisfy its newly stable rules ([af74a46](https://github.com/schiste/toolhub-evolved/commit/af74a46504f1efc619a74057bf030820d87e3abd))
+- green the spell check on a docstring ([a07a912](https://github.com/schiste/toolhub-evolved/commit/a07a912a1f0e3c3e894fd28f5e2a130ebc03a1be))
+- green the spell check on pushed code ([9783e03](https://github.com/schiste/toolhub-evolved/commit/9783e0364a93b080bd320391bc936c954790c73e))
+- run the duplication gate over Python too ([6a4efc2](https://github.com/schiste/toolhub-evolved/commit/6a4efc2d091e55630fd78719f3c45c1350a73afa))
+- recognize identity pipeline terminology ([5b17d13](https://github.com/schiste/toolhub-evolved/commit/5b17d13427f6871f9c4d743c69340fe3644aa6b6))
+
+### Other
+
+- Merge origin/main into feat/toolhub-discovery-facets ([bb89dea](https://github.com/schiste/toolhub-evolved/commit/bb89deaa5961108006de2d9c9e48f1b579c21b3d))
+- Revert "feat: ranked canonical tool search with FTS and keyword indexing" ([baf6877](https://github.com/schiste/toolhub-evolved/commit/baf6877286ceb935be6a472ae80c5294a69b44fd))
+- gate commits with pinned aethyme ruff checks ([af9936e](https://github.com/schiste/toolhub-evolved/commit/af9936e1ab38de4b28e9b893c71c44490e310df2))
+
+## 2026-08-12
+
+### Features
+
+- reconnect Toolforge identities securely ([9e11e5d](https://github.com/schiste/toolhub-evolved/commit/9e11e5df7ab07ac27bc309169bac2469365bbe6e))
+- verify reconnectable Toolforge accounts ([283b8ed](https://github.com/schiste/toolhub-evolved/commit/283b8edaf32020c3484ce685056a24b83564b338))
+- add secure account reconnection proofs ([e42f7ce](https://github.com/schiste/toolhub-evolved/commit/e42f7cec731ae36380f64e51cbf4bcec9b8e5e58))
+- bind immutable external accounts ([ace9c41](https://github.com/schiste/toolhub-evolved/commit/ace9c41c3d4d0a9196924d3d79f8e27eb818a8e3))
+- project Toolforge accounts and memberships ([6d47959](https://github.com/schiste/toolhub-evolved/commit/6d479596a04ca539996a350de3eb1053cc84a3ba))
+- publish curated deployment history ([c5ca659](https://github.com/schiste/toolhub-evolved/commit/c5ca65985c62c6066f081936ea95abd9141a6667))
+
+### Fixes
+
+- hide canonicalized identity aliases ([9087a7e](https://github.com/schiste/toolhub-evolved/commit/9087a7e8307a447df76c71b36a4b811c4c2acb18))
+- show canonical tool relationships ([6003e09](https://github.com/schiste/toolhub-evolved/commit/6003e093694f2bdfd15936cea138aeb60160276e))
+- reuse recent catalog snapshots ([e51ca77](https://github.com/schiste/toolhub-evolved/commit/e51ca773c5fbb307df5dbe25c64fcb746ce2882f))
+- drain only catalog retirements ([90b98ad](https://github.com/schiste/toolhub-evolved/commit/90b98adfff4e3dc8d28daaca8f2406eadb9737c3))
+- hide retired Toolhub index records ([bb80980](https://github.com/schiste/toolhub-evolved/commit/bb80980067a77de092c7b48f946f66407509be68))
+- retire tools after complete snapshots ([5dbbb47](https://github.com/schiste/toolhub-evolved/commit/5dbbb47da0451483422a66a9acdca0f1fedeb54b))
+- correct failure reporting and add log rotation ([d4a05a2](https://github.com/schiste/toolhub-evolved/commit/d4a05a2e64cb923985484f8e4a48260772127c98))
+- recover from transient module failures ([19b5ec2](https://github.com/schiste/toolhub-evolved/commit/19b5ec25ed857e6b589825695d2a2718a46ebec7))
+- expose only author and maintainer roles ([0067f89](https://github.com/schiste/toolhub-evolved/commit/0067f894153591f23d47d6d0071390330727cc47))
+- keep authority edges internal ([dd67fda](https://github.com/schiste/toolhub-evolved/commit/dd67fda83dd81104cba111ffe61bffa835ad9d37))
+- self-heal reapplied identity evidence ([ab38374](https://github.com/schiste/toolhub-evolved/commit/ab3837423204cee6f352ca817bb44c32132771da))
+- present curated product releases ([ac82162](https://github.com/schiste/toolhub-evolved/commit/ac8216246bf5be42900dc18336eebd42074ee8f6))
+- label the signing command ([5204f02](https://github.com/schiste/toolhub-evolved/commit/5204f027483a832420118cffd9fa7b525f0e4524))
+- type connected identity payloads ([c2ff4ed](https://github.com/schiste/toolhub-evolved/commit/c2ff4ed56d1efc5e2e3cbda7687352fef8927255))
+- publish structured author handles ([0e5c71f](https://github.com/schiste/toolhub-evolved/commit/0e5c71f28c390f4206d2813fda04368905c64463))
+- reconcile multiple verified accounts ([1bffe0c](https://github.com/schiste/toolhub-evolved/commit/1bffe0cccb9be36edec22a201ad84973aa6811cb))
+- reexec after updating script ([4416879](https://github.com/schiste/toolhub-evolved/commit/4416879c3e9680fd79e1843b395625ae997deed0))
+- run account sync as bounded job ([eaf3f4d](https://github.com/schiste/toolhub-evolved/commit/eaf3f4d650131d6b656f04b83d2dd007ef474222))
+- make route loading converge ([622d48c](https://github.com/schiste/toolhub-evolved/commit/622d48c8b25d6e36dfc4090387bfe111efed902c))
+
+### Documentation
+
+- extend community release range ([04730ed](https://github.com/schiste/toolhub-evolved/commit/04730edeaa4e2ff7a746181160fb8156f61085c4))
+- extend community release range ([8d6266a](https://github.com/schiste/toolhub-evolved/commit/8d6266af19d40a2d38e47c7a6f64098fa91273ed))
+- extend community release range ([3fdcf1a](https://github.com/schiste/toolhub-evolved/commit/3fdcf1ab8d5b5d7d39359d10805e6e082681906a))
+- extend community release range ([c1ee530](https://github.com/schiste/toolhub-evolved/commit/c1ee530f2c2f554e1c08186fb2c80c14ab395139))
+- extend community data lifecycle ([5c427a9](https://github.com/schiste/toolhub-evolved/commit/5c427a94ddf4d479e9c8ea9f6d1e0feded5b6786))
+- describe job reliability and log rotation ([2fbe4cf](https://github.com/schiste/toolhub-evolved/commit/2fbe4cf0f14bb7dc8ca50df052485c84d151a158))
+- extend community release range ([a33a1ab](https://github.com/schiste/toolhub-evolved/commit/a33a1abd59c9e18c167a4814082e2b8cb47eb494))
+- clarify public relationship roles ([cc8b5d3](https://github.com/schiste/toolhub-evolved/commit/cc8b5d37c323c7b5093bd6311a45384b7e289651))
+- include reconciliation self-healing ([f03ddd0](https://github.com/schiste/toolhub-evolved/commit/f03ddd017b69272332a04106266d3a5c057fc511))
+- include fallback release seed ([9e56315](https://github.com/schiste/toolhub-evolved/commit/9e56315f11bf1576921e9e3cd629983287f48bd3))
+- seal curated identity release ([24d3151](https://github.com/schiste/toolhub-evolved/commit/24d3151eb741b9c3ed7bee326ab71656df14caad))
+- bundle identity reconciliation release ([8b7f996](https://github.com/schiste/toolhub-evolved/commit/8b7f9964148e6d03dab8629812d3a8e6a6693f0f))
+- define reconciliation and reconnect contracts ([17e508e](https://github.com/schiste/toolhub-evolved/commit/17e508ed016d5337ea967247bb191ff6cea26264))
+- seal production deployment range ([828d83a](https://github.com/schiste/toolhub-evolved/commit/828d83a6712c5a970220ca41393a401d79fb4c9b))
+- finalize deployment release range ([1602d31](https://github.com/schiste/toolhub-evolved/commit/1602d31ec7d9202109b8d470b39772075e90dab4))
+- extend reviewed release range ([748ca52](https://github.com/schiste/toolhub-evolved/commit/748ca52ba384b0037608dac64c1324c9649200b0))
+- seal reviewed release range ([a76a8f2](https://github.com/schiste/toolhub-evolved/commit/a76a8f23843fdbd3a4e468b35b88f13e3cc2b450))
+
+### Refactoring
+
+- group deploys under curated releases ([039fd97](https://github.com/schiste/toolhub-evolved/commit/039fd979afe38530f6561a0d848c14f9e0e66cd1))
+- remove legacy resolver cache ([6564020](https://github.com/schiste/toolhub-evolved/commit/6564020c4863b59626410b53c74d929e376706e5))
+- separate unresolved attributions ([be66b2d](https://github.com/schiste/toolhub-evolved/commit/be66b2db7c23527094aaa348cede2f7cbaf0479f))
+- share canonical account relationships ([7030622](https://github.com/schiste/toolhub-evolved/commit/70306226f553c238068d0135da73f8fc4f67d65c))
+- use jobs for environment steps ([37634a0](https://github.com/schiste/toolhub-evolved/commit/37634a01c181a3665cfe1ffd059f260da257063f))
+
+### Tests
+
+- wait for settled interactive chrome ([b02b1c8](https://github.com/schiste/toolhub-evolved/commit/b02b1c82a66020cc05e5a6487cebe3ed4bab93cd))
+- align integration guard contracts ([566562b](https://github.com/schiste/toolhub-evolved/commit/566562b505257a3cfe5ec90b76f7c9fec14d7b9d))
+
+### Maintenance
+
+- add empty fallback release manifest ([d983144](https://github.com/schiste/toolhub-evolved/commit/d983144e55c83b0a17c8ce94dc4206bac89ca3b0))
+- add parallel preflight ([91a2807](https://github.com/schiste/toolhub-evolved/commit/91a28078910abdda6e93abba9ac81eafda6602d1))
+
+## 2026-08-11
+
+### Fixes
+
+- preserve overlays during data refresh ([498dd52](https://github.com/schiste/toolhub-evolved/commit/498dd5266478d9a1353093d845dfceb53ad50904))
+- coordinate pending state with navigation ([3c87220](https://github.com/schiste/toolhub-evolved/commit/3c87220b7b21f819f1c54b799931ebb709027e3e))
+- stop same-route render loops ([a222236](https://github.com/schiste/toolhub-evolved/commit/a222236f606a3590451c74df7897205080cfad20))
+- require trusted handle provenance ([369553c](https://github.com/schiste/toolhub-evolved/commit/369553c4d0bcd559ac30d52312347e8a4f2dbd92))
+
+### Performance
+
+- skip retired evidence backfill ([116ee3e](https://github.com/schiste/toolhub-evolved/commit/116ee3e0730230e57e572bb038a9d0fb8a6bda5c))
+
+### Documentation
+
+- record directory hardening ([9eadfdb](https://github.com/schiste/toolhub-evolved/commit/9eadfdba12cb6835ddf9b9bc3f60d3163a66e96a))
+- note same-route loop fix ([f65d46b](https://github.com/schiste/toolhub-evolved/commit/f65d46b1c7e7c404ef24d07dc069dc4a69c3a8dc))
+- record trusted identity projection ([eecf8a3](https://github.com/schiste/toolhub-evolved/commit/eecf8a3b50a7111ea8b992f8cabd7fc3cc421152))
+
+### Tests
+
+- allow installed Chromium ([04bfcf1](https://github.com/schiste/toolhub-evolved/commit/04bfcf1658bdb2bf6959df8c682769f6c4dd5659))
+- contain background refresh work ([dcd5603](https://github.com/schiste/toolhub-evolved/commit/dcd5603c738e0e76ec4ddb9b24795699531a03e8))
+
+## 2026-08-10
+
+### Features
+
+- present evidence-aware results ([d50d872](https://github.com/schiste/toolhub-evolved/commit/d50d8723994c28cd775333a5a3d913c9ab4b41a8))
+- structure directory search results ([b2bea41](https://github.com/schiste/toolhub-evolved/commit/b2bea41b192fde6eb57242aa8b77a06186534c96))
+- add relationship metrics to cards ([ecd870a](https://github.com/schiste/toolhub-evolved/commit/ecd870aef1352f32873ed35df1a58ba44271d3d9))
+- show owner and maintainer tool counts ([a0712c8](https://github.com/schiste/toolhub-evolved/commit/a0712c8e8d4cc87c7838beb3128cb12074c03f38))
+- expose per-role tool counts ([c99dc46](https://github.com/schiste/toolhub-evolved/commit/c99dc465764902c2a62971f802420feca2f9111b))
+
+### Fixes
+
+- keep label clusters out of review queue ([56a6361](https://github.com/schiste/toolhub-evolved/commit/56a63618122fc88f0412e148c07d89e29f4c12af))
+- preserve relationship provenance ([1b7ecb5](https://github.com/schiste/toolhub-evolved/commit/1b7ecb5700238f9181e0c3506f814c976851eae7))
+- prioritize duplicate identity clusters ([8541e5d](https://github.com/schiste/toolhub-evolved/commit/8541e5dbc55480ca752fd70e77fb86dc1bb17351))
+- clarify mixed directory cards ([0d0dfe2](https://github.com/schiste/toolhub-evolved/commit/0d0dfe20659c7b57e903819b4f35ec038b64894c))
+- rank first-class search results ([1cad2d7](https://github.com/schiste/toolhub-evolved/commit/1cad2d7804fcf8dab401e98387f7937b55cd2981))
+- reconcile Toolsadmin account names ([6249cb3](https://github.com/schiste/toolhub-evolved/commit/6249cb3f0f8e89ad7439ebd4dcb70e9dbecb7bcb))
+- use Wikimedia LDAP global IDs ([f3d13b2](https://github.com/schiste/toolhub-evolved/commit/f3d13b2fea01f7380687ca9df3deed6e55f5979e))
+- reconcile verified wiki handles ([e069940](https://github.com/schiste/toolhub-evolved/commit/e06994025ccb16890f0dcaa23bdf523ab69dd0c2))
+- tolerate stale advisory lock release ([910049f](https://github.com/schiste/toolhub-evolved/commit/910049ff14361e70ba02bd8ff3aa8424b3a110ca))
+- consolidate duplicate pending conflicts ([26309de](https://github.com/schiste/toolhub-evolved/commit/26309deae2310d1daaa1d6a0cb47d74067fed319))
+- enrich linked account results ([14f7a3f](https://github.com/schiste/toolhub-evolved/commit/14f7a3fdc5f49894ce4991bc659975c6d40f8a46))
+
+### Documentation
+
+- record evidence-aware directory release ([b92df08](https://github.com/schiste/toolhub-evolved/commit/b92df08ba7a5fbf6eb607e0ca241b797f9e01b5e))
+- advance reviewed release range ([0e365ea](https://github.com/schiste/toolhub-evolved/commit/0e365ea5bbfd430af544b8fdca75f880d652d9f9))
+- note duplicate-first reconciliation ([05729fb](https://github.com/schiste/toolhub-evolved/commit/05729fb33123b33c59fff86de676da4853b5338a))
+- advance reviewed release range ([35710b4](https://github.com/schiste/toolhub-evolved/commit/35710b487e81150dda1b5eee2eda22cd0b49777a))
+- explain stable identity reconciliation ([9bde089](https://github.com/schiste/toolhub-evolved/commit/9bde08958775aa9918289a04ae88871c2459e5d7))
+- advance reviewed release range ([cfacc2c](https://github.com/schiste/toolhub-evolved/commit/cfacc2c3805db357bc2ad73f113673bd5f21f36c))
+- clarify public identity reconciliation ([6dfe38d](https://github.com/schiste/toolhub-evolved/commit/6dfe38de2422bf1303a98c19a4d8cf2f276041a4))
+- note long reconciliation reliability ([bbb452b](https://github.com/schiste/toolhub-evolved/commit/bbb452bafa014d1cd21ccb625756131cfadb153c))
+- note reconciliation conflict cleanup ([aaade63](https://github.com/schiste/toolhub-evolved/commit/aaade63c586bf6b0b4f2962e737a829e64ab2caf))
+- review community directory release notes ([2119677](https://github.com/schiste/toolhub-evolved/commit/2119677d9c8313d7ce2ff2b5c17d2dc392fe4093))
+
+### Tests
+
+- cover attribution trust breakdown ([0de7f0c](https://github.com/schiste/toolhub-evolved/commit/0de7f0c46d53d37b6ba3ca74713cdff806a5af7a))
+
+## 2026-08-09
+
+### Features
+
+- align directory with catalog search ([1325295](https://github.com/schiste/toolhub-evolved/commit/13252958df5ea0dd198a8e4ef2fafafb28fd6cec))
+- reconcile SUL-backed public identities ([13f7b6f](https://github.com/schiste/toolhub-evolved/commit/13f7b6f2623f2d016796bd6874f7778bb4a9e46f))
+- materialize stable Toolhub account identities ([aa088e6](https://github.com/schiste/toolhub-evolved/commit/aa088e6bc3b4acfc5f92266aa7f5ccb98f7c040a))
+
+### Operations
+
+- refresh public identity links after account sync ([7e0763f](https://github.com/schiste/toolhub-evolved/commit/7e0763fb086aa104729771d25ffb513305073d47))
+
+## 2026-08-07
+
+### Features
+
+- replace community tabs with unified search ([f394bb6](https://github.com/schiste/toolhub-evolved/commit/f394bb6a865a553ca78260224756f343cc215e2e))
+- unify community identity search ([7f09125](https://github.com/schiste/toolhub-evolved/commit/7f091252aa2d4de72a600443de2f4d9c5a28ca66))
+- validate message files, 404 missing catalogs, fix the JS budget ([76e38c6](https://github.com/schiste/toolhub-evolved/commit/76e38c6c2cfaa32165aa3159967863c551c49017))
+- move messages to the banana format translatewiki speaks ([b933500](https://github.com/schiste/toolhub-evolved/commit/b9335007e76a1cfe4a9da7ea2b5e82ab5f6a545b))
+- unify people accounts and contributors ([b37918c](https://github.com/schiste/toolhub-evolved/commit/b37918c3464498e0c9119f0ab503ab68809d0d0d))
+- add account and contributor APIs ([9ad048e](https://github.com/schiste/toolhub-evolved/commit/9ad048e236e23c3debf3753355f4cb166b84cb77))
+- add resumable official projection ([d1c2077](https://github.com/schiste/toolhub-evolved/commit/d1c2077a1d59d0b29635d1b9f550e952b1070072))
+
+### Fixes
+
+- clear the gates that were failing CI ([b951bbb](https://github.com/schiste/toolhub-evolved/commit/b951bbbeb50199e3bb8c4e096b5e44bf4ae6c1ba))
+- preserve community trust badge colors ([7a9cfc4](https://github.com/schiste/toolhub-evolved/commit/7a9cfc452d293f136ff3763487a2151c152791ab))
+- require complete deploy refresh ([01602a9](https://github.com/schiste/toolhub-evolved/commit/01602a9a8350301833c17445db80d2c21f28eff2))
+
+### Documentation
+
+- regenerate FEATURES.md for the community directory ([1a09d5b](https://github.com/schiste/toolhub-evolved/commit/1a09d5b9e2acf7454463ff14c42a67bebfa22f22))
+- define unified community evidence contract ([27e2a74](https://github.com/schiste/toolhub-evolved/commit/27e2a742c6025fa454f5741c43212b5c95a03ee7))
+- define directory and API contracts ([2992328](https://github.com/schiste/toolhub-evolved/commit/299232886880aecd3ad549ec38a38090a8fd40b5))
+
+### Operations
+
+- refresh complete projection on deploy ([ef59a40](https://github.com/schiste/toolhub-evolved/commit/ef59a404c9074a355dec15f46b97e2bb740f8fdd))
+
+### Tests
+
+- hold the reverse proxy at 100% and ratchet the rest ([c8a78c3](https://github.com/schiste/toolhub-evolved/commit/c8a78c33cb95470b979a22a926a56b2ebb5bb2ce))
+- cover account directory browser flows ([237245f](https://github.com/schiste/toolhub-evolved/commit/237245f492f472cf9b064e05d8c471652fc0203f))
+
+### Maintenance
+
+- preserve type-check baseline ([63e2b04](https://github.com/schiste/toolhub-evolved/commit/63e2b0420eef206033d24fe775f65822e719668c))
+
+### Other
+
+- leave people_index.py to the session that is editing it ([71cc31f](https://github.com/schiste/toolhub-evolved/commit/71cc31ff464bd7e7376656bb823e9582cd68e3e3))
+- Merge main into the i18n banana migration ([8aea533](https://github.com/schiste/toolhub-evolved/commit/8aea53368277550b47e550652bd6e3ac473c00b8))
+
+## 2026-08-06
+
+### Features
+
+- add paginated profile tool UI ([51891a7](https://github.com/schiste/toolhub-evolved/commit/51891a70f66af1902b5f8b50938267febf792e03))
+- paginate profile tool summaries ([f181ad9](https://github.com/schiste/toolhub-evolved/commit/f181ad9b60f47f371719488cc1dd6c87eb3fdffd))
+- build URL-driven directory UI ([f6bbab7](https://github.com/schiste/toolhub-evolved/commit/f6bbab75a267879e30996e3475c10494830a481f))
+- add directory search client ([727b321](https://github.com/schiste/toolhub-evolved/commit/727b321155b3c199a625b8c7516a3c61b617de0b))
+- add paginated directory search ([e4854c7](https://github.com/schiste/toolhub-evolved/commit/e4854c767bc5ba40466e3bc46c452b9f733282ea))
+- expose tool viewer relationship context ([1f78e92](https://github.com/schiste/toolhub-evolved/commit/1f78e92d087fa05f43f3da947fdd7e5b51e0a375))
+- reveal relationship trust on profiles ([a36b765](https://github.com/schiste/toolhub-evolved/commit/a36b76510eb6135883f629139814de558ef2ed81))
+- centralize relationship trust labels ([f6ddf8d](https://github.com/schiste/toolhub-evolved/commit/f6ddf8d067d5e718dba19c14265865503dc6952f))
+- expose relationship verification evidence ([92da44d](https://github.com/schiste/toolhub-evolved/commit/92da44d9f37030858425d9fdceaf0876897a2889))
+- disambiguate legacy author routes ([6dac4b1](https://github.com/schiste/toolhub-evolved/commit/6dac4b1e22dc2b9d66ab61ab5add34f044ecc12c))
+- persist Toolforge account evidence ([bb05941](https://github.com/schiste/toolhub-evolved/commit/bb059419aade04c256f52b20062a461cfc63d4db))
+- apply durable identity review decisions ([62f2055](https://github.com/schiste/toolhub-evolved/commit/62f2055f0d8e1a44ec62008eeecbf4da3ae65aca))
+- queue evidence-backed identity candidates ([7f25c52](https://github.com/schiste/toolhub-evolved/commit/7f25c52e3854d625700c156f1170133d928c8252))
+- discover exact Toolhub identities ([9a74d90](https://github.com/schiste/toolhub-evolved/commit/9a74d9042e70e7f75bf18dfee69e6264e7385845))
+- retain Wikimedia global identity ([13e4cca](https://github.com/schiste/toolhub-evolved/commit/13e4cca16dfbacb8dbc03b12b63956b8246ff179))
+- label unresolved directory evidence ([0d86a4c](https://github.com/schiste/toolhub-evolved/commit/0d86a4cfea1a432a75adaee5a13444d222143180))
+- fail the push when the release notes do not describe it ([081e06f](https://github.com/schiste/toolhub-evolved/commit/081e06f0ea6c362eaa2631833d397c4724e1ae45))
+
+### Fixes
+
+- clamp profile tool pages ([dc7c67b](https://github.com/schiste/toolhub-evolved/commit/dc7c67b0b7db4368418a24a68507bbd8ac5fdaaa))
+- remove profile tool request fan-out ([df972d7](https://github.com/schiste/toolhub-evolved/commit/df972d769028a619fec49958970b235c18dff49f))
+- harden directory navigation failures ([1a1eff5](https://github.com/schiste/toolhub-evolved/commit/1a1eff505e9e750db383981941df97bc60056d03))
+- label actions by verified viewer role ([02c8e11](https://github.com/schiste/toolhub-evolved/commit/02c8e1119db2148ec06496af2313a631fabc6a66))
+- label maintainer verification explicitly ([82850e4](https://github.com/schiste/toolhub-evolved/commit/82850e473468ac170f7e96abd1904027607c5feb))
+- preserve evidence callback typing ([94815a2](https://github.com/schiste/toolhub-evolved/commit/94815a2109708a39776332825ede16278c32872f))
+- distinguish maintainer relationship trust ([9fd446f](https://github.com/schiste/toolhub-evolved/commit/9fd446f1fa93351b2e42c3a1b2e70d214e4f8bf9))
+- resolve legacy routes by unique handles ([679d4db](https://github.com/schiste/toolhub-evolved/commit/679d4db8fb4014adf5415f25bdde312d90b909c2))
+- quarantine stable identity conflicts ([f31f3af](https://github.com/schiste/toolhub-evolved/commit/f31f3af4ac3e370fee40c34e463380369a6627f2))
+- separate unresolved attributions ([534dd18](https://github.com/schiste/toolhub-evolved/commit/534dd18841dce2e2d1aae956fd86208b98db1c6a))
+- ignore a gzipped twin older than the file it stands for ([4fb37e2](https://github.com/schiste/toolhub-evolved/commit/4fb37e29f91dc4f39126f077843ae6eeb19c4e46))
+
+### Interface and accessibility
+
+- restore ruff formatting ([61a6a96](https://github.com/schiste/toolhub-evolved/commit/61a6a96aea3f9b17583cda245d6c5c484d28ac31))
+
+### Documentation
+
+- extend reviewed release range ([43f2386](https://github.com/schiste/toolhub-evolved/commit/43f23863f599be192d9059b301c9ced0f6d634c4))
+- document legacy route disambiguation ([402d4c2](https://github.com/schiste/toolhub-evolved/commit/402d4c28686a416308a51110581a37bbd5545157))
+- finalize reviewed release range ([a6a5dd3](https://github.com/schiste/toolhub-evolved/commit/a6a5dd37444b564202c64b755209dd3f95c22fa5))
+- advance reviewed release notes ([16d9d40](https://github.com/schiste/toolhub-evolved/commit/16d9d4098588e87ff80390f4c9054ed7e7250ba4))
+- document identity reconciliation operations ([4494063](https://github.com/schiste/toolhub-evolved/commit/44940638a916a59b0699e7ed4e7773d93615dea1))
+- define public identity policy ([401149a](https://github.com/schiste/toolhub-evolved/commit/401149a67eb64072c049261af4dd2a266590a529))
+- note the output/ ignore rule and move the range forward ([38de4ff](https://github.com/schiste/toolhub-evolved/commit/38de4ff92979b9896033cf1a3082b9a9fc98cc91))
+- describe the release-notes gate in the release notes ([716b84e](https://github.com/schiste/toolhub-evolved/commit/716b84ea879ebec9d1d26bacf6975b3e0db8809c))
+- rewrite the release notes, which had been stale for 34 commits ([a75efed](https://github.com/schiste/toolhub-evolved/commit/a75efed50d3449c617bb2c725de12b8f7f5fe187))
+
+### Refactoring
+
+- centralize identity evidence policy ([1936912](https://github.com/schiste/toolhub-evolved/commit/193691276ac20ad9392c77304e17daa5575d6818))
+
+### Tests
+
+- cover prolific profile pagination ([9e8b855](https://github.com/schiste/toolhub-evolved/commit/9e8b8554ee6a4c8a8df7223a85a348d19fc179e6))
+- cover directory search contract ([ba9638e](https://github.com/schiste/toolhub-evolved/commit/ba9638e4290a1af52fe4e462aac6d44498c6115d))
+- cover contributor action boundaries ([a104993](https://github.com/schiste/toolhub-evolved/commit/a1049938312c64ea7f51cada0a1f1cc533511636))
+- inventory public handle resolver ([360d587](https://github.com/schiste/toolhub-evolved/commit/360d587d28032d1213833d839d224fa7ae278ac4))
+- align Toolsadmin handle namespace ([4c77dbb](https://github.com/schiste/toolhub-evolved/commit/4c77dbb8104b0d30f8e9a0a087f19fdd50158426))
+- enforce identity acceptance criteria ([6accefa](https://github.com/schiste/toolhub-evolved/commit/6accefaacbeb6e6d99683ae87bfaa786f45cf3e0))
+
+### Maintenance
+
+- ignore output/, which can contain signed-in session state ([24be52a](https://github.com/schiste/toolhub-evolved/commit/24be52a65ad5768ad1d82b278e26ce1542bd816d))
+
+## 2026-08-05
+
+### Fixes
+
+- report a scan failure that cannot be recorded instead of dropping it ([6d5c835](https://github.com/schiste/toolhub-evolved/commit/6d5c8355a570a2cc038ac015ae75bd64a008d385))
+- move the issue-publish failure messages into their exception classes ([c6f4254](https://github.com/schiste/toolhub-evolved/commit/c6f42548246e283d70618a04fdfb309290593664))
+- clear the three lint findings in user_tool_cache ([5f0b71b](https://github.com/schiste/toolhub-evolved/commit/5f0b71b11f750759588362e2bbb935df89058f41))
+- route every summary cache write through one guarded path ([5969bfa](https://github.com/schiste/toolhub-evolved/commit/5969bfab19fee65803f631a5b06bb5efde8408a4))
+- stop the card view from evicting a stored full summary ([801ccf9](https://github.com/schiste/toolhub-evolved/commit/801ccf905df9312c4d73d23eae0bd6629f537b52))
+- keep the requested view through the deferred summary queue ([cff7225](https://github.com/schiste/toolhub-evolved/commit/cff722510ab7cdbe995f12d5488b43beb779c3c4))
+
+### Performance
+
+- serve built static assets from memory instead of NFS ([29e7ff0](https://github.com/schiste/toolhub-evolved/commit/29e7ff04357fdeef1cbf878a76215712912e6952))
+- gzip static assets at build time instead of per request ([435e9d7](https://github.com/schiste/toolhub-evolved/commit/435e9d715bc0503604e2d14f3bcada8a1253b58e))
+
+### Interface and accessibility
+
+- apply ruff format to five files it had drifted from ([6d6db56](https://github.com/schiste/toolhub-evolved/commit/6d6db567612c721c078d61f070e953b11b863e51))
+
+### Refactoring
+
+- move three helpers to modules that match what they do ([480d36e](https://github.com/schiste/toolhub-evolved/commit/480d36ec9068ad3fe4a89b921fb89fb959b9fb7a))
+- give the shared v1 helpers a home and public names ([29876c3](https://github.com/schiste/toolhub-evolved/commit/29876c382d6f030e17f26490e20dad28ae293728))
+- split the last six multi-route families out of v1.py ([af8a51c](https://github.com/schiste/toolhub-evolved/commit/af8a51cbb69445db3e268bce67fed65d9362e9f8))
+- stop exporting three internal-only symbols ([c690e28](https://github.com/schiste/toolhub-evolved/commit/c690e28d731cc94db6ff42292326ddae56b762cd))
+- split six more route families out of v1.py ([c4cee59](https://github.com/schiste/toolhub-evolved/commit/c4cee59cccfc878fc1816f92a18226c08e98141d))
+- split /v1/me/ out of v1.py and reach shared helpers through the module ([341bcc0](https://github.com/schiste/toolhub-evolved/commit/341bcc0e275b18cfd5285a43eeb98f63f29c5bec))
+- move the /v1/write/ bridge out of v1.py ([80f8464](https://github.com/schiste/toolhub-evolved/commit/80f84647d39f3cd06189e1c853e0c14f46ca8197))
+
+### Maintenance
+
+- restore the lint gate after splitting v1.py ([bdfe2b3](https://github.com/schiste/toolhub-evolved/commit/bdfe2b395153a0d540022466433398ee9d882469))
+
+### Other
+
+- Revert "perf: serve built static assets from memory instead of NFS" ([43975bd](https://github.com/schiste/toolhub-evolved/commit/43975bdc4c874d7b06a1490ab94d8d900d09b636))
+
+## 2026-08-04
+
+### Features
+
+- ship person profiles and relationship claims ([d21de8d](https://github.com/schiste/toolhub-evolved/commit/d21de8dbc306e49a5541cf1a089f271a6542d096))
+- give search, lists and filtered home a cache-first health score ([4437250](https://github.com/schiste/toolhub-evolved/commit/4437250cf67d3da664428dee7b85e8069eb928ce))
+- ship health summaries with the signed-in tool list ([b6f4c97](https://github.com/schiste/toolhub-evolved/commit/b6f4c97874feed0aea3c5425d882f7866cc1c0d6))
+
+### Fixes
+
+- type claim request ownership guard ([9d0333f](https://github.com/schiste/toolhub-evolved/commit/9d0333febfa540c34c46149bfcf06532fb774e41))
+- derive claim roles from proof methods ([37055f6](https://github.com/schiste/toolhub-evolved/commit/37055f6b95cfb3d68456aa5952946b0e9c35dc5b))
+- isolate claim drawer request state ([17dd29a](https://github.com/schiste/toolhub-evolved/commit/17dd29a0d27fcdd4a6366b1ee141264477a0ebf1))
+- harden people reconciliation invariants ([cc9c3a2](https://github.com/schiste/toolhub-evolved/commit/cc9c3a2cce470412c342ed9c74597d111bd51564))
+- keep both maintainer count names in the card projection ([919bfcb](https://github.com/schiste/toolhub-evolved/commit/919bfcb88e2c79c5324f972a985a326fe43103eb))
+- read the tool page health summary alongside the canonical record ([b146fc4](https://github.com/schiste/toolhub-evolved/commit/b146fc4cc2e1be9fa8f95eb2314fbb057d78e77d))
+- trim the summary cache to fit instead of halving it ([811b12c](https://github.com/schiste/toolhub-evolved/commit/811b12c76d857962eba5adc08cb0c64de3d175cd))
+- show cached health scores in the first render ([0aacb82](https://github.com/schiste/toolhub-evolved/commit/0aacb82cdac23e3176e8a219a000b34a9c86b0a9))
+
+### Performance
+
+- fetch the score popover breakdown after the route renders ([78d4fec](https://github.com/schiste/toolhub-evolved/commit/78d4fec00a1227857d6a37e1be583e73eafd3989))
+- serve tool cards a projected summary instead of the whole record ([dfd8238](https://github.com/schiste/toolhub-evolved/commit/dfd8238e240fcf976869aa3155d060a4b7b529ee))
+
+### Documentation
+
+- document person identity and claim workflows ([b5d8ecd](https://github.com/schiste/toolhub-evolved/commit/b5d8ecd9196a73cec0a2b4e14cf99e60b3b27a3d))
+
+### Refactoring
+
+- make people the relationship authority ([ae10bf6](https://github.com/schiste/toolhub-evolved/commit/ae10bf6f85d7ea10432923cfc737dc0d9f040dfb))
+
 ## 2026-08-03
 
 ### Features
 
+- move release notes to bottom toaster ([268d8c7](https://github.com/schiste/toolhub-evolved/commit/268d8c724e9fb644a7bd6dc5a3205dcfcc0ba4f8))
+- add reviewed marketing release notes ([9878a87](https://github.com/schiste/toolhub-evolved/commit/9878a87a87597d4850a73f44a85f2dd40fe94cf0))
 - add deploy changelog announcements ([8a5f07b](https://github.com/schiste/toolhub-evolved/commit/8a5f07b4b229167c816784252b464aba83d068d4))
+
+### Fixes
+
+- recover from a failed module load instead of showing a blank page ([d73086b](https://github.com/schiste/toolhub-evolved/commit/d73086bb7873b3390a4bb14be69cb6da82c43d30))
+- preserve release notice state and content ([828438f](https://github.com/schiste/toolhub-evolved/commit/828438f06df265abea5f48da4c6974140ad23c8a))
 
 ### Performance
 
+- compose the landing page into one request ([619e6b2](https://github.com/schiste/toolhub-evolved/commit/619e6b225378993073055c99e8c70bf167848b9f))
 - keep the static prose pages out of the first paint ([ea81748](https://github.com/schiste/toolhub-evolved/commit/ea817485339251667b1e1a60cd6bf449c933ddba))
 
 ## 2026-08-01
