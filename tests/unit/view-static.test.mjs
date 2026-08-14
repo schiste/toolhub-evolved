@@ -220,6 +220,12 @@ test("the MCP page is self-sufficient documentation, not a pointer at the reposi
 	assert.ok(html.includes("no scanned tool matches"));
 	assert.ok(html.includes("429 rate limited, retry later"));
 	assert.ok(html.includes("Absence is weak evidence"));
+	// The reason to connect at all leads the page, and leads it in bold.
+	assert.ok(
+		html.includes(
+			"<strong>An AI assistant can answer the question every new Wikimedia tool should start with: does this already exist, and what do similar tools build on?</strong>"
+		)
+	);
 });
 
 test("STATIC_SLUGS lists exactly the pages static.js can render", async () => {

@@ -862,7 +862,8 @@ export const STATIC = {
 	"mcp-server": () => ({
 		title: t("static.mcp.title", "MCP server"),
 		body: `
-		<p>${t("static.mcp.intro", "Toolhub Evolved publishes catalog discovery over the Model Context Protocol, so an AI assistant can answer the question every new Wikimedia tool should start with: does this already exist, and what do similar tools build on?")}</p>
+		<p>${t("static.mcp.intro", "Toolhub Evolved publishes catalog discovery over the Model Context Protocol.")}
+		<strong>${t("static.mcp.introPayoff", "An AI assistant can answer the question every new Wikimedia tool should start with: does this already exist, and what do similar tools build on?")}</strong></p>
 		<p>${tWithElements("static.mcp.endpointIntro", "The endpoint is $1. It is read-only and anonymous — no account, no API key, no OAuth grant — and everything it returns is public catalog data, the same records this site shows.", { html: code(MCP_ENDPOINT_URL) })}</p>
 		<h2>${t("static.mcp.connectHeading", "Connect a client")}</h2>
 		<p>${t("static.mcp.claudeCode", "In Claude Code, add it once:")}</p>
