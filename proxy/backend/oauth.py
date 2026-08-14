@@ -14,6 +14,7 @@ import secrets
 import requests
 from flask import Blueprint, Response, jsonify, redirect, request, session, url_for
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend import authz, db, people_index, security, toolhub
 from backend.models import User
@@ -167,6 +168,37 @@ def _callback_preconditions(state: object, redirect_uri: str | None) -> Response
     return None
 
 
+def _persist_login(
+    *,
+    toolhub_user_id: str,
+    username: str,
+    wikimedia_global_user_id: str,
+    token_payload: dict[str, object],
+) -> tuple[int, int]:
+    """Commit the authentication authority without touching derived identity rows."""
+
+    def persist() -> tuple[int, int]:
+        with db.session_scope() as s:
+            user = s.execute(select(User).where(User.wm_sub == toolhub_user_id)).scalar_one_or_none()
+            if user is None:
+                user = User(
+                    wm_sub=toolhub_user_id,
+                    username=username,
+                    wikimedia_global_user_id=wikimedia_global_user_id or None,
+                    role=authz.role_for_login(toolhub_user_id, username),
+                )
+                s.add(user)
+                s.flush()
+            else:
+                user.username = username
+                user.wikimedia_global_user_id = wikimedia_global_user_id or user.wikimedia_global_user_id
+                user.role = authz.role_for_login(toolhub_user_id, username, user.role)
+            toolhub.store_grant(s, user.id, token_payload)
+            return user.id, user.session_epoch or 0
+
+    return db.run_with_lock_retry(persist)
+
+
 @oauth_bp.route("/oauth/callback")
 def oauth_callback() -> Response:
     """Exchange the code, fetch the Toolhub user, sign into Evolved."""
@@ -190,24 +222,18 @@ def oauth_callback() -> Response:
         return _login_failed(f"token endpoint returned HTTP {status}", body)
     except (requests.RequestException, toolhub.ToolhubAuthError, KeyError, ValueError) as exc:
         return _login_failed(f"{type(exc).__name__} during the exchange", exc)
-    with db.session_scope() as s:
-        user = s.execute(select(User).where(User.wm_sub == toolhub_user_id)).scalar_one_or_none()
-        if user is None:
-            user = User(
-                wm_sub=toolhub_user_id,
-                username=username,
-                wikimedia_global_user_id=wikimedia_global_user_id or None,
-                role=authz.role_for_login(toolhub_user_id, username),
-            )
-            s.add(user)
-            s.flush()
-        else:
-            user.username = username
-            user.wikimedia_global_user_id = wikimedia_global_user_id or user.wikimedia_global_user_id
-            user.role = authz.role_for_login(toolhub_user_id, username, user.role)
-        people_index.link_user(s, user)
-        uid, epoch = user.id, user.session_epoch or 0
-    toolhub.save_grant(uid, token_payload)
+    try:
+        uid, epoch = _persist_login(
+            toolhub_user_id=toolhub_user_id,
+            username=username,
+            wikimedia_global_user_id=wikimedia_global_user_id,
+            token_payload=token_payload,
+        )
+    except SQLAlchemyError as exc:
+        reason = (
+            "local database remained locked" if db.is_transient_lock_error(exc) else "local database rejected login"
+        )
+        return _login_failed(reason, type(exc).__name__)
     _set_session(uid, epoch)
     return redirect("/")
 
