@@ -205,6 +205,13 @@ def run(
         }
         report["status"] = "completed"
         report["failurePhase"] = None
+    except ProjectionRefreshDeferredError as error:
+        # Another refresh owns one or more complete input generations. This is
+        # the same healthy overlap semantics as every other advisory-locked
+        # worker: preserve the reason for operators, then let the owner finish.
+        report["status"] = "deferred"
+        report["failurePhase"] = None
+        report["reason"] = str(error)[:2000]
     except Exception as error:
         report["status"] = "failed"
         report["error"] = str(error)[:2000]
