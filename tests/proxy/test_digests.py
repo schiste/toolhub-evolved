@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+import requests
 from flask import Flask
 from sqlalchemy import select
 
@@ -295,7 +296,40 @@ def test_model_prompt_requests_grounded_people_names_but_forbids_model_links():
     assert "do not merely repeat the title" in system
     assert "exactly one object for every supplied tool" in system
     assert supplied["author_names"] == ["Ada Lovelace"]
-    assert supplied["toolhub_url"] == "https://toolhub.wikimedia.org/tools/known"
+    assert "toolhub_url" not in supplied
+    assert "url" not in supplied
+
+
+def test_model_payload_bounds_busy_periods_but_daily_supplies_every_tool():
+    facts = [
+        {
+            "name": f"tool-{index}",
+            "title": f"Tool {index}",
+            "description": (f"Description for tool {index}. " * 80),
+            "tasks": [f"task-{item}" * 30 for item in range(12)],
+            "toolhub_url": f"https://toolhub.wikimedia.org/tools/tool-{index}",
+            "url": f"https://tool-{index}.example/",
+            "authors": [{"name": "Person", "url": "https://people.example/person"}],
+        }
+        for index in range(118)
+    ]
+
+    monthly = digests._model_payload(facts, "monthly", "llm-qwen36-27b")
+    monthly_input = json.loads(monthly["messages"][1]["content"])
+    candidates = monthly_input["tools"]
+    candidate_indexes = [int(item["name"].removeprefix("tool-")) for item in candidates]
+
+    assert monthly_input["period_tool_count"] == 118
+    assert digests.MAX_HIGHLIGHTS <= len(candidates) <= digests.MAX_MODEL_CANDIDATES
+    assert len(json.dumps(candidates, ensure_ascii=False).encode()) <= digests.MAX_MODEL_FACTS_BYTES
+    assert min(candidate_indexes) < 10
+    assert max(candidate_indexes) > 100
+    assert all(set(item) <= {"name", *digests.EVIDENCE_FIELDS} for item in candidates)
+
+    daily = digests._model_payload(facts, "daily", "llm-qwen36-27b")
+    daily_input = json.loads(daily["messages"][1]["content"])
+    assert daily_input["candidate_count"] == 118
+    assert [item["name"] for item in daily_input["tools"]] == [fact["name"] for fact in facts]
 
 
 def test_model_editorial_rejects_unknown_tools_and_links():
@@ -1486,7 +1520,29 @@ def test_digest_generation_falls_back_on_bad_model_response(monkeypatch):
     assert model == "llm-qwen36-27b"
     assert fallback is True
     assert response is not None
+    assert "JSONDecodeError" in response["_toolhub_generation_error"]
     assert editorial["highlights"][0]["blurb"] == "Useful."
+
+
+def test_digest_generation_preserves_liftwing_http_failure(monkeypatch):
+    monkeypatch.setenv(
+        "LIFTWING_API_URL",
+        "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions",
+    )
+    monkeypatch.setenv("LIFTWING_MODEL", "llm-qwen36-27b")
+
+    class Response:
+        def raise_for_status(self):
+            raise requests.HTTPError("500 Server Error from LiftWing")
+
+    monkeypatch.setattr(digests.requests, "post", lambda *_args, **_kwargs: Response())
+
+    _editorial, _model, fallback, response = digests.generate_editorial(
+        [{"name": "known", "description": "Useful."}], "monthly"
+    )
+
+    assert fallback is True
+    assert response == {"_toolhub_generation_error": "HTTPError: 500 Server Error from LiftWing"}
 
 
 def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
