@@ -435,14 +435,17 @@ def _analyzer_facets(report: dict | None) -> list[tuple[str, str, str, int]]:
                 _clean_text(entry.get("label") or entry.get("value")).encode("utf-8", "ignore").decode("utf-8")[:255]
             )
 
-            # Coerce confidence with try/except, reject non-finite, clamp to [0.0, 1.0], convert to basis points
+            # Missing, unparseable, or non-finite confidence drops the finding:
+            # tool_facets.py documents these rows as detection certainty, and a
+            # finding the analyzer would not publish must not become queryable
+            # with certainty 0 attached.
             try:
-                confidence_float = float(entry.get("confidence", 0.0))
+                confidence_float = float(entry.get("confidence"))
                 if not math.isfinite(confidence_float):
                     continue
                 confidence_float = max(0.0, min(1.0, confidence_float))
             except (TypeError, ValueError):
-                confidence_float = 0.0
+                continue
 
             confidence_basis_points = round(confidence_float * 10000)
 

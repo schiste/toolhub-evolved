@@ -966,10 +966,11 @@ def test_analyzer_facets_report_not_dict_coverage():
     assert not analyzer_rows
 
 
-def test_analyzer_facets_non_numeric_confidence_coerced():
-    """Test that non-numeric confidence is coerced to 0.0 without error.
+def test_analyzer_facets_non_numeric_confidence_dropped():
+    """Findings without a usable confidence are dropped, not kept at 0.
 
-    This covers the try/except at catalog_projection._analyzer_facets:427-433.
+    tool_facets.py documents analyzer confidence as detection certainty and
+    promises missing values drop the finding entirely.
     """
     now = utcnow()
     user = None
@@ -1004,9 +1005,10 @@ def test_analyzer_facets_non_numeric_confidence_coerced():
         facets = {(row.field, row.value, row.confidence_basis_points) for row in s.query(CatalogFacetValue).filter_by(tool_name="badconf").all()}
     # Good facet should be present with correct confidence
     assert ("dependency", "pypi:good", 9500) in facets
-    # Bad confidence facets should be present with 0 confidence
-    assert ("dependency", "pypi:string", 0) in facets
-    assert ("dependency", "pypi:none", 0) in facets
+    # Findings without a usable confidence never become facet rows
+    values = {value for _, value, _ in facets}
+    assert "pypi:string" not in values
+    assert "pypi:none" not in values
 
 
 def test_latest_report_times_respects_review_approved_filter():
