@@ -17,6 +17,7 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Fixes
 
+- guard configurable preflight source ([34380dc](https://github.com/schiste/toolhub-evolved/commit/34380dc8ca5c9c4980bbc2886882514c4ca78e0b))
 - resolve remote identities outside DB sessions ([00b7f5a](https://github.com/schiste/toolhub-evolved/commit/00b7f5adb595688db788f2a52c6b11d2d26faf85))
 - resume deep recent-event backlogs ([4099a90](https://github.com/schiste/toolhub-evolved/commit/4099a90804e596999ba30285921ca67a1914fa6e))
 - invalidate caches from policy source ([048c0d1](https://github.com/schiste/toolhub-evolved/commit/048c0d18407b48a6259730b1e2bce27b73bae5ea))
@@ -55,6 +56,7 @@ This file is generated with `npm run changelog:generate`; do not edit it by hand
 
 ### Documentation
 
+- explain ownership reliability metrics ([040a472](https://github.com/schiste/toolhub-evolved/commit/040a472e7f7528773be454dc3b83998b82df0cd9))
 - describe canonical people links ([ddcb990](https://github.com/schiste/toolhub-evolved/commit/ddcb9904f9b85c2db44c4bc64e3abba159fda530))
 - explain authentication lock fix ([787e941](https://github.com/schiste/toolhub-evolved/commit/787e941e6a4dc82ffb0af005a1813f30cf5b4fc3))
 - record attribution hardening ([05a32b5](https://github.com/schiste/toolhub-evolved/commit/05a32b5c3ee192cf8030c9f60c4b37387461c208))
