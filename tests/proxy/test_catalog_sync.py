@@ -210,6 +210,32 @@ def test_changed_count_restarts_snapshot_without_pruning(monkeypatch):
         assert state.status == "error"
 
 
+def test_changed_count_retries_once_from_a_fresh_generation(monkeypatch):
+    requested_pages = []
+
+    def page(number, _page_size):
+        requested_pages.append(number)
+        if requested_pages == [1]:
+            return ([{"name": "unstable-one"}], True, 2)
+        if requested_pages == [1, 2]:
+            return ([{"name": "unstable-two"}], False, 3)
+        return (
+            ([{"name": "stable-one"}], True, 2)
+            if number == 1
+            else ([{"name": "stable-two"}], False, 2)
+        )
+
+    monkeypatch.setattr(catalog_sync, "listing_page", page)
+
+    summary = catalog_sync.run_complete(sleep_fn=lambda _seconds: None)
+
+    assert requested_pages == [1, 2, 1, 2]
+    assert summary["generation"] == 2
+    assert summary["completed"] is True
+    with db.session_scope() as s:
+        assert {row.tool_name for row in s.query(CanonicalToolCache)} == {"stable-one", "stable-two"}
+
+
 def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
     with db.session_scope() as s:
         s.add(

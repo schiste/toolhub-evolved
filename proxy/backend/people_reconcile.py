@@ -8,6 +8,8 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend import (
     db,
@@ -73,15 +75,42 @@ def enqueue_tool_names_in_session(s: Session, tool_names: list[str], *, reason: 
     if not names:
         return 0
     now = utcnow()
-    for name in names:
-        row = s.get(PersonReconciliationQueue, name)
-        if row is None:
-            s.add(PersonReconciliationQueue(tool_name=name, reason=_clean(reason, 64), enqueued_at=now))
-        else:
-            row.reason = _clean(reason, 64) or row.reason
-            row.enqueued_at = now
-            row.next_attempt_at = None
-            row.last_error = None
+    clean_reason = _clean(reason, 64) or "data_ingestion"
+    rows = [{"tool_name": name, "reason": clean_reason, "enqueued_at": now} for name in names]
+    dialect = s.get_bind().dialect.name
+    if dialect == "mysql":
+        statement = mysql_insert(PersonReconciliationQueue).values(rows)
+        s.execute(
+            statement.on_duplicate_key_update(
+                reason=statement.inserted.reason,
+                enqueued_at=statement.inserted.enqueued_at,
+                next_attempt_at=None,
+                last_error=None,
+            )
+        )
+    elif dialect == "sqlite":
+        statement = sqlite_insert(PersonReconciliationQueue).values(rows)
+        s.execute(
+            statement.on_conflict_do_update(
+                index_elements=[PersonReconciliationQueue.tool_name],
+                set_={
+                    "reason": statement.excluded.reason,
+                    "enqueued_at": statement.excluded.enqueued_at,
+                    "next_attempt_at": None,
+                    "last_error": None,
+                },
+            )
+        )
+    else:
+        for row_values in rows:
+            row = s.get(PersonReconciliationQueue, row_values["tool_name"])
+            if row is None:
+                s.add(PersonReconciliationQueue(**row_values))
+            else:
+                row.reason = clean_reason
+                row.enqueued_at = now
+                row.next_attempt_at = None
+                row.last_error = None
     return len(names)
 
 
