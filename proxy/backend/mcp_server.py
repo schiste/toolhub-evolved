@@ -156,7 +156,9 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "each — the ecosystem's actual adoption ranking. Call before facet_tools to "
             "learn what values exist. Detected types (scanned repos only): dependency, "
             "wikimedia_api, detected_technology. Declared types (whole catalog): tool_type, "
-            "keywords, wiki, license. The response says which family a type belongs to."
+            "keywords, wiki, license — plus tasks and audiences, which are sparsely "
+            "filled but the only values describing what a tool is FOR. The response "
+            "says which family a type belongs to."
         ),
         "inputSchema": {
             "type": "object",
@@ -241,7 +243,7 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
         if not filters:
             msg = (
                 "supply at least one filter: dependency, api, technology (detected), "
-                "or tool_type, keyword, wiki, license (declared)"
+                "or tool_type, keyword, wiki, license, task, audience (declared)"
             )
             raise _ToolError(msg)
         matches = facets_backend.tools_matching_facets(s, filters, limit=_limit_from(arguments, 25))
@@ -382,14 +384,14 @@ _PRIOR_ART_PROMPT = (
     "longer queries introduce noise. Prefer several narrow queries with different "
     "vocabulary.\n\n"
     "2. **facet_tools(dependency=[], api=[], technology=[], tool_type=[], keyword=[], "
-    "wiki=[], license=[], limit=25)**: Find tools by technical signals (detected "
+    "wiki=[], license=[], task=[], audience=[], limit=25)**: Find tools by technical signals (detected "
     "dependency packages and APIs used) or catalog metadata (declared types, keywords, "
     "wikis, licenses). Check the returned `coverage` field — an empty result may "
     "reflect limited catalog scanning, not absence of tools.\n\n"
     "3. **list_facet_values(type)**: List adoption-ranked values of a facet type "
     "before calling facet_tools. Supported types: dependency, wikimedia_api, "
     "detected_technology (detected in scanned repos), tool_type, keywords, wiki, "
-    "license (declared metadata).\n\n"
+    "license, tasks, audiences (declared metadata).\n\n"
     "## Methodology\n\n"
     "1. **Characterize** your idea in 2-3 alternate phrasings, predicting:\n"
     "   - Likely Wikimedia APIs it would call (mediawiki-action-api, wikibase-api, "
