@@ -324,7 +324,7 @@
 }
 .digest-entry li > .digest-tool__links,
 .digest-entry li > .digest-tool__people {
-	margin-left: 0;
+	margin-inline-start: 0;
 }
 .digest-entry footer {
 	color: var(--digest-muted);
