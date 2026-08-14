@@ -80,6 +80,7 @@ def run_once() -> list[MigrationResult]:
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
         ),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
+        MigrationResult("legacy Toolforge proof retirement", _retire_legacy_toolforge_proofs()),
         MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
         MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker()),
         MigrationResult("relationship verification timestamps", _backfill_relationship_verified_at()),
@@ -195,6 +196,60 @@ def _clean_resolver_identity_claims() -> int:
         if "user_tool_resolver_cache" in inspect(db.engine()).get_table_names():
             cache_count = int(s.execute(text("DELETE FROM user_tool_resolver_cache")).rowcount or 0)
         return len(rows) + legacy_edge_count + int(cache_count or 0)
+
+
+def _retire_legacy_toolforge_proofs() -> int:
+    """Withdraw HTML-label proofs that predate exact LDAP reconciliation."""
+    now = utcnow()
+    touched = 0
+    affected_tools: set[str] = set()
+    with db.session_scope() as s:
+        claims = list(
+            s.execute(
+                select(ToolAuthorClaim).where(
+                    ToolAuthorClaim.verification_method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    ToolAuthorClaim.revoked_at.is_(None),
+                    ToolAuthorClaim.verification_status.in_(("verified", "stale")),
+                )
+            ).scalars()
+        )
+        for claim in claims:
+            if maintainer_index.toolforge_claim_has_ldap_proof(claim):
+                continue
+            claim.verification_status = "unverified"
+            claim.expires_at = None
+            claim.last_error = "Legacy Toolsadmin label was not exact LDAP membership proof"
+            claim.updated_at = now
+            affected_tools.add(claim.tool_name)
+            touched += 1
+
+        toolsadmin_rows = list(
+            s.execute(
+                select(ToolRelationshipEvidence).where(
+                    ToolRelationshipEvidence.source == maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+                    ToolRelationshipEvidence.withdrawn_at.is_(None),
+                )
+            ).scalars()
+        )
+        for row in toolsadmin_rows:
+            payload = row.evidence_payload if isinstance(row.evidence_payload, dict) else {}
+            exact_membership = bool(
+                row.method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+                and payload.get("membershipValidatedBy") == "toolforge_ldap"
+                and payload.get("toolforgeUidNumber")
+            )
+            if exact_membership:
+                continue
+            row.withdrawn_at = now
+            row.updated_at = now
+            affected_tools.add(row.tool_name)
+            touched += 1
+
+        if affected_tools:
+            maintainer_index.sync_author_claim_edges(s, tool_names=sorted(affected_tools))
+            for tool_name in sorted(affected_tools):
+                people_index.resolve_tool_relationships(s, tool_name)
+    return touched
 
 
 def _backfill_people_identity() -> int:

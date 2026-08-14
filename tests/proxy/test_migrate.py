@@ -26,6 +26,7 @@ from backend.models import (  # noqa: E402
     ToolAuthorClaim,
     ToolAuthorKey,
     ToolPersonRelationship,
+    ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     User,
     utcnow,
@@ -248,6 +249,66 @@ def test_migrate_cleans_legacy_resolver_identity_claims_and_caches(configured_db
 
     second = {result.name: result.rows for result in migrate.run_once()}
     assert second["resolver identity cleanup"] == 0
+
+
+def test_migrate_retires_only_toolforge_proofs_without_exact_ldap_evidence(configured_db):
+    with db.session_scope() as s:
+        user = User(wm_sub="42", username="Alice")
+        s.add(user)
+        s.flush()
+        person = maintainer_index.people_index.link_user(s, user)
+        s.add_all(
+            [
+                ToolAuthorClaim(
+                    tool_name="legacy-tool",
+                    author_name="Alice",
+                    toolhub_username="Alice",
+                    user_id=user.id,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    evidence_payload={"maintainers": [{"displayName": "Alice"}]},
+                ),
+                ToolAuthorClaim(
+                    tool_name="ldap-tool",
+                    author_name="Alice",
+                    toolhub_username="Alice",
+                    user_id=user.id,
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    evidence_payload={
+                        "discoveryMethod": "toolforge_ldap_membership",
+                        "toolforgeUidNumber": "9001",
+                        "toolforgeToolName": "alice-tool",
+                    },
+                ),
+                ToolRelationshipEvidence(
+                    tool_name="legacy-tool",
+                    person_id=person.id,
+                    relationship_type=sync.PERSON_REL_MAINTAINER,
+                    source=maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+                    method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                    evidence_key="alice",
+                    verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                    confidence=95,
+                    evidence_payload={"maintainers": [{"displayName": "Alice"}]},
+                ),
+            ]
+        )
+
+    assert migrate._retire_legacy_toolforge_proofs() == 2  # noqa: SLF001 - exact migration regression
+    assert migrate._retire_legacy_toolforge_proofs() == 0  # noqa: SLF001 - idempotency regression
+
+    with db.session_scope() as s:
+        legacy_claim = s.query(ToolAuthorClaim).filter_by(tool_name="legacy-tool").one()
+        ldap_claim = s.query(ToolAuthorClaim).filter_by(tool_name="ldap-tool").one()
+        html_evidence = (
+            s.query(ToolRelationshipEvidence).filter_by(source=maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN).one()
+        )
+        assert legacy_claim.verification_status == sync.AUTHOR_CLAIM_UNVERIFIED
+        assert ldap_claim.verification_status == sync.AUTHOR_CLAIM_VERIFIED
+        assert html_evidence.withdrawn_at is not None
+        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="legacy-tool").one()
+        assert relationship.verification_status == sync.AUTHOR_CLAIM_UNVERIFIED
 
 
 def test_relationship_backfill_prefers_current_canonical_metadata_over_legacy_snapshot(configured_db):
