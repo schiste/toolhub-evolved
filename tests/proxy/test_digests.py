@@ -219,6 +219,59 @@ def test_create_edition_freezes_facts_and_uses_deterministic_fallback(monkeypatc
     assert "Grace Hopper" in edition.rendered_text
 
 
+def test_digest_attributes_only_current_verified_relationships(monkeypatch):
+    monkeypatch.delenv("LIFTWING_API_URL", raising=False)
+    digests.capture_recent_rows([creation(1, "relationship-tool", "2026-08-12T12:00:00Z")])
+    relationships = (
+        ("Current Person", "verified", None),
+        ("Unverified Person", "unverified", None),
+        ("Stale Person", "stale", None),
+        ("Failed Person", "failed", None),
+        ("Expired Person", "verified", datetime(2020, 1, 1)),
+    )
+    with db.session_scope() as session:
+        session.add(
+            CanonicalToolCache(
+                tool_name="relationship-tool",
+                record={"name": "relationship-tool", "title": "Relationship Tool"},
+                expires_at=datetime(2026, 8, 14),
+                stale_until=datetime(2026, 8, 15),
+            )
+        )
+        for display_name, verification_status, expires_at in relationships:
+            person = Person(
+                canonical_key=f"relationship:{display_name}",
+                public_id=display_name.casefold().replace(" ", "-"),
+                display_name=display_name,
+            )
+            session.add(person)
+            session.flush()
+            session.add(PersonProfile(person_id=person.id, visibility="public"))
+            session.add(
+                ToolPersonRelationship(
+                    tool_name="relationship-tool",
+                    person_id=person.id,
+                    relationship_type="maintainer",
+                    verification_status=verification_status,
+                    confidence=100,
+                    expires_at=expires_at,
+                )
+            )
+
+    edition = digests.create_edition(digests.period_for("daily", datetime(2026, 8, 12, 12)))
+
+    assert edition is not None
+    with db.session_scope() as session:
+        tool = session.execute(select(DigestEditionTool)).scalar_one()
+        assert tool.facts["maintainer_names"] == ["Current Person"]
+        assert tool.facts["maintainers"] == [
+            {
+                "name": "Current Person",
+                "url": "https://toolhub-evolved.toolforge.org/people/current-person",
+            }
+        ]
+
+
 def test_model_prompt_requests_grounded_people_names_but_forbids_model_links():
     facts = [
         {
@@ -441,6 +494,39 @@ def test_meta_wikitext_neutralizes_tool_and_model_markup(monkeypatch):
     assert "[[Category:Injected]]" not in edition.rendered_wikitext
     assert "&#123;&#123;Danger&#125;&#125;" in edition.rendered_wikitext
     assert "&#91;&#91;Category&#58;Injected&#93;&#93;" in edition.rendered_wikitext
+
+
+@pytest.mark.parametrize(
+    "unsafe_url",
+    ("https://[", "https://example.org/]\n==Injected digest heading=="),
+    ids=("malformed-host", "wikitext-delimiters"),
+)
+def test_digest_omits_malformed_or_wikitext_unsafe_direct_urls(monkeypatch, unsafe_url):
+    monkeypatch.delenv("LIFTWING_API_URL", raising=False)
+    digests.capture_recent_rows([creation(1, "unsafe-url", "2026-08-12T12:00:00Z")])
+    with db.session_scope() as session:
+        session.add(
+            CanonicalToolCache(
+                tool_name="unsafe-url",
+                record={
+                    "name": "unsafe-url",
+                    "title": "Unsafe URL",
+                    "description": "A tool whose direct URL must be omitted safely.",
+                    "url": unsafe_url,
+                },
+                expires_at=datetime(2026, 8, 14),
+                stale_until=datetime(2026, 8, 15),
+            )
+        )
+
+    edition = digests.create_edition(digests.period_for("daily", datetime(2026, 8, 12, 12)))
+
+    assert edition is not None
+    assert "Open tool" not in edition.rendered_wikitext
+    assert "Injected digest heading" not in edition.rendered_wikitext
+    with db.session_scope() as session:
+        tool = session.execute(select(DigestEditionTool)).scalar_one()
+        assert tool.facts["url"] == ""
 
 
 def test_meta_archive_refuses_collisions_and_retries_without_new_editions(monkeypatch):

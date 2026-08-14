@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlparse
 
 import requests
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from backend import db, people_index, toolinfo_authors
 from backend.models import (
@@ -28,7 +28,7 @@ from backend.models import (
     ToolPersonRelationship,
     utcnow,
 )
-from backend.sync import clean_error
+from backend.sync import AUTHOR_CLAIM_VERIFIED, clean_error
 from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient, page_url
 
 if TYPE_CHECKING:
@@ -58,6 +58,7 @@ ARCHIVE_MARKER = "<!-- toolhub-evolved-digest-archive:en -->"
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 _THINK_RE = re.compile(r"^\s*<think>.*?</think>\s*", flags=re.IGNORECASE | re.DOTALL)
 _INVALID_META_TITLE_RE = re.compile(r"[\x00-\x1f\x7f#<>\[\]{}|]")
+_UNSAFE_WIKITEXT_URL_RE = re.compile(r"[\x00-\x20\x7f\[\]]")
 EVIDENCE_FIELDS = {
     "title",
     "description",
@@ -254,10 +255,16 @@ def public_base_url() -> str:
 def _safe_http_url(value: Any) -> str:  # noqa: ANN401 - cached official JSON is heterogeneous
     """Return one safe public HTTP(S) URL or an empty string."""
     candidate = _fact_text(value)
-    parsed = urlparse(candidate)
+    try:
+        parsed = urlparse(candidate)
+        hostname = parsed.hostname
+    except ValueError:
+        return ""
     if (
-        parsed.scheme not in ("http", "https")
-        or not parsed.hostname
+        not candidate
+        or _UNSAFE_WIKITEXT_URL_RE.search(candidate)
+        or parsed.scheme not in ("http", "https")
+        or not hostname
         or parsed.username is not None
         or parsed.password is not None
     ):
@@ -267,6 +274,7 @@ def _safe_http_url(value: Any) -> str:  # noqa: ANN401 - cached official JSON is
 
 def _resolved_people_for_tools(session: Session, names: set[str]) -> dict[str, dict[str, list[dict[str, str]]]]:
     """Return publishable resolved authors and maintainers grouped by tool."""
+    checked_at = utcnow()
     rows = list(
         session.execute(
             select(ToolPersonRelationship, Person)
@@ -274,6 +282,11 @@ def _resolved_people_for_tools(session: Session, names: set[str]) -> dict[str, d
             .where(
                 ToolPersonRelationship.tool_name.in_(names or {""}),
                 ToolPersonRelationship.relationship_type.in_(("author", "maintainer")),
+                ToolPersonRelationship.verification_status == AUTHOR_CLAIM_VERIFIED,
+                or_(
+                    ToolPersonRelationship.expires_at.is_(None),
+                    ToolPersonRelationship.expires_at > checked_at,
+                ),
             )
             .order_by(
                 ToolPersonRelationship.tool_name,
