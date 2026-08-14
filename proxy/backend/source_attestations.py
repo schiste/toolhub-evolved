@@ -146,6 +146,7 @@ def _person_identity(s: Session, person_id: int) -> dict[str, str]:
         people_index.NS_TOOLFORGE_UID_NUMBER: "toolforge_uid_number",
         people_index.NS_TOOLHUB_USERNAME: "toolhub_username",
         people_index.NS_TOOLFORGE_USERNAME: "toolforge_username",
+        people_index.NS_TOOLFORGE_SHELL_USERNAME: "toolforge_shell_username",
         people_index.NS_WIKI_USERNAME: "wiki_username",
     }
     out = dict.fromkeys(fields.values(), "")
@@ -529,7 +530,10 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
                 assert binding.person_id is not None  # noqa: S101 - index contains only bound accounts
                 maintainers.append(
                     {
-                        "display_name": display_names.get(binding.person_id, account.uid),
+                        "display_name": display_names.get(
+                            binding.person_id,
+                            account.developer_username or account.uid,
+                        ),
                         **identities.get(binding.person_id, {}),
                         "relationship_type": PERSON_REL_MAINTAINER,
                         "method": METHOD_TARGET_MEMBERSHIP,
@@ -541,6 +545,8 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
                             "sourceId": source.id,
                             "toolforgeProject": project,
                             "toolforgeUidNumber": account.uid_number,
+                            "toolforgeDeveloperUsername": account.developer_username,
+                            "toolforgeShellUsername": account.uid,
                             "identityBindingMethod": binding.proof_method,
                         },
                         "checked_at": source.last_fetched_at or item.last_seen_at,

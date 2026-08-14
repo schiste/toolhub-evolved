@@ -16,8 +16,11 @@ from sqlalchemy import func, select
 
 from backend import people_index, toolinfo_authors
 from backend.models import (
+    PersonAccountBinding,
     PersonActivitySummary,
     ToolAuthorClaim,
+    ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     User,
@@ -56,6 +59,7 @@ SOURCE_TOOLFORGE_LDAP = "toolforge_ldap"
 METHOD_TOOLHUB_AUTHOR = "toolhub_author_metadata"
 METHOD_TOOLHUB_CREATED_BY = "toolhub_created_by"
 METHOD_TOOLHUB_MODIFIED_BY = "toolhub_modified_by"
+METHOD_TOOLFORGE_TOOLSADMIN_LABEL = "toolforge_toolsadmin_label"
 VERIFIED_CONFIDENCE_MIN = 70
 VERIFIED_STATUS_CONFIDENCE_MIN = 85
 CLAIM_RANK_MIN = datetime.min.replace(tzinfo=UTC).replace(tzinfo=None)
@@ -79,8 +83,26 @@ def clean_text(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - untrusted
     return str(value or "").strip()[:limit]
 
 
+def toolforge_claim_has_ldap_proof(row: ToolAuthorClaim) -> bool:
+    """Return whether a claim carries the complete projected LDAP proof."""
+    if clean_author_claim_method(row.verification_method) != AUTHOR_CLAIM_TOOLFORGE_MAINTAINER:
+        return False
+    payload = row.evidence_payload if isinstance(row.evidence_payload, dict) else {}
+    return bool(
+        payload.get("discoveryMethod") == "toolforge_ldap_membership"
+        and clean_text(payload.get("toolforgeUidNumber"), 64)
+        and clean_text(payload.get("toolforgeToolName"))
+    )
+
+
 def _claim_status(row: ToolAuthorClaim) -> str:
     status = clean_author_claim_status(row.verification_status)
+    if (
+        clean_author_claim_method(row.verification_method) == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER
+        and status in {AUTHOR_CLAIM_VERIFIED, AUTHOR_CLAIM_STALE}
+        and not toolforge_claim_has_ldap_proof(row)
+    ):
+        return AUTHOR_CLAIM_UNVERIFIED
     if status == AUTHOR_CLAIM_VERIFIED and row.expires_at is not None and row.expires_at <= utcnow():
         return AUTHOR_CLAIM_STALE
     return status
@@ -160,9 +182,10 @@ def sync_author_claim_edges(
         method = clean_author_claim_method(claim.verification_method)
         user = users_by_id.get(claim.user_id) if claim.user_id is not None else None
         claim_payload = claim.evidence_payload if isinstance(claim.evidence_payload, dict) else {}
+        authoritative_toolforge = user is not None and toolforge_claim_has_ldap_proof(claim)
         toolforge_username = (
-            clean_text(claim_payload.get("toolforgeUsername"))
-            if method == AUTHOR_CLAIM_TOOLFORGE_MAINTAINER and user is not None
+            clean_text(claim_payload.get("toolforgeDeveloperUsername") or claim_payload.get("toolforgeUsername"))
+            if authoritative_toolforge
             else ""
         )
         by_tool.setdefault(clean_text(claim.tool_name), []).append(
@@ -199,26 +222,74 @@ def replace_toolforge_maintainer_edges(
     checked_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime passthrough
     expires_at: Any = None,  # noqa: ANN401 - SQLAlchemy datetime passthrough
 ) -> list[ToolRelationshipEvidence]:
-    """Replace Toolsadmin operational-maintainer evidence for one tool."""
+    """Replace Toolsadmin labels, verifying only LDAP-backed memberships."""
+    accounts = list(
+        s.execute(select(ToolforgeAccountProjection).where(ToolforgeAccountProjection.disabled.is_(False))).scalars()
+    )
+    accounts_by_handle: dict[str, dict[str, ToolforgeAccountProjection]] = {}
+    for account in accounts:
+        for value in (account.normalized_developer_username, account.normalized_uid):
+            if value:
+                accounts_by_handle.setdefault(value, {})[account.uid_number] = account
+    memberships = {
+        (uid_number, project.casefold())
+        for uid_number, project in s.execute(
+            select(ToolforgeMembershipProjection.uid_number, ToolforgeMembershipProjection.tool_name)
+        ).all()
+    }
+    verified_bindings = {
+        row.external_id: row
+        for row in s.execute(
+            select(PersonAccountBinding).where(
+                PersonAccountBinding.provider == "toolforge",
+                PersonAccountBinding.status == "verified",
+                PersonAccountBinding.person_id.is_not(None),
+                PersonAccountBinding.revoked_at.is_(None),
+            )
+        ).scalars()
+    }
     observations = []
     for toolforge_name, maintainers, evidence_url in pages:
         for maintainer in maintainers:
             display = clean_text(maintainer.display_name)
             if not display:
                 continue
+            handles = {value.casefold() for value in (clean_text(maintainer.username), display) if value}
+            candidates = {
+                uid_number: account
+                for handle in handles
+                for uid_number, account in accounts_by_handle.get(handle, {}).items()
+            }
+            account = next(iter(candidates.values())) if len(candidates) == 1 else None
+            membership_verified = bool(
+                account is not None
+                and (account.uid_number, toolforge_name.casefold()) in memberships
+                and account.uid_number in verified_bindings
+            )
             observations.append(
                 {
                     "display_name": display,
-                    "toolforge_username": clean_text(maintainer.username),
+                    "toolforge_uid_number": account.uid_number if membership_verified and account else "",
+                    "toolforge_username": account.developer_username if membership_verified and account else "",
                     "relationship_type": PERSON_REL_MAINTAINER,
-                    "method": AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-                    "evidence_key": clean_text(toolforge_name),
-                    "verification_status": AUTHOR_CLAIM_VERIFIED,
-                    "confidence": CLAIM_CONFIDENCE[AUTHOR_CLAIM_TOOLFORGE_MAINTAINER],
+                    "method": (
+                        AUTHOR_CLAIM_TOOLFORGE_MAINTAINER if membership_verified else METHOD_TOOLFORGE_TOOLSADMIN_LABEL
+                    ),
+                    "evidence_key": (
+                        f"{clean_text(toolforge_name)}:{account.uid_number if account else display.casefold()}"
+                    ),
+                    "verification_status": AUTHOR_CLAIM_VERIFIED if membership_verified else AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 100 if membership_verified else 25,
                     "evidence_url": evidence_url,
                     "evidence_payload": {
                         "toolforgeToolName": toolforge_name,
                         "profileUsername": clean_text(maintainer.username),
+                        "toolforgeUidNumber": account.uid_number if membership_verified and account else "",
+                        "toolforgeDeveloperUsername": (
+                            account.developer_username if membership_verified and account else ""
+                        ),
+                        "toolforgeShellUsername": account.uid if membership_verified and account else "",
+                        "membershipValidatedBy": "toolforge_ldap" if membership_verified else "",
                     },
                     "checked_at": checked_at,
                     "expires_at": expires_at,

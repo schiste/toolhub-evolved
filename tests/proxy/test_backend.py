@@ -82,6 +82,8 @@ from backend.models import (  # noqa: E402
     ToolAuthorKey,
     ToolEvent,
     ToolHealthTarget,
+    ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
     ToolhubToken,
     ToolinfoControlChallenge,
     ToolinfoDiscovery,
@@ -177,6 +179,7 @@ def identity_resolver(username, *tools, global_id="160", toolforge_uid=None):
                 {
                     "uid": [toolforge_uid or username.casefold()],
                     "uidNumber": ["3067"],
+                    "cn": [username],
                     "wikimediaGlobalAccountId": [global_id],
                     "wikimediaGlobalAccountName": [username],
                     "memberOf": [f"cn=tools.{tool},ou=servicegroups,dc=wikimedia,dc=org" for tool in tools],
@@ -197,6 +200,28 @@ def add_user(username="Ada", wm_sub="42", role=authz.ROLE_USER, wikimedia_global
         s.add(user)
         s.flush()
         return user.id
+
+
+def add_toolforge_account(
+    *,
+    global_id="160",
+    developer_username="Schiste",
+    shell_username="schiste",
+    tools=("toolhub-evolved",),
+):
+    with db.session_scope() as s:
+        s.add(
+            ToolforgeAccountProjection(
+                uid_number="3067",
+                uid=shell_username,
+                normalized_uid=shell_username.casefold(),
+                developer_username=developer_username,
+                normalized_developer_username=developer_username.casefold(),
+                wikimedia_global_user_id=global_id,
+            )
+        )
+        for tool_name in tools:
+            s.add(ToolforgeMembershipProjection(uid_number="3067", tool_name=tool_name))
 
 
 def sign_in(client, uid, csrf="tok"):
@@ -1395,16 +1420,11 @@ def test_toolinfo_control_challenge_requires_published_token_before_claiming(cli
         assert claim.evidence_url == "https://example.org/toolinfo.json"
 
 
-def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):
-    uid = add_user(username="schiste")
-    user = User(id=uid, wm_sub="42", username="schiste")
-    calls = []
-
-    def fetch_toolsadmin(name):
-        calls.append(name)
-        return 200, TOOLSADMIN_MAINTAINERS_TABLE_HTML
-
-    provider = ToolforgeMaintainerProvider(fetcher=fetch_toolsadmin)
+def test_toolforge_maintainer_provider_verifies_sul_bound_ldap_membership(client):
+    uid = add_user(username="schiste", wikimedia_global_user_id="160")
+    user = User(id=uid, wm_sub="42", username="schiste", wikimedia_global_user_id="160")
+    add_toolforge_account()
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML"))
     with db.session_scope() as s:
         rows = provider.verify(
             s,
@@ -1424,7 +1444,8 @@ def test_toolforge_maintainer_provider_verifies_matching_maintainer(client):
             toolhub_tool={"url": "https://toolhub-evolved.toolforge.org"},
         )
         assert [row.id for row in repeated] == [rows[0].id]
-    assert calls == ["toolhub-evolved"]
+    assert rows[0].evidence_payload["toolforgeDeveloperUsername"] == "Schiste"
+    assert rows[0].evidence_payload["toolforgeShellUsername"] == "schiste"
 
 
 def test_claim_method_overrides_a_malformed_stored_relationship(client):
@@ -1460,8 +1481,9 @@ def test_claim_method_overrides_a_malformed_stored_relationship(client):
 
 
 def test_toolforge_maintainer_provider_retries_failed_claims(client):
-    uid = add_user(username="schiste")
-    user = User(id=uid, wm_sub="42", username="schiste")
+    uid = add_user(username="schiste", wikimedia_global_user_id="160")
+    user = User(id=uid, wm_sub="42", username="schiste", wikimedia_global_user_id="160")
+    add_toolforge_account()
     with db.session_scope() as s:
         author_claims.record_author_claim(
             s,
@@ -1473,10 +1495,7 @@ def test_toolforge_maintainer_provider_retries_failed_claims(client):
             expires_at=utcnow() + timedelta(days=1),
             last_error="user is not listed as a Toolforge maintainer",
         )
-        calls = []
-        rows = ToolforgeMaintainerProvider(
-            fetcher=lambda name: calls.append(name) or (200, TOOLSADMIN_MAINTAINERS_TABLE_HTML)
-        ).verify(
+        rows = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML")).verify(
             s,
             user,
             tool_name="toolhub-evolved",
@@ -1486,7 +1505,6 @@ def test_toolforge_maintainer_provider_retries_failed_claims(client):
         assert len(rows) == 1
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
         assert rows[0].last_error is None
-    assert calls == ["toolhub-evolved"]
 
 
 def test_author_claim_provider_parsers_cover_malformed_public_shapes():
@@ -1523,7 +1541,7 @@ def test_author_claim_provider_parsers_cover_malformed_public_shapes():
 def test_toolforge_maintainer_provider_records_failures(client):
     uid = add_user(username="Ada")
     user = User(id=uid, wm_sub="42", username="Ada")
-    provider = ToolforgeMaintainerProvider(fetcher=lambda name: (500, "down"))
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML"))
     with db.session_scope() as s:
         rows = provider.verify(
             s,
@@ -1533,10 +1551,8 @@ def test_toolforge_maintainer_provider_records_failures(client):
             toolhub_tool={},
         )
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
-        assert "500" in rows[0].last_error
-    provider = ToolforgeMaintainerProvider(
-        fetcher=lambda name: (200, "Maintainers\nMaintainers\nOther\nGit repositories")
-    )
+        assert "SUL-bound" in rows[0].last_error
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML"))
     with db.session_scope() as s:
         rows = provider.verify(
             s,
@@ -1546,19 +1562,14 @@ def test_toolforge_maintainer_provider_records_failures(client):
             toolhub_tool={},
         )
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
-        assert "not listed" in rows[0].last_error
+        assert "SUL-bound" in rows[0].last_error
 
 
-def test_toolforge_maintainer_provider_tries_next_name_after_404(client):
-    uid = add_user(username="Ada")
-    user = User(id=uid, wm_sub="42", username="Ada")
-    calls = []
-
-    def fetcher(name):
-        calls.append(name)
-        return (404, "") if name == "alpha" else (200, '<a href="/profile/ada/">Ada</a>')
-
-    provider = ToolforgeMaintainerProvider(fetcher=fetcher)
+def test_toolforge_maintainer_provider_matches_any_validated_project_alias(client):
+    uid = add_user(username="Ada", wikimedia_global_user_id="160")
+    user = User(id=uid, wm_sub="42", username="Ada", wikimedia_global_user_id="160")
+    add_toolforge_account(developer_username="AdaDeveloper", shell_username="ada", tools=("beta",))
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML"))
     with db.session_scope() as s:
         rows = provider.verify(
             s,
@@ -1568,10 +1579,10 @@ def test_toolforge_maintainer_provider_tries_next_name_after_404(client):
             toolhub_tool={"url": "https://beta.toolforge.org"},
         )
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_VERIFIED
-    assert calls == ["alpha", "beta"]
+        assert rows[0].evidence_payload["toolforgeToolName"] == "beta"
 
 
-def test_toolforge_maintainer_provider_records_fetch_errors(client):
+def test_toolforge_maintainer_provider_does_not_use_toolsadmin_fetch_errors(client):
     uid = add_user(username="Ada")
     user = User(id=uid, wm_sub="42", username="Ada")
 
@@ -1588,7 +1599,7 @@ def test_toolforge_maintainer_provider_records_fetch_errors(client):
         )
         assert rows[0].author_name == "Ada"
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
-        assert "offline" in rows[0].last_error
+        assert "SUL-bound" in rows[0].last_error
 
 
 def test_toolforge_provider_skips_non_toolforge_candidates(client):
@@ -2179,7 +2190,11 @@ def test_maintainer_index_builds_public_safe_summary_from_claims():
                 verification_status=sync.AUTHOR_CLAIM_VERIFIED,
                 verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 evidence_url="https://toolsadmin.wikimedia.org/tools/id/ada-tool",
-                evidence_payload={"rawMaintainerPage": "private evidence"},
+                evidence_payload={
+                    "discoveryMethod": "toolforge_ldap_membership",
+                    "toolforgeUidNumber": "1001",
+                    "toolforgeToolName": "ada-tool",
+                },
             )
         )
         s.flush()
@@ -2213,6 +2228,11 @@ def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
                     verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                     checked_at=now - timedelta(days=30),
                     expires_at=now - timedelta(days=1),
+                    evidence_payload={
+                        "discoveryMethod": "toolforge_ldap_membership",
+                        "toolforgeUidNumber": "1001",
+                        "toolforgeToolName": "toolhub-evolved",
+                    },
                 ),
                 ToolAuthorClaim(
                     tool_name="toolforge-toolhub-evolved",
@@ -2222,6 +2242,11 @@ def test_maintainer_index_uses_strongest_claim_for_duplicate_public_edge():
                     verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                     checked_at=now,
                     expires_at=now + timedelta(days=1),
+                    evidence_payload={
+                        "discoveryMethod": "toolforge_ldap_membership",
+                        "toolforgeUidNumber": "1001",
+                        "toolforgeToolName": "toolhub-evolved",
+                    },
                 ),
             ]
         )
@@ -2354,6 +2379,11 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
                 verification_method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
                 checked_at=now,
                 expires_at=now + timedelta(days=1),
+                evidence_payload={
+                    "discoveryMethod": "toolforge_ldap_membership",
+                    "toolforgeUidNumber": "1001",
+                    "toolforgeToolName": "ada-tool",
+                },
             )
         )
         s.add(
@@ -3812,7 +3842,9 @@ def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, m
     claim = created.get_json()["claims"][0]
     assert claim["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
     assert claim["isVerified"] is True
-    assert claim["evidencePayload"]["toolforgeUsername"] == "schiste"
+    assert claim["evidencePayload"]["toolforgeUsername"] == "Schiste"
+    assert claim["evidencePayload"]["toolforgeDeveloperUsername"] == "Schiste"
+    assert claim["evidencePayload"]["toolforgeShellUsername"] == "schiste"
     assert claim["evidencePayload"]["ldapServiceGroup"] == "tools.toolhub-evolved"
     with db.session_scope() as s:
         relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolhub-evolved").one()

@@ -281,7 +281,9 @@ def v1_tool_claim_create(name: str) -> Response:  # noqa: C901, PLR0911, PLR0912
                     stored_user,
                     tool_name=tool_name,
                     toolforge_name=matched,
-                    toolforge_username=toolforge_identity.uid,
+                    toolforge_username=toolforge_identity.developer_username,
+                    toolforge_uid_number=toolforge_identity.uid_number,
+                    toolforge_shell_username=toolforge_identity.uid,
                 )
             ]
         elif method == AUTHOR_CLAIM_TOOLINFO_URL_CONTROL:

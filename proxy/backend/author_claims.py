@@ -18,10 +18,17 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, unquote, urlparse
 
 import requests
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from backend import canonical_tools, toolhub, toolinfo_authors
-from backend.models import ToolAuthorClaim, ToolAuthorKey, User, utcnow
+from backend.models import (
+    ToolAuthorClaim,
+    ToolAuthorKey,
+    ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
+    User,
+    utcnow,
+)
 from backend.sync import (
     AUTHOR_CLAIM_AUTHOR_DISPLAY_NAME,
     AUTHOR_CLAIM_FAILED,
@@ -305,7 +312,7 @@ class AuthorNameProvider:
 
 
 class ToolforgeMaintainerProvider:
-    """Verify a candidate through the public Toolsadmin maintainer list."""
+    """Verify a candidate through SUL-bound LDAP project membership."""
 
     def __init__(self, *, base_url: str = TOOLFORGE_BASE_URL, fetcher: ToolforgeFetcher | None = None) -> None:
         """Store the public Toolsadmin base URL and optional test fetcher."""
@@ -321,7 +328,7 @@ class ToolforgeMaintainerProvider:
         author_names: list[str],
         toolhub_tool: dict | None = None,
     ) -> list[ToolAuthorClaim]:
-        """Record verified/failed claims from Toolsadmin maintainer evidence."""
+        """Record claims only when LDAP binds the user to the project."""
         toolforge_names = toolforge_names_from_toolhub_tool(tool_name, toolhub_tool or {})
         if not toolforge_names:
             return []
@@ -329,24 +336,34 @@ class ToolforgeMaintainerProvider:
         fresh_rows = self._fresh_rows(s, user, tool_name, names)
         if len(fresh_rows) == len(names):
             return fresh_rows
-        for toolforge_name in toolforge_names:
-            evidence_url = self.evidence_url(toolforge_name)
-            try:
-                status, body = self.fetcher(toolforge_name)
-            except requests.RequestException as exc:
-                return self._record_failed(s, user, tool_name, names, evidence_url, str(exc))
-            if status == HTTP_NOT_FOUND:
-                continue
-            if status >= HTTP_BAD_REQUEST:
-                return self._record_failed(s, user, tool_name, names, evidence_url, f"Toolsadmin returned {status}")
-            maintainer_entries = parse_toolsadmin_maintainer_entries(body)
-            if any(
-                string_key(entry.username) == string_key(user.username)
-                or string_key(entry.display_name) == string_key(user.username)
-                for entry in maintainer_entries
-            ):
-                return self._record_verified(
-                    s, user, tool_name, names, toolforge_name, maintainer_entries, evidence_url
+        global_id = clean_string(user.wikimedia_global_user_id)
+        if global_id:
+            matches = list(
+                s.execute(
+                    select(ToolforgeAccountProjection, ToolforgeMembershipProjection)
+                    .join(
+                        ToolforgeMembershipProjection,
+                        ToolforgeMembershipProjection.uid_number == ToolforgeAccountProjection.uid_number,
+                    )
+                    .where(
+                        ToolforgeAccountProjection.wikimedia_global_user_id == global_id,
+                        ToolforgeAccountProjection.disabled.is_(False),
+                        func.lower(ToolforgeMembershipProjection.tool_name).in_(
+                            {name.casefold() for name in toolforge_names}
+                        ),
+                    )
+                ).all()
+            )
+            by_account = {account.uid_number: (account, membership) for account, membership in matches}
+            if len(by_account) == 1:
+                account, membership = next(iter(by_account.values()))
+                return self._record_membership_verified(
+                    s,
+                    user,
+                    tool_name,
+                    names,
+                    membership.tool_name,
+                    account,
                 )
         return self._record_failed(
             s,
@@ -354,10 +371,45 @@ class ToolforgeMaintainerProvider:
             tool_name,
             names,
             self.evidence_url(toolforge_names[0]),
-            "user is not listed as a Toolforge maintainer",
+            "SUL-bound Toolforge LDAP membership was not found",
         )
 
-    def record_membership(
+    def _record_membership_verified(  # noqa: PLR0913, PLR0917 - proof inputs stay explicit
+        self,
+        s: Session,
+        user: User,
+        tool_name: str,
+        author_names: list[str],
+        toolforge_name: str,
+        account: ToolforgeAccountProjection,
+    ) -> list[ToolAuthorClaim]:
+        """Persist one exact SUL → Developer account → project proof."""
+        expires_at = utcnow() + TOOLFORGE_CLAIM_TTL
+        return [
+            record_author_claim(
+                s,
+                tool_name=tool_name,
+                author_name=author_name,
+                toolhub_username=user.username,
+                user_id=user.id,
+                verification_status=AUTHOR_CLAIM_VERIFIED,
+                verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                evidence_url=self.evidence_url(toolforge_name),
+                evidence_payload={
+                    "toolforgeToolName": toolforge_name,
+                    "toolforgeUidNumber": account.uid_number,
+                    "toolforgeDeveloperUsername": account.developer_username,
+                    "toolforgeShellUsername": account.uid,
+                    "wikimediaGlobalUserId": account.wikimedia_global_user_id,
+                    "ldapServiceGroup": f"tools.{toolforge_name}",
+                    "discoveryMethod": "toolforge_ldap_membership",
+                },
+                expires_at=expires_at,
+            )
+            for author_name in author_names
+        ]
+
+    def record_membership(  # noqa: PLR0913 - proof inputs stay explicit
         self,
         s: Session,
         user: User,
@@ -365,6 +417,8 @@ class ToolforgeMaintainerProvider:
         tool_name: str,
         toolforge_name: str,
         toolforge_username: str,
+        toolforge_uid_number: str = "",
+        toolforge_shell_username: str = "",
     ) -> ToolAuthorClaim:
         """Record direct LDAP membership without requiring a page fetch.
 
@@ -384,7 +438,10 @@ class ToolforgeMaintainerProvider:
             evidence_url=self.evidence_url(toolforge_name),
             evidence_payload={
                 "toolforgeToolName": toolforge_name,
+                "toolforgeUidNumber": clean_string(toolforge_uid_number),
                 "toolforgeUsername": clean_string(toolforge_username),
+                "toolforgeDeveloperUsername": clean_string(toolforge_username),
+                "toolforgeShellUsername": clean_string(toolforge_shell_username),
                 "ldapServiceGroup": f"tools.{toolforge_name}",
                 "discoveryMethod": "toolforge_ldap_membership",
             },
@@ -419,40 +476,15 @@ class ToolforgeMaintainerProvider:
                 ToolAuthorClaim.verification_status == AUTHOR_CLAIM_VERIFIED,
             )
         ).scalars()
-        fresh = {string_key(row.author_name): row for row in rows if not _is_expired(row.expires_at)}
+        fresh = {
+            string_key(row.author_name): row
+            for row in rows
+            if not _is_expired(row.expires_at)
+            and isinstance(row.evidence_payload, dict)
+            and row.evidence_payload.get("discoveryMethod") == "toolforge_ldap_membership"
+            and row.evidence_payload.get("toolforgeUidNumber")
+        }
         return [fresh[key] for name in author_names if (key := string_key(name)) in fresh]
-
-    def _record_verified(  # noqa: PLR0913, PLR0917 - claim evidence is clearer as named arguments.
-        self,
-        s: Session,
-        user: User,
-        tool_name: str,
-        author_names: list[str],
-        toolforge_name: str,
-        maintainers: list[ToolsadminMaintainer],
-        evidence_url: str,
-    ) -> list[ToolAuthorClaim]:
-        expires_at = utcnow() + TOOLFORGE_CLAIM_TTL
-        return [
-            record_author_claim(
-                s,
-                tool_name=tool_name,
-                author_name=author_name,
-                toolhub_username=user.username,
-                user_id=user.id,
-                verification_status=AUTHOR_CLAIM_VERIFIED,
-                verification_method=AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
-                evidence_url=evidence_url,
-                evidence_payload={
-                    "toolforgeToolName": toolforge_name,
-                    "maintainers": [
-                        {"displayName": entry.display_name, "username": entry.username} for entry in maintainers
-                    ],
-                },
-                expires_at=expires_at,
-            )
-            for author_name in author_names
-        ]
 
     def _record_failed(  # noqa: PLR0913, PLR0917 - claim evidence is clearer as named arguments.
         self,

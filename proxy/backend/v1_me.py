@@ -130,23 +130,32 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
             }
             bucket = verified if any(edge.verification_status == "verified" for edge in edges) else possible
             bucket.append(item)
-        binding = session.execute(
-            select(PersonAccountBinding).where(
-                PersonAccountBinding.person_id == person.id,
-                PersonAccountBinding.provider == "toolforge",
-                PersonAccountBinding.status == "verified",
-                PersonAccountBinding.revoked_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        toolforge_names: list[str] = []
-        if binding is not None and session.get(ToolforgeAccountProjection, binding.external_id) is not None:
-            toolforge_names = list(
-                session.execute(
-                    select(ToolforgeMembershipProjection.tool_name)
-                    .where(ToolforgeMembershipProjection.uid_number == binding.external_id)
-                    .order_by(ToolforgeMembershipProjection.tool_name)
-                ).scalars()
-            )
+        binding_ids = list(
+            session.execute(
+                select(PersonAccountBinding).where(
+                    PersonAccountBinding.person_id == person.id,
+                    PersonAccountBinding.provider == "toolforge",
+                    PersonAccountBinding.status == "verified",
+                    PersonAccountBinding.revoked_at.is_(None),
+                )
+            ).scalars()
+        )
+        binding_external_ids = {binding.external_id for binding in binding_ids}
+        toolforge_names = list(
+            session.execute(
+                select(ToolforgeMembershipProjection.tool_name)
+                .join(
+                    ToolforgeAccountProjection,
+                    ToolforgeAccountProjection.uid_number == ToolforgeMembershipProjection.uid_number,
+                )
+                .where(
+                    ToolforgeMembershipProjection.uid_number.in_(binding_external_ids or {""}),
+                    ToolforgeAccountProjection.disabled.is_(False),
+                )
+                .distinct()
+                .order_by(ToolforgeMembershipProjection.tool_name)
+            ).scalars()
+        )
         return {
             "username": stored_user.username,
             "personId": person.public_id,

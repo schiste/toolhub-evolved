@@ -28,6 +28,7 @@ def account(
     uid: str,
     uid_number: str,
     *,
+    developer_username: str = "",
     global_id: str = "",
     tools: tuple[str, ...] = (),
     ssh_keys: tuple[str, ...] = (),
@@ -35,6 +36,8 @@ def account(
     return {
         "uid": [uid],
         "uidNumber": [uid_number],
+        "cn": [developer_username or uid.title()],
+        "createTimestamp": ["20130729163514Z"],
         "wikimediaGlobalAccountId": [global_id] if global_id else [],
         "wikimediaGlobalAccountName": [uid.title()] if global_id else [],
         "sshPublicKey": list(ssh_keys),
@@ -56,6 +59,9 @@ def test_sync_projects_bound_and_unbound_accounts_and_memberships():
         magnus = session.get(ToolforgeAccountProjection, "3067")
         assert magnus is not None
         assert magnus.uid == "magnus"
+        assert magnus.developer_username == "Magnus"
+        assert magnus.normalized_developer_username == "magnus"
+        assert magnus.ldap_created_at == "20130729163514Z"
         assert magnus.wikimedia_global_user_id == "160"
         legacy = session.get(ToolforgeAccountProjection, "9001")
         assert legacy is not None
@@ -86,15 +92,43 @@ def test_failed_cycle_preserves_last_complete_generation():
 
 
 def test_successful_next_generation_prunes_removed_rows_and_tracks_renames():
-    toolforge_account_sync.run(loader=lambda: [account("old-name", "1", global_id="10", tools=("one", "removed"))])
+    toolforge_account_sync.run(
+        loader=lambda: [
+            account(
+                "old-shell",
+                "1",
+                developer_username="OldDeveloper",
+                global_id="10",
+                tools=("one", "removed"),
+            )
+        ]
+    )
     result = toolforge_account_sync.run(
-        loader=lambda: [account("new-name", "1", global_id="10", tools=("one", "added"))]
+        loader=lambda: [
+            account(
+                "new-shell",
+                "1",
+                developer_username="NewDeveloper",
+                global_id="10",
+                tools=("one", "added"),
+            )
+        ]
     )
 
     assert result["generation"] == 2
     with db.session_scope() as session:
-        assert session.get(ToolforgeAccountProjection, "1").uid == "new-name"
+        projected = session.get(ToolforgeAccountProjection, "1")
+        assert projected.uid == "new-shell"
+        assert projected.developer_username == "NewDeveloper"
         assert {row.tool_name for row in session.query(ToolforgeMembershipProjection)} == {"one", "added"}
+
+
+def test_missing_developer_account_name_rejects_generation():
+    row = account("shell", "1")
+    row["cn"] = []
+
+    with pytest.raises(toolforge_account_sync.ToolforgeAccountSyncError, match="developer account name"):
+        toolforge_account_sync.run(loader=lambda: [row])
 
 
 def test_duplicate_uid_number_rejects_the_generation():

@@ -42,11 +42,13 @@ def toolhub_account(user_id="42", username="Alice", global_id="160"):
     )
 
 
-def toolforge_account(uid_number="9001", uid="alice", global_id="160"):
+def toolforge_account(uid_number="9001", uid="alice", developer_username="AliceDeveloper", global_id="160"):
     return ToolforgeAccountProjection(
         uid_number=uid_number,
         uid=uid,
         normalized_uid=uid.casefold(),
+        developer_username=developer_username,
+        normalized_developer_username=developer_username.casefold(),
         wikimedia_global_user_id=global_id or None,
         wikimedia_global_name="Alice" if global_id else "",
     )
@@ -74,7 +76,8 @@ def test_sul_bound_toolforge_account_joins_the_toolhub_person():
 
     assert result["verified"] == 1
     assert result["canonicalMembershipRelationships"] == 0
-    assert result["fallbackMembershipRelationships"] == 1
+    assert result["fallbackMembershipRelationships"] == 0
+    assert result["unmappedMemberships"] == 1
     with db.session_scope() as session:
         binding = session.query(PersonAccountBinding).filter_by(provider="toolforge").one()
         assert binding.status == "verified"
@@ -85,12 +88,9 @@ def test_sul_bound_toolforge_account_joins_the_toolhub_person():
         assert (people_index.NS_TOOLHUB_USER_ID, "42") in identifiers
         assert (people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, "160") in identifiers
         assert (people_index.NS_TOOLFORGE_UID_NUMBER, "9001") in identifiers
-        assert (people_index.NS_TOOLFORGE_USERNAME, "alice") in identifiers
-        relationship = session.query(ToolPersonRelationship).one()
-        assert relationship.tool_name == "toolforge-example-tool"
-        assert relationship.relationship_type == "maintainer"
-        assert relationship.verification_status == "verified"
-        assert relationship.confidence == 100
+        assert (people_index.NS_TOOLFORGE_USERNAME, "AliceDeveloper") in identifiers
+        assert (people_index.NS_TOOLFORGE_SHELL_USERNAME, "alice") in identifiers
+        assert session.query(ToolPersonRelationship).count() == 0
 
 
 @pytest.mark.parametrize(
@@ -143,7 +143,7 @@ def test_one_toolforge_project_can_verify_multiple_canonical_records():
         assert {row.tool_name for row in session.query(ToolPersonRelationship)} == {"mix-n-match", "mm_mixnmatch"}
 
 
-def test_canonical_alias_replaces_old_fallback_and_invalidates_tool_summaries():
+def test_canonical_alias_projects_a_previously_unmapped_membership_and_invalidates_tool_summaries():
     with db.session_scope() as session:
         session.add(toolhub_account())
         session.add(toolforge_account())
@@ -152,19 +152,19 @@ def test_canonical_alias_replaces_old_fallback_and_invalidates_tool_summaries():
     with db.session_scope() as session:
         first = identity_graph.synchronize(session)
 
-    assert first["fallbackMembershipRelationships"] == 1
+    assert first["fallbackMembershipRelationships"] == 0
+    assert first["unmappedMemberships"] == 1
     with db.session_scope() as session:
         now = utcnow()
         session.add(canonical_tool("mix-n-match", url="https://mix-n-match.toolforge.org/"))
-        for name in ("mix-n-match", "toolforge-mix-n-match"):
-            session.add(
-                ToolSummaryCache(
-                    tool_name=name,
-                    summary={"toolName": name},
-                    expires_at=now,
-                    stale_until=now,
-                )
+        session.add(
+            ToolSummaryCache(
+                tool_name="mix-n-match",
+                summary={"toolName": "mix-n-match"},
+                expires_at=now,
+                stale_until=now,
             )
+        )
 
     with db.session_scope() as session:
         second = identity_graph.synchronize(session)
@@ -173,10 +173,9 @@ def test_canonical_alias_replaces_old_fallback_and_invalidates_tool_summaries():
     assert second["fallbackMembershipRelationships"] == 0
     with db.session_scope() as session:
         assert {row.tool_name for row in session.query(ToolPersonRelationship)} == {"mix-n-match"}
-        assert {
-            row.tool_name
-            for row in session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None)
-        } == {"mix-n-match"}
+        assert {row.tool_name for row in session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None)} == {
+            "mix-n-match"
+        }
         assert session.query(ToolSummaryCache).count() == 0
 
 

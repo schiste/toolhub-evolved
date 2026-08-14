@@ -62,10 +62,17 @@ NS_TOOLHUB_USER_ID = "toolhub_user_id"
 NS_WIKIMEDIA_GLOBAL_USER_ID = "wikimedia_global_user_id"
 NS_TOOLFORGE_UID_NUMBER = "toolforge_uid_number"
 NS_TOOLHUB_USERNAME = "toolhub_username"
+# Public Developer-account name (LDAP ``cn``), not the Unix shell login.
 NS_TOOLFORGE_USERNAME = "toolforge_username"
+NS_TOOLFORGE_SHELL_USERNAME = "toolforge_shell_username"
 NS_WIKI_USERNAME = "wiki_username"
 PUBLIC_ROLES = PUBLIC_PERSON_REL_VALUES
-PUBLIC_HANDLE_NAMESPACES = (NS_TOOLHUB_USERNAME, NS_TOOLFORGE_USERNAME, NS_WIKI_USERNAME)
+PUBLIC_HANDLE_NAMESPACES = (
+    NS_TOOLHUB_USERNAME,
+    NS_TOOLFORGE_USERNAME,
+    NS_TOOLFORGE_SHELL_USERNAME,
+    NS_WIKI_USERNAME,
+)
 TRUSTED_PUBLIC_HANDLE_SOURCES = (
     "evolved_author_claim",
     "toolhub_oauth",
@@ -481,6 +488,7 @@ def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers an
     stable_id: str,
     handle_namespace: str = "",
     handle: str = "",
+    additional_handles: tuple[tuple[str, str], ...] = (),
     source: str,
     checked_at: datetime | None = None,
 ) -> bool:
@@ -504,12 +512,27 @@ def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers an
         source=source,
         checked_at=now,
     )
-    if handle_namespace and handle:
+    for namespace, value in ((handle_namespace, handle), *additional_handles):
+        if not namespace or not value:
+            continue
+        normalized = _normalized(value)
+        superseded = s.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.person_id == person.id,
+                PersonIdentifier.namespace == namespace,
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.normalized_value != normalized,
+            )
+        ).scalars()
+        for old_handle in superseded:
+            old_handle.is_current = False
+            old_handle.retired_at = now
+            old_handle.updated_at = now
         _upsert_identifier(
             s,
             person,
-            namespace=handle_namespace,
-            value=handle,
+            namespace=namespace,
+            value=value,
             source=source,
             checked_at=now,
             authoritative_reassignment=True,

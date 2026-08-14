@@ -203,6 +203,26 @@ def test_me_tools_with_verified_relationship_and_claim(client):
     assert len(item["relationships"]) == 1
 
 
+def test_me_tools_unions_memberships_from_multiple_verified_toolforge_accounts(client):
+    uid = add_user()
+    sign_in(client, uid)
+    person_id = link_person(uid, tool_name="alpha-tool")
+    with db.session_scope() as s:
+        s.add(PersonAccountBinding(provider="toolforge", external_id="1002", person_id=person_id, status="verified"))
+        s.add(ToolforgeAccountProjection(uid_number="1002", uid="ada-secondary"))
+        s.add_all(
+            [
+                ToolforgeMembershipProjection(uid_number="1002", tool_name="alpha-tool"),
+                ToolforgeMembershipProjection(uid_number="1002", tool_name="beta-tool"),
+            ]
+        )
+
+    resp = client.get("/v1/me/tools/")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["toolforgeToolNames"] == ["alpha-tool", "beta-tool"]
+
+
 # ---------------------------------------------------------------------------
 # v1_me_profile_get / v1_me_profile_put
 

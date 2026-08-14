@@ -340,8 +340,10 @@ class ToolhubAccountSyncState(Base):
 class ToolforgeAccountProjection(Base):
     """Rebuildable projection of one Wikimedia developer account.
 
-    ``uid_number`` is the immutable LDAP/POSIX identifier. ``uid`` is a
-    mutable login handle and must never be used as a person identifier on its
+    ``uid_number`` is the immutable LDAP/POSIX identifier. ``uid`` is the
+    Unix shell login while ``developer_username`` is LDAP ``cn``: the
+    Wikimedia Developer account name used by toolinfo's
+    ``author.developer_username``. Neither handle may identify a person on its
     own. The Wikimedia binding is nullable because many legacy developer
     accounts have not connected their SUL identity.
     """
@@ -350,8 +352,11 @@ class ToolforgeAccountProjection(Base):
     uid_number: Mapped[str] = mapped_column(String(64), primary_key=True)
     uid: Mapped[str] = mapped_column(String(255), index=True)
     normalized_uid: Mapped[str] = mapped_column(String(255), default="", index=True)
+    developer_username: Mapped[str] = mapped_column(String(255), default="", index=True)
+    normalized_developer_username: Mapped[str] = mapped_column(String(255), default="", index=True)
     wikimedia_global_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     wikimedia_global_name: Mapped[str] = mapped_column(String(255), default="")
+    ldap_created_at: Mapped[str] = mapped_column(String(32), default="")
     # Store capability, not credentials. Verification re-reads the current
     # public keys from LDAP so removed/rotated keys cannot survive in cache.
     ssh_key_count: Mapped[int] = mapped_column(Integer, default=0)

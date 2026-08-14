@@ -90,6 +90,7 @@ class ToolforgeIdentity:
 
     uid: str
     uid_number: str
+    developer_username: str
     sul_username: str
     tool_names: tuple[str, ...]
 
@@ -257,7 +258,8 @@ class ToolforgeIdentityProvider:
             linked_username = _clean(_first(row.get("wikimediaGlobalAccountName")))
             uid = _clean(_first(row.get("uid")))
             uid_number = _clean(_first(row.get("uidNumber")), 64)
-            if resolved_id != expected_id or not uid or not uid_number:
+            developer_username = _clean(_first(row.get("cn")))
+            if resolved_id != expected_id or not uid or not uid_number or not developer_username:
                 continue
             raw_memberships = row.get("memberOf")
             member_dns = list(raw_memberships) if isinstance(raw_memberships, (list, tuple)) else []
@@ -265,6 +267,7 @@ class ToolforgeIdentityProvider:
                 ToolforgeIdentity(
                     uid=uid,
                     uid_number=uid_number,
+                    developer_username=developer_username,
                     sul_username=_clean(canonical_username) or linked_username,
                     tool_names=tool_names_from_member_dns(member_dns),
                 )
@@ -291,6 +294,7 @@ class ToolforgeIdentityProvider:
                 attributes=[
                     "uid",
                     "uidNumber",
+                    "cn",
                     "wikimediaGlobalAccountId",
                     "wikimediaGlobalAccountName",
                     "memberOf",

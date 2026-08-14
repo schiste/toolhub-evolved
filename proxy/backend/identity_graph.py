@@ -201,6 +201,7 @@ def input_fingerprint(session: Session) -> str:
             select(
                 ToolforgeAccountProjection.uid_number,
                 ToolforgeAccountProjection.uid,
+                ToolforgeAccountProjection.developer_username,
                 ToolforgeAccountProjection.wikimedia_global_user_id,
                 ToolforgeAccountProjection.disabled,
             ).order_by(ToolforgeAccountProjection.uid_number)
@@ -307,7 +308,8 @@ def bind_toolforge_account(  # noqa: PLR0913 - proof metadata is part of the sec
         stable_namespace=people_index.NS_TOOLFORGE_UID_NUMBER,
         stable_id=account.uid_number,
         handle_namespace=people_index.NS_TOOLFORGE_USERNAME,
-        handle=account.uid,
+        handle=account.developer_username,
+        additional_handles=((people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid),),
         source=proof_method,
     ):
         message = f"Toolforge uidNumber {account.uid_number} could not be attached"
@@ -423,13 +425,21 @@ def _unique_toolhub_handle_candidate(
     account: ToolforgeAccountProjection,
     toolhub_handles: dict[str, list[ToolhubAccountProjection]],
     identifiers: dict[tuple[str, str], Person],
-) -> tuple[ToolhubAccountProjection, Person] | None:
-    matches = toolhub_handles.get(account.normalized_uid, [])
-    if len(matches) != 1:
+) -> tuple[ToolhubAccountProjection, Person, str] | None:
+    candidates = {
+        row.toolhub_user_id: (row, handle_kind)
+        for normalized, handle_kind in (
+            (account.normalized_developer_username, "developer_username"),
+            (account.normalized_uid, "shell_username"),
+        )
+        if normalized
+        for row in toolhub_handles.get(normalized, [])
+    }
+    if len(candidates) != 1:
         return None
-    toolhub_account = matches[0]
+    toolhub_account, handle_kind = next(iter(candidates.values()))
     person = _indexed_person(identifiers, people_index.NS_TOOLHUB_USER_ID, toolhub_account.toolhub_user_id)
-    return (toolhub_account, person) if person is not None else None
+    return (toolhub_account, person, handle_kind) if person is not None else None
 
 
 def _sync_toolforge_bindings(
@@ -450,21 +460,27 @@ def _sync_toolforge_bindings(
             if person is None:
                 person = people_index.ensure_person(
                     session,
-                    display_name=account.wikimedia_global_name or account.uid,
+                    display_name=account.wikimedia_global_name or account.developer_username or account.uid,
                     wikimedia_global_user_id=global_id,
                     wiki_username=account.wikimedia_global_name,
                     source=PROOF_TOOLFORGE_SUL,
                 )
                 identifiers[(people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, global_id.casefold())] = person
             stable_owner = _indexed_person(identifiers, people_index.NS_TOOLFORGE_UID_NUMBER, account.uid_number)
-            handle_owner = _indexed_person(identifiers, people_index.NS_TOOLFORGE_USERNAME, account.uid)
+            developer_owner = _indexed_person(
+                identifiers,
+                people_index.NS_TOOLFORGE_USERNAME,
+                account.developer_username,
+            )
+            shell_owner = _indexed_person(identifiers, people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid)
             existing = bindings.get((PROVIDER_TOOLFORGE, account.uid_number))
             if (
                 existing is not None
                 and existing.status == STATUS_VERIFIED
                 and existing.person_id == person.id
                 and stable_owner is person
-                and handle_owner is person
+                and developer_owner is person
+                and shell_owner is person
             ):
                 stats["verified"] += 1
                 continue
@@ -478,6 +494,8 @@ def _sync_toolforge_bindings(
                     evidence={
                         "wikimediaGlobalUserId": global_id,
                         "toolforgeUidNumber": account.uid_number,
+                        "toolforgeDeveloperUsername": account.developer_username,
+                        "toolforgeShellUsername": account.uid,
                     },
                     binding_index=bindings,
                 )
@@ -497,13 +515,14 @@ def _sync_toolforge_bindings(
             else:
                 stats["verified"] += 1
                 identifiers[(people_index.NS_TOOLFORGE_UID_NUMBER, account.uid_number.casefold())] = person
-                identifiers[(people_index.NS_TOOLFORGE_USERNAME, account.uid.casefold())] = person
+                identifiers[(people_index.NS_TOOLFORGE_USERNAME, account.developer_username.casefold())] = person
+                identifiers[(people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid.casefold())] = person
             continue
         candidate = _unique_toolhub_handle_candidate(account, toolhub_handles, identifiers)
         if candidate is None:
             stats["unresolved"] += 1
             continue
-        toolhub_account, person = candidate
+        toolhub_account, person, handle_kind = candidate
         existing = _binding(session, PROVIDER_TOOLFORGE, account.uid_number, bindings)
         if existing.status == STATUS_VERIFIED:
             stats["verified"] += 1
@@ -518,9 +537,11 @@ def _sync_toolforge_bindings(
             confidence=70,
             evidence={
                 "toolforgeUid": account.uid,
+                "toolforgeDeveloperUsername": account.developer_username,
                 "toolforgeUidNumber": account.uid_number,
                 "toolhubUserId": toolhub_account.toolhub_user_id,
                 "toolhubUsername": toolhub_account.username,
+                "matchedHandleKind": handle_kind,
             },
             binding_index=bindings,
         )
@@ -575,13 +596,14 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
             "membershipRelationships": 0,
             "canonicalMembershipRelationships": 0,
             "fallbackMembershipRelationships": 0,
+            "unmappedMemberships": 0,
             "unboundMemberships": 0,
             "relationshipCacheHit": 1,
         }
     by_tool: dict[str, list[dict[str, Any]]] = {}
     unbound = 0
     canonical_relationships = 0
-    fallback_relationships = 0
+    unmapped_memberships = 0
     person_ids = {row.person_id for row in bindings.values() if row.person_id is not None}
     people = {
         person.id: person
@@ -598,26 +620,28 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
             unbound += 1
             continue
         matched_names = canonical_names.get(membership.tool_name.casefold(), ())
-        catalog_tool_names = matched_names or (f"toolforge-{membership.tool_name}",)
+        if not matched_names:
+            unmapped_memberships += 1
+            continue
         canonical_relationships += len(matched_names)
-        fallback_relationships += int(not matched_names)
-        for catalog_tool_name in catalog_tool_names:
+        for catalog_tool_name in matched_names:
             by_tool.setdefault(catalog_tool_name, []).append(
                 {
-                    "display_name": person.display_name or account.uid,
+                    "display_name": person.display_name or account.developer_username or account.uid,
                     "toolforge_uid_number": account.uid_number,
-                    "toolforge_username": account.uid,
+                    "toolforge_username": account.developer_username,
                     "relationship_type": "maintainer",
                     "method": "toolforge_ldap_membership",
                     "evidence_key": account.uid_number,
                     "verification_status": "verified",
                     "confidence": 100,
                     "evidence_payload": {
-                        "toolforgeUid": account.uid,
+                        "toolforgeDeveloperUsername": account.developer_username,
+                        "toolforgeShellUsername": account.uid,
                         "toolforgeUidNumber": account.uid_number,
                         "toolforgeToolName": membership.tool_name,
                         "canonicalToolName": catalog_tool_name,
-                        "toolMappingMethod": "canonical_project_alias" if matched_names else "conventional_fallback",
+                        "toolMappingMethod": "canonical_project_alias",
                         "identityBindingMethod": binding.proof_method,
                     },
                     "checked_at": membership.last_seen_at,
@@ -649,7 +673,8 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
     return {
         "membershipRelationships": projected,
         "canonicalMembershipRelationships": canonical_relationships,
-        "fallbackMembershipRelationships": fallback_relationships,
+        "fallbackMembershipRelationships": 0,
+        "unmappedMemberships": unmapped_memberships,
         "unboundMemberships": unbound,
         "relationshipCacheHit": 0,
     }

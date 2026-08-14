@@ -189,6 +189,11 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "search_text": f"{text_col} NULL",
             "generation": "INTEGER NOT NULL DEFAULT 0",
         },
+        "toolforge_account_projection": {
+            "developer_username": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "normalized_developer_username": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "ldap_created_at": "VARCHAR(32) NOT NULL DEFAULT ''",
+        },
         "people": {
             # Filled by the one-off data migration. UUID generation is kept out
             # of worker-start DDL because it is proportional to row count.
