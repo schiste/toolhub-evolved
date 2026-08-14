@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Read-only live LiftWing digest preflight tests."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -36,23 +37,33 @@ def editorial(source):
     }
 
 
-def test_fetch_edition_facts_is_bounded_and_validated():
+def test_fetch_edition_facts_is_bounded_and_validated(monkeypatch):
     class Response:
-        content = b"{}"
+        headers = {"Content-Type": "application/json"}
+        is_redirect = False
+        is_permanent_redirect = False
 
         def raise_for_status(self):
             return None
 
-        def json(self):
-            return {"tools": [{"facts": fact} for fact in facts()]}
+        def iter_content(self, _size):
+            yield json.dumps({"tools": [{"facts": fact} for fact in facts()]}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
 
     class Session:
-        def get(self, url, timeout):
+        def get(self, url, **kwargs):
             assert url.endswith("/v1/digests/daily/2026-08-13/")
-            assert timeout == preflight.SOURCE_TIMEOUT_SECONDS
+            assert kwargs["timeout"] == preflight.SOURCE_TIMEOUT_SECONDS
+            assert kwargs["stream"] is True
             return Response()
 
     period = digests.period_from_key("daily", "2026-08-13")
+    monkeypatch.setattr(preflight.outbound, "require_allowed", lambda *_args, **_kwargs: None)
     assert len(preflight.fetch_edition_facts(period, session=Session())) == 2
     with pytest.raises(ValueError, match="HTTPS origin"):
         preflight.clean_public_base("http://example.test/path")

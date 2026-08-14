@@ -57,16 +57,42 @@ def main(argv: list[str] | None = None) -> int:
                 limit=int(os.environ.get("PEOPLE_RECONCILE_QUEUE_LIMIT", people_reconcile.DEFAULT_QUEUE_LIMIT))
             )
         mode = people_reconcile.MODE_APPLY if args.apply or args.identities_only else people_reconcile.MODE_DRY_RUN
-        with db.session_scope() as session:
-            return people_reconcile.run(
-                session,
-                mode=mode,
-                discover_candidates=args.apply or args.identities_only,
+        discover = args.apply or args.identities_only
+        if discover and not args.identities_only:
+            with db.session_scope() as session:
+                local_summary = people_reconcile.run(
+                    session,
+                    mode=mode,
+                    discover_candidates=False,
+                    rebuild_tools=True,
+                    sync_accounts=True,
+                )
+        else:
+            local_summary = None
+        resolved_identities, resolved_registry = (
+            people_reconcile.resolve_remote_batches(
                 candidate_label_limit=args.candidate_label_limit,
                 registry_label_limit=args.registry_label_limit,
-                rebuild_tools=not args.identities_only,
-                sync_accounts=not args.identities_only,
             )
+            if discover
+            else (None, None)
+        )
+        with db.session_scope() as session:
+            summary = people_reconcile.run(
+                session,
+                mode=mode,
+                discover_candidates=discover,
+                candidate_label_limit=args.candidate_label_limit,
+                registry_label_limit=args.registry_label_limit,
+                rebuild_tools=not args.identities_only and local_summary is None,
+                sync_accounts=not args.identities_only and local_summary is None,
+                resolved_identity_candidates=resolved_identities,
+                resolved_registry_candidates=resolved_registry,
+            )
+        if local_summary is not None:
+            summary["toolsRebuilt"] = local_summary["toolsRebuilt"]
+            summary["localPhase"] = local_summary
+        return summary
 
     # Per backend.job_contract: tools this pass could not reconcile stay queued
     # with their retry state and are reported as `failed`. The sweep ran, so it

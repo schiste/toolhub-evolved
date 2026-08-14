@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
@@ -48,6 +49,18 @@ class CatalogSyncError(RuntimeError):
 
 class SnapshotConsistencyError(CatalogSyncError):
     """A full snapshot changed shape and must restart from page one."""
+
+
+@dataclass(frozen=True)
+class RecentScan:
+    """One safe, resumable slice between two immutable recent-event markers."""
+
+    rows: list[dict[str, Any]]
+    latest_marker: str | None
+    boundary_marker: str | None
+    page: int
+    pages_fetched: int
+    complete: bool
 
 
 def _catalog_error(message: str) -> CatalogSyncError:
@@ -174,25 +187,68 @@ def _latest_marker(rows: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def _recent_rows_since(last_marker: str | None) -> tuple[list[dict[str, Any]], str | None]:
-    """Read through recent pages without advancing across an unproven gap."""
+def _recent_rows_since(
+    last_marker: str | None,
+    *,
+    resume_page: int = 1,
+    scan_latest_marker: str | None = None,
+    boundary_marker: str | None = None,
+) -> RecentScan:
+    """Read one checkpointed slice without advancing across an unproven gap."""
     collected: list[dict[str, Any]] = []
-    latest: str | None = None
-    for page in range(1, MAX_RECENT_PAGES_PER_RUN + 1):
+    latest = scan_latest_marker
+    boundary = boundary_marker
+    seeking = boundary_marker
+    first_page = max(1, resume_page - int(bool(boundary_marker)))
+    last_page = first_page
+    for offset in range(MAX_RECENT_PAGES_PER_RUN):
+        page = first_page + offset
+        last_page = page
         rows, has_next = recent_page(page)
-        if page == 1:
+        if latest is None and page == 1:
             latest = _latest_marker(rows)
             if last_marker is None or latest is None:
-                return [], latest
-        for row in rows:
+                return RecentScan(
+                    rows=[],
+                    latest_marker=latest,
+                    boundary_marker=None,
+                    page=page,
+                    pages_fetched=offset + 1,
+                    complete=True,
+                )
+        start = 0
+        if seeking is not None:
+            matched = next((index for index, row in enumerate(rows) if _marker(row) == seeking), None)
+            if matched is None:
+                if not has_next:
+                    message = "Toolhub recent scan boundary disappeared before it could be resumed"
+                    raise CatalogSyncError(message)
+                continue
+            start = matched + 1
+            seeking = None
+        for row in rows[start:]:
             if _marker(row) == last_marker:
-                return collected, latest
+                return RecentScan(
+                    rows=collected,
+                    latest_marker=latest,
+                    boundary_marker=boundary,
+                    page=page,
+                    pages_fetched=offset + 1,
+                    complete=True,
+                )
             collected.append(row)
+            boundary = _marker(row) or boundary
         if not has_next:
             message = "Toolhub recent cursor disappeared before it could be reconciled"
             raise CatalogSyncError(message)
-    message = f"Toolhub recent cursor exceeded the {MAX_RECENT_PAGES_PER_RUN}-page safety limit"
-    raise CatalogSyncError(message)
+    return RecentScan(
+        rows=collected,
+        latest_marker=latest,
+        boundary_marker=boundary,
+        page=last_page,
+        pages_fetched=MAX_RECENT_PAGES_PER_RUN,
+        complete=False,
+    )
 
 
 def _tool_names(rows: list[dict[str, Any]]) -> list[str]:
@@ -286,18 +342,36 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         state = _state(s)
         previous = state.recent_latest_marker
         pending = list(state.recent_pending_tools or [])
-    new_rows, latest = _recent_rows_since(previous)
-    if latest is None:
-        return {"recent_tools": 0, "recent_errors": 0}
+        scan_page = state.recent_scan_page
+        scan_latest = state.recent_scan_latest_marker
+        scan_boundary = state.recent_scan_boundary_marker
+    scan = _recent_rows_since(
+        previous,
+        resume_page=scan_page,
+        scan_latest_marker=scan_latest,
+        boundary_marker=scan_boundary,
+    )
+    if scan.latest_marker is None:
+        return {
+            "recent_tools": 0,
+            "recent_errors": 0,
+            "recent_scan_pages": scan.pages_fetched,
+            "recent_scan_complete": 1,
+        }
     if previous is None:
         with db.session_scope() as s:
             state = _state(s)
-            state.recent_latest_marker = latest
+            state.recent_latest_marker = scan.latest_marker
             state.recent_last_at = utcnow()
             state.status = STATUS_IDLE
-        return {"recent_tools": 0, "recent_errors": 0}
-    digests.capture_recent_rows(new_rows)
-    names = _dedupe_names(pending + _tool_names(new_rows))
+        return {
+            "recent_tools": 0,
+            "recent_errors": 0,
+            "recent_scan_pages": scan.pages_fetched,
+            "recent_scan_complete": 1,
+        }
+    digests.capture_recent_rows(scan.rows)
+    names = _dedupe_names(pending + _tool_names(scan.rows))
     successful = errors = 0
     refreshed_names: list[str] = []
     remaining: list[str] = []
@@ -316,7 +390,15 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
     remaining.extend(names[MAX_RECENT_DETAILS_PER_RUN:])
     with db.session_scope() as s:
         state = _state(s)
-        state.recent_latest_marker = latest
+        if scan.complete:
+            state.recent_latest_marker = scan.latest_marker
+            state.recent_scan_page = 1
+            state.recent_scan_latest_marker = None
+            state.recent_scan_boundary_marker = None
+        else:
+            state.recent_scan_page = scan.page
+            state.recent_scan_latest_marker = scan.latest_marker
+            state.recent_scan_boundary_marker = scan.boundary_marker
         state.recent_pending_tools = _dedupe_names(remaining)
         state.recent_last_at = utcnow()
         state.last_success_at = utcnow()
@@ -324,7 +406,12 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
         state.source = SOURCE_OFFICIAL
         state.sync_status = SYNC_OFFICIAL
     graph_enrichment.refresh_tool_names(refreshed_names)
-    return {"recent_tools": successful, "recent_errors": errors}
+    return {
+        "recent_tools": successful,
+        "recent_errors": errors,
+        "recent_scan_pages": scan.pages_fetched,
+        "recent_scan_complete": int(scan.complete),
+    }
 
 
 def _graph_detail_candidates(cursor: str | None, pending: list[str]) -> list[str]:

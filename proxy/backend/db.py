@@ -171,6 +171,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "snapshot_started_at": "DATETIME NULL",
             "recent_latest_marker": "VARCHAR(255) NULL",
             "recent_pending_tools": f"{json_col} NULL",
+            "recent_scan_page": "INTEGER NOT NULL DEFAULT 1",
+            "recent_scan_latest_marker": "VARCHAR(255) NULL",
+            "recent_scan_boundary_marker": "VARCHAR(255) NULL",
             "recent_last_at": "DATETIME NULL",
             "detail_hydration_cursor": "VARCHAR(255) NULL",
             "detail_hydration_pending_tools": f"{json_col} NULL",
@@ -190,6 +193,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # Filled by the one-off data migration. UUID generation is kept out
             # of worker-start DDL because it is proportional to row count.
             "public_id": "VARCHAR(36) NULL",
+        },
+        "person_tool_relationships": {
+            "verified_at": "DATETIME NULL",
         },
         "person_identifiers": {
             "identifier_kind": "VARCHAR(32) NOT NULL DEFAULT 'handle'",

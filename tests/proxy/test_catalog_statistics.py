@@ -22,6 +22,7 @@ from backend.models import (  # noqa: E402
     ToolinfoAuthorBinding,
     ToolinfoSource,
     ToolPersonRelationship,
+    ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     utcnow,
 )
@@ -319,9 +320,7 @@ def test_relationships_skip_orphaned_rows_and_report_expired_verified_claims_as_
     now = datetime(2026, 8, 13, 12, tzinfo=UTC)
     with db.session_scope() as session:
         _tool(session, "known", {"title": "Known"})
-        person = people_index.ensure_person(
-            session, display_name="Ada", wikimedia_global_user_id="99", source="test"
-        )
+        person = people_index.ensure_person(session, display_name="Ada", wikimedia_global_user_id="99", source="test")
         session.add_all(
             [
                 # A verified claim whose expiry has passed must be reported as
@@ -349,6 +348,79 @@ def test_relationships_skip_orphaned_rows_and_report_expired_verified_claims_as_
     assert payload["relationships"]["authors"] == {"stale": 1}
     assert payload["relationships"]["maintainers"] == {}
     assert payload["catalog"]["verifiedAuthors"] == {"count": 0, "missingCount": 1, "percent": 0}
+
+
+def test_relationship_metrics_separate_tools_people_rows_changes_and_freshness():
+    now = datetime(2026, 8, 13, 12, tzinfo=UTC)
+    naive_now = now.replace(tzinfo=None)
+    with db.session_scope() as session:
+        for name in ("alpha", "beta", "gamma"):
+            _tool(session, name, {"title": name.title()})
+        linked = people_index.ensure_person(
+            session, display_name="Linked", wikimedia_global_user_id="101", source="test"
+        )
+        identity_only = people_index.ensure_person(
+            session, display_name="Identity only", wikimedia_global_user_id="102", source="test"
+        )
+        session.add_all(
+            [
+                ToolPersonRelationship(
+                    tool_name="alpha",
+                    person_id=linked.id,
+                    relationship_type=PERSON_REL_AUTHOR,
+                    verification_status=AUTHOR_CLAIM_VERIFIED,
+                    verified_at=naive_now - timedelta(hours=2),
+                ),
+                ToolPersonRelationship(
+                    tool_name="beta",
+                    person_id=linked.id,
+                    relationship_type=PERSON_REL_MAINTAINER,
+                    verification_status=AUTHOR_CLAIM_VERIFIED,
+                    verified_at=naive_now - timedelta(days=2),
+                ),
+                ToolPersonRelationship(
+                    tool_name="gamma",
+                    person_id=linked.id,
+                    relationship_type=PERSON_REL_MAINTAINER,
+                    verification_status=AUTHOR_CLAIM_VERIFIED,
+                    verified_at=naive_now - timedelta(hours=1),
+                    expires_at=naive_now - timedelta(minutes=1),
+                ),
+                ToolRelationshipEvidence(
+                    tool_name="alpha",
+                    person_id=linked.id,
+                    relationship_type=PERSON_REL_AUTHOR,
+                    source="test",
+                    verification_status=AUTHOR_CLAIM_VERIFIED,
+                    expires_at=naive_now + timedelta(hours=48),
+                ),
+                ToolRelationshipEvidence(
+                    tool_name="gamma",
+                    person_id=linked.id,
+                    relationship_type=PERSON_REL_MAINTAINER,
+                    source="test",
+                    verification_status=AUTHOR_CLAIM_VERIFIED,
+                    expires_at=naive_now - timedelta(hours=1),
+                ),
+            ]
+        )
+        session.flush()
+        payload = catalog_statistics.build_snapshot(session, now=now)
+
+    metrics = payload["relationshipMetrics"]
+    assert metrics["tools"] == {"verifiedAuthors": 1, "verifiedMaintainers": 1}
+    assert metrics["people"] == {
+        "withAnyCurrentRelationship": 1,
+        "withAnyVerifiedRelationship": 1,
+        "verifiedAuthors": 1,
+        "verifiedMaintainers": 1,
+        "identityOnly": 1,
+    }
+    assert metrics["rows"] == {"total": 3, "verified": 2, "stale": 1}
+    assert metrics["newlyVerifiedTools"]["last24Hours"] == {"all": 1, "authors": 1, "maintainers": 0}
+    assert metrics["newlyVerifiedTools"]["last7Days"] == {"all": 2, "authors": 1, "maintainers": 1}
+    assert metrics["evidenceFreshness"] == {"active": 1, "expired": 1, "expiringWithin72Hours": 1, "withdrawn": 0}
+    assert identity_only.id != linked.id
 
 
 def test_snapshot_rebuilds_when_the_cached_payload_is_corrupt_json():

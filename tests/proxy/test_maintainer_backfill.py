@@ -84,7 +84,15 @@ def test_backfill_materializes_stable_public_edges_and_checkpoints(monkeypatch):
 
     summary = maintainer_backfill.run(limit=1, provider=provider, sleep_fn=lambda _seconds: None)
 
-    assert summary == {"tools": 1, "maintainers": 1, "failed": 0, "requests": 1, "cycleComplete": True, "remaining": 0}
+    assert summary == {
+        "tools": 1,
+        "maintainers": 1,
+        "failed": 0,
+        "requests": 1,
+        "durableToolsSkipped": 0,
+        "cycleComplete": True,
+        "remaining": 0,
+    }
     with db.session_scope() as s:
         edge = s.query(ToolRelationshipEvidence).one()
         identifier = s.query(PersonIdentifier).filter_by(person_id=edge.person_id).one()
@@ -196,3 +204,58 @@ def test_failed_backfill_preserves_existing_evidence(monkeypatch):
     assert summary["failed"] == 1
     with db.session_scope() as s:
         assert s.query(ToolRelationshipEvidence).count() == 1
+
+
+def test_backfill_skips_tools_covered_by_authoritative_ldap_projection(monkeypatch):
+    monkeypatch.setattr(
+        maintainer_backfill,
+        "_candidates",
+        lambda: [
+            ("ldap-covered", {"name": "ldap-covered"}, ["covered"]),
+            ("fallback-only", {"name": "fallback-only"}, ["fallback"]),
+        ],
+    )
+    with db.session_scope() as s:
+        person = maintainer_index.people_index.ensure_person(
+            s,
+            display_name="LDAP maintainer",
+            toolforge_uid_number="100",
+            source="test",
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="ldap-covered",
+                person_id=person.id,
+                relationship_type="maintainer",
+                source=maintainer_index.SOURCE_TOOLFORGE_LDAP,
+                method="toolforge_ldap_membership",
+                verification_status="verified",
+            )
+        )
+    requested = []
+    provider = ToolforgeMaintainerProvider(
+        fetcher=lambda name: requested.append(name)
+        or (200, '<a href="/profile/fallback-user/">Fallback user</a>')
+    )
+
+    summary = maintainer_backfill.run(limit=10, provider=provider, sleep_fn=lambda _seconds: None)
+
+    assert requested == ["fallback"]
+    assert summary["durableToolsSkipped"] == 1
+    assert summary["tools"] == 1
+
+
+def test_backfill_remaining_uses_the_persisted_cursor_position(monkeypatch):
+    monkeypatch.setattr(
+        maintainer_backfill,
+        "_candidates",
+        lambda: [(name, {"name": name}, [name]) for name in ("alpha", "beta", "gamma", "omega")],
+    )
+    with db.session_scope() as s:
+        s.add(MaintainerBackfillState(key=maintainer_backfill.STATE_KEY, next_tool_name="beta"))
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: (404, ""))
+
+    summary = maintainer_backfill.run(limit=1, provider=provider, sleep_fn=lambda _seconds: None)
+
+    assert summary["tools"] == 1
+    assert summary["remaining"] == 1

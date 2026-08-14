@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
-from backend import canonical_tools, people_index
+from backend import canonical_tools, maintainer_index, people_index, projection_policy
 from backend.models import (
     ApiCacheMeta,
     Person,
@@ -41,8 +42,12 @@ PROOF_TOOLFORGE_SUL = "toolforge_ldap_wikimedia_global_id"
 PROOF_EXACT_HANDLE = "exact_cross_provider_handle_candidate"
 PROOF_AUTHENTICATED = "authenticated_account_control"
 PROOF_OPERATOR = "operator_approved"
-SOURCE_TOOLFORGE_LDAP = "toolforge_ldap"
+SOURCE_TOOLFORGE_LDAP = maintainer_index.SOURCE_TOOLFORGE_LDAP
 TOOLFORGE_RELATIONSHIP_META_KEY = "toolforge_relationship_input_v1"
+RELATIONSHIP_RULES_FINGERPRINT = projection_policy.module_fingerprint(
+    sys.modules[__name__],
+    namespace="toolforge-membership-relationship-policy-v1",
+)
 
 
 class IdentityBindingConflictError(RuntimeError):
@@ -220,6 +225,7 @@ def _relationship_fingerprint(
     canonical_names: dict[str, tuple[str, ...]],
 ) -> str:
     digest = hashlib.sha256()
+    digest.update(RELATIONSHIP_RULES_FINGERPRINT.encode())
     _update_digest(
         digest,
         "bindings",

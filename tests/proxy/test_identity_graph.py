@@ -204,6 +204,19 @@ def test_existing_identity_graph_uses_preloaded_fast_path(monkeypatch):
     assert result["relationshipCacheHit"] == 1
 
 
+def test_relationship_policy_change_forces_a_complete_ldap_reprojection(monkeypatch):
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        session.add(toolforge_account())
+        identity_graph.synchronize(session)
+
+    monkeypatch.setattr(identity_graph, "RELATIONSHIP_RULES_FINGERPRINT", "changed-policy")
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["relationshipCacheHit"] == 0
+
+
 def test_identity_input_fingerprint_ignores_freshness_timestamps():
     with db.session_scope() as session:
         account = toolhub_account()

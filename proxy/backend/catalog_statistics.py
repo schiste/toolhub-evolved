@@ -21,6 +21,7 @@ from backend.models import (
     ToolinfoSource,
     ToolinfoSourceAttestation,
     ToolPersonRelationship,
+    ToolRelationshipEvidence,
     UnresolvedAttributionEvidence,
     utcnow,
 )
@@ -178,6 +179,98 @@ def _current_relationship(row: ToolPersonRelationship, now: datetime) -> bool:
     return row.expires_at is None or row.expires_at > now.replace(tzinfo=None)
 
 
+def _relationship_statistics(
+    session: Session,
+    tool_names: set[str],
+    checked_at: datetime,
+    publishable_person_ids: set[int],
+) -> tuple[dict[str, set[str]], dict[str, Counter[str]], dict[str, Any]]:
+    """Count tool, person, row, transition, and freshness units separately."""
+    roles = (PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER)
+    verified_by_role: dict[str, set[str]] = {role: set() for role in roles}
+    verified_people_by_role: dict[str, set[int]] = {role: set() for role in roles}
+    status_counts: dict[str, Counter[str]] = {role: Counter() for role in roles}
+    linked_people: set[int] = set()
+    newly_verified = {
+        "last24Hours": {role: set() for role in roles},
+        "last7Days": {role: set() for role in roles},
+    }
+    naive_now = checked_at.replace(tzinfo=None)
+    relationships = session.execute(
+        select(ToolPersonRelationship).where(ToolPersonRelationship.relationship_type.in_(roles))
+    ).scalars()
+    for relationship in relationships:
+        if relationship.tool_name not in tool_names:
+            continue
+        status = relationship.verification_status or "unverified"
+        is_current = _current_relationship(relationship, checked_at)
+        if status == AUTHOR_CLAIM_VERIFIED and not is_current:
+            status = "stale"
+        status_counts[relationship.relationship_type][status] += 1
+        if is_current:
+            linked_people.add(relationship.person_id)
+        if status != AUTHOR_CLAIM_VERIFIED:
+            continue
+        verified_by_role[relationship.relationship_type].add(relationship.tool_name)
+        verified_people_by_role[relationship.relationship_type].add(relationship.person_id)
+        if relationship.verified_at is not None and relationship.verified_at >= naive_now - timedelta(days=7):
+            newly_verified["last7Days"][relationship.relationship_type].add(relationship.tool_name)
+            if relationship.verified_at >= naive_now - timedelta(hours=24):
+                newly_verified["last24Hours"][relationship.relationship_type].add(relationship.tool_name)
+
+    evidence_rows = list(
+        session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name.in_(tool_names or {"<none>"}),
+                ToolRelationshipEvidence.relationship_type.in_(roles),
+            )
+        ).scalars()
+    )
+    active_evidence = [row for row in evidence_rows if row.withdrawn_at is None]
+    expired_evidence = [row for row in active_evidence if row.expires_at is not None and row.expires_at <= naive_now]
+    expiring_evidence = [
+        row
+        for row in active_evidence
+        if row.expires_at is not None and naive_now < row.expires_at <= naive_now + timedelta(hours=72)
+    ]
+
+    def window_metrics(window: str) -> dict[str, int]:
+        authors = newly_verified[window][PERSON_REL_AUTHOR]
+        maintainers = newly_verified[window][PERSON_REL_MAINTAINER]
+        return {"all": len(authors | maintainers), "authors": len(authors), "maintainers": len(maintainers)}
+
+    verified_people = verified_people_by_role[PERSON_REL_AUTHOR] | verified_people_by_role[PERSON_REL_MAINTAINER]
+    metrics = {
+        "tools": {
+            "verifiedAuthors": len(verified_by_role[PERSON_REL_AUTHOR]),
+            "verifiedMaintainers": len(verified_by_role[PERSON_REL_MAINTAINER]),
+        },
+        "people": {
+            "withAnyCurrentRelationship": len(publishable_person_ids & linked_people),
+            "withAnyVerifiedRelationship": len(publishable_person_ids & verified_people),
+            "verifiedAuthors": len(publishable_person_ids & verified_people_by_role[PERSON_REL_AUTHOR]),
+            "verifiedMaintainers": len(publishable_person_ids & verified_people_by_role[PERSON_REL_MAINTAINER]),
+            "identityOnly": len(publishable_person_ids - linked_people),
+        },
+        "rows": {
+            "total": sum(sum(counts.values()) for counts in status_counts.values()),
+            "verified": sum(counts[AUTHOR_CLAIM_VERIFIED] for counts in status_counts.values()),
+            "stale": sum(counts["stale"] for counts in status_counts.values()),
+        },
+        "newlyVerifiedTools": {
+            "last24Hours": window_metrics("last24Hours"),
+            "last7Days": window_metrics("last7Days"),
+        },
+        "evidenceFreshness": {
+            "active": len(active_evidence) - len(expired_evidence),
+            "expired": len(expired_evidence),
+            "expiringWithin72Hours": len(expiring_evidence),
+            "withdrawn": len(evidence_rows) - len(active_evidence),
+        },
+    }
+    return verified_by_role, status_counts, metrics
+
+
 def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str, Any]:
     """Build one deterministic statistics document from local projections."""
     checked_at = (now or datetime.now(tz=UTC)).astimezone(UTC)
@@ -202,25 +295,10 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
         for record in records.values()
     )
 
-    verified_by_role = {PERSON_REL_AUTHOR: set(), PERSON_REL_MAINTAINER: set()}
-    status_counts: dict[str, Counter[str]] = {
-        PERSON_REL_AUTHOR: Counter(),
-        PERSON_REL_MAINTAINER: Counter(),
-    }
-    relationships = session.execute(
-        select(ToolPersonRelationship).where(
-            ToolPersonRelationship.relationship_type.in_((PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER))
-        )
-    ).scalars()
-    for relationship in relationships:
-        if relationship.tool_name not in tool_names:
-            continue
-        status = relationship.verification_status or "unverified"
-        if status == AUTHOR_CLAIM_VERIFIED and not _current_relationship(relationship, checked_at):
-            status = "stale"
-        status_counts[relationship.relationship_type][status] += 1
-        if status == AUTHOR_CLAIM_VERIFIED:
-            verified_by_role[relationship.relationship_type].add(relationship.tool_name)
+    publishable_person_ids = people_index.public_identity_ids(session)
+    verified_by_role, status_counts, relationship_metrics = _relationship_statistics(
+        session, tool_names, checked_at, publishable_person_ids
+    )
 
     unresolved_rows = list(
         session.execute(
@@ -243,7 +321,6 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
         if row.normalized_label and (row.expires_at is None or row.expires_at > checked_at.replace(tzinfo=None))
     }
 
-    publishable_person_ids = people_index.public_identity_ids(session)
     quality_counts = Counter(
         quality
         for _person_id, quality in session.execute(
@@ -294,6 +371,7 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "authors": dict(sorted(status_counts[PERSON_REL_AUTHOR].items())),
             "maintainers": dict(sorted(status_counts[PERSON_REL_MAINTAINER].items())),
         },
+        "relationshipMetrics": relationship_metrics,
         "identities": {
             "publishablePeople": len(publishable_person_ids),
             "stablePeople": quality_counts["stable"],
@@ -325,6 +403,8 @@ def build_snapshot(session: Session, *, now: datetime | None = None) -> dict[str
             "verifiedAuthor": "A current author relationship backed by stable identity evidence.",
             "listedAuthor": "The canonical Toolhub record contains at least one author attribution.",
             "verifiedMaintainer": "A current maintainer relationship backed by confirmed access evidence.",
+            "identityOnly": "A publishable person identity with no current author or maintainer relationship.",
+            "newlyVerifiedTool": "A canonical tool whose current relationship first became verified in the window.",
             "coreMetadata": "Title, description, tool URL, and at least one listed author are present.",
             "dateBasis": "Dates are canonical Toolhub catalog record dates; unavailable values remain visible.",
             "noLocalMatch": "Unresolved labels no current rule can reach, so the remaining limit is the rules.",
