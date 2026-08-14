@@ -79,6 +79,11 @@ four tools plus a prior-art-review prompt.
 claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolforge.org/mcp
 ```
 
+**[`docs/MCP.md`](docs/MCP.md) is the user guide** — client setup (Claude Code,
+Claude Desktop, `mcp.json` clients, raw `curl`), what each tool returns field by
+field, how to read the coverage caveats honestly, limits, and troubleshooting.
+The summary below is the short version.
+
 **Tools** — all read-only, no authentication:
 
 - **`search_tools(query, limit=10)`** — relevance-ranked search across ~4,500 tools via upstream Toolhub (elasticsearch-backed). Keep queries short (2-3 content words).
@@ -110,6 +115,7 @@ tools/
   deploy.sh         ·  Toolforge update helper
 TOKENS.md           ·  design-token reference + contribution rules
 docs/
+  MCP.md               ·  user guide for the MCP discovery server
   I18N.md              ·  source-message rules and translatewiki readiness notes
   FEATURES.md          ·  generated feature listing from public_html/views/experiments.js
   HYBRID-FEATURE-PLAN.md · feature-by-feature backend realization plan
