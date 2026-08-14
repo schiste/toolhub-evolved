@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, or_, select, text
+from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMTEXT
 
 from backend import (
     DEFAULT_DB_URL,
@@ -71,6 +72,7 @@ class MigrationResult:
 def run_once() -> list[MigrationResult]:
     """Apply every pending data migration and report what each one touched."""
     return [
+        MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns()),
         MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
         MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
         MigrationResult(
@@ -85,6 +87,27 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
+
+
+def _widen_digest_render_columns() -> int:
+    """Widen existing MariaDB digest bodies beyond TEXT's 64 KiB ceiling."""
+    engine = db.engine()
+    if engine.dialect.name not in {"mysql", "mariadb"}:
+        return 0
+    inspector = inspect(engine)
+    if "digest_editions" not in inspector.get_table_names():
+        return 0
+    render_columns = {"rendered_html", "rendered_wikitext", "rendered_text"}
+    current = {column["name"]: column["type"] for column in inspector.get_columns("digest_editions")}
+    pending = [
+        name
+        for name in sorted(render_columns)
+        if name in current and not isinstance(current[name], (MEDIUMTEXT, LONGTEXT))
+    ]
+    with engine.begin() as connection:
+        for name in pending:
+            connection.exec_driver_sql(f"ALTER TABLE digest_editions MODIFY COLUMN {name} MEDIUMTEXT NOT NULL")
+    return len(pending)
 
 
 def _initialize_source_attestation_rules() -> int:
