@@ -173,6 +173,19 @@ def test_dependency_shorthand_is_literal_not_a_like_pattern(app):
         assert v1_facets.dependency_values(s, ["my_lib"]) == ["pypi:my_lib"]
         assert v1_facets.dependency_values(s, ["%"]) == []
         assert v1_facets.dependency_values(s, ["my%"]) == []
+        # Blank entries are skipped, not expanded to everything.
+        assert v1_facets.dependency_values(s, ["", "my_lib"]) == ["pypi:my_lib"]
+
+
+def test_malformed_limit_falls_back_to_default_on_both_routes(client):
+    with db.session_scope() as s:
+        _seed(s)
+    tools = client.get("/v1/facets/tools/?dependency=pywikibot&limit=abc")
+    assert tools.status_code == 200
+    assert tools.get_json()["total"] == 2
+    values = client.get("/v1/facets/values/?type=dependency&limit=abc")
+    assert values.status_code == 200
+    assert values.get_json()["values"]
 
 
 def test_facets_tools_rejects_no_filters_and_bad_limit(client):
@@ -307,3 +320,10 @@ def test_cached_facet_values_clamping_and_expiry(app, monkeypatch):
     # Third call should query again
     result3 = v1_facets.cached_facet_values("dependency", limit=100)
     assert call_count == 1  # One new query
+
+    # A present-but-stale entry re-queries too (distinct from the cleared case).
+    real_time = v1_facets.time
+    monkeypatch.setattr(v1_facets, "time", lambda: real_time() + v1_facets.VALUES_MAX_AGE.total_seconds() + 1)
+    result4 = v1_facets.cached_facet_values("dependency", limit=100)
+    assert call_count == 2  # Expired entry did not serve
+    assert result4 == result3

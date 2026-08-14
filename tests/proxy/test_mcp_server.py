@@ -297,6 +297,22 @@ def test_facet_tools_scalar_filter_is_not_dropped(client):
     assert payload["tools"] == [] and payload["total"] == 0
 
 
+def test_tool_argument_edge_cases_error_or_fall_back(client):
+    """Blank required args error; a malformed limit falls back to the default."""
+    with db.session_scope() as s:
+        _seed(s)
+    no_filters = _call_tool(client, "facet_tools", {})["result"]
+    assert no_filters["isError"] is True
+    assert "at least one filter" in no_filters["content"][0]["text"]
+    bad_limit = _call_tool(client, "facet_tools", {"dependency": ["pywikibot"], "limit": "abc"})["result"]
+    assert bad_limit["isError"] is False
+    assert json.loads(bad_limit["content"][0]["text"])["total"] == 2
+    blank_query = _call_tool(client, "search_tools", {"query": "   "})["result"]
+    assert blank_query["isError"] is True
+    blank_name = _call_tool(client, "get_tool", {"name": "   "})["result"]
+    assert blank_name["isError"] is True
+
+
 def test_facet_tools_unknown_value_matches_nothing(client):
     with db.session_scope() as s:
         _seed(s)

@@ -539,6 +539,13 @@ def test_analyzer_facets_dedupe_keeps_max_confidence():
                             "label": "Express.js",
                             "confidence": 0.95,
                         },
+                        {
+                            # A LOWER-confidence duplicate after the max: the
+                            # existing entry must be kept, not overwritten.
+                            "value": "npm:express",
+                            "label": "express (weak)",
+                            "confidence": 0.60,
+                        },
                     ]
                 },
                 review_status=REVIEW_APPROVED,
@@ -552,7 +559,8 @@ def test_analyzer_facets_dedupe_keeps_max_confidence():
         rows = s.query(CatalogFacetValue).filter_by(tool_name="mu", field="dependency", value="npm:express").all()
     # Should have exactly one row with the max confidence
     assert len(rows) == 1
-    assert rows[0].confidence_basis_points == 9500  # max(0.80 * 10000, 0.95 * 10000)
+    assert rows[0].confidence_basis_points == 9500  # max of 0.80, 0.95, 0.60
+    assert rows[0].label == "Express.js"  # the max-confidence finding's label
 
 
 def test_graph_enrichment_refresh_produces_analyzer_facets():
