@@ -643,9 +643,11 @@ at the `return`.
 
 **Public-registry lookups.** The hourly `people-identity-reconcile` job resolves
 up to `PEOPLE_REGISTRY_LABEL_LIMIT` handle-shaped unresolved labels per run
-against CentralAuth, one second apart, walking a persisted cursor so every label
-gets a turn and one the registry does not know is retried at most once per
-sweep. It targets attribution labels, which carry no person id — not the
+against CentralAuth, four a second and serialized, walking a persisted cursor so
+every label gets a turn and one the registry does not know is retried at most
+once per sweep. The fetcher sends `maxlag` and obeys a `Retry-After` header, so
+meta.wikimedia.org sets the ceiling rather than a delay guessed on its behalf; a
+rate-limited lookup resolves nothing rather than inventing an identity. It targets attribution labels, which carry no person id — not the
 display-name people the Toolhub candidate pass walks; aiming at the latter
 checked nine labels while nine hundred sat untouched.
 

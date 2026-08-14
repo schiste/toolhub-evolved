@@ -613,12 +613,14 @@ def _candidate_account_groups(
     )
 
 
-DEFAULT_REGISTRY_LABEL_LIMIT = 100
-# One request per second, serialized. Wikimedia's API guidance asks for a
-# real user agent and serial rather than parallel requests, both of which
-# hold here; a full sweep of ~900 labels is roughly 900 requests spread over
-# nine hourly runs, which is a rounding error against meta.wikimedia.org.
-REGISTRY_MIN_INTERVAL_SECONDS = 1.0
+DEFAULT_REGISTRY_LABEL_LIMIT = 1000
+# Four requests a second, serialized, against an API that publishes no read
+# limit and asks chiefly for a descriptive user agent and serial rather than
+# parallel requests. The fixed one-second delay this replaces was a guess
+# standing in for the real mechanisms; the fetcher now sends maxlag and obeys
+# Retry-After, so meta.wikimedia.org can slow us down when it wants to rather
+# than us assuming a rate on its behalf. A ~900-label sweep is ~4 minutes.
+REGISTRY_MIN_INTERVAL_SECONDS = 0.25
 # Provenance for people minted from a registry lookup rather than from an
 # account that registered with Toolhub or Toolforge. Deliberately not a
 # trusted handle source: the stable id makes them publishable, and nothing

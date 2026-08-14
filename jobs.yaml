@@ -140,12 +140,13 @@
   # Fresh unresolved candidates cool down for a day, so each run advances
   # through the population while transient failures are retried later.
   # PEOPLE_REGISTRY_LABEL_LIMIT resolves that many handle-shaped unresolved
-  # labels against CentralAuth per run, one second apart, walking a cursor so
-  # every label gets a turn and unknown ones are retried once per sweep.
-  # 100 costs ~100s of a run that has measured 154-423s against this timeout,
-  # and sweeps the ~900-label population in about nine hours. It records
+  # labels against CentralAuth per run, four a second and serialized, walking a
+  # cursor so every label gets a turn and unknown ones are retried once per
+  # sweep. The fetcher sends maxlag and obeys Retry-After, so the service sets
+  # the ceiling rather than a guessed delay. 1000 costs ~250s of a run measured
+  # at 154-423s, sweeping the ~900-label population in a single run. It records
   # identity only; corroboration on a shared tool is what publishes anything.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-identity-reconcile -- /usr/bin/env PEOPLE_IDENTITY_CANDIDATE_LIMIT=100 PEOPLE_REGISTRY_LABEL_LIMIT=1000 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --identities-only
   image: python3.13
   schedule: "43 * * * *"
   timeout: 900

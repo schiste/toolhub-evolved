@@ -219,3 +219,31 @@ def test_corroboration_still_governs_publication():
 
         assert resolved is not None
         assert resolved.id == identifier.person_id
+
+
+def test_retry_after_is_honoured_within_bounds():
+    from backend import public_identity
+
+    # Wikimedia's own signal decides the wait, not a delay we guessed.
+    assert public_identity.retry_delay_seconds("5") == 5.0
+    assert public_identity.retry_delay_seconds("0") == 0.0
+    # Clamped so a hostile or mistaken header cannot stall a job for hours.
+    assert public_identity.retry_delay_seconds("99999") == public_identity.MAX_RETRY_DELAY_SECONDS
+    # Absent or unparseable falls back to a short, safe pause.
+    for header in (None, "", "soon", "Wed, 21 Oct 2026 07:28:00 GMT"):
+        assert public_identity.retry_delay_seconds(header) == public_identity.DEFAULT_RETRY_DELAY_SECONDS
+
+
+def test_a_rate_limited_response_is_retried_then_given_up_on():
+    from backend import public_identity
+
+    calls = []
+
+    def fetcher(_username):
+        calls.append(1)
+        return 429, None
+
+    provider = public_identity.WikimediaIdentityProvider(username_fetcher=fetcher)
+    # A rate-limited lookup resolves nothing rather than inventing an identity.
+    assert provider.lookup_username("0xdeadbeef") is None
+    assert len(calls) == 1
