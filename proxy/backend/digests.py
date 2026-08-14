@@ -522,12 +522,15 @@ def _model_payload(
     facts: list[dict[str, Any]], cadence: str, model: str, *, total_tool_count: int | None = None
 ) -> dict[str, Any]:
     supplied_facts = _model_facts(facts, cadence)
+    period_tool_count = total_tool_count if total_tool_count is not None else len(facts)
+    selected_tool_count = period_tool_count if cadence == "daily" else min(period_tool_count, MAX_HIGHLIGHTS)
     highlight_contract = (
         "For a daily edition, highlights MUST contain exactly one object for every supplied tool; omit none. "
         if cadence == "daily"
         else (
             "For a weekly or monthly edition, supplied tools are representative candidates selected across the full "
-            "period; highlights contains at most five objects and may name only supplied candidates. "
+            f"period; highlights MUST contain exactly {selected_tool_count} objects and may name only supplied "
+            "candidates. "
         )
     )
     system = (
@@ -552,8 +555,9 @@ def _model_payload(
         {
             "cadence": cadence,
             "language": "en",
-            "period_tool_count": total_tool_count if total_tool_count is not None else len(facts),
+            "period_tool_count": period_tool_count,
             "candidate_count": len(supplied_facts),
+            "selected_tool_count": selected_tool_count,
             "tools": supplied_facts,
         },
         ensure_ascii=False,
@@ -657,6 +661,9 @@ def validate_editorial(
         raise ValueError(message)
     if cadence == "daily" and len(raw_highlights) != len(facts):
         message = "daily editorial output must highlight every supplied tool exactly once"
+        raise ValueError(message)
+    if cadence in {"weekly", "monthly"} and len(raw_highlights) != min(len(facts), MAX_HIGHLIGHTS):
+        message = "weekly and monthly editorial output must select exactly the configured number of tools"
         raise ValueError(message)
     known = {str(fact["name"]): fact for fact in facts}
     titles: dict[str, list[str]] = {}
@@ -821,7 +828,7 @@ def _text_tool_context(fact: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _render(
+def render_editorial(
     period: Period,
     editorial: dict[str, Any],
     facts: list[dict[str, Any]],
@@ -912,7 +919,9 @@ def _draft_edition(period: Period, *, require_model: bool) -> EditionDraft | Non
         ) or "unknown generation failure"
         message = f"LiftWing Qwen did not produce valid editorial copy for {period.cadence}:{period.key}: {detail}"
         raise RuntimeError(message)
-    rendered_html, rendered_wikitext, rendered_text = _render(period, editorial, facts, used_fallback=used_fallback)
+    rendered_html, rendered_wikitext, rendered_text = render_editorial(
+        period, editorial, facts, used_fallback=used_fallback
+    )
     return EditionDraft(
         period=period,
         source_rows=source_rows,
