@@ -837,6 +837,8 @@ export function normalizeTool(t) {
 		catalogProjection: t._catalogProjection || null,
 		cachedIconUrl: t._cachedIconUrl || null,
 		accountRelationships: Array.isArray(t.accountRelationships) ? t.accountRelationships : [],
+		accountPerson: t.accountPerson && typeof t.accountPerson.id === "string" ? { ...t.accountPerson } : undefined,
+		relationshipPeople: Array.isArray(t.relationshipPeople) ? t.relationshipPeople : [],
 		weeklyViews: 0,
 		status: statusOf({ deprecated, experimental })
 	};

@@ -67,7 +67,7 @@ const INTENT_AXES = {
 };
 
 /** @typedef {{ axis: string, term: string, wiki: string }} IntentState */
-/** @typedef {{ tools: Tool[], person?: AccountPerson, error?: boolean, loading?: boolean }} PersonalTools */
+/** @typedef {{ tools: Tool[], error?: boolean, loading?: boolean }} PersonalTools */
 /** @typedef {{ favorites: PersonalTools, ownTools: PersonalTools }} PersonalHomeModel */
 /** @typedef {{ model: PersonalHomeModel, refresh?: Promise<PersonalHomeModel> }} PersonalHomeResult */
 /** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean, totalTools?: number }} HomeModel */
@@ -88,18 +88,16 @@ const PERSONAL_TOOLS_CACHE_TTL_MS = 5 * 60 * 1000;
  * record rather than an implicit global, so switching accounts cannot reuse a
  * previous user's associations.
  * @param {string} username
- * @returns {{ tools: Tool[], person?: AccountPerson, updatedAt: number } | null}
+ * @returns {{ tools: Tool[], updatedAt: number } | null}
  */
 function readPersonalToolsCache(username) {
 	const cached = personalToolsCacheGet(username);
-	return cached
-		? { tools: cached.tools.map((tool) => normalizeTool(tool)), person: cached.person, updatedAt: cached.updatedAt }
-		: null;
+	return cached ? { tools: cached.tools.map((tool) => normalizeTool(tool)), updatedAt: cached.updatedAt } : null;
 }
 
-/** @param {string} username @param {Tool[]} tools @param {AccountPerson | undefined} person */
-function writePersonalToolsCache(username, tools, person) {
-	personalToolsCacheSet(username, tools, person);
+/** @param {string} username @param {Tool[]} tools */
+function writePersonalToolsCache(username, tools) {
+	personalToolsCacheSet(username, tools);
 }
 
 function intentAxisItems() {
@@ -283,21 +281,22 @@ async function ownToolsForHome() {
 	seedEvolvedSummaries(data.summaries || {});
 	const tools = [];
 	const seen = new Set();
-	for (const item of [...(data.verified || []), ...(data.possible || [])]) {
-		if (!item?.tool) continue;
-		const tool = normalizeTool(item.tool);
-		tool.accountRelationships = Array.isArray(item.relationships) ? item.relationships : [];
-		if (seen.has(tool.name)) continue;
-		seen.add(tool.name);
-		tools.push(tool);
-	}
 	const person =
 		data.person && typeof data.person.id === "string" && typeof data.person.displayName === "string"
 			? data.person
 			: data.personId
 				? { id: String(data.personId), displayName: String(data.username || "") }
 				: undefined;
-	return { tools, person };
+	for (const item of [...(data.verified || []), ...(data.possible || [])]) {
+		if (!item?.tool) continue;
+		const tool = normalizeTool(item.tool);
+		tool.accountRelationships = Array.isArray(item.relationships) ? item.relationships : [];
+		tool.accountPerson = person;
+		if (seen.has(tool.name)) continue;
+		seen.add(tool.name);
+		tools.push(tool);
+	}
+	return { tools };
 }
 
 /** @param {string} key @returns {Promise<PersonalHomeModel>} */
@@ -307,7 +306,7 @@ async function resolvePersonalHomeModel(key) {
 		favoriteToolsForHome().catch(() => ({ tools: [], error: true })),
 		ownToolsForHome().catch(() => ({ tools: [], error: true }))
 	]);
-	if (!ownTools.error) writePersonalToolsCache(key, ownTools.tools, ownTools.person);
+	if (!ownTools.error) writePersonalToolsCache(key, ownTools.tools);
 	return attachAndCachePersonalHome(key, favorites, ownTools);
 }
 
@@ -351,7 +350,7 @@ async function personalHomeModel() {
 	if (!stored) return { model: await startPersonalHomeRequest(key) };
 
 	const [favorites] = await Promise.all([favoriteToolsForHome().catch(() => ({ tools: [], error: true }))]);
-	const model = await attachAndCachePersonalHome(key, favorites, { tools: stored.tools, person: stored.person });
+	const model = await attachAndCachePersonalHome(key, favorites, { tools: stored.tools });
 	if (Date.now() - stored.updatedAt > PERSONAL_TOOLS_CACHE_TTL_MS) {
 		return { model, refresh: startPersonalHomeRequest(key) };
 	}
@@ -370,11 +369,7 @@ function personalToolsSectionHTML(title, href, section, empty, error) {
 		? cardGridSkeleton("tool", 4)
 		: section.error
 			? `<p class="empty">${esc(error)}</p>`
-			: toolsGridHTML(
-					section.tools,
-					empty,
-					section.person ? (tool) => toolCard(tool, { relationshipPerson: section.person }) : undefined
-				);
+			: toolsGridHTML(section.tools, empty);
 	return `<div class="section-head"><h2>${esc(title)}</h2><a class="link" href="${href}">${t("home.viewAll", "View all")}</a></div>${body}`;
 }
 /**

@@ -769,7 +769,10 @@ test("signed-in home puts favorites before owned tools", async () => {
 	assert.ok(document.body.innerHTML.includes('data-tool="owned"'), "owned tool card renders");
 	assert.ok(document.body.innerHTML.includes('href="/people/person-ada"'), "owned card links canonical person");
 	assert.ok(document.body.innerHTML.includes("Maintained by"), "owned card describes the relationship");
-	assert.ok(!document.body.innerHTML.includes("/by/Unstructured%20label"), "raw label is not used as owner identity");
+	assert.ok(
+		document.body.innerHTML.includes("/by/Unstructured%20label?context=attribution"),
+		"raw author label remains unresolved attribution instead of being mistaken for the owner"
+	);
 	assert.equal(document.body.innerHTML.includes("<h2>Featured tools</h2>"), false);
 	assert.equal(document.body.innerHTML.includes("<h2>Most listed</h2>"), false);
 	assert.equal(h.backendGetJson.mock.calls.filter(([path]) => path === "/v1/me/tools/").length, 1);

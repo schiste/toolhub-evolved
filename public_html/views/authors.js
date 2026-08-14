@@ -5,6 +5,7 @@ import { fmt, t } from "../lib/core/i18n.js";
 import { identityQualityLabel, relationshipLabel } from "../lib/core/claims.js";
 import { normalizeTool } from "../lib/core/api.js";
 import { personById, resolvePersonHandle, searchCommunity, toolsForPerson } from "../lib/core/people.js";
+import { peopleFromRelationships } from "../lib/core/relationship-people.js";
 import { navigateTo, personHref } from "../lib/core/routing.js";
 import { attachEvolvedSummaries, EVOLVED_SUMMARY_GRACE_MS } from "../lib/core/signals.js";
 import { icon } from "../lib/atoms/icon.js";
@@ -153,6 +154,18 @@ function renderPerson(person, tools) {
 /** @param {any} person */
 async function resolvedView(person) {
 	const tools = await toolsForPerson(person);
+	for (const tool of tools) {
+		tool.relationshipPeople = person?.id
+			? [
+					{
+						id: person.id,
+						displayName: person.displayName,
+						identifiers: person.identifiers || [],
+						relationships: tool.personRelationships || []
+					}
+				]
+			: [];
+	}
 	await attachEvolvedSummaries(tools, { graceMs: EVOLVED_SUMMARY_GRACE_MS });
 	return renderPerson(person, tools);
 }
@@ -405,9 +418,11 @@ function toolMatchReason(item) {
 /** @param {any} item */
 function directoryToolResult(item) {
 	const reason = toolMatchReason(item);
+	const tool = normalizeTool(item.tool);
+	tool.relationshipPeople = peopleFromRelationships(item.relationships || []);
 	return `<div class="community-tool-result">
 		<p class="community-tool-result__reason"><strong>${esc(reason.label)}</strong>${reason.value ? ` <span${dirAttrs(reason.value)}>${esc(reason.value)}</span>` : ""}</p>
-		${toolCard(normalizeTool(item.tool))}
+		${toolCard(tool)}
 	</div>`;
 }
 

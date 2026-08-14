@@ -132,6 +132,8 @@ test("viewPerson renders every role with distinct provenance on one tool", async
 	assert.doesNotMatch(view.html, /author-tool-card__relationships/);
 	assert.doesNotMatch(view.html, /record authority/i);
 	assert.match(view.html, /<dt>Tools with a verified relationship<\/dt><dd>1<\/dd>/);
+	assert.match(view.html, /Maintained by/);
+	assert.match(view.html, /href="\/people\/person-trust"/);
 	assert.equal(h.getToolsByName.mock.calls.length, 0);
 });
 
@@ -387,6 +389,7 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 					},
 					relationships: [
 						{
+							personId: "person-1",
 							personName: "Ada",
 							type: "author",
 							status: "unverified",
@@ -402,6 +405,7 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 							]
 						},
 						{
+							personId: "person-1",
 							personName: "Ada",
 							type: "maintainer",
 							status: "verified",
@@ -473,6 +477,7 @@ test("viewPeople unifies resolved people, official accounts, tools, and unresolv
 	assert.match(view.html, /Tools mentioning this text/);
 	assert.match(view.html, /The name is mentioned only in the tool description/);
 	assert.match(view.html, /href="\/tools\/magnus-tool"/);
+	assert.ok(view.html.match(/href="\/people\/person-1"/g)?.length >= 2);
 });
 
 test("peopleDirectoryState validates and restores shareable URL state", () => {
