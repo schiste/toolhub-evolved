@@ -320,6 +320,8 @@ def test_model_payload_bounds_busy_periods_but_daily_supplies_every_tool():
     candidate_indexes = [int(item["name"].removeprefix("tool-")) for item in candidates]
 
     assert monthly_input["period_tool_count"] == 118
+    assert monthly_input["selected_tool_count"] == digests.MAX_HIGHLIGHTS
+    assert f"exactly {digests.MAX_HIGHLIGHTS} objects" in monthly["messages"][0]["content"]
     assert digests.MAX_HIGHLIGHTS <= len(candidates) <= digests.MAX_MODEL_CANDIDATES
     assert len(json.dumps(candidates, ensure_ascii=False).encode()) <= digests.MAX_MODEL_FACTS_BYTES
     assert min(candidate_indexes) < 10
@@ -330,6 +332,42 @@ def test_model_payload_bounds_busy_periods_but_daily_supplies_every_tool():
     daily_input = json.loads(daily["messages"][1]["content"])
     assert daily_input["candidate_count"] == 118
     assert [item["name"] for item in daily_input["tools"]] == [fact["name"] for fact in facts]
+
+
+def test_weekly_and_monthly_select_all_tools_below_the_limit():
+    facts = [
+        {"name": f"tool-{index}", "description": f"Description for tool {index}."} for index in range(3)
+    ]
+    payload = digests._model_payload(facts, "weekly", "llm-qwen36-27b")
+    model_input = json.loads(payload["messages"][1]["content"])
+    assert model_input["selected_tool_count"] == 3
+    assert "exactly 3 objects" in payload["messages"][0]["content"]
+
+    incomplete = {
+        "introduction": "Three tools support distinct Wikimedia workflows.",
+        "highlights": [
+            {
+                "tool_name": fact["name"],
+                "blurb": f"Tool {index} supports a documented workflow.",
+                "evidence_field": "description",
+                "evidence": fact["description"],
+            }
+            for index, fact in enumerate(facts[:2])
+        ],
+    }
+    with pytest.raises(ValueError, match="select exactly"):
+        digests.validate_editorial(incomplete, facts, cadence="weekly")
+
+    complete = {**incomplete, "highlights": [
+        {
+            "tool_name": fact["name"],
+            "blurb": f"Tool {index} supports a documented workflow.",
+            "evidence_field": "description",
+            "evidence": fact["description"],
+        }
+        for index, fact in enumerate(facts)
+    ]}
+    assert len(digests.validate_editorial(complete, facts, cadence="monthly")["highlights"]) == 3
 
 
 def test_model_editorial_rejects_unknown_tools_and_links():
@@ -1570,7 +1608,7 @@ def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
         "introduction": "Two tools arrived.",
         "highlights": [{"tool_name": "featured", "blurb": "It helps."}],
     }
-    rendered = digests._render(weekly, editorial, facts, used_fallback=False)
+    rendered = digests.render_editorial(weekly, editorial, facts, used_fallback=False)
     assert "All other additions" in rendered[0]
     assert "Open tool" in rendered[0]
     assert "https://people.example/ada" in rendered[0]
@@ -1585,7 +1623,7 @@ def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
             {"tool_name": "other", "blurb": "It helps too."},
         ],
     }
-    daily_rendered = digests._render(
+    daily_rendered = digests.render_editorial(
         digests.period_for("daily", datetime(2026, 8, 12)), daily_editorial, facts, used_fallback=False
     )
     assert "Every new tool" in daily_rendered[0]

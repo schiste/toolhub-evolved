@@ -21,6 +21,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
 from backend.sync import (
@@ -38,6 +39,7 @@ from backend.sync import (
 
 # Bound on the denormalized canonical search haystack (see CanonicalToolCache).
 SEARCH_TEXT_MAX_CHARS = 4000
+DIGEST_RENDER_TEXT = Text().with_variant(MEDIUMTEXT(), "mysql").with_variant(MEDIUMTEXT(), "mariadb")
 
 
 def utcnow() -> datetime:
@@ -82,9 +84,9 @@ class DigestEdition(Base):
     status: Mapped[str] = mapped_column(String(32), default="generating", index=True)
     title: Mapped[str] = mapped_column(String(500), default="")
     introduction: Mapped[str] = mapped_column(Text, default="")
-    rendered_html: Mapped[str] = mapped_column(Text, default="")
-    rendered_wikitext: Mapped[str] = mapped_column(Text, default="")
-    rendered_text: Mapped[str] = mapped_column(Text, default="")
+    rendered_html: Mapped[str] = mapped_column(DIGEST_RENDER_TEXT, default="")
+    rendered_wikitext: Mapped[str] = mapped_column(DIGEST_RENDER_TEXT, default="")
+    rendered_text: Mapped[str] = mapped_column(DIGEST_RENDER_TEXT, default="")
     source_hash: Mapped[str] = mapped_column(String(64), default="")
     prompt_version: Mapped[str] = mapped_column(String(64), default="")
     model_name: Mapped[str] = mapped_column(String(255), default="")
