@@ -83,6 +83,33 @@ def test_refresh_persists_failure_phase_without_publishing(monkeypatch):
         assert '"status":"failed"' in persisted.value
 
 
+def test_refresh_persists_input_lock_overlap_as_a_healthy_defer(monkeypatch):
+    monkeypatch.setattr(
+        projection_refresh,
+        "_sync_plan",
+        lambda *_args, **_kwargs: {"toolhubAccounts": True, "toolforgeAccounts": True, "catalog": False},
+    )
+    monkeypatch.setattr(
+        projection_refresh,
+        "_parallel_sync",
+        lambda *_args: (_ for _ in ()).throw(
+            projection_refresh.ProjectionRefreshDeferredError(
+                "projection already refreshing: toolforgeAccounts, toolhubAccounts"
+            )
+        ),
+    )
+
+    report = projection_refresh.run()
+
+    assert report["status"] == "deferred"
+    assert report["failurePhase"] is None
+    assert report["reason"] == "projection already refreshing: toolforgeAccounts, toolhubAccounts"
+    with db.session_scope() as session:
+        persisted = session.get(ApiCacheMeta, projection_refresh.RUN_META_KEY)
+        assert persisted is not None
+        assert '"status":"deferred"' in persisted.value
+
+
 def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")
