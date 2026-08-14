@@ -244,7 +244,7 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
             raise _ToolError(msg)
         matches = facets_backend.tools_matching_facets(s, filters, limit=_limit_from(arguments, 25))
         total = facets_backend.count_matching(s, filters)
-        disclosed = v1_facets.coverage(s)
+    disclosed = v1_facets.cached_coverage()
     matched_by_tool = {m.tool_name: m.matched for m in matches}
     return {
         "tools": v1_facets.tool_summaries([m.tool_name for m in matches], matched_by_tool=matched_by_tool),
@@ -262,8 +262,7 @@ def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
     # Through the same cached accessor as the REST route (Phase 3 Task 3) —
     # this tool is the fan-out surface the cache exists for.
     listing = v1_facets.cached_facet_values(facet_type, limit=facets_backend.DEFAULT_VALUE_RESULTS)
-    with db.session_scope() as s:
-        disclosed = v1_facets.coverage(s)
+    disclosed = v1_facets.cached_coverage()
     return {
         "type": facet_type,
         "values": listing["values"],

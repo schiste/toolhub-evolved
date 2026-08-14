@@ -18,6 +18,10 @@ def app():
     backend.register(application, db_url="sqlite://", secret_key="test-secret")
     application.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     security.clear_rate_limits()
+    # Both value and coverage caches are per-process with a 15-minute TTL;
+    # without this, tests can be served numbers computed from a previous
+    # test's discarded in-memory DB (order-dependent flake).
+    v1_facets.clear_cache()
     return application
 
 

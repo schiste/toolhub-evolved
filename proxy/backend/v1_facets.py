@@ -61,12 +61,32 @@ def coverage(s: Session) -> dict[str, int]:
 
 # In-memory per-worker cache for facet value counts: (field_name, limit) -> (timestamp, values, total)
 _value_cache: dict[tuple[str, int], tuple[float, list[dict[str, Any]], int]] = {}
+# Same-shaped cache for the coverage counts every discovery response carries.
+_coverage_cache: dict[str, tuple[float, dict[str, int]]] = {}
 VALUES_MAX_AGE = timedelta(minutes=15)
 
 
 def clear_cache() -> None:
-    """Clear the value-count cache (tests)."""
+    """Clear the value-count and coverage caches (tests)."""
     _value_cache.clear()
+    _coverage_cache.clear()
+
+
+def cached_coverage() -> dict[str, int]:
+    """Coverage counts, cached per worker for 15 minutes.
+
+    Two COUNT(DISTINCT) aggregates that change on the same slow cadence as
+    the facet values; without this the value cache built to absorb MCP
+    fan-out saved one query per hit and immediately spent two here.
+    """
+    now = time()
+    cached = _coverage_cache.get("coverage")
+    if cached and now - cached[0] < VALUES_MAX_AGE.total_seconds():
+        return dict(cached[1])
+    with db.session_scope() as s:
+        disclosed = coverage(s)
+    _coverage_cache["coverage"] = (now, disclosed)
+    return dict(disclosed)
 
 
 def cached_facet_values(facet_type: str, *, limit: int) -> dict[str, Any]:
@@ -204,7 +224,7 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
         matches = tool_facets.tools_matching_facets(s, filters, limit=capped)
         # True total, not page size: 50-of-50 and 50-of-800 must differ.
         total = tool_facets.count_matching(s, filters)
-        disclosed_coverage = coverage(s)
+    disclosed_coverage = cached_coverage()
     matched_by_tool = {m.tool_name: m.matched for m in matches}
     return jsonify(
         {
@@ -230,8 +250,7 @@ def v1_facets_values() -> Response | tuple[Response, int]:
     except ValueError:
         limit = tool_facets.DEFAULT_VALUE_RESULTS
     listing = cached_facet_values(facet_type, limit=limit)
-    with db.session_scope() as s:
-        disclosed_coverage = coverage(s)
+    disclosed_coverage = cached_coverage()
     return jsonify(
         {
             "type": facet_type,
