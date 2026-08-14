@@ -74,6 +74,41 @@ class FacetMatch:
     matched: list[dict[str, Any]] = field(default_factory=list)
 
 
+def _clean_filters(filters: dict[str, list[str]] | None) -> dict[str, list[str]] | None:
+    """Normalize a filter mapping; None means the query can match nothing.
+
+    Shared by tools_matching_facets and count_matching so the page and its
+    total can never disagree on what a filter means. An unknown field, or a
+    filter the caller asked for that carries no known value, fails the whole
+    query closed: dropping it instead would silently widen the AND across
+    fields to the remaining filters. Non-list values (None, strings) coerce
+    to [] for the same fail-closed reason.
+    """
+    clean: dict[str, list[str]] = {}
+    for field_name, values in (filters or {}).items():
+        clean_field = str(field_name or "").strip()
+        if clean_field not in _VALID_FIELDS:
+            return None
+        value_list = values if isinstance(values, (list, tuple)) else []
+        wanted = sorted({str(v or "").strip().casefold() for v in value_list if str(v or "").strip()})
+        if not wanted:
+            return None
+        clean[clean_field] = wanted
+    return clean or None
+
+
+def _matching_names_select(clean_filters: dict[str, list[str]]) -> Any:  # noqa: ANN401 - SQLAlchemy Select
+    """INTERSECT chain over tool names: each field must match at least one value."""
+    matching = None
+    for field_name, values in clean_filters.items():
+        names = select(CatalogFacetValue.tool_name).where(
+            CatalogFacetValue.field == field_name,
+            CatalogFacetValue.value.in_(values),
+        )
+        matching = names if matching is None else matching.intersect(names)
+    return matching
+
+
 def tools_matching_facets(
     s: Session,
     filters: dict[str, list[str]],
@@ -90,34 +125,12 @@ def tools_matching_facets(
     by stripping whitespace. Values are compared against the casefolded
     CatalogFacetValue.value.
     """
-    clean_filters: dict[str, list[str]] = {}
-    for field_name, values in (filters or {}).items():
-        clean_field = str(field_name or "").strip()
-        if clean_field not in _VALID_FIELDS:
-            # Unknown field matches nothing
-            return []
-        # Coerce non-list values (None, strings) to [] for fail-closed behavior
-        value_list = values if isinstance(values, (list, tuple)) else []
-        wanted = sorted({str(v or "").strip().casefold() for v in value_list if str(v or "").strip()})
-        if not wanted:
-            # A filter the caller asked for that carries no known value
-            # matches nothing; dropping it instead would silently widen
-            # the AND across fields to the remaining filters.
-            return []
-        clean_filters[clean_field] = wanted
-
-    if not clean_filters:
+    clean_filters = _clean_filters(filters)
+    if clean_filters is None:
         return []
     capped = max(1, min(MAX_FACET_RESULTS, int(limit or MAX_FACET_RESULTS)))
 
-    # Build INTERSECT chain: each field must match at least one value
-    matching = None
-    for field_name, values in clean_filters.items():
-        names = select(CatalogFacetValue.tool_name).where(
-            CatalogFacetValue.field == field_name,
-            CatalogFacetValue.value.in_(values),
-        )
-        matching = names if matching is None else matching.intersect(names)
+    matching = _matching_names_select(clean_filters)
 
     # Build condition for matched facets (only those matching the query filters)
     matched_condition = or_(
@@ -226,35 +239,12 @@ def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
     stripping whitespace. Values are compared against the casefolded
     CatalogFacetValue.value.
     """
-    clean_filters: dict[str, list[str]] = {}
-    for field_name, values in (filters or {}).items():
-        clean_field = str(field_name or "").strip()
-        if clean_field not in _VALID_FIELDS:
-            # Unknown field matches nothing
-            return 0
-        # Coerce non-list values (None, strings) to [] for fail-closed behavior
-        value_list = values if isinstance(values, (list, tuple)) else []
-        wanted = sorted({str(v or "").strip().casefold() for v in value_list if str(v or "").strip()})
-        if not wanted:
-            # An asked-for filter with no known value matches nothing,
-            # it does not vanish from the AND.
-            return 0
-        clean_filters[clean_field] = wanted
-
-    if not clean_filters:
+    clean_filters = _clean_filters(filters)
+    if clean_filters is None:
         return 0
 
-    # Build INTERSECT chain: each field must match at least one value
-    matching = None
-    for field_name, values in clean_filters.items():
-        names = select(CatalogFacetValue.tool_name).where(
-            CatalogFacetValue.field == field_name,
-            CatalogFacetValue.value.in_(values),
-        )
-        matching = names if matching is None else matching.intersect(names)
-
     # COUNT(DISTINCT ...): a tool matching two values of one field is one tool.
-    sub = matching.subquery()
+    sub = _matching_names_select(clean_filters).subquery()
     return int(s.execute(select(func.count(func.distinct(sub.c.tool_name)))).scalar() or 0)
 
 
