@@ -194,8 +194,7 @@ def run(
 
         if full_sources:
             report["failurePhase"] = "full-source-audit"
-            with db.session_scope() as session:
-                sources, duration = _timed(lambda: source_attestations.refresh_full(session))
+            sources, duration = _timed(source_attestations.refresh_full_batched)
             report["stages"]["fullSourceAudit"] = {"durationMs": duration, "metrics": sources}
 
         report["failurePhase"] = "statistics"

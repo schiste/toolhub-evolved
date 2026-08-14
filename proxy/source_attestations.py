@@ -15,12 +15,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     def body() -> dict:
-        with db.session_scope() as session:
-            return (
-                source_attestations.refresh_full(session)
-                if args.full
-                else source_attestations.refresh_incremental(session)
-            )
+        if args.full:
+            return source_attestations.refresh_full_batched()
+        with db.advisory_lock(source_attestations.SOURCE_WRITER_LOCK) as acquired:
+            if not acquired:
+                return {"locked": True}
+            with db.session_scope() as session:
+                return source_attestations.refresh_incremental(session)
 
     return job_runner.run_job("source-attestations", body, lock=True)
 

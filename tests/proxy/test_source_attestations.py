@@ -923,6 +923,34 @@ def test_refresh_full_updates_an_existing_rules_version_marker():
         assert after.updated_at >= before_updated_at
 
 
+def test_refresh_full_batched_commits_bounded_source_groups_and_publishes_marker():
+    with db.session_scope() as session:
+        _canonical(session, "first-tool")
+        _canonical(session, "second-tool")
+        _source(
+            session,
+            "https://first.example/toolinfo.json",
+            [{"name": "first-tool", "url": "https://first.example", "author": "First"}],
+        )
+        _source(
+            session,
+            "https://second.example/toolinfo.json",
+            [{"name": "second-tool", "url": "https://second.example", "author": "Second"}],
+        )
+
+    result = source_attestations.refresh_full_batched(batch_size=1)
+
+    assert result["batches"] == 2
+    assert result["sources"] == 2
+    assert result["tools"] == 2
+    assert result["fullAudit"] == 1
+    with db.session_scope() as session:
+        marker = session.get(ApiCacheMeta, source_attestations.RULES_META_KEY)
+        assert marker is not None
+        assert marker.value == source_attestations.RULES_VERSION
+        assert session.query(PersonReconciliationRun).count() == 2
+
+
 def test_incremental_refresh_attests_a_newly_indexed_source():
     with db.session_scope() as session:
         source_attestations.refresh_full(session)  # establishes the rules-version marker

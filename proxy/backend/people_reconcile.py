@@ -1120,11 +1120,21 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 if discover_candidates and registry_label_limit
                 else {"checked": 0, "resolved": 0, "peopleCreated": 0}
             )
-            source_attestation_summary = (
-                source_attestations.refresh_incremental(s, identity_changed_since=identity_changed_since)
-                if refresh_sources
-                else {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
-            )
+            source_attestation_summary = {
+                "sources": 0,
+                "tools": 0,
+                "authorEvidence": 0,
+                "maintainerEvidence": 0,
+            }
+            if refresh_sources:
+                with db.advisory_lock(source_attestations.SOURCE_WRITER_LOCK) as source_lock:
+                    if source_lock:
+                        source_attestation_summary = source_attestations.refresh_incremental(
+                            s,
+                            identity_changed_since=identity_changed_since,
+                        )
+                    else:
+                        source_attestation_summary["locked"] = True
             if rebuild_tools or candidate_result["linked"] or source_attestation_summary["tools"]:
                 people_index.refresh_activity_summaries(s)
             # User/person links are the only reconciliation writes that can

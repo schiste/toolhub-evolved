@@ -1511,6 +1511,35 @@ def test_identities_only_run_resolves_remote_batch_before_people_writes(monkeypa
     assert events == ["remote", "people-write"]
 
 
+def test_run_skips_source_refresh_when_full_audit_owns_writer_lock(monkeypatch):
+    _configure()
+
+    class BusyLock:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(people_reconcile.db, "advisory_lock", lambda *_args, **_kwargs: BusyLock())
+    monkeypatch.setattr(
+        people_reconcile.source_attestations,
+        "refresh_incremental",
+        lambda *_args, **_kwargs: pytest.fail("busy source writer must not be entered"),
+    )
+
+    with db.session_scope() as session:
+        result = people_reconcile.run(
+            session,
+            mode=people_reconcile.MODE_APPLY,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=True,
+        )
+
+    assert result["sourceAttestations"]["locked"] is True
+
+
 def test_run_marks_the_row_failed_and_reraises_on_an_unexpected_error(monkeypatch):
     _configure()
     with db.session_scope() as s:

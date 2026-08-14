@@ -119,6 +119,39 @@ def test_identity_publication_does_not_repeat_network_candidate_discovery(monkey
     assert captured["discover_candidates"] is False
 
 
+def test_full_source_audit_uses_concurrency_safe_batched_runner(monkeypatch):
+    order = []
+    monkeypatch.setattr(
+        projection_refresh,
+        "_sync_plan",
+        lambda *_args, **_kwargs: {"toolhubAccounts": False, "toolforgeAccounts": False, "catalog": False},
+    )
+    monkeypatch.setattr(
+        projection_refresh,
+        "_parallel_sync",
+        lambda *_args: {},
+    )
+    monkeypatch.setattr(projection_refresh.people_reconcile, "drain_queue", lambda **_kwargs: {})
+    monkeypatch.setattr(projection_refresh, "_identity_fingerprint", lambda: "current")
+    monkeypatch.setattr(projection_refresh, "_identity_is_current", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        projection_refresh.source_attestations,
+        "refresh_full_batched",
+        lambda: order.append("source-audit") or {"fullAudit": 1, "batches": 12},
+    )
+    monkeypatch.setattr(
+        projection_refresh.catalog_statistics,
+        "snapshot",
+        lambda **_kwargs: order.append("statistics")
+        or {"generatedAt": "2026-08-14T00:00:00Z", "catalog": {"totalTools": 2}},
+    )
+
+    report = projection_refresh.run(full_sources=True)
+
+    assert order == ["source-audit", "statistics"]
+    assert report["stages"]["fullSourceAudit"]["metrics"]["batches"] == 12
+
+
 class AcquiredLock:
     def __enter__(self):
         return True
