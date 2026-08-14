@@ -784,6 +784,39 @@ def _resolve_registry_candidate_batch(
     return resolved, cursor
 
 
+def resolve_remote_batches(
+    *,
+    identity_resolver: PublicIdentityResolver | None = None,
+    registry_provider: public_identity.WikimediaIdentityProvider | None = None,
+    candidate_label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+    registry_label_limit: int = 0,
+    sleep: Any = time.sleep,  # noqa: ANN401 - injected for deterministic tests
+) -> tuple[
+    list[tuple[ToolhubAccountProjection, list[Person], public_identity.ResolvedPublicIdentity | None]],
+    tuple[list[tuple[str, public_identity.WikimediaIdentity | None]], str],
+]:
+    """Read candidates briefly, close the DB session, then resolve remotely."""
+    with db.session_scope() as s:
+        account_limit = max(1, min(int(candidate_label_limit), 100))
+        identity_candidates = _candidate_account_groups(s, _candidate_source_people(s))[:account_limit]
+        registry_batch, registry_cursor = (
+            _registry_label_batch(s, limit=registry_label_limit) if registry_label_limit else ([], "")
+        )
+
+    resolver = identity_resolver or PublicIdentityResolver()
+    resolved_identities = [
+        (account, people, resolver.resolve(account.wikimedia_global_user_id or ""))
+        for account, people in identity_candidates
+    ]
+    provider = registry_provider or public_identity.WikimediaIdentityProvider()
+    resolved_registry = []
+    for index, label in enumerate(registry_batch):
+        if index:
+            sleep(REGISTRY_MIN_INTERVAL_SECONDS)
+        resolved_registry.append((label, provider.lookup_username(label)))
+    return resolved_identities, (resolved_registry, registry_cursor)
+
+
 def discover_registry_candidates(
     s: Session,
     *,
@@ -996,6 +1029,11 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     sync_accounts: bool = True,
     refresh_sources: bool = True,
     source_changes_since: Any | None = None,  # noqa: ANN401 - persisted naive datetime
+    resolved_identity_candidates: list[
+        tuple[ToolhubAccountProjection, list[Person], public_identity.ResolvedPublicIdentity | None]
+    ]
+    | None = None,
+    resolved_registry_candidates: tuple[list[tuple[str, public_identity.WikimediaIdentity | None]], str] | None = None,
 ) -> dict[str, Any]:
     """Audit or rebuild Toolhub-backed evidence and local people projections."""
     if mode not in {MODE_DRY_RUN, MODE_APPLY}:
@@ -1013,23 +1051,31 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
         # touches people rows, and user links are kept last below.
         identity_resolver = identity_resolver or PublicIdentityResolver()
         resolved_identity_candidates = (
-            _resolve_identity_candidate_batch(
-                s,
-                identity_resolver=identity_resolver,
-                label_limit=candidate_label_limit,
+            resolved_identity_candidates
+            if resolved_identity_candidates is not None
+            else (
+                _resolve_identity_candidate_batch(
+                    s,
+                    identity_resolver=identity_resolver,
+                    label_limit=candidate_label_limit,
+                )
+                if mode == MODE_APPLY and discover_candidates and not rebuild_tools
+                else None
             )
-            if mode == MODE_APPLY and discover_candidates and not rebuild_tools
-            else None
         )
         resolved_registry_candidates = (
-            _resolve_registry_candidate_batch(
-                s,
-                provider=public_identity.WikimediaIdentityProvider(),
-                label_limit=registry_label_limit,
-                sleep=time.sleep,
+            resolved_registry_candidates
+            if resolved_registry_candidates is not None
+            else (
+                _resolve_registry_candidate_batch(
+                    s,
+                    provider=public_identity.WikimediaIdentityProvider(),
+                    label_limit=registry_label_limit,
+                    sleep=time.sleep,
+                )
+                if mode == MODE_APPLY and discover_candidates and registry_label_limit and not rebuild_tools
+                else None
             )
-            if mode == MODE_APPLY and discover_candidates and registry_label_limit and not rebuild_tools
-            else None
         )
         if mode == MODE_APPLY:
             account_bindings = (

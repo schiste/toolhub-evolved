@@ -2,6 +2,7 @@
 """Registry lookups walk unresolved labels and record identity, never a claim."""
 
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -97,6 +98,39 @@ def test_registry_finishes_remote_batch_before_writing_people():
 
         assert registry.asked == ["0xalice", "0xbob"]
         assert result == {"checked": 2, "resolved": 2, "peopleCreated": 2}
+
+
+def test_worker_remote_batches_run_after_the_candidate_session_closes(monkeypatch):
+    with db.session_scope() as session:
+        _label(session, "0xoutside")
+
+    active_sessions = 0
+    original_session_scope = db.session_scope
+
+    @contextmanager
+    def tracked_session_scope():
+        nonlocal active_sessions
+        active_sessions += 1
+        try:
+            with original_session_scope() as session:
+                yield session
+        finally:
+            active_sessions -= 1
+
+    class SessionCheckingRegistry(FakeRegistry):
+        def lookup_username(self, username):
+            assert active_sessions == 0
+            return super().lookup_username(username)
+
+    monkeypatch.setattr(db, "session_scope", tracked_session_scope)
+    _identities, (registry, cursor) = people_reconcile.resolve_remote_batches(
+        registry_provider=SessionCheckingRegistry({"0xoutside": "101"}),
+        registry_label_limit=1,
+        sleep=lambda _seconds: None,
+    )
+
+    assert registry[0][1].global_user_id == "101"
+    assert cursor == "0xoutside"
 
 
 def test_the_new_person_makes_the_label_locally_resolvable():
