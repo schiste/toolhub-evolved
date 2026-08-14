@@ -7,8 +7,10 @@ called again with a new URL (tests do this per-fixture) — the previous engine
 is disposed.
 """
 
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from typing import TypeVar
 
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,6 +18,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.models import Base
+
+T = TypeVar("T")
 
 _engine: Engine | None = None
 _session_factory: sessionmaker[Session] | None = None
@@ -349,6 +353,50 @@ def advisory_lock(name: str, *, timeout_seconds: int = 0) -> Iterator[bool]:
             # reported failure.
             connection.invalidate()
         connection.close()
+
+
+# MariaDB rolls one transaction back to break a lock cycle (1213) or gives up
+# waiting for a lock (1205). Both mean "your work was undone, try again", not
+# "your work was wrong", and both are routine when several bounded jobs touch
+# the shared identity tables in the same minute. Retrying is the documented
+# remedy; without it a scheduled sweep loses a whole run to a collision that
+# resolves itself in milliseconds.
+TRANSIENT_LOCK_ERRNOS = (1205, 1213)
+DEFAULT_LOCK_RETRIES = 3
+LOCK_RETRY_BACKOFF_SECONDS = 0.2
+
+
+def is_transient_lock_error(error: BaseException) -> bool:
+    """Return True when the database undid the work and inviting a retry."""
+    original = getattr(error, "orig", None)
+    args = getattr(original, "args", ()) if original is not None else ()
+    return bool(args) and args[0] in TRANSIENT_LOCK_ERRNOS
+
+
+def run_with_lock_retry(
+    work: Callable[[], T],
+    *,
+    attempts: int = DEFAULT_LOCK_RETRIES,
+    sleep: Callable[[float], None] = time.sleep,
+) -> T:
+    """Run one unit of work again when the database rolled it back for a lock.
+
+    ``work`` must own its transaction and be safe to repeat, which is why this
+    wraps a whole session_scope() rather than living inside one: by the time
+    the error surfaces the transaction is already gone.
+    """
+    last: BaseException | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return work()
+        except SQLAlchemyError as error:
+            if not is_transient_lock_error(error):
+                raise
+            last = error
+            if attempt < attempts - 1:
+                sleep(LOCK_RETRY_BACKOFF_SECONDS * (attempt + 1))
+    # Every attempt lost the same race; surface the database's own error.
+    raise last
 
 
 @contextmanager

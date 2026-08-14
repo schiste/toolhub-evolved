@@ -129,26 +129,44 @@ def run(
             sleep_fn=lambda seconds: sleep_fn(max(interval, seconds)),
             request_count=request_count,
         )
-        with db.session_scope() as s:
-            state = _state(s)
-            if success:
-                edges = maintainer_index.replace_toolforge_maintainer_edges(
-                    s,
-                    tool_name,
-                    pages,
-                    checked_at=utcnow(),
-                    expires_at=utcnow() + TOOLFORGE_CLAIM_TTL,
-                )
-                found += len(edges)
-                state.last_success_at = utcnow()
-            else:
-                failed += 1
-            checked += 1
-            state.tools_checked += 1
-            state.maintainers_found += len(edges) if success else 0
-            state.failed_tools += 0 if success else 1
-            state.next_tool_name = None if cycle_complete and index == len(batch) - 1 else tool_name
-            state.status = "idle"
+
+        # Loop values are bound as defaults so the closure records the tool it
+        # was built for, not whatever the loop reached by the time it runs.
+        def record(
+            tool_name: str = tool_name,
+            index: int = index,
+            pages: list = pages,
+            *,
+            success: bool = success,
+        ) -> int:
+            with db.session_scope() as s:
+                state = _state(s)
+                edge_count = 0
+                if success:
+                    edge_count = len(
+                        maintainer_index.replace_toolforge_maintainer_edges(
+                            s,
+                            tool_name,
+                            pages,
+                            checked_at=utcnow(),
+                            expires_at=utcnow() + TOOLFORGE_CLAIM_TTL,
+                        )
+                    )
+                    state.last_success_at = utcnow()
+                state.tools_checked += 1
+                state.maintainers_found += edge_count
+                state.failed_tools += 0 if success else 1
+                state.next_tool_name = None if cycle_complete and index == len(batch) - 1 else tool_name
+                state.status = "idle"
+                return edge_count
+
+        # Several bounded jobs update the shared identity tables every minute
+        # and MariaDB breaks a lock cycle by undoing one of them. Recording one
+        # tool's maintainers is idempotent, so losing that race should cost a
+        # moment rather than the rest of the sweep.
+        found += db.run_with_lock_retry(record)
+        checked += 1
+        failed += 0 if success else 1
     if not batch:
         with db.session_scope() as s:
             state = _state(s)
