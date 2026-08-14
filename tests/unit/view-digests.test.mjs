@@ -59,6 +59,20 @@ test("edition detail renders frozen server HTML and canonical Meta link", async 
 	assert.match(view.html, /meta\.wikimedia\.org/);
 });
 
+test("historical website edition renders as an ordinary entry without claiming Meta publication", async () => {
+	h.backendGetJson.mockResolvedValue({
+		...edition,
+		metaPageUrl: "",
+		html: '<article class="digest-entry"><footer>Author: LiftWing Qwen</footer></article>'
+	});
+
+	const view = await viewDigests("daily", "2026-08-12");
+
+	assert.match(view.html, /Author: LiftWing Qwen/);
+	assert.doesNotMatch(view.html, /Read on Meta-Wiki/);
+	assert.doesNotMatch(view.html, /preview/i);
+});
+
 test("signed-in talk-page form sends cadence and wiki through the CSRF server writer", async () => {
 	h.signedIn.mockReturnValue(true);
 	h.backendGetJson.mockImplementation((path) =>
