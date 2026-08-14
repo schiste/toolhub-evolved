@@ -86,10 +86,10 @@ const pluralRules = new Intl.PluralRules(LOCALE);
  * written in. English has two, Russian four, Arabic six. The order is imposed
  * here because engines disagree about `resolvedOptions().pluralCategories`:
  * newer V8 returns CLDR order, older V8 (Node ≤22, older browsers) returns it
- * alphabetically, which would misindex every positional form.
+ * alphabetically, which would point every positional form at the wrong category.
  */
-const PLURAL_CATEGORIES = ["zero", "one", "two", "few", "many", "other"].filter((category) =>
-	pluralRules.resolvedOptions().pluralCategories.includes(category)
+const PLURAL_CATEGORIES = /** @type {Intl.LDMLPluralRule[]} */ (["zero", "one", "two", "few", "many", "other"]).filter(
+	(category) => pluralRules.resolvedOptions().pluralCategories.includes(category)
 );
 const PSEUDO_MAP = Object.freeze(
 	/** @type {Record<string, string>} */ ({
