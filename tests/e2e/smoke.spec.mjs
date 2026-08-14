@@ -61,7 +61,9 @@ test.describe("deterministic app smoke", () => {
 			"href",
 			"/by/Katherine%20Johnson%20with%20an%20exceptionally%20long%20display%20name"
 		);
-		const panelBox = await authors.locator(".tcard__authors-panel").boundingBox();
+		const panel = authors.locator(".tcard__authors-panel");
+		await expect(panel).toBeVisible();
+		const panelBox = await panel.boundingBox();
 		expect(panelBox).not.toBeNull();
 		expect(panelBox.x).toBeGreaterThanOrEqual(0);
 		expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(390);
