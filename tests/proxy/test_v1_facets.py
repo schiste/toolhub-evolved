@@ -9,6 +9,7 @@ from flask import Flask
 import backend
 from backend import db, security, tool_facets
 from backend.models import CanonicalToolCache, CatalogFacetValue, SourceAnalysisReport, User, utcnow
+from backend.sync import REVIEW_APPROVED
 
 
 @pytest.fixture
@@ -47,8 +48,8 @@ def _seed(s):
     user = User(wm_sub="42", username="Seeder")
     s.add(user)
     s.flush()
-    s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=user.id))
-    s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=user.id))
+    s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=user.id, review_status=REVIEW_APPROVED))
+    s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=user.id, review_status=REVIEW_APPROVED))
     for name, record in (
         (
             "sfedits",
@@ -119,6 +120,13 @@ def test_tool_summary_shape(app):
 def test_coverage_counts(app):
     with db.session_scope() as s:
         _seed(s)
+        # A user-submitted report that was never approved projects no facets,
+        # so it must not count as scanned either: clients build "no scanned
+        # tool matches X" claims on this number.
+        submitter = User(wm_sub="43", username="Submitter")
+        s.add(submitter)
+        s.flush()
+        s.add(SourceAnalysisReport(tool_name="unreviewed-tool", report={}, user_id=submitter.id))
     with db.session_scope() as s:
         assert v1_facets.coverage(s) == {"scannedTools": 2, "totalTools": 2}
 

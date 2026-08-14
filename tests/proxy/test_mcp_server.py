@@ -10,6 +10,7 @@ from flask import Flask
 import backend
 from backend import db, security, tool_facets, v1_facets
 from backend.models import CanonicalToolCache, CatalogFacetValue, SourceAnalysisReport, User, utcnow
+from backend.sync import REVIEW_APPROVED
 
 
 @pytest.fixture
@@ -54,8 +55,8 @@ def _seed(s):
     user = User(wm_sub="42", username="Seeder")
     s.add(user)
     s.flush()
-    s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=user.id))
-    s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=user.id))
+    s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=user.id, review_status=REVIEW_APPROVED))
+    s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=user.id, review_status=REVIEW_APPROVED))
     for name, title, description in (
         ("sfedits", "SF edits", "San Francisco edit stream bot"),
         ("cite-checker", "Cite checker", "checks citations for accuracy"),
@@ -271,7 +272,7 @@ def test_facet_tools_limit_never_exceeds_serializer_cap(client):
                     stale_until=utcnow() + timedelta(hours=2),
                 )
             )
-            s.add(SourceAnalysisReport(tool_name=name, report={}, user_id=user.id))
+            s.add(SourceAnalysisReport(tool_name=name, report={}, user_id=user.id, review_status=REVIEW_APPROVED))
             _facet(s, name, "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9000)
     payload = json.loads(
         _call_tool(client, "facet_tools", {"dependency": ["pywikibot"], "limit": 9999})["result"]["content"][0]["text"]

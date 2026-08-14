@@ -40,6 +40,7 @@ from backend.models import (
     CatalogFacetValue,
     SourceAnalysisReport,
 )
+from backend.sync import REVIEW_APPROVED
 
 # Declared facet vocabulary from catalog_projection.FACET_FIELDS (8 fields)
 _DECLARED_FIELDS = frozenset(
@@ -258,10 +259,20 @@ def count_matching(s: Session, filters: dict[str, list[str]]) -> int:
 
 
 def scanned_tool_count(s: Session) -> int:
-    """Count tools with at least one stored analysis report (coverage basis).
+    """Count tools with at least one APPROVED analysis report (coverage basis).
 
     Counts reports, not facets: a scanned repository that yielded zero
     findings is still scanned, and the coverage number is what discovery
     clients repeat to users — it must not report fewer than were scanned.
+    Approved only, because facets are projected from approved reports alone:
+    counting open or rejected reports would let "no scanned tool matches"
+    claims rest on tools whose findings are not actually queryable.
     """
-    return int(s.execute(select(func.count(func.distinct(SourceAnalysisReport.tool_name)))).scalar() or 0)
+    return int(
+        s.execute(
+            select(func.count(func.distinct(SourceAnalysisReport.tool_name))).where(
+                SourceAnalysisReport.review_status == REVIEW_APPROVED
+            )
+        ).scalar()
+        or 0
+    )

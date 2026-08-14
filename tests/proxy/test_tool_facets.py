@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 from backend import db  # noqa: E402
 from backend import tool_facets  # noqa: E402
 from backend.models import CatalogFacetValue, SourceAnalysisReport, User, utcnow  # noqa: E402
+from backend.sync import REVIEW_APPROVED  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -78,8 +79,8 @@ def _seed_facets() -> None:
         # Coverage is defined as "tools with at least one analysis report",
         # so the reports themselves must exist, not just derived facets.
         uid = _report_user(s)
-        s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=uid))
-        s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="sfedits", report={}, user_id=uid, review_status=REVIEW_APPROVED))
+        s.add(SourceAnalysisReport(tool_name="cite-checker", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Seed CatalogFacetValue rows directly (simulating projection output)
         # sfedits: pywikibot (0.95), npm:vue (0.90), wikidata-query-service (0.94), python (0.64)
@@ -246,8 +247,8 @@ def test_tools_matching_facets_ranking_by_matched_confidence() -> None:
                 confidence_basis_points=9900,  # High but unrelated
             )
         )
-        s.add(SourceAnalysisReport(tool_name="high-match", report={}, user_id=uid))
-        s.add(SourceAnalysisReport(tool_name="low-match", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="high-match", report={}, user_id=uid, review_status=REVIEW_APPROVED))
+        s.add(SourceAnalysisReport(tool_name="low-match", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Query for shared dependency should rank by matched confidence, not by all facets
         result = tool_facets.tools_matching_facets(s, {"dependency": ["pypi:shared"]})
@@ -300,7 +301,7 @@ def test_facet_match_detail_full_equality() -> None:
                 confidence_basis_points=9000,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="multi-facet", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="multi-facet", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Query for just one dependency
         result = tool_facets.tools_matching_facets(s, {"dependency": ["pypi:target"]})
@@ -334,7 +335,7 @@ def test_tools_matching_facets_result_caps() -> None:
                     confidence_basis_points=5000 + (i % 10) * 100,
                 )
             )
-            s.add(SourceAnalysisReport(tool_name=f"tool-{i}", report={}, user_id=uid))
+            s.add(SourceAnalysisReport(tool_name=f"tool-{i}", report={}, user_id=uid, review_status=REVIEW_APPROVED))
         s.flush()
 
         result = tool_facets.tools_matching_facets(s, {"dependency": ["pypi:common"]})
@@ -369,7 +370,7 @@ def test_facet_value_counts_result_caps() -> None:
                     confidence_basis_points=5000,
                 )
             )
-            s.add(SourceAnalysisReport(tool_name=f"tool-deps-{i}", report={}, user_id=uid))
+            s.add(SourceAnalysisReport(tool_name=f"tool-deps-{i}", report={}, user_id=uid, review_status=REVIEW_APPROVED))
         s.flush()
 
         # Test that default limit is bounded by MAX_VALUE_RESULTS
@@ -478,7 +479,7 @@ def test_tools_matching_facets_declared_and_analyzer_combined() -> None:
                 confidence_basis_points=9500,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="bot-with-lib", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="bot-with-lib", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Tool 2: library type (declared) + pywikibot dependency (analyzer)
         s.add(
@@ -499,7 +500,7 @@ def test_tools_matching_facets_declared_and_analyzer_combined() -> None:
                 confidence_basis_points=9500,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="library-with-lib", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="library-with-lib", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Tool 3: bot type but NO pywikibot dependency
         s.add(
@@ -520,7 +521,7 @@ def test_tools_matching_facets_declared_and_analyzer_combined() -> None:
                 confidence_basis_points=9000,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="bot-no-lib", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="bot-no-lib", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
     with db.session_scope() as s:
         # Query: tool_type=bot AND dependency=pywikibot
@@ -570,7 +571,7 @@ def test_tools_matching_facets_declared_empty_fails_closed() -> None:
                 confidence_basis_points=9500,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="some-tool", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="some-tool", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
     with db.session_scope() as s:
         # Empty declared filter alongside populated analyzer filter
@@ -649,7 +650,7 @@ def test_count_matching_declared_filters() -> None:
                 confidence_basis_points=9500,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="bot1", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="bot1", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Tool 2: library, has pywikibot
         s.add(
@@ -670,7 +671,7 @@ def test_count_matching_declared_filters() -> None:
                 confidence_basis_points=9500,
             )
         )
-        s.add(SourceAnalysisReport(tool_name="lib1", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="lib1", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
     with db.session_scope() as s:
         # Just declared filter
@@ -718,7 +719,7 @@ def test_mixed_declared_and_analyzer_facets_ordering() -> None:
                 provenance=[{"source": "official_toolhub"}],
             )
         )
-        s.add(SourceAnalysisReport(tool_name="tool-a", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="tool-a", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Tool B: analyzer technology=python (8000)
         s.add(
@@ -731,7 +732,7 @@ def test_mixed_declared_and_analyzer_facets_ordering() -> None:
                 provenance=[{"source": "repository_analysis"}],
             )
         )
-        s.add(SourceAnalysisReport(tool_name="tool-b", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="tool-b", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
         # Tool C: analyzer technology=python (9200)
         s.add(
@@ -744,7 +745,7 @@ def test_mixed_declared_and_analyzer_facets_ordering() -> None:
                 provenance=[{"source": "repository_analysis"}],
             )
         )
-        s.add(SourceAnalysisReport(tool_name="tool-c", report={}, user_id=uid))
+        s.add(SourceAnalysisReport(tool_name="tool-c", report={}, user_id=uid, review_status=REVIEW_APPROVED))
 
     with db.session_scope() as s:
         # Query: detected_technology=python
