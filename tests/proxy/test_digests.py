@@ -592,6 +592,78 @@ def test_public_archive_detail_and_full_content_rss(monkeypatch):
     assert b"Toolhub/Digest/Daily/2026-08-12" in feed.data
 
 
+def test_historical_website_editions_use_liftwing_without_entering_delivery_channels(monkeypatch):
+    client = _web_client()
+    digests.capture_recent_rows(
+        [
+            creation(1, "july-tool", "2026-07-31T12:00:00Z"),
+            creation(2, "august-tool", "2026-08-09T12:00:00Z"),
+        ]
+    )
+
+    def editorial(facts, cadence):
+        return (
+            {"introduction": f"A concise historical {cadence} edition.", "highlights": []},
+            "llm-qwen36-27b",
+            False,
+            {"choices": []},
+        )
+
+    monkeypatch.setattr(digests, "generate_editorial", editorial)
+
+    periods = (
+        digests.period_for("daily", datetime(2026, 8, 9, 12)),
+        digests.period_for("weekly", datetime(2026, 8, 9, 12)),
+        digests.period_for("monthly", datetime(2026, 7, 31, 12)),
+    )
+    editions = [
+        digests.create_edition(
+            period,
+            initial_status=digests.WEBSITE_ONLY_STATUS,
+            require_model=True,
+        )
+        for period in periods
+    ]
+
+    assert all(edition is not None for edition in editions)
+    with db.session_scope() as session:
+        stored = list(session.execute(select(DigestEdition)).scalars())
+        assert {edition.status for edition in stored} == {digests.WEBSITE_ONLY_STATUS}
+        assert {edition.model_name for edition in stored} == {"llm-qwen36-27b"}
+        assert all(edition.published_at is not None for edition in stored)
+        assert all("Author: LiftWing Qwen" in edition.rendered_html for edition in stored)
+        assert all("preview" not in edition.rendered_html.casefold() for edition in stored)
+
+    archive = client.get("/v1/digests/?cadence=daily").get_json()
+    detail = client.get(f"/v1/digests/daily/{archive['editions'][0]['editionKey']}/").get_json()
+    assert archive["pagination"]["total"] == 1
+    assert detail["author"] == "LiftWing Qwen"
+    assert detail["modelName"] == "llm-qwen36-27b"
+    assert "publicationScope" not in detail
+    for cadence in digests.CADENCES:
+        assert b"A concise" not in client.get(f"/feeds/digests/{cadence}.xml").data
+    assert digest_delivery.queue_published_editions() == 0
+    wiki = FakeWiki()
+    assert digests.publish_pending(client=wiki) == {"published": 0, "failed": 0}
+    assert wiki.pages == {}
+    assert wiki.emails == []
+    assert wiki.talk == []
+
+    monkeypatch.setattr(
+        digests,
+        "generate_editorial",
+        lambda _facts, _cadence: ({"introduction": "Fallback.", "highlights": []}, "qwen", True, None),
+    )
+    with pytest.raises(RuntimeError, match="did not produce"):
+        digests.create_edition(
+            digests.period_for("daily", datetime(2026, 7, 31, 12)),
+            initial_status=digests.WEBSITE_ONLY_STATUS,
+            require_model=True,
+        )
+    with pytest.raises(ValueError, match="unsupported initial"):
+        digests.create_edition(periods[0], initial_status="rss_only")
+
+
 def test_public_archive_pages_through_every_published_edition(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
     client = _web_client()

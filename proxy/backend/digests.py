@@ -31,6 +31,9 @@ from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient, page_
 
 CADENCES = ("daily", "weekly", "monthly")
 DEFAULT_LANGUAGE = "en"
+WEBSITE_ONLY_STATUS = "website_only"
+WEBSITE_VISIBLE_STATUSES = ("published", WEBSITE_ONLY_STATUS)
+LIFTWING_AUTHOR = "LiftWing Qwen"
 PROMPT_VERSION = "toolhub-digest-v2-evidence"
 MAX_HIGHLIGHTS = 5
 MAX_INTRODUCTION = 600
@@ -454,11 +457,13 @@ def _render(
     used_fallback: bool,
 ) -> tuple[str, str, str]:
     title = _edition_title(period)
+    author = LIFTWING_AUTHOR if not used_fallback else "Toolhub Evolved"
     provenance = (
-        "Editorial prose generated with Wikimedia Lift Wing from verified public Toolhub metadata."
+        "Generated with Wikimedia Lift Wing from verified public Toolhub metadata."
         if not used_fallback
         else "Editorial summary generated deterministically from verified public Toolhub metadata."
     )
+    byline = f"Author: {author}. {provenance}"
     highlights = {item["tool_name"]: item["blurb"] for item in editorial["highlights"]}
     featured = [fact for fact in facts if fact["name"] in highlights]
     remaining = [fact for fact in facts if fact["name"] not in highlights]
@@ -484,7 +489,7 @@ def _render(
             if remaining
             else ""
         )
-        + f"<footer><p>{provenance}</p></footer></article>"
+        + f"<footer><p>{byline}</p></footer></article>"
     )
     wiki_featured = "\n".join(
         f"=== [{fact['toolhub_url']} {wiki_plaintext(fact['title'])}] ===\n{wiki_plaintext(highlights[fact['name']])}"
@@ -495,7 +500,7 @@ def _render(
     rendered_wikitext = (
         f"{marker}\n{wiki_plaintext(editorial['introduction'])}\n\n== Highlights ==\n{wiki_featured}"
         + (f"\n\n== Also added ==\n{wiki_remaining}" if remaining else "")
-        + f"\n\n<small>{provenance}</small>"
+        + f"\n\n<small>{byline}</small>"
     )
     text_featured = "\n\n".join(
         f"{fact['title']}\n{highlights[fact['name']]}\n{fact['toolhub_url']}" for fact in featured
@@ -504,13 +509,21 @@ def _render(
     rendered_text = (
         f"{title}\n\n{editorial['introduction']}\n\nHIGHLIGHTS\n{text_featured}"
         + (f"\n\nALSO ADDED\n{text_remaining}" if remaining else "")
-        + f"\n\n{provenance}"
+        + f"\n\n{byline}"
     )
     return rendered_html, rendered_wikitext, rendered_text
 
 
-def create_edition(period: Period) -> DigestEdition | None:
+def create_edition(
+    period: Period,
+    *,
+    initial_status: str = "validated",
+    require_model: bool = False,
+) -> DigestEdition | None:
     """Create one immutable edition; return None for empty or already-created periods."""
+    if initial_status not in ("validated", WEBSITE_ONLY_STATUS):
+        message = f"unsupported initial digest status: {initial_status}"
+        raise ValueError(message)
     source_rows = facts_for_period(period)
     if not source_rows:
         return None
@@ -518,6 +531,9 @@ def create_edition(period: Period) -> DigestEdition | None:
     source_json = json.dumps(facts, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     source_hash = hashlib.sha256(source_json.encode()).hexdigest()
     editorial, model, used_fallback, response_payload = generate_editorial(facts, period.cadence)
+    if require_model and used_fallback:
+        message = f"LiftWing Qwen did not produce valid editorial copy for {period.cadence}:{period.key}"
+        raise RuntimeError(message)
     rendered_html, rendered_wikitext, rendered_text = _render(period, editorial, facts, used_fallback=used_fallback)
     highlight_blurbs = {item["tool_name"]: item["blurb"] for item in editorial["highlights"]}
     with db.session_scope() as session:
@@ -536,7 +552,7 @@ def create_edition(period: Period) -> DigestEdition | None:
             language_code=DEFAULT_LANGUAGE,
             period_start=period.start,
             period_end=period.end,
-            status="validated",
+            status=initial_status,
             title=_edition_title(period),
             introduction=editorial["introduction"],
             rendered_html=rendered_html,
@@ -546,6 +562,7 @@ def create_edition(period: Period) -> DigestEdition | None:
             prompt_version=PROMPT_VERSION,
             model_name=model,
             used_fallback=used_fallback,
+            published_at=utcnow() if initial_status == WEBSITE_ONLY_STATUS else None,
         )
         session.add(edition)
         session.flush()

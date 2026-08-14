@@ -158,6 +158,7 @@ toolforge jobs run digest-deliver
 ```
 
 The signed-in `/v1/digests/status/` endpoint gives bounded status counts. The
-public `/v1/digests/` endpoint and RSS feeds expose published editions only.
+public `/v1/digests/` endpoint exposes website publications; RSS exposes only
+editions published through the normal cross-channel process.
 After correcting a job failure, reset its circuit breaker as described in
 `RUNBOOK.md`, run it manually, and confirm that `digest-audit` becomes healthy.

@@ -112,14 +112,17 @@ async function detailView(cadence, editionKey) {
 		`/v1/digests/${encodeURIComponent(cadence)}/${encodeURIComponent(editionKey)}/`
 	);
 	if (!edition) throw new Error(t("digests.notFound", "Digest edition not found"));
+	const publicationFooter = edition.metaPageUrl
+		? `<footer class="digest-edition-canonical"><p>${esc(t("digests.canonical", "This edition is permanently published on Meta-Wiki."))}</p>
+		<a class="btn btn--outline btn--md" href="${esc(edition.metaPageUrl)}" target="_blank" rel="noopener">${esc(t("digests.readOnMeta", "Read on Meta-Wiki"))} ↗</a></footer>`
+		: "";
 	return {
 		title: edition.title,
 		styles: ["/styles/digests.css"],
 		html: `<div class="digest-page digest-page--edition"><nav class="digest-edition-nav" aria-label="${esc(t("digests.editionNavigation", "Digest edition"))}">
 		<a href="/digests/${esc(cadence)}"><span aria-hidden="true">←</span> ${esc(t("digests.backToArchive", "All $1 editions", label(cadence).toLowerCase()))}</a>
 		<a href="/feeds/digests/${esc(cadence)}.xml" target="_blank" rel="noopener">RSS <span aria-hidden="true">↗</span></a></nav>
-		<div class="digest-edition-body">${edition.html}</div><footer class="digest-edition-canonical"><p>${esc(t("digests.canonical", "This edition is permanently published on Meta-Wiki."))}</p>
-		<a class="btn btn--outline btn--md" href="${esc(edition.metaPageUrl)}" target="_blank" rel="noopener">${esc(t("digests.readOnMeta", "Read on Meta-Wiki"))} ↗</a></footer></div>`
+		<div class="digest-edition-body">${edition.html}</div>${publicationFooter}</div>`
 	};
 }
 

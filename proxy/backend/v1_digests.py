@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from backend import db
 from backend.digest_delivery import public_base_url, read_subscription_token, send_confirmation
 from backend.digest_health import status_counts
-from backend.digests import CADENCES, DEFAULT_LANGUAGE
+from backend.digests import CADENCES, DEFAULT_LANGUAGE, LIFTWING_AUTHOR, WEBSITE_VISIBLE_STATUSES
 from backend.models import (
     DigestEdition,
     DigestEditionTool,
@@ -61,19 +61,22 @@ def _edition_payload(edition: DigestEdition, tools: list[DigestEditionTool]) -> 
         "metaPageTitle": edition.meta_page_title,
         "metaPageUrl": edition.meta_page_url,
         "publishedAt": _iso(edition.published_at),
+        "author": LIFTWING_AUTHOR if not edition.used_fallback else "Toolhub Evolved",
+        "modelName": edition.model_name,
         "tools": [_tool_payload(row) for row in tools],
     }
 
 
-def _published_editions(
+def _visible_editions(
     cadence: str | None = None,
     *,
     limit: int = MAX_FEED_EDITIONS,
     offset: int = 0,
+    statuses: tuple[str, ...] = WEBSITE_VISIBLE_STATUSES,
 ) -> list[DigestEdition]:
     with db.session_scope() as session:
         statement = select(DigestEdition).where(
-            DigestEdition.status == "published",
+            DigestEdition.status.in_(statuses),
             DigestEdition.language_code == DEFAULT_LANGUAGE,
         )
         if cadence:
@@ -115,14 +118,14 @@ def digest_archive() -> Response:
         page = max(1, int(request.args.get("page", "1")))
     except ValueError:
         return jsonify({"error": "limit and page must be integers"}), HTTP_BAD_REQUEST
-    editions = _published_editions(cadence, limit=limit, offset=(page - 1) * limit)
+    editions = _visible_editions(cadence, limit=limit, offset=(page - 1) * limit)
     tools = _edition_tools(editions)
     with db.session_scope() as session:
         total_statement = (
             select(func.count())
             .select_from(DigestEdition)
             .where(
-                DigestEdition.status == "published",
+                DigestEdition.status.in_(WEBSITE_VISIBLE_STATUSES),
                 DigestEdition.language_code == DEFAULT_LANGUAGE,
             )
         )
@@ -154,7 +157,7 @@ def digest_detail(cadence: str, edition_key: str) -> Response:
                 DigestEdition.cadence == cadence,
                 DigestEdition.edition_key == edition_key,
                 DigestEdition.language_code == DEFAULT_LANGUAGE,
-                DigestEdition.status == "published",
+                DigestEdition.status.in_(WEBSITE_VISIBLE_STATUSES),
             )
         ).scalar_one_or_none()
         if edition is None:
@@ -178,7 +181,7 @@ def digest_feed(cadence: str) -> Response:
     """Serve a full-content RSS 2.0 feed for one digest cadence."""
     if cadence not in CADENCES:
         return Response("Digest feed not found\n", status=HTTP_NOT_FOUND, content_type="text/plain; charset=utf-8")
-    editions = _published_editions(cadence)
+    editions = _visible_editions(cadence, statuses=("published",))
     base = public_base_url()
     items: list[str] = []
     for edition in editions:
