@@ -219,27 +219,23 @@ def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
+    raw_by_param: dict[str, list[Any]] = {}
+    for param in v1_facets.FILTER_PARAMS:
+        raw_values = arguments.get(param)
+        if raw_values is None:
+            continue
+        if not isinstance(raw_values, list):
+            # LLM callers routinely send a bare string where the schema
+            # says array. Wrap it instead of dropping the filter — a
+            # dropped filter silently widens the AND, the one failure
+            # mode this surface must never have.
+            raw_values = [raw_values]
+        raw_by_param[param] = raw_values
     with db.session_scope() as s:
-        filters: dict[str, list[str]] = {}
-        for param, facet_type in v1_facets.FILTER_PARAMS.items():
-            raw_values = arguments.get(param)
-            if raw_values is None:
-                continue
-            if not isinstance(raw_values, list):
-                # LLM callers routinely send a bare string where the schema
-                # says array. Wrap it instead of dropping the filter — a
-                # dropped filter silently widens the AND, the one failure
-                # mode this surface must never have.
-                raw_values = [raw_values]
-            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
-            if not requested:
-                continue
-            values = v1_facets.dependency_values(s, requested) if facet_type == "dependency" else requested
-            # Same rule as the REST route: an unknown value is a filter that
-            # matches nothing, not an invalid request — and the Phase 1
-            # helpers treat the resulting empty list as matching nothing
-            # rather than dropping it (which would widen the AND).
-            filters[facet_type] = sorted({str(v).strip().casefold() for v in values if str(v).strip()})
+        # Same normalization as the REST route, including the rule that an
+        # unknown value is a filter that matches nothing, not an invalid
+        # request.
+        filters, _ = v1_facets.normalized_filters(s, raw_by_param)
         if not filters:
             msg = (
                 "supply at least one filter: dependency, api, technology (detected), "

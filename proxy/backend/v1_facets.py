@@ -156,6 +156,34 @@ def dependency_values(s: Session, raw: list[str]) -> list[str]:
     return expanded
 
 
+def normalized_filters(
+    s: Session, raw_by_param: dict[str, list[Any]]
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Turn per-parameter raw values into backend filters, one rule for every surface.
+
+    Returns (filters keyed by facet type, applied echo keyed by the caller's
+    parameter name so responses round-trip into new requests). A parameter
+    with no non-blank value is not a filter and is skipped. An UNKNOWN value
+    is still a filter: it legitimately matches nothing, it does not
+    invalidate the request. Emptiness is decided on the raw request values,
+    never on the dependency-expansion result — tools_matching_facets/
+    count_matching treat an asked-for-but-empty value list as matching
+    nothing (they must never drop it, which would widen the AND).
+    """
+    filters: dict[str, list[str]] = {}
+    applied: dict[str, list[str]] = {}
+    for param, facet_type in FILTER_PARAMS.items():
+        raw_values = raw_by_param.get(param) or []
+        requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
+        if not requested:
+            continue
+        values = dependency_values(s, requested) if facet_type == "dependency" else requested
+        cleaned = sorted({str(v).strip().casefold() for v in values if str(v).strip()})
+        filters[facet_type] = cleaned
+        applied[param] = cleaned or requested
+    return filters, applied
+
+
 @v1_facets_bp.route("/v1/facets/tools/")
 def v1_facets_tools() -> Response | tuple[Response, int]:
     """Tools matching every supplied facet filter (AND across types)."""
@@ -166,28 +194,11 @@ def v1_facets_tools() -> Response | tuple[Response, int]:
         capped = max(1, min(MAX_LIMIT, int(limit))) if limit else DEFAULT_LIMIT
     except ValueError:
         capped = DEFAULT_LIMIT
+    raw_by_param: dict[str, list[Any]] = {
+        param: [v for raw in request.args.getlist(param) for v in raw.split(",")] for param in FILTER_PARAMS
+    }
     with db.session_scope() as s:
-        filters: dict[str, list[str]] = {}
-        applied: dict[str, list[str]] = {}
-        for param, facet_type in FILTER_PARAMS.items():
-            raw_values = [v for raw in request.args.getlist(param) for v in raw.split(",")]
-            requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
-            if not requested:
-                # `?dependency=` (no value at all) is not a filter and must
-                # not bypass the at-least-one-filter check below.
-                continue
-            values = dependency_values(s, requested) if facet_type == "dependency" else requested
-            cleaned = sorted({str(v).strip().casefold() for v in values if str(v).strip()})
-            # An UNKNOWN value is still a filter: it legitimately matches
-            # nothing (200 + empty tools), it does not invalidate the request.
-            # Emptiness is decided on the raw request value above, never on
-            # the expansion result — tools_matching_facets/count_matching
-            # treat an asked-for-but-empty value list as matching nothing
-            # (they must never drop it, which would widen the AND).
-            filters[facet_type] = cleaned
-            # Echo under the caller's parameter name so responses round-trip
-            # into new requests without knowing internal facet-type names.
-            applied[param] = cleaned or requested
+        filters, applied = normalized_filters(s, raw_by_param)
         if not filters:
             return jsonify({"error": "at least one facet filter is required"}), 400
         matches = tool_facets.tools_matching_facets(s, filters, limit=capped)
