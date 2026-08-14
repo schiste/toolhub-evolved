@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+import requests
 from flask import Flask
 from sqlalchemy import select
 
@@ -22,12 +23,14 @@ import backend.v1_digests as v1_digests_api  # noqa: E402
 import digest_audit  # noqa: E402
 import digest_deliver  # noqa: E402
 import digest_publish  # noqa: E402
+import digest_regenerate  # noqa: E402
 from backend import db, digest_delivery, digests, wikimedia_delivery  # noqa: E402
 from backend.models import (  # noqa: E402
     DigestDelivery,
     CanonicalToolCache,
     DigestEdition,
     DigestEditionTool,
+    DigestGenerationAttempt,
     DigestOperationalState,
     DigestSubscription,
     Person,
@@ -289,8 +292,82 @@ def test_model_prompt_requests_grounded_people_names_but_forbids_model_links():
     supplied = json.loads(payload["messages"][1]["content"])["tools"][0]
     assert "author_names or maintainer_names" in system
     assert "Never emit URLs" in system
+    assert "scanning in under a minute" in system
+    assert "do not merely repeat the title" in system
+    assert "exactly one object for every supplied tool" in system
     assert supplied["author_names"] == ["Ada Lovelace"]
-    assert supplied["toolhub_url"] == "https://toolhub.wikimedia.org/tools/known"
+    assert "toolhub_url" not in supplied
+    assert "url" not in supplied
+
+
+def test_model_payload_bounds_busy_periods_but_daily_supplies_every_tool():
+    facts = [
+        {
+            "name": f"tool-{index}",
+            "title": f"Tool {index}",
+            "description": (f"Description for tool {index}. " * 80),
+            "tasks": [f"task-{item}" * 30 for item in range(12)],
+            "toolhub_url": f"https://toolhub.wikimedia.org/tools/tool-{index}",
+            "url": f"https://tool-{index}.example/",
+            "authors": [{"name": "Person", "url": "https://people.example/person"}],
+        }
+        for index in range(118)
+    ]
+
+    monthly = digests._model_payload(facts, "monthly", "llm-qwen36-27b")
+    monthly_input = json.loads(monthly["messages"][1]["content"])
+    candidates = monthly_input["tools"]
+    candidate_indexes = [int(item["name"].removeprefix("tool-")) for item in candidates]
+
+    assert monthly_input["period_tool_count"] == 118
+    assert monthly_input["selected_tool_count"] == digests.MAX_HIGHLIGHTS
+    assert f"exactly {digests.MAX_HIGHLIGHTS} objects" in monthly["messages"][0]["content"]
+    assert digests.MAX_HIGHLIGHTS <= len(candidates) <= digests.MAX_MODEL_CANDIDATES
+    assert len(json.dumps(candidates, ensure_ascii=False).encode()) <= digests.MAX_MODEL_FACTS_BYTES
+    assert min(candidate_indexes) < 10
+    assert max(candidate_indexes) > 100
+    assert all(set(item) <= {"name", *digests.EVIDENCE_FIELDS} for item in candidates)
+
+    daily = digests._model_payload(facts, "daily", "llm-qwen36-27b")
+    daily_input = json.loads(daily["messages"][1]["content"])
+    assert daily_input["candidate_count"] == 118
+    assert [item["name"] for item in daily_input["tools"]] == [fact["name"] for fact in facts]
+
+
+def test_weekly_and_monthly_select_all_tools_below_the_limit():
+    facts = [
+        {"name": f"tool-{index}", "description": f"Description for tool {index}."} for index in range(3)
+    ]
+    payload = digests._model_payload(facts, "weekly", "llm-qwen36-27b")
+    model_input = json.loads(payload["messages"][1]["content"])
+    assert model_input["selected_tool_count"] == 3
+    assert "exactly 3 objects" in payload["messages"][0]["content"]
+
+    incomplete = {
+        "introduction": "Three tools support distinct Wikimedia workflows.",
+        "highlights": [
+            {
+                "tool_name": fact["name"],
+                "blurb": f"Tool {index} supports a documented workflow.",
+                "evidence_field": "description",
+                "evidence": fact["description"],
+            }
+            for index, fact in enumerate(facts[:2])
+        ],
+    }
+    with pytest.raises(ValueError, match="select exactly"):
+        digests.validate_editorial(incomplete, facts, cadence="weekly")
+
+    complete = {**incomplete, "highlights": [
+        {
+            "tool_name": fact["name"],
+            "blurb": f"Tool {index} supports a documented workflow.",
+            "evidence_field": "description",
+            "evidence": fact["description"],
+        }
+        for index, fact in enumerate(facts)
+    ]}
+    assert len(digests.validate_editorial(complete, facts, cadence="monthly")["highlights"]) == 3
 
 
 def test_model_editorial_rejects_unknown_tools_and_links():
@@ -298,6 +375,64 @@ def test_model_editorial_rejects_unknown_tools_and_links():
     with pytest.raises(ValueError, match="unknown"):
         digests.validate_editorial(
             {"introduction": "New tools.", "highlights": [{"tool_name": "invented", "blurb": "Useful."}]},
+            facts,
+        )
+
+
+def test_model_editorial_rejects_prose_that_exceeds_reading_limits():
+    facts = [{"name": "known", "description": "Helps editors review changes."}]
+    with pytest.raises(ValueError, match="introduction exceeded"):
+        digests.validate_editorial(
+            {
+                "introduction": " ".join(["word"] * (digests.MAX_INTRODUCTION_WORDS + 1)),
+                "highlights": [
+                    {
+                        "tool_name": "known",
+                        "blurb": "Helps editors review changes.",
+                        "evidence_field": "description",
+                        "evidence": "Helps editors review changes.",
+                    }
+                ],
+            },
+            facts,
+        )
+
+
+def test_daily_editorial_must_mention_every_tool_exactly_once():
+    facts = [
+        {"name": "one", "description": "Helps editors review changes."},
+        {"name": "two", "description": "Shows recent Wikimedia activity."},
+    ]
+    incomplete = {
+        "introduction": "Two focused tools support review and activity monitoring.",
+        "highlights": [
+            {
+                "tool_name": "one",
+                "blurb": "The first tool helps editors review changes.",
+                "evidence_field": "description",
+                "evidence": "Helps editors review changes.",
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="every supplied tool"):
+        digests.validate_editorial(incomplete, facts, cadence="daily")
+
+    fallback = digests._fallback_editorial(facts, "daily")
+    assert [item["tool_name"] for item in fallback["highlights"]] == ["one", "two"]
+    with pytest.raises(ValueError, match="blurb exceeded"):
+        digests.validate_editorial(
+            {
+                "introduction": "A focused review tool arrived.",
+                "highlights": [
+                    {
+                        "tool_name": "known",
+                        "blurb": " ".join(["word"] * (digests.MAX_BLURB_WORDS + 1)),
+                        "evidence_field": "description",
+                        "evidence": "Helps editors review changes.",
+                    }
+                ],
+            },
             facts,
         )
 
@@ -862,6 +997,9 @@ def test_public_archive_detail_and_full_content_rss(monkeypatch):
     feed = client.get("/feeds/digests/daily.xml")
 
     assert archive["editions"][0]["editionKey"] == "2026-08-12"
+    assert archive["editions"][0]["toolCount"] == 1
+    assert "html" not in archive["editions"][0]
+    assert "tools" not in archive["editions"][0]
     assert detail["tools"][0]["name"] == "example"
     assert feed.status_code == 200
     assert b"<content:encoded>" in feed.data
@@ -938,6 +1076,81 @@ def test_historical_website_editions_use_liftwing_without_entering_delivery_chan
         )
     with pytest.raises(ValueError, match="unsupported initial"):
         digests.create_edition(periods[0], initial_status="rss_only")
+
+
+def test_website_only_regeneration_is_atomic_and_keeps_audit_history(monkeypatch):
+    digests.capture_recent_rows(
+        [
+            creation(1, "july-tool", "2026-07-31T12:00:00Z"),
+            creation(2, "august-tool", "2026-08-09T12:00:00Z"),
+        ]
+    )
+    periods = [
+        digests.period_from_key("daily", "2026-08-09"),
+        digests.period_from_key("weekly", "2026-W32"),
+        digests.period_from_key("monthly", "2026-07"),
+    ]
+    round_number = 1
+
+    def editorial(facts, _cadence):
+        return (
+            {
+                "introduction": f"Editorial round {round_number} covers verified tools for Wikimedia contributors.",
+                "highlights": [
+                    {"tool_name": facts[0]["name"], "blurb": f"Round {round_number} explains the tool clearly."}
+                ],
+            },
+            "llm-qwen36-27b",
+            False,
+            {"round": round_number},
+        )
+
+    monkeypatch.setattr(digests, "generate_editorial", editorial)
+    original = [
+        digests.create_edition(period, initial_status=digests.WEBSITE_ONLY_STATUS, require_model=True)
+        for period in periods
+    ]
+    original_ids = {edition.id for edition in original if edition is not None}
+    round_number = 2
+
+    regenerated = digests.regenerate_website_editions(periods)
+
+    assert {edition.id for edition in regenerated} == original_ids
+    assert all("round 2" in edition.introduction.casefold() for edition in regenerated)
+    with db.session_scope() as session:
+        assert session.query(DigestGenerationAttempt).count() == 6
+        assert {attempt.attempt for attempt in session.query(DigestGenerationAttempt)} == {1, 2}
+        assert session.query(DigestDelivery).count() == 0
+    assert digest_regenerate.run(periods)["publicationScope"] == "website-only"
+
+
+def test_website_only_regeneration_refuses_a_published_edition_before_mutation(monkeypatch):
+    digests.capture_recent_rows([creation(1, "published-tool", "2026-08-09T12:00:00Z")])
+    period = digests.period_from_key("daily", "2026-08-09")
+    monkeypatch.setattr(
+        digests,
+        "generate_editorial",
+        lambda facts, _cadence: (
+            {
+                "introduction": "One verified tool supports Wikimedia work.",
+                "highlights": [{"tool_name": facts[0]["name"], "blurb": "The tool supports Wikimedia work."}],
+            },
+            "llm-qwen36-27b",
+            False,
+            {},
+        ),
+    )
+    edition = digests.create_edition(period)
+    assert edition is not None
+
+    with pytest.raises(ValueError, match="non-website"):
+        digests.regenerate_website_editions([period])
+
+    with db.session_scope() as session:
+        stored = session.get(DigestEdition, edition.id)
+        assert stored is not None
+        assert stored.introduction == "One verified tool supports Wikimedia work."
+        assert session.query(DigestGenerationAttempt).count() == 1
 
 
 def test_public_archive_pages_through_every_published_edition(monkeypatch):
@@ -1345,7 +1558,29 @@ def test_digest_generation_falls_back_on_bad_model_response(monkeypatch):
     assert model == "llm-qwen36-27b"
     assert fallback is True
     assert response is not None
+    assert "JSONDecodeError" in response["_toolhub_generation_error"]
     assert editorial["highlights"][0]["blurb"] == "Useful."
+
+
+def test_digest_generation_preserves_liftwing_http_failure(monkeypatch):
+    monkeypatch.setenv(
+        "LIFTWING_API_URL",
+        "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions",
+    )
+    monkeypatch.setenv("LIFTWING_MODEL", "llm-qwen36-27b")
+
+    class Response:
+        def raise_for_status(self):
+            raise requests.HTTPError("500 Server Error from LiftWing")
+
+    monkeypatch.setattr(digests.requests, "post", lambda *_args, **_kwargs: Response())
+
+    _editorial, _model, fallback, response = digests.generate_editorial(
+        [{"name": "known", "description": "Useful."}], "monthly"
+    )
+
+    assert fallback is True
+    assert response == {"_toolhub_generation_error": "HTTPError: 500 Server Error from LiftWing"}
 
 
 def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
@@ -1373,14 +1608,27 @@ def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
         "introduction": "Two tools arrived.",
         "highlights": [{"tool_name": "featured", "blurb": "It helps."}],
     }
-    rendered = digests._render(weekly, editorial, facts, used_fallback=False)
-    assert "Also added" in rendered[0]
+    rendered = digests.render_editorial(weekly, editorial, facts, used_fallback=False)
+    assert "All other additions" in rendered[0]
     assert "Open tool" in rendered[0]
     assert "https://people.example/ada" in rendered[0]
     assert "Authors:" in rendered[1]
     assert "Maintainers: Grace" in rendered[2]
     assert "Unsafe" not in rendered[0]
     assert "Lift Wing" in rendered[2]
+    daily_editorial = {
+        "introduction": "Two tools support distinct Wikimedia workflows.",
+        "highlights": [
+            {"tool_name": "featured", "blurb": "It helps."},
+            {"tool_name": "other", "blurb": "It helps too."},
+        ],
+    }
+    daily_rendered = digests.render_editorial(
+        digests.period_for("daily", datetime(2026, 8, 12)), daily_editorial, facts, used_fallback=False
+    )
+    assert "Every new tool" in daily_rendered[0]
+    assert "EVERY NEW TOOL" in daily_rendered[2]
+    assert "All other additions" not in daily_rendered[0]
     assert digests._safe_http_url("javascript:alert(1)") == ""
     assert digests.create_edition(digests.period_for("daily", datetime(2020, 1, 1))) is None
 

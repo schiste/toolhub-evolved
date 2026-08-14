@@ -10,6 +10,9 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Text
+from sqlalchemy.dialects import mysql
+from sqlalchemy.dialects.mysql import MEDIUMTEXT, mariadb
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
@@ -18,6 +21,7 @@ import migrate  # noqa: E402
 from backend import api_cache, canonical_tools, db, maintainer_index  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCache,
+    DigestEdition,
     ToolAuthorClaim,
     ToolAuthorKey,
     UnresolvedAttributionEvidence,
@@ -51,6 +55,7 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
     # Asserted per migration rather than as a whole set, so adding a migration
     # extends this rather than breaking it.
     first = {result.name: result.rows for result in migrate.run_once()}
+    assert first["digest render MEDIUMTEXT"] == 0
     assert first["api_cache index columns"] == 1
     assert first["canonical search_text"] == 1
 
@@ -59,6 +64,61 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
     assert second["api_cache index columns"] == 0
     assert second["canonical search_text"] == 0
     assert [r for r in canonical_tools.search("cached earlier")][0]["toolName"] == "legacy-tool"
+
+
+def test_digest_render_columns_compile_to_mysql_mediumtext(configured_db):
+    for name in ("rendered_html", "rendered_wikitext", "rendered_text"):
+        column = DigestEdition.__table__.columns[name]
+        assert column.type.compile(dialect=mysql.dialect()) == "MEDIUMTEXT"
+        assert column.type.compile(dialect=mariadb.MariaDBDialect()) == "MEDIUMTEXT"
+        assert column.type.compile(dialect=db.engine().dialect) == "TEXT"
+
+
+def test_digest_render_migration_is_mysql_idempotent(monkeypatch):
+    statements = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def exec_driver_sql(self, statement):
+            statements.append(statement)
+
+    class Engine:
+        dialect = type("Dialect", (), {"name": "mysql"})()
+
+        def begin(self):
+            return Connection()
+
+    class Inspector:
+        def __init__(self, widened=False):
+            self.widened = widened
+
+        def get_table_names(self):
+            return ["digest_editions"]
+
+        def get_columns(self, _table):
+            column_type = MEDIUMTEXT() if self.widened else Text()
+            return [
+                {"name": name, "type": column_type}
+                for name in ("rendered_html", "rendered_wikitext", "rendered_text")
+            ]
+
+    engine = Engine()
+    monkeypatch.setattr(migrate.db, "engine", lambda: engine)
+    monkeypatch.setattr(migrate, "inspect", lambda _engine: Inspector())
+    assert migrate._widen_digest_render_columns() == 3  # noqa: SLF001 - exact DDL regression
+    assert statements == [
+        "ALTER TABLE digest_editions MODIFY COLUMN rendered_html MEDIUMTEXT NOT NULL",
+        "ALTER TABLE digest_editions MODIFY COLUMN rendered_text MEDIUMTEXT NOT NULL",
+        "ALTER TABLE digest_editions MODIFY COLUMN rendered_wikitext MEDIUMTEXT NOT NULL",
+    ]
+
+    monkeypatch.setattr(migrate, "inspect", lambda _engine: Inspector(widened=True))
+    assert migrate._widen_digest_render_columns() == 0  # noqa: SLF001 - idempotency regression
 
 
 def test_schema_setup_does_no_row_level_work(configured_db):

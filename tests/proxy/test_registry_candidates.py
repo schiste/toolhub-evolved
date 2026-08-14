@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 from backend import db, people_index, people_reconcile  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCacheMeta,
+    Person,
     PersonIdentifier,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
@@ -79,6 +80,23 @@ def test_a_confirmed_account_becomes_a_person_keyed_on_its_global_id():
 
         assert (result["checked"], result["resolved"], result["peopleCreated"]) == (1, 1, 1)
         assert _identifier(session, "9999") is not None
+
+
+def test_registry_finishes_remote_batch_before_writing_people():
+    with db.session_scope() as session:
+        _label(session, "0xalice", tool="tool-a")
+        _label(session, "0xbob", tool="tool-b")
+
+        class InspectingRegistry(FakeRegistry):
+            def lookup_username(self, username):
+                assert not any(isinstance(row, Person) for row in session.new | session.dirty)
+                return super().lookup_username(username)
+
+        registry = InspectingRegistry({"0xalice": "100", "0xbob": "200"})
+        result = _discover(session, registry)
+
+        assert registry.asked == ["0xalice", "0xbob"]
+        assert result == {"checked": 2, "resolved": 2, "peopleCreated": 2}
 
 
 def test_the_new_person_makes_the_label_locally_resolvable():

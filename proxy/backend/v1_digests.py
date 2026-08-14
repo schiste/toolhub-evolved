@@ -48,7 +48,8 @@ def _tool_payload(row: DigestEditionTool) -> dict[str, object]:
     }
 
 
-def _edition_payload(edition: DigestEdition, tools: list[DigestEditionTool]) -> dict[str, object]:
+def _edition_base_payload(edition: DigestEdition) -> dict[str, object]:
+    """Return fields shared by archive summaries and full edition responses."""
     return {
         "cadence": edition.cadence,
         "editionKey": edition.edition_key,
@@ -57,14 +58,25 @@ def _edition_payload(edition: DigestEdition, tools: list[DigestEditionTool]) -> 
         "periodEnd": _iso(edition.period_end),
         "title": edition.title,
         "introduction": edition.introduction,
+        "publishedAt": _iso(edition.published_at),
+        "author": LIFTWING_AUTHOR if not edition.used_fallback else "Toolhub Evolved",
+    }
+
+
+def _edition_payload(edition: DigestEdition, tools: list[DigestEditionTool]) -> dict[str, object]:
+    return {
+        **_edition_base_payload(edition),
         "html": edition.rendered_html,
         "metaPageTitle": edition.meta_page_title,
         "metaPageUrl": edition.meta_page_url,
-        "publishedAt": _iso(edition.published_at),
-        "author": LIFTWING_AUTHOR if not edition.used_fallback else "Toolhub Evolved",
         "modelName": edition.model_name,
         "tools": [_tool_payload(row) for row in tools],
     }
+
+
+def _edition_summary_payload(edition: DigestEdition, tool_count: int) -> dict[str, object]:
+    """Return only the fields needed to render one archive row."""
+    return {**_edition_base_payload(edition), "toolCount": tool_count}
 
 
 def _visible_editions(
@@ -88,23 +100,18 @@ def _visible_editions(
         )
 
 
-def _edition_tools(editions: list[DigestEdition]) -> dict[int, list[DigestEditionTool]]:
-    """Load one page's frozen tool rows in a single ordered query."""
+def _edition_tool_counts(editions: list[DigestEdition]) -> dict[int, int]:
+    """Count one page's frozen tools without loading their large fact snapshots."""
     edition_ids = [edition.id for edition in editions]
     if not edition_ids:
         return {}
     with db.session_scope() as session:
-        rows = list(
-            session.execute(
-                select(DigestEditionTool)
-                .where(DigestEditionTool.edition_id.in_(edition_ids))
-                .order_by(DigestEditionTool.edition_id, DigestEditionTool.position, DigestEditionTool.id)
-            ).scalars()
-        )
-    grouped: dict[int, list[DigestEditionTool]] = {edition_id: [] for edition_id in edition_ids}
-    for row in rows:
-        grouped[row.edition_id].append(row)
-    return grouped
+        rows = session.execute(
+            select(DigestEditionTool.edition_id, func.count())
+            .where(DigestEditionTool.edition_id.in_(edition_ids))
+            .group_by(DigestEditionTool.edition_id)
+        ).all()
+    return {edition_id: int(count) for edition_id, count in rows}
 
 
 @v1_digests_bp.route("/v1/digests/")
@@ -119,7 +126,7 @@ def digest_archive() -> Response:
     except ValueError:
         return jsonify({"error": "limit and page must be integers"}), HTTP_BAD_REQUEST
     editions = _visible_editions(cadence, limit=limit, offset=(page - 1) * limit)
-    tools = _edition_tools(editions)
+    tool_counts = _edition_tool_counts(editions)
     with db.session_scope() as session:
         total_statement = (
             select(func.count())
@@ -132,7 +139,7 @@ def digest_archive() -> Response:
         if cadence:
             total_statement = total_statement.where(DigestEdition.cadence == cadence)
         total = session.execute(total_statement).scalar_one()
-    payload = [_edition_payload(edition, tools.get(edition.id, [])) for edition in editions]
+    payload = [_edition_summary_payload(edition, tool_counts.get(edition.id, 0)) for edition in editions]
     return jsonify(
         {
             "editions": payload,

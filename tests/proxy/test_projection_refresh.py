@@ -94,6 +94,9 @@ def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
     assert "webservice restart" in deploy
     assert "Restart command returned" in deploy
     assert "deployment-diagnostics.jsonl" in deploy
+    assert 'deployment_log_dir="$HOME/deployment-logs"' in deploy
+    assert 'projection-refresh-$deploy_run_id.out' in deploy
+    assert 'ln -sfn "$projection_out" "$HOME/projection-refresh-deploy.out"' in deploy
 
 
 def test_identity_publication_does_not_repeat_network_candidate_discovery(monkeypatch):

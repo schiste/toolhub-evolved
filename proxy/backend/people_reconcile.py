@@ -8,6 +8,8 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend import (
     db,
@@ -73,15 +75,42 @@ def enqueue_tool_names_in_session(s: Session, tool_names: list[str], *, reason: 
     if not names:
         return 0
     now = utcnow()
-    for name in names:
-        row = s.get(PersonReconciliationQueue, name)
-        if row is None:
-            s.add(PersonReconciliationQueue(tool_name=name, reason=_clean(reason, 64), enqueued_at=now))
-        else:
-            row.reason = _clean(reason, 64) or row.reason
-            row.enqueued_at = now
-            row.next_attempt_at = None
-            row.last_error = None
+    clean_reason = _clean(reason, 64) or "data_ingestion"
+    rows = [{"tool_name": name, "reason": clean_reason, "enqueued_at": now} for name in names]
+    dialect = s.get_bind().dialect.name
+    if dialect == "mysql":
+        statement = mysql_insert(PersonReconciliationQueue).values(rows)
+        s.execute(
+            statement.on_duplicate_key_update(
+                reason=statement.inserted.reason,
+                enqueued_at=statement.inserted.enqueued_at,
+                next_attempt_at=None,
+                last_error=None,
+            )
+        )
+    elif dialect == "sqlite":
+        statement = sqlite_insert(PersonReconciliationQueue).values(rows)
+        s.execute(
+            statement.on_conflict_do_update(
+                index_elements=[PersonReconciliationQueue.tool_name],
+                set_={
+                    "reason": statement.excluded.reason,
+                    "enqueued_at": statement.excluded.enqueued_at,
+                    "next_attempt_at": None,
+                    "last_error": None,
+                },
+            )
+        )
+    else:
+        for row_values in rows:
+            row = s.get(PersonReconciliationQueue, row_values["tool_name"])
+            if row is None:
+                s.add(PersonReconciliationQueue(**row_values))
+            else:
+                row.reason = clean_reason
+                row.enqueued_at = now
+                row.next_attempt_at = None
+                row.last_error = None
     return len(names)
 
 
@@ -738,12 +767,30 @@ def _registry_label_batch(s: Session, *, limit: int) -> tuple[list[str], str]:
     return batch, batch[-1]
 
 
+def _resolve_registry_candidate_batch(
+    s: Session,
+    *,
+    provider: public_identity.WikimediaIdentityProvider,
+    label_limit: int,
+    sleep: Any,  # noqa: ANN401 - injected for deterministic tests
+) -> tuple[list[tuple[str, public_identity.WikimediaIdentity | None]], str]:
+    """Finish every registry request before the reconciliation write phase."""
+    batch, cursor = _registry_label_batch(s, limit=label_limit)
+    resolved = []
+    for index, label in enumerate(batch):
+        if index:
+            sleep(REGISTRY_MIN_INTERVAL_SECONDS)
+        resolved.append((label, provider.lookup_username(label)))
+    return resolved, cursor
+
+
 def discover_registry_candidates(
     s: Session,
     *,
     provider: public_identity.WikimediaIdentityProvider | None = None,
     label_limit: int = DEFAULT_REGISTRY_LABEL_LIMIT,
     sleep: Any = time.sleep,  # noqa: ANN401 - injected for deterministic tests
+    resolved_batch: tuple[list[tuple[str, public_identity.WikimediaIdentity | None]], str] | None = None,
 ) -> dict[str, int]:
     """Record identities for handle-shaped labels a public registry confirms.
 
@@ -762,12 +809,18 @@ def discover_registry_candidates(
     checked = 0
     resolved = 0
     people_created = 0
-    batch, cursor = _registry_label_batch(s, limit=label_limit)
-    for index, label in enumerate(batch):
-        if index:
-            sleep(REGISTRY_MIN_INTERVAL_SECONDS)
+    candidates, cursor = (
+        resolved_batch
+        if resolved_batch is not None
+        else _resolve_registry_candidate_batch(
+            s,
+            provider=resolver,
+            label_limit=label_limit,
+            sleep=sleep,
+        )
+    )
+    for _label, identity in candidates:
         checked += 1
-        identity = resolver.lookup_username(label)
         if identity is None:
             continue
         resolved += 1
@@ -797,21 +850,44 @@ def discover_registry_candidates(
     return {"checked": checked, "resolved": resolved, "peopleCreated": people_created}
 
 
+def _resolve_identity_candidate_batch(
+    s: Session,
+    *,
+    identity_resolver: PublicIdentityResolver,
+    label_limit: int,
+) -> list[tuple[ToolhubAccountProjection, list[Person], public_identity.ResolvedPublicIdentity | None]]:
+    """Finish every remote identity bridge before shared identity rows are written."""
+    account_limit = max(1, min(int(label_limit), 100))
+    candidates = _candidate_account_groups(s, _candidate_source_people(s))
+    return [
+        (account, people, identity_resolver.resolve(account.wikimedia_global_user_id or ""))
+        for account, people in candidates[:account_limit]
+    ]
+
+
 def discover_identity_candidates(
     s: Session,
     *,
     run_id: int,
     identity_resolver: PublicIdentityResolver,
     label_limit: int = DEFAULT_CANDIDATE_LABEL_LIMIT,
+    resolved_batch: list[tuple[ToolhubAccountProjection, list[Person], public_identity.ResolvedPublicIdentity | None]]
+    | None = None,
 ) -> dict[str, int]:
     """Resolve exact public accounts and auto-link only SUL-backed tool evidence."""
     created = 0
     linked = 0
     conflicts = 0
-    account_limit = max(1, min(int(label_limit), 100))
-    candidates = _candidate_account_groups(s, _candidate_source_people(s))
-    for account, people in candidates[:account_limit]:
-        resolved = identity_resolver.resolve(account.wikimedia_global_user_id or "")
+    candidates = (
+        resolved_batch
+        if resolved_batch is not None
+        else _resolve_identity_candidate_batch(
+            s,
+            identity_resolver=identity_resolver,
+            label_limit=label_limit,
+        )
+    )
+    for account, people, resolved in candidates:
         toolforge = resolved.toolforge if resolved is not None else None
         verified_wikimedia_handles = {
             source.id: _verified_wikimedia_handle(s, source.id, resolved.wikimedia.username)
@@ -930,6 +1006,31 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
     identity_changed_since = source_changes_since or utcnow()
     try:
         before = build_plan(s)
+        # The hourly identities-only worker starts from materialized evidence,
+        # so exhaust its remote providers before the first shared people/user
+        # write. A full rebuild must first create fresh candidate evidence and
+        # therefore keeps discovery after that local phase. OAuth no longer
+        # touches people rows, and user links are kept last below.
+        identity_resolver = identity_resolver or PublicIdentityResolver()
+        resolved_identity_candidates = (
+            _resolve_identity_candidate_batch(
+                s,
+                identity_resolver=identity_resolver,
+                label_limit=candidate_label_limit,
+            )
+            if mode == MODE_APPLY and discover_candidates and not rebuild_tools
+            else None
+        )
+        resolved_registry_candidates = (
+            _resolve_registry_candidate_batch(
+                s,
+                provider=public_identity.WikimediaIdentityProvider(),
+                label_limit=registry_label_limit,
+                sleep=time.sleep,
+            )
+            if mode == MODE_APPLY and discover_candidates and registry_label_limit and not rebuild_tools
+            else None
+        )
         if mode == MODE_APPLY:
             account_bindings = (
                 identity_graph.synchronize(s)
@@ -947,8 +1048,6 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)
             identity_qualities_refreshed = people_index.refresh_identity_qualities(s)
             non_actionable_conflicts_retired = _retire_non_actionable_display_conflicts(s)
-            for user in s.execute(select(User).order_by(User.id)).scalars():
-                people_index.link_user(s, user)
             if rebuild_tools:
                 for name in before["toolNames"]:
                     _reconcile_tool(s, name)
@@ -956,8 +1055,9 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 discover_identity_candidates(
                     s,
                     run_id=run_row.id,
-                    identity_resolver=identity_resolver or PublicIdentityResolver(),
+                    identity_resolver=identity_resolver,
                     label_limit=candidate_label_limit,
+                    resolved_batch=resolved_identity_candidates,
                 )
                 if discover_candidates
                 else {"created": 0, "linked": 0, "conflicts": 0}
@@ -966,7 +1066,11 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             # text, so it runs a small number of external lookups per pass and
             # its results publish nothing without corroboration.
             registry_result = (
-                discover_registry_candidates(s, label_limit=registry_label_limit)
+                discover_registry_candidates(
+                    s,
+                    label_limit=registry_label_limit,
+                    resolved_batch=resolved_registry_candidates,
+                )
                 if discover_candidates and registry_label_limit
                 else {"checked": 0, "resolved": 0, "peopleCreated": 0}
             )
@@ -977,6 +1081,11 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             )
             if rebuild_tools or candidate_result["linked"] or source_attestation_summary["tools"]:
                 people_index.refresh_activity_summaries(s)
+            # User/person links are the only reconciliation writes that can
+            # overlap the authentication authority. Keep them last so their
+            # row-lock lifetime is bounded by the final local summary queries.
+            for user in s.execute(select(User).order_by(User.id)).scalars():
+                people_index.link_user(s, user)
         else:
             account_bindings = {
                 "toolhubBindings": 0,

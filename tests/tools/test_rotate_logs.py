@@ -2,7 +2,9 @@
 """Tests for the copy-truncate log rotator."""
 
 import gzip
+import os
 import subprocess
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +21,7 @@ def run_rotate(log_dir: Path, *, max_bytes: int = 100, keep: int = 3) -> subproc
             "TOOLHUB_LOG_DIR": str(log_dir),
             "TOOLHUB_LOG_MAX_BYTES": str(max_bytes),
             "TOOLHUB_LOG_KEEP": str(keep),
+            "TOOLHUB_DEPLOY_LOG_RETENTION_DAYS": "14",
         },
         capture_output=True,
         text=True,
@@ -77,6 +80,25 @@ def test_covers_uwsgi_and_every_job_stream(tmp_path):
     assert "3 files checked, 3 rotated" in result.stdout
     assert not (tmp_path / "notes.txt.1.gz").exists()
     assert (tmp_path / "notes.txt").read_text() == "z" * 500
+
+
+def test_rotates_and_prunes_per_deployment_streams(tmp_path):
+    deployment_logs = tmp_path / "deployment-logs"
+    deployment_logs.mkdir()
+    current = deployment_logs / "projection-refresh-current.out"
+    expired = deployment_logs / "projection-refresh-expired.err"
+    current.write_text("z" * 500)
+    expired.write_text("old failure")
+    old = time.time() - 16 * 24 * 60 * 60
+    os.utime(expired, (old, old))
+
+    result = run_rotate(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert current.read_text() == ""
+    assert (deployment_logs / "projection-refresh-current.out.1.gz").is_file()
+    assert not expired.exists()
+    assert "1 expired deploy logs pruned" in result.stdout
 
 
 def test_empty_log_directory_is_a_clean_no_op(tmp_path):

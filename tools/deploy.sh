@@ -17,6 +17,11 @@ if [ "$deploy_head_before" != "$deploy_head_after" ] && [ "${TOOLHUB_DEPLOY_REEX
 	exec env TOOLHUB_DEPLOY_REEXECUTED=1 sh "$REPO_DIR/tools/deploy.sh"
 fi
 
+deploy_short="$(printf '%s' "$deploy_id" | cut -c1-12)"
+deploy_run_id="$(date -u +%Y%m%dT%H%M%SZ)-$deploy_short"
+deployment_log_dir="$HOME/deployment-logs"
+mkdir -p "$deployment_log_dir"
+
 # The python webservice runs ~/www/python/src/app.py (symlinked to proxy/).
 mkdir -p "$HOME/www/python"
 ln -sfn "$REPO_DIR/proxy" "$HOME/www/python/src"
@@ -197,11 +202,18 @@ done
 
 if [ -x "$VENV_PY" ]; then
 	echo "Queuing last-good projection refresh ..."
-	toolforge jobs run --image python3.13 --filelog \
-		-o "$HOME/projection-refresh-deploy.out" -e "$HOME/projection-refresh-deploy.err" \
+	projection_out="$deployment_log_dir/projection-refresh-$deploy_run_id.out"
+	projection_err="$deployment_log_dir/projection-refresh-$deploy_run_id.err"
+	if toolforge jobs run --image python3.13 --filelog \
+		-o "$projection_out" -e "$projection_err" \
 		--command "$VENV_PY $REPO_DIR/proxy/projection_refresh.py" \
-		projection-refresh-deploy \
-		|| echo "  projection refresh could not be queued; the scheduled job will retry" >&2
+		projection-refresh-deploy; then
+		ln -sfn "$projection_out" "$HOME/projection-refresh-deploy.out"
+		ln -sfn "$projection_err" "$HOME/projection-refresh-deploy.err"
+		echo "  projection logs: $projection_out and $projection_err"
+	else
+		echo "  projection refresh could not be queued; the scheduled job will retry" >&2
+	fi
 fi
 
 if [ -x "$VENV_PY" ]; then

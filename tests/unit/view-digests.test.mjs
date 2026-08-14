@@ -24,6 +24,7 @@ const edition = {
 	periodStart: "2026-08-12T00:00:00Z",
 	title: "Toolhub Daily — 12 August 2026",
 	introduction: "Two focused additions for editors.",
+	toolCount: 1,
 	html: '<article class="digest-entry"><h1>Toolhub Daily</h1></article>',
 	metaPageUrl: "https://meta.wikimedia.org/wiki/Toolhub/Digest/Daily/2026-08-12",
 	tools: [{ name: "example" }]
@@ -44,6 +45,7 @@ test("archive is a date-led editorial stream with cadence RSS and signed-out CTA
 	assert.deepEqual(view.styles, ["/styles/digests.css"]);
 	assert.match(view.html, /Toolhub Digest/);
 	assert.match(view.html, /August 12, 2026/);
+	assert.match(view.html, /1 tool added/);
 	assert.match(view.html, /feeds\/digests\/daily\.xml/);
 	assert.match(view.html, /Sign in to subscribe/);
 	assert.deepEqual(h.backendGetJson.mock.calls, [["/v1/digests/?cadence=daily"]]);

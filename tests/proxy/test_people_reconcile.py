@@ -297,6 +297,30 @@ def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
     assert people_reconcile.process_queue(limit=1) == {"claimed": 0, "processed": 0, "failed": 0}
 
 
+def test_incremental_queue_reenqueue_resets_retry_state_without_losing_attempt_history():
+    _configure()
+    with db.session_scope() as s:
+        s.add(
+            PersonReconciliationQueue(
+                tool_name="retry-tool",
+                reason="failed_run",
+                attempts=3,
+                next_attempt_at=utcnow(),
+                last_error="temporary failure",
+            )
+        )
+
+    assert people_reconcile.enqueue_tool_names(["retry-tool"], reason="canonical_fetch") == 1
+
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationQueue, "retry-tool")
+        assert row is not None
+        assert row.reason == "canonical_fetch"
+        assert row.attempts == 3
+        assert row.next_attempt_at is None
+        assert row.last_error is None
+
+
 def test_confirmed_catalog_retirement_withdraws_evidence_and_public_relationships():
     _configure()
     with db.session_scope() as s:
@@ -1457,6 +1481,34 @@ def test_run_rejects_an_unknown_mode():
     with db.session_scope() as s:
         with pytest.raises(people_reconcile.PersonReconciliationError, match="bogus-mode"):
             people_reconcile.run(s, mode="bogus-mode")
+
+
+def test_identities_only_run_resolves_remote_batch_before_people_writes(monkeypatch):
+    _configure()
+    events = []
+    monkeypatch.setattr(
+        people_reconcile,
+        "_resolve_identity_candidate_batch",
+        lambda *_args, **_kwargs: events.append("remote") or [],
+    )
+    monkeypatch.setattr(
+        people_index,
+        "refresh_identity_qualities",
+        lambda _session: events.append("people-write") or 0,
+    )
+
+    with db.session_scope() as s:
+        people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            registry_label_limit=0,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=False,
+        )
+
+    assert events == ["remote", "people-write"]
 
 
 def test_run_marks_the_row_failed_and_reraises_on_an_unexpected_error(monkeypatch):

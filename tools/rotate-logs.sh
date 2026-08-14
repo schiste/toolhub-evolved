@@ -15,15 +15,16 @@ set -eu
 DIR="${TOOLHUB_LOG_DIR:-$HOME}"
 MAX_BYTES="${TOOLHUB_LOG_MAX_BYTES:-8388608}" # 8 MiB
 KEEP_DEFAULT="${TOOLHUB_LOG_KEEP:-5}"
+DEPLOY_RETENTION_DAYS="${TOOLHUB_DEPLOY_LOG_RETENTION_DAYS:-14}"
 
 command -v gzip >/dev/null 2>&1 || {
 	echo "rotate-logs: gzip not found" >&2
 	exit 1
 }
 
-case "$MAX_BYTES$KEEP_DEFAULT" in
+case "$MAX_BYTES$KEEP_DEFAULT$DEPLOY_RETENTION_DAYS" in
 	*[!0-9]*)
-		echo "rotate-logs: max bytes and keep count must be non-negative integers" >&2
+		echo "rotate-logs: max bytes, keep count, and retention days must be non-negative integers" >&2
 		exit 2
 		;;
 esac
@@ -72,7 +73,7 @@ rotate_one() {
 
 checked=0
 rotated=0
-for log in "$DIR"/uwsgi.log "$DIR"/*.out "$DIR"/*.err; do
+for log in "$DIR"/uwsgi.log "$DIR"/*.out "$DIR"/*.err "$DIR"/deployment-logs/*.out "$DIR"/deployment-logs/*.err; do
 	[ -f "$log" ] || continue # unmatched globs arrive literally
 	checked=$((checked + 1))
 	if rotate_one "$log"; then
@@ -80,4 +81,15 @@ for log in "$DIR"/uwsgi.log "$DIR"/*.out "$DIR"/*.err; do
 	fi
 done
 
-echo "rotate-logs: $checked files checked, $rotated rotated, threshold $MAX_BYTES bytes"
+pruned=0
+if [ -d "$DIR/deployment-logs" ]; then
+	while IFS= read -r expired; do
+		[ -n "$expired" ] || continue
+		rm -f -- "$expired"
+		pruned=$((pruned + 1))
+	done <<EOF
+$(find "$DIR/deployment-logs" -type f \( -name '*.out' -o -name '*.err' -o -name '*.gz' \) -mtime "+$DEPLOY_RETENTION_DAYS" -print)
+EOF
+fi
+
+echo "rotate-logs: $checked files checked, $rotated rotated, $pruned expired deploy logs pruned, threshold $MAX_BYTES bytes"

@@ -34,6 +34,7 @@ MAX_RECENT_PAGES_PER_RUN = 20
 MAX_RECENT_DETAILS_PER_RUN = 20
 MAX_GRAPH_DETAILS_PER_RUN = 20
 MAX_COMPLETE_PAGES = 100
+DEFAULT_SNAPSHOT_CONSISTENCY_RETRIES = 1
 RECONCILE_INTERVAL = timedelta(hours=12)
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
@@ -476,75 +477,100 @@ def _publish_snapshot(generation: int, expected_count: int) -> list[str]:
     return retired
 
 
+def _run_complete_snapshot(
+    effective_page_size: int,
+    interval: float,
+    sleep_fn: Callable[[float], None],
+) -> dict[str, int | bool | str]:
+    """Run one count-stable snapshot attempt from its current cursor."""
+    page, generation, expected_count = _begin_snapshot()
+    pages = records = 0
+    while pages < MAX_COMPLETE_PAGES:
+        if pages:
+            sleep_fn(interval)
+        rows, has_next, total_count = listing_page(page, effective_page_size)
+        if not rows and has_next:
+            raise _empty_page_error(page)
+        if expected_count and total_count != expected_count:
+            raise _changed_count_error(expected_count, total_count)
+        expected_count = expected_count or total_count
+        stored = _store_snapshot_page(
+            rows,
+            page=page,
+            page_size=effective_page_size,
+            generation=generation,
+            expected_count=expected_count,
+        )
+        pages += 1
+        records += stored
+        if has_next:
+            page += 1
+            continue
+
+        retired = _publish_snapshot(generation, expected_count)
+        return {
+            "phase": "complete",
+            "pages": pages,
+            "records": records,
+            "retired": len(retired),
+            "generation": generation,
+            "completed": True,
+        }
+    raise _page_limit_error()
+
+
+def _recent_complete_snapshot(max_age_seconds: int) -> dict[str, int | bool | str] | None:
+    """Return a reusable completed snapshot summary when it is still fresh."""
+    if max_age_seconds <= 0:
+        return None
+    with db.session_scope() as s:
+        state = _state(s)
+        recent_cutoff = utcnow() - timedelta(seconds=max_age_seconds)
+        if (
+            state.snapshot_started_at is not None
+            or state.last_completed_at is None
+            or state.last_completed_at < recent_cutoff
+        ):
+            return None
+        return {
+            "phase": "complete_cached",
+            "pages": 0,
+            "records": 0,
+            "retired": 0,
+            "generation": int(state.snapshot_generation or 0),
+            "completed": True,
+        }
+
+
 def run_complete(
     *,
     page_size: int = DEFAULT_PAGE_SIZE,
     min_interval_seconds: float = DEFAULT_MIN_INTERVAL_SECONDS,
     max_age_seconds: int = 0,
     sleep_fn: Callable[[float], None] = time.sleep,
+    consistency_retries: int = DEFAULT_SNAPSHOT_CONSISTENCY_RETRIES,
 ) -> dict[str, int | bool | str]:
     """Publish one resumable full snapshot and retire confirmed missing tools."""
+    cached = _recent_complete_snapshot(max_age_seconds)
+    if cached is not None:
+        return cached
     effective_page_size = _bounded_page_size(page_size)
     interval = _bounded_interval(min_interval_seconds)
-    if max_age_seconds > 0:
-        with db.session_scope() as s:
-            state = _state(s)
-            recent_cutoff = utcnow() - timedelta(seconds=max_age_seconds)
-            if (
-                state.snapshot_started_at is None
-                and state.last_completed_at is not None
-                and state.last_completed_at >= recent_cutoff
-            ):
-                return {
-                    "phase": "complete_cached",
-                    "pages": 0,
-                    "records": 0,
-                    "retired": 0,
-                    "generation": int(state.snapshot_generation or 0),
-                    "completed": True,
-                }
-    page, generation, expected_count = _begin_snapshot()
-    pages = records = 0
-    try:
-        while pages < MAX_COMPLETE_PAGES:
-            if pages:
-                sleep_fn(interval)
-            rows, has_next, total_count = listing_page(page, effective_page_size)
-            if not rows and has_next:
-                raise _empty_page_error(page)
-            if expected_count and total_count != expected_count:
-                raise _changed_count_error(expected_count, total_count)
-            expected_count = expected_count or total_count
-            stored = _store_snapshot_page(
-                rows,
-                page=page,
-                page_size=effective_page_size,
-                generation=generation,
-                expected_count=expected_count,
-            )
-            pages += 1
-            records += stored
-            if has_next:
-                page += 1
-                continue
-
-            retired = _publish_snapshot(generation, expected_count)
-            return {
-                "phase": "complete",
-                "pages": pages,
-                "records": records,
-                "retired": len(retired),
-                "generation": generation,
-                "completed": True,
-            }
-        raise _page_limit_error()
-    except SnapshotConsistencyError as exc:
-        _restart_snapshot()
-        _mark_error(exc)
-        raise
-    except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:
-        _mark_error(exc)
-        raise
+    retries = max(0, min(int(consistency_retries), DEFAULT_SNAPSHOT_CONSISTENCY_RETRIES))
+    attempt = 0
+    while True:
+        try:
+            return _run_complete_snapshot(effective_page_size, interval, sleep_fn)
+        except SnapshotConsistencyError as exc:
+            _restart_snapshot()
+            if attempt >= retries:
+                _mark_error(exc)
+                raise
+            attempt += 1
+            sleep_fn(interval)
+        except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:
+            _mark_error(exc)
+            raise
 
 
 def run(

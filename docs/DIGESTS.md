@@ -38,9 +38,25 @@ generation snapshots the corresponding canonical cache facts into
 Lift Wing receives only those verified public facts. Configure the Qwen
 inference URL and model with `LIFTWING_API_URL` and `LIFTWING_MODEL`. Its JSON
 response is accepted only when every named tool exists in the snapshot, the
-number and length of highlights are bounded, editorial blurbs contain no links,
+number and length of highlights are bounded, the introduction stays within 32
+words, each highlight stays within 28 words, editorial blurbs contain no links,
 and every highlight cites an exact supporting value from an allowed field in
-the frozen facts. Canonical author names and publishable resolved author and
+the frozen facts. The prompt asks Qwen for one concrete thematic introduction
+and active-voice highlights that explain what a tool lets someone do, avoiding
+title repetition, cadence boilerplate, vague praise, and promotional language.
+Daily editions require one validated entry for every supplied tool and label
+the section “Every new tool”; an omission, duplicate, or invented identifier
+rejects the model response. Weekly and monthly editions select exactly the
+smaller of five tools or the period's complete tool count, then retain every
+other tool in the complete compact index. Daily
+inference therefore receives every tool in the closed UTC day. For busy weekly
+and monthly periods, inference receives a bounded set selected from evenly
+spaced period buckets, preferring records with richer citable metadata; the
+trusted renderer still includes every tool in the edition. Model input contains
+only bounded citation fields—never renderer-only URLs or person objects—and
+generation failures retain their sanitized HTTP or validation reason in the
+audit payload and operator error.
+Canonical author names and publishable resolved author and
 maintainer identities are frozen alongside the tool metadata. Qwen may mention
 those supplied names but never emits URLs. The deterministic renderer adds the
 official Toolhub page, safe direct-tool URL, author index or resolved person
@@ -161,6 +177,30 @@ toolforge jobs logs digest-audit
 toolforge jobs run digest-publish
 toolforge jobs run digest-deliver
 ```
+
+The three explicitly selected website examples can be regenerated after an
+editorial or renderer change without creating a preview channel or touching
+Meta, RSS, email, or talk pages. The operator command drafts and validates every
+requested Qwen edition before opening its replacement transaction, preserves
+the edition IDs and generation-attempt history, and refuses any edition carrying
+published or delivery state. Before deployment, the read-only preflight fetches
+the exact frozen public facts, exercises live LiftWing generation, validation,
+and rendering, reports body sizes, and performs no database writes:
+
+```sh
+LIFTWING_MODEL=llm-qwen36-27b LIFTWING_API_URL=https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions LIFTWING_USER_AGENT='toolhub-evolved digest preflight (https://toolhub-evolved.toolforge.org/)' .venv/bin/python proxy/digest_liftwing_preflight.py --edition daily:2026-08-13 --edition weekly:2026-W32 --edition monthly:2026-07
+```
+
+After that passes and the revision is deployed, regenerate the website-only
+editions:
+
+```sh
+toolforge jobs run --wait 900 --image python3.13 --filelog -o "$HOME/digest-regenerate.out" -e "$HOME/digest-regenerate.err" --command "$HOME/www/python/venv/bin/python $HOME/repo/proxy/digest_regenerate.py --edition daily:2026-08-13 --edition weekly:2026-W32 --edition monthly:2026-07" digest-regenerate
+```
+
+MariaDB stores rendered HTML, wikitext, and text as `MEDIUMTEXT`; deploy-time
+migration widens older `TEXT` columns idempotently before the webservice
+restart, so large complete indexes do not hit the 64 KiB `TEXT` ceiling.
 
 The signed-in `/v1/digests/status/` endpoint gives bounded status counts. The
 public `/v1/digests/` endpoint exposes website publications; RSS exposes only

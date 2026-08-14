@@ -4612,6 +4612,7 @@ def test_me_tools_reads_the_canonical_relationship_graph_without_upstream_search
     assert data["verified"][0]["tool"]["name"] == "ada-tool"
     assert data["verified"][0]["relationships"][0]["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
     assert data["searchTerms"] == ["canonical-relationship-graph"]
+
 def test_overlay_get_requires_login(client):
     assert client.get("/v1/overlay/").status_code == 401
 
@@ -7499,7 +7500,11 @@ def test_oauth_callback_success_and_relogin(client, monkeypatch):
     assert me["csrf"]
     with db.session_scope() as s:
         assert s.query(ToolhubToken).count() == 1
-        assert s.query(User).one().wikimedia_global_user_id == "160"
+        user = s.query(User).one()
+        assert user.wikimedia_global_user_id == "160"
+        assert user.person_id is None  # derived identity work cannot gate authentication
+        people_index.link_user(s, user)  # the reconciliation worker supplies this projection
+    with db.session_scope() as s:
         assert (
             s.query(PersonIdentifier)
             .filter_by(namespace="wikimedia_global_user_id", normalized_value="160")
@@ -7518,6 +7523,44 @@ def test_oauth_callback_success_and_relogin(client, monkeypatch):
     assert client.get("/v1/user/").get_json()["username"] == "Ada Renamed"
     with db.session_scope() as s:
         assert s.query(User).count() == 1
+
+
+def test_oauth_callback_rolls_back_account_when_grant_storage_fails(client, monkeypatch):
+    configure_oauth(monkeypatch)
+    monkeypatch.setattr(toolhub.requests, "post", lambda *a, **k: FakeResp({"access_token": "at"}))
+    monkeypatch.setattr(
+        toolhub.requests,
+        "request",
+        lambda *a, **k: FakeResp({"id": 7, "username": "Ada", "is_authenticated": True}),
+    )
+    monkeypatch.setattr(toolhub, "store_grant", lambda *_a, **_k: (_ for _ in ()).throw(SQLAlchemyError("down")))
+
+    state = start_login(client)
+    assert client.get(f"/oauth/callback?code=c&state={state}").headers["Location"] == "/?login=error"
+    with db.session_scope() as s:
+        assert s.query(User).count() == 0
+        assert s.query(ToolhubToken).count() == 0
+
+
+def test_oauth_callback_reports_exhausted_database_lock_without_a_500(client, monkeypatch, caplog):
+    configure_oauth(monkeypatch)
+    monkeypatch.setattr(toolhub.requests, "post", lambda *a, **k: FakeResp({"access_token": "at"}))
+    monkeypatch.setattr(
+        toolhub.requests,
+        "request",
+        lambda *a, **k: FakeResp({"id": 7, "username": "Ada", "is_authenticated": True}),
+    )
+    locked = SQLAlchemyError("locked")
+    locked.orig = RuntimeError(1205, "Lock wait timeout exceeded")
+    monkeypatch.setattr(db, "run_with_lock_retry", lambda *_args, **_kwargs: (_ for _ in ()).throw(locked))
+
+    state = start_login(client)
+    with caplog.at_level("WARNING", logger="backend.oauth"):
+        response = client.get(f"/oauth/callback?code=c&state={state}")
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/?login=error"
+    assert "local database remained locked" in caplog.text
 
 
 def test_oauth_callback_succeeds_in_production_style_config(client, monkeypatch):
