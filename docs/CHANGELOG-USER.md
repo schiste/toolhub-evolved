@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: toolhub-digests -->
 <!-- Release title: Toolhub Digests -->
-<!-- Source range: 0cd2a68..7a44c45 (76 commits) -->
+<!-- Source range: 0cd2a68..5a3fd69 (78 commits) -->
 
 # What's New for Users
 
