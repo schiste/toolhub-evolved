@@ -255,6 +255,10 @@ def test_register_allows_an_ephemeral_secret_only_in_development(monkeypatch):
 PUBLIC_V1_ROUTES = {
     "/healthz": "liveness probe, no data",
     "/v1/config/": "public feature flags for the signed-out SPA",
+    "/v1/digests/": "public immutable digest archive; local DB only",
+    "/v1/digests/<cadence>/<edition_key>/": "public immutable digest edition; local DB only",
+    "/v1/digests/subscriptions/confirm/": "signed single-subscription email confirmation capability",
+    "/v1/digests/subscriptions/unsubscribe/": "signed single-subscription unsubscribe capability",
     "/v1/user/": "reports authenticated:false when signed out",
     "/v1/canonical/tools/": "public canonical Toolhub cache; local DB only and already-public catalog data",
     "/v1/catalog/tools/<name>/projection/": "public versioned projection assembled only from local public evidence",
@@ -291,6 +295,7 @@ PUBLIC_V1_ROUTES = {
     "/feeds/lists.xml": "public RSS feed generated from official Toolhub lists",
     "/feeds/tools/<path:name>/revisions.xml": "public RSS feed generated from official tool revisions",
     "/feeds/lists/<list_id>/revisions.xml": "public RSS feed generated from official list revisions",
+    "/feeds/digests/<cadence>.xml": "public RSS feed generated from immutable published digest editions",
     "/toolinfo.json": "public feed the official Toolhub crawler ingests",
 }
 

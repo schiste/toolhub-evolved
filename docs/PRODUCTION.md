@@ -93,6 +93,11 @@ Landed in this repo (see the runbook for the Toolforge configuration steps):
   registered toolinfo URLs, signed-toolinfo author-claim verification,
   upstream-name de-dupe, create-time `toolinfo_url` enrichment for submitted
   tools, and per-run history.
+- **Toolhub Digest** (`proxy/backend/digests.py`, `proxy/digest_*.py`): durable
+  official tool-creation events become immutable UTC daily, weekly, and monthly
+  English editions. Lift Wing Qwen supplies validated editorial prose; Meta is
+  canonical, with a local blog, RSS, Wikimedia email, and talk-page delivery.
+  See `docs/DIGESTS.md` for the full contract and Toolforge variables.
 - **Ops**: nightly DB backup + rotation, `docs/RUNBOOK.md`.
 - **i18n**: `t()` catalog mechanism, generated `i18n/en.json` (CI-enforced),
   working locale switcher for shipped catalogs, `pickLocalized()` for API

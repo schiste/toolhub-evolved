@@ -20,6 +20,8 @@ from backend import v1_common as common
 from backend.models import (
     ActivityRow,
     CrawlerUrl,
+    DigestDelivery,
+    DigestSubscription,
     Favorite,
     Person,
     PersonActivitySummary,
@@ -119,6 +121,23 @@ def v1_user_export() -> Response:
                 .order_by(SourceAnalysisReport.created_at, SourceAnalysisReport.id)
             ).scalars()
         ]
+        digest_subscriptions = [
+            {
+                "channel": row.channel,
+                "cadence": row.cadence,
+                "language": row.language_code,
+                "wikiDomain": row.wiki_domain,
+                "wikiUsername": row.wiki_username,
+                "active": row.active,
+                "confirmedAt": common.iso(row.confirmed_at),
+                "createdAt": common.iso(row.created_at),
+            }
+            for row in s.execute(
+                select(DigestSubscription)
+                .where(DigestSubscription.user_id == uid)
+                .order_by(DigestSubscription.created_at, DigestSubscription.id)
+            ).scalars()
+        ]
         person = s.get(Person, user.person_id) if user.person_id is not None else None
         relationship_evidence = [
             {
@@ -158,6 +177,7 @@ def v1_user_export() -> Response:
             "contributionActivity": contribution_activity,
             "relationshipEvidence": relationship_evidence,
             "sourceAnalysisReports": source_analysis_reports,
+            "digestSubscriptions": digest_subscriptions,
         }
     )
 
@@ -171,6 +191,17 @@ def v1_user_delete_evolved_data() -> Response:
     user = common.require_policy_or_abort(authz.ACTION_PRIVATE_DELETE, authz.Resource(owner_user_id=uid))
     deleted: dict[str, int] = {}
     with db.session_scope() as s:
+        subscription_ids = select(DigestSubscription.id).where(DigestSubscription.user_id == uid)
+        delivery_count = s.execute(
+            select(func.count()).select_from(DigestDelivery).where(DigestDelivery.subscription_id.in_(subscription_ids))
+        ).scalar_one()
+        deleted["digestDeliveries"] = int(delivery_count)
+        s.execute(delete(DigestDelivery).where(DigestDelivery.subscription_id.in_(subscription_ids)))
+        subscription_count = s.execute(
+            select(func.count()).select_from(DigestSubscription).where(DigestSubscription.user_id == uid)
+        ).scalar_one()
+        deleted["digestSubscriptions"] = int(subscription_count)
+        s.execute(delete(DigestSubscription).where(DigestSubscription.user_id == uid))
         for key, model in {
             "favorites": Favorite,
             "lists": ToolList,

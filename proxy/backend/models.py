@@ -53,6 +53,127 @@ class Base(DeclarativeBase):
     """Declarative base for all Toolhub Evolved tables."""
 
 
+class ToolActivityEvent(Base):
+    """One immutable official Toolhub event eligible for digest publication."""
+
+    __tablename__ = "tool_activity_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    upstream_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), default="created", index=True)
+    event_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
+
+
+class DigestEdition(Base):
+    """One immutable English publication for a closed UTC period."""
+
+    __tablename__ = "digest_editions"
+    __table_args__ = (UniqueConstraint("cadence", "period_start", "language_code"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cadence: Mapped[str] = mapped_column(String(16), index=True)
+    edition_key: Mapped[str] = mapped_column(String(32), index=True)
+    language_code: Mapped[str] = mapped_column(String(16), default="en", index=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime, index=True)
+    period_end: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="generating", index=True)
+    title: Mapped[str] = mapped_column(String(500), default="")
+    introduction: Mapped[str] = mapped_column(Text, default="")
+    rendered_html: Mapped[str] = mapped_column(Text, default="")
+    rendered_wikitext: Mapped[str] = mapped_column(Text, default="")
+    rendered_text: Mapped[str] = mapped_column(Text, default="")
+    source_hash: Mapped[str] = mapped_column(String(64), default="")
+    prompt_version: Mapped[str] = mapped_column(String(64), default="")
+    model_name: Mapped[str] = mapped_column(String(255), default="")
+    used_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
+    meta_page_title: Mapped[str] = mapped_column(String(1000), default="")
+    meta_page_url: Mapped[str] = mapped_column(String(2000), default="")
+    meta_revision_id: Mapped[str] = mapped_column(String(64), default="")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DigestEditionTool(Base):
+    """Frozen source facts and validated editorial copy for one edition tool."""
+
+    __tablename__ = "digest_edition_tools"
+    __table_args__ = (UniqueConstraint("edition_id", "event_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    edition_id: Mapped[int] = mapped_column(ForeignKey("digest_editions.id"), index=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("tool_activity_events.id"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(255), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    highlighted: Mapped[bool] = mapped_column(Boolean, default=False)
+    facts: Mapped[dict] = mapped_column(JSON, default=dict)
+    blurb: Mapped[str] = mapped_column(Text, default="")
+
+
+class DigestSubscription(Base):
+    """One signed-in user's opt-in for a push digest channel and cadence."""
+
+    __tablename__ = "digest_subscriptions"
+    __table_args__ = (UniqueConstraint("user_id", "channel", "cadence", "wiki_domain", "language_code"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    channel: Mapped[str] = mapped_column(String(16), index=True)
+    cadence: Mapped[str] = mapped_column(String(16), index=True)
+    language_code: Mapped[str] = mapped_column(String(16), default="en")
+    wiki_domain: Mapped[str] = mapped_column(String(255), default="meta.wikimedia.org")
+    wiki_username: Mapped[str] = mapped_column(String(255), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DigestDelivery(Base):
+    """Idempotent, retryable delivery of an edition to one subscription."""
+
+    __tablename__ = "digest_deliveries"
+    __table_args__ = (UniqueConstraint("edition_id", "subscription_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    edition_id: Mapped[int] = mapped_column(ForeignKey("digest_editions.id"), index=True)
+    subscription_id: Mapped[int] = mapped_column(ForeignKey("digest_subscriptions.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    external_id: Mapped[str] = mapped_column(String(255), default="")
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DigestGenerationAttempt(Base):
+    """Auditable outcome of one model or deterministic generation attempt."""
+
+    __tablename__ = "digest_generation_attempts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    edition_id: Mapped[int] = mapped_column(ForeignKey("digest_editions.id"), index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    model_name: Mapped[str] = mapped_column(String(255), default="")
+    prompt_version: Mapped[str] = mapped_column(String(64), default="")
+    succeeded: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    used_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
+    response_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class DigestOperationalState(Base):
+    """Durable health of a singleton digest publication component."""
+
+    __tablename__ = "digest_operational_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class User(Base):
     """A Toolhub account that authorized Toolhub Evolved via OAuth."""
 

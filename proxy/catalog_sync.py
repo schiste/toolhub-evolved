@@ -14,7 +14,7 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-from backend import canonical_tools, db, graph_enrichment, job_runner, toolhub
+from backend import canonical_tools, db, digests, graph_enrichment, job_runner, toolhub
 from backend.models import ToolCatalogSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -30,6 +30,7 @@ DEFAULT_MIN_INTERVAL_SECONDS = 3.0
 MAX_MIN_INTERVAL_SECONDS = 60.0
 RECENT_PATH = "/api/recent/"
 RECENT_PAGE_SIZE = 50
+MAX_RECENT_PAGES_PER_RUN = 20
 MAX_RECENT_DETAILS_PER_RUN = 20
 MAX_GRAPH_DETAILS_PER_RUN = 20
 MAX_COMPLETE_PAGES = 100
@@ -118,12 +119,16 @@ def listing_page(page: int, page_size: int) -> tuple[list[dict[str, Any]], bool,
     return rows, bool(payload.get("next")), total_count
 
 
-def recent_page() -> list[dict[str, Any]]:
-    """Fetch the newest official changes for incremental catalog updates."""
-    payload = toolhub.public_api_get(RECENT_PATH, params={"page_size": RECENT_PAGE_SIZE})
+def recent_page(page: int = 1) -> tuple[list[dict[str, Any]], bool]:
+    """Fetch one validated page of official incremental catalog updates."""
+    payload = toolhub.public_api_get(
+        RECENT_PATH,
+        params={"page": page, "page_size": RECENT_PAGE_SIZE},
+        read_cache=False,
+    )
     if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
         raise _missing_results_error()
-    return [row for row in payload["results"] if isinstance(row, dict)]
+    return [row for row in payload["results"] if isinstance(row, dict)], bool(payload.get("next"))
 
 
 def listing_url(page: int, page_size: int) -> str:
@@ -168,15 +173,25 @@ def _latest_marker(rows: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def _new_recent_rows(rows: list[dict[str, Any]], last_marker: str | None) -> list[dict[str, Any]]:
-    if last_marker is None:
-        return []
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        if _marker(row) == last_marker:
-            break
-        out.append(row)
-    return out
+def _recent_rows_since(last_marker: str | None) -> tuple[list[dict[str, Any]], str | None]:
+    """Read through recent pages without advancing across an unproven gap."""
+    collected: list[dict[str, Any]] = []
+    latest: str | None = None
+    for page in range(1, MAX_RECENT_PAGES_PER_RUN + 1):
+        rows, has_next = recent_page(page)
+        if page == 1:
+            latest = _latest_marker(rows)
+            if last_marker is None or latest is None:
+                return [], latest
+        for row in rows:
+            if _marker(row) == last_marker:
+                return collected, latest
+            collected.append(row)
+        if not has_next:
+            message = "Toolhub recent cursor disappeared before it could be reconciled"
+            raise CatalogSyncError(message)
+    message = f"Toolhub recent cursor exceeded the {MAX_RECENT_PAGES_PER_RUN}-page safety limit"
+    raise CatalogSyncError(message)
 
 
 def _tool_names(rows: list[dict[str, Any]]) -> list[str]:
@@ -266,12 +281,11 @@ def _initial_backfill(
 
 
 def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[str, int]:
-    rows = recent_page()
-    latest = _latest_marker(rows)
     with db.session_scope() as s:
         state = _state(s)
         previous = state.recent_latest_marker
         pending = list(state.recent_pending_tools or [])
+    new_rows, latest = _recent_rows_since(previous)
     if latest is None:
         return {"recent_tools": 0, "recent_errors": 0}
     if previous is None:
@@ -281,7 +295,8 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
             state.recent_last_at = utcnow()
             state.status = STATUS_IDLE
         return {"recent_tools": 0, "recent_errors": 0}
-    names = _dedupe_names(pending + _tool_names(_new_recent_rows(rows, previous)))
+    digests.capture_recent_rows(new_rows)
+    names = _dedupe_names(pending + _tool_names(new_rows))
     successful = errors = 0
     refreshed_names: list[str] = []
     remaining: list[str] = []

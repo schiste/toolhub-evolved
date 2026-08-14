@@ -36,6 +36,14 @@ FIXED_TARGET_FETCHERS = {
     ("backend/author_claims.py", "_fetch"): "TOOLFORGE_BASE_URL constant (Toolsadmin)",
     ("backend/github_issues.py", "publish_issue"): "fixed api.github.com GitHub Issues API host",
     ("backend/account_linking.py", "verify_ssh_signature"): "fixed local OpenSSH subprocess; no HTTP URL is fetched",
+    (
+        "backend/digests.py",
+        "generate_editorial",
+    ): "operator endpoint is restricted to the fixed api.wikimedia.org Lift Wing prediction path",
+    (
+        "backend/wikimedia_delivery.py",
+        "request",
+    ): "Action API host is restricted by clean_wiki_domain to Wikimedia-operated project domains",
     ("analyze_source.py", "_git_output"): "bounded local Git subprocess; no HTTP URL is fetched",
     ("repository_scan.py", "_git"): "bounded non-interactive Git subprocess with an explicit public-host allowlist",
 }

@@ -223,10 +223,10 @@ def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
     monkeypatch.setattr(
         catalog_sync,
         "recent_page",
-        lambda: [
+        lambda _page=1: ([
             {"id": 2, "timestamp": "new", "content_type": "tool", "content_id": "changed-tool"},
             {"id": 1, "timestamp": "old", "content_type": "tool", "content_id": "old-tool"},
-        ],
+        ], False),
     )
     monkeypatch.setattr(
         catalog_sync,
@@ -261,6 +261,47 @@ def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
         assert state.reconcile_next_page == 2
 
 
+def test_recent_cursor_scans_all_pages_until_previous_marker(monkeypatch):
+    previous = catalog_sync._marker({"id": 1, "timestamp": "old"})
+    pages = {
+        1: ([{"id": 3, "timestamp": "newest"}, {"id": 2, "timestamp": "new"}], True),
+        2: ([{"id": 1, "timestamp": "old"}], False),
+    }
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda page=1: pages[page])
+
+    rows, latest = catalog_sync._recent_rows_since(previous)
+
+    assert [row["id"] for row in rows] == [3, 2]
+    assert latest == catalog_sync._marker({"id": 3, "timestamp": "newest"})
+
+
+def test_recent_cursor_gap_fails_without_advancing_marker(monkeypatch):
+    previous = catalog_sync._marker({"id": 1, "timestamp": "old"})
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                recent_latest_marker=previous,
+            )
+        )
+    calls = []
+    monkeypatch.setattr(
+        catalog_sync,
+        "recent_page",
+        lambda page=1: calls.append(page) or ([{"id": 1000 - page, "timestamp": str(page)}], True),
+    )
+
+    with pytest.raises(catalog_sync.CatalogSyncError, match="safety limit"):
+        catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert calls == list(range(1, catalog_sync.MAX_RECENT_PAGES_PER_RUN + 1))
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.recent_latest_marker == previous
+        assert state.status == "error"
+
+
 def test_steady_state_defers_reconciliation_until_interval(monkeypatch):
     with db.session_scope() as s:
         s.add(
@@ -270,7 +311,7 @@ def test_steady_state_defers_reconciliation_until_interval(monkeypatch):
                 reconcile_last_at=catalog_sync.utcnow(),
             )
         )
-    monkeypatch.setattr(catalog_sync, "recent_page", lambda: [])
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda _page=1: ([], False))
     monkeypatch.setattr(catalog_sync, "listing_page", lambda *_args: pytest.fail("reconcile is not due"))
 
     summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
@@ -293,7 +334,7 @@ def test_steady_state_hydrates_graph_candidates_with_persistent_cursor(monkeypat
                 for name in ("alpha", "beta")
             ]
         )
-    monkeypatch.setattr(catalog_sync, "recent_page", lambda: [])
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda _page=1: ([], False))
     monkeypatch.setattr(
         catalog_sync, "_reconcile_if_due", lambda _page_size: {"reconcile_pages": 0, "reconcile_records": 0}
     )
@@ -349,7 +390,7 @@ def test_graph_hydration_retries_failures_before_advancing_the_rotation(monkeypa
                 stale_until=catalog_sync.utcnow(),
             )
         )
-    monkeypatch.setattr(catalog_sync, "recent_page", lambda: [])
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda _page=1: ([], False))
     monkeypatch.setattr(
         catalog_sync, "_reconcile_if_due", lambda _page_size: {"reconcile_pages": 0, "reconcile_records": 0}
     )

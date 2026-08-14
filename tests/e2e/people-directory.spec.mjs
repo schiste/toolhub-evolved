@@ -48,9 +48,7 @@ test.describe("People directory", () => {
 		await expect(page.locator('[name="role"]')).toHaveValue("maintainer");
 		await expect(page.locator('[name="project"]')).toHaveValue("wikidata.org");
 		await expect(page.getByText("Maintainer · 1 of 2 tools verified", { exact: true })).toBeVisible();
-		await expect(
-			page.getByText("Verified Toolhub record owner relationship · 1 tool", { exact: true })
-		).toBeVisible();
+		await expect(page.getByText("Tools authored", { exact: true })).toBeVisible();
 		await expect(page.locator(".community-facets")).toBeVisible();
 		await expect(page.locator(".community-results .tcard.entity-card")).toHaveCount(1);
 		await expect(page.locator(".people-card")).toHaveCount(0);
@@ -176,7 +174,7 @@ test.describe("Unified account evidence", () => {
 		await expect(name).toBeVisible();
 		await expect(name).toHaveCSS("white-space", "normal");
 		await expect(page.getByText("Tools maintained", { exact: true })).toBeVisible();
-		await expect(page.getByText("Toolhub records owned", { exact: true })).toBeVisible();
+		await expect(page.getByText("Tools authored", { exact: true })).toBeVisible();
 		await expect(page.locator(".entity-card__metric strong")).toHaveText(["0", "0"]);
 
 		await name.click();

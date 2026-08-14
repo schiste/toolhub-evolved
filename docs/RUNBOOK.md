@@ -695,6 +695,9 @@ toolforge jobs logs projection-refresh
 toolforge jobs logs source-attestations
 toolforge jobs logs api-cache-invalidator
 toolforge jobs logs maintainer-backfill
+toolforge jobs logs digest-publish
+toolforge jobs logs digest-deliver
+toolforge jobs logs digest-audit
 ```
 
 Jobs are configured with Toolforge file logs. If the central `jobs logs`
@@ -734,6 +737,11 @@ Every Python job calls `db.init_schema()` before doing work. Existing Toolforge
 databases receive idempotent additive repairs there, including the catalog
 reconciliation cursor columns and null retry-counter normalization. No database
 reset is required after a deploy.
+
+The Toolhub Digest's UTC period contract, Meta page layout, Lift Wing and
+Wikimedia variables, delivery behavior, and recovery procedure are documented
+in [DIGESTS.md](DIGESTS.md). Its publisher runs at 06:15 UTC and catches up all
+missing closed non-empty periods; it never creates an empty edition.
 
 `projection-refresh` is the six-hour projection coordinator. It reuses input
 generations completed within six hours, runs stale Toolhub, Toolforge, and

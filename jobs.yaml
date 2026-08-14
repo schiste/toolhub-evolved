@@ -179,6 +179,32 @@
   schedule: "* * * * *"
   emails: onfailure
 
+- name: digest-publish
+  # At 06:15 UTC, generate every missing closed, non-empty UTC period and
+  # publish immutable daily/weekly/monthly editions plus the Meta archive.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name digest-publish --stale-after 3600 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/digest_publish.py
+  image: python3.13
+  schedule: "15 6 * * *"
+  timeout: 1800
+  emails: onfailure
+
+- name: digest-deliver
+  # Rebuild missing outbox rows and drain a bounded email/talk-page batch.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name digest-deliver --stale-after 600 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/digest_deliver.py
+  image: python3.13
+  schedule: "*/5 * * * *"
+  timeout: 300
+  emails: onfailure
+
+- name: digest-audit
+  # Turn durable publication failures and stale delivery backlogs into an
+  # operator-visible failure email rather than trusting cron execution alone.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name digest-audit --stale-after 240 -- /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/digest_audit.py
+  image: python3.13
+  schedule: "23 * * * *"
+  timeout: 120
+  emails: onfailure
+
 - name: db-backup
   # Nightly ToolsDB dump with 14-day rotation (tools/backup-db.sh).
   # The mariadb image ships the client tools; check `toolforge jobs images`
