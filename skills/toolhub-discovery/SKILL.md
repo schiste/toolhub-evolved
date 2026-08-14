@@ -9,7 +9,9 @@ description: Use when starting or scoping a new Wikimedia tool, bot, gadget, or 
 
 The Wikimedia tool ecosystem duplicates work constantly, and the cause is
 rarely that people lack a research method — it is that **nobody thinks to
-look**. This skill exists to notice the moment, not to explain the workflow.
+look**. An LLM asked for a tool makes that worse: it will happily build one
+that already exists, and Toolforge is taking on new developers faster than
+ever. This skill exists to notice the moment, not to explain the workflow.
 The workflow itself lives in the MCP server, so it stays correct for every
 client that connects to it.
 

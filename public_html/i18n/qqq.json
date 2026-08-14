@@ -1543,6 +1543,7 @@
 	"static.mcp.promptCommandLabel": "Accessible name of the code block holding the Claude Code command that runs the prior-art review.",
 	"static.mcp.promptHeading": "Section heading: the prior-art review prompt, the quickest way to use the server.",
 	"static.mcp.promptIntro": "Paragraph describing what the prior-art review prompt does and what it reports back.\n\nParameters:\n* $1 - the prompt name prior-art-review, in a code element; not translated",
+	"static.mcp.promptWhy": "Paragraph on the MCP server page explaining why a developer should have their LLM tooling check the catalog before starting a project: Toolforge has many new developers, and LLM tools readily rebuild what already exists.",
 	"static.mcp.rawHttp": "Paragraph explaining that any HTTP client can call the endpoint directly, introducing the curl example below.",
 	"static.mcp.rulesOfEngagement": "Link label for the Rules of Engagement page, used inside {{msg-toolhub-evolved|static.mcp.honestyContribute}}.",
 	"static.mcp.searchToolsCoverage": "Table cell: how much of the catalog search_tools covers.",

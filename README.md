@@ -71,9 +71,11 @@ stored.
 
 ## MCP server
 
-Toolhub Evolved exposes catalog discovery as a stateless HTTP MCP server for use
-in LLM-based workflows. Any MCP-capable client can add the endpoint and access
-four tools plus a prior-art-review prompt.
+Toolforge is taking on an influx of new developers, and the LLM tools they work
+with are quick to reinvent an existing wheel. Toolhub Evolved exposes catalog
+discovery as a stateless HTTP MCP server so those tools can be pointed at the
+catalog before a project starts. Any MCP-capable client can add the endpoint and
+access four tools plus a prior-art-review prompt.
 
 ```bash
 claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolforge.org/mcp

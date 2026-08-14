@@ -208,6 +208,10 @@ test("the MCP page is self-sufficient documentation, not a pointer at the reposi
 	assert.ok(html.includes("https://toolhub-evolved.toolforge.org/mcp"));
 	assert.ok(html.includes("mcpServers"));
 	assert.ok(html.includes("prior-art-review"));
+	// The prompt section argues why to run the check, rather than asserting
+	// what most readers came for.
+	assert.ok(html.includes("too happy to reinvent the wheel"));
+	assert.ok(!html.includes("Most people want"));
 	for (const tool of [
 		"search_tools(query, limit=10)",
 		"facet_tools(…)",
