@@ -1483,3 +1483,53 @@ def test_replace_facets_skips_a_value_whose_label_cleans_to_empty(monkeypatch):
     # empty on the second pass, so no facet row may be recorded for it.
     assert calls["n"] == 2
     assert s.added == []
+
+
+def test_purpose_annotations_project_as_task_and_audience_facets():
+    """Toolhub nests tasks/audiences under `annotations`, never at top level.
+
+    Reading them only at top level made both purpose facets permanently empty
+    in production even though ~12% of the catalog carries the annotations.
+    """
+    with db.session_scope() as s:
+        s.add(
+            _canonical(
+                "annotated",
+                annotations={"tasks": ["analysis"], "audiences": ["researchers"]},
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["annotated"])
+
+    payload = catalog_projection.projection_payload("annotated")
+    assert payload["record"]["tasks"] == ["analysis"]
+    assert payload["record"]["audiences"] == ["researchers"]
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="annotated").all()}
+    assert facets >= {("tasks", "analysis"), ("audiences", "researchers")}
+
+
+def test_annotation_lift_leaves_fields_that_have_a_top_level_counterpart():
+    """Guard: widening the lift past the purpose fields would reorder precedence.
+
+    tool_type and for_wikis exist at top level too, where the merge already
+    reads them with the right source precedence, so an annotations-only copy
+    must not become evidence on its own.
+    """
+    with db.session_scope() as s:
+        s.add(
+            _canonical(
+                "narrow",
+                annotations={"tasks": ["analysis"], "tool_type": "bot", "for_wikis": ["commons.wikimedia.org"]},
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["narrow"])
+
+    payload = catalog_projection.projection_payload("narrow")
+    assert payload["record"]["tasks"] == ["analysis"]
+    assert "tool_type" not in payload["record"]
+    assert "for_wikis" not in payload["record"]
+    with db.session_scope() as s:
+        fields = {row.field for row in s.query(CatalogFacetValue).filter_by(tool_name="narrow").all()}
+    assert fields == {"tasks"}

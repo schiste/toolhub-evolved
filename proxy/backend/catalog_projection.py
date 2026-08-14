@@ -34,7 +34,9 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-PROJECTION_VERSION = 2
+# 3: purpose annotations (tasks, audiences) are lifted out of `annotations`.
+# Rows projected at 2 recorded neither, so they must all re-project.
+PROJECTION_VERSION = 3
 MAX_REFRESH_TOOLS = 500
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
@@ -69,6 +71,9 @@ SCALAR_FIELDS = (
     "toolinfo_url",
 )
 PROJECTED_FIELDS = (*SCALAR_FIELDS, *LIST_FIELDS)
+# Projected fields Toolhub serves only under `annotations` (see
+# _lift_purpose_annotations). Fields with a top-level counterpart stay out.
+ANNOTATION_ONLY_FIELDS = ("tasks", "audiences")
 URL_FIELDS = {
     "url",
     "repository",
@@ -345,6 +350,32 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     return sources
 
 
+def _lift_purpose_annotations(payload: dict[str, Any]) -> dict[str, Any]:
+    """Surface Toolhub's annotation-only purpose fields for the merge below.
+
+    Toolhub serves `tasks` and `audiences` only inside the `annotations`
+    object, with no top-level counterpart, so reading them at top level made
+    both purpose facets permanently empty regardless of upstream coverage.
+
+    The lift stays limited to those two fields on purpose: every other
+    annotation key (tool_type, for_wikis, icon, repository, the URL fields)
+    also exists at top level, where the merge already reads it, and lifting
+    those would silently reorder established source precedence.
+
+    Returns a copy — the payload is a stored JSON column and must not be
+    mutated.
+    """
+    annotations = payload.get("annotations")
+    if not isinstance(annotations, dict):
+        return payload
+    lifted = {
+        field: annotations[field]
+        for field in ANNOTATION_ONLY_FIELDS
+        if not payload.get(field) and annotations.get(field)
+    }
+    return {**payload, **lifted} if lifted else payload
+
+
 def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in one ordered pass.
     name: str, sources: list[dict[str, Any]]
 ) -> tuple[dict, dict, dict, dict]:
@@ -354,7 +385,7 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
     curations: dict[str, Any] = {}
 
     for source_row in sources:
-        payload = source_row["payload"]
+        payload = _lift_purpose_annotations(source_row["payload"])
         source = source_row["source"]
         observed = _iso(source_row.get("observed"))
         if observed:
