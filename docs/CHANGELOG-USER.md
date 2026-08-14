@@ -1,16 +1,13 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
-<!-- None was available on any push in this range, so these were written by hand and checked against the commits. -->
-<!-- Release id: community-directory-identities -->
-<!-- Release title: Community directory and connected identities -->
-<!-- Source range: 828438f..522cc86 (326 commits) -->
+<!-- None was available on this push, so these were written by hand and checked against the commits. -->
+<!-- Release id: toolhub-digests -->
+<!-- Release title: Toolhub Digests -->
+<!-- Source range: 0cd2a68..bba5e08 (1 commit) -->
 
 # What's New for Users
 
-- The Community directory now searches people, official Toolhub accounts, contributors, matching tools, and unresolved name-only evidence together, with shareable filters, useful ranking, pagination, retry states, and accessible cards.
-- A new Statistics ledger makes catalog quality measurable, including verified and unresolved authorship, maintainer coverage, metadata completeness, identity and source resolution, tool types, creation years, and update recency; missing data stays visible in every denominator and chart, and unresolved names are now broken down by whether any known account could still match them, so remaining gaps are visibly a limit rather than a backlog.
-- Stable Toolhub, Wikimedia, wiki, Toolforge, and verified toolinfo-source evidence now bring duplicate catalog records under one public person when the evidence is safe; multi-author feeds create one relationship per author, an author credit written as a wiki user link is read as the account it names, a credit written as a chosen handle can be matched to a real Wikimedia account but is only connected once separate evidence ties that person to the tool, and a name-only credit is connected to a person only when that same tool already carries separate verified evidence for them, while unsupported or conflicting labels stay grouped and explicitly unresolved instead of becoming fake people.
-- Connected identities let signed-in users securely reconnect each legacy Toolforge developer account with an SSH-key proof, restoring its current and future tool relationships without uploading a private key or granting catalog write access.
-- Public tool relationships now focus on authors and maintainers; verified Toolforge memberships follow strong project aliases even when older Toolhub records lack the usual `toolforge-` prefix, cards show every author through a compact clickable list, and a bold green name remains the sole visual maintainer cue while detailed evidence and internal permissions stay elsewhere.
-- Public profiles show each related tool once with every known role and compact paginated summaries; legacy name links disambiguate safely, and maintainer-only actions appear only for people with verified authority.
-- Pages and health information load with smaller payloads, bounded background refreshes, stable quick views, and loading states that settle instead of repeatedly remounting the current route.
-- Deployment reconciliation, account and catalog synchronization, translation checks, and release publication now fail safely while preserving the last known-good public data; independent projections refresh together in the background without delaying a healthy code release, fresh catalog snapshots never mix independently cached pages, tools confirmed absent from a complete official catalog no longer linger in search or people relationships, and maintenance fixes stay inside one named product release instead of appearing as separate versions. A new Background workers page shows every scheduled job that fetches, cleans, or reconciles data and when each one last actually ran, and a job stopped by a timeout or a passing upstream glitch now recovers by itself instead of quietly never running again.
+- Toolhub Evolved now publishes concise English daily, weekly, and monthly digests of newly added tools. Every edition covers one closed UTC period, and periods without new tools produce no empty edition.
+- Each edition appears as a readable local blog entry and RSS item, while Meta-Wiki remains the canonical publication archive with stable pages for sharing and long-term discovery.
+- Signed-in users can subscribe by Wikimedia email or by delivery to their talk page on a supported Wikimedia wiki. Email subscriptions require confirmation, unsubscribe links are signed, and new subscriptions never backfill older editions.
+- LiftWing's public Qwen 3.6 27B model writes the short editorial introduction and highlights from bounded Toolhub facts. Every highlight must retain exact supporting evidence; invalid or unavailable model output falls back to deterministic factual copy instead of inventing claims.
+- Publication and delivery are restart-safe and observable: missed non-empty periods are recovered, deliveries retry without duplication, permanent recipient failures suspend only that subscription, and an hourly audit makes stalled publication or fallback generation visible to operators.
