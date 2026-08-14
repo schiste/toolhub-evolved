@@ -40,10 +40,15 @@ inference URL and model with `LIFTWING_API_URL` and `LIFTWING_MODEL`. Its JSON
 response is accepted only when every named tool exists in the snapshot, the
 number and length of highlights are bounded, editorial blurbs contain no links,
 and every highlight cites an exact supporting value from an allowed field in
-the frozen facts. Any unavailable, malformed, or ungrounded response uses a short
-deterministic fallback, records that decision in `digest_generation_attempts`,
-and remains publishable. The hourly audit still fails visibly when a configured
-Qwen call falls back, so availability does not hide degraded editorial quality.
+the frozen facts. Canonical author names and publishable resolved author and
+maintainer identities are frozen alongside the tool metadata. Qwen may mention
+those supplied names but never emits URLs. The deterministic renderer adds the
+official Toolhub page, safe direct-tool URL, author index or resolved person
+page, and resolved maintainer page to HTML, wikitext, and plain text. Any
+unavailable, malformed, or ungrounded response uses a short deterministic
+fallback, records that decision in `digest_generation_attempts`, and remains
+publishable. The hourly audit still fails visibly when a configured Qwen call
+falls back, so availability does not hide degraded editorial quality.
 
 The validated edition stores HTML, wikitext, and plain text together. Those
 same frozen renderings feed the local blog, Meta, RSS, email, and talk pages.
