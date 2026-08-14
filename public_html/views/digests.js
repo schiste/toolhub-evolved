@@ -32,10 +32,11 @@ function errorMessage(error) {
 /** @param {any} edition */
 function editionRow(edition) {
 	const href = `/digests/${encodeURIComponent(edition.cadence)}/${encodeURIComponent(edition.editionKey)}`;
-	const count = Array.isArray(edition.tools) ? edition.tools.length : 0;
+	const count = Number.isFinite(Number(edition.toolCount)) ? Number(edition.toolCount) : 0;
 	return `<article class="digest-list__entry">
-		<time class="digest-list__date" datetime="${esc(edition.periodStart || "")}">${esc(dateLabel(edition.periodStart))}</time>
-		<div class="digest-list__story"><p class="digest-kicker">${esc(label(edition.cadence))} · ${esc(t("digests.toolsAdded", "$1 {{PLURAL:$1|tool|tools}} added", count))}</p>
+		<div class="digest-list__meta"><time class="digest-list__date" datetime="${esc(edition.periodStart || "")}">${esc(dateLabel(edition.periodStart))}</time>
+		<span>${esc(t("digests.toolsAdded", "$1 {{PLURAL:$1|tool|tools}} added", count))}</span></div>
+		<div class="digest-list__story">
 		<h2><a href="${href}">${esc(edition.title)}</a></h2><p>${esc(edition.introduction)}</p>
 		<a class="digest-list__read" href="${href}">${esc(t("digests.readEdition", "Read edition"))} <span aria-hidden="true">→</span></a></div>
 	</article>`;

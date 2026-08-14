@@ -14,10 +14,10 @@
 			3.75rem 100%,
 		var(--background-color-neutral-subtle, #f8f9fa);
 	border-bottom: 1px solid var(--digest-rule);
-	padding: clamp(3.5rem, 9vw, 8rem) max(1.5rem, calc((100vw - 70rem) / 2));
+	padding: clamp(2.25rem, 5vw, 4.5rem) max(1.5rem, calc((100vw - 64rem) / 2));
 }
 .digest-masthead__inner {
-	max-width: 52rem;
+	max-width: 46rem;
 }
 .digest-kicker {
 	color: var(--digest-accent);
@@ -28,23 +28,22 @@
 	text-transform: uppercase;
 }
 .digest-masthead h1 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(3.75rem, 10vw, 8.75rem);
-	font-weight: 400;
-	letter-spacing: -0.065em;
-	line-height: 0.82;
+	font-size: clamp(2.4rem, 6vw, 3.75rem);
+	font-weight: 720;
+	letter-spacing: -0.045em;
+	line-height: 1;
 	margin: 0;
 }
 .digest-masthead__inner > p:nth-of-type(2) {
-	font-size: clamp(1.05rem, 2vw, 1.35rem);
+	font-size: clamp(1rem, 2vw, 1.2rem);
 	line-height: 1.5;
-	margin: 2rem 0 0;
+	margin: 1.15rem 0 0;
 	max-width: 39rem;
 }
 .digest-cadences {
 	display: flex;
 	gap: 1.75rem;
-	margin-top: 3.5rem;
+	margin-top: 2rem;
 }
 .digest-cadences__link {
 	border-bottom: 2px solid transparent;
@@ -66,10 +65,10 @@
 .digest-edition-nav,
 .digest-edition-canonical {
 	margin-inline: auto;
-	max-width: 70rem;
+	max-width: 64rem;
 }
 .digest-layout {
-	padding: clamp(3.5rem, 7vw, 6.5rem) 1.5rem 7rem;
+	padding: clamp(2.25rem, 5vw, 4rem) 1.5rem 5rem;
 }
 .digest-layout__heading {
 	align-items: end;
@@ -78,9 +77,9 @@
 	margin-bottom: 1.25rem;
 }
 .digest-layout__heading h2 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(2.25rem, 5vw, 4.5rem);
-	font-weight: 400;
+	font-size: clamp(1.65rem, 4vw, 2.4rem);
+	font-weight: 700;
+	letter-spacing: -0.025em;
 	line-height: 1;
 	margin: 0;
 }
@@ -96,28 +95,36 @@
 }
 .digest-list__entry {
 	display: grid;
-	gap: clamp(1.5rem, 5vw, 5rem);
-	grid-template-columns: minmax(8rem, 0.6fr) minmax(0, 1.8fr);
-	padding: clamp(2.25rem, 5vw, 4.5rem) 0;
+	gap: clamp(1.5rem, 4vw, 3.5rem);
+	grid-template-columns: minmax(8.5rem, 0.5fr) minmax(0, 2fr);
+	padding: clamp(1.6rem, 3.5vw, 2.6rem) 0;
 	position: relative;
 }
 .digest-list__entry + .digest-list__entry {
 	border-top: 1px solid color-mix(in srgb, var(--digest-rule) 55%, transparent);
 }
-.digest-list__date {
+.digest-list__meta {
 	color: var(--digest-muted);
+	display: flex;
+	flex-direction: column;
+	font-size: 0.85rem;
+	gap: 0.35rem;
+	line-height: 1.35;
+}
+.digest-list__date {
+	color: var(--digest-ink);
 	font-variant-numeric: tabular-nums;
+	font-weight: 650;
 }
 .digest-list__story {
-	max-width: 43rem;
+	max-width: 46rem;
 }
 .digest-list__story h2 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(1.75rem, 3.5vw, 3rem);
-	font-weight: 400;
-	letter-spacing: -0.025em;
-	line-height: 1.08;
-	margin: 0 0 1rem;
+	font-size: clamp(1.3rem, 2.8vw, 1.85rem);
+	font-weight: 680;
+	letter-spacing: -0.02em;
+	line-height: 1.16;
+	margin: 0 0 0.65rem;
 }
 .digest-list__story h2 a {
 	color: inherit;
@@ -130,9 +137,9 @@
 }
 .digest-list__story > p:not(.digest-kicker) {
 	color: var(--digest-muted);
-	font-size: 1.05rem;
-	line-height: 1.6;
-	margin: 0 0 1.35rem;
+	font-size: 1rem;
+	line-height: 1.55;
+	margin: 0 0 0.9rem;
 }
 .digest-list__read {
 	color: var(--digest-accent);
@@ -155,14 +162,14 @@
 	display: grid;
 	gap: 2.75rem clamp(2rem, 6vw, 6rem);
 	grid-template-columns: minmax(0, 1fr) minmax(18rem, 1fr);
-	margin-top: 5rem;
-	padding-top: 3rem;
+	margin-top: 3.5rem;
+	padding-top: 2.25rem;
 }
 .digest-subscribe h2 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(2rem, 4vw, 3.5rem);
-	font-weight: 400;
-	line-height: 1.05;
+	font-size: clamp(1.55rem, 3.5vw, 2.25rem);
+	font-weight: 700;
+	letter-spacing: -0.025em;
+	line-height: 1.1;
 	margin: 0 0 1.25rem;
 }
 .digest-subscribe__intro > p:last-child,
@@ -247,14 +254,17 @@
 	font-weight: 650;
 }
 .digest-page--edition {
-	padding: 2rem 1.5rem 6rem;
+	padding: 1.5rem 1.5rem 5rem;
 }
 .digest-edition-nav {
 	display: flex;
 	justify-content: space-between;
-	margin-bottom: clamp(3rem, 7vw, 7rem);
+	margin-bottom: clamp(2rem, 5vw, 3.5rem);
 }
 .digest-edition-body {
+	max-width: 60rem;
+}
+.digest-entry > header {
 	max-width: 48rem;
 }
 .digest-entry__cadence {
@@ -265,37 +275,46 @@
 	text-transform: uppercase;
 }
 .digest-entry > header h1 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(3rem, 8vw, 6.75rem);
-	font-weight: 400;
-	letter-spacing: -0.055em;
-	line-height: 0.95;
-	margin: 1rem 0 2rem;
+	font-size: clamp(2rem, 5vw, 3.4rem);
+	font-weight: 720;
+	letter-spacing: -0.04em;
+	line-height: 1.05;
+	margin: 0.7rem 0 1.15rem;
 }
 .digest-entry > header > p:last-child {
 	color: var(--digest-muted);
-	font-size: clamp(1.15rem, 2.3vw, 1.45rem);
-	line-height: 1.55;
-	margin-bottom: 5rem;
+	font-size: clamp(1.05rem, 2vw, 1.25rem);
+	line-height: 1.5;
+	margin-bottom: clamp(2.5rem, 5vw, 3.75rem);
 }
 .digest-entry > section {
 	border-top: 1px solid var(--digest-rule);
-	padding: 2.5rem 0;
+	padding: 2rem 0;
 }
 .digest-entry > section > h2 {
 	font-size: 0.8rem;
 	letter-spacing: 0.1em;
-	margin: 0 0 2.5rem;
+	margin: 0 0 1.5rem;
 	text-transform: uppercase;
 }
 .digest-tool {
-	padding: 0 0 2.5rem;
+	display: grid;
+	gap: 0.35rem clamp(1.5rem, 4vw, 3.5rem);
+	grid-template-columns: minmax(11rem, 0.75fr) minmax(0, 1.5fr);
+	padding: 0 0 1.75rem;
+}
+.digest-tool + .digest-tool {
+	border-top: 1px solid color-mix(in srgb, var(--digest-rule) 45%, transparent);
+	padding-top: 1.75rem;
 }
 .digest-tool h2 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(1.6rem, 3vw, 2.3rem);
-	font-weight: 400;
-	margin: 0 0 0.6rem;
+	font-size: clamp(1.15rem, 2.4vw, 1.55rem);
+	font-weight: 680;
+	grid-column: 1;
+	grid-row: 1 / span 4;
+	letter-spacing: -0.015em;
+	line-height: 1.2;
+	margin: 0;
 }
 .digest-tool h2 a {
 	color: inherit;
@@ -303,8 +322,16 @@
 .digest-tool p,
 .digest-entry li {
 	color: var(--digest-muted);
-	font-size: 1.05rem;
-	line-height: 1.65;
+	font-size: 1rem;
+	line-height: 1.55;
+}
+.digest-tool > p,
+.digest-tool > .digest-tool__links,
+.digest-tool > .digest-tool__people {
+	grid-column: 2;
+}
+.digest-tool > p {
+	margin: 0;
 }
 .digest-tool__links {
 	display: flex;
@@ -326,6 +353,21 @@
 .digest-entry li > .digest-tool__people {
 	margin-inline-start: 0;
 }
+.digest-tool-index {
+	column-gap: clamp(2rem, 5vw, 4rem);
+	columns: 2 18rem;
+	margin: 0;
+	padding-inline-start: 1.25rem;
+}
+.digest-tool-index > li {
+	break-inside: avoid;
+	margin: 0 0 1rem;
+	padding-inline-start: 0.25rem;
+}
+.digest-tool-index > li > a:first-child {
+	color: var(--digest-ink);
+	font-weight: 650;
+}
 .digest-entry footer {
 	color: var(--digest-muted);
 	font-size: 0.8rem;
@@ -336,7 +378,7 @@
 	border-top: 3px solid var(--digest-ink);
 	display: flex;
 	justify-content: space-between;
-	margin-top: 5rem;
+	margin-top: 3.5rem;
 	padding-top: 2rem;
 }
 .digest-action {
@@ -345,9 +387,8 @@
 	padding: 0 1.5rem;
 }
 .digest-action h1 {
-	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(2.5rem, 6vw, 5rem);
-	font-weight: 400;
+	font-size: clamp(2rem, 5vw, 3.5rem);
+	font-weight: 720;
 	line-height: 1;
 	margin: 0 0 1.5rem;
 }
@@ -384,17 +425,29 @@
 }
 @media (max-width: 700px) {
 	.digest-masthead {
-		padding-block: 4rem;
+		padding-block: 2.75rem;
 	}
 	.digest-masthead h1 {
-		font-size: clamp(3.4rem, 20vw, 5.5rem);
+		font-size: clamp(2.35rem, 12vw, 3.2rem);
 	}
 	.digest-list__entry,
-	.digest-subscribe {
+	.digest-subscribe,
+	.digest-tool {
 		grid-template-columns: 1fr;
 	}
 	.digest-list__entry {
 		gap: 0.8rem;
+	}
+	.digest-list__meta {
+		flex-direction: row;
+		gap: 0.75rem;
+	}
+	.digest-tool h2,
+	.digest-tool > p,
+	.digest-tool > .digest-tool__links,
+	.digest-tool > .digest-tool__people {
+		grid-column: 1;
+		grid-row: auto;
 	}
 	.digest-subscribe--signed-out,
 	.digest-edition-canonical {

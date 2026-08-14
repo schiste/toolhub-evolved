@@ -297,6 +297,30 @@ def test_incremental_queue_deduplicates_and_rebuilds_one_changed_tool():
     assert people_reconcile.process_queue(limit=1) == {"claimed": 0, "processed": 0, "failed": 0}
 
 
+def test_incremental_queue_reenqueue_resets_retry_state_without_losing_attempt_history():
+    _configure()
+    with db.session_scope() as s:
+        s.add(
+            PersonReconciliationQueue(
+                tool_name="retry-tool",
+                reason="failed_run",
+                attempts=3,
+                next_attempt_at=utcnow(),
+                last_error="temporary failure",
+            )
+        )
+
+    assert people_reconcile.enqueue_tool_names(["retry-tool"], reason="canonical_fetch") == 1
+
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationQueue, "retry-tool")
+        assert row is not None
+        assert row.reason == "canonical_fetch"
+        assert row.attempts == 3
+        assert row.next_attempt_at is None
+        assert row.last_error is None
+
+
 def test_confirmed_catalog_retirement_withdraws_evidence_and_public_relationships():
     _configure()
     with db.session_scope() as s:
