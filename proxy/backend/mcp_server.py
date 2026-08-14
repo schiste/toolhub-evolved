@@ -14,6 +14,7 @@ stateless behavior in every supported revision.
 """
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -46,6 +47,9 @@ PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
+INTERNAL_ERROR = -32603
+
+_log = logging.getLogger(__name__)
 
 # The serializer truncates at canonical_tools.MAX_QUERY_NAMES (=50 today,
 # canonical_tools.py:23,294); exceeding it yields husk records with empty
@@ -359,6 +363,9 @@ def mcp_endpoint() -> Response | tuple[Response, int]:
         return _result(req_id, handler(params))
     except _ParamError as exc:
         return _error(req_id, INVALID_PARAMS, str(exc))
+    except Exception:  # noqa: BLE001 - MCP clients need a JSON-RPC object, not Flask's HTML 500
+        _log.exception("MCP method %s failed", method)
+        return _error(req_id, INTERNAL_ERROR, "internal error")
 
 
 _PRIOR_ART_PROMPT = (

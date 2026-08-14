@@ -317,6 +317,22 @@ def test_tool_call_errors(client):
     assert missing["isError"] is True
 
 
+def test_unexpected_handler_failure_returns_jsonrpc_error(client, monkeypatch):
+    """A crashing handler must yield -32603, never Flask's HTML 500 page."""
+    from backend import mcp_server
+
+    def boom(_arguments):
+        msg = "db went away"
+        raise RuntimeError(msg)
+
+    monkeypatch.setitem(mcp_server._TOOL_HANDLERS, "get_tool", boom)
+    response = _rpc(client, "tools/call", {"name": "get_tool", "arguments": {"name": "x"}})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["error"]["code"] == -32603
+    assert "db went away" not in body["error"]["message"]  # no internals leaked
+
+
 def test_prompts_list_and_get(client):
     result = _rpc(client, "prompts/list").get_json()["result"]
     assert result["resultType"] == "complete"
