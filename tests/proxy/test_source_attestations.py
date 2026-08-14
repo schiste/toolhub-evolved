@@ -999,6 +999,19 @@ def test_incremental_refresh_runs_a_full_audit_when_no_rules_marker_exists():
         assert session.get(ApiCacheMeta, source_attestations.RULES_META_KEY) is not None
 
 
+def test_incremental_refresh_runs_a_full_audit_when_policy_source_changes(monkeypatch):
+    with db.session_scope() as session:
+        source_attestations.refresh_full(session)
+
+    monkeypatch.setattr(source_attestations, "RULES_VERSION", "changed-policy")
+    with db.session_scope() as session:
+        result = source_attestations.refresh_incremental(session)
+
+    assert result["fullAudit"] == 1
+    with db.session_scope() as session:
+        assert session.get(ApiCacheMeta, source_attestations.RULES_META_KEY).value == "changed-policy"
+
+
 def test_incremental_refresh_reprocesses_sources_touched_by_identity_changes():
     with db.session_scope() as session:
         person = _stable_person(session, "Refreshed Person", "80", "refreshed", "800")

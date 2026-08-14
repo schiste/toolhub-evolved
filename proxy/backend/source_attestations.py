@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
+import sys
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
 from sqlalchemy import and_, func, or_, select
 
-from backend import canonical_tools, identity_graph, people_index, toolinfo_authors
+from backend import canonical_tools, identity_graph, people_index, projection_policy, toolinfo_authors
 from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
@@ -58,7 +59,10 @@ STATUS_RESOLVED = "resolved"
 STATUS_UNRESOLVED = "unresolved"
 STATUS_CONFLICT = "conflict"
 RECONCILIATION_RUN_MODE = "source-evidence"
-RULES_VERSION = "2"
+RULES_VERSION = projection_policy.module_fingerprint(
+    sys.modules[__name__],
+    namespace="source-attestation-policy-v1",
+)
 RULES_META_KEY = "source_attestation_rules_version"
 GENERATION_COMPARISON_DEPTH = 2
 

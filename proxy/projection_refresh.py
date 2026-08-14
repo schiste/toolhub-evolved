@@ -15,7 +15,16 @@ from typing import TYPE_CHECKING, Any
 import account_sync
 import catalog_sync
 import toolforge_account_sync
-from backend import catalog_statistics, db, identity_graph, job_runner, people_reconcile, source_attestations
+from backend import (
+    catalog_statistics,
+    db,
+    identity_graph,
+    job_runner,
+    people_policy,
+    people_reconcile,
+    projection_policy,
+    source_attestations,
+)
 from backend.models import (
     ApiCacheMeta,
     ToolCatalogSyncState,
@@ -29,7 +38,13 @@ if TYPE_CHECKING:
 
 RUN_META_KEY = "projection_refresh_last_run"
 IDENTITY_META_KEY = "identity_projection_input_v2"
-IDENTITY_RULES_VERSION = "2"
+IDENTITY_RULES_VERSION = projection_policy.module_fingerprint(
+    identity_graph,
+    people_policy,
+    people_reconcile,
+    source_attestations,
+    namespace="identity-publication-policy-v1",
+)
 DEFAULT_MAX_AGE_SECONDS = 21_600
 EARLIEST_IDENTITY_CHANGE = datetime(1970, 1, 1)  # noqa: DTZ001 - database timestamps are intentionally naive UTC
 
