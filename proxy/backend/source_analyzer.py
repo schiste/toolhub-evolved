@@ -2102,7 +2102,7 @@ def _assessment_signal(
     return signal
 
 
-def _assessment(  # noqa: PLR0913 - assessment payload fields are clearer as explicit arguments.
+def _assessment(  # noqa: PLR0913, PLR0917 - assessment payload fields are clearer as explicit arguments.
     key: str,
     label: str,
     score: int,

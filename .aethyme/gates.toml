@@ -11,7 +11,7 @@
 # which independently made the gate wrong:
 #   scope   — pyproject sets select = ["ALL"], which only proxy/ is held to.
 #             Repo-wide `.` reports 5817 errors; CI runs `ruff check proxy`.
-#   version — CI pins ruff==0.14.9 (tools/python-quality-requirements.txt).
+#   version — CI pins ruff==0.16.3 (tools/python-quality-requirements.txt).
 #             The PATH ruff here is 0.15.21, which fires FURB171 on
 #             proxy/backend/source_analyzer.py:679 while 0.14.9 passes.
 #             An unpinned gate blocks commits for findings CI never reports.
@@ -23,12 +23,12 @@
 
 [[gate]]
 name = "ruff-check"
-command = "uvx ruff@0.14.9 check proxy"
+command = "uvx ruff@0.16.3 check proxy"
 cost = 1
 triggers = ["proxy/**/*.py", "pyproject.toml"]
 
 [[gate]]
 name = "ruff-format"
-command = "uvx ruff@0.14.9 format --check proxy"
+command = "uvx ruff@0.16.3 format --check proxy"
 cost = 1
 triggers = ["proxy/**/*.py", "pyproject.toml"]

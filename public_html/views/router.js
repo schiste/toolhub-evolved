@@ -77,6 +77,7 @@ const loadStyleguide = () => loadRouteModule("./styleguide.js", () => import("./
 const loadChangelog = () => loadRouteModule("./changelog.js", () => import("./changelog.js"));
 const loadStatistics = () => loadRouteModule("./statistics.js", () => import("./statistics.js"));
 const loadWorkers = () => loadRouteModule("./workers.js", () => import("./workers.js"));
+const loadDigests = () => loadRouteModule("./digests.js", () => import("./digests.js"));
 // The prose pages, the sign-in page and the 404 all live in static.js — the
 // largest module in the app. Loading it on demand like any other route keeps it
 // out of the first paint; every use below is a render, reached only when that
@@ -351,6 +352,10 @@ export function dispatch() {
 	if (seg[0] === "people" && seg[1]) return loadAuthors().then((m) => m.viewPerson(decodeURIComponent(seg[1])));
 	if (seg[0] === "tools" && seg[1]) return dispatchToolRoute(seg);
 	if (seg[0] === "lists" && seg[1]) return dispatchListRoute(seg);
+	if (seg[0] === "digests") {
+		const action = seg[1] === "confirm" || seg[1] === "unsubscribe" ? seg[1] : undefined;
+		return loadDigests().then((module) => module.viewDigests(action ? undefined : seg[1], seg[2], action));
+	}
 	if (ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]) {
 		return ROUTES[/** @type {keyof typeof ROUTES} */ (seg[0])]();
 	}
@@ -366,6 +371,7 @@ function navHrefMatches(pathHash, href) {
 	if (href === "/search") return pathHash === "/search" || pathHash.startsWith("/search/");
 	if (href === "/lists") return pathHash === "/lists" || pathHash.startsWith("/lists/");
 	if (href === "/graph") return pathHash === "/graph" || pathHash.startsWith("/graph/");
+	if (href === "/digests") return pathHash === "/digests" || pathHash.startsWith("/digests/");
 	return href === pathHash;
 }
 export function setActiveNav() {
