@@ -55,13 +55,20 @@ def seed_user(username="Alice", wm_sub="42", wikimedia_global_user_id="160"):
         return session.query(User).filter_by(wm_sub=wm_sub).one().id
 
 
-def seed_toolforge_account(uid_number="9001", uid="alice-dev", ssh_key_count=1):
+def seed_toolforge_account(
+    uid_number="9001",
+    uid="alice-dev",
+    developer_username="AliceDeveloper",
+    ssh_key_count=1,
+):
     with db.session_scope() as session:
         session.add(
             ToolforgeAccountProjection(
                 uid_number=uid_number,
                 uid=uid,
                 normalized_uid=uid.lower(),
+                developer_username=developer_username,
+                normalized_developer_username=developer_username.casefold(),
                 ssh_key_count=ssh_key_count,
             )
         )
@@ -219,6 +226,9 @@ def test_account_link_challenge_create_succeeds(client):
     body = resp.get_json()
     assert body["externalId"] == "9001"
     assert body["provider"] == "toolforge"
+    assert body["username"] == "AliceDeveloper"
+    assert body["developerUsername"] == "AliceDeveloper"
+    assert body["shellUsername"] == "alice-dev"
 
 
 def test_account_link_challenge_create_outer_except_catches_late_session_failure(client, monkeypatch):

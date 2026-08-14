@@ -13,7 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend import identity_graph, people_index, public_identity
 from backend.models import (
@@ -80,7 +80,9 @@ def _toolforge_account_summary(session: Session, external_id: str) -> dict[str, 
         or 0
     )
     return {
-        "username": account.uid,
+        "username": account.developer_username,
+        "developerUsername": account.developer_username,
+        "shellUsername": account.uid,
         "toolCount": tool_count,
         "sshSignatureAvailable": account.ssh_key_count > 0,
     }
@@ -125,7 +127,9 @@ def link_state(session: Session, user: User) -> dict[str, Any]:
                 {
                     "provider": "toolforge",
                     "externalId": account.uid_number,
-                    "username": account.uid,
+                    "username": account.developer_username,
+                    "developerUsername": account.developer_username,
+                    "shellUsername": account.uid,
                     "status": row.status,
                     "proofMethod": row.proof_method,
                     **_toolforge_account_summary(session, account.uid_number),
@@ -159,7 +163,10 @@ def _account_by_username(session: Session, username: str) -> ToolforgeAccountPro
     rows = list(
         session.execute(
             select(ToolforgeAccountProjection).where(
-                ToolforgeAccountProjection.normalized_uid == normalized,
+                or_(
+                    ToolforgeAccountProjection.normalized_developer_username == normalized,
+                    ToolforgeAccountProjection.normalized_uid == normalized,
+                ),
                 ToolforgeAccountProjection.disabled.is_(False),
             )
         ).scalars()
@@ -210,7 +217,9 @@ def start_toolforge_challenge(session: Session, user: User, username: str) -> di
     return {
         "challengeId": challenge_id,
         "provider": "toolforge",
-        "username": account.uid,
+        "username": account.developer_username,
+        "developerUsername": account.developer_username,
+        "shellUsername": account.uid,
         "externalId": account.uid_number,
         "challenge": challenge,
         "expiresAt": expires_at.isoformat() + "Z",

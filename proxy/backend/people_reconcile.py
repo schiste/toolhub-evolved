@@ -952,7 +952,7 @@ def discover_identity_candidates(
                 wikimedia_global_user_id=resolved.wikimedia.global_user_id,
                 toolforge_uid_number=toolforge.uid_number if toolforge else "",
                 toolhub_username=account.username,
-                toolforge_username=toolforge.uid if toolforge else "",
+                toolforge_username=toolforge.developer_username if toolforge else "",
                 wiki_username=resolved.wikimedia.username,
                 source="wikimedia_toolforge_bridge",
             )
@@ -987,7 +987,8 @@ def discover_identity_candidates(
                 "identity": _account_evidence(account),
                 "wikimediaUsername": resolved.wikimedia.username if resolved else "",
                 "verifiedWikimediaHandle": verified_wikimedia_handle,
-                "toolforgeUsername": toolforge.uid if toolforge else "",
+                "toolforgeDeveloperUsername": toolforge.developer_username if toolforge else "",
+                "toolforgeShellUsername": toolforge.uid if toolforge else "",
                 "toolforgeUidNumber": toolforge.uid_number if toolforge else "",
                 "sourcePublicId": source.public_id,
                 "toolNames": tool_names,
@@ -1089,6 +1090,12 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                     "candidate": 0,
                     "conflict": 0,
                     "unresolved": 0,
+                    "membershipRelationships": 0,
+                    "canonicalMembershipRelationships": 0,
+                    "fallbackMembershipRelationships": 0,
+                    "unmappedMemberships": 0,
+                    "unboundMemberships": 0,
+                    "relationshipCacheHit": 0,
                 }
             )
             account_binding_conflicts_queued = _record_account_binding_conflicts(s, run_row.id)

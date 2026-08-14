@@ -48,6 +48,8 @@ def seed() -> int:
                 uid_number="9001",
                 uid="alice-dev",
                 normalized_uid="alice-dev",
+                developer_username="AliceDeveloper",
+                normalized_developer_username="alicedeveloper",
                 ssh_key_count=1,
             )
         )
@@ -61,6 +63,10 @@ def test_valid_signature_binds_the_account_once_and_projects_all_memberships():
     with db.session_scope() as session:
         user = session.get(User, user_id)
         started = account_linking.start_toolforge_challenge(session, user, "alice-dev")
+
+    assert started["username"] == "AliceDeveloper"
+    assert started["developerUsername"] == "AliceDeveloper"
+    assert started["shellUsername"] == "alice-dev"
 
     with db.session_scope() as session:
         user = session.get(User, user_id)
@@ -92,6 +98,17 @@ def test_valid_signature_binds_the_account_once_and_projects_all_memberships():
                 key_loader=lambda _uid: ["key"],
                 verifier=lambda *_args: True,
             )
+
+
+def test_account_lookup_accepts_developer_and_shell_names_without_conflating_them():
+    seed()
+    with db.session_scope() as session:
+        developer = account_linking._account_by_username(session, "AliceDeveloper")
+        shell = account_linking._account_by_username(session, "alice-dev")
+
+    assert developer.uid_number == shell.uid_number == "9001"
+    assert developer.developer_username == "AliceDeveloper"
+    assert developer.uid == "alice-dev"
 
 
 def test_modified_challenge_is_rejected_and_attempt_is_counted():
@@ -189,10 +206,13 @@ def test_account_link_routes_are_private_csrf_protected_and_return_challenges(mo
     state = client.get("/v1/me/account-links/")
     assert state.status_code == 200
     assert state.headers["Cache-Control"] == "private, no-store"
-    assert client.post(
-        "/v1/me/account-links/toolforge/challenges/",
-        json={"username": "alice-dev"},
-    ).status_code == 403
+    assert (
+        client.post(
+            "/v1/me/account-links/toolforge/challenges/",
+            json={"username": "alice-dev"},
+        ).status_code
+        == 403
+    )
     started = client.post(
         "/v1/me/account-links/toolforge/challenges/",
         json={"username": "alice-dev"},
@@ -384,9 +404,7 @@ def test_verify_ssh_signature_rejects_oversized_signature_and_missing_ssh_keygen
 
     monkeypatch.setattr(account_linking, "SSH_KEYGEN", "/no/such/ssh-keygen")
     assert (
-        account_linking.verify_ssh_signature(
-            "challenge", "-----BEGIN SSH SIGNATURE-----short", ["ssh-ed25519 AAAA"]
-        )
+        account_linking.verify_ssh_signature("challenge", "-----BEGIN SSH SIGNATURE-----short", ["ssh-ed25519 AAAA"])
         is False
     )
 

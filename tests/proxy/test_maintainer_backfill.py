@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import db, maintainer_index, toolinfo_authors  # noqa: E402
+from backend import db, identity_graph, maintainer_index, people_index, toolinfo_authors  # noqa: E402
 from backend.author_claims import (  # noqa: E402
     ToolforgeMaintainerProvider,
     ToolsadminMaintainer,
@@ -19,7 +19,10 @@ from backend.models import (  # noqa: E402
     MaintainerBackfillState,
     PersonIdentifier,
     ToolAuthorClaim,
+    ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
     ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
     utcnow,
 )
 from backend.sync import AUTHOR_CLAIM_TOOLFORGE_MAINTAINER, AUTHOR_CLAIM_VERIFIED  # noqa: E402
@@ -47,17 +50,24 @@ def test_toolsadmin_parser_prefers_profile_handles():
     ]
 
 
-def test_toolforge_provider_matches_profile_handle_when_display_name_changed():
-    provider = ToolforgeMaintainerProvider(
-        fetcher=lambda _name: (
-            200,
-            '<table><caption>Maintainers</caption><tr><td><a href="/profile/ada/">Ada Lovelace</a></td></tr></table>',
-        )
-    )
+def test_toolforge_provider_uses_sul_bound_ldap_membership_not_html():
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML"))
     from backend.models import User
 
-    user = User(id=1, wm_sub="ada-sub", username="ada")
+    user = User(id=1, wm_sub="ada-sub", username="Ada", wikimedia_global_user_id="160")
     with db.session_scope() as s:
+        s.add(
+            ToolforgeAccountProjection(
+                uid_number="9001",
+                uid="ada-shell",
+                normalized_uid="ada-shell",
+                developer_username="AdaDeveloper",
+                normalized_developer_username="adadeveloper",
+                wikimedia_global_user_id="160",
+            )
+        )
+        s.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="ada-tool"))
+        s.flush()
         rows = provider.verify(
             s,
             user,
@@ -67,9 +77,11 @@ def test_toolforge_provider_matches_profile_handle_when_display_name_changed():
         )
 
     assert rows[0].verification_status == "verified"
+    assert rows[0].evidence_payload["toolforgeUidNumber"] == "9001"
+    assert rows[0].evidence_payload["toolforgeDeveloperUsername"] == "AdaDeveloper"
 
 
-def test_backfill_materializes_stable_public_edges_and_checkpoints(monkeypatch):
+def test_backfill_keeps_unresolved_html_labels_out_of_identity_graph(monkeypatch):
     monkeypatch.setattr(
         maintainer_backfill,
         "_candidates",
@@ -86,7 +98,7 @@ def test_backfill_materializes_stable_public_edges_and_checkpoints(monkeypatch):
 
     assert summary == {
         "tools": 1,
-        "maintainers": 1,
+        "maintainers": 0,
         "failed": 0,
         "requests": 1,
         "durableToolsSkipped": 0,
@@ -94,15 +106,60 @@ def test_backfill_materializes_stable_public_edges_and_checkpoints(monkeypatch):
         "remaining": 0,
     }
     with db.session_scope() as s:
-        edge = s.query(ToolRelationshipEvidence).one()
-        identifier = s.query(PersonIdentifier).filter_by(person_id=edge.person_id).one()
-        assert identifier.namespace == "toolforge_username"
-        assert identifier.normalized_value == "ada"
-        assert edge.source == maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN
+        assert s.query(ToolRelationshipEvidence).count() == 0
+        unresolved = s.query(UnresolvedAttributionEvidence).one()
+        assert unresolved.normalized_label == "ada"
+        assert unresolved.verification_status == "unverified"
         state = s.get(MaintainerBackfillState, maintainer_backfill.STATE_KEY)
         assert state is not None
         assert state.cycles_completed == 1
         assert state.next_tool_name is None
+
+
+def test_toolsadmin_label_verifies_only_with_bound_ldap_membership():
+    with db.session_scope() as s:
+        person = people_index.ensure_person(
+            s,
+            display_name="Ada Lovelace",
+            wikimedia_global_user_id="160",
+            source="test",
+        )
+        account = ToolforgeAccountProjection(
+            uid_number="9001",
+            uid="ada-shell",
+            normalized_uid="ada-shell",
+            developer_username="AdaDeveloper",
+            normalized_developer_username="adadeveloper",
+            wikimedia_global_user_id="160",
+        )
+        s.add(account)
+        s.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="alpha"))
+        s.flush()
+        identity_graph.bind_toolforge_account(
+            s,
+            account=account,
+            person=person,
+            proof_method=identity_graph.PROOF_TOOLFORGE_SUL,
+            confidence=100,
+            evidence={"wikimediaGlobalUserId": "160"},
+        )
+        rows = maintainer_index.replace_toolforge_maintainer_edges(
+            s,
+            "toolforge-alpha",
+            [
+                (
+                    "alpha",
+                    [ToolsadminMaintainer(display_name="Ada", username="AdaDeveloper")],
+                    "https://toolsadmin.wikimedia.org/tools/id/alpha",
+                )
+            ],
+            checked_at=utcnow(),
+        )
+
+    assert len(rows) == 1
+    assert rows[0].verification_status == "verified"
+    assert rows[0].confidence == 100
+    assert rows[0].evidence_payload["membershipValidatedBy"] == "toolforge_ldap"
 
 
 def test_best_claim_rows_keeps_the_first_when_a_later_row_ranks_no_higher():
@@ -190,7 +247,7 @@ def test_failed_backfill_preserves_existing_evidence(monkeypatch):
             [("alpha", [], "https://toolsadmin.example/tools/id/alpha")],
             checked_at=utcnow(),
         )
-        # A populated edge is added separately to make the preservation assertion explicit.
+        # A populated unresolved label is added separately to make preservation explicit.
         maintainer_index.replace_toolforge_maintainer_edges(
             s,
             "toolforge-alpha",
@@ -203,7 +260,8 @@ def test_failed_backfill_preserves_existing_evidence(monkeypatch):
 
     assert summary["failed"] == 1
     with db.session_scope() as s:
-        assert s.query(ToolRelationshipEvidence).count() == 1
+        assert s.query(ToolRelationshipEvidence).count() == 0
+        assert s.query(UnresolvedAttributionEvidence).count() == 1
 
 
 def test_backfill_skips_tools_covered_by_authoritative_ldap_projection(monkeypatch):
@@ -234,8 +292,7 @@ def test_backfill_skips_tools_covered_by_authoritative_ldap_projection(monkeypat
         )
     requested = []
     provider = ToolforgeMaintainerProvider(
-        fetcher=lambda name: requested.append(name)
-        or (200, '<a href="/profile/fallback-user/">Fallback user</a>')
+        fetcher=lambda name: requested.append(name) or (200, '<a href="/profile/fallback-user/">Fallback user</a>')
     )
 
     summary = maintainer_backfill.run(limit=10, provider=provider, sleep_fn=lambda _seconds: None)
