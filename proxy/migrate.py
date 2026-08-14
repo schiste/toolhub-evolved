@@ -82,6 +82,7 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
         MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
         MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker()),
+        MigrationResult("relationship verification timestamps", _backfill_relationship_verified_at()),
         MigrationResult("people immutable ids and account links", _backfill_people_identity()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
@@ -124,6 +125,22 @@ def _initialize_toolforge_relationship_marker() -> int:
     """Avoid reprojecting unchanged LDAP memberships after this upgrade."""
     with db.session_scope() as s:
         return identity_graph.seed_relationship_fingerprint(s)
+
+
+def _backfill_relationship_verified_at() -> int:
+    """Seed historical milestones without making deployment look like new verification."""
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(ToolPersonRelationship).where(
+                    ToolPersonRelationship.verification_status == "verified",
+                    ToolPersonRelationship.verified_at.is_(None),
+                )
+            ).scalars()
+        )
+        for row in rows:
+            row.verified_at = row.created_at
+        return len(rows)
 
 
 def _clean_resolver_identity_claims() -> int:

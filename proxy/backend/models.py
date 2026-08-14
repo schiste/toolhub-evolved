@@ -1123,6 +1123,7 @@ class ToolPersonRelationship(Base):
     evidence_count: Mapped[int] = mapped_column(Integer, default=0)
     toolhub_canonical: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     resolved_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

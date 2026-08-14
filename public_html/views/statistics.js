@@ -75,6 +75,11 @@ function breakdown(values) {
 export function statisticsHTML(data) {
 	const catalog = data?.catalog || {};
 	const identities = data?.identities || {};
+	const relationshipMetrics = data?.relationshipMetrics || {};
+	const peopleMetrics = relationshipMetrics.people || {};
+	const rowMetrics = relationshipMetrics.rows || {};
+	const newVerification = relationshipMetrics.newlyVerifiedTools?.last24Hours || {};
+	const evidenceFreshness = relationshipMetrics.evidenceFreshness || {};
 	const sources = data?.sources || {};
 	const distributions = data?.distributions || {};
 	const definitions = data?.definitions || {};
@@ -101,6 +106,14 @@ export function statisticsHTML(data) {
 				${qualityRow(t("statistics.verifiedAuthors", "Verified authors"), definitions.verifiedAuthor || "Current author relationships backed by stable evidence.", catalog.verifiedAuthors || {})}
 				${qualityRow(t("statistics.verifiedMaintainers", "Verified maintainers"), definitions.verifiedMaintainer || "Current maintenance relationships backed by access evidence.", catalog.verifiedMaintainers || {})}
 			</div>
+			<dl class="statistics-ledger statistics-ledger--compact" aria-label="${esc(t("statistics.relationshipMetricOverview", "Relationship metric overview"))}">
+				<div><dt>${esc(t("statistics.verifiedPeople", "People with a verified relationship"))}</dt><dd>${esc(count(peopleMetrics.withAnyVerifiedRelationship))}</dd></div>
+				<div><dt>${esc(t("statistics.identityOnlyPeople", "Identity-only people"))}</dt><dd>${esc(count(peopleMetrics.identityOnly))}</dd></div>
+				<div><dt>${esc(t("statistics.newlyVerifiedTools24h", "Newly verified tools · 24h"))}</dt><dd>${esc(count(newVerification.all))}</dd></div>
+				<div class="statistics-ledger__attention"><dt>${esc(t("statistics.staleRelationships", "Stale relationships"))}</dt><dd>${esc(count(rowMetrics.stale))}</dd></div>
+				<div><dt>${esc(t("statistics.relationshipRows", "Relationship rows"))}</dt><dd>${esc(count(rowMetrics.total))}</dd></div>
+				<div><dt>${esc(t("statistics.evidenceExpiring", "Evidence expiring within 72h"))}</dt><dd>${esc(count(evidenceFreshness.expiringWithin72Hours))}</dd></div>
+			</dl>
 			<div class="statistics-columns">
 				<div><h3>${esc(t("statistics.authorEvidence", "Author relationship evidence"))}</h3>${breakdown(data?.relationships?.authors)}</div>
 				<div><h3>${esc(t("statistics.maintainerEvidence", "Maintainer relationship evidence"))}</h3>${breakdown(data?.relationships?.maintainers)}</div>

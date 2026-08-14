@@ -22,8 +22,10 @@ from backend import api_cache, canonical_tools, db, maintainer_index  # noqa: E4
 from backend.models import (  # noqa: E402
     ApiCache,
     DigestEdition,
+    Person,
     ToolAuthorClaim,
     ToolAuthorKey,
+    ToolPersonRelationship,
     UnresolvedAttributionEvidence,
     User,
     utcnow,
@@ -74,6 +76,30 @@ def test_digest_render_columns_compile_to_mysql_mediumtext(configured_db):
         assert column.type.compile(dialect=db.engine().dialect) == "TEXT"
 
 
+def test_migrate_seeds_historical_relationship_verification_time(configured_db):
+    with db.session_scope() as s:
+        person = Person(canonical_key="stable:1", display_name="Ada", identity_quality="stable")
+        s.add(person)
+        s.flush()
+        relationship = ToolPersonRelationship(
+            tool_name="historical",
+            person_id=person.id,
+            relationship_type="maintainer",
+            verification_status="verified",
+        )
+        s.add(relationship)
+        s.flush()
+        created_at = relationship.created_at
+
+    first = {result.name: result.rows for result in migrate.run_once()}
+    second = {result.name: result.rows for result in migrate.run_once()}
+
+    assert first["relationship verification timestamps"] == 1
+    assert second["relationship verification timestamps"] == 0
+    with db.session_scope() as s:
+        assert s.query(ToolPersonRelationship).one().verified_at == created_at
+
+
 def test_digest_render_migration_is_mysql_idempotent(monkeypatch):
     statements = []
 
@@ -103,8 +129,7 @@ def test_digest_render_migration_is_mysql_idempotent(monkeypatch):
         def get_columns(self, _table):
             column_type = MEDIUMTEXT() if self.widened else Text()
             return [
-                {"name": name, "type": column_type}
-                for name in ("rendered_html", "rendered_wikitext", "rendered_text")
+                {"name": name, "type": column_type} for name in ("rendered_html", "rendered_wikitext", "rendered_text")
             ]
 
     engine = Engine()

@@ -1133,6 +1133,7 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         conn.exec_driver_sql("CREATE TABLE tool_health_targets (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_media (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql("CREATE TABLE tool_catalog_sync_state (key VARCHAR(64) PRIMARY KEY)")
+        conn.exec_driver_sql("CREATE TABLE person_tool_relationships (id INTEGER PRIMARY KEY)")
         conn.exec_driver_sql(
             "CREATE TABLE repository_analysis_state (tool_name VARCHAR(255) PRIMARY KEY, attempts INTEGER)"
         )
@@ -1182,6 +1183,8 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         "source",
         "sync_status",
     }.issubset(catalog_columns)
+    relationship_columns = {col["name"] for col in inspect(eng).get_columns("person_tool_relationships")}
+    assert "verified_at" in relationship_columns
     conflict_columns = {col["name"] for col in inspect(eng).get_columns("person_reconciliation_conflicts")}
     assert {"status", "reviewed_by_user_id", "reviewed_at", "review_notes", "last_seen_at"}.issubset(conflict_columns)
     with eng.connect() as conn:

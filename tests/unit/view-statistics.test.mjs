@@ -22,6 +22,12 @@ const payload = {
 	},
 	metadata: [{ key: "title", label: "Title", count: 2900, missingCount: 100, percent: 97 }],
 	relationships: { authors: { verified: 950, unverified: 600 }, maintainers: { verified: 800 } },
+	relationshipMetrics: {
+		people: { withAnyCurrentRelationship: 500, withAnyVerifiedRelationship: 480, identityOnly: 120 },
+		rows: { total: 2350, verified: 1750, stale: 25 },
+		newlyVerifiedTools: { last24Hours: { all: 12, authors: 3, maintainers: 10 } },
+		evidenceFreshness: { active: 2500, expired: 8, expiringWithin72Hours: 15, withdrawn: 100 }
+	},
 	identities: { publishablePeople: 600, stablePeople: 400, handlePeople: 200, unresolvedLabels: 350 },
 	sources: {
 		total: 200,
@@ -60,6 +66,10 @@ test("statistics report exposes exact counts alongside accessible histograms", (
 	assert.match(html, /<figure class="statistics-histogram">/);
 	assert.match(html, /How these statistics are calculated/);
 	assert.match(html, /Verified author definition/);
+	assert.match(html, /People with a verified relationship/);
+	assert.match(html, /480/);
+	assert.match(html, /Newly verified tools · 24h/);
+	assert.match(html, /Stale relationships/);
 });
 
 test("statistics route settles immediately, then replaces its local loading state", async () => {

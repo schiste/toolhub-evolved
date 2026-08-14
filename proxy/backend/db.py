@@ -194,6 +194,9 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # of worker-start DDL because it is proportional to row count.
             "public_id": "VARCHAR(36) NULL",
         },
+        "person_tool_relationships": {
+            "verified_at": "DATETIME NULL",
+        },
         "person_identifiers": {
             "identifier_kind": "VARCHAR(32) NOT NULL DEFAULT 'handle'",
             "source": "VARCHAR(64) NOT NULL DEFAULT 'local'",

@@ -796,7 +796,14 @@ def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRel
         if row is None:
             row = ToolPersonRelationship(tool_name=clean_tool, person_id=person_id, relationship_type=role)
             s.add(row)
-        row.verification_status = _resolved_status(supporting)
+        resolved_status = _resolved_status(supporting)
+        if resolved_status == AUTHOR_CLAIM_VERIFIED and (
+            row.verification_status != AUTHOR_CLAIM_VERIFIED or row.verified_at is None
+        ):
+            row.verified_at = now
+        elif resolved_status != AUTHOR_CLAIM_VERIFIED:
+            row.verified_at = None
+        row.verification_status = resolved_status
         row.confidence = max(item.confidence for item in supporting)
         row.evidence_count = len(supporting)
         row.toolhub_canonical = any(item.toolhub_canonical for item in supporting)

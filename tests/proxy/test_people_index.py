@@ -241,6 +241,32 @@ def test_resolve_tool_relationships_marks_wholly_expired_evidence_as_stale():
         assert relationship.verification_status == AUTHOR_CLAIM_STALE
 
 
+def test_verified_at_tracks_status_transitions_not_ordinary_reprojection():
+    observation = {
+        "display_name": "Ada",
+        "wiki_username": "Ada",
+        "relationship_type": PERSON_REL_AUTHOR,
+        "verification_status": AUTHOR_CLAIM_VERIFIED,
+    }
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(s, "toolx", "sourcex", [observation])
+        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolx").one()
+        first_verified_at = relationship.verified_at
+        people_index.replace_source_evidence(s, "toolx", "sourcex", [observation])
+        assert relationship.verified_at == first_verified_at
+
+        people_index.replace_source_evidence(
+            s,
+            "toolx",
+            "sourcex",
+            [{**observation, "verification_status": AUTHOR_CLAIM_UNVERIFIED}],
+        )
+        assert relationship.verified_at is None
+        people_index.replace_source_evidence(s, "toolx", "sourcex", [observation])
+        assert relationship.verified_at is not None
+        assert relationship.verified_at >= first_verified_at
+
+
 def test_search_unresolved_attributions_filters_by_project_and_role():
     with db.session_scope() as s:
         people_index.replace_source_evidence(
