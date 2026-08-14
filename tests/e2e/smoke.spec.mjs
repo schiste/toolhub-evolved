@@ -44,6 +44,7 @@ test.describe("deterministic app smoke", () => {
 		await page.addInitScript(() => localStorage.setItem("toolhub-whats-new-never", "1"));
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.goto(new URL("/search", smoke.url).href);
+		await page.waitForTimeout(1000);
 		const card = page.locator('[data-tool="toolforge-admin"]');
 		const authors = card.locator(".tcard__authors");
 		const summary = authors.locator("summary");
