@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
 from sqlalchemy import and_, func, or_, select
 
-from backend import canonical_tools, identity_graph, people_index, projection_policy, toolinfo_authors
+from backend import canonical_tools, db, identity_graph, people_index, projection_policy, toolinfo_authors
 from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
@@ -65,6 +65,17 @@ RULES_VERSION = projection_policy.module_fingerprint(
 )
 RULES_META_KEY = "source_attestation_rules_version"
 GENERATION_COMPARISON_DEPTH = 2
+FULL_AUDIT_BATCH_SIZE = 10
+SOURCE_WRITER_LOCK = "toolhub-evolved:source-attestation-writes"
+
+
+class SourceAttestationBusyError(RuntimeError):
+    """Raised when another worker is publishing source-derived evidence."""
+
+    def __init__(self) -> None:
+        """Create the operator-facing lock timeout error."""
+        super().__init__("source-attestation writer remained busy for 120 seconds")
+
 
 # A per-record signature anchors that record's signer through the ordinary
 # relationship graph. It does not prove control of sibling feed records.
@@ -695,6 +706,83 @@ def refresh_full(s: Session) -> dict[str, int]:
         rules.updated_at = utcnow()
     totals["fullAudit"] = 1
     return totals
+
+
+def refresh_full_batched(*, batch_size: int = FULL_AUDIT_BATCH_SIZE) -> dict[str, int]:
+    """Audit every source in bounded transactions under one writer lease.
+
+    A monolithic audit can hold source and relationship rows for several
+    minutes. Production has minute-level incremental writers, so one collision
+    can otherwise exhaust MariaDB's lock wait timeout and roll back the whole
+    audit. Each batch is independently atomic and retryable; the rules marker
+    is published only after every batch succeeds.
+    """
+    size = max(1, int(batch_size))
+    with db.advisory_lock(SOURCE_WRITER_LOCK, timeout_seconds=120) as acquired:
+        if not acquired:
+            raise SourceAttestationBusyError
+        with db.session_scope() as session:
+            source_ids = list(session.execute(select(ToolinfoSource.id).order_by(ToolinfoSource.id)).scalars())
+            tool_names = set(session.execute(select(ToolinfoSourceItem.tool_name).distinct()).scalars())
+
+        totals = {
+            "sources": 0,
+            "verified": 0,
+            "resolved": 0,
+            "unresolved": 0,
+            "conflicts": 0,
+            "tools": 0,
+            "authorEvidence": 0,
+            "maintainerEvidence": 0,
+        }
+        batches = [source_ids[offset : offset + size] for offset in range(0, len(source_ids), size)]
+        for source_batch in batches:
+
+            def refresh_batch(batch: tuple[int, ...] = tuple(source_batch)) -> dict[str, int]:
+                with db.session_scope() as session:
+                    return refresh_source_ids(session, list(batch))
+
+            batch_totals = db.run_with_lock_retry(refresh_batch)
+            for key in totals:
+                totals[key] += batch_totals[key]
+
+        with db.session_scope() as session:
+            rules = session.get(ApiCacheMeta, RULES_META_KEY)
+            if rules is None:
+                session.add(ApiCacheMeta(key=RULES_META_KEY, value=RULES_VERSION))
+            else:
+                rules.value = RULES_VERSION
+                rules.updated_at = utcnow()
+            # Source batches can share tool names. Report the final active
+            # projection, not the sum of repeated per-batch replacements.
+            totals["tools"] = len(tool_names)
+            totals["authorEvidence"] = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(ToolRelationshipEvidence)
+                    .where(
+                        ToolRelationshipEvidence.tool_name.in_(tool_names or {"<none>"}),
+                        ToolRelationshipEvidence.source == SOURCE_AUTHOR_ATTESTATION,
+                        ToolRelationshipEvidence.withdrawn_at.is_(None),
+                    )
+                )
+                or 0
+            )
+            totals["maintainerEvidence"] = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(ToolRelationshipEvidence)
+                    .where(
+                        ToolRelationshipEvidence.tool_name.in_(tool_names or {"<none>"}),
+                        ToolRelationshipEvidence.source == SOURCE_TARGET_MEMBERSHIP,
+                        ToolRelationshipEvidence.withdrawn_at.is_(None),
+                    )
+                )
+                or 0
+            )
+        totals["batches"] = len(batches)
+        totals["fullAudit"] = 1
+        return totals
 
 
 def _content_changed_source_ids(s: Session) -> set[int]:
