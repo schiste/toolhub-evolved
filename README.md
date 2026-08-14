@@ -82,8 +82,8 @@ claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolfo
 **Tools** — all read-only, no authentication:
 
 - **`search_tools(query, limit=10)`** — relevance-ranked search across ~4,500 tools via upstream Toolhub (elasticsearch-backed). Keep queries short (2-3 content words).
-- **`facet_tools(...)`** — filter tools by technical signals (scanned dependencies, APIs, detected technology) or catalog metadata (type, keywords, wikis, licenses). Results include adoption counts.
-- **`list_facet_values(type)`** — list distinct values of one facet type, adoption-ranked. Call before `facet_tools` to learn what values exist.
+- **`facet_tools(...)`** — filter tools by technical signals detected in scanned source (`dependency`, `api`, `detected_technology`) or by declared catalog metadata covering the whole catalog (`tool_type`, `keyword`, `wiki`, `license`, `ui_language`, `technology`, `task`, `audience`). Results include adoption counts. Note that `technology` (what a tool's record claims) and `detected_technology` (what the analyzer found in its code) are separate filters and often disagree — the declared one is far better populated.
+- **`list_facet_values(type)`** — list distinct values of one facet type, adoption-ranked. Call before `facet_tools` to learn what values exist. Type names are exactly the `facet_tools` filter names, so a listed value pastes straight into a filter.
 - **`get_tool(name)`** — fetch one tool's full canonical Toolhub record by exact name.
 
 **Prompt**:

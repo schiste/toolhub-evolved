@@ -21,7 +21,7 @@ from typing import Any
 import requests
 from flask import Blueprint, Response, jsonify, request
 
-from backend import canonical_tools, db, security, toolhub, v1_facets
+from backend import canonical_tools, db, facet_names, security, toolhub, v1_facets
 from backend import tool_facets as facets_backend
 
 mcp_bp = Blueprint("mcp", __name__)
@@ -95,6 +95,12 @@ def _server_discover(_params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Derived from the facet_names boundary so a new facet reaches MCP clients by
+# adding one map entry, rather than by remembering to edit a schema literal here.
+_FACET_FILTER_PROPERTIES: dict[str, Any] = {
+    public: {"type": "array", "items": {"type": "string"}} for public in facet_names.PUBLIC_TO_STORAGE
+}
+
 _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "name": "search_tools",
@@ -120,31 +126,27 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "name": "facet_tools",
         "description": (
-            "Find tools by verified technical signals extracted from their source code: "
-            "dependency (package name, optionally ecosystem-prefixed like 'pypi:pywikibot'), "
-            "api (one of: mediawiki-action-api, wikibase-api, wikidata-query-service, "
-            "mediawiki-rest-api, toolforge, commons-upload), technology (a language detected "
-            "in the source, e.g. 'python'). Filters AND together. These three are DETECTED "
-            "from source code, so they cover only tools with a scanned repository — check the "
-            "returned coverage field; an empty result is not proof that no such tool exists. "
-            "You can also filter on DECLARED catalog metadata, which covers every tool: "
-            "tool_type (e.g. 'bot', 'web app'), keyword, wiki, license, and — for what a "
-            "tool is FOR rather than what it is built from — task and audience. Those two "
-            "are only filled in for a small minority of tools, so use them to narrow a "
-            "search, never to conclude that nothing does a thing."
+            "Find tools by technical signals or catalog metadata. Filters AND together.\n"
+            "DETECTED from source code, so they cover only tools with a scanned repository "
+            "— check the returned coverage field; an empty result is not proof that no such "
+            "tool exists: dependency (package name, optionally ecosystem-prefixed like "
+            "'pypi:pywikibot'), api (one of: mediawiki-action-api, wikibase-api, "
+            "wikidata-query-service, mediawiki-rest-api, toolforge, commons-upload), "
+            "detected_technology (a language or framework found in the source, e.g. 'python').\n"
+            "DECLARED catalog metadata, which covers every tool: tool_type (e.g. 'bot', "
+            "'web app'), keyword, wiki, license, ui_language, technology (what the tool's own "
+            "record claims it is built with — far better populated than detected_technology, "
+            "but a claim rather than evidence), and — for what a tool is FOR rather than what "
+            "it is built from — task and audience. Those last two are only filled in for a "
+            "small minority of tools, so use them to narrow a search, never to conclude that "
+            "nothing does a thing.\n"
+            "technology and detected_technology are separate on purpose and often disagree: "
+            "one is the claim, the other is what the analyzer found."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "dependency": {"type": "array", "items": {"type": "string"}},
-                "api": {"type": "array", "items": {"type": "string"}},
-                "technology": {"type": "array", "items": {"type": "string"}},
-                "tool_type": {"type": "array", "items": {"type": "string"}},
-                "keyword": {"type": "array", "items": {"type": "string"}},
-                "wiki": {"type": "array", "items": {"type": "string"}},
-                "license": {"type": "array", "items": {"type": "string"}},
-                "task": {"type": "array", "items": {"type": "string"}},
-                "audience": {"type": "array", "items": {"type": "string"}},
+                **_FACET_FILTER_PROPERTIES,
                 "limit": {"type": "integer", "minimum": 1, "maximum": _MAX_TOOL_RESULTS, "default": 25},
             },
         },
@@ -154,11 +156,13 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "description": (
             "List the distinct values of one facet type ranked by how many tools carry "
             "each — the ecosystem's actual adoption ranking. Call before facet_tools to "
-            "learn what values exist. Detected types (scanned repos only): dependency, "
-            "wikimedia_api, detected_technology. Declared types (whole catalog): tool_type, "
-            "keywords, wiki, license — plus tasks and audiences, which are sparsely "
-            "filled but the only values describing what a tool is FOR. The response "
-            "says which family a type belongs to."
+            "learn what values exist. The type names are exactly the facet_tools filter "
+            "names, so a value listed here pastes straight into a filter. Detected types "
+            "(scanned repos only): dependency, api, detected_technology. Declared types "
+            "(whole catalog): tool_type, keyword, wiki, license, ui_language, technology — "
+            "plus task and audience, which are sparsely filled but the only values "
+            "describing what a tool is FOR. The response says which family a type "
+            "belongs to."
         ),
         "inputSchema": {
             "type": "object",
@@ -220,7 +224,7 @@ def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
     raw_by_param: dict[str, list[Any]] = {}
-    for param in v1_facets.FILTER_PARAMS:
+    for param in facet_names.PUBLIC_TO_STORAGE:
         raw_values = arguments.get(param)
         if raw_values is None:
             continue
@@ -254,9 +258,12 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
-    facet_type = str(arguments.get("type") or "").strip().casefold()
-    if facet_type not in set(v1_facets.FILTER_PARAMS.values()):
-        valid_types = ", ".join(sorted(set(v1_facets.FILTER_PARAMS.values())))
+    # Public name in, public name out — the same vocabulary facet_tools filters
+    # on, so a value listed here can be pasted straight into a filter.
+    public_type = str(arguments.get("type") or "").strip().casefold()
+    facet_type = facet_names.to_storage(public_type)
+    if facet_type is None:
+        valid_types = ", ".join(sorted(facet_names.PUBLIC_TO_STORAGE))
         msg = f"type must be one of: {valid_types}"
         raise _ToolError(msg)
     # Through the same cached accessor as the REST route (Phase 3 Task 3) —
@@ -264,7 +271,7 @@ def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
     listing = v1_facets.cached_facet_values(facet_type, limit=facets_backend.DEFAULT_VALUE_RESULTS)
     disclosed = v1_facets.cached_coverage()
     return {
-        "type": facet_type,
+        "type": public_type,
         "values": listing["values"],
         "totalValues": listing["totalValues"],
         "coverage": disclosed,
@@ -378,15 +385,19 @@ _PRIOR_ART_PROMPT = (
     "~4,500-tool catalog. Keep queries short and distinctive (2-3 content words); "
     "longer queries introduce noise. Prefer several narrow queries with different "
     "vocabulary.\n\n"
-    "2. **facet_tools(dependency=[], api=[], technology=[], tool_type=[], keyword=[], "
-    "wiki=[], license=[], task=[], audience=[], limit=25)**: Find tools by technical signals (detected "
-    "dependency packages and APIs used) or catalog metadata (declared types, keywords, "
-    "wikis, licenses). Check the returned `coverage` field — an empty result may "
-    "reflect limited catalog scanning, not absence of tools.\n\n"
+    "2. **facet_tools(dependency=[], api=[], detected_technology=[], technology=[], "
+    "tool_type=[], keyword=[], wiki=[], license=[], ui_language=[], task=[], audience=[], "
+    "limit=25)**: Find tools by technical signals (detected dependency packages, APIs, and "
+    "technologies) or catalog metadata (declared types, keywords, wikis, licenses, claimed "
+    "technology). Check the returned `coverage` field — an empty result may reflect limited "
+    "catalog scanning, not absence of tools. Note `technology` (what the record claims) and "
+    "`detected_technology` (what the analyzer found) are different questions; the declared "
+    "one is far better populated.\n\n"
     "3. **list_facet_values(type)**: List adoption-ranked values of a facet type "
-    "before calling facet_tools. Supported types: dependency, wikimedia_api, "
-    "detected_technology (detected in scanned repos), tool_type, keywords, wiki, "
-    "license, tasks, audiences (declared metadata).\n\n"
+    "before calling facet_tools. Type names are the same as the facet_tools filter "
+    "names: dependency, api, detected_technology (detected in scanned repos), "
+    "tool_type, keyword, wiki, license, ui_language, technology, task, audience "
+    "(declared metadata).\n\n"
     "## Methodology\n\n"
     "1. **Characterize** your idea in 2-3 alternate phrasings, predicting:\n"
     "   - Likely Wikimedia APIs it would call (mediawiki-action-api, wikibase-api, "

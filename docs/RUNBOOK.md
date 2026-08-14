@@ -522,6 +522,47 @@ Discard buttons must call the matching fallback delete endpoint where the
 backend stores one. Evolved-only public rows must be labeled as `Evolved data`
 and use review badges rather than implying Toolhub approval.
 
+## Facet name contract
+
+Three vocabularies name the same concepts, and only two of them are ours:
+
+| vocabulary        | examples                                                                         | who owns it                                                                                                                                                                     |
+| ----------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upstream toolinfo | `for_wikis`, `technology_used`, `available_ui_languages`, `keywords`             | Toolhub. Echoed verbatim by `/v1/catalog/tools/<name>/projection/` in `record` and `provenance`, because matching upstream **is** that endpoint's contract. Never rename these. |
+| Storage           | `CatalogFacetValue.field` — `wikimedia_api`, `keywords`, `tasks`, `audiences`, … | Ours, internal, **not** a stable API. Free to rename.                                                                                                                           |
+| Public facet      | `api`, `keyword`, `task`, `audience`, `technology`, `detected_technology`, …     | Ours, client-facing, stable. What `facet_tools`, `/v1/facets/`, and `list_facet_values` speak.                                                                                  |
+
+`proxy/backend/facet_names.py` is the only place the storage↔public mapping is
+allowed to live. It exports `PUBLIC_TO_STORAGE`, `to_storage()`, and
+`to_public()`; every crossing calls one of them. The crossings today are the
+request filters, the `type` argument and echo on value listing, the
+`matched[].facet` rows in responses, and the MCP input schemas (generated from
+the map, not written by hand).
+
+**Why a boundary rather than one shared vocabulary.** Storage names are not
+promised to anyone, so they can be normalized or split without a client-visible
+change — the inconsistent pluralization (`keywords` and `tasks` are plural,
+`wiki` and `license` are singular) is cheap to fix precisely because nothing
+outside sees it. The cost is that translation must be total; a boundary applied
+in some places and forgotten in others is worse than none, which is what
+happened before this contract existed (clients filtered on `api` and got
+`wikimedia_api` back).
+
+**To add a facet:** add one entry to `PUBLIC_TO_STORAGE`, put its public name in
+`DETECTED_PUBLIC` or `DECLARED_PUBLIC`, and stop. Do not hardcode a storage name
+in a route, a tool schema, or a response body. The family sets are what drive
+the scanned-coverage caveat, so putting a facet in the wrong one makes responses
+lie about their own completeness.
+
+**The guard:** `tests/proxy/test_facet_name_boundary.py` walks every public
+payload and fails if a storage-only name appears in a facet-naming position (a
+`facet` key, a `type` key, `appliedFilters` keys, JSON-Schema `properties`
+keys). It deliberately does not blanket-scan response bodies, because
+`keywords`, `tasks`, and `audiences` are also legitimate upstream toolinfo names
+on the projection endpoint. A new API surface that names facets through one of
+those four conventions is covered automatically; one that invents a fifth
+position must extend the walk.
+
 ## Public-data moderation
 
 Reviewers/admins use `GET /v1/moderation/public-data/` to list pending
