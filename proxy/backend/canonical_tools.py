@@ -138,7 +138,7 @@ def _has_value(value: Any) -> bool:  # noqa: ANN401 - official API JSON
     return value not in (None, "", [], {})
 
 
-def _escape_like(term: str) -> str:
+def escape_like(term: str) -> str:
     """Escape LIKE wildcards so a query for "100%" is not a match-anything pattern."""
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -312,7 +312,7 @@ def search(query: str = "", *, limit: int = MAX_SEARCH_RESULTS) -> list[dict[str
     capped = max(1, min(MAX_SEARCH_RESULTS, int(limit or MAX_SEARCH_RESULTS)))
     statement = select(CanonicalToolCache).order_by(CanonicalToolCache.fetched_at.desc(), CanonicalToolCache.tool_name)
     if term:
-        statement = statement.where(CanonicalToolCache.search_text.like(f"%{_escape_like(term)}%", escape="\\"))
+        statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(term)}%", escape="\\"))
     with db.session_scope() as s:
         rows = list(s.execute(statement.limit(capped)).scalars())
     return [_payload(row) for row in rows]

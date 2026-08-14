@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import logging
+import math
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
@@ -30,7 +32,9 @@ from backend.sync import REVIEW_APPROVED
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-PROJECTION_VERSION = 1
+_log = logging.getLogger(__name__)
+
+PROJECTION_VERSION = 2
 MAX_REFRESH_TOOLS = 500
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
@@ -94,6 +98,16 @@ SOURCE_CONFIDENCE = {
     SOURCE_CURATION: 100,
 }
 
+# Report section -> CatalogFacetValue.field for signals detected in source.
+# Named apart from the declared FACET_FIELDS vocabulary: "detected_technology"
+# is what the analyzer found in the code, "technology" is what the toolinfo
+# record claims. They are different assertions and must stay distinguishable.
+ANALYZER_FACET_FIELDS = (
+    ("dependencies", "dependency"),
+    ("apis", "wikimedia_api"),
+    ("technology", "detected_technology"),
+)
+
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - job/API input
     return str(value or "").strip()[:255]
@@ -136,6 +150,22 @@ def _url_validation(value: Any) -> dict[str, Any]:  # noqa: ANN401 - public meta
     return {"valid": True, "state": "syntax_valid"}
 
 
+def _casefold_deduped_list(raw: list[Any]) -> list[str]:
+    """Bound a curated list value, deduping casefolded but keeping the first spelling.
+
+    Facet rows are unique on the casefolded value, so "OCR" and "ocr" would
+    collide at projection time.
+    """
+    seen: set[str] = set()
+    clean: list[str] = []
+    for item in raw:
+        text = _clean_text(item)[:255]
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            clean.append(text)
+    return clean[:50]
+
+
 def validate_curation_patch(value: Any) -> tuple[dict[str, Any], list[dict[str, str]]]:  # noqa: ANN401
     """Bound and validate a proposed public correction before persistence."""
     if not isinstance(value, dict):
@@ -150,8 +180,7 @@ def validate_curation_patch(value: Any) -> tuple[dict[str, Any], list[dict[str, 
             if not isinstance(raw, list):
                 errors.append({"field": field, "message": "value must be a list"})
                 continue
-            clean = list(dict.fromkeys(_clean_text(item)[:255] for item in raw if _clean_text(item)))[:50]
-            patch[field] = clean
+            patch[field] = _casefold_deduped_list(raw)
             continue
         clean_value = _clean_text(raw)[:4000]
         if field in URL_FIELDS:
@@ -185,11 +214,22 @@ def _report_patch(row: SourceAnalysisReport | None) -> dict[str, Any]:
 
 
 def _latest_reports(s: Any, names: list[str]) -> dict[str, SourceAnalysisReport]:  # noqa: ANN401
+    """Get the newest report per tool, handling NULL timestamps correctly.
+
+    Uses NULLs-last ordering to prefer reviewed_at over created_at,
+    with id tiebreak for determinism. Matches graph_enrichment._latest_reports.
+    """
     rows = list(
         s.execute(
             select(SourceAnalysisReport)
             .where(SourceAnalysisReport.tool_name.in_(names), SourceAnalysisReport.review_status == REVIEW_APPROVED)
-            .order_by(SourceAnalysisReport.reviewed_at.desc(), SourceAnalysisReport.created_at.desc())
+            .order_by(
+                SourceAnalysisReport.tool_name,
+                SourceAnalysisReport.reviewed_at.is_(None),  # NULLs last
+                SourceAnalysisReport.reviewed_at.desc(),
+                SourceAnalysisReport.created_at.desc(),
+                SourceAnalysisReport.id.desc(),
+            )
         ).scalars()
     )
     out: dict[str, SourceAnalysisReport] = {}
@@ -199,8 +239,30 @@ def _latest_reports(s: Any, names: list[str]) -> dict[str, SourceAnalysisReport]
     return out
 
 
+def _latest_report_times(s: Session) -> dict[str, datetime]:
+    """Get the newest report timestamp for each tool without loading full report rows.
+
+    Returns a dict mapping tool_name -> timestamp of the newest report, preferring
+    reviewed_at over created_at (via coalesce). Filters to REVIEW_APPROVED reports.
+    Uses the same coalesce logic as _latest_reports to ensure consistency.
+    """
+    rows = list(
+        s.execute(
+            select(
+                SourceAnalysisReport.tool_name,
+                func.max(func.coalesce(SourceAnalysisReport.reviewed_at, SourceAnalysisReport.created_at)).label(
+                    "latest_timestamp"
+                ),
+            )
+            .where(SourceAnalysisReport.review_status == REVIEW_APPROVED)
+            .group_by(SourceAnalysisReport.tool_name)
+        )
+    )
+    return {row.tool_name: row.latest_timestamp for row in rows if row.tool_name}
+
+
 def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
-    s: Session, names: list[str]
+    s: Session, names: list[str], reports: dict[str, SourceAnalysisReport] | None = None
 ) -> dict[str, list[dict[str, Any]]]:
     sources: dict[str, list[dict[str, Any]]] = defaultdict(list)
     canonical = s.execute(select(CanonicalToolCache).where(CanonicalToolCache.tool_name.in_(names))).scalars()
@@ -241,7 +303,8 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
                 }
             )
 
-    reports = _latest_reports(s, names)
+    if reports is None:
+        reports = _latest_reports(s, names)
     repository_rows = {
         row.tool_name: row
         for row in s.execute(
@@ -350,13 +413,128 @@ def _search_text(record: dict[str, Any]) -> str:
     return "\n".join(part for part in (_clean_text(value) for value in parts) if part).casefold()[:12000]
 
 
+def _analyzer_facets(report: dict | None) -> list[tuple[str, str, str, int]]:
+    """Return (field, value, label, confidence_basis_points) per detected signal.
+
+    Pure so it can be exercised without a database. Duplicate values keep the
+    highest confidence: the analyzer emits one finding per evidence source.
+
+    Confidence convention: for detected facets, confidence_basis_points means
+    DETECTION CERTAINTY (finding confidence x 10000), as opposed to the
+    DECLARED facets where it means SOURCE AUTHORITY.
+    """
+    if not isinstance(report, dict):
+        return []
+
+    # Collect all findings, indexed by (field, value) for deduplication
+    findings: dict[tuple[str, str], tuple[str, int]] = {}
+
+    for report_section, facet_field in ANALYZER_FACET_FIELDS:
+        section_data = report.get(report_section)
+        if not isinstance(section_data, list):
+            continue
+
+        for entry in section_data:
+            if not isinstance(entry, dict):
+                continue
+
+            raw_value = _clean_text(entry.get("value"))
+            if not raw_value:
+                continue
+
+            # Sanitize value and label for valid UTF-8, casefold and truncate to 255
+            value = raw_value.encode("utf-8", "ignore").decode("utf-8").casefold()[:255]
+
+            # Label from finding's label else value, sanitized and truncated to 255
+            label = (
+                _clean_text(entry.get("label") or entry.get("value")).encode("utf-8", "ignore").decode("utf-8")[:255]
+            )
+
+            # Missing, unparseable, or non-finite confidence drops the finding:
+            # tool_facets.py documents these rows as detection certainty, and a
+            # finding the analyzer would not publish must not become queryable
+            # with certainty 0 attached.
+            try:
+                confidence_float = float(entry.get("confidence"))
+                if not math.isfinite(confidence_float):
+                    continue
+                confidence_float = max(0.0, min(1.0, confidence_float))
+            except (TypeError, ValueError):
+                continue
+
+            confidence_basis_points = round(confidence_float * 10000)
+
+            # Keep max confidence for (field, value)
+            key = (facet_field, value)
+            if key not in findings or findings[key][1] < confidence_basis_points:
+                findings[key] = (label, confidence_basis_points)
+
+    # Return as list of tuples
+    return [
+        (field, value, label, confidence_basis_points)
+        for (field, value), (label, confidence_basis_points) in findings.items()
+    ]
+
+
+def _emit_analyzer_facets(
+    s: Any,  # noqa: ANN401
+    name: str,
+    report: SourceAnalysisReport,
+    now: datetime,
+) -> None:
+    """Emit analyzer-derived facets for one tool from its latest report.
+
+    Wraps analyzer emission in its own savepoint so malformed reports
+    cannot cost a tool its declared facets or fail the batch.
+    """
+    try:
+        with s.begin_nested():
+            facet_provenance = [
+                {
+                    "source": SOURCE_REPOSITORY,
+                    "reportId": report.id,
+                    "observed": _iso(report.reviewed_at or report.created_at),
+                }
+            ]
+            for field, value, label, confidence_basis_points in _analyzer_facets(report.report):
+                s.add(
+                    CatalogFacetValue(
+                        tool_name=name,
+                        field=field,
+                        value=value,
+                        label=label,
+                        provenance=facet_provenance,
+                        confidence_basis_points=confidence_basis_points,
+                        refreshed_at=now,
+                    )
+                )
+            s.flush()
+    except (SQLAlchemyError, TypeError, ValueError, OverflowError, ArithmeticError):
+        # Malformed report must not cost the tool its declared facets or fail the batch.
+        # OverflowError/ArithmeticError can be raised by round(x*10000) if confidence is extreme.
+        _log.warning("Failed to emit analyzer facets for %s report %s", name, report.id)
+
+
 def _replace_facets(s: Any, name: str, record: dict, provenance: dict, now: datetime) -> None:  # noqa: ANN401
+    """Emit declared facets for the tool from the merged effective record.
+
+    Analyzer facets are emitted separately via _emit_analyzer_facets.
+    This separation allows containment: a malformed report cannot cost the tool
+    its declared facets because emission failures roll back within a savepoint.
+    """
     s.execute(delete(CatalogFacetValue).where(CatalogFacetValue.tool_name == name))
+
+    # Emit declared facets from the effective merged record. Guard the
+    # (tool_name, field, value) unique constraint here too: values reach this
+    # point from several sources and a single case-variant pair would fail
+    # the whole refresh batch with an IntegrityError.
+    seen: set[tuple[str, str]] = set()
     for record_field, facet_field in FACET_FIELDS.items():
         for value in _values(record.get(record_field)):
             label = _clean_text(value)[:255]
-            if not label:
+            if not label or (facet_field, label.casefold()) in seen:
                 continue
+            seen.add((facet_field, label.casefold()))
             source_rows = [
                 item
                 for item in provenance.get(record_field, [])
@@ -417,13 +595,22 @@ def _mark_failures(names: list[str], error: BaseException) -> None:
 
 
 def _refresh_batch(names: list[str]) -> dict[str, int]:
+    """Refresh a batch of tools' catalog projections.
+
+    Per-batch row budget: with analyzer facets, inserts per batch include both
+    declared and analyzer facets. Analyzer rows cap at ~120/tool (source_analyzer's
+    MAX_FINDINGS_PER_BUCKET), so a 500-tool batch can insert ~60k analyzer rows
+    plus declared facets in one transaction.
+    """
     if not names:
         return {"requested": 0, "refreshed": 0, "changed": 0, "errors": 0}
     now = utcnow()
     changed = 0
     try:
         with db.session_scope() as s:
-            source_map = _sources_by_tool(s, names)
+            # Fetch reports once per batch before the per-tool loop
+            reports = _latest_reports(s, names)
+            source_map = _sources_by_tool(s, names, reports)
             for name in names:
                 effective, provenance, validation, timestamps = _assemble(name, source_map.get(name, []))
                 row = s.get(CatalogToolProjection, name)
@@ -450,6 +637,8 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
                 row.attempts = 0
                 row.last_error = None
                 _replace_facets(s, name, effective, provenance, now)
+                if report := reports.get(name):
+                    _emit_analyzer_facets(s, name, report, now)
     except (SQLAlchemyError, TypeError, ValueError) as exc:
         _mark_failures(names, exc)
         return {"requested": len(names), "refreshed": 0, "changed": 0, "errors": len(names)}
@@ -472,12 +661,35 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
     with db.session_scope() as s:
         canonical = list(s.execute(select(CanonicalToolCache.tool_name)).scalars())
         existing = {row.tool_name: row for row in s.execute(select(CatalogToolProjection)).scalars()}
+        # Fetch latest report timestamps to detect newly-analyzed tools (lightweight query)
+        latest_report_times = _latest_report_times(s)
+        analyzer_facet_tools = set(
+            s.execute(
+                select(CatalogFacetValue.tool_name)
+                .where(CatalogFacetValue.field.in_(field for _, field in ANALYZER_FACET_FIELDS))
+                .distinct()
+            ).scalars()
+        )
     candidates = []
     for name in canonical:
         row = existing.get(name)
         if row is not None and row.next_attempt_at is not None and row.next_attempt_at > now:
             continue
         if row is None or row.projection_version != PROJECTION_VERSION or row.status == STATUS_ERROR:
+            candidates.append(name)
+        elif (
+            (report_timestamp := latest_report_times.get(name))
+            and row.refreshed_at
+            and report_timestamp > row.refreshed_at
+            and report_timestamp <= now
+        ):
+            # Include tools whose latest report is newer than their projection,
+            # but clamp to now() to avoid perpetual-candidate issue with future-dated reports.
+            candidates.append(name)
+        elif name in analyzer_facet_tools and name not in latest_report_times:
+            # Serving analyzer facets with no approved report left behind them:
+            # the report was rejected or reopened after projection. Re-project
+            # so the moderated-away facets stop being served.
             candidates.append(name)
     names = sorted(candidates)[:bounded]
     return {"candidates": len(candidates), **refresh_tool_names(names)}

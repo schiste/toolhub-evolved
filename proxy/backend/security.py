@@ -22,6 +22,12 @@ WRITE_WINDOW_SECONDS = 60.0  # …per rolling minute
 # as much as it is our own availability problem. Generous enough that a real
 # page load (a handful of parallel calls, then mostly cache hits) never notices.
 READ_LIMIT = 120
+# Facet discovery reads, per client address per rolling minute. Facet queries
+# are unauthenticated aggregate queries that the MCP server will fan out to.
+FACET_READ_LIMIT_PER_WINDOW = 120
+# MCP endpoint requests, per client address per rolling minute. The MCP server
+# exposes read-only catalog tools and is rate-limited to prevent abuse.
+MCP_LIMIT_PER_WINDOW = 60
 
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
@@ -119,17 +125,31 @@ class RollingLimit:
 
 _writes = RollingLimit(WRITE_LIMIT)
 _reads = RollingLimit(READ_LIMIT)
+_facets = RollingLimit(FACET_READ_LIMIT_PER_WINDOW)
+_mcp = RollingLimit(MCP_LIMIT_PER_WINDOW)
 
 
 def clear_rate_limits() -> None:
     """Reset the in-memory counters (tests; harmless in prod restarts)."""
     _writes.clear()
     _reads.clear()
+    _facets.clear()
+    _mcp.clear()
 
 
 def read_rate_limited(client_addr: str | None) -> bool:
     """Record one anonymous proxy read and report whether the caller is over the limit."""
     return _reads.exceeded(client_addr or "unknown")
+
+
+def facet_rate_limited(client_addr: str | None) -> bool:
+    """Record one facet discovery read and report whether the caller is over the limit."""
+    return _facets.exceeded(client_addr or "unknown")
+
+
+def mcp_rate_limited(client_addr: str | None) -> bool:
+    """Record one MCP endpoint request and report whether the caller is over the limit."""
+    return _mcp.exceeded(client_addr or "unknown")
 
 
 def csrf_ok(token: str) -> bool:

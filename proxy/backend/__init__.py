@@ -14,8 +14,10 @@ from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend import db, token_crypto
+from backend.mcp_server import mcp_bp
 from backend.oauth import oauth_bp
 from backend.v1 import v1_bp
 from backend.v1_account_links import v1_account_links_bp
@@ -25,6 +27,7 @@ from backend.v1_catalog import v1_catalog_bp
 from backend.v1_claims import v1_claims_bp
 from backend.v1_community import v1_community_bp
 from backend.v1_crawler import v1_crawler_bp
+from backend.v1_facets import v1_facets_bp
 from backend.v1_me import v1_me_bp
 from backend.v1_moderation import v1_moderation_bp
 from backend.v1_overlay import v1_overlay_bp
@@ -89,7 +92,14 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     token_crypto.configure(app.secret_key)
     db.configure(url)
     db.init_schema()
+    proxy_hops = int(os.environ.get("TOOLHUB_PROXYFIX_X_FOR", "0") or 0)
+    if proxy_hops:
+        # N is measured per deployment via /v1/debug/forwarded/ (see
+        # docs/deploy-toolforge.md); trusting more hops than the ingress
+        # actually appends lets clients forge their address.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops)
     app.register_blueprint(oauth_bp)
+    app.register_blueprint(mcp_bp)
     app.register_blueprint(v1_bp)
     app.register_blueprint(v1_write_bp)
     app.register_blueprint(v1_crawler_bp)
@@ -103,6 +113,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(v1_tools_bp)
     app.register_blueprint(v1_toolinfo_bp)
     app.register_blueprint(v1_source_analysis_bp)
+    app.register_blueprint(v1_facets_bp)
     app.register_blueprint(v1_statistics_bp)
     app.register_blueprint(v1_workers_bp)
     app.register_blueprint(v1_moderation_bp)
