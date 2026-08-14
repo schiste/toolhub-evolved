@@ -14,6 +14,7 @@ const routes = [
 	{ path: "/changelog", title: /changelog/i },
 	{ path: "/recent?show=unpatrolled", title: /recent changes/i },
 	{ path: "/api-docs", title: /api documentation/i },
+	{ path: "/mcp-server", title: /mcp server/i },
 	{ path: "/user/login/?next=/", title: /sign in/i },
 	{ path: "/user/logout/", title: /signed out/i }
 ];

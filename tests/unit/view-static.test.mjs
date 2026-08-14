@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test, vi } from "vitest";
 import * as S from "../../public_html/views/static.js";
+import { esc } from "../../public_html/lib/core/dom.js";
 import * as api from "../../public_html/lib/core/api.js";
 import * as serversync from "../../public_html/lib/core/serversync.js";
 
@@ -25,6 +26,7 @@ const STATIC_TITLES = {
 	terms: "Terms of Use — Toolhub",
 	"code-of-conduct": "Code of Conduct — Toolhub",
 	api: "API — Toolhub",
+	"mcp-server": "MCP server — Toolhub",
 	"rules-of-engagement": "Rules of Engagement — Toolhub",
 	"health-score": "Health score system — Toolhub",
 	feeds: "Feeds — Toolhub",
@@ -50,7 +52,7 @@ test("ext renders safe external links and rejects unsafe URLs", () => {
 
 test("viewStatic exposes every static page with current hybrid Toolhub/Evolved copy", () => {
 	const slugs = Object.keys(STATIC_TITLES);
-	assert.equal(slugs.length, 11);
+	assert.equal(slugs.length, 12);
 	assert.deepEqual(Object.keys(S.STATIC), slugs);
 	for (const slug of slugs) {
 		assert.equal(S.viewStatic(slug).title, STATIC_TITLES[slug]);
@@ -195,6 +197,29 @@ test("viewApiDocs shows the unavailable placeholder when the root cannot be read
 	assert.ok(view.html.includes("The live endpoint index is unavailable."));
 	assert.ok(view.html.includes("data-api-explorer"));
 	assert.ok(view.html.includes("Authenticated writes never go through that proxy"));
+});
+
+test("the MCP page is self-sufficient documentation, not a pointer at the repository", () => {
+	// This page IS the user documentation for the discovery server: someone who
+	// never opens the repository has to be able to connect a client and read a
+	// result correctly from it alone.
+	const html = S.viewStatic("mcp-server").html;
+	assert.ok(html.includes("claude mcp add --transport http toolhub-discovery"));
+	assert.ok(html.includes("https://toolhub-evolved.toolforge.org/mcp"));
+	assert.ok(html.includes("mcpServers"));
+	assert.ok(html.includes("prior-art-review"));
+	for (const tool of [
+		"search_tools(query, limit=10)",
+		"facet_tools(…)",
+		"list_facet_values(type)",
+		"get_tool(name)"
+	]) {
+		assert.ok(html.includes(esc(tool)), tool);
+	}
+	assert.ok(html.includes("60 requests per rolling minute"));
+	assert.ok(html.includes("no scanned tool matches"));
+	assert.ok(html.includes("429 rate limited, retry later"));
+	assert.ok(html.includes("Absence is weak evidence"));
 });
 
 test("STATIC_SLUGS lists exactly the pages static.js can render", async () => {

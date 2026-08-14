@@ -42,6 +42,9 @@ ALLOWED_ORIGINS = frozenset({"https://toolhub-evolved.toolforge.org"})
 # Freshness hints for 2026-07-28 list caching; the catalog changes on the
 # 15-minute sync cadence, so half that keeps clients comfortably current.
 LIST_TTL_MS = 7 * 60 * 1000
+# The in-app page documenting this endpoint (public_html/views/static.js).
+# Users should never have to open the source repository to connect a client.
+DOCS_PATH = "/mcp-server"
 
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
@@ -363,6 +366,26 @@ def mcp_endpoint() -> Response | tuple[Response, int]:
     except Exception:  # noqa: BLE001 - MCP clients need a JSON-RPC object, not Flask's HTML 500
         _log.exception("MCP method %s failed", method)
         return _error(req_id, INTERNAL_ERROR, "internal error")
+
+
+@mcp_bp.route("/mcp", methods=["GET"])
+def mcp_endpoint_docs() -> tuple[Response, int]:
+    """Point a browser at the documentation without breaking the transport.
+
+    The status stays 405: a streamable-HTTP server that offers no SSE stream
+    MUST answer GET that way, and a 200 with HTML here would confuse a client
+    probing for one. But a bare Flask 405 tells a person who pasted the URL
+    into their address bar nothing at all, so the body names the page that
+    documents this endpoint.
+    """
+    body = jsonify(
+        {
+            "error": "this endpoint speaks MCP over POST and offers no SSE stream",
+            "documentation": DOCS_PATH,
+        }
+    )
+    body.headers["Allow"] = "POST"
+    return body, 405
 
 
 _PRIOR_ART_PROMPT = (

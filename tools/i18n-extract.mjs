@@ -46,9 +46,10 @@ const DOC_STUB = "TODO: document this message.";
  * means lowering this number in the same commit. Onboarding to translatewiki
  * needs it at 0.
  */
-// Set once, at the merge that introduced this gate: every message written
-// before it existed counts as debt. It may only fall from here.
-const DOCUMENTATION_DEBT = 2012;
+// Set at the merge that introduced this gate: every message written before it
+// existed counts as debt. It may only fall from here, so a change that leaves
+// the real count below the ceiling lowers the ceiling to match.
+const DOCUMENTATION_DEBT = 1995;
 
 /** @returns {string[]} all first-party app sources with extractable messages */
 function sourceFiles(dir) {

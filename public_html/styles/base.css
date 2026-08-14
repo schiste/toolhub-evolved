@@ -136,7 +136,13 @@ a:hover {
 :where(.prose, .qv__desc) h6 {
 	font-size: var(--fs-body);
 }
-:where(.prose, .qv__desc) :where(a:not(.btn)) {
+
+/* Not :where() on the container: that scores 0 specificity, so the bare
+   `a { text-decoration: none }` above won and long-form links were never
+   underlined. A link inside a sentence then relied on color alone, which
+   fails WCAG 1.4.1 against this body text (2.41:1, under the 3:1 floor). */
+.prose :where(a:not(.btn)),
+.qv__desc :where(a:not(.btn)) {
 	color: var(--color-progressive);
 	text-decoration: underline;
 }

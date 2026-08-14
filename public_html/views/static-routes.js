@@ -18,6 +18,7 @@ export const STATIC_SLUGS = [
 	"terms",
 	"code-of-conduct",
 	"api",
+	"mcp-server",
 	"rules-of-engagement",
 	"health-score",
 	"feeds",

@@ -137,6 +137,14 @@ def test_protocol_errors(client):
     assert client.get("/mcp").status_code == 405
 
 
+def test_browser_visit_still_405s_but_names_the_documentation_page(client):
+    """A pasted URL is a GET; the status must stay 405, the body must help."""
+    resp = client.get("/mcp")
+    assert resp.status_code == 405
+    assert resp.headers["Allow"] == "POST"
+    assert resp.get_json()["documentation"] == "/mcp-server"
+
+
 def test_origin_validation(client):
     # No Origin (CLI / server-side MCP clients): allowed.
     assert _rpc(client, "ping").status_code == 200

@@ -37,8 +37,15 @@ export const ext = (url, label) =>
 	`<a href="${safeUrl(url)}" target="_blank" rel="${EXTERNAL_REL}">${esc(label)} ${icon("external")}</a>`;
 /** @param {string} value */
 const code = (value) => `<code>${esc(value)}</code>`;
-/** @param {string} value */
-const blockCode = (value) => `<pre><code>${esc(value)}</code></pre>`;
+/**
+ * A code block scrolls sideways when it is wider than the page, and a region
+ * that scrolls has to be reachable from the keyboard (WCAG 2.1.1) — hence the
+ * tabindex, matching the `<pre>` blocks on /api-docs.
+ * @param {string} value
+ * @param {string} [label] accessible name for the focusable block
+ */
+const blockCode = (value, label) =>
+	`<pre tabindex="0"${label ? ` aria-label="${esc(label)}"` : ""}><code>${esc(value)}</code></pre>`;
 /**
  * @param {string} caption
  * @param {string[]} headers
@@ -60,6 +67,180 @@ const rssFeedItem = (href, title, description, iconName) => `<li><a href="${esc(
 	<span class="feed__main"><strong>${esc(title)}</strong><span class="feed__sub">${esc(description)}</span></span>
 	<span class="feed__when">${esc(t("static.rss.rssFormat", "RSS"))}</span>
 </a></li>`;
+
+/* ---- MCP discovery server (docs live here, not only in the repo) -------- */
+const MCP_ENDPOINT_URL = "https://toolhub-evolved.toolforge.org/mcp";
+const MCP_ADD_COMMAND = `claude mcp add --transport http toolhub-discovery ${MCP_ENDPOINT_URL}`;
+const MCP_CLIENT_CONFIG_JSON = JSON.stringify(
+	{ mcpServers: { "toolhub-discovery": { type: "http", url: MCP_ENDPOINT_URL } } },
+	null,
+	2
+);
+const MCP_CURL_EXAMPLE = `curl -sS -X POST ${MCP_ENDPOINT_URL} \\
+  -H 'Content-Type: application/json' \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`;
+const MCP_PROMPT_COMMAND = "/mcp__toolhub-discovery__prior-art-review a bot that flags unsourced statements";
+
+function mcpToolTable() {
+	return proseTable(
+		t("static.mcp.toolTableCaption", "Tools exposed by the discovery server"),
+		[
+			t("static.mcp.toolHeader", "Tool"),
+			t("static.mcp.toolQuestionHeader", "The question it answers"),
+			t("static.mcp.toolCoverageHeader", "Coverage")
+		],
+		[
+			[
+				code("search_tools(query, limit=10)"),
+				esc(
+					t(
+						"static.mcp.searchToolsWhat",
+						"Relevance-ranked text search, served by Toolhub's own search index."
+					)
+				),
+				esc(t("static.mcp.searchToolsCoverage", "The whole catalog, roughly 4,500 tools."))
+			],
+			[
+				code("facet_tools(…)"),
+				esc(
+					t(
+						"static.mcp.facetToolsWhat",
+						"Which tools carry a signal: a dependency, a Wikimedia API, a language, or declared catalog metadata."
+					)
+				),
+				esc(
+					t(
+						"static.mcp.facetToolsCoverage",
+						"Detected filters cover scanned repositories only; declared filters cover every tool."
+					)
+				)
+			],
+			[
+				code("list_facet_values(type)"),
+				esc(
+					t(
+						"static.mcp.listFacetValuesWhat",
+						"Which values exist for one facet, ranked by how many tools carry each — the ecosystem's real adoption ranking."
+					)
+				),
+				esc(t("static.mcp.listFacetValuesCoverage", "Top 100 values, with the true total alongside."))
+			],
+			[
+				code("get_tool(name)"),
+				esc(t("static.mcp.getToolWhat", "One tool's full canonical Toolhub record, by exact name.")),
+				esc(t("static.mcp.getToolCoverage", "Names are exact and case-sensitive."))
+			]
+		]
+	);
+}
+
+function mcpFieldTable() {
+	return proseTable(
+		t("static.mcp.fieldTableCaption", "Fields on every tool the discovery server returns"),
+		[t("static.mcp.fieldHeader", "Field"), t("static.mcp.fieldMeaningHeader", "Meaning")],
+		[
+			[code("name"), esc(t("static.mcp.fieldName", "Exact Toolhub name — the key get_tool takes."))],
+			[code("title"), esc(t("static.mcp.fieldTitle", "Human-readable title."))],
+			[code("description"), esc(t("static.mcp.fieldDescription", "Catalog description."))],
+			[code("url"), esc(t("static.mcp.fieldUrl", "Where the tool runs."))],
+			[
+				code("tool_type"),
+				esc(t("static.mcp.fieldToolType", "Declared type: bot, web app, gadget, library, and so on."))
+			],
+			[
+				code("repository"),
+				esc(t("static.mcp.fieldRepository", "Source repository, or null when none is declared."))
+			],
+			[
+				code("deprecated"),
+				esc(
+					t("static.mcp.fieldDeprecated", "Deprecated tools are still prior art; flag them, never drop them.")
+				)
+			],
+			[code("keywords"), esc(t("static.mcp.fieldKeywords", "Declared keywords."))],
+			[
+				code("matched"),
+				esc(
+					t(
+						"static.mcp.fieldMatched",
+						"For facet queries, which facet values matched and how confident the signal is, from 0 to 1."
+					)
+				)
+			],
+			[
+				code("coverage"),
+				esc(
+					t(
+						"static.mcp.fieldCoverage",
+						"Scanned tools against total tools. Restate it whenever you report a facet result."
+					)
+				)
+			]
+		]
+	);
+}
+
+function mcpTroubleshootingTable() {
+	return proseTable(
+		t("static.mcp.troubleshootingCaption", "What the endpoint's error responses mean"),
+		[t("static.mcp.symptomHeader", "Response"), t("static.mcp.causeHeader", "Cause and fix")],
+		[
+			[
+				code("405 Method Not Allowed"),
+				esc(t("static.mcp.fix405", "The endpoint is POST only, so opening the URL in a browser always fails."))
+			],
+			[
+				code("403 origin not allowed"),
+				esc(
+					t(
+						"static.mcp.fix403",
+						"A browser-based client sent an Origin header this server does not allow. Programmatic clients send none and are fine."
+					)
+				)
+			],
+			[
+				code("429 rate limited, retry later"),
+				esc(
+					t(
+						"static.mcp.fix429",
+						"Over 60 requests a minute from your address. Wait out the minute and make fewer speculative calls."
+					)
+				)
+			],
+			[
+				code("400 batch requests are not supported"),
+				esc(t("static.mcp.fix400", "Send one JSON-RPC request per POST; JSON-RPC batches are rejected."))
+			],
+			[
+				esc(t("static.mcp.searchUnavailable", "Toolhub search is unavailable right now")),
+				esc(
+					t(
+						"static.mcp.fixSearchUnavailable",
+						"Upstream search is down and has no local fallback by design. Facets and get_tool still work, but say the review is half done rather than substituting weaker evidence."
+					)
+				)
+			],
+			[
+				esc(t("static.mcp.unknownTool", "no canonical tool named …")),
+				esc(
+					t(
+						"static.mcp.fixUnknownTool",
+						"Pass the name field from a search or facet result, not the displayed title."
+					)
+				)
+			],
+			[
+				esc(t("static.mcp.noFilter", "supply at least one filter")),
+				esc(
+					t(
+						"static.mcp.fixNoFilter",
+						"facet_tools needs at least one filter; list_facet_values shows which values exist."
+					)
+				)
+			]
+		]
+	);
+}
 
 function healthPublicFormula() {
 	return blockCode(`included = [dimension for dimension in health.dimensions
@@ -675,7 +856,60 @@ export const STATIC = {
 			<li>${tWithElements("static.api.evolvedApiDocsItem", "Use this prototype's $1 for read-only examples, response inspection, and schema pointers.", { html: `<a href="/api-docs">${esc(t("static.api.apiDocsPage", "API explorer"))}</a>` })}</li>
 			<li>${tWithElements("static.api.openApiItem", "The OpenAPI schema and endpoints live under $1.", { html: ext("https://toolhub.wikimedia.org/api/", "/api/") })}</li>
 			<li>${tWithElements("static.api.writeAccessItem", "Read access is anonymous; creating or editing records uses your Wikimedia OAuth identity. For example, $1 adds a tool.", { html: code("POST /api/tools/") })}</li>
+			<li>${tWithElements("static.api.mcpItem", "For AI assistants, Evolved also serves catalog discovery over the Model Context Protocol — see the $1 page.", { html: `<a href="/mcp-server">${esc(t("static.api.mcpPage", "MCP server"))}</a>` })}</li>
 		</ul>`
+	}),
+	"mcp-server": () => ({
+		title: t("static.mcp.title", "MCP server"),
+		body: `
+		<p>${t("static.mcp.intro", "Toolhub Evolved publishes catalog discovery over the Model Context Protocol, so an AI assistant can answer the question every new Wikimedia tool should start with: does this already exist, and what do similar tools build on?")}</p>
+		<p>${tWithElements("static.mcp.endpointIntro", "The endpoint is $1. It is read-only and anonymous — no account, no API key, no OAuth grant — and everything it returns is public catalog data, the same records this site shows.", { html: code(MCP_ENDPOINT_URL) })}</p>
+		<h2>${t("static.mcp.connectHeading", "Connect a client")}</h2>
+		<p>${t("static.mcp.claudeCode", "In Claude Code, add it once:")}</p>
+		${blockCode(MCP_ADD_COMMAND, t("static.mcp.addCommandLabel", "Command that adds the server to Claude Code"))}
+		<p>${t("static.mcp.claudeDesktop", "In Claude Desktop or claude.ai, add a custom connector with that URL and leave authentication empty. The server issues no tokens and keeps no sessions, so there is nothing else to configure.")}</p>
+		<p>${tWithElements("static.mcp.jsonClients", "Cursor, VS Code, and other clients configured through an $1 file take this entry:", { html: code("mcp.json") })}</p>
+		${blockCode(MCP_CLIENT_CONFIG_JSON, t("static.mcp.clientConfigLabel", "Client configuration entry for an mcp.json file"))}
+		<p>${t("static.mcp.rawHttp", "Anything else can speak to it directly: the endpoint is one POST that takes JSON-RPC 2.0 and answers with plain JSON, so curl is a legitimate client.")}</p>
+		${blockCode(MCP_CURL_EXAMPLE, t("static.mcp.curlExampleLabel", "curl command listing the server's tools"))}
+		<p>${tWithElements("static.mcp.methods", "Supported methods are $1, $2, $3, $4, $5, $6, and $7. Notifications are accepted and answered with 202. Clients that only speak the older stdio transport need a bridge; this endpoint is HTTP-only.", { html: code("initialize") }, { html: code("server/discover") }, { html: code("ping") }, { html: code("tools/list") }, { html: code("tools/call") }, { html: code("prompts/list") }, { html: code("prompts/get") })}</p>
+		<h2>${t("static.mcp.promptHeading", "Start with the prior-art review")}</h2>
+		<p>${tWithElements("static.mcp.promptIntro", "Most people want one thing from this server, and a prompt does it end to end. $1 takes an idea in a sentence or three and reports back in three sections: build, reuse, or differentiate; adjacent tools worth extending; and a recommended stack ranked by how many existing tools already use each library.", { html: code("prior-art-review") })}</p>
+		${blockCode(MCP_PROMPT_COMMAND, t("static.mcp.promptCommandLabel", "Claude Code command that runs the prior-art review"))}
+		<p>${t("static.mcp.promptClients", "Other clients surface prompts their own way — a slash command, a prompt picker, or a prompts/get call. The methodology lives in the prompt rather than in any one client's configuration, so every client runs the same review and a correction reaches all of them at once.")}</p>
+		<h2>${t("static.mcp.toolsHeading", "The four tools")}</h2>
+		<p>${t("static.mcp.toolsIntro", "If you would rather drive the search yourself, these are the tools the prompt is made of. All four are read-only, and every response is JSON.")}</p>
+		${mcpToolTable()}
+		<ul>
+			<li>${t("static.mcp.toolsQueryTip", "Keep search queries short and distinctive — two or three content words. Terms are scored independently, so padding a query with common words pulls in unrelated results and pushes the good ones down. Several narrow queries with different vocabulary beat one long descriptive sentence.")}</li>
+			<li>${tWithElements("static.mcp.toolsDetectedTip", "The detected facet filters are $1, $2, and $3. They come from scanning source code, so they only cover tools with a scanned repository.", { html: code("dependency") }, { html: code("api") }, { html: code("technology") })}</li>
+			<li>${tWithElements("static.mcp.toolsDeclaredTip", "The declared filters — $1, $2, $3, $4, $5, and $6 — come from catalog metadata and cover every tool. The last two are the only fields that say what a tool is for rather than what it is built from, and few maintainers fill them in, so use them to narrow a search rather than to settle one.", { html: code("tool_type") }, { html: code("keyword") }, { html: code("wiki") }, { html: code("license") }, { html: code("task") }, { html: code("audience") })}</li>
+			<li>${t("static.mcp.toolsLimitTip", "Filters combine with AND across parameters and OR within one parameter's values. A value nothing carries is a filter that matches nothing rather than an error. Result limits accept 1 to 50; search returns 10 by default and facets 25.")}</li>
+		</ul>
+		<h2>${t("static.mcp.fieldsHeading", "What comes back")}</h2>
+		<p>${tWithElements("static.mcp.fieldsIntro", "Search and facet results share one tool shape, so a client never has to branch on which retrieval route produced a tool. Alongside the tools, search reports $1 — the size of this page, deliberately not a catalog-wide total — while facet queries report the true match count as $2.", { html: code("returned") }, { html: code("total") })}</p>
+		${mcpFieldTable()}
+		<h2>${t("static.mcp.honestyHeading", "Reading the answers honestly")}</h2>
+		<p>${t("static.mcp.honestyIntro", "These are the judgment calls the tool descriptions cannot make for you, and they decide whether a discovery pass prevents duplicated work or causes it.")}</p>
+		<ul>
+			<li>${tWithElements("static.mcp.honestyPhrasing", "One phrasing is not a search. Vocabulary in the catalog is inconsistent: $1 returns nothing, while $2 returns fediverse tools and $3 surfaces a bot that already posts wiki content to social platforms — the actual prior art for a Bluesky bot.", { html: code("bluesky") }, { html: code("mastodon") }, { html: code("cross-post") })}</li>
+			<li>${t("static.mcp.honestyAbsence", 'Absence is weak evidence. Search matches text, not behavior, and plenty of real tools are unregistered or live only as on-wiki scripts. "I did not find one" is honest; "there isn\'t one" is not.')}</li>
+			<li>${t("static.mcp.honestyCoverage", 'Two facet families, one caveat. The scanned-versus-total coverage numbers apply to the detected filters only, so phrase a gap there as "no scanned tool matches". Declared filters cover the whole catalog and carry no scan caveat.')}</li>
+			<li>${t("static.mcp.honestyAdoption", 'Adoption is not quality. "14 of 20 scanned tools use this library" means it fits the ecosystem, not that it is the right choice for you.')}</li>
+			<li>${tWithElements("static.mcp.honestyContribute", "If prior art exists and is maintained, the useful answer is to contribute to it rather than rebuild it. That is the whole point of checking — and $1 explains how Evolved and official Toolhub divide the work.", { html: `<a href="/rules-of-engagement">${esc(t("static.mcp.rulesOfEngagement", "Rules of Engagement"))}</a>` })}</li>
+		</ul>
+		<h2>${t("static.mcp.limitsHeading", "Limits and etiquette")}</h2>
+		<ul>
+			<li>${t("static.mcp.limitRate", "60 requests per rolling minute per client address.")}</li>
+			<li>${t("static.mcp.limitReadOnly", "Read-only and anonymous: no writes, no cookies, no sessions, and nothing you send is associated with a Toolhub account.")}</li>
+			<li>${t("static.mcp.limitFreshness", "Catalog data follows the 15-minute sync cadence, and clients are told that tool and prompt listings stay valid for seven minutes.")}</li>
+			<li>${t("static.mcp.limitBypass", "Please do not bypass it. This server carries the User-Agent, caching, and rate-limit obligations for upstream Wikimedia traffic; a client that scrapes Toolhub directly instead generates uncredited load on Wikimedia infrastructure.")}</li>
+		</ul>
+		<h2>${t("static.mcp.troubleshootingHeading", "Troubleshooting")}</h2>
+		${mcpTroubleshootingTable()}
+		<h2>${t("static.mcp.skillHeading", "The optional Claude skill")}</h2>
+		<p>${tWithElements("static.mcp.skillBody", "The repository also ships $1, which adds the one thing a prompt cannot do: it fires on its own when someone starts describing a tool idea, instead of waiting for a user who already knows to check. Copy it into your skills directory once the server above is configured; the skill performs no HTTP of its own.", { html: ext("https://github.com/schiste/toolhub-evolved/tree/main/skills/toolhub-discovery", t("static.mcp.skillLink", "a toolhub-discovery skill for Claude")) })}</p>
+		<p>${tWithElements("static.mcp.sourceBody", "The server itself is $1, about 500 lines of Flask that speak the protocol directly.", { html: ext("https://github.com/schiste/toolhub-evolved/blob/main/proxy/backend/mcp_server.py", t("static.mcp.sourceLink", "one module in the Evolved backend")) })}</p>`
 	}),
 	"rules-of-engagement": () => ({
 		title: t("static.rulesOfEngagement.title", "Rules of Engagement"),
@@ -712,8 +946,11 @@ export const STATIC = {
 };
 /** @param {string} slug */
 export function viewStatic(slug) {
+	// Reference pages carry wide data tables; 72ch would break a call signature
+	// like search_tools(query, limit=10) mid-token.
+	const wide = slug === "health-score" || slug === "mcp-server";
 	const p = STATIC[/** @type {keyof typeof STATIC} */ (slug)]?.();
-	return p ? prosePage(p.title, p.body, slug === "health-score" ? "wide" : "") : viewNotFound();
+	return p ? prosePage(p.title, p.body, wide ? "wide" : "") : viewNotFound();
 }
 
 /* ---- Help maintain Toolhub Evolved: the contribution hub ---------------- */
@@ -811,6 +1048,7 @@ export async function viewApiDocs() {
 				${linkCard(icon("code"), t("static.apiDocs.toolinfoSchema", "toolinfo JSON Schema"), t("static.apiDocs.toolinfoSchemaDesc", "Open the official 1.2.2 schema source used for crawled toolinfo.json files."), TOOLINFO_SCHEMA_URL)}
 				${linkCard(icon("tools"), t("static.apiDocs.toolinfoFieldReference", "Toolinfo field reference"), t("static.apiDocs.toolinfoFieldReferenceDesc", "Read the field meanings, core versus annotation boundary, and controlled values."), TOOLINFO_DATA_MODEL_URL)}
 				${proxyCard(icon("globe"), t("static.apiDocs.apiRoot", "API root"), t("static.apiDocs.apiRootDesc", "Browse the proxied endpoint index used by this prototype."), "/api/")}
+				${linkCard(icon("tools"), t("static.apiDocs.mcpServer", "MCP server"), t("static.apiDocs.mcpServerDesc", "Connect an AI assistant to catalog discovery: four read-only tools and a prior-art review prompt."), "/mcp-server", true)}
 			</div>
 			${renderApiExplorer()}
 			<h2 class="contribute__h2">${t("static.apiDocs.toolinfoSchemaHeading", "toolinfo.json schema")}</h2>

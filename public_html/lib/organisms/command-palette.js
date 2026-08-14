@@ -161,6 +161,14 @@ function actions() {
 			keywords: ["api", "schema", "openapi", "docs", "explorer", "curl", "fetch"]
 		},
 		{
+			id: "mcp",
+			title: t("commandPalette.mcp", "MCP server"),
+			description: t("commandPalette.mcpDesc", "Connect an AI assistant to catalog discovery."),
+			href: "/mcp-server",
+			iconName: "code",
+			keywords: ["mcp", "llm", "ai", "claude", "prior art", "discovery", "assistant"]
+		},
+		{
 			id: "developer",
 			title: t("commandPalette.developerSettings", "Developer settings"),
 			description: t("commandPalette.developerSettingsDesc", "Manage Evolved developer features."),

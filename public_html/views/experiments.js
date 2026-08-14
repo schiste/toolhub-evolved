@@ -157,6 +157,23 @@ export const EXPERIMENTS = [
 				need: t("experiments.docsPagesNeed", "Curated GET /api/... explorer plus static documentation pages"),
 				tryHref: "/api-docs",
 				tryLabel: t("experiments.docsPagesTry", "API explorer")
+			},
+			{
+				name: t("experiments.mcpServerName", "MCP discovery server"),
+				what: t(
+					"experiments.mcpServerWhat",
+					"Let an AI assistant check the catalog for prior art before someone builds a tool that already exists."
+				),
+				current: t(
+					"experiments.mcpServerCurrent",
+					"A stateless Model Context Protocol endpoint serves four read-only discovery tools and a prior-art review prompt to any MCP client, with its own documentation page and rate limit."
+				),
+				need: t(
+					"experiments.mcpServerNeed",
+					"Public POST /mcp plus the facet and canonical catalog projections"
+				),
+				tryHref: "/mcp-server",
+				tryLabel: t("experiments.mcpServerTry", "Read the MCP guide")
 			}
 		]
 	},
