@@ -7751,13 +7751,32 @@ def test_me_tools_carries_materialized_summaries_without_queueing_builds(client,
     assert queued == []
 
 
-def test_card_view_drops_the_maintainer_record_but_keeps_the_counts():
-    """Cards render the score and popover; only the detail page reads maintainers."""
+def test_card_view_projects_every_people_identity_and_keeps_the_counts():
+    """Cards receive link identities without receiving full person evidence."""
+    people = [
+        {
+            "id": f"person-{index}",
+            "displayName": f"Person {index}",
+            "profile": {"bio": "large detail-only profile"},
+            "relationships": [
+                {
+                    "type": "maintainer",
+                    "status": "verified",
+                    "confidence": 100,
+                    "evidence": [
+                        {"observedName": f"Handle {name_index}", "evidencePayload": {"large": "private"}}
+                        for name_index in range(10)
+                    ],
+                }
+            ],
+        }
+        for index in range(20)
+    ]
     full = {
         "toolName": "ada-tool",
         "health": {"score": 71, "grade": "good", "sourceHealth": {"repository": {"branch": "main"}}},
         "maintainerDimension": {"status": "verified-maintainer"},
-        "maintainer": {"healthCounts": {"verifiedPeople": 2}, "people": [{"name": "Ada"}] * 20},
+        "maintainer": {"healthCounts": {"verifiedPeople": 2}, "people": people},
     }
     card = tool_summaries.card_view(full)
 
@@ -7767,8 +7786,19 @@ def test_card_view_drops_the_maintainer_record_but_keeps_the_counts():
     assert card["health"]["grade"] == full["health"]["grade"]
     assert card["maintainerDimension"] == full["maintainerDimension"]
     assert card["maintainer"]["healthCounts"] == {"verifiedPeople": 2}
-    # The people list is the bulk of a summary and is detail-page only.
-    assert "people" not in card["maintainer"]
+    assert len(card["maintainer"]["people"]) == len(people)
+    first = card["maintainer"]["people"][0]
+    assert first == {
+        "id": "person-0",
+        "displayName": "Person 0",
+        "relationships": [
+            {
+                "type": "maintainer",
+                "status": "verified",
+                "observedNames": [f"Handle {index}" for index in range(10)],
+            }
+        ],
+    }
     assert len(dumps(card)) < len(dumps(full)) / 2
     # The original is untouched, since it is the cached row's payload.
     assert "people" in full["maintainer"]

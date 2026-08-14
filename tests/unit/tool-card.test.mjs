@@ -219,14 +219,78 @@ test("toolCard uses structured handles only when the catalog supplies one", () =
 });
 
 test("toolCard uses canonical relationship identity in account-owned context", () => {
-	const html = toolCard(
-		{ ...base, accountRelationships: [{ type: "maintainer" }] },
-		{ relationshipPerson: { id: "person-123", displayName: "Schiste" } }
-	);
+	const html = toolCard({
+		...base,
+		accountPerson: { id: "person-123", displayName: "Schiste" },
+		accountRelationships: [{ type: "maintainer", status: "verified" }]
+	});
 	assert.ok(html.includes("Maintained by"));
 	assert.ok(html.includes('href="/people/person-123"'));
 	assert.ok(html.includes(">Schiste</span></a>"));
+	assert.ok(html.includes("/by/Jane%20%26%20Co?context=attribution"));
+});
+
+test("toolCard links every proven author and maintainer from shared relationship evidence", () => {
+	const html = toolCard({
+		...base,
+		authors: ["Catalog alias"],
+		evolvedSummary: {
+			maintainer: {
+				people: [
+					{
+						id: "person-author",
+						displayName: "Canonical Author",
+						relationships: [{ type: "author", status: "unverified", observedNames: ["Catalog alias"] }]
+					},
+					{
+						id: "person-maintainer",
+						displayName: "Toolforge Maintainer",
+						relationships: [{ type: "maintainer", status: "verified", observedNames: [] }]
+					}
+				]
+			}
+		}
+	});
+
+	assert.ok(html.includes('href="/people/person-author"'));
+	assert.ok(html.includes(">Catalog alias</span></a>"));
+	assert.ok(html.includes("Maintained by"));
+	assert.ok(html.includes('href="/people/person-maintainer"'));
+	assert.ok(html.includes("Toolforge Maintainer"));
 	assert.ok(!html.includes("context=attribution"));
+});
+
+test("toolCard never guesses when one attribution label matches multiple people", () => {
+	const html = toolCard({
+		...base,
+		authors: ["Shared label"],
+		relationshipPeople: ["person-one", "person-two"].map((id) => ({
+			id,
+			displayName: id,
+			relationships: [{ type: "author", observedNames: ["Shared label"] }]
+		}))
+	});
+
+	assert.ok(html.includes("/by/Shared%20label?context=attribution"));
+	assert.ok(!html.includes("/people/person-one"));
+	assert.ok(!html.includes("/people/person-two"));
+});
+
+test("toolCard does not repeat one person as both author and maintainer", () => {
+	const html = toolCard({
+		...base,
+		authors: ["Ada"],
+		relationshipPeople: [
+			{
+				id: "person-ada",
+				displayName: "Ada",
+				relationships: [{ type: "author" }, { type: "maintainer", status: "verified" }]
+			}
+		]
+	});
+
+	assert.ok(html.includes('href="/people/person-ada"'));
+	assert.ok(!html.includes("Maintained by"));
 });
 
 test("toolCard renders unknown health as a dash in the metric row", () => {

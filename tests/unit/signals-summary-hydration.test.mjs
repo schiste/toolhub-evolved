@@ -232,7 +232,19 @@ test("cache-first mode does not wait when every summary is already known", async
 });
 
 test("a card summary does not satisfy the detail page", async () => {
-	const CARD = { health: { score: 55 }, maintainer: { counts: { verifiedMaintainers: 1 } } };
+	const CARD = {
+		health: { score: 55 },
+		maintainer: {
+			counts: { verifiedMaintainers: 1 },
+			people: [
+				{
+					id: "person-ada",
+					displayName: "Ada",
+					relationships: [{ type: "maintainer", status: "verified", observedNames: ["Ada"] }]
+				}
+			]
+		}
+	};
 	const FULL = { health: { score: 55 }, maintainer: { counts: { verifiedMaintainers: 1 }, people: ["ada"] } };
 	const calls = [];
 	globalThis.fetch = async (url) => {
@@ -247,7 +259,7 @@ test("a card summary does not satisfy the detail page", async () => {
 	const cardTools = [{ name: "two-view-tool" }];
 	await signals.attachEvolvedSummaries(cardTools, { graceMs: signals.EVOLVED_SUMMARY_GRACE_MS });
 	await settleIdle();
-	assert.equal(cardTools[0].evolvedSummary.maintainer.people, undefined);
+	assert.deepEqual(cardTools[0].evolvedSummary.maintainer.people, CARD.maintainer.people);
 	assert.ok(calls[0].includes("view=card"));
 
 	// The detail page needs the maintainer record, so the card entry — fresh as

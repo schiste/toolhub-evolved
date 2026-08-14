@@ -12,6 +12,7 @@ import {
 } from "../lib/core/api.js";
 import { renderMarkdown } from "../lib/core/markdown.js";
 import { peopleForTool } from "../lib/core/people.js";
+import { personForRelationshipLabel } from "../lib/core/relationship-people.js";
 import { officialWrite, officialWriteAvailable, serverWrite } from "../lib/core/serversync.js";
 import {
 	attachEvolvedSummaries,
@@ -222,23 +223,9 @@ function authorLink(entry) {
 
 /** @param {Tool} t @param {PeopleSummary | null} peopleSummary */
 function authorInlineList(t, peopleSummary) {
-	const authors = Array.isArray(peopleSummary?.people)
-		? peopleSummary.people.filter((person) =>
-				person.relationships?.some((relationship) => relationship.type === "author")
-			)
-		: [];
+	const people = Array.isArray(peopleSummary?.people) ? peopleSummary.people : [];
 	const entries = authorEntries(t).map((entry) => {
-		const key = entry.name.toLocaleLowerCase();
-		const person = authors.find(
-			(candidate) =>
-				candidate.displayName?.toLocaleLowerCase() === key ||
-				candidate.identifiers?.some((identifier) => identifier.value?.toLocaleLowerCase() === key) ||
-				candidate.relationships?.some((relationship) =>
-					relationship.evidence?.some(
-						(/** @type {any} */ evidence) => evidence.observedName?.toLocaleLowerCase() === key
-					)
-				)
-		);
+		const person = personForRelationshipLabel(people, entry.name, "author");
 		return person ? { ...entry, publicId: person.id } : entry;
 	});
 	return entries.map((entry) => authorLink(entry)).join('<span class="toolpage__sep">, </span>');

@@ -24,12 +24,24 @@ interface AccountToolRelationship {
 	type?: "author" | "maintainer";
 	verificationStatus?: string;
 	isVerified?: boolean;
+	status?: string;
 }
 
 /** Stable public person identity attached to account-scoped tool results. */
 interface AccountPerson {
 	id: string;
 	displayName: string;
+}
+
+/** Public identity and relationship subset carried by tool cards. */
+interface RelationshipPerson extends AccountPerson {
+	identifiers?: Array<{ namespace?: string; value?: string }>;
+	relationships: Array<
+		AccountToolRelationship & {
+			observedNames?: string[];
+			evidence?: Array<{ observedName?: string }>;
+		}
+	>;
 }
 
 /** Cached automated discovery state for an owned Toolhub tool. */
@@ -153,6 +165,9 @@ interface Tool {
 	authorVerificationLabel?: string;
 	authorVerificationBadges?: AuthorVerificationBadge[];
 	accountRelationships?: AccountToolRelationship[];
+	accountPerson?: AccountPerson;
+	relationshipPeople?: RelationshipPerson[];
+	personRelationships?: RelationshipPerson["relationships"];
 	toolinfoDiscovery?: ToolinfoDiscovery;
 	toolinfoSource?: ToolinfoSource;
 }

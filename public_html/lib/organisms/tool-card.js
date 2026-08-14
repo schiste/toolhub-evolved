@@ -2,6 +2,7 @@
 import { dirAttrs, esc, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
 import { authorAttributionHref, authorHref, personHref, toolHref } from "../core/routing.js";
+import { peopleForRole, personForRelationshipLabel, relationshipsForRole } from "../core/relationship-people.js";
 import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
 import { toolIcon } from "../atoms/avatar.js";
@@ -27,8 +28,29 @@ function authorNames(tool) {
 		});
 }
 
-/** @param {Tool} tool @param {string} name */
-function authorLink(tool, name) {
+/** @param {Tool} tool @param {any} evolvedSummary */
+function relationshipPeople(tool, evolvedSummary) {
+	const summaryPeople = Array.isArray(evolvedSummary?.maintainer?.people) ? evolvedSummary.maintainer.people : [];
+	const accountPerson = tool.accountPerson?.id
+		? [{ ...tool.accountPerson, relationships: tool.accountRelationships || [] }]
+		: [];
+	const byId = new Map();
+	for (const person of [...summaryPeople, ...(tool.relationshipPeople || []), ...accountPerson]) {
+		if (!person?.id) continue;
+		const previous = byId.get(person.id);
+		byId.set(person.id, {
+			...previous,
+			...person,
+			relationships: [...(previous?.relationships || []), ...(person.relationships || [])]
+		});
+	}
+	return [...byId.values()];
+}
+
+/** @param {Tool} tool @param {string} name @param {any[]} people */
+function authorLink(tool, name, people) {
+	const person = personForRelationshipLabel(people, name, "author");
+	if (person?.id) return personHref(person.id);
 	const record = (tool.authorObjs || []).find(
 		(author) =>
 			String(author?.name || "")
@@ -88,7 +110,7 @@ function singleAuthorByline(tool, evolvedSummary, author) {
 		? t("toolCard.maintainerConfirmed", "$1, confirmed maintainer", maintainer)
 		: t("toolCard.maintainerUnconfirmed", "$1, maintainer not confirmed yet", maintainer);
 	const owner = hasOwner
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorLink(tool, maintainer))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
+		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorLink(tool, maintainer, relationshipPeople(tool, evolvedSummary)))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
 		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">${t("toolCard.by", "by")} ${owner}</div>`;
 }
@@ -97,10 +119,11 @@ function singleAuthorByline(tool, evolvedSummary, author) {
 function authorByline(tool, evolvedSummary) {
 	const names = authorNames(tool);
 	if (names.length <= 1) return singleAuthorByline(tool, evolvedSummary, names[0] || "");
+	const people = relationshipPeople(tool, evolvedSummary);
 	const count = names.length;
 	const compact = compactAuthorNames(names);
 	const links = names
-		.map((name) => `<li><a href="${esc(authorLink(tool, name))}"${dirAttrs(name)}>${esc(name)}</a></li>`)
+		.map((name) => `<li><a href="${esc(authorLink(tool, name, people))}"${dirAttrs(name)}>${esc(name)}</a></li>`)
 		.join("");
 	return `<details class="tcard__authors health-popover" data-route-disclosure="tool-authors:${esc(tool.name)}">
 		<summary class="tcard__authors-summary" aria-label="${esc(t("toolCard.showAllAuthors", "Show all $1 authors", count))}"><span>${t("toolCard.by", "by")} <span class="tcard__authors-text"${dirAttrs(compact)}>${esc(compact)}</span></span></summary>
@@ -108,17 +131,28 @@ function authorByline(tool, evolvedSummary) {
 	</details>`;
 }
 
-/** @param {Tool} tool @param {{id: string, displayName: string}} person */
-function relationshipByline(tool, person) {
-	const roles = new Set(
-		(tool.accountRelationships || []).map(
-			(relationship) => relationship?.requestedRelationship || relationship?.type
-		)
+/** @param {Tool} tool @param {any} evolvedSummary */
+function maintainerByline(tool, evolvedSummary) {
+	const people = relationshipPeople(tool, evolvedSummary);
+	const authorIds = new Set(
+		authorNames(tool)
+			.map((name) => personForRelationshipLabel(people, name, "author")?.id)
+			.filter(Boolean)
 	);
-	const label = roles.has("maintainer")
-		? t("toolCard.maintainedBy", "Maintained by")
-		: t("toolCard.authoredBy", "Authored by");
-	return `<div class="tcard__maint">${label} <a class="tcard__maint-name tcard__maint-name--confirmed" href="${esc(personHref(person.id))}"><span class="tcard__maint-text"${dirAttrs(person.displayName)}>${esc(person.displayName)}</span></a></div>`;
+	const maintainers = peopleForRole(people, "maintainer").filter((person) => !authorIds.has(person.id));
+	if (maintainers.length === 0) return "";
+	const visible = maintainers.slice(0, 2);
+	const links = visible
+		.map((person) => {
+			const name = String(person.displayName || t("toolCard.unknownMaintainer", "Unknown"));
+			const confirmed = relationshipsForRole(person, "maintainer").some(
+				(/** @type {any} */ relationship) => relationship?.status === "verified" || relationship?.isVerified
+			);
+			return `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(personHref(person.id))}"><span class="tcard__maint-text"${dirAttrs(name)}>${esc(name)}</span></a>`;
+		})
+		.join(", ");
+	const remaining = maintainers.length - visible.length;
+	return `<div class="tcard__maint">${t("toolCard.maintainedBy", "Maintained by")} ${links}${remaining > 0 ? ` <span class="tcard__maint-more">+${remaining}</span>` : ""}</div>`;
 }
 
 /** @param {any} summary */
@@ -144,7 +178,7 @@ function healthCornerClass(summary) {
 
 /**
  * @param {Tool} tool
- * @param {{ rank?: number; popular?: boolean; relationshipPerson?: {id: string, displayName: string} }} [opts]
+ * @param {{ rank?: number; popular?: boolean }} [opts]
  * @returns {string}
  */
 export function toolCard(tool, opts = {}) {
@@ -185,6 +219,9 @@ export function toolCard(tool, opts = {}) {
 	const signalLine = `${trustLine ? `<div class="tcard__signal-row tcard__signal-row--trust">${trustLine}</div>` : ""}<div class="tcard__signal-row tcard__signal-row--metrics">${metricLine}</div>`;
 	const favorite = signedIn() ? favBtn(tool.name, { cls: "favbtn--sm favbtn--bare" }) : "";
 	const topRight = `${flag}${updatedTimeTag(tool.modified, "tcard__when")}${favorite}`;
+	const bylines = [authorByline(tool, evolvedSummary), maintainerByline(tool, evolvedSummary)]
+		.filter(Boolean)
+		.join("\n\t\t\t\t");
 	return `
 	<article class="tcard${opts.popular ? " tcard--popular" : ""}${completeClass}${healthCornerClass(evolvedSummary)}" data-tool="${esc(tool.name)}">
 		<div class="tcard__topline">${topLeft}<span class="tcard__topmeta">${topRight}</span></div>
@@ -192,7 +229,7 @@ export function toolCard(tool, opts = {}) {
 			${rank}${toolIcon(tool)}
 			<div class="tcard__heading">
 				<a class="tcard__title" href="${esc(toolHref(tool.name))}"${textAttrs(tool.title, tool.titleLanguage)}>${esc(tool.title)}</a>
-				${opts.relationshipPerson?.id ? relationshipByline(tool, opts.relationshipPerson) : authorByline(tool, evolvedSummary)}
+				${bylines}
 			</div>
 		</div>
 		<p class="tcard__desc"${textAttrs(tool.description, tool.descriptionLanguage)}>${esc(tool.description)}</p>
