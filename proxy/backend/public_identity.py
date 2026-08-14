@@ -199,9 +199,10 @@ class WikimediaIdentityProvider:
                 headers={"User-Agent": toolhub.USER_AGENT, "Accept": "application/json"},
                 timeout=toolhub.REQUEST_TIMEOUT,
             )
-            if response.status_code not in RATE_LIMIT_STATUSES or attempt == RATE_LIMIT_RETRIES:
+            if response.status_code not in RATE_LIMIT_STATUSES:
                 break
-            time.sleep(retry_delay_seconds(response.headers.get("Retry-After")))
+            if attempt < RATE_LIMIT_RETRIES:
+                time.sleep(retry_delay_seconds(response.headers.get("Retry-After")))
         try:
             payload: object = response.json()
         except ValueError:

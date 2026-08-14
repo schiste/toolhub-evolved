@@ -247,3 +247,79 @@ def test_a_rate_limited_response_is_retried_then_given_up_on():
     # A rate-limited lookup resolves nothing rather than inventing an identity.
     assert provider.lookup_username("0xdeadbeef") is None
     assert len(calls) == 1
+
+
+def test_lookups_after_the_first_are_spaced_apart():
+    with db.session_scope() as session:
+        for index in range(3):
+            _label(session, f"handle{index}", tool=f"tool{index}")
+        sleeps = []
+
+        people_reconcile.discover_registry_candidates(
+            session, provider=FakeRegistry({}), sleep=sleeps.append, label_limit=3
+        )
+
+    # The first request goes straight out; every later one waits, so a batch
+    # never becomes a burst against the registry.
+    assert sleeps == [people_reconcile.REGISTRY_MIN_INTERVAL_SECONDS] * 2
+
+
+def test_a_person_that_cannot_be_created_is_counted_as_resolved_only(monkeypatch):
+    with db.session_scope() as session:
+        _label(session, "0xdeadbeef")
+        monkeypatch.setattr(people_index, "ensure_person", lambda *_a, **_k: None)
+
+        result = _discover(session, FakeRegistry({"0xdeadbeef": "777"}))
+
+        # The registry answered, but nothing was recorded, so the label stays
+        # unresolved rather than being counted as progress.
+        assert (result["resolved"], result["peopleCreated"]) == (1, 0)
+
+
+class _Response:
+    def __init__(self, status_code, payload=None, retry_after=None):
+        self.status_code = status_code
+        self._payload = payload
+        self.headers = {"Retry-After": retry_after} if retry_after else {}
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("not json")
+        return self._payload
+
+
+def test_the_real_fetcher_waits_and_retries_when_rate_limited(monkeypatch):
+    from backend import public_identity
+
+    ok = {"query": {"globaluserinfo": {"id": "500", "name": "Ada"}}}
+    responses = [_Response(429, retry_after="0"), _Response(200, ok)]
+    waits = []
+    monkeypatch.setattr(public_identity.requests, "get", lambda *_a, **_k: responses.pop(0))
+    monkeypatch.setattr(public_identity.time, "sleep", waits.append)
+
+    status, payload = public_identity.WikimediaIdentityProvider._fetch_username("Ada")
+
+    # It waited exactly as long as the service asked, then succeeded.
+    assert (status, payload) == (200, ok)
+    assert waits == [0.0]
+
+
+def test_the_real_fetcher_gives_up_after_the_retry_budget(monkeypatch):
+    from backend import public_identity
+
+    monkeypatch.setattr(public_identity.requests, "get", lambda *_a, **_k: _Response(503, retry_after="0"))
+    monkeypatch.setattr(public_identity.time, "sleep", lambda _s: None)
+
+    status, payload = public_identity.WikimediaIdentityProvider._fetch_username("Ada")
+
+    # A persistently unavailable registry yields nothing rather than looping.
+    assert status == 503
+    assert payload is None
+
+
+def test_a_non_json_body_is_treated_as_no_answer(monkeypatch):
+    from backend import public_identity
+
+    monkeypatch.setattr(public_identity.requests, "get", lambda *_a, **_k: _Response(200))
+
+    assert public_identity.WikimediaIdentityProvider._fetch_username("Ada") == (200, None)

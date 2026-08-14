@@ -114,7 +114,7 @@ def normalize_record(item: dict) -> dict | None:
     }
 
 
-def _ingest_items(  # noqa: PLR0913, PLR0917 - signed-toolinfo evidence needs the source URL plus crawl state.
+def _ingest_items(  # noqa: PLR0913 - signed-toolinfo evidence needs the source URL plus crawl state.
     items: list,
     owner_id: int,
     toolinfo_url: str,

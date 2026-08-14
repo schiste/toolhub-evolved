@@ -510,7 +510,7 @@ def bounded_score(value: int) -> int:
     return max(0, min(100, value))
 
 
-def summary_dimension(  # noqa: PLR0913, PLR0917 - explicit fields keep scoring dimensions auditable.
+def summary_dimension(  # noqa: PLR0913 - explicit fields keep scoring dimensions auditable.
     key: str,
     label: str,
     score: int | None,
