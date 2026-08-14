@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: toolhub-digests -->
 <!-- Release title: Toolhub Digests -->
-<!-- Source range: 0cd2a68..0f74dde (10 commits) -->
+<!-- Source range: 0cd2a68..3875263 (11 commits) -->
 
 # Technical Release Notes
 
@@ -14,3 +14,4 @@
 - Schedules publication at 06:15 UTC, delivery every five minutes, and an hourly audit. Job locks reclaim at twice each timeout; audit failures cover missing configuration, recent Qwen fallback, overdue generation, Meta/archive failure, exhausted delivery, and stale validated or queued work.
 - Supports operator-selected historical editions through an internal website-only publication state. These rows are visible to the local archive/detail API but remain excluded from Meta publication, RSS selection, and subscriber outbox creation; no preview workflow or automatic historical selector is exposed.
 - Normalizes a Qwen highlight's exact supplied title to the canonical tool id only when the frozen fact set contains one unique match; ambiguous or invented identifiers remain validation failures. Evidence accepts exact full-field values or whitespace-normalized verbatim excerpts of at least 24 characters, while paraphrases and trivial fragments remain fail-closed.
+- Freezes canonical author labels and publishable resolved author/maintainer identities into each edition, exposes only grounded name arrays to Qwen, and renders Toolhub, direct-tool, author-index, and stable person links deterministically across HTML, wikitext, RSS content, email, and talk-page output. Unsafe URL schemes and non-publishable identities are excluded.
