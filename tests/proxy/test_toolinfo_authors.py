@@ -73,6 +73,23 @@ def test_legacy_delimited_values_keep_their_lower_trust_flag():
     assert all(row.legacy_delimited for row in assertions)
 
 
+def test_structured_entry_with_no_usable_name_contributes_no_assertion():
+    # No name, developer_username, or wiki_username leaves display empty, so
+    # the loop must skip straight to the next author entry.
+    assertions = toolinfo_authors.author_assertions(
+        {"author": [{"unrelated": "field"}, {"name": "Ada"}]}
+    )
+    assert [row.display_name for row in assertions] == ["Ada"]
+
+
+def test_repeated_plain_author_values_are_deduplicated():
+    # Two independent list entries that resolve to the same identity key
+    # exercise the final assertion-level dedupe, distinct from the wiki-link
+    # dedupe already covered by the repeated-link test above.
+    assertions = toolinfo_authors.author_assertions({"author": ["Ada", "Ada"]})
+    assert [row.display_name for row in assertions] == ["Ada"]
+
+
 def test_a_linked_value_still_counts_as_a_listed_author():
     # Catalog statistics count listed authors from this function, so link
     # parsing must never empty a record that previously had an attribution.

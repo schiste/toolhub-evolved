@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +27,23 @@ except ImportError:  # pragma: no cover - local tests do not require ldap3.
 
 
 CENTRALAUTH_API_URL = "https://meta.wikimedia.org/w/api.php"
+# Wikimedia's published backpressure mechanisms: decline the request when
+# replication is lagging, and obey an explicit wait when asked.
+MAX_LAG_SECONDS = 5
+RATE_LIMIT_STATUSES = frozenset({429, 503})
+RATE_LIMIT_RETRIES = 2
+MAX_RETRY_DELAY_SECONDS = 30.0
+DEFAULT_RETRY_DELAY_SECONDS = 1.0
+
+
+def retry_delay_seconds(header: str | None) -> float:
+    """Return how long a Retry-After header asks us to wait, within bounds."""
+    try:
+        return min(MAX_RETRY_DELAY_SECONDS, max(0.0, float(header)))
+    except (TypeError, ValueError):
+        return DEFAULT_RETRY_DELAY_SECONDS
+
+
 TOOLFORGE_LDAP_URI = "ldaps://ldap-ro.eqiad.wikimedia.org:636"
 TOOLFORGE_LDAP_BASE_DN = "ou=people,dc=wikimedia,dc=org"
 TOOLFORGE_LDAP_TIMEOUT = 5
@@ -158,18 +176,32 @@ class WikimediaIdentityProvider:
 
     @staticmethod
     def _fetch_username(username: str) -> tuple[int, object]:
-        response = requests.get(
-            CENTRALAUTH_API_URL,
-            params={
-                "action": "query",
-                "meta": "globaluserinfo",
-                "guiuser": username,
-                "format": "json",
-                "formatversion": 2,
-            },
-            headers={"User-Agent": toolhub.USER_AGENT, "Accept": "application/json"},
-            timeout=toolhub.REQUEST_TIMEOUT,
-        )
+        """Ask CentralAuth about one username, yielding when it asks us to.
+
+        A fixed delay between requests is a guess about how much load is
+        acceptable. These are the mechanisms Wikimedia actually publishes:
+        ``maxlag`` declines the request when replication is behind, and a
+        429/503 with ``Retry-After`` says how long to wait. Honouring both is
+        what makes a faster steady rate reasonable, because the service can
+        always push back and be obeyed.
+        """
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            response = requests.get(
+                CENTRALAUTH_API_URL,
+                params={
+                    "action": "query",
+                    "meta": "globaluserinfo",
+                    "guiuser": username,
+                    "maxlag": MAX_LAG_SECONDS,
+                    "format": "json",
+                    "formatversion": 2,
+                },
+                headers={"User-Agent": toolhub.USER_AGENT, "Accept": "application/json"},
+                timeout=toolhub.REQUEST_TIMEOUT,
+            )
+            if response.status_code not in RATE_LIMIT_STATUSES or attempt == RATE_LIMIT_RETRIES:
+                break
+            time.sleep(retry_delay_seconds(response.headers.get("Retry-After")))
         try:
             payload: object = response.json()
         except ValueError:

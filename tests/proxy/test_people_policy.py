@@ -65,6 +65,14 @@ def test_relationship_basis_does_not_turn_membership_into_authorship():
     assert people_policy.relationship_basis("author", "toolhub_author_metadata") == "authorship_attribution"
 
 
+def test_relationship_basis_covers_catalog_actor_and_the_generic_fallback():
+    # An unknown method falls through to the role-based basis: catalog_actor
+    # gets its own label, and every other role falls back to a generic one
+    # rather than silently inheriting authorship or maintainer wording.
+    assert people_policy.relationship_basis("catalog_actor", "some_unmapped_method") == "catalog_activity"
+    assert people_policy.relationship_basis("record_owner", "some_unmapped_method") == "relationship_observation"
+
+
 def test_viewer_action_audience_requires_current_verified_tool_authority():
     now = utcnow()
     assert (

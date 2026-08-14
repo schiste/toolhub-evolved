@@ -21,6 +21,12 @@ ignore = [
   "ISC001"
 ]
 
+# This repo deliberately uses bare SPDX license tags, not per-file copyright
+# notices (see LICENSE for the license text). Point CPY001 at that convention
+# so it enforces the header every file actually carries.
+[tool.ruff.lint.flake8-copyright]
+notice-rgx = 'SPDX-License-Identifier: GPL-3\.0-or-later'
+
 [tool.ruff.format]
 line-ending = "lf"
 
@@ -33,15 +39,17 @@ branch = true
 # 100%: `npm run coverage:proxy` (and the CI step of the same name) reports
 # app.py and crawl.py alone with --fail-under=100.
 #
-# This number covers the whole measured tree, which is a different thing. When
-# the rule was written, `source` was effectively the proxy; the /v1 backend
-# added ~9,900 statements to it later without the threshold being revisited, so
-# the gate had been failing rather than protecting anything. 100% across a
-# backend that size is not a bar anyone was holding.
+# This number covers the whole measured tree, which is a different thing. It
+# started life as a ratchet well below 100 while the /v1 backend caught up;
+# since 2026-08 the whole tree (statements AND branches) is held at a literal
+# 100%, so the app.py/crawl.py step above is now a belt-and-suspenders check
+# rather than a stricter bar.
 #
-# So this is a RATCHET on the whole tree: it may be raised, never lowered.
-# Raise it in the same commit that adds the tests.
-fail_under = 91.7
+# This is a RATCHET: it may never be lowered. New code lands with the tests
+# that cover it, in the same commit. The handful of genuinely unreachable
+# defensive branches are exercised directly (see the *_gaps / helper-level
+# tests) or carry an explicit `# pragma: no cover`.
+fail_under = 100
 precision = 2
 show_missing = true
 exclude_also = ["if __name__ == .__main__.:"]

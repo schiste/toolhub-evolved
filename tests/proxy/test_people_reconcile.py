@@ -4,13 +4,16 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import db, maintainer_index, people_index, people_reconcile, sync  # noqa: E402
+from backend import db, identity_graph, maintainer_index, people_index, people_policy, people_reconcile, sync  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
     Person,
+    PersonAccountBinding,
     PersonIdentifier,
     PersonReconciliationConflict,
     PersonReconciliationMapping,
@@ -797,3 +800,887 @@ def test_conflicting_toolforge_uid_number_never_overwrites_a_stable_person():
         assert summary["stableIdentityConflicts"] == 0
         assert s.query(PersonReconciliationMapping).count() == 0
         assert account_person.id != toolforge_person.id
+
+
+def test_enqueue_ignores_blank_tool_names():
+    _configure()
+    assert people_reconcile.enqueue_tool_names(["", "   "], reason="data_ingestion") == 0
+    with db.session_scope() as s:
+        assert s.query(PersonReconciliationQueue).count() == 0
+
+
+def test_enqueue_refreshes_an_existing_queue_row_and_clears_retry_state():
+    _configure()
+    assert people_reconcile.enqueue_tool_names(["stuck-tool"], reason="data_ingestion") == 1
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationQueue, "stuck-tool")
+        row.next_attempt_at = utcnow()
+        row.last_error = "previous failure"
+        row.attempts = 3
+
+    assert people_reconcile.enqueue_tool_names(["stuck-tool"], reason="canonical_fetch") == 1
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationQueue, "stuck-tool")
+        assert row.reason == "canonical_fetch"
+        assert row.next_attempt_at is None
+        assert row.last_error is None
+
+
+def test_move_mapping_evidence_returns_empty_set_without_both_person_ids():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id, source_person_id=None, target_person_id=None, decision=people_reconcile.MAPPING_CANDIDATE
+        )
+        s.add(mapping)
+        s.flush()
+
+        assert people_reconcile._move_mapping_evidence(s, mapping) == set()  # noqa: SLF001
+
+
+def test_apply_mapping_merges_evidence_into_a_higher_confidence_duplicate():
+    _configure()
+    with db.session_scope() as s:
+        target = people_index.ensure_person(s, display_name="Target Stable", toolhub_user_id="900")
+        source = people_index.ensure_person(
+            s, display_name="Source Alias", toolforge_username="source-alias", source="toolforge_toolsadmin"
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="dup-tool",
+                person_id=target.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                source="toolhub_author_metadata",
+                method="author_display_name",
+                evidence_key="k1",
+                confidence=50,
+                verification_status=sync.AUTHOR_CLAIM_UNVERIFIED,
+            )
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="dup-tool",
+                person_id=source.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                source="toolhub_author_metadata",
+                method="author_display_name",
+                evidence_key="k1",
+                confidence=90,
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+                evidence_url="https://example.org/proof",
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=source.id,
+            target_person_id=target.id,
+            decision=people_reconcile.MAPPING_APPROVED,
+        )
+        s.add(mapping)
+        s.flush()
+
+        affected = people_reconcile.apply_mapping(s, mapping)
+
+        assert affected == 1
+        remaining = s.query(ToolRelationshipEvidence).filter_by(tool_name="dup-tool").all()
+        assert len(remaining) == 1
+        merged = remaining[0]
+        assert merged.person_id == target.id
+        assert merged.confidence == 90
+        assert merged.verification_status == sync.AUTHOR_CLAIM_VERIFIED
+        assert merged.evidence_url == "https://example.org/proof"
+
+
+def test_apply_mapping_noop_for_non_applied_decision():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id, source_person_id=1, target_person_id=2, decision=people_reconcile.MAPPING_CANDIDATE
+        )
+        s.add(mapping)
+        s.flush()
+
+        assert people_reconcile.apply_mapping(s, mapping) == 0
+
+
+def test_apply_mapping_requires_source_and_target_ids():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=None,
+            target_person_id=None,
+            decision=people_reconcile.MAPPING_APPROVED,
+        )
+        s.add(mapping)
+        s.flush()
+
+        with pytest.raises(people_reconcile.PersonReconciliationError, match="must name source and target"):
+            people_reconcile.apply_mapping(s, mapping)
+
+
+def test_apply_mapping_rejects_matching_source_and_target():
+    _configure()
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Solo")
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=person.id,
+            target_person_id=person.id,
+            decision=people_reconcile.MAPPING_APPROVED,
+        )
+        s.add(mapping)
+        s.flush()
+
+        with pytest.raises(people_reconcile.PersonReconciliationError, match="must differ"):
+            people_reconcile.apply_mapping(s, mapping)
+
+
+def test_apply_mapping_requires_target_with_stable_identity():
+    _configure()
+    with db.session_scope() as s:
+        source = people_index.ensure_person(s, display_name="Src")
+        target = people_index.ensure_person(s, display_name="Tgt Unstable")
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=source.id,
+            target_person_id=target.id,
+            decision=people_reconcile.MAPPING_APPROVED,
+        )
+        s.add(mapping)
+        s.flush()
+
+        with pytest.raises(people_reconcile.PersonReconciliationError, match="stable identity evidence"):
+            people_reconcile.apply_mapping(s, mapping)
+
+
+def test_apply_mapping_refuses_when_source_gained_stable_identity():
+    _configure()
+    with db.session_scope() as s:
+        target = people_index.ensure_person(s, display_name="Tgt Stable", toolhub_user_id="777")
+        source = people_index.ensure_person(s, display_name="Src Now Stable", wikimedia_global_user_id="778")
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=source.id,
+            target_person_id=target.id,
+            decision=people_reconcile.MAPPING_APPROVED,
+        )
+        s.add(mapping)
+        s.flush()
+
+        with pytest.raises(people_reconcile.PersonReconciliationError, match="conflict review"):
+            people_reconcile.apply_mapping(s, mapping)
+
+
+def test_process_queue_skips_a_row_removed_before_its_turn(monkeypatch):
+    _configure()
+    people_reconcile.enqueue_tool_names(["a", "b"])
+    original = people_reconcile._reconcile_tool  # noqa: SLF001
+
+    def fake(s, name, *, retired=False):
+        if name == "a":
+            s.query(PersonReconciliationQueue).filter_by(tool_name="b").delete()
+            return
+        original(s, name, retired=retired)
+
+    monkeypatch.setattr(people_reconcile, "_reconcile_tool", fake)
+
+    summary = people_reconcile.process_queue(limit=2)
+
+    assert summary == {"claimed": 2, "processed": 1, "failed": 0}
+    with db.session_scope() as s:
+        assert s.get(PersonReconciliationQueue, "a") is None
+        assert s.get(PersonReconciliationQueue, "b") is None
+
+
+def test_process_queue_records_failure_and_schedules_a_retry(monkeypatch):
+    _configure()
+    people_reconcile.enqueue_tool_names(["boom"])
+
+    def raiser(s, name, *, retired=False):
+        raise RuntimeError("boom failure")
+
+    monkeypatch.setattr(people_reconcile, "_reconcile_tool", raiser)
+
+    summary = people_reconcile.process_queue(limit=1)
+
+    assert summary == {"claimed": 1, "processed": 0, "failed": 1}
+    with db.session_scope() as s:
+        row = s.get(PersonReconciliationQueue, "boom")
+        assert row is not None
+        assert row.attempts == 1
+        assert row.next_attempt_at is not None
+        assert row.last_error == "boom failure"
+
+
+def test_drain_queue_stops_after_max_batches_without_an_empty_claim():
+    _configure()
+    people_reconcile.enqueue_tool_names(["only-tool"])
+
+    summary = people_reconcile.drain_queue(max_batches=1)
+
+    assert summary == {"claimed": 1, "processed": 1, "failed": 0, "batches": 1}
+    with db.session_scope() as s:
+        assert s.get(PersonReconciliationQueue, "only-tool") is None
+
+
+def test_recent_candidate_without_structured_evidence_is_not_yet_due():
+    _configure()
+    with db.session_scope() as s:
+        person = Person(
+            canonical_key="display:no-handle-yet", display_name="No Handle Yet", identity_quality="display_name"
+        )
+        s.add(person)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="quiet-tool", person_id=person.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        mapping = PersonReconciliationMapping(
+            run_id=run.id,
+            source_person_id=person.id,
+            decision=people_reconcile.MAPPING_CANDIDATE,
+            evidence={},
+        )
+        s.add(mapping)
+        s.flush()
+
+        due_ids = [p.id for p in people_reconcile._candidate_source_people(s)]  # noqa: SLF001
+
+        assert person.id not in due_ids
+
+
+def test_source_evidence_for_person_collects_toolforge_tool_names():
+    _configure()
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Direct Evidence Person")
+        s.add(
+            ToolPersonRelationship(
+                tool_name="direct-tool", person_id=person.id, relationship_type=sync.PERSON_REL_MAINTAINER
+            )
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="direct-tool",
+                person_id=person.id,
+                relationship_type=sync.PERSON_REL_MAINTAINER,
+                source=maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+                method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                evidence_key="k1",
+                evidence_payload={"toolforgeToolName": "glamtools"},
+            )
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="direct-tool",
+                person_id=person.id,
+                relationship_type=sync.PERSON_REL_MAINTAINER,
+                source=maintainer_index.SOURCE_TOOLFORGE_TOOLSADMIN,
+                method=sync.AUTHOR_CLAIM_TOOLFORGE_MAINTAINER,
+                evidence_key="k2",
+                evidence_payload={"profileUsername": ""},
+            )
+        )
+        s.flush()
+
+        tool_names, toolforge_names, roles = people_reconcile._source_evidence_for_person(s, person.id)  # noqa: SLF001
+
+        assert tool_names == ["direct-tool"]
+        assert toolforge_names == ["glamtools"]
+        assert roles == [sync.PERSON_REL_MAINTAINER]
+
+
+def test_membership_aliases_skips_blank_names():
+    aliases = people_reconcile._membership_aliases(["", "   ", "Toolforge-Foo"])  # noqa: SLF001
+
+    assert aliases == {"toolforge-foo", "foo"}
+
+
+def test_stable_identifier_owner_ignores_blank_values():
+    _configure()
+    with db.session_scope() as s:
+        assert people_reconcile._stable_identifier_owner(s, people_index.NS_TOOLHUB_USER_ID, "") is None  # noqa: SLF001
+
+
+def test_verified_wikimedia_handle_ignores_blank_canonical_username():
+    _configure()
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Someone")
+        assert people_reconcile._verified_wikimedia_handle(s, person.id, "") == ""  # noqa: SLF001
+
+
+def test_record_stable_identity_conflict_creates_and_reuses_pending_row():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        toolhub_person = people_index.ensure_person(s, display_name="Toolhub Owner", toolhub_user_id="1")
+        wikimedia_person = people_index.ensure_person(s, display_name="Wikimedia Owner", wikimedia_global_user_id="2")
+        account = ToolhubAccountProjection(
+            toolhub_user_id="1",
+            username="Someone",
+            normalized_username="someone",
+            wikimedia_global_user_id="2",
+        )
+        s.add(account)
+        s.flush()
+
+        assert people_reconcile._record_stable_identity_conflict(s, run.id, account) is True  # noqa: SLF001
+        conflict = s.query(PersonReconciliationConflict).one()
+        assert conflict.details["toolhubPersonId"] == toolhub_person.public_id
+        assert conflict.details["wikimediaPersonId"] == wikimedia_person.public_id
+        assert "toolforgePersonId" not in conflict.details
+
+        assert people_reconcile._record_stable_identity_conflict(s, run.id, account) is True  # noqa: SLF001
+        assert s.query(PersonReconciliationConflict).count() == 1
+
+
+def test_record_stable_identity_conflict_covers_the_toolforge_owner():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        wikimedia_person = people_index.ensure_person(
+            s, display_name="Wikimedia Owner Two", wikimedia_global_user_id="20"
+        )
+        toolforge_person = people_index.ensure_person(
+            s, display_name="Toolforge Owner", toolforge_uid_number="30", toolforge_username="toolforge-owner"
+        )
+        account = ToolhubAccountProjection(
+            toolhub_user_id="99",
+            username="Nobody Local",
+            normalized_username="nobody local",
+            wikimedia_global_user_id="20",
+        )
+        s.add(account)
+        s.flush()
+
+        created = people_reconcile._record_stable_identity_conflict(  # noqa: SLF001
+            s, run.id, account, toolforge_uid_number="30"
+        )
+
+        assert created is True
+        conflict = s.query(PersonReconciliationConflict).one()
+        assert "toolhubPersonId" not in conflict.details
+        assert conflict.details["wikimediaPersonId"] == wikimedia_person.public_id
+        assert conflict.details["toolforgePersonId"] == toolforge_person.public_id
+
+
+def test_record_stable_identity_conflict_without_a_wikimedia_owner():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        toolhub_person = people_index.ensure_person(s, display_name="Toolhub Only Owner", toolhub_user_id="40")
+        toolforge_person = people_index.ensure_person(
+            s, display_name="Toolforge Only Owner", toolforge_uid_number="41", toolforge_username="toolforge-only"
+        )
+        account = ToolhubAccountProjection(
+            toolhub_user_id="40", username="No Wikimedia", normalized_username="no wikimedia"
+        )
+        s.add(account)
+        s.flush()
+
+        created = people_reconcile._record_stable_identity_conflict(  # noqa: SLF001
+            s, run.id, account, toolforge_uid_number="41"
+        )
+
+        assert created is True
+        conflict = s.query(PersonReconciliationConflict).one()
+        assert conflict.details["toolhubPersonId"] == toolhub_person.public_id
+        assert "wikimediaPersonId" not in conflict.details
+        assert conflict.details["toolforgePersonId"] == toolforge_person.public_id
+
+
+def test_process_queue_records_failure_even_when_the_row_vanishes_mid_flight(monkeypatch):
+    _configure()
+    people_reconcile.enqueue_tool_names(["vanish"])
+
+    def raiser(s, name, *, retired=False):
+        s.query(PersonReconciliationQueue).filter_by(tool_name=name).delete()
+        s.commit()
+        raise RuntimeError("vanished mid-flight")
+
+    monkeypatch.setattr(people_reconcile, "_reconcile_tool", raiser)
+
+    summary = people_reconcile.process_queue(limit=1)
+
+    assert summary == {"claimed": 1, "processed": 0, "failed": 1}
+    with db.session_scope() as s:
+        assert s.get(PersonReconciliationQueue, "vanish") is None
+
+
+def test_record_account_binding_conflicts_updates_an_existing_pending_row():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        person = people_index.ensure_person(s, display_name="Conflicted Account Holder")
+        binding = PersonAccountBinding(
+            provider="wikimedia",
+            external_id="900",
+            person_id=person.id,
+            status=identity_graph.STATUS_CONFLICT,
+            proof_method="toolforge_ldap_wikimedia_global_id",
+            evidence={"note": "first"},
+        )
+        s.add(binding)
+        s.flush()
+
+        assert people_reconcile._record_account_binding_conflicts(s, run.id) == 1  # noqa: SLF001
+        conflict = s.query(PersonReconciliationConflict).one()
+        assert conflict.value == "wikimedia:900"
+
+        binding.evidence = {"note": "second"}
+        s.flush()
+
+        assert people_reconcile._record_account_binding_conflicts(s, run.id) == 1  # noqa: SLF001
+        assert s.query(PersonReconciliationConflict).count() == 1
+        assert conflict.details["evidence"]["note"] == "second"
+
+
+def test_candidate_account_groups_skips_labels_without_an_exact_account():
+    _configure()
+    with db.session_scope() as s:
+        matched = Person(canonical_key="display:known", display_name="Known", identity_quality="display_name")
+        unmatched = Person(
+            canonical_key="display:mystery", display_name="Mystery Person", identity_quality="display_name"
+        )
+        s.add_all(
+            [
+                matched,
+                unmatched,
+                ToolhubAccountProjection(toolhub_user_id="5", username="Known", normalized_username="known"),
+            ]
+        )
+        s.flush()
+
+        groups = people_reconcile._candidate_account_groups(s, [matched, unmatched])  # noqa: SLF001
+
+        assert [account.username for account, _sources in groups] == ["Known"]
+
+
+def test_registry_corroborated_requires_tool_names_and_verified_evidence():
+    _configure()
+    with db.session_scope() as s:
+        target = people_index.ensure_person(s, display_name="Target Person")
+
+        assert (
+            people_reconcile._registry_corroborated(s, target_person_id=target.id, tool_names=[]) is False  # noqa: SLF001
+        )
+        assert (
+            people_reconcile._registry_corroborated(  # noqa: SLF001
+                s, target_person_id=target.id, tool_names=["some-tool"]
+            )
+            is False
+        )
+
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="some-tool",
+                person_id=target.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                source="toolhub_author_metadata",
+                method="author_display_name",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+            )
+        )
+        s.flush()
+
+        assert (
+            people_reconcile._registry_corroborated(  # noqa: SLF001
+                s, target_person_id=target.id, tool_names=["some-tool"]
+            )
+            is True
+        )
+
+
+def test_upsert_mapping_reuses_an_existing_mapping_row():
+    _configure()
+    with db.session_scope() as s:
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        source = people_index.ensure_person(s, display_name="Reused Source")
+        target1 = people_index.ensure_person(s, display_name="Target One", toolhub_user_id="10")
+        target2 = people_index.ensure_person(s, display_name="Target Two", toolhub_user_id="11")
+        decision = people_policy.decide_identity_link(registry_handle=True)
+
+        mapping, created = people_reconcile._upsert_mapping(  # noqa: SLF001
+            s, run_id=run.id, source=source, target=target1, decision=decision, evidence={"round": 1}
+        )
+        assert created is True
+        assert s.query(PersonReconciliationMapping).count() == 1
+
+        mapping_again, created_again = people_reconcile._upsert_mapping(  # noqa: SLF001
+            s, run_id=run.id, source=source, target=target2, decision=decision, evidence={"round": 2}
+        )
+        assert created_again is False
+        assert mapping_again.id == mapping.id
+        assert mapping_again.target_person_id == target2.id
+        assert s.query(PersonReconciliationMapping).count() == 1
+
+
+def test_registry_candidates_create_new_person_for_a_handle_shaped_label():
+    _configure()
+    with db.session_scope() as s:
+        source = Person(
+            canonical_key="display:magnus-manske-99", display_name="MagnusManske99", identity_quality="display_name"
+        )
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="handle-tool", person_id=source.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        provider = WikimediaIdentityProvider(
+            username_fetcher=lambda username: (200, {"query": {"globaluserinfo": {"id": "500", "name": username}}})
+        )
+        sleeps = []
+
+        result = people_reconcile.discover_registry_candidates(
+            s, run_id=run.id, provider=provider, label_limit=5, sleep=sleeps.append
+        )
+
+        assert result == {"checked": 1, "resolved": 1, "peopleCreated": 1, "created": 1, "linked": 0}
+        assert sleeps == []
+        mapping = s.query(PersonReconciliationMapping).one()
+        assert mapping.decision == "candidate"
+        assert mapping.source_person_id == source.id
+        target = s.get(Person, mapping.target_person_id)
+        assert target.id != source.id
+        assert target.display_name == "MagnusManske99"
+
+
+def test_registry_candidates_space_out_lookups_after_the_first():
+    _configure()
+    with db.session_scope() as s:
+        for name in ("HandleAlpha", "HandleBeta"):
+            person = Person(canonical_key=f"display:{name.lower()}", display_name=name, identity_quality="display_name")
+            s.add(person)
+            s.flush()
+            s.add(
+                ToolPersonRelationship(
+                    tool_name=f"tool-{name.lower()}", person_id=person.id, relationship_type=sync.PERSON_REL_AUTHOR
+                )
+            )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        provider = WikimediaIdentityProvider(
+            username_fetcher=lambda username: (
+                200,
+                {"query": {"globaluserinfo": {"id": f"id-{username}", "name": username}}},
+            )
+        )
+        sleeps = []
+
+        result = people_reconcile.discover_registry_candidates(s, run_id=run.id, provider=provider, sleep=sleeps.append)
+
+        assert result["checked"] == 2
+        assert result["created"] == 2
+        assert sleeps == [people_reconcile.REGISTRY_MIN_INTERVAL_SECONDS]
+
+
+def test_registry_candidate_skips_an_unresolvable_handle():
+    _configure()
+    with db.session_scope() as s:
+        person = Person(
+            canonical_key="display:no-such-account", display_name="NoSuchAccount", identity_quality="display_name"
+        )
+        s.add(person)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="handle-tool", person_id=person.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        provider = WikimediaIdentityProvider(username_fetcher=lambda _username: (404, {}))
+
+        result = people_reconcile.discover_registry_candidates(
+            s, run_id=run.id, provider=provider, sleep=lambda _n: None
+        )
+
+        assert result == {"checked": 1, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
+        assert s.query(PersonReconciliationMapping).count() == 0
+
+
+def test_registry_candidate_matches_an_existing_wikimedia_identity_without_creating_a_person():
+    _configure()
+    with db.session_scope() as s:
+        existing_target = people_index.ensure_person(
+            s, display_name="Already Known", wikimedia_global_user_id="321"
+        )
+        source = Person(
+            canonical_key="display:already-known-handle",
+            display_name="AlreadyKnownHandle",
+            identity_quality="display_name",
+        )
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="handle-tool", person_id=source.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        provider = WikimediaIdentityProvider(
+            username_fetcher=lambda _username: (
+                200,
+                {"query": {"globaluserinfo": {"id": "321", "name": "Already Known"}}},
+            )
+        )
+
+        result = people_reconcile.discover_registry_candidates(
+            s, run_id=run.id, provider=provider, sleep=lambda _n: None
+        )
+
+        assert result["peopleCreated"] == 0
+        assert result["created"] == 1
+        mapping = s.query(PersonReconciliationMapping).one()
+        assert mapping.target_person_id == existing_target.id
+
+
+def test_registry_candidate_auto_links_when_target_has_corroborating_evidence():
+    _configure()
+    with db.session_scope() as s:
+        target = people_index.ensure_person(s, display_name="Verified Target", wikimedia_global_user_id="654")
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="shared-tool",
+                person_id=target.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                source="toolhub_author_metadata",
+                method="author_display_name",
+                verification_status=sync.AUTHOR_CLAIM_VERIFIED,
+            )
+        )
+        source = Person(
+            canonical_key="display:verified-target-handle",
+            display_name="VerifiedTargetHandle",
+            identity_quality="display_name",
+        )
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="shared-tool", person_id=source.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        provider = WikimediaIdentityProvider(
+            username_fetcher=lambda _username: (
+                200,
+                {"query": {"globaluserinfo": {"id": "654", "name": "Verified Target"}}},
+            )
+        )
+
+        result = people_reconcile.discover_registry_candidates(
+            s, run_id=run.id, provider=provider, sleep=lambda _n: None
+        )
+
+        assert result["linked"] == 1
+        mapping = s.query(PersonReconciliationMapping).one()
+        assert mapping.decision == "auto_link"
+
+
+def test_registry_candidate_skips_when_ensure_person_yields_no_target(monkeypatch):
+    _configure()
+    with db.session_scope() as s:
+        person = Person(
+            canonical_key="display:ghost-handle", display_name="GhostHandle", identity_quality="display_name"
+        )
+        s.add(person)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="handle-tool", person_id=person.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.flush()
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        provider = WikimediaIdentityProvider(
+            username_fetcher=lambda username: (200, {"query": {"globaluserinfo": {"id": "777", "name": username}}})
+        )
+        monkeypatch.setattr(people_index, "ensure_person", lambda *_a, **_k: None)
+
+        result = people_reconcile.discover_registry_candidates(
+            s, run_id=run.id, provider=provider, sleep=lambda _n: None
+        )
+
+        assert result == {"checked": 1, "resolved": 1, "peopleCreated": 0, "created": 0, "linked": 0}
+        assert s.query(PersonReconciliationMapping).count() == 0
+
+
+def test_discover_identity_candidates_records_conflict_and_skips_the_source():
+    _configure()
+    with db.session_scope() as s:
+        toolhub_person = people_index.ensure_person(s, display_name="Toolhub Stable", toolhub_user_id="700")
+        wikimedia_person = people_index.ensure_person(
+            s, display_name="Wikimedia Stable", wikimedia_global_user_id="701"
+        )
+        source = Person(
+            canonical_key="display:conflicted", display_name="Conflicted Label", identity_quality="display_name"
+        )
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="conflict-tool", person_id=source.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="conflict-tool",
+                person_id=source.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                source="toolhub_author_metadata",
+            )
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="700",
+                username="Conflicted Label",
+                normalized_username="conflicted label",
+                wikimedia_global_user_id="701",
+            )
+        )
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        resolver = PublicIdentityResolver(
+            wikimedia=WikimediaIdentityProvider(
+                fetcher=lambda _id: (200, {"query": {"globaluserinfo": {"id": "701", "name": "Conflicted Label"}}})
+            ),
+            toolforge=ToolforgeIdentityProvider(
+                lookup=lambda _u: [
+                    {
+                        "uid": ["cl"],
+                        "uidNumber": ["9999"],
+                        "wikimediaGlobalAccountId": ["701"],
+                        "wikimediaGlobalAccountName": ["Conflicted Label"],
+                        "memberOf": [],
+                    }
+                ]
+            ),
+        )
+
+        result = people_reconcile.discover_identity_candidates(s, run_id=run.id, identity_resolver=resolver)
+
+        assert result["conflicts"] == 1
+        assert result["created"] == 0
+        assert s.query(PersonReconciliationMapping).count() == 0
+        assert toolhub_person.id != wikimedia_person.id
+
+
+def test_discover_identity_candidates_counts_conflict_when_account_person_is_refused(monkeypatch):
+    _configure()
+    with db.session_scope() as s:
+        source = Person(
+            canonical_key="display:refused", display_name="Refused Label", identity_quality="display_name"
+        )
+        s.add(source)
+        s.flush()
+        s.add(
+            ToolPersonRelationship(
+                tool_name="refused-tool", person_id=source.id, relationship_type=sync.PERSON_REL_AUTHOR
+            )
+        )
+        s.add(
+            ToolRelationshipEvidence(
+                tool_name="refused-tool",
+                person_id=source.id,
+                relationship_type=sync.PERSON_REL_AUTHOR,
+                source="toolhub_author_metadata",
+            )
+        )
+        s.add(
+            ToolhubAccountProjection(
+                toolhub_user_id="800", username="Refused Label", normalized_username="refused label"
+            )
+        )
+        run = PersonReconciliationRun(mode="apply", status="completed")
+        s.add(run)
+        s.flush()
+        monkeypatch.setattr(people_index, "ensure_official_account_person", lambda *_a, **_k: None)
+
+        result = people_reconcile.discover_identity_candidates(
+            s, run_id=run.id, identity_resolver=_identity_resolver()
+        )
+
+        assert result["conflicts"] == 1
+        assert result["created"] == 0
+
+
+def test_run_rejects_an_unknown_mode():
+    _configure()
+    with db.session_scope() as s:
+        with pytest.raises(people_reconcile.PersonReconciliationError, match="bogus-mode"):
+            people_reconcile.run(s, mode="bogus-mode")
+
+
+def test_run_marks_the_row_failed_and_reraises_on_an_unexpected_error(monkeypatch):
+    _configure()
+    with db.session_scope() as s:
+
+        def boom(_s):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(people_reconcile, "build_plan", boom)
+
+        with pytest.raises(RuntimeError, match="kaboom"):
+            people_reconcile.run(s, mode=people_reconcile.MODE_DRY_RUN)
+
+        run_row = s.query(PersonReconciliationRun).one()
+        assert run_row.status == people_reconcile.RUN_FAILED
+        assert run_row.error == "kaboom"
+        assert run_row.completed_at is not None

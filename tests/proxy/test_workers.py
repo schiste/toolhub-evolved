@@ -112,6 +112,34 @@ def test_the_same_silence_is_healthy_for_a_job_that_runs_that_rarely():
     assert _worker(payload, "people-reconcile")["status"] == workers.STATUS_HEALTHY
 
 
+def test_status_treats_an_unknown_schedule_as_failing_or_unknown():
+    job = job_catalog.ScheduledJob(name="mystery", schedule="nonsense", description="", timeout_seconds=0)
+    assert job.expected_interval_minutes == 0
+    started = datetime.now(tz=UTC).replace(tzinfo=None)
+    failed_run = JobRun(job_name="mystery", started_at=started, succeeded=False)
+    assert workers._status(job, failed_run, 0.0) == workers.STATUS_FAILING
+    succeeded_run = JobRun(job_name="mystery", started_at=started, succeeded=True)
+    assert workers._status(job, succeeded_run, 0.0) == workers.STATUS_UNKNOWN
+
+
+def test_a_run_silent_for_a_few_periods_is_late_but_not_stalled():
+    with db.session_scope() as session:
+        # crawler runs hourly (period=60): 200 minutes is >= LATE_PERIODS*60
+        # (180) but below STALLED_PERIODS*60 (600).
+        _run(session, "crawler", minutes_ago=200)
+        session.flush()
+        payload = workers.snapshot(session)
+    assert _worker(payload, "crawler")["status"] == workers.STATUS_LATE
+
+
+def test_snapshot_handles_no_declared_jobs(monkeypatch):
+    monkeypatch.setattr(job_catalog, "load", lambda: [])
+    with db.session_scope() as session:
+        payload = workers.snapshot(session)
+    assert payload["workers"] == []
+    assert payload["counts"] == {}
+
+
 def test_a_job_with_no_recorded_run_is_unknown_rather_than_broken():
     with db.session_scope() as session:
         payload = workers.snapshot(session)

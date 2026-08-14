@@ -13,10 +13,14 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db, people_index, source_attestations, toolinfo_authors, toolinfo_sources  # noqa: E402
 from backend.models import (  # noqa: E402
+    ApiCacheMeta,
     CanonicalToolCache,
+    Person,
     PersonAccountBinding,
+    PersonIdentifier,
     PersonReconciliationConflict,
     PersonReconciliationRun,
+    ToolAuthorClaim,
     ToolRelationshipEvidence,
     ToolforgeAccountProjection,
     ToolforgeMembershipProjection,
@@ -26,6 +30,7 @@ from backend.models import (  # noqa: E402
     ToolinfoSourceGeneration,
     ToolinfoSourceItem,
     UnresolvedAttributionEvidence,
+    User,
     utcnow,
 )
 
@@ -479,3 +484,555 @@ def test_conflicting_source_proofs_enter_operator_queue_and_fail_closed():
         assert binding.person_id is None
         assert conflicts[0].conflict_type == "toolinfo_source_identity"
         assert conflicts[0].status == "pending"
+
+
+def test_wiki_user_from_source_url_prefers_a_matching_wiki_path_candidate():
+    # The query-string "title" candidate is tried first but has no "User:"
+    # prefix, so it is skipped; the loop falls through to the "/wiki/" path
+    # segment, which does carry the prefix and is trimmed to its first
+    # path component.
+    url = "https://en.wikipedia.org/wiki/User:Ada_Lovelace/talk?title=Not_A_User_Page"
+    assert source_attestations.wiki_user_from_source_url(url) == "Ada_Lovelace"
+
+    # Neither candidate has a "User:" prefix: the function falls off the end
+    # and returns "".
+    assert source_attestations.wiki_user_from_source_url("https://example.org/wiki/Some_Article") == ""
+
+
+def test_normalized_identity_strips_user_namespace_prefix():
+    assert source_attestations._normalized_identity("User:Ada Lovelace") == "ada lovelace"
+    assert source_attestations._normalized_identity("Ada Lovelace") == "ada lovelace"
+
+
+def test_verified_person_for_handle_rejects_empty_ambiguous_and_non_public_matches():
+    with db.session_scope() as session:
+        # An empty (whitespace-only) handle never resolves.
+        assert (
+            source_attestations._verified_person_for_handle(session, people_index.NS_WIKI_USERNAME, "   ") is None
+        )
+
+        # Two people whose handles collide only under this module's looser
+        # normalization (not the stored normalized_value used for the
+        # uniqueness constraint) are ambiguous, not a match.
+        first = _stable_person(session, "First Person", "91", "first91", "910")
+        second = _stable_person(session, "Second Person", "92", "second92", "920")
+        session.add(
+            PersonIdentifier(
+                person_id=first.id,
+                namespace=people_index.NS_WIKI_USERNAME,
+                value="User:Ada",
+                normalized_value="user:ada",
+                identifier_kind="handle",
+                source="test_ambiguous",
+            )
+        )
+        session.add(
+            PersonIdentifier(
+                person_id=second.id,
+                namespace=people_index.NS_WIKI_USERNAME,
+                value="Ada",
+                normalized_value="ada",
+                identifier_kind="handle",
+                source="test_ambiguous",
+            )
+        )
+        session.flush()
+        assert (
+            source_attestations._verified_person_for_handle(session, people_index.NS_WIKI_USERNAME, "Ada") is None
+        )
+
+        # A single match whose person is not a public identity (a bare
+        # untrusted handle, no stable id, no profile) does not resolve.
+        private_person = Person(canonical_key="display:private handle person", display_name="Private Handle Person")
+        session.add(private_person)
+        session.flush()
+        session.add(
+            PersonIdentifier(
+                person_id=private_person.id,
+                namespace=people_index.NS_WIKI_USERNAME,
+                value="Private Handle",
+                normalized_value="private handle",
+                identifier_kind="handle",
+                source="untrusted_source",
+            )
+        )
+        session.flush()
+        assert (
+            source_attestations._verified_person_for_handle(
+                session, people_index.NS_WIKI_USERNAME, "Private Handle"
+            )
+            is None
+        )
+
+
+def test_wikimedia_user_page_verifies_single_person_control():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada Lovelace", "40", "adawiki", "400")
+        _canonical(session, "wiki-tool")
+        source = _source(
+            session,
+            "https://en.wikipedia.org/wiki/User:Ada_Lovelace",
+            [
+                {
+                    "name": "wiki-tool",
+                    "title": "Wiki",
+                    "description": "Wiki",
+                    "url": "https://wiki-tool.example",
+                    "author": "Someone Unrelated",
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        attestation = session.get(ToolinfoSourceAttestation, source.id)
+        assert attestation.classification == source_attestations.CLASS_SINGLE
+        assert attestation.status == source_attestations.STATUS_VERIFIED
+        assert attestation.controller_person_id == ada.id
+        assert attestation.method == "wikimedia_user_page_control"
+        assert attestation.confidence == 95
+        assert attestation.evidence["wikiUsername"] == "Ada_Lovelace"
+
+
+def test_single_verified_source_control_claim_verifies_the_controller():
+    with db.session_scope() as session:
+        _canonical(session, "solo-tool")
+        source = _source(
+            session,
+            "https://solo-claim.example/toolinfo.json",
+            [
+                {
+                    "name": "solo-tool",
+                    "title": "Solo",
+                    "description": "Solo",
+                    "url": "https://solo.example",
+                    "author": "Solo Author",
+                }
+            ],
+        )
+        owner = _stable_person(session, "Owner", "50", "owner", "500")
+        user = User(wm_sub="50", username="owner-user", person_id=owner.id)
+        session.add(user)
+        session.flush()
+        session.add(
+            ToolAuthorClaim(
+                tool_name="solo-tool",
+                author_name="Solo Author",
+                toolhub_username=user.username,
+                user_id=user.id,
+                verification_status="verified",
+                verification_method="toolinfo_url_control",
+                evidence_url=source.url,
+                expires_at=utcnow() + timedelta(days=1),
+            )
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        attestation = session.get(ToolinfoSourceAttestation, source.id)
+        assert attestation.classification == source_attestations.CLASS_SINGLE
+        assert attestation.status == source_attestations.STATUS_VERIFIED
+        assert attestation.controller_person_id == owner.id
+        assert attestation.method == "challenged_source_control"
+        assert attestation.confidence == 100
+
+
+def test_single_toolforge_member_without_a_verified_binding_stays_unknown():
+    with db.session_scope() as session:
+        _canonical(session, "loose-tool")
+        source = _source(
+            session,
+            "https://loose.toolforge.org/toolinfo.json",
+            [
+                {
+                    "name": "loose-tool",
+                    "title": "Loose",
+                    "description": "Loose",
+                    "url": "https://loose.example",
+                    "author": "Nobody Verified",
+                }
+            ],
+        )
+        session.add(ToolforgeAccountProjection(uid_number="60", uid="looseuser", normalized_uid="looseuser"))
+        session.add(ToolforgeMembershipProjection(uid_number="60", tool_name="loose"))
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        attestation = session.get(ToolinfoSourceAttestation, source.id)
+        assert attestation.classification == source_attestations.CLASS_UNKNOWN
+        assert attestation.status == source_attestations.STATUS_UNRESOLVED
+        assert attestation.controller_person_id is None
+        assert attestation.evidence["toolforgeProject"] == "loose"
+        assert attestation.evidence["activeMemberCount"] == 1
+        assert attestation.evidence["toolforgeUidNumber"] == "60"
+
+
+def test_official_registry_service_account_is_classified_as_service():
+    with db.session_scope() as session:
+        source = ToolinfoSource(
+            url="https://registry.example/toolinfo.json",
+            source_kind="self_hosted_toolinfo",
+            status="valid",
+            valid=True,
+            created_by_username="Toolhub",
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            ToolinfoSourceItem(
+                source_id=source.id,
+                source_url=source.url,
+                tool_name="service-tool",
+                title="Service",
+                tool_url="https://service.example",
+                payload={
+                    "name": "service-tool",
+                    "title": "Service",
+                    "description": "Service",
+                    "url": "https://service.example",
+                    "author": "Someone",
+                },
+            )
+        )
+        session.flush()
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        attestation = session.get(ToolinfoSourceAttestation, source.id)
+        assert attestation.classification == source_attestations.CLASS_SERVICE
+        assert attestation.method == "official_registry_service_account"
+        assert attestation.status == source_attestations.STATUS_UNRESOLVED
+        assert attestation.controller_person_id is None
+
+
+def test_conflicting_source_control_conflict_record_is_updated_on_rerun():
+    with db.session_scope() as session:
+        _canonical(session, "rerun-conflict-tool")
+        source = _source(
+            session,
+            "https://rerun-conflict.example/toolinfo.json",
+            [
+                {
+                    "name": "rerun-conflict-tool",
+                    "title": "Conflict",
+                    "description": "Conflict",
+                    "url": "https://rerun-conflict.example",
+                    "author": "Same Label",
+                }
+            ],
+        )
+        first = _stable_person(session, "First", "32", "first32", "320")
+        second = _stable_person(session, "Second", "33", "second33", "330")
+        for index, person in enumerate((first, second), start=1):
+            user = User(wm_sub=f"rerun-{index}", username=f"rerun-user-{index}", person_id=person.id)
+            session.add(user)
+            session.flush()
+            session.add(
+                ToolAuthorClaim(
+                    tool_name="rerun-conflict-tool",
+                    author_name="Same Label",
+                    toolhub_username=user.username,
+                    user_id=user.id,
+                    verification_status="verified",
+                    verification_method="toolinfo_url_control",
+                    evidence_url=source.url,
+                    expires_at=utcnow() + timedelta(days=1),
+                )
+            )
+        source_id = source.id
+
+    with db.session_scope() as session:
+        source_attestations.refresh_source_ids(session, [source_id])
+        first_conflict = session.execute(select(PersonReconciliationConflict)).scalar_one()
+        first_conflict_id = first_conflict.id
+        first_run_id = first_conflict.run_id
+        first_binding = session.execute(select(ToolinfoAuthorBinding)).scalar_one()
+        first_binding_id = first_binding.id
+
+    with db.session_scope() as session:
+        # Re-running against the still-open conflict updates the existing
+        # row (and reuses the existing author binding row) instead of
+        # duplicating either.
+        source_attestations.refresh_source_ids(session, [source_id])
+        conflicts = list(session.execute(select(PersonReconciliationConflict)).scalars())
+        bindings = list(session.execute(select(ToolinfoAuthorBinding)).scalars())
+        assert len(conflicts) == 1
+        assert conflicts[0].id == first_conflict_id
+        assert conflicts[0].run_id != first_run_id
+        assert len(bindings) == 1
+        assert bindings[0].id == first_binding_id
+
+
+def test_conflicting_structured_identity_evidence_is_recorded_as_a_binding_conflict():
+    with db.session_scope() as session:
+        alice = _stable_person(session, "Alice", "70", "alice-dev", "700")
+        bob = _stable_person(session, "bob-wiki", "71", "bobdev", "701")
+        _canonical(session, "mismatched-tool")
+        source = _source(
+            session,
+            "https://metadata.example/mismatched.json",
+            [
+                {
+                    "name": "mismatched-tool",
+                    "title": "Mismatched",
+                    "description": "Mismatched",
+                    "url": "https://mismatched.example",
+                    "author": [
+                        {
+                            "name": "Ambiguous",
+                            "developer_username": "alice-dev",
+                            "wiki_username": "bob-wiki",
+                        }
+                    ],
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        binding = session.execute(select(ToolinfoAuthorBinding)).scalar_one()
+        conflict = session.execute(
+            select(PersonReconciliationConflict).where(
+                PersonReconciliationConflict.conflict_type == "toolinfo_source_identity"
+            )
+        ).scalar_one()
+        assert binding.status == source_attestations.STATUS_CONFLICT
+        assert binding.person_id is None
+        assert binding.method == "conflicting_source_identity_evidence"
+        assert binding.confidence == 100
+        assert sorted(conflict.details["candidatePersonIds"]) == sorted([alice.public_id, bob.public_id])
+
+
+def test_items_with_a_non_dict_payload_are_skipped_and_non_matching_anchors_are_ignored():
+    with db.session_scope() as session:
+        anchor_person = _stable_person(session, "Anchor Person", "90", "anchoruser", "900")
+        match_person = _stable_person(session, "Match Person", "93", "matchuser", "930")
+        _canonical(session, "broken-tool")
+        _canonical(session, "no-match-tool")
+        source = ToolinfoSource(
+            url="https://broken.example/toolinfo.json",
+            source_kind="self_hosted_toolinfo",
+            status="valid",
+            valid=True,
+        )
+        session.add(source)
+        session.flush()
+        session.add(
+            ToolinfoSourceItem(
+                source_id=source.id,
+                source_url=source.url,
+                tool_name="broken-tool",
+                title="Broken",
+                tool_url="https://broken.example",
+                payload=["not", "a", "dict"],
+            )
+        )
+        session.add(
+            ToolinfoSourceItem(
+                source_id=source.id,
+                source_url=source.url,
+                tool_name="no-match-tool",
+                title="No Match",
+                tool_url="https://no-match.example",
+                payload={
+                    "name": "no-match-tool",
+                    "title": "No Match",
+                    "description": "No Match",
+                    "url": "https://no-match.example",
+                    "author": "Completely Different Name",
+                },
+            )
+        )
+        session.flush()
+
+        # Independent verified evidence corroborates both tools, but the
+        # "broken-tool" item's payload is not a dict (it cannot be
+        # inspected for author tokens at all), and "no-match-tool"'s only
+        # author does not match match_person's aliases.
+        people_index.replace_source_evidence(
+            session,
+            "broken-tool",
+            "independent_verification",
+            [
+                {
+                    "display_name": "Anchor Person",
+                    "wikimedia_global_user_id": "900",
+                    "relationship_type": "maintainer",
+                    "method": "independent_stable_proof",
+                    "evidence_key": "900",
+                    "verification_status": "verified",
+                    "confidence": 100,
+                }
+            ],
+        )
+        people_index.replace_source_evidence(
+            session,
+            "no-match-tool",
+            "independent_verification",
+            [
+                {
+                    "display_name": "Match Person",
+                    "wikimedia_global_user_id": "930",
+                    "relationship_type": "maintainer",
+                    "method": "independent_stable_proof",
+                    "evidence_key": "930",
+                    "verification_status": "verified",
+                    "confidence": 100,
+                }
+            ],
+        )
+
+        # Should not raise despite the non-dict payload, and should not
+        # bind or propagate authorship for either tool.
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        bindings = {
+            row.normalized_label: row for row in session.execute(select(ToolinfoAuthorBinding)).scalars()
+        }
+        assert "no-match-tool" not in [b.evidence.get("sourceId") for b in bindings.values()]
+        no_match_binding = bindings["completely different name"]
+        assert no_match_binding.status == source_attestations.STATUS_UNRESOLVED
+        assert no_match_binding.person_id is None
+
+        propagated = list(
+            session.execute(
+                select(ToolRelationshipEvidence).where(
+                    ToolRelationshipEvidence.source == source_attestations.SOURCE_AUTHOR_ATTESTATION,
+                    ToolRelationshipEvidence.person_id.in_({anchor_person.id, match_person.id}),
+                )
+            ).scalars()
+        )
+        assert propagated == []
+
+
+def test_refresh_tool_names_with_no_valid_names_is_a_noop():
+    with db.session_scope() as session:
+        result = source_attestations.refresh_tool_names(session, ["   ", ""])
+        assert result == {"tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
+
+
+def test_refresh_full_updates_an_existing_rules_version_marker():
+    with db.session_scope() as session:
+        source_attestations.refresh_full(session)  # first call: creates the ApiCacheMeta row
+
+    with db.session_scope() as session:
+        before = session.get(ApiCacheMeta, source_attestations.RULES_META_KEY)
+        before_updated_at = before.updated_at
+
+    with db.session_scope() as session:
+        source_attestations.refresh_full(session)  # second call: updates the existing row
+
+    with db.session_scope() as session:
+        after = session.get(ApiCacheMeta, source_attestations.RULES_META_KEY)
+        assert after.value == source_attestations.RULES_VERSION
+        assert after.updated_at >= before_updated_at
+
+
+def test_incremental_refresh_attests_a_newly_indexed_source():
+    with db.session_scope() as session:
+        source_attestations.refresh_full(session)  # establishes the rules-version marker
+
+    with db.session_scope() as session:
+        _canonical(session, "fresh-tool")
+        source = _source(
+            session,
+            "https://fresh.example/toolinfo.json",
+            [
+                {
+                    "name": "fresh-tool",
+                    "title": "Fresh",
+                    "description": "Fresh",
+                    "url": "https://fresh.example",
+                    "author": "Fresh Author",
+                }
+            ],
+        )
+        source_id = source.id
+
+    with db.session_scope() as session:
+        # This source was indexed after the rules-version marker was
+        # established and has never been attested, so the incremental pass
+        # must notice and attest it even without an explicit source id list.
+        result = source_attestations.refresh_incremental(session)
+        assert result["sources"] == 1
+        assert result["fullAudit"] == 0
+        assert session.get(ToolinfoSourceAttestation, source_id) is not None
+
+
+def test_person_identity_skips_unmapped_identifier_namespaces():
+    with db.session_scope() as session:
+        person = _stable_person(session, "Namespaced Person", "95", "namespaced", "950")
+        session.add(
+            PersonIdentifier(
+                person_id=person.id,
+                namespace="unmapped_namespace",
+                value="ignored",
+                normalized_value="ignored",
+                identifier_kind="handle",
+                source="test_unmapped",
+            )
+        )
+        _toolforge_member(session, person, project="namespaced-project", uid_number="95", uid="namespaced")
+        _canonical(session, "namespaced-tool")
+        source = _source(
+            session,
+            "https://namespaced-project.toolforge.org/toolinfo.json",
+            [
+                {
+                    "name": "namespaced-tool",
+                    "title": "Namespaced",
+                    "description": "Namespaced",
+                    "url": "https://namespaced-project.toolforge.org",
+                    "author": "Someone Else",
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+
+        edge = session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.source == source_attestations.SOURCE_TARGET_MEMBERSHIP
+            )
+        ).scalar_one()
+        assert edge.person_id == person.id
+
+
+def test_incremental_refresh_runs_a_full_audit_when_no_rules_marker_exists():
+    with db.session_scope() as session:
+        result = source_attestations.refresh_incremental(session)
+        assert result["fullAudit"] == 1
+        assert session.get(ApiCacheMeta, source_attestations.RULES_META_KEY) is not None
+
+
+def test_incremental_refresh_reprocesses_sources_touched_by_identity_changes():
+    with db.session_scope() as session:
+        person = _stable_person(session, "Refreshed Person", "80", "refreshed", "800")
+        _canonical(session, "identity-tool")
+        source = _source(
+            session,
+            "https://identity.example/toolinfo.json",
+            [
+                {
+                    "name": "identity-tool",
+                    "title": "Identity",
+                    "description": "Identity",
+                    "url": "https://identity.example",
+                    "author": "Refreshed Person",
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+        source_attestations.refresh_full(session)  # establishes the rules-version marker
+        source_id = source.id
+        person_id = person.id
+
+    cutoff = utcnow() - timedelta(minutes=1)
+    with db.session_scope() as session:
+        identifier = session.execute(
+            select(PersonIdentifier).where(
+                PersonIdentifier.person_id == person_id,
+                PersonIdentifier.namespace == people_index.NS_WIKI_USERNAME,
+            )
+        ).scalar_one()
+        identifier.updated_at = utcnow()
+
+    with db.session_scope() as session:
+        result = source_attestations.refresh_incremental(session, identity_changed_since=cutoff)
+        assert result["sources"] >= 1
+        assert result["fullAudit"] == 0
+        assert session.get(ToolinfoSourceAttestation, source_id) is not None

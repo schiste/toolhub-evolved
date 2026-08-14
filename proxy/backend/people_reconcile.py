@@ -19,6 +19,7 @@ from backend import (
     source_attestations,
 )
 from backend.models import (
+    ApiCacheMeta,
     CanonicalToolCache,
     Person,
     PersonAccountBinding,
@@ -31,6 +32,7 @@ from backend.models import (
     ToolhubAccountProjection,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
     User,
     utcnow,
 )
@@ -611,13 +613,20 @@ def _candidate_account_groups(
     )
 
 
-DEFAULT_REGISTRY_LABEL_LIMIT = 25
-REGISTRY_MIN_INTERVAL_SECONDS = 1.0
+DEFAULT_REGISTRY_LABEL_LIMIT = 1000
+# Four requests a second, serialized, against an API that publishes no read
+# limit and asks chiefly for a descriptive user agent and serial rather than
+# parallel requests. The fixed one-second delay this replaces was a guess
+# standing in for the real mechanisms; the fetcher now sends maxlag and obeys
+# Retry-After, so meta.wikimedia.org can slow us down when it wants to rather
+# than us assuming a rate on its behalf. A ~900-label sweep is ~4 minutes.
+REGISTRY_MIN_INTERVAL_SECONDS = 0.25
 # Provenance for people minted from a registry lookup rather than from an
 # account that registered with Toolhub or Toolforge. Deliberately not a
 # trusted handle source: the stable id makes them publishable, and nothing
 # about the label should lend authority to the handle.
 REGISTRY_SOURCE = "wikimedia_centralauth"
+REGISTRY_CURSOR_KEY = "registry_label_cursor"
 
 
 def _registry_corroborated(s: Session, *, target_person_id: int, tool_names: list[str]) -> bool:
@@ -676,90 +685,116 @@ def _upsert_mapping(  # noqa: PLR0913 - the mapping's audit fields stay explicit
     return mapping, created
 
 
+def _registry_label_batch(s: Session, *, limit: int) -> tuple[list[str], str]:
+    """Return the next handle-shaped labels no local rule can resolve.
+
+    The unresolved population is attribution *labels*, which by design carry no
+    person id, so it is not the same set as the display-name people the Toolhub
+    candidate pass walks. Aiming at the people set checked nine labels while
+    nine hundred sat untouched.
+
+    A persisted cursor walks the population in label order and wraps, which
+    keeps each run bounded, gives every label a turn, and rate-limits retries
+    of labels the registry does not know to once per full sweep.
+    """
+    now = utcnow()
+    labels = sorted(
+        {
+            row[0]
+            for row in s.execute(
+                select(UnresolvedAttributionEvidence.normalized_label).where(
+                    UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+                    or_(
+                        UnresolvedAttributionEvidence.expires_at.is_(None),
+                        UnresolvedAttributionEvidence.expires_at > now,
+                    ),
+                )
+            ).all()
+            if row[0] and people_policy.is_handle_shaped(row[0])
+        }
+    )
+    if not labels:
+        return [], ""
+    # Anything already matching a publishable person's handle is resolvable
+    # locally and needs no lookup.
+    known = {
+        normalized
+        for person_id, normalized in s.execute(
+            select(PersonIdentifier.person_id, PersonIdentifier.normalized_value).where(
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.namespace.in_((people_index.NS_WIKI_USERNAME, people_index.NS_TOOLFORGE_USERNAME)),
+                PersonIdentifier.normalized_value.in_(labels),
+            )
+        ).all()
+        if person_id in people_index.public_identity_ids(s)
+    }
+    pending = [label for label in labels if label not in known]
+    if not pending:
+        return [], ""
+    cursor_row = s.get(ApiCacheMeta, REGISTRY_CURSOR_KEY)
+    cursor = cursor_row.value if cursor_row is not None else ""
+    after = [label for label in pending if label > cursor]
+    batch = (after or pending)[: max(1, int(limit))]
+    return batch, batch[-1]
+
+
 def discover_registry_candidates(
     s: Session,
     *,
-    run_id: int,
     provider: public_identity.WikimediaIdentityProvider | None = None,
     label_limit: int = DEFAULT_REGISTRY_LABEL_LIMIT,
     sleep: Any = time.sleep,  # noqa: ANN401 - injected for deterministic tests
 ) -> dict[str, int]:
-    """Resolve handle-shaped labels against CentralAuth as durable candidates.
+    """Record identities for handle-shaped labels a public registry confirms.
 
-    Every other path starts from an immutable id we already hold. This one
-    starts from catalog text, so it is the only one that can be wrong about
-    who is meant, and it is bounded accordingly: the shape gate decides which
-    labels are asked about at all, one label is looked up at a time with
-    spacing between requests, and the result is a candidate that publishes
-    nothing until corroboration promotes it.
+    Every other path starts from an immutable id already held here. This one
+    starts from catalog text, so it is bounded at every step: the shape gate
+    decides which labels are asked about, a cursor bounds each run, and
+    lookups are spaced.
+
+    It records identity only. A confirmed account becomes a person keyed on
+    its immutable global user id, which makes the label resolvable by the
+    ordinary corroborated-handle rule the moment independent evidence ties
+    that person to a tool. Nothing here publishes a relationship, and a person
+    with none stays out of the public directory.
     """
     resolver = provider or public_identity.WikimediaIdentityProvider()
-    created = 0
-    linked = 0
-    resolved = 0
     checked = 0
+    resolved = 0
     people_created = 0
-    candidates = [
-        person for person in _candidate_source_people(s) if people_policy.is_handle_shaped(person.display_name)
-    ]
-    for index, source in enumerate(candidates[: max(1, min(int(label_limit), 100))]):
+    batch, cursor = _registry_label_batch(s, limit=label_limit)
+    for index, label in enumerate(batch):
         if index:
             sleep(REGISTRY_MIN_INTERVAL_SECONDS)
         checked += 1
-        identity = resolver.lookup_username(source.display_name)
+        identity = resolver.lookup_username(label)
         if identity is None:
             continue
         resolved += 1
         owner_id = _stable_identifier_owner(s, people_index.NS_WIKIMEDIA_GLOBAL_USER_ID, identity.global_user_id)
-        target = s.get(Person, owner_id) if owner_id else None
-        if target is None:
-            # A CentralAuth global id is an immutable stable identifier, the
-            # same class the account syncs already mint people from, so this
-            # records a real account rather than inventing one. It creates the
-            # identity only; the relationship still has to be earned, and a
-            # person with no tool relationship stays out of the public
-            # directory, which is what keeps a mistaken lookup invisible.
-            target = people_index.ensure_person(
-                s,
-                display_name=identity.username,
-                wikimedia_global_user_id=identity.global_user_id,
-                wiki_username=identity.username,
-                source=REGISTRY_SOURCE,
-            )
-            if target is not None:
-                people_created += 1
-        if target is None or target.id == source.id:
+        if owner_id is not None:
             continue
-        tool_names, _toolforge_names, _roles = _source_evidence_for_person(s, source.id)
-        decision = people_policy.decide_identity_link(
-            registry_handle=True,
-            corroborated_handle=_registry_corroborated(s, target_person_id=target.id, tool_names=tool_names),
-        )
-        mapping, was_created = _upsert_mapping(
+        # A CentralAuth global id is an immutable stable identifier, the same
+        # class the account syncs already mint people from, so this records a
+        # real account rather than inventing one.
+        person = people_index.ensure_person(
             s,
-            run_id=run_id,
-            source=source,
-            target=target,
-            decision=decision,
-            evidence={
-                "observedLabel": source.display_name,
-                "wikimediaGlobalUserId": identity.global_user_id,
-                "wikimediaUsername": identity.username,
-                "sharedToolNames": sorted(tool_names)[:20],
-            },
+            display_name=identity.username,
+            wikimedia_global_user_id=identity.global_user_id,
+            wiki_username=identity.username,
+            source=REGISTRY_SOURCE,
         )
-        created += int(was_created)
-        if mapping.decision == MAPPING_AUTO_LINK:
-            _move_mapping_evidence(s, mapping)
-            linked += 1
+        if person is not None:
+            people_created += 1
         s.flush()
-    return {
-        "checked": checked,
-        "resolved": resolved,
-        "peopleCreated": people_created,
-        "created": created,
-        "linked": linked,
-    }
+    if cursor:
+        row = s.get(ApiCacheMeta, REGISTRY_CURSOR_KEY)
+        if row is None:
+            s.add(ApiCacheMeta(key=REGISTRY_CURSOR_KEY, value=cursor))
+        else:
+            row.value = cursor
+            row.updated_at = utcnow()
+    return {"checked": checked, "resolved": resolved, "peopleCreated": people_created}
 
 
 def discover_identity_candidates(
@@ -931,9 +966,9 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             # text, so it runs a small number of external lookups per pass and
             # its results publish nothing without corroboration.
             registry_result = (
-                discover_registry_candidates(s, run_id=run_row.id, label_limit=registry_label_limit)
+                discover_registry_candidates(s, label_limit=registry_label_limit)
                 if discover_candidates and registry_label_limit
-                else {"checked": 0, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
+                else {"checked": 0, "resolved": 0, "peopleCreated": 0}
             )
             source_attestation_summary = (
                 source_attestations.refresh_incremental(s, identity_changed_since=identity_changed_since)
@@ -954,7 +989,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             }
             account_binding_conflicts_queued = 0
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
-            registry_result = {"checked": 0, "resolved": 0, "peopleCreated": 0, "created": 0, "linked": 0}
+            registry_result = {"checked": 0, "resolved": 0, "peopleCreated": 0}
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
             source_attestation_summary = {
@@ -978,8 +1013,6 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "registryChecked": registry_result["checked"],
             "registryResolved": registry_result["resolved"],
             "registryPeopleCreated": registry_result["peopleCreated"],
-            "registryCandidatesCreated": registry_result["created"],
-            "registryMappingsApplied": registry_result["linked"],
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "accountBindings": account_bindings,

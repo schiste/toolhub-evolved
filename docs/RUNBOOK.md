@@ -641,26 +641,33 @@ must not fail the run: `crawl.py` did exactly that, and one flaky URL retired
 the crawler for ten days. Deviations are allowed but must state their reason
 at the `return`.
 
-**Public-registry candidates.** The hourly `people-identity-reconcile` job
-resolves up to `PEOPLE_REGISTRY_LABEL_LIMIT` handle-shaped labels per run
-against CentralAuth, one second apart. `backend.people_policy.is_handle_shaped`
-decides which labels are asked about: self-chosen handles are admitted,
-multi-word purely alphabetic labels are refused, because there a username and a
-person's name are indistinguishable and a wrong bind misattributes a real
-individual. Set the limit to `0` to disable the path entirely.
+**Public-registry lookups.** The hourly `people-identity-reconcile` job resolves
+up to `PEOPLE_REGISTRY_LABEL_LIMIT` handle-shaped unresolved labels per run
+against CentralAuth, four a second and serialized, walking a persisted cursor so
+every label gets a turn and one the registry does not know is retried at most
+once per sweep. The fetcher sends `maxlag` and obeys a `Retry-After` header, so
+meta.wikimedia.org sets the ceiling rather than a delay guessed on its behalf; a
+rate-limited lookup resolves nothing rather than inventing an identity. It targets attribution labels, which carry no person id — not the
+display-name people the Toolhub candidate pass walks; aiming at the latter
+checked nine labels while nine hundred sat untouched.
 
-A registry hit proves the account exists, never that its owner wrote the tool,
-so it is recorded as a `candidate` mapping and moves no evidence. It is promoted
-to `auto_link` only when the resolved person already holds verified,
-independently sourced evidence on a tool the label appears on. A resolved account with no person in the graph now creates one, keyed on the
-immutable CentralAuth global user id -- the same class of identifier the account
-syncs already mint people from, so it records a real account rather than inventing
-one. Creation grants identity only: with no tool relationship such a person is
-not listed in the public directory, so a mistaken lookup never becomes a visible
-claim about anyone. Their handle provenance is `wikimedia_centralauth`, which is
-deliberately not a trusted handle source. Run summaries report `registryChecked`,
-`registryResolved`, `registryPeopleCreated`, `registryCandidatesCreated`, and
-`registryMappingsApplied`.
+`backend.people_policy.is_handle_shaped` decides which labels are asked about:
+self-chosen handles are admitted, multi-word purely alphabetic labels are
+refused, because there a username and a person's name are indistinguishable and
+a wrong bind misattributes a real individual. A label already matching a
+publishable person's handle is skipped as resolvable locally. Set the limit to
+`0` to disable the path.
+
+A confirmed account becomes a person keyed on its immutable CentralAuth global
+user id — the same class of identifier the account syncs already mint people
+from, so it records a real account rather than inventing one. That is all it
+does: the new handle makes the label resolvable by the ordinary
+corroborated-handle rule the moment independent verified evidence ties that
+person to a tool. The lookup publishes no relationship, and a person holding
+none is not listed in the public directory, so a mistaken lookup stays
+invisible. Handle provenance is `wikimedia_centralauth`, deliberately not a
+trusted handle source. Run summaries report `registryChecked`,
+`registryResolved`, and `registryPeopleCreated`.
 
 **Duplication gates.** JavaScript is held at a strict zero
 (`.jscpd.json`). Python runs against a ratchet in `.jscpd.python.json`,
