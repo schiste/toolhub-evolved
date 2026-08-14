@@ -217,8 +217,14 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
         filters: dict[str, list[str]] = {}
         for param, facet_type in v1_facets.FILTER_PARAMS.items():
             raw_values = arguments.get(param)
-            if not isinstance(raw_values, list):
+            if raw_values is None:
                 continue
+            if not isinstance(raw_values, list):
+                # LLM callers routinely send a bare string where the schema
+                # says array. Wrap it instead of dropping the filter — a
+                # dropped filter silently widens the AND, the one failure
+                # mode this surface must never have.
+                raw_values = [raw_values]
             requested = sorted({str(v).strip().casefold() for v in raw_values if str(v).strip()})
             if not requested:
                 continue

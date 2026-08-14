@@ -281,6 +281,21 @@ def test_facet_tools_limit_never_exceeds_serializer_cap(client):
     assert payload["total"] == ct.MAX_QUERY_NAMES + 5  # true total, not page size
 
 
+def test_facet_tools_scalar_filter_is_not_dropped(client):
+    """A bare string where the schema says array must still filter."""
+    with db.session_scope() as s:
+        _seed(s)
+    # Scalar alone works like the single-item list it stands for.
+    alone = _call_tool(client, "facet_tools", {"dependency": "pywikibot"})["result"]
+    assert alone["isError"] is False
+    assert json.loads(alone["content"][0]["text"])["total"] == 2
+    # Scalar combined with another filter must narrow the AND, not vanish.
+    combined = _call_tool(client, "facet_tools", {"technology": "rust", "dependency": ["pywikibot"]})["result"]
+    assert combined["isError"] is False
+    payload = json.loads(combined["content"][0]["text"])
+    assert payload["tools"] == [] and payload["total"] == 0
+
+
 def test_facet_tools_unknown_value_matches_nothing(client):
     with db.session_scope() as s:
         _seed(s)
