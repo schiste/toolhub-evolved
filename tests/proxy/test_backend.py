@@ -4298,6 +4298,14 @@ def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
     assert [candidate["id"] for candidate in canonicalized["candidates"]] == [canonical_magnus_id]
     assert canonicalized["unresolvedAttributions"][0]["label"] == "Magnus Manske"
 
+    attribution = client.get(
+        "/v1/people/resolve/?handle=Magnus%20Manske&context=attribution"
+    ).get_json()
+    assert attribution["status"] == "ambiguous"
+    assert attribution["matchType"] == "handle"
+    assert [candidate["id"] for candidate in attribution["candidates"]] == [canonical_magnus_id]
+    assert attribution["unresolvedAttributions"][0]["label"] == "Magnus Manske"
+
     assert client.get("/v1/people/resolve/?handle=Nobody").get_json()["status"] == "not_found"
     assert client.get("/v1/people/resolve/").status_code == 400
 

@@ -248,6 +248,26 @@ test("viewAuthor resolves one exact handle through the dedicated resolver", asyn
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
+test("viewAuthor preserves catalog attribution context during identity resolution", async () => {
+	window.history.replaceState({}, "", "/by/Christophe?context=attribution");
+	h.backendGetJson.mockResolvedValueOnce({
+		status: "ambiguous",
+		matchType: "handle",
+		candidates: [{ id: "other-christophe", displayName: "Christophe", identifiers: [] }],
+		unresolvedAttributions: [
+			{ label: "Christophe", toolCount: 6, evidenceCount: 12, identityStatus: "unresolved_attribution" }
+		]
+	});
+
+	const view = await viewAuthor("Christophe");
+
+	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/resolve/?handle=Christophe&context=attribution");
+	assert.match(view.html, /Attributions awaiting identity evidence/);
+	assert.match(view.html, /6 tools · 12 observations/);
+	assert.match(view.html, /href="\/people\/other-christophe"/);
+	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
+});
+
 test("viewAuthor renders disambiguation instead of selecting the first duplicate", async () => {
 	h.backendGetJson.mockResolvedValueOnce({
 		status: "ambiguous",

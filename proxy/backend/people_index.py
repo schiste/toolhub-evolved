@@ -1209,8 +1209,14 @@ def _person_base_payload(
     }
 
 
-def resolve_legacy_handle(s: Session, query: str) -> dict[str, Any]:
-    """Resolve one exact structured handle or return explicit ambiguity."""
+def resolve_legacy_handle(s: Session, query: str, *, attribution_context: bool = False) -> dict[str, Any]:
+    """Resolve one exact structured handle or return explicit ambiguity.
+
+    A bare Toolhub author label is not a structured account handle.  When a
+    caller identifies the input as an attribution, matching unresolved
+    evidence must remain visible even if the same text happens to be somebody
+    else's unique public handle.
+    """
     clean_query = _clean(query)
     normalized = _normalized(clean_query)
     if not normalized:
@@ -1270,7 +1276,7 @@ def resolve_legacy_handle(s: Session, query: str) -> dict[str, Any]:
         for attribution in unresolved_attributions(s, clean_query, limit=100)
         if _normalized(attribution.get("label")) == normalized
     ]
-    if match_type == "handle" and len(candidates) == 1:
+    if match_type == "handle" and len(candidates) == 1 and not (attribution_context and unresolved):
         return {
             "status": "resolved",
             "query": clean_query,

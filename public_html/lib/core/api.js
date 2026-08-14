@@ -836,6 +836,7 @@ export function normalizeTool(t) {
 		origin: t.origin || "crawler",
 		catalogProjection: t._catalogProjection || null,
 		cachedIconUrl: t._cachedIconUrl || null,
+		accountRelationships: Array.isArray(t.accountRelationships) ? t.accountRelationships : [],
 		weeklyViews: 0,
 		status: statusOf({ deprecated, experimental })
 	};

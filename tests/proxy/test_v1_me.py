@@ -163,6 +163,7 @@ def test_me_tools_no_relationships_returns_empty_summaries(client):
     resp = client.get("/v1/me/tools/")
     assert resp.status_code == 200
     body = resp.get_json()
+    assert body["person"] == {"id": body["personId"], "displayName": "Ada"}
     assert body["verified"] == []
     assert body["possible"] == []
     assert body["summaries"] == {}

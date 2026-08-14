@@ -202,7 +202,8 @@ function renderDisambiguation(name, resolution) {
 
 /** Legacy name route; the name is resolved through current identifiers first. @param {string} name */
 export async function viewAuthor(name) {
-	const resolution = await resolvePersonHandle(name).catch(() => null);
+	const context = new URLSearchParams(globalThis.location?.search || "").get("context");
+	const resolution = await resolvePersonHandle(name, context === "attribution" ? { context } : {}).catch(() => null);
 	if (resolution?.status === "resolved" && resolution?.person?.id) {
 		const person = await personById(resolution.person.id, { toolPage: profileToolPage() });
 		return resolvedView(person);

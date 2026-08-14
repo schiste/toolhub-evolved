@@ -150,6 +150,7 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
         return {
             "username": stored_user.username,
             "personId": person.public_id,
+            "person": {"id": person.public_id, "displayName": person.display_name},
             "searchTerms": ["canonical-relationship-graph"],
             "toolforgeToolNames": toolforge_names,
             "counts": {"verified": len(verified), "possible": len(possible)},

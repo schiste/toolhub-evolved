@@ -183,8 +183,9 @@ def v1_people_resolve() -> Response:
     handle = str(request.args.get("handle") or "").strip()
     if not handle:
         return common.bad("handle is required")
+    attribution_context = str(request.args.get("context") or "").strip() == "attribution"
     with db.session_scope() as s:
-        payload = people_index.resolve_legacy_handle(s, handle)
+        payload = people_index.resolve_legacy_handle(s, handle, attribution_context=attribution_context)
     return jsonify(
         payload
         | {

@@ -739,7 +739,16 @@ test("signed-in home puts favorites before owned tools", async () => {
 	h.cachedCanonicalTools.mockResolvedValue([rawTool("favorite", { title: "Favorite" })]);
 	h.backendGetJson.mockImplementation(async (path) => {
 		if (path === "/v1/me/tools/") {
-			return { verified: [{ tool: rawTool("owned", { title: "Owned" }) }], possible: [] };
+			return {
+				person: { id: "person-ada", displayName: "Ada" },
+				verified: [
+					{
+						tool: rawTool("owned", { title: "Owned", author: [{ name: "Unstructured label" }] }),
+						relationships: [{ type: "maintainer" }]
+					}
+				],
+				possible: []
+			};
 		}
 		return { results: {} };
 	});
@@ -758,6 +767,9 @@ test("signed-in home puts favorites before owned tools", async () => {
 	await tick();
 	assert.ok(document.body.innerHTML.includes('data-tool="favorite"'), "favorite tool card renders");
 	assert.ok(document.body.innerHTML.includes('data-tool="owned"'), "owned tool card renders");
+	assert.ok(document.body.innerHTML.includes('href="/people/person-ada"'), "owned card links canonical person");
+	assert.ok(document.body.innerHTML.includes("Maintained by"), "owned card describes the relationship");
+	assert.ok(!document.body.innerHTML.includes("/by/Unstructured%20label"), "raw label is not used as owner identity");
 	assert.equal(document.body.innerHTML.includes("<h2>Featured tools</h2>"), false);
 	assert.equal(document.body.innerHTML.includes("<h2>Most listed</h2>"), false);
 	assert.equal(h.backendGetJson.mock.calls.filter(([path]) => path === "/v1/me/tools/").length, 1);
