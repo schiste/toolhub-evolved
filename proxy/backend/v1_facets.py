@@ -146,7 +146,9 @@ def dependency_values(s: Session, raw: list[str]) -> list[str]:
                 select(CatalogFacetValue.value)
                 .where(
                     CatalogFacetValue.field == "dependency",
-                    CatalogFacetValue.value.like(f"%:{clean}"),
+                    # Escaped: "%" must not read the whole dependency
+                    # vocabulary and "my_lib" must not match "myxlib".
+                    CatalogFacetValue.value.like(f"%:{canonical_tools.escape_like(clean)}", escape="\\"),
                 )
                 .distinct()
             ).scalars()

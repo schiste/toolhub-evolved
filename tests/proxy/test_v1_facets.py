@@ -150,6 +150,19 @@ def test_facets_tools_dependency_shorthand(client):
     assert {t["name"] for t in pinned["tools"]} == {"cite-checker", "sfedits"}
 
 
+def test_dependency_shorthand_is_literal_not_a_like_pattern(app):
+    """LIKE wildcards in a query value must not act as wildcards."""
+    from backend import v1_facets
+
+    with app.app_context(), db.session_scope() as s:
+        _facet(s, "sfedits", "dependency", "pypi:my_lib", "my_lib (pypi)", 9000)
+        _facet(s, "cite-checker", "dependency", "pypi:myxlib", "myxlib (pypi)", 9000)
+        s.flush()
+        assert v1_facets.dependency_values(s, ["my_lib"]) == ["pypi:my_lib"]
+        assert v1_facets.dependency_values(s, ["%"]) == []
+        assert v1_facets.dependency_values(s, ["my%"]) == []
+
+
 def test_facets_tools_rejects_no_filters_and_bad_limit(client):
     assert client.get("/v1/facets/tools/").status_code == 400
     resp = client.get("/v1/facets/tools/?dependency=x&limit=9999")
