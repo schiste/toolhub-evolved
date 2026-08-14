@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 import requests
+from sqlalchemy import select
 
 from backend import canonical_tools, db, job_runner, maintainer_index
 from backend.author_claims import (
@@ -17,7 +18,7 @@ from backend.author_claims import (
     parse_toolsadmin_maintainer_entries,
     toolforge_names_from_toolhub_tool,
 )
-from backend.models import MaintainerBackfillState, utcnow
+from backend.models import MaintainerBackfillState, ToolRelationshipEvidence, utcnow
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -66,13 +67,26 @@ def _batch(
     rows: list[tuple[str, dict[str, Any], list[str]]],
     cursor: str | None,
     limit: int,
-) -> tuple[list[tuple[str, dict[str, Any], list[str]]], bool]:
+) -> tuple[list[tuple[str, dict[str, Any], list[str]]], bool, int]:
     if not rows:
-        return [], True
+        return [], True, 0
     names = [row[0] for row in rows]
     start = names.index(cursor) + 1 if cursor in names else 0
     selected = rows[start : start + limit]
-    return selected, start + len(selected) >= len(rows)
+    return selected, start + len(selected) >= len(rows), start
+
+
+def _durably_projected_tools() -> set[str]:
+    """Return tools already covered by the complete LDAP generation."""
+    with db.session_scope() as s:
+        return set(
+            s.execute(
+                select(ToolRelationshipEvidence.tool_name).where(
+                    ToolRelationshipEvidence.source == maintainer_index.SOURCE_TOOLFORGE_LDAP,
+                    ToolRelationshipEvidence.withdrawn_at.is_(None),
+                )
+            ).scalars()
+        )
 
 
 def _fetch_pages(
@@ -112,14 +126,16 @@ def run(
     effective_limit = _bounded_limit(limit)
     interval = _bounded_interval(min_interval_seconds)
     provider = provider or ToolforgeMaintainerProvider()
-    rows = _candidates()
+    all_rows = _candidates()
+    durable_tools = _durably_projected_tools()
+    rows = [row for row in all_rows if row[0] not in durable_tools]
     with db.session_scope() as s:
         state = _state(s)
         cursor = state.next_tool_name
         state.status = "running"
         state.last_started_at = utcnow()
         state.last_error = None
-    batch, cycle_complete = _batch(rows, cursor, effective_limit)
+    batch, cycle_complete, start = _batch(rows, cursor, effective_limit)
     checked = found = failed = 0
     request_count = 0
     for index, (tool_name, _record, toolforge_names) in enumerate(batch):
@@ -184,8 +200,9 @@ def run(
         "maintainers": found,
         "failed": failed,
         "requests": request_count,
+        "durableToolsSkipped": len(all_rows) - len(rows),
         "cycleComplete": cycle_complete,
-        "remaining": max(0, len(rows) - checked) if not cycle_complete else 0,
+        "remaining": max(0, len(rows) - start - checked) if not cycle_complete else 0,
     }
 
 

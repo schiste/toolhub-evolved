@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
-from backend import canonical_tools, people_index
+from backend import canonical_tools, maintainer_index, people_index
 from backend.models import (
     ApiCacheMeta,
     Person,
@@ -41,7 +41,7 @@ PROOF_TOOLFORGE_SUL = "toolforge_ldap_wikimedia_global_id"
 PROOF_EXACT_HANDLE = "exact_cross_provider_handle_candidate"
 PROOF_AUTHENTICATED = "authenticated_account_control"
 PROOF_OPERATOR = "operator_approved"
-SOURCE_TOOLFORGE_LDAP = "toolforge_ldap"
+SOURCE_TOOLFORGE_LDAP = maintainer_index.SOURCE_TOOLFORGE_LDAP
 TOOLFORGE_RELATIONSHIP_META_KEY = "toolforge_relationship_input_v1"
 
 

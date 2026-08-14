@@ -55,7 +55,10 @@ TOOLFORGE_BASE_URL = "https://toolsadmin.wikimedia.org"
 TOOLFORGE_TIMEOUT = 5
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
-TOOLFORGE_CLAIM_TTL = timedelta(days=1)
+# Toolsadmin is a bounded audit/fallback sweep. Its evidence must survive the
+# full worst-case hourly sweep; the authoritative LDAP generation below it is
+# non-expiring and is withdrawn only by the next complete projection.
+TOOLFORGE_CLAIM_TTL = timedelta(days=3)
 DISPLAY_NAME_CLAIM_TTL = timedelta(days=30)
 WRITE_CLAIM_TTL = timedelta(days=30)
 SIGNED_CLAIM_TTL = timedelta(days=90)
