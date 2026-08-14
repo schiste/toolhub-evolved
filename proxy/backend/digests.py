@@ -38,6 +38,7 @@ PROMPT_VERSION = "toolhub-digest-v2-evidence"
 MAX_HIGHLIGHTS = 5
 MAX_INTRODUCTION = 600
 MAX_BLURB = 320
+MIN_EVIDENCE_EXCERPT = 24
 MAX_META_BASE_TITLE = 800
 MODEL_TIMEOUT_SECONDS = 60
 LIFTWING_HOST = "api.wikimedia.org"
@@ -363,7 +364,10 @@ def validate_editorial(payload: dict[str, Any], facts: list[dict[str, Any]]) -> 
         normalized_evidence = {
             " ".join(str(value or "").split()) for value in source_evidence if str(value or "").strip()
         }
-        if not evidence or evidence not in normalized_evidence:
+        evidence_matches = evidence in normalized_evidence or (
+            len(evidence) >= MIN_EVIDENCE_EXCERPT and any(evidence in source for source in normalized_evidence)
+        )
+        if not evidence or not evidence_matches:
             message = "highlight evidence did not exactly match the frozen Toolhub facts"
             raise ValueError(message)
         seen.add(name)

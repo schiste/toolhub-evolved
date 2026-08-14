@@ -128,7 +128,7 @@ def test_model_editorial_rejects_unknown_tools_and_links():
         )
 
 
-def test_model_editorial_requires_exact_frozen_fact_evidence():
+def test_model_editorial_requires_verbatim_frozen_fact_evidence():
     facts = [{"name": "known", "description": "Helps editors review changes."}]
     accepted = digests.validate_editorial(
         {
@@ -145,6 +145,36 @@ def test_model_editorial_requires_exact_frozen_fact_evidence():
         facts,
     )
     assert accepted["highlights"][0]["evidence_field"] == "description"
+    excerpt = digests.validate_editorial(
+        {
+            "introduction": "A focused review tool arrived.",
+            "highlights": [
+                {
+                    "tool_name": "known",
+                    "blurb": "It supports change review workflows.",
+                    "evidence_field": "description",
+                    "evidence": "Helps editors review changes",
+                }
+            ],
+        },
+        facts,
+    )
+    assert excerpt["highlights"][0]["evidence"] == "Helps editors review changes"
+    with pytest.raises(ValueError, match="evidence"):
+        digests.validate_editorial(
+            {
+                "introduction": "A focused review tool arrived.",
+                "highlights": [
+                    {
+                        "tool_name": "known",
+                        "blurb": "It supports editors.",
+                        "evidence_field": "description",
+                        "evidence": "editors",
+                    }
+                ],
+            },
+            facts,
+        )
     with pytest.raises(ValueError, match="evidence"):
         digests.validate_editorial(
             {
