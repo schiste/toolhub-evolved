@@ -102,9 +102,14 @@ async function mountedDetailHtml(view, name) {
 		document.body.innerHTML = view.html;
 		view.mount();
 		await vi.advanceTimersByTimeAsync(3000);
-		if (typeof vi.dynamicImportSettled === "function") await vi.dynamicImportSettled();
-		await Promise.resolve();
-		await Promise.resolve();
+		// Lazy detail modules can resolve across several scheduler turns when the
+		// full suite is loading modules concurrently. Drain that bounded chain
+		// instead of assuming two microtasks are always enough.
+		for (let attempt = 0; attempt < 5; attempt += 1) {
+			if (typeof vi.dynamicImportSettled === "function") await vi.dynamicImportSettled();
+			await vi.runOnlyPendingTimersAsync();
+			await Promise.resolve();
+		}
 		return document.body.innerHTML;
 	} finally {
 		window.history.replaceState({}, "", originalPath);
