@@ -70,3 +70,49 @@ test("What's New shows two curated releases without raw commit rows", async () =
 	assert.doesNotMatch(body.textContent, /Outcome 2|raw commit/);
 	assert.doesNotMatch(body.textContent, /\bDeploy\b/);
 });
+
+/** The panel markup as index.html ships it: hidden until something opens it. */
+function mountWhatsNew() {
+	document.body.innerHTML = `<div id="whats-new" class="hidden" aria-hidden="true">
+		<button class="whats-new__collapsed" data-whats-new-open aria-expanded="false">What's new</button>
+		<button data-whats-new-close>Close</button><div id="whats-new-body"></div>
+	</div>`;
+	localStorage.clear();
+	whatsNew.resetWhatsNewForTests();
+}
+
+test("an empty release manifest announces nothing and never takes focus", async () => {
+	mountWhatsNew();
+	h.backendGetJson.mockResolvedValue({ schemaVersion: 3, deployments: [] });
+	await whatsNew.initWhatsNew();
+	const element = document.querySelector("#whats-new");
+
+	assert.ok(element.classList.contains("hidden"));
+	assert.ok(!element.classList.contains("is-collapsed"));
+	assert.equal(element.getAttribute("aria-hidden"), "true");
+	assert.equal(document.activeElement, document.body);
+});
+
+test("?whats-new=1 still opens the panel on an empty manifest", async () => {
+	mountWhatsNew();
+	window.history.replaceState({}, "", "/?whats-new=1");
+	h.backendGetJson.mockResolvedValue({ schemaVersion: 3, deployments: [] });
+	await whatsNew.initWhatsNew();
+	const element = document.querySelector("#whats-new");
+
+	assert.ok(!element.classList.contains("hidden"));
+	assert.match(document.querySelector("#whats-new-body").textContent, /No release notes are available yet/);
+	window.history.replaceState({}, "", "/");
+});
+
+test("a populated manifest still opens on a first visit", async () => {
+	mountWhatsNew();
+	h.backendGetJson.mockResolvedValue({
+		deployments: [{ id: "r1", title: "Release one", marketing: { user: "- Outcome" } }]
+	});
+	await whatsNew.initWhatsNew();
+	const element = document.querySelector("#whats-new");
+
+	assert.ok(!element.classList.contains("hidden"));
+	assert.match(element.textContent, /Release one/);
+});

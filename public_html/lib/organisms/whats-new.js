@@ -167,8 +167,9 @@ export async function initWhatsNew() {
 	});
 	releaseData = await backendGetJson("/data/deployments.json");
 	if (!releaseData) return;
-	if (whatsNewForced() || (!whatsNewNever() && !whatsNewCollapsed())) openWhatsNew();
-	else if (!whatsNewNever()) showCollapsedWhatsNew();
+	const hasRelease = Boolean(latestDeployment());
+	if (whatsNewForced() || (hasRelease && !whatsNewNever() && !whatsNewCollapsed())) openWhatsNew();
+	else if (hasRelease && !whatsNewNever()) showCollapsedWhatsNew();
 }
 
 export function resetWhatsNewForTests() {
