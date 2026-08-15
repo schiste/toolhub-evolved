@@ -830,6 +830,13 @@ project remains group-controlled. Wikimedia user-page sources and explicit
 URL-control challenges provide equivalent source-scoped proofs. Toolhub's
 `created_by` value proves who registered a crawler URL, not who controls it.
 
+Legacy developer accounts without a Toolforge↔SUL bridge remain candidates on
+an exact Toolhub/Toolforge handle match alone. They are promoted automatically
+only when current LDAP membership and an independent verified relationship
+source corroborate that exact handle on the same canonical tool. The resulting
+binding stores the immutable Toolforge UID number and the shared tool names;
+conflicting stable identifiers still block publication.
+
 Each toolinfo author becomes an independent assertion. The current schema's
 author array and structured `wiki_username` / `developer_username` fields are
 preferred. Legacy scalar values such as `Ada, Grace` are split for compatibility
