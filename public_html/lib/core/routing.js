@@ -15,9 +15,11 @@ export function authorHref(name) {
 export function authorAttributionHref(name) {
 	return `${authorHref(name)}?context=attribution`;
 }
-/** @param {string} publicId */
-export function personHref(publicId) {
-	return `/people/${encodeURIComponent(publicId)}`;
+/** @param {string|{id?: string, slug?: string}} personOrId @param {string} [publicSlug] */
+export function personHref(personOrId, publicSlug = "") {
+	const person = typeof personOrId === "object" && personOrId !== null ? personOrId : null;
+	const reference = publicSlug || person?.slug || person?.id || String(personOrId || "");
+	return `/people/${encodeURIComponent(reference)}`;
 }
 /* ------------------------------------------------------------- static cfg */
 // Personas = WHO you are → real `audiences` facet values (audiences__term).

@@ -221,11 +221,11 @@ test("toolCard uses structured handles only when the catalog supplies one", () =
 test("toolCard uses canonical relationship identity in account-owned context", () => {
 	const html = toolCard({
 		...base,
-		accountPerson: { id: "person-123", displayName: "Schiste" },
+		accountPerson: { id: "person-123", slug: "schiste-0123", displayName: "Schiste" },
 		accountRelationships: [{ type: "maintainer", status: "verified" }]
 	});
 	assert.ok(html.includes("Maintained by"));
-	assert.ok(html.includes('href="/people/person-123"'));
+	assert.ok(html.includes('href="/people/schiste-0123"'));
 	assert.ok(html.includes(">Schiste</span></a>"));
 	assert.ok(!html.includes("/by/Jane%20%26%20Co"));
 });

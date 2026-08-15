@@ -65,6 +65,7 @@ test("viewAuthor renders the author name, count, back link and a tools grid", as
 test("viewPerson renders every role with distinct provenance on one tool", async () => {
 	h.backendGetJson.mockResolvedValueOnce({
 		id: "person-trust",
+		slug: "ada-lovelace-4ced",
 		displayName: "Ada Lovelace",
 		identityQuality: "stable_id",
 		profile: {},
@@ -133,7 +134,8 @@ test("viewPerson renders every role with distinct provenance on one tool", async
 	assert.doesNotMatch(view.html, /record authority/i);
 	assert.match(view.html, /<dt>Tools with a verified relationship<\/dt><dd>1<\/dd>/);
 	assert.match(view.html, /Maintained by/);
-	assert.match(view.html, /href="\/people\/person-trust"/);
+	assert.match(view.html, /href="\/people\/ada-lovelace-4ced"/);
+	assert.equal(window.location.pathname, "/people/ada-lovelace-4ced");
 	assert.equal(h.getToolsByName.mock.calls.length, 0);
 });
 
@@ -231,7 +233,7 @@ test("viewAuthor resolves one exact handle through the dedicated resolver", asyn
 	h.backendGetJson
 		.mockResolvedValueOnce({
 			status: "resolved",
-			person: { id: "person-ada", displayName: "Ada Lovelace" }
+			person: { id: "person-ada", slug: "ada-lovelace-4ced", displayName: "Ada Lovelace" }
 		})
 		.mockResolvedValueOnce({
 			id: "person-ada",
@@ -247,7 +249,7 @@ test("viewAuthor resolves one exact handle through the dedicated resolver", asyn
 	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/resolve/?handle=Ada");
 	assert.equal(h.backendGetJson.mock.calls[1][0], "/v1/people/person-ada/");
 	assert.equal(view.title, "Ada Lovelace — Toolhub");
-	assert.equal(window.location.pathname, "/people/person-ada");
+	assert.equal(window.location.pathname, "/people/ada-lovelace-4ced");
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
@@ -257,7 +259,7 @@ test("viewAuthor canonicalizes one current attribution handle onto the stable pe
 		.mockResolvedValueOnce({
 			status: "resolved",
 			matchType: "handle",
-			person: { id: "person-christophe", displayName: "Christophe", identifiers: [] }
+			person: { id: "person-christophe", slug: "christophe-4ced", displayName: "Christophe", identifiers: [] }
 		})
 		.mockResolvedValueOnce({
 			id: "person-christophe",
@@ -272,7 +274,7 @@ test("viewAuthor canonicalizes one current attribution handle onto the stable pe
 
 	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/resolve/?handle=Christophe&context=attribution");
 	assert.equal(h.backendGetJson.mock.calls[1][0], "/v1/people/person-christophe/");
-	assert.equal(window.location.pathname, "/people/person-christophe");
+	assert.equal(window.location.pathname, "/people/christophe-4ced");
 	assert.equal(view.title, "Christophe — Toolhub");
 	assert.doesNotMatch(view.html, /Attributions awaiting identity evidence/);
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
