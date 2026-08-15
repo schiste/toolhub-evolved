@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import select
 
-from backend import authz, db, people_index, tool_summaries, toolinfo_discovery, toolinfo_sources
+from backend import authz, canonical_tools, db, people_index, tool_summaries, toolinfo_discovery, toolinfo_sources
 from backend import v1_common as common
 from backend.models import (
     CanonicalToolCache,
@@ -72,7 +72,14 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
     with db.session_scope() as session:
         stored_user = session.get(User, user.id)
         if stored_user is None:
-            return {"username": user.username, "verified": [], "possible": [], "errors": []}
+            return {
+                "username": user.username,
+                "identities": {"wikiUsername": user.username, "toolforgeDeveloperUsernames": []},
+                "toolforgeProjects": [],
+                "verified": [],
+                "possible": [],
+                "errors": [],
+            }
         person = people_index.link_user(session, stored_user)
         relationships = list(
             session.execute(
@@ -113,6 +120,37 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
         sources = toolinfo_sources.sources_for_tools(names)
         verified: list[dict[str, Any]] = []
         possible: list[dict[str, Any]] = []
+        bindings = list(
+            session.execute(
+                select(PersonAccountBinding)
+                .where(
+                    PersonAccountBinding.person_id == person.id,
+                    PersonAccountBinding.provider == "toolforge",
+                    PersonAccountBinding.status == "verified",
+                    PersonAccountBinding.revoked_at.is_(None),
+                )
+                .order_by(PersonAccountBinding.external_id)
+            ).scalars()
+        )
+        developer_accounts = {
+            binding.external_id: account.uid
+            for binding in bindings
+            if (account := session.get(ToolforgeAccountProjection, binding.external_id)) is not None
+            and not account.disabled
+        }
+        project_developers: dict[str, set[str]] = {}
+        if developer_accounts:
+            memberships = session.execute(
+                select(ToolforgeMembershipProjection.uid_number, ToolforgeMembershipProjection.tool_name)
+                .where(ToolforgeMembershipProjection.uid_number.in_(developer_accounts))
+                .order_by(ToolforgeMembershipProjection.tool_name, ToolforgeMembershipProjection.uid_number)
+            ).all()
+            for uid_number, project_name in memberships:
+                project_developers.setdefault(project_name, set()).add(developer_accounts[uid_number])
+        toolforge_projects = [
+            {"name": project_name, "developerUsernames": sorted(usernames, key=str.casefold)}
+            for project_name, usernames in sorted(project_developers.items(), key=lambda item: item[0].casefold())
+        ]
         for name in names:
             record = records.get(name)
             if record is None:
@@ -125,43 +163,29 @@ def _canonical_account_tools(user: User) -> dict[str, Any]:
                 "searchTerms": ["canonical-relationship-graph"],
                 "claims": [*claims_by_tool.get(name, []), *edge_claims],
                 "relationships": edge_claims,
+                "toolforgeProjects": [
+                    project
+                    for project in canonical_tools.toolforge_project_names(name, record)
+                    if project in project_developers
+                ],
                 "toolinfoDiscovery": discoveries.get(name, {"status": "pending"}),
                 "toolinfoSource": sources.get(name),
             }
             bucket = verified if any(edge.verification_status == "verified" for edge in edges) else possible
             bucket.append(item)
-        binding_ids = list(
-            session.execute(
-                select(PersonAccountBinding).where(
-                    PersonAccountBinding.person_id == person.id,
-                    PersonAccountBinding.provider == "toolforge",
-                    PersonAccountBinding.status == "verified",
-                    PersonAccountBinding.revoked_at.is_(None),
-                )
-            ).scalars()
-        )
-        binding_external_ids = {binding.external_id for binding in binding_ids}
-        toolforge_names = list(
-            session.execute(
-                select(ToolforgeMembershipProjection.tool_name)
-                .join(
-                    ToolforgeAccountProjection,
-                    ToolforgeAccountProjection.uid_number == ToolforgeMembershipProjection.uid_number,
-                )
-                .where(
-                    ToolforgeMembershipProjection.uid_number.in_(binding_external_ids or {""}),
-                    ToolforgeAccountProjection.disabled.is_(False),
-                )
-                .distinct()
-                .order_by(ToolforgeMembershipProjection.tool_name)
-            ).scalars()
-        )
+        toolforge_names = [project["name"] for project in toolforge_projects]
+        developer_usernames = sorted(set(developer_accounts.values()), key=str.casefold)
         return {
             "username": stored_user.username,
             "personId": person.public_id,
             "person": {"id": person.public_id, "displayName": person.display_name},
+            "identities": {
+                "wikiUsername": stored_user.username,
+                "toolforgeDeveloperUsernames": developer_usernames,
+            },
             "searchTerms": ["canonical-relationship-graph"],
             "toolforgeToolNames": toolforge_names,
+            "toolforgeProjects": toolforge_projects,
             "counts": {"verified": len(verified), "possible": len(possible)},
             "verified": verified,
             "possible": possible,

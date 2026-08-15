@@ -167,6 +167,8 @@ def test_me_tools_no_relationships_returns_empty_summaries(client):
     assert body["verified"] == []
     assert body["possible"] == []
     assert body["summaries"] == {}
+    assert body["identities"] == {"wikiUsername": "Ada", "toolforgeDeveloperUsernames": []}
+    assert body["toolforgeProjects"] == []
 
 
 def test_me_tools_stored_user_vanishes_mid_request(client, monkeypatch):
@@ -194,6 +196,8 @@ def test_me_tools_with_verified_relationship_and_claim(client):
     body = resp.get_json()
     assert body["counts"]["verified"] == 1
     assert body["toolforgeToolNames"] == ["alpha-tool"]
+    assert body["identities"] == {"wikiUsername": "Ada", "toolforgeDeveloperUsernames": ["ada"]}
+    assert body["toolforgeProjects"] == [{"name": "alpha-tool", "developerUsernames": ["ada"]}]
     assert {item["tool"]["name"] for item in body["verified"] + body["possible"]} == {"alpha-tool"}
     item = body["verified"][0]
     assert item["tool"]["name"] == "alpha-tool"
@@ -201,6 +205,40 @@ def test_me_tools_with_verified_relationship_and_claim(client):
     # resolved relationship's own claim shape.
     assert len(item["claims"]) == 2
     assert len(item["relationships"]) == 1
+    assert item["toolforgeProjects"] == []
+
+
+def test_me_tools_keeps_project_specific_developer_accounts(client):
+    """Multiple verified Toolforge identities remain attached to their projects."""
+    uid = add_user()
+    sign_in(client, uid)
+    with db.session_scope() as session:
+        user = session.get(User, uid)
+        person = people_index.link_user(session, user)
+        for external_id, username, projects in (
+            ("1001", "ada", ["shared", "alpha"]),
+            ("1002", "ada-alt", ["shared", "beta"]),
+        ):
+            session.add(
+                PersonAccountBinding(
+                    provider="toolforge",
+                    external_id=external_id,
+                    person_id=person.id,
+                    status="verified",
+                )
+            )
+            session.add(ToolforgeAccountProjection(uid_number=external_id, uid=username))
+            for project in projects:
+                session.add(ToolforgeMembershipProjection(uid_number=external_id, tool_name=project))
+
+    body = client.get("/v1/me/tools/").get_json()
+
+    assert body["identities"]["toolforgeDeveloperUsernames"] == ["ada", "ada-alt"]
+    assert body["toolforgeProjects"] == [
+        {"name": "alpha", "developerUsernames": ["ada"]},
+        {"name": "beta", "developerUsernames": ["ada-alt"]},
+        {"name": "shared", "developerUsernames": ["ada", "ada-alt"]},
+    ]
 
 
 def test_me_tools_unions_memberships_from_multiple_verified_toolforge_accounts(client):

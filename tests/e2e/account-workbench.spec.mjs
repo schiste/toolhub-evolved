@@ -26,6 +26,10 @@ test.describe("Account workbench layout", () => {
 			route.fulfill({
 				contentType: "application/json; charset=utf-8",
 				json: {
+					username: "Schiste",
+					person: { id: "person-schiste", displayName: "Christophe" },
+					identities: { wikiUsername: "Schiste", toolforgeDeveloperUsernames: ["schiste"] },
+					toolforgeProjects: [{ name: "wiki-polis", developerUsernames: ["schiste"] }],
 					verified: [
 						{
 							tool: {
@@ -38,6 +42,7 @@ test.describe("Account workbench layout", () => {
 								modified_date: "2026-03-01T12:00:00Z"
 							},
 							claims: [{ verificationMethod: "toolforge_maintainer", isVerified: true }],
+							toolforgeProjects: ["wiki-polis"],
 							toolinfoSource: {
 								sourceUrl: "https://toolsadmin.wikimedia.org/tools/toolinfo/v1.2/toolinfo.json",
 								sourceKind: "toolsadmin",
@@ -109,6 +114,12 @@ test.describe("Account workbench layout", () => {
 		await expect(page.locator('.account-workbench__nav a[href="/preferences"]')).toHaveText(/Preferences/);
 
 		await expect(page.locator(".account-records__table")).toBeVisible();
+		await page.getByRole("button", { name: "Create toolinfo.json" }).click();
+		await expect(page.getByRole("heading", { name: "Generated toolinfo.json" })).toBeVisible();
+		await expect(page.locator('[data-toolinfo-field="name"]')).toHaveValue("toolforge-wiki-polis");
+		await expect(page.locator('[data-toolinfo-field="author-wiki"]')).toHaveValue("Schiste");
+		await expect(page.locator('[data-toolinfo-field="author-developer"]')).toHaveValue("schiste");
+		await expect(page.locator("[data-toolinfo-preview]")).toHaveValue(/"developer_username": "schiste"/);
 		await expect(page.getByText("Unverified author name")).toHaveCount(0);
 		await expect(page.getByText("Verified: Toolforge maintainer")).toBeVisible();
 		const badgeOverflow = await page.locator(".account-records__table .sync-badge").evaluateAll((badges) =>

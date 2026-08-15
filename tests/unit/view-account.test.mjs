@@ -274,8 +274,12 @@ test("viewMyTools prefers verified rows when the same tool appears in possible m
 	});
 
 	const r = await viewMyTools();
+	const page = document.createElement("div");
+	page.innerHTML = r.html;
+	const rows = page.querySelectorAll(".account-records__table tbody tr");
 
-	assert.equal((r.html.match(/Shared Tool/g) || []).length, 1);
+	assert.equal(rows.length, 1);
+	assert.match(rows[0].textContent, /Shared Tool/);
 	assert.ok(r.html.includes("Verified: Toolforge maintainer"));
 	assert.ok(!r.html.includes("Unverified author name"));
 });

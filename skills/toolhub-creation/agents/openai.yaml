@@ -1,0 +1,7 @@
+interface:
+    display_name: "Toolhub Creation"
+    short_description: "Create and validate Wikimedia toolinfo.json"
+    default_prompt: "Use $toolhub-creation to create or improve a repository toolinfo.json for this Wikimedia tool."
+
+policy:
+    allow_implicit_invocation: true

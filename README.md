@@ -94,6 +94,8 @@ The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and 
 
 **Claude skill** — [`skills/toolhub-discovery/`](skills/toolhub-discovery/) holds an optional skill for Claude Code and claude.ai. It is deliberately thin: the review methodology lives in the `prior-art-review` prompt above, so it reaches every MCP client and has one place to be corrected. What the skill adds is the part a prompt cannot do — it fires on its own when someone starts describing a tool idea, rather than waiting to be invoked by a user who already knows to check. Copy the directory into `~/.claude/skills/` to install it; the MCP server must be configured first.
 
+**Toolhub creation skill** — [`skills/toolhub-creation/`](skills/toolhub-creation/) is a portable agent skill for creating, migrating, and validating repository-owned `toolinfo.json`. It enforces the `toolforge-$PROJECT` naming convention, structured author identities, the core-versus-annotation boundary, and schema 1.2.2 with an offline helper. Copy the directory into the skills location supported by your agent runtime (for example `~/.claude/skills/` or `$CODEX_HOME/skills/`).
+
 ## Repository layout
 
 ```

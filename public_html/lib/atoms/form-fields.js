@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $input, esc } from "../core/dom.js";
+import { TOOLINFO_TOOL_TYPES } from "../core/toolinfo-docs.js";
 
 // Shared form-field renderers (reused by all Lane B forms).
 /**
@@ -82,19 +83,7 @@ export function fArea(label, id, value, hint, opts = {}) {
 export function fCheck(label, id, checked) {
 	return `<label class="le__check"><input type="checkbox" id="${id}"${checked ? " checked" : ""} /> ${esc(label)}</label>`;
 }
-export const TOOL_TYPES = [
-	"",
-	"web app",
-	"desktop app",
-	"bot",
-	"gadget",
-	"user script",
-	"command line tool",
-	"coding framework",
-	"lua module",
-	"template",
-	"other"
-];
+export const TOOL_TYPES = TOOLINFO_TOOL_TYPES;
 /**
  * @param {string} label
  * @param {string} id
