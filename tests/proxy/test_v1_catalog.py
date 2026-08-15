@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
 from backend import authz, catalog_projection, db, security, sync, tool_assets  # noqa: E402
-from backend.models import CanonicalToolCache, CatalogCuration, User, utcnow  # noqa: E402
+from backend.models import CanonicalToolCache, CatalogCuration, CatalogFacetValue, User, utcnow  # noqa: E402
 
 
 @pytest.fixture
@@ -93,6 +93,20 @@ def post_curation(client, name, **kwargs):
         json=payload,
         headers={"X-CSRF-Token": "tok"},
     )
+
+
+def test_catalog_facets_are_available_as_an_independent_local_read(client):
+    add_canonical("alpha", {"name": "alpha", "title": "Alpha", "tool_type": "web-app"})
+    with db.session_scope() as session:
+        session.add(CatalogFacetValue(tool_name="alpha", field="tool_type", value="web-app", label="web-app"))
+
+    response = client.get("/v1/catalog/search/facets/")
+
+    assert response.status_code == 200
+    assert response.headers["X-Toolhub-Evolved-Source"] == "local-replica"
+    assert response.get_json()["facets"]["_filter_tool_type"]["tool_type"]["buckets"] == [
+        {"key": "web-app", "doc_count": 1}
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ from backend import (
     DEFAULT_DB_URL,
     api_cache,
     canonical_tools,
+    catalog_facets,
     catalog_projection,
     db,
     identity_graph,
@@ -37,6 +38,8 @@ from backend import (
 from backend.author_claims import claim_relationship_for_method
 from backend.models import (
     ApiCacheMeta,
+    CanonicalToolCache,
+    CatalogFacetValue,
     Person,
     PersonIdentifier,
     ToolAuthorClaim,
@@ -74,11 +77,14 @@ def run_once() -> list[MigrationResult]:
     return [
         MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns()),
         MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
+        MigrationResult("catalog read indexes", _ensure_catalog_read_indexes()),
         MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
+        MigrationResult("canonical card and sort projection", canonical_tools.backfill_read_projection()),
         MigrationResult(
             "catalog projections",
             catalog_projection.refresh_candidates(limit=catalog_projection.MAX_REFRESH_TOOLS)["refreshed"],
         ),
+        MigrationResult("catalog facet aggregate", catalog_facets.rebuild_global_payload(force=True)),
         MigrationResult("resolver identity cleanup", _clean_resolver_identity_claims()),
         MigrationResult("legacy Toolforge proof retirement", _retire_legacy_toolforge_proofs()),
         MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
@@ -89,6 +95,41 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
     ]
+
+
+def _ensure_catalog_read_indexes() -> int:
+    """Create covering indexes and retire the single-column predecessors."""
+    engine = db.engine()
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    targets = (
+        (CanonicalToolCache.__table__, "ix_canonical_tool_cache_modified_at_sort"),
+        (CatalogFacetValue.__table__, "ix_catalog_facet_values_field_value_tool"),
+    )
+    created = 0
+    for table, name in targets:
+        if table.name not in existing_tables:
+            continue
+        existing = {item["name"] for item in inspector.get_indexes(table.name)}
+        if name in existing:
+            continue
+        index = next(candidate for candidate in table.indexes if candidate.name == name)
+        index.create(bind=engine)
+        created += 1
+    obsolete = {
+        "ix_catalog_facet_values_tool_name",
+        "ix_catalog_facet_values_field",
+        "ix_catalog_facet_values_value",
+    }
+    existing_facet_indexes = {item["name"] for item in inspect(engine).get_indexes(CatalogFacetValue.__tablename__)}
+    with engine.begin() as connection:
+        for name in sorted(obsolete & existing_facet_indexes):
+            if engine.dialect.name in {"mysql", "mariadb"}:
+                connection.exec_driver_sql(f"DROP INDEX {name} ON {CatalogFacetValue.__tablename__}")
+            else:
+                connection.exec_driver_sql(f"DROP INDEX {name}")
+            created += 1
+    return created
 
 
 def _widen_digest_render_columns() -> int:

@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -40,6 +41,67 @@ from backend.sync import (
 # Bound on the denormalized canonical search haystack (see CanonicalToolCache).
 SEARCH_TEXT_MAX_CHARS = 4000
 DIGEST_RENDER_TEXT = Text().with_variant(MEDIUMTEXT(), "mysql").with_variant(MEDIUMTEXT(), "mariadb")
+
+# Public catalog cards need only this stable Toolhub subset. Keeping a derived
+# JSON projection avoids reading and serializing detail-only fields (and large
+# multilingual/source payloads) for every browse result while the canonical
+# record remains intact for detail pages and reconciliation.
+CATALOG_CARD_FIELDS = (
+    "name",
+    "title",
+    "description",
+    "url",
+    "icon",
+    "keywords",
+    "author",
+    "created_by",
+    "wikidata_qid",
+    "subtitle",
+    "sponsor",
+    "replaced_by",
+    "tool_type",
+    "license",
+    "repository",
+    "api_url",
+    "technology_used",
+    "audiences",
+    "tasks",
+    "for_wikis",
+    "available_ui_languages",
+    "user_docs_url",
+    "developer_docs_url",
+    "feedback_url",
+    "bugtracker_url",
+    "translate_url",
+    "deprecated",
+    "experimental",
+    "modified_date",
+    "modified",
+    "origin",
+    "annotations",
+    "_language",
+)
+
+
+def catalog_card_record(record: dict | None) -> dict:
+    """Return the bounded canonical record shape required by list cards."""
+    source = record if isinstance(record, dict) else {}
+    return {field: source[field] for field in CATALOG_CARD_FIELDS if field in source}
+
+
+def catalog_modified_at(record: dict | None) -> datetime | None:
+    """Normalize Toolhub's modification timestamp into naive UTC for sorting."""
+    source = record if isinstance(record, dict) else {}
+    raw = source.get("modified_date") or source.get("modified")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
 
 
 def utcnow() -> datetime:
@@ -259,10 +321,14 @@ class CanonicalToolCache(Base):
     __tablename__ = "canonical_tool_cache"
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     record: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Nullable only for the deploy window in which an existing table has gained
+    # the column but migrate.py has not completed its bounded backfill yet.
+    card_record: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
     # Lowercased name/title/description, denormalized out of `record` so a search
     # can filter and limit in SQL. Matching inside the JSON column would mean
     # shipping every record to Python to test a substring.
     search_text: Mapped[str] = mapped_column(Text, default="")
+    modified_at_sort: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     source_url: Mapped[str] = mapped_column(String(2000), default="")
     source: Mapped[str] = mapped_column(String(32), default=SOURCE_OFFICIAL)
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_OFFICIAL)
@@ -286,6 +352,8 @@ class CanonicalToolCache(Base):
         source = record or {}
         parts = (source.get("name"), source.get("title"), source.get("description"))
         self.search_text = "\n".join(str(part or "") for part in parts).casefold()[:SEARCH_TEXT_MAX_CHARS]
+        self.card_record = catalog_card_record(source)
+        self.modified_at_sort = catalog_modified_at(source)
         return record
 
 
@@ -471,11 +539,17 @@ class CatalogFacetValue(Base):
     """Indexed normalized facet value materialized from one catalog projection."""
 
     __tablename__ = "catalog_facet_values"
-    __table_args__ = (UniqueConstraint("tool_name", "field", "value"),)
+    __table_args__ = (
+        UniqueConstraint("tool_name", "field", "value"),
+        # Aggregate queries group in field/value order, then count distinct
+        # tools. The legacy unique index starts with tool_name and forces
+        # MariaDB into a temporary table + filesort for every request.
+        Index("ix_catalog_facet_values_field_value_tool", "field", "value", "tool_name"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tool_name: Mapped[str] = mapped_column(String(255), index=True)
-    field: Mapped[str] = mapped_column(String(64), index=True)
-    value: Mapped[str] = mapped_column(String(255), index=True)
+    tool_name: Mapped[str] = mapped_column(String(255))
+    field: Mapped[str] = mapped_column(String(64))
+    value: Mapped[str] = mapped_column(String(255))
     label: Mapped[str] = mapped_column(String(255), default="")
     provenance: Mapped[list] = mapped_column(JSON, default=list)
     confidence_basis_points: Mapped[int] = mapped_column(Integer, default=10000)

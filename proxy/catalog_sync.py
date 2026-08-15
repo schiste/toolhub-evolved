@@ -15,7 +15,7 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-from backend import canonical_tools, db, digests, graph_enrichment, job_runner, toolhub
+from backend import canonical_tools, catalog_facets, db, digests, graph_enrichment, job_runner, toolhub
 from backend.models import ToolCatalogSyncState, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL, clean_error
 
@@ -553,10 +553,12 @@ def _publish_snapshot(generation: int, expected_count: int) -> list[str]:
         state.cycles_completed += 1
         state.last_completed_at = utcnow()
         state.status = STATUS_IDLE
+        catalog_facets.mark_dirty(s)
     from backend import api_cache  # noqa: PLC0415 - avoid backend import cycle
 
     for name in retired:
         api_cache.invalidate_tool(name)
+    catalog_facets.rebuild_global_payload()
     return retired
 
 

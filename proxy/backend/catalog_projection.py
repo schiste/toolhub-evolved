@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import db, wikimedia_urls
+from backend import catalog_facets, db, wikimedia_urls
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
@@ -651,6 +651,10 @@ def _refresh_batch(names: list[str]) -> dict[str, int]:
                 _replace_facets(s, name, effective, provenance, now)
                 if report := reports.get(name):
                     _emit_analyzer_facets(s, name, report, now)
+            # One dirty marker per batch, not one metadata round trip per tool.
+            # The scheduled projection pass publishes the replacement aggregate
+            # after the authoritative facet rows commit.
+            catalog_facets.mark_dirty(s)
     except (SQLAlchemyError, TypeError, ValueError) as exc:
         _mark_failures(names, exc)
         return {"requested": len(names), "refreshed": 0, "changed": 0, "errors": len(names)}
@@ -704,7 +708,9 @@ def refresh_candidates(limit: int = MAX_REFRESH_TOOLS) -> dict[str, int]:
             # so the moderated-away facets stop being served.
             candidates.append(name)
     names = sorted(candidates)[:bounded]
-    return {"candidates": len(candidates), **refresh_tool_names(names)}
+    summary = {"candidates": len(candidates), **refresh_tool_names(names)}
+    catalog_facets.rebuild_global_payload()
+    return summary
 
 
 def projection_payload(name: str) -> dict[str, Any] | None:
