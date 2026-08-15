@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// cspell:ignore openhub pedia versity
 import { TOOLINFO_SCHEMA_VERSION, TOOLINFO_TOOL_TYPES } from "./toolinfo-docs.js";
 
 /** @typedef {{ name: string, wiki_username?: string, developer_username?: string, email?: string, url?: string }} ToolinfoAuthor */
@@ -40,6 +41,19 @@ export const CORE_TOOLINFO_FIELDS = [
 
 const URL_FIELDS = ["url", "repository", "replaced_by", "icon", "api_url", "translate_url", "bugtracker_url"];
 const MULTILINGUAL_URL_FIELDS = ["developer_docs_url", "user_docs_url", "feedback_url", "privacy_policy_url"];
+const STRING_LIMITS = {
+	_schema: 32,
+	_language: 16,
+	name: 255,
+	title: 255,
+	subtitle: 255,
+	description: 65535,
+	openhub_id: 255,
+	bot_username: 255,
+	license: 255,
+	tool_type: 32,
+	keywords: 2047
+};
 const LANGUAGE_PATTERN = /^(x-.*|[A-Za-z]{2,3}(-.*)?)$/;
 const WIKI_PATTERN =
 	/^(\*|(.*)?\.?(mediawiki|wiktionary|wiki(pedia|quote|books|source|news|versity|data|voyage|media))\.org)$/i;
@@ -110,7 +124,7 @@ function projectTitle(projectName) {
 
 /**
  * @param {Record<string, any>} record
- * @param {{ projectName?: string, displayName?: string, wikiUsername?: string, developerUsernames?: string[] }} [context]
+ * @param {{ projectName?: string, displayName?: string, wikiUsername?: string, developerUsernames?: string[], identityVerified?: boolean, isAuthor?: boolean }} [context]
  */
 export function prefillToolinfo(record = {}, context = {}) {
 	const projectName = clean(context.projectName);
@@ -148,12 +162,14 @@ export function prefillToolinfo(record = {}, context = {}) {
 	const identityTokens = new Set(
 		[displayName, wikiUsername, ...developerUsernames].map((item) => item.toLowerCase()).filter(Boolean)
 	);
-	let ownAuthor = authors.find((author) =>
-		[author.name, author.wiki_username, author.developer_username]
-			.map((item) => clean(item).toLowerCase())
-			.some((item) => identityTokens.has(item))
-	);
-	if (!ownAuthor && authors.length === 0 && displayName) {
+	let ownAuthor = context.identityVerified
+		? authors.find((author) =>
+				[author.name, author.wiki_username, author.developer_username]
+					.map((item) => clean(item).toLowerCase())
+					.some((item) => identityTokens.has(item))
+			)
+		: undefined;
+	if (!ownAuthor && authors.length === 0 && displayName && context.identityVerified && context.isAuthor) {
 		ownAuthor = { name: displayName };
 		authors.push(ownAuthor);
 	}
@@ -178,14 +194,16 @@ export function formatMultilingualUrls(value) {
 	return clean(value);
 }
 
-/** @param {string} value */
-export function parseMultilingualUrls(value) {
+/** @param {string} value @param {{ alwaysArray?: boolean }} [options] */
+export function parseMultilingualUrls(value, options = {}) {
 	const lines = String(value || "")
 		.split("\n")
 		.map((line) => line.trim())
 		.filter(Boolean);
 	if (lines.length === 0) return "";
-	if (lines.length === 1 && !lines[0].includes("|")) return lines[0];
+	if (lines.length === 1 && !lines[0].includes("|")) {
+		return options.alwaysArray ? [{ language: "en", url: lines[0] }] : lines[0];
+	}
 	return lines.map((line) => {
 		const separator = line.indexOf("|");
 		return separator < 0
@@ -223,8 +241,8 @@ function multilingualUrls(value) {
 	return Array.isArray(value) ? value : value ? [value] : [];
 }
 
-/** @param {Record<string, any>} value @param {{ projectName?: string }} [context] */
-export function validateToolinfo(value, context = {}) {
+/** @param {Record<string, any>} value @param {{ projectName?: string }} context */
+function basicErrors(value, context) {
 	const errors = [];
 	for (const field of ["name", "title", "description", "url"]) {
 		if (!clean(value[field])) {
@@ -234,26 +252,55 @@ export function validateToolinfo(value, context = {}) {
 	if (context.projectName && value.name !== toolforgeToolinfoName(context.projectName)) {
 		errors.push(`name must be ${toolforgeToolinfoName(context.projectName)} for this Toolforge project.`);
 	}
+	for (const [field, limit] of Object.entries(STRING_LIMITS)) {
+		if (clean(value[field]).length > limit) {
+			errors.push(`${field} must be ${limit} characters or fewer.`);
+		}
+	}
+	return errors;
+}
+
+/** @param {Record<string, any>} value */
+function urlErrors(value) {
+	const errors = [];
 	for (const field of URL_FIELDS) {
 		if (value[field] && !httpUrl(value[field])) {
 			errors.push(`${field} must be an http(s) URL.`);
 		}
+		if (clean(value[field]).length > 2047) {
+			errors.push(`${field} must be 2047 characters or fewer.`);
+		}
 	}
 	for (const field of ["url_alternates", ...MULTILINGUAL_URL_FIELDS]) {
+		if (field === "url_alternates" && value[field] && !Array.isArray(value[field])) {
+			errors.push("url_alternates must be an array of language and URL objects.");
+		}
 		for (const item of multilingualUrls(value[field])) {
 			const url = typeof item === "string" ? item : item?.url;
 			const language = typeof item === "string" ? "" : item?.language;
 			if (!httpUrl(url)) {
 				errors.push(`${field} contains an invalid URL.`);
 			}
+			if (clean(url).length > 2047) {
+				errors.push(`${field} contains a URL longer than 2047 characters.`);
+			}
 			if (language && !LANGUAGE_PATTERN.test(clean(language))) {
 				errors.push(`${field} contains an invalid language code.`);
+			}
+			if (clean(language).length > 16) {
+				errors.push(`${field} contains a language code longer than 16 characters.`);
 			}
 		}
 	}
 	if (value.icon && !/^https:\/\/commons\.wikimedia\.org\/wiki\/File:.+\..+$/.test(value.icon)) {
 		errors.push("icon must be a Wikimedia Commons File: page URL.");
 	}
+	return errors;
+}
+
+/** @param {Record<string, any>} value */
+function classificationErrors(value) {
+	const errors = [];
 	if (value.tool_type && !TOOLINFO_TOOL_TYPES.includes(value.tool_type)) {
 		errors.push("tool_type is not supported by schema 1.2.2.");
 	}
@@ -261,21 +308,60 @@ export function validateToolinfo(value, context = {}) {
 		if (!WIKI_PATTERN.test(wiki)) {
 			errors.push(`for_wikis contains an invalid target: ${wiki}.`);
 		}
+		if (wiki.length > 255) {
+			errors.push("for_wikis values must be 255 characters or fewer.");
+		}
 	}
-	for (const language of [value._language, ...list(value.available_ui_languages)]) {
+	if (!LANGUAGE_PATTERN.test(clean(value._language || "en"))) {
+		errors.push(`Invalid record language code: ${value._language}.`);
+	}
+	for (const language of list(value.available_ui_languages)) {
 		if (language !== "*" && !LANGUAGE_PATTERN.test(clean(language))) {
 			errors.push(`Invalid language code: ${language}.`);
 		}
 	}
+	for (const field of ["sponsor", "technology_used"]) {
+		for (const item of list(value[field])) {
+			if (item.length > 255) {
+				errors.push(`${field} values must be 255 characters or fewer.`);
+			}
+		}
+	}
+	return errors;
+}
+
+/** @param {Record<string, any>} value */
+function authorErrors(value) {
+	const errors = [];
 	for (const author of normalizeToolinfoAuthors(value.author)) {
+		for (const field of ["name", "wiki_username", "developer_username", "email"]) {
+			if (clean(/** @type {Record<string, any>} */ (author)[field]).length > 255) {
+				errors.push(`Author ${field} for ${author.name} must be 255 characters or fewer.`);
+			}
+		}
 		if (author.url && !httpUrl(author.url)) {
 			errors.push(`Author URL for ${author.name} is invalid.`);
+		}
+		if (clean(author.url).length > 2047) {
+			errors.push(`Author URL for ${author.name} must be 2047 characters or fewer.`);
 		}
 		if (author.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(author.email)) {
 			errors.push(`Author email for ${author.name} is invalid.`);
 		}
 	}
-	return [...new Set(errors)];
+	return errors;
+}
+
+/** @param {Record<string, any>} value @param {{ projectName?: string }} [context] */
+export function validateToolinfo(value, context = {}) {
+	return [
+		...new Set([
+			...basicErrors(value, context),
+			...urlErrors(value),
+			...classificationErrors(value),
+			...authorErrors(value)
+		])
+	];
 }
 
 /** @param {Record<string, any>} value */

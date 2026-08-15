@@ -8,6 +8,7 @@ import { USER } from "../lib/core/session.js";
 import { invalidUrlNotice } from "../lib/atoms/labels.js";
 import { accountEmptyState, accountWorkbenchPage } from "../lib/organisms/account-workbench.js";
 import { sourceAnalysisWorkspace } from "../lib/organisms/source-analysis.js";
+import { buildToolinfoGeneratorEntries, toolinfoGeneratorWorkspace } from "../lib/organisms/toolinfo-generator.js";
 import { toolRegistrationWorkspace } from "./toolforms.js";
 
 const AUTHOR_CLAIM_TOOLFORGE_MAINTAINER = "toolforge_maintainer";
@@ -75,6 +76,8 @@ function resolvedTools(items, verified, sourcesByTool = {}) {
 			tool.accountRelationships = Array.isArray(item.relationships) ? item.relationships : [];
 			tool.toolinfoDiscovery = item.toolinfoDiscovery || { status: "pending" };
 			tool.toolinfoSource = item.toolinfoSource || sourcesByTool[tool.name];
+			tool.toolforgeProjects = Array.isArray(item.toolforgeProjects) ? item.toolforgeProjects : [];
+			tool.canonicalRecord = structuredClone(item.tool);
 			return tool;
 		})
 		.filter((tool) => tool !== null);
@@ -199,7 +202,7 @@ function toolinfoEvidenceCell(source, discovery) {
 }
 
 /** @param {Tool} tool */
-function toolRow(tool) {
+function toolRow(tool, generatorKey = "") {
 	const hasType = Boolean(tool.toolType);
 	const type = tool.toolType || t("accountTools.noType", "No type");
 	const when =
@@ -221,13 +224,14 @@ function toolRow(tool) {
 			<div class="account-records__actions">
 				<a href="${toolHref(tool.name)}">${t("accountTools.view", "View")}</a>
 				${toolUrl ? `<a href="${toolUrl}" target="_blank" rel="noopener nofollow">${t("accountTools.open", "Open")}</a>` : ""}
+				${generatorKey ? `<button type="button" class="account-records__action" data-toolinfo-open="${esc(generatorKey)}">${t("accountTools.generateToolinfo", "Create toolinfo.json")}</button>` : ""}
 			</div>
 		</td>
 	</tr>`;
 }
 
 /** @param {Tool[]} tools */
-function toolsTable(tools, actions = "") {
+function toolsTable(tools, generatorKeys = new Map(), actions = "") {
 	if (tools.length === 0) {
 		return accountEmptyState({
 			iconName: "tools",
@@ -257,7 +261,7 @@ function toolsTable(tools, actions = "") {
 				<th scope="col">${t("accountTools.updated", "Updated")}</th>
 				<th scope="col">${t("accountTools.actions", "Actions")}</th>
 			</tr></thead>
-			<tbody>${tools.map((tool) => toolRow(tool)).join("")}</tbody>
+			<tbody>${tools.map((tool) => toolRow(tool, generatorKeys.get(tool.name) || "")).join("")}</tbody>
 		</table>
 	</div>`;
 }
@@ -276,27 +280,34 @@ async function myTools() {
 		if (seen.has(tool.name)) continue;
 		tools.push(tool);
 	}
-	return tools;
+	return { tools, payload: data };
 }
 
 export async function viewMyTools() {
 	/** @type {Tool[]} */
 	let tools = [];
+	/** @type {any} */
+	let payload = {};
 	let error = null;
 	try {
-		tools = await myTools();
+		({ tools, payload } = await myTools());
 	} catch (e) {
 		error = e;
 	}
 	const registration = toolRegistrationWorkspace();
 	const sourceAnalysis = sourceAnalysisWorkspace();
+	const generatorEntries = buildToolinfoGeneratorEntries(tools, payload);
+	const generator = toolinfoGeneratorWorkspace(generatorEntries, {
+		displayName: payload?.person?.displayName || USER.name,
+		wikiUsername: payload?.identities?.wikiUsername || payload?.username || USER.name
+	});
 	const content = error
 		? accountEmptyState({
 				iconName: "tools",
 				title: t("accountTools.loadFailedTitle", "Tools could not be loaded"),
 				body: t("accountTools.loadFailed", "Unable to load your Toolhub tools right now.")
 			})
-		: toolsTable(tools);
+		: toolsTable(tools, generator.entryKeyByTool);
 	const html = accountWorkbenchPage({
 		active: "tools",
 		title: t("accountTools.title", "My tools"),
@@ -306,12 +317,13 @@ export async function viewMyTools() {
 			USER.name
 		),
 		className: "account-records account-tools at",
-		body: `${content}${registration.html}${sourceAnalysis.html}`
+		body: `${content}${generator.html}${registration.html}${sourceAnalysis.html}`
 	});
 	return {
 		title: t("accountTools.docTitle", "My tools - Toolhub"),
 		html,
 		mount() {
+			generator.mount();
 			registration.mount();
 			sourceAnalysis.mount();
 		}

@@ -1527,6 +1527,16 @@
 	gap: var(--space-1-5);
 	font-size: var(--fs-caption);
 }
+.account-records__action {
+	padding: var(--space-0);
+	border: var(--space-0);
+	background: transparent;
+	color: var(--color-progressive);
+	font: inherit;
+	text-align: start;
+	text-decoration: underline;
+	cursor: pointer;
+}
 .account-tools__badges {
 	display: flex;
 	flex-wrap: wrap;
@@ -1555,6 +1565,83 @@
 }
 .account-tools__source-badge {
 	cursor: help;
+}
+.toolinfo-generator > .le__label {
+	max-width: 38rem;
+}
+.toolinfo-generator__form {
+	display: grid;
+	gap: var(--space-5);
+	margin-top: var(--space-4);
+}
+.toolinfo-generator__form fieldset {
+	display: grid;
+	gap: var(--space-3);
+	margin: var(--space-0);
+	padding: var(--space-4);
+	border: var(--border-base);
+	border-radius: var(--radius-md);
+}
+.toolinfo-generator__form legend {
+	padding-inline: var(--space-1);
+	font-size: var(--fs-h4);
+	font-weight: 700;
+}
+.toolinfo-generator__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+	gap: var(--space-3);
+}
+.toolinfo-generator__notice {
+	margin-top: var(--space-4);
+	padding: var(--space-3) var(--space-4);
+	border-inline-start: var(--border-progressive-strong);
+	background: var(--color-progressive-subtle);
+	color: var(--color-text);
+	line-height: var(--lh-body);
+}
+.toolinfo-generator__authors {
+	display: grid;
+	gap: var(--space-3);
+}
+.toolinfo-generator__author {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+	align-items: end;
+	gap: var(--space-3);
+	padding: var(--space-3);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface-muted);
+}
+.toolinfo-generator__author > .btn {
+	justify-self: start;
+}
+.toolinfo-generator__checks,
+.toolinfo-generator__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+.toolinfo-generator__output {
+	display: grid;
+	gap: var(--space-3);
+}
+.toolinfo-generator__output h3 {
+	margin: var(--space-0);
+}
+.toolinfo-generator__preview {
+	min-height: 24rem;
+	font-family: var(--font-mono);
+	font-size: var(--fs-caption);
+	line-height: 1.55;
+	tab-size: 2;
+}
+.toolinfo-generator__validation {
+	line-height: var(--lh-body);
+}
+.toolinfo-generator__validation ul {
+	margin-block: var(--space-2) var(--space-0);
+	color: var(--color-destructive);
 }
 .source-analysis__form {
 	display: grid;

@@ -26,7 +26,9 @@ test("prefill creates the canonical Toolforge name and enriches the matching aut
 			projectName: "example",
 			displayName: "Christophe",
 			wikiUsername: "Schiste",
-			developerUsernames: ["schiste"]
+			developerUsernames: ["schiste"],
+			identityVerified: true,
+			isAuthor: true
 		}
 	);
 
@@ -38,7 +40,14 @@ test("prefill creates the canonical Toolforge name and enriches the matching aut
 test("prefill creates a reviewable record for an unregistered Toolforge project", () => {
 	const result = prefillToolinfo(
 		{},
-		{ projectName: "citation-bot", displayName: "Ada", wikiUsername: "Ada", developerUsernames: ["ada"] }
+		{
+			projectName: "citation-bot",
+			displayName: "Ada",
+			wikiUsername: "Ada",
+			developerUsernames: ["ada"],
+			identityVerified: true,
+			isAuthor: true
+		}
 	);
 
 	assert.deepEqual(
@@ -64,9 +73,29 @@ test("prefill creates a reviewable record for an unregistered Toolforge project"
 test("multiple developer identities are never collapsed into one author handle", () => {
 	const result = prefillToolinfo(
 		{},
-		{ projectName: "shared", displayName: "Ada", developerUsernames: ["ada", "ada-alt"] }
+		{
+			projectName: "shared",
+			displayName: "Ada",
+			developerUsernames: ["ada", "ada-alt"],
+			identityVerified: true,
+			isAuthor: true
+		}
 	);
 	assert.deepEqual(result.author, [{ name: "Ada" }]);
+});
+
+test("maintainership alone does not create authorship or enrich an unverified match", () => {
+	const maintainer = prefillToolinfo(
+		{},
+		{ projectName: "example", displayName: "Ada", wikiUsername: "AdaWiki", identityVerified: true, isAuthor: false }
+	);
+	assert.deepEqual(maintainer.author, []);
+
+	const unverified = prefillToolinfo(
+		{ author: [{ name: "Ada" }] },
+		{ displayName: "Ada", wikiUsername: "AdaWiki", identityVerified: false, isAuthor: true }
+	);
+	assert.deepEqual(unverified.author, [{ name: "Ada" }]);
 });
 
 test("author and multilingual helpers preserve supported schema shapes", () => {
@@ -83,6 +112,9 @@ test("author and multilingual helpers preserve supported schema shapes", () => {
 		{ language: "en", url: "https://example.org/default" }
 	]);
 	assert.equal(parseMultilingualUrls("https://example.org/docs"), "https://example.org/docs");
+	assert.deepEqual(parseMultilingualUrls("https://example.org/docs", { alwaysArray: true }), [
+		{ language: "en", url: "https://example.org/docs" }
+	]);
 });
 
 test("build omits empty and inapplicable fields and serializes with a final newline", () => {

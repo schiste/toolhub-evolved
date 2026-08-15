@@ -170,6 +170,7 @@ interface Tool {
 	personRelationships?: RelationshipPerson["relationships"];
 	toolinfoDiscovery?: ToolinfoDiscovery;
 	toolinfoSource?: ToolinfoSource;
+	toolforgeProjects?: string[];
 }
 
 /** A normalized curated-list record. */
