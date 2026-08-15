@@ -1332,6 +1332,59 @@ def resolve_legacy_handle(s: Session, query: str, *, attribution_context: bool =
     }
 
 
+def _fold_resolved_handle_attributions(
+    people: list[dict[str, Any]],
+    attributions: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Hide unresolved roles already tied to one exact current handle.
+
+    The unresolved evidence remains stored for audit. This projection-only fold
+    is deliberately narrower than display-name matching: it requires one unique
+    public person with a current structured handle and the same relationship
+    role on this exact tool.
+    """
+    people_by_handle_role: dict[tuple[str, str], set[str]] = {}
+    public_roles = set(PUBLIC_ROLES)
+    for person in people:
+        public_id = str(person.get("id") or "")
+        handles = {
+            _normalized(identifier.get("value"))
+            for identifier in person.get("identifiers", [])
+            if isinstance(identifier, dict) and identifier.get("kind") == IDENTIFIER_HANDLE
+        }
+        roles = {
+            str(relationship.get("type") or "")
+            for relationship in person.get("relationships", [])
+            if isinstance(relationship, dict)
+        }
+        for handle in handles - {""}:
+            for role in roles & public_roles:
+                people_by_handle_role.setdefault((handle, role), set()).add(public_id)
+
+    visible: list[dict[str, Any]] = []
+    folded = 0
+    for attribution in attributions:
+        label = _normalized(attribution.get("label"))
+        breakdown = [item for item in attribution.get("relationshipBreakdown", []) if isinstance(item, dict)]
+        remaining = []
+        for item in breakdown:
+            role = str(item.get("type") or "")
+            if len(people_by_handle_role.get((label, role), set())) == 1:
+                folded += int(item.get("evidenceCount") or 0)
+            else:
+                remaining.append(item)
+        if not remaining:
+            continue
+        projected = dict(attribution)
+        projected["relationshipBreakdown"] = remaining
+        projected["relationshipTypes"] = list(dict.fromkeys(item["type"] for item in remaining))
+        projected["evidenceCount"] = sum(int(item.get("evidenceCount") or 0) for item in remaining)
+        projected["attributionCount"] = projected["evidenceCount"]
+        projected["bestConfidence"] = max((int(item.get("bestConfidence") or 0) for item in remaining), default=0)
+        visible.append(projected)
+    return visible, folded
+
+
 def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
     """Return the canonical local people view for a Toolhub tool."""
     clean_tool = _clean(tool_name)
@@ -1395,7 +1448,10 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
         role: sum(any(relationship["type"] == role for relationship in item["relationships"]) for item in items)
         for role in PUBLIC_ROLES
     }
-    unresolved = unresolved_attributions(s, tool_name=clean_tool, limit=100)
+    unresolved, folded_unresolved = _fold_resolved_handle_attributions(
+        items,
+        unresolved_attributions(s, tool_name=clean_tool, limit=100),
+    )
     unresolved_counts = {role: sum(role in item["relationshipTypes"] for item in unresolved) for role in PUBLIC_ROLES}
     return {
         "toolName": clean_tool,
@@ -1403,6 +1459,7 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
         "counts": counts,
         "unresolvedAttributions": unresolved,
         "unresolvedCounts": unresolved_counts,
+        "foldedUnresolvedAttributionCount": folded_unresolved,
         "resolvedRelationshipCount": sum(len(item["relationships"]) for item in items),
         "relationshipCount": len(relationships),
         "source": SOURCE_LOCAL,
