@@ -32,7 +32,10 @@ features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
   for background enrichment and resilience; it is not authoritative and never
   replaces live Toolhub reads or official write decisions. The `catalog-sync` job
   performs a paced initial backfill, then consumes recent tool changes and
-  reconciles one catalog page every 12 hours. A short-lived `api_cache` table
+  reconciles one catalog page every 12 hours. Projection publication invokes
+  that same incremental path when the mirror is stale; only the twice-monthly
+  `catalog-integrity` job downloads and validates a complete snapshot. A
+  short-lived `api_cache` table
   stores anonymous `GET /api/*` response bodies as a shared performance cache;
   the browser may also keep a bounded localStorage copy for stale-while-refresh.
   Official writes are sent to Toolhub's API with the user's stored OAuth grant.

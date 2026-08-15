@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
@@ -40,6 +41,7 @@ PROOF_TOOLHUB_ACCOUNT = "official_toolhub_account"
 PROOF_TOOLHUB_WIKIMEDIA = "toolhub_wikimedia_global_id"
 PROOF_TOOLFORGE_SUL = "toolforge_ldap_wikimedia_global_id"
 PROOF_EXACT_HANDLE = "exact_cross_provider_handle_candidate"
+PROOF_EXACT_HANDLE_SHARED_TOOL = "exact_handle_verified_shared_tool"
 PROOF_AUTHENTICATED = "authenticated_account_control"
 PROOF_OPERATOR = "operator_approved"
 SOURCE_TOOLFORGE_LDAP = maintainer_index.SOURCE_TOOLFORGE_LDAP
@@ -52,6 +54,15 @@ RELATIONSHIP_RULES_FINGERPRINT = projection_policy.module_fingerprint(
 
 class IdentityBindingConflictError(RuntimeError):
     """Raised when a requested binding contradicts an existing stable identity."""
+
+
+@dataclass(frozen=True)
+class ToolforgeCorroborationIndexes:
+    """Query-bounded inputs for cross-provider same-tool corroboration."""
+
+    projects_by_account: dict[str, set[str]]
+    verified_tools_by_person: dict[int, set[str]]
+    canonical_names: dict[str, tuple[str, ...]]
 
 
 def _binding_conflict(message: str) -> IdentityBindingConflictError:
@@ -442,6 +453,121 @@ def _unique_toolhub_handle_candidate(
     return (toolhub_account, person, handle_kind) if person is not None else None
 
 
+def _verified_shared_tool_names(
+    account: ToolforgeAccountProjection,
+    handle_kind: str,
+    identifiers: dict[tuple[str, str], Person],
+    indexes: ToolforgeCorroborationIndexes,
+) -> list[str]:
+    """Corroborate one exact handle through independent same-tool evidence."""
+    namespace, handle = (
+        (people_index.NS_TOOLFORGE_USERNAME, account.developer_username)
+        if handle_kind == "developer_username"
+        else (people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid)
+    )
+    source_person = _indexed_person(identifiers, namespace, handle)
+    if source_person is None:
+        return []
+    membership_tools = {
+        tool_name
+        for project in indexes.projects_by_account.get(account.uid_number, set())
+        for tool_name in (indexes.canonical_names.get(project.casefold(), ()) or (f"toolforge-{project}",))
+    }
+    return sorted(membership_tools & indexes.verified_tools_by_person.get(source_person.id, set()))
+
+
+def _toolforge_corroboration_indexes(
+    session: Session,
+) -> ToolforgeCorroborationIndexes:
+    projects_by_account: dict[str, set[str]] = {}
+    for uid_number, tool_name in session.execute(
+        select(ToolforgeMembershipProjection.uid_number, ToolforgeMembershipProjection.tool_name)
+    ):
+        projects_by_account.setdefault(uid_number, set()).add(tool_name)
+    verified_tools_by_person: dict[int, set[str]] = {}
+    for person_id, tool_name in session.execute(
+        select(ToolRelationshipEvidence.person_id, ToolRelationshipEvidence.tool_name).where(
+            ToolRelationshipEvidence.verification_status == STATUS_VERIFIED,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+            ToolRelationshipEvidence.source != SOURCE_TOOLFORGE_LDAP,
+        )
+    ):
+        verified_tools_by_person.setdefault(person_id, set()).add(tool_name)
+    return ToolforgeCorroborationIndexes(
+        projects_by_account=projects_by_account,
+        verified_tools_by_person=verified_tools_by_person,
+        canonical_names=canonical_tools.names_by_toolforge_project(session),
+    )
+
+
+def _sync_unbound_toolforge_handle(  # noqa: PLR0913 - indexes keep the account loop query-free
+    session: Session,
+    account: ToolforgeAccountProjection,
+    *,
+    toolhub_handles: dict[str, list[ToolhubAccountProjection]],
+    identifiers: dict[tuple[str, str], Person],
+    bindings: dict[tuple[str, str], PersonAccountBinding],
+    corroboration: ToolforgeCorroborationIndexes,
+) -> str:
+    candidate = _unique_toolhub_handle_candidate(account, toolhub_handles, identifiers)
+    if candidate is None:
+        return "unresolved"
+    toolhub_account, person, handle_kind = candidate
+    shared_tool_names = _verified_shared_tool_names(
+        account,
+        handle_kind,
+        identifiers,
+        corroboration,
+    )
+    if shared_tool_names:
+        try:
+            bind_toolforge_account(
+                session,
+                account=account,
+                person=person,
+                proof_method=PROOF_EXACT_HANDLE_SHARED_TOOL,
+                confidence=90,
+                evidence={
+                    "toolhubUserId": toolhub_account.toolhub_user_id,
+                    "toolhubUsername": toolhub_account.username,
+                    "toolforgeDeveloperUsername": account.developer_username,
+                    "toolforgeShellUsername": account.uid,
+                    "toolforgeUidNumber": account.uid_number,
+                    "matchedHandleKind": handle_kind,
+                    "sharedToolNames": shared_tool_names,
+                },
+                binding_index=bindings,
+            )
+        except IdentityBindingConflictError:
+            return "conflict"
+        identifiers[(people_index.NS_TOOLFORGE_UID_NUMBER, account.uid_number.casefold())] = person
+        identifiers[(people_index.NS_TOOLFORGE_USERNAME, account.developer_username.casefold())] = person
+        identifiers[(people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid.casefold())] = person
+        return "verified"
+    existing = _binding(session, PROVIDER_TOOLFORGE, account.uid_number, bindings)
+    if existing.status == STATUS_VERIFIED:
+        return "verified"
+    _set_binding(
+        session,
+        provider=PROVIDER_TOOLFORGE,
+        external_id=account.uid_number,
+        person_id=person.id,
+        status=STATUS_CANDIDATE,
+        proof_method=PROOF_EXACT_HANDLE,
+        confidence=70,
+        evidence={
+            "toolforgeDeveloperUsername": account.developer_username,
+            "toolforgeShellUsername": account.uid,
+            "toolforgeUidNumber": account.uid_number,
+            "toolhubUserId": toolhub_account.toolhub_user_id,
+            "toolhubUsername": toolhub_account.username,
+            "matchedHandleKind": handle_kind,
+        },
+        binding_index=bindings,
+    )
+    return "candidate"
+
+
 def _sync_toolforge_bindings(
     session: Session,
     accounts: list[ToolforgeAccountProjection],
@@ -452,6 +578,7 @@ def _sync_toolforge_bindings(
     toolhub_handles: dict[str, list[ToolhubAccountProjection]] = {}
     for row in toolhub_accounts:
         toolhub_handles.setdefault(row.normalized_username, []).append(row)
+    corroboration = _toolforge_corroboration_indexes(session)
     stats = {"verified": 0, "candidate": 0, "conflict": 0, "unresolved": 0}
     for account in accounts:
         global_id = account.wikimedia_global_user_id or ""
@@ -518,34 +645,15 @@ def _sync_toolforge_bindings(
                 identifiers[(people_index.NS_TOOLFORGE_USERNAME, account.developer_username.casefold())] = person
                 identifiers[(people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid.casefold())] = person
             continue
-        candidate = _unique_toolhub_handle_candidate(account, toolhub_handles, identifiers)
-        if candidate is None:
-            stats["unresolved"] += 1
-            continue
-        toolhub_account, person, handle_kind = candidate
-        existing = _binding(session, PROVIDER_TOOLFORGE, account.uid_number, bindings)
-        if existing.status == STATUS_VERIFIED:
-            stats["verified"] += 1
-            continue
-        _set_binding(
+        status = _sync_unbound_toolforge_handle(
             session,
-            provider=PROVIDER_TOOLFORGE,
-            external_id=account.uid_number,
-            person_id=person.id,
-            status=STATUS_CANDIDATE,
-            proof_method=PROOF_EXACT_HANDLE,
-            confidence=70,
-            evidence={
-                "toolforgeUid": account.uid,
-                "toolforgeDeveloperUsername": account.developer_username,
-                "toolforgeUidNumber": account.uid_number,
-                "toolhubUserId": toolhub_account.toolhub_user_id,
-                "toolhubUsername": toolhub_account.username,
-                "matchedHandleKind": handle_kind,
-            },
-            binding_index=bindings,
+            account,
+            toolhub_handles=toolhub_handles,
+            identifiers=identifiers,
+            bindings=bindings,
+            corroboration=corroboration,
         )
-        stats["candidate"] += 1
+        stats[status] += 1
     return stats
 
 

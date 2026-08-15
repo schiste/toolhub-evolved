@@ -27,7 +27,7 @@ def test_refresh_reuses_fresh_inputs_then_publishes_and_precomputes(monkeypatch)
     monkeypatch.setattr(
         projection_refresh,
         "_parallel_sync",
-        lambda actual, _age: order.append(("sync", actual)) or {"toolforgeAccounts": {"status": "idle"}},
+        lambda actual: order.append(("sync", actual)) or {"toolforgeAccounts": {"status": "idle"}},
     )
     monkeypatch.setattr(
         projection_refresh.people_reconcile,
@@ -110,11 +110,34 @@ def test_refresh_persists_input_lock_overlap_as_a_healthy_defer(monkeypatch):
         assert '"status":"deferred"' in persisted.value
 
 
+def test_parallel_refresh_uses_incremental_catalog_sync(monkeypatch):
+    monkeypatch.setattr(
+        projection_refresh.catalog_sync,
+        "run",
+        lambda: {"phase": "steady", "completed": True},
+    )
+    monkeypatch.setattr(
+        projection_refresh.catalog_sync,
+        "run_complete",
+        lambda **_kwargs: pytest.fail("normal projection refresh must not download a complete catalog"),
+    )
+
+    result = projection_refresh._parallel_sync(  # noqa: SLF001 - orchestration contract
+        {"toolhubAccounts": False, "toolforgeAccounts": False, "catalog": True}
+    )
+
+    assert result["catalog"]["phase"] == "steady"
+    assert result["catalog"]["cacheHit"] is False
+
+
 def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")
 
     assert "name: projection-refresh" in jobs
+    assert "name: catalog-integrity" in jobs
+    assert 'schedule: "17 3 1,15 * *"' in jobs
+    assert "catalog_sync.py --complete" in jobs
     assert "name: source-attestations-full" in jobs
     assert 'timeout: 900' in jobs
     assert "retired_job in account-sync toolforge-account-sync catalog-snapshot" in deploy

@@ -272,6 +272,51 @@ def test_unbound_matching_handle_is_only_a_candidate():
         )
 
 
+def test_exact_handle_and_verified_shared_tool_promotes_toolforge_binding():
+    with db.session_scope() as session:
+        session.add(toolhub_account(username="Alice", global_id=""))
+        session.add(toolforge_account(uid="alice-shell", developer_username="Alice", global_id=""))
+        session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="alice-tool"))
+        session.add(canonical_tool("toolforge-alice-tool", url="https://alice-tool.toolforge.org"))
+        people_index.replace_source_evidence(
+            session,
+            "toolforge-alice-tool",
+            "toolforge_toolsadmin",
+            [
+                {
+                    "display_name": "Alice",
+                    "toolforge_username": "Alice",
+                    "relationship_type": "maintainer",
+                    "method": "toolforge_maintainer",
+                    "verification_status": "verified",
+                    "confidence": 95,
+                    "evidence_payload": {
+                        "toolforgeToolName": "alice-tool",
+                        "profileUsername": "Alice",
+                    },
+                }
+            ],
+        )
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["verified"] == 1
+    assert result["candidate"] == 0
+    with db.session_scope() as session:
+        binding = session.query(PersonAccountBinding).filter_by(provider="toolforge").one()
+        assert binding.status == "verified"
+        assert binding.proof_method == identity_graph.PROOF_EXACT_HANDLE_SHARED_TOOL
+        assert binding.confidence == 90
+        assert binding.evidence["sharedToolNames"] == ["toolforge-alice-tool"]
+        assert (
+            session.query(PersonIdentifier)
+            .filter_by(namespace=people_index.NS_TOOLFORGE_UID_NUMBER, value="9001")
+            .count()
+            == 1
+        )
+
+
 def test_multiple_developer_accounts_with_one_global_id_join_the_same_person():
     with db.session_scope() as session:
         session.add(toolhub_account())
