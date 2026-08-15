@@ -20,7 +20,7 @@ import { communityHeader } from "./community.js";
 const PEOPLE_PAGE_SIZES = [12, 24, 48];
 const DEFAULT_PEOPLE_PAGE_SIZE = 24;
 const PEOPLE_ROLES = new Set(["author", "maintainer"]);
-const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified", "renewal_needed"]);
+const PEOPLE_VERIFICATIONS = new Set(["verified", "unverified"]);
 const PEOPLE_ACTIVITIES = new Set(["active", "quiet", "unknown"]);
 const PEOPLE_ORDERINGS = new Set(["relevance", "relationship", "recent", "name"]);
 
@@ -218,7 +218,10 @@ export async function viewAuthor(name) {
 	const context = new URLSearchParams(globalThis.location?.search || "").get("context");
 	const resolution = await resolvePersonHandle(name, context === "attribution" ? { context } : {}).catch(() => null);
 	if (resolution?.status === "resolved" && resolution?.person?.id) {
-		const person = await personById(resolution.person.id, { toolPage: profileToolPage() });
+		const page = profileToolPage();
+		const canonicalHref = `${personHref(resolution.person.id)}${page > 1 ? `?page=${page}` : ""}`;
+		globalThis.history?.replaceState?.({}, "", canonicalHref);
+		const person = await personById(resolution.person.id, { toolPage: page });
 		return resolvedView(person);
 	}
 	if (resolution?.status === "ambiguous") return renderDisambiguation(name, resolution);
@@ -705,8 +708,7 @@ function directorySidebar(state) {
 	const verificationOptions = [
 		["", t("authors.anyVerification", "Any verification")],
 		["verified", t("authors.filterVerified", "Currently verified")],
-		["unverified", t("authors.filterUnverified", "Unverified")],
-		["renewal_needed", t("authors.filterRenewal", "Renewal needed")]
+		["unverified", t("authors.filterUnverified", "Unverified")]
 	]
 		.map(([value, label]) => option(value, state.verification, label))
 		.join("");

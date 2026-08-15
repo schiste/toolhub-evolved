@@ -151,7 +151,7 @@ def test_the_new_person_makes_the_label_locally_resolvable():
     assert "0xdeadbeef" in handles
 
 
-def test_a_created_person_publishes_no_relationship_and_is_not_listed():
+def test_a_created_person_projects_only_an_unverified_current_candidate():
     with db.session_scope() as session:
         _label(session, "0xdeadbeef")
         _discover(session, FakeRegistry({"0xdeadbeef": "9999"}))
@@ -160,9 +160,14 @@ def test_a_created_person_publishes_no_relationship_and_is_not_listed():
 
         assert session.query(ToolRelationshipEvidence).count() == 0
         assert session.query(ToolPersonRelationship).count() == 0
-    # Publishable by stable identity, but with no relationship it is not
-    # listed, so a mistaken lookup never becomes a visible claim about anyone.
-    assert listed["count"] == 0
+    # The exact unique handle has one canonical destination, but the candidate
+    # exists only in the public read model and never becomes stored or verified.
+    assert listed["count"] == 1
+    relationship = listed["results"][0]["relationshipSummary"]
+    assert relationship["relationshipCount"] == 1
+    assert relationship["verifiedRelationshipCount"] == 0
+    assert relationship["types"] == [PERSON_REL_AUTHOR]
+    assert relationship["verifiedTypes"] == []
 
 
 def test_name_shaped_labels_are_never_looked_up():

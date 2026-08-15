@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { dirAttrs, esc, textAttrs } from "../core/dom.js";
 import { t, updatedTimeTag } from "../core/i18n.js";
-import { authorAttributionHref, authorHref, personHref, toolHref } from "../core/routing.js";
+import { authorHref, personHref, toolHref } from "../core/routing.js";
 import { peopleForRole, personForRelationshipLabel, relationshipsForRole } from "../core/relationship-people.js";
 import { completeness } from "../core/signals.js";
 import { signedIn } from "../core/session.js";
@@ -58,7 +58,7 @@ function authorLink(tool, name, people) {
 				.toLowerCase() === name.toLowerCase()
 	);
 	const handle = String(record?.wikiUsername || record?.developerUsername || "").trim();
-	return handle ? authorHref(handle) : authorAttributionHref(name);
+	return handle ? authorHref(handle) : null;
 }
 
 /** @param {string} value */
@@ -109,9 +109,13 @@ function singleAuthorByline(tool, evolvedSummary, author) {
 	const label = confirmed
 		? t("toolCard.maintainerConfirmed", "$1, confirmed maintainer", maintainer)
 		: t("toolCard.maintainerUnconfirmed", "$1, maintainer not confirmed yet", maintainer);
-	const owner = hasOwner
-		? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(authorLink(tool, maintainer, relationshipPeople(tool, evolvedSummary)))}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
-		: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
+	const href = hasOwner ? authorLink(tool, maintainer, relationshipPeople(tool, evolvedSummary)) : null;
+	const owner =
+		hasOwner && href
+			? `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(href)}"${confirmed ? "" : ` title="${esc(label)}"`} aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></a>`
+			: hasOwner
+				? `<span class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`
+				: `<span class="tcard__maint-name" title="${esc(label)}" aria-label="${esc(label)}"><span class="tcard__maint-text"${dirAttrs(maintainer)}>${esc(maintainer)}</span></span>`;
 	return `<div class="tcard__maint">${t("toolCard.by", "by")} ${owner}</div>`;
 }
 
@@ -123,7 +127,12 @@ function authorByline(tool, evolvedSummary) {
 	const count = names.length;
 	const compact = compactAuthorNames(names);
 	const links = names
-		.map((name) => `<li><a href="${esc(authorLink(tool, name, people))}"${dirAttrs(name)}>${esc(name)}</a></li>`)
+		.map((name) => {
+			const href = authorLink(tool, name, people);
+			return href
+				? `<li><a href="${esc(href)}"${dirAttrs(name)}>${esc(name)}</a></li>`
+				: `<li><span${dirAttrs(name)}>${esc(name)}</span></li>`;
+		})
 		.join("");
 	return `<details class="tcard__authors health-popover" data-route-disclosure="tool-authors:${esc(tool.name)}">
 		<summary class="tcard__authors-summary" aria-label="${esc(t("toolCard.showAllAuthors", "Show all $1 authors", count))}"><span>${t("toolCard.by", "by")} <span class="tcard__authors-text"${dirAttrs(compact)}>${esc(compact)}</span></span></summary>
