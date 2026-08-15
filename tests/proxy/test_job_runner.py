@@ -79,11 +79,9 @@ def test_the_lock_name_keeps_the_shared_prefix(monkeypatch):
     assert seen == ["toolhub-evolved:people-reconcile"]
 
 
-def test_interval_minutes_returns_zero_for_an_unclassifiable_cron_shape():
-    # Specific minute, specific non-"*/" hour, specific day-of-month, and a
-    # wildcard day-of-week does not match any of the coarse buckets this
-    # reader distinguishes, so it falls through to the explicit 0.
-    assert job_catalog._interval_minutes("30 5 15 * *") == 0
+def test_interval_minutes_uses_the_longest_month_for_a_monthly_schedule():
+    # Worker health must tolerate the longest valid silence between two runs.
+    assert job_catalog._interval_minutes("30 5 15 * *") == 31 * 24 * 60
 
 
 def test_load_returns_no_jobs_when_the_file_is_missing():

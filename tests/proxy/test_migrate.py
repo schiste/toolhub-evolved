@@ -54,6 +54,7 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
     with db.session_scope() as s:
         s.query(ApiCache).update({ApiCache.path: "", ApiCache.collection: "", ApiCache.detail_key: ""})
         s.execute(db.text("UPDATE canonical_tool_cache SET search_text = ''"))
+        s.execute(db.text("UPDATE canonical_tool_cache SET card_record = NULL, modified_at_sort = NULL"))
 
     # Asserted per migration rather than as a whole set, so adding a migration
     # extends this rather than breaking it.
@@ -61,12 +62,60 @@ def test_migrate_backfills_both_caches_and_is_idempotent(configured_db, capsys):
     assert first["digest render MEDIUMTEXT"] == 0
     assert first["api_cache index columns"] == 1
     assert first["canonical search_text"] == 1
+    # search_text repair reassigns the same record and therefore fills every
+    # derived read column in one pass.
+    assert first["canonical card and sort projection"] == 0
 
     # Running again is a no-op, so a deploy can re-run it without thinking.
     second = {result.name: result.rows for result in migrate.run_once()}
     assert second["api_cache index columns"] == 0
     assert second["canonical search_text"] == 0
+    assert second["canonical card and sort projection"] == 0
     assert [r for r in canonical_tools.search("cached earlier")][0]["toolName"] == "legacy-tool"
+
+
+def test_catalog_read_projection_backfill_repairs_rows_with_current_search_text(configured_db):
+    canonical_tools.upsert_records(
+        [{"name": "projected", "title": "Projected", "modified_date": "2026-08-15T12:00:00Z"}],
+        source_url="https://toolhub.wikimedia.org/api/search/tools/",
+    )
+    with db.session_scope() as session:
+        session.execute(
+            db.text(
+                "UPDATE canonical_tool_cache SET card_record = NULL, modified_at_sort = NULL "
+                "WHERE tool_name = 'projected'"
+            )
+        )
+
+    assert canonical_tools.backfill_read_projection() == 1
+    with db.session_scope() as session:
+        row = (
+            session.execute(
+                db.text("SELECT card_record, modified_at_sort FROM canonical_tool_cache WHERE tool_name = 'projected'")
+            )
+            .mappings()
+            .one()
+        )
+    assert row["card_record"] is not None
+    assert row["modified_at_sort"] is not None
+    assert canonical_tools.backfill_read_projection() == 0
+
+
+def test_catalog_index_migration_retires_redundant_single_column_indexes(configured_db):
+    with db.engine().begin() as connection:
+        connection.exec_driver_sql("CREATE INDEX ix_catalog_facet_values_tool_name ON catalog_facet_values (tool_name)")
+        connection.exec_driver_sql("CREATE INDEX ix_catalog_facet_values_field ON catalog_facet_values (field)")
+        connection.exec_driver_sql("CREATE INDEX ix_catalog_facet_values_value ON catalog_facet_values (value)")
+
+    assert migrate._ensure_catalog_read_indexes() == 3
+    names = {item["name"] for item in db.inspect(db.engine()).get_indexes("catalog_facet_values")}
+    assert "ix_catalog_facet_values_field_value_tool" in names
+    assert not names & {
+        "ix_catalog_facet_values_tool_name",
+        "ix_catalog_facet_values_field",
+        "ix_catalog_facet_values_value",
+    }
+    assert migrate._ensure_catalog_read_indexes() == 0
 
 
 def test_digest_render_columns_compile_to_mysql_mediumtext(configured_db):
@@ -126,8 +175,7 @@ def test_migrate_backfills_stable_person_slugs_idempotently(configured_db):
     assert migrate._backfill_people_identity() == 0
     with db.session_scope() as s:
         slugs = {
-            person.canonical_key: person.public_slug
-            for person in s.query(Person).order_by(Person.canonical_key).all()
+            person.canonical_key: person.public_slug for person in s.query(Person).order_by(Person.canonical_key).all()
         }
         assert slugs == {
             "stable:slug": "christophe-4ced",

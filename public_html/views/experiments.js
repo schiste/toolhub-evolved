@@ -558,11 +558,11 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.apiCacheCurrent",
-					"Scheduled workers stage complete generations and publish atomically; public routes retain the prior generation when refresh fails."
+					"Scheduled workers publish atomic catalog generations and precomputed facet projections; compact card reads render independently from deferred enrichment and retain the prior generation when refresh fails."
 				),
 				need: t(
 					"experiments.apiCacheNeed",
-					"Canonical replica, snapshot staging, /v1/catalog/health/, and browser local-response cache"
+					"Canonical replica, compact read projections, indexed sort/facets, /v1/catalog/health/, and browser local-response cache"
 				)
 			},
 			{

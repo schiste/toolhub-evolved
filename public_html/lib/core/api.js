@@ -232,7 +232,11 @@ const apiServerStaleFollowups = new Map();
 let apiCacheLoaded = false;
 let apiPersistScheduled = false;
 const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
-const TOOL_AGGREGATE_PATHS = new Set(["/v1/catalog/search/tools/", "/v1/catalog/ui/home/"]);
+const TOOL_AGGREGATE_PATHS = new Set([
+	"/v1/catalog/search/tools/",
+	"/v1/catalog/search/facets/",
+	"/v1/catalog/ui/home/"
+]);
 const LIST_COLLECTION_PATH = "/v1/catalog/lists/";
 const RECENT_COLLECTION_PATH = "/v1/catalog/recent/";
 const CRAWLER_RUNS_PATH = "/v1/catalog/crawler/runs/";
@@ -350,7 +354,11 @@ export function apiCachePolicy(url) {
 	if (path === RECENT_COLLECTION_PATH || path === "/api/recent/") {
 		return { freshMs: API_RECENT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	}
-	if (path === "/v1/catalog/search/tools/" || path === "/api/search/tools/") {
+	if (
+		path === "/v1/catalog/search/tools/" ||
+		path === "/v1/catalog/search/facets/" ||
+		path === "/api/search/tools/"
+	) {
 		return { freshMs: API_SEARCH_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	}
 	if (path === CRAWLER_RUNS_PATH) return { freshMs: API_CRAWLER_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };

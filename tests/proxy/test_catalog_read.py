@@ -10,8 +10,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import api_cache, canonical_tools, catalog_read, db  # noqa: E402
-from backend.models import CatalogFacetValue, ToolCatalogSyncState  # noqa: E402
+from backend import api_cache, canonical_tools, catalog_facets, catalog_read, db  # noqa: E402
+from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -55,9 +55,7 @@ def test_search_is_locally_filtered_paginated_ordered_and_faceted():
 
     assert payload["count"] == 1
     assert [row["name"] for row in payload["results"]] == ["alpha"]
-    assert payload["facets"]["_filter_wiki"]["wiki"]["buckets"] == [
-        {"key": "wikidata.org", "doc_count": 1}
-    ]
+    assert payload["facets"]["_filter_wiki"]["wiki"]["buckets"] == [{"key": "wikidata.org", "doc_count": 1}]
     assert payload["replica"]["upstreamOnRequest"] is False
     assert payload["replica"]["generation"] == 7
 
@@ -67,6 +65,46 @@ def test_recent_ordering_uses_replica_metadata():
 
     assert payload["count"] == 2
     assert payload["results"][0]["name"] == "beta"
+
+
+def test_card_search_skips_facets_and_returns_only_the_bounded_projection(monkeypatch):
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, "alpha")
+        row.record = {**row.record, "detail_only_payload": "x" * 10_000}
+
+    monkeypatch.setattr(catalog_read, "_facet_payload", lambda *_args: pytest.fail("facets must be deferred"))
+    payload = catalog_read.search_payload({"q": "alpha", "page_size": "1", "view": "card", "include_facets": "false"})
+
+    assert payload["canonical"] is True
+    assert payload["facets"] == {}
+    assert payload["results"][0]["name"] == "alpha"
+    assert "detail_only_payload" not in payload["results"][0]
+
+
+def test_unfiltered_facets_use_the_published_aggregate(monkeypatch):
+    assert catalog_facets.rebuild_global_payload(force=True) > 0
+    monkeypatch.setattr(
+        catalog_read,
+        "_facet_payload",
+        lambda *_args: pytest.fail("global facets must not aggregate on the request path"),
+    )
+
+    payload = catalog_read.search_payload({"page_size": "1"})
+
+    assert payload["facets"]["_filter_tool_type"]["tool_type"]["buckets"] == [
+        {"key": "bot", "doc_count": 1},
+        {"key": "web-app", "doc_count": 1},
+    ]
+
+
+def test_read_projection_fields_and_indexes_are_materialized():
+    with db.session_scope() as session:
+        beta = session.get(CanonicalToolCache, "beta")
+        assert beta.card_record["name"] == "beta"
+        assert beta.modified_at_sort.isoformat() == "2026-08-15T10:00:00"
+
+    indexes = {index["name"] for index in db.inspect(db.engine()).get_indexes("catalog_facet_values")}
+    assert "ix_catalog_facet_values_field_value_tool" in indexes
 
 
 def test_collection_merge_uses_expired_database_rows_without_network():

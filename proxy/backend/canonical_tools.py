@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
 from backend.api_cache import DETAIL_FRESH_SECONDS, SEARCH_FRESH_SECONDS, STALE_IF_ERROR_SECONDS
-from backend.models import CanonicalToolCache, CatalogSnapshotStage, utcnow
+from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogSnapshotStage, catalog_card_record, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
 
 if TYPE_CHECKING:
@@ -26,10 +26,16 @@ MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
 MAX_RECORD_RESULTS = 5000
 TOOLSADMIN_HOST = "toolsadmin.wikimedia.org"
+READ_PROJECTION_META_KEY = "catalog:read-projection:v1"
 
 
 def _clean_name(value: Any) -> str:  # noqa: ANN401 - untrusted official API JSON
     return str(value or "").strip()[:255]
+
+
+def compact_record(record: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the stable card/list representation of one canonical record."""
+    return catalog_card_record(record)
 
 
 def _path(url: str) -> str:
@@ -370,6 +376,32 @@ def backfill_search_text(*, batch_size: int = 500) -> int:
                     filled += 1
         except SQLAlchemyError:
             return filled
+
+
+def backfill_read_projection(*, batch_size: int = 500) -> int:
+    """Populate compact card JSON and indexed modification timestamps once."""
+    with db.session_scope() as session:
+        if session.get(ApiCacheMeta, READ_PROJECTION_META_KEY) is not None:
+            return 0
+    filled = 0
+    while True:
+        with db.session_scope() as session:
+            rows = list(
+                session.execute(
+                    select(CanonicalToolCache)
+                    .where(CanonicalToolCache.card_record.is_(None))
+                    .order_by(CanonicalToolCache.tool_name)
+                    .limit(max(1, batch_size))
+                ).scalars()
+            )
+            if not rows:
+                marker = session.get(ApiCacheMeta, READ_PROJECTION_META_KEY)
+                if marker is None:
+                    session.add(ApiCacheMeta(key=READ_PROJECTION_META_KEY, value="complete"))
+                return filled
+            for row in rows:
+                row.record = row.record or {}
+                filled += 1
 
 
 def _payload(row: CanonicalToolCache) -> dict[str, Any]:

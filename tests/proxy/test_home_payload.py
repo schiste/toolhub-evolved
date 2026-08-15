@@ -11,7 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import api_cache, db, home_payload, toolhub  # noqa: E402
+from backend import api_cache, db, home_payload  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -75,42 +75,25 @@ def test_tool_names_dedupes_preserves_order_and_skips_blank():
     assert home_payload._tool_names(tools) == ["Alpha", "Beta"]
 
 
-# --- _total_tools -------------------------------------------------------------
-
-
-def test_total_tools_branches(monkeypatch):
-    state = {"payload": {"total_tools": 5}}
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: state["payload"])
-
-    assert home_payload._total_tools() == 5
-
-    state["payload"] = {}
-    assert home_payload._total_tools() == 0
-
-    state["payload"] = "not-a-dict"
-    assert home_payload._total_tools() == 0
-
-    state["payload"] = {"total_tools": "5"}  # not an int
-    assert home_payload._total_tools() == 0
-
-
 # --- _featured_lists ------------------------------------------------------------
 
 
 def test_featured_lists_requests_the_featured_page_and_filters_rows(monkeypatch):
     captured = {}
 
-    def fake(path, **kwargs):
+    def fake(path, params, *, include_replica):
         captured["path"] = path
-        captured["params"] = kwargs.get("params")
+        captured["params"] = params
+        captured["include_replica"] = include_replica
         return {"results": [{"id": "1"}, "bad"]}
 
-    monkeypatch.setattr(toolhub, "public_api_get", fake)
+    monkeypatch.setattr(home_payload.catalog_read, "collection_payload", fake)
     result = home_payload._featured_lists()
 
     assert result == [{"id": "1"}]
     assert captured["path"] == "/api/lists/"
     assert captured["params"] == {"featured": "true", "page_size": home_payload.FEATURED_LIST_COUNT}
+    assert captured["include_replica"] is False
 
 
 # --- _recent_tools --------------------------------------------------------------
@@ -119,17 +102,20 @@ def test_featured_lists_requests_the_featured_page_and_filters_rows(monkeypatch)
 def test_recent_tools_requests_the_modified_ordering(monkeypatch):
     captured = {}
 
-    def fake(path, **kwargs):
-        captured["path"] = path
-        captured["params"] = kwargs.get("params")
+    def fake(params):
+        captured["params"] = params
         return {"results": [{"name": "Recent"}]}
 
-    monkeypatch.setattr(toolhub, "public_api_get", fake)
+    monkeypatch.setattr(home_payload.catalog_read, "search_payload", fake)
     result = home_payload._recent_tools()
 
     assert result == [{"name": "Recent"}]
-    assert captured["path"] == "/api/search/tools/"
-    assert captured["params"] == {"ordering": "-modified_date", "page_size": home_payload.RECENT_TOOL_COUNT}
+    assert captured["params"] == {
+        "ordering": "-modified_date",
+        "page_size": home_payload.RECENT_TOOL_COUNT,
+        "include_facets": "false",
+        "view": "card",
+    }
 
 
 # --- _memberships -----------------------------------------------------------------
@@ -165,11 +151,12 @@ def test_memberships_walks_pages_filters_rows_and_stops_without_next(monkeypatch
         2: {"results": [], "next": None},
     }
 
-    def fake(_path, **kwargs):
-        page = kwargs["params"]["page"]
+    def fake(_path, params, *, include_replica):
+        assert include_replica is False
+        page = params["page"]
         return pages.get(page, {"results": [], "next": None})
 
-    monkeypatch.setattr(toolhub, "public_api_get", fake)
+    monkeypatch.setattr(home_payload.catalog_read, "collection_payload", fake)
     result = home_payload._memberships()
 
     assert result == {
@@ -179,22 +166,27 @@ def test_memberships_walks_pages_filters_rows_and_stops_without_next(monkeypatch
 
 
 def test_memberships_stops_when_a_page_returns_no_rows_immediately(monkeypatch):
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: {"results": [], "next": True})
+    monkeypatch.setattr(
+        home_payload.catalog_read,
+        "collection_payload",
+        lambda *_a, **_k: {"results": [], "next": True},
+    )
     assert home_payload._memberships() == {}
 
 
 def test_memberships_exhausts_the_page_budget_without_a_next_marker(monkeypatch):
     calls = []
 
-    def fake(_path, **kwargs):
-        page = kwargs["params"]["page"]
+    def fake(_path, params, *, include_replica):
+        assert include_replica is False
+        page = params["page"]
         calls.append(page)
         return {
             "results": [{"id": page, "title": f"List {page}", "published": True, "tools": [{"name": "Alpha"}]}],
             "next": "more",
         }
 
-    monkeypatch.setattr(toolhub, "public_api_get", fake)
+    monkeypatch.setattr(home_payload.catalog_read, "collection_payload", fake)
     result = home_payload._memberships()
 
     assert calls == list(range(1, home_payload.MEMBERSHIP_MAX_PAGES + 1))
@@ -208,7 +200,7 @@ def test_build_composes_payload_from_its_helpers(monkeypatch):
     monkeypatch.setattr(home_payload, "_featured_lists", lambda: [{"tools": [{"name": "Alpha"}, "bad"]}])
     monkeypatch.setattr(home_payload, "_recent_tools", lambda: [{"name": "Beta"}])
     monkeypatch.setattr(home_payload, "_memberships", lambda: {"Alpha": [{"id": "1", "title": "L"}]})
-    monkeypatch.setattr(home_payload, "_total_tools", lambda: 99)
+    monkeypatch.setattr(home_payload.catalog_read, "replica_status", lambda: {"recordCount": 99})
 
     class FakeRead:
         results = {"Alpha": {"summary": "x"}}

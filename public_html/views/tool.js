@@ -44,7 +44,7 @@ const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
 /** @typedef {{ name: string, publicId?: string, publicSlug?: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
-/** @typedef {{ id?: string, displayName?: string, identifiers?: Array<{ namespace?: string, value?: string }>, relationships?: Array<any> }} PublicPerson */
+/** @typedef {{ id?: string, slug?: string, displayName?: string, identifiers?: Array<{ namespace?: string, value?: string }>, relationships?: Array<any> }} PublicPerson */
 /** @typedef {{ people?: PublicPerson[], unresolvedAttributions?: Array<any> }} PeopleSummary */
 
 /** @param {{ tool: Tool, shared?: string[] }} item */

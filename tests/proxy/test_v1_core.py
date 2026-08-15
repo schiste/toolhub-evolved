@@ -100,11 +100,11 @@ def test_feed_text_scalar():
 
 
 # ---------------------------------------------------------------------------
-# _feed_payload (pure-ish helper; touches toolhub.public_api_get only)
+# _feed_payload (pure-ish helper; reads the local catalog boundary)
 
 
 def test_feed_payload_non_dict_returns_empty_list(monkeypatch):
-    monkeypatch.setattr(v1_api.toolhub, "public_api_get", lambda path, params=None: None)
+    monkeypatch.setattr(v1_api.catalog_read, "collection_payload", lambda path, params=None: None)
     assert v1_api._feed_payload("/api/recent/") == []
 
 
@@ -113,11 +113,10 @@ def test_feed_payload_non_dict_returns_empty_list(monkeypatch):
 
 
 def test_feed_recently_updated_tools_upstream_failure(client, monkeypatch):
-    def boom(path, params=None):
-        message = "upstream exploded"
-        raise v1_api.toolhub.ToolhubAPIError(502, message)
+    def boom(params=None):
+        raise RuntimeError("local catalog unavailable")
 
-    monkeypatch.setattr(v1_api.toolhub, "public_api_get", boom)
+    monkeypatch.setattr(v1_api.catalog_read, "search_payload", boom)
     resp = client.get("/feeds/tools/recently-updated.xml")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "feed upstream unavailable"
@@ -125,9 +124,9 @@ def test_feed_recently_updated_tools_upstream_failure(client, monkeypatch):
 
 def test_feed_recently_updated_tools_happy_path(client, monkeypatch):
     monkeypatch.setattr(
-        v1_api.toolhub,
-        "public_api_get",
-        lambda path, params=None: {"results": [{"name": "alpha", "title": "Alpha"}]},
+        v1_api.catalog_read,
+        "search_payload",
+        lambda params=None: {"results": [{"name": "alpha", "title": "Alpha"}]},
     )
     resp = client.get("/feeds/tools/recently-updated.xml")
     assert resp.status_code == 200
@@ -136,10 +135,9 @@ def test_feed_recently_updated_tools_happy_path(client, monkeypatch):
 
 def test_feed_lists_upstream_failure(client, monkeypatch):
     def boom(path, params=None):
-        message = "upstream exploded"
-        raise v1_api.toolhub.ToolhubAPIError(502, message)
+        raise RuntimeError("local catalog unavailable")
 
-    monkeypatch.setattr(v1_api.toolhub, "public_api_get", boom)
+    monkeypatch.setattr(v1_api.catalog_read, "collection_payload", boom)
     resp = client.get("/feeds/lists.xml")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "feed upstream unavailable"
@@ -147,8 +145,8 @@ def test_feed_lists_upstream_failure(client, monkeypatch):
 
 def test_feed_lists_happy_path(client, monkeypatch):
     monkeypatch.setattr(
-        v1_api.toolhub,
-        "public_api_get",
+        v1_api.catalog_read,
+        "collection_payload",
         lambda path, params=None: {"results": [{"id": "1", "title": "A list"}]},
     )
     resp = client.get("/feeds/lists.xml")
@@ -163,11 +161,10 @@ def test_feed_tool_revisions_blank_name_is_rejected(client):
 
 
 def test_feed_tool_revisions_upstream_failure(client, monkeypatch):
-    def boom(path, params=None):
-        message = "upstream exploded"
-        raise v1_api.toolhub.ToolhubAPIError(502, message)
+    def boom(url):
+        raise RuntimeError("local catalog unavailable")
 
-    monkeypatch.setattr(v1_api.toolhub, "public_api_get", boom)
+    monkeypatch.setattr(v1_api.catalog_read, "cached_payload", boom)
     resp = client.get("/feeds/tools/alpha-tool/revisions.xml")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "feed upstream unavailable"
@@ -175,9 +172,9 @@ def test_feed_tool_revisions_upstream_failure(client, monkeypatch):
 
 def test_feed_tool_revisions_happy_path(client, monkeypatch):
     monkeypatch.setattr(
-        v1_api.toolhub,
-        "public_api_get",
-        lambda path, params=None: {"results": [{"id": "r1", "user": {"username": "Ada"}}]},
+        v1_api.catalog_read,
+        "cached_payload",
+        lambda url: (b'{"results":[{"id":"r1","user":{"username":"Ada"}}]}', "application/json", 200),
     )
     resp = client.get("/feeds/tools/alpha-tool/revisions.xml")
     assert resp.status_code == 200
@@ -191,11 +188,10 @@ def test_feed_list_revisions_blank_id_is_rejected(client):
 
 
 def test_feed_list_revisions_upstream_failure(client, monkeypatch):
-    def boom(path, params=None):
-        message = "upstream exploded"
-        raise v1_api.toolhub.ToolhubAPIError(502, message)
+    def boom(url):
+        raise RuntimeError("local catalog unavailable")
 
-    monkeypatch.setattr(v1_api.toolhub, "public_api_get", boom)
+    monkeypatch.setattr(v1_api.catalog_read, "cached_payload", boom)
     resp = client.get("/feeds/lists/list-1/revisions.xml")
     assert resp.status_code == 502
     assert resp.get_json()["error"] == "feed upstream unavailable"
@@ -203,9 +199,9 @@ def test_feed_list_revisions_upstream_failure(client, monkeypatch):
 
 def test_feed_list_revisions_happy_path(client, monkeypatch):
     monkeypatch.setattr(
-        v1_api.toolhub,
-        "public_api_get",
-        lambda path, params=None: {"results": [{"id": "r1", "user": {"username": "Ada"}}]},
+        v1_api.catalog_read,
+        "cached_payload",
+        lambda url: (b'{"results":[{"id":"r1","user":{"username":"Ada"}}]}', "application/json", 200),
     )
     resp = client.get("/feeds/lists/list-1/revisions.xml")
     assert resp.status_code == 200

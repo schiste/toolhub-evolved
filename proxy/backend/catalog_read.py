@@ -9,13 +9,12 @@ generation or collection payloads already persisted by those jobs.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import func, select
 
-from backend import api_cache, db
+from backend import api_cache, catalog_facets, db
 from backend.canonical_tools import escape_like
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
@@ -25,17 +24,7 @@ if TYPE_CHECKING:
 STATE_KEY = "official_catalog"
 MAX_PAGE_SIZE = 100
 DEFAULT_PAGE_SIZE = 20
-FACET_BUCKET_LIMIT = 50
-FACET_FIELDS = {
-    "tool_type": "tool_type",
-    "keywords": "keywords",
-    "audiences": "audiences",
-    "tasks": "tasks",
-    "ui_language": "ui_language",
-    "license": "license",
-    "wiki": "wiki",
-    "technology": "technology",
-}
+FACET_FIELDS = catalog_facets.FACET_FIELDS
 
 
 def _int(value: Any, default: int, *, minimum: int = 1, maximum: int = MAX_PAGE_SIZE) -> int:  # noqa: ANN401
@@ -51,11 +40,15 @@ def _values(params: Any, key: str) -> list[str]:  # noqa: ANN401 - Flask MultiDi
     return list(dict.fromkeys(str(value).strip().casefold() for value in values if str(value).strip()))
 
 
-def replica_status() -> dict[str, Any]:
+def replica_status(*, record_count: int | None = None) -> dict[str, Any]:
     """Return public freshness and atomic-generation metadata."""
     with db.session_scope() as session:
         state = session.get(ToolCatalogSyncState, STATE_KEY)
-        count = int(session.scalar(select(func.count()).select_from(CanonicalToolCache)) or 0)
+        count = (
+            int(record_count)
+            if record_count is not None
+            else int(session.scalar(select(func.count()).select_from(CanonicalToolCache)) or 0)
+        )
     last_success = state.last_success_at if state is not None else None
     age = max(0, int((utcnow() - last_success).total_seconds())) if last_success else None
     return {
@@ -92,32 +85,25 @@ def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # no
 
 
 def _facet_payload(session: Any, filtered: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy objects
-    names = filtered.with_only_columns(CanonicalToolCache.tool_name).subquery()
-    rows = session.execute(
-        select(
-            CatalogFacetValue.field,
-            CatalogFacetValue.value,
-            func.max(CatalogFacetValue.label),
-            func.count(distinct(CatalogFacetValue.tool_name)),
-        )
-        .join(names, names.c.tool_name == CatalogFacetValue.tool_name)
-        .where(CatalogFacetValue.field.in_(FACET_FIELDS.values()))
-        .group_by(CatalogFacetValue.field, CatalogFacetValue.value)
-        .order_by(CatalogFacetValue.field, func.count(distinct(CatalogFacetValue.tool_name)).desc())
-    ).all()
-    buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for field, value, label, count in rows:
-        if len(buckets[field]) < FACET_BUCKET_LIMIT:
-            buckets[field].append({"key": label or value, "doc_count": int(count)})
-    payload: dict[str, Any] = {}
-    for public_field, stored_field in FACET_FIELDS.items():
-        payload[f"_filter_{public_field}"] = {
-            public_field: {
-                "meta": {"param": f"{public_field}__term"},
-                "buckets": buckets.get(stored_field, []),
-            }
-        }
-    return payload
+    return catalog_facets.dynamic_payload(session, filtered)
+
+
+def _has_catalog_filters(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+    if str(params.get("q") or "").strip():
+        return True
+    return any(_values(params, f"{field}__term") for field in FACET_FIELDS)
+
+
+def _include_facets(params: Any) -> bool:  # noqa: ANN401 - Flask MultiDict or mapping
+    return str(params.get("include_facets", "true")).strip().casefold() not in {"0", "false", "no"}
+
+
+def _facets_for(session: Any, filtered: Any, params: Any) -> dict[str, Any]:  # noqa: ANN401
+    if not _has_catalog_filters(params):
+        cached = catalog_facets.cached_global_payload(session)
+        if cached is not None:
+            return cached
+    return _facet_payload(session, filtered)
 
 
 def search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask MultiDict or mapping
@@ -129,16 +115,23 @@ def search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask Multi
     if ordering == "name":
         ordered = filtered.order_by(CanonicalToolCache.tool_name.asc())
     elif ordering == "-modified_date":
-        ordered = filtered.order_by(CanonicalToolCache.record["modified_date"].as_string().desc())
+        ordered = filtered.order_by(CanonicalToolCache.modified_at_sort.desc(), CanonicalToolCache.tool_name.asc())
     elif ordering == "modified_date":
-        ordered = filtered.order_by(CanonicalToolCache.record["modified_date"].as_string().asc())
+        ordered = filtered.order_by(CanonicalToolCache.modified_at_sort.asc(), CanonicalToolCache.tool_name.asc())
     else:
         ordered = filtered.order_by(CanonicalToolCache.tool_name.asc())
+    compact = str(params.get("view") or "").strip().casefold() == "card"
     with db.session_scope() as session:
-        total = int(session.scalar(select(func.count()).select_from(filtered.subquery())) or 0)
-        rows = list(session.execute(ordered.offset((page - 1) * page_size).limit(page_size)).scalars())
-        facets = _facet_payload(session, filtered)
-    query = {key: value for key, value in params.items() if key != "page"}
+        total_statement = filtered.with_only_columns(func.count(CanonicalToolCache.tool_name)).order_by(None)
+        total = int(session.scalar(total_statement) or 0)
+        result_column = CanonicalToolCache.card_record if compact else CanonicalToolCache.record
+        rows = list(
+            session.execute(
+                ordered.with_only_columns(result_column).offset((page - 1) * page_size).limit(page_size)
+            ).scalars()
+        )
+        facets = _facets_for(session, filtered, params) if _include_facets(params) else {}
+    query = {key: value for key, value in params.items() if key not in {"page", "include_facets", "view"}}
     next_url = None
     previous_url = None
     if page * page_size < total:
@@ -149,10 +142,19 @@ def search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask Multi
         "count": total,
         "next": next_url,
         "previous": previous_url,
-        "results": [row.record for row in rows],
+        "results": rows,
         "facets": facets,
-        "replica": replica_status(),
+        "canonical": True,
+        "replica": replica_status(record_count=total) if not _has_catalog_filters(params) else replica_status(),
     }
+
+
+def facet_search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Return exact facets independently so card first paint never waits for aggregation."""
+    filtered = _filtered_statement(params)
+    with db.session_scope() as session:
+        facets = _facets_for(session, filtered, params)
+    return {"facets": facets, "canonical": True}
 
 
 def tool_payload(name: str) -> dict[str, Any] | None:
@@ -196,7 +198,7 @@ def _cached_rows(path: str) -> list[dict[str, Any]]:
     return rows
 
 
-def collection_payload(path: str, params: Any) -> dict[str, Any]:  # noqa: ANN401
+def collection_payload(path: str, params: Any, *, include_replica: bool = True) -> dict[str, Any]:  # noqa: ANN401
     rows = _cached_rows(path)
     if path == "/api/lists/" and str(params.get("featured") or "").casefold() == "true":
         rows = [row for row in rows if row.get("featured") is True]
@@ -204,7 +206,7 @@ def collection_payload(path: str, params: Any) -> dict[str, Any]:  # noqa: ANN40
     page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
     offset = (page - 1) * page_size
     selected = rows[offset : offset + page_size]
-    return {
+    payload = {
         "count": len(rows),
         "next": f"/v1/catalog/{path.removeprefix('/api/')}?page={page + 1}&page_size={page_size}"
         if offset + page_size < len(rows)
@@ -213,8 +215,10 @@ def collection_payload(path: str, params: Any) -> dict[str, Any]:  # noqa: ANN40
         if page > 1
         else None,
         "results": selected,
-        "replica": replica_status(),
     }
+    if include_replica:
+        payload["replica"] = replica_status()
+    return payload
 
 
 def list_payload(list_id: str) -> dict[str, Any] | None:

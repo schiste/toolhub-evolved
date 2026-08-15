@@ -68,6 +68,7 @@ def test_the_file_header_is_not_mistaken_for_the_first_job_description():
         ("17 * * * *", 60),
         ("23 */6 * * *", 360),
         ("13 5 * * 0", 10080),
+        ("17 3 1,15 * *", 24480),
         ("nonsense", 0),
     ],
 )

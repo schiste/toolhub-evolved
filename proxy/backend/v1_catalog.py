@@ -55,6 +55,8 @@ def v1_catalog_read(path: str) -> Response:  # noqa: PLR0911 - explicit compatib
     normalized = path.strip("/")
     if normalized == "search/tools":
         return _local_json(catalog_read.search_payload(request.args))
+    if normalized == "search/facets":
+        return _local_json(catalog_read.facet_search_payload(request.args))
     if normalized == "ui/home":
         return _local_json(catalog_read.home_payload())
     if normalized == "lists":

@@ -23,12 +23,12 @@ from datetime import timedelta
 from threading import Lock
 from typing import Any
 
-from backend import api_cache, catalog_read
+from backend import api_cache, canonical_tools, catalog_read
 from backend.models import utcnow
 
 # Bump when the payload shape changes, so old cached rows are ignored rather
 # than deserialized into a shape the client no longer understands.
-HOME_CACHE_VERSION = 2
+HOME_CACHE_VERSION = 3
 HOME_FRESH_SECONDS = 5 * 60
 HOME_STALE_SECONDS = 24 * 60 * 60
 # Short per-worker copy in front of the shared cache, so a burst of landing-page
@@ -70,22 +70,33 @@ def _tool_names(tools: list[dict[str, Any]]) -> list[str]:
     return seen
 
 
-def _total_tools() -> int:
-    """Return the catalog size shown in the search placeholder."""
-    payload = catalog_read.home_payload()
-    total = payload.get("total_tools")
-    return int(total) if isinstance(total, int) else 0
-
-
 def _featured_lists() -> list[dict[str, Any]]:
     """Return the administrator-featured lists, with their embedded tools."""
-    payload = catalog_read.collection_payload("/api/lists/", {"featured": "true", "page_size": FEATURED_LIST_COUNT})
-    return _results(payload)
+    payload = catalog_read.collection_payload(
+        "/api/lists/", {"featured": "true", "page_size": FEATURED_LIST_COUNT}, include_replica=False
+    )
+    return [
+        {
+            key: (
+                [canonical_tools.compact_record(tool) for tool in row.get("tools") or []] if key == "tools" else value
+            )
+            for key, value in row.items()
+            if key in {"id", "title", "description", "featured", "published", "tools"}
+        }
+        for row in _results(payload)
+    ]
 
 
 def _recent_tools() -> list[dict[str, Any]]:
     """Return the most recently modified tools."""
-    payload = catalog_read.search_payload({"ordering": "-modified_date", "page_size": RECENT_TOOL_COUNT})
+    payload = catalog_read.search_payload(
+        {
+            "ordering": "-modified_date",
+            "page_size": RECENT_TOOL_COUNT,
+            "include_facets": "false",
+            "view": "card",
+        }
+    )
     return _results(payload)
 
 
@@ -99,7 +110,9 @@ def _memberships() -> dict[str, list[dict[str, str]]]:
     """
     memberships: dict[str, list[dict[str, str]]] = {}
     for page in range(1, MEMBERSHIP_MAX_PAGES + 1):
-        payload = catalog_read.collection_payload("/api/lists/", {"page_size": MEMBERSHIP_PAGE_SIZE, "page": page})
+        payload = catalog_read.collection_payload(
+            "/api/lists/", {"page_size": MEMBERSHIP_PAGE_SIZE, "page": page}, include_replica=False
+        )
         rows = _results(payload)
         for row in rows:
             if row.get("published") is False:
