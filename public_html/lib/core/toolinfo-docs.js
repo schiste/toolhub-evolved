@@ -4,6 +4,19 @@ export const TOOLINFO_SCHEMA_VERSION = "/toolinfo/1.2.2";
 export const TOOLINFO_SCHEMA_URL =
 	"https://gerrit.wikimedia.org/r/plugins/gitiles/wikimedia/toolhub/+/refs/heads/main/jsonschema/toolinfo/current.yaml";
 export const TOOLINFO_DATA_MODEL_URL = "https://meta.wikimedia.org/wiki/Toolhub/Data_model#Toolinfo_schema";
+export const TOOLINFO_TOOL_TYPES = [
+	"",
+	"web app",
+	"desktop app",
+	"bot",
+	"gadget",
+	"user script",
+	"command line tool",
+	"coding framework",
+	"lua module",
+	"template",
+	"other"
+];
 
 export const TOOLINFO_EXAMPLE_JSON = `{
   "_schema": "${TOOLINFO_SCHEMA_VERSION}",
