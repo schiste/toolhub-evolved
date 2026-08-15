@@ -78,6 +78,7 @@ const loadChangelog = () => loadRouteModule("./changelog.js", () => import("./ch
 const loadStatistics = () => loadRouteModule("./statistics.js", () => import("./statistics.js"));
 const loadWorkers = () => loadRouteModule("./workers.js", () => import("./workers.js"));
 const loadDigests = () => loadRouteModule("./digests.js", () => import("./digests.js"));
+const loadMcpServer = () => loadRouteModule("./mcp-server.js", () => import("./mcp-server.js"));
 // The prose pages, the sign-in page and the 404 all live in static.js — the
 // largest module in the app. Loading it on demand like any other route keeps it
 // out of the first paint; every use below is a render, reached only when that
@@ -267,6 +268,7 @@ export const ROUTES = {
 	"crawler-history": () => loadCrawler().then((m) => m.viewCrawler()),
 	"audit-logs": () => loadAudit().then((m) => m.viewAudit()),
 	"api-docs": () => loadStatic().then((m) => m.viewApiDocs()),
+	"mcp-server": () => loadMcpServer().then((m) => m.viewMcpServer()),
 	contribute: () => loadStatic().then((m) => m.viewContribute()),
 	experiments: () => loadExperiments().then((m) => m.viewExperiments()),
 	styleguide: () => loadStyleguide().then((m) => m.viewStyleguide())

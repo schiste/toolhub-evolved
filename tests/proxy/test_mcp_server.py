@@ -8,7 +8,7 @@ import pytest
 from flask import Flask
 
 import backend
-from backend import db, security, tool_facets, v1_facets
+from backend import db, security, v1_facets
 from backend.models import CanonicalToolCache, CatalogFacetValue, SourceAnalysisReport, User, utcnow
 from backend.sync import REVIEW_APPROVED
 
@@ -180,16 +180,7 @@ def test_tools_list_shapes(client):
         assert tool["inputSchema"]["type"] == "object"
 
 
-def test_search_tools_call(client, monkeypatch):
-    from backend import toolhub
-
-    # Stub upstream search to return controlled data
-    def stub_search(path, params=None):
-        if params and params.get("q") == "citations":
-            return {"results": [{"name": "cite-checker"}]}
-        return {"results": []}
-
-    monkeypatch.setattr(toolhub, "public_api_get", stub_search)
+def test_search_tools_call(client):
     with db.session_scope() as s:
         _seed(s)
     data = _call_tool(client, "search_tools", {"query": "citations", "limit": 5})
@@ -201,6 +192,16 @@ def test_search_tools_call(client, monkeypatch):
     assert payload["returned"] == 1
     assert "total" not in payload  # a capped page must not masquerade as a total
     assert result["structuredContent"] == payload  # additive 2026-07-28 field
+
+
+def test_get_mcp_points_browser_visitors_to_documentation(client):
+    response = client.get("/mcp")
+    assert response.status_code == 405
+    assert response.headers["Allow"] == "POST"
+    assert response.get_json() == {
+        "error": "this endpoint speaks MCP over POST and offers no SSE stream",
+        "documentation": "/mcp-server",
+    }
 
 
 def test_facet_tools_schema_advertises_purpose_filters(client):

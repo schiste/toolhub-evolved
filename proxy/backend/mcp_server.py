@@ -24,6 +24,7 @@ from backend import canonical_tools, catalog_read, db, facet_names, security, v1
 from backend import tool_facets as facets_backend
 
 mcp_bp = Blueprint("mcp", __name__)
+DOCS_PATH = "/mcp-server"
 
 SERVER_INFO = {"name": "toolhub-evolved", "version": "1.0.0"}
 CURRENT_PROTOCOL_VERSION = "2026-07-28"
@@ -99,13 +100,12 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "name": "search_tools",
         "description": (
             "Relevance-ranked search over all ~4,500 Wikimedia tools in the Toolhub "
-            "catalog, served by Toolhub's own search index. Covers the full catalog. "
+            "catalog, served from Toolhub Evolved's synchronized local replica. Covers "
+            "the latest complete catalog generation without request-time upstream calls. "
             "Keep queries SHORT and distinctive (2-3 content words): terms are matched "
             "independently and scored, so extra common words ('wikipedia', 'check', "
             "'tool') pull in unrelated results and push good ones down. Prefer several "
-            "narrow queries with different vocabulary over one long descriptive one. "
-            "If this tool reports search is unavailable, say so plainly rather than "
-            "substituting weaker evidence - facet_tools and get_tool still work."
+            "narrow queries with different vocabulary over one long descriptive one."
         ),
         "inputSchema": {
             "type": "object",
@@ -359,6 +359,19 @@ def mcp_endpoint() -> Response | tuple[Response, int]:
         return _error(req_id, INTERNAL_ERROR, "internal error")
 
 
+@mcp_bp.route("/mcp", methods=["GET"])
+def mcp_endpoint_docs() -> tuple[Response, int]:
+    """Keep the transport 405 while pointing browser visitors to its guide."""
+    body = jsonify(
+        {
+            "error": "this endpoint speaks MCP over POST and offers no SSE stream",
+            "documentation": DOCS_PATH,
+        }
+    )
+    body.headers["Allow"] = "POST"
+    return body, 405
+
+
 _PRIOR_ART_PROMPT = (
     "You are evaluating a greenfield tool idea for the Wikimedia ecosystem.\n\n"
     "## The Idea\n\n"
@@ -372,15 +385,17 @@ _PRIOR_ART_PROMPT = (
     "~4,500-tool catalog. Keep queries short and distinctive (2-3 content words); "
     "longer queries introduce noise. Prefer several narrow queries with different "
     "vocabulary.\n\n"
-    "2. **facet_tools(dependency=[], api=[], technology=[], tool_type=[], keyword=[], "
-    "wiki=[], license=[], task=[], audience=[], limit=25)**: Find tools by technical signals (detected "
-    "dependency packages and APIs used) or catalog metadata (declared types, keywords, "
-    "wikis, licenses). Check the returned `coverage` field — an empty result may "
-    "reflect limited catalog scanning, not absence of tools.\n\n"
+    "2. **facet_tools(dependency=[], api=[], detected_technology=[], "
+    "declared_technology=[], tool_type=[], keyword=[], wiki=[], license=[], "
+    "ui_language=[], task=[], audience=[], limit=25)**: Find tools by technical "
+    "signals (detected packages, APIs, and languages) or declared catalog metadata. "
+    "The legacy `technology` parameter remains an alias for `detected_technology`. "
+    "Check the returned `coverage` field — an empty detected result may reflect "
+    "limited repository scanning, not absence of tools.\n\n"
     "3. **list_facet_values(type)**: List adoption-ranked values of a facet type "
-    "before calling facet_tools. Supported types: dependency, wikimedia_api, "
-    "detected_technology (detected in scanned repos), tool_type, keywords, wiki, "
-    "license, tasks, audiences (declared metadata).\n\n"
+    "before calling facet_tools. Canonical public types: dependency, api, "
+    "detected_technology (detected in scanned repos), declared_technology, "
+    "tool_type, keyword, wiki, license, ui_language, task, and audience.\n\n"
     "## Methodology\n\n"
     "1. **Characterize** your idea in 2-3 alternate phrasings, predicting:\n"
     "   - Likely Wikimedia APIs it would call (mediawiki-action-api, wikibase-api, "

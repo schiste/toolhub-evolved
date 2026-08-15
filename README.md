@@ -73,7 +73,10 @@ stored.
 
 Toolhub Evolved exposes catalog discovery as a stateless HTTP MCP server for use
 in LLM-based workflows. Any MCP-capable client can add the endpoint and access
-four tools plus a prior-art-review prompt.
+four tools plus a prior-art-review prompt. The public
+[`/mcp-server`](https://toolhub-evolved.toolforge.org/mcp-server) guide includes
+separate, verified setup examples for Claude Code, Visual Studio Code, Cursor,
+and raw HTTP.
 
 ```bash
 claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolforge.org/mcp
@@ -81,8 +84,8 @@ claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolfo
 
 **Tools** — all read-only, no authentication:
 
-- **`search_tools(query, limit=10)`** — relevance-ranked search across ~4,500 tools via upstream Toolhub (elasticsearch-backed). Keep queries short (2-3 content words).
-- **`facet_tools(...)`** — filter tools by technical signals (scanned dependencies, APIs, detected technology) or catalog metadata (type, keywords, wikis, licenses). Results include adoption counts.
+- **`search_tools(query, limit=10)`** — relevance-ranked search across the latest complete local Toolhub catalog generation. Keep queries short (2-3 content words).
+- **`facet_tools(...)`** — filter tools by technical signals (`dependency`, `api`, `detected_technology`) or declared catalog metadata (`declared_technology`, `tool_type`, `keyword`, `wiki`, `license`, `ui_language`, `task`, `audience`). Results include adoption counts; legacy `technology` remains an alias for `detected_technology`.
 - **`list_facet_values(type)`** — list distinct values of one facet type, adoption-ranked. Call before `facet_tools` to learn what values exist.
 - **`get_tool(name)`** — fetch one tool's full canonical Toolhub record by exact name.
 
@@ -90,7 +93,7 @@ claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolfo
 
 - **`prior-art-review`** — guided workflow to evaluate greenfield tool ideas. The prompt characterizes the idea, retrieves via search and facets, and reports findings in three sections: build/reuse/differentiate, adjacent tools, and recommended stack (ranked by adoption). Includes caveat instructions about coverage and facet limitations.
 
-The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and earlier) and the newer 2026-07-28 stateless revision. Rate-limited to 60 requests per rolling minute per client IP; no session cookies. See [`docs/deploy-toolforge.md`](docs/deploy-toolforge.md) for deployment notes and conformance testing with the official MCP inspector.
+The endpoint speaks both legacy `initialize`-handshake protocol (2025-06-18 and earlier) and the newer 2026-07-28 stateless revision. Rate-limited to 60 requests per rolling minute per client IP; no session cookies and no request-time Toolhub call. See [`docs/deploy-toolforge.md`](docs/deploy-toolforge.md) for deployment notes and conformance testing with the official MCP inspector.
 
 **Claude skill** — [`skills/toolhub-discovery/`](skills/toolhub-discovery/) holds an optional skill for Claude Code and claude.ai. It is deliberately thin: the review methodology lives in the `prior-art-review` prompt above, so it reaches every MCP client and has one place to be corrected. What the skill adds is the part a prompt cannot do — it fires on its own when someone starts describing a tool idea, rather than waiting to be invoked by a user who already knows to check. Copy the directory into `~/.claude/skills/` to install it; the MCP server must be configured first.
 
@@ -126,10 +129,11 @@ LICENSE             ·  GNU GPL v3.0-or-later
 
 See **[docs/PLAN.md](docs/PLAN.md)** for the original demonstrator roadmap and
 **[docs/PRODUCTION.md](docs/PRODUCTION.md)** for the production architecture.
-The current direction is hybrid: live Toolhub reads remain canonical, supported
-signed-in writes publish through official Toolhub OAuth, and Evolved keeps a
-local overlay for drafts, fallback state, and features the official API does
-not expose. The feature-by-feature realization plan lives in
+The current direction is hybrid: official Toolhub remains the catalog source of
+truth, scheduled jobs publish complete generations into Evolved's local read
+replica, supported signed-in writes use official Toolhub OAuth, and Evolved
+keeps a local overlay for drafts, fallback state, and features the official API
+does not expose. The feature-by-feature realization plan lives in
 **[docs/HYBRID-FEATURE-PLAN.md](docs/HYBRID-FEATURE-PLAN.md)**.
 
 ## Run locally

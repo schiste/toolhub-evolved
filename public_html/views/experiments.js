@@ -163,6 +163,23 @@ export const EXPERIMENTS = [
 				need: t("experiments.docsPagesNeed", "Curated GET /api/... explorer plus static documentation pages"),
 				tryHref: "/api-docs",
 				tryLabel: t("experiments.docsPagesTry", "API explorer")
+			},
+			{
+				name: t("experiments.mcpServerName", "MCP catalog discovery"),
+				what: t(
+					"experiments.mcpServerWhat",
+					"Let AI assistants check Wikimedia prior art and ecosystem adoption before proposing new tools."
+				),
+				current: t(
+					"experiments.mcpServerCurrent",
+					"A stateless, anonymous HTTP endpoint serves four read-only tools and one reusable prompt entirely from the local catalog database."
+				),
+				need: t(
+					"experiments.mcpServerNeed",
+					"Local catalog search, canonical facet names, MCP JSON-RPC transport, rate limiting, and in-app client documentation"
+				),
+				tryHref: "/mcp-server",
+				tryLabel: t("experiments.mcpServerTry", "Open MCP guide")
 			}
 		]
 	},

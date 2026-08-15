@@ -121,7 +121,10 @@ limiter is now active.
 The `/mcp` endpoint (POST only) exposes catalog discovery as a stateless HTTP MCP
 server for use in LLM workflows. It requires the same ProxyFix configuration as
 the facets endpoints, but uses its own rate limit of 60 requests per rolling
-minute per client IP (separate from the 120-per-minute facets limit).
+minute per client IP (separate from the 120-per-minute facets limit). All four
+tools read the synchronized local catalog database; serving an MCP request never
+contacts Toolhub. Browser visitors who open `/mcp` with GET receive a JSON 405
+response pointing to the public setup guide at `/mcp-server`.
 
 **Testing conformance locally:**
 
