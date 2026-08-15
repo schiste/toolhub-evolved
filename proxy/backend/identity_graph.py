@@ -49,7 +49,8 @@ SOURCE_TOOLFORGE_LDAP = maintainer_index.SOURCE_TOOLFORGE_LDAP
 TOOLFORGE_RELATIONSHIP_META_KEY = "toolforge_relationship_input_v1"
 RELATIONSHIP_RULES_FINGERPRINT = projection_policy.module_fingerprint(
     sys.modules[__name__],
-    namespace="toolforge-membership-relationship-policy-v1",
+    canonical_tools,
+    namespace="toolforge-membership-relationship-policy-v2",
 )
 
 
@@ -230,13 +231,21 @@ def input_fingerprint(session: Session) -> str:
             )
         ),
     )
-    _update_digest(digest, "aliases", _canonical_alias_rows(canonical_tools.names_by_toolforge_project(session)))
+    _update_digest(
+        digest, "verified-aliases", _canonical_alias_rows(canonical_tools.names_by_toolforge_project(session))
+    )
+    _update_digest(
+        digest,
+        "candidate-aliases",
+        _canonical_alias_rows(canonical_tools.candidate_names_by_toolforge_project(session)),
+    )
     return digest.hexdigest()
 
 
 def _relationship_fingerprint(
     session: Session,
     canonical_names: dict[str, tuple[str, ...]],
+    candidate_names: dict[str, tuple[str, ...]],
 ) -> str:
     digest = hashlib.sha256()
     digest.update(RELATIONSHIP_RULES_FINGERPRINT.encode())
@@ -267,7 +276,8 @@ def _relationship_fingerprint(
             )
         ),
     )
-    _update_digest(digest, "aliases", _canonical_alias_rows(canonical_names))
+    _update_digest(digest, "verified-aliases", _canonical_alias_rows(canonical_names))
+    _update_digest(digest, "candidate-aliases", _canonical_alias_rows(candidate_names))
     return digest.hexdigest()
 
 
@@ -286,10 +296,11 @@ def seed_relationship_fingerprint(session: Session) -> int:
     if not has_projection:
         return 0
     canonical_names = canonical_tools.names_by_toolforge_project(session)
+    candidate_names = canonical_tools.candidate_names_by_toolforge_project(session)
     session.add(
         ApiCacheMeta(
             key=TOOLFORGE_RELATIONSHIP_META_KEY,
-            value=_relationship_fingerprint(session, canonical_names),
+            value=_relationship_fingerprint(session, canonical_names, candidate_names),
         )
     )
     return 1
@@ -713,12 +724,14 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
         ).scalars()
     }
     canonical_names = canonical_tools.names_by_toolforge_project(session)
-    relationship_fingerprint = _relationship_fingerprint(session, canonical_names)
+    candidate_names = canonical_tools.candidate_names_by_toolforge_project(session)
+    relationship_fingerprint = _relationship_fingerprint(session, canonical_names, candidate_names)
     relationship_marker = session.get(ApiCacheMeta, TOOLFORGE_RELATIONSHIP_META_KEY)
     if relationship_marker is not None and relationship_marker.value == relationship_fingerprint:
         return {
             "membershipRelationships": 0,
             "canonicalMembershipRelationships": 0,
+            "candidateMembershipRelationships": 0,
             "fallbackMembershipRelationships": 0,
             "unmappedMemberships": 0,
             "unboundMemberships": 0,
@@ -727,6 +740,7 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
     by_tool: dict[str, list[dict[str, Any]]] = {}
     unbound = 0
     canonical_relationships = 0
+    candidate_relationships = 0
     unmapped_memberships = 0
     person_ids = {row.person_id for row in bindings.values() if row.person_id is not None}
     people = {
@@ -743,12 +757,21 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
         if person is None:
             unbound += 1
             continue
-        matched_names = canonical_names.get(membership.tool_name.casefold(), ())
-        if not matched_names:
+        project_key = membership.tool_name.casefold()
+        matched_names = canonical_names.get(project_key, ())
+        matched_name_set = set(matched_names)
+        candidate_matched_names = tuple(
+            name for name in candidate_names.get(project_key, ()) if name not in matched_name_set
+        )
+        if not matched_names and not candidate_matched_names:
             unmapped_memberships += 1
             continue
         canonical_relationships += len(matched_names)
-        for catalog_tool_name in matched_names:
+        candidate_relationships += len(candidate_matched_names)
+        for catalog_tool_name, status, confidence, mapping_method in (
+            *((name, STATUS_VERIFIED, 100, "canonical_project_alias") for name in matched_names),
+            *((name, "unverified", 60, "toolforge_runtime_host_candidate") for name in candidate_matched_names),
+        ):
             by_tool.setdefault(catalog_tool_name, []).append(
                 {
                     "display_name": person.display_name or account.developer_username or account.uid,
@@ -757,15 +780,15 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
                     "relationship_type": "maintainer",
                     "method": "toolforge_ldap_membership",
                     "evidence_key": account.uid_number,
-                    "verification_status": "verified",
-                    "confidence": 100,
+                    "verification_status": status,
+                    "confidence": confidence,
                     "evidence_payload": {
                         "toolforgeDeveloperUsername": account.developer_username,
                         "toolforgeShellUsername": account.uid,
                         "toolforgeUidNumber": account.uid_number,
                         "toolforgeToolName": membership.tool_name,
                         "canonicalToolName": catalog_tool_name,
-                        "toolMappingMethod": "canonical_project_alias",
+                        "toolMappingMethod": mapping_method,
                         "identityBindingMethod": binding.proof_method,
                     },
                     "checked_at": membership.last_seen_at,
@@ -797,6 +820,7 @@ def _sync_toolforge_relationships(session: Session) -> dict[str, int]:
     return {
         "membershipRelationships": projected,
         "canonicalMembershipRelationships": canonical_relationships,
+        "candidateMembershipRelationships": candidate_relationships,
         "fallbackMembershipRelationships": 0,
         "unmappedMemberships": unmapped_memberships,
         "unboundMemberships": unbound,

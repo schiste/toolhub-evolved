@@ -525,7 +525,14 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
                     "checked_at": source.last_fetched_at or item.last_seen_at,
                 }
             )
-        for project in canonical_tools.toolforge_project_names(tool_name, item.payload):
+        source_project = toolforge_project_from_source_url(source.url)
+        project_mappings = [
+            (project, "canonical_tool_name") for project in canonical_tools.verified_toolforge_project_names(tool_name)
+        ]
+        mapped_projects = {project.casefold() for project, _method in project_mappings}
+        if source_project and source_project.casefold() not in mapped_projects:
+            project_mappings.append((source_project, "registered_source_toolforge_host"))
+        for project, mapping_method in project_mappings:
             for account, binding in members_by_project.get(project.casefold(), []):
                 assert binding.person_id is not None  # noqa: S101 - index contains only bound accounts
                 maintainers.append(
@@ -544,6 +551,7 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
                         "evidence_payload": {
                             "sourceId": source.id,
                             "toolforgeProject": project,
+                            "toolMappingMethod": mapping_method,
                             "toolforgeUidNumber": account.uid_number,
                             "toolforgeDeveloperUsername": account.developer_username,
                             "toolforgeShellUsername": account.uid,

@@ -40,6 +40,31 @@ def test_toolforge_project_names_dedupes_across_prefix_url_and_toolsadmin_path()
     assert canonical_tools.toolforge_project_names("toolforge-myproj", record) == ["myproj"]
 
 
+def test_toolforge_runtime_host_is_only_a_candidate_project_hint():
+    record = {"url": "https://toolhub-evolved.toolforge.org/tools/create"}
+
+    assert canonical_tools.verified_toolforge_project_names("bd808-toolhub-evolved-test") == []
+    assert canonical_tools.candidate_toolforge_project_names("bd808-toolhub-evolved-test", record) == [
+        "toolhub-evolved"
+    ]
+    assert canonical_tools.toolforge_project_names("bd808-toolhub-evolved-test", record) == ["toolhub-evolved"]
+
+
+def test_explicit_toolforge_name_is_verified_while_runtime_and_admin_urls_are_candidates():
+    record = {
+        "url": "https://toolsadmin.wikimedia.org/tools/id/toolsadmin-project/toolinfo/1.2/toolinfo.json",
+        "api_url": "https://runtime-project.toolforge.org/api",
+    }
+
+    assert canonical_tools.verified_toolforge_project_names("toolforge-name-project") == [
+        "name-project",
+    ]
+    assert canonical_tools.candidate_toolforge_project_names("toolforge-name-project", record) == [
+        "toolsadmin-project",
+        "runtime-project",
+    ]
+
+
 def test_toolforge_project_names_ignores_non_toolforge_hosts_and_missing_record():
     assert canonical_tools.toolforge_project_names("plain-tool", None) == []
     assert (

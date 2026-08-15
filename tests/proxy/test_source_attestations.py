@@ -307,7 +307,7 @@ def test_target_toolforge_membership_is_verified_per_target_project():
         _canonical(session, "target-tool")
         source = _source(
             session,
-            "https://metadata.example/toolinfo.json",
+            "https://target-project.toolforge.org/toolinfo.json",
             [
                 {
                     "name": "target-tool",
@@ -329,6 +329,36 @@ def test_target_toolforge_membership_is_verified_per_target_project():
         assert edge.relationship_type == "maintainer"
         assert edge.verification_status == "verified"
         assert edge.evidence_payload["toolforgeProject"] == "target-project"
+        assert edge.evidence_payload["toolMappingMethod"] == "registered_source_toolforge_host"
+
+
+def test_runtime_tool_url_without_matching_source_does_not_verify_project_membership():
+    with db.session_scope() as session:
+        operator = _stable_person(session, "Operator", "21", "operator", "201")
+        _toolforge_member(session, operator, project="target-project", uid_number="21", uid="operator")
+        _canonical(session, "bd808-toolhub-evolved-test")
+        source = _source(
+            session,
+            "https://metadata.example/toolinfo.json",
+            [
+                {
+                    "name": "bd808-toolhub-evolved-test",
+                    "title": "Test",
+                    "description": "Test",
+                    "url": "https://target-project.toolforge.org/tools/create",
+                    "author": [],
+                }
+            ],
+        )
+
+        result = source_attestations.refresh_source_ids(session, [source.id])
+
+        assert result["maintainerEvidence"] == 0
+        assert session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.source == source_attestations.SOURCE_TARGET_MEMBERSHIP
+            )
+        ).scalar_one_or_none() is None
 
 
 def test_failed_fetch_retains_last_good_generation_and_relationship_evidence():
