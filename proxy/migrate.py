@@ -329,9 +329,26 @@ def _backfill_people_identity() -> int:
 
 def _backfill_person_slugs(s) -> int:  # noqa: ANN001 - SQLAlchemy session
     """Fill canonical slugs once without rewriting already-published URLs."""
+    used = {
+        str(slug).casefold()
+        for (slug,) in s.execute(select(Person.public_slug).where(Person.public_slug.is_not(None))).all()
+        if str(slug or "").strip()
+    }
     touched = 0
     for person in s.execute(select(Person).where(Person.public_slug.is_(None)).order_by(Person.id)).scalars():
-        people_index.ensure_person_public_slug(s, person)
+        candidate = next(
+            (
+                value
+                for value in people_index.person_slug_candidates(person.display_name, person.public_id)
+                if value.casefold() not in used
+            ),
+            None,
+        )
+        if candidate is None:
+            message = f"could not allocate unique public slug for person {person.public_id}"
+            raise RuntimeError(message)
+        person.public_slug = candidate
+        used.add(candidate.casefold())
         touched += 1
     return touched
 
