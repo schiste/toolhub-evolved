@@ -142,6 +142,7 @@ def relationship_basis(role: str, method: str) -> str:
         "toolinfo_target_ldap_membership": "toolforge_access_or_maintainership",
         "toolinfo_source_controller": "source_attested_authorship",
         "toolinfo_verified_author_anchor": "source_attested_authorship",
+        "wikimedia_user_space_toolforge_identity": "wikimedia_user_space_attested_authorship",
         "signed_toolinfo": "maintainer_control",
         "toolinfo_url_control": "maintainer_control",
         "toolhub_write_access": "toolhub_record_authority",

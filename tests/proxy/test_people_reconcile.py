@@ -21,6 +21,7 @@ from backend.models import (  # noqa: E402
     PersonReconciliationRun,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
+    ToolforgeAccountProjection,
     ToolhubAccountProjection,
     User,
     utcnow,
@@ -28,6 +29,7 @@ from backend.models import (  # noqa: E402
 from backend.public_identity import (  # noqa: E402
     PublicIdentityResolver,
     ToolforgeIdentityProvider,
+    WikimediaIdentity,
     WikimediaIdentityProvider,
 )
 
@@ -389,6 +391,60 @@ def test_identity_only_resolution_does_not_rebuild_canonical_tool_evidence():
 
         assert summary["toolsRebuilt"] == 0
         assert s.query(ToolRelationshipEvidence).count() == 0
+
+
+def test_identity_only_registry_resolution_applies_wikimedia_user_space_rule():
+    _configure()
+    with db.session_scope() as s:
+        now = utcnow()
+        s.add(
+            CanonicalToolCache(
+                tool_name="enwiki-enterprisey-tool",
+                record={
+                    "name": "enwiki-enterprisey-tool",
+                    "url": "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
+                    "author": [{"name": "Enterprisey"}],
+                },
+                expires_at=now,
+                stale_until=now,
+            )
+        )
+        s.add(
+            ToolforgeAccountProjection(
+                uid_number="9001",
+                uid="enterprisey",
+                normalized_uid="enterprisey",
+                developer_username="Enterprisey",
+                normalized_developer_username="enterprisey",
+            )
+        )
+        people_index.replace_source_evidence(
+            s,
+            "enwiki-enterprisey-tool",
+            "toolhub_author_metadata",
+            [{"display_name": "Enterprisey", "relationship_type": sync.PERSON_REL_AUTHOR}],
+        )
+        resolved_registry = (
+            [("enterprisey", WikimediaIdentity(global_user_id="500", username="Enterprisey"))],
+            "enterprisey",
+        )
+
+        summary = people_reconcile.run(
+            s,
+            mode=people_reconcile.MODE_APPLY,
+            discover_candidates=True,
+            registry_label_limit=1,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=False,
+            resolved_identity_candidates=[],
+            resolved_registry_candidates=resolved_registry,
+        )
+
+        assert summary["registryPeopleCreated"] == 1
+        assert summary["wikimediaUserSpaceReconciliation"]["verifiedTools"] == 1
+        relationship = s.query(ToolPersonRelationship).filter_by(relationship_type="author").one()
+        assert relationship.verification_status == "verified"
 
 
 def test_identity_batch_limit_counts_resolvable_accounts_not_unmatched_labels():

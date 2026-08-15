@@ -6,11 +6,19 @@ from __future__ import annotations
 import sys
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs, unquote, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import and_, func, or_, select
 
-from backend import canonical_tools, db, identity_graph, people_index, projection_policy, toolinfo_authors
+from backend import (
+    canonical_tools,
+    db,
+    identity_graph,
+    people_index,
+    projection_policy,
+    toolinfo_authors,
+    wikimedia_urls,
+)
 from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
@@ -111,17 +119,8 @@ def toolforge_project_from_source_url(url: str) -> str:
 
 def wiki_user_from_source_url(url: str) -> str:
     """Extract a user namespace owner from a Wikimedia raw-page source."""
-    parsed = urlparse(url)
-    candidates = [parse_qs(parsed.query).get("title", [""])[0]]
-    path = unquote(parsed.path)
-    if "/wiki/" in path:
-        candidates.append(path.split("/wiki/", 1)[1])
-    for candidate in candidates:
-        title = _clean(candidate)
-        prefix, separator, remainder = title.partition(":")
-        if separator and prefix.casefold() == "user":
-            return remainder.split("/", 1)[0].strip()
-    return ""
+    page = wikimedia_urls.user_space_page(url)
+    return page.username if page is not None else ""
 
 
 def _person_aliases(s: Session, person_id: int) -> set[str]:
