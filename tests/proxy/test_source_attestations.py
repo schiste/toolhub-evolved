@@ -497,6 +497,12 @@ def test_wiki_user_from_source_url_prefers_a_matching_wiki_path_candidate():
     # Neither candidate has a "User:" prefix: the function falls off the end
     # and returns "".
     assert source_attestations.wiki_user_from_source_url("https://example.org/wiki/Some_Article") == ""
+    assert (
+        source_attestations.wiki_user_from_source_url(
+            "https://en.wikipedia.org.attacker.example/wiki/User:Ada_Lovelace/toolinfo.json"
+        )
+        == ""
+    )
 
 
 def test_normalized_identity_strips_user_namespace_prefix():

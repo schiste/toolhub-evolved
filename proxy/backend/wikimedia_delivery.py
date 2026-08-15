@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -12,6 +11,7 @@ from urllib.parse import quote
 import requests
 
 from backend.sync import clean_error
+from backend.wikimedia_urls import clean_wiki_domain
 
 REQUEST_TIMEOUT_SECONDS = 30
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -23,10 +23,6 @@ ERROR_CANNOT_SEND = "cantsend"
 ERROR_EDIT_FAILED = "edit-failed"
 ERROR_EMAIL_FAILED = "email-failed"
 ERROR_UNEXPECTED_ACCOUNT = "unexpected-account"
-WIKIMEDIA_HOST_RE = re.compile(
-    r"^(?:[a-z0-9-]+\.)*(?:wikipedia|wikimedia|wiktionary|wikibooks|wikinews|wikiquote|wikiversity|"
-    r"wikivoyage|wikisource)\.org$|^(?:www\.)?wikidata\.org$|^species\.wikimedia\.org$"
-)
 RECIPIENT_ERRORS = {
     "blockedfrommail",
     "cantsend",
@@ -62,15 +58,6 @@ class WikiEditResult:
     page_title: str
     revision_id: str
     page_url: str
-
-
-def clean_wiki_domain(value: str) -> str:
-    """Return a supported public Wikimedia domain or reject the destination."""
-    domain = value.strip().casefold().rstrip(".")
-    if not domain or not WIKIMEDIA_HOST_RE.fullmatch(domain):
-        message = "destination must be a public Wikimedia wiki domain"
-        raise ValueError(message)
-    return domain
 
 
 def api_url(domain: str) -> str:
