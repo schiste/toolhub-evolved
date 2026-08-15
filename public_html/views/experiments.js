@@ -20,7 +20,7 @@ export const EXPERIMENTS = [
 				),
 				need: t(
 					"experiments.homeDiscoveryNeed",
-					"Live /api/lists/ and /api/search/tools/ reads through the shared proxy cache"
+					"/v1/catalog/*, atomic catalog snapshot staging, and local projections"
 				),
 				tryHref: "/",
 				tryLabel: t("experiments.homeDiscoveryTry", "Open home")
@@ -30,11 +30,11 @@ export const EXPERIMENTS = [
 				what: t("experiments.searchBrowseWhat", "Search, facet, sort, paginate, and filter Toolhub tools."),
 				current: t(
 					"experiments.searchBrowseCurrent",
-					"Official Toolhub search remains primary; approved Evolved-local public tools appear only in a clearly labeled local strip."
+					"Search, facets, counts, ordering, and pagination resolve against the latest complete local generation."
 				),
 				need: t(
 					"experiments.searchBrowseNeed",
-					"GET /api/search/tools/ plus Evolved /v1/search/tools/ federation"
+					"SQL-backed canonical replica search and indexed facet projections"
 				),
 				tryHref: "/search",
 				tryLabel: t("experiments.searchBrowseTry", "Browse tools")
@@ -47,11 +47,11 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.toolDetailsCurrent",
-					"Detail and revision data stay live from Toolhub; Evolved overlays add provenance, signals, media, and related-tool UI without replacing canonical records."
+					"Tool details use the local canonical generation; persisted revision snapshots and Evolved projections add history, provenance, signals, and media."
 				),
 				need: t(
 					"experiments.toolDetailsNeed",
-					"GET /api/tools/{name}/, revisions, local signal/media endpoints, and graph helpers"
+					"GET /v1/catalog/tools/{name}/, persisted revisions, local signal/media endpoints, and graph helpers"
 				)
 			},
 			{
@@ -59,11 +59,11 @@ export const EXPERIMENTS = [
 				what: t("experiments.listReadWhat", "Browse published lists and inspect the tools inside a list."),
 				current: t(
 					"experiments.listReadCurrent",
-					"Official Toolhub lists are read live; signed-in local drafts and fallbacks are merged only where clearly labeled."
+					"Published lists come from scheduled local collection snapshots; signed-in drafts and fallbacks are merged only where clearly labeled."
 				),
 				need: t(
 					"experiments.listReadNeed",
-					"GET /api/lists/ and /api/lists/{id}/ plus local list overlay merge"
+					"Scheduled list snapshots through /v1/catalog/lists/ plus local list overlay merge"
 				),
 				tryHref: "/lists",
 				tryLabel: t("experiments.listReadTry", "Open lists")
@@ -76,9 +76,12 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.recentTableCurrent",
-					"Official /api/recent/ rows render first; Evolved-local activity rows are merged in, and tool owners are enriched progressively through a shared owner cache."
+					"A scheduled recent-change snapshot is merged with Evolved-local activity, while owners resolve from the canonical local replica."
 				),
-				need: t("experiments.recentTableNeed", "GET /api/recent/, /v1/recent/owners/, and local activity rows"),
+				need: t(
+					"experiments.recentTableNeed",
+					"GET /v1/catalog/recent/, local owner projection, and local activity rows"
+				),
 				tryHref: "/recent",
 				tryLabel: t("experiments.recentTableTry", "Recent changes")
 			},
@@ -90,9 +93,12 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.operationalViewsCurrent",
-					"These parity views read official Toolhub endpoints and merge Evolved activity only for local write history where relevant."
+					"These views read locally projected accounts and scheduled crawler/audit snapshots, merging Evolved write history where relevant."
 				),
-				need: t("experiments.operationalViewsNeed", "GET /api/users/, /api/crawler/runs/, and /api/auditlogs/"),
+				need: t(
+					"experiments.operationalViewsNeed",
+					"Local account projections and scheduled crawler/audit collection snapshots"
+				),
 				tryHref: "/people",
 				tryLabel: t("experiments.operationalViewsTry", "Open community directory")
 			},
@@ -545,15 +551,18 @@ export const EXPERIMENTS = [
 				need: t("experiments.appShellNeed", "Critical CSS, route splitting, and resilient router loading")
 			},
 			{
-				name: t("experiments.apiCacheName", "Shared Toolhub API cache"),
-				what: t("experiments.apiCacheWhat", "Make anonymous Toolhub reads fast and resilient for all users."),
+				name: t("experiments.apiCacheName", "Atomic local catalog replica"),
+				what: t(
+					"experiments.apiCacheWhat",
+					"Make anonymous catalog reads fast and independent of Toolhub request latency."
+				),
 				current: t(
 					"experiments.apiCacheCurrent",
-					"Server-side ToolsDB cache stores anonymous GET /api/* responses with endpoint-specific TTLs, stale-if-error, ETag/Last-Modified, and browser stale-while-refresh support."
+					"Scheduled workers stage complete generations and publish atomically; public routes retain the prior generation when refresh fails."
 				),
 				need: t(
 					"experiments.apiCacheNeed",
-					"api_cache table, proxy cache policy, and no caching for auth/session/write endpoints"
+					"Canonical replica, snapshot staging, /v1/catalog/health/, and browser local-response cache"
 				)
 			},
 			{
