@@ -127,7 +127,9 @@ def fake_background_get(monkeypatch):
 def scheduled_revalidations(monkeypatch):
     """Capture background revalidation scheduling without running a thread."""
     scheduled = []
-    monkeypatch.setattr(proxy_app, "_schedule_background_revalidation", lambda url, stale: scheduled.append((url, stale)))
+    monkeypatch.setattr(
+        proxy_app, "_schedule_background_revalidation", lambda url, stale: scheduled.append((url, stale))
+    )
     return scheduled
 
 
@@ -160,6 +162,10 @@ def test_csp_is_strict_and_matches_inline_script(client):
 
 # ---- reverse proxy ---------------------------------------------------------
 
+LEGACY_REQUEST_TIME_UPSTREAM = pytest.mark.skip(
+    reason="request-time upstream proxy removed; synchronizer tests own I/O"
+)
+
 
 def test_non_get_is_rejected_read_only(client):
     resp = client.post("/api/tools/")
@@ -178,6 +184,36 @@ def test_parent_directory_segments_are_rejected(client, fake_get):
     assert captured["calls"] == 0, "no upstream request may be made for a rejected path"
 
 
+def test_catalog_cache_miss_never_contacts_upstream(client, fake_get):
+    captured = fake_get(FakeUpstream(200, b'{"must":"not be used"}'))
+    response = client.get("/api/tools/not-persisted/")
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "local replica entry unavailable"
+    assert response.headers["X-Toolhub-Evolved-Upstream"] == "none"
+    assert captured["calls"] == 0
+
+
+def test_catalog_compatibility_route_serves_expired_local_row(client, fake_get):
+    captured = fake_get(FakeUpstream(500, b'{"must":"not be used"}'))
+    proxy_app.api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/schema/",
+        proxy_app.api_cache.CacheableResponse(
+            status=200,
+            content_type="application/json",
+            body=b'{"openapi":"3.0.0"}',
+        ),
+        fresh_seconds=-1,
+        stale_if_error_seconds=0,
+    )
+    response = client.get("/api/schema/")
+    assert response.status_code == 200
+    assert response.get_json() == {"openapi": "3.0.0"}
+    assert response.headers["X-Toolhub-Evolved-Cache"] == "replica"
+    assert response.headers["X-Toolhub-Evolved-Upstream"] == "none"
+    assert captured["calls"] == 0
+
+
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_anonymous_reads_are_rate_limited(client, fake_get, monkeypatch):
     fake_get(FakeUpstream(200, b"{}"))
     clock = {"t": 100.0}
@@ -191,6 +227,7 @@ def test_anonymous_reads_are_rate_limited(client, fake_get, monkeypatch):
     assert client.get("/api/tools/x/").status_code == 200
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_upstream_exception_returns_502(client, fake_get):
     fake_get(raises=proxy_app.requests.RequestException("boom"))
     resp = client.get("/api/tools/")
@@ -201,6 +238,7 @@ def test_upstream_exception_returns_502(client, fake_get):
     assert resp.headers["X-Toolhub-Evolved-Upstream"] == "timeout"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_success_is_relayed_and_cached(client, fake_get):
     captured = fake_get(FakeUpstream(200, b'{"ok":true}'))
     resp = client.get("/api/search/tools/?q=wiki&page=2")
@@ -225,6 +263,7 @@ def test_success_is_relayed_and_cached(client, fake_get):
         assert row.body == b'{"ok":true}'
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_successful_tool_payload_populates_canonical_tool_cache(client, fake_get):
     body = b'{"results":[{"name":"toolforge-demo","title":"Demo","description":"Cached canonical tool"}]}'
     fake_get(FakeUpstream(200, body))
@@ -242,6 +281,7 @@ def test_successful_tool_payload_populates_canonical_tool_cache(client, fake_get
         assert queue.reason == "canonical_fetch"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_successful_list_detail_payload_populates_canonical_tool_cache(client, fake_get):
     body = b'{"id":"L1","tools":[{"name":"listed-tool","title":"Listed","description":"From a list"}]}'
     fake_get(FakeUpstream(200, body))
@@ -256,6 +296,7 @@ def test_successful_list_detail_payload_populates_canonical_tool_cache(client, f
         assert row.source_url == "https://toolhub.wikimedia.org/api/lists/L1/"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_error_status_is_relayed_but_not_cached(client, fake_get):
     fake_get(FakeUpstream(503, b'{"error":"upstream"}'))
     resp = client.get("/api/tools/")
@@ -265,6 +306,7 @@ def test_error_status_is_relayed_but_not_cached(client, fake_get):
     assert resp.headers["X-Toolhub-Evolved-Upstream"] == "503"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_redirect_is_relayed_not_followed(client, fake_get):
     captured = fake_get(FakeUpstream(302, b"", content_type="text/html"))
     resp = client.get("/api/whatever/")
@@ -275,6 +317,7 @@ def test_redirect_is_relayed_not_followed(client, fake_get):
     assert resp.headers["X-Toolhub-Evolved-Upstream"] == "302"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_oversize_response_is_rejected(client, fake_get, monkeypatch):
     monkeypatch.setattr(proxy_app, "_MAX_UPSTREAM_BYTES", 8)
     upstream = FakeUpstream(200, b"x" * 64)
@@ -288,6 +331,7 @@ def test_oversize_response_is_rejected(client, fake_get, monkeypatch):
     assert upstream.closed is True, "the oversized stream must be closed"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_repeated_get_is_served_from_the_ttl_cache(client, fake_get):
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
     first = client.get("/api/ui/home/")
@@ -310,12 +354,21 @@ def test_cache_policy_uses_endpoint_specific_ttls():
     only adds upstream revalidations. Changing a number here should be a
     conscious retune, not a side effect."""
     assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/recent/").fresh_seconds == 5 * 60
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/search/tools/?q=wiki").fresh_seconds == 30 * 60
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/tools/citoid/").fresh_seconds == 6 * 60 * 60
-    assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/lists/123/").fresh_seconds == 6 * 60 * 60
+    assert (
+        proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/search/tools/?q=wiki").fresh_seconds
+        == 30 * 60
+    )
+    assert (
+        proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/tools/citoid/").fresh_seconds
+        == 6 * 60 * 60
+    )
+    assert (
+        proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/lists/123/").fresh_seconds == 6 * 60 * 60
+    )
     assert proxy_app.api_cache.policy_for_url("https://toolhub.wikimedia.org/api/schema/").fresh_seconds == 86400
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_detail_cache_stores_stale_if_error_after_fresh_window(client, fake_get, monkeypatch):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -329,6 +382,7 @@ def test_detail_cache_stores_stale_if_error_after_fresh_window(client, fake_get,
         assert row.stale_until == clock["t"] + timedelta(seconds=detail_ttl + 86400)
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_stale_cache_is_served_immediately_after_ttl(client, fake_get, monkeypatch, scheduled_revalidations):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -350,7 +404,10 @@ def test_stale_cache_is_served_immediately_after_ttl(client, fake_get, monkeypat
     assert scheduled_revalidations[0][1].stale is True
 
 
-def test_background_revalidation_is_scheduled_once_and_refreshes_the_row(client, fake_get, fake_background_get, monkeypatch):
+@LEGACY_REQUEST_TIME_UPSTREAM
+def test_background_revalidation_is_scheduled_once_and_refreshes_the_row(
+    client, fake_get, fake_background_get, monkeypatch
+):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     fake_get(FakeUpstream(200, b'{"v":1}'))
@@ -370,6 +427,7 @@ def test_background_revalidation_is_scheduled_once_and_refreshes_the_row(client,
     assert client.get("/api/tools/").data == b'{"v":2}'
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_background_revalidation_swallows_failures(client, fake_get, fake_background_get, monkeypatch):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -388,6 +446,7 @@ def test_background_revalidation_swallows_failures(client, fake_get, fake_backgr
     assert client.get("/api/tools/").data == b'{"v":1}'
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_background_revalidation_keeps_the_stale_row_on_a_transient_upstream_status(
     client, fake_get, fake_background_get, monkeypatch
 ):
@@ -416,6 +475,7 @@ def test_server_timing_helpers_handle_empty_and_untimed_requests(client):
     assert "app;dur=" not in out.headers.get("Server-Timing", "")
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_error_response_is_not_cached(client, fake_get):
     captured = fake_get(FakeUpstream(503, b'{"error":"x"}'))
     client.get("/api/tools/")
@@ -423,6 +483,7 @@ def test_error_response_is_not_cached(client, fake_get):
     assert captured["calls"] == 2, "a 5xx must not be cached — every call re-fetches"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_cache_miss_does_not_poll_recent_changes_on_request_path(client, fake_get, monkeypatch):
     captured = fake_get(FakeUpstream(200, b'{"ok":true}'))
 
@@ -446,6 +507,7 @@ def test_cache_miss_does_not_poll_recent_changes_on_request_path(client, fake_ge
         ),
     ],
 )
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_public_activity_proxy_filters_private_preferences_on_miss_and_hit(client, fake_get, path, private_row):
     public_row = {"content_type": "tool", "content_id": "public-tool"}
     body = json.dumps({"count": 2, "results": [private_row, public_row]}).encode()
@@ -459,6 +521,7 @@ def test_public_activity_proxy_filters_private_preferences_on_miss_and_hit(clien
     assert captured["calls"] == 1
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_stale_cache_does_not_block_on_upstream_exception(client, fake_get, monkeypatch, scheduled_revalidations):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -479,7 +542,10 @@ def test_stale_cache_does_not_block_on_upstream_exception(client, fake_get, monk
     assert len(scheduled_revalidations) == 1
 
 
-def test_stale_cache_does_not_block_on_transient_upstream_status(client, fake_get, monkeypatch, scheduled_revalidations):
+@LEGACY_REQUEST_TIME_UPSTREAM
+def test_stale_cache_does_not_block_on_transient_upstream_status(
+    client, fake_get, monkeypatch, scheduled_revalidations
+):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
     captured = fake_get(FakeUpstream(200, b'{"v":1}'))
@@ -498,6 +564,7 @@ def test_stale_cache_does_not_block_on_transient_upstream_status(client, fake_ge
     assert len(scheduled_revalidations) == 1
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_stale_cache_is_not_served_after_stale_window(client, fake_get, monkeypatch):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -511,12 +578,14 @@ def test_stale_cache_is_not_served_after_stale_window(client, fake_get, monkeypa
     assert resp.get_json()["error"] == "upstream unavailable"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_proxy_raises_if_fetch_contract_is_broken(client, monkeypatch):
     monkeypatch.setattr(proxy_app, "_fetch_upstream", lambda *_args: (None, None, None))
     with pytest.raises(RuntimeError):
         client.get("/api/tools/")
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_background_revalidation_updates_stale_cache(client, fake_get, fake_background_get, monkeypatch):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -535,6 +604,7 @@ def test_background_revalidation_updates_stale_cache(client, fake_get, fake_back
     assert refreshed.stale is False
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_background_revalidation_uses_conditional_headers_for_304(client, fake_get, fake_background_get, monkeypatch):
     clock = {"t": datetime(2026, 1, 1, 12, 0, 0)}
     monkeypatch.setattr(proxy_app.api_cache, "utcnow", lambda: clock["t"])
@@ -681,9 +751,7 @@ def test_html_shell_is_gzipped_when_the_client_accepts_it(client):
 def test_compression_leaves_revalidation_and_small_bodies_alone(client, fake_get):
     """ETags must keep matching, and tiny payloads are not worth compressing."""
     first = client.get("/", headers={"Accept-Encoding": "gzip"})
-    not_modified = client.get(
-        "/", headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]}
-    )
+    not_modified = client.get("/", headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]})
     # Re-tagging per encoding would make every revalidation miss and turn a free
     # 304 back into a full download.
     assert not_modified.status_code == proxy_app._HTTP_NOT_MODIFIED
@@ -695,6 +763,7 @@ def test_compression_leaves_revalidation_and_small_bodies_alone(client, fake_get
     assert "Content-Encoding" not in tiny.headers, "below one packet, compressing saves nothing"
 
 
+@LEGACY_REQUEST_TIME_UPSTREAM
 def test_large_json_proxy_responses_are_compressed(client, fake_get):
     """The /api proxy relays decoded upstream bodies, so they arrive uncompressed."""
     payload = b'{"results":[' + b'{"name":"tool"},' * 400 + b'{"name":"last"}]}'
@@ -833,5 +902,7 @@ def test_a_stale_gzip_twin_is_ignored(tmp_path, monkeypatch):
         os.utime(root / "data.json.gz", (0, 0))
 
         corrected = c.get("/data.json", headers={"Accept-Encoding": "gzip"})
-        body = gzip.decompress(corrected.data) if corrected.headers.get("Content-Encoding") == "gzip" else corrected.data
+        body = (
+            gzip.decompress(corrected.data) if corrected.headers.get("Content-Encoding") == "gzip" else corrected.data
+        )
         assert body == fresh, "a stale twin was served instead of the corrected file"

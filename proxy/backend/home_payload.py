@@ -28,7 +28,7 @@ from backend.models import utcnow
 
 # Bump when the payload shape changes, so old cached rows are ignored rather
 # than deserialized into a shape the client no longer understands.
-HOME_CACHE_VERSION = 1
+HOME_CACHE_VERSION = 2
 HOME_FRESH_SECONDS = 5 * 60
 HOME_STALE_SECONDS = 24 * 60 * 60
 # Short per-worker copy in front of the shared cache, so a burst of landing-page
@@ -93,7 +93,8 @@ def _memberships() -> dict[str, list[dict[str, str]]]:
     """Map each tool name to the public lists containing it.
 
     This is what the browser used to compute by crawling every page of
-    /api/lists/ on a cold visit — two requests of ~1.5s each that also gated
+    the locally persisted list collection on a cold visit. Keeping this merge
+    server-side prevents list membership expansion from blocking first paint.
     the most-listed ordering. Server side each page is a cache hit.
     """
     memberships: dict[str, list[dict[str, str]]] = {}
@@ -121,13 +122,15 @@ def build(summaries_for: Any) -> dict[str, Any]:  # noqa: ANN401 - injected to a
     names = _tool_names([*featured_tools, *recent])
     memberships = _memberships()
     read = summaries_for(names)
+    replica = catalog_read.replica_status()
     return {
-        "totalTools": _total_tools(),
+        "totalTools": replica["recordCount"],
         "lists": lists,
         "recentTools": recent,
         # Keyed by tool name so the client can attach without another round trip.
         "summaries": read.results,
         "endorsements": {name: memberships.get(name, []) for name in names},
+        "replica": replica,
         "source": "local",
         "cachePolicy": {
             "summary": "Composed server-side from the local catalog replica and local summaries.",

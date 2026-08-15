@@ -18,7 +18,7 @@ import re
 from datetime import UTC, datetime
 from email.utils import format_datetime
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlencode
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import Blueprint, Response, jsonify, request
@@ -28,6 +28,7 @@ from backend import (
     activity_privacy,
     authz,
     canonical_tools,
+    catalog_read,
     db,
     github_issues,
     graph_payload,
@@ -35,7 +36,6 @@ from backend import (
     recent_owners,
     security,
     tool_summaries,
-    toolhub,
 )
 from backend import v1_common as common
 from backend.author_claims import (
@@ -217,7 +217,16 @@ def _rss_response(title: str, description: str, link_path: str, items: list[dict
 
 
 def _feed_payload(path: str, params: dict[str, object] | None = None) -> list[dict[str, Any]]:
-    payload = toolhub.public_api_get(path, params=params)
+    if path.rstrip("/") == "/api/recent":
+        payload = catalog_read.collection_payload("/api/recent/", params or {})
+    elif path.rstrip("/") == "/api/lists":
+        payload = catalog_read.collection_payload("/api/lists/", params or {})
+    elif path.rstrip("/") == "/api/search/tools":
+        payload = catalog_read.search_payload(params or {})
+    else:
+        query = urlencode(params or {})
+        cached = catalog_read.cached_payload(f"https://toolhub.wikimedia.org{path}{('?' + query) if query else ''}")
+        payload = json.loads(cached[0].decode("utf-8")) if cached is not None else {}
     if not isinstance(payload, dict):
         return []
     rows = payload.get("results")

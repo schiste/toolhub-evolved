@@ -34,6 +34,7 @@ from backend import (  # noqa: E402
     author_claims,
     authz,
     canonical_tools,
+    catalog_read,
     catalog_projection,
     db,
     github_issues,
@@ -286,14 +287,14 @@ PUBLIC_V1_ROUTES = {
     "/v1/digests/subscriptions/unsubscribe/": "signed single-subscription unsubscribe capability",
     "/v1/user/": "reports authenticated:false when signed out",
     "/v1/canonical/tools/": "public canonical Toolhub cache; local DB only and already-public catalog data",
+    "/v1/catalog/": "public cache-only compatibility root; no request-time upstream access",
+    "/v1/catalog/<path:path>": "public local replica reads with bounded pagination; no network I/O",
+    "/v1/catalog/health/": "public replica generation and freshness metadata; local DB only",
     "/v1/catalog/tools/<name>/projection/": "public versioned projection assembled only from local public evidence",
     "/v1/catalog/tools/<name>/icon/": "public bounded icon bytes previously validated by a background job",
     "/v1/catalog/curations/<int:curation_id>/": "public approved correction evidence; pending rows remain hidden",
     "/v1/graph/": "public similarity graph derived from local canonical Toolhub cache; no upstream fetch",
-    "/v1/home/": (
-        "public landing page composed from the shared anonymous Toolhub read cache and local summaries; "
-        "exactly the data the signed-out homepage already fetched one endpoint at a time"
-    ),
+    "/v1/home/": ("public landing page composed from the local catalog replica and local summaries"),
     "/v1/search/tools/": "public search over local records; local DB only",
     "/v1/statistics/": "public cached quality snapshot derived only from local public catalog evidence",
     "/v1/facets/tools/": "public faceted discovery by analyzer signals and declared metadata; rate limited",
@@ -314,12 +315,12 @@ PUBLIC_V1_ROUTES = {
         "public normalized people and typed tool relationships; evidence is redacted and reads are rate limited"
     ),
     "/v1/tools/<name>/media/": "GET is public; the POST half calls write_guard inside _tool_media_post",
-    "/v1/recent/owners/": "public Recent enrichment; rate limited + per-request fetch budget",
-    "/feeds/recent.xml": "public RSS feed generated from official recent changes",
-    "/feeds/tools/recently-updated.xml": "public RSS feed generated from official Toolhub search",
-    "/feeds/lists.xml": "public RSS feed generated from official Toolhub lists",
-    "/feeds/tools/<path:name>/revisions.xml": "public RSS feed generated from official tool revisions",
-    "/feeds/lists/<list_id>/revisions.xml": "public RSS feed generated from official list revisions",
+    "/v1/recent/owners/": "public Recent enrichment; rate limited and local catalog only",
+    "/feeds/recent.xml": "public RSS feed generated from the local recent-change replica",
+    "/feeds/tools/recently-updated.xml": "public RSS feed generated from local catalog ordering",
+    "/feeds/lists.xml": "public RSS feed generated from persisted list replica pages",
+    "/feeds/tools/<path:name>/revisions.xml": "public RSS feed generated from persisted revision responses",
+    "/feeds/lists/<list_id>/revisions.xml": "public RSS feed generated from persisted revision responses",
     "/feeds/digests/<cadence>.xml": "public RSS feed generated from immutable published digest editions",
     "/toolinfo.json": "public feed the official Toolhub crawler ingests",
 }
@@ -411,12 +412,11 @@ def test_catalog_projection_and_reviewed_curation_are_local_only(client):
 # ---- public RSS feeds ------------------------------------------------------
 
 
-def test_recent_rss_feed_uses_official_recent_changes(client, monkeypatch):
-    calls = []
+def test_recent_rss_feed_uses_local_recent_replica(client, monkeypatch):
     monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
 
-    def fake_public_api_get(path, *, params=None):
-        calls.append((path, params))
+    def fake_collection(path, params):
+        assert (path, params) == ("/api/recent/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE})
         return {
             "results": [
                 {
@@ -432,7 +432,7 @@ def test_recent_rss_feed_uses_official_recent_changes(client, monkeypatch):
             ]
         }
 
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    monkeypatch.setattr(catalog_read, "collection_payload", fake_collection)
     resp = client.get("/feeds/recent.xml")
 
     assert resp.status_code == 200
@@ -442,7 +442,6 @@ def test_recent_rss_feed_uses_official_recent_changes(client, monkeypatch):
     assert "A &amp; B tool" in text
     assert "Fixed &lt;metadata&gt;" in text
     assert "https://evolved.example/tools/abc-tool" in text
-    assert calls == [("/api/recent/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE})]
     root = ET.fromstring(text)
     assert root.tag == "rss"
     assert root.find("./channel/item/guid").text == "toolhub-recent:7"
@@ -459,8 +458,8 @@ def test_cached_feed_links_ignore_a_forged_host_header(client, monkeypatch):
     monkeypatch.delenv("TOOLHUB_EVOLVED_BASE_URL", raising=False)
     monkeypatch.delenv("TOOLHUB_INSECURE_COOKIES", raising=False)
     monkeypatch.setattr(
-        toolhub,
-        "public_api_get",
+        catalog_read,
+        "collection_payload",
         lambda *_a, **_k: {"results": [{"id": 1, "content_type": "tool", "content_id": "t"}]},
     )
 
@@ -472,54 +471,52 @@ def test_cached_feed_links_ignore_a_forged_host_header(client, monkeypatch):
     assert v1_api.DEFAULT_PUBLIC_BASE_URL in text
 
 
-def test_catalog_rss_feeds_call_matching_official_endpoints(client, monkeypatch):
-    calls = []
+def test_catalog_rss_feeds_use_matching_local_replica_surfaces(client, monkeypatch):
     monkeypatch.setenv("TOOLHUB_EVOLVED_BASE_URL", "https://evolved.example")
 
-    def fake_public_api_get(path, *, params=None):
-        calls.append((path, params))
-        if path == "/api/search/tools/":
-            return {
-                "results": [
-                    {
-                        "name": "maps-tool",
-                        "title": {"en": "Maps tool"},
-                        "description": {"en": "Map helper"},
-                        "modified_date": "2026-07-29T10:00:00Z",
-                    }
-                ]
-            }
-        if path == "/api/lists/":
-            return {"results": [{"id": 42, "title": "Starter list", "description": "For new editors"}]}
-        if path == "/api/tools/Foo%2FBar/revisions/":
-            return {"results": [{"id": 9, "timestamp": "2026-07-28T10:00:00Z", "user": {"username": "Grace"}}]}
-        if path == "/api/lists/42/revisions/":
-            return {"results": [{"id": 8, "timestamp": "2026-07-27T10:00:00Z", "comment": "List update"}]}
-        return {"results": []}
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+    monkeypatch.setattr(
+        catalog_read,
+        "search_payload",
+        lambda _params: {
+            "results": [
+                {
+                    "name": "maps-tool",
+                    "title": {"en": "Maps tool"},
+                    "description": {"en": "Map helper"},
+                    "modified_date": "2026-07-29T10:00:00Z",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        catalog_read,
+        "collection_payload",
+        lambda _path, _params: {"results": [{"id": 42, "title": "Starter list", "description": "For new editors"}]},
+    )
+    revision_payloads = deque(
+        [
+            {"results": [{"id": 9, "timestamp": "2026-07-28T10:00:00Z", "user": {"username": "Grace"}}]},
+            {"results": [{"id": 8, "timestamp": "2026-07-27T10:00:00Z", "comment": "List update"}]},
+        ]
+    )
+    monkeypatch.setattr(
+        catalog_read,
+        "cached_payload",
+        lambda _url: (dumps(revision_payloads.popleft()).encode(), "application/json", 200),
+    )
 
     assert "Maps tool" in client.get("/feeds/tools/recently-updated.xml").get_data(as_text=True)
     assert "Starter list" in client.get("/feeds/lists.xml").get_data(as_text=True)
     assert "Toolhub revisions: Foo/Bar" in client.get("/feeds/tools/Foo%2FBar/revisions.xml").get_data(as_text=True)
     assert "Toolhub list revisions: 42" in client.get("/feeds/lists/42/revisions.xml").get_data(as_text=True)
-    assert calls == [
-        ("/api/search/tools/", {"ordering": "-modified_date", "page_size": v1_api.RSS_FEED_PAGE_SIZE}),
-        ("/api/lists/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE}),
-        ("/api/tools/Foo%2FBar/revisions/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE}),
-        ("/api/lists/42/revisions/", {"page_size": v1_api.RSS_FEED_PAGE_SIZE}),
-    ]
 
 
-def test_rss_feed_reports_upstream_failure(client, monkeypatch):
-    def failing_public_api_get(*_args, **_kwargs):
-        raise RuntimeError("upstream down")
-
-    monkeypatch.setattr(toolhub, "public_api_get", failing_public_api_get)
+def test_rss_feed_remains_available_with_an_empty_local_replica(client, monkeypatch):
+    monkeypatch.setattr(catalog_read, "collection_payload", lambda *_args, **_kwargs: {"results": []})
     resp = client.get("/feeds/recent.xml")
 
-    assert resp.status_code == 502
-    assert resp.get_json()["error"] == "feed upstream unavailable"
+    assert resp.status_code == 200
+    assert "<channel>" in resp.get_data(as_text=True)
 
 
 # ---- db plumbing -----------------------------------------------------------
@@ -1064,13 +1061,12 @@ def test_owner_cache_database_failures_do_not_break_the_recent_page(app, monkeyp
         yield
 
     monkeypatch.setattr(recent_owners.db, "session_scope", broken_session_scope)
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: {"name": "t", "author": [{"name": "Ada"}]})
     # Every path degrades to "no cache" rather than raising into the request.
     assert recent_owners._cached_owner("t") is None
     recent_owners._store_owner("t", "Ada")
     recent_owners._mark_failure("t", "boom")
     assert recent_owners.purge_expired() == 0
-    assert recent_owners.resolve_owners(["t"])["owners"] == {"t": "Ada"}
+    assert recent_owners.resolve_owners(["t"])["owners"] == {"t": ""}
 
 
 def test_fully_expired_owner_row_is_treated_as_a_miss(client):
@@ -5854,26 +5850,21 @@ def test_toolhub_public_api_get_raises_upstream_error(client, monkeypatch):
     assert exc.value.payload == {"message": "bad"}
 
 
-def test_recent_owner_resolver_fetches_once_then_uses_toolsdb_cache(client, monkeypatch):
-    calls = []
-
-    def fake_public_api_get(path, **_kwargs):
-        calls.append(path)
-        return {"name": "my-tool", "author": [{"name": "Ada Maintainer"}]}
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+def test_recent_owner_resolver_reads_replica_once_then_uses_owner_cache(client):
+    canonical_tools.upsert_records(
+        [{"name": "my-tool", "author": [{"name": "Ada Maintainer"}]}], source_url="local-test"
+    )
     first = client.get("/v1/recent/owners/?tool=my-tool&tool=my-tool").get_json()
     second = client.get("/v1/recent/owners/?tools=my-tool").get_json()
 
     assert first["owners"] == {"my-tool": "Ada Maintainer"}
-    assert first["meta"]["my-tool"]["cached"] is False
+    assert first["meta"]["my-tool"]["cached"] is True
     assert second["owners"] == {"my-tool": "Ada Maintainer"}
     assert second["meta"]["my-tool"]["cached"] is True
-    assert calls == ["/api/tools/my-tool/"]
     with db.session_scope() as s:
         row = s.get(ToolOwnerCache, "my-tool")
         assert row.owner == "Ada Maintainer"
-        assert row.source == "toolhub_detail"
+        assert row.source == "local_catalog"
 
 
 def test_owner_cache_purges_only_rows_past_their_stale_window(client):
@@ -5896,8 +5887,7 @@ def test_owner_cache_purges_only_rows_past_their_stale_window(client):
     assert recent_owners.purge_expired() == 0  # idempotent
 
 
-def test_unresolved_owner_rows_expire_far_sooner_than_resolved_ones(client, monkeypatch):
-    monkeypatch.setattr(toolhub, "public_api_get", lambda path, **_k: {"name": path, "author": []})
+def test_unresolved_owner_rows_expire_far_sooner_than_resolved_ones(client):
     client.get("/v1/recent/owners/?tool=nobody")  # resolves to no owner → negative entry
     with db.session_scope() as s:
         row = s.get(ToolOwnerCache, "nobody")
@@ -5908,19 +5898,15 @@ def test_unresolved_owner_rows_expire_far_sooner_than_resolved_ones(client, monk
         )
 
 
-def test_recent_owners_defers_names_past_the_fetch_budget(client, monkeypatch):
-    calls = []
-
-    def fake_public_api_get(path, **_kwargs):
-        calls.append(path)
-        return {"name": path, "author": [{"name": "Ada"}]}
-
-    monkeypatch.setattr(toolhub, "public_api_get", fake_public_api_get)
+def test_recent_owners_defers_names_past_the_fetch_budget(client):
     cold = recent_owners.OWNER_FETCH_BUDGET + 6
+    canonical_tools.upsert_records(
+        [{"name": f"cold-{i}", "author": [{"name": "Ada"}]} for i in range(cold)], source_url="local-test"
+    )
     names = "&".join(f"tool=cold-{i}" for i in range(cold))
     data = client.get(f"/v1/recent/owners/?{names}").get_json()
 
-    assert len(calls) == recent_owners.OWNER_FETCH_BUDGET  # one request cannot fan out further
+    assert sum(owner == "Ada" for owner in data["owners"].values()) == recent_owners.OWNER_FETCH_BUDGET
     deferred = [n for n, m in data["meta"].items() if m["source"] == recent_owners.SOURCE_DEFERRED]
     assert len(deferred) == cold - recent_owners.OWNER_FETCH_BUDGET
     assert all(data["owners"][name] == "" for name in deferred)
@@ -5931,7 +5917,6 @@ def test_recent_owners_defers_names_past_the_fetch_budget(client, monkeypatch):
 
 
 def test_recent_owners_is_rate_limited(client, monkeypatch):
-    monkeypatch.setattr(toolhub, "public_api_get", lambda *_a, **_k: {"name": "t", "author": []})
     clock = {"t": 100.0}
     monkeypatch.setattr(security.time, "monotonic", lambda: clock["t"])
     for _ in range(security.READ_LIMIT):
@@ -5943,17 +5928,13 @@ def test_recent_owners_is_rate_limited(client, monkeypatch):
     assert client.get("/v1/recent/owners/?tool=warm").status_code == 200
 
 
-def test_resolve_owners_without_a_budget_is_unlimited(client, monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        toolhub, "public_api_get", lambda path, **_k: calls.append(path) or {"name": path, "author": []}
-    )
+def test_resolve_owners_without_a_budget_is_unlimited(client):
     # The scheduled prewarm job is trusted and passes no budget.
-    recent_owners.resolve_owners([f"job-{i}" for i in range(recent_owners.OWNER_FETCH_BUDGET + 3)])
-    assert len(calls) == recent_owners.OWNER_FETCH_BUDGET + 3
+    result = recent_owners.resolve_owners([f"job-{i}" for i in range(recent_owners.OWNER_FETCH_BUDGET + 3)])
+    assert result["count"] == recent_owners.OWNER_FETCH_BUDGET + 3
 
 
-def test_recent_owner_resolver_returns_stale_owner_when_toolhub_fails(client, monkeypatch):
+def test_recent_owner_resolver_returns_stale_owner_when_replica_misses(client):
     with db.session_scope() as s:
         now = utcnow()
         s.add(
@@ -5966,35 +5947,21 @@ def test_recent_owner_resolver_returns_stale_owner_when_toolhub_fails(client, mo
             )
         )
 
-    def failing_public_api_get(_path, **_kwargs):
-        raise toolhub.ToolhubAPIError(503, {"message": "down"})
-
-    monkeypatch.setattr(toolhub, "public_api_get", failing_public_api_get)
     data = client.get("/v1/recent/owners/?tool=stale-tool").get_json()
 
     assert data["owners"] == {"stale-tool": "Cached Owner"}
     assert data["meta"]["stale-tool"]["cached"] is True
     assert data["meta"]["stale-tool"]["stale"] is True
     with db.session_scope() as s:
-        assert "Toolhub API returned 503" in s.get(ToolOwnerCache, "stale-tool").last_error
+        assert "absent from the local catalog" in s.get(ToolOwnerCache, "stale-tool").last_error
 
 
-def test_recent_owner_resolver_cleans_bounds_and_negative_caches_failures(client, monkeypatch):
-    calls = []
-
-    def failing_public_api_get(path, **_kwargs):
-        calls.append(path)
-        raise toolhub.ToolhubAPIError(404, {"message": "missing"})
-
-    monkeypatch.setattr(toolhub, "public_api_get", failing_public_api_get)
+def test_recent_owner_resolver_cleans_bounds_and_negative_caches_failures(client):
     names = "&".join(f"tool=tool-{i}" for i in range(recent_owners.OWNER_MAX_NAMES + 5))
     data = client.get(f"/v1/recent/owners/?tool=&tool=tool-0&{names}").get_json()
 
     assert data["count"] == recent_owners.OWNER_MAX_NAMES
     assert data["owners"]["tool-0"] == ""
-    # The name list is still bounded at OWNER_MAX_NAMES, but only the first
-    # OWNER_FETCH_BUDGET cold names may go upstream in one request.
-    assert len(calls) == recent_owners.OWNER_FETCH_BUDGET
     with db.session_scope() as s:
         row = s.get(ToolOwnerCache, "tool-0")
         assert row.owner == ""
