@@ -21,7 +21,6 @@ PROXY = pathlib.Path(__file__).resolve().parents[2] / "proxy"
 # this repository, not something a user or upstream registry supplied. The value
 # is the reason, so adding an entry is a claim somebody can check.
 FIXED_TARGET_FETCHERS = {
-    ("app.py", "_fetch_upstream"): "UPSTREAM constant; the read-only Toolhub proxy",
     ("cache_invalidation.py", "fetch_recent_change_rows"): "fixed RECENT_INVALIDATION_URL constant",
     ("cache_prewarm.py", "prewarm_endpoint"): "built from the static hot-endpoint list",
     ("crawl.py", "upstream_state"): "UPSTREAM_TOOL constant",

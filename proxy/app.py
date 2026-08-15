@@ -11,18 +11,15 @@ Official writes go through /v1/toolhub/* with a stored per-user OAuth grant;
 Evolved-only overlay writes land in the local database via /v1.
 """
 
-from concurrent.futures import ThreadPoolExecutor
 from gzip import compress as gzip_compress
 from mimetypes import guess_type
 from pathlib import Path
-from threading import Lock
 from time import perf_counter
 
-import requests
 from flask import Flask, Response, abort, g, request, send_from_directory
 
 import backend
-from backend import activity_privacy, api_cache, canonical_tools, security
+from backend import activity_privacy, api_cache, security
 
 HERE = Path(__file__).resolve().parent
 _SOURCE_DIR = (HERE.parent / "public_html").resolve()
@@ -37,11 +34,6 @@ def _static_root() -> Path:
 
 UA = "toolhub-evolved/0.2 (https://toolhub-evolved.toolforge.org; christophe@aeptus.com)"
 
-# The proxy buffers the upstream body before relaying it; cap that buffer so a
-# (hypothetical) runaway upstream response can't exhaust the webservice's memory.
-# Toolhub JSON pages are a few hundred KiB at most, so 10 MiB is generous slack.
-_MAX_UPSTREAM_BYTES = 10 * 1024 * 1024
-_CHUNK_BYTES = 64 * 1024
 # Types the edge does not already compress, plus text/* handled by prefix.
 _COMPRESSIBLE_TYPES = {
     "application/json",
@@ -56,29 +48,16 @@ _COMPRESS_MAX_BYTES = 2 * 1024 * 1024
 _COMPRESS_LEVEL = 6
 _VERSIONED_STATIC_CACHE = "public, max-age=31536000, immutable"
 _REVALIDATED_STATIC_CACHE = "no-cache"
+_HTTP_OK = 200
 _HTTP_NOT_MODIFIED = 304
-_CACHEABLE_MIN_STATUS = 200
 # Statuses that carry no body to compress.
 _BODILESS_STATUSES = {204, _HTTP_NOT_MODIFIED}
-_CACHEABLE_MAX_STATUS = 300
-_TRANSIENT_UPSTREAM_STATUSES = {502, 503, 504}
 _CACHE_HEADER = "X-Toolhub-Evolved-Cache"
 _UPSTREAM_HEADER = "X-Toolhub-Evolved-Upstream"
 _SERVER_TIMING_HEADER = "Server-Timing"
-_UPSTREAM_TIMEOUT = "timeout"
-_UPSTREAM_BACKGROUND = "background"
 
 app = Flask(__name__, static_folder=None)
 backend.register(app)
-
-# One pooled HTTPS connection set to the upstream, reused across requests so each
-# proxied call skips a fresh TCP + TLS handshake to toolhub.wikimedia.org
-# (~100-200ms saved per request — the SPA makes several per page).
-_SESSION = requests.Session()
-_BACKGROUND_SESSION = requests.Session()
-_BACKGROUND_REFRESH = ThreadPoolExecutor(max_workers=1, thread_name_prefix="api-cache-refresh")
-_BACKGROUND_REFRESHING: set[str] = set()
-_BACKGROUND_REFRESH_LOCK = Lock()
 
 
 def _server_timing_desc(value: int | str) -> str:
@@ -141,152 +120,6 @@ def _cached_api_response(
     return resp
 
 
-def _upstream_headers(stale: api_cache.CachedResponse | None = None) -> dict[str, str]:
-    """Headers for anonymous Toolhub API reads, optionally conditional."""
-    headers = {"User-Agent": UA, "Accept": "application/json"}
-    if stale and stale.etag:
-        headers["If-None-Match"] = stale.etag
-    if stale and stale.last_modified:
-        headers["If-Modified-Since"] = stale.last_modified
-    return headers
-
-
-def _oversize_response(upstream_status: int | str, upstream_dur_ms: float | None = None) -> Response:
-    """Return the fixed JSON error for an oversized upstream body."""
-    resp = Response('{"error":"upstream response too large"}', status=502, content_type="application/json")
-    resp.headers["Cache-Control"] = "no-store"
-    return _with_proxy_diagnostics(resp, cache="miss", upstream=upstream_status, upstream_dur_ms=upstream_dur_ms)
-
-
-def _unavailable_response(upstream_dur_ms: float | None = None) -> Response:
-    """Return the fixed JSON error for an unavailable upstream."""
-    resp = Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
-    resp.headers["Cache-Control"] = "no-store"
-    return _with_proxy_diagnostics(resp, cache="miss", upstream=_UPSTREAM_TIMEOUT, upstream_dur_ms=upstream_dur_ms)
-
-
-def _fetch_upstream(
-    url: str, stale: api_cache.CachedResponse | None, *, session: requests.Session | None = None
-) -> tuple[requests.Response | None, bytes | None, Response | None]:
-    """Fetch upstream under the proxy's no-redirect and response-size limits."""
-    http = session or _SESSION
-    started = perf_counter()
-    try:
-        # allow_redirects=False: this is a fixed-target read-only proxy, so it must
-        # never chase a 3xx the upstream returns (an upstream open redirect would
-        # otherwise become SSRF to whatever host the Location names). A 3xx is
-        # relayed through verbatim instead. stream=True so the body is read under
-        # the size cap below rather than fully buffered by requests up front. The
-        # pooled _SESSION reuses the TCP/TLS connection to the upstream.
-        upstream = http.get(
-            url,
-            headers=_upstream_headers(stale),
-            timeout=20,
-            allow_redirects=False,
-            stream=True,
-        )
-        body = bytearray()
-        for chunk in upstream.iter_content(_CHUNK_BYTES):
-            body.extend(chunk)
-            if len(body) > _MAX_UPSTREAM_BYTES:
-                elapsed_ms = (perf_counter() - started) * 1000
-                upstream.close()
-                return None, None, _oversize_response(upstream.status_code, elapsed_ms)
-    except requests.RequestException as exc:
-        elapsed_ms = (perf_counter() - started) * 1000
-        api_cache.mark_failure(url, str(exc))
-        if stale is not None:
-            return (
-                None,
-                None,
-                _cached_api_response(stale, "stale", upstream=_UPSTREAM_TIMEOUT, upstream_dur_ms=elapsed_ms),
-            )
-        return None, None, _unavailable_response(elapsed_ms)
-    # Stashed on the response so the relay helpers can report upstream time without
-    # threading it through every signature. Public name: a leading underscore would
-    # read as touching requests' internals.
-    upstream.toolhub_evolved_upstream_ms = (perf_counter() - started) * 1000
-    return upstream, bytes(body), None
-
-
-def _background_revalidate(url: str, stale: api_cache.CachedResponse) -> None:
-    """Refresh one stale shared-cache row without holding up the user request."""
-    try:
-        upstream, payload, early = _fetch_upstream(url, stale, session=_BACKGROUND_SESSION)
-        if early is not None or upstream is None or payload is None:
-            return
-        _relay_upstream_response(url, upstream, payload, stale)
-    except Exception as exc:  # noqa: BLE001 - background refresh must never affect the served response.
-        api_cache.mark_failure(url, f"background refresh failed: {exc}")
-    finally:
-        with _BACKGROUND_REFRESH_LOCK:
-            _BACKGROUND_REFRESHING.discard(url)
-
-
-def _schedule_background_revalidation(url: str, stale: api_cache.CachedResponse) -> None:
-    """Queue at most one background refresh for a stale anonymous API response."""
-    with _BACKGROUND_REFRESH_LOCK:
-        if url in _BACKGROUND_REFRESHING:
-            return
-        _BACKGROUND_REFRESHING.add(url)
-    _BACKGROUND_REFRESH.submit(_background_revalidate, url, stale)
-
-
-def _relay_upstream_response(
-    url: str, upstream: requests.Response, payload: bytes, stale: api_cache.CachedResponse | None
-) -> Response:
-    """Persist/relay an upstream response according to the anonymous read-cache contract."""
-    payload = activity_privacy.sanitize_public_api_payload(url, payload)
-    content_type = upstream.headers.get("content-type", "application/json")
-    cacheable = _CACHEABLE_MIN_STATUS <= upstream.status_code < _CACHEABLE_MAX_STATUS
-    if upstream.status_code == _HTTP_NOT_MODIFIED and stale is not None:
-        api_cache.refresh(url)
-        return _cached_api_response(
-            api_cache.CachedResponse(
-                url=stale.url,
-                status=stale.status,
-                content_type=stale.content_type,
-                body=stale.body,
-                stale=False,
-                etag=stale.etag,
-                last_modified=stale.last_modified,
-            ),
-            "revalidated",
-            upstream=upstream.status_code,
-            upstream_dur_ms=getattr(upstream, "toolhub_evolved_upstream_ms", None),
-        )
-    # Only cache successful payloads. Caching a transient 4xx/5xx would serve the
-    # error for 5 minutes and defeat the SPA's own retry of 502/503/504 (api.js).
-    if cacheable:
-        api_cache.put_success(
-            url,
-            api_cache.CacheableResponse(
-                status=upstream.status_code,
-                content_type=content_type,
-                body=payload,
-                etag=upstream.headers.get("etag"),
-                last_modified=upstream.headers.get("last-modified"),
-            ),
-        )
-        canonical_tools.ingest_payload(url, payload)
-    elif stale is not None and upstream.status_code in _TRANSIENT_UPSTREAM_STATUSES:
-        api_cache.mark_failure(url, f"HTTP {upstream.status_code}")
-        return _cached_api_response(
-            stale,
-            "stale",
-            upstream=upstream.status_code,
-            upstream_dur_ms=getattr(upstream, "toolhub_evolved_upstream_ms", None),
-        )
-    resp = Response(payload, status=upstream.status_code, content_type=content_type)
-    resp.headers["Cache-Control"] = api_cache.cache_control(url) if cacheable else "no-store"
-    return _with_proxy_diagnostics(
-        resp,
-        cache="miss",
-        upstream=upstream.status_code,
-        upstream_dur_ms=getattr(upstream, "toolhub_evolved_upstream_ms", None),
-    )
-
-
 # CSP hash of the one inline theme script in index.html (kept inline so the theme
 # resolves before first paint — no FOUC). tests/proxy/test_app.py recomputes this
 # from index.html and fails if it drifts, so the value can never silently rot.
@@ -327,7 +160,7 @@ def start_request_timing() -> None:
 
 def _compressible(resp: Response) -> bool:
     """Report whether this response is worth gzipping and safe to gzip."""
-    if resp.status_code < _CACHEABLE_MIN_STATUS or resp.status_code in _BODILESS_STATUSES:
+    if resp.status_code < _HTTP_OK or resp.status_code in _BODILESS_STATUSES:
         return False
     if "Content-Encoding" in resp.headers or "Content-Range" in resp.headers:
         return False

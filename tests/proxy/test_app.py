@@ -34,20 +34,12 @@ from backend.models import ApiCache, CanonicalToolCache, PersonReconciliationQue
 @pytest.fixture(autouse=True)
 def _clear_cache(monkeypatch):
     """The proxy's API cache and read limiter are process-wide; isolate tests."""
-    # Keep executor work inside the fixture that owns its in-memory SQLite
-    # engine. Queue semantics are covered by tests that replace submit below;
-    # a real thread here could outlive teardown and race the next db.configure().
-    monkeypatch.setattr(proxy_app._BACKGROUND_REFRESH, "submit", lambda fn, *args: fn(*args))
     proxy_app.api_cache.clear()
     proxy_app.security.clear_rate_limits()
-    with proxy_app._BACKGROUND_REFRESH_LOCK:
-        proxy_app._BACKGROUND_REFRESHING.clear()
     monkeypatch.setattr(proxy_app.api_cache, "maybe_poll_recent_changes", lambda *_args, **_kwargs: 0)
     yield
     proxy_app.api_cache.clear()
     proxy_app.security.clear_rate_limits()
-    with proxy_app._BACKGROUND_REFRESH_LOCK:
-        proxy_app._BACKGROUND_REFRESHING.clear()
 
 
 @pytest.fixture
@@ -173,28 +165,23 @@ def test_non_get_is_rejected_read_only(client):
     assert resp.get_json()["error"] == "read-only proxy"
 
 
-def test_parent_directory_segments_are_rejected(client, fake_get):
-    captured = fake_get()
+def test_parent_directory_segments_are_rejected(client):
     # Flask decodes %2f before routing, so this reaches the view as "../../o/token/"
     # and would otherwise be normalized by requests into a fetch outside /api/.
     for path in ("..%2f..%2fo%2ftoken%2f", "../admin/", "tools/../../admin/"):
         resp = client.get(f"/api/{path}")
         assert resp.status_code == 400, path
         assert resp.get_json()["error"] == "invalid api path"
-    assert captured["calls"] == 0, "no upstream request may be made for a rejected path"
 
 
-def test_catalog_cache_miss_never_contacts_upstream(client, fake_get):
-    captured = fake_get(FakeUpstream(200, b'{"must":"not be used"}'))
+def test_catalog_cache_miss_never_contacts_upstream(client):
     response = client.get("/api/tools/not-persisted/")
     assert response.status_code == 503
     assert response.get_json()["error"] == "local replica entry unavailable"
     assert response.headers["X-Toolhub-Evolved-Upstream"] == "none"
-    assert captured["calls"] == 0
 
 
-def test_catalog_compatibility_route_serves_expired_local_row(client, fake_get):
-    captured = fake_get(FakeUpstream(500, b'{"must":"not be used"}'))
+def test_catalog_compatibility_route_serves_expired_local_row(client):
     proxy_app.api_cache.put_success(
         "https://toolhub.wikimedia.org/api/schema/",
         proxy_app.api_cache.CacheableResponse(
@@ -210,7 +197,6 @@ def test_catalog_compatibility_route_serves_expired_local_row(client, fake_get):
     assert response.get_json() == {"openapi": "3.0.0"}
     assert response.headers["X-Toolhub-Evolved-Cache"] == "replica"
     assert response.headers["X-Toolhub-Evolved-Upstream"] == "none"
-    assert captured["calls"] == 0
 
 
 @LEGACY_REQUEST_TIME_UPSTREAM
@@ -748,7 +734,7 @@ def test_html_shell_is_gzipped_when_the_client_accepts_it(client):
     assert "Content-Encoding" not in plain.headers
 
 
-def test_compression_leaves_revalidation_and_small_bodies_alone(client, fake_get):
+def test_compression_leaves_revalidation_and_small_bodies_alone(client):
     """ETags must keep matching, and tiny payloads are not worth compressing."""
     first = client.get("/", headers={"Accept-Encoding": "gzip"})
     not_modified = client.get("/", headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]})
@@ -758,7 +744,14 @@ def test_compression_leaves_revalidation_and_small_bodies_alone(client, fake_get
     assert not_modified.get_data() == b""
     assert "Content-Encoding" not in not_modified.headers
 
-    fake_get(FakeUpstream(200, b'{"small":true}'))
+    proxy_app.api_cache.put_success(
+        "https://toolhub.wikimedia.org/api/tools/",
+        proxy_app.api_cache.CacheableResponse(
+            status=200,
+            content_type="application/json",
+            body=b'{"small":true}',
+        ),
+    )
     tiny = client.get("/api/tools/", headers={"Accept-Encoding": "gzip"})
     assert "Content-Encoding" not in tiny.headers, "below one packet, compressing saves nothing"
 
@@ -906,3 +899,29 @@ def test_a_stale_gzip_twin_is_ignored(tmp_path, monkeypatch):
             gzip.decompress(corrected.data) if corrected.headers.get("Content-Encoding") == "gzip" else corrected.data
         )
         assert body == fresh, "a stale twin was served instead of the corrected file"
+
+
+def test_local_proxy_applies_read_rate_limit(client, monkeypatch):
+    monkeypatch.setattr(proxy_app.security, "read_rate_limited", lambda _address: True)
+
+    response = client.get("/api/tools/")
+
+    assert response.status_code == 429
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Retry-After"]
+
+
+def test_local_proxy_can_serve_a_stale_but_usable_replica_row(client):
+    url = "https://toolhub.wikimedia.org/api/tools/"
+    proxy_app.api_cache.put_success(
+        url,
+        proxy_app.api_cache.CacheableResponse(200, "application/json", b'{"stale":true}'),
+        fresh_seconds=-1,
+        stale_if_error_seconds=60,
+    )
+
+    response = client.get("/api/tools/")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"stale": True}
+    assert response.headers["X-Toolhub-Evolved-Cache"] == "stale"
