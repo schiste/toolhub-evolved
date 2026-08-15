@@ -3,6 +3,7 @@
 
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import api_cache, canonical_tools, catalog_facets, catalog_read, db  # noqa: E402
-from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState  # noqa: E402
+from backend.models import (  # noqa: E402
+    ApiCacheMeta,
+    CanonicalToolCache,
+    CatalogFacetValue,
+    ToolCatalogSyncState,
+    catalog_modified_at,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -138,3 +145,83 @@ def test_get_local_returns_expired_row_but_normal_cache_read_does_not():
 
     assert api_cache.get(url, allow_stale=True) is None
     assert api_cache.get_local(url).body == b'{"openapi":"3"}'
+
+
+def test_search_covers_ordering_and_bidirectional_pagination():
+    first = catalog_read.search_payload({"ordering": "name", "page_size": "1"})
+    second = catalog_read.search_payload({"ordering": "modified_date", "page": "2", "page_size": "1"})
+
+    assert first["next"].endswith("page=2")
+    assert second["previous"].endswith("page=1")
+    assert second["results"][0]["name"] == "beta"
+
+
+def test_local_payload_helpers_cover_present_and_missing_rows():
+    assert catalog_read.tool_payload(" alpha ")["name"] == "alpha"
+    assert catalog_read.tool_payload("missing") is None
+    assert catalog_read.home_payload()["total_tools"] == 2
+    assert catalog_read.cached_payload("https://missing.example") is None
+
+    url = "https://toolhub.wikimedia.org/api/schema/"
+    api_cache.put_success(url, api_cache.CacheableResponse(200, "application/json", b"{}"))
+    assert catalog_read.cached_payload(url) == (b"{}", "application/json", 200)
+
+    assert catalog_modified_at({"modified_date": "not-a-date"}) is None
+    assert catalog_modified_at({"modified_date": "2026-08-15T10:00:00"}).isoformat() == "2026-08-15T10:00:00"
+
+
+def test_collection_merge_rejects_malformed_rows_deduplicates_and_paginates(monkeypatch):
+    responses = [
+        api_cache.CachedResponse("bad", 200, "application/json", b"not-json", False, None, None),
+        api_cache.CachedResponse("array", 200, "application/json", b"[]", False, None, None),
+        api_cache.CachedResponse("shape", 200, "application/json", b'{"results":"wrong"}', False, None, None),
+        api_cache.CachedResponse(
+            "rows",
+            200,
+            "application/json",
+            json.dumps(
+                {
+                    "results": [
+                        "wrong",
+                        {"id": 1, "featured": False},
+                        {"id": 1, "featured": True},
+                        {"title": "anonymous", "featured": True},
+                        {"id": 2, "featured": True},
+                    ]
+                }
+                ).encode(),
+                False,
+                None,
+                None,
+            ),
+    ]
+    monkeypatch.setattr(api_cache, "responses_for_path", lambda _path: responses)
+
+    page = catalog_read.collection_payload("/api/lists/", {"featured": "true", "page": "2", "page_size": "1"})
+    without_status = catalog_read.collection_payload("/api/lists/", {}, include_replica=False)
+
+    assert page["count"] == 2
+    assert page["previous"].endswith("page=1&page_size=1")
+    assert page["results"] == [{"id": 2, "featured": True}]
+    assert "replica" not in without_status
+
+
+def test_facet_cache_rejects_invalid_envelopes_and_caps_buckets(monkeypatch):
+    with db.session_scope() as session:
+        session.add(ApiCacheMeta(key=catalog_facets.CACHE_KEY, value="not-json"))
+    with db.session_scope() as session:
+        assert catalog_facets.cached_global_payload(session) is None
+        session.get(ApiCacheMeta, catalog_facets.CACHE_KEY).value = '{"version":0,"facets":{}}'
+    with db.session_scope() as session:
+        assert catalog_facets.cached_global_payload(session) is None
+
+    rows = [("tool_type", str(index), str(index), 1) for index in range(catalog_facets.FACET_BUCKET_LIMIT + 1)]
+    payload = catalog_facets.payload_from_rows(rows)
+    assert len(payload["_filter_tool_type"]["tool_type"]["buckets"]) == catalog_facets.FACET_BUCKET_LIMIT
+
+    @contextmanager
+    def locked_out(*_args, **_kwargs):
+        yield False
+
+    monkeypatch.setattr(db, "advisory_lock", locked_out)
+    assert catalog_facets.rebuild_global_payload() == 0

@@ -28,3 +28,8 @@ def test_catalog_and_projection_vocabulary_preserve_toolhub_names():
 def test_unknown_discovery_names_are_rejected_in_both_directions():
     assert facet_names.to_storage("internal_future_signal") is None
     assert facet_names.to_public("internal_future_signal") is None
+
+
+def test_detected_facets_are_identified_through_the_public_vocabulary():
+    assert facet_names.is_detected(" detected_technology ") is True
+    assert facet_names.is_detected("declared_technology") is False

@@ -1513,6 +1513,9 @@ def test_author_claim_provider_parsers_cover_malformed_public_shapes():
     ) == ["Ada Lovelace"]
     assert author_claims.parse_toolsadmin_maintainers('<a href="/profile/blank/"> </a>') == []
     assert author_claims.parse_toolsadmin_maintainers("<p>No maintainers here</p>") == []
+    assert author_claims.parse_toolsadmin_maintainers(
+        "Maintainers Maintainers Ada\nGrace Git repositories"
+    ) == ["Ada", "Grace"]
     assert author_claims.author_names_from_toolinfo({"author": "Ada"}) == ["Ada"]
     assert author_claims.author_names_from_toolinfo({"author": "Magnus Manske, JoanJoc"}) == [
         "Magnus Manske",
@@ -1559,6 +1562,23 @@ def test_toolforge_maintainer_provider_records_failures(client):
         )
         assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
         assert "SUL-bound" in rows[0].last_error
+
+
+def test_toolforge_maintainer_provider_fails_closed_when_sul_has_no_membership(client):
+    uid = add_user(username="Ada", wikimedia_global_user_id="160")
+    user = User(id=uid, wm_sub="42", username="Ada", wikimedia_global_user_id="160")
+
+    with db.session_scope() as session:
+        rows = ToolforgeMaintainerProvider(fetcher=lambda _name: pytest.fail("must not fetch HTML")).verify(
+            session,
+            user,
+            tool_name="toolforge-missing",
+            author_names=["Ada"],
+            toolhub_tool={},
+        )
+
+    assert rows[0].verification_status == sync.AUTHOR_CLAIM_FAILED
+    assert "SUL-bound" in rows[0].last_error
 
 
 def test_toolforge_maintainer_provider_matches_any_validated_project_alias(client):

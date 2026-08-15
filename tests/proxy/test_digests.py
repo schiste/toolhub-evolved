@@ -2088,3 +2088,81 @@ def test_digest_delivery_handles_rows_deleted_after_external_success(monkeypatch
         "cancelled": 0,
         "skipped": 0,
     }
+
+
+@pytest.mark.parametrize(
+    ("cadence", "key"),
+    [
+        ("daily", "2026-99-99"),
+        ("daily", "2026-8-09"),
+        ("weekly", "2026-32"),
+        ("weekly", "2026-W99"),
+        ("monthly", "2026-99"),
+        ("yearly", "2026"),
+    ],
+)
+def test_digest_period_keys_reject_invalid_or_unsupported_values(cadence, key):
+    with pytest.raises(ValueError, match="digest edition"):
+        digests.period_from_key(cadence, key)
+
+
+def test_compact_model_facts_drop_empty_lists_and_keep_nonempty_evidence():
+    compact = digests._compact_model_fact(  # noqa: SLF001 - contract at the Lift Wing boundary
+        {"name": "alpha", "tasks": ["", " editing "], "keywords": [], "description": " Useful "}
+    )
+
+    assert compact == {"name": "alpha", "description": "Useful", "tasks": ["editing"]}
+
+
+def test_website_only_regeneration_validates_input_and_external_state(monkeypatch):
+    period = digests.period_from_key("daily", "2026-08-09")
+    with pytest.raises(ValueError, match="one or more unique"):
+        digests.regenerate_website_editions([])
+    with pytest.raises(ValueError, match="one or more unique"):
+        digests.regenerate_website_editions([period, period])
+    with pytest.raises(ValueError, match="captured creation events"):
+        digests.regenerate_website_editions([period])
+
+    digests.capture_recent_rows([creation(1, "external-tool", "2026-08-09T12:00:00Z")])
+    monkeypatch.setattr(
+        digests,
+        "generate_editorial",
+        lambda facts, _cadence: (
+            {
+                "introduction": "One verified tool supports Wikimedia work.",
+                "highlights": [{"tool_name": facts[0]["name"], "blurb": "It supports Wikimedia work."}],
+            },
+            "llm-qwen36-27b",
+            False,
+            {},
+        ),
+    )
+    edition = digests.create_edition(period, initial_status=digests.WEBSITE_ONLY_STATUS, require_model=True)
+    with db.session_scope() as session:
+        session.get(DigestEdition, edition.id).meta_page_url = "https://meta.wikimedia.org/wiki/Example"
+
+    with pytest.raises(ValueError, match="external publication state"):
+        digests.regenerate_website_editions([period])
+
+
+def test_create_edition_returns_the_winner_of_a_concurrent_insert(monkeypatch):
+    digests.capture_recent_rows([creation(1, "race-tool", "2026-08-09T12:00:00Z")])
+    period = digests.period_from_key("daily", "2026-08-09")
+    monkeypatch.setattr(
+        digests,
+        "generate_editorial",
+        lambda facts, _cadence: (
+            {
+                "introduction": "One verified tool supports Wikimedia work.",
+                "highlights": [{"tool_name": facts[0]["name"], "blurb": "It supports Wikimedia work."}],
+            },
+            "llm-qwen36-27b",
+            False,
+            {},
+        ),
+    )
+    winner = SimpleNamespace(id=99)
+    calls = iter((None, winner))
+    monkeypatch.setattr(digests, "_existing_edition", lambda *_args, **_kwargs: next(calls))
+
+    assert digests.create_edition(period) is winner

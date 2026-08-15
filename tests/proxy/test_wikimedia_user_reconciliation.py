@@ -217,3 +217,67 @@ def test_changed_canonical_ownership_retires_previous_evidence_and_cache_is_idem
         assert len(evidence) == 2
         assert all(row.withdrawn_at is not None for row in evidence)
         assert session.query(ToolPersonRelationship).count() == 0
+
+
+def test_ambiguous_people_and_toolforge_accounts_fail_closed(monkeypatch):
+    with db.session_scope() as session:
+        _canonical(session)
+        first = _wikimedia_person(session, global_id="500")
+        second = people_index.ensure_person(
+            session,
+            display_name="Other Enterprisey",
+            wikimedia_global_user_id="501",
+            source="test",
+        )
+        monkeypatch.setattr(
+            wikimedia_user_reconciliation,
+            "_wikimedia_people",
+            lambda _session: {
+                "enterprisey": [
+                    wikimedia_user_reconciliation.WikimediaPerson(first, "500", "Enterprisey"),
+                    wikimedia_user_reconciliation.WikimediaPerson(second, "501", "Enterprisey"),
+                ]
+            },
+        )
+
+        ambiguous_people = wikimedia_user_reconciliation.synchronize(session)
+
+        assert ambiguous_people["ambiguousWikimediaIdentities"] == 1
+
+    db.configure("sqlite://")
+    db.init_schema()
+    with db.session_scope() as session:
+        _canonical(session)
+        person = _wikimedia_person(session)
+        account_one = ToolforgeAccountProjection(
+            uid_number="1",
+            uid="enterprisey",
+            normalized_uid="enterprisey",
+            developer_username="Enterprisey",
+            normalized_developer_username="enterprisey",
+            disabled=False,
+        )
+        account_two = ToolforgeAccountProjection(
+            uid_number="2",
+            uid="enterprisey-two",
+            normalized_uid="enterprisey-two",
+            developer_username="Enterprisey",
+            normalized_developer_username="enterprisey",
+            disabled=False,
+        )
+        monkeypatch.setattr(
+            wikimedia_user_reconciliation,
+            "_wikimedia_people",
+            lambda _session: {
+                "enterprisey": [wikimedia_user_reconciliation.WikimediaPerson(person, "500", "Enterprisey")]
+            },
+        )
+        monkeypatch.setattr(
+            wikimedia_user_reconciliation,
+            "_toolforge_accounts",
+            lambda _session: {"enterprisey": [account_one, account_two]},
+        )
+
+        ambiguous_accounts = wikimedia_user_reconciliation.synchronize(session)
+
+        assert ambiguous_accounts["ambiguousToolforgeAccounts"] == 1

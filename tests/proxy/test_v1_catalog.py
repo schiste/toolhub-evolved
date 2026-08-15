@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import backend  # noqa: E402
-from backend import authz, catalog_projection, db, security, sync, tool_assets  # noqa: E402
+from backend import authz, catalog_projection, catalog_read, db, security, sync, tool_assets  # noqa: E402
 from backend.models import CanonicalToolCache, CatalogCuration, CatalogFacetValue, User, utcnow  # noqa: E402
 
 
@@ -93,6 +93,66 @@ def post_curation(client, name, **kwargs):
         json=payload,
         headers={"X-CSRF-Token": "tok"},
     )
+
+
+def test_catalog_health_is_a_local_cacheable_response(client, monkeypatch):
+    monkeypatch.setattr(catalog_read, "replica_status", lambda: {"status": "idle"})
+
+    response = client.get("/v1/catalog/health/")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "idle"}
+    assert response.headers["Cache-Control"] == "public, max-age=30, stale-if-error=86400"
+
+
+@pytest.mark.parametrize(
+    ("path", "helper", "expected"),
+    [
+        ("/v1/catalog/search/tools/?q=alpha", "search_payload", {"kind": "search"}),
+        ("/v1/catalog/ui/home/", "home_payload", {"kind": "home"}),
+        ("/v1/catalog/lists/?featured=true", "collection_payload", {"kind": "lists"}),
+        ("/v1/catalog/recent/", "collection_payload", {"kind": "recent"}),
+    ],
+)
+def test_catalog_compatibility_dispatches_to_local_helpers(client, monkeypatch, path, helper, expected):
+    if helper == "collection_payload":
+        monkeypatch.setattr(catalog_read, helper, lambda route, _args: {"kind": route.removeprefix("/api/").strip("/")})
+    else:
+        monkeypatch.setattr(catalog_read, helper, lambda *_args: expected)
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert response.get_json() == expected
+    assert response.headers["X-Toolhub-Evolved-Source"] == "local-replica"
+
+
+@pytest.mark.parametrize(("path", "helper"), [("tools/alpha", "tool_payload"), ("lists/42", "list_payload")])
+def test_catalog_named_resources_are_local_and_report_missing_rows(client, monkeypatch, path, helper):
+    monkeypatch.setattr(catalog_read, helper, lambda _name: {"name": "found"})
+    assert client.get(f"/v1/catalog/{path}/").get_json() == {"name": "found"}
+
+    monkeypatch.setattr(catalog_read, helper, lambda _name: None)
+    missing = client.get(f"/v1/catalog/{path}/")
+    assert missing.status_code == 404
+
+
+def test_catalog_cached_compatibility_surface_never_falls_through_to_network(client, monkeypatch):
+    monkeypatch.setattr(catalog_read, "replica_status", lambda: {"status": "idle"})
+    monkeypatch.setattr(catalog_read, "cached_payload", lambda _url: None)
+    missing = client.get("/v1/catalog/schema/?format=openapi")
+    assert missing.status_code == 503
+    assert missing.get_json()["replica"] == {"status": "idle"}
+
+    monkeypatch.setattr(
+        catalog_read,
+        "cached_payload",
+        lambda _url: (b'{"openapi":"3"}', "application/json", 200),
+    )
+    cached = client.get("/v1/catalog/schema/?format=openapi")
+    assert cached.status_code == 200
+    assert cached.get_json() == {"openapi": "3"}
+    assert cached.headers["X-Toolhub-Evolved-Source"] == "local-replica"
 
 
 def test_catalog_facets_are_available_as_an_independent_local_read(client):

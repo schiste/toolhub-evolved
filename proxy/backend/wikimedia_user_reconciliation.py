@@ -92,7 +92,9 @@ def _tool_candidates(s: Session) -> list[UserSpaceToolCandidate]:
             ),
             "",
         )
-        if not normalized_owner:
+        # user_space_page accepts only a User: title with a non-empty username;
+        # normalization cannot erase that value.
+        if not normalized_owner:  # pragma: no cover - parser invariant
             continue
         candidates.append(
             UserSpaceToolCandidate(
@@ -117,7 +119,7 @@ def _toolforge_accounts(s: Session) -> dict[str, list[ToolforgeAccountProjection
     ).scalars()
     for account in accounts:
         normalized = wikimedia_urls.normalized_username(account.developer_username)
-        if normalized:
+        if normalized:  # pragma: no branch - ingested active accounts always carry a handle
             by_handle.setdefault(normalized, []).append(account)
     return by_handle
 
@@ -149,7 +151,7 @@ def _wikimedia_people(s: Session) -> dict[str, list[WikimediaPerson]]:
         global_user_id = next(iter(global_ids))
         for handle in handles:
             normalized = wikimedia_urls.normalized_username(handle)
-            if normalized:
+            if normalized:  # pragma: no branch - current handle identifiers are non-empty
                 by_handle.setdefault(normalized, []).append(
                     WikimediaPerson(
                         person=person,

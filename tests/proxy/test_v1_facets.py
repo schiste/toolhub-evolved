@@ -120,6 +120,7 @@ def test_tool_summary_shape(app):
             "matched": [{"facet": "dependency", "value": "pypi:pywikibot", "confidence": 0.95}],
         }
     ]
+    assert v1_facets._public_matched([{"facet": "internal-only", "value": "x"}]) == []  # noqa: SLF001
 
 
 def test_coverage_counts(app):

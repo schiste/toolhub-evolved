@@ -84,6 +84,10 @@ def test_interval_minutes_uses_the_longest_month_for_a_monthly_schedule():
     assert job_catalog._interval_minutes("30 5 15 * *") == 31 * 24 * 60
 
 
+def test_interval_minutes_rejects_a_non_numeric_day_of_month():
+    assert job_catalog._interval_minutes("30 5 nope * *") == 0
+
+
 def test_load_returns_no_jobs_when_the_file_is_missing():
     assert job_catalog.load(Path("/nonexistent/toolhub-evolved-jobs.yaml")) == []
 
