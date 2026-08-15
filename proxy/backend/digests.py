@@ -674,7 +674,9 @@ def validate_editorial(
     seen: set[str] = set()
     selected_highlights = raw_highlights if cadence == "daily" else raw_highlights[:MAX_HIGHLIGHTS]
     highlights = [_validated_highlight(item, known=known, titles=titles, seen=seen) for item in selected_highlights]
-    if cadence == "daily" and seen != set(known):
+    # Length, uniqueness, and membership are validated above, so this can only
+    # trip if those invariants are changed independently in a future refactor.
+    if cadence == "daily" and seen != set(known):  # pragma: no cover - defensive invariant
         message = "daily editorial output must highlight every supplied tool exactly once"
         raise ValueError(message)
     return {"introduction": introduction, "highlights": highlights}

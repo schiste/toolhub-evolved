@@ -396,7 +396,9 @@ def backfill_read_projection(*, batch_size: int = 500) -> int:
             )
             if not rows:
                 marker = session.get(ApiCacheMeta, READ_PROJECTION_META_KEY)
-                if marker is None:
+                # Only a concurrent backfill can publish this marker between
+                # the initial guard and this empty-page check.
+                if marker is None:  # pragma: no branch - benign concurrent winner
                     session.add(ApiCacheMeta(key=READ_PROJECTION_META_KEY, value="complete"))
                 return filled
             for row in rows:

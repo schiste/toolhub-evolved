@@ -81,6 +81,20 @@ def test_toolforge_provider_uses_sul_bound_ldap_membership_not_html():
     assert rows[0].evidence_payload["toolforgeDeveloperUsername"] == "AdaDeveloper"
 
 
+def test_toolsadmin_edge_replacement_ignores_accounts_without_handles():
+    with db.session_scope() as session:
+        session.add(
+            ToolforgeAccountProjection(
+                uid_number="blank",
+                uid="",
+                normalized_uid="",
+                developer_username="",
+                normalized_developer_username="",
+            )
+        )
+        assert maintainer_index.replace_toolforge_maintainer_edges(session, "toolforge-empty", []) == []
+
+
 def test_backfill_keeps_unresolved_html_labels_out_of_identity_graph(monkeypatch):
     monkeypatch.setattr(
         maintainer_backfill,

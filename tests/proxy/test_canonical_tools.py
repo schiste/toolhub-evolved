@@ -97,6 +97,19 @@ def test_ingest_payload_returns_zero_for_undecodable_or_invalid_json_bodies():
     assert canonical_tools.ingest_payload(url, b"\xff\xfe\x00\x01") == 0
 
 
+def test_ingest_payload_ignores_unrelated_paths_and_persists_valid_tools():
+    assert canonical_tools.ingest_payload("https://toolhub.wikimedia.org/api/schema/", b'{"name":"alpha"}') == 0
+    assert canonical_tools.ingest_payload("https://toolhub.wikimedia.org/api/tools/", b'{"results":[]}') == 0
+    assert (
+        canonical_tools.ingest_payload(
+            "https://toolhub.wikimedia.org/api/tools/alpha/",
+            b'{"name":"alpha","title":"Alpha"}',
+        )
+        == 1
+    )
+    assert canonical_tools.compact_record({"name": "alpha", "description": "A"})["name"] == "alpha"
+
+
 def test_upsert_records_skips_blank_and_duplicate_names():
     count = canonical_tools.upsert_records(
         [
@@ -121,6 +134,22 @@ def test_upsert_records_returns_zero_when_every_record_is_unusable():
         )
         == 0
     )
+
+
+def test_upsert_records_can_stage_a_generation_without_queueing_reconciliation():
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    assert (
+        canonical_tools.upsert_records(
+            [{"name": "alpha"}],
+            source_url="https://toolhub.wikimedia.org/api/tools/",
+            generation=9,
+            enqueue_reconciliation=False,
+        )
+        == 1
+    )
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "alpha").generation == 9
 
 
 def test_upsert_records_swallows_sqlalchemy_errors(monkeypatch):
@@ -190,6 +219,88 @@ def test_prune_completed_generation_skips_delete_when_nothing_is_retired():
     assert retired == []
     with db.session_scope() as s:
         assert s.get(CanonicalToolCache, "alpha") is not None
+
+
+def test_prune_completed_generation_deletes_retired_rows():
+    from backend.models import CanonicalToolCache, utcnow  # noqa: PLC0415
+
+    now = utcnow()
+    with db.session_scope() as session:
+        for name, generation in (("current", 2), ("retired", 1)):
+            session.add(
+                CanonicalToolCache(
+                    tool_name=name,
+                    record={"name": name},
+                    fetched_at=now,
+                    expires_at=now,
+                    stale_until=now,
+                    generation=generation,
+                )
+            )
+    with db.session_scope() as session:
+        assert canonical_tools.prune_completed_generation(session, 2, 1) == ["retired"]
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "retired") is None
+
+
+def test_snapshot_staging_validates_counts_and_publishes_new_rows():
+    from backend.models import CanonicalToolCache  # noqa: PLC0415
+
+    assert canonical_tools.stage_snapshot_records([{"name": ""}, "wrong"], source_url="source", generation=4) == 0
+    assert (
+        canonical_tools.stage_snapshot_records(
+            [{"name": "alpha"}, {"name": "alpha", "title": "duplicate"}],
+            source_url="https://toolhub.wikimedia.org/api/tools/",
+            generation=4,
+        )
+        == 1
+    )
+    with db.session_scope() as session, pytest.raises(ValueError, match="staged 1 distinct rows, expected 2"):
+        canonical_tools.publish_snapshot_stage(session, 4, 2)
+    with db.session_scope() as session:
+        assert canonical_tools.publish_snapshot_stage(session, 4, 1) == []
+    with db.session_scope() as session:
+        assert session.get(CanonicalToolCache, "alpha").generation == 4
+
+
+def test_snapshot_publish_preserves_existing_detail_only_fields_and_source():
+    from backend.models import CanonicalToolCache, utcnow  # noqa: PLC0415
+
+    now = utcnow()
+    detail_url = "https://toolhub.wikimedia.org/api/tools/alpha/"
+    with db.session_scope() as session:
+        session.add(
+            CanonicalToolCache(
+                tool_name="alpha",
+                record={"name": "alpha", "detail_only": "keep"},
+                source_url=detail_url,
+                fetched_at=now,
+                expires_at=now,
+                stale_until=now,
+                generation=3,
+            )
+        )
+    canonical_tools.stage_snapshot_records(
+        [{"name": "alpha", "title": "Listing title"}],
+        source_url="https://toolhub.wikimedia.org/api/tools/",
+        generation=4,
+    )
+
+    with db.session_scope() as session:
+        assert canonical_tools.publish_snapshot_stage(session, 4, 1) == []
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, "alpha")
+        assert row.record["detail_only"] == "keep"
+        assert row.record["title"] == "Listing title"
+        assert row.source_url == detail_url
+
+
+def test_read_projection_backfill_marks_an_empty_catalog_complete():
+    from backend.models import ApiCacheMeta  # noqa: PLC0415
+
+    assert canonical_tools.backfill_read_projection() == 0
+    with db.session_scope() as session:
+        assert session.get(ApiCacheMeta, canonical_tools.READ_PROJECTION_META_KEY).value == "complete"
 
 
 def test_backfill_search_text_swallows_sqlalchemy_errors(monkeypatch):

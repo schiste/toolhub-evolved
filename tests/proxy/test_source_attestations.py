@@ -986,6 +986,25 @@ def test_refresh_full_batched_commits_bounded_source_groups_and_publishes_marker
         assert marker.value == source_attestations.RULES_VERSION
         assert session.query(PersonReconciliationRun).count() == 2
 
+    repeated = source_attestations.refresh_full_batched(batch_size=1)
+    assert repeated["sources"] == 2
+
+
+def test_full_batched_refresh_reports_a_busy_writer_lock(monkeypatch):
+    class BusyLock:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, *_args):
+            return False
+
+    error = source_attestations.SourceAttestationBusyError()
+    assert "remained busy" in str(error)
+    monkeypatch.setattr(source_attestations.db, "advisory_lock", lambda *_args, **_kwargs: BusyLock())
+
+    with pytest.raises(source_attestations.SourceAttestationBusyError):
+        source_attestations.refresh_full_batched()
+
 
 def test_incremental_refresh_attests_a_newly_indexed_source():
     with db.session_scope() as session:

@@ -751,3 +751,53 @@ def test_candidate_count_for_person_counts_pending_candidates():
         count = identity_graph.candidate_count_for_person(session, binding.person_id)
 
     assert count == 1
+
+
+def test_corroboration_indexes_include_independent_verified_person_evidence():
+    with db.session_scope() as session:
+        person = people_index.ensure_person(session, display_name="Ada", toolhub_user_id="42", source="test")
+        session.add(
+            ToolRelationshipEvidence(
+                tool_name="shared-tool",
+                person_id=person.id,
+                relationship_type="author",
+                source="repository_owner",
+                method="repository_owner",
+                evidence_key="ada",
+                verification_status=identity_graph.STATUS_VERIFIED,
+            )
+        )
+        session.flush()
+
+        indexes = identity_graph._toolforge_corroboration_indexes(session)  # noqa: SLF001
+
+        assert indexes.verified_tools_by_person[person.id] == {"shared-tool"}
+
+
+def test_exact_handle_shared_tool_binding_reports_conflicts(monkeypatch):
+    person = Person(id=1, canonical_key="person", public_id="person-id", display_name="Ada")
+    account = toolforge_account(uid_number="1", uid="ada", developer_username="Ada", global_id="")
+    toolhub = toolhub_account(user_id="42", username="Ada", global_id="")
+    identifiers = {(people_index.NS_TOOLHUB_USER_ID, "42"): person}
+    corroboration = identity_graph.ToolforgeCorroborationIndexes(
+        projects_by_account={"1": {"project"}},
+        verified_tools_by_person={},
+        verified_tools_by_handle={"ada": {"toolforge-project"}},
+        canonical_names={"project": ("toolforge-project",)},
+    )
+    monkeypatch.setattr(
+        identity_graph,
+        "bind_toolforge_account",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(identity_graph.IdentityBindingConflictError()),
+    )
+
+    result = identity_graph._sync_unbound_toolforge_handle(  # noqa: SLF001
+        object(),
+        account,
+        toolhub_handles={"ada": [toolhub]},
+        identifiers=identifiers,
+        bindings={},
+        corroboration=corroboration,
+    )
+
+    assert result == "conflict"

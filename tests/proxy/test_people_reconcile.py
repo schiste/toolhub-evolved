@@ -906,6 +906,77 @@ def test_enqueue_refreshes_an_existing_queue_row_and_clears_retry_state():
         assert row.last_error is None
 
 
+def test_enqueue_supports_mysql_and_portable_database_dialects(monkeypatch):
+    class MysqlStatement:
+        inserted = type("Inserted", (), {"reason": "reason", "enqueued_at": "time"})()
+
+        def values(self, rows):
+            self.rows = rows
+            return self
+
+        @staticmethod
+        def on_duplicate_key_update(**_values):
+            return "mysql-upsert"
+
+    mysql_statement = MysqlStatement()
+    monkeypatch.setattr(people_reconcile, "mysql_insert", lambda _model: mysql_statement)
+
+    class MysqlSession:
+        @staticmethod
+        def get_bind():
+            return type("Bind", (), {"dialect": type("Dialect", (), {"name": "mysql"})()})()
+
+        @staticmethod
+        def execute(statement):
+            assert statement == "mysql-upsert"
+
+    assert people_reconcile.enqueue_tool_names_in_session(MysqlSession(), ["alpha"]) == 1
+
+    existing = PersonReconciliationQueue(tool_name="existing", reason="old", enqueued_at=utcnow())
+
+    class PortableSession:
+        added = []
+
+        @staticmethod
+        def get_bind():
+            return type("Bind", (), {"dialect": type("Dialect", (), {"name": "postgresql"})()})()
+
+        @staticmethod
+        def get(_model, name):
+            return existing if name == "existing" else None
+
+        @classmethod
+        def add(cls, row):
+            cls.added.append(row)
+
+    assert people_reconcile.enqueue_tool_names_in_session(
+        PortableSession(), ["new", "existing"], reason=""
+    ) == 2
+    assert PortableSession.added[0].tool_name == "new"
+    assert existing.reason == "data_ingestion"
+    assert existing.next_attempt_at is None
+    assert existing.last_error is None
+
+
+def test_remote_registry_batch_throttles_after_the_first_lookup(monkeypatch):
+    _configure()
+    monkeypatch.setattr(people_reconcile, "_candidate_source_people", lambda _session: [])
+    monkeypatch.setattr(people_reconcile, "_candidate_account_groups", lambda *_args: [])
+    monkeypatch.setattr(people_reconcile, "_registry_label_batch", lambda *_args, **_kwargs: (["Ada", "Grace"], "g"))
+    sleeps = []
+    provider = WikimediaIdentityProvider(fetcher=lambda _username: (200, {"query": {"globaluserinfo": {}}}))
+
+    _identities, (registry, cursor) = people_reconcile.resolve_remote_batches(
+        registry_provider=provider,
+        registry_label_limit=2,
+        sleep=sleeps.append,
+    )
+
+    assert [label for label, _identity in registry] == ["Ada", "Grace"]
+    assert cursor == "g"
+    assert sleeps == [people_reconcile.REGISTRY_MIN_INTERVAL_SECONDS]
+
+
 def test_move_mapping_evidence_returns_empty_set_without_both_person_ids():
     _configure()
     with db.session_scope() as s:

@@ -1637,7 +1637,9 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
     items_by_id: dict[int, dict[str, Any]] = {}
     for relationship in relationships:
         person = people.get(relationship.person_id)
-        if person is None:
+        # The candidate query is anchored to a current PersonIdentifier, so the
+        # person cannot disappear inside this transaction under normal DB rules.
+        if person is None:  # pragma: no cover - defensive against external corruption
             continue
         payload = items_by_id.setdefault(
             person.id,
@@ -1656,7 +1658,9 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
             candidate_by_key.setdefault(key, []).append(attribution)
     for (person_id, relationship_type), supporting in candidate_by_key.items():
         person = people.get(person_id)
-        if person is None:
+        # Candidate rows are resolved through current identifiers belonging to
+        # these people in the same transaction.
+        if person is None:  # pragma: no cover - defensive against external corruption
             continue
         payload = items_by_id.setdefault(
             person.id,

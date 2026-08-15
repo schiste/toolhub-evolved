@@ -50,6 +50,16 @@ def test_filtered_json_skips_non_list_key_values() -> None:
     assert activity_privacy.sanitize_overlay_payload(payload) == payload
 
 
+def test_public_activity_endpoint_sanitizer_filters_results() -> None:
+    payload = json.dumps(
+        {"results": [{"content_type": "favorite"}, {"content_type": "tool", "name": "public"}]}
+    ).encode()
+
+    assert json.loads(
+        activity_privacy.sanitize_public_api_payload("https://toolhub.wikimedia.org/api/recent/", payload)
+    ) == {"results": [{"content_type": "tool", "name": "public"}]}
+
+
 def test_overlay_sanitizer_removes_private_rows_from_both_shared_feeds() -> None:
     private_revision = {"content_type": "favorite", "content_id": "secret"}
     private_audit = {"action": "unfavorited", "target": {"type": "favorite", "id": "secret"}}

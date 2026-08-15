@@ -92,6 +92,84 @@ def test_person_slug_preserves_unicode_names_and_has_an_empty_name_fallback():
     assert people_index.person_slug_candidates("---", "00000000-0000-0000-0000-00000000ab12")[0] == "person-ab12"
 
 
+def test_person_slug_handles_non_alphanumeric_and_short_public_ids():
+    hashed = people_index.person_slug_candidates("Ada", "---")
+    short = people_index.person_slug_candidates("Ada", "a")
+
+    assert hashed[0].startswith("ada-")
+    assert short == ("ada-a",)
+
+
+def test_slug_assignment_generates_missing_ids_and_has_a_collision_fallback():
+    class AvailableSession:
+        @staticmethod
+        def scalar(_statement):
+            return None
+
+    missing = Person(canonical_key="missing", public_id="", display_name="Ada")
+    assert people_index.ensure_person_public_slug(AvailableSession(), missing).startswith("ada-")
+    assert missing.public_id
+
+    class CollidingSession:
+        @staticmethod
+        def scalar(_statement):
+            return 1
+
+    colliding = Person(canonical_key="collision", public_id="fixed-public-id", display_name="Ada")
+    slug = people_index.ensure_person_public_slug(CollidingSession(), colliding)
+    assert slug.startswith("ada-")
+    assert len(slug.rsplit("-", 1)[1]) == 32
+
+
+def test_public_handle_owners_exclude_handle_only_people():
+    with db.session_scope() as session:
+        people_index.ensure_person(session, display_name="Ghost", wiki_username="Ghost", source="test")
+
+        assert people_index._unique_public_handle_owners(session, {"ghost"}) == {}  # noqa: SLF001
+
+
+def test_candidate_projections_skip_existing_relationships_and_tools_outside_the_page():
+    with db.session_scope() as session:
+        person = people_index.ensure_person(
+            session,
+            display_name="Ada",
+            wikimedia_global_user_id="42",
+            wiki_username="Ada",
+            source="test",
+        )
+        for tool_name in ("a-tool", "b-tool"):
+            people_index.replace_source_evidence(
+                session,
+                tool_name,
+                "toolhub_author_metadata",
+                [
+                    {
+                        "display_name": "Ada",
+                        "relationship_type": PERSON_REL_AUTHOR,
+                        "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                        "confidence": 45,
+                    }
+                ],
+            )
+        session.add(_relationship("a-tool", person.id))
+        session.flush()
+
+        detail = people_index.person_detail(
+            session,
+            person.public_id,
+            people_index.PersonToolPage(page=1, page_size=1),
+        )
+        summaries = people_index._directory_relationship_summaries(  # noqa: SLF001
+            session,
+            {person.id},
+            checked_at=utcnow(),
+        )
+
+        assert detail["tools"]["count"] == 2
+        assert detail["tools"]["results"][0]["name"] == "a-tool"
+        assert summaries[person.id]["toolCountsByType"][PERSON_REL_AUTHOR] == 2
+
+
 def test_ensure_person_never_moves_a_stable_identifier_it_does_not_own():
     """A stable identifier collision must never be silently reassigned.
 
