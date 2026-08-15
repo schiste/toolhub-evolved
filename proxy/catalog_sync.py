@@ -51,6 +51,16 @@ class SnapshotConsistencyError(CatalogSyncError):
     """A full snapshot changed shape and must restart from page one."""
 
 
+class RecentCursorLostError(CatalogSyncError):
+    """The saved recent-event marker fell outside Toolhub's retained window."""
+
+    def __init__(self, message: str, *, rows: list[dict[str, Any]], latest_marker: str | None) -> None:
+        """Retain the observable event tail and its newest safe recovery anchor."""
+        super().__init__(message)
+        self.rows = rows
+        self.latest_marker = latest_marker
+
+
 @dataclass(frozen=True)
 class RecentScan:
     """One safe, resumable slice between two immutable recent-event markers."""
@@ -222,7 +232,7 @@ def _recent_rows_since(
             if matched is None:
                 if not has_next:
                     message = "Toolhub recent scan boundary disappeared before it could be resumed"
-                    raise CatalogSyncError(message)
+                    raise RecentCursorLostError(message, rows=collected, latest_marker=latest)
                 continue
             start = matched + 1
             seeking = None
@@ -240,7 +250,7 @@ def _recent_rows_since(
             boundary = _marker(row) or boundary
         if not has_next:
             message = "Toolhub recent cursor disappeared before it could be reconciled"
-            raise CatalogSyncError(message)
+            raise RecentCursorLostError(message, rows=collected, latest_marker=latest)
     return RecentScan(
         rows=collected,
         latest_marker=latest,
@@ -285,6 +295,20 @@ def _mark_error(error: BaseException) -> None:
         row.last_error = clean_error(str(error))
         row.source = SOURCE_OFFICIAL
         row.sync_status = SYNC_OFFICIAL
+
+
+def _prepare_recent_cursor_recovery(error: RecentCursorLostError) -> None:
+    """Persist a pre-snapshot anchor without discarding still-visible events."""
+    digests.capture_recent_rows(error.rows)
+    with db.session_scope() as s:
+        state = _state(s)
+        state.recent_pending_tools = _dedupe_names([*(state.recent_pending_tools or []), *_tool_names(error.rows)])
+        state.recent_scan_page = 1
+        state.recent_scan_latest_marker = error.latest_marker
+        state.recent_scan_boundary_marker = None
+        state.recent_cursor_recovery_required = True
+        state.status = STATUS_ERROR
+        state.last_error = clean_error(str(error))
 
 
 def _store_page(page: int, page_size: int, rows: list[dict[str, Any]], *, has_next: bool, reconcile: bool) -> int:
@@ -553,6 +577,14 @@ def _publish_snapshot(generation: int, expected_count: int) -> list[str]:
         state.cycles_completed += 1
         state.last_completed_at = utcnow()
         state.status = STATUS_IDLE
+        state.last_success_at = utcnow()
+        state.last_error = None
+        if state.recent_cursor_recovery_required:
+            state.recent_latest_marker = state.recent_scan_latest_marker
+            state.recent_scan_page = 1
+            state.recent_scan_latest_marker = None
+            state.recent_scan_boundary_marker = None
+            state.recent_cursor_recovery_required = False
         catalog_facets.mark_dirty(s)
     from backend import api_cache  # noqa: PLC0415 - avoid backend import cycle
 
@@ -679,7 +711,16 @@ def run(
                 pages_limit=pages_limit, page_size=effective_page_size, interval=interval, sleep_fn=sleep_fn
             )
             return {"phase": "backfill", **backfill}
-        recent = _recent_updates(interval, sleep_fn)
+        try:
+            recent = _recent_updates(interval, sleep_fn)
+        except RecentCursorLostError as exc:
+            _prepare_recent_cursor_recovery(exc)
+            snapshot = run_complete(
+                page_size=effective_page_size,
+                min_interval_seconds=interval,
+                sleep_fn=sleep_fn,
+            )
+            return {**snapshot, "phase": "cursor_recovery", "recent_events_preserved": len(exc.rows)}
         hydration = _hydrate_graph_details(interval, sleep_fn)
         reconcile = _reconcile_if_due(effective_page_size)
     except (CatalogSyncError, OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:

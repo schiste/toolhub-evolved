@@ -302,6 +302,106 @@ def test_recent_cursor_scans_all_pages_until_previous_marker(monkeypatch):
     assert scan.complete is True
 
 
+def test_vanished_recent_cursor_recovers_through_anchored_complete_snapshot(monkeypatch):
+    previous = catalog_sync._marker({"id": 1, "timestamp": "expired"})
+    visible = {"id": 2, "timestamp": "anchor", "content_type": "tool", "content_id": "visible-tool"}
+    anchor = catalog_sync._marker(visible)
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                recent_latest_marker=previous,
+            )
+        )
+
+    captured = []
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda _page=1: ([visible], False))
+    monkeypatch.setattr(
+        catalog_sync,
+        "listing_page",
+        lambda _page, _page_size: ([{"name": "visible-tool", "title": "Visible"}], False, 1),
+    )
+    monkeypatch.setattr(catalog_sync.digests, "capture_recent_rows", lambda rows: captured.extend(rows))
+
+    summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert summary == {
+        "phase": "cursor_recovery",
+        "pages": 1,
+        "records": 1,
+        "retired": 0,
+        "generation": 1,
+        "completed": True,
+        "recent_events_preserved": 1,
+    }
+    assert captured == [visible]
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.recent_latest_marker == anchor
+        assert state.recent_pending_tools == ["visible-tool"]
+        assert state.recent_scan_page == 1
+        assert state.recent_scan_latest_marker is None
+        assert state.recent_scan_boundary_marker is None
+        assert state.recent_cursor_recovery_required is False
+        assert state.status == "idle"
+        assert state.last_error is None
+        assert s.get(CanonicalToolCache, "visible-tool") is not None
+
+        state.reconcile_last_at = catalog_sync.utcnow()
+
+    arrived = {"id": 3, "timestamp": "after", "content_type": "tool", "content_id": "arrived-tool"}
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda _page=1: ([arrived, visible], False))
+    monkeypatch.setattr(
+        toolhub,
+        "public_api_get",
+        lambda path, **_kwargs: {"name": path.rstrip("/").rsplit("/", 1)[-1], "title": "Refreshed"},
+    )
+
+    follow_up = catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert follow_up["phase"] == "steady"
+    assert follow_up["recent_tools"] == 2
+    assert captured == [visible, arrived]
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.recent_latest_marker == catalog_sync._marker(arrived)
+        assert state.recent_pending_tools == []
+        assert s.get(CanonicalToolCache, "arrived-tool") is not None
+
+
+def test_failed_cursor_recovery_keeps_anchor_for_resumable_snapshot(monkeypatch):
+    previous = catalog_sync._marker({"id": 1, "timestamp": "expired"})
+    visible = {"id": 2, "timestamp": "anchor", "content_type": "tool", "content_id": "visible-tool"}
+    anchor = catalog_sync._marker(visible)
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                recent_latest_marker=previous,
+            )
+        )
+
+    monkeypatch.setattr(catalog_sync, "recent_page", lambda _page=1: ([visible], False))
+    monkeypatch.setattr(
+        catalog_sync,
+        "listing_page",
+        lambda _page, _page_size: (_ for _ in ()).throw(toolhub.ToolhubAPIError(503, {"detail": "busy"})),
+    )
+    monkeypatch.setattr(catalog_sync.digests, "capture_recent_rows", lambda _rows: None)
+
+    with pytest.raises(toolhub.ToolhubAPIError):
+        catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.recent_latest_marker == previous
+        assert state.recent_scan_latest_marker == anchor
+        assert state.recent_cursor_recovery_required is True
+        assert state.status == "error"
+
+
 def test_recent_cursor_backlog_checkpoints_without_advancing_marker(monkeypatch):
     previous = catalog_sync._marker({"id": 1, "timestamp": "old"})
     with db.session_scope() as s:

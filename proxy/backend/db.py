@@ -174,6 +174,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             "recent_scan_page": "INTEGER NOT NULL DEFAULT 1",
             "recent_scan_latest_marker": "VARCHAR(255) NULL",
             "recent_scan_boundary_marker": "VARCHAR(255) NULL",
+            "recent_cursor_recovery_required": "BOOLEAN NOT NULL DEFAULT 0",
             "recent_last_at": "DATETIME NULL",
             "detail_hydration_cursor": "VARCHAR(255) NULL",
             "detail_hydration_pending_tools": f"{json_col} NULL",
