@@ -123,7 +123,7 @@ const S = {
 			<div class="toolpage__id">
 				<h1 class="toolpage__title" dir="auto">Deprecated Tool</h1>
 				
-				<div class="toolpage__by">by <span class="author-ref"><a href="/by/Unknown" dir="auto">Unknown</a></span></div>
+				<div class="toolpage__by">by <span class="author-ref"><span dir="auto">Unknown</span></span></div>
 				
 				<div class="toolpage__notice">Replaced by <a href="/tools/replacement-tool" dir="auto">replacement-tool</a></div>
 				<div class="toolpage__prov"><span class="exp-badge">Demo submission</span> <span class="exp-badge">Edited · demo</span> <span class="exp-badge">Community annotations · demo</span></div>
@@ -208,7 +208,7 @@ const S = {
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">Maintainers</h2>
-					<ul class="maint-list"><li><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">U</span><span class="maint-list__name"><span class="author-ref"><a href="/by/Unknown" dir="auto">Unknown</a></span></span></li></ul>
+					<ul class="maint-list"><li><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">U</span><span class="maint-list__name"><span class="author-ref"><span dir="auto">Unknown</span></span></span></li></ul>
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">Listing completeness</h2>
@@ -231,7 +231,7 @@ const S = {
 			<div class="toolpage__id">
 				<h1 class="toolpage__title" dir="auto">Full Tool</h1>
 				<p class="toolpage__subtitle" dir="auto">A subtitle</p>
-				<div class="toolpage__by">by <span class="author-ref"><a href="/by/Ada%20Lovelace" dir="auto">Ada Lovelace</a><a class="author-ref__external" href="https://example.org/ada" target="_blank" rel="noopener nofollow" aria-label="External profile for Ada Lovelace"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span><span class="toolpage__sep">, </span><span class="author-ref"><a href="/by/Grace%20Hopper" dir="auto">Grace Hopper</a><a class="author-ref__external" href="https://meta.wikimedia.org/wiki/User:Grace" target="_blank" rel="noopener nofollow" aria-label="External profile for Grace Hopper"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span></div>
+				<div class="toolpage__by">by <span class="author-ref"><span dir="auto">Ada Lovelace</span><a class="author-ref__external" href="https://example.org/ada" target="_blank" rel="noopener nofollow" aria-label="External profile for Ada Lovelace"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span><span class="toolpage__sep">, </span><span class="author-ref"><span dir="auto">Grace Hopper</span><a class="author-ref__external" href="https://meta.wikimedia.org/wiki/User:Grace" target="_blank" rel="noopener nofollow" aria-label="External profile for Grace Hopper"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span></div>
 				<div class="toolpage__sponsor"><span class="toolpage__label">Sponsor:</span> <span dir="auto">Wikimedia Foundation</span></div>
 				
 				<div class="toolpage__prov"><a class="glance toolpage__wikidata" href="https://www.wikidata.org/wiki/Q123" target="_blank" rel="noopener nofollow">Wikidata: <span dir="auto">Q123</span><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></div>
@@ -346,7 +346,7 @@ const S = {
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">Maintainers</h2>
-					<ul class="maint-list"><li><span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">A</span><span class="maint-list__name"><span class="author-ref"><a href="/by/Ada%20Lovelace" dir="auto">Ada Lovelace</a><a class="author-ref__external" href="https://example.org/ada" target="_blank" rel="noopener nofollow" aria-label="External profile for Ada Lovelace"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span></span></li><li><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">G</span><span class="maint-list__name"><span class="author-ref"><a href="/by/Grace%20Hopper" dir="auto">Grace Hopper</a><a class="author-ref__external" href="https://meta.wikimedia.org/wiki/User:Grace" target="_blank" rel="noopener nofollow" aria-label="External profile for Grace Hopper"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span></span></li></ul>
+					<ul class="maint-list"><li><span class="avatar " style="background:var(--wmf-red-aaa)" aria-hidden="true">A</span><span class="maint-list__name"><span class="author-ref"><span dir="auto">Ada Lovelace</span><a class="author-ref__external" href="https://example.org/ada" target="_blank" rel="noopener nofollow" aria-label="External profile for Ada Lovelace"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span></span></li><li><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">G</span><span class="maint-list__name"><span class="author-ref"><span dir="auto">Grace Hopper</span><a class="author-ref__external" href="https://meta.wikimedia.org/wiki/User:Grace" target="_blank" rel="noopener nofollow" aria-label="External profile for Grace Hopper"><svg class="icon" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 7H3v10h10v-5h2v7H1V5h7z"/><path d="M19.001 2 19 8h-2V4.415l-9 9L6.586 12l9-8.999L12 3V1h6.001z"/></svg></a></span></span></li></ul>
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">Listing completeness</h2>
@@ -381,7 +381,7 @@ const S = {
 			<div class="toolpage__id">
 				<h1 class="toolpage__title" dir="auto">Minimal Tool</h1>
 				
-				<div class="toolpage__by">by <span class="author-ref"><a href="/by/Unknown" dir="auto">Unknown</a></span></div>
+				<div class="toolpage__by">by <span class="author-ref"><span dir="auto">Unknown</span></span></div>
 				
 				
 				
@@ -463,7 +463,7 @@ const S = {
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">Maintainers</h2>
-					<ul class="maint-list"><li><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">U</span><span class="maint-list__name"><span class="author-ref"><a href="/by/Unknown" dir="auto">Unknown</a></span></span></li></ul>
+					<ul class="maint-list"><li><span class="avatar " style="background:var(--wmf-purple)" aria-hidden="true">U</span><span class="maint-list__name"><span class="author-ref"><span dir="auto">Unknown</span></span></span></li></ul>
 				</div>
 				<div class="panel">
 					<h2 class="panel__title">Listing completeness</h2>
@@ -1202,15 +1202,11 @@ test("authorEntries: reversed authorObjs use find(), and a missing author falls 
 	);
 	const r = await tool.viewTool("auth");
 	// Alpha resolved via find() → external link to a.example
-	assert.ok(
-		r.html.includes('href="/by/Alpha" dir="auto">Alpha</a><a class="author-ref__external" href="https://a.example"')
-	);
+	assert.ok(r.html.includes('<span dir="auto">Alpha</span><a class="author-ref__external" href="https://a.example"'));
 	// Bravo → b.example
-	assert.ok(
-		r.html.includes('href="/by/Bravo" dir="auto">Bravo</a><a class="author-ref__external" href="https://b.example"')
-	);
+	assert.ok(r.html.includes('<span dir="auto">Bravo</span><a class="author-ref__external" href="https://b.example"'));
 	// Gamma → no authorObj → no external link
-	assert.ok(r.html.includes('href="/by/Gamma" dir="auto">Gamma</a></span>'), "gamma has no external link");
+	assert.ok(r.html.includes('<span dir="auto">Gamma</span></span>'), "gamma has no external link");
 });
 
 test("tool authors and maintainers link to immutable people ids through observed relationship names", async () => {

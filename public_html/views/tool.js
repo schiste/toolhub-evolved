@@ -25,7 +25,7 @@ import {
 import { signedIn } from "../lib/core/session.js";
 import { SYNC_STATUS, clearLocalToolDraft, demoRevisionsFor } from "../lib/core/store.js";
 import { authorProfileUrl } from "../lib/core/author-index.js";
-import { authorHref, navigateTo, personHref, toolHref } from "../lib/core/routing.js";
+import { navigateTo, personHref, toolHref } from "../lib/core/routing.js";
 import { avatar, toolIcon } from "../lib/atoms/avatar.js";
 import { completenessList, completenessMeter, endorsementChip, fitChip, statusBadge } from "../lib/atoms/badges.js";
 import { button } from "../lib/atoms/button.js";
@@ -217,8 +217,10 @@ function authorExternalLink(entry) {
 
 /** @param {AuthorEntry} entry */
 function authorLink(entry) {
-	const href = entry.publicId ? personHref(entry.publicId) : authorHref(entry.name);
-	return `<span class="author-ref"><a href="${esc(href)}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>${authorExternalLink(entry)}</span>`;
+	const name = entry.publicId
+		? `<a href="${esc(personHref(entry.publicId))}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>`
+		: `<span${dirAttrs(entry.name)}>${esc(entry.name)}</span>`;
+	return `<span class="author-ref">${name}${authorExternalLink(entry)}</span>`;
 }
 
 /** @param {Tool} t @param {PeopleSummary | null} peopleSummary */

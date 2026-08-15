@@ -171,10 +171,11 @@ test("toolCard adds per-field lang attributes when the tool record exposes them"
 	assert.ok(html.includes('<p class="tcard__desc" dir="auto" lang="fr">A *great* tool</p>'));
 });
 
-test("toolCard exposes separate navigation targets for title, owner, and tags", () => {
+test("toolCard links tools and tags but leaves unresolved owner labels as text", () => {
 	const html = toolCard(base);
 	assert.ok(html.includes('class="tcard__title" href="/tools/my%20tool"'));
-	assert.ok(html.includes('class="tcard__maint-name" href="/by/Jane%20%26%20Co?context=attribution"'));
+	assert.ok(html.includes('<span class="tcard__maint-name"'));
+	assert.ok(!html.includes("/by/Jane%20%26%20Co"));
 	assert.ok(html.includes('class="tag" href="/search?keywords__term=alpha"'));
 });
 
@@ -188,24 +189,23 @@ test("toolCard discloses every linked author without overflowing the byline", ()
 	);
 	assert.ok(html.includes('aria-label="Show all 3 authors"'));
 	assert.ok(html.includes('<span class="tcard__authors-text" dir="auto">Ada Lovelace, Grace Hopper +1</span>'));
-	assert.ok(html.includes('<a href="/by/Ada%20Lovelace?context=attribution" dir="auto">Ada Lovelace</a>'));
-	assert.ok(html.includes('<a href="/by/Grace%20Hopper?context=attribution" dir="auto">Grace Hopper</a>'));
+	assert.ok(html.includes('<li><span dir="auto">Ada Lovelace</span></li>'));
+	assert.ok(html.includes('<li><span dir="auto">Grace Hopper</span></li>'));
 	assert.ok(
-		html.includes(
-			'<a href="/by/Katherine%20Johnson%20with%20an%20exceptionally%20long%20display%20name?context=attribution" dir="auto">Katherine Johnson with an exceptionally long display name</a>'
-		)
+		html.includes('<li><span dir="auto">Katherine Johnson with an exceptionally long display name</span></li>')
 	);
-	assert.equal((html.match(/<li><a href="\/by\//g) || []).length, 3);
+	assert.ok(!html.includes("/by/"));
 });
 
-test("toolCard keeps a single author as a direct link and removes duplicate author labels", () => {
+test("toolCard keeps unresolved authors as text and removes duplicate labels", () => {
 	const single = toolCard({ ...base, authors: ["Ada Lovelace"] });
 	assert.ok(!single.includes('class="tcard__authors"'));
-	assert.ok(single.includes('href="/by/Ada%20Lovelace?context=attribution"'));
+	assert.ok(single.includes('class="tcard__maint-name"'));
+	assert.ok(!single.includes("/by/"));
 
 	const deduplicated = toolCard({ ...base, authors: ["Ada Lovelace", "ada lovelace", "Grace Hopper"] });
 	assert.ok(deduplicated.includes('aria-label="Show all 2 authors"'));
-	assert.equal((deduplicated.match(/<li><a href="\/by\//g) || []).length, 2);
+	assert.equal((deduplicated.match(/<li><span/g) || []).length, 2);
 });
 
 test("toolCard uses structured handles only when the catalog supplies one", () => {
@@ -227,7 +227,7 @@ test("toolCard uses canonical relationship identity in account-owned context", (
 	assert.ok(html.includes("Maintained by"));
 	assert.ok(html.includes('href="/people/person-123"'));
 	assert.ok(html.includes(">Schiste</span></a>"));
-	assert.ok(html.includes("/by/Jane%20%26%20Co?context=attribution"));
+	assert.ok(!html.includes("/by/Jane%20%26%20Co"));
 });
 
 test("toolCard links every proven author and maintainer from shared relationship evidence", () => {
@@ -271,7 +271,8 @@ test("toolCard never guesses when one attribution label matches multiple people"
 		}))
 	});
 
-	assert.ok(html.includes("/by/Shared%20label?context=attribution"));
+	assert.ok(html.includes('<span class="tcard__maint-name"'));
+	assert.ok(!html.includes("/by/Shared%20label"));
 	assert.ok(!html.includes("/people/person-one"));
 	assert.ok(!html.includes("/people/person-two"));
 });

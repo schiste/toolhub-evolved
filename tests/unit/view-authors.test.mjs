@@ -247,26 +247,34 @@ test("viewAuthor resolves one exact handle through the dedicated resolver", asyn
 	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/resolve/?handle=Ada");
 	assert.equal(h.backendGetJson.mock.calls[1][0], "/v1/people/person-ada/");
 	assert.equal(view.title, "Ada Lovelace — Toolhub");
+	assert.equal(window.location.pathname, "/people/person-ada");
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
-test("viewAuthor preserves catalog attribution context during identity resolution", async () => {
+test("viewAuthor canonicalizes one current attribution handle onto the stable person page", async () => {
 	window.history.replaceState({}, "", "/by/Christophe?context=attribution");
-	h.backendGetJson.mockResolvedValueOnce({
-		status: "ambiguous",
-		matchType: "handle",
-		candidates: [{ id: "other-christophe", displayName: "Christophe", identifiers: [] }],
-		unresolvedAttributions: [
-			{ label: "Christophe", toolCount: 6, evidenceCount: 12, identityStatus: "unresolved_attribution" }
-		]
-	});
+	h.backendGetJson
+		.mockResolvedValueOnce({
+			status: "resolved",
+			matchType: "handle",
+			person: { id: "person-christophe", displayName: "Christophe", identifiers: [] }
+		})
+		.mockResolvedValueOnce({
+			id: "person-christophe",
+			displayName: "Christophe",
+			identifiers: [{ namespace: "wiki_username", value: "Christophe" }],
+			profile: {},
+			activity: { status: "unknown", relatedToolCount: 6 },
+			tools: { count: 6, page: 1, pageSize: 24, pageCount: 1, results: [] }
+		});
 
 	const view = await viewAuthor("Christophe");
 
 	assert.equal(h.backendGetJson.mock.calls[0][0], "/v1/people/resolve/?handle=Christophe&context=attribution");
-	assert.match(view.html, /Attributions awaiting identity evidence/);
-	assert.match(view.html, /6 tools · 12 observations/);
-	assert.match(view.html, /href="\/people\/other-christophe"/);
+	assert.equal(h.backendGetJson.mock.calls[1][0], "/v1/people/person-christophe/");
+	assert.equal(window.location.pathname, "/people/person-christophe");
+	assert.equal(view.title, "Christophe — Toolhub");
+	assert.doesNotMatch(view.html, /Attributions awaiting identity evidence/);
 	assert.equal(authorIndex.toolsByAuthor.mock.calls.length, 0);
 });
 
