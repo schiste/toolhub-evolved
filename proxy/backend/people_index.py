@@ -138,6 +138,29 @@ def _iso(value: datetime | None) -> str:
     return normalized.isoformat(timespec="seconds") + "Z"
 
 
+def _current_relationship_clause(*, checked_at: datetime) -> Any:  # noqa: ANN401 - SQL expression
+    """Keep only relationships supported by evidence that is current now."""
+    return and_(
+        ToolPersonRelationship.verification_status.in_((AUTHOR_CLAIM_VERIFIED, AUTHOR_CLAIM_UNVERIFIED)),
+        or_(
+            ToolPersonRelationship.expires_at.is_(None),
+            ToolPersonRelationship.expires_at > checked_at,
+        ),
+    )
+
+
+def _current_unresolved_clause(*, checked_at: datetime) -> Any:  # noqa: ANN401 - SQL expression
+    """Keep audit-only attribution rows out of every public projection."""
+    return and_(
+        UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+        UnresolvedAttributionEvidence.verification_status.in_((AUTHOR_CLAIM_VERIFIED, AUTHOR_CLAIM_UNVERIFIED)),
+        or_(
+            UnresolvedAttributionEvidence.expires_at.is_(None),
+            UnresolvedAttributionEvidence.expires_at > checked_at,
+        ),
+    )
+
+
 def public_relationship_payload(
     person: Person,
     relationship: ToolPersonRelationship,
@@ -163,6 +186,107 @@ def public_relationship_payload(
                     relationship.relationship_type,
                     row.method,
                 ),
+                "checkedAt": _iso(row.checked_at),
+                "expiresAt": _iso(row.expires_at),
+            }
+            for row in supporting
+        ],
+    }
+
+
+def _unique_public_handle_owners(
+    s: Session,
+    normalized_labels: set[str],
+) -> dict[str, int]:
+    """Resolve exact current handles only when one public person owns them."""
+    if not normalized_labels:
+        return {}
+    rows = list(
+        s.execute(
+            select(PersonIdentifier.normalized_value, PersonIdentifier.person_id).where(
+                PersonIdentifier.namespace.in_(PUBLIC_HANDLE_NAMESPACES),
+                PersonIdentifier.normalized_value.in_(normalized_labels),
+                PersonIdentifier.is_current.is_(True),
+            )
+        ).all()
+    )
+    public_ids = public_identity_ids(s, {person_id for _, person_id in rows})
+    owners: dict[str, set[int]] = {}
+    for label, person_id in rows:
+        if person_id in public_ids:
+            owners.setdefault(label, set()).add(person_id)
+    return {label: next(iter(person_ids)) for label, person_ids in owners.items() if len(person_ids) == 1}
+
+
+def _current_candidate_attributions(
+    s: Session,
+    *,
+    tool_name: str = "",
+    person_ids: set[int] | None = None,
+    checked_at: datetime | None = None,
+) -> list[tuple[UnresolvedAttributionEvidence, int]]:
+    """Bind current raw labels to unique handles for public display only.
+
+    The unresolved rows remain the audit source of truth. Returning an owner id
+    here neither creates an identity mapping nor promotes the relationship to
+    verified; it only lets every current surface use one canonical person URL.
+    """
+    now = checked_at or utcnow()
+    labels_for_people: set[str] | None = None
+    if person_ids is not None:
+        identifier_rows = list(
+            s.execute(
+                select(PersonIdentifier.normalized_value).where(
+                    PersonIdentifier.person_id.in_(person_ids or {-1}),
+                    PersonIdentifier.namespace.in_(PUBLIC_HANDLE_NAMESPACES),
+                    PersonIdentifier.is_current.is_(True),
+                )
+            ).scalars()
+        )
+        labels_for_people = set(identifier_rows)
+        if not labels_for_people:
+            return []
+    statement = select(UnresolvedAttributionEvidence).where(
+        _current_unresolved_clause(checked_at=now),
+        UnresolvedAttributionEvidence.relationship_type.in_(PUBLIC_ROLES),
+    )
+    if tool_name:
+        statement = statement.where(UnresolvedAttributionEvidence.tool_name == tool_name)
+    if labels_for_people is not None:
+        statement = statement.where(UnresolvedAttributionEvidence.normalized_label.in_(labels_for_people))
+    rows = list(s.execute(statement).scalars())
+    owners = _unique_public_handle_owners(s, {row.normalized_label for row in rows})
+    return [
+        (row, owners[row.normalized_label])
+        for row in rows
+        if row.normalized_label in owners and (person_ids is None or owners[row.normalized_label] in person_ids)
+    ]
+
+
+def _candidate_relationship_payload(
+    person: Person,
+    relationship_type: str,
+    supporting: list[UnresolvedAttributionEvidence],
+) -> dict[str, Any]:
+    """Project an exact-handle candidate without upgrading its trust."""
+    confidence = min(60, max((row.confidence for row in supporting), default=0))
+    return {
+        "type": relationship_type,
+        "status": AUTHOR_CLAIM_UNVERIFIED,
+        "confidence": confidence,
+        "evidenceCount": len(supporting),
+        "toolhubCanonical": False,
+        "candidateOnly": True,
+        "evidence": [
+            {
+                "source": row.source,
+                "method": row.method,
+                "observedName": row.observed_label,
+                "status": AUTHOR_CLAIM_UNVERIFIED,
+                "confidence": min(60, row.confidence),
+                "available": False,
+                "identityBasis": person.identity_quality,
+                "relationshipBasis": "exact_current_handle_attribution",
                 "checkedAt": _iso(row.checked_at),
                 "expiresAt": _iso(row.expires_at),
             }
@@ -933,6 +1057,7 @@ def refresh_activity_summaries(s: Session, *, person_ids: set[int] | None = None
                 select(ToolPersonRelationship).where(
                     ToolPersonRelationship.person_id == person_id,
                     ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+                    _current_relationship_clause(checked_at=now),
                 )
             ).scalars()
         )
@@ -1075,6 +1200,7 @@ def _unresolved_relationship_breakdown(
     """Summarize relationship evidence without promoting labels to identities."""
     if not normalized_labels:
         return {}
+    checked_at = utcnow()
     statement = (
         select(
             UnresolvedAttributionEvidence.normalized_label,
@@ -1085,7 +1211,7 @@ def _unresolved_relationship_breakdown(
             func.max(UnresolvedAttributionEvidence.confidence),
         )
         .where(
-            UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            _current_unresolved_clause(checked_at=checked_at),
             UnresolvedAttributionEvidence.normalized_label.in_(normalized_labels),
             UnresolvedAttributionEvidence.relationship_type.in_(PUBLIC_ROLES),
         )
@@ -1138,6 +1264,7 @@ def search_unresolved_attributions(
     """Search unresolved labels with totals independent from public people."""
     clean_query = _clean(search.query)
     clean_tool = _clean(search.tool_name)
+    checked_at = utcnow()
     statement = (
         select(
             UnresolvedAttributionEvidence.normalized_label,
@@ -1148,7 +1275,7 @@ def search_unresolved_attributions(
             func.max(UnresolvedAttributionEvidence.confidence).label("best_confidence"),
         )
         .where(
-            UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            _current_unresolved_clause(checked_at=checked_at),
             UnresolvedAttributionEvidence.relationship_type.in_(PUBLIC_ROLES),
         )
         .group_by(UnresolvedAttributionEvidence.normalized_label)
@@ -1242,11 +1369,11 @@ def _person_base_payload(
 def resolve_legacy_handle(s: Session, query: str, *, attribution_context: bool = False) -> dict[str, Any]:
     """Resolve one exact structured handle or return explicit ambiguity.
 
-    A bare Toolhub author label is not a structured account handle.  When a
-    caller identifies the input as an attribution, matching unresolved
-    evidence must remain visible even if the same text happens to be somebody
-    else's unique public handle.
+    Attribution context does not create a second profile namespace. One unique
+    current structured handle resolves to the canonical person; matching raw
+    evidence is projected there as an unverified current relationship.
     """
+    del attribution_context  # compatibility-only query flag; identity policy is now route-independent
     clean_query = _clean(query)
     normalized = _normalized(clean_query)
     if not normalized:
@@ -1306,7 +1433,7 @@ def resolve_legacy_handle(s: Session, query: str, *, attribution_context: bool =
         for attribution in unresolved_attributions(s, clean_query, limit=100)
         if _normalized(attribution.get("label")) == normalized
     ]
-    if match_type == "handle" and len(candidates) == 1 and not (attribution_context and unresolved):
+    if match_type == "handle" and len(candidates) == 1:
         return {
             "status": "resolved",
             "query": clean_query,
@@ -1388,17 +1515,24 @@ def _fold_resolved_handle_attributions(
 def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
     """Return the canonical local people view for a Toolhub tool."""
     clean_tool = _clean(tool_name)
+    checked_at = utcnow()
     relationships = list(
         s.execute(
             select(ToolPersonRelationship)
             .where(
                 ToolPersonRelationship.tool_name == clean_tool,
                 ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+                _current_relationship_clause(checked_at=checked_at),
             )
             .order_by(ToolPersonRelationship.confidence.desc(), ToolPersonRelationship.id)
         ).scalars()
     )
-    all_person_ids = {row.person_id for row in relationships}
+    candidate_attributions = _current_candidate_attributions(
+        s,
+        tool_name=clean_tool,
+        checked_at=checked_at,
+    )
+    all_person_ids = {row.person_id for row in relationships} | {person_id for _, person_id in candidate_attributions}
     person_ids = public_identity_ids(s, all_person_ids)
     people = {row.id: row for row in s.execute(select(Person).where(Person.id.in_(person_ids or {-1}))).scalars()}
     identifiers = _identifiers_by_person(s, person_ids)
@@ -1419,6 +1553,11 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
                 ToolRelationshipEvidence.tool_name == clean_tool,
                 ToolRelationshipEvidence.relationship_type.in_(PUBLIC_ROLES),
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
+                ToolRelationshipEvidence.verification_status.in_((AUTHOR_CLAIM_VERIFIED, AUTHOR_CLAIM_UNVERIFIED)),
+                or_(
+                    ToolRelationshipEvidence.expires_at.is_(None),
+                    ToolRelationshipEvidence.expires_at > checked_at,
+                ),
             )
             .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
         ).scalars()
@@ -1440,6 +1579,24 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
         )
         supporting = evidence_by_key.get((person.id, relationship.relationship_type), [])
         payload["relationships"].append(public_relationship_payload(person, relationship, supporting))
+    relationship_keys = {(row.person_id, row.relationship_type) for row in relationships}
+    candidate_by_key: dict[tuple[int, str], list[UnresolvedAttributionEvidence]] = {}
+    for attribution, person_id in candidate_attributions:
+        key = (person_id, attribution.relationship_type)
+        if key not in relationship_keys:
+            candidate_by_key.setdefault(key, []).append(attribution)
+    for (person_id, relationship_type), supporting in candidate_by_key.items():
+        person = people.get(person_id)
+        if person is None:
+            continue
+        payload = items_by_id.setdefault(
+            person.id,
+            _person_base_payload(
+                person, identifiers.get(person.id, []), profiles.get(person.id), activities.get(person.id)
+            )
+            | {"relationships": []},
+        )
+        payload["relationships"].append(_candidate_relationship_payload(person, relationship_type, supporting))
     items = sorted(
         items_by_id.values(),
         key=lambda item: (-max((role["confidence"] for role in item["relationships"]), default=0), item["id"]),
@@ -1461,7 +1618,7 @@ def public_people_summary(s: Session, tool_name: str) -> dict[str, Any]:
         "unresolvedCounts": unresolved_counts,
         "foldedUnresolvedAttributionCount": folded_unresolved,
         "resolvedRelationshipCount": sum(len(item["relationships"]) for item in items),
-        "relationshipCount": len(relationships),
+        "relationshipCount": len(relationships) + len(candidate_by_key),
         "source": SOURCE_LOCAL,
         "syncStatus": "evolved_real",
         "canonicalAuthority": {"catalog": "toolhub", "profiles": "toolhub-evolved"},
@@ -1537,27 +1694,41 @@ def person_detail(
     requested = tool_page or PersonToolPage()
     requested_page = max(1, requested.page)
     page_size = max(1, min(requested.page_size, 50))
+    checked_at = utcnow()
     identifiers = _identifiers_by_person(s, {person.id}).get(person.id, [])
     profile = s.get(PersonProfile, person.id)
     activity = s.get(PersonActivitySummary, person.id)
-    tool_names_statement = (
+    relationship_names_statement = (
         select(ToolPersonRelationship.tool_name)
         .where(
             ToolPersonRelationship.person_id == person.id,
             ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+            _current_relationship_clause(checked_at=checked_at),
         )
         .group_by(ToolPersonRelationship.tool_name)
     )
-    tool_count = int(s.scalar(select(func.count()).select_from(tool_names_statement.order_by(None).subquery())) or 0)
+    candidate_attributions = _current_candidate_attributions(
+        s,
+        person_ids={person.id},
+        checked_at=checked_at,
+    )
+    all_tool_names = sorted(
+        set(s.execute(relationship_names_statement).scalars()) | {row.tool_name for row, _ in candidate_attributions}
+    )
+    tool_count = len(all_tool_names)
+    verified_tool_count = int(
+        s.scalar(
+            select(func.count(func.distinct(ToolPersonRelationship.tool_name))).where(
+                ToolPersonRelationship.person_id == person.id,
+                ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+                _current_verified_clause(checked_at=checked_at),
+            )
+        )
+        or 0
+    )
     page_count = max(1, (tool_count + page_size - 1) // page_size)
     page = min(requested_page, page_count)
-    tool_names = list(
-        s.execute(
-            tool_names_statement.order_by(ToolPersonRelationship.tool_name)
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        ).scalars()
-    )
+    tool_names = all_tool_names[(page - 1) * page_size : page * page_size]
     relationships = list(
         s.execute(
             select(ToolPersonRelationship)
@@ -1565,6 +1736,7 @@ def person_detail(
                 ToolPersonRelationship.person_id == person.id,
                 ToolPersonRelationship.tool_name.in_(tool_names or {""}),
                 ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+                _current_relationship_clause(checked_at=checked_at),
             )
             .order_by(ToolPersonRelationship.tool_name, ToolPersonRelationship.relationship_type)
         ).scalars()
@@ -1577,6 +1749,11 @@ def person_detail(
                 ToolRelationshipEvidence.tool_name.in_(tool_names or {""}),
                 ToolRelationshipEvidence.relationship_type.in_(PUBLIC_ROLES),
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
+                ToolRelationshipEvidence.verification_status.in_((AUTHOR_CLAIM_VERIFIED, AUTHOR_CLAIM_UNVERIFIED)),
+                or_(
+                    ToolRelationshipEvidence.expires_at.is_(None),
+                    ToolRelationshipEvidence.expires_at > checked_at,
+                ),
             )
             .order_by(ToolRelationshipEvidence.checked_at.desc(), ToolRelationshipEvidence.id)
         ).scalars()
@@ -1592,6 +1769,16 @@ def person_detail(
                 row,
                 evidence_by_key.get((row.tool_name, row.relationship_type), []),
             )
+        )
+    relationship_keys = {(row.tool_name, row.relationship_type) for row in relationships}
+    candidate_by_key: dict[tuple[str, str], list[UnresolvedAttributionEvidence]] = {}
+    for attribution, _ in candidate_attributions:
+        key = (attribution.tool_name, attribution.relationship_type)
+        if attribution.tool_name in tool_names and key not in relationship_keys:
+            candidate_by_key.setdefault(key, []).append(attribution)
+    for (tool_name, relationship_type), supporting in candidate_by_key.items():
+        roles_by_tool.setdefault(tool_name, []).append(
+            _candidate_relationship_payload(person, relationship_type, supporting)
         )
     canonical_by_name = {
         row.tool_name: row
@@ -1625,7 +1812,11 @@ def person_detail(
                 "relationships": roles_by_tool.get(name, []),
             }
         )
-    return _person_base_payload(person, identifiers, profile, activity) | {
+    payload = _person_base_payload(person, identifiers, profile, activity)
+    payload["activity"] = dict(payload["activity"])
+    payload["activity"]["relatedToolCount"] = tool_count
+    payload["activity"]["verifiedToolCount"] = verified_tool_count
+    return payload | {
         "tools": {
             "count": tool_count,
             "page": page,
@@ -1668,6 +1859,7 @@ def _relationship_directory_filter(
     statement = select(ToolPersonRelationship.id).where(
         ToolPersonRelationship.person_id == Person.id,
         ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+        _current_relationship_clause(checked_at=checked_at),
     )
     if project:
         statement = statement.join(
@@ -1723,9 +1915,12 @@ def _directory_relationship_summaries(
         select(ToolPersonRelationship).where(
             ToolPersonRelationship.person_id.in_(person_ids or {-1}),
             ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+            _current_relationship_clause(checked_at=checked_at),
         )
     ).scalars()
+    relationship_keys: set[tuple[int, str, str]] = set()
     for row in rows:
+        relationship_keys.add((row.person_id, row.tool_name, row.relationship_type))
         summary = summaries.setdefault(
             row.person_id,
             _empty_directory_relationship_summary() | {"types": set(), "verifiedTypes": set()},
@@ -1742,6 +1937,31 @@ def _directory_relationship_summaries(
             summary["verifiedRelationshipCount"] += 1
             summary["verifiedTypes"].add(row.relationship_type)
             summary["verifiedToolCountsByType"][row.relationship_type] += 1
+    candidate_groups: dict[tuple[int, str, str], list[UnresolvedAttributionEvidence]] = {}
+    for attribution, person_id in _current_candidate_attributions(
+        s,
+        person_ids=person_ids,
+        checked_at=checked_at,
+    ):
+        key = (person_id, attribution.tool_name, attribution.relationship_type)
+        if key not in relationship_keys:
+            candidate_groups.setdefault(key, []).append(attribution)
+    candidate_tools_by_role: dict[tuple[int, str], set[str]] = {}
+    for (person_id, tool_name, relationship_type), supporting in candidate_groups.items():
+        summary = summaries.setdefault(
+            person_id,
+            _empty_directory_relationship_summary() | {"types": set(), "verifiedTypes": set()},
+        )
+        summary["relationshipCount"] += 1
+        summary["evidenceCount"] += len(supporting)
+        summary["bestConfidence"] = max(
+            summary["bestConfidence"],
+            max((row.confidence for row in supporting), default=0),
+        )
+        summary["types"].add(relationship_type)
+        candidate_tools_by_role.setdefault((person_id, relationship_type), set()).add(tool_name)
+    for (person_id, relationship_type), tool_names in candidate_tools_by_role.items():
+        summaries[person_id]["toolCountsByType"][relationship_type] += len(tool_names)
     for summary in summaries.values():
         summary["types"] = [role for role in PUBLIC_ROLES if role in summary["types"]]
         summary["verifiedTypes"] = [role for role in PUBLIC_ROLES if role in summary["verifiedTypes"]]
@@ -1811,14 +2031,26 @@ def search_people_directory(  # noqa: C901, PLR0915 - explicit query/ranking/fil
     normalized_query = _normalized(clean_query)
     checked_at = utcnow()
     related_people = select(ToolPersonRelationship.person_id).where(
-        ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES)
+        ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+        _current_relationship_clause(checked_at=checked_at),
     )
+    candidate_people = select(PersonIdentifier.person_id).where(
+        PersonIdentifier.namespace.in_(PUBLIC_HANDLE_NAMESPACES),
+        PersonIdentifier.is_current.is_(True),
+        PersonIdentifier.normalized_value.in_(
+            select(UnresolvedAttributionEvidence.normalized_label).where(
+                _current_unresolved_clause(checked_at=checked_at),
+                UnresolvedAttributionEvidence.relationship_type.in_(PUBLIC_ROLES),
+            )
+        ),
+    )
+    visible_people = related_people.union(candidate_people)
     profile_people = select(PersonProfile.person_id)
     statement = (
         select(Person)
         .outerjoin(PersonActivitySummary, PersonActivitySummary.person_id == Person.id)
         .where(
-            or_(Person.id.in_(related_people), Person.id.in_(profile_people)),
+            or_(Person.id.in_(visible_people), Person.id.in_(profile_people)),
             _public_identity_clause(),
         )
     )

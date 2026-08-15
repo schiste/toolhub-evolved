@@ -2970,9 +2970,7 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
         "toolhub_username",
     }
     assert any(item["displayName"] == "Ada Lovelace" for item in data["people"])
-    assert {relationship["type"] for relationship in ada_person["relationships"]} == {
-        sync.PERSON_REL_MAINTAINER
-    }
+    assert {relationship["type"] for relationship in ada_person["relationships"]} == {sync.PERSON_REL_MAINTAINER}
     assert data["unresolvedCounts"][sync.PERSON_REL_AUTHOR] == 0
     assert sync.PERSON_REL_RECORD_OWNER not in dumps(data)
     assert sync.PERSON_REL_CATALOG_ACTOR not in dumps(data)
@@ -2980,9 +2978,7 @@ def test_public_tool_people_endpoint_reads_local_toolhub_and_evolved_evidence(cl
     with db.session_scope() as s:
         internal_roles = set(
             s.execute(
-                select(ToolPersonRelationship.relationship_type).where(
-                    ToolPersonRelationship.tool_name == "ada-tool"
-                )
+                select(ToolPersonRelationship.relationship_type).where(ToolPersonRelationship.tool_name == "ada-tool")
             ).scalars()
         )
     assert sync.PERSON_REL_CATALOG_ACTOR in internal_roles
@@ -3156,18 +3152,18 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
                 PersonIdentifier(
                     person_id=metadata_handle_only.id,
                     namespace=people_index.NS_TOOLFORGE_USERNAME,
-                        value="Magnus Manske",
-                        normalized_value="magnus manske",
-                        identifier_kind=people_index.IDENTIFIER_HANDLE,
-                        source="legacy_untrusted_metadata",
+                    value="Magnus Manske",
+                    normalized_value="magnus manske",
+                    identifier_kind=people_index.IDENTIFIER_HANDLE,
+                    source="legacy_untrusted_metadata",
                 ),
                 PersonIdentifier(
                     person_id=metadata_handle_only.id,
                     namespace=people_index.NS_WIKI_USERNAME,
-                        value="User:Magnus Manske",
-                        normalized_value="user:magnus manske",
-                        identifier_kind=people_index.IDENTIFIER_HANDLE,
-                        source="legacy_untrusted_metadata",
+                    value="User:Magnus Manske",
+                    normalized_value="user:magnus manske",
+                    identifier_kind=people_index.IDENTIFIER_HANDLE,
+                    source="legacy_untrusted_metadata",
                 ),
                 PersonIdentifier(
                     person_id=toolhub_actor.id,
@@ -3373,7 +3369,7 @@ def test_community_search_collapses_stable_accounts_and_preserves_unresolved_lab
     assert person["supportingEvidence"][0]["label"] == "Magnus Manske"
     assert person["supportingEvidence"][0]["relationshipBreakdown"] == [
         {
-                "bestConfidence": 45,
+            "bestConfidence": 45,
             "evidenceCount": 324,
             "status": "unverified",
             "toolCount": 324,
@@ -3816,9 +3812,7 @@ def test_tool_viewer_context_uses_only_current_relationships_owned_by_the_signed
 
     authority = client.get("/v1/tools/viewer-tool/viewer-context/").get_json()
     assert authority["audience"] == "tool_manager"
-    assert authority["qualifyingRelationships"] == [
-        maintainer["qualifyingRelationships"][0]
-    ]
+    assert authority["qualifyingRelationships"] == [maintainer["qualifyingRelationships"][0]]
 
 
 def test_unified_claim_api_verifies_toolforge_membership_as_maintainer(client, monkeypatch):
@@ -4171,7 +4165,7 @@ def test_people_directory_combines_role_verification_activity_and_project_filter
             role=sync.PERSON_REL_MAINTAINER,
             activity="active",
         )
-        expired = _add_directory_person(
+        _add_directory_person(
             s,
             display_name="Expired Maintainer",
             stable_id="expired",
@@ -4184,7 +4178,6 @@ def test_people_directory_combines_role_verification_activity_and_project_filter
         for tool_name in ("matching-tool", "unverified-tool", "expired-tool"):
             s.add(CatalogFacetValue(tool_name=tool_name, field="wiki", value="wikidata.org", label="Wikidata"))
         matching_id = matching.public_id
-        expired_id = expired.public_id
 
     filtered = client.get(
         "/v1/people/?role=maintainer&verification=verified&activity=active&project=wikidata.org"
@@ -4201,7 +4194,7 @@ def test_people_directory_combines_role_verification_activity_and_project_filter
         sync.PERSON_REL_AUTHOR: 0,
         sync.PERSON_REL_MAINTAINER: 1,
     }
-    assert [person["id"] for person in renewal["results"]] == [expired_id]
+    assert renewal["results"] == []
     assert client.get("/v1/people/?role=record_owner").status_code == 400
 
 
@@ -4336,12 +4329,10 @@ def test_legacy_people_resolver_requires_one_unique_exact_handle(client):
     assert [candidate["id"] for candidate in canonicalized["candidates"]] == [canonical_magnus_id]
     assert canonicalized["unresolvedAttributions"][0]["label"] == "Magnus Manske"
 
-    attribution = client.get(
-        "/v1/people/resolve/?handle=Magnus%20Manske&context=attribution"
-    ).get_json()
-    assert attribution["status"] == "ambiguous"
+    attribution = client.get("/v1/people/resolve/?handle=Magnus%20Manske&context=attribution").get_json()
+    assert attribution["status"] == "resolved"
     assert attribution["matchType"] == "handle"
-    assert [candidate["id"] for candidate in attribution["candidates"]] == [canonical_magnus_id]
+    assert attribution["person"]["id"] == canonical_magnus_id
     assert attribution["unresolvedAttributions"][0]["label"] == "Magnus Manske"
 
     assert client.get("/v1/people/resolve/?handle=Nobody").get_json()["status"] == "not_found"
@@ -4658,6 +4649,7 @@ def test_me_tools_reads_the_canonical_relationship_graph_without_upstream_search
     assert data["verified"][0]["tool"]["name"] == "ada-tool"
     assert data["verified"][0]["relationships"][0]["requestedRelationship"] == sync.PERSON_REL_MAINTAINER
     assert data["searchTerms"] == ["canonical-relationship-graph"]
+
 
 def test_overlay_get_requires_login(client):
     assert client.get("/v1/overlay/").status_code == 401

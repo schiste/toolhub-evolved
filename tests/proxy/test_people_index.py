@@ -324,7 +324,7 @@ def test_public_people_summary_skips_relationships_whose_person_is_not_publishab
         assert summary["resolvedRelationshipCount"] == 0
 
 
-def test_public_people_summary_folds_only_same_role_exact_handle_attributions():
+def test_public_people_summary_projects_current_exact_handle_attributions_once():
     with db.session_scope() as s:
         people_index.replace_source_evidence(
             s,
@@ -364,10 +364,98 @@ def test_public_people_summary_folds_only_same_role_exact_handle_attributions():
         summary = people_index.public_people_summary(s, "bd808-toolhub-evolved-test")
 
         assert summary["counts"][PERSON_REL_MAINTAINER] == 1
+        assert summary["counts"][PERSON_REL_AUTHOR] == 1
         assert summary["people"][0]["relationships"][0]["status"] == AUTHOR_CLAIM_UNVERIFIED
+        assert summary["people"][0]["relationships"][1]["candidateOnly"] is True
+        assert summary["foldedUnresolvedAttributionCount"] == 2
+        assert summary["unresolvedAttributions"] == []
+        assert summary["unresolvedCounts"] == {PERSON_REL_AUTHOR: 0, PERSON_REL_MAINTAINER: 0}
+
+
+def test_unique_current_handle_attribution_uses_one_canonical_person_profile():
+    with db.session_scope() as s:
+        person = people_index.ensure_person(
+            s,
+            display_name="Christophe",
+            wikimedia_global_user_id="36969602",
+            wiki_username="Christophe",
+            source="test",
+        )
+        people_index.replace_source_evidence(
+            s,
+            "current-tool",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Christophe",
+                    "relationship_type": PERSON_REL_AUTHOR,
+                    "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 45,
+                }
+            ],
+        )
+
+        resolution = people_index.resolve_legacy_handle(s, "Christophe", attribution_context=True)
+        summary = people_index.public_people_summary(s, "current-tool")
+        detail = people_index.person_detail(s, person.public_id)
+        directory = people_index.search_people_directory(
+            s,
+            people_index.PeopleDirectoryQuery(query="Christophe"),
+        )
+
+        assert resolution["status"] == "resolved"
+        assert resolution["person"]["id"] == person.public_id
+        assert summary["unresolvedAttributions"] == []
         assert summary["foldedUnresolvedAttributionCount"] == 1
-        assert summary["unresolvedAttributions"][0]["relationshipTypes"] == [PERSON_REL_AUTHOR]
-        assert summary["unresolvedCounts"] == {PERSON_REL_AUTHOR: 1, PERSON_REL_MAINTAINER: 0}
+        assert summary["people"][0]["id"] == person.public_id
+        candidate = summary["people"][0]["relationships"][0]
+        assert candidate["type"] == PERSON_REL_AUTHOR
+        assert candidate["status"] == AUTHOR_CLAIM_UNVERIFIED
+        assert candidate["confidence"] == 45
+        assert candidate["candidateOnly"] is True
+        assert detail["toolCount"] == 1
+        assert detail["activity"]["relatedToolCount"] == 1
+        assert detail["tools"]["results"][0]["name"] == "current-tool"
+        assert detail["tools"]["results"][0]["relationships"][0]["candidateOnly"] is True
+        assert directory["results"][0]["relationshipSummary"]["toolCountsByType"][PERSON_REL_AUTHOR] == 1
+
+
+def test_public_people_projections_exclude_stale_and_expired_attributions():
+    with db.session_scope() as s:
+        person = people_index.ensure_person(
+            s,
+            display_name="Ada",
+            wikimedia_global_user_id="42",
+            wiki_username="Ada",
+            source="test",
+        )
+        s.add(_relationship("past-tool", person.id, status=AUTHOR_CLAIM_STALE, confidence=80))
+        people_index.replace_source_evidence(
+            s,
+            "expired-tool",
+            "toolhub_author_metadata",
+            [
+                {
+                    "display_name": "Ada",
+                    "relationship_type": PERSON_REL_AUTHOR,
+                    "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 45,
+                    "expires_at": utcnow() - timedelta(minutes=1),
+                }
+            ],
+        )
+        s.flush()
+
+        assert people_index.public_people_summary(s, "past-tool")["people"] == []
+        assert people_index.public_people_summary(s, "expired-tool")["people"] == []
+        assert (
+            people_index.search_unresolved_attributions(
+                s,
+                people_index.UnresolvedAttributionQuery(query="Ada"),
+            )["results"]
+            == []
+        )
+        assert people_index.person_detail(s, person.public_id)["toolCount"] == 0
 
 
 def test_person_detail_includes_a_cached_icon_url_when_the_asset_is_ready():
