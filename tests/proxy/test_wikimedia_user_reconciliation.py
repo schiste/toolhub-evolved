@@ -105,7 +105,7 @@ def test_three_way_match_verifies_the_author_and_maintainer_then_binds_the_accou
 
 
 @pytest.mark.parametrize(
-    ("url", "author", "account_name", "disabled", "expected_roles"),
+    ("url", "author", "account_name", "disabled", "expected_roles", "expected_binding"),
     [
         (
             "https://en.wikipedia.org.attacker.example/wiki/User:Enterprisey/tool.js",
@@ -113,6 +113,7 @@ def test_three_way_match_verifies_the_author_and_maintainer_then_binds_the_accou
             "Enterprisey",
             False,
             set(),
+            False,
         ),
         (
             "https://en.wikipedia.org/wiki/User:SomeoneElse/tool.js",
@@ -120,6 +121,7 @@ def test_three_way_match_verifies_the_author_and_maintainer_then_binds_the_accou
             "Enterprisey",
             False,
             set(),
+            False,
         ),
         (
             "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
@@ -127,24 +129,29 @@ def test_three_way_match_verifies_the_author_and_maintainer_then_binds_the_accou
             "Enterprisey",
             False,
             {"maintainer"},
+            True,
         ),
         (
             "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
             "Enterprisey",
             "DifferentAccount",
             False,
-            set(),
+            {"author", "maintainer"},
+            False,
         ),
         (
             "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
             "Enterprisey",
             "Enterprisey",
             True,
-            set(),
+            {"author", "maintainer"},
+            False,
         ),
     ],
 )
-def test_each_role_requires_its_own_complete_evidence(url, author, account_name, disabled, expected_roles):
+def test_each_role_requires_its_own_complete_evidence(
+    url, author, account_name, disabled, expected_roles, expected_binding
+):
     with db.session_scope() as session:
         _canonical(session, url=url, author=author)
         _account(session, username=account_name, disabled=disabled)
@@ -157,10 +164,10 @@ def test_each_role_requires_its_own_complete_evidence(url, author, account_name,
         assert result["verifiedTools"] == int(bool(expected_roles))
         assert result["authorEvidence"] == int("author" in expected_roles)
         assert result["maintainerEvidence"] == int("maintainer" in expected_roles)
-        assert session.query(PersonAccountBinding).count() == int(bool(expected_roles))
+        assert session.query(PersonAccountBinding).count() == int(expected_binding)
 
 
-def test_a_stable_toolforge_identity_conflict_never_publishes_authorship():
+def test_a_toolforge_identity_conflict_does_not_suppress_wikimedia_relationships():
     with db.session_scope() as session:
         _canonical(session)
         _account(session)
@@ -185,7 +192,9 @@ def test_a_stable_toolforge_identity_conflict_never_publishes_authorship():
         result = wikimedia_user_reconciliation.synchronize(session)
 
         assert result["bindingConflicts"] == 1
-        assert session.query(ToolRelationshipEvidence).count() == 0
+        edges = session.query(ToolRelationshipEvidence).all()
+        assert {row.relationship_type for row in edges} == {"author", "maintainer"}
+        assert {row.person_id for row in edges} == {expected.id}
         assert expected.id != conflicting.id
 
 

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 SOURCE = "wikimedia_user_space_toolforge"
-METHOD = "wikimedia_user_space_toolforge_identity"
+METHOD = "wikimedia_user_space_centralauth_author"
 MAINTAINER_METHOD = "wikimedia_user_space_namespace_owner"
 PROOF_METHOD = "wikimedia_user_space_exact_toolforge_handle"
 META_KEY = "wikimedia_user_space_reconciliation_v1"
@@ -250,13 +250,6 @@ def synchronize(  # noqa: C901, PLR0912, PLR0915 - ordered fail-closed reconcili
 
     observations_by_tool: dict[str, list[dict[str, Any]]] = {}
     for owner, tools in candidates_by_owner.items():
-        matching_accounts = accounts.get(owner, [])
-        if not matching_accounts:
-            stats["missingToolforgeAccounts"] += 1
-            continue
-        if len(matching_accounts) != 1:
-            stats["ambiguousToolforgeAccounts"] += 1
-            continue
         matching_people = people.get(owner, [])
         if not matching_people:
             stats["missingWikimediaIdentities"] += 1
@@ -265,61 +258,76 @@ def synchronize(  # noqa: C901, PLR0912, PLR0915 - ordered fail-closed reconcili
         if len(person_ids) != 1:
             stats["ambiguousWikimediaIdentities"] += 1
             continue
-        account = matching_accounts[0]
-        identity = matching_people[0]
-        existing = bindings.get((identity_graph.PROVIDER_TOOLFORGE, account.uid_number))
-        was_verified = bool(
-            existing is not None
-            and existing.status == identity_graph.STATUS_VERIFIED
-            and existing.person_id == identity.person.id
-            and existing.revoked_at is None
-        )
-        try:
-            identity_graph.bind_toolforge_account(
-                s,
-                account=account,
-                person=identity.person,
-                proof_method=PROOF_METHOD,
-                confidence=CONFIDENCE,
-                evidence={
-                    "wikimediaGlobalUserId": identity.global_user_id,
-                    "wikimediaUsername": identity.wiki_username,
-                    "wikimediaDomains": sorted({tool.domain for tool in tools}),
-                    "toolforgeUidNumber": account.uid_number,
-                    "toolforgeDeveloperUsername": account.developer_username,
-                    "toolforgeShellUsername": account.uid,
-                    "matchedToolNames": [tool.tool_name for tool in tools],
-                },
-                binding_index=bindings,
+        identity = min(matching_people, key=lambda row: (row.global_user_id, row.wiki_username))
+        account: ToolforgeAccountProjection | None = None
+        matching_accounts = accounts.get(owner, [])
+        if not matching_accounts:
+            stats["missingToolforgeAccounts"] += 1
+        elif len(matching_accounts) != 1:
+            stats["ambiguousToolforgeAccounts"] += 1
+        else:
+            candidate_account = matching_accounts[0]
+            existing = bindings.get((identity_graph.PROVIDER_TOOLFORGE, candidate_account.uid_number))
+            was_verified = bool(
+                existing is not None
+                and existing.status == identity_graph.STATUS_VERIFIED
+                and existing.person_id == identity.person.id
+                and existing.revoked_at is None
             )
-        except identity_graph.IdentityBindingConflictError:
-            stats["bindingConflicts"] += 1
-            continue
-        stats["accountsVerified"] += 1
-        stats["accountsBound"] += int(not was_verified)
+            try:
+                identity_graph.bind_toolforge_account(
+                    s,
+                    account=candidate_account,
+                    person=identity.person,
+                    proof_method=PROOF_METHOD,
+                    confidence=CONFIDENCE,
+                    evidence={
+                        "wikimediaGlobalUserId": identity.global_user_id,
+                        "wikimediaUsername": identity.wiki_username,
+                        "wikimediaDomains": sorted({tool.domain for tool in tools}),
+                        "toolforgeUidNumber": candidate_account.uid_number,
+                        "toolforgeDeveloperUsername": candidate_account.developer_username,
+                        "toolforgeShellUsername": candidate_account.uid,
+                        "matchedToolNames": [tool.tool_name for tool in tools],
+                    },
+                    binding_index=bindings,
+                )
+            except identity_graph.IdentityBindingConflictError:
+                stats["bindingConflicts"] += 1
+            else:
+                account = candidate_account
+                stats["accountsVerified"] += 1
+                stats["accountsBound"] += int(not was_verified)
         for tool in tools:
+            evidence_payload = {
+                "wikimediaDomain": tool.domain,
+                "wikimediaPageTitle": tool.page_title,
+                "wikimediaPageOwner": tool.owner,
+                "wikimediaUsername": identity.wiki_username,
+                "wikimediaGlobalUserId": identity.global_user_id,
+            }
             common = {
                 "display_name": identity.person.display_name or identity.wiki_username,
                 "wikimedia_global_user_id": identity.global_user_id,
                 "wiki_username": identity.wiki_username,
-                "toolforge_uid_number": account.uid_number,
-                "toolforge_username": account.developer_username,
-                "evidence_key": account.uid_number,
+                "evidence_key": identity.global_user_id,
                 "verification_status": AUTHOR_CLAIM_VERIFIED,
                 "confidence": CONFIDENCE,
                 "evidence_url": tool.url,
-                "evidence_payload": {
-                    "wikimediaDomain": tool.domain,
-                    "wikimediaPageTitle": tool.page_title,
-                    "wikimediaPageOwner": tool.owner,
-                    "wikimediaUsername": identity.wiki_username,
-                    "wikimediaGlobalUserId": identity.global_user_id,
-                    "toolforgeDeveloperUsername": account.developer_username,
-                    "toolforgeUidNumber": account.uid_number,
-                    "identityBindingMethod": PROOF_METHOD,
-                },
+                "evidence_payload": evidence_payload,
                 "checked_at": utcnow(),
             }
+            if account is not None:
+                common |= {
+                    "toolforge_uid_number": account.uid_number,
+                    "toolforge_username": account.developer_username,
+                    "evidence_payload": evidence_payload
+                    | {
+                        "toolforgeDeveloperUsername": account.developer_username,
+                        "toolforgeUidNumber": account.uid_number,
+                        "identityBindingMethod": PROOF_METHOD,
+                    },
+                }
             observations = [
                 common
                 | {
