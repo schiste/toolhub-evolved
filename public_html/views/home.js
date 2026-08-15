@@ -554,15 +554,15 @@ function replicaStatusHTML(replica) {
 	return `<p class="hero__replica${replica.stale ? " hero__replica--stale" : ""}">${t("home.replicaStatus", "Local catalog · last synchronized")} <time datetime="${esc(replica.lastSuccessAt)}">${esc(replica.lastSuccessAt.replace("T", " ").replace("Z", " UTC"))}</time>${stale}</p>`;
 }
 
+function homeViewContext() {
+	const initialState = intentStateFromContext(getUserContext());
+	return { initialState, authenticated: signedIn() };
+}
+
 export async function viewHome() {
-	const ctx = getUserContext();
-	const initialState = intentStateFromContext(ctx);
-	const authenticated = signedIn();
-	// One signed-out request carries sections, summaries, endorsement counts and
-	// catalog size, so nothing here needs a second round trip. Everything else — signed in, or a
-	// composed payload that is unavailable or filtered — keeps the original
-	// parallel fetch, including the deferred endorsement crawl that must not
-	// block first paint.
+	const { initialState, authenticated } = homeViewContext();
+	// Signed-out home is composed in one request; filtered and personal views
+	// retain their parallel local queries and deferred enrichment.
 	const composed = authenticated || hasHomeFilters(initialState) ? null : await composedHomeModel().catch(() => null);
 	const [home, initialModel] = composed
 		? [{ total_tools: composed.totalTools, replica: composed.replica }, composed]

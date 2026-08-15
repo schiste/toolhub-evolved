@@ -203,8 +203,9 @@ async function staticFile(res, pathname) {
 export function createSmokeServer() {
 	return createServer((req, res) => {
 		const url = new URL(req.url, `http://${req.headers.host}`);
-		if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v1/catalog/"))
+		if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v1/catalog/")) {
 			return api(req, res, url.pathname);
+		}
 		return staticFile(res, url.pathname);
 	});
 }
