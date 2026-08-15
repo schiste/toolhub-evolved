@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend import canonical_tools, maintainer_index, people_index, projection_policy
 from backend.models import (
@@ -21,6 +21,7 @@ from backend.models import (
     ToolforgeMembershipProjection,
     ToolhubAccountProjection,
     ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
     User,
     utcnow,
 )
@@ -62,6 +63,7 @@ class ToolforgeCorroborationIndexes:
 
     projects_by_account: dict[str, set[str]]
     verified_tools_by_person: dict[int, set[str]]
+    verified_tools_by_handle: dict[str, set[str]]
     canonical_names: dict[str, tuple[str, ...]]
 
 
@@ -466,14 +468,15 @@ def _verified_shared_tool_names(
         else (people_index.NS_TOOLFORGE_SHELL_USERNAME, account.uid)
     )
     source_person = _indexed_person(identifiers, namespace, handle)
-    if source_person is None:
-        return []
     membership_tools = {
         tool_name
         for project in indexes.projects_by_account.get(account.uid_number, set())
         for tool_name in (indexes.canonical_names.get(project.casefold(), ()) or (f"toolforge-{project}",))
     }
-    return sorted(membership_tools & indexes.verified_tools_by_person.get(source_person.id, set()))
+    corroborated_tools = set(indexes.verified_tools_by_handle.get(handle.casefold(), set()))
+    if source_person is not None:
+        corroborated_tools.update(indexes.verified_tools_by_person.get(source_person.id, set()))
+    return sorted(membership_tools & corroborated_tools)
 
 
 def _toolforge_corroboration_indexes(
@@ -485,17 +488,30 @@ def _toolforge_corroboration_indexes(
     ):
         projects_by_account.setdefault(uid_number, set()).add(tool_name)
     verified_tools_by_person: dict[int, set[str]] = {}
+    now = utcnow()
     for person_id, tool_name in session.execute(
         select(ToolRelationshipEvidence.person_id, ToolRelationshipEvidence.tool_name).where(
             ToolRelationshipEvidence.verification_status == STATUS_VERIFIED,
             ToolRelationshipEvidence.withdrawn_at.is_(None),
+            or_(ToolRelationshipEvidence.expires_at.is_(None), ToolRelationshipEvidence.expires_at > now),
             ToolRelationshipEvidence.source != SOURCE_TOOLFORGE_LDAP,
         )
     ):
         verified_tools_by_person.setdefault(person_id, set()).add(tool_name)
+    verified_tools_by_handle: dict[str, set[str]] = {}
+    for normalized_label, tool_name in session.execute(
+        select(UnresolvedAttributionEvidence.normalized_label, UnresolvedAttributionEvidence.tool_name).where(
+            UnresolvedAttributionEvidence.verification_status == STATUS_VERIFIED,
+            UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+            or_(UnresolvedAttributionEvidence.expires_at.is_(None), UnresolvedAttributionEvidence.expires_at > now),
+            UnresolvedAttributionEvidence.source != SOURCE_TOOLFORGE_LDAP,
+        )
+    ):
+        verified_tools_by_handle.setdefault(normalized_label, set()).add(tool_name)
     return ToolforgeCorroborationIndexes(
         projects_by_account=projects_by_account,
         verified_tools_by_person=verified_tools_by_person,
+        verified_tools_by_handle=verified_tools_by_handle,
         canonical_names=canonical_tools.names_by_toolforge_project(session),
     )
 
