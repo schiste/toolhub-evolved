@@ -1520,3 +1520,42 @@ def test_replace_facets_skips_a_value_whose_label_cleans_to_empty(monkeypatch):
     # empty on the second pass, so no facet row may be recorded for it.
     assert calls["n"] == 2
     assert s.added == []
+
+
+def test_purpose_annotations_project_as_task_and_audience_facets():
+    with db.session_scope() as s:
+        s.add(
+            _canonical(
+                "annotated",
+                annotations={"tasks": ["analysis"], "audiences": ["researchers"]},
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["annotated"])
+
+    payload = catalog_projection.projection_payload("annotated")
+    assert payload["record"]["tasks"] == ["analysis"]
+    assert payload["record"]["audiences"] == ["researchers"]
+    with db.session_scope() as s:
+        facets = {(row.field, row.value) for row in s.query(CatalogFacetValue).filter_by(tool_name="annotated")}
+    assert facets >= {("tasks", "analysis"), ("audiences", "researchers")}
+
+
+def test_annotation_lift_does_not_reorder_top_level_field_precedence():
+    with db.session_scope() as s:
+        s.add(
+            _canonical(
+                "narrow",
+                annotations={"tasks": ["analysis"], "tool_type": "bot", "for_wikis": ["commons.wikimedia.org"]},
+            )
+        )
+
+    catalog_projection.refresh_tool_names(["narrow"])
+
+    payload = catalog_projection.projection_payload("narrow")
+    assert payload["record"]["tasks"] == ["analysis"]
+    assert "tool_type" not in payload["record"]
+    assert "for_wikis" not in payload["record"]
+    with db.session_scope() as s:
+        fields = {row.field for row in s.query(CatalogFacetValue).filter_by(tool_name="narrow")}
+    assert fields == {"tasks"}
