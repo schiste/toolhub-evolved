@@ -324,6 +324,52 @@ def test_public_people_summary_skips_relationships_whose_person_is_not_publishab
         assert summary["resolvedRelationshipCount"] == 0
 
 
+def test_public_people_summary_folds_only_same_role_exact_handle_attributions():
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(
+            s,
+            "bd808-toolhub-evolved-test",
+            "repository_owner",
+            [
+                {
+                    "display_name": "Schiste",
+                    "relationship_type": PERSON_REL_MAINTAINER,
+                    "verification_status": AUTHOR_CLAIM_VERIFIED,
+                    "confidence": 95,
+                },
+                {
+                    "display_name": "Schiste",
+                    "relationship_type": PERSON_REL_AUTHOR,
+                    "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 40,
+                },
+            ],
+        )
+        people_index.replace_source_evidence(
+            s,
+            "bd808-toolhub-evolved-test",
+            "toolforge_ldap",
+            [
+                {
+                    "display_name": "Schiste",
+                    "toolforge_uid_number": "102093",
+                    "toolforge_username": "Schiste",
+                    "relationship_type": PERSON_REL_MAINTAINER,
+                    "verification_status": AUTHOR_CLAIM_UNVERIFIED,
+                    "confidence": 60,
+                }
+            ],
+        )
+
+        summary = people_index.public_people_summary(s, "bd808-toolhub-evolved-test")
+
+        assert summary["counts"][PERSON_REL_MAINTAINER] == 1
+        assert summary["people"][0]["relationships"][0]["status"] == AUTHOR_CLAIM_UNVERIFIED
+        assert summary["foldedUnresolvedAttributionCount"] == 1
+        assert summary["unresolvedAttributions"][0]["relationshipTypes"] == [PERSON_REL_AUTHOR]
+        assert summary["unresolvedCounts"] == {PERSON_REL_AUTHOR: 1, PERSON_REL_MAINTAINER: 0}
+
+
 def test_person_detail_includes_a_cached_icon_url_when_the_asset_is_ready():
     with db.session_scope() as s:
         person = people_index.ensure_person(s, display_name="Ada", toolhub_user_id="9", source="test")

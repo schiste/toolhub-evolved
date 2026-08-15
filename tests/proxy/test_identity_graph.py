@@ -98,13 +98,7 @@ def test_sul_bound_toolforge_account_joins_the_toolhub_person():
 @pytest.mark.parametrize(
     ("canonical_name", "record_kwargs", "project"),
     [
-        ("mix-n-match", {"url": "https://mix-n-match.toolforge.org/"}, "mix-n-match"),
         ("toolforge-cersei", {}, "cersei"),
-        (
-            "plain-name",
-            {"api_url": "https://toolsadmin.wikimedia.org/tools/id/project-from-api/toolinfo/1.2/toolinfo.json"},
-            "project-from-api",
-        ),
     ],
 )
 def test_toolforge_memberships_resolve_canonical_tool_aliases(canonical_name, record_kwargs, project):
@@ -118,6 +112,7 @@ def test_toolforge_memberships_resolve_canonical_tool_aliases(canonical_name, re
         result = identity_graph.synchronize(session)
 
     assert result["canonicalMembershipRelationships"] == 1
+    assert result["candidateMembershipRelationships"] == 0
     assert result["fallbackMembershipRelationships"] == 0
     with db.session_scope() as session:
         relationship = session.query(ToolPersonRelationship).one()
@@ -128,21 +123,117 @@ def test_toolforge_memberships_resolve_canonical_tool_aliases(canonical_name, re
         assert evidence.evidence_payload["toolMappingMethod"] == "canonical_project_alias"
 
 
+def test_runtime_host_only_projects_unverified_maintainer_candidate():
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        session.add(toolforge_account())
+        session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="toolhub-evolved"))
+        session.add(
+            canonical_tool(
+                "bd808-toolhub-evolved-test",
+                url="https://toolhub-evolved.toolforge.org/tools/create",
+            )
+        )
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["canonicalMembershipRelationships"] == 0
+    assert result["candidateMembershipRelationships"] == 1
+    assert result["unmappedMemberships"] == 0
+    with db.session_scope() as session:
+        relationship = session.query(ToolPersonRelationship).one()
+        assert relationship.tool_name == "bd808-toolhub-evolved-test"
+        assert relationship.verification_status == "unverified"
+        assert relationship.confidence == 60
+        evidence = session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None).one()
+        assert evidence.verification_status == "unverified"
+        assert evidence.evidence_payload["toolforgeToolName"] == "toolhub-evolved"
+        assert evidence.evidence_payload["toolMappingMethod"] == "toolforge_runtime_host_candidate"
+
+
+def test_runtime_host_reprojection_downgrades_previously_verified_relationship():
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        session.add(toolforge_account())
+        session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="toolhub-evolved"))
+        session.add(
+            canonical_tool(
+                "bd808-toolhub-evolved-test",
+                url="https://toolhub-evolved.toolforge.org/tools/create",
+            )
+        )
+        identity_graph.synchronize(session)
+        evidence = session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None).one()
+        relationship = session.query(ToolPersonRelationship).one()
+        evidence.verification_status = "verified"
+        evidence.confidence = 100
+        relationship.verification_status = "verified"
+        relationship.confidence = 100
+        relationship.verified_at = utcnow()
+        session.get(ApiCacheMeta, identity_graph.TOOLFORGE_RELATIONSHIP_META_KEY).value = "legacy-policy"
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["relationshipCacheHit"] == 0
+    with db.session_scope() as session:
+        evidence = session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None).one()
+        relationship = session.query(ToolPersonRelationship).one()
+        assert evidence.verification_status == "unverified"
+        assert evidence.confidence == 60
+        assert relationship.verification_status == "unverified"
+        assert relationship.confidence == 60
+        assert relationship.verified_at is None
+
+
+def test_toolsadmin_url_only_projects_unverified_maintainer_candidate():
+    with db.session_scope() as session:
+        session.add(toolhub_account())
+        session.add(toolforge_account())
+        session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="project-from-api"))
+        session.add(
+            canonical_tool(
+                "plain-name",
+                api_url="https://toolsadmin.wikimedia.org/tools/id/project-from-api/toolinfo/1.2/toolinfo.json",
+            )
+        )
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["canonicalMembershipRelationships"] == 0
+    assert result["candidateMembershipRelationships"] == 1
+    with db.session_scope() as session:
+        assert session.query(ToolPersonRelationship).one().verification_status == "unverified"
+
+
 def test_one_toolforge_project_can_verify_multiple_canonical_records():
     with db.session_scope() as session:
         session.add(toolhub_account())
         session.add(toolforge_account())
         session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="mix-n-match"))
-        session.add(canonical_tool("mix-n-match", url="https://mix-n-match.toolforge.org/"))
-        session.add(canonical_tool("mm_mixnmatch", url="https://mix-n-match.toolforge.org"))
+        session.add(canonical_tool("toolforge-mix-n-match"))
+        session.add(
+            canonical_tool(
+                "mm_mixnmatch",
+                url="https://mix-n-match.toolforge.org/alternate",
+            )
+        )
 
     with db.session_scope() as session:
         result = identity_graph.synchronize(session)
 
-    assert result["canonicalMembershipRelationships"] == 2
+    assert result["canonicalMembershipRelationships"] == 1
+    assert result["candidateMembershipRelationships"] == 1
     assert result["fallbackMembershipRelationships"] == 0
     with db.session_scope() as session:
-        assert {row.tool_name for row in session.query(ToolPersonRelationship)} == {"mix-n-match", "mm_mixnmatch"}
+        assert {row.tool_name for row in session.query(ToolPersonRelationship)} == {
+            "toolforge-mix-n-match",
+            "mm_mixnmatch",
+        }
+        statuses = {row.tool_name: row.verification_status for row in session.query(ToolPersonRelationship)}
+        assert statuses == {"toolforge-mix-n-match": "verified", "mm_mixnmatch": "unverified"}
 
 
 def test_canonical_alias_projects_a_previously_unmapped_membership_and_invalidates_tool_summaries():
@@ -171,13 +262,15 @@ def test_canonical_alias_projects_a_previously_unmapped_membership_and_invalidat
     with db.session_scope() as session:
         second = identity_graph.synchronize(session)
 
-    assert second["canonicalMembershipRelationships"] == 1
+    assert second["canonicalMembershipRelationships"] == 0
+    assert second["candidateMembershipRelationships"] == 1
     assert second["fallbackMembershipRelationships"] == 0
     with db.session_scope() as session:
         assert {row.tool_name for row in session.query(ToolPersonRelationship)} == {"mix-n-match"}
         assert {row.tool_name for row in session.query(ToolRelationshipEvidence).filter_by(withdrawn_at=None)} == {
             "mix-n-match"
         }
+        assert session.query(ToolPersonRelationship).one().verification_status == "unverified"
         assert session.query(ToolSummaryCache).count() == 0
 
 

@@ -40,30 +40,8 @@ def _path_parts(url: str) -> list[str]:
     return [unquote(part) for part in _path(url).strip("/").split("/") if part]
 
 
-def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> list[str]:
-    """Return Toolforge projects proven by one canonical Toolhub record.
-
-    Toolhub names are user-supplied catalog identifiers, so the conventional
-    ``toolforge-`` prefix is useful but not universal. Toolforge deployment
-    hosts and Toolsadmin project URLs provide equally strong project aliases.
-    """
-    candidates: list[str] = []
-    clean_tool_name = _clean_name(tool_name)
-    if clean_tool_name.casefold().startswith("toolforge-"):
-        candidates.append(clean_tool_name[len("toolforge-") :])
-    source = record if isinstance(record, dict) else {}
-    for key in ("url", "api_url"):
-        raw_url = str(source.get(key) or "").strip()
-        parsed = urlparse(raw_url)
-        host = (parsed.hostname or "").casefold()
-        if host.endswith(".toolforge.org"):
-            candidates.append(host.removesuffix(".toolforge.org"))
-        if host == TOOLSADMIN_HOST:
-            parts = [unquote(part) for part in parsed.path.split("/") if part]
-            for index in range(len(parts) - 2):
-                if parts[index : index + 2] == ["tools", "id"]:
-                    candidates.append(parts[index + 2])
-                    break
+def _dedupe_project_names(candidates: list[str]) -> list[str]:
+    """Return cleaned project names in evidence-precedence order."""
     names: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -75,12 +53,69 @@ def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> li
     return names
 
 
+def verified_toolforge_project_names(tool_name: str) -> list[str]:
+    """Return project aliases backed by explicit Toolforge project identity.
+
+    Only a canonical ``toolforge-$PROJECT`` name names the project within the
+    record itself. Runtime and administration URLs are deliberately excluded:
+    a Toolhub record may link to another project's launcher, proxy, or creation
+    interface. Registered source provenance is evaluated separately.
+    """
+    candidates: list[str] = []
+    clean_tool_name = _clean_name(tool_name)
+    if clean_tool_name.casefold().startswith("toolforge-"):
+        candidates.append(clean_tool_name[len("toolforge-") :])
+    return _dedupe_project_names(candidates)
+
+
+def candidate_toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> list[str]:
+    """Return runtime-host project hints that are insufficient for verification."""
+    source = record if isinstance(record, dict) else {}
+    candidates = []
+    for key in ("url", "api_url"):
+        parsed = urlparse(str(source.get(key) or "").strip())
+        host = (parsed.hostname or "").casefold()
+        if host.endswith(".toolforge.org"):
+            candidates.append(host.removesuffix(".toolforge.org"))
+        if host == TOOLSADMIN_HOST:
+            parts = [unquote(part) for part in parsed.path.split("/") if part]
+            for index in range(len(parts) - 2):
+                if parts[index : index + 2] == ["tools", "id"]:
+                    candidates.append(parts[index + 2])
+                    break
+    verified = {name.casefold() for name in verified_toolforge_project_names(tool_name)}
+    return [name for name in _dedupe_project_names(candidates) if name.casefold() not in verified]
+
+
+def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> list[str]:
+    """Return all project associations, with deterministic aliases first."""
+    return _dedupe_project_names(
+        [
+            *verified_toolforge_project_names(tool_name),
+            *candidate_toolforge_project_names(tool_name, record),
+        ]
+    )
+
+
 def names_by_toolforge_project(s: Session) -> dict[str, tuple[str, ...]]:
-    """Index canonical Toolhub names by strongly inferred Toolforge project."""
+    """Index canonical Toolhub names by deterministically verified project."""
+    index: dict[str, set[str]] = {}
+    tool_names = s.execute(select(CanonicalToolCache.tool_name)).scalars()
+    for tool_name in tool_names:
+        for project in verified_toolforge_project_names(tool_name):
+            index.setdefault(project.casefold(), set()).add(tool_name)
+    return {
+        project: tuple(sorted(tool_names, key=lambda value: (value.casefold(), value)))
+        for project, tool_names in index.items()
+    }
+
+
+def candidate_names_by_toolforge_project(s: Session) -> dict[str, tuple[str, ...]]:
+    """Index Toolhub names by URL-only project hints for unverified display."""
     index: dict[str, set[str]] = {}
     rows = s.execute(select(CanonicalToolCache.tool_name, CanonicalToolCache.record)).all()
     for tool_name, record in rows:
-        for project in toolforge_project_names(tool_name, record):
+        for project in candidate_toolforge_project_names(tool_name, record):
             index.setdefault(project.casefold(), set()).add(tool_name)
     return {
         project: tuple(sorted(tool_names, key=lambda value: (value.casefold(), value)))
