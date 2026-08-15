@@ -40,7 +40,7 @@ test.describe("deterministic app smoke", () => {
 		await expect(page.locator("#account .spinner")).toHaveCount(0);
 	});
 
-	test("multi-author cards disclose every linked author without opening quick view", async ({ page }) => {
+	test("multi-author cards disclose every author without inventing identity links", async ({ page }) => {
 		await page.addInitScript(() => localStorage.setItem("toolhub-whats-new-never", "1"));
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.goto(new URL("/search", smoke.url).href);
@@ -55,13 +55,8 @@ test.describe("deterministic app smoke", () => {
 		await expect(authors).toHaveJSProperty("open", true);
 		await expect(page.locator("#qv")).not.toBeVisible();
 		const links = authors.locator(".tcard__authors-panel a");
-		await expect(links).toHaveCount(3);
-		await expect(links.nth(0)).toHaveAttribute("href", "/by/Bryan%20Davis");
-		await expect(links.nth(1)).toHaveAttribute("href", "/by/Grace%20Hopper");
-		await expect(links.nth(2)).toHaveAttribute(
-			"href",
-			"/by/Katherine%20Johnson%20with%20an%20exceptionally%20long%20display%20name"
-		);
+		await expect(links).toHaveCount(0);
+		await expect(authors.locator(".tcard__authors-panel li span")).toHaveCount(3);
 		const panel = authors.locator(".tcard__authors-panel");
 		await expect(panel).toBeVisible();
 		const panelBox = await panel.boundingBox();

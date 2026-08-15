@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Real, honest trust signals derived from live Toolhub data — no simulation.
+// Real trust signals derived from synchronized Toolhub data — no simulation.
 // Listing completeness, curated-list endorsement, freshness, and fit-to-your-context.
 // Serves tool users (evaluate/trust) and maintainers (improve-your-listing).
 import { backendGetJson, paginate } from "./api.js";

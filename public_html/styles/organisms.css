@@ -790,6 +790,14 @@
 	font-style: italic;
 	line-height: 1;
 }
+.hero__replica {
+	margin: var(--space-3) auto var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-caption);
+}
+.hero__replica--stale {
+	color: var(--color-warning-text);
+}
 .home-results,
 .recent {
 	transition: opacity 0.15s ease;

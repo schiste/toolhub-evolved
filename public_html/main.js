@@ -351,19 +351,19 @@ document.addEventListener("toolhub:api-cache-refresh", (e) => {
 	const url = String(detail.url || "");
 	if (detail.state === "start") {
 		if (url) refreshingApiUrls.add(url);
-		showApiToast(t("api.refreshingLiveData", "Refreshing live Toolhub data…"));
+		showApiToast(t("api.refreshingLiveData", "Checking the local catalog…"));
 		return;
 	}
 	if (detail.state === "server-background") {
 		if (url) refreshingApiUrls.delete(url);
-		showApiToast(t("api.refreshingLiveData", "Refreshing live Toolhub data…"));
+		showApiToast(t("api.refreshingLiveData", "Checking the local catalog…"));
 		hideApiToastSoon(1800);
 		return;
 	}
 	if (url) refreshingApiUrls.delete(url);
 	if (refreshingApiUrls.size > 0) return;
 	if (detail.state === "success") {
-		showApiToast(t("api.liveDataUpdated", "Live Toolhub data updated."), "success");
+		showApiToast(t("api.liveDataUpdated", "Local catalog data updated."), "success");
 		scheduleApiRefreshRender();
 		hideApiToastSoon();
 	} else if (detail.state === "error") {

@@ -133,7 +133,11 @@ function json(res, data, status = 200) {
 }
 
 function api(req, res, pathname) {
-	if (pathname === "/api/") {
+	// The production frontend reads the local catalog namespace. Normalizing it
+	// here keeps the smoke fixtures focused on response shapes instead of the
+	// deployment-specific route prefix.
+	const localPath = pathname.replace(/^\/v1\/catalog/, "/api");
+	if (localPath === "/api/") {
 		return json(res, {
 			search: "/api/search/",
 			tools: "/api/tools/",
@@ -145,11 +149,12 @@ function api(req, res, pathname) {
 			schema: "/api/schema/"
 		});
 	}
-	if (pathname === "/api/ui/home/") return json(res, {});
-	if (pathname === "/api/search/tools/") return json(res, { count: tools.length, facets, results: tools });
-	if (pathname === "/api/lists/") return json(res, { count: 1, results: [list] });
-	if (pathname === "/api/lists/featured-toolforge/") return json(res, list);
-	if (pathname === "/api/recent/") {
+	if (localPath === "/api/ui/home/") return json(res, {});
+	if (localPath === "/api/search/tools/") return json(res, { count: tools.length, facets, results: tools });
+	if (localPath === "/api/lists/") return json(res, { count: 1, results: [list] });
+	if (localPath === "/api/lists/featured-toolforge/") return json(res, list);
+	if (/^\/api\/tools\/[^/]+\/projection\/$/.test(localPath)) return json(res, {});
+	if (localPath === "/api/recent/") {
 		return json(res, {
 			count: 1,
 			results: [
@@ -162,17 +167,17 @@ function api(req, res, pathname) {
 			]
 		});
 	}
-	if (pathname === "/api/users/") return json(res, { count: 1, results: [{ username: "Ada Lovelace", count: 12 }] });
-	if (pathname === "/api/crawler/runs/") {
+	if (localPath === "/api/users/") return json(res, { count: 1, results: [{ username: "Ada Lovelace", count: 12 }] });
+	if (localPath === "/api/crawler/runs/") {
 		return json(res, { count: 1, results: [{ id: 1, status: "completed", urls: 4 }] });
 	}
-	if (pathname === "/api/auditlogs/") {
+	if (localPath === "/api/auditlogs/") {
 		return json(res, { count: 1, results: [{ id: 1, target: tools[0].name, action: "created" }] });
 	}
-	const toolMatch = pathname.match(/^\/api\/tools\/([^/]+)\/(?:revisions\/)?$/);
+	const toolMatch = localPath.match(/^\/api\/tools\/([^/]+)\/(?:revisions\/)?$/);
 	if (toolMatch) {
 		const name = decodeURIComponent(toolMatch[1]);
-		if (pathname.endsWith("/revisions/")) return json(res, { count: 1, results: [{ id: 1, content_id: name }] });
+		if (localPath.endsWith("/revisions/")) return json(res, { count: 1, results: [{ id: 1, content_id: name }] });
 		const tool = tools.find((item) => item.name === name);
 		return tool ? json(res, tool) : json(res, { error: "not found" }, 404);
 	}
@@ -198,7 +203,8 @@ async function staticFile(res, pathname) {
 export function createSmokeServer() {
 	return createServer((req, res) => {
 		const url = new URL(req.url, `http://${req.headers.host}`);
-		if (url.pathname.startsWith("/api/")) return api(req, res, url.pathname);
+		if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/v1/catalog/"))
+			return api(req, res, url.pathname);
 		return staticFile(res, url.pathname);
 	});
 }

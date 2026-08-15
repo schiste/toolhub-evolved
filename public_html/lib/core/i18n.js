@@ -24,12 +24,13 @@ export const RTL_LANGS = new Set([
 
 /** @type {Readonly<Record<string, string>>} */
 export const BOOT_MESSAGES = Object.freeze({
-	"api.liveDataUpdated": "Live Toolhub data updated.",
-	"api.refreshFailed": "Showing saved Toolhub data; refresh failed.",
-	"api.refreshingLiveData": "Refreshing live Toolhub data...",
+	"api.liveDataUpdated": "Local catalog data updated.",
+	"api.refreshFailed": "Showing the last published catalog generation.",
+	"api.refreshingLiveData": "Checking the local catalog...",
 	"router.backToHome": "Back to home",
-	"router.loadErrorTitle": "Couldn't load live data",
-	"router.loadingToolhubData": "Loading Toolhub data"
+	"router.loadErrorTitle": "Couldn't load the local catalog",
+	"router.loadErrorBody": "The local catalog replica could not be read ($1).",
+	"router.loadingToolhubData": "Loading the local catalog"
 });
 
 function storedLocale() {

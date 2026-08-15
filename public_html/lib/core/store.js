@@ -450,7 +450,7 @@ export function listToolToggle(id, name) {
 /* ===== Tool overlays — edits / annotations / new submissions ===============
    Official writes are attempted through /v1/write/* when signed in. These
    COMPACT-shaped records remain the local Evolved draft/fallback layer merged
-   onto live Toolhub data by applyToolOverlay(). */
+   onto replicated Toolhub data by applyToolOverlay(). */
 /**
  * @param {string} key
  * @returns {Record<string, any>}

@@ -361,7 +361,7 @@ function footerExample() {
 			<div class="footer__bottom">
 				<a class="footer__maintain" href="/contribute">${icon("tools")} ${t("styleguide.helpMaintainToolhub", "Help maintain Toolhub Evolved")}</a>
 				<span class="footer__legal">${tWithElements("styleguide.footer.legal", "Catalog content under $1 · $2", { html: '<a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener nofollow">CC0</a>' }, { html: '<a href="https://github.com/schiste/toolhub-evolved" target="_blank" rel="noopener nofollow">Toolhub Evolved v0.2.0</a>' })}</span>
-				<span class="footer__note">${t("styleguide.footer.note", "Live Toolhub data · Evolved overlay")}</span>
+				<span class="footer__note">${t("styleguide.footer.note", "Local Toolhub replica · Evolved overlay")}</span>
 			</div>
 		</footer>
 	</div>`;
@@ -370,7 +370,7 @@ function footerExample() {
 function mockupBannerExample() {
 	return `<div class="sg-chrome-frame sg-chrome-frame--tight">
 		<div class="mockup-banner" role="region" aria-label="${esc(t("styleguide.featureStatusNoticeLabel", "Feature status notice"))}" data-sitenotice>
-			<span class="mockup-banner__txt">${t("styleguide.banner.previewText", "Evolved preview: live Toolhub data with Evolved additions.")} <span class="mock-tag">${t("styleguide.banner.hybrid", "Hybrid")}</span></span>
+			<span class="mockup-banner__txt">${t("styleguide.banner.previewText", "Evolved preview: synchronized Toolhub data with Evolved additions.")} <span class="mock-tag">${t("styleguide.banner.hybrid", "Hybrid")}</span></span>
 			<a class="mockup-banner__link" href="/experiments">${t("styleguide.banner.featureStatus", "Feature status")}</a>
 			<a class="mockup-banner__link" href="/rules-of-engagement">${t("styleguide.rulesOfEngagement", "Rules of Engagement")}</a>
 			<button class="mockup-banner__close" type="button" aria-label="${esc(t("styleguide.dismissSiteNoticeLabel", "Dismiss site notice"))}">${icon("close")}</button>
@@ -434,7 +434,7 @@ function loadingExample() {
 
 function errorPageExample() {
 	return `<div class="errorpage sg-error-demo">
-		<h1>${t("styleguide.loadErrorTitle", "Couldn't load live data")}</h1>
+		<h1>${t("styleguide.loadErrorTitle", "Couldn't load the local catalog")}</h1>
 		<p class="prose">${t("styleguide.loadErrorBody", "The Toolhub API didn't respond. Try again from the browse page.")}</p>
 		${button(t("styleguide.homeButton", "Go to the home page"), { variant: "primary", href: "/" })}
 	</div>`;

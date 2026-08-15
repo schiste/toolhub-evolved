@@ -70,8 +70,8 @@ test("viewStatic exposes every static page with current hybrid Toolhub/Evolved c
 	assert.ok(S.viewStatic("code-of-conduct").html.includes("not an official Wikimedia Foundation venue"));
 	assert.ok(S.viewStatic("code-of-conduct").html.includes("accessibility, localization, privacy"));
 	const rules = S.viewStatic("rules-of-engagement").html;
-	assert.ok(rules.includes("supported writes are sent back to the official Toolhub API"));
-	assert.ok(rules.includes("server-side canonical cache of official tool records"));
+	assert.ok(rules.includes("supported writes are sent to the official Toolhub API"));
+	assert.ok(rules.includes("published locally as an atomic generation"));
 	assert.ok(rules.includes("every 15 minutes"));
 	assert.ok(rules.includes("one catalog page is reconciled every 12 hours"));
 	assert.ok(rules.includes("What's Evolved-only"));
@@ -165,8 +165,8 @@ test("viewApiDocs lists sorted proxy endpoints from the API root", async () => {
 	const view = await S.viewApiDocs();
 	assert.deepEqual(api.apiGet.mock.calls[0], ["/"]);
 	assert.equal(view.title, "API documentation — Toolhub");
-	assert.ok(view.html.includes("Evolved reads the live catalog through a same-origin proxy"));
-	assert.ok(view.html.includes("<code>/v1/write/*</code> official-first lifecycle"));
+	assert.ok(view.html.includes("serves public reads from its local"));
+	assert.ok(view.html.includes("<code>/v1/catalog/*</code> replica"));
 	assert.ok(view.html.includes("official OAuth tokens stay server-side"));
 	assert.equal(typeof view.mount, "function");
 	assert.ok(view.html.includes("data-api-explorer"));
@@ -192,9 +192,9 @@ test("viewApiDocs shows the unavailable placeholder when the root cannot be read
 	api.apiGet.mockRejectedValue(new Error("x"));
 	const view = await S.viewApiDocs();
 	assert.equal(view.title, "API documentation — Toolhub");
-	assert.ok(view.html.includes("The live endpoint index is unavailable."));
+	assert.ok(view.html.includes("The local endpoint index is unavailable."));
 	assert.ok(view.html.includes("data-api-explorer"));
-	assert.ok(view.html.includes("Authenticated writes never go through that proxy"));
+	assert.ok(view.html.includes("official OAuth tokens stay server-side"));
 });
 
 test("STATIC_SLUGS lists exactly the pages static.js can render", async () => {

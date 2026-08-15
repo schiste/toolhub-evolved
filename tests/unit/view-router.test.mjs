@@ -536,7 +536,7 @@ test("setActiveNav does not match a look-alike prefix and only marks the first m
 /* ---- render / commitView / errorHTML / loadingHTML -------------------- */
 
 test("loadingHTML renders route skeletons with a spinner fallback", () => {
-	assert.match(router.loadingHTML(), /Loading Toolhub data/);
+	assert.match(router.loadingHTML(), /Loading the local catalog/);
 	assert.match(router.loadingHTML(), /class="spinner"/);
 	assert.doesNotMatch(router.loadingHTML("/"), /skeleton-grid|hero--loading|route-loading--home/);
 	assert.match(router.loadingHTML("/search"), /route-loading--search/);
@@ -548,11 +548,11 @@ test("loadingHTML renders route skeletons with a spinner fallback", () => {
 	assert.match(router.loadingHTML("/audit-logs"), /Loading audit logs/);
 	assert.equal(
 		router.errorHTML(new Error("oops")),
-		'<div class="container page errorpage"><h1>Couldn\'t load live data</h1>\n\t<p class="prose">The Toolhub API didn\'t respond (oops).</p>\n\t<a class="btn btn--primary btn--md" href="/">Back to home</a></div>'
+		'<div class="container page errorpage"><h1>Couldn\'t load the local catalog</h1>\n\t<p class="prose">The local catalog replica could not be read (oops).</p>\n\t<a class="btn btn--primary btn--md" href="/">Back to home</a></div>'
 	);
 	// `(e && e.message) || e`: an object without message falls back to e; a nullish e → String(e).
-	assert.match(router.errorHTML({ message: "hi" }), /respond \(hi\)/);
-	assert.match(router.errorHTML(null), /respond \(null\)/);
+	assert.match(router.errorHTML({ message: "hi" }), /read \(hi\)/);
+	assert.match(router.errorHTML(null), /read \(null\)/);
 });
 
 const deferred = () => {
@@ -750,7 +750,7 @@ test("render: a dispatch failure commits the error page", async () => {
 
 	await router.render();
 	assert.equal(document.title, "Error — Toolhub");
-	assert.match(viewEl.innerHTML, /Couldn't load live data/);
-	assert.match(viewEl.innerHTML, /respond \(boom\)/);
+	assert.match(viewEl.innerHTML, /Couldn't load the local catalog/);
+	assert.match(viewEl.innerHTML, /read \(boom\)/);
 	assert.match(viewEl.innerHTML, /Back to home/);
 });

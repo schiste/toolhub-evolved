@@ -351,7 +351,7 @@ function ownerSensitiveRecentState(state) {
 	return Boolean(state.owner || state.q || state.sort === "owner");
 }
 
-// Recent changes — live from /api/recent/ (deep-links tools via content_id slug).
+// Recent changes — from the local catalog replica (deep-links tools via content_id slug).
 export async function viewRecent() {
 	const state = recentState(new URLSearchParams(location.search));
 	// Stryker disable next-line ObjectLiteral: the catch shape is unobservable — the only read is `data.results || []`, which coerces a missing `results` to the same [] as the {results:[]} fallback.
@@ -380,7 +380,7 @@ export async function viewRecent() {
 		<div class="container page recent-page">
 			<header class="recent-head">
 				<h1 class="page__title">${t("parity.recentChanges", "Recent changes")}</h1>
-				<p class="page__intro">${t("parity.recentIntroHybrid", "Live Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
+				<p class="page__intro">${t("parity.recentIntroHybrid", "Background-synchronized Toolhub activity, merged with Evolved-local write activity when a change is saved here.")}</p>
 			</header>
 			<form class="recent-controls" id="recent-filter-form">
 				<div class="recent-controls__filters">

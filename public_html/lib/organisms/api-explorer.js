@@ -61,7 +61,7 @@ export const API_EXPLORER_ENDPOINTS = /** @type {ApiExplorerEndpoint[]} */ ([
 	{
 		id: "search-tools",
 		title: t("apiExplorer.searchTools", "Search tools"),
-		description: t("apiExplorer.searchToolsDesc", "Search the live Toolhub catalog with a small result page."),
+		description: t("apiExplorer.searchToolsDesc", "Search the local Toolhub replica with a small result page."),
 		pathTemplate: "/api/search/tools/",
 		fields: [
 			{
@@ -390,7 +390,7 @@ export function renderApiExplorer() {
 		<div class="section-head api-explorer__section-head">
 			<div>
 				<h2 id="api-explorer-title">${t("apiExplorer.title", "Try read-only endpoints")}</h2>
-				<p class="page__intro">${t("apiExplorer.intro", "Run common anonymous Toolhub reads through Evolved's same-origin proxy, then copy examples for production clients.")}</p>
+				<p class="page__intro">${t("apiExplorer.intro", "Inspect locally persisted Toolhub responses, then copy canonical API examples for production clients.")}</p>
 			</div>
 			<a href="https://toolhub.wikimedia.org/api-docs" target="_blank" rel="noopener nofollow">${t("apiExplorer.officialDocs", "Official docs")}</a>
 		</div>

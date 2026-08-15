@@ -1121,14 +1121,14 @@ test("total outage (every source rejects) surfaces an error, not an empty catalo
 	h.apiGet.mockRejectedValue(new Error("down"));
 	// homeSectionsModel counts the failures and, with nothing loaded, rethrows so
 	// the router shows the error page instead of "No tools match this sentence".
-	await assert.rejects(() => home.viewHome(), /live catalog unavailable/);
+	await assert.rejects(() => home.viewHome(), /local catalog unavailable/);
 });
 
 test("total outage with canonical cache renders saved tools", async () => {
 	h.apiGet.mockRejectedValue(new Error("down"));
 	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-home", { title: "Cached Home" })]);
 	const r = await home.viewHome();
-	assert.ok(r.html.includes("Showing saved Toolhub data while live data refreshes."));
+	assert.ok(r.html.includes("Showing the last published catalog generation."));
 	assert.ok(r.html.includes('data-tool="cached-home"'));
 });
 

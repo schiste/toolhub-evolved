@@ -134,7 +134,7 @@ test("officialWrite uses the authenticated session CSRF token", async () => {
 	const calls = mockFetch({
 		"/v1/user/": { json: { authenticated: true, username: "Ada", csrf: "tok-official" } },
 		"/v1/overlay/": { json: {} },
-		"/api/tools/x/": { json: { name: "x", title: "cached" } },
+		"/v1/catalog/tools/x/": { json: { name: "x", title: "cached" } },
 		"/v1/toolhub/tools/": { json: { ok: true, toolhub: { name: "x" } } }
 	});
 	const cached = await api.apiGet("/tools/x/");
@@ -149,7 +149,7 @@ test("officialWrite uses the authenticated session CSRF token", async () => {
 	assert.equal(call.opts.method, "POST");
 	assert.equal(call.opts.headers["X-CSRF-Token"], "tok-official");
 	assert.deepEqual(JSON.parse(call.opts.body), { name: "x" });
-	assert.equal(calls.filter((c) => c.url === "/api/tools/x/").length, 2);
+	assert.equal(calls.filter((c) => c.url === "/v1/catalog/tools/x/").length, 2);
 	session.setServerUser(null);
 	session.USER.name = "Ada Lovelace";
 	session.applyExp(false);
