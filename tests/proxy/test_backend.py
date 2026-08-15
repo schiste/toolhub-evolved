@@ -1193,6 +1193,7 @@ def test_schema_upgrade_and_sync_cleaners_cover_legacy_metadata():
         "recent_scan_page",
         "recent_scan_latest_marker",
         "recent_scan_boundary_marker",
+        "recent_cursor_recovery_required",
         "recent_last_at",
         "detail_hydration_cursor",
         "detail_hydration_pending_tools",
