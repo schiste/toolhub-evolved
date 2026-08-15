@@ -140,6 +140,15 @@ request path. Server-side crawler ingestion skips names already present in the
 replica; local overlays strip canonical identity fields such as `name` and
 `origin` before storage or merge.
 
+Catalog read-performance rule: canonical writes derive a bounded card record
+and normalized modification timestamp once. Unfiltered facet counts are
+materialized by projection/synchronization jobs and atomically stored under one
+versioned metadata key; filtered facet counts remain exact against the indexed
+inverted table, but the browser requests them independently so they never block
+the first tool cards. Existing API consumers retain the full search envelope by
+default, while the SPA requests `view=card&include_facets=false`. Public request
+handlers may consume a published aggregate but must never rebuild one.
+
 Collection cache rule: `api_cache` stores only anonymous Toolhub collection and
 compatibility responses fetched by scheduled workers. It never stores `/v1/user`, OAuth/session responses,
 CSRF-protected writes, or official write payloads made with a user's Toolhub
