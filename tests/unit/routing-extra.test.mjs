@@ -23,6 +23,17 @@ test("PERSONAS and NEEDS hold the exact icon/label/facet triples", () => {
 	]);
 });
 
+test("personHref prefers a canonical slug while retaining public-id compatibility", () => {
+	assert.equal(
+		routing.personHref("31e9abd5-fb61-42d8-96e4-ccbe3bb54ced"),
+		"/people/31e9abd5-fb61-42d8-96e4-ccbe3bb54ced"
+	);
+	assert.equal(
+		routing.personHref({ id: "31e9abd5-fb61-42d8-96e4-ccbe3bb54ced", slug: "christophe-4ced" }),
+		"/people/christophe-4ced"
+	);
+});
+
 test("parseRoute reflects the current pathname", () => {
 	window.history.replaceState({}, "", "/tools/Example");
 	assert.deepEqual(routing.parseRoute(), { path: "/tools/Example" });

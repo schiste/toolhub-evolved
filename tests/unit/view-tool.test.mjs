@@ -1209,7 +1209,7 @@ test("authorEntries: reversed authorObjs use find(), and a missing author falls 
 	assert.ok(r.html.includes('<span dir="auto">Gamma</span></span>'), "gamma has no external link");
 });
 
-test("tool authors and maintainers link to immutable people ids through observed relationship names", async () => {
+test("tool authors and maintainers link to canonical people slugs through observed relationship names", async () => {
 	h.getTool.mockResolvedValue(
 		toolFixture("person-links", {
 			title: "Person links",
@@ -1224,6 +1224,7 @@ test("tool authors and maintainers link to immutable people ids through observed
 						people: [
 							{
 								id: "person-42",
+								slug: "ada-lovelace-0042",
 								displayName: "Ada",
 								identifiers: [{ namespace: "toolhub_username", value: "Ada" }],
 								relationships: [
@@ -1238,7 +1239,7 @@ test("tool authors and maintainers link to immutable people ids through observed
 	);
 
 	const result = await tool.viewTool("person-links");
-	assert.equal(result.html.match(/href="\/people\/person-42"/g)?.length, 2);
+	assert.equal(result.html.match(/href="\/people\/ada-lovelace-0042"/g)?.length, 2);
 });
 
 test("tool maintainer panel separates verified, stale, and unresolved relationships", async () => {

@@ -84,7 +84,7 @@ def run_once() -> list[MigrationResult]:
         MigrationResult("source attestation rules marker", _initialize_source_attestation_rules()),
         MigrationResult("Toolforge relationship input marker", _initialize_toolforge_relationship_marker()),
         MigrationResult("relationship verification timestamps", _backfill_relationship_verified_at()),
-        MigrationResult("people immutable ids and account links", _backfill_people_identity()),
+        MigrationResult("people immutable ids, slugs and account links", _backfill_people_identity()),
         MigrationResult("unified relationship evidence", _backfill_relationship_evidence()),
         MigrationResult("display-only attribution evidence", _migrate_display_attributions()),
         MigrationResult("retired legacy people projections", _retire_legacy_people_tables()),
@@ -253,7 +253,7 @@ def _retire_legacy_toolforge_proofs() -> int:
 
 
 def _backfill_people_identity() -> int:
-    """Assign opaque ids, classify identifiers, and link OAuth accounts."""
+    """Assign opaque IDs and slugs, classify identifiers, and link accounts."""
     touched = 0
     now = utcnow()
     with db.session_scope() as s:
@@ -261,6 +261,8 @@ def _backfill_people_identity() -> int:
             if not person.public_id:
                 person.public_id = str(uuid4())
                 touched += 1
+        s.flush()
+        touched += _backfill_person_slugs(s)
         for identifier in s.execute(select(PersonIdentifier).order_by(PersonIdentifier.id)).scalars():
             namespace_map = {
                 "toolhub": people_index.NS_TOOLHUB_USERNAME,
@@ -321,7 +323,30 @@ def _backfill_people_identity() -> int:
             connection.exec_driver_sql("CREATE UNIQUE INDEX ux_people_public_id ON people (public_id)")
         if not has_unique_column("users", "person_id"):
             connection.exec_driver_sql("CREATE UNIQUE INDEX ux_users_person_id ON users (person_id)")
+    _ensure_person_slug_index()
     return touched
+
+
+def _backfill_person_slugs(s) -> int:  # noqa: ANN001 - SQLAlchemy session
+    """Fill canonical slugs once without rewriting already-published URLs."""
+    touched = 0
+    for person in s.execute(select(Person).where(Person.public_slug.is_(None)).order_by(Person.id)).scalars():
+        people_index.ensure_person_public_slug(s, person)
+        touched += 1
+    return touched
+
+
+def _ensure_person_slug_index() -> None:
+    """Add the production uniqueness guard after the row backfill completes."""
+    inspector = inspect(db.engine())
+    indexes = inspector.get_indexes("people")
+    constraints = inspector.get_unique_constraints("people")
+    unique = any(index.get("unique") and index.get("column_names") == ["public_slug"] for index in indexes) or any(
+        constraint.get("column_names") == ["public_slug"] for constraint in constraints
+    )
+    if not unique:
+        with db.engine().begin() as connection:
+            connection.exec_driver_sql("CREATE UNIQUE INDEX ux_people_public_slug ON people (public_slug)")
 
 
 def _backfill_account_owned_records(s, users: list[User]) -> int:  # noqa: ANN001 - SQLAlchemy session

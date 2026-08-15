@@ -50,7 +50,7 @@ function relationshipPeople(tool, evolvedSummary) {
 /** @param {Tool} tool @param {string} name @param {any[]} people */
 function authorLink(tool, name, people) {
 	const person = personForRelationshipLabel(people, name, "author");
-	if (person?.id) return personHref(person.id);
+	if (person?.id) return personHref(person);
 	const record = (tool.authorObjs || []).find(
 		(author) =>
 			String(author?.name || "")
@@ -157,7 +157,7 @@ function maintainerByline(tool, evolvedSummary) {
 			const confirmed = relationshipsForRole(person, "maintainer").some(
 				(/** @type {any} */ relationship) => relationship?.status === "verified" || relationship?.isVerified
 			);
-			return `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(personHref(person.id))}"><span class="tcard__maint-text"${dirAttrs(name)}>${esc(name)}</span></a>`;
+			return `<a class="tcard__maint-name${confirmed ? " tcard__maint-name--confirmed" : ""}" href="${esc(personHref(person))}"><span class="tcard__maint-text"${dirAttrs(name)}>${esc(name)}</span></a>`;
 		})
 		.join(", ");
 	const remaining = maintainers.length - visible.length;

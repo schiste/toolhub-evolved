@@ -976,6 +976,7 @@ class Person(Base):
     canonical_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     public_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, default=lambda: str(uuid4()))
+    public_slug: Mapped[str | None] = mapped_column(String(96), unique=True, index=True, nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), default="")
     identity_quality: Mapped[str] = mapped_column(String(32), default="display_name")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

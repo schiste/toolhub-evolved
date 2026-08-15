@@ -309,7 +309,7 @@ PUBLIC_V1_ROUTES = {
     "/v1/people/": "public local people search; reads are rate limited",
     "/v1/people/attributions/": "public unresolved-label discovery over local evidence; reads are rate limited",
     "/v1/people/resolve/": "public exact-handle resolution over local public identities; reads are rate limited",
-    "/v1/people/<public_id>/": "public local person profile; reads are rate limited",
+    "/v1/people/<person_reference>/": "public local person profile; reads are rate limited",
     "/v1/people/tools/<name>/": (
         "public normalized people and typed tool relationships; evidence is redacted and reads are rate limited"
     ),
@@ -3644,6 +3644,10 @@ def test_person_profile_uses_immutable_public_id_and_evolved_owned_content(clien
     assert updated["links"] == ["https://meta.wikimedia.org/wiki/User:Ada"]
 
     public = client.get(f"/v1/people/{public_id}/").get_json()
+    public_slug = public["slug"]
+    assert public_slug.startswith("ada-")
+    assert public["canonicalPath"] == f"/people/{public_slug}"
+    assert client.get(f"/v1/people/{public_slug}/").get_json()["id"] == public_id
     assert public["profile"]["bio"] == "Builds Wikimedia tools."
     assert public["canonicalAuthority"] == {"catalog": "toolhub", "profiles": "toolhub-evolved"}
     search = client.get("/v1/people/?q=ada").get_json()
@@ -3668,6 +3672,7 @@ def test_person_profile_uses_immutable_public_id_and_evolved_owned_content(clien
         people_index.link_user(s, user)
         person = s.get(Person, user.person_id)
         assert person.public_id == public_id
+        assert person.public_slug == public_slug
         assert person.display_name == "Renamed"
         current_handles = {
             row.value

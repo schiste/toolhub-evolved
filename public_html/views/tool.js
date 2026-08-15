@@ -43,7 +43,7 @@ import { prosePage, viewNotFound } from "./static.js";
 const QUICK_VIEW_BUTTON_STYLE =
 	"appearance: none; border: 0; background: none; padding: 0; color: inherit; font-family: inherit; text-align: start; cursor: pointer;";
 
-/** @typedef {{ name: string, publicId?: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
+/** @typedef {{ name: string, publicId?: string, publicSlug?: string, profile: { url?: string | null, wikiUsername?: string | null } }} AuthorEntry */
 /** @typedef {{ id?: string, displayName?: string, identifiers?: Array<{ namespace?: string, value?: string }>, relationships?: Array<any> }} PublicPerson */
 /** @typedef {{ people?: PublicPerson[], unresolvedAttributions?: Array<any> }} PeopleSummary */
 
@@ -218,7 +218,7 @@ function authorExternalLink(entry) {
 /** @param {AuthorEntry} entry */
 function authorLink(entry) {
 	const name = entry.publicId
-		? `<a href="${esc(personHref(entry.publicId))}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>`
+		? `<a href="${esc(personHref(entry.publicId, entry.publicSlug))}"${dirAttrs(entry.name)}>${esc(entry.name)}</a>`
 		: `<span${dirAttrs(entry.name)}>${esc(entry.name)}</span>`;
 	return `<span class="author-ref">${name}${authorExternalLink(entry)}</span>`;
 }
@@ -228,7 +228,7 @@ function authorInlineList(t, peopleSummary) {
 	const people = Array.isArray(peopleSummary?.people) ? peopleSummary.people : [];
 	const entries = authorEntries(t).map((entry) => {
 		const person = personForRelationshipLabel(people, entry.name, "author");
-		return person ? { ...entry, publicId: person.id } : entry;
+		return person ? { ...entry, publicId: person.id, publicSlug: person.slug } : entry;
 	});
 	return entries.map((entry) => authorLink(entry)).join('<span class="toolpage__sep">, </span>');
 }
@@ -244,6 +244,7 @@ function maintainerPeople(peopleSummary) {
 				entry: {
 					name: person.displayName || t("tool.unknownMaintainer", "Unknown"),
 					publicId: person.id,
+					publicSlug: person.slug,
 					profile: {
 						wikiUsername: person.identifiers?.find((item) => item.namespace === "wiki_username")?.value
 					}

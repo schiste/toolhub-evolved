@@ -196,9 +196,9 @@ def v1_people_resolve() -> Response:
     )
 
 
-@v1_people_bp.route("/v1/people/<public_id>/")
-def v1_person(public_id: str) -> Response:
-    """Return one public person with one bounded local-only tool page."""
+@v1_people_bp.route("/v1/people/<person_reference>/")
+def v1_person(person_reference: str) -> Response:
+    """Return one person by canonical slug or legacy immutable public id."""
     if security.read_rate_limited(request.remote_addr):
         return common.deny(v1.HTTP_TOO_MANY, "rate limit exceeded")
     try:
@@ -209,7 +209,7 @@ def v1_person(public_id: str) -> Response:
     with db.session_scope() as s:
         payload = people_index.person_detail(
             s,
-            public_id,
+            person_reference,
             people_index.PersonToolPage(page=tool_page, page_size=tool_page_size),
         )
     if payload is None:

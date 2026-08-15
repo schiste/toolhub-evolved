@@ -145,7 +145,7 @@ function renderPerson(person, tools) {
 				const button = /** @type {HTMLElement | null} */ (event.target?.closest?.("[data-page]"));
 				if (!button || !person?.id) return;
 				const page = positiveInteger(button.getAttribute("data-page"), 1);
-				navigateTo(`${personHref(person.id)}${page > 1 ? `?page=${page}` : ""}`);
+				navigateTo(`${personHref(person)}${page > 1 ? `?page=${page}` : ""}`);
 			});
 		}
 	};
@@ -159,6 +159,7 @@ async function resolvedView(person) {
 			? [
 					{
 						id: person.id,
+						slug: person.slug,
 						displayName: person.displayName,
 						identifiers: person.identifiers || [],
 						relationships: tool.personRelationships || []
@@ -219,7 +220,7 @@ export async function viewAuthor(name) {
 	const resolution = await resolvePersonHandle(name, context === "attribution" ? { context } : {}).catch(() => null);
 	if (resolution?.status === "resolved" && resolution?.person?.id) {
 		const page = profileToolPage();
-		const canonicalHref = `${personHref(resolution.person.id)}${page > 1 ? `?page=${page}` : ""}`;
+		const canonicalHref = `${personHref(resolution.person)}${page > 1 ? `?page=${page}` : ""}`;
 		globalThis.history?.replaceState?.({}, "", canonicalHref);
 		const person = await personById(resolution.person.id, { toolPage: page });
 		return resolvedView(person);
@@ -240,9 +241,13 @@ export async function viewAuthor(name) {
 	);
 }
 
-/** Immutable public-id route. @param {string} publicId */
-export async function viewPerson(publicId) {
-	const person = await personById(publicId, { toolPage: profileToolPage() });
+/** Canonical-slug route with immutable public-id compatibility. @param {string} personReference */
+export async function viewPerson(personReference) {
+	const person = await personById(personReference, { toolPage: profileToolPage() });
+	const canonicalHref = `${personHref(person)}${globalThis.location?.search || ""}`;
+	if (globalThis.location?.pathname !== personHref(person)) {
+		globalThis.history?.replaceState?.({}, "", canonicalHref);
+	}
 	return resolvedView(person);
 }
 
@@ -354,7 +359,7 @@ function personCard(item) {
 		kind: t("authors.personResult", "Person"),
 		kindDetail: identityQualityLabel(person?.identityQuality || ""),
 		title: name,
-		href: personHref(person.id),
+		href: personHref(person),
 		visual: picture,
 		subtitle: t("authors.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(count), count),
 		description: [matchDetail, contributorDetail].filter(Boolean).join(" · "),

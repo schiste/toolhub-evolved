@@ -101,6 +101,24 @@ def test_migrate_seeds_historical_relationship_verification_time(configured_db):
         assert s.query(ToolPersonRelationship).one().verified_at == created_at
 
 
+def test_migrate_backfills_stable_person_slugs_idempotently(configured_db):
+    with db.session_scope() as s:
+        s.add(
+            Person(
+                canonical_key="stable:slug",
+                public_id="31e9abd5-fb61-42d8-96e4-ccbe3bb54ced",
+                public_slug=None,
+                display_name="Christophe",
+                identity_quality="stable",
+            )
+        )
+
+    assert migrate._backfill_people_identity() == 1
+    assert migrate._backfill_people_identity() == 0
+    with db.session_scope() as s:
+        assert s.query(Person).one().public_slug == "christophe-4ced"
+
+
 def test_digest_render_migration_is_mysql_idempotent(monkeypatch):
     statements = []
 
