@@ -174,6 +174,7 @@ def test_interrupted_complete_snapshot_preserves_last_known_good_catalog(monkeyp
 
     with db.session_scope() as s:
         assert s.get(CanonicalToolCache, "keep-until-complete") is not None
+        assert s.get(CanonicalToolCache, "new-tool") is None, "an incomplete generation must remain unpublished"
         state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
         assert state.snapshot_next_page == 2
         assert state.snapshot_started_at is not None
@@ -216,22 +217,10 @@ def test_changed_count_retries_until_a_bounded_fresh_generation_is_consistent(mo
     def page(number, _page_size):
         requested_pages.append(number)
         if len(requested_pages) <= 2:
-            return (
-                ([{"name": "unstable-one"}], True, 2)
-                if number == 1
-                else ([{"name": "unstable-two"}], False, 3)
-            )
+            return ([{"name": "unstable-one"}], True, 2) if number == 1 else ([{"name": "unstable-two"}], False, 3)
         if len(requested_pages) <= 4:
-            return (
-                ([{"name": "unstable-three"}], True, 3)
-                if number == 1
-                else ([{"name": "unstable-four"}], False, 2)
-            )
-        return (
-            ([{"name": "stable-one"}], True, 2)
-            if number == 1
-            else ([{"name": "stable-two"}], False, 2)
-        )
+            return ([{"name": "unstable-three"}], True, 3) if number == 1 else ([{"name": "unstable-four"}], False, 2)
+        return ([{"name": "stable-one"}], True, 2) if number == 1 else ([{"name": "stable-two"}], False, 2)
 
     monkeypatch.setattr(catalog_sync, "listing_page", page)
 
@@ -257,10 +246,13 @@ def test_steady_state_ingests_recent_tools_and_reconciles_slowly(monkeypatch):
     monkeypatch.setattr(
         catalog_sync,
         "recent_page",
-        lambda _page=1: ([
-            {"id": 2, "timestamp": "new", "content_type": "tool", "content_id": "changed-tool"},
-            {"id": 1, "timestamp": "old", "content_type": "tool", "content_id": "old-tool"},
-        ], False),
+        lambda _page=1: (
+            [
+                {"id": 2, "timestamp": "new", "content_type": "tool", "content_id": "changed-tool"},
+                {"id": 1, "timestamp": "old", "content_type": "tool", "content_id": "old-tool"},
+            ],
+            False,
+        ),
     )
     monkeypatch.setattr(
         catalog_sync,
