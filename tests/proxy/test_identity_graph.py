@@ -2,6 +2,7 @@
 """Tests for immutable external-account bindings."""
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from backend.models import (  # noqa: E402
     ToolPersonRelationship,
     ToolRelationshipEvidence,
     ToolSummaryCache,
+    UnresolvedAttributionEvidence,
     User,
     utcnow,
 )
@@ -278,24 +280,19 @@ def test_exact_handle_and_verified_shared_tool_promotes_toolforge_binding():
         session.add(toolforge_account(uid="alice-shell", developer_username="Alice", global_id=""))
         session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="alice-tool"))
         session.add(canonical_tool("toolforge-alice-tool", url="https://alice-tool.toolforge.org"))
-        people_index.replace_source_evidence(
-            session,
-            "toolforge-alice-tool",
-            "toolforge_toolsadmin",
-            [
-                {
-                    "display_name": "Alice",
-                    "toolforge_username": "Alice",
-                    "relationship_type": "maintainer",
-                    "method": "toolforge_maintainer",
-                    "verification_status": "verified",
-                    "confidence": 95,
-                    "evidence_payload": {
-                        "toolforgeToolName": "alice-tool",
-                        "profileUsername": "Alice",
-                    },
-                }
-            ],
+        session.add(
+            UnresolvedAttributionEvidence(
+                tool_name="toolforge-alice-tool",
+                observed_label="Alice",
+                normalized_label="alice",
+                relationship_type="maintainer",
+                source="toolforge_toolsadmin",
+                method="toolforge_maintainer",
+                evidence_key="alice-tool",
+                verification_status="verified",
+                confidence=95,
+                evidence_payload={"toolforgeToolName": "alice-tool", "profileUsername": "Alice"},
+            )
         )
 
     with db.session_scope() as session:
@@ -315,6 +312,34 @@ def test_exact_handle_and_verified_shared_tool_promotes_toolforge_binding():
             .count()
             == 1
         )
+
+
+def test_expired_unresolved_evidence_does_not_promote_toolforge_binding():
+    with db.session_scope() as session:
+        session.add(toolhub_account(username="Alice", global_id=""))
+        session.add(toolforge_account(uid="alice-shell", developer_username="Alice", global_id=""))
+        session.add(ToolforgeMembershipProjection(uid_number="9001", tool_name="alice-tool"))
+        session.add(canonical_tool("toolforge-alice-tool", url="https://alice-tool.toolforge.org"))
+        session.add(
+            UnresolvedAttributionEvidence(
+                tool_name="toolforge-alice-tool",
+                observed_label="Alice",
+                normalized_label="alice",
+                relationship_type="maintainer",
+                source="toolforge_toolsadmin",
+                method="toolforge_maintainer",
+                evidence_key="alice-tool",
+                verification_status="verified",
+                confidence=95,
+                expires_at=utcnow() - timedelta(seconds=1),
+            )
+        )
+
+    with db.session_scope() as session:
+        result = identity_graph.synchronize(session)
+
+    assert result["verified"] == 0
+    assert result["candidate"] == 1
 
 
 def test_multiple_developer_accounts_with_one_global_id_join_the_same_person():
