@@ -628,25 +628,31 @@ async function apiParamsFor(qs) {
 }
 
 test("api params: default (no query) → relevance default with no ordering", async () => {
-	assert.equal(await apiParamsFor(""), "page=1&page_size=24");
+	assert.equal(await apiParamsFor(""), "page=1&page_size=24&include_facets=false&view=card");
 });
 test("api params: q + sort=name + paging", async () => {
 	assert.equal(
 		await apiParamsFor("q=maps&sort=name&page=3&page_size=12"),
-		"q=maps&page=3&page_size=12&ordering=name"
+		"q=maps&page=3&page_size=12&ordering=name&include_facets=false&view=card"
 	);
 });
 test("api params: sort=complete → no ordering param", async () => {
-	assert.equal(await apiParamsFor("sort=complete"), "page=1&page_size=24");
+	assert.equal(await apiParamsFor("sort=complete"), "page=1&page_size=24&include_facets=false&view=card");
 });
 test("api params: sort=recent stays allowed (ordering kept)", async () => {
-	assert.equal(await apiParamsFor("sort=recent"), "page=1&page_size=24&ordering=-modified_date");
+	assert.equal(
+		await apiParamsFor("sort=recent"),
+		"page=1&page_size=24&ordering=-modified_date&include_facets=false&view=card"
+	);
 });
 test("api params: sort=name stays allowed (ordering=name)", async () => {
-	assert.equal(await apiParamsFor("sort=name"), "page=1&page_size=24&ordering=name");
+	assert.equal(await apiParamsFor("sort=name"), "page=1&page_size=24&ordering=name&include_facets=false&view=card");
 });
 test("api params: only *__term filters are forwarded (others dropped)", async () => {
-	assert.equal(await apiParamsFor("audiences__term=editor&extra=x"), "page=1&page_size=24&audiences__term=editor");
+	assert.equal(
+		await apiParamsFor("audiences__term=editor&extra=x"),
+		"page=1&page_size=24&audiences__term=editor&include_facets=false&view=card"
+	);
 });
 
 test("selected *__term marks the matching facet checkbox checked", async () => {
