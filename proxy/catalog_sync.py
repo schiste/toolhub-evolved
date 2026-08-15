@@ -278,14 +278,20 @@ def _dedupe_names(names: list[str]) -> list[str]:
     return list(dict.fromkeys(name.strip() for name in names if name.strip()))
 
 
-def _cancel_obsolete_cursor_recovery(state: ToolCatalogSyncState) -> int:
-    """Reset a superseded snapshot and return its staging generation."""
-    if not state.recent_cursor_recovery_required:
-        return 0
+def _reset_snapshot_cursor(state: ToolCatalogSyncState) -> int:
+    """Reset staged snapshot progress and return its generation for cleanup."""
     generation = int(state.snapshot_generation or 0)
     state.snapshot_next_page = 1
     state.snapshot_expected_count = 0
     state.snapshot_started_at = None
+    return generation
+
+
+def _cancel_obsolete_cursor_recovery(state: ToolCatalogSyncState) -> int:
+    """Reset a superseded snapshot and return its staging generation."""
+    if not state.recent_cursor_recovery_required:
+        return 0
+    generation = _reset_snapshot_cursor(state)
     state.recent_cursor_recovery_required = False
     return generation
 
@@ -335,8 +341,11 @@ def _mark_error(error: BaseException) -> None:
 def _prepare_recent_cursor_recovery(error: RecentCursorLostError) -> None:
     """Persist a pre-snapshot anchor without discarding still-visible events."""
     digests.capture_recent_rows(error.rows)
+    abandoned_snapshot_generation = 0
     with db.session_scope() as s:
         state = _state(s)
+        if not state.recent_cursor_recovery_required and state.snapshot_started_at is not None:
+            abandoned_snapshot_generation = _reset_snapshot_cursor(state)
         state.recent_pending_tools = _dedupe_names([*(state.recent_pending_tools or []), *_tool_names(error.rows)])
         state.recent_scan_page = 1
         state.recent_scan_latest_marker = error.latest_marker
@@ -344,6 +353,8 @@ def _prepare_recent_cursor_recovery(error: RecentCursorLostError) -> None:
         state.recent_cursor_recovery_required = True
         state.status = STATUS_ERROR
         state.last_error = clean_error(str(error))
+    if abandoned_snapshot_generation:
+        canonical_tools.discard_snapshot_stage(abandoned_snapshot_generation)
 
 
 def _store_page(page: int, page_size: int, rows: list[dict[str, Any]], *, has_next: bool, reconcile: bool) -> int:
@@ -555,10 +566,7 @@ def _restart_snapshot() -> None:
     """Discard only the incomplete cursor; last-known-good rows stay intact."""
     with db.session_scope() as s:
         state = _state(s)
-        generation = int(state.snapshot_generation or 0)
-        state.snapshot_next_page = 1
-        state.snapshot_expected_count = 0
-        state.snapshot_started_at = None
+        generation = _reset_snapshot_cursor(state)
     canonical_tools.discard_snapshot_stage(generation)
 
 

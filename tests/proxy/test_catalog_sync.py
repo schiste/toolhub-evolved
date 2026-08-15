@@ -402,6 +402,55 @@ def test_failed_cursor_recovery_keeps_anchor_for_resumable_snapshot(monkeypatch)
         assert state.status == "error"
 
 
+def test_cursor_recovery_replaces_only_a_preexisting_integrity_snapshot(monkeypatch):
+    visible = {"id": 2, "timestamp": "anchor", "content_type": "tool", "content_id": "visible-tool"}
+    error = catalog_sync.RecentCursorLostError(
+        "cursor lost",
+        rows=[visible],
+        latest_marker=catalog_sync._marker(visible),
+    )
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                snapshot_generation=7,
+                snapshot_next_page=3,
+                snapshot_expected_count=200,
+                snapshot_started_at=catalog_sync.utcnow(),
+            )
+        )
+
+    discarded = []
+    monkeypatch.setattr(catalog_sync.digests, "capture_recent_rows", lambda _rows: None)
+    monkeypatch.setattr(catalog_sync.canonical_tools, "discard_snapshot_stage", discarded.append)
+
+    catalog_sync._prepare_recent_cursor_recovery(error)
+
+    assert discarded == [7]
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.snapshot_next_page == 1
+        assert state.snapshot_expected_count == 0
+        assert state.snapshot_started_at is None
+        assert state.recent_cursor_recovery_required is True
+
+        state.snapshot_generation = 8
+        state.snapshot_next_page = 2
+        state.snapshot_expected_count = 100
+        state.snapshot_started_at = catalog_sync.utcnow()
+
+    catalog_sync._prepare_recent_cursor_recovery(error)
+
+    assert discarded == [7]
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.snapshot_generation == 8
+        assert state.snapshot_next_page == 2
+        assert state.snapshot_expected_count == 100
+        assert state.snapshot_started_at is not None
+
+
 def test_restored_recent_cursor_cancels_obsolete_snapshot_recovery(monkeypatch):
     previous_row = {"id": 1, "timestamp": "old"}
     previous = catalog_sync._marker(previous_row)
