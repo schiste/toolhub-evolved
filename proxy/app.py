@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Toolforge webservice for Toolhub Evolved.
 
-Serves the static single-page app, reverse-proxies read-only GET requests to
-the live Toolhub API at the same origin (so the browser can read live catalog
-data without hitting CORS — the upstream API sends no CORS headers), and hosts
-the site's own backend (backend/): Toolhub OAuth sign-in, the /v1 overlay API,
-and the official Toolhub write bridge over the project-specific database that
-complements the live catalog.
+Serves the static single-page app and its local Toolhub catalog replica, plus
+the site's own backend: Toolhub OAuth sign-in, the /v1 overlay API, and the
+official Toolhub write bridge. Public web requests never fetch Toolhub; only
+scheduled synchronizers and authenticated writes perform upstream I/O.
 
-The /api proxy is NOT an open proxy: requests only ever go to UPSTREAM/api/...
-and only GET. Official writes go through /v1/toolhub/* with a stored per-user
-OAuth grant; Evolved-only overlay writes land in the local database via /v1.
+The legacy /api surface is cache-only compatibility for developer examples.
+Official writes go through /v1/toolhub/* with a stored per-user OAuth grant;
+Evolved-only overlay writes land in the local database via /v1.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -426,7 +424,7 @@ def _rejected_proxy_request(path: str) -> Response | None:
 @app.route("/api/", defaults={"path": ""}, methods=_PROXY_METHODS)
 @app.route("/api/<path:path>", methods=_PROXY_METHODS)
 def api_proxy(path: str) -> Response:
-    """Read-only reverse proxy to the live Toolhub API (same-origin for the SPA)."""
+    """Serve a persisted Toolhub response without upstream request-time I/O."""
     rejected = _rejected_proxy_request(path)
     if rejected is not None:
         return rejected
@@ -437,14 +435,13 @@ def api_proxy(path: str) -> Response:
         return _cached_api_response(cached, "hit")
     stale = api_cache.get(url, allow_stale=True)
     if stale is not None:
-        _schedule_background_revalidation(url, stale)
-        return _cached_api_response(stale, "stale", upstream=_UPSTREAM_BACKGROUND)
-    upstream, payload, early = _fetch_upstream(url, stale)
-    if early is not None:
-        return early
-    if upstream is None or payload is None:
-        raise RuntimeError
-    return _relay_upstream_response(url, upstream, payload, stale)
+        return _cached_api_response(stale, "stale", upstream="none")
+    expired = api_cache.get_local(url)
+    if expired is not None:
+        return _cached_api_response(expired, "replica", upstream="none")
+    resp = Response('{"error":"local replica entry unavailable"}', status=503, content_type="application/json")
+    resp.headers["Cache-Control"] = "no-store"
+    return _with_proxy_diagnostics(resp, cache="miss", upstream="none")
 
 
 def _twin_is_current(packed: Path, plain: Path) -> bool:
