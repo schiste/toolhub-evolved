@@ -1,0 +1,19 @@
+{
+	"repo_summary": "Toolhub Evolved is a Toolforge-hosted Flask and JavaScript companion interface that serves a synchronized local Toolhub catalog, adds reviewed local projections, and publishes authenticated writes to official Toolhub.",
+	"hard_constraints": [
+		"Use the Aethyme broker for coordinated repository changes and submit verified commits before release.",
+		"Before merging into or pushing the default branch, state the exact source ref and target commit, ask the user for explicit confirmation, and wait. After confirmation, an agent may perform the verified fast-forward and push; confirmation does not waive broker gates, remote freshness checks, or fast-forward safety.",
+		"Never push or modify aethyme/integration directly; it is managed by broker promotion."
+	],
+	"validation_rules": [
+		"Run the smallest relevant test set before broader suites.",
+		"Before deployment, verify the production manifest and build; after deployment, verify the webservice and feature-specific health endpoints."
+	],
+	"commit_hygiene_notes": [
+		"Keep changes in small typed commits and include Problem, Decision, Rationale, and Validation for substantive commits."
+	],
+	"summon_policy_notes": [
+		"Load repo-onboarding first for broad or unfamiliar tasks and repo-act when moving from diagnosis into implementation."
+	],
+	"maintainer_markdown": "## Release Authorization\n\nBroker promotion verifies and assembles changes, but does not itself authorize publication. Immediately before a default-branch merge or push, report the exact verified source ref and commit and obtain explicit user confirmation. Once confirmed, perform only the stated fast-forward release, then deploy and report production verification."
+}
