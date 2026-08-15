@@ -61,6 +61,37 @@ def _relationship(tool_name, person_id, *, role=PERSON_REL_AUTHOR, status=AUTHOR
     )
 
 
+def test_person_slug_is_readable_immutable_and_extends_only_on_collision():
+    with db.session_scope() as s:
+        first = Person(
+            canonical_key="stable:first",
+            public_id="31e9abd5-fb61-42d8-96e4-ccbe3bb54ced",
+            display_name="Christophe",
+        )
+        people_index.ensure_person_public_slug(s, first)
+        s.add(first)
+        s.flush()
+
+        second = Person(
+            canonical_key="stable:second",
+            public_id="11111111-1111-1111-1111-11113bb54ced",
+            display_name="Christophe",
+        )
+        people_index.ensure_person_public_slug(s, second)
+        s.add(second)
+        s.flush()
+
+        assert first.public_slug == "christophe-4ced"
+        assert second.public_slug == "christophe-b54ced"
+        first.display_name = "Christophe Renamed"
+        assert people_index.ensure_person_public_slug(s, first) == "christophe-4ced"
+
+
+def test_person_slug_preserves_unicode_names_and_has_an_empty_name_fallback():
+    assert people_index.person_slug_candidates("Élodie 张", "00000000-0000-0000-0000-00000000ab12")[0] == "élodie-张-ab12"
+    assert people_index.person_slug_candidates("---", "00000000-0000-0000-0000-00000000ab12")[0] == "person-ab12"
+
+
 def test_ensure_person_never_moves_a_stable_identifier_it_does_not_own():
     """A stable identifier collision must never be silently reassigned.
 

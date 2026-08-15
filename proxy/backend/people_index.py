@@ -9,9 +9,11 @@ of those rows grant or replace upstream Toolhub permissions.
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, timedelta
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from sqlalchemy import and_, case, func, or_, select
 
@@ -84,6 +86,8 @@ RECENT_ACTIVITY_DAYS = 90
 ACTIVITY_STALE_DAYS = 1
 ACTIVE_CONTRIBUTION_DAYS = 30
 QUIET_CONTRIBUTION_DAYS = 180
+PERSON_SLUG_STEM_LENGTH = 72
+PERSON_SLUG_SUFFIX_LENGTHS = (4, 6, 8, 12, 32)
 
 
 @dataclass(frozen=True)
@@ -124,6 +128,65 @@ class PersonToolPage:
 
 def _clean(value: Any, limit: int = 255) -> str:  # noqa: ANN401 - upstream values are untrusted
     return str(value or "").strip()[:limit]
+
+
+def _person_slug_stem(display_name: str) -> str:
+    """Return a readable, Unicode-safe URL stem for one display name."""
+    normalized = unicodedata.normalize("NFKC", _clean(display_name)).casefold()
+    characters: list[str] = []
+    pending_separator = False
+    for character in normalized:
+        if character.isalnum():
+            if pending_separator and characters:
+                characters.append("-")
+            characters.append(character)
+            pending_separator = False
+        else:
+            pending_separator = True
+    return "".join(characters).strip("-")[:PERSON_SLUG_STEM_LENGTH].rstrip("-") or "person"
+
+
+def person_slug_candidates(display_name: str, public_id: str) -> tuple[str, ...]:
+    """Build deterministic candidates, extending the opaque suffix on collision."""
+    stem = _person_slug_stem(display_name)
+    opaque = "".join(character for character in _clean(public_id, 64).casefold() if character.isalnum())
+    if not opaque:
+        opaque = hashlib.sha256(_clean(public_id, 255).encode()).hexdigest()
+    suffixes = [opaque[-length:] for length in PERSON_SLUG_SUFFIX_LENGTHS if len(opaque) >= length]
+    if not suffixes:
+        suffixes = [opaque]
+    candidates = []
+    for suffix in dict.fromkeys(suffixes):
+        candidate_stem = stem[: 95 - len(suffix)].rstrip("-") or "person"
+        candidates.append(f"{candidate_stem}-{suffix}")
+    return tuple(candidates)
+
+
+def ensure_person_public_slug(s: Session, person: Person) -> str:
+    """Assign one immutable canonical slug, extending its suffix if necessary."""
+    existing = _clean(person.public_slug, 96)
+    if existing:
+        return existing
+    if not person.public_id:
+        person.public_id = str(uuid4())
+    for candidate in person_slug_candidates(person.display_name, person.public_id):
+        statement = select(Person.id).where(func.lower(Person.public_slug) == candidate.casefold())
+        if person.id is not None:
+            statement = statement.where(Person.id != person.id)
+        if s.scalar(statement) is None:
+            person.public_slug = candidate
+            return candidate
+    # A unique public UUID makes this effectively unreachable, but retaining a
+    # longer digest keeps slug creation total even for manually imported IDs.
+    digest = hashlib.sha256(person.public_id.encode()).hexdigest()[:32]
+    candidate_stem = _person_slug_stem(person.display_name)[:63].rstrip("-") or "person"
+    person.public_slug = f"{candidate_stem}-{digest}"
+    return person.public_slug
+
+
+def canonical_person_slug(person: Person) -> str:
+    """Read the persisted slug, with a deterministic compatibility fallback."""
+    return _clean(person.public_slug, 96) or person_slug_candidates(person.display_name, person.public_id)[0]
 
 
 def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrusted
@@ -508,11 +571,13 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
                 display=display,
                 display_scope=display_scope,
             ),
+            public_id=str(uuid4()),
             display_name=display,
             identity_quality="stable"
             if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number
             else ("handle" if toolhub_username or toolforge_username or wiki_username else "display_name"),
         )
+        ensure_person_public_slug(s, person)
         s.add(person)
         s.flush()
     if display and (not person.display_name or person.identity_quality == "display_name"):
@@ -526,6 +591,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         )
     elif person.identity_quality == "display_name" and (toolhub_username or toolforge_username or wiki_username):
         person.identity_quality = "handle"
+    ensure_person_public_slug(s, person)
     person.updated_at = checked_at or utcnow()
     s.flush()
     if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number:
@@ -1348,8 +1414,11 @@ def _person_base_payload(
             else "profile"
         )
     )
+    slug = canonical_person_slug(person)
     return {
         "id": person.public_id,
+        "slug": slug,
+        "canonicalPath": f"/people/{slug}",
         "displayName": person.display_name,
         "identityQuality": identity_quality,
         "identifiers": identifiers,
@@ -1685,10 +1754,18 @@ def _compact_profile_tool(
 
 def person_detail(
     s: Session,
-    public_id: str,
+    person_reference: str,
     tool_page: PersonToolPage | None = None,
 ) -> dict[str, Any] | None:
-    person = s.execute(select(Person).where(Person.public_id == _clean(public_id, 36))).scalar_one_or_none()
+    reference = _clean(person_reference, 96)
+    person = s.execute(
+        select(Person).where(
+            or_(
+                Person.public_id == reference,
+                func.lower(Person.public_slug) == reference.casefold(),
+            )
+        )
+    ).scalar_one_or_none()
     if person is None or person.id not in public_identity_ids(s, {person.id}):
         return None
     requested = tool_page or PersonToolPage()

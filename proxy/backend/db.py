@@ -198,6 +198,7 @@ def _schema_additions() -> dict[str, dict[str, str]]:
             # Filled by the one-off data migration. UUID generation is kept out
             # of worker-start DDL because it is proportional to row count.
             "public_id": "VARCHAR(36) NULL",
+            "public_slug": "VARCHAR(96) NULL",
         },
         "person_tool_relationships": {
             "verified_at": "DATETIME NULL",
