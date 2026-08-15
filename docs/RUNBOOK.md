@@ -318,7 +318,10 @@ several-thousand-tool backfill over repeated cycles without running inside web
 requests.
 
 The normalized people view is available from `GET /v1/people/tools/<name>/`.
-Person-centric reads use `GET /v1/people/<public_id>/` and `GET /v1/people/`.
+Person-centric reads use `GET /v1/people/<person_slug_or_public_id>/` and
+`GET /v1/people/`. New links use the immutable `slug` and `canonicalPath`
+returned by person projections; UUID paths remain permanent compatibility
+inputs and the frontend replaces them with the canonical readable path.
 Legacy `/by/<name>` routes call
 `GET /v1/people/resolve/?handle=<name>`. The resolver returns `resolved` only
 when one public person owns the exact current Toolhub, Toolforge, or wiki
