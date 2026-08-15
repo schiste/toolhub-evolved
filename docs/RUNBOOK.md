@@ -746,9 +746,10 @@ in [DIGESTS.md](DIGESTS.md). Its publisher runs at 06:15 UTC and catches up all
 missing closed non-empty periods; it never creates an empty edition.
 
 `projection-refresh` is the six-hour projection coordinator. It reuses input
-generations completed within six hours, runs stale Toolhub, Toolforge, and
-catalog inputs concurrently, then performs one account/identity graph pass and
-computes `/v1/statistics/` ahead of user traffic. Toolinfo source reconciliation is content-hash
+generations completed within six hours, runs stale Toolhub and Toolforge inputs
+plus the incremental catalog path concurrently, then performs one
+account/identity graph pass and computes `/v1/statistics/` ahead of user
+traffic. It never initiates a complete catalog download. Toolinfo source reconciliation is content-hash
 incremental; a changed reconciliation rules version forces one full pass, and
 `source-attestations-full` provides an additional weekly full-audit backstop.
 The full-source jobs have a 900-second timeout while the normal incremental
@@ -864,6 +865,12 @@ safety pass over roughly a month for a catalog of several thousand tools while
 keeping normal incremental traffic small. The `tool_catalog_sync_state` row
 records the backfill and reconciliation cursors, recent marker, retry queue,
 completed cycles, success/error state, and timestamps.
+
+`catalog-integrity` is the separate twice-monthly backstop. It builds a new
+complete generation, checks that the upstream count stayed stable throughout
+pagination, and publishes it atomically; a moving catalog fails that candidate
+generation without disturbing the last complete mirror. Ordinary deploys and
+projection refreshes do not invoke this full-snapshot path.
 
 The public graph endpoint never fetches Toolhub synchronously. It derives a
 bounded nearest-neighbor graph from this shared canonical cache, reports facet

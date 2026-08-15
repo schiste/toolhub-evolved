@@ -86,11 +86,15 @@ def _sync_plan(max_age_seconds: int, *, force: bool) -> dict[str, bool]:
         }
 
 
-def _parallel_sync(plan: dict[str, bool], max_age_seconds: int) -> dict[str, dict[str, Any]]:
+def _parallel_sync(plan: dict[str, bool]) -> dict[str, dict[str, Any]]:
     tasks: dict[str, Callable[[], dict[str, Any]]] = {
         "toolhubAccounts": account_sync.run_complete,
         "toolforgeAccounts": toolforge_account_sync.run,
-        "catalog": lambda: catalog_sync.run_complete(max_age_seconds=max_age_seconds),
+        # Normal projection publication must never turn a stale input marker
+        # into a catalog-wide download. The incremental synchronizer consumes
+        # recent changes and advances the rolling reconciliation cursor; the
+        # separately scheduled integrity job owns complete snapshots.
+        "catalog": catalog_sync.run,
     }
     results: dict[str, dict[str, Any]] = {
         name: {"status": "fresh", "cacheHit": True} for name, should_run in plan.items() if not should_run
@@ -172,7 +176,7 @@ def run(
     try:
         report["failurePhase"] = "parallel-sync"
         plan = _sync_plan(max_age_seconds, force=force)
-        sync, duration = _timed(lambda: _parallel_sync(plan, max_age_seconds))
+        sync, duration = _timed(lambda: _parallel_sync(plan))
         report["stages"]["parallelSync"] = {"durationMs": duration, "plan": plan, "results": sync}
         _persist(report)
 

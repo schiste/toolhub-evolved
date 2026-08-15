@@ -49,6 +49,16 @@
   timeout: 300
   emails: onfailure
 
+- name: catalog-integrity
+  # A complete consistency-checked snapshot is an integrity backstop, not the
+  # normal ingestion path. Twice monthly is close to a two-week cadence while
+  # keeping the schedule deterministic across month boundaries.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name catalog-integrity --stale-after 3600 -- /usr/bin/env CATALOG_SYNC_PAGE_SIZE=100 CATALOG_SYNC_MIN_INTERVAL_SECONDS=3 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/catalog_sync.py --complete
+  image: python3.13
+  schedule: "17 3 1,15 * *"
+  timeout: 1800
+  emails: onfailure
+
 - name: projection-refresh
   # Refresh independent official inputs concurrently, then publish one atomic
   # identity/source projection and precompute catalog statistics. Fresh inputs
