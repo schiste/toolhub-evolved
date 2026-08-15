@@ -23,9 +23,8 @@ claude mcp add --transport http toolhub-discovery https://toolhub-evolved.toolfo
 
 If the `search_tools` / `facet_tools` tools are not available in this session,
 tell the user to run that command and STOP. Do not substitute curl, fetch, or
-any other transport: the server carries the User-Agent, caching, and rate-limit
-obligations for upstream Wikimedia traffic, and a client that bypasses it is
-generating uncredited load against Wikimedia infrastructure.
+any other transport: the MCP server is the supported contract, applies its own
+rate limit, and serves one atomically synchronized local catalog generation.
 
 ## When to invoke
 
@@ -65,18 +64,15 @@ These are the judgment calls the tool descriptions cannot make for you.
 - **Absence is weak evidence.** `search_tools` matches text, not behavior, and
   plenty of real tools are unregistered or live only as on-wiki scripts. Say
   "I did not find one", never "there isn't one".
-- **Two facet families, one caveat.** `dependency`, `api`, and `technology` are
-  detected by scanning source, so they only cover tools with a scanned
-  repository — always restate the returned `coverage` numbers and phrase gaps
-  as "no _scanned_ tool matches". `tool_type`, `keyword`, `wiki`, `license`,
-  `task`, and `audience` come from catalog metadata and cover everything, so do
-  not attach the scan caveat to them. `task` and `audience` are filled in for
-  only a small minority of tools: use them to narrow, never to conclude
-  absence.
-- **If search is unavailable, say so and stop that half.** `search_tools` has
-  no local fallback by design. Do not substitute facet results and present the
-  result as a completed review — an incomplete review that reads as complete
-  causes exactly the duplicated work this skill prevents.
+- **Two facet families, one caveat.** `dependency`, `api`, and
+  `detected_technology` are detected by scanning source, so they only cover
+  tools with a scanned repository — always restate the returned `coverage`
+  numbers and phrase gaps as "no _scanned_ tool matches". `technology` remains
+  a legacy alias for `detected_technology`. `declared_technology`, `tool_type`,
+  `keyword`, `wiki`, `license`, `ui_language`, `task`, and `audience` come from
+  catalog metadata, so do not attach the scan caveat to them. `task` and
+  `audience` are filled in for only a small minority of tools: use them to
+  narrow, never to conclude absence.
 - **Deprecated tools are still prior art.** Flag their status; never omit them.
   A dead tool that did the idea is evidence about the idea.
 - **Adoption is not quality.** "14 of 20 scanned tools use X" means X fits the

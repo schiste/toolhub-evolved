@@ -21,6 +21,7 @@ import * as crawlerView from "../../public_html/views/crawler.js";
 import * as auditView from "../../public_html/views/audit.js";
 import * as staticViews from "../../public_html/views/static.js";
 import * as styleguide from "../../public_html/views/styleguide.js";
+import * as mcpServer from "../../public_html/views/mcp-server.js";
 import * as session from "../../public_html/lib/core/session.js";
 import * as store from "../../public_html/lib/core/store.js";
 
@@ -74,6 +75,9 @@ vi.mock("../../public_html/views/static.js", async (importOriginal) => {
 vi.mock("../../public_html/views/experiments.js", () => ({ viewExperiments: vi.fn(() => ({ tag: "experiments" })) }));
 vi.mock("../../public_html/views/graph.js", () => ({ viewGraph: vi.fn(() => ({ tag: "graph" })) }));
 vi.mock("../../public_html/views/styleguide.js", () => ({ viewStyleguide: vi.fn(() => ({ tag: "styleguide" })) }));
+vi.mock("../../public_html/views/mcp-server.js", () => ({
+	viewMcpServer: vi.fn(() => ({ tag: "mcp-server" }))
+}));
 vi.mock("../../public_html/views/recent.js", () => ({ viewRecent: vi.fn(() => ({ tag: "recent" })) }));
 vi.mock("../../public_html/views/members.js", () => ({ viewMembers: vi.fn(() => ({ tag: "members" })) }));
 vi.mock("../../public_html/views/crawler.js", () => ({ viewCrawler: vi.fn(() => ({ tag: "crawler" })) }));
@@ -311,12 +315,14 @@ test("dispatch routes the ungated ROUTES entries to their views", async () => {
 	assert.deepEqual(await at("/api-docs"), { tag: "apidocs" });
 	assert.deepEqual(await at("/contribute"), { tag: "contribute" });
 	assert.deepEqual(await at("/experiments"), { tag: "experiments" });
+	assert.deepEqual(await at("/mcp-server"), { tag: "mcp-server" });
 	assert.deepEqual(await at("/styleguide"), { tag: "styleguide" });
 	assert.equal(lists.viewLists.mock.calls.length, 2); // lists + published-lists
 	assert.equal(recentView.viewRecent.mock.calls.length, 1);
 	assert.equal(membersView.viewMembers.mock.calls.length, 1);
 	assert.equal(crawlerView.viewCrawler.mock.calls.length, 1);
 	assert.equal(auditView.viewAudit.mock.calls.length, 1);
+	assert.equal(mcpServer.viewMcpServer.mock.calls.length, 1);
 });
 
 test("dispatch ROUTES sign-in stubs use their exact copy", async () => {

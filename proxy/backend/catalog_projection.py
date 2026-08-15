@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import catalog_facets, db, wikimedia_urls
+from backend import catalog_facets, db, facet_names, wikimedia_urls
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
@@ -34,7 +34,10 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-PROJECTION_VERSION = 3
+# 4: purpose annotations (tasks, audiences) are lifted out of `annotations`.
+# Version 3 was already used for Wikimedia user-script maintainership, so
+# existing version-3 rows must all re-project.
+PROJECTION_VERSION = 4
 MAX_REFRESH_TOOLS = 500
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
@@ -70,6 +73,9 @@ SCALAR_FIELDS = (
     "toolinfo_url",
 )
 PROJECTED_FIELDS = (*SCALAR_FIELDS, *LIST_FIELDS)
+# Toolhub serves these purpose fields only under `annotations`. Fields with a
+# top-level counterpart deliberately stay out so source precedence is stable.
+ANNOTATION_ONLY_FIELDS = ("tasks", "audiences")
 URL_FIELDS = {
     "url",
     "repository",
@@ -81,16 +87,7 @@ URL_FIELDS = {
     "translate_url",
     "toolinfo_url",
 }
-FACET_FIELDS = {
-    "tool_type": "tool_type",
-    "keywords": "keywords",
-    "for_wikis": "wiki",
-    "technology_used": "technology",
-    "tasks": "tasks",
-    "audiences": "audiences",
-    "available_ui_languages": "ui_language",
-    "license": "license",
-}
+FACET_FIELDS = facet_names.PROJECTED_FIELD_TO_STORAGE
 SOURCE_CONFIDENCE = {
     SOURCE_CANONICAL: 100,
     SOURCE_CRAWLER: 95,
@@ -357,6 +354,19 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
     return sources
 
 
+def _lift_purpose_annotations(payload: dict[str, Any]) -> dict[str, Any]:
+    """Copy Toolhub's annotation-only purpose fields to the merge boundary."""
+    annotations = payload.get("annotations")
+    if not isinstance(annotations, dict):
+        return payload
+    lifted = {
+        field: annotations[field]
+        for field in ANNOTATION_ONLY_FIELDS
+        if not payload.get(field) and annotations.get(field)
+    }
+    return {**payload, **lifted} if lifted else payload
+
+
 def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in one ordered pass.
     name: str, sources: list[dict[str, Any]]
 ) -> tuple[dict, dict, dict, dict]:
@@ -366,7 +376,7 @@ def _assemble(  # noqa: C901, PLR0912 - precedence and evidence must remain in o
     curations: dict[str, Any] = {}
 
     for source_row in sources:
-        payload = source_row["payload"]
+        payload = _lift_purpose_annotations(source_row["payload"])
         source = source_row["source"]
         observed = _iso(source_row.get("observed"))
         if observed:

@@ -673,6 +673,7 @@ export const STATIC = {
 		<ul>
 			<li>${tWithElements("static.api.interactiveDocsItem", "Browse the interactive documentation at $1.", { html: ext("https://toolhub.wikimedia.org/api-docs", "toolhub.wikimedia.org/api-docs") })}</li>
 			<li>${tWithElements("static.api.evolvedApiDocsItem", "Use this prototype's $1 for read-only examples, response inspection, and schema pointers.", { html: `<a href="/api-docs">${esc(t("static.api.apiDocsPage", "API explorer"))}</a>` })}</li>
+			<li>${tWithElements("static.api.mcpItem", "Connect AI assistants to the local catalog through the read-only $1.", { html: `<a href="/mcp-server">${esc(t("static.api.mcpPage", "MCP server"))}</a>` })}</li>
 			<li>${tWithElements("static.api.openApiItem", "The OpenAPI schema and endpoints live under $1.", { html: ext("https://toolhub.wikimedia.org/api/", "/api/") })}</li>
 			<li>${tWithElements("static.api.writeAccessItem", "Read access is anonymous; creating or editing records uses your Wikimedia OAuth identity. For example, $1 adds a tool.", { html: code("POST /api/tools/") })}</li>
 		</ul>`
@@ -811,6 +812,7 @@ export async function viewApiDocs() {
 				${linkCard(icon("code"), t("static.apiDocs.toolinfoSchema", "toolinfo JSON Schema"), t("static.apiDocs.toolinfoSchemaDesc", "Open the official 1.2.2 schema source used for crawled toolinfo.json files."), TOOLINFO_SCHEMA_URL)}
 				${linkCard(icon("tools"), t("static.apiDocs.toolinfoFieldReference", "Toolinfo field reference"), t("static.apiDocs.toolinfoFieldReferenceDesc", "Read the field meanings, core versus annotation boundary, and controlled values."), TOOLINFO_DATA_MODEL_URL)}
 				${proxyCard(icon("globe"), t("static.apiDocs.apiRoot", "API root"), t("static.apiDocs.apiRootDesc", "Browse the proxied endpoint index used by this prototype."), "/api/")}
+				${linkCard(icon("tools"), t("static.apiDocs.mcpServer", "MCP server"), t("static.apiDocs.mcpServerDesc", "Connect an AI assistant to four local, read-only catalog discovery tools and a prior-art review prompt."), "/mcp-server", true)}
 			</div>
 			${renderApiExplorer()}
 			<h2 class="contribute__h2">${t("static.apiDocs.toolinfoSchemaHeading", "toolinfo.json schema")}</h2>

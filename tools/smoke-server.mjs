@@ -151,6 +151,7 @@ function api(req, res, pathname) {
 	}
 	if (localPath === "/api/ui/home/") return json(res, {});
 	if (localPath === "/api/search/tools/") return json(res, { count: tools.length, facets, results: tools });
+	if (localPath === "/api/search/facets/") return json(res, { facets });
 	if (localPath === "/api/lists/") return json(res, { count: 1, results: [list] });
 	if (localPath === "/api/lists/featured-toolforge/") return json(res, list);
 	if (/^\/api\/tools\/[^/]+\/projection\/$/.test(localPath)) return json(res, {});

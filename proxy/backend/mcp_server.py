@@ -20,10 +20,11 @@ from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 
-from backend import canonical_tools, catalog_read, db, security, v1_facets
+from backend import canonical_tools, catalog_read, db, facet_names, security, v1_facets
 from backend import tool_facets as facets_backend
 
 mcp_bp = Blueprint("mcp", __name__)
+DOCS_PATH = "/mcp-server"
 
 SERVER_INFO = {"name": "toolhub-evolved", "version": "1.0.0"}
 CURRENT_PROTOCOL_VERSION = "2026-07-28"
@@ -99,13 +100,12 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "name": "search_tools",
         "description": (
             "Relevance-ranked search over all ~4,500 Wikimedia tools in the Toolhub "
-            "catalog, served by Toolhub's own search index. Covers the full catalog. "
+            "catalog, served from Toolhub Evolved's synchronized local replica. Covers "
+            "the latest complete catalog generation without request-time upstream calls. "
             "Keep queries SHORT and distinctive (2-3 content words): terms are matched "
             "independently and scored, so extra common words ('wikipedia', 'check', "
             "'tool') pull in unrelated results and push good ones down. Prefer several "
-            "narrow queries with different vocabulary over one long descriptive one. "
-            "If this tool reports search is unavailable, say so plainly rather than "
-            "substituting weaker evidence - facet_tools and get_tool still work."
+            "narrow queries with different vocabulary over one long descriptive one."
         ),
         "inputSchema": {
             "type": "object",
@@ -122,13 +122,15 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "Find tools by verified technical signals extracted from their source code: "
             "dependency (package name, optionally ecosystem-prefixed like 'pypi:pywikibot'), "
             "api (one of: mediawiki-action-api, wikibase-api, wikidata-query-service, "
-            "mediawiki-rest-api, toolforge, commons-upload), technology (a language detected "
-            "in the source, e.g. 'python'). Filters AND together. These three are DETECTED "
+            "mediawiki-rest-api, toolforge, commons-upload), detected_technology (a language "
+            "detected in source, e.g. 'python'). The legacy technology alias has the same "
+            "detected meaning. Filters AND together. These three are DETECTED "
             "from source code, so they cover only tools with a scanned repository — check the "
             "returned coverage field; an empty result is not proof that no such tool exists. "
             "You can also filter on DECLARED catalog metadata, which covers every tool: "
-            "tool_type (e.g. 'bot', 'web app'), keyword, wiki, license, and — for what a "
-            "tool is FOR rather than what it is built from — task and audience. Those two "
+            "declared_technology, tool_type (e.g. 'bot', 'web app'), keyword, wiki, license, "
+            "ui_language, and — for what a tool is FOR rather than what it is built from — "
+            "task and audience. Those two "
             "are only filled in for a small minority of tools, so use them to narrow a "
             "search, never to conclude that nothing does a thing."
         ),
@@ -137,13 +139,21 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "properties": {
                 "dependency": {"type": "array", "items": {"type": "string"}},
                 "api": {"type": "array", "items": {"type": "string"}},
-                "technology": {"type": "array", "items": {"type": "string"}},
+                "detected_technology": {"type": "array", "items": {"type": "string"}},
+                "technology": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "deprecated": True,
+                    "description": "Legacy alias for detected_technology",
+                },
+                "declared_technology": {"type": "array", "items": {"type": "string"}},
                 "tool_type": {"type": "array", "items": {"type": "string"}},
                 "keyword": {"type": "array", "items": {"type": "string"}},
                 "wiki": {"type": "array", "items": {"type": "string"}},
                 "license": {"type": "array", "items": {"type": "string"}},
                 "task": {"type": "array", "items": {"type": "string"}},
                 "audience": {"type": "array", "items": {"type": "string"}},
+                "ui_language": {"type": "array", "items": {"type": "string"}},
                 "limit": {"type": "integer", "minimum": 1, "maximum": _MAX_TOOL_RESULTS, "default": 25},
             },
         },
@@ -153,9 +163,10 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "description": (
             "List the distinct values of one facet type ranked by how many tools carry "
             "each — the ecosystem's actual adoption ranking. Call before facet_tools to "
-            "learn what values exist. Detected types (scanned repos only): dependency, "
-            "wikimedia_api, detected_technology. Declared types (whole catalog): tool_type, "
-            "keywords, wiki, license — plus tasks and audiences, which are sparsely "
+            "learn what values exist. Detected types (scanned repos only): dependency, api, "
+            "detected_technology (technology is a legacy alias). Declared types: "
+            "declared_technology, tool_type, keyword, wiki, license, ui_language, task, and audience. "
+            "The last two are sparsely "
             "filled but the only values describing what a tool is FOR. The response "
             "says which family a type belongs to."
         ),
@@ -219,8 +230,9 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
         filters, _ = v1_facets.normalized_filters(s, raw_by_param)
         if not filters:
             msg = (
-                "supply at least one filter: dependency, api, technology (detected), "
-                "or tool_type, keyword, wiki, license, task, audience (declared)"
+                "supply at least one filter: dependency, api, detected_technology "
+                "(or legacy technology), declared_technology, tool_type, keyword, "
+                "wiki, license, ui_language, task, or audience"
             )
             raise _ToolError(msg)
         matches = facets_backend.tools_matching_facets(s, filters, limit=_limit_from(arguments, 25))
@@ -235,9 +247,10 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
-    facet_type = str(arguments.get("type") or "").strip().casefold()
-    if facet_type not in set(v1_facets.FILTER_PARAMS.values()):
-        valid_types = ", ".join(sorted(set(v1_facets.FILTER_PARAMS.values())))
+    public_type = str(arguments.get("type") or "").strip().casefold()
+    facet_type = facet_names.to_storage(public_type)
+    if facet_type is None:
+        valid_types = ", ".join(sorted(v1_facets.FILTER_PARAMS))
         msg = f"type must be one of: {valid_types}"
         raise _ToolError(msg)
     # Through the same cached accessor as the REST route (Phase 3 Task 3) —
@@ -245,7 +258,7 @@ def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
     listing = v1_facets.cached_facet_values(facet_type, limit=facets_backend.DEFAULT_VALUE_RESULTS)
     disclosed = v1_facets.cached_coverage()
     return {
-        "type": facet_type,
+        "type": public_type,
         "values": listing["values"],
         "totalValues": listing["totalValues"],
         "coverage": disclosed,
@@ -346,6 +359,19 @@ def mcp_endpoint() -> Response | tuple[Response, int]:
         return _error(req_id, INTERNAL_ERROR, "internal error")
 
 
+@mcp_bp.route("/mcp", methods=["GET"])
+def mcp_endpoint_docs() -> tuple[Response, int]:
+    """Keep the transport 405 while pointing browser visitors to its guide."""
+    body = jsonify(
+        {
+            "error": "this endpoint speaks MCP over POST and offers no SSE stream",
+            "documentation": DOCS_PATH,
+        }
+    )
+    body.headers["Allow"] = "POST"
+    return body, 405
+
+
 _PRIOR_ART_PROMPT = (
     "You are evaluating a greenfield tool idea for the Wikimedia ecosystem.\n\n"
     "## The Idea\n\n"
@@ -359,15 +385,17 @@ _PRIOR_ART_PROMPT = (
     "~4,500-tool catalog. Keep queries short and distinctive (2-3 content words); "
     "longer queries introduce noise. Prefer several narrow queries with different "
     "vocabulary.\n\n"
-    "2. **facet_tools(dependency=[], api=[], technology=[], tool_type=[], keyword=[], "
-    "wiki=[], license=[], task=[], audience=[], limit=25)**: Find tools by technical signals (detected "
-    "dependency packages and APIs used) or catalog metadata (declared types, keywords, "
-    "wikis, licenses). Check the returned `coverage` field — an empty result may "
-    "reflect limited catalog scanning, not absence of tools.\n\n"
+    "2. **facet_tools(dependency=[], api=[], detected_technology=[], "
+    "declared_technology=[], tool_type=[], keyword=[], wiki=[], license=[], "
+    "ui_language=[], task=[], audience=[], limit=25)**: Find tools by technical "
+    "signals (detected packages, APIs, and languages) or declared catalog metadata. "
+    "The legacy `technology` parameter remains an alias for `detected_technology`. "
+    "Check the returned `coverage` field — an empty detected result may reflect "
+    "limited repository scanning, not absence of tools.\n\n"
     "3. **list_facet_values(type)**: List adoption-ranked values of a facet type "
-    "before calling facet_tools. Supported types: dependency, wikimedia_api, "
-    "detected_technology (detected in scanned repos), tool_type, keywords, wiki, "
-    "license, tasks, audiences (declared metadata).\n\n"
+    "before calling facet_tools. Canonical public types: dependency, api, "
+    "detected_technology (detected in scanned repos), declared_technology, "
+    "tool_type, keyword, wiki, license, ui_language, task, and audience.\n\n"
     "## Methodology\n\n"
     "1. **Characterize** your idea in 2-3 alternate phrasings, predicting:\n"
     "   - Likely Wikimedia APIs it would call (mediawiki-action-api, wikibase-api, "
