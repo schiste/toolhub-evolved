@@ -1,0 +1,20 @@
+{
+	"_schema": "/toolinfo/1.2.2",
+	"_language": "en",
+	"name": "toolforge-example",
+	"title": "Example",
+	"description": "Helps Wikimedians complete a specific task and explains when to use it.",
+	"url": "https://example.toolforge.org/",
+	"author": [
+		{
+			"name": "Example developer",
+			"wiki_username": "Example developer",
+			"developer_username": "example"
+		}
+	],
+	"repository": "https://gitlab.wikimedia.org/toolforge-repos/example",
+	"license": "GPL-3.0-or-later",
+	"tool_type": "web app",
+	"for_wikis": ["*"],
+	"available_ui_languages": ["en"]
+}
