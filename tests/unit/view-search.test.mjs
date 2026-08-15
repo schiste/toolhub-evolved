@@ -427,70 +427,25 @@ test("search hides an upstream index hit absent from the canonical snapshot", as
 	assert.ok(result.html.includes("Showing 1-1 of 1 tool"));
 });
 
-test("search serves local canonical results first on a cold query, then upgrades to live", async () => {
+test("search renders the paginated local replica response directly", async () => {
 	setUrl("q=cite");
-	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
-	h.cachedCanonicalTools.mockImplementation(async (options = {}) =>
-		options.names
-			? options.names.map((name) => cachedTool(name, { title: name }))
-			: [cachedTool("cached-cite", { title: "Cached Cite" })]
-	);
-	// Live is slow; the local answer must not wait for it.
-	let resolveLive;
-	h.apiGet.mockReturnValue(
-		new Promise((resolve) => {
-			resolveLive = resolve;
-		})
-	);
+	h.apiGet.mockResolvedValue({ results: [rawTool("local-cite", { title: "Local Cite" })], count: 1, facets: FACETS });
+	h.cachedCanonicalTools.mockResolvedValue([cachedTool("local-cite", { title: "Local Cite" })]);
 
-	const first = await search.viewSearch();
-	assert.ok(first.html.includes('data-tool="cached-cite"'), "local results paint before Toolhub answers");
-	assert.ok(first.html.includes("showing saved results while Toolhub loads"));
-
-	// Once live lands it is served instead, without the interim note.
-	resolveLive({ results: [rawTool("live-cite", { title: "Live Cite" })], count: 1, facets: FACETS });
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	h.apiGet.mockResolvedValue({ results: [rawTool("live-cite", { title: "Live Cite" })], count: 1, facets: FACETS });
-	h.apiCached.mockReturnValue(true); // the live response is cached now
-	const second = await search.viewSearch();
-	assert.ok(second.html.includes('data-tool="live-cite"'));
-	assert.ok(!second.html.includes("showing saved results while Toolhub loads"));
+	const result = await search.viewSearch();
+	assert.ok(result.html.includes('data-tool="local-cite"'));
+	assert.ok(!result.html.includes("while Toolhub loads"));
 });
 
-test("search falls back to cached canonical tools when live Toolhub search fails", async () => {
+test("search falls back to the last canonical generation when the local query fails", async () => {
 	setUrl("q=cite");
-	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
 	h.apiGet.mockRejectedValue(new Error("down"));
 	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-cite", { title: "Cached Cite" })]);
 
-	// Cold query: local paints first, optimistically.
-	const first = await search.viewSearch();
+	const result = await search.viewSearch();
 	assert.deepEqual(h.cachedCanonicalTools.mock.calls[0], [{ q: "cite", limit: 24 }]);
-	assert.ok(first.html.includes('data-tool="cached-cite"'));
-
-	// The live failure settles, and the re-render states it plainly rather than
-	// leaving a "loading" note that will never resolve.
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	const second = await search.viewSearch();
-	assert.ok(second.html.includes("showing saved Toolhub data"));
-	assert.ok(!second.html.includes("showing saved results while Toolhub loads"));
-	assert.ok(second.html.includes('data-tool="cached-cite"'));
-});
-
-test("a failed live search does not loop back into the local-first path", async () => {
-	setUrl("q=loopcheck");
-	h.apiCached.mockReturnValue(false); // cold: nothing cached for this query
-	h.apiGet.mockRejectedValue(new Error("down"));
-	h.cachedCanonicalTools.mockResolvedValue([cachedTool("cached-loop", { title: "Cached Loop" })]);
-
-	await search.viewSearch();
-	await new Promise((resolve) => setTimeout(resolve, 0));
-	// Every later render takes the normal path and reports the failure, rather
-	// than optimistically repainting local results forever.
-	for (let i = 0; i < 3; i += 1) {
-		const again = await search.viewSearch();
-		assert.ok(again.html.includes("showing saved Toolhub data"), `render ${i} must report the failure`);
-	}
+	assert.ok(result.html.includes("showing the last published catalog generation"));
+	assert.ok(result.html.includes('data-tool="cached-cite"'));
 });
 
 test("search sort=complete orders by completeness with title tiebreak", async () => {

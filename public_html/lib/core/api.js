@@ -46,7 +46,7 @@ export function fetchRead(input, init = {}) {
 }
 
 /* Tool cache for O(1) detail / quick-view lookups; filled by normalizeTool()
-   as live data arrives (search results, lists, tool pages). No snapshot. */
+   as local replica data arrives (search results, lists, tool pages). */
 /** @type {Record<string, Tool>} */
 export const INDEX = {};
 const OVERLAY_META_KEYS = new Set([
@@ -126,7 +126,7 @@ export function applyToolOverlay(o) {
 	return o;
 }
 // Build a compact tool object from a locally-registered record (the project
-// database that complements the live catalog), then overlay edits.
+// database that complements the replicated catalog), then overlay edits.
 /**
  * @param {string} name
  * @param {Record<string, any>} rec
@@ -183,13 +183,13 @@ export function statusOf(t) {
 			? { level: "yellow", label: "Experimental" }
 			: { level: "green", label: "Healthy" };
 }
-/* ===================================================================== LIVE API
-   Every read goes through the same-origin proxy (/api → toolhub.wikimedia.org/api).
-   Tool/list objects are normalized to the compact shape the views/cards expect.
-   There is no bundled snapshot — the catalog is always the live one. */
-const API_BASE = "/api";
-/* Stale-while-revalidate cache for anonymous Toolhub GET reads. Keyed by full
-   same-origin /api URL. Hot entries live in memory; a bounded public-data copy
+/* ================================================================= LOCAL CATALOG API
+   Every product read comes from the same-origin, versioned local replica.
+   Toolhub network access belongs to scheduled synchronization and authenticated
+   writes; it is never part of rendering a page. */
+const API_BASE = "/v1/catalog";
+/* Browser cache for anonymous local-catalog GET reads. Keyed by full
+   same-origin catalog URL. Hot entries live in memory; a bounded public-data copy
    also lives in localStorage so hard refreshes can render useful content before
    the live API refresh finishes. /v1 session, OAuth, overlay, and write calls use
    the backend* helpers below and never enter this cache. */
@@ -232,21 +232,21 @@ const apiServerStaleFollowups = new Map();
 let apiCacheLoaded = false;
 let apiPersistScheduled = false;
 const DETAIL_COLLECTIONS = new Set(["tools", "lists"]);
-const TOOL_AGGREGATE_PATHS = new Set(["/api/search/tools/", "/api/ui/home/"]);
-const LIST_COLLECTION_PATH = "/api/lists/";
-const RECENT_COLLECTION_PATH = "/api/recent/";
-const CRAWLER_RUNS_PATH = "/api/crawler/runs/";
+const TOOL_AGGREGATE_PATHS = new Set(["/v1/catalog/search/tools/", "/v1/catalog/ui/home/"]);
+const LIST_COLLECTION_PATH = "/v1/catalog/lists/";
+const RECENT_COLLECTION_PATH = "/v1/catalog/recent/";
+const CRAWLER_RUNS_PATH = "/v1/catalog/crawler/runs/";
 const CONFIG_PATHS = new Set([
-	"/api/",
-	"/api/schema/",
-	"/api/audiences/",
-	"/api/content-types/",
-	"/api/licenses/",
-	"/api/origins/",
-	"/api/tasks/",
-	"/api/tool-types/",
-	"/api/technology-used/",
-	"/api/wikis/"
+	"/v1/catalog/",
+	"/v1/catalog/schema/",
+	"/v1/catalog/audiences/",
+	"/v1/catalog/content-types/",
+	"/v1/catalog/licenses/",
+	"/v1/catalog/origins/",
+	"/v1/catalog/tasks/",
+	"/v1/catalog/tool-types/",
+	"/v1/catalog/technology-used/",
+	"/v1/catalog/wikis/"
 ]);
 // Transient failures — a network blip (e.g. ERR_NETWORK_CHANGED on a WiFi/VPN
 // switch) or a momentary 5xx (e.g. the webservice restarting on deploy) — would
@@ -272,10 +272,16 @@ function apiPathParts(url) {
 		.filter(Boolean)
 		.map((part) => decodeURIComponent(part));
 }
+/** @param {string} url */
+function apiResourceParts(url) {
+	const parts = apiPathParts(url);
+	if (parts[0] === "v1" && parts[1] === "catalog") return parts.slice(2);
+	return parts[0] === "api" ? parts.slice(1) : parts;
+}
 /** @param {string} path */
 function isDetailPath(path) {
-	const parts = path.replaceAll(/^\/+|\/+$/g, "").split("/");
-	return parts.length === 3 && parts[0] === "api" && DETAIL_COLLECTIONS.has(parts[1]) && Boolean(parts[2]);
+	const parts = apiResourceParts(path);
+	return parts.length === 2 && DETAIL_COLLECTIONS.has(parts[0]) && Boolean(parts[1]);
 }
 /**
  * @param {unknown} value
@@ -306,8 +312,8 @@ function objectStringValue(object, ...keys) {
 function matchesToolCache(url, toolNames) {
 	const path = apiPath(url);
 	if (path === RECENT_COLLECTION_PATH || TOOL_AGGREGATE_PATHS.has(path)) return toolNames.size > 0;
-	const parts = apiPathParts(url);
-	return parts.length >= 3 && parts[0] === "api" && parts[1] === "tools" && toolNames.has(parts[2]);
+	const parts = apiResourceParts(url);
+	return parts.length >= 2 && parts[0] === "tools" && toolNames.has(parts[1]);
 }
 /**
  * @param {string} url
@@ -316,8 +322,8 @@ function matchesToolCache(url, toolNames) {
 function matchesListCache(url, listIds) {
 	const path = apiPath(url);
 	if (path === RECENT_COLLECTION_PATH || path === LIST_COLLECTION_PATH) return listIds.size > 0;
-	const parts = apiPathParts(url);
-	return parts.length >= 3 && parts[0] === "api" && parts[1] === "lists" && listIds.has(parts[2]);
+	const parts = apiResourceParts(url);
+	return parts.length >= 2 && parts[0] === "lists" && listIds.has(parts[1]);
 }
 /** @param {(url: string) => boolean} predicate */
 function invalidateApiCacheWhere(predicate) {
@@ -341,11 +347,17 @@ function invalidateApiCacheWhere(predicate) {
  */
 export function apiCachePolicy(url) {
 	const path = apiPath(url);
-	if (path === "/api/recent/") return { freshMs: API_RECENT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
-	if (path === "/api/search/tools/") return { freshMs: API_SEARCH_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	if (path === RECENT_COLLECTION_PATH || path === "/api/recent/") {
+		return { freshMs: API_RECENT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	}
+	if (path === "/v1/catalog/search/tools/" || path === "/api/search/tools/") {
+		return { freshMs: API_SEARCH_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	}
 	if (path === CRAWLER_RUNS_PATH) return { freshMs: API_CRAWLER_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 	if (isDetailPath(path)) return { freshMs: API_DETAIL_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
-	if (CONFIG_PATHS.has(path)) return { freshMs: API_CONFIG_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	if (CONFIG_PATHS.has(path) || CONFIG_PATHS.has(path.replace(/^\/api\//, "/v1/catalog/"))) {
+		return { freshMs: API_CONFIG_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
+	}
 	return { freshMs: API_DEFAULT_TTL_MS, staleIfErrorMs: API_STALE_IF_ERROR_MS };
 }
 /** @param {string} url @param {string} state @param {unknown} [error] */
@@ -585,7 +597,7 @@ export function apiCached(path, params) {
 	return Date.now() - hit.ts <= policy.freshMs + policy.staleIfErrorMs;
 }
 /**
- * Fetch a same-origin Toolhub API URL and expose the raw Response. This keeps
+ * Fetch a same-origin JSON URL and expose the raw Response. This keeps
  * network ownership in core while letting developer tools inspect status and
  * headers that apiGet intentionally abstracts away.
  *

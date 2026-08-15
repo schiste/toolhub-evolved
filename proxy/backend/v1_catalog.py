@@ -12,6 +12,7 @@ from flask import Blueprint, Response, jsonify, request
 from backend import (
     authz,
     catalog_projection,
+    catalog_read,
     db,
     tool_assets,
 )
@@ -29,6 +30,60 @@ from backend.sync import (
 )
 
 v1_catalog_bp = Blueprint("v1_catalog", __name__)
+UPSTREAM = "https://toolhub.wikimedia.org"
+RESOURCE_PATH_PARTS = 2
+
+
+def _local_json(payload: dict, *, status: int = 200) -> Response:
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers["Cache-Control"] = "public, max-age=30, stale-if-error=86400"
+    response.headers["X-Toolhub-Evolved-Source"] = "local-replica"
+    return response
+
+
+@v1_catalog_bp.route("/v1/catalog/health/")
+def v1_catalog_health() -> Response:
+    """Expose the generation and freshness of the request-safe replica."""
+    return _local_json(catalog_read.replica_status())
+
+
+@v1_catalog_bp.route("/v1/catalog/", defaults={"path": ""})
+@v1_catalog_bp.route("/v1/catalog/<path:path>")
+def v1_catalog_read(path: str) -> Response:  # noqa: PLR0911 - explicit compatibility route dispatch
+    """Serve Toolhub-compatible reads without network I/O on the request path."""
+    normalized = path.strip("/")
+    if normalized == "search/tools":
+        return _local_json(catalog_read.search_payload(request.args))
+    if normalized == "ui/home":
+        return _local_json(catalog_read.home_payload())
+    if normalized == "lists":
+        return _local_json(catalog_read.collection_payload("/api/lists/", request.args))
+    if normalized == "recent":
+        return _local_json(catalog_read.collection_payload("/api/recent/", request.args))
+    parts = normalized.split("/") if normalized else []
+    if len(parts) == RESOURCE_PATH_PARTS and parts[0] == "tools":
+        payload = catalog_read.tool_payload(parts[1])
+        return _local_json(payload) if payload is not None else common.deny(common.HTTP_NOT_FOUND, "tool not found")
+    if len(parts) == RESOURCE_PATH_PARTS and parts[0] == "lists":
+        payload = catalog_read.list_payload(parts[1])
+        return _local_json(payload) if payload is not None else common.deny(common.HTTP_NOT_FOUND, "list not found")
+
+    # Non-catalog compatibility surfaces (schema, crawler runs, audit history,
+    # revisions) may still be rendered by the SPA. They are served only when a
+    # scheduled job has persisted the exact response; a miss never reaches out.
+    query = request.query_string.decode()
+    url = f"{UPSTREAM}/api/{normalized + '/' if normalized else ''}{('?' + query) if query else ''}"
+    cached = catalog_read.cached_payload(url)
+    if cached is None:
+        return _local_json(
+            {"error": "local replica entry unavailable", "replica": catalog_read.replica_status()}, status=503
+        )
+    body, content_type, status = cached
+    response = Response(body, status=status, content_type=content_type)
+    response.headers["Cache-Control"] = "public, max-age=30, stale-if-error=86400"
+    response.headers["X-Toolhub-Evolved-Source"] = "local-replica"
+    return response
 
 
 @v1_catalog_bp.route("/v1/catalog/tools/<name>/projection/")

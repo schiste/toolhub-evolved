@@ -70,7 +70,7 @@ const INTENT_AXES = {
 /** @typedef {{ tools: Tool[], error?: boolean, loading?: boolean }} PersonalTools */
 /** @typedef {{ favorites: PersonalTools, ownTools: PersonalTools }} PersonalHomeModel */
 /** @typedef {{ model: PersonalHomeModel, refresh?: Promise<PersonalHomeModel> }} PersonalHomeResult */
-/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean, totalTools?: number }} HomeModel */
+/** @typedef {{ lists: ToolList[], featuredRanked: Tool[], mostListedRanked: Tool[], recentTools: Tool[], personal?: PersonalHomeModel, cacheFallback?: boolean, totalTools?: number, replica?: any }} HomeModel */
 /** @typedef {Tool & { endorsement?: { count?: number } }} HomeTool */
 
 // Account resolution is substantially more expensive than the public catalog
@@ -246,7 +246,7 @@ function listsGridHTML(lists, empty) {
 }
 /**
  * Resolve favorite names from the local-first canonical cache, then fill gaps
- * from live Toolhub records. The order follows the user's saved order.
+ * from the last published local catalog generation. The order follows the user's saved order.
  * @returns {Promise<PersonalTools>}
  */
 async function favoriteToolsForHome() {
@@ -396,7 +396,7 @@ function renderHomeMain(model, state) {
 	const filtered = hasHomeFilters(state);
 	const featuredHref = filtered ? searchHrefForState(state) : "/featured-tools";
 	const fallbackNote = model.cacheFallback
-		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing saved Toolhub data while live data refreshes.")}</p>
+		? `<p class="browse__count-note">${t("home.cachedCanonicalData", "Showing the last published catalog generation.")}</p>
 		`
 		: "";
 	return `${fallbackNote}
@@ -462,7 +462,8 @@ async function composedHomeModel() {
 		mostListedRanked: rankFitsFirst(mostListed),
 		recentTools,
 		cacheFallback: false,
-		totalTools: data.totalTools
+		totalTools: data.totalTools,
+		replica: data.replica
 	};
 }
 
@@ -535,7 +536,7 @@ async function homeSectionsModel(state) {
 	// catalog. Rethrow so viewHome's caller (the router) shows the error page;
 	// the interactive refreshHome path catches this and shows its own notice.
 	if (failures > 0 && lists.length === 0 && featured.length === 0 && recentTools.length === 0) {
-		throw new Error("home: live catalog unavailable");
+		throw new Error("home: local catalog unavailable");
 	}
 	const mostListed = sortedByEndorsements(featured);
 	return {
@@ -547,20 +548,24 @@ async function homeSectionsModel(state) {
 	};
 }
 
+function replicaStatusHTML(replica) {
+	if (!replica?.lastSuccessAt) return "";
+	const stale = replica.stale ? ` · ${t("home.replicaStale", "refresh delayed")}` : "";
+	return `<p class="hero__replica${replica.stale ? " hero__replica--stale" : ""}">${t("home.replicaStatus", "Local catalog · last synchronized")} <time datetime="${esc(replica.lastSuccessAt)}">${esc(replica.lastSuccessAt.replace("T", " ").replace("Z", " UTC"))}</time>${stale}</p>`;
+}
+
+function homeViewContext() {
+	const initialState = intentStateFromContext(getUserContext());
+	return { initialState, authenticated: signedIn() };
+}
+
 export async function viewHome() {
-	// Live: total count, featured curated lists (with embedded tools), recent tools.
-	const ctx = getUserContext();
-	const initialState = intentStateFromContext(ctx);
-	const authenticated = signedIn();
-	// One request for the signed-out landing page: /v1/home/ carries the
-	// sections, the summaries, the endorsement counts and the catalog size, so
-	// nothing here needs a second round trip. Everything else — signed in, or a
-	// composed payload that is unavailable or filtered — keeps the original
-	// parallel fetch, including the deferred endorsement crawl that must not
-	// block first paint.
+	const { initialState, authenticated } = homeViewContext();
+	// Signed-out home is composed in one request; filtered and personal views
+	// retain their parallel local queries and deferred enrichment.
 	const composed = authenticated || hasHomeFilters(initialState) ? null : await composedHomeModel().catch(() => null);
 	const [home, initialModel] = composed
-		? [{ total_tools: composed.totalTools }, composed]
+		? [{ total_tools: composed.totalTools, replica: composed.replica }, composed]
 		: await Promise.all([
 				apiGet("/ui/home/").catch(() => ({})),
 				authenticated
@@ -581,6 +586,7 @@ export async function viewHome() {
 			}
 		: undefined;
 	const total = home.total_tools || 0;
+	const replicaNote = replicaStatusHTML(home.replica);
 	const intentAxis = initialState.axis;
 	const intentTerm = initialState.term;
 	const intentWiki = initialState.wiki;
@@ -612,7 +618,12 @@ export async function viewHome() {
 			<label for="home-q" class="skip-label">${t("home.searchTools", "Search tools")}</label>
 			<input id="home-q" class="search__input" type="search" aria-label="${t("home.searchTools", "Search tools")}" placeholder="${t("home.searchPlaceholder", "Search $1 {{PLURAL:$2|tool|tools}}…", fmt(total), total)}" autocomplete="off" />
 			${button(t("home.search", "Search"), { variant: "primary", type: "submit", cls: "search__btn" })}
-		</form>
+		</form>${
+			replicaNote
+				? `
+		${replicaNote}`
+				: ""
+		}
 	</section>
 	<div class="container layout">
 		<div class="layout__main home-results" data-home-main aria-live="polite">

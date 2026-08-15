@@ -587,7 +587,7 @@ export const STATIC = {
 		<p>${t("static.about.coreVsAnnotationsBody", "Each tool has authoritative core information, editable only by its owner or administrators, plus community annotations that any logged-in Wikimedian can enrich. When both are set for a field, Toolhub shows the core value, balancing maintainer control with community contribution.")}</p>
 		<p>${t("static.about.cc0", "Structured data is released under CC0; attribution via links back is\n\t\tencouraged but not required. Sign in with Toolhub — no separate Evolved account\n\t\tor password is needed.")}</p>
 		<p>${tWithElements("static.about.helpBuildBody", "Want to help improve this beta or coordinate with upstream Toolhub? See $1.", { html: `<a href="/contribute">${esc(t("static.community.contributeLink", "Help maintain Toolhub Evolved"))}</a>` })}</p>
-		<blockquote>${t("static.about.prototypeNote", "This is a companion interface for Toolhub: it reads live catalog data from the public API, publishes official writes through Toolhub OAuth when you sign in, and keeps Evolved-only additions in its local overlay database.")}</blockquote>`
+		<blockquote>${t("static.about.prototypeNote", "This is a companion interface for Toolhub: it reads a background-synchronized local catalog, publishes official writes through Toolhub OAuth when you sign in, and keeps Evolved-only additions in its local overlay database.")}</blockquote>`
 	}),
 	help: () => ({
 		title: t("static.help.title", "Help"),
@@ -632,7 +632,7 @@ export const STATIC = {
 		<ul>
 			<li>${t("static.privacy.oauthItem", "If you sign in, the beta uses official Toolhub OAuth and stores a local session plus a server-side OAuth grant. It never asks for or stores your Wikimedia password.")}</li>
 			<li>${t("static.privacy.evolvedDraftsItem", "Evolved-only drafts, fallback writes, signed-toolinfo public keys, local author claims, activity rows, preferences, and health/source-analysis review data may be stored in this site's local database.")}</li>
-			<li>${t("static.privacy.browserCacheItem", "The browser may cache live catalog responses, local UI state, theme/language choices, dismissed notices, and local fallback data so pages can load quickly and recover after failed writes.")}</li>
+			<li>${t("static.privacy.browserCacheItem", "The browser may cache local catalog responses, UI state, theme/language choices, dismissed notices, and local fallback data so pages load quickly.")}</li>
 			<li>${t("static.privacy.officialWritesItem", "When an action is sent to official Toolhub, Toolhub's own API receives the request and applies Toolhub attribution, permissions, validation, logging, and retention rules.")}</li>
 		</ul>
 		<h2>${t("static.privacy.boundariesTitle", "Boundaries")}</h2>
@@ -680,9 +680,9 @@ export const STATIC = {
 	"rules-of-engagement": () => ({
 		title: t("static.rulesOfEngagement.title", "Rules of Engagement"),
 		body: `
-		<p>${t("static.rulesOfEngagement.intro", "This is a companion interface on a separate domain, not the official Toolhub frontend. It exists to run next to Toolhub: live Toolhub data remains the base, while Evolved adds a local overlay for extra and fallback data.")}</p>
+		<p>${t("static.rulesOfEngagement.intro", "This is a companion interface on a separate domain, not the official Toolhub frontend. It serves a local replica synchronized from Toolhub in the background, while Evolved adds its own reviewed data.")}</p>
 		<h2>${t("static.rulesOfEngagement.whatsReal", "What's real")}</h2>
-		<p>${tWithElements("static.rulesOfEngagement.whatsRealBody", "The catalog itself is genuine: user-facing tools, search, facets, tool details, lists, members, recent changes, crawler history, and audit logs come from $1 through the read proxy. Evolved also keeps a server-side canonical cache of official tool records for background enrichment and resilience; that cache is rebuildable, is not the source of truth, and never replaces live Toolhub authority. When you sign in with Toolhub, supported writes are sent back to the official Toolhub API using your OAuth grant.", { html: ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org") })}</p>
+		<p>${tWithElements("static.rulesOfEngagement.whatsRealBody", "The catalog is synchronized from $1 by scheduled jobs and published locally as an atomic generation. Pages never contact Toolhub while rendering. When you sign in, supported writes are sent to the official Toolhub API using your OAuth grant and reconciled back into the replica.", { html: ext("https://toolhub.wikimedia.org/api/", "toolhub.wikimedia.org") })}</p>
 		<h2>${t("static.rulesOfEngagement.catalogSync", "How the catalog cache is maintained")}</h2>
 		<ul>
 			<li>${t("static.rulesOfEngagement.catalogSyncBackfill", "The initial backfill processes at most five pages of 100 records every 15 minutes, with at least three seconds between upstream requests. A persistent cursor resumes after interruptions and advances until the first complete catalog cycle finishes.")}</li>
@@ -699,11 +699,11 @@ export const STATIC = {
 		<h2>${t("static.rulesOfEngagement.whereActionsGo", "Where your actions go")}</h2>
 		<ul>
 			<li>${t("static.rulesOfEngagement.officialWritesItem", "Signed-in supported writes go first to official Toolhub. If Toolhub rejects a write, Evolved keeps it locally as a draft or overlay where the feature supports that.")}</li>
-			<li>${t("static.rulesOfEngagement.signedOutItem", "Signed-out users can read live Toolhub data, but create/update/delete actions require Toolhub sign-in.")}</li>
+			<li>${t("static.rulesOfEngagement.signedOutItem", "Signed-out users read the local public replica; create, update, and delete actions require Toolhub sign-in.")}</li>
 			<li>${t("static.rulesOfEngagement.noticeItem", "The site notice can be dismissed with its close button; that only hides the notice in this browser and does not change where data is stored.")}</li>
 		</ul>
 		<h2>${t("static.rulesOfEngagement.honestEdges", "The honest edges")}</h2>
-		<p>${t("static.rulesOfEngagement.honestEdgesBody", "Because search is still based on Toolhub's live search API, a locally saved draft may not appear in live search until it has been accepted by official Toolhub. We label local overlays rather than presenting them as canonical Toolhub data.")}</p>
+		<p>${t("static.rulesOfEngagement.honestEdgesBody", "Search reads the latest complete local generation. A newly accepted Toolhub write may therefore appear after the next scheduled synchronization; local drafts remain explicitly labeled as overlays.")}</p>
 		<blockquote>${t("static.rulesOfEngagement.summary", "In short: Toolhub remains the source of truth for catalog data; Evolved publishes through Toolhub when signed in and keeps local overlay data for drafts, fallback, and features Toolhub does not expose.")}</blockquote>`
 	}),
 	"health-score": viewHealthScoreStaticPage,
@@ -803,7 +803,7 @@ export async function viewApiDocs() {
 		html: `
 		<div class="container page api-docs-page">
 			<h1 class="page__title">${t("static.apiDocs.heading", "API documentation")}</h1>
-			<p class="page__intro">${tWithElements("static.apiDocs.intro", "Toolhub is API-first. Evolved reads the live catalog through a same-origin proxy and sends authenticated writes through its own $1 official-first lifecycle after Toolhub OAuth sign-in.", { html: code("/v1/write/*") })}</p>
+			<p class="page__intro">${tWithElements("static.apiDocs.intro", "Toolhub is API-first. Evolved serves public reads from its local $1 replica and sends authenticated writes through its official-first lifecycle after Toolhub OAuth sign-in.", { html: code("/v1/catalog/*") })}</p>
 			<div class="linkgrid">
 				${linkCard(icon("code"), t("static.apiDocs.interactiveDocs", "Interactive API docs"), t("static.apiDocs.interactiveDocsDesc", "Open the canonical Toolhub API documentation."), "https://toolhub.wikimedia.org/api-docs")}
 				${proxyCard(icon("code"), t("static.apiDocs.openApiSchema", "OpenAPI schema"), t("static.apiDocs.openApiSchemaDesc", "Machine-readable schema served at GET /api/schema/."), "/api/schema/")}
@@ -826,7 +826,7 @@ export async function viewApiDocs() {
 				<pre tabindex="0" aria-label="${t("static.apiDocs.generatorCommandLabel", "OpenAPI Generator command")}"><code>openapi-generator-cli generate -i https://toolhub.wikimedia.org/api/schema/ -g python -o toolhub-client</code></pre>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.readOnlyBoundary", "Read-only boundary")}</h2>
-			<p class="page__intro">${tWithElements("static.apiDocs.readOnlyBoundaryBody", "The public proxy exposes anonymous live Toolhub $1 responses for browsing and examples. Authenticated writes never go through that proxy; they use Evolved's CSRF-protected backend bridge so official OAuth tokens stay server-side.", { html: code("GET") })}</p>
+			<p class="page__intro">${tWithElements("static.apiDocs.readOnlyBoundaryBody", "Public $1 requests are local-replica reads. The legacy proxy is cache-only; authenticated writes use Evolved's CSRF-protected backend bridge so official OAuth tokens stay server-side.", { html: code("GET") })}</p>
 			<h2 class="contribute__h2">${t("static.apiDocs.revisionDiffHeading", "Revision diffs and JSON Patch operations")}</h2>
 			<div class="prose">
 				<p>${tWithElements("static.apiDocs.revisionDiffBody", "Tool and list history endpoints expose revision rows, and their $1 subresources return what older tickets may call $2 operations. In the live Toolhub OpenAPI schema these are standard RFC 6902 $3 operations.", { html: code("diff") }, { html: code("jsondiff") }, { html: code("application/json-patch+json") })}</p>
@@ -870,7 +870,7 @@ export async function viewApiDocs() {
 				</ul>
 			</div>
 			<h2 class="contribute__h2">${t("static.apiDocs.liveProxyEndpoints", "Live proxy endpoints")}</h2>
-			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The live endpoint index is unavailable.")}</p>`}</div>
+			<div class="linkgrid">${endpointCards || `<p class="empty">${t("static.apiDocs.endpointIndexUnavailable", "The local endpoint index is unavailable.")}</p>`}</div>
 		</div>`,
 		mount: () => mountApiExplorer()
 	};

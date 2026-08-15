@@ -92,6 +92,9 @@ def hot_endpoints() -> tuple[HotEndpoint, ...]:
         HotEndpoint("/api/search/tools/", (("page", "1"), ("page_size", "24"))),
         HotEndpoint("/api/search/tools/", (("ordering", "-modified_date"), ("page_size", "5"))),
     ]
+    # The local list adapter merges these persisted pages into a complete
+    # collection and answers arbitrary UI pagination without upstream I/O.
+    endpoints.extend(HotEndpoint("/api/lists/", (("page_size", "50"), ("page", str(page)))) for page in range(1, 5))
     endpoints.extend(
         HotEndpoint("/api/search/tools/", (("q", query), ("page", "1"), ("page_size", "24")))
         for query in configured_search_queries()

@@ -6,7 +6,7 @@
 
 # What's New for Users
 
-- Toolhub Evolved now publishes concise English daily, weekly, and monthly digests of newly added tools. Daily editions mention every new tool, every edition covers one closed UTC period, and periods without new tools produce no empty edition.
+- Toolhub Evolved now publishes concise English daily, weekly, and monthly digests of newly added tools. Daily editions mention every new tool, every edition covers one closed UTC period, and periods without new tools produce no empty edition. Public browsing now uses the latest complete local catalog generation, reports its UTC freshness, and keeps the previous generation available if synchronization fails instead of blocking page loads on Toolhub.
 - Each edition appears as a compact, readable local blog entry and RSS item, while the lightweight archive makes issues easy to scan and Meta-Wiki remains the canonical publication archive with stable pages for sharing and long-term discovery.
 - Signed-in users can subscribe by Wikimedia email or by delivery to their talk page on a supported Wikimedia wiki. Email subscriptions require confirmation, unsubscribe links are signed, and new subscriptions never backfill older editions.
 - LiftWing's public Qwen 3.6 27B model writes the short editorial introduction and highlights from bounded Toolhub facts. Every highlight must retain verbatim supporting evidence—either the full metadata value or a substantial exact excerpt—and an exact unambiguous tool title is safely resolved to its canonical Toolhub id; invalid or unavailable model output falls back to deterministic factual copy instead of inventing claims.

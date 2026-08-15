@@ -133,25 +133,26 @@ of `source`, `sync_status`, `official_id`/`official_name`, `last_synced_at`,
 its Evolved provenance is tracked through `sync_status`, review state, creator,
 errors, and deletion state.
 
-Canonical data rule: official Toolhub catalog data is never replaced by local
-rows. Single-tool reads ask live Toolhub first and use a local new-tool record
-only after an upstream `404`; server-side crawler ingestion skips names that
-already exist upstream; local edit/annotation overlays strip canonical identity
-fields such as `name` and `origin` before storage or merge.
+Canonical data rule: Toolhub remains the upstream authority, while the latest
+complete local generation is authoritative for public serving. Single-tool,
+search, facet, count, ordering, and pagination reads never contact Toolhub on the
+request path. Server-side crawler ingestion skips names already present in the
+replica; local overlays strip canonical identity fields such as `name` and
+`origin` before storage or merge.
 
-Read-proxy cache rule: `api_cache` stores only anonymous official Toolhub
-`GET /api/*` responses. It never stores `/v1/user`, OAuth/session responses,
+Collection cache rule: `api_cache` stores only anonymous Toolhub collection and
+compatibility responses fetched by scheduled workers. It never stores `/v1/user`, OAuth/session responses,
 CSRF-protected writes, or official write payloads made with a user's Toolhub
 grant. Rows are performance artifacts with `fetched_at`, `expires_at`,
-`stale_until`, validators (`etag`, `last_modified`), and `last_error`; they can
-be safely truncated if stale or oversized.
+`stale_until`, validators (`etag`, `last_modified`), and `last_error`. Expired
+rows remain locally readable until a scheduled refresh publishes a replacement;
+request handlers never revalidate them upstream.
 
-Browser cache rule: the SPA may store a bounded localStorage cache under
-`toolhub-api-cache:v1`, again only for anonymous `/api/*` reads. It exists solely
-to make hard refreshes feel instant: stale public data is rendered first, the app
-shows a refresh toast, and the route repaints after the freshest API response is
-available. Clearing browser storage only removes this performance cache and does
-not affect Evolved server data.
+Browser cache rule: the SPA may keep bounded localStorage copies of anonymous
+`/v1/catalog/*` responses. They make hard refreshes fast but never cause network
+revalidation: the browser checks the same local server replica and may repaint
+when a newer local generation is available. Clearing browser storage does not
+affect Evolved server data.
 
 Anonymous API cache TTLs:
 
@@ -210,9 +211,9 @@ names are:
 
 | Data                                                               | Visibility                                             | Operational note                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api_cache`                                                        | Anonymous public Toolhub API payload cache             | Shared worker cache for `GET /api/*`; not canonical data, safe to clear, stale rows may be served only during transient upstream failures.                                                                                              |
+| `api_cache`                                                        | Anonymous public collection snapshot store             | Scheduled-worker snapshots for list/recent/compatibility resources; request handlers never fetch upstream, and the previous row remains readable when refresh fails.                                                                    |
 | `api_cache_meta`                                                   | Anonymous cache coordination state                     | Stores the recent-change poll throttle and latest timestamp/id marker; safe to clear, which causes the next poll to baseline without deleting cache rows.                                                                               |
-| `canonical_tool_cache`                                             | Anonymous public canonical cache                       | Resumable mirror of official `/api/tools/` records used by local enrichment; rebuildable from Toolhub and never a replacement for live canonical reads.                                                                                 |
+| `canonical_tool_cache`                                             | Anonymous public catalog replica                       | Resumable mirror of official `/api/tools/` records and the serving base for public search/details; a complete snapshot is staged and published atomically.                                                                              |
 | `graph_tool_enrichment`                                            | Anonymous public derived graph facets                  | Versioned materialization of graph-relevant metadata with per-value provenance; rebuilt from canonical, crawler, discovered toolinfo, and approved repository sources.                                                                  |
 | `catalog_tool_projection` / `catalog_facet_values`                 | Anonymous public Evolved catalog projection            | Versioned effective records, per-field evidence, validation state, and indexed facets; canonical Toolhub rows remain untouched and the scheduled repair job rebuilds missing versions.                                                  |
 | `catalog_curations`                                                | Pending/private review; approved evidence public       | Reviewer-approved local corrections only. Proposals never mutate canonical Toolhub data and do not affect projections before approval.                                                                                                  |
@@ -230,7 +231,7 @@ names are:
 | `lists`                                                            | Private/user-visible fallback                          | Store local drafts or rejected official writes; keep official ids, creator, soft-delete, sync status, Toolhub response details, and validation errors.                                                                                  |
 | `tools`                                                            | Local draft or public Evolved feed row                 | Never mirror official Toolhub tools; public local records require `review_status = approved` and feed `/toolinfo.json` for possible upstream ingestion.                                                                                 |
 | `tool_overlays`                                                    | User-visible local delta                               | Field patches for edits/annotations rejected by Toolhub or kept as drafts; strip canonical identity fields and keep Toolhub validation metadata.                                                                                        |
-| `activity`                                                         | User-visible/admin-visible depending on event          | Local audit/revision rows only; include local provenance and merge with live Toolhub feeds without pretending to be official Toolhub activity.                                                                                          |
+| `activity`                                                         | User-visible/admin-visible depending on event          | Local audit/revision rows only; include local provenance and merge with scheduled Toolhub collection snapshots without pretending to be official Toolhub activity.                                                                      |
 | `crawler_urls`                                                     | Private until surfaced in local crawler UI/feed        | Local URL registrations and official-write fallbacks; scheduled jobs fetch only enabled local URLs; failed official writes keep validation details.                                                                                     |
 | `crawler_runs`                                                     | Operational/user-visible history                       | Per-run crawler outcomes; useful for failure emails, user debugging, and restore checks.                                                                                                                                                |
 | `toolinfo_discovery`                                               | Owner-facing Evolved cache                             | Per-tool automated root/sitemap `toolinfo.json` discovery state shown on My tools; seeded from official Toolhub listings and owner resolver candidates; not canonical.                                                                  |
@@ -985,12 +986,12 @@ then point a local `TOOLHUB_DB_URL` at the restore-test DB and check
 
 ## Incidents
 
-| Symptom                          | First moves                                                                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/healthz` returns 503           | ToolsDB reachability: `sql tools`; check `TOOLHUB_DB_URL`; `webservice restart`                                                                         |
-| Site up, catalog empty           | Upstream Toolhub outage — the SPA shows "couldn't load live data"; nothing to do but wait/verify with `curl https://toolhub.wikimedia.org/api/ui/home/` |
-| Sign-in loops to `/?login=error` | Check Toolhub OAuth env vars; callback URL exact? `TOOLHUB_EVOLVED_BASE_URL` needed? `toolhub.wikimedia.org` reachable?                                 |
-| Official writes return 401       | The user's stored grant is absent/expired — ask them to sign in with Toolhub again                                                                      |
-| Official writes return 4xx       | Toolhub rejected validation or permissions; check the response `details` from `/v1/write/*` and revise the payload                                      |
-| Crawler failure emails           | `toolforge jobs logs crawler`; bad registered URL errors are recorded per-run in `crawler_runs`                                                         |
-| Disk quota                       | `du -sh ~/backups ~/repo ~/*.log ~/*.out ~/*.err`; prune old backups; `sh ~/repo/tools/rotate-logs.sh`; `git -C ~/repo gc`                              |
+| Symptom                          | First moves                                                                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/healthz` returns 503           | ToolsDB reachability: `sql tools`; check `TOOLHUB_DB_URL`; `webservice restart`                                                                                                         |
+| Site up, catalog unavailable     | Local replica/database problem — check `/v1/catalog/health/` and `tool_catalog_sync_state`; an upstream outage should only mark refresh delayed while retaining the previous generation |
+| Sign-in loops to `/?login=error` | Check Toolhub OAuth env vars; callback URL exact? `TOOLHUB_EVOLVED_BASE_URL` needed? `toolhub.wikimedia.org` reachable?                                                                 |
+| Official writes return 401       | The user's stored grant is absent/expired — ask them to sign in with Toolhub again                                                                                                      |
+| Official writes return 4xx       | Toolhub rejected validation or permissions; check the response `details` from `/v1/write/*` and revise the payload                                                                      |
+| Crawler failure emails           | `toolforge jobs logs crawler`; bad registered URL errors are recorded per-run in `crawler_runs`                                                                                         |
+| Disk quota                       | `du -sh ~/backups ~/repo ~/*.log ~/*.out ~/*.err`; prune old backups; `sh ~/repo/tools/rotate-logs.sh`; `git -C ~/repo gc`                                                              |

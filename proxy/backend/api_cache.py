@@ -188,6 +188,52 @@ def get(url: str, *, allow_stale: bool = False) -> CachedResponse | None:
         return None
 
 
+def _detached(row: ApiCache, *, stale: bool) -> CachedResponse:
+    """Detach a cache row so callers never retain a database session."""
+    return CachedResponse(
+        url=row.url,
+        status=row.status,
+        content_type=row.content_type,
+        body=bytes(row.body),
+        stale=stale,
+        etag=row.etag,
+        last_modified=row.last_modified,
+    )
+
+
+def get_local(url: str) -> CachedResponse | None:
+    """Return the last persisted response regardless of its refresh deadline.
+
+    Request handlers use this only as a local replica read.  Freshness belongs
+    to the scheduled synchronizer; an expired local row is still safer and more
+    available than turning a user request into an upstream fetch.
+    """
+    try:
+        with db.session_scope() as s:
+            row = s.get(ApiCache, _key(url))
+            return _detached(row, stale=row.expires_at <= utcnow()) if row is not None else None
+    except SQLAlchemyError:
+        return None
+
+
+def responses_for_path(path: str) -> list[CachedResponse]:
+    """Return persisted collection pages newest-first, including expired rows."""
+    normalized = path.rstrip("/") + "/"
+    try:
+        with db.session_scope() as s:
+            rows = list(
+                s.execute(
+                    select(ApiCache)
+                    .where(ApiCache.path == normalized)
+                    .order_by(ApiCache.fetched_at.desc(), ApiCache.url)
+                ).scalars()
+            )
+            now = utcnow()
+            return [_detached(row, stale=row.expires_at <= now) for row in rows]
+    except SQLAlchemyError:
+        return []
+
+
 def put_success(
     url: str,
     upstream: CacheableResponse,

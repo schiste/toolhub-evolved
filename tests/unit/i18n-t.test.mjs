@@ -25,8 +25,8 @@ test("t returns the English fallback when no catalog is installed", () => {
 });
 
 test("t has tiny boot-critical English fallbacks when a caller has no catalog fallback", () => {
-	assert.equal(BOOT_MESSAGES["router.loadingToolhubData"], "Loading Toolhub data");
-	assert.equal(t("router.loadingToolhubData"), "Loading Toolhub data");
+	assert.equal(BOOT_MESSAGES["router.loadingToolhubData"], "Loading the local catalog");
+	assert.equal(t("router.loadingToolhubData"), "Loading the local catalog");
 	assert.equal(t("x.unknown"), "x.unknown");
 });
 

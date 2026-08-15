@@ -289,6 +289,17 @@ class CanonicalToolCache(Base):
         return record
 
 
+class CatalogSnapshotStage(Base):
+    """Unpublished rows for one consistency-checked full catalog generation."""
+
+    __tablename__ = "catalog_snapshot_stage"
+    generation: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    record: Mapped[dict] = mapped_column(JSON, default=dict)
+    source_url: Mapped[str] = mapped_column(String(2000), default="")
+    staged_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class ToolhubAccountProjection(Base):
     """Rebuildable public projection of one official Toolhub account.
 

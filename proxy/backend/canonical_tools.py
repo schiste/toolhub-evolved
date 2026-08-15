@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from backend import db
 from backend.api_cache import DETAIL_FRESH_SECONDS, SEARCH_FRESH_SECONDS, STALE_IF_ERROR_SECONDS
-from backend.models import CanonicalToolCache, utcnow
+from backend.models import CanonicalToolCache, CatalogSnapshotStage, utcnow
 from backend.sync import SOURCE_OFFICIAL, SYNC_OFFICIAL
 
 if TYPE_CHECKING:
@@ -268,6 +268,76 @@ def prune_completed_generation(s: Session, generation: int, expected_count: int)
     )
     if retired:
         s.execute(delete(CanonicalToolCache).where(CanonicalToolCache.generation != generation))
+    return retired
+
+
+def stage_snapshot_records(records: list[dict[str, Any]], *, source_url: str, generation: int) -> int:
+    """Persist a full-snapshot page without mutating the published catalog."""
+    clean: dict[str, dict[str, Any]] = {}
+    for record in records:
+        name = _clean_name(record.get("name")) if isinstance(record, dict) else ""
+        if name and name not in clean:
+            clean[name] = record
+    if not clean:
+        return 0
+    with db.session_scope() as session:
+        for name, record in clean.items():
+            session.merge(
+                CatalogSnapshotStage(
+                    generation=generation,
+                    tool_name=name,
+                    record=record,
+                    source_url=source_url[:MAX_SOURCE_URL],
+                    staged_at=utcnow(),
+                )
+            )
+    return len(clean)
+
+
+def discard_snapshot_stage(generation: int) -> None:
+    with db.session_scope() as session:
+        session.execute(delete(CatalogSnapshotStage).where(CatalogSnapshotStage.generation == generation))
+
+
+def publish_snapshot_stage(s: Session, generation: int, expected_count: int) -> list[str]:
+    """Replace the published generation atomically after exact-count validation."""
+    staged = list(
+        s.execute(
+            select(CatalogSnapshotStage)
+            .where(CatalogSnapshotStage.generation == generation)
+            .order_by(CatalogSnapshotStage.tool_name)
+        ).scalars()
+    )
+    if len(staged) != expected_count:
+        msg = f"catalog generation {generation} staged {len(staged)} distinct rows, expected {expected_count}"
+        raise ValueError(msg)
+    now = utcnow()
+    fresh = SEARCH_FRESH_SECONDS
+    for item in staged:
+        row = s.get(CanonicalToolCache, item.tool_name)
+        existing_is_detail = bool(row and is_tool_detail_url(row.source_url))
+        if row is None:
+            row = CanonicalToolCache(tool_name=item.tool_name)
+            s.add(row)
+        row.record = _merge_listing_record(row.record or {}, item.record)
+        if not existing_is_detail:
+            row.source_url = item.source_url
+            row.expires_at = now + timedelta(seconds=fresh)
+            row.stale_until = now + timedelta(seconds=fresh + STALE_IF_ERROR_SECONDS)
+        row.source = SOURCE_OFFICIAL
+        row.sync_status = SYNC_OFFICIAL
+        row.fetched_at = now
+        row.generation = generation
+    retired = list(
+        s.execute(
+            select(CanonicalToolCache.tool_name)
+            .where(CanonicalToolCache.generation != generation)
+            .order_by(CanonicalToolCache.tool_name)
+        ).scalars()
+    )
+    if retired:
+        s.execute(delete(CanonicalToolCache).where(CanonicalToolCache.generation != generation))
+    s.execute(delete(CatalogSnapshotStage).where(CatalogSnapshotStage.generation == generation))
     return retired
 
 

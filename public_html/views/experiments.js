@@ -6,7 +6,7 @@ import { t } from "../lib/core/i18n.js";
 // Single source of truth for every Evolved feature and hybrid integration path.
 export const EXPERIMENTS = [
 	{
-		group: t("experiments.groupLiveReads", "Live Toolhub read surfaces"),
+		group: t("experiments.groupLiveReads", "Local catalog read surfaces"),
 		items: [
 			{
 				name: t("experiments.homeDiscoveryName", "Home and discovery"),
@@ -16,7 +16,7 @@ export const EXPERIMENTS = [
 				),
 				current: t(
 					"experiments.homeDiscoveryCurrent",
-					"Home sections read live Toolhub lists/search data and degrade each panel independently if one upstream call fails."
+					"Home sections read the latest complete local catalog generation and remain available if an upstream synchronization fails."
 				),
 				need: t(
 					"experiments.homeDiscoveryNeed",
@@ -290,7 +290,7 @@ export const EXPERIMENTS = [
 				name: t("experiments.transparencyName", "Hybrid transparency notice"),
 				what: t(
 					"experiments.transparencyWhat",
-					"Understand when data is live Toolhub data, Evolved-local data, or an official-first write fallback."
+					"Understand when data is replicated from Toolhub, Evolved-local data, or an official-first write fallback."
 				),
 				current: t(
 					"experiments.transparencyCurrent",
@@ -536,7 +536,7 @@ export const EXPERIMENTS = [
 				name: t("experiments.appShellName", "Immediate app shell"),
 				what: t(
 					"experiments.appShellWhat",
-					"Show the header, site notice, clean loading panel, and footer before live Toolhub data finishes loading."
+					"Show the header, site notice, clean loading panel, and footer while the local catalog route resolves."
 				),
 				current: t(
 					"experiments.appShellCurrent",
@@ -641,7 +641,7 @@ export function viewExperiments() {
 		<div class="container page">
 			<h1 class="page__title">${t("experiments.title", "Feature status")}</h1>
 			<p class="page__intro">${t("experiments.introLead", "The $1 features below describe Toolhub Evolved's hybrid model:", esc(String(total)))}
-			<strong>${t("experiments.introLive", "live Toolhub data stays the base")}</strong>, ${t("experiments.introWrites", "supported signed-in writes publish to official Toolhub first, and")}
+			<strong>${t("experiments.introLive", "the local Toolhub replica serves public reads")}</strong>, ${t("experiments.introWrites", "supported signed-in writes publish to official Toolhub first, and")}
 			<strong>${t("experiments.introOverlay", "local overlays cover drafts, fallback data, and Evolved-owned data")}</strong>.
 			${t("experiments.introTail", "These features are visible by default; for the live-vs-local model and where your data goes, see")}
 			<a href="/rules-of-engagement">${t("experiments.rulesOfEngagement", "Rules of Engagement")}</a>.</p>

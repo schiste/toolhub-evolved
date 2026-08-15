@@ -8,13 +8,12 @@ back. Measured in a browser, that was ~1.6s of wall clock spent on requests
 the server answers in tens of milliseconds — the cost was the round trips and
 the dependency between them, not the work.
 
-Everything here already exists locally: the anonymous Toolhub reads sit in the
-shared cache, and the summaries in tool_summary_cache. Composing them server
+Everything here already exists locally: the canonical replica, persisted list
+collections, and summaries in tool_summary_cache. Composing them server
 side turns the landing page into one request, and caching the composition
 turns the common case into a single cache read.
 
-Nothing is fetched that the proxy would not already have fetched: reads go
-through toolhub.public_api_get, which is cache-first.
+No request-time network access is permitted here.
 """
 
 from __future__ import annotations
@@ -24,12 +23,12 @@ from datetime import timedelta
 from threading import Lock
 from typing import Any
 
-from backend import api_cache, toolhub
+from backend import api_cache, catalog_read
 from backend.models import utcnow
 
 # Bump when the payload shape changes, so old cached rows are ignored rather
 # than deserialized into a shape the client no longer understands.
-HOME_CACHE_VERSION = 1
+HOME_CACHE_VERSION = 2
 HOME_FRESH_SECONDS = 5 * 60
 HOME_STALE_SECONDS = 24 * 60 * 60
 # Short per-worker copy in front of the shared cache, so a burst of landing-page
@@ -73,22 +72,20 @@ def _tool_names(tools: list[dict[str, Any]]) -> list[str]:
 
 def _total_tools() -> int:
     """Return the catalog size shown in the search placeholder."""
-    payload = toolhub.public_api_get("/api/ui/home/")
-    total = payload.get("total_tools") if isinstance(payload, dict) else None
+    payload = catalog_read.home_payload()
+    total = payload.get("total_tools")
     return int(total) if isinstance(total, int) else 0
 
 
 def _featured_lists() -> list[dict[str, Any]]:
     """Return the administrator-featured lists, with their embedded tools."""
-    payload = toolhub.public_api_get("/api/lists/", params={"featured": "true", "page_size": FEATURED_LIST_COUNT})
+    payload = catalog_read.collection_payload("/api/lists/", {"featured": "true", "page_size": FEATURED_LIST_COUNT})
     return _results(payload)
 
 
 def _recent_tools() -> list[dict[str, Any]]:
     """Return the most recently modified tools."""
-    payload = toolhub.public_api_get(
-        "/api/search/tools/", params={"ordering": "-modified_date", "page_size": RECENT_TOOL_COUNT}
-    )
+    payload = catalog_read.search_payload({"ordering": "-modified_date", "page_size": RECENT_TOOL_COUNT})
     return _results(payload)
 
 
@@ -96,12 +93,13 @@ def _memberships() -> dict[str, list[dict[str, str]]]:
     """Map each tool name to the public lists containing it.
 
     This is what the browser used to compute by crawling every page of
-    /api/lists/ on a cold visit — two requests of ~1.5s each that also gated
+    the locally persisted list collection on a cold visit. Keeping this merge
+    server-side prevents list membership expansion from blocking first paint.
     the most-listed ordering. Server side each page is a cache hit.
     """
     memberships: dict[str, list[dict[str, str]]] = {}
     for page in range(1, MEMBERSHIP_MAX_PAGES + 1):
-        payload = toolhub.public_api_get("/api/lists/", params={"page_size": MEMBERSHIP_PAGE_SIZE, "page": page})
+        payload = catalog_read.collection_payload("/api/lists/", {"page_size": MEMBERSHIP_PAGE_SIZE, "page": page})
         rows = _results(payload)
         for row in rows:
             if row.get("published") is False:
@@ -124,16 +122,19 @@ def build(summaries_for: Any) -> dict[str, Any]:  # noqa: ANN401 - injected to a
     names = _tool_names([*featured_tools, *recent])
     memberships = _memberships()
     read = summaries_for(names)
+    replica = catalog_read.replica_status()
     return {
-        "totalTools": _total_tools(),
+        "totalTools": replica["recordCount"],
         "lists": lists,
         "recentTools": recent,
         # Keyed by tool name so the client can attach without another round trip.
         "summaries": read.results,
         "endorsements": {name: memberships.get(name, []) for name in names},
+        "replica": replica,
         "source": "local",
         "cachePolicy": {
-            "summary": "Composed server-side from the shared Toolhub read cache and local summaries.",
+            "summary": "Composed server-side from the local catalog replica and local summaries.",
+            "upstream": False,
         },
     }
 

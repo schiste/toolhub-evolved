@@ -1,0 +1,227 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Request-safe reads from the local Toolhub catalog replica.
+
+No function in this module performs network I/O.  Toolhub is consumed by the
+scheduled synchronizers; web requests only query the last published local
+generation or collection payloads already persisted by those jobs.
+"""
+
+from __future__ import annotations
+
+import json
+from collections import defaultdict
+from typing import TYPE_CHECKING, Any
+from urllib.parse import urlencode
+
+from sqlalchemy import distinct, func, select
+
+from backend import api_cache, db
+from backend.canonical_tools import escape_like
+from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
+
+if TYPE_CHECKING:
+    from sqlalchemy.sql import Select
+
+STATE_KEY = "official_catalog"
+MAX_PAGE_SIZE = 100
+DEFAULT_PAGE_SIZE = 20
+FACET_BUCKET_LIMIT = 50
+FACET_FIELDS = {
+    "tool_type": "tool_type",
+    "keywords": "keywords",
+    "audiences": "audiences",
+    "tasks": "tasks",
+    "ui_language": "ui_language",
+    "license": "license",
+    "wiki": "wiki",
+    "technology": "technology",
+}
+
+
+def _int(value: Any, default: int, *, minimum: int = 1, maximum: int = MAX_PAGE_SIZE) -> int:  # noqa: ANN401
+    try:
+        return max(minimum, min(maximum, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _values(params: Any, key: str) -> list[str]:  # noqa: ANN401 - Flask MultiDict or ordinary mapping
+    raw = params.getlist(key) if hasattr(params, "getlist") else params.get(key, [])
+    values = raw if isinstance(raw, list | tuple) else [raw]
+    return list(dict.fromkeys(str(value).strip().casefold() for value in values if str(value).strip()))
+
+
+def replica_status() -> dict[str, Any]:
+    """Return public freshness and atomic-generation metadata."""
+    with db.session_scope() as session:
+        state = session.get(ToolCatalogSyncState, STATE_KEY)
+        count = int(session.scalar(select(func.count()).select_from(CanonicalToolCache)) or 0)
+    last_success = state.last_success_at if state is not None else None
+    age = max(0, int((utcnow() - last_success).total_seconds())) if last_success else None
+    return {
+        "source": "local_replica",
+        "upstreamOnRequest": False,
+        "status": state.status if state is not None else "unavailable",
+        "recordCount": count,
+        "generation": int(state.snapshot_generation or 0) if state is not None else 0,
+        "lastSuccessAt": last_success.isoformat(timespec="seconds") + "Z" if last_success else "",
+        "lastCompletedAt": state.last_completed_at.isoformat(timespec="seconds") + "Z"
+        if state is not None and state.last_completed_at
+        else "",
+        "ageSeconds": age,
+        "stale": age is None or age > 60 * 60,
+        "lastError": state.last_error or "" if state is not None else "replica has not been synchronized",
+    }
+
+
+def _filtered_statement(params: Any) -> Select[tuple[CanonicalToolCache]]:  # noqa: ANN401
+    statement = select(CanonicalToolCache)
+    query = str(params.get("q") or "").strip().casefold()
+    if query:
+        statement = statement.where(CanonicalToolCache.search_text.like(f"%{escape_like(query)}%", escape="\\"))
+    for public_field, stored_field in FACET_FIELDS.items():
+        selected = _values(params, f"{public_field}__term")
+        if not selected:
+            continue
+        matching = select(CatalogFacetValue.tool_name).where(
+            CatalogFacetValue.field == stored_field,
+            CatalogFacetValue.value.in_(selected),
+        )
+        statement = statement.where(CanonicalToolCache.tool_name.in_(matching))
+    return statement
+
+
+def _facet_payload(session: Any, filtered: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy objects
+    names = filtered.with_only_columns(CanonicalToolCache.tool_name).subquery()
+    rows = session.execute(
+        select(
+            CatalogFacetValue.field,
+            CatalogFacetValue.value,
+            func.max(CatalogFacetValue.label),
+            func.count(distinct(CatalogFacetValue.tool_name)),
+        )
+        .join(names, names.c.tool_name == CatalogFacetValue.tool_name)
+        .where(CatalogFacetValue.field.in_(FACET_FIELDS.values()))
+        .group_by(CatalogFacetValue.field, CatalogFacetValue.value)
+        .order_by(CatalogFacetValue.field, func.count(distinct(CatalogFacetValue.tool_name)).desc())
+    ).all()
+    buckets: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for field, value, label, count in rows:
+        if len(buckets[field]) < FACET_BUCKET_LIMIT:
+            buckets[field].append({"key": label or value, "doc_count": int(count)})
+    payload: dict[str, Any] = {}
+    for public_field, stored_field in FACET_FIELDS.items():
+        payload[f"_filter_{public_field}"] = {
+            public_field: {
+                "meta": {"param": f"{public_field}__term"},
+                "buckets": buckets.get(stored_field, []),
+            }
+        }
+    return payload
+
+
+def search_payload(params: Any) -> dict[str, Any]:  # noqa: ANN401 - Flask MultiDict or mapping
+    """Return a Toolhub-compatible, filtered and paginated local search page."""
+    page = _int(params.get("page"), 1, maximum=100_000)
+    page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
+    filtered = _filtered_statement(params)
+    ordering = str(params.get("ordering") or "")
+    if ordering == "name":
+        ordered = filtered.order_by(CanonicalToolCache.tool_name.asc())
+    elif ordering == "-modified_date":
+        ordered = filtered.order_by(CanonicalToolCache.record["modified_date"].as_string().desc())
+    elif ordering == "modified_date":
+        ordered = filtered.order_by(CanonicalToolCache.record["modified_date"].as_string().asc())
+    else:
+        ordered = filtered.order_by(CanonicalToolCache.tool_name.asc())
+    with db.session_scope() as session:
+        total = int(session.scalar(select(func.count()).select_from(filtered.subquery())) or 0)
+        rows = list(session.execute(ordered.offset((page - 1) * page_size).limit(page_size)).scalars())
+        facets = _facet_payload(session, filtered)
+    query = {key: value for key, value in params.items() if key != "page"}
+    next_url = None
+    previous_url = None
+    if page * page_size < total:
+        next_url = f"/v1/catalog/search/tools/?{urlencode({**query, 'page': page + 1})}"
+    if page > 1:
+        previous_url = f"/v1/catalog/search/tools/?{urlencode({**query, 'page': page - 1})}"
+    return {
+        "count": total,
+        "next": next_url,
+        "previous": previous_url,
+        "results": [row.record for row in rows],
+        "facets": facets,
+        "replica": replica_status(),
+    }
+
+
+def tool_payload(name: str) -> dict[str, Any] | None:
+    with db.session_scope() as session:
+        row = session.get(CanonicalToolCache, str(name or "").strip())
+        return dict(row.record) if row is not None and isinstance(row.record, dict) else None
+
+
+def home_payload() -> dict[str, Any]:
+    status = replica_status()
+    return {
+        "total_tools": status["recordCount"],
+        "last_crawl_time": status["lastSuccessAt"],
+        "last_crawl_changed": 0,
+        "replica": status,
+    }
+
+
+def _cached_rows(path: str) -> list[dict[str, Any]]:
+    """Merge locally persisted collection pages, newest copy winning."""
+    seen: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    for response in api_cache.responses_for_path(path):
+        try:
+            payload = json.loads(response.body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        candidates = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(candidates, list):
+            continue
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            identity = str(candidate.get("id") or candidate.get("name") or candidate.get("content_id") or "")
+            if not identity:
+                identity = json.dumps(candidate, sort_keys=True, default=str)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            rows.append(candidate)
+    return rows
+
+
+def collection_payload(path: str, params: Any) -> dict[str, Any]:  # noqa: ANN401
+    rows = _cached_rows(path)
+    if path == "/api/lists/" and str(params.get("featured") or "").casefold() == "true":
+        rows = [row for row in rows if row.get("featured") is True]
+    page = _int(params.get("page"), 1, maximum=100_000)
+    page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
+    offset = (page - 1) * page_size
+    selected = rows[offset : offset + page_size]
+    return {
+        "count": len(rows),
+        "next": f"/v1/catalog/{path.removeprefix('/api/')}?page={page + 1}&page_size={page_size}"
+        if offset + page_size < len(rows)
+        else None,
+        "previous": f"/v1/catalog/{path.removeprefix('/api/')}?page={page - 1}&page_size={page_size}"
+        if page > 1
+        else None,
+        "results": selected,
+        "replica": replica_status(),
+    }
+
+
+def list_payload(list_id: str) -> dict[str, Any] | None:
+    clean = str(list_id or "").strip()
+    return next((row for row in _cached_rows("/api/lists/") if str(row.get("id")) == clean), None)
+
+
+def cached_payload(url: str) -> tuple[bytes, str, int] | None:
+    cached = api_cache.get_local(url)
+    return (cached.body, cached.content_type, cached.status) if cached is not None else None

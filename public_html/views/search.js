@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { fmt, t } from "../lib/core/i18n.js";
-import {
-	apiCached,
-	apiGet,
-	backendGetJson,
-	cachedCanonicalTools,
-	localToolBase,
-	normalizeTool
-} from "../lib/core/api.js";
+import { apiGet, backendGetJson, cachedCanonicalTools, localToolBase, normalizeTool } from "../lib/core/api.js";
 import { navigateTo } from "../lib/core/routing.js";
 import {
 	attachEndorsements,
@@ -95,39 +88,18 @@ function resolveSort(usp) {
 	return { sort, ordering, defaultSort };
 }
 const LOCAL_STRIP_CAP = 12;
-/**
- * Tell the shell that live search data has arrived, so it re-renders the route.
- *
- * Reuses the same event the stale-while-revalidate path emits, so a local-first
- * first paint is upgraded by exactly the mechanism that already upgrades a
- * stale cached one — no second repaint path to keep in step.
- */
-function announceLiveSearchReady(state = "success") {
-	if (typeof document === "undefined" || typeof CustomEvent === "undefined") return;
-	document.dispatchEvent(
-		new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/search/tools/", state } })
-	);
-}
-/* Queries whose live fetch was tried and failed. A failed response is not
-   cached, so without this the re-render after a failure would look cold again,
-   serve local-first again, and loop. Recording the attempt sends the next
-   render down the normal path, where the failure produces the honest
-   "showing saved Toolhub data" state instead of a permanent "loading" note. */
-const liveSearchFailed = new Set();
 /** Clear the cross-render local-first state (tests; each case starts fresh). */
 export function resetLocalFirstStateForTests() {
-	liveSearchFailed.clear();
+	// Kept as a compatibility hook for the deterministic view harness.
 }
 /**
  * @param {string} q
  * @returns {Promise<any[]>}
  */
 /*
- * Federated search, phase 1 (docs/PRODUCTION.md P5): tools registered on this
- * site, matching the same query. The live Toolhub results always come straight
- * from the upstream API; this strip only ever adds clearly-provenanced local
- * records. Any backend failure yields an empty strip — local records never
- * block live search.
+ * Tools registered directly on this site, matching the same query. Canonical
+ * Toolhub results come from the local replica; this strip adds only distinct,
+ * clearly-provenanced Evolved records.
  */
 async function localCandidates(q) {
 	try {
@@ -140,7 +112,7 @@ async function localCandidates(q) {
 /**
  * Dedupe local candidates against the live page and build the strip.
  *
- * Split from the fetch so the request can run alongside the live search rather
+ * Split from the fetch so the request can run alongside local catalog search rather
  * than after it: the dedup is the only part that needs the live results, and it
  * is pure.
  * @param {any[]} candidates
@@ -203,7 +175,7 @@ export async function viewSearch() {
 	}
 
 	const apiParams = /** @type {Record<string, string>} */ (/** @type {unknown} */ (api));
-	const live = () =>
+	const catalog = () =>
 		(async () => {
 			try {
 				const liveData = await apiGet("/search/tools/", apiParams);
@@ -231,55 +203,7 @@ export async function viewSearch() {
 			}
 		})();
 
-	// Local-first: on a cold query, Evolved's own canonical cache answers in a
-	// couple of milliseconds where Toolhub takes hundreds. Serve that, then let
-	// the live response replace it when it lands.
-	//
-	// Deliberately narrow. The local cache cannot evaluate facet filters and
-	// does not paginate, so using it for a filtered or later page would answer a
-	// different question than the one asked. And when a live response is already
-	// cached, that path is instant anyway and is always the better answer.
-	const liveKey = apiParams.toString();
-	const coldQuery =
-		page === 1 && selected.size === 0 && !liveSearchFailed.has(liveKey) && !apiCached("/search/tools/", apiParams);
-	/** @type {{ data: any, results: Tool[], canonicalFallback: boolean, localFirst?: boolean }} */
-	let loaded;
-	/** @type {any[]} */
-	let candidates;
-	if (coldQuery) {
-		const livePending = live();
-		const localFirst = await cachedCanonicalTools({ q, limit: pageSize }).catch(() => []);
-		if (localFirst.length > 0) {
-			// Repaint through the router once Toolhub answers. By then apiGet
-			// resolves from cache, so the re-render costs no extra request.
-			livePending
-				.then((result) => {
-					// live() resolves either way: on a Toolhub failure it answers
-					// from the canonical cache and says so. Treat that as the
-					// failure signal, so the next render takes the normal path and
-					// turns the optimistic "while Toolhub loads" note into the
-					// honest one, instead of leaving it up forever.
-					if (result.canonicalFallback) liveSearchFailed.add(liveKey);
-					else liveSearchFailed.delete(liveKey);
-				})
-				.catch(() => liveSearchFailed.add(liveKey))
-				.finally(announceLiveSearchReady);
-			loaded = { data: { count: localFirst.length, facets: {} }, results: localFirst, canonicalFallback: false };
-			loaded.localFirst = true;
-			candidates = await localCandidates(q);
-		} else {
-			// Nothing cached locally either — wait for live, as before.
-			[loaded, candidates] = await Promise.all([livePending, localCandidates(q)]);
-		}
-	} else {
-		// The local strip only needs the live results to dedupe against, so its
-		// request runs alongside the live search instead of after it.
-		[loaded, candidates] = await Promise.all([
-			live(),
-			// Page 1 only — the strip is additive, never paginated.
-			page === 1 ? localCandidates(q) : Promise.resolve([])
-		]);
-	}
+	const [loaded, candidates] = await Promise.all([catalog(), page === 1 ? localCandidates(q) : Promise.resolve([])]);
 	const data = loaded.data;
 	/** @type {Tool[]} */
 	let results = loaded.results;
@@ -331,8 +255,7 @@ export async function viewSearch() {
 				: esc(t("search.toolCount", "$1 {{PLURAL:$2|tool|tools}}", fmt(total), total));
 	const countNotes = [
 		clientStatuses.size > 0 ? t("search.filteredInBrowser", "filtered in your browser") : "",
-		canonicalFallback ? t("search.cachedCanonicalData", "showing saved Toolhub data") : "",
-		loaded.localFirst ? t("search.localFirstResults", "showing saved results while Toolhub loads") : ""
+		canonicalFallback ? t("search.cachedCanonicalData", "showing the last published catalog generation") : ""
 	].filter(Boolean);
 	const countNoteHTML = countNotes.map((note) => ` <span class="browse__count-note">${esc(note)}</span>`).join("");
 

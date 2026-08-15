@@ -10,11 +10,11 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 	assert.equal(actual.title, EXPECTED_TITLE);
 	// Pin the computed feature total derived from the reduce() over every group.
 	assert.ok(actual.html.includes("The 43 features below describe Toolhub Evolved's hybrid model"));
-	assert.ok(actual.html.includes("live Toolhub data stays the base"));
+	assert.ok(actual.html.includes("the local Toolhub replica serves public reads"));
 	assert.ok(actual.html.includes("local overlays cover drafts, fallback data, and Evolved-owned data"));
 	assert.ok(actual.html.includes("Current behavior"));
 	assert.ok(actual.html.includes("Production need"));
-	assert.ok(actual.html.includes("Live Toolhub read surfaces"));
+	assert.ok(actual.html.includes("Local catalog read surfaces"));
 	assert.ok(actual.html.includes("Search and browse"));
 	assert.ok(actual.html.includes("Tool detail and history"));
 	assert.ok(actual.html.includes("Recent changes table"));
@@ -53,7 +53,7 @@ test("EXPERIMENTS is the source array with the expected feature counts", () => {
 	assert.deepEqual(
 		experiments.EXPERIMENTS.map((g) => g.group),
 		[
-			"Live Toolhub read surfaces",
+			"Local catalog read surfaces",
 			"Identity & account",
 			"Your contributions — official when possible, local when needed",
 			"Evolved-only signals — real Evolved data only",

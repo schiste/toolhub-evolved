@@ -80,7 +80,7 @@ function actions() {
 		{
 			id: "browse",
 			title: t("commandPalette.browseTools", "Browse tools"),
-			description: t("commandPalette.browseToolsDesc", "Search and filter the live Toolhub catalog."),
+			description: t("commandPalette.browseToolsDesc", "Search and filter the local Toolhub replica."),
 			href: "/search",
 			iconName: "search",
 			keywords: ["tools", "search", "browse", "catalog"]

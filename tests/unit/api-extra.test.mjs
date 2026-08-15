@@ -216,13 +216,13 @@ test("fetchJson sends the JSON Accept header to the proxied /api URL", async () 
 		return { ok: true, json: async () => ({ ok: 1 }) };
 	};
 	await api.apiGet("/hdr-probe/", { a: "b" });
-	assert.equal(seenUrl, "/api/hdr-probe/?a=b");
+	assert.equal(seenUrl, "/v1/catalog/hdr-probe/?a=b");
 	assert.deepEqual(seenOpts.headers, { Accept: "application/json" });
 	assert.ok(seenOpts.signal instanceof AbortSignal);
 
 	// Without params there is no query string.
 	await api.apiGet("/hdr-noparams/");
-	assert.equal(seenUrl, "/api/hdr-noparams/");
+	assert.equal(seenUrl, "/v1/catalog/hdr-noparams/");
 });
 
 test("apiGetResponse exposes raw API responses with the JSON Accept header", async () => {
@@ -362,7 +362,7 @@ test("apiGet serves persisted public GET cache after hard refresh and refreshes 
 		);
 		assert.ok(
 			FRONTEND_TIMINGS.some(
-				(entry) => entry.name === "fresh-refresh-completed" && entry.detail.url === "/api/recent/"
+				(entry) => entry.name === "fresh-refresh-completed" && entry.detail.url === "/v1/catalog/recent/"
 			)
 		);
 		const refreshed = await hardRefreshApi.apiGet("/recent/");
@@ -405,7 +405,7 @@ test("apiGet treats server-stale cache as visible data and follows up for fresh 
 		assert.equal(calls, 2);
 		assert.ok(
 			FRONTEND_TIMINGS.some(
-				(entry) => entry.name === "fresh-refresh-completed" && entry.detail.url === "/api/server-stale/"
+				(entry) => entry.name === "fresh-refresh-completed" && entry.detail.url === "/v1/catalog/server-stale/"
 			)
 		);
 
@@ -475,7 +475,7 @@ test("persisted API cache stays inside a total storage budget, newest first", as
 		assert.ok(raw.length <= 1200000, `payload ${raw.length} chars exceeds the budget`);
 		assert.ok(stored.entries.length > 0, "budget must still admit the newest entries");
 		assert.ok(stored.entries.length < 40, "budget must drop the oldest entries");
-		assert.equal(stored.entries[0][0], "/api/budget-39/");
+		assert.equal(stored.entries[0][0], "/v1/catalog/budget-39/");
 	} finally {
 		nowSpy.mockRestore();
 	}
@@ -789,7 +789,7 @@ test("getTool returns the tool on success and null only on a true 404", async ()
 	const good = await api.getTool("Good");
 	assert.equal(good.name, "Good");
 	assert.equal(good.title, "Good Tool");
-	assert.equal(seenUrl, "/api/tools/Good/");
+	assert.equal(seenUrl, "/v1/catalog/tools/Good/");
 
 	// A genuine 404 means the tool is absent → null (caller renders "not found").
 	assert.equal(await api.getTool("Gone"), null);

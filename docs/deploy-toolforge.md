@@ -4,10 +4,10 @@ Toolhub Evolved runs as a small **Python (Flask) webservice** that does two thin
 (`proxy/app.py`):
 
 1. Serves the static single-page app from `public_html/`.
-2. Reverse-proxies read-only `GET /api/*` to the live Toolhub API
-   (`toolhub.wikimedia.org`) **same-origin**, so the browser can read live
-   catalog data without hitting CORS (the upstream API sends no CORS headers).
-3. Hosts `/v1/*`: Evolved's overlay API and the `/v1/write/*` official-first
+2. Serves read-only `GET /v1/catalog/*` from the latest complete local replica;
+   public page rendering performs no request-time Toolhub network calls. Legacy
+   `GET /api/*` compatibility reads are local-cache-only.
+3. Hosts the remaining `/v1/*` Evolved APIs and the `/v1/write/*` official-first
    lifecycle that performs Toolhub writes with the signed-in user's OAuth grant
    and stores Evolved fallback metadata when appropriate.
 
@@ -171,7 +171,7 @@ webservice restart            # or: sh ~/repo/tools/deploy.sh
 - **No bundled catalog.** The SPA does not ship a catalog snapshot in `dist/`.
   User-facing reads remain live through the proxy, while the server-side
   `canonical_tool_cache` supports background enrichment and resilience. If the
-  API is unreachable, views show a clear "Couldn't load live data" message
+  local replica is unavailable, views show a clear "Couldn't load the local catalog" message
   rather than presenting the local enrichment cache as canonical.
 - **Fonts & privacy.** Typography uses the native Wikimedia/Codex system font stack
   (`styles/tokens.css`); no web font is downloaded, so the app makes no third-party

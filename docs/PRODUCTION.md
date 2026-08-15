@@ -2,10 +2,10 @@
 
 # Production Plan — Toolhub Evolved beside Toolhub
 
-Last updated: 2026-07-27. Companion to [`PLAN.md`](PLAN.md), which governed the
+Last updated: 2026-08-15. Companion to [`PLAN.md`](PLAN.md), which governed the
 demonstrator. This document captures the current production target: run Evolved
-beside official Toolhub, using live Toolhub data and APIs while storing only the
-additional Evolved layer locally.
+beside official Toolhub, serving public reads from a local atomic replica while
+using Toolhub APIs for scheduled ingestion and authenticated writes.
 
 For the feature-by-feature plan that turns the Evolved layer into real backend
 features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
@@ -26,18 +26,18 @@ features, see [`HYBRID-FEATURE-PLAN.md`](HYBRID-FEATURE-PLAN.md).
 - **Launch blocker: Lane A i18n/a11y must be finished first** (`PLAN.md`
   §2.2–2.3). Nothing user-facing launches before the interface is localizable
   and the deferred accessibility items are closed.
-- **Data architecture (updated 2026-07-31): live Toolhub + local overlay.**
-  User-facing Toolhub catalog reads remain live through the Toolhub API and the
-  read proxy. Evolved also maintains a rebuildable `canonical_tool_cache` mirror
-  for background enrichment and resilience; it is not authoritative and never
-  replaces live Toolhub reads or official write decisions. The `catalog-sync` job
+- **Data architecture (updated 2026-08-15): local atomic replica + official writes.**
+  Every public page reads `canonical_tool_cache` and local projections through
+  `/v1/catalog/*`; request rendering never contacts Toolhub. Toolhub remains the
+  upstream authority, but the latest complete local generation is the serving
+  authority. The `catalog-sync` job
   performs a paced initial backfill, then consumes recent tool changes and
   reconciles one catalog page every 12 hours. Projection publication invokes
   that same incremental path when the mirror is stale; only the twice-monthly
   `catalog-integrity` job downloads and validates a complete snapshot. A
-  short-lived `api_cache` table
-  stores anonymous `GET /api/*` response bodies as a shared performance cache;
-  the browser may also keep a bounded localStorage copy for stale-while-refresh.
+  `api_cache` table stores scheduled collection snapshots and compatibility
+  resources such as list, recent, schema, and revision payloads. Expiry never
+  forces request-time upstream I/O: the last complete local row remains usable.
   Official writes are sent to Toolhub's API with the user's stored OAuth grant.
   If a record exists upstream, Toolhub remains the source of truth.
 
@@ -127,21 +127,18 @@ media (tracked by #108); obtain actual translations (the mechanism ships
 English-only catalogs); the long-term card-as-link a11y refactor; the
 privacy-policy rewrite for server-side accounts and stored OAuth grants (P6).
 
-## 1. Product architecture — "live base + local overlay + official bridge"
+## 1. Product architecture — "local replica + local overlay + official bridge"
 
 The resolved data architecture (§0) is the demonstrator's core insight carried
 over unchanged, one level up:
 
-- **The base catalog stays live Toolhub data.** `apiGet` keeps reading
-  `toolhub.wikimedia.org` through the same-origin read proxy. We do not fork or
-  mirror the upstream catalog; upstream tools always render from live data. The
-  read proxy keeps anonymous, expiring `GET /api/*` payloads in `api_cache`; the
-  derived tool map uses the same bounded store so its payload also survives
-  restarts and is shared across workers. Stale rows remain briefly usable during
-  refresh failures. The SPA adds a stale-while-revalidate browser cache for the
-  same anonymous public reads: stale cached content can render immediately after a
-  hard refresh, then a toast announces the live refresh and the route repaints
-  when fresh data arrives.
+- **The base catalog is the latest complete local generation.** `apiGet` reads
+  `/v1/catalog/*`, whose search, facets, ordering, counts, pagination, tool
+  details, home model, and persisted collections are resolved without network
+  I/O. Full snapshots stage under a generation id and replace the serving set in
+  one transaction only after the expected count is present. A failed sync records
+  its error while the prior generation remains intact. The homepage exposes the
+  last successful UTC synchronization and a delayed-refresh state.
 - **Officially supported writes go back to Toolhub.** Toolhub OAuth gives
   Evolved a per-user grant. The browser calls `/v1/write/*`; the backend
   validates locally, checks Evolved policy, attaches the access token, forwards
@@ -162,7 +159,7 @@ over unchanged, one level up:
   author claim is scoped to its exact `tool_name`; the same author name on
   another tool remains unverified until that tool has its own evidence.
 - **The merge step is unchanged.** `normalizeTool()`/`normalizeList()` still
-  merge an overlay onto the live record at render time; the overlay now comes
+  merge an overlay onto the replicated record at render time; the overlay comes
   from `GET /v1/…` instead of `localStorage`.
 
 This keeps the product honest by construction: official Toolhub accepts or
@@ -171,8 +168,7 @@ draft, or fallback data instead of presenting it as accepted catalog data.
 
 ```
 Browser (SPA, public_html/)
-  │  GET /api/*   ──────────────►  read proxy ──► api_cache ──► toolhub.wikimedia.org
-  │                                                     (anonymous, expiring)   (live, read-only)
+  │  GET /v1/catalog/* ─────────► local read API ───────► latest complete replica
   │  GET/POST/PUT/DELETE /v1/overlay/* ─► Evolved API ─► ToolsDB: drafts,
   │                                                        overlays, local state
   │  POST/PUT/DELETE /v1/write/* ───────► Evolved API ─► toolhub.wikimedia.org/api
@@ -182,29 +178,30 @@ Browser (SPA, public_html/)
   └  GET /oauth/* ─────────────────────► Toolhub OAuth (/o/authorize/, /o/token/)
 
 Toolforge Jobs framework (scheduled)
+  ├  catalog sync ──► Toolhub reads ──► staged atomic generation ──► ToolsDB
   └  crawler job ──► fetches registered toolinfo.json URLs ──► validates ──► ToolsDB
 ```
 
 ### Components
 
-| Component     | Choice                                                                                                                                 | Why                                                                                                         |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Web app       | Grow `proxy/app.py` into a small Flask package (blueprints)                                                                            | One Toolforge `python3.13` webservice already serves SPA + proxy; add a `/v1` blueprint, keep the stack     |
-| Database      | **ToolsDB (MariaDB)** + SQLAlchemy + Alembic migrations                                                                                | SQLite on Toolforge NFS is unsafe (locking); ToolsDB is the platform-native managed DB                      |
-| Auth          | **Toolhub OAuth 2.0** application + server session                                                                                     | Toolhub is the authorization server for Toolhub API writes; `GET /api/user/` maps the official user locally |
-| Crawler       | **Toolforge Jobs framework** scheduled job (same repo, `tools/`)                                                                       | Server-side fetch of `toolinfo.json` (schema 1.2.2 validation) — the thing the browser never could          |
-| Search        | Phase 1: **federated** (live upstream search + local DB search, merged) · Phase 2: Toolforge shared **Elasticsearch** if quota granted | Local tools become findable immediately without new infra; ES upgrades relevance later                      |
-| Static assets | Unchanged (`dist/` build via `tools/deploy.sh`)                                                                                        | Already works                                                                                               |
+| Component     | Choice                                                                                                                  | Why                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Web app       | Grow `proxy/app.py` into a small Flask package (blueprints)                                                             | One Toolforge `python3.13` webservice already serves SPA + proxy; add a `/v1` blueprint, keep the stack     |
+| Database      | **ToolsDB (MariaDB)** + SQLAlchemy + Alembic migrations                                                                 | SQLite on Toolforge NFS is unsafe (locking); ToolsDB is the platform-native managed DB                      |
+| Auth          | **Toolhub OAuth 2.0** application + server session                                                                      | Toolhub is the authorization server for Toolhub API writes; `GET /api/user/` maps the official user locally |
+| Crawler       | **Toolforge Jobs framework** scheduled job (same repo, `tools/`)                                                        | Server-side fetch of `toolinfo.json` (schema 1.2.2 validation) — the thing the browser never could          |
+| Search        | SQL-backed local replica search and indexed facet projection; optional Elasticsearch remains a future relevance upgrade | All filters, counts, ordering, and pagination share one request-independent generation                      |
+| Static assets | Unchanged (`dist/` build via `tools/deploy.sh`)                                                                         | Already works                                                                                               |
 
 ### The two-catalog question (biggest product risk — decided up front)
 
 The architecture avoids creating a second canonical catalog:
 
 1. **Canonical data is always from Toolhub.** If an official write succeeds,
-   the live API becomes the source of truth. If it fails, Evolved can keep a
+   the next synchronized generation becomes the serving source. If it fails, Evolved can keep a
    local draft/overlay, but it stays labeled as local.
-   Single-tool reads always ask live Toolhub first; local new-tool records are
-   used only after a real upstream `404`, and local overlays strip canonical
+   Single-tool reads use the latest complete replica; local new-tool records are
+   merged only through their labeled overlay path, and local overlays strip canonical
    identity/source fields such as `name` and `origin`.
 2. **Local additions are feeder/fallback data, not a fork.** Locally-registered
    tools are exposed as a public **`toolinfo.json` feed** (`/toolinfo.json`) so
@@ -401,7 +398,7 @@ milestone (real sign-in + favorites) lands ~4–5 weeks in.
 | Risk                                                                   | Mitigation                                                                                                                          |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Catalog divergence from official Toolhub                               | Provenance labeling everywhere + `/toolinfo.json` feeder feed (§1.3) — we add to the ecosystem                                      |
-| Upstream API changes/outage breaks the base catalog                    | Already-graceful "couldn't load live data" states; proxy TTL cache absorbs blips; contract tests vs. `/api/schema/` in CI           |
+| Upstream API changes/outage delays catalog refresh                     | Atomic publication retains the prior complete generation; freshness status exposes delay; contract tests cover `/api/schema/` in CI |
 | Community perception (unofficial service using Toolhub data and OAuth) | Early, explicit outreach to maintainers; honest naming; GPL-3.0 code; cached, identified API use; clear write attribution           |
 | Solo-maintainer ops burden                                             | Everything scripted and in-repo (deploy, jobs, migrations, backups); external uptime alerting; runbook                              |
 | Toolhub OAuth application setup blocks write flows                     | Register the OAuth application before launch; keep read-only mode working when OAuth is unconfigured                                |

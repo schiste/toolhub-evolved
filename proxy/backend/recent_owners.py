@@ -4,11 +4,10 @@
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
-from urllib.parse import quote
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import db, toolhub
+from backend import canonical_tools, db
 from backend.models import ToolOwnerCache, utcnow
 
 OWNER_FRESH_SECONDS = 24 * 60 * 60
@@ -20,11 +19,8 @@ OWNER_NEGATIVE_FRESH_SECONDS = 60 * 60
 OWNER_NEGATIVE_STALE_SECONDS = 60 * 60
 OWNER_MAX_NAMES = 50
 OWNER_ERROR_LIMIT = 2000
-# Live upstream fetches one resolve_owners() call may trigger. Cache hits are
-# free; only cold names spend budget. The Recent page asks about tools that the
-# prewarm job already warmed, so it effectively never reaches this — but without
-# it a single anonymous request fans out into OWNER_MAX_NAMES requests at
-# toolhub.wikimedia.org. Callers pass None (the scheduled job) to opt out.
+# Local catalog lookups one resolve_owners() call may trigger. Cache hits are
+# free; only cold names spend budget, bounding database work for anonymous reads.
 OWNER_FETCH_BUDGET = 10
 SOURCE_DEFERRED = "deferred"
 
@@ -97,7 +93,7 @@ def _cached_owner(tool_name: str) -> OwnerResult | None:
     return None
 
 
-def _store_owner(tool_name: str, owner: str, *, source: str = "toolhub_detail", error: str | None = None) -> None:
+def _store_owner(tool_name: str, owner: str, *, source: str = "local_catalog", error: str | None = None) -> None:
     now = utcnow()
     fresh_seconds = OWNER_FRESH_SECONDS if owner else OWNER_NEGATIVE_FRESH_SECONDS
     stale_seconds = OWNER_STALE_SECONDS if owner else OWNER_NEGATIVE_STALE_SECONDS
@@ -127,19 +123,26 @@ def _mark_failure(tool_name: str, error: str) -> None:
         return
 
 
+def _owner_failure(tool_name: str, error: str) -> OwnerResult:
+    cached = _cached_owner(tool_name)
+    if cached is not None:
+        _mark_failure(tool_name, error)
+        return cached
+    _store_owner(tool_name, "", error=error)
+    return OwnerResult(tool_name, "", "local_catalog_error", cached=False)
+
+
 def _fetch_owner(tool_name: str) -> OwnerResult:
     try:
-        tool = toolhub.public_api_get(f"/api/tools/{quote(tool_name, safe='')}/")
+        cached = canonical_tools.tools_by_name([tool_name]).get(tool_name)
+        tool = cached.get("record") if cached else None
+        if not isinstance(tool, dict):
+            return _owner_failure(tool_name, "tool is absent from the local catalog replica")
         owner = owner_from_tool_record(tool)
         _store_owner(tool_name, owner)
-        return OwnerResult(tool_name, owner, "toolhub_detail", cached=False)
+        return OwnerResult(tool_name, owner, "local_catalog", cached=True)
     except Exception as exc:  # noqa: BLE001 - owner enrichment must never break Recent.
-        cached = _cached_owner(tool_name)
-        if cached is not None:
-            _mark_failure(tool_name, str(exc))
-            return cached
-        _store_owner(tool_name, "", error=str(exc))
-        return OwnerResult(tool_name, "", "toolhub_error", cached=False)
+        return _owner_failure(tool_name, str(exc))
 
 
 def purge_expired() -> int:

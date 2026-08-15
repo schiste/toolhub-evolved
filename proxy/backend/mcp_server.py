@@ -18,10 +18,9 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-import requests
 from flask import Blueprint, Response, jsonify, request
 
-from backend import canonical_tools, db, security, toolhub, v1_facets
+from backend import canonical_tools, catalog_read, db, security, v1_facets
 from backend import tool_facets as facets_backend
 
 mcp_bp = Blueprint("mcp", __name__)
@@ -186,31 +185,13 @@ def _limit_from(arguments: dict[str, Any], default: int) -> int:
 
 
 def _tool_search_tools(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Idea-similarity search, delegated to upstream Toolhub.
-
-    Upstream is Elasticsearch-backed and handles the sentence-shaped queries
-    an LLM composes ("find unsourced statements needing references"); the
-    local canonical search is substring matching and cannot. public_api_get
-    carries the compliant User-Agent and the shared ApiCache (same path as
-    catalog_sync.py:292). Falls back to the local cache only when upstream
-    is unavailable, and says so in the payload so the caller can caveat it.
-    """
+    """Search the request-safe local catalog replica."""
     query = str(arguments.get("query") or "").strip()
     if not query:
         msg = "query must be a non-empty string"
         raise _ToolError(msg)
     limit = _limit_from(arguments, 10)
-    try:
-        payload = toolhub.public_api_get("/api/search/tools/", params={"q": query, "page_size": limit})
-    except (OSError, requests.RequestException, toolhub.ToolhubAPIError) as exc:
-        # Deliberately no local fallback. canonical_tools.search is substring
-        # matching ordered by cache-fetch time; for prior art a weak answer is
-        # WORSE than none, because the caller acts on it and builds a tool that
-        # already exists. Fail loudly so the report says "search unavailable"
-        # instead of silently under-reporting. facet_tools and get_tool are
-        # unaffected - they read local data and still work.
-        msg = f"Toolhub search is unavailable right now ({exc}); retry shortly"
-        raise _ToolError(msg) from exc
+    payload = catalog_read.search_payload({"q": query, "page_size": limit})
     results = payload.get("results") if isinstance(payload, dict) else None
     names = [str(r.get("name")) for r in (results or []) if isinstance(r, dict) and r.get("name")]
     # "returned", not "total": a capped page labeled "total" reads as

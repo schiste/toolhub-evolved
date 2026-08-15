@@ -398,7 +398,7 @@ export const loadingHTML = (path) =>
 	`<div class="container page route-loading" role="status" aria-live="polite">
 	<div class="route-loading__panel">
 		<span class="spinner" aria-hidden="true"></span>
-		<span class="route-loading__label">${t("router.loadingToolhubData", "Loading Toolhub data")}</span>
+		<span class="route-loading__label">${t("router.loadingToolhubData", "Loading the local catalog")}</span>
 		</div>
 	</div>`;
 /** @param {string} href */
@@ -412,8 +412,8 @@ function redirectTo(href) {
 /** @param {unknown} e */
 export const errorHTML = (
 	e
-) => `<div class="container page errorpage"><h1>${t("router.loadErrorTitle", "Couldn't load live data")}</h1>
-	<p class="prose">${t("router.loadErrorBody", "The Toolhub API didn't respond ($1).", esc(String((e && /** @type {{ message?: unknown }} */ (e).message) || e)))}</p>
+) => `<div class="container page errorpage"><h1>${t("router.loadErrorTitle", "Couldn't load the local catalog")}</h1>
+	<p class="prose">${t("router.loadErrorBody", "The local catalog replica could not be read ($1).", esc(String((e && /** @type {{ message?: unknown }} */ (e).message) || e)))}</p>
 	${button(t("router.backToHome", "Back to home"), { variant: "primary", href: "/" })}</div>`;
 // How long a view may load before we replace the page with a spinner. Below this,
 // the current page stays on screen — fast/cached loads never flash a spinner.

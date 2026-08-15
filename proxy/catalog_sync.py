@@ -510,24 +510,21 @@ def _restart_snapshot() -> None:
     """Discard only the incomplete cursor; last-known-good rows stay intact."""
     with db.session_scope() as s:
         state = _state(s)
+        generation = int(state.snapshot_generation or 0)
         state.snapshot_next_page = 1
         state.snapshot_expected_count = 0
         state.snapshot_started_at = None
+    canonical_tools.discard_snapshot_stage(generation)
 
 
 def _store_snapshot_page(
     rows: list[dict[str, Any]], *, page: int, page_size: int, generation: int, expected_count: int
 ) -> int:
     """Persist one validated page and its resumable cursor."""
-    stored = canonical_tools.upsert_records(
+    stored = canonical_tools.stage_snapshot_records(
         rows,
         source_url=listing_url(page, page_size),
-        detail=False,
         generation=generation,
-        # Incremental and recent-detail syncs already enqueue changed records.
-        # A full snapshot exists to prove absence, so only retired names need a
-        # new reconciliation event.
-        enqueue_reconciliation=False,
     )
     with db.session_scope() as s:
         state = _state(s)
@@ -536,7 +533,6 @@ def _store_snapshot_page(
         state.pages_fetched += 1
         state.records_seen += stored
         state.last_success_at = utcnow()
-    graph_enrichment.refresh_tool_names([str(row.get("name") or "") for row in rows])
     return stored
 
 
@@ -546,7 +542,7 @@ def _publish_snapshot(generation: int, expected_count: int) -> list[str]:
 
     with db.session_scope() as s:
         try:
-            retired = canonical_tools.prune_completed_generation(s, generation, expected_count)
+            retired = canonical_tools.publish_snapshot_stage(s, generation, expected_count)
         except ValueError as exc:
             raise SnapshotConsistencyError(str(exc)) from exc
         enqueue_tool_names_in_session(s, retired, reason="canonical_retired")

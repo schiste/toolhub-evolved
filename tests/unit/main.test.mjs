@@ -248,12 +248,12 @@ test("API cache refresh events show a toast and repaint once fresh data arrives"
 		document.dispatchEvent(
 			new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/ui/home/", state: "start" } })
 		);
-		assert.equal($("#toast-region").textContent, "Refreshing live Toolhub data…");
+		assert.equal($("#toast-region").textContent, "Checking the local catalog…");
 
 		document.dispatchEvent(
 			new CustomEvent("toolhub:api-cache-refresh", { detail: { url: "/api/ui/home/", state: "success" } })
 		);
-		assert.equal($("#toast-region").textContent, "Live Toolhub data updated.");
+		assert.equal($("#toast-region").textContent, "Local catalog data updated.");
 		vi.advanceTimersByTime(150);
 		assert.equal(router.render.mock.calls.length, 1);
 		vi.advanceTimersByTime(2400);
@@ -299,7 +299,7 @@ test("server-background cache refresh events show a brief refresh toast", () => 
 				detail: { url: "/api/recent/", state: "server-background" }
 			})
 		);
-		assert.equal($("#toast-region").textContent, "Refreshing live Toolhub data…");
+		assert.equal($("#toast-region").textContent, "Checking the local catalog…");
 		vi.advanceTimersByTime(1800);
 		assert.equal($("#toast-region").textContent, "");
 	} finally {

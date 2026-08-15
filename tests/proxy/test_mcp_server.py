@@ -93,11 +93,15 @@ def _rpc(client, method, params=None, req_id=1, headers=None):
 
 
 def test_legacy_initialize_and_ping(client):
-    resp = _rpc(client, "initialize", {
-        "protocolVersion": "2025-06-18",
-        "capabilities": {},
-        "clientInfo": {"name": "pytest", "version": "0"},
-    })
+    resp = _rpc(
+        client,
+        "initialize",
+        {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "pytest", "version": "0"},
+        },
+    )
     assert resp.status_code == 200
     assert "Mcp-Session-Id" not in resp.headers
     data = resp.get_json()
@@ -164,7 +168,10 @@ def test_tools_list_shapes(client):
     assert result["ttlMs"] > 0
     tools = result["tools"]
     assert [t["name"] for t in tools] == [
-        "search_tools", "facet_tools", "list_facet_values", "get_tool",
+        "search_tools",
+        "facet_tools",
+        "list_facet_values",
+        "get_tool",
     ]  # deterministic order per spec
     for tool in tools:
         assert tool["description"]
@@ -206,30 +213,19 @@ def test_facet_tools_schema_advertises_purpose_filters(client):
     assert set(v1_facets.FILTER_PARAMS) <= props
 
 
-def test_search_tools_fails_loudly_when_upstream_is_down(client, monkeypatch):
-    """No local fallback: a weak answer is worse than none for prior art.
-
-    Substring-matching the local cache would quietly under-report existing
-    tools, and the caller acts on that by building something that already
-    exists - the exact failure this product prevents. Stub the pure upstream
-    boundary so the production handler still runs.
-    """
-    import requests
-
+def test_search_tools_uses_local_replica_when_upstream_is_down(client, monkeypatch):
     from backend import toolhub
 
     def boom(path, params=None):
-        raise requests.RequestException("upstream unreachable")
+        raise AssertionError("public MCP search must not contact upstream")
 
     monkeypatch.setattr(toolhub, "public_api_get", boom)
     with db.session_scope() as s:
         _seed(s)
     result = _call_tool(client, "search_tools", {"query": "citations"})["result"]
-    assert result["isError"] is True
-    text = result["content"][0]["text"].casefold()
-    assert "unavailable" in text and "retry" in text
-    # Must NOT have silently degraded to local results.
-    assert "cite-checker" not in text
+    assert result.get("isError") is not True
+    payload = json.loads(result["content"][0]["text"])
+    assert [tool["name"] for tool in payload["tools"]] == ["cite-checker"]
 
 
 def test_facet_tools_call_includes_coverage(client):
@@ -245,9 +241,7 @@ def test_facet_tools_call_includes_coverage(client):
 def test_list_facet_values_and_get_tool(client):
     with db.session_scope() as s:
         _seed(s)
-    values = json.loads(
-        _call_tool(client, "list_facet_values", {"type": "dependency"})["result"]["content"][0]["text"]
-    )
+    values = json.loads(_call_tool(client, "list_facet_values", {"type": "dependency"})["result"]["content"][0]["text"])
     assert values["values"][0]["value"] == "pypi:pywikibot"
     assert "coverage" in values
     tool = json.loads(_call_tool(client, "get_tool", {"name": "sfedits"})["result"]["content"][0]["text"])
@@ -316,9 +310,9 @@ def test_tool_argument_edge_cases_error_or_fall_back(client):
 def test_facet_tools_unknown_value_matches_nothing(client):
     with db.session_scope() as s:
         _seed(s)
-    result = _call_tool(
-        client, "facet_tools", {"dependency": ["nosuchpkg"], "api": ["wikidata-query-service"]}
-    )["result"]
+    result = _call_tool(client, "facet_tools", {"dependency": ["nosuchpkg"], "api": ["wikidata-query-service"]})[
+        "result"
+    ]
     assert result["isError"] is False
     payload = json.loads(result["content"][0]["text"])
     # Unknown dependency + valid API filter: empty, never widened to API-only.
@@ -361,10 +355,14 @@ def test_prompts_list_and_get(client):
         "description": "The greenfield tool idea, in a sentence or three",
         "required": True,
     }
-    got = _rpc(client, "prompts/get", {
-        "name": "prior-art-review",
-        "arguments": {"project_description": "a bot that fixes broken citations on enwiki"},
-    }).get_json()["result"]
+    got = _rpc(
+        client,
+        "prompts/get",
+        {
+            "name": "prior-art-review",
+            "arguments": {"project_description": "a bot that fixes broken citations on enwiki"},
+        },
+    ).get_json()["result"]
     assert got["resultType"] == "complete"
     text_out = got["messages"][0]["content"]["text"]
     assert "a bot that fixes broken citations on enwiki" in text_out
