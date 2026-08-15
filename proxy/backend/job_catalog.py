@@ -11,6 +11,7 @@ tests assert it against the real file so a shape change fails loudly.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 JOBS_FILE = Path(__file__).resolve().parents[2] / "jobs.yaml"
@@ -19,6 +20,7 @@ CRON_FIELDS = 5
 MINUTES_PER_HOUR = 60
 MINUTES_PER_DAY = 1440
 MINUTES_PER_WEEK = 10080
+DAYS_PER_LONG_MONTH = 31
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,11 @@ def _interval_minutes(schedule: str) -> int:  # noqa: PLR0911 - one return per c
         return MINUTES_PER_WEEK
     if day_of_month == "*":
         return MINUTES_PER_DAY
+    days = sorted({int(value) for value in day_of_month.split(",") if value.isdigit()})
+    if days:
+        circular_gaps = [right - left for left, right in pairwise(days)]
+        circular_gaps.append(DAYS_PER_LONG_MONTH - days[-1] + days[0])
+        return max(circular_gaps) * MINUTES_PER_DAY
     return 0
 
 
