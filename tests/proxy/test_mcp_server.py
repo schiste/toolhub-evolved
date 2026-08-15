@@ -71,6 +71,8 @@ def _seed(s):
         )
     _facet(s, "sfedits", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9500)
     _facet(s, "sfedits", "wikimedia_api", "wikidata-query-service", "Wikidata Query Service", 9400)
+    _facet(s, "sfedits", "detected_technology", "python", "Python", 9400)
+    _facet(s, "sfedits", "technology", "python", "Python (declared)", 10000)
     _facet(s, "cite-checker", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 8000)
 
 
@@ -211,6 +213,8 @@ def test_facet_tools_schema_advertises_purpose_filters(client):
     from backend import v1_facets
 
     assert set(v1_facets.FILTER_PARAMS) <= props
+    assert {"technology", "detected_technology", "declared_technology", "ui_language"} <= props
+    assert facet["inputSchema"]["properties"]["technology"]["deprecated"] is True
 
 
 def test_search_tools_uses_local_replica_when_upstream_is_down(client, monkeypatch):
@@ -246,6 +250,29 @@ def test_list_facet_values_and_get_tool(client):
     assert "coverage" in values
     tool = json.loads(_call_tool(client, "get_tool", {"name": "sfedits"})["result"]["content"][0]["text"])
     assert tool["record"]["title"] == "SF edits"
+
+
+def test_mcp_facet_names_preserve_technology_compatibility(client):
+    with db.session_scope() as s:
+        _seed(s)
+
+    legacy = json.loads(
+        _call_tool(client, "facet_tools", {"technology": ["python"]})["result"]["content"][0]["text"]
+    )
+    canonical = json.loads(
+        _call_tool(client, "facet_tools", {"detected_technology": ["python"]})["result"]["content"][0]["text"]
+    )
+    declared = json.loads(
+        _call_tool(client, "facet_tools", {"declared_technology": ["python"]})["result"]["content"][0]["text"]
+    )
+    assert legacy["total"] == canonical["total"] == declared["total"] == 1
+    assert canonical["tools"][0]["matched"][0]["facet"] == "detected_technology"
+    assert declared["tools"][0]["matched"][0]["facet"] == "declared_technology"
+
+    listed = json.loads(
+        _call_tool(client, "list_facet_values", {"type": "api"})["result"]["content"][0]["text"]
+    )
+    assert listed["type"] == "api"
 
 
 def test_facet_tools_limit_never_exceeds_serializer_cap(client):

@@ -89,6 +89,7 @@ def _seed(s):
     _facet(s, "sfedits", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 9500)
     _facet(s, "sfedits", "wikimedia_api", "wikidata-query-service", "Wikidata Query Service", 9400)
     _facet(s, "sfedits", "detected_technology", "python", "Python", 6400)
+    _facet(s, "sfedits", "technology", "python", "Python (declared)", 10000)
     _facet(s, "sfedits", "tool_type", "bot", "bot", 10000)
     _facet(s, "cite-checker", "dependency", "pypi:pywikibot", "pywikibot (pypi)", 8000)
     _facet(s, "cite-checker", "detected_technology", "javascript", "JavaScript", 6400)
@@ -273,6 +274,38 @@ def test_facets_values_listing_and_validation(client):
     assert client.get("/v1/facets/values/?type=bogus").status_code == 400
     assert client.get("/v1/facets/values/").status_code == 400
     assert client.get("/v1/facets/tools/?dependency=").status_code == 400  # empty value ≠ filter
+
+
+def test_discovery_names_round_trip_without_storage_leaks(client):
+    with db.session_scope() as s:
+        _seed(s)
+
+    detected = client.get("/v1/facets/tools/?technology=python").get_json()
+    canonical = client.get("/v1/facets/tools/?detected_technology=python").get_json()
+    declared = client.get("/v1/facets/tools/?declared_technology=python").get_json()
+
+    assert detected["total"] == canonical["total"] == declared["total"] == 1
+    assert detected["appliedFilters"] == {"technology": ["python"]}
+    assert canonical["tools"][0]["matched"][0]["facet"] == "detected_technology"
+    assert declared["tools"][0]["matched"][0]["facet"] == "declared_technology"
+
+    api_values = client.get("/v1/facets/values/?type=api").get_json()
+    legacy_values = client.get("/v1/facets/values/?type=technology").get_json()
+    declared_values = client.get("/v1/facets/values/?type=declared_technology").get_json()
+    assert api_values["type"] == "api"
+    assert legacy_values["type"] == "technology"
+    assert declared_values["type"] == "declared_technology"
+
+
+def test_detected_technology_aliases_combine_as_one_or_filter(app):
+    with db.session_scope() as s:
+        _seed(s)
+        filters, applied = v1_facets.normalized_filters(
+            s,
+            {"technology": ["python"], "detected_technology": ["javascript"]},
+        )
+    assert filters == {"detected_technology": ["javascript", "python"]}
+    assert applied == {"technology": ["python"], "detected_technology": ["javascript"]}
 
 
 def test_facets_tools_rate_limited(client, monkeypatch):

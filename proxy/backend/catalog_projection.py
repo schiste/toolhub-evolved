@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import catalog_facets, db, wikimedia_urls
+from backend import catalog_facets, db, facet_names, wikimedia_urls
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
@@ -87,16 +87,7 @@ URL_FIELDS = {
     "translate_url",
     "toolinfo_url",
 }
-FACET_FIELDS = {
-    "tool_type": "tool_type",
-    "keywords": "keywords",
-    "for_wikis": "wiki",
-    "technology_used": "technology",
-    "tasks": "tasks",
-    "audiences": "audiences",
-    "available_ui_languages": "ui_language",
-    "license": "license",
-}
+FACET_FIELDS = facet_names.PROJECTED_FIELD_TO_STORAGE
 SOURCE_CONFIDENCE = {
     SOURCE_CANONICAL: 100,
     SOURCE_CRAWLER: 95,

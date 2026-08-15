@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import distinct, func, select
 
-from backend import db
+from backend import db, facet_names
 from backend.models import ApiCacheMeta, CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
 if TYPE_CHECKING:
@@ -27,16 +27,7 @@ CACHE_KEY = "catalog:facets:v1"
 DIRTY_KEY = "catalog:facets:dirty:v1"
 CACHE_VERSION = 1
 FACET_BUCKET_LIMIT = 50
-FACET_FIELDS = {
-    "tool_type": "tool_type",
-    "keywords": "keywords",
-    "audiences": "audiences",
-    "tasks": "tasks",
-    "ui_language": "ui_language",
-    "license": "license",
-    "wiki": "wiki",
-    "technology": "technology",
-}
+FACET_FIELDS = facet_names.CATALOG_PUBLIC_TO_STORAGE
 
 
 def _aggregate_rows(session: Session, filtered: Select) -> list[Any]:

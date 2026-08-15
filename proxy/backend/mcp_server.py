@@ -20,7 +20,7 @@ from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 
-from backend import canonical_tools, catalog_read, db, security, v1_facets
+from backend import canonical_tools, catalog_read, db, facet_names, security, v1_facets
 from backend import tool_facets as facets_backend
 
 mcp_bp = Blueprint("mcp", __name__)
@@ -122,13 +122,15 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "Find tools by verified technical signals extracted from their source code: "
             "dependency (package name, optionally ecosystem-prefixed like 'pypi:pywikibot'), "
             "api (one of: mediawiki-action-api, wikibase-api, wikidata-query-service, "
-            "mediawiki-rest-api, toolforge, commons-upload), technology (a language detected "
-            "in the source, e.g. 'python'). Filters AND together. These three are DETECTED "
+            "mediawiki-rest-api, toolforge, commons-upload), detected_technology (a language "
+            "detected in source, e.g. 'python'). The legacy technology alias has the same "
+            "detected meaning. Filters AND together. These three are DETECTED "
             "from source code, so they cover only tools with a scanned repository — check the "
             "returned coverage field; an empty result is not proof that no such tool exists. "
             "You can also filter on DECLARED catalog metadata, which covers every tool: "
-            "tool_type (e.g. 'bot', 'web app'), keyword, wiki, license, and — for what a "
-            "tool is FOR rather than what it is built from — task and audience. Those two "
+            "declared_technology, tool_type (e.g. 'bot', 'web app'), keyword, wiki, license, "
+            "ui_language, and — for what a tool is FOR rather than what it is built from — "
+            "task and audience. Those two "
             "are only filled in for a small minority of tools, so use them to narrow a "
             "search, never to conclude that nothing does a thing."
         ),
@@ -137,13 +139,21 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
             "properties": {
                 "dependency": {"type": "array", "items": {"type": "string"}},
                 "api": {"type": "array", "items": {"type": "string"}},
-                "technology": {"type": "array", "items": {"type": "string"}},
+                "detected_technology": {"type": "array", "items": {"type": "string"}},
+                "technology": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "deprecated": True,
+                    "description": "Legacy alias for detected_technology",
+                },
+                "declared_technology": {"type": "array", "items": {"type": "string"}},
                 "tool_type": {"type": "array", "items": {"type": "string"}},
                 "keyword": {"type": "array", "items": {"type": "string"}},
                 "wiki": {"type": "array", "items": {"type": "string"}},
                 "license": {"type": "array", "items": {"type": "string"}},
                 "task": {"type": "array", "items": {"type": "string"}},
                 "audience": {"type": "array", "items": {"type": "string"}},
+                "ui_language": {"type": "array", "items": {"type": "string"}},
                 "limit": {"type": "integer", "minimum": 1, "maximum": _MAX_TOOL_RESULTS, "default": 25},
             },
         },
@@ -153,9 +163,10 @@ _TOOL_DEFINITIONS: tuple[dict[str, Any], ...] = (
         "description": (
             "List the distinct values of one facet type ranked by how many tools carry "
             "each — the ecosystem's actual adoption ranking. Call before facet_tools to "
-            "learn what values exist. Detected types (scanned repos only): dependency, "
-            "wikimedia_api, detected_technology. Declared types (whole catalog): tool_type, "
-            "keywords, wiki, license — plus tasks and audiences, which are sparsely "
+            "learn what values exist. Detected types (scanned repos only): dependency, api, "
+            "detected_technology (technology is a legacy alias). Declared types: "
+            "declared_technology, tool_type, keyword, wiki, license, ui_language, task, and audience. "
+            "The last two are sparsely "
             "filled but the only values describing what a tool is FOR. The response "
             "says which family a type belongs to."
         ),
@@ -219,8 +230,9 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
         filters, _ = v1_facets.normalized_filters(s, raw_by_param)
         if not filters:
             msg = (
-                "supply at least one filter: dependency, api, technology (detected), "
-                "or tool_type, keyword, wiki, license, task, audience (declared)"
+                "supply at least one filter: dependency, api, detected_technology "
+                "(or legacy technology), declared_technology, tool_type, keyword, "
+                "wiki, license, ui_language, task, or audience"
             )
             raise _ToolError(msg)
         matches = facets_backend.tools_matching_facets(s, filters, limit=_limit_from(arguments, 25))
@@ -235,9 +247,10 @@ def _tool_facet_tools(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
-    facet_type = str(arguments.get("type") or "").strip().casefold()
-    if facet_type not in set(v1_facets.FILTER_PARAMS.values()):
-        valid_types = ", ".join(sorted(set(v1_facets.FILTER_PARAMS.values())))
+    public_type = str(arguments.get("type") or "").strip().casefold()
+    facet_type = facet_names.to_storage(public_type)
+    if facet_type is None:
+        valid_types = ", ".join(sorted(v1_facets.FILTER_PARAMS))
         msg = f"type must be one of: {valid_types}"
         raise _ToolError(msg)
     # Through the same cached accessor as the REST route (Phase 3 Task 3) —
@@ -245,7 +258,7 @@ def _tool_list_facet_values(arguments: dict[str, Any]) -> dict[str, Any]:
     listing = v1_facets.cached_facet_values(facet_type, limit=facets_backend.DEFAULT_VALUE_RESULTS)
     disclosed = v1_facets.cached_coverage()
     return {
-        "type": facet_type,
+        "type": public_type,
         "values": listing["values"],
         "totalValues": listing["totalValues"],
         "coverage": disclosed,
