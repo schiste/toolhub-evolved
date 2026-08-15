@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Verify user-space tool authors through Wikimedia and Toolforge identity."""
+"""Verify user-space tool authors and maintainers through stable identity."""
 
 from __future__ import annotations
 
@@ -22,13 +22,14 @@ from backend.models import (
     ToolRelationshipEvidence,
     utcnow,
 )
-from backend.sync import AUTHOR_CLAIM_VERIFIED, PERSON_REL_AUTHOR
+from backend.sync import AUTHOR_CLAIM_VERIFIED, PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 SOURCE = "wikimedia_user_space_toolforge"
 METHOD = "wikimedia_user_space_toolforge_identity"
+MAINTAINER_METHOD = "wikimedia_user_space_namespace_owner"
 PROOF_METHOD = "wikimedia_user_space_exact_toolforge_handle"
 META_KEY = "wikimedia_user_space_reconciliation_v1"
 CONFIDENCE = 95
@@ -40,7 +41,7 @@ RULES_FINGERPRINT = projection_policy.module_fingerprint(
 
 @dataclass(frozen=True)
 class UserSpaceToolCandidate:
-    """One canonical tool whose author matches its Wikimedia page owner."""
+    """One canonical tool hosted below a Wikimedia user namespace."""
 
     tool_name: str
     url: str
@@ -48,7 +49,7 @@ class UserSpaceToolCandidate:
     page_title: str
     owner: str
     normalized_owner: str
-    matched_author: str
+    matched_author: str = ""
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ def _tool_candidates(s: Session) -> list[UserSpaceToolCandidate]:
             ),
             "",
         )
-        if not normalized_owner or not matched:
+        if not normalized_owner:
             continue
         candidates.append(
             UserSpaceToolCandidate(
@@ -192,7 +193,16 @@ def _fingerprint(s: Session) -> str:
         .where(ToolRelationshipEvidence.source == SOURCE)
         .order_by(ToolRelationshipEvidence.id)
     ).scalars():
-        update((row.tool_name, row.person_id, row.verification_status, row.withdrawn_at))
+        update(
+            (
+                row.tool_name,
+                row.person_id,
+                row.relationship_type,
+                row.method,
+                row.verification_status,
+                row.withdrawn_at,
+            )
+        )
     return digest.hexdigest()
 
 
@@ -201,6 +211,7 @@ def empty_stats(*, cache_hit: int = 0) -> dict[str, int]:
         "candidateTools": 0,
         "verifiedTools": 0,
         "authorEvidence": 0,
+        "maintainerEvidence": 0,
         "accountsVerified": 0,
         "accountsBound": 0,
         "bindingConflicts": 0,
@@ -213,10 +224,10 @@ def empty_stats(*, cache_hit: int = 0) -> dict[str, int]:
     }
 
 
-def synchronize(  # noqa: C901, PLR0915 - ordered fail-closed reconciliation policy
+def synchronize(  # noqa: C901, PLR0912, PLR0915 - ordered fail-closed reconciliation policy
     s: Session,
 ) -> dict[str, int]:
-    """Publish verified author evidence for deterministic three-way matches."""
+    """Publish role-specific evidence for deterministic three-way matches."""
     current_fingerprint = _fingerprint(s)
     marker = s.get(ApiCacheMeta, META_KEY)
     if marker is not None and marker.value == current_fingerprint:
@@ -287,33 +298,45 @@ def synchronize(  # noqa: C901, PLR0915 - ordered fail-closed reconciliation pol
         stats["accountsVerified"] += 1
         stats["accountsBound"] += int(not was_verified)
         for tool in tools:
-            observations_by_tool[tool.tool_name] = [
-                {
-                    "display_name": identity.person.display_name or identity.wiki_username,
-                    "wikimedia_global_user_id": identity.global_user_id,
-                    "wiki_username": identity.wiki_username,
-                    "toolforge_uid_number": account.uid_number,
-                    "toolforge_username": account.developer_username,
-                    "relationship_type": PERSON_REL_AUTHOR,
-                    "method": METHOD,
-                    "evidence_key": account.uid_number,
-                    "verification_status": AUTHOR_CLAIM_VERIFIED,
-                    "confidence": CONFIDENCE,
-                    "evidence_url": tool.url,
-                    "evidence_payload": {
-                        "wikimediaDomain": tool.domain,
-                        "wikimediaPageTitle": tool.page_title,
-                        "wikimediaPageOwner": tool.owner,
-                        "wikimediaUsername": identity.wiki_username,
-                        "wikimediaGlobalUserId": identity.global_user_id,
-                        "toolforgeDeveloperUsername": account.developer_username,
-                        "toolforgeUidNumber": account.uid_number,
-                        "matchedAuthor": tool.matched_author,
-                        "identityBindingMethod": PROOF_METHOD,
-                    },
-                    "checked_at": utcnow(),
+            common = {
+                "display_name": identity.person.display_name or identity.wiki_username,
+                "wikimedia_global_user_id": identity.global_user_id,
+                "wiki_username": identity.wiki_username,
+                "toolforge_uid_number": account.uid_number,
+                "toolforge_username": account.developer_username,
+                "evidence_key": account.uid_number,
+                "verification_status": AUTHOR_CLAIM_VERIFIED,
+                "confidence": CONFIDENCE,
+                "evidence_url": tool.url,
+                "evidence_payload": {
+                    "wikimediaDomain": tool.domain,
+                    "wikimediaPageTitle": tool.page_title,
+                    "wikimediaPageOwner": tool.owner,
+                    "wikimediaUsername": identity.wiki_username,
+                    "wikimediaGlobalUserId": identity.global_user_id,
+                    "toolforgeDeveloperUsername": account.developer_username,
+                    "toolforgeUidNumber": account.uid_number,
+                    "identityBindingMethod": PROOF_METHOD,
+                },
+                "checked_at": utcnow(),
+            }
+            observations = [
+                common
+                | {
+                    "relationship_type": PERSON_REL_MAINTAINER,
+                    "method": MAINTAINER_METHOD,
                 }
             ]
+            if tool.matched_author:
+                observations.append(
+                    common
+                    | {
+                        "relationship_type": PERSON_REL_AUTHOR,
+                        "method": METHOD,
+                        "evidence_payload": common["evidence_payload"] | {"matchedAuthor": tool.matched_author},
+                    }
+                )
+            observations_by_tool[tool.tool_name] = observations
 
     previous_tools = set(
         s.execute(
@@ -330,7 +353,8 @@ def synchronize(  # noqa: C901, PLR0915 - ordered fail-closed reconciliation pol
             SOURCE,
             observations_by_tool.get(tool_name, []),
         )
-        stats["authorEvidence"] += len(rows)
+        stats["authorEvidence"] += sum(row.relationship_type == PERSON_REL_AUTHOR for row in rows)
+        stats["maintainerEvidence"] += sum(row.relationship_type == PERSON_REL_MAINTAINER for row in rows)
     stats["verifiedTools"] = len(observations_by_tool)
     stats["retiredTools"] = len(previous_tools - set(observations_by_tool))
 

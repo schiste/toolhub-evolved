@@ -55,3 +55,16 @@ def test_path_title_is_authoritative_when_a_query_also_contains_a_title():
 
 def test_normalized_username_handles_mediawiki_spelling_only():
     assert wikimedia_urls.normalized_username("User:Ada_Lovelace") == "ada lovelace"
+
+
+@pytest.mark.parametrize(
+    ("url", "is_javascript"),
+    [
+        ("https://en.wikipedia.org/wiki/User:Enterprisey/tool.js", True),
+        ("https://en.wikipedia.org/w/index.php?title=User%3AEnterprisey%2Ftool.JS&action=raw", True),
+        ("https://en.wikipedia.org/wiki/User:Enterprisey/tool.css", False),
+        ("https://example.org/wiki/User:Enterprisey/tool.js", False),
+    ],
+)
+def test_user_space_javascript_page_requires_a_trusted_js_title(url, is_javascript):
+    assert (wikimedia_urls.user_space_javascript_page(url) is not None) is is_javascript

@@ -67,7 +67,7 @@ def _wikimedia_person(session, *, username="Enterprisey", global_id="500"):
     )
 
 
-def test_three_way_match_verifies_the_author_and_binds_the_toolforge_account():
+def test_three_way_match_verifies_the_author_and_maintainer_then_binds_the_account():
     with db.session_scope() as session:
         _canonical(session)
         _account(session)
@@ -78,18 +78,24 @@ def test_three_way_match_verifies_the_author_and_binds_the_toolforge_account():
 
         assert result["candidateTools"] == 1
         assert result["verifiedTools"] == 1
+        assert result["authorEvidence"] == 1
+        assert result["maintainerEvidence"] == 1
         assert result["accountsBound"] == 1
         binding = session.query(PersonAccountBinding).one()
         assert binding.status == "verified"
         assert binding.person_id == person_id
         assert binding.proof_method == wikimedia_user_reconciliation.PROOF_METHOD
-        edge = session.query(ToolRelationshipEvidence).one()
-        assert edge.relationship_type == "author"
-        assert edge.verification_status == "verified"
-        assert edge.person_id == person_id
-        assert edge.evidence_payload["wikimediaPageOwner"] == "Enterprisey"
-        assert edge.evidence_payload["toolforgeDeveloperUsername"] == "Enterprisey"
-        assert session.query(ToolPersonRelationship).one().verification_status == "verified"
+        edges = {row.relationship_type: row for row in session.query(ToolRelationshipEvidence).all()}
+        assert set(edges) == {"author", "maintainer"}
+        assert all(edge.verification_status == "verified" for edge in edges.values())
+        assert all(edge.person_id == person_id for edge in edges.values())
+        assert edges["maintainer"].method == wikimedia_user_reconciliation.MAINTAINER_METHOD
+        assert edges["maintainer"].evidence_payload["wikimediaPageOwner"] == "Enterprisey"
+        assert edges["author"].evidence_payload["matchedAuthor"] == "Enterprisey"
+        assert edges["author"].evidence_payload["toolforgeDeveloperUsername"] == "Enterprisey"
+        relationships = {row.relationship_type: row for row in session.query(ToolPersonRelationship).all()}
+        assert set(relationships) == {"author", "maintainer"}
+        assert all(row.verification_status == "verified" for row in relationships.values())
         identifiers = {
             (row.namespace, row.value)
             for row in session.query(PersonIdentifier).filter_by(person_id=person_id, is_current=True)
@@ -99,16 +105,46 @@ def test_three_way_match_verifies_the_author_and_binds_the_toolforge_account():
 
 
 @pytest.mark.parametrize(
-    ("url", "author", "account_name", "disabled"),
+    ("url", "author", "account_name", "disabled", "expected_roles"),
     [
-        ("https://en.wikipedia.org.attacker.example/wiki/User:Enterprisey/tool.js", "Enterprisey", "Enterprisey", False),
-        ("https://en.wikipedia.org/wiki/User:SomeoneElse/tool.js", "Enterprisey", "Enterprisey", False),
-        ("https://en.wikipedia.org/wiki/User:Enterprisey/tool.js", "SomeoneElse", "Enterprisey", False),
-        ("https://en.wikipedia.org/wiki/User:Enterprisey/tool.js", "Enterprisey", "DifferentAccount", False),
-        ("https://en.wikipedia.org/wiki/User:Enterprisey/tool.js", "Enterprisey", "Enterprisey", True),
+        (
+            "https://en.wikipedia.org.attacker.example/wiki/User:Enterprisey/tool.js",
+            "Enterprisey",
+            "Enterprisey",
+            False,
+            set(),
+        ),
+        (
+            "https://en.wikipedia.org/wiki/User:SomeoneElse/tool.js",
+            "Enterprisey",
+            "Enterprisey",
+            False,
+            set(),
+        ),
+        (
+            "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
+            "SomeoneElse",
+            "Enterprisey",
+            False,
+            {"maintainer"},
+        ),
+        (
+            "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
+            "Enterprisey",
+            "DifferentAccount",
+            False,
+            set(),
+        ),
+        (
+            "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js",
+            "Enterprisey",
+            "Enterprisey",
+            True,
+            set(),
+        ),
     ],
 )
-def test_any_missing_or_untrusted_link_fails_closed(url, author, account_name, disabled):
+def test_each_role_requires_its_own_complete_evidence(url, author, account_name, disabled, expected_roles):
     with db.session_scope() as session:
         _canonical(session, url=url, author=author)
         _account(session, username=account_name, disabled=disabled)
@@ -116,9 +152,12 @@ def test_any_missing_or_untrusted_link_fails_closed(url, author, account_name, d
 
         result = wikimedia_user_reconciliation.synchronize(session)
 
-        assert result["verifiedTools"] == 0
-        assert session.query(ToolRelationshipEvidence).count() == 0
-        assert session.query(PersonAccountBinding).count() == 0
+        roles = {row.relationship_type for row in session.query(ToolRelationshipEvidence).all()}
+        assert roles == expected_roles
+        assert result["verifiedTools"] == int(bool(expected_roles))
+        assert result["authorEvidence"] == int("author" in expected_roles)
+        assert result["maintainerEvidence"] == int("maintainer" in expected_roles)
+        assert session.query(PersonAccountBinding).count() == int(bool(expected_roles))
 
 
 def test_a_stable_toolforge_identity_conflict_never_publishes_authorship():
@@ -165,6 +204,7 @@ def test_changed_canonical_ownership_retires_previous_evidence_and_cache_is_idem
         retired = wikimedia_user_reconciliation.synchronize(session)
 
         assert retired["retiredTools"] == 1
-        evidence = session.query(ToolRelationshipEvidence).one()
-        assert evidence.withdrawn_at is not None
+        evidence = session.query(ToolRelationshipEvidence).all()
+        assert len(evidence) == 2
+        assert all(row.withdrawn_at is not None for row in evidence)
         assert session.query(ToolPersonRelationship).count() == 0

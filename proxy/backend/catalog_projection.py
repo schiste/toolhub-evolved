@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend import db
+from backend import db, wikimedia_urls
 from backend.models import (
     CanonicalToolCache,
     CatalogCuration,
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-PROJECTION_VERSION = 2
+PROJECTION_VERSION = 3
 MAX_REFRESH_TOOLS = 500
 STATUS_READY = "ready"
 STATUS_ERROR = "error"
@@ -43,6 +43,7 @@ SOURCE_CANONICAL = "official_toolhub"
 SOURCE_CRAWLER = "official_toolinfo"
 SOURCE_DISCOVERY = "self_hosted_toolinfo"
 SOURCE_REPOSITORY = "repository_analysis"
+SOURCE_WIKIMEDIA_USER_SCRIPT = "wikimedia_user_script"
 SOURCE_CURATION = "evolved_curation"
 
 LIST_FIELDS = (
@@ -95,6 +96,7 @@ SOURCE_CONFIDENCE = {
     SOURCE_CRAWLER: 95,
     SOURCE_DISCOVERY: 80,
     SOURCE_REPOSITORY: 75,
+    SOURCE_WIKIMEDIA_USER_SCRIPT: 95,
     SOURCE_CURATION: 100,
 }
 
@@ -271,6 +273,16 @@ def _sources_by_tool(  # noqa: C901 - source joins stay explicit and auditable.
             sources[row.tool_name].append(
                 {"payload": row.record, "source": SOURCE_CANONICAL, "url": row.source_url, "observed": row.fetched_at}
             )
+            tool_url = _clean_text(row.record.get("url"))
+            if wikimedia_urls.user_space_javascript_page(tool_url) is not None:
+                sources[row.tool_name].append(
+                    {
+                        "payload": {"repository": tool_url},
+                        "source": SOURCE_WIKIMEDIA_USER_SCRIPT,
+                        "url": tool_url,
+                        "observed": row.fetched_at,
+                    }
+                )
 
     crawler_rows = s.execute(
         select(ToolinfoSourceItem, ToolinfoSource)
