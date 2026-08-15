@@ -19,6 +19,7 @@ from backend import (
     people_policy,
     public_identity,
     source_attestations,
+    wikimedia_user_reconciliation,
 )
 from backend.models import (
     ApiCacheMeta,
@@ -1018,7 +1019,7 @@ def build_plan(s: Session) -> dict[str, Any]:
     }
 
 
-def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic in tests
+def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation deterministic in tests
     s: Session,
     *,
     mode: str = MODE_DRY_RUN,
@@ -1127,6 +1128,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                 if discover_candidates and registry_label_limit
                 else {"checked": 0, "resolved": 0, "peopleCreated": 0}
             )
+            wikimedia_user_space_result = wikimedia_user_reconciliation.synchronize(s)
             source_attestation_summary = {
                 "sources": 0,
                 "tools": 0,
@@ -1142,7 +1144,13 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
                         )
                     else:
                         source_attestation_summary["locked"] = True
-            if rebuild_tools or candidate_result["linked"] or source_attestation_summary["tools"]:
+            if (
+                rebuild_tools
+                or candidate_result["linked"]
+                or wikimedia_user_space_result["verifiedTools"]
+                or wikimedia_user_space_result["retiredTools"]
+                or source_attestation_summary["tools"]
+            ):
                 people_index.refresh_activity_summaries(s)
             # User/person links are the only reconciliation writes that can
             # overlap the authentication authority. Keep them last so their
@@ -1162,6 +1170,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             account_binding_conflicts_queued = 0
             candidate_result = {"created": 0, "linked": 0, "conflicts": 0}
             registry_result = {"checked": 0, "resolved": 0, "peopleCreated": 0}
+            wikimedia_user_space_result = wikimedia_user_reconciliation.empty_stats()
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
             source_attestation_summary = {
@@ -1188,6 +1197,7 @@ def run(  # noqa: PLR0913 - explicit providers keep reconciliation deterministic
             "identityMappingsApplied": candidate_result["linked"],
             "stableIdentityConflicts": candidate_result["conflicts"],
             "accountBindings": account_bindings,
+            "wikimediaUserSpaceReconciliation": wikimedia_user_space_result,
             "sourceAttestations": source_attestation_summary,
             "accountBindingConflictsQueued": account_binding_conflicts_queued,
             "catalogAuthority": "toolhub",
