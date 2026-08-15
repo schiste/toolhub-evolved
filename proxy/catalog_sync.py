@@ -278,6 +278,41 @@ def _dedupe_names(names: list[str]) -> list[str]:
     return list(dict.fromkeys(name.strip() for name in names if name.strip()))
 
 
+def _cancel_obsolete_cursor_recovery(state: ToolCatalogSyncState) -> int:
+    """Reset a superseded snapshot and return its staging generation."""
+    if not state.recent_cursor_recovery_required:
+        return 0
+    generation = int(state.snapshot_generation or 0)
+    state.snapshot_next_page = 1
+    state.snapshot_expected_count = 0
+    state.snapshot_started_at = None
+    state.recent_cursor_recovery_required = False
+    return generation
+
+
+def _store_recent_progress(scan: RecentScan, remaining: list[str]) -> int:
+    """Persist recent-scan progress and retire any superseded recovery."""
+    with db.session_scope() as s:
+        state = _state(s)
+        abandoned_snapshot_generation = _cancel_obsolete_cursor_recovery(state)
+        if scan.complete:
+            state.recent_latest_marker = scan.latest_marker
+            state.recent_scan_page = 1
+            state.recent_scan_latest_marker = None
+            state.recent_scan_boundary_marker = None
+        else:
+            state.recent_scan_page = scan.page
+            state.recent_scan_latest_marker = scan.latest_marker
+            state.recent_scan_boundary_marker = scan.boundary_marker
+        state.recent_pending_tools = _dedupe_names(remaining)
+        state.recent_last_at = utcnow()
+        state.last_success_at = utcnow()
+        state.status = STATUS_IDLE
+        state.source = SOURCE_OFFICIAL
+        state.sync_status = SYNC_OFFICIAL
+        return abandoned_snapshot_generation
+
+
 def _mark_started() -> None:
     with db.session_scope() as s:
         row = _state(s)
@@ -412,23 +447,9 @@ def _recent_updates(interval: float, sleep_fn: Callable[[float], None]) -> dict[
             errors += 1
             remaining.append(name)
     remaining.extend(names[MAX_RECENT_DETAILS_PER_RUN:])
-    with db.session_scope() as s:
-        state = _state(s)
-        if scan.complete:
-            state.recent_latest_marker = scan.latest_marker
-            state.recent_scan_page = 1
-            state.recent_scan_latest_marker = None
-            state.recent_scan_boundary_marker = None
-        else:
-            state.recent_scan_page = scan.page
-            state.recent_scan_latest_marker = scan.latest_marker
-            state.recent_scan_boundary_marker = scan.boundary_marker
-        state.recent_pending_tools = _dedupe_names(remaining)
-        state.recent_last_at = utcnow()
-        state.last_success_at = utcnow()
-        state.status = STATUS_IDLE
-        state.source = SOURCE_OFFICIAL
-        state.sync_status = SYNC_OFFICIAL
+    abandoned_snapshot_generation = _store_recent_progress(scan, remaining)
+    if abandoned_snapshot_generation:
+        canonical_tools.discard_snapshot_stage(abandoned_snapshot_generation)
     graph_enrichment.refresh_tool_names(refreshed_names)
     return {
         "recent_tools": successful,
