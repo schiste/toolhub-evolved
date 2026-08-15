@@ -548,6 +548,7 @@ async function homeSectionsModel(state) {
 	};
 }
 
+/** @param {any} replica */
 function replicaStatusHTML(replica) {
 	if (!replica?.lastSuccessAt) return "";
 	const stale = replica.stale ? ` · ${t("home.replicaStale", "refresh delayed")}` : "";

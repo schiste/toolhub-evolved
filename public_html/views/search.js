@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { fmt, t } from "../lib/core/i18n.js";
-import { apiGet, backendGetJson, cachedCanonicalTools, localToolBase, normalizeTool } from "../lib/core/api.js";
-import { navigateTo } from "../lib/core/routing.js";
 import {
-	attachEndorsements,
-	attachEvolvedSummaries,
-	completeness,
-	EVOLVED_SUMMARY_GRACE_MS,
-	rankFitsFirst
-} from "../lib/core/signals.js";
+	apiCached,
+	apiGet,
+	backendGetJson,
+	cachedCanonicalTools,
+	localToolBase,
+	normalizeTool
+} from "../lib/core/api.js";
+import { navigateTo } from "../lib/core/routing.js";
+import { attachEndorsements, attachEvolvedSummaries, completeness, rankFitsFirst } from "../lib/core/signals.js";
 import { button } from "../lib/atoms/button.js";
 import { FACET_GROUPS, renderFacetGroup } from "../lib/molecules/facet-group.js";
 import { renderPager } from "../lib/molecules/pager.js";
@@ -127,29 +128,6 @@ function localStrip(candidates, live) {
 		.map((/** @type {any} */ rec) => localToolBase(rec.name, rec));
 }
 
-/**
- * Keep Toolhub search-index lag from publishing records that are absent from
- * the last complete canonical catalog snapshot. If the local projection is
- * unavailable, preserve the live response: an outage is not evidence that
- * every tool was deleted.
- * @param {Tool[]} results
- * @returns {Promise<{ results: Tool[], retiredOnPage: number }>}
- */
-async function retainCanonicalResults(results) {
-	if (results.length === 0) return { results, retiredOnPage: 0 };
-	try {
-		const canonical = await cachedCanonicalTools({
-			names: results.map((tool) => tool.name),
-			limit: results.length
-		});
-		const active = new Set(canonical.map((tool) => tool.name));
-		const visible = results.filter((tool) => active.has(tool.name));
-		return { results: visible, retiredOnPage: results.length - visible.length };
-	} catch {
-		return { results, retiredOnPage: 0 };
-	}
-}
-
 export async function viewSearch() {
 	// Stryker disable next-line StringLiteral: when location.search is empty the fallback feeds URLSearchParams; "" yields no params and any sentinel yields a single unread key, so reads (q, page, *__term, …) are unaffected — equivalent.
 	const usp = new URLSearchParams(location.search || "");
@@ -173,21 +151,24 @@ export async function viewSearch() {
 			selected.add(`${k}=${v}`);
 		}
 	}
+	const facetApi = new URLSearchParams(api);
+	facetApi.delete("page");
+	facetApi.delete("page_size");
+	facetApi.delete("ordering");
+	const facetParams = /** @type {Record<string, string>} */ (/** @type {unknown} */ (facetApi));
+	const facetsWereCached = apiCached("/search/facets/", facetParams);
+	const facetsPending = apiGet("/search/facets/", facetParams).catch(() => ({ facets: {} }));
+	api.set("include_facets", "false");
+	api.set("view", "card");
 
 	const apiParams = /** @type {Record<string, string>} */ (/** @type {unknown} */ (api));
 	const catalog = () =>
 		(async () => {
 			try {
 				const liveData = await apiGet("/search/tools/", apiParams);
-				const canonical = await retainCanonicalResults(
-					(liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool))
-				);
 				return {
-					data: {
-						...liveData,
-						count: Math.max(0, Number(liveData.count || 0) - canonical.retiredOnPage)
-					},
-					results: canonical.results,
+					data: liveData,
+					results: (liveData.results || []).map((/** @type {any} */ tool) => normalizeTool(tool)),
 					canonicalFallback: false
 				};
 			} catch (error) {
@@ -205,14 +186,15 @@ export async function viewSearch() {
 
 	const [loaded, candidates] = await Promise.all([catalog(), page === 1 ? localCandidates(q) : Promise.resolve([])]);
 	const data = loaded.data;
+	const initialFacetData = facetsWereCached ? await facetsPending : null;
 	/** @type {Tool[]} */
 	let results = loaded.results;
 	const { canonicalFallback } = loaded;
 	const local = localStrip(candidates, results);
 	await Promise.all([
 		attachEndorsements(results, { defer: true }),
-		attachEvolvedSummaries(results, { graceMs: EVOLVED_SUMMARY_GRACE_MS }),
-		attachEvolvedSummaries(local, { graceMs: EVOLVED_SUMMARY_GRACE_MS })
+		attachEvolvedSummaries(results),
+		attachEvolvedSummaries(local)
 	]);
 	// Client-side prototype until backend status faceting + result counts exist (#57/#58).
 	if (clientStatuses.size > 0) {
@@ -224,7 +206,9 @@ export async function viewSearch() {
 	results = rankFitsFirst(results);
 	const total = data.count || 0;
 	const pages = Math.max(1, Math.ceil(total / pageSize));
-	const facetHTML = FACET_GROUPS.map((g) => renderFacetGroup(g, data.facets, selected)).join("");
+	/** @param {any} facets */
+	const renderFacets = (facets) => FACET_GROUPS.map((g) => renderFacetGroup(g, facets, selected)).join("");
+	const facetHTML = initialFacetData ? renderFacets(initialFacetData.facets || {}) : "";
 	const statusFacetHTML = renderStatusFacetGroup(clientStatuses);
 	const pagerHTML = renderPager(page, pages);
 	// Stryker disable next-line ConditionalExpression,EqualityOperator: firstResult/lastResult are only read in the results.length>0 branch of countHTML, where this guard is already true, so the empty-case value is never observed — equivalent.
@@ -291,7 +275,9 @@ export async function viewSearch() {
 					<input id="facet-q" class="facets__search" type="search" placeholder="${t("search.searchToolsPlaceholder", "Search tools…")}" autocomplete="off" value="${esc(q)}" />
 				</form>
 				${statusFacetHTML}
-				${facetHTML || `<p class="facet__empty">${t("search.noFiltersAvailable", "No filters available.")}</p>`}
+				<div data-facet-groups${initialFacetData ? "" : ' aria-busy="true"'}>
+					${facetHTML || `<p class="facet__empty">${initialFacetData ? t("search.noFiltersAvailable", "No filters available.") : t("search.loadingFilters", "Loading filters…")}</p>`}
+				</div>
 				${clearFiltersBtn}
 			</aside>
 			<div class="browse__main">
@@ -309,6 +295,17 @@ export async function viewSearch() {
 	</div>`;
 
 	function mount() {
+		if (!initialFacetData) {
+			facetsPending.then((facetData) => {
+				const holder = /** @type {HTMLElement | null} */ ($("[data-facet-groups]"));
+				if (!holder) return;
+				const rendered = renderFacets(facetData.facets || {});
+				holder.innerHTML =
+					rendered ||
+					`<p class="facet__empty">${t("search.noFiltersAvailable", "No filters available.")}</p>`;
+				holder.removeAttribute("aria-busy");
+			});
+		}
 		/** @type {HTMLInputElement} */ ($input("#sort")).value = sort;
 		/** @type {HTMLInputElement} */ ($input("#page-size")).value = String(pageSize);
 		/** @param {{ page?: number }} extra */

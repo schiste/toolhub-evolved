@@ -57,7 +57,9 @@ const S = {
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
 				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated"> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental"> <span>Experimental</span></label></div>
-				<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
+				<div data-facet-groups>
+					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
+				</div>
 				<a class="btn btn--outline btn--md facets__reset" href="/search">Clear filters</a>
 			</aside>
 			<div class="browse__main">
@@ -145,7 +147,9 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
 				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated"> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental"> <span>Experimental</span></label></div>
-				<p class="facet__empty">No filters available.</p>
+				<div data-facet-groups>
+					<p class="facet__empty">No filters available.</p>
+				</div>
 				<a class="btn btn--outline btn--md facets__reset" href="/search">Clear filters</a>
 			</aside>
 			<div class="browse__main">
@@ -171,7 +175,9 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
 				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental" checked> <span>Experimental</span></label></div>
-				<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
+				<div data-facet-groups>
+					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
+				</div>
 				<a class="btn btn--outline btn--md facets__reset" href="/search">Clear filters</a>
 			</aside>
 			<div class="browse__main">
@@ -259,7 +265,9 @@ Missing: Issue tracker or feedback"><span class="meter" aria-hidden="true"><span
 					<input id="facet-q" class="facets__search" type="search" placeholder="Search tools…" autocomplete="off" value="" />
 				</form>
 				<div class="facet-group"><h2 class="facet-group__title">Status</h2><label class="facet"><input type="checkbox" data-client-status="deprecated" checked> <span>Deprecated</span></label><label class="facet"><input type="checkbox" data-client-status="experimental"> <span>Experimental</span></label></div>
-				<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
+				<div data-facet-groups>
+					<div class="facet-group"><h2 class="facet-group__title">Tool type</h2><label class="facet"><input type="checkbox" data-facet="tool_type" value="web app"> <span dir="auto">web app</span> <span class="facet__n">12</span></label></div>
+				</div>
 				<a class="btn btn--outline btn--md facets__reset" href="/search">Clear filters</a>
 			</aside>
 			<div class="browse__main">
@@ -408,23 +416,26 @@ test("search empty results, no facets (response is {} → exercises `data.result
 	expect("empty", r.html);
 });
 
-test("search hides an upstream index hit absent from the canonical snapshot", async () => {
+test("search trusts the canonical replica page without a redundant verification request", async () => {
 	setUrl("q=Bryan+Davis");
-	h.apiGet.mockResolvedValue({
-		results: [
-			rawTool("active-tool", { title: "Active" }),
-			rawTool("toolforge-bd808-pywikibot", { title: "Deleted Pywikibot" })
-		],
-		count: 2,
-		facets: {}
+	h.apiGet.mockImplementation(async (path) => {
+		if (path === "/search/facets/") return { facets: {} };
+		return {
+			results: [rawTool("active-tool", { title: "Active" })],
+			count: 1,
+			canonical: true,
+			facets: {}
+		};
 	});
-	h.cachedCanonicalTools.mockResolvedValue([cachedTool("active-tool", { title: "Active" })]);
 
 	const result = await search.viewSearch();
 
 	assert.ok(result.html.includes('data-tool="active-tool"'));
-	assert.ok(!result.html.includes("toolforge-bd808-pywikibot"));
 	assert.ok(result.html.includes("Showing 1-1 of 1 tool"));
+	assert.equal(h.cachedCanonicalTools.mock.calls.length, 0);
+	const [, params] = h.apiGet.mock.calls.find(([path]) => path === "/search/tools/");
+	assert.equal(params.get("include_facets"), "false");
+	assert.equal(params.get("view"), "card");
 });
 
 test("search renders the paginated local replica response directly", async () => {
@@ -435,6 +446,31 @@ test("search renders the paginated local replica response directly", async () =>
 	const result = await search.viewSearch();
 	assert.ok(result.html.includes('data-tool="local-cite"'));
 	assert.ok(!result.html.includes("while Toolhub loads"));
+});
+
+test("cold facets never block the first card paint and hydrate after mount", async () => {
+	h.apiCached.mockReturnValue(false);
+	let resolveFacets;
+	h.apiGet.mockImplementation((path) => {
+		if (path === "/search/facets/") {
+			return new Promise((resolve) => {
+				resolveFacets = resolve;
+			});
+		}
+		return Promise.resolve({ results: [rawTool("fast-card", { title: "Fast card" })], count: 1 });
+	});
+
+	const result = await search.viewSearch();
+	assert.ok(result.html.includes('data-tool="fast-card"'));
+	assert.ok(result.html.includes("Loading filters…"));
+	document.body.innerHTML = result.html;
+	result.mount();
+	resolveFacets({ facets: FACETS });
+	await Promise.resolve();
+	await Promise.resolve();
+
+	assert.ok(document.querySelector("[data-facet-groups]").textContent.includes("Tool type"));
+	assert.equal(document.querySelector("[data-facet-groups]").hasAttribute("aria-busy"), false);
 });
 
 test("search falls back to the last canonical generation when the local query fails", async () => {

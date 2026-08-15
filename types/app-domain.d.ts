@@ -30,6 +30,7 @@ interface AccountToolRelationship {
 /** Stable public person identity attached to account-scoped tool results. */
 interface AccountPerson {
 	id: string;
+	slug?: string;
 	displayName: string;
 }
 
