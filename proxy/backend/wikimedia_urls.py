@@ -73,3 +73,9 @@ def user_space_page(url: str) -> WikimediaUserPage | None:
             username, title = parsed_title
             return WikimediaUserPage(domain=domain, username=username, title=title)
     return None
+
+
+def user_space_javascript_page(url: str) -> WikimediaUserPage | None:
+    """Return a validated user-space page only when the title is JavaScript."""
+    page = user_space_page(url)
+    return page if page is not None and page.title.casefold().endswith(".js") else None

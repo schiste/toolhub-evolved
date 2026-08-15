@@ -79,6 +79,43 @@ def test_projection_preserves_invalid_official_evidence_and_merges_valid_sources
     assert facets >= {("technology", "python"), ("technology", "django")}
 
 
+def test_projection_records_wikimedia_user_javascript_as_source_code_without_overwriting_declared_repository():
+    wiki_source = "https://en.wikipedia.org/wiki/User:Enterprisey/tool.js"
+    declared_repository = "https://github.com/example/tool"
+    with db.session_scope() as s:
+        s.add(_canonical("wiki-script", url=wiki_source))
+        s.add(_canonical("wiki-script-with-repository", url=wiki_source, repository=declared_repository))
+        s.add(_canonical("untrusted-script", url="https://example.org/wiki/User:Enterprisey/tool.js"))
+
+    summary = catalog_projection.refresh_tool_names(
+        ["wiki-script", "wiki-script-with-repository", "untrusted-script"]
+    )
+
+    assert summary == {"requested": 3, "refreshed": 3, "changed": 3, "errors": 0}
+    inferred = catalog_projection.projection_payload("wiki-script")
+    assert inferred["record"]["repository"] == wiki_source
+    assert inferred["provenance"]["repository"] == [
+        {
+            "value": wiki_source,
+            "source": catalog_projection.SOURCE_WIKIMEDIA_USER_SCRIPT,
+            "sourceUrl": wiki_source,
+            "observedAt": inferred["provenance"]["repository"][0]["observedAt"],
+            "confidence": 95,
+            "effective": True,
+            "valid": True,
+            "state": "syntax_valid",
+        }
+    ]
+    declared = catalog_projection.projection_payload("wiki-script-with-repository")
+    assert declared["record"]["repository"] == declared_repository
+    assert [row["source"] for row in declared["provenance"]["repository"]] == [
+        catalog_projection.SOURCE_CANONICAL,
+        catalog_projection.SOURCE_WIKIMEDIA_USER_SCRIPT,
+    ]
+    assert [row["effective"] for row in declared["provenance"]["repository"]] == [True, False]
+    assert "repository" not in catalog_projection.projection_payload("untrusted-script")["record"]
+
+
 def test_approved_curation_is_only_source_that_replaces_valid_canonical_scalar():
     now = utcnow()
     with db.session_scope() as s:
