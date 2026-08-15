@@ -40,7 +40,7 @@ test("viewExperiments() renders the hybrid-feature showcase copy and title", () 
 	assert.ok(actual.html.includes("Public local tools and toolinfo feed"));
 	assert.ok(actual.html.includes("Moderation and review queue"));
 	assert.ok(actual.html.includes("Performance, resilience, and platform"));
-	assert.ok(actual.html.includes("Shared Toolhub API cache"));
+	assert.ok(actual.html.includes("Atomic local catalog replica"));
 	assert.ok(actual.html.includes("Cache invalidation and prewarming"));
 	assert.ok(actual.html.includes("Language, theme, and accessibility"));
 	assert.ok(!actual.html.includes('href="/search?sort=views" data-enable-evolved'));
