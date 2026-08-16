@@ -10,7 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Text
+from sqlalchemy import Text, select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.dialects.mysql import MEDIUMTEXT, mariadb
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import migrate  # noqa: E402
-from backend import api_cache, canonical_tools, db, maintainer_index  # noqa: E402
+from backend import api_cache, canonical_tools, db, digests, maintainer_index  # noqa: E402
 from backend.models import (  # noqa: E402
     ApiCache,
     DigestEdition,
@@ -165,11 +165,67 @@ def test_migrate_activates_stranded_email_subscriptions_without_reviving_stopped
         rows = {row.cadence: row for row in s.query(DigestSubscription).all()}
         assert rows["daily"].active is True
         assert rows["daily"].last_error is None
-        # Stamped now, not backdated: delivery gates on confirmed_at <= published_at,
-        # so a backdated stamp would make an already-published edition eligible.
+        # Stamped now, not backdated: delivery gates on confirmed_at <= period_end,
+        # so a backdated stamp would make an already-closed period eligible.
         assert rows["daily"].confirmed_at > published_at
         # An explicitly stopped subscription stays stopped across deployments.
         assert rows["weekly"].active is False
+
+
+def _edition(key: str, period_end, status: str, **extra) -> DigestEdition:
+    return DigestEdition(
+        cadence="daily",
+        edition_key=key,
+        period_start=period_end - timedelta(days=1),
+        period_end=period_end,
+        status=status,
+        title=f"Toolhub Daily — {key}",
+        **extra,
+    )
+
+
+def test_migrate_retires_only_unpublishable_out_of_scope_editions(configured_db):
+    """Generation once had no horizon, so validated editions from years ago must not reach Meta."""
+    now = utcnow()
+    with db.session_scope() as s:
+        s.add_all(
+            [
+                _edition("2021-11-08", now - timedelta(days=1700), "validated"),
+                _edition("2026-08-14", now - timedelta(days=2), "validated"),
+                _edition("2022-03-01", now - timedelta(days=1500), "published", meta_revision_id="7"),
+                _edition("2022-03-02", now - timedelta(days=1499), digests.WEBSITE_ONLY_STATUS),
+                # Already has an off-site page: retiring it silently would hide that.
+                _edition("2022-03-03", now - timedelta(days=1498), "validated", meta_page_title="Toolhub/X"),
+            ]
+        )
+
+    first = {result.name: result.rows for result in migrate.run_once()}
+    second = {result.name: result.rows for result in migrate.run_once()}
+
+    assert first["out-of-scope digest editions retired"] == 1
+    assert second["out-of-scope digest editions retired"] == 0
+    with db.session_scope() as s:
+        rows = {row.edition_key: row.status for row in s.query(DigestEdition).all()}
+        assert rows["2021-11-08"] == digests.OUT_OF_SCOPE_STATUS
+        # Inside the horizon, so still a real publication candidate.
+        assert rows["2026-08-14"] == "validated"
+        assert rows["2022-03-01"] == "published"
+        assert rows["2022-03-02"] == digests.WEBSITE_ONLY_STATUS
+        assert rows["2022-03-03"] == "validated"
+
+
+def test_retired_editions_are_never_republished_or_shown(configured_db):
+    """A retired edition must stay out of publish_pending and out of the website."""
+    with db.session_scope() as s:
+        s.add(_edition("2021-11-09", utcnow() - timedelta(days=1699), "validated"))
+    migrate.run_once()
+
+    with db.session_scope() as s:
+        pending = s.execute(
+            select(DigestEdition.id).where(DigestEdition.status.in_(("validated", "publication_failed")))
+        ).scalars()
+        assert list(pending) == []
+        assert digests.OUT_OF_SCOPE_STATUS not in digests.WEBSITE_VISIBLE_STATUSES
 
 
 def test_migrate_seeds_historical_relationship_verification_time(configured_db):

@@ -18,6 +18,8 @@ re-running this is cheap and safe, and a partial run simply resumes.
 import os
 import sys
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, or_, select, text
@@ -30,6 +32,7 @@ from backend import (
     catalog_facets,
     catalog_projection,
     db,
+    digests,
     identity_graph,
     maintainer_index,
     people_index,
@@ -40,6 +43,8 @@ from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
     CatalogFacetValue,
+    DigestDelivery,
+    DigestEdition,
     DigestSubscription,
     Person,
     PersonIdentifier,
@@ -78,6 +83,7 @@ def run_once() -> list[MigrationResult]:
     return [
         MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns()),
         MigrationResult("digest email subscriptions activated", _confirm_legacy_email_subscriptions()),
+        MigrationResult("out-of-scope digest editions retired", _retire_out_of_scope_digest_editions()),
         MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
         MigrationResult("catalog read indexes", _ensure_catalog_read_indexes()),
         MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
@@ -186,11 +192,11 @@ def _confirm_legacy_email_subscriptions() -> int:
     unsubscribe from being undone by a later deployment.
 
     confirmed_at is stamped now rather than copied from the row's creation
-    time because delivery queues on `confirmed_at <= edition.published_at`. A
-    backdated stamp would make a recovered older edition eligible, and no
-    subscription is supposed to receive an edition published before it existed.
-    The stored last_error is cleared with it: it describes a confirmation email
-    that is no longer part of the flow.
+    time because delivery queues on `confirmed_at <= edition.period_end`. A
+    backdated stamp would make an already-closed period eligible, and no
+    subscription is supposed to receive an edition covering a period that ended
+    before it existed. The stored last_error is cleared with it: it describes a
+    confirmation email that is no longer part of the flow.
     """
     with db.session_scope() as s:
         rows = list(s.execute(select(DigestSubscription).where(DigestSubscription.confirmed_at.is_(None))).scalars())
@@ -201,6 +207,51 @@ def _confirm_legacy_email_subscriptions() -> int:
             row.last_error = None
             row.updated_at = now
         return len(rows)
+
+
+def _retire_out_of_scope_digest_editions() -> int:
+    """Retire generated editions whose period closed before the backfill horizon.
+
+    Generation used to have no horizon, so it worked forward from the catalog's
+    first 2021 event and accumulated hundreds of validated editions that
+    publication never reached. Those periods are now outside the horizon and will
+    never be regenerated, but publish_pending() would still pick them up on the
+    first pass that gets that far and post years of stale editions to Meta.
+
+    Only `validated` rows are matched, so this is idempotent and cannot touch a
+    published edition, a website-only example, or a genuine publication failure
+    inside the horizon. Rows carrying any external publication state or delivery
+    row are left alone and reported by the audit instead: something already
+    happened off-site for them, so silently retiring them would hide it.
+    """
+    horizon = utcnow() - timedelta(days=digests.backfill_days())
+
+    def absent(column: Any) -> Any:  # noqa: ANN401 - SQLAlchemy column expression
+        # These columns default to "" rather than NULL, so emptiness is the marker.
+        return or_(column.is_(None), column == "")
+
+    with db.session_scope() as s:
+        rows = list(
+            s.execute(
+                select(DigestEdition).where(
+                    DigestEdition.status == "validated",
+                    DigestEdition.period_end < horizon,
+                    absent(DigestEdition.meta_page_title),
+                    absent(DigestEdition.meta_page_url),
+                    absent(DigestEdition.meta_revision_id),
+                )
+            ).scalars()
+        )
+        delivered = set(
+            s.execute(
+                select(DigestDelivery.edition_id).where(DigestDelivery.edition_id.in_([row.id for row in rows] or [-1]))
+            ).scalars()
+        )
+        retired = [row for row in rows if row.id not in delivered]
+        for row in retired:
+            row.status = digests.OUT_OF_SCOPE_STATUS
+            row.updated_at = utcnow()
+        return len(retired)
 
 
 def _backfill_relationship_verified_at() -> int:
