@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC
 from email.utils import format_datetime
 from xml.sax.saxutils import escape, quoteattr
@@ -26,11 +27,14 @@ from backend.security import current_user_id, login_required, write_guard
 from backend.sync import clean_error
 from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient, clean_wiki_domain
 
+_log = logging.getLogger(__name__)
+
 v1_digests_bp = Blueprint("v1_digests", __name__)
 CHANNELS = {"email", "talk"}
 MAX_FEED_EDITIONS = 50
 HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
+HTTP_SERVER_ERROR = 500
 HTTP_BAD_GATEWAY = 502
 
 
@@ -279,6 +283,28 @@ def _request_subscription() -> tuple[str, str, str, str]:
     return channel, cadence, language, domain
 
 
+def _confirmation_failure(subscription_id: int, payload: dict[str, object], wiki: WikimediaClient) -> Response | None:
+    """Send the confirmation email, returning an error response only on failure.
+
+    The subscription row is already committed when this runs, so a failure is a
+    partial success: the error carries the stored payload so the caller can show
+    the unconfirmed subscription it really did create.
+    """
+    try:
+        send_confirmation(subscription_id, client=wiki)
+    except (OSError, RuntimeError, ValueError, WikimediaAPIError) as exc:
+        _log.exception("digest confirmation email failed for subscription %s", subscription_id)
+        with db.session_scope() as session:
+            stored = session.get(DigestSubscription, subscription_id)
+            if stored is not None:
+                stored.last_error = clean_error(str(exc))
+        return (
+            jsonify({"error": "the confirmation email could not be sent", "subscription": payload}),
+            HTTP_BAD_GATEWAY,
+        )
+    return None
+
+
 @v1_digests_bp.route("/v1/digests/subscriptions/", methods=["POST"])
 @write_guard
 def subscriptions_post() -> Response:  # noqa: PLR0911 - each upstream/identity failure has a distinct API response
@@ -294,12 +320,21 @@ def subscriptions_post() -> Response:  # noqa: PLR0911 - each upstream/identity 
         return jsonify({"error": "connect a Wikimedia account before subscribing"}), HTTP_BAD_REQUEST
     identity = WikimediaIdentityProvider().lookup(global_id)
     if identity is None:
+        _log.warning("digest subscription refused: identity lookup returned nothing for global id %s", global_id)
         return jsonify({"error": "the connected Wikimedia identity could not be verified"}), HTTP_BAD_GATEWAY
-    wiki = WikimediaClient()
+    try:
+        wiki = WikimediaClient()
+    except ValueError as exc:
+        # Header validation names the offending variable and never quotes its
+        # value, so the message is safe to return: it is the only way an
+        # operator learns which envvar to fix.
+        _log.exception("digest subscription refused: Wikimedia client configuration is invalid")
+        return jsonify({"error": f"Wikimedia delivery is misconfigured: {exc}"}), HTTP_SERVER_ERROR
     try:
         if not wiki.user_identity_matches(domain, identity.username, global_id):
             return jsonify({"error": f"{identity.username} does not have an account on {domain}"}), HTTP_BAD_REQUEST
     except WikimediaAPIError as exc:
+        _log.warning("digest subscription refused: %s identity check failed on %s: %s", exc.code, domain, exc)
         return jsonify({"error": clean_error(str(exc)), "code": exc.code}), HTTP_BAD_GATEWAY
     now = utcnow()
     with db.session_scope() as session:
@@ -330,17 +365,9 @@ def subscriptions_post() -> Response:  # noqa: PLR0911 - each upstream/identity 
         subscription_id = subscription.id
         payload = _subscription_payload(subscription)
     if channel == "email":
-        try:
-            send_confirmation(subscription_id, client=wiki)
-        except (OSError, RuntimeError, ValueError, WikimediaAPIError) as exc:
-            with db.session_scope() as session:
-                stored = session.get(DigestSubscription, subscription_id)
-                if stored is not None:
-                    stored.last_error = clean_error(str(exc))
-            return (
-                jsonify({"error": "the confirmation email could not be sent", "subscription": payload}),
-                HTTP_BAD_GATEWAY,
-            )
+        failure = _confirmation_failure(subscription_id, payload, wiki)
+        if failure is not None:
+            return failure
     return jsonify({"subscription": payload}), 201
 
 
