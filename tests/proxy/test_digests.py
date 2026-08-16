@@ -1317,6 +1317,38 @@ def test_wikimedia_writer_fails_closed_when_token_uses_the_wrong_account(monkeyp
     assert failure.value.permanent is True
 
 
+def test_wikimedia_writer_accepts_the_underscore_spelling_of_its_own_account(monkeypatch):
+    """The configured name and the API answer are two spellings of one account."""
+    monkeypatch.setenv("WIKIMEDIA_ACCOUNT_NAME", "NellieBly_Bot")
+    client = WikimediaClient(access_token="token")
+    monkeypatch.setattr(
+        client,
+        "request",
+        lambda *_args, **_kwargs: {
+            "query": {"userinfo": {"name": "NellieBly Bot"}, "tokens": {"csrftoken": "csrf-value"}}
+        },
+    )
+
+    assert client.csrf_token("meta.wikimedia.org") == "csrf-value"
+
+
+def test_wikimedia_writer_still_rejects_an_account_differing_only_in_case(monkeypatch):
+    """Spelling folds; case does not. MediaWiki capitalizes only the first letter."""
+    monkeypatch.setenv("WIKIMEDIA_ACCOUNT_NAME", "Nellie_Bly")
+    client = WikimediaClient(access_token="token")
+    monkeypatch.setattr(
+        client,
+        "request",
+        lambda *_args, **_kwargs: {
+            "query": {"userinfo": {"name": "Nellie bly"}, "tokens": {"csrftoken": "csrf-value"}}
+        },
+    )
+
+    with pytest.raises(WikimediaAPIError, match="Nellie bly") as failure:
+        client.csrf_token("meta.wikimedia.org")
+    assert failure.value.permanent is True
+
+
 def test_toolforge_manifest_schedules_publish_delivery_and_audit_in_utc():
     manifest = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     assert "name: digest-publish" in manifest

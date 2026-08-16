@@ -12,7 +12,7 @@ import requests
 
 from backend.http_headers import clean_header_value, clean_secret_header_value
 from backend.sync import clean_error
-from backend.wikimedia_urls import clean_wiki_domain
+from backend.wikimedia_urls import canonical_username, clean_wiki_domain
 
 DEFAULT_USER_AGENT = "ToolhubDigestBot/1.0 (https://toolhub-evolved.toolforge.org/digests)"
 REDACTED = "***"
@@ -86,7 +86,7 @@ class WikimediaClient:
             "WIKIMEDIA_USER_AGENT",
             user_agent if user_agent is not None else os.environ.get("WIKIMEDIA_USER_AGENT", DEFAULT_USER_AGENT),
         )
-        self.expected_account = os.environ.get("WIKIMEDIA_ACCOUNT_NAME", "").strip()
+        self.expected_account = canonical_username(os.environ.get("WIKIMEDIA_ACCOUNT_NAME", ""))
         self._csrf: dict[str, str] = {}
 
     @staticmethod
@@ -172,7 +172,7 @@ class WikimediaClient:
         query = payload.get("query")
         userinfo = query.get("userinfo") if isinstance(query, dict) else None
         authenticated_name = str(userinfo.get("name") or "") if isinstance(userinfo, dict) else ""
-        if self.expected_account and authenticated_name != self.expected_account:
+        if self.expected_account and canonical_username(authenticated_name) != self.expected_account:
             raise self._failure(
                 ERROR_UNEXPECTED_ACCOUNT,
                 f"Wikimedia token belongs to {authenticated_name or 'an unknown account'}, not the configured account",

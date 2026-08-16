@@ -57,6 +57,16 @@ def test_normalized_username_handles_mediawiki_spelling_only():
     assert wikimedia_urls.normalized_username("User:Ada_Lovelace") == "ada lovelace"
 
 
+def test_canonical_username_folds_spelling_but_not_case():
+    # Underscores and spaces are interchangeable; a name copied from a URL has
+    # underscores while the Action API always answers with spaces.
+    assert wikimedia_urls.canonical_username("NellieBly_Bot") == "NellieBly Bot"
+    assert wikimedia_urls.canonical_username("  User:Ada__Lovelace  ") == "Ada Lovelace"
+    # Case is identity: MediaWiki capitalizes only the first letter, so these
+    # are two different accounts and must not compare equal.
+    assert wikimedia_urls.canonical_username("Foo Bar") != wikimedia_urls.canonical_username("Foo bar")
+
+
 @pytest.mark.parametrize(
     ("url", "is_javascript"),
     [
