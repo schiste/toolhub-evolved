@@ -22,6 +22,7 @@ from backend import api_cache, canonical_tools, db, maintainer_index  # noqa: E4
 from backend.models import (  # noqa: E402
     ApiCache,
     DigestEdition,
+    DigestSubscription,
     Person,
     ToolAuthorClaim,
     ToolAuthorKey,
@@ -124,6 +125,51 @@ def test_digest_render_columns_compile_to_mysql_mediumtext(configured_db):
         assert column.type.compile(dialect=mysql.dialect()) == "MEDIUMTEXT"
         assert column.type.compile(dialect=mariadb.MariaDBDialect()) == "MEDIUMTEXT"
         assert column.type.compile(dialect=db.engine().dialect) == "TEXT"
+
+
+def test_migrate_activates_stranded_email_subscriptions_without_reviving_stopped_ones(configured_db):
+    """Nothing sends confirmation links any more, so unconfirmed rows must not stay stuck."""
+    published_at = utcnow() - timedelta(days=2)
+    with db.session_scope() as s:
+        user = User(wm_sub="42", username="Subscriber", wikimedia_global_user_id="9")
+        s.add(user)
+        s.flush()
+        s.add_all(
+            [
+                DigestSubscription(
+                    user_id=user.id,
+                    channel="email",
+                    cadence="daily",
+                    wiki_domain="meta.wikimedia.org",
+                    wiki_username="Subscriber",
+                    last_error="the confirmation email could not be sent",
+                ),
+                DigestSubscription(
+                    user_id=user.id,
+                    channel="email",
+                    cadence="weekly",
+                    wiki_domain="meta.wikimedia.org",
+                    wiki_username="Subscriber",
+                    confirmed_at=published_at,
+                    active=False,
+                ),
+            ]
+        )
+
+    first = {result.name: result.rows for result in migrate.run_once()}
+    second = {result.name: result.rows for result in migrate.run_once()}
+
+    assert first["digest email subscriptions activated"] == 1
+    assert second["digest email subscriptions activated"] == 0
+    with db.session_scope() as s:
+        rows = {row.cadence: row for row in s.query(DigestSubscription).all()}
+        assert rows["daily"].active is True
+        assert rows["daily"].last_error is None
+        # Stamped now, not backdated: delivery gates on confirmed_at <= published_at,
+        # so a backdated stamp would make an already-published edition eligible.
+        assert rows["daily"].confirmed_at > published_at
+        # An explicitly stopped subscription stays stopped across deployments.
+        assert rows["weekly"].active is False
 
 
 def test_migrate_seeds_historical_relationship_verification_time(configured_db):

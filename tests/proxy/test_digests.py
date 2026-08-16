@@ -1218,11 +1218,18 @@ def test_email_confirmation_and_talk_subscription_use_verified_wikimedia_identit
         headers={"X-CSRF-Token": "token"},
     )
     assert email.status_code == 201
-    assert email.get_json()["subscription"]["active"] is False
-    confirmation_link = next(line for line in wiki.emails[0][3].splitlines() if line.startswith("http"))
-    token = parse_qs(urlparse(confirmation_link).query)["token"][0]
+    # Active on subscribe: OAuth proved the subscriber, and MediaWiki only
+    # relays emailuser to an address its owner already confirmed on-wiki.
+    assert email.get_json()["subscription"]["active"] is True
+    assert email.get_json()["subscription"]["confirmed"] is True
+    assert wiki.emails == []
+
+    # Confirmation links already sitting in inboxes must stay harmless.
+    email_id = email.get_json()["subscription"]["id"]
+    token = digest_delivery.subscription_token(email_id, uid, "confirm")
     confirmed = client.post("/v1/digests/subscriptions/confirm/", json={"token": token})
     assert confirmed.get_json()["subscription"]["confirmed"] is True
+    assert confirmed.get_json()["subscription"]["active"] is True
 
     talk = client.post(
         "/v1/digests/subscriptions/",
@@ -1883,35 +1890,25 @@ def test_digest_subscription_handles_local_identity_and_confirmation_failures(mo
 
     class EmailFailureWiki(FakeWiki):
         def email_user(self, *_args):
-            raise OSError("mail unavailable")
+            message = "mail unavailable"
+            raise OSError(message)
 
+    # Subscribing no longer sends anything, so a wiki that cannot deliver mail
+    # can no longer turn a valid subscription into a 502.
     monkeypatch.setattr(v1_digests_api, "WikimediaClient", EmailFailureWiki)
     monkeypatch.setenv("DIGEST_SIGNING_SECRET", "secret")
-    failed_email = client.post(
+    email = client.post(
         "/v1/digests/subscriptions/",
         json={"channel": "email", "cadence": "daily"},
         headers={"X-CSRF-Token": "token"},
     )
-    assert failed_email.status_code == 502
+    assert email.status_code == 201
+    assert email.get_json()["subscription"]["active"] is True
     with db.session_scope() as session:
-        assert "mail unavailable" in session.execute(select(DigestSubscription)).scalar_one().last_error
-
-    class DeleteDuringEmailWiki(FakeWiki):
-        def email_user(self, *_args):
-            with db.session_scope() as session:
-                newest = session.execute(
-                    select(DigestSubscription).order_by(DigestSubscription.id.desc())
-                ).scalars().first()
-                session.delete(newest)
-            raise OSError("deleted during email")
-
-    monkeypatch.setattr(v1_digests_api, "WikimediaClient", DeleteDuringEmailWiki)
-    deleted_email = client.post(
-        "/v1/digests/subscriptions/",
-        json={"channel": "email", "cadence": "weekly"},
-        headers={"X-CSRF-Token": "token"},
-    )
-    assert deleted_email.status_code == 502
+        stored = session.execute(
+            select(DigestSubscription).where(DigestSubscription.channel == "email")
+        ).scalar_one()
+        assert stored.last_error is None
 
 
 def test_digest_subscription_listing_reactivation_tokens_delete_and_status(monkeypatch):
@@ -1967,25 +1964,6 @@ def test_digest_subscription_tokens_and_confirmation_fail_closed(monkeypatch):
     malformed = digest_delivery._serializer().dumps({"action": "confirm"})
     with pytest.raises(ValueError, match="payload"):
         digest_delivery.read_subscription_token(malformed, "confirm")
-
-    with pytest.raises(ValueError, match="does not exist"):
-        digest_delivery.send_confirmation(999, client=FakeWiki())
-    with db.session_scope() as session:
-        user = User(wm_sub="confirmation", username="User", wikimedia_global_user_id="8")
-        session.add(user)
-        session.flush()
-        talk = DigestSubscription(
-            user_id=user.id,
-            channel="talk",
-            cadence="daily",
-            wiki_domain="en.wikipedia.org",
-            wiki_username="User",
-        )
-        session.add(talk)
-        session.flush()
-        talk_id = talk.id
-    with pytest.raises(ValueError, match="does not exist"):
-        digest_delivery.send_confirmation(talk_id, client=FakeWiki())
 
 
 def test_digest_delivery_queue_repair_and_backfill_paths(monkeypatch):
