@@ -12,8 +12,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
 import phabricator_realname_sync as sync  # noqa: E402
-from backend import db, people_index  # noqa: E402
-from backend.models import PhabricatorProfileProjection, ToolforgeAccountProjection, utcnow  # noqa: E402
+from backend import canonical_tools, db, people_index  # noqa: E402
+from backend.models import (  # noqa: E402
+    PhabricatorProfileProjection,
+    ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
+    UnresolvedAttributionEvidence,
+    utcnow,
+)
 from backend.phabricator_identity import PhabricatorProfile, PhabricatorProfileError  # noqa: E402
 
 
@@ -243,6 +249,73 @@ def test_an_outage_is_never_cached_as_a_missing_profile():
 
     with db.session_scope() as session:
         assert session.get(PhabricatorProfileProjection, "dev1") is None
+
+
+def _unresolved_label(session, tool, label):
+    session.add(
+        UnresolvedAttributionEvidence(
+            tool_name=tool,
+            observed_label=label,
+            normalized_label=label.casefold(),
+            relationship_type="author",
+            source="toolhub_author_metadata",
+        )
+    )
+
+
+def _toolforge_tool(session, toolhub_name, project, uid_number):
+    canonical_tools.upsert_records(
+        [{"name": toolhub_name, "url": f"https://{project}.toolforge.org/"}],
+        source_url="https://toolhub.wikimedia.org/api/tools/",
+        enqueue_reconciliation=False,
+    )
+    session.add(ToolforgeMembershipProjection(uid_number=uid_number, tool_name=project))
+
+
+def test_an_account_maintaining_a_name_labelled_tool_is_read_before_the_walk():
+    with db.session_scope() as session:
+        # 1001 sorts last, so cursor order alone would never reach it first.
+        _account(session, "1001", "Gopavasanth")
+        _account(session, "1000", "Unrelated")
+        _person(session, "1001", "Gopavasanth")
+        _person(session, "1000", "Unrelated")
+        _toolforge_tool(session, "toolforge-dabfix", "dabfix", "1001")
+        _unresolved_label(session, "toolforge-dabfix", "Gopa Vasanth")
+
+    provider = FakeProvider({"Gopavasanth": "Gopa Vasanth"})
+    result = _run(provider, limit=1)
+
+    assert result["priorityAccounts"] == 1
+    assert provider.asked == ["Gopavasanth"]
+    assert result["recorded"] == 1
+
+
+def test_a_handle_shaped_label_does_not_make_its_tool_a_candidate():
+    with db.session_scope() as session:
+        _account(session, "1001", "Gopavasanth")
+        _person(session, "1001", "Gopavasanth")
+        _toolforge_tool(session, "toolforge-dabfix", "dabfix", "1001")
+        # A handle-shaped label is the public registry sweep's job, not this one.
+        _unresolved_label(session, "toolforge-dabfix", "0xDeadbeef")
+
+    result = _run(FakeProvider({}), limit=1)
+
+    assert result["priorityAccounts"] == 0
+
+
+def test_priority_reads_do_not_move_the_background_cursor():
+    with db.session_scope() as session:
+        _account(session, "1001", "Gopavasanth")
+        _person(session, "1001", "Gopavasanth")
+        _toolforge_tool(session, "toolforge-dabfix", "dabfix", "1001")
+        _unresolved_label(session, "toolforge-dabfix", "Gopa Vasanth")
+
+    _run(FakeProvider({"Gopavasanth": "Gopa Vasanth"}), limit=1)
+
+    with db.session_scope() as session:
+        # The whole budget went to the candidate, so the walk never ran and
+        # must not be reported as a completed cycle.
+        assert sync._cursor(session) == ""
 
 
 def test_a_handle_shaped_like_prose_is_never_turned_into_a_profile_url():
