@@ -39,7 +39,17 @@ if TYPE_CHECKING:
 CADENCES = ("daily", "weekly", "monthly")
 DEFAULT_LANGUAGE = "en"
 WEBSITE_ONLY_STATUS = "website_only"
+OUT_OF_SCOPE_STATUS = "out_of_scope"
 WEBSITE_VISIBLE_STATUSES = ("published", WEBSITE_ONLY_STATUS)
+# The catalog carries creation events from 2021 onward, so an unbounded due-period
+# scan queues over a thousand editions and never reaches the current day. Digests
+# are news: bound generation to a recent window so the daily pass stays small and
+# a five-year archive is never mistaken for a publication backlog.
+DEFAULT_BACKFILL_DAYS = 90
+# One coordinator pass generates then publishes. Generation is the slow half (one
+# bounded Lift Wing call per edition), so it must be capped or publication is
+# unreachable inside the job timeout and validated editions accumulate forever.
+DEFAULT_MAX_EDITIONS_PER_RUN = 40
 LIFTWING_AUTHOR = "LiftWing Qwen"
 PROMPT_VERSION = "toolhub-digest-v5-bounded-editorial"
 MAX_HIGHLIGHTS = 5
@@ -249,15 +259,45 @@ def period_from_key(cadence: str, key: str) -> Period:
     return period
 
 
+def backfill_days() -> int:
+    """Return how far back generation still treats a closed period as due."""
+    raw = os.environ.get("DIGEST_BACKFILL_DAYS", "").strip()
+    if not raw:
+        return DEFAULT_BACKFILL_DAYS
+    try:
+        days = int(raw)
+    except ValueError as exc:
+        message = "DIGEST_BACKFILL_DAYS must be an integer number of days"
+        raise ValueError(message) from exc
+    if days < 1:
+        message = "DIGEST_BACKFILL_DAYS must be at least 1"
+        raise ValueError(message)
+    return days
+
+
 def due_periods(*, now: datetime | None = None) -> list[Period]:
-    """Return every event-containing, fully closed period not already materialized."""
+    """Return recent event-containing, fully closed periods not already materialized.
+
+    Bounded by `backfill_days()`. Periods that closed before the horizon are
+    deliberately never returned again: a period is only newsworthy near its own
+    end, and an unbounded scan over the whole catalog history queues years of
+    editions ahead of today's, which starves publication and stalls the feature.
+    """
     current = _naive_utc(now or utcnow())
     today = datetime(current.year, current.month, current.day, tzinfo=UTC).replace(tzinfo=None)
+    horizon = today - timedelta(days=backfill_days())
     with db.session_scope() as session:
         event_times = list(
             session.execute(
                 select(ToolActivityEvent.event_at)
-                .where(ToolActivityEvent.event_type == "created", ToolActivityEvent.event_at < today)
+                .where(
+                    ToolActivityEvent.event_type == "created",
+                    ToolActivityEvent.event_at < today,
+                    # A period ends at most one month after its events, so filtering
+                    # events a month before the horizon keeps every period the
+                    # horizon can still admit while skipping the 2021-2023 bulk.
+                    ToolActivityEvent.event_at >= horizon - timedelta(days=31),
+                )
                 .order_by(ToolActivityEvent.event_at)
             ).scalars()
         )
@@ -271,7 +311,7 @@ def due_periods(*, now: datetime | None = None) -> list[Period]:
         period
         for event_at in event_times
         for cadence in CADENCES
-        if (period := period_for(cadence, event_at)).end <= today
+        if horizon <= (period := period_for(cadence, event_at)).end <= today
         and (cadence, period.start, DEFAULT_LANGUAGE) not in existing
     }
     return sorted(periods, key=lambda item: (item.end, CADENCES.index(item.cadence), item.start))
@@ -1088,10 +1128,18 @@ def regenerate_website_editions(periods: list[Period]) -> list[DigestEdition]:
         )
 
 
-def generate_due_editions(*, now: datetime | None = None) -> dict[str, int]:
-    """Generate all missed, closed, non-empty UTC editions."""
+def generate_due_editions(*, now: datetime | None = None, limit: int | None = None) -> dict[str, int]:
+    """Generate missed, closed, non-empty UTC editions, at most `limit` per pass.
+
+    The cap exists so the caller reaches publication. Each edition costs one
+    bounded Lift Wing call, so an uncapped pass over a large backlog consumes the
+    whole job timeout and leaves every edition it generated unpublished.
+    """
+    budget = DEFAULT_MAX_EDITIONS_PER_RUN if limit is None else limit
     created = fallback = failed = 0
-    for period in due_periods(now=now):
+    pending = due_periods(now=now)
+    remaining = max(0, len(pending) - budget)
+    for period in pending[:budget]:
         try:
             edition = create_edition(period)
         except (OSError, TypeError, ValueError, requests.RequestException) as exc:
@@ -1102,7 +1150,7 @@ def generate_due_editions(*, now: datetime | None = None) -> dict[str, int]:
         if edition is not None:
             created += 1
             fallback += int(edition.used_fallback)
-    return {"created": created, "fallback": fallback, "failed": failed}
+    return {"created": created, "fallback": fallback, "failed": failed, "remaining": remaining}
 
 
 def edition_marker(edition: DigestEdition) -> str:

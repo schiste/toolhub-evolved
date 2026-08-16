@@ -87,6 +87,63 @@ def test_due_periods_are_closed_utc_days_weeks_and_months_without_empty_periods(
     assert all(period.end <= datetime(2026, 8, 10) for period in periods)
 
 
+def test_due_periods_stop_at_the_backfill_horizon():
+    digests.capture_recent_rows(
+        [
+            creation(1, "ancient-tool", "2021-10-10T12:00:00Z"),
+            creation(2, "recent-tool", "2026-08-09T12:00:00Z"),
+        ]
+    )
+
+    periods = digests.due_periods(now=datetime(2026, 8, 10, 6))
+
+    keys = {(period.cadence, period.key) for period in periods}
+    assert ("daily", "2026-08-09") in keys
+    # Five years of closed periods must never re-enter the queue ahead of today's.
+    assert not any(period.end < datetime(2026, 5, 12) for period in periods)
+    assert ("daily", "2021-10-10") not in keys
+
+
+def test_backfill_horizon_is_configurable_and_rejects_nonsense(monkeypatch):
+    digests.capture_recent_rows([creation(1, "old-tool", "2026-06-01T12:00:00Z")])
+
+    monkeypatch.setenv("DIGEST_BACKFILL_DAYS", "5")
+    assert digests.due_periods(now=datetime(2026, 8, 10, 6)) == []
+
+    monkeypatch.setenv("DIGEST_BACKFILL_DAYS", "120")
+    assert ("daily", "2026-06-01") in {
+        (period.cadence, period.key) for period in digests.due_periods(now=datetime(2026, 8, 10, 6))
+    }
+
+    monkeypatch.setenv("DIGEST_BACKFILL_DAYS", "0")
+    with pytest.raises(ValueError, match="DIGEST_BACKFILL_DAYS"):
+        digests.backfill_days()
+    monkeypatch.setenv("DIGEST_BACKFILL_DAYS", "ninety")
+    with pytest.raises(ValueError, match="DIGEST_BACKFILL_DAYS"):
+        digests.backfill_days()
+
+
+def test_generate_due_editions_caps_one_pass_and_reports_the_remainder(monkeypatch):
+    monkeypatch.delenv("LIFTWING_API_URL", raising=False)
+    digests.capture_recent_rows(
+        [
+            creation(1, "tool-a", "2026-08-07T12:00:00Z"),
+            creation(2, "tool-b", "2026-08-08T12:00:00Z"),
+            creation(3, "tool-c", "2026-08-09T12:00:00Z"),
+        ]
+    )
+    pending = len(digests.due_periods(now=datetime(2026, 8, 10, 6)))
+    assert pending > 2
+
+    result = digests.generate_due_editions(now=datetime(2026, 8, 10, 6), limit=2)
+
+    # Publication runs after generation in the same pass, so an uncapped
+    # generation over a backlog would leave every edition it created unpublished.
+    assert result["created"] == 2
+    assert result["remaining"] == pending - 2
+    assert len(digests.due_periods(now=datetime(2026, 8, 10, 6))) == pending - 2
+
+
 def test_monthly_period_closes_only_after_utc_month_end():
     digests.capture_recent_rows([creation(1, "july-tool", "2026-07-31T23:59:59Z")])
 
@@ -799,7 +856,7 @@ def test_service_account_failure_retries_without_unsubscribing_user(monkeypatch)
                 cadence="daily",
                 wiki_username="Example",
                 active=True,
-                confirmed_at=published.published_at,
+                confirmed_at=published.period_end,
             )
         )
     digest_delivery.queue_deliveries(published.id)
@@ -813,7 +870,7 @@ def test_service_account_failure_retries_without_unsubscribing_user(monkeypatch)
         assert session.execute(select(DigestSubscription)).scalar_one().active is True
 
 
-def test_delivery_eligibility_starts_at_confirmation_not_historical_publication(monkeypatch):
+def test_delivery_eligibility_is_measured_against_the_period_not_publication_time(monkeypatch):
     monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
     edition = _generated_edition(monkeypatch)
     published = digests.publish_edition(edition.id, client=FakeWiki())
@@ -828,11 +885,62 @@ def test_delivery_eligibility_starts_at_confirmation_not_historical_publication(
                 cadence="daily",
                 wiki_username="Late",
                 active=True,
-                confirmed_at=published.published_at + timedelta(microseconds=1),
+                confirmed_at=published.period_end + timedelta(microseconds=1),
             )
         )
 
+    # published_at is later still, so the old publication-time comparison would
+    # have accepted this subscription for a period that closed before it existed.
+    assert published.published_at > published.period_end
     assert digest_delivery.queue_deliveries(published.id) == 0
+
+
+def test_backfilled_editions_publish_everywhere_but_are_never_pushed(monkeypatch):
+    monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
+    edition = _generated_edition(monkeypatch)
+    published = digests.publish_edition(edition.id, client=FakeWiki())
+    with db.session_scope() as session:
+        user = User(wm_sub="old", username="Old", wikimedia_global_user_id="74")
+        session.add(user)
+        session.flush()
+        session.add(
+            DigestSubscription(
+                user_id=user.id,
+                channel="talk",
+                cadence="daily",
+                wiki_username="Old",
+                active=True,
+                # Subscribed long before the period, so only the lateness bound
+                # can keep a bulk backfill out of this subscriber's talk page.
+                confirmed_at=published.period_start - timedelta(days=365),
+            )
+        )
+        stale = session.get(DigestEdition, published.id)
+        stale.published_at = stale.period_end + timedelta(days=90)
+
+    assert digest_delivery.queue_deliveries(published.id) == 0
+
+    with db.session_scope() as session:
+        recovered = session.get(DigestEdition, published.id)
+        # Still fully published: the website, the feeds and Meta are unaffected.
+        assert recovered.status == "published"
+        assert recovered.meta_revision_id
+        recovered.published_at = recovered.period_end + timedelta(days=2)
+
+    # A genuine two-day recovery is not a backfill and still delivers.
+    assert digest_delivery.queue_deliveries(published.id) == 1
+
+
+def test_publication_lateness_bound_is_configurable_and_rejects_nonsense(monkeypatch):
+    assert digest_delivery.max_publication_lateness_days() == digest_delivery.DEFAULT_MAX_PUBLICATION_LATENESS_DAYS
+    monkeypatch.setenv("DIGEST_MAX_PUBLICATION_LATENESS_DAYS", "3")
+    assert digest_delivery.max_publication_lateness_days() == 3
+    monkeypatch.setenv("DIGEST_MAX_PUBLICATION_LATENESS_DAYS", "0")
+    with pytest.raises(ValueError, match="DIGEST_MAX_PUBLICATION_LATENESS_DAYS"):
+        digest_delivery.max_publication_lateness_days()
+    monkeypatch.setenv("DIGEST_MAX_PUBLICATION_LATENESS_DAYS", "soon")
+    with pytest.raises(ValueError, match="DIGEST_MAX_PUBLICATION_LATENESS_DAYS"):
+        digest_delivery.max_publication_lateness_days()
 
 
 def test_delivery_refreshes_renamed_wikimedia_identity(monkeypatch):
@@ -851,7 +959,7 @@ def test_delivery_refreshes_renamed_wikimedia_identity(monkeypatch):
                 wiki_domain="fr.wikipedia.org",
                 wiki_username="Old",
                 active=True,
-                confirmed_at=published.published_at,
+                confirmed_at=published.period_end,
             )
         )
     digest_delivery.queue_deliveries(published.id)
@@ -1244,7 +1352,7 @@ def test_email_confirmation_and_talk_subscription_use_verified_wikimedia_identit
 
 
 def test_scheduled_coordinators_generate_publish_repair_and_bound_delivery(monkeypatch):
-    monkeypatch.setattr(digests, "generate_due_editions", lambda: {"created": 3, "fallback": 0})
+    monkeypatch.setattr(digests, "generate_due_editions", lambda **_: {"created": 3, "fallback": 0})
     monkeypatch.setattr(digests, "publish_pending", lambda: {"published": 3, "failed": 0})
     monkeypatch.setattr(digest_delivery, "queue_published_editions", lambda: 2)
     seen = []
@@ -1685,6 +1793,7 @@ def test_digest_titles_rendering_empty_editions_and_due_generation(monkeypatch):
         "created": 1,
         "fallback": 1,
         "failed": 1,
+        "remaining": 0,
     }
 
 
@@ -2007,7 +2116,7 @@ def _delivery_subscription(monkeypatch, *, active=True):
             wiki_domain="meta.wikimedia.org",
             wiki_username="User",
             active=active,
-            confirmed_at=published.published_at,
+            confirmed_at=published.period_end,
         )
         session.add(subscription)
         session.flush()
