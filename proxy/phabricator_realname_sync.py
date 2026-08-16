@@ -24,11 +24,13 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from backend import db, job_runner, people_index, people_policy
+from backend import canonical_tools, db, job_runner, people_index, people_policy
 from backend.models import (
     ApiCacheMeta,
     PhabricatorProfileProjection,
     ToolforgeAccountProjection,
+    ToolforgeMembershipProjection,
+    UnresolvedAttributionEvidence,
     utcnow,
 )
 from backend.phabricator_identity import (
@@ -45,7 +47,10 @@ if TYPE_CHECKING:
 CURSOR_KEY = "phabricator_realname_cursor"
 SOURCE = "phabricator_profile"
 DEFAULT_LIMIT = 60
-MAX_LIMIT = 200
+# The scheduled cadence is 60 accounts per hour. The ceiling is far higher so
+# an operator can drain the labelled candidate set in one manual backfill,
+# which is the only time a run is expected to make thousands of requests.
+MAX_LIMIT = 4000
 DEFAULT_MIN_INTERVAL_SECONDS = 2.0
 MAX_MIN_INTERVAL_SECONDS = 60.0
 # A real name changes rarely, so a known pair is re-read seasonally. A handle
@@ -119,8 +124,83 @@ def _accounts(s: Session, cursor: str, limit: int) -> list[ToolforgeAccountProje
     return list(s.execute(query.limit(limit)).scalars())
 
 
+def _labelled_tools(s: Session) -> set[str]:
+    """Return tools carrying an unresolved label shaped like a person's name.
+
+    ``is_handle_shaped`` is the same gate the registry sweep uses, read the
+    other way round: a label it refuses is one no public handle registry can
+    resolve, which is exactly the population a real name can reach.
+    """
+    return {
+        tool_name
+        for tool_name, label in s.execute(
+            select(UnresolvedAttributionEvidence.tool_name, UnresolvedAttributionEvidence.observed_label).where(
+                UnresolvedAttributionEvidence.withdrawn_at.is_(None)
+            )
+        ).all()
+        if label and not people_policy.is_handle_shaped(label)
+    }
+
+
+def _priority_uid_numbers(s: Session) -> set[str]:
+    """Return accounts that maintain a tool with a name-shaped label to resolve.
+
+    A full walk of every developer account eventually reads the same profiles,
+    but most of them can resolve nothing: the account maintains no catalogued
+    tool whose author label is a name. Asking about those first would spend the
+    whole request budget before reaching an account that changes an answer, so
+    the labels choose the candidates and the cursor walk stays the backstop.
+    """
+    tools = _labelled_tools(s)
+    if not tools:
+        return set()
+    projects = {
+        project.casefold()
+        for item in canonical_tools.records()
+        if (name := str(item.get("toolName") or "").strip()) in tools and isinstance(item.get("record"), dict)
+        for project in canonical_tools.toolforge_project_names(name, item["record"])
+    }
+    if not projects:
+        return set()
+    return {
+        uid_number
+        for uid_number, tool_name in s.execute(
+            select(ToolforgeMembershipProjection.uid_number, ToolforgeMembershipProjection.tool_name)
+        ).all()
+        if str(tool_name or "").casefold() in projects
+    }
+
+
+def _priority_accounts(s: Session, limit: int) -> list[ToolforgeAccountProjection]:
+    """Return the candidate accounts, oldest account first, capped at limit."""
+    uid_numbers = _priority_uid_numbers(s)
+    if not uid_numbers:
+        return []
+    accounts = s.execute(select(ToolforgeAccountProjection).order_by(ToolforgeAccountProjection.uid_number)).scalars()
+    return [account for account in accounts if account.uid_number in uid_numbers][:limit]
+
+
 def _is_fresh(row: PhabricatorProfileProjection, now: Any) -> bool:  # noqa: ANN401 - datetime
     return row.checked_at > now - (MISSING_TTL if row.missing else PROFILE_TTL)
+
+
+def _stale_groups(
+    s: Session,
+    accounts: list[ToolforgeAccountProjection],
+    now: Any,  # noqa: ANN401 - datetime
+) -> list[tuple[str, list[str]]]:
+    """Group each account with the handles whose cached read has expired."""
+    return [
+        (account.uid_number, handles)
+        for account in accounts
+        if (
+            handles := [
+                handle
+                for handle, _kind in candidate_handles(account)
+                if (row := s.get(PhabricatorProfileProjection, _normalized(handle))) is None or not _is_fresh(row, now)
+            ]
+        )
+    ]
 
 
 def _store_profile(s: Session, handle: str, real_name: str) -> None:
@@ -140,6 +220,36 @@ def _store_profile(s: Session, handle: str, real_name: str) -> None:
     row.updated_at = now
 
 
+def _read_account(
+    provider: PhabricatorProfileProvider,
+    handles: list[str],
+    *,
+    interval: float,
+    sleep_fn: Callable[[float], None],
+    spent: int,
+) -> tuple[int, bool]:
+    """Read one account's stale handles; return (requests made, interrupted)."""
+    made = 0
+    for handle in handles:
+        if spent + made:
+            sleep_fn(interval)
+        made += 1
+        try:
+            profile = provider.lookup(handle)
+        except PhabricatorProfileError:
+            # Stop the window rather than record an outage as "no real name".
+            # The cursor stays on the last account read in full, so the next
+            # run resumes here instead of skipping the remainder.
+            return made, True
+        with db.session_scope() as s:
+            _store_profile(s, handle, profile.real_name if profile is not None else "")
+        if profile is not None:
+            # The ``cn`` answered, so the SUL fallback costs a request for a
+            # name this account will not be allowed to hold anyway.
+            break
+    return made, False
+
+
 def _fetch_window(
     provider: PhabricatorProfileProvider,
     *,
@@ -147,70 +257,53 @@ def _fetch_window(
     interval: float,
     sleep_fn: Callable[[float], None],
 ) -> dict[str, int | bool]:
-    """Read every stale candidate in one cursor window, then advance.
+    """Read the candidates that can resolve a label, then continue the walk.
 
-    Staleness is grouped per account, and the cursor only ever advances past an
-    account whose every stale handle was read. An account whose ``cn`` has no
-    Phabricator profile is meant to fall back to its SUL name on the same run,
-    so advancing mid-account would silently retire that fallback.
+    Priority accounts spend the budget first and never move the cursor, so the
+    background walk keeps its place while the labelled candidates drain. Only
+    the leftover budget continues the walk, and the cursor advances only past
+    an account whose every stale handle was read: an account whose ``cn`` has
+    no Phabricator profile falls back to its SUL name on the same run, so
+    advancing mid-account would silently drop that fallback.
     """
     with db.session_scope() as s:
-        accounts = _accounts(s, _cursor(s), limit)
-        last_uid = accounts[-1].uid_number if accounts else ""
         now = utcnow()
-        groups = [
-            (account.uid_number, handles)
-            for account in accounts
-            if (
-                handles := [
-                    handle
-                    for handle, _kind in candidate_handles(account)
-                    if (row := s.get(PhabricatorProfileProjection, _normalized(handle))) is None
-                    or not _is_fresh(row, now)
-                ]
-            )
-        ]
+        priority = _stale_groups(s, _priority_accounts(s, limit), now)
+        budget = max(0, limit - len(priority))
+        walked = _accounts(s, _cursor(s), budget) if budget else []
+        walked_uids = {account.uid_number for account in walked}
+        groups = priority + _stale_groups(s, walked, now)
+        last_uid = walked[-1].uid_number if walked else ""
 
     stale = sum(len(handles) for _uid, handles in groups)
     requests_made = 0
     reached = ""
     interrupted = False
     for uid, handles in groups:
-        for handle in handles:
-            if requests_made:
-                sleep_fn(interval)
-            requests_made += 1
-            try:
-                profile = provider.lookup(handle)
-            except PhabricatorProfileError:
-                # Stop the window rather than record an outage as "no real
-                # name". The cursor stays on the last account read in full, so
-                # the next run resumes here instead of skipping the remainder.
-                interrupted = True
-                break
-            with db.session_scope() as s:
-                _store_profile(s, handle, profile.real_name if profile is not None else "")
-            if profile is not None:
-                # The ``cn`` answered, so the SUL fallback costs a request for
-                # a name this account will not be allowed to hold anyway.
-                break
+        read, interrupted = _read_account(provider, handles, interval=interval, sleep_fn=sleep_fn, spent=requests_made)
+        requests_made += read
         if interrupted:
             break
-        reached = uid
+        if uid in walked_uids:
+            reached = uid
 
     complete = not interrupted
+    # A budget fully spent on priority accounts leaves the walk untouched, so
+    # an empty `walked` only means "end of table" when the walk was asked at all.
+    cycle_complete = budget > 0 and not walked
     with db.session_scope() as s:
-        if not accounts:
+        if cycle_complete:
             _set_cursor(s, "")
-        elif complete:
+        elif complete and last_uid:
             _set_cursor(s, last_uid)
         elif reached:
             _set_cursor(s, reached)
     return {
-        "accounts": len(accounts),
+        "priorityAccounts": len(priority),
+        "accounts": len(priority) + len(walked),
         "requests": requests_made,
         "stale": stale,
-        "cycleComplete": not accounts,
+        "cycleComplete": cycle_complete,
         "interrupted": not complete,
     }
 
