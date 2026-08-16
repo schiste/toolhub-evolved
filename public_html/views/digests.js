@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { backendGetJson, backendWriteJson } from "../lib/core/api.js";
+import { backendErrorMessage, backendGetJson, backendWriteJson } from "../lib/core/api.js";
 import { esc } from "../lib/core/dom.js";
 import { t } from "../lib/core/i18n.js";
 import { serverWrite } from "../lib/core/serversync.js";
@@ -22,11 +22,6 @@ function dateLabel(value) {
 	return Number.isNaN(date.getTime())
 		? t("digests.dateUnavailable", "Date unavailable")
 		: new Intl.DateTimeFormat(undefined, { dateStyle: "long", timeZone: "UTC" }).format(date);
-}
-
-/** @param {unknown} error */
-function errorMessage(error) {
-	return error && typeof error === "object" && "message" in error ? String(error.message) : String(error);
 }
 
 /** @param {any} edition */
@@ -139,7 +134,7 @@ async function actionView(action) {
 				: t("digests.action.unsubscribed", "That digest subscription has been stopped.")
 		);
 	} catch (error) {
-		return actionResult(false, errorMessage(error));
+		return actionResult(false, backendErrorMessage(error));
 	}
 }
 
@@ -180,7 +175,7 @@ function mountSubscriptions() {
 					: t("digests.subscribe.checkEmail", "Check your Wikimedia email to confirm.");
 			}
 		} catch (error) {
-			if (status) status.textContent = errorMessage(error);
+			if (status) status.textContent = backendErrorMessage(error);
 		} finally {
 			if (submit instanceof HTMLButtonElement) submit.disabled = false;
 		}
