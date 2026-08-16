@@ -1790,6 +1790,31 @@ def test_digest_subscription_requires_resolvable_connected_identity(monkeypatch)
     assert response.status_code == 502
 
 
+def test_digest_subscription_reports_misconfigured_wikimedia_headers(monkeypatch):
+    """A rejected header envvar is a server misconfiguration, not an upstream outage."""
+    client, _user_id = _authenticated_digest_client()
+    monkeypatch.setattr(
+        v1_digests_api,
+        "WikimediaIdentityProvider",
+        lambda: SimpleNamespace(lookup=lambda _gid: SimpleNamespace(username="DigestUser")),
+    )
+
+    def refuse():
+        message = "WIKIMEDIA_ACCESS_TOKEN contains whitespace or control characters"
+        raise ValueError(message)
+
+    monkeypatch.setattr(v1_digests_api, "WikimediaClient", refuse)
+    response = client.post(
+        "/v1/digests/subscriptions/",
+        json={"channel": "talk", "cadence": "daily", "wikiDomain": "en.wikipedia.org"},
+        headers={"X-CSRF-Token": "token"},
+    )
+    assert response.status_code == 500
+    # The variable name is the actionable part and is safe to surface; the
+    # value it holds is a credential and never appears in the message.
+    assert "WIKIMEDIA_ACCESS_TOKEN" in response.get_json()["error"]
+
+
 def test_digest_subscription_handles_local_identity_and_confirmation_failures(monkeypatch):
     client, _user_id = _authenticated_digest_client()
     identity = SimpleNamespace(username="DigestUser")
