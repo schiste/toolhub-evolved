@@ -31,13 +31,25 @@ def clean_wiki_domain(value: str) -> str:
     return domain
 
 
-def normalized_username(value: str) -> str:
-    """Normalize MediaWiki spelling without treating a display name as identity."""
+def canonical_username(value: str) -> str:
+    """Return one MediaWiki spelling of a username, preserving case.
+
+    Underscores and spaces are interchangeable in MediaWiki titles, and a name
+    copied out of a URL carries underscores while the API always answers with
+    spaces. Case is left alone: MediaWiki capitalizes only the first letter, so
+    `Foo Bar` and `Foo bar` are two different accounts and folding them
+    together would be unsound wherever this is used as an identity assertion.
+    """
     clean = " ".join(unquote(str(value or "")).replace("_", " ").split())
     prefix, separator, remainder = clean.partition(":")
     if separator and prefix.casefold() == "user":
         clean = remainder.strip()
-    return clean.casefold()
+    return clean
+
+
+def normalized_username(value: str) -> str:
+    """Normalize MediaWiki spelling without treating a display name as identity."""
+    return canonical_username(value).casefold()
 
 
 def _user_title(value: str) -> tuple[str, str] | None:
