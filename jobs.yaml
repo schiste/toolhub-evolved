@@ -88,6 +88,18 @@
   timeout: 300
   emails: onfailure
 
+- name: phabricator-realname-sync
+  # Read the public Phabricator profile of developer handles this project
+  # already holds, so catalog author labels carrying a real name can match.
+  # Only /p/<username>/ is requested, one handle at a time, two seconds apart;
+  # a known pair is re-read after 90 days and an absent one after a year, so a
+  # steady-state cycle spends almost no requests.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name phabricator-realname-sync --stale-after 1200 -- /usr/bin/env PHABRICATOR_REALNAME_LIMIT=60 PHABRICATOR_REALNAME_MIN_INTERVAL_SECONDS=2 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/phabricator_realname_sync.py
+  image: python3.13
+  schedule: "31 * * * *"
+  timeout: 600
+  emails: onfailure
+
 - name: repository-analysis
   # Deterministically analyze up to 100 newly added or changed public repositories
   # per hour. The initial catalog backfill can be run manually with a larger limit.

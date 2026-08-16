@@ -737,6 +737,34 @@ def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers an
     return True
 
 
+def person_for_identifier(s: Session, namespace: str, value: str) -> Person | None:
+    """Return the person a current identifier points at, or None."""
+    return _identifier_person(s, namespace, value)
+
+
+def handle_owner_ids(s: Session, value: str) -> set[int]:
+    """Return the people who currently hold one value as a public handle.
+
+    Deliberately excludes ``NS_PHABRICATOR_REAL_NAME``: this answers "is this
+    string already somebody's handle", which is what makes a real name
+    dangerous to record. Counting real names here would make every second
+    sweep see its own prior write as a conflict.
+    """
+    normalized = _normalized(value)
+    if not normalized:
+        return set()
+    return {
+        row[0]
+        for row in s.execute(
+            select(PersonIdentifier.person_id).where(
+                PersonIdentifier.is_current.is_(True),
+                PersonIdentifier.namespace.in_(PUBLIC_HANDLE_NAMESPACES),
+                PersonIdentifier.normalized_value == normalized,
+            )
+        ).all()
+    }
+
+
 def record_phabricator_real_name(
     s: Session,
     person: Person,
