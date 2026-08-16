@@ -21,6 +21,13 @@ from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient
 CONFIRMATION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MAX_ATTEMPTS = 8
 MAX_RETRY_HOURS = 24
+# A digest is news about its own period, and publication normally follows the
+# period end by hours. Measuring lateness as published_at - period_end rather
+# than against the wall clock keeps the decision a property of the edition
+# itself: it is stable on re-evaluation and identical on every replica. Editions
+# published far later than their period are an operator backfill and belong on
+# the website, in the feeds and on Meta, but not in an inbox as a burst.
+DEFAULT_MAX_PUBLICATION_LATENESS_DAYS = 14
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -63,11 +70,32 @@ def unsubscribe_url(subscription: DigestSubscription) -> str:
     return f"{public_base_url()}/digests/unsubscribe?token={token}"
 
 
+def max_publication_lateness_days() -> int:
+    """Return how long after its period an edition may still be pushed."""
+    raw = os.environ.get("DIGEST_MAX_PUBLICATION_LATENESS_DAYS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_PUBLICATION_LATENESS_DAYS
+    try:
+        days = int(raw)
+    except ValueError as exc:
+        message = "DIGEST_MAX_PUBLICATION_LATENESS_DAYS must be an integer number of days"
+        raise ValueError(message) from exc
+    if days < 1:
+        message = "DIGEST_MAX_PUBLICATION_LATENESS_DAYS must be at least 1"
+        raise ValueError(message)
+    return days
+
+
 def _queue_deliveries_once(edition_id: int) -> int:
     created = 0
     with db.session_scope() as session:
         edition = session.get(DigestEdition, edition_id)
         if edition is None or edition.status != "published":
+            return 0
+        lateness = timedelta(days=max_publication_lateness_days())
+        if edition.published_at is None or edition.published_at - edition.period_end > lateness:
+            # Backfilled history rather than news. Recovering an edition missed a
+            # day or two ago stays well inside the window and still delivers.
             return 0
         subscriptions = list(
             session.execute(
@@ -76,7 +104,11 @@ def _queue_deliveries_once(edition_id: int) -> int:
                     DigestSubscription.confirmed_at.is_not(None),
                     DigestSubscription.cadence == edition.cadence,
                     DigestSubscription.language_code == edition.language_code,
-                    DigestSubscription.confirmed_at <= edition.published_at,
+                    # Compared against the period, not against publication time. A
+                    # subscription must not receive an edition covering a period
+                    # that closed before it existed, and publication time only
+                    # stands in for that while publication is prompt.
+                    DigestSubscription.confirmed_at <= edition.period_end,
                 )
             ).scalars()
         )
