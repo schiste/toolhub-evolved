@@ -135,6 +135,63 @@ def decide_identity_link(  # noqa: C901, PLR0911, PLR0913 - the ordered branches
     return IdentityDecision(ACTION_UNRESOLVED, REASON_DISPLAY_ONLY, 0)
 
 
+# The Unix login is deliberately absent. It is a lowercased, truncated shell
+# handle that often reads as a common first name, so building a profile URL
+# from it is the one candidate likely to land on an unrelated Phabricator
+# account. The two identity-bearing handles are asked about instead.
+PHABRICATOR_HANDLE_KINDS = frozenset({"developer_username", "wikimedia_global_name"})
+
+
+def accept_phabricator_real_name(  # noqa: PLR0913 - each fact is an independent gate
+    *,
+    handle_kind: str = "",
+    real_name: str = "",
+    matched_username: str = "",
+    account_count_for_real_name: int = 0,
+    conflicting_handle_owner: bool = False,
+    account_disabled: bool = False,  # noqa: ARG001 - see the note on departed accounts below
+) -> bool:
+    """Decide whether one Phabricator real name may identify one account.
+
+    Toolsadmin writes this value into the catalog's ``author`` field, so it is
+    the only bridge between a name-shaped label and a handle this project
+    holds. It is also the weakest kind of key: unlike a handle, nobody chose
+    it to be unique, and two unrelated developers may share one.
+
+    The real name is never resolved on its own -- ``corroborated_handle_person``
+    still demands an independent verified edge to the same tool before any
+    relationship is written. This gate decides only whether the pair is clean
+    enough to record as an identifier at all.
+
+    Four rules, each failing closed:
+
+    A shared real name is refused outright. Downstream corroboration would
+    often disambiguate it, but "often" is the wrong bar for a key that names a
+    real individual, and the cost of the refusal is one label left unresolved.
+
+    Only an identity-bearing handle may be asked about, for the reason on
+    ``PHABRICATOR_HANDLE_KINDS`` above.
+
+    A real name that is merely the handle again is refused, because it adds no
+    matching key that the handle namespaces do not already carry. This is
+    equality after case folding only, not after collapsing separators: the
+    whole population this feature exists for is ``Gopavasanth`` publishing as
+    ``Gopa Vasanth``, and a separator-insensitive test would reject exactly
+    the labels it is meant to resolve.
+
+    A disabled account is *kept*. Someone who has left Wikimedia still wrote
+    the tools they wrote, and dropping them would quietly erase authorship
+    history rather than protect anybody.
+    """
+    name = " ".join(str(real_name or "").split())
+    username = " ".join(str(matched_username or "").split())
+    if not name or not username or handle_kind not in PHABRICATOR_HANDLE_KINDS:
+        return False
+    if account_count_for_real_name != 1 or conflicting_handle_owner:
+        return False
+    return name.casefold() != username.casefold()
+
+
 def relationship_basis(role: str, method: str) -> str:
     """Describe what a source proves without upgrading one role into another."""
     method_basis = {

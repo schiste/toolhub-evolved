@@ -33,6 +33,10 @@ FIXED_TARGET_FETCHERS = {
         "fixed official CentralAuth API URL; the label is an encoded query parameter, never the host"
     ),
     ("backend/author_claims.py", "_fetch"): "TOOLFORGE_BASE_URL constant (Toolsadmin)",
+    ("backend/phabricator_identity.py", "_fetch"): (
+        "PHABRICATOR_BASE_URL constant; the handle is percent-encoded into the path by "
+        "evidence_url and USERNAME_PATTERN already refused anything but [A-Za-z0-9._-]"
+    ),
     ("backend/github_issues.py", "publish_issue"): "fixed api.github.com GitHub Issues API host",
     ("backend/account_linking.py", "verify_ssh_signature"): "fixed local OpenSSH subprocess; no HTTP URL is fetched",
     (

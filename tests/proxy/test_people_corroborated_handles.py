@@ -215,3 +215,76 @@ def test_a_bare_label_with_no_matching_handle_is_untouched():
     with db.session_scope() as session:
         _canonical_author_label(session, "toolx", "Nobody At All")
         assert _unresolved_labels(session, "toolx") == {"nobody at all"}
+
+
+PHABRICATOR_SOURCE = "phabricator_profile"
+
+
+def test_a_phabricator_real_name_resolves_a_label_no_handle_could_reach():
+    with db.session_scope() as session:
+        # The exact production shape: Toolsadmin renders the LDAP cn as the
+        # maintainer handle and the Phabricator real name as the catalog author,
+        # so the two never match and the label has always gone unresolved.
+        gopa = _stable_person(session, "Gopavasanth", "42", wiki_username="Gopavasanth")
+        people_index.record_phabricator_real_name(session, gopa, real_name="Gopa Vasanth", source=PHABRICATOR_SOURCE)
+        _verified_maintainer_edge(session, "dabfix", "Gopavasanth")
+        _canonical_author_label(session, "dabfix", "Gopa Vasanth")
+
+        assert _author_person_ids(session, "dabfix") == {gopa.id}
+        assert _unresolved_labels(session, "dabfix") == set()
+
+
+def test_a_real_name_still_needs_the_independent_edge():
+    with db.session_scope() as session:
+        gopa = _stable_person(session, "Gopavasanth", "42", wiki_username="Gopavasanth")
+        people_index.record_phabricator_real_name(session, gopa, real_name="Gopa Vasanth", source=PHABRICATOR_SOURCE)
+        # No maintainer edge on this tool: a name read off a public profile is
+        # an identity fact, never an authorship one.
+        _canonical_author_label(session, "someone-elses-tool", "Gopa Vasanth")
+
+        assert _author_person_ids(session, "someone-elses-tool") == set()
+        assert _unresolved_labels(session, "someone-elses-tool") == {"gopa vasanth"}
+
+
+def test_a_real_name_another_person_already_carries_is_refused_not_moved():
+    with db.session_scope() as session:
+        # policy refuses to offer a shared name at all, so this only happens
+        # when two sweeps disagree. The name must not silently change owner.
+        one = _stable_person(session, "Adam", "42", wiki_username="adam1")
+        two = _stable_person(session, "Adam", "43", wiki_username="adam2")
+        assert people_index.record_phabricator_real_name(
+            session, one, real_name="Adam Smith", source=PHABRICATOR_SOURCE
+        )
+        assert (
+            people_index.record_phabricator_real_name(session, two, real_name="Adam Smith", source=PHABRICATOR_SOURCE)
+            is None
+        )
+
+        _verified_maintainer_edge(session, "toolx", "adam2")
+        _canonical_author_label(session, "toolx", "Adam Smith")
+        # The name still belongs to the first writer, who has no edge here, so
+        # the second person's tool gains nothing from the collision.
+        assert _author_person_ids(session, "toolx") == set()
+        assert _unresolved_labels(session, "toolx") == {"adam smith"}
+
+
+def test_a_superseded_real_name_stops_matching_once_retired():
+    with db.session_scope() as session:
+        person = _stable_person(session, "Volans", "42", wiki_username="volans")
+        people_index.record_phabricator_real_name(session, person, real_name="Old Name", source=PHABRICATOR_SOURCE)
+        people_index.record_phabricator_real_name(session, person, real_name="New Name", source=PHABRICATOR_SOURCE)
+        assert people_index.retire_phabricator_real_names(session, person, keep="New Name") == 1
+        _verified_maintainer_edge(session, "toolx", "volans")
+
+        _canonical_author_label(session, "toolx", "Old Name")
+        assert _unresolved_labels(session, "toolx") == {"old name"}
+        _canonical_author_label(session, "toolx", "New Name")
+        assert _author_person_ids(session, "toolx") == {person.id}
+
+
+def test_a_real_name_is_not_published_as_a_handle():
+    with db.session_scope() as session:
+        person = _stable_person(session, "Gopavasanth", "42", wiki_username="Gopavasanth")
+        people_index.record_phabricator_real_name(session, person, real_name="Gopa Vasanth", source=PHABRICATOR_SOURCE)
+
+        assert people_index.NS_PHABRICATOR_REAL_NAME not in people_index.PUBLIC_HANDLE_NAMESPACES

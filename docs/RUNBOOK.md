@@ -327,6 +327,39 @@ tools per hour by default, checkpoints after every tool, and completes a
 several-thousand-tool backfill over repeated cycles without running inside web
 requests.
 
+The `phabricator-realname-sync` job exists because Toolsadmin renders the LDAP
+`cn` as a tool's maintainer handle but copies the maintainer's Phabricator
+_real name_ into the toolinfo `author` field. The two drifted apart, so a
+catalog author reads `Gopa Vasanth` while every handle held for the same person
+reads `Gopavasanth`, and no handle namespace can reach those labels.
+
+The job asks Phabricator only about handles this project already holds. For
+each projected developer account it requests the public profile at
+`/p/<username>/` — the only anonymous direction the site offers, and the only
+one that needs no credentials — for the LDAP `cn` first and the SUL name only
+if the `cn` has no profile. The Unix login is never asked about: it is a
+lowercased, truncated shell handle that often reads as a common first name, so
+it is the one candidate likely to land on an unrelated account. A real name is
+never a search key, so a common name cannot pull in a stranger who shares it.
+Each read is cached in `phabricator_profile_projection` and re-read after 90
+days; a handle with no Phabricator account is re-asked after a year. Sixty
+accounts are walked per hour at a minimum two-second interval, the cursor
+advances only past accounts read in full, and a Phabricator outage stops the
+window rather than being recorded as "this person has no real name".
+
+Every sweep then re-judges the whole cache, because uniqueness is a property of
+the population: a name that was the only one of its kind stops being usable the
+moment a second account claims it. `people_policy.accept_phabricator_real_name`
+records a pair only when exactly one account carries that name, nobody else
+already holds it as a public handle, and the name is not merely the handle
+again after case folding. Disabled accounts are kept — someone who has left
+Wikimedia still wrote the tools they wrote. An accepted name becomes a
+`phabricator_real_name` identifier, which is a matching key only: it is
+excluded from the public handle namespaces, is never published as a handle, and
+links nothing on its own. A label matching one still resolves only through
+`corroborated_handle_person`, which requires an independent verified edge to
+that same tool from another source.
+
 The normalized people view is available from `GET /v1/people/tools/<name>/`.
 Person-centric reads use `GET /v1/people/<person_slug_or_public_id>/` and
 `GET /v1/people/`. New links use the immutable `slug` and `canonicalPath`
@@ -710,6 +743,7 @@ toolforge jobs logs projection-refresh
 toolforge jobs logs source-attestations
 toolforge jobs logs api-cache-invalidator
 toolforge jobs logs maintainer-backfill
+toolforge jobs logs phabricator-realname-sync
 toolforge jobs logs digest-publish
 toolforge jobs logs digest-deliver
 toolforge jobs logs digest-audit
