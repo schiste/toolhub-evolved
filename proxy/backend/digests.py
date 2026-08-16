@@ -17,6 +17,7 @@ import requests
 from sqlalchemy import delete, func, or_, select
 
 from backend import db, people_index, toolinfo_authors
+from backend.http_headers import clean_header_value
 from backend.models import (
     CanonicalToolCache,
     DigestDelivery,
@@ -54,6 +55,7 @@ MAX_BLURB_WORDS = 28
 MIN_EVIDENCE_EXCERPT = 24
 MAX_META_BASE_TITLE = 800
 MODEL_TIMEOUT_SECONDS = 60
+DEFAULT_LIFTWING_USER_AGENT = "toolhub-evolved/0.2 (Toolhub digest)"
 LIFTWING_HOST = "api.wikimedia.org"
 LIFTWING_CHAT_PATH_RE = re.compile(
     r"^/service/lw/inference/v1/models/(?P<model>llm-[a-z0-9][a-z0-9-]{0,127})/openai/v1/chat/completions$"
@@ -688,15 +690,21 @@ def generate_editorial(facts: list[dict[str, Any]], cadence: str) -> tuple[dict[
     model = os.environ.get("LIFTWING_MODEL", "").strip() or "unconfigured-qwen"
     if not raw_endpoint:
         return _fallback_editorial(facts, cadence), model, True, None
-    user_agent = os.environ.get("LIFTWING_USER_AGENT", "toolhub-evolved/0.2 (Toolhub digest)").strip()
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": user_agent,
-        "Api-User-Agent": user_agent,
-    }
     response_payload: object | None = None
     try:
+        # Built inside the try so a malformed LIFTWING_USER_AGENT degrades to the
+        # deterministic fallback with a recorded diagnostic, like every other
+        # generation failure, instead of escaping and stopping publication.
+        user_agent = clean_header_value(
+            "LIFTWING_USER_AGENT",
+            os.environ.get("LIFTWING_USER_AGENT", DEFAULT_LIFTWING_USER_AGENT),
+        )
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": user_agent,
+            "Api-User-Agent": user_agent,
+        }
         endpoint = clean_liftwing_endpoint(raw_endpoint, model=model)
         response = requests.post(
             endpoint,

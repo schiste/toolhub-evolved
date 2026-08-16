@@ -83,6 +83,24 @@ def test_client_refuses_a_wrapped_access_token(monkeypatch: pytest.MonkeyPatch) 
     assert "first-half" not in str(excinfo.value)
 
 
+def test_wrapped_liftwing_user_agent_degrades_instead_of_stopping_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Editorial generation records a diagnostic and falls back; it must not raise."""
+    from backend import digests
+
+    monkeypatch.setenv("LIFTWING_API_URL", "https://api.wikimedia.org/service/lw/inference/v1/models/x:predict")
+    # os.environ itself refuses a NUL, so use another non-whitespace control character.
+    monkeypatch.setenv("LIFTWING_USER_AGENT", "toolhub\x01evolved")
+    # A non-empty fact list: _fallback_editorial indexes titles[0] unconditionally,
+    # and empty periods never reach generation because they produce no edition.
+    facts = [{"name": "example-tool", "title": "Example Tool"}]
+    _editorial, _model, fell_back, payload = digests.generate_editorial(facts, "daily")
+    assert fell_back is True
+    assert isinstance(payload, dict)
+    assert "LIFTWING_USER_AGENT" in str(payload.get("_toolhub_generation_error"))
+
+
 def test_transport_errors_never_carry_the_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
     """A transport exception that quotes the Authorization header must not reach a caller intact."""
     token = "super-secret-token"  # noqa: S105 - test fixture, not a real credential
