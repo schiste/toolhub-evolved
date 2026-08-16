@@ -102,3 +102,55 @@ def test_viewer_action_audience_requires_current_verified_tool_authority():
             people_policy.viewer_action_audience([relationship], checked_at=now)
             == people_policy.VIEWER_AUDIENCE_CONTRIBUTOR
         )
+
+
+def _accept(**overrides):
+    facts = {
+        "handle_kind": "developer_username",
+        "real_name": "Gopa Vasanth",
+        "matched_username": "Gopavasanth",
+        "account_count_for_real_name": 1,
+        "conflicting_handle_owner": False,
+        "account_disabled": False,
+    }
+    return people_policy.accept_phabricator_real_name(**(facts | overrides))
+
+
+def test_accepts_a_unique_real_name_that_differs_from_its_handle():
+    assert _accept() is True
+    assert _accept(handle_kind="wikimedia_global_name") is True
+
+
+def test_keeps_departed_developers_rather_than_erasing_their_authorship():
+    assert _accept(account_disabled=True) is True
+
+
+def test_refuses_a_real_name_more_than_one_account_carries():
+    assert _accept(account_count_for_real_name=2) is False
+    assert _accept(account_count_for_real_name=0) is False
+
+
+def test_refuses_a_real_name_that_is_already_another_persons_handle():
+    assert _accept(conflicting_handle_owner=True) is False
+
+
+def test_refuses_a_handle_kind_that_is_not_identity_bearing():
+    assert _accept(handle_kind="shell_username") is False
+    assert _accept(handle_kind="") is False
+
+
+def test_refuses_a_real_name_that_is_merely_the_handle_again():
+    assert _accept(real_name="Volans", matched_username="Volans") is False
+    assert _accept(real_name="volans", matched_username="Volans") is False
+
+
+def test_still_accepts_the_spaced_form_of_a_run_together_handle():
+    # The population this exists for: separator-insensitive equality would
+    # reject exactly the labels the bridge is meant to resolve.
+    assert _accept(real_name="Gopa Vasanth", matched_username="Gopavasanth") is True
+    assert _accept(real_name="Sohom Datta", matched_username="Soda") is True
+
+
+def test_refuses_an_empty_half_of_the_pair():
+    assert _accept(real_name="   ") is False
+    assert _accept(matched_username="") is False
