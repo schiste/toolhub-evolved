@@ -462,6 +462,33 @@ class ToolforgeMembershipProjection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class PhabricatorProfileProjection(Base):
+    """Cached public ``username -> real name`` pair for one Phabricator handle.
+
+    Read from ``/p/<username>/``, which is the only anonymous direction the
+    site offers. The row is keyed on the Phabricator handle rather than on any
+    Toolforge identifier because it caches a *read*, not a link: which account
+    a pair may identify is re-decided by policy on every sweep, so a changed
+    LDAP mirror cannot leave a stale identity behind this cache.
+
+    ``real_name`` is empty for a handle whose profile carries no real name and
+    for a handle Phabricator does not know. Both are ordinary outcomes and are
+    stored so the sweep does not re-request them every cycle; ``missing``
+    separates the two for operators.
+    """
+
+    __tablename__ = "phabricator_profile_projection"
+    normalized_username: Mapped[str] = mapped_column(String(255), primary_key=True)
+    username: Mapped[str] = mapped_column(String(255), default="")
+    real_name: Mapped[str] = mapped_column(String(255), default="")
+    normalized_real_name: Mapped[str] = mapped_column(String(255), default="", index=True)
+    missing: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), default="phabricator_profile")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class ToolforgeAccountSyncState(Base):
     """Generation state for the authoritative LDAP account/membership mirror."""
 

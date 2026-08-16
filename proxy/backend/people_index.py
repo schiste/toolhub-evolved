@@ -68,6 +68,10 @@ NS_TOOLHUB_USERNAME = "toolhub_username"
 NS_TOOLFORGE_USERNAME = "toolforge_username"
 NS_TOOLFORGE_SHELL_USERNAME = "toolforge_shell_username"
 NS_WIKI_USERNAME = "wiki_username"
+# A Phabricator real name, which Toolsadmin copies into the catalog's author
+# field. Unlike every namespace above it this is a *name*, not a handle: it is
+# a matching key only and is deliberately absent from the public handle list.
+NS_PHABRICATOR_REAL_NAME = "phabricator_real_name"
 PUBLIC_ROLES = PUBLIC_PERSON_REL_VALUES
 PUBLIC_HANDLE_NAMESPACES = (
     NS_TOOLHUB_USERNAME,
@@ -733,6 +737,64 @@ def attach_verified_external_account(  # noqa: PLR0913 - provider identifiers an
     return True
 
 
+def record_phabricator_real_name(
+    s: Session,
+    person: Person,
+    *,
+    real_name: str,
+    source: str,
+    checked_at: datetime | None = None,
+) -> PersonIdentifier | None:
+    """Record one policy-approved real name as a matching key for a person.
+
+    Reassignment is never authoritative here. A real name that already points
+    somewhere else is left alone rather than moved, because nothing about a
+    name proves which of two people currently owns it -- only the stable
+    Toolforge and Toolhub ids may move identity data.
+
+    A collision returns ``None`` rather than the row that blocked it, so a
+    caller cannot read a refusal as a successful record. ``people_policy``
+    already refuses to offer a name that more than one account carries, so
+    reaching here means the two sweeps disagreed and the earlier writer keeps
+    the name until a stable identifier says otherwise.
+    """
+    row = _upsert_identifier(
+        s,
+        person,
+        namespace=NS_PHABRICATOR_REAL_NAME,
+        value=real_name,
+        source=source,
+        checked_at=checked_at,
+    )
+    return None if row is not None and row.person_id != person.id else row
+
+
+def retire_phabricator_real_names(s: Session, person: Person, *, keep: str, checked_at: datetime | None = None) -> int:
+    """Withdraw every real name for a person other than the current one.
+
+    Real names change -- marriage, transition, romanization, a corrected
+    spelling -- and a superseded one must stop matching labels, so this
+    retires rather than accumulates.
+    """
+    now = checked_at or utcnow()
+    keep_normalized = _normalized(keep)
+    retired = 0
+    for row in s.execute(
+        select(PersonIdentifier).where(
+            PersonIdentifier.person_id == person.id,
+            PersonIdentifier.namespace == NS_PHABRICATOR_REAL_NAME,
+            PersonIdentifier.is_current.is_(True),
+        )
+    ).scalars():
+        if row.normalized_value == keep_normalized:
+            continue
+        row.is_current = False
+        row.retired_at = now
+        row.updated_at = now
+        retired += 1
+    return retired
+
+
 def corroborated_handle_person(s: Session, *, tool_name: str, display_name: str, source: str) -> Person | None:
     """Resolve a bare label only when an independent edge already ties it here.
 
@@ -747,6 +809,14 @@ def corroborated_handle_person(s: Session, *, tool_name: str, display_name: str,
     or retired handle resolves nothing. The corroborating edge must come
     from another source, so this can never confirm itself on a rerun.
 
+    A Phabricator real name counts as a matching key here because Toolsadmin
+    writes it into the catalog's author field, which makes it the only bridge
+    to labels no handle namespace can reach. It is admitted on exactly the
+    same terms as a handle rather than easier ones: ``people_policy``
+    already refused any name more than one account carries before it could be
+    recorded, and the independent same-tool edge below still decides whether
+    anything is linked.
+
     This is the canonical-catalog counterpart of the anchoring that source
     attestation already applies to indexed feeds.
     """
@@ -759,7 +829,9 @@ def corroborated_handle_person(s: Session, *, tool_name: str, display_name: str,
             select(PersonIdentifier.person_id).where(
                 PersonIdentifier.is_current.is_(True),
                 PersonIdentifier.identifier_kind == IDENTIFIER_HANDLE,
-                PersonIdentifier.namespace.in_((NS_WIKI_USERNAME, NS_TOOLFORGE_USERNAME, NS_TOOLHUB_USERNAME)),
+                PersonIdentifier.namespace.in_(
+                    (NS_WIKI_USERNAME, NS_TOOLFORGE_USERNAME, NS_TOOLHUB_USERNAME, NS_PHABRICATOR_REAL_NAME)
+                ),
                 PersonIdentifier.normalized_value == normalized,
             )
         ).all()
