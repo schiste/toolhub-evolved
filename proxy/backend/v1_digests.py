@@ -12,7 +12,7 @@ from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import func, select
 
 from backend import db
-from backend.digest_delivery import public_base_url, read_subscription_token, send_confirmation
+from backend.digest_delivery import public_base_url, read_subscription_token
 from backend.digest_health import status_counts
 from backend.digests import CADENCES, DEFAULT_LANGUAGE, LIFTWING_AUTHOR, WEBSITE_VISIBLE_STATUSES
 from backend.models import (
@@ -283,28 +283,6 @@ def _request_subscription() -> tuple[str, str, str, str]:
     return channel, cadence, language, domain
 
 
-def _confirmation_failure(subscription_id: int, payload: dict[str, object], wiki: WikimediaClient) -> Response | None:
-    """Send the confirmation email, returning an error response only on failure.
-
-    The subscription row is already committed when this runs, so a failure is a
-    partial success: the error carries the stored payload so the caller can show
-    the unconfirmed subscription it really did create.
-    """
-    try:
-        send_confirmation(subscription_id, client=wiki)
-    except (OSError, RuntimeError, ValueError, WikimediaAPIError) as exc:
-        _log.exception("digest confirmation email failed for subscription %s", subscription_id)
-        with db.session_scope() as session:
-            stored = session.get(DigestSubscription, subscription_id)
-            if stored is not None:
-                stored.last_error = clean_error(str(exc))
-        return (
-            jsonify({"error": "the confirmation email could not be sent", "subscription": payload}),
-            HTTP_BAD_GATEWAY,
-        )
-    return None
-
-
 @v1_digests_bp.route("/v1/digests/subscriptions/", methods=["POST"])
 @write_guard
 def subscriptions_post() -> Response:  # noqa: PLR0911 - each upstream/identity failure has a distinct API response
@@ -359,15 +337,15 @@ def subscriptions_post() -> Response:  # noqa: PLR0911 - each upstream/identity 
         subscription.wiki_username = identity.username
         subscription.updated_at = now
         subscription.last_error = None
-        subscription.confirmed_at = now if channel == "talk" else None
-        subscription.active = channel == "talk"
+        # Both channels activate on subscribe. Wikimedia OAuth already proved
+        # who is asking, the CentralAuth check above proved the account exists
+        # on the destination wiki, and MediaWiki only relays emailuser to an
+        # address its owner has already confirmed on-wiki. A second opt-in
+        # would confirm a strict subset of what those two already establish.
+        subscription.confirmed_at = now
+        subscription.active = True
         session.flush()
-        subscription_id = subscription.id
         payload = _subscription_payload(subscription)
-    if channel == "email":
-        failure = _confirmation_failure(subscription_id, payload, wiki)
-        if failure is not None:
-            return failure
     return jsonify({"subscription": payload}), 201
 
 

@@ -45,9 +45,7 @@ function subscriptionRow(subscription) {
 			: t("digests.subscription.talkDestination", "Talk page on $1", subscription.wikiDomain);
 	const state = subscription.active
 		? t("digests.subscription.active", "Active")
-		: subscription.confirmed
-			? t("digests.subscription.paused", "Paused")
-			: t("digests.subscription.awaitingConfirmation", "Awaiting confirmation");
+		: t("digests.subscription.paused", "Paused");
 	return `<li class="digest-subscriptions__item" data-subscription-row="${subscription.id}"><div>
 		<strong>${esc(label(subscription.cadence))} · ${esc(destination)}</strong><span>${esc(state)}</span></div>
 		<button class="digest-text-button" type="button" data-delete-subscription="${subscription.id}">${esc(t("digests.subscription.stop", "Stop"))}</button></li>`;
@@ -163,17 +161,13 @@ function mountSubscriptions() {
 		const data = new FormData(form);
 		if (submit instanceof HTMLButtonElement) submit.disabled = true;
 		try {
-			const result = await serverWrite("POST", "/v1/digests/subscriptions/", {
+			await serverWrite("POST", "/v1/digests/subscriptions/", {
 				channel: data.get("channel"),
 				cadence: data.get("cadence"),
 				language: "en",
 				wikiDomain: data.get("wikiDomain")
 			});
-			if (status) {
-				status.textContent = result.subscription.confirmed
-					? t("digests.subscribe.active", "Subscription active.")
-					: t("digests.subscribe.checkEmail", "Check your Wikimedia email to confirm.");
-			}
+			if (status) status.textContent = t("digests.subscribe.active", "Subscription active.");
 		} catch (error) {
 			if (status) status.textContent = backendErrorMessage(error);
 		} finally {

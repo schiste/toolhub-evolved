@@ -40,6 +40,7 @@ from backend.models import (
     ApiCacheMeta,
     CanonicalToolCache,
     CatalogFacetValue,
+    DigestSubscription,
     Person,
     PersonIdentifier,
     ToolAuthorClaim,
@@ -76,6 +77,7 @@ def run_once() -> list[MigrationResult]:
     """Apply every pending data migration and report what each one touched."""
     return [
         MigrationResult("digest render MEDIUMTEXT", _widen_digest_render_columns()),
+        MigrationResult("digest email subscriptions activated", _confirm_legacy_email_subscriptions()),
         MigrationResult("api_cache index columns", api_cache.backfill_index_columns()),
         MigrationResult("catalog read indexes", _ensure_catalog_read_indexes()),
         MigrationResult("canonical search_text", canonical_tools.backfill_search_text()),
@@ -167,6 +169,38 @@ def _initialize_toolforge_relationship_marker() -> int:
     """Avoid reprojecting unchanged LDAP memberships after this upgrade."""
     with db.session_scope() as s:
         return identity_graph.seed_relationship_fingerprint(s)
+
+
+def _confirm_legacy_email_subscriptions() -> int:
+    """Activate email subscriptions that were stranded awaiting a second opt-in.
+
+    Email subscriptions no longer require a confirmation click, so rows created
+    under the old flow would otherwise stay inactive forever: nothing sends the
+    confirmation link any more. They were created by an authenticated request
+    from the account they deliver to, which is the same consent every new
+    subscription now records.
+
+    Rows that were explicitly stopped are left alone. Those have confirmed_at
+    set and active cleared, so they are not matched here; only never-confirmed
+    rows are promoted, which keeps the migration idempotent and keeps an
+    unsubscribe from being undone by a later deployment.
+
+    confirmed_at is stamped now rather than copied from the row's creation
+    time because delivery queues on `confirmed_at <= edition.published_at`. A
+    backdated stamp would make a recovered older edition eligible, and no
+    subscription is supposed to receive an edition published before it existed.
+    The stored last_error is cleared with it: it describes a confirmation email
+    that is no longer part of the flow.
+    """
+    with db.session_scope() as s:
+        rows = list(s.execute(select(DigestSubscription).where(DigestSubscription.confirmed_at.is_(None))).scalars())
+        now = utcnow()
+        for row in rows:
+            row.confirmed_at = now
+            row.active = True
+            row.last_error = None
+            row.updated_at = now
+        return len(rows)
 
 
 def _backfill_relationship_verified_at() -> int:

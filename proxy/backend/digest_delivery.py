@@ -57,35 +57,10 @@ def read_subscription_token(token: str, action: str) -> tuple[int, int]:
         raise ValueError(message) from exc
 
 
-def confirmation_url(subscription: DigestSubscription) -> str:
-    """Return the signed email confirmation URL for a subscription."""
-    token = subscription_token(subscription.id, subscription.user_id, "confirm")
-    return f"{public_base_url()}/digests/confirm?token={token}"
-
-
 def unsubscribe_url(subscription: DigestSubscription) -> str:
     """Return the signed one-click unsubscribe URL for a subscription."""
     token = subscription_token(subscription.id, subscription.user_id, "unsubscribe")
     return f"{public_base_url()}/digests/unsubscribe?token={token}"
-
-
-def send_confirmation(subscription_id: int, *, client: WikimediaClient | None = None) -> None:
-    """Send an email-channel opt-in confirmation through Meta-Wiki."""
-    with db.session_scope() as session:
-        subscription = session.get(DigestSubscription, subscription_id)
-        if subscription is None or subscription.channel != "email":
-            message = "email digest subscription does not exist"
-            raise ValueError(message)
-        username = subscription.wiki_username
-        cadence = subscription.cadence
-        link = confirmation_url(subscription)
-    text = (
-        f"Confirm your {cadence} Toolhub digest subscription:\n\n{link}\n\n"
-        "This request was made from your signed-in Toolhub Evolved account. "
-        "Ignore this message if you did not request it."
-    )
-    wiki = client or WikimediaClient()
-    wiki.email_user("meta.wikimedia.org", username, "Confirm your Toolhub digest subscription", text)
 
 
 def _queue_deliveries_once(edition_id: int) -> int:
