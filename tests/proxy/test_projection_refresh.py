@@ -130,6 +130,32 @@ def test_parallel_refresh_uses_incremental_catalog_sync(monkeypatch):
     assert result["catalog"]["cacheHit"] is False
 
 
+def test_parallel_refresh_releases_account_locks_before_catalog_sync(monkeypatch):
+    completed = set()
+    monkeypatch.setattr(
+        projection_refresh.account_sync,
+        "run_complete",
+        lambda: completed.add("toolhubAccounts") or {"status": "idle"},
+    )
+    monkeypatch.setattr(
+        projection_refresh.toolforge_account_sync,
+        "run",
+        lambda: completed.add("toolforgeAccounts") or {"status": "idle"},
+    )
+
+    def catalog():
+        assert completed == {"toolhubAccounts", "toolforgeAccounts"}
+        return {"phase": "steady", "completed": True}
+
+    monkeypatch.setattr(projection_refresh, "_run_catalog_sync", catalog)
+
+    result = projection_refresh._parallel_sync(  # noqa: SLF001 - orchestration contract
+        {"toolhubAccounts": True, "toolforgeAccounts": True, "catalog": True}
+    )
+
+    assert set(result) == {"toolhubAccounts", "toolforgeAccounts", "catalog"}
+
+
 def test_parallel_refresh_defers_when_scheduled_catalog_worker_owns_lock(monkeypatch):
     lock_names = []
 
