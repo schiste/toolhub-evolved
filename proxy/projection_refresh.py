@@ -98,20 +98,21 @@ def _parallel_sync(plan: dict[str, bool]) -> dict[str, dict[str, Any]]:
     tasks: dict[str, Callable[[], dict[str, Any]]] = {
         "toolhubAccounts": account_sync.run_complete,
         "toolforgeAccounts": toolforge_account_sync.run,
-        # Normal projection publication must never turn a stale input marker
-        # into a catalog-wide download. The incremental synchronizer consumes
-        # recent changes and advances the rolling reconciliation cursor; the
-        # separately scheduled integrity job owns complete snapshots.
-        "catalog": _run_catalog_sync,
     }
     results: dict[str, dict[str, Any]] = {
         name: {"status": "fresh", "cacheHit": True} for name, should_run in plan.items() if not should_run
     }
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="projection-sync") as executor:
-        futures = {executor.submit(tasks[name]): name for name, should_run in plan.items() if should_run}
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="projection-sync") as executor:
+        futures = {executor.submit(task): name for name, task in tasks.items() if plan.get(name)}
         for future in as_completed(futures):
             name = futures[future]
             results[name] = {**future.result(), "cacheHit": False}
+    if plan.get("catalog"):
+        # Account generations retain advisory-lock connections while they
+        # synchronize. Start the catalog writer after those locks are released
+        # so the bounded MariaDB pool still has capacity for its transactions.
+        # This remains incremental; scheduled integrity owns routine snapshots.
+        results["catalog"] = {**_run_catalog_sync(), "cacheHit": False}
     locked = [name for name, result in results.items() if result.get("status") == "locked"]
     if locked:
         raise ProjectionRefreshDeferredError("projection already refreshing: " + ", ".join(sorted(locked)))
