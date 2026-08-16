@@ -10,9 +10,12 @@ from urllib.parse import quote
 
 import requests
 
+from backend.http_headers import clean_header_value, clean_secret_header_value
 from backend.sync import clean_error
 from backend.wikimedia_urls import clean_wiki_domain
 
+DEFAULT_USER_AGENT = "ToolhubDigestBot/1.0 (https://toolhub-evolved.toolforge.org/digests)"
+REDACTED = "***"
 REQUEST_TIMEOUT_SECONDS = 30
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 HTTP_BAD_REQUEST = 400
@@ -75,17 +78,14 @@ class WikimediaClient:
 
     def __init__(self, *, access_token: str | None = None, user_agent: str | None = None) -> None:
         """Use explicit test credentials or the Toolforge environment."""
-        self.access_token = (
-            access_token if access_token is not None else os.environ.get("WIKIMEDIA_ACCESS_TOKEN", "")
-        ).strip()
-        self.user_agent = (
-            user_agent
-            if user_agent is not None
-            else os.environ.get(
-                "WIKIMEDIA_USER_AGENT",
-                "ToolhubDigestBot/1.0 (https://toolhub-evolved.toolforge.org/digests)",
-            )
-        ).strip()
+        self.access_token = clean_secret_header_value(
+            "WIKIMEDIA_ACCESS_TOKEN",
+            access_token if access_token is not None else os.environ.get("WIKIMEDIA_ACCESS_TOKEN", ""),
+        )
+        self.user_agent = clean_header_value(
+            "WIKIMEDIA_USER_AGENT",
+            user_agent if user_agent is not None else os.environ.get("WIKIMEDIA_USER_AGENT", DEFAULT_USER_AGENT),
+        )
         self.expected_account = os.environ.get("WIKIMEDIA_ACCOUNT_NAME", "").strip()
         self._csrf: dict[str, str] = {}
 
@@ -103,6 +103,18 @@ class WikimediaClient:
             permanent=permanent,
             recipient_failure=recipient_failure,
         )
+
+    def _redact(self, text: str) -> str:
+        """Strip credential material from a string that will reach a caller.
+
+        Transport exceptions quote what they choked on, and the Authorization
+        header is built from the access token, so an exception raised while
+        sending it can carry the credential into an API response body and into
+        the stored per-subscription last_error. Validation already refuses the
+        malformed tokens that trigger that, but the redaction is cheap and the
+        disclosure would be permanent.
+        """
+        return text.replace(self.access_token, REDACTED) if self.access_token else text
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json", "User-Agent": self.user_agent}
@@ -142,7 +154,7 @@ class WikimediaClient:
         except WikimediaAPIError:
             raise
         except (OSError, ValueError, requests.RequestException) as exc:
-            raise self._failure(ERROR_TRANSPORT, str(exc)) from exc
+            raise self._failure(ERROR_TRANSPORT, self._redact(str(exc))) from exc
         if response.status_code >= HTTP_BAD_REQUEST or not isinstance(payload, dict) or "error" in payload:
             raise self._error(payload, response.status_code)
         return payload

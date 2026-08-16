@@ -11,7 +11,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
+import requests  # noqa: E402
+
+from backend import wikimedia_delivery  # noqa: E402
 from backend.http_headers import clean_header_value, clean_secret_header_value  # noqa: E402
+from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient  # noqa: E402
 
 # The exact shape a wrapped Toolforge envvar produces: the newline is interior,
 # so str.strip() leaves it in place and requests rejects the header.
@@ -61,3 +65,36 @@ def test_secret_error_never_quotes_the_credential() -> None:
 
 def test_empty_secret_stays_empty() -> None:
     assert clean_secret_header_value("WIKIMEDIA_ACCESS_TOKEN", "   ") == ""
+
+
+def test_client_repairs_a_wrapped_user_agent_envvar(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WIKIMEDIA_USER_AGENT", WRAPPED_USER_AGENT)
+    monkeypatch.delenv("WIKIMEDIA_ACCESS_TOKEN", raising=False)
+    client = WikimediaClient()
+    assert "\n" not in client.user_agent
+    # The repaired value is transmittable: requests validates headers on send.
+    requests.models.PreparedRequest().prepare_headers({"User-Agent": client.user_agent})
+
+
+def test_client_refuses_a_wrapped_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WIKIMEDIA_ACCESS_TOKEN", "first-half\nsecond-half")
+    with pytest.raises(ValueError) as excinfo:
+        WikimediaClient()
+    assert "first-half" not in str(excinfo.value)
+
+
+def test_transport_errors_never_carry_the_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A transport exception that quotes the Authorization header must not reach a caller intact."""
+    token = "super-secret-token"  # noqa: S105 - test fixture, not a real credential
+    client = WikimediaClient(access_token=token, user_agent="Test/1.0")
+
+    def explode(*_args: object, **_kwargs: object) -> object:
+        # requests.InvalidHeader quotes the offending header value verbatim.
+        message = f"Invalid return character in header value: 'Bearer {token}'"
+        raise requests.RequestException(message)
+
+    monkeypatch.setattr(wikimedia_delivery.requests, "request", explode)
+    with pytest.raises(WikimediaAPIError) as excinfo:
+        client.request("meta.wikimedia.org", "GET", {"action": "query"})
+    assert token not in str(excinfo.value)
+    assert wikimedia_delivery.REDACTED in str(excinfo.value)
