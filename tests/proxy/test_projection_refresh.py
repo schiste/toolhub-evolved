@@ -130,6 +130,35 @@ def test_parallel_refresh_uses_incremental_catalog_sync(monkeypatch):
     assert result["catalog"]["cacheHit"] is False
 
 
+def test_parallel_refresh_defers_when_scheduled_catalog_worker_owns_lock(monkeypatch):
+    lock_names = []
+
+    class BusyLock:
+        def __enter__(self):
+            return False
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        projection_refresh.db,
+        "advisory_lock",
+        lambda name: lock_names.append(name) or BusyLock(),
+    )
+    monkeypatch.setattr(
+        projection_refresh.catalog_sync,
+        "run",
+        lambda: pytest.fail("contended projection refresh must not start a second catalog writer"),
+    )
+
+    with pytest.raises(projection_refresh.ProjectionRefreshDeferredError, match="catalog"):
+        projection_refresh._parallel_sync(  # noqa: SLF001 - orchestration contract
+            {"toolhubAccounts": False, "toolforgeAccounts": False, "catalog": True}
+        )
+
+    assert lock_names == ["toolhub-evolved:catalog-sync"]
+
+
 def test_job_contract_has_bounded_full_audit_and_retires_old_schedules():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")

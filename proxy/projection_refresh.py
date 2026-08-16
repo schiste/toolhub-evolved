@@ -86,6 +86,14 @@ def _sync_plan(max_age_seconds: int, *, force: bool) -> dict[str, bool]:
         }
 
 
+def _run_catalog_sync() -> dict[str, Any]:
+    """Share the catalog writer lock with scheduled sync and integrity jobs."""
+    with db.advisory_lock("toolhub-evolved:catalog-sync") as acquired:
+        if not acquired:
+            return {"status": "locked", "completed": False}
+        return catalog_sync.run()
+
+
 def _parallel_sync(plan: dict[str, bool]) -> dict[str, dict[str, Any]]:
     tasks: dict[str, Callable[[], dict[str, Any]]] = {
         "toolhubAccounts": account_sync.run_complete,
@@ -94,7 +102,7 @@ def _parallel_sync(plan: dict[str, bool]) -> dict[str, dict[str, Any]]:
         # into a catalog-wide download. The incremental synchronizer consumes
         # recent changes and advances the rolling reconciliation cursor; the
         # separately scheduled integrity job owns complete snapshots.
-        "catalog": catalog_sync.run,
+        "catalog": _run_catalog_sync,
     }
     results: dict[str, dict[str, Any]] = {
         name: {"status": "fresh", "cacheHit": True} for name, should_run in plan.items() if not should_run
