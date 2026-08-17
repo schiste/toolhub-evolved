@@ -168,6 +168,22 @@ also allow email from other users for the email channel to work.
   configured Qwen fallbacks, exhausted deliveries, validated editions stuck
   over two hours, or outbox rows stuck over 48 hours.
 
+Two of those conditions are deliberately narrowed, because an alarm no action
+can clear is an alarm operators learn to ignore:
+
+- An edition Meta refuses on content grounds — currently the spam blacklist,
+  which rejects a URL the rendered wikitext contains — is stored as
+  `publication_blocked` rather than `publication_failed`. Republishing the same
+  text always fails, so `publish_pending` no longer retries it and the audit
+  reports it as `blockedPublications` instead of failing hourly forever. The
+  fix is editorial: remove or replace the blacklisted link and regenerate.
+  Every other failure, including a permanent authentication one an operator can
+  correct, stays `publication_failed` and stays in the retry set.
+- The recent-fallback check ignores `out_of_scope` editions. Retiring a
+  backfilled edition leaves its generation history in place, and those rows
+  never reach a reader, so their fallback says nothing about whether Lift Wing
+  is serving the editions that do.
+
 Useful checks:
 
 ```sh

@@ -1407,6 +1407,79 @@ def test_digest_audit_reports_qwen_fallback_when_endpoint_is_configured(monkeypa
     assert edition.used_fallback is True
 
 
+def test_meta_blacklist_rejection_is_terminal_and_never_republished(monkeypatch):
+    monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
+    edition = _generated_edition(monkeypatch)
+
+    class BlacklistingWiki(FakeWiki):
+        def __init__(self):
+            super().__init__()
+            self.attempts = 0
+
+        def edit_page(self, *_args, **_kwargs):
+            self.attempts += 1
+            raise WikimediaAPIError("spamblacklist", "yapk. is blacklisted", permanent=True, recipient_failure=False)
+
+    wiki = BlacklistingWiki()
+    with pytest.raises(WikimediaAPIError, match="blacklisted"):
+        digests.publish_edition(edition.id, client=wiki)
+    with db.session_scope() as session:
+        blocked = session.get(DigestEdition, edition.id)
+        assert blocked.status == digests.PUBLICATION_BLOCKED_STATUS
+        assert "blacklisted" in blocked.last_error
+
+    assert digests.publish_pending(client=wiki) == {"published": 0, "failed": 0}
+    assert wiki.attempts == 1
+
+
+def test_transient_publication_failure_stays_retryable(monkeypatch):
+    monkeypatch.setenv("DIGEST_META_BASE_TITLE", "Toolhub/Digest")
+    edition = _generated_edition(monkeypatch)
+
+    class OfflineWiki(FakeWiki):
+        def page_source(self, *_args):
+            raise OSError("offline")
+
+    with pytest.raises(OSError, match="offline"):
+        digests.publish_edition(edition.id, client=OfflineWiki())
+
+    assert digests.publish_pending(client=FakeWiki())["published"] == 1
+
+
+def test_digest_audit_reports_blocked_publications_without_alarming(monkeypatch):
+    monkeypatch.setenv(
+        "LIFTWING_API_URL",
+        "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions",
+    )
+    monkeypatch.setenv("LIFTWING_MODEL", "llm-qwen36-27b")
+    with db.session_scope() as session:
+        session.add_all(
+            [
+                DigestEdition(
+                    cadence="daily",
+                    edition_key="2026-08-12",
+                    period_start=datetime(2026, 8, 12),
+                    period_end=datetime(2026, 8, 13),
+                    status=digests.PUBLICATION_BLOCKED_STATUS,
+                ),
+                DigestEdition(
+                    cadence="daily",
+                    edition_key="2021-04-02",
+                    period_start=datetime(2021, 4, 2),
+                    period_end=datetime(2021, 4, 3),
+                    status=digests.OUT_OF_SCOPE_STATUS,
+                    used_fallback=True,
+                ),
+            ]
+        )
+
+    status = digest_audit.audit()
+
+    assert status["healthy"] is True
+    assert status["blockedPublications"] == 1
+    assert status["recentFallbacks"] == 0
+
+
 def test_public_digest_origin_rejects_paths_and_non_https(monkeypatch):
     monkeypatch.setenv("DIGEST_PUBLIC_BASE_URL", "https://tool.example/digests")
     with pytest.raises(ValueError, match="HTTPS origin"):
@@ -1508,6 +1581,12 @@ def test_wikimedia_client_normalizes_transport_auth_and_api_failures(monkeypatch
     with pytest.raises(WikimediaAPIError) as api_failure:
         client.request("meta.wikimedia.org", "POST", {})
     assert api_failure.value.recipient_failure is True
+
+    response.json = lambda: {"error": {"code": "spamblacklist", "info": "yapk. is blacklisted"}}
+    with pytest.raises(WikimediaAPIError) as blacklisted:
+        client.request("meta.wikimedia.org", "POST", {})
+    assert blacklisted.value.permanent is True
+    assert blacklisted.value.recipient_failure is False
 
     response.status_code = 200
     response.json = lambda: (_ for _ in ()).throw(ValueError("bad json"))

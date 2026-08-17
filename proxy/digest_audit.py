@@ -8,7 +8,14 @@ from sqlalchemy import func, select
 
 from backend import db, job_runner
 from backend.digest_health import status_counts
-from backend.digests import ARCHIVE_STATE_KEY, clean_liftwing_endpoint, due_periods
+from backend.digests import (
+    ARCHIVE_STATE_KEY,
+    OUT_OF_SCOPE_STATUS,
+    PUBLICATION_BLOCKED_STATUS,
+    PUBLICATION_FAILED_STATUS,
+    clean_liftwing_endpoint,
+    due_periods,
+)
 from backend.models import (
     DigestDelivery,
     DigestEdition,
@@ -74,11 +81,18 @@ def audit() -> dict[str, object]:
         recent_fallbacks = session.execute(
             select(func.count())
             .select_from(DigestEdition)
-            .where(DigestEdition.used_fallback.is_(True), DigestEdition.created_at >= now - FALLBACK_ALERT_WINDOW)
+            .where(
+                DigestEdition.used_fallback.is_(True),
+                DigestEdition.created_at >= now - FALLBACK_ALERT_WINDOW,
+                # Retiring a backfilled edition leaves its generation history behind.
+                # Those rows never reach a reader, so their fallback says nothing about
+                # whether Lift Wing is serving the editions that do.
+                DigestEdition.status != OUT_OF_SCOPE_STATUS,
+            )
         ).scalar_one()
     late_due = [period for period in due_periods(now=now) if period.end <= now - MAX_DUE_PERIOD_AGE]
     problems = []
-    if edition_counts.get("publication_failed", 0):
+    if edition_counts.get(PUBLICATION_FAILED_STATUS, 0):
         problems.append("one or more Meta publications failed")
     if old_validated:
         problems.append("validated editions have remained unpublished for over two hours")
@@ -103,6 +117,10 @@ def audit() -> dict[str, object]:
         "latestActivityEvent": latest_event.isoformat() + "Z" if latest_event else None,
         "lateDuePeriods": len(late_due),
         "recentFallbacks": recent_fallbacks,
+        # Reported, never alarmed on. Meta will refuse these editions on every future
+        # attempt, so an hourly alert would fire forever without any action clearing
+        # it; the count keeps them visible for the one-off decision they do need.
+        "blockedPublications": edition_counts.get(PUBLICATION_BLOCKED_STATUS, 0),
     }
     if problems:
         raise DigestAuditError("; ".join(problems))
