@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote, urlparse
@@ -64,18 +65,55 @@ def _dedupe_project_names(candidates: list[str]) -> list[str]:
     return names
 
 
-def verified_toolforge_project_names(tool_name: str) -> list[str]:
+def _collapse_hyphens(value: str) -> str:
+    """Collapse hyphen runs the way an upstream canonical name does."""
+    return re.sub(r"-{2,}", "-", value)
+
+
+def _hyphen_restoring_host_projects(name_project: str, record: dict[str, Any] | None) -> list[str]:
+    """Return the record's own runtime project when its name confirms it.
+
+    Upstream canonical names collapse hyphen runs, so an internationalised
+    project like ``xn--9s9h`` reaches us as the record name
+    ``toolforge-xn-9s9h``. The collapse is lossy in that direction and cannot be
+    undone from the name alone, which would leave every punycode project
+    permanently unverifiable.
+
+    The record's own runtime host still carries the lost hyphen, and requiring
+    it to collapse back to exactly the name-derived project is what makes it
+    admissible here rather than a mere hint: the host is not being trusted to
+    name the project, it is being checked against the name that already does. A
+    record naming one project while linking to another project's launcher or
+    proxy fails that check, which is the case the strictness exists for.
+    """
+    if not name_project:
+        return []
+    target = _collapse_hyphens(name_project).casefold()
+    return [
+        project
+        for project in runtime_host_project_names(record)
+        if project.casefold() != name_project.casefold() and _collapse_hyphens(project).casefold() == target
+    ]
+
+
+def verified_toolforge_project_names(tool_name: str, record: dict[str, Any] | None = None) -> list[str]:
     """Return project aliases backed by explicit Toolforge project identity.
 
     Only a canonical ``toolforge-$PROJECT`` name names the project within the
     record itself. Runtime and administration URLs are deliberately excluded:
     a Toolhub record may link to another project's launcher, proxy, or creation
     interface. Registered source provenance is evaluated separately.
+
+    The single exception is a runtime host that collapses back to the record's
+    own name-derived project — see ``_hyphen_restoring_host_projects``. Callers
+    without a record in hand may omit it and lose only that exception.
     """
     candidates: list[str] = []
     clean_tool_name = _clean_name(tool_name)
     if clean_tool_name.casefold().startswith("toolforge-"):
-        candidates.append(clean_tool_name[len("toolforge-") :])
+        name_project = clean_tool_name[len("toolforge-") :]
+        candidates.append(name_project)
+        candidates.extend(_hyphen_restoring_host_projects(name_project, record))
     return _dedupe_project_names(candidates)
 
 
@@ -94,7 +132,7 @@ def candidate_toolforge_project_names(tool_name: str, record: dict[str, Any] | N
                 if parts[index : index + 2] == ["tools", "id"]:
                     candidates.append(parts[index + 2])
                     break
-    verified = {name.casefold() for name in verified_toolforge_project_names(tool_name)}
+    verified = {name.casefold() for name in verified_toolforge_project_names(tool_name, source)}
     return [name for name in _dedupe_project_names(candidates) if name.casefold() not in verified]
 
 
@@ -132,7 +170,7 @@ def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> li
     """Return all project associations, with deterministic aliases first."""
     return _dedupe_project_names(
         [
-            *verified_toolforge_project_names(tool_name),
+            *verified_toolforge_project_names(tool_name, record),
             *candidate_toolforge_project_names(tool_name, record),
         ]
     )
@@ -141,9 +179,9 @@ def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> li
 def names_by_toolforge_project(s: Session) -> dict[str, tuple[str, ...]]:
     """Index canonical Toolhub names by deterministically verified project."""
     index: dict[str, set[str]] = {}
-    tool_names = s.execute(select(CanonicalToolCache.tool_name)).scalars()
-    for tool_name in tool_names:
-        for project in verified_toolforge_project_names(tool_name):
+    rows = s.execute(select(CanonicalToolCache.tool_name, CanonicalToolCache.record)).all()
+    for tool_name, record in rows:
+        for project in verified_toolforge_project_names(tool_name, record):
             index.setdefault(project.casefold(), set()).add(tool_name)
     return {
         project: tuple(sorted(tool_names, key=lambda value: (value.casefold(), value)))
