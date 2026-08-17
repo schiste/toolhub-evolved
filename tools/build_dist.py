@@ -5,9 +5,11 @@
 The project is deliberately no-build and served raw in development, but the
 Toolforge webservice has no Node toolchain. CSS is minified with pure-Python
 rcssmin, while JS stays unminified because Python JS minifiers are not reliable
-for this app's modern template-literal rendering. `proxy/app.py` serves `dist/`
-when it exists and falls back to `public_html/` otherwise, so local dev is
-unaffected unless a previous build is present.
+for this app's modern template-literal rendering. JS *is* bundled — see
+tools/bundle_modules.py for why 39 requests was the landing page's dominant
+cost. `proxy/app.py` serves `dist/` when it exists and falls back to
+`public_html/` otherwise, so local dev is unaffected unless a previous build is
+present.
 
 Run from anywhere: `python tools/build_dist.py`.
 """
@@ -20,6 +22,16 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    from . import bundle_modules
+except ImportError:
+    # Run as a script rather than imported as tools.build_dist, so `tools` is
+    # not a package here and the sibling has to be found on the path. Both
+    # spellings must reach the *same* module object, or `except BundleError`
+    # would be catching a different class than the one raised.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import bundle_modules  # type: ignore[no-redef]
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "public_html"
@@ -45,6 +57,11 @@ _STATIC_IMPORT_RE = re.compile(r'\bfrom\s*(?P<quote>["\'])(?P<url>(?:\.{1,2}/)[^
 # preloading every route would cost every visitor all of them.
 _PRELOAD_ENTRIES = ("main.js", "views/home.js")
 _PRELOAD_MARKER = '<link rel="modulepreload"'
+#: The one `<script type="module">` that boots the app. In dist it has to name
+#: the bundle holding main.js instead, or the browser would load the shell
+#: twice — once unbundled, once inside the bundle — with two copies of every
+#: module-level cache.
+_ENTRY_SCRIPT_RE = re.compile(r'(?P<prefix><script\b[^>]*\btype="module"[^>]*\bsrc=")(?P<url>/[^"?]+\.js)(?P<suffix>")')
 
 
 def _module_graph(entry: Path) -> list[Path]:
@@ -79,20 +96,25 @@ def preload_modules() -> list[str]:
     return urls
 
 
-def _preload_links(version: str, indent: str) -> str:
+def _preload_links(version: str, indent: str, urls: list[str] | None = None) -> str:
     """Render the modulepreload block for the whole first-paint module graph."""
     return "\n".join(
-        f'{indent}<link rel="modulepreload" href="{_append_version(url, version)}" />' for url in preload_modules()
+        f'{indent}<link rel="modulepreload" href="{_append_version(url, version)}" />'
+        for url in (preload_modules() if urls is None else urls)
     )
 
 
-def _inject_preloads(text: str, version: str) -> str:
+def _inject_preloads(text: str, version: str, urls: list[str] | None = None) -> str:
     """Replace the hand-written modulepreload block with the derived graph.
 
     Nine of these were maintained by hand while the graph was 33 modules deep,
     so the browser discovered the rest a level at a time — six sequential waves
     of round trips before the first API call could start. Deriving the list from
     the imports keeps it complete and stops it rotting.
+
+    Once the graph is bundled there is a single entry to preload, and `urls`
+    carries it: the preload block and the module `src` must name the same URL or
+    the browser fetches the bundle twice.
     """
     lines = text.splitlines()
     hits = [i for i, line in enumerate(lines) if _PRELOAD_MARKER in line]
@@ -100,7 +122,36 @@ def _inject_preloads(text: str, version: str) -> str:
         return text
     first, last = hits[0], hits[-1]
     indent = lines[first][: len(lines[first]) - len(lines[first].lstrip())]
-    return "\n".join([*lines[:first], _preload_links(version, indent), *lines[last + 1 :]]) + "\n"
+    return "\n".join([*lines[:first], _preload_links(version, indent, urls), *lines[last + 1 :]]) + "\n"
+
+
+#: Any module specifier left in a built file: a relative import, or the absolute
+#: `/bundle/…` URL a rewritten one becomes.
+_ANY_SPEC_RE = re.compile(r'(?P<quote>["\'])(?P<url>(?:\.{1,2}/|/bundle/)[^"\']+\.js)(?:\?[^"\']*)?(?P=quote)')
+
+
+def _check_specifiers_resolve(root: Path) -> None:
+    """Fail the build if any emitted module points at a file that is not there.
+
+    Bundling deletes the standalone copy of every module it absorbs, so a file
+    the bundler does not know about — a Worker entry, say — can be left holding
+    an import of something that no longer exists. That is invisible until a user
+    hits the one route that loads it, which is far too late to find out.
+    """
+    missing: list[str] = []
+    for path in sorted(root.rglob("*.js")):
+        for match in _ANY_SPEC_RE.finditer(path.read_text(encoding="utf-8")):
+            url = match.group("url")
+            target = (root / url.lstrip("/")) if url.startswith("/") else (path.parent / url)
+            if not target.resolve().is_file():
+                missing.append(f"  {path.relative_to(root).as_posix()} -> {url}")
+    if missing:
+        raise SystemExit("build_dist: emitted modules import files that were not built:\n" + "\n".join(missing))
+
+
+def _point_entry_at_bundle(text: str, bundle_url: str) -> str:
+    """Repoint the boot `<script type="module">` at its bundle."""
+    return _ENTRY_SCRIPT_RE.sub(lambda m: f"{m.group('prefix')}{bundle_url}{m.group('suffix')}", text, count=1)
 
 
 def _source_fingerprint() -> str:
@@ -216,21 +267,39 @@ def _write_precompressed(out: Path) -> int:
     return len(packed)
 
 
-def build(deployment_manifest: Path | None = None) -> tuple[int, int, int]:
-    """Mirror SRC into DIST, preserving JS, minifying CSS, and copying everything else.
+def build(deployment_manifest: Path | None = None) -> tuple[int, int, int, list[str]]:
+    """Mirror SRC into DIST, bundling JS, minifying CSS, and copying everything else.
 
     Builds into a temp dir and swaps it in atomically, so an interrupted build
     never leaves a partial dist/ for the proxy to serve.
+
+    Returns the raw/emitted/gzipped byte counts and the unreachable JS that was
+    left out of the tree.
     """
     if TMP.exists():
         shutil.rmtree(TMP)
     version = _asset_version()
+    plan = bundle_modules.plan(SRC, _PRELOAD_ENTRIES)
+    app_bundle = plan.bundles[0]
+    dropped: list[str] = []
     raw = mini = packed = 0
     for path in sorted(SRC.rglob("*")):
         if path.is_dir():
             continue
         rel = path.relative_to(SRC)
         if rel in _STAGED_DATA:
+            continue
+        # A bundled module is already inside its bundle. Shipping the standalone
+        # copy too would only invite something to import it and get a second
+        # instance with its own module-level state.
+        if path.suffix == ".js" and path.resolve() not in plan.standalone:
+            if path.resolve() in plan.owner:
+                raw += path.stat().st_size  # its bytes reappear in a bundle below
+                continue
+            # Reachable from neither the entry graph, a lazy route, nor a
+            # Worker. Shipping it would ship a file whose own imports were
+            # bundled away — a 404 waiting for whoever first loads it.
+            dropped.append(rel.as_posix())
             continue
         out = TMP / rel
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -246,31 +315,44 @@ def build(deployment_manifest: Path | None = None) -> tuple[int, int, int]:
             raw += len(data)
             mini += len(text.encode("utf-8"))
         elif path.suffix == ".html":
-            html = _version_html_assets(data.decode("utf-8"), version)
+            html = data.decode("utf-8")
             if rel.name == "index.html":
-                html = _inject_preloads(html, version)
+                html = _point_entry_at_bundle(html, app_bundle.url)
+            html = _version_html_assets(html, version)
+            if rel.name == "index.html":
+                html = _inject_preloads(html, version, [app_bundle.url])
             out.write_text(html, encoding="utf-8")
         else:
             out.write_bytes(data)
+        packed += _write_precompressed(out)
+    for bundle in plan.bundles:
+        out = TMP / "bundle" / f"{bundle.name}.js"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        text = _minify_js(bundle_modules.render(bundle, plan, lambda url: _append_version(url, version)))
+        out.write_text(text, encoding="utf-8")
+        mini += len(text.encode("utf-8"))
         packed += _write_precompressed(out)
     if deployment_manifest is not None:
         release_out = TMP / "data" / "deployments.json"
         release_out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(deployment_manifest, release_out)
         packed += _write_precompressed(release_out)
+    _check_specifiers_resolve(TMP)
     if DIST.exists():
         shutil.rmtree(DIST)
     TMP.rename(DIST)  # swap the freshly-built tree in
-    return raw, mini, packed
+    return raw, mini, packed, dropped
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--deployment-manifest", type=Path)
     args = parser.parse_args()
-    raw_bytes, mini_bytes, packed_bytes = build(args.deployment_manifest)
+    raw_bytes, mini_bytes, packed_bytes, unreachable = build(args.deployment_manifest)
     pct = 0 if raw_bytes == 0 else round((raw_bytes - mini_bytes) * 100 / raw_bytes)
     sys.stdout.write(
-        f"Built {DIST} — JS preserved, CSS minified; JS/CSS {raw_bytes} -> {mini_bytes} bytes "
+        f"Built {DIST} — JS bundled, CSS minified; JS/CSS {raw_bytes} -> {mini_bytes} bytes "
         f"({pct}% smaller, pre-gzip); {packed_bytes} bytes of gzipped twins stored\n"
     )
+    if unreachable:
+        sys.stdout.write("Left out (reachable from no entry, worker or route): " + ", ".join(unreachable) + "\n")
