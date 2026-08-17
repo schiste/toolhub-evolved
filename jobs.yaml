@@ -196,9 +196,27 @@
   timeout: 900
   emails: onfailure
 
+- name: people-attribution-reconverge
+  # Re-decide stored unresolved attributions against evidence that arrived after
+  # they were first judged. Corroboration is the one attribution rule whose
+  # answer can change without its own observation changing, and nothing else
+  # revisits it: an unresolved row otherwise waits for its source feed to be
+  # re-ingested for that tool, which for most rows means the weekly full pass.
+  # A rolling cursor makes coverage complete across passes, so an hourly bounded
+  # batch is enough and no single run has to read the whole backlog.
+  # It shares the people-reconcile advisory lock deliberately. Concurrent
+  # identity writers have deadlocked this table before, so being skipped by the
+  # per-minute drain and converging an hour later is the cheaper failure: the
+  # cursor persists, so a skipped run loses no coverage.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-attribution-reconverge --stale-after 1200 -- /usr/bin/env PEOPLE_RECONVERGE_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --reconverge
+  image: python3.13
+  schedule: "21 * * * *"
+  timeout: 600
+  emails: onfailure
+
 - name: people-reconcile-incremental
   # Process canonical and newly ingested tool changes shortly after their
-  # write transaction. The six-hour full pass remains the global backstop.
+  # write transaction. The weekly full pass remains the global backstop.
   # A kill at the timeout cannot release the guard lock, so every guarded job
   # sets --stale-after to twice its own timeout: past that, no live run can
   # still hold it. This drain died on 2026-08-03 that way and no run happened

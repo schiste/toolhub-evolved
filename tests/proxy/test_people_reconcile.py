@@ -1638,6 +1638,63 @@ def test_identities_only_run_resolves_remote_batch_before_people_writes(monkeypa
     assert events == ["remote", "people-write"]
 
 
+def test_reconvergence_runs_after_every_evidence_phase_of_the_same_pass(monkeypatch):
+    # Ordering is load-bearing: it decides observations against evidence, so an
+    # edge this pass just created has to be visible to it. Running it earlier
+    # would defer that edge's effect by a whole pass.
+    _configure()
+    events = []
+    monkeypatch.setattr(
+        people_reconcile.identity_graph,
+        "synchronize",
+        lambda _session: events.append("accounts") or {"membershipRelationships": 0},
+    )
+    monkeypatch.setattr(
+        people_reconcile.source_attestations,
+        "refresh_incremental",
+        lambda *_args, **_kwargs: events.append("sources")
+        or {"sources": 0, "tools": 0, "authorEvidence": 0, "maintainerEvidence": 0},
+    )
+    monkeypatch.setattr(
+        people_reconcile,
+        "reconverge_attributions",
+        lambda *_args, **_kwargs: events.append("reconverge") or {"examined": 3, "promoted": 2, "tools": 1},
+    )
+
+    with db.session_scope() as session:
+        result = people_reconcile.run(
+            session,
+            mode=people_reconcile.MODE_APPLY,
+            rebuild_tools=False,
+            sync_accounts=True,
+            refresh_sources=True,
+        )
+
+    assert events == ["accounts", "sources", "reconverge"]
+    assert result["attributionReconvergence"] == {"examined": 3, "promoted": 2, "tools": 1}
+
+
+def test_reconvergence_is_skipped_when_its_batch_is_disabled(monkeypatch):
+    _configure()
+    monkeypatch.setattr(
+        people_reconcile,
+        "reconverge_attributions",
+        lambda *_args, **_kwargs: pytest.fail("a zero batch must not read the backlog"),
+    )
+
+    with db.session_scope() as session:
+        result = people_reconcile.run(
+            session,
+            mode=people_reconcile.MODE_APPLY,
+            rebuild_tools=False,
+            sync_accounts=False,
+            refresh_sources=False,
+            reconverge_limit=0,
+        )
+
+    assert result["attributionReconvergence"] == {"examined": 0, "promoted": 0, "tools": 0}
+
+
 def test_run_skips_source_refresh_when_full_audit_owns_writer_lock(monkeypatch):
     _configure()
 

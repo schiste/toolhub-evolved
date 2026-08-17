@@ -958,6 +958,122 @@ def _store_unresolved_observation(  # noqa: PLR0913 - source evidence fields sta
     row.updated_at = now
 
 
+def _upsert_relationship_evidence(  # noqa: PLR0913 - source evidence fields stay explicit
+    s: Session,
+    *,
+    tool_name: str,
+    person_id: int,
+    role: str,
+    source: str,
+    method: str,
+    evidence_key: str,
+    observation: dict[str, Any],
+    identity_decision: people_policy.IdentityDecision,
+    now: datetime,
+) -> ToolRelationshipEvidence:
+    """Write one observation onto its evidence row, creating it if needed.
+
+    Shared by live ingest and by backlog re-evaluation so the two paths cannot
+    drift into recording the same observation differently.
+    """
+    row = s.execute(
+        select(ToolRelationshipEvidence).where(
+            ToolRelationshipEvidence.tool_name == tool_name,
+            ToolRelationshipEvidence.person_id == person_id,
+            ToolRelationshipEvidence.relationship_type == role,
+            ToolRelationshipEvidence.source == source,
+            ToolRelationshipEvidence.method == method,
+            ToolRelationshipEvidence.evidence_key == evidence_key,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = ToolRelationshipEvidence(
+            tool_name=tool_name,
+            person_id=person_id,
+            relationship_type=role,
+            source=source,
+            method=method,
+            evidence_key=evidence_key,
+            first_seen_at=observation.get("first_seen_at") or now,
+        )
+        s.add(row)
+    row.verification_status = _clean(observation.get("verification_status"), 32) or AUTHOR_CLAIM_UNVERIFIED
+    row.observed_name = _clean(observation.get("display_name"))
+    row.confidence = max(0, min(100, int(observation.get("confidence") or 0)))
+    row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
+    row.evidence_url = _clean(observation.get("evidence_url"), 2000) or None
+    raw_payload = observation.get("evidence_payload")
+    evidence_payload = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+    evidence_payload["identityResolution"] = {
+        "action": identity_decision.action,
+        "reason": identity_decision.reason,
+    }
+    row.evidence_payload = evidence_payload
+    row.checked_at = observation.get("checked_at") or now
+    row.expires_at = observation.get("expires_at")
+    row.withdrawn_at = None
+    row.last_error = _clean(observation.get("last_error"), 2000) or None
+    row.updated_at = now
+    return row
+
+
+def promote_unresolved_attribution(
+    s: Session,
+    row: UnresolvedAttributionEvidence,
+) -> ToolRelationshipEvidence | None:
+    """Re-run corroboration for one stored unresolved observation.
+
+    An observation reaches ``UnresolvedAttributionEvidence`` only when it
+    carried no identifier of its own and corroboration failed at the time. Its
+    stored columns are therefore the whole observation, and replaying it needs
+    no identifier fields: the only outcome that can change is corroboration,
+    which depends on evidence recorded elsewhere on the same tool. That is what
+    makes the backlog re-evaluable rather than merely re-ingestible, and why
+    every identity input below is fixed at false.
+
+    Returns the promoted evidence row, or ``None`` when the observation still
+    resolves to nobody and must stay in the backlog.
+    """
+    display_name = _clean(row.observed_label)
+    if not display_name:
+        return None
+    person = corroborated_handle_person(
+        s,
+        tool_name=row.tool_name,
+        display_name=display_name,
+        source=row.source,
+    )
+    if person is None:
+        return None
+    now = utcnow()
+    evidence = _upsert_relationship_evidence(
+        s,
+        tool_name=row.tool_name,
+        person_id=person.id,
+        role=row.relationship_type,
+        source=row.source,
+        method=row.method,
+        evidence_key=row.evidence_key,
+        observation={
+            "display_name": display_name,
+            "verification_status": row.verification_status,
+            "confidence": row.confidence,
+            "toolhub_canonical": row.toolhub_canonical,
+            "evidence_url": row.evidence_url,
+            "evidence_payload": row.evidence_payload,
+            "first_seen_at": row.first_seen_at,
+            "checked_at": row.checked_at,
+            "expires_at": row.expires_at,
+            "last_error": row.last_error,
+        },
+        identity_decision=people_policy.decide_identity_link(corroborated_handle=True),
+        now=now,
+    )
+    row.withdrawn_at = now
+    row.updated_at = now
+    return evidence
+
+
 def replace_source_evidence(
     s: Session,
     tool_name: str,
@@ -1053,45 +1169,20 @@ def replace_source_evidence(
             authenticated_claim=bool(observation.get("authenticated_claim")),
             corroborated_handle=corroborated is not None,
         )
-        row = s.execute(
-            select(ToolRelationshipEvidence).where(
-                ToolRelationshipEvidence.tool_name == clean_tool,
-                ToolRelationshipEvidence.person_id == person.id,
-                ToolRelationshipEvidence.relationship_type == role,
-                ToolRelationshipEvidence.source == source,
-                ToolRelationshipEvidence.method == method,
-                ToolRelationshipEvidence.evidence_key == evidence_key,
-            )
-        ).scalar_one_or_none()
-        if row is None:
-            row = ToolRelationshipEvidence(
+        rows.append(
+            _upsert_relationship_evidence(
+                s,
                 tool_name=clean_tool,
                 person_id=person.id,
-                relationship_type=role,
+                role=role,
                 source=source,
                 method=method,
                 evidence_key=evidence_key,
-                first_seen_at=observation.get("first_seen_at") or now,
+                observation=observation,
+                identity_decision=identity_decision,
+                now=now,
             )
-            s.add(row)
-        row.verification_status = _clean(observation.get("verification_status"), 32) or AUTHOR_CLAIM_UNVERIFIED
-        row.observed_name = _clean(observation.get("display_name"))
-        row.confidence = max(0, min(100, int(observation.get("confidence") or 0)))
-        row.toolhub_canonical = bool(observation.get("toolhub_canonical"))
-        row.evidence_url = _clean(observation.get("evidence_url"), 2000) or None
-        raw_payload = observation.get("evidence_payload")
-        evidence_payload = dict(raw_payload) if isinstance(raw_payload, dict) else {}
-        evidence_payload["identityResolution"] = {
-            "action": identity_decision.action,
-            "reason": identity_decision.reason,
-        }
-        row.evidence_payload = evidence_payload
-        row.checked_at = observation.get("checked_at") or now
-        row.expires_at = observation.get("expires_at")
-        row.withdrawn_at = None
-        row.last_error = _clean(observation.get("last_error"), 2000) or None
-        row.updated_at = now
-        rows.append(row)
+        )
     s.flush()
     resolve_tool_relationships(s, clean_tool)
     summary = s.get(ToolSummaryCache, clean_tool)

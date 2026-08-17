@@ -2,6 +2,7 @@
 """A bare author label resolves only when an independent edge corroborates it."""
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -10,9 +11,19 @@ from sqlalchemy import select
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
-from backend import db, people_index, people_policy  # noqa: E402
-from backend.models import ToolRelationshipEvidence, UnresolvedAttributionEvidence  # noqa: E402
-from backend.sync import AUTHOR_CLAIM_VERIFIED, PERSON_REL_AUTHOR, PERSON_REL_MAINTAINER  # noqa: E402
+from backend import db, people_index, people_policy, people_reconcile  # noqa: E402
+from backend.models import (  # noqa: E402
+    ToolPersonRelationship,
+    ToolRelationshipEvidence,
+    UnresolvedAttributionEvidence,
+    utcnow,
+)
+from backend.sync import (  # noqa: E402
+    AUTHOR_CLAIM_UNVERIFIED,
+    AUTHOR_CLAIM_VERIFIED,
+    PERSON_REL_AUTHOR,
+    PERSON_REL_MAINTAINER,
+)
 
 MAINTAINER_SOURCE = "toolforge_toolsadmin"
 CANONICAL_SOURCE = "toolhub_canonical"
@@ -391,3 +402,180 @@ def test_a_real_name_is_not_published_as_a_handle():
         people_index.record_phabricator_real_name(session, person, real_name="Gopa Vasanth", source=PHABRICATOR_SOURCE)
 
         assert people_index.NS_PHABRICATOR_REAL_NAME not in people_index.PUBLIC_HANDLE_NAMESPACES
+
+
+def _relationship_status(session, tool, person_id, role=PERSON_REL_AUTHOR):
+    row = session.execute(
+        select(ToolPersonRelationship).where(
+            ToolPersonRelationship.tool_name == tool,
+            ToolPersonRelationship.person_id == person_id,
+            ToolPersonRelationship.relationship_type == role,
+        )
+    ).scalar_one_or_none()
+    return None if row is None else row.verification_status
+
+
+def test_a_label_ingested_before_its_corroborating_edge_stays_unresolved():
+    # The gap reconvergence exists to close. Corroboration is the one rule whose
+    # answer can change without its own observation changing, and ingest judges
+    # each observation once, so this row's verdict is decided by feed order.
+    with db.session_scope() as session:
+        _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+
+        assert _unresolved_labels(session, "toolx") == {"ada"}
+        assert _author_person_ids(session, "toolx") == set()
+
+
+def test_reconvergence_promotes_a_label_its_own_feed_would_not_revisit():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+
+        assert people_reconcile.reconverge_attributions(session) == {
+            "examined": 1,
+            "promoted": 1,
+            "tools": 1,
+        }
+        assert _author_person_ids(session, "toolx") == {ada.id}
+        assert _unresolved_labels(session, "toolx") == set()
+        # Promotion is not complete until the collapsed relationship exists:
+        # that row is what the catalog reads. It carries the observation's own
+        # strength, not the corroborating edge's -- corroboration decided who
+        # this label names, which is identification, and left how well the
+        # authorship itself is attested exactly where the source left it.
+        assert _relationship_status(session, "toolx", ada.id) == AUTHOR_CLAIM_UNVERIFIED
+        assert _relationship_status(session, "toolx", ada.id, PERSON_REL_MAINTAINER) == AUTHOR_CLAIM_VERIFIED
+
+
+def test_reconvergence_records_the_same_reason_as_ingest_time_corroboration():
+    with db.session_scope() as session:
+        _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        people_reconcile.reconverge_attributions(session)
+        row = session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == "toolx",
+                ToolRelationshipEvidence.relationship_type == PERSON_REL_AUTHOR,
+            )
+        ).scalar_one()
+
+        assert row.evidence_payload["identityResolution"]["reason"] == people_policy.REASON_HANDLE_CORROBORATED
+        assert row.verification_status == AUTHOR_CLAIM_UNVERIFIED
+        assert row.observed_name == "Ada"
+
+
+def test_reconvergence_leaves_a_label_nothing_corroborates():
+    # It re-decides rows under the same rule, so a row the rule refuses stays
+    # refused. Nothing here loosens what may be linked.
+    with db.session_scope() as session:
+        _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+
+        assert people_reconcile.reconverge_attributions(session) == {
+            "examined": 0,
+            "promoted": 0,
+            "tools": 0,
+        }
+        assert _unresolved_labels(session, "toolx") == {"ada"}
+
+
+def test_reconvergence_refuses_a_label_two_holders_of_the_tool_share():
+    with db.session_scope() as session:
+        _stable_person(session, "Ada L", "42", wiki_username="Ada")
+        _stable_person(session, "Ada B", "43", toolhub_username="A-d-a")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "A-d-a", source="toolinfo_source_attestation")
+
+        # Read, because the tool now has verified edges, and still refused.
+        assert people_reconcile.reconverge_attributions(session) == {
+            "examined": 1,
+            "promoted": 0,
+            "tools": 0,
+        }
+        assert _unresolved_labels(session, "toolx") == {"ada"}
+
+
+def test_reconvergence_walks_a_cursor_so_a_bounded_batch_still_covers_everything():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        for tool in ("toola", "toolb"):
+            _canonical_author_label(session, tool, "Ada")
+            _verified_maintainer_edge(session, tool, "Ada")
+
+        first = people_reconcile.reconverge_attributions(session, limit=1)
+        assert first == {"examined": 1, "promoted": 1, "tools": 1}
+        assert _author_person_ids(session, "toola") == {ada.id}
+        assert _author_person_ids(session, "toolb") == set()
+
+        # The next pass resumes past the row it already decided instead of
+        # re-reading the head, which is what makes coverage complete.
+        second = people_reconcile.reconverge_attributions(session, limit=1)
+        assert second == {"examined": 1, "promoted": 1, "tools": 1}
+        assert _author_person_ids(session, "toolb") == {ada.id}
+
+
+def test_the_cursor_wraps_at_the_tail_so_no_row_starves_behind_a_refused_one():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        # An eligible row the rule refuses: the tool has verified edges, but the
+        # label matches nobody who holds it. It is read on every pass forever.
+        _stable_person(session, "Bo", "43", wiki_username="Bo")
+        _verified_maintainer_edge(session, "toola", "Bo")
+        _canonical_author_label(session, "toola", "Ada")
+
+        assert people_reconcile.reconverge_attributions(session, limit=1) == {
+            "examined": 1,
+            "promoted": 0,
+            "tools": 0,
+        }
+        # The cursor advanced past it, so the next pass reaches the row behind
+        # it rather than re-reading the same refusal forever.
+        _canonical_author_label(session, "toolb", "Ada")
+        _verified_maintainer_edge(session, "toolb", "Ada")
+        assert people_reconcile.reconverge_attributions(session, limit=1) == {
+            "examined": 1,
+            "promoted": 1,
+            "tools": 1,
+        }
+        assert _author_person_ids(session, "toolb") == {ada.id}
+
+        # Reaching the tail resets the cursor, so the refused head row is
+        # revisited on a later pass. Without the wrap it would be decided once
+        # and then never re-examined, which is the very failure this pass exists
+        # to fix.
+        assert people_reconcile.reconverge_attributions(session, limit=1) == {
+            "examined": 0,
+            "promoted": 0,
+            "tools": 0,
+        }
+        assert people_reconcile.reconverge_attributions(session, limit=1) == {
+            "examined": 1,
+            "promoted": 0,
+            "tools": 0,
+        }
+
+
+def test_reconvergence_ignores_an_expired_observation():
+    with db.session_scope() as session:
+        _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        row = session.execute(
+            select(UnresolvedAttributionEvidence).where(UnresolvedAttributionEvidence.tool_name == "toolx")
+        ).scalar_one()
+        row.expires_at = utcnow() - timedelta(days=1)
+        session.flush()
+
+        # An observation whose source no longer stands by it must not be
+        # promoted on the strength of an edge that arrived after it lapsed.
+        assert people_reconcile.reconverge_attributions(session) == {
+            "examined": 0,
+            "promoted": 0,
+            "tools": 0,
+        }
+        assert _author_person_ids(session, "toolx") == set()
