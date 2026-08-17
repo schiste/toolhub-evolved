@@ -8,6 +8,16 @@ import os
 
 from backend import db, job_runner, people_reconcile
 
+# --reconverge runs hourly, but the lock it shares is held for the whole of the
+# weekly full pass -- longer than the gap between two reconverge runs. So the
+# job's premise that "skipped now, converges an hour later" costs nothing does
+# not hold while that pass runs: it is skipped every hour until the pass ends.
+# On 2026-08-17 five consecutive attempts were skipped that way. Queueing
+# briefly turns that run of skips into one short wait. Only this mode waits:
+# the per-minute drain has another attempt sixty seconds later and should keep
+# skipping, and the full pass is the run everyone else is waiting on.
+RECONVERGE_LOCK_WAIT_SECONDS = 120
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -117,7 +127,12 @@ def main(argv: list[str] | None = None) -> int:
     # with their retry state and are reported as `failed`. The sweep ran, so it
     # must not count toward the guard's breaker -- this is the job whose
     # ten-day outage the breaker and lock work came from.
-    return job_runner.run_job("people-reconcile", body, lock=True)
+    return job_runner.run_job(
+        "people-reconcile",
+        body,
+        lock=True,
+        lock_wait_seconds=RECONVERGE_LOCK_WAIT_SECONDS if args.reconverge else 0,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - operator entrypoint

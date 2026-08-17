@@ -213,10 +213,15 @@
   # re-ingested for that tool, which for most rows means the weekly full pass.
   # A rolling cursor makes coverage complete across passes, so an hourly bounded
   # batch is enough and no single run has to read the whole backlog.
-  # It shares the people-reconcile advisory lock deliberately. Concurrent
-  # identity writers have deadlocked this table before, so being skipped by the
-  # per-minute drain and converging an hour later is the cheaper failure: the
-  # cursor persists, so a skipped run loses no coverage.
+  # It shares the people-reconcile advisory lock deliberately: concurrent
+  # identity writers have deadlocked this table before. It waits up to 120s for
+  # that lock rather than skipping on contact, which the per-minute drain still
+  # does. Skipping assumed the next run an hour later would converge instead,
+  # and against the per-minute drain that holds. It does not against the weekly
+  # full pass, which holds the lock for longer than the gap between two runs of
+  # this job: on 2026-08-17 five consecutive attempts were skipped. Waiting adds
+  # no concurrency, so the deadlock reasoning above is unaffected, and 120s is
+  # well inside the 600s timeout below.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-attribution-reconverge --stale-after 1200 -- /usr/bin/env PEOPLE_RECONVERGE_LIMIT=500 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --reconverge
   image: python3.13
   schedule: "21 * * * *"

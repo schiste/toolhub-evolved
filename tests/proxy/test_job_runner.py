@@ -79,6 +79,53 @@ def test_the_lock_name_keeps_the_shared_prefix(monkeypatch):
     assert seen == ["toolhub-evolved:people-reconcile"]
 
 
+def test_the_lock_is_taken_without_waiting_unless_a_wait_is_asked_for(monkeypatch):
+    seen = []
+    from contextlib import contextmanager
+
+    @contextmanager
+    def record(_name, **kwargs):
+        seen.append(kwargs.get("timeout_seconds"))
+        yield True
+
+    monkeypatch.setattr(db, "advisory_lock", record)
+    job_runner.run_job("example-job", lambda: None, lock=True)
+    job_runner.run_job("example-job", lambda: None, lock=True, lock_wait_seconds=120)
+
+    # Skipping on contact stays the default: the callers that run every minute
+    # have another attempt immediately and must not queue behind a long pass.
+    assert seen == [0, 120]
+
+
+def test_only_reconvergence_waits_for_the_shared_people_lock(monkeypatch):
+    """The mode whose next attempt is an hour away is the one that waits."""
+    import people_reconcile as entrypoint
+
+    seen = []
+    monkeypatch.setattr(
+        job_runner,
+        "run_job",
+        lambda _name, _body, **kwargs: seen.append(kwargs.get("lock_wait_seconds")) or job_contract.EXIT_OK,
+    )
+    entrypoint.main(["--reconverge"])
+    entrypoint.main(["--queue"])
+    entrypoint.main(["--apply"])
+
+    assert seen == [entrypoint.RECONVERGE_LOCK_WAIT_SECONDS, 0, 0]
+
+
+def test_the_reconvergence_wait_stays_inside_its_own_job_timeout():
+    """Waiting past the timeout would be a kill, which is worse than a skip."""
+    import people_reconcile as entrypoint
+
+    timeout = 0
+    for job in job_catalog.load(ROOT / "jobs.yaml"):
+        if job.name == "people-attribution-reconverge":
+            timeout = job.timeout_seconds
+    assert timeout, "people-attribution-reconverge must declare a timeout"
+    assert entrypoint.RECONVERGE_LOCK_WAIT_SECONDS < timeout / 2
+
+
 def test_interval_minutes_uses_the_longest_month_for_a_monthly_schedule():
     # Worker health must tolerate the longest valid silence between two runs.
     assert job_catalog._interval_minutes("30 5 15 * *") == 31 * 24 * 60
