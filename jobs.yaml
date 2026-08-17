@@ -103,10 +103,18 @@
 - name: repository-analysis
   # Deterministically analyze up to 100 newly added or changed public repositories
   # per hour. The initial catalog backfill can be run manually with a larger limit.
+  # Needs more than the default 512Mi: `git clone` resolving a large pack spikes
+  # the whole pod past 1.2Gi for a few seconds, and the checkout cap only rejects
+  # an oversized tree after the clone that produced it. Measured peak over one
+  # 100-tool batch was 1.264Gi against steady-state 150Mi, so `kubectl top` never
+  # shows it. A kill here is silent and permanent: the run dies before it can
+  # record the tool, so the next run selects the same tool first and dies the same
+  # way. That deadlock ran undetected from 2026-08-13 to 2026-08-17.
   command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name repository-analysis --stale-after 1800 -- /usr/bin/env REPOSITORY_SCAN_LIMIT=100 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_scan.py
   image: python3.13
   schedule: "47 * * * *"
   timeout: 900
+  mem: 2Gi
   emails: onfailure
 
 - name: graph-enrichment
