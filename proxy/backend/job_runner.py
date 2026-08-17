@@ -10,7 +10,9 @@ circuit breaker that acts on them (see backend.job_contract).
 
 The lock convention is preserved exactly: a job that cannot take it prints
 ``{"locked": true}`` and exits zero, because losing a race with the job
-already doing the work is a successful no-op, not a failure.
+already doing the work is a successful no-op, not a failure. A caller that
+would rather queue than skip can ask for a bounded wait first; giving up is
+still what happens when the wait runs out.
 """
 
 from __future__ import annotations
@@ -57,15 +59,23 @@ def run_job(
     body: Callable[[], Any],
     *,
     lock: bool = False,
+    lock_wait_seconds: int = 0,
 ) -> int:
     """Run one job body with the shared database, lock, and exit conventions.
 
     ``body`` returns a mapping to be printed as this job's summary, or None
     when it has already written its own human-readable line.
+
+    ``lock_wait_seconds`` queues for the lock instead of giving up the instant
+    someone else holds it, for the jobs whose scheduling gap is shorter than
+    the runs they contend with -- see people_reconcile. It must stay well
+    inside the caller's own job timeout: waiting past that is a kill, and a
+    kill is strictly worse than the skip it replaced. Waiting adds no
+    concurrency, so it does not reintroduce the deadlocks the lock prevents.
     """
     configure()
     if lock:
-        with db.advisory_lock(f"{LOCK_PREFIX}{name}") as acquired:
+        with db.advisory_lock(f"{LOCK_PREFIX}{name}", timeout_seconds=lock_wait_seconds) as acquired:
             if not acquired:
                 sys.stdout.write(json.dumps({"locked": True}, sort_keys=True) + "\n")
                 return job_contract.EXIT_OK
