@@ -75,6 +75,56 @@ def test_toolforge_project_names_ignores_non_toolforge_hosts_and_missing_record(
     )
 
 
+def test_a_runtime_host_restores_the_hyphen_the_canonical_name_collapsed():
+    # Upstream names collapse hyphen runs, so the punycode project `xn--9s9h`
+    # arrives as `toolforge-xn-9s9h` and the name alone can never name it back.
+    # The record's own host still carries the lost hyphen, and it collapses to
+    # exactly the name-derived project, so it is admissible as the project the
+    # record provably runs in rather than a hint about where it might run.
+    record = {"url": "https://xn--9s9h.toolforge.org/"}
+
+    assert canonical_tools.verified_toolforge_project_names("toolforge-xn-9s9h", record) == [
+        "xn-9s9h",
+        "xn--9s9h",
+    ]
+    # And it stops being a mere candidate, which is what makes the LDAP project
+    # mapping verified rather than unverified.
+    assert canonical_tools.candidate_toolforge_project_names("toolforge-xn-9s9h", record) == []
+
+
+def test_a_runtime_host_that_disagrees_with_the_name_stays_a_candidate():
+    # The reason a host is normally inadmissible: this record links to another
+    # project's deployment. Collapsing hyphens does not make the two agree, so
+    # the exception must not fire and the host stays unverified.
+    record = {"url": "https://xn--other.toolforge.org/"}
+
+    assert canonical_tools.verified_toolforge_project_names("toolforge-xn-9s9h", record) == ["xn-9s9h"]
+    assert canonical_tools.candidate_toolforge_project_names("toolforge-xn-9s9h", record) == ["xn--other"]
+
+
+def test_the_hyphen_exception_needs_a_record_and_a_toolforge_name():
+    # Callers with no record in hand lose only the exception, never the name.
+    assert canonical_tools.verified_toolforge_project_names("toolforge-xn-9s9h") == ["xn-9s9h"]
+    # A record that is not named for a Toolforge project verifies nothing, so
+    # the exception cannot be a back door into the strict path.
+    assert canonical_tools.verified_toolforge_project_names("xn-9s9h", {"url": "https://xn--9s9h.toolforge.org/"}) == []
+
+
+def test_names_by_toolforge_project_indexes_the_restored_hyphen():
+    canonical_tools.upsert_records(
+        [{"name": "toolforge-xn-9s9h", "title": "Punycode", "url": "https://xn--9s9h.toolforge.org/"}],
+        source_url="https://toolhub.wikimedia.org/api/tools/toolforge-xn-9s9h/",
+    )
+
+    with db.session_scope() as session:
+        index = canonical_tools.names_by_toolforge_project(session)
+
+    # LDAP keys membership on the real project name, so the index has to reach
+    # it under that spelling; the collapsed name stays indexed alongside.
+    assert index["xn--9s9h"] == ("toolforge-xn-9s9h",)
+    assert index["xn-9s9h"] == ("toolforge-xn-9s9h",)
+
+
 def test_runtime_host_project_names_reads_every_host_form_toolforge_has_used():
     # One project, four eras of URL. A record written in any of them still names
     # its tool, so all four have to resolve; reading only the current form would

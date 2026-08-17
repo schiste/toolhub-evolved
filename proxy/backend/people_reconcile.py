@@ -35,6 +35,7 @@ from backend.models import (
     ToolhubAccountProjection,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
+    ToolSummaryCache,
     UnresolvedAttributionEvidence,
     User,
     utcnow,
@@ -1006,6 +1007,98 @@ def discover_identity_candidates(
     return {"created": created, "linked": linked, "conflicts": conflicts}
 
 
+DEFAULT_RECONVERGE_LIMIT = 500
+RECONVERGE_CURSOR_KEY = "unresolved_reconverge_cursor"
+
+
+def _reconverge_cursor(s: Session) -> int:
+    row = s.get(ApiCacheMeta, RECONVERGE_CURSOR_KEY)
+    try:
+        return max(0, int(row.value)) if row is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _store_reconverge_cursor(s: Session, cursor: int) -> None:
+    row = s.get(ApiCacheMeta, RECONVERGE_CURSOR_KEY)
+    if row is None:
+        s.add(ApiCacheMeta(key=RECONVERGE_CURSOR_KEY, value=str(cursor)))
+        return
+    row.value = str(cursor)
+    row.updated_at = utcnow()
+
+
+def reconverge_attributions(s: Session, *, limit: int = DEFAULT_RECONVERGE_LIMIT) -> dict[str, int]:
+    """Re-decide stored unresolved observations against present evidence.
+
+    Corroboration is the one attribution rule whose answer depends on evidence
+    that arrives outside the observation being judged: a label resolves once
+    some other source proves the same person holds the same tool. Without this
+    pass an observation is only ever judged at ingest time, so its verdict is
+    fixed by whichever feed happened to run first, and the corroborating edge
+    that lands an hour later changes nothing until that feed is re-ingested for
+    that tool. The backlog then reflects feed order rather than what the catalog
+    can prove, and a widened rule reaches the existing rows only as their feeds
+    happen to come round again.
+
+    Re-deciding them here is what makes reconciliation converge on evidence.
+    The batch is bounded two ways: a correlated ``EXISTS`` that mirrors the
+    corroboration query's own candidate predicates exactly, so only rows where
+    the rule could possibly now succeed are read at all, and a rolling id cursor
+    that resumes where the last pass stopped and wraps at the tail, so a
+    permanently unresolvable row cannot starve the ones behind it.
+    """
+    batch_size = max(1, int(limit))
+    now = utcnow()
+    # Mirrors corroborated_handle_person's candidate query. Mirroring it exactly
+    # is the correctness condition: a looser filter wastes work, a tighter one
+    # would silently skip rows the rule would have promoted.
+    corroborating_edge_exists = (
+        select(ToolRelationshipEvidence.id)
+        .where(
+            ToolRelationshipEvidence.tool_name == UnresolvedAttributionEvidence.tool_name,
+            ToolRelationshipEvidence.source != UnresolvedAttributionEvidence.source,
+            ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+        )
+        .exists()
+    )
+    cursor = _reconverge_cursor(s)
+    rows = list(
+        s.execute(
+            select(UnresolvedAttributionEvidence)
+            .where(
+                UnresolvedAttributionEvidence.withdrawn_at.is_(None),
+                UnresolvedAttributionEvidence.id > cursor,
+                or_(
+                    UnresolvedAttributionEvidence.expires_at.is_(None),
+                    UnresolvedAttributionEvidence.expires_at > now,
+                ),
+                corroborating_edge_exists,
+            )
+            .order_by(UnresolvedAttributionEvidence.id)
+            .limit(batch_size)
+        ).scalars()
+    )
+    promoted_tools: set[str] = set()
+    promoted = 0
+    for row in rows:
+        if people_index.promote_unresolved_attribution(s, row) is not None:
+            promoted += 1
+            promoted_tools.add(row.tool_name)
+    s.flush()
+    for tool_name in sorted(promoted_tools):
+        people_index.resolve_tool_relationships(s, tool_name)
+        summary = s.get(ToolSummaryCache, tool_name)
+        if summary is not None:
+            s.delete(summary)
+    # A short batch means the tail is reached, so the next pass starts from the
+    # head. Coverage is therefore complete over successive passes without any
+    # pass having to read the whole backlog.
+    _store_reconverge_cursor(s, 0 if len(rows) < batch_size else rows[-1].id)
+    return {"examined": len(rows), "promoted": promoted, "tools": len(promoted_tools)}
+
+
 def build_plan(s: Session) -> dict[str, Any]:
     cached_tools = {row[0] for row in s.execute(select(CanonicalToolCache.tool_name)).all()}
     claim_tools = {row[0] for row in s.execute(select(ToolAuthorClaim.tool_name).distinct()).all()}
@@ -1030,6 +1123,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
     rebuild_tools: bool = True,
     sync_accounts: bool = True,
     refresh_sources: bool = True,
+    reconverge_limit: int = DEFAULT_RECONVERGE_LIMIT,
     source_changes_since: Any | None = None,  # noqa: ANN401 - persisted naive datetime
     resolved_identity_candidates: list[
         tuple[ToolhubAccountProjection, list[Person], public_identity.ResolvedPublicIdentity | None]
@@ -1144,12 +1238,20 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                         )
                     else:
                         source_attestation_summary["locked"] = True
+            # Last of the evidence phases on purpose: it decides observations
+            # against evidence, so it must see everything this pass created.
+            reconverge_summary = (
+                reconverge_attributions(s, limit=reconverge_limit)
+                if reconverge_limit
+                else {"examined": 0, "promoted": 0, "tools": 0}
+            )
             if (
                 rebuild_tools
                 or candidate_result["linked"]
                 or wikimedia_user_space_result["verifiedTools"]
                 or wikimedia_user_space_result["retiredTools"]
                 or source_attestation_summary["tools"]
+                or reconverge_summary["promoted"]
             ):
                 people_index.refresh_activity_summaries(s)
             # User/person links are the only reconciliation writes that can
@@ -1173,6 +1275,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
             wikimedia_user_space_result = wikimedia_user_reconciliation.empty_stats()
             identity_qualities_refreshed = 0
             non_actionable_conflicts_retired = 0
+            reconverge_summary = {"examined": 0, "promoted": 0, "tools": 0}
             source_attestation_summary = {
                 "sources": 0,
                 "tools": 0,
@@ -1199,6 +1302,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
             "accountBindings": account_bindings,
             "wikimediaUserSpaceReconciliation": wikimedia_user_space_result,
             "sourceAttestations": source_attestation_summary,
+            "attributionReconvergence": reconverge_summary,
             "accountBindingConflictsQueued": account_binding_conflicts_queued,
             "catalogAuthority": "toolhub",
         }
