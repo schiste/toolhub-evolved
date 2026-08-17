@@ -619,16 +619,29 @@ def test_background_revalidation_uses_conditional_headers_for_304(client, fake_g
 # ---- static files ----------------------------------------------------------
 
 
-def test_existing_asset_is_served(client):
+@pytest.fixture
+def source_tree(monkeypatch):
+    """Serve public_html/ regardless of whether a dist/ has been built locally.
+
+    _static_root() prefers dist/, where the bundler leaves no main.js — and a
+    path the build did not produce is not a 404 here, it is the SPA shell under
+    a 200. These two tests went on passing their status assertion while reading
+    HTML, so pin the root instead of depending on which tree happens to exist.
+    """
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: ROOT / "public_html")
+
+
+def test_existing_asset_is_served(client, source_tree):
     resp = client.get("/main.js")
     assert resp.status_code == 200
-    assert "javascript" in resp.headers["Content-Type"]
+    assert "javascript" in resp.headers["Content-Type"], "served the SPA shell, not the asset"
     assert resp.headers["Cache-Control"] == "no-cache"
 
 
-def test_versioned_asset_is_cached_immutably(client):
+def test_versioned_asset_is_cached_immutably(client, source_tree):
     resp = client.get("/main.js?v=test-build")
     assert resp.status_code == 200
+    assert "javascript" in resp.headers["Content-Type"], "served the SPA shell, not the asset"
     assert resp.headers["Cache-Control"] == "public, max-age=31536000, immutable"
 
 
@@ -794,9 +807,10 @@ def test_compression_skips_responses_it_must_not_touch():
 def test_static_files_serve_the_build_time_gzip_twin(tmp_path, monkeypatch):
     """A precompressed twin is served as-is instead of gzipping per request.
 
-    The pod is capped at 500m of CPU and was spending 66% of its scheduling
-    periods throttled while a cold page load fetched 33 modules, every one of
-    them gzipped in-process. tools/build_dist.py stores the .gz once per deploy.
+    Gzipping in the request path forces the whole body through memory rather
+    than off disk, and that is slower on the wire even at equal size — measured
+    against production, the same 8.2 KB document took 899ms that way and 483ms
+    from its twin. tools/build_dist.py stores the .gz once per deploy instead.
     """
     root = tmp_path / "dist"
     (root / "lib").mkdir(parents=True)
@@ -835,6 +849,58 @@ def test_static_files_serve_the_build_time_gzip_twin(tmp_path, monkeypatch):
         )
         assert again.status_code == proxy_app._HTTP_NOT_MODIFIED
         assert again.get_data() == b""
+
+
+def test_the_spa_shell_is_served_from_its_twin_on_every_entry_point(tmp_path, monkeypatch):
+    """The document takes the twin path too, not just files that exist on disk.
+
+    `/` carries an empty path, so the is_file() branch that reaches _send_static
+    never runs for it, and the shell stayed on the request-time gzip after every
+    other asset had moved off it — the single most requested document on the
+    site. Every cold deep link lands here as well: it matches no file, so it is
+    served the shell by the same line.
+    """
+    root = tmp_path / "dist"
+    root.mkdir()
+    body = b"<!doctype html><title>shell</title>" + b"<!-- pad -->" * 400
+    (root / "index.html").write_bytes(body)
+    (root / "index.html.gz").write_bytes(gzip.compress(body, 9, mtime=0))
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+
+    with proxy_app.app.test_client() as c:
+        for url in ("/", "/tools/some-tool", "/statistics"):
+            served = c.get(url, headers={"Accept-Encoding": "gzip"})
+            assert served.headers["Content-Encoding"] == "gzip", url
+            # One decompress, not two: compress_response() must leave a body
+            # that already carries Content-Encoding alone.
+            assert gzip.decompress(served.data) == body, url
+            assert served.headers["Content-Type"].startswith("text/html"), url
+            assert "Accept-Encoding" in served.headers["Vary"], url
+            assert served.headers["Cache-Control"] == proxy_app._REVALIDATED_STATIC_CACHE, url
+
+        # A client that did not ask for gzip still gets the shell.
+        plain = c.get("/", headers={"Accept-Encoding": ""})
+        assert "Content-Encoding" not in plain.headers
+        assert plain.data == body
+
+
+def test_the_spa_shell_falls_back_when_no_twin_was_built(tmp_path, monkeypatch):
+    """Serving raw public_html/ has no .gz beside anything, and must still work.
+
+    deploy.sh treats the dist build as best-effort: a failure there leaves the
+    source tree being served, where the twins do not exist.
+    """
+    root = tmp_path / "public_html"
+    root.mkdir()
+    body = b"<!doctype html><title>shell</title>" + b"<!-- pad -->" * 400
+    (root / "index.html").write_bytes(body)
+    monkeypatch.setattr(proxy_app, "_static_root", lambda: root)
+
+    with proxy_app.app.test_client() as c:
+        served = c.get("/", headers={"Accept-Encoding": "gzip"})
+
+    assert served.headers["Content-Encoding"] == "gzip", "request-time gzip still applies"
+    assert gzip.decompress(served.data) == body
 
 
 def test_a_twin_with_no_plain_file_is_still_current(tmp_path):

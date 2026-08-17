@@ -5,13 +5,18 @@
 Why this exists
 ---------------
 The app ships raw ES modules, one HTTP request each. That is fine against a
-server where a request is nearly free; it is not fine here. The webservice pod
-is capped at 500m CPU, and a cold landing page asked for 39 modules: measured
-in production, they completed in a steady drip of roughly three per 100ms —
-the CFS scheduler period — taking 1.8s to deliver 122 KB that the network
-could have carried in a fraction of that. proxy/uwsgi.ini reached the same
-conclusion from the server side: "the fix for a CPU cap is to need less CPU,
-not to add concurrency in front of it." Fewer requests is the only lever left.
+server where a request is nearly free; it is not fine here. A cold landing page
+asked for 39 modules, and measured in production they completed in a steady
+drip of roughly three per 100ms — 1.8s to deliver 122 KB that the network could
+have carried in a fraction of that.
+
+The cost is per request, and it is not the pod: measured from inside it, every
+one of these assets is served in single-digit milliseconds, and `app;dur` reads
+1-4ms while the same request takes ~276ms of wall clock from the same cluster.
+Whatever that fixed overhead is, it sits between the ingress and the client, it
+does not shrink with the response, and nothing on the server side can pay it
+down. So the lever is not a faster handler or more workers — it is asking for
+fewer things.
 
 Why concatenation is enough
 ---------------------------

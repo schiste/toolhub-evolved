@@ -118,10 +118,10 @@ def test_build_versions_html_assets_and_stages_data(monkeypatch, tmp_path):
 def test_build_points_the_page_at_one_bundle(monkeypatch, tmp_path):
     """The whole first-paint graph arrives as a single response.
 
-    39 modules were being fetched for a cold landing page, and against a pod
-    capped at 500m CPU they completed at roughly three per 100ms scheduling
-    period — 1.8s to deliver 122 KB. The bytes were never the problem; the
-    request count was.
+    39 modules were being fetched for a cold landing page, completing at
+    roughly three per 100ms — 1.8s to deliver 122 KB. The pod served each one
+    in single-digit milliseconds, so the cost was a fixed per-request overhead
+    further out. The bytes were never the problem; the request count was.
     """
     src = _fixture_app(tmp_path)
     dist = _use_fixture(monkeypatch, tmp_path, src)

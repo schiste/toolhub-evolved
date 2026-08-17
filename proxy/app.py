@@ -289,10 +289,14 @@ def _twin_is_current(packed: Path, plain: Path) -> bool:
 def _send_static(root: Path, path: str) -> Response:
     """Serve a static file, preferring the twin gzipped at build time.
 
-    Compressing in the request path cost CPU on every hit, and this pod is
-    capped at 500m — it was spending 66% of its scheduling periods throttled
-    while a cold page load fetched 33 modules. tools/build_dist.py stores a
-    `.gz` beside each text asset, so serving one is a file read.
+    tools/build_dist.py stores a `.gz` beside each text asset, so serving one
+    is a file read: Flask streams it straight off disk. compress_response()
+    instead has to clear direct_passthrough, pull the whole body into memory
+    and re-emit it, and that is measurably slower on the wire even when the
+    two bodies are the same size. Serving the shell (33,513 bytes, 8.2 KB
+    gzipped) both ways against production: 899ms through the middleware,
+    483ms from the twin. Server time was single-digit milliseconds either
+    way, so the cost is in how the body reaches the socket, not in the gzip.
 
     Flask derives the ETag and answers If-None-Match from whichever file it is
     given, so the gzipped twin carries its own tag and revalidation keeps
@@ -342,7 +346,11 @@ def static_files(path: str) -> Response:
     # reach JSON.parse and surface a routine missing translation as a fetch error.
     if path.startswith("i18n/") and path.endswith(".json"):
         abort(404)
-    resp = send_from_directory(root, "index.html")
+    # Through _send_static, not send_from_directory: `/` carries an empty path,
+    # so the branch above never runs for the most requested document on the site
+    # and the shell was the one asset still being gzipped per request. It is also
+    # every cold deep link, which arrives here rather than at a file.
+    resp = _send_static(root, "index.html")
     resp.headers["Cache-Control"] = _REVALIDATED_STATIC_CACHE
     return resp
 

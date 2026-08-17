@@ -246,11 +246,11 @@ _STAGED_DATA = {Path("data/changelog.json"), Path("data/deployments.json")}
 def _write_precompressed(out: Path) -> int:
     """Store a gzipped twin beside `out` when it is worth serving.
 
-    The pod is capped at 500m of CPU and was spending 66% of its scheduling
-    periods throttled; a cold page load fetches 33 ES modules and gzipped every
-    one of them in-process. Doing it here means that work happens once per
-    deploy instead of once per request, and it can afford level 9 where the
-    request path could not.
+    Gzipping in the request path is not only CPU per hit: it forces the whole
+    body through memory instead of streaming off disk, which measured 899ms
+    against 483ms for the same 8.2 KB document in production. Doing it here
+    means the work happens once per deploy rather than once per request, and it
+    can afford level 9 where the request path could not.
     """
     if out.suffix not in _PRECOMPRESS_SUFFIXES:
         return 0
