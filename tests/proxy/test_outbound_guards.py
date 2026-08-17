@@ -48,7 +48,7 @@ FIXED_TARGET_FETCHERS = {
         "request",
     ): "Action API host is restricted by clean_wiki_domain to Wikimedia-operated project domains",
     ("analyze_source.py", "_git_output"): "bounded local Git subprocess; no HTTP URL is fetched",
-    ("repository_scan.py", "_git"): "bounded non-interactive Git subprocess with an explicit public-host allowlist",
+    ("repository_scan.py", "_git_raw"): "bounded non-interactive Git subprocess with an explicit public-host allowlist",
 }
 
 # The shared implementation is itself allowed to call requests directly.

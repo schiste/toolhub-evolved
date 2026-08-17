@@ -18,10 +18,18 @@ from urllib.parse import urlparse, urlunparse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from analyze_source import _local_git_context, _read_tree
+from analyze_source import _local_git_context
 from backend import db, graph_enrichment, job_runner, tool_summaries
 from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport, User, utcnow
-from backend.source_analyzer import SourceAnalysisError, analyze_source_files
+from backend.source_analyzer import (
+    IGNORED_SOURCE_DIRS,
+    MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_TOTAL_BYTES,
+    SourceAnalysisError,
+    analyze_source_files,
+    is_supported_source_path,
+)
 from backend.sync import REVIEW_APPROVED, SOURCE_REPOSITORY_SCAN, SYNC_ERROR, SYNC_EVOLVED_REAL, clean_error
 from backend.v1_common import build_local_tool_summary
 
@@ -31,6 +39,11 @@ GIT_TIMEOUT_SECONDS = 180
 MAX_CHECKOUT_BYTES = 64 * 1024 * 1024
 MAX_URL_CHARS = 2000
 MIN_HEAD_PARTS = 2
+MIN_TREE_FIELDS = 3
+MIN_BATCH_FIELDS = 2
+TYPED_HEADER_FIELDS = 3
+BODILESS_REPLIES = frozenset({"missing", "ambiguous"})
+REGULAR_FILE_MODES = frozenset({"100644", "100755"})
 EARLIEST_CHECK = datetime.min  # noqa: DTZ901 - database timestamps are stored as naive UTC.
 SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
 ALLOWED_HOSTS = frozenset(
@@ -83,8 +96,8 @@ def provider_for(url: str) -> str:
     return SUPPORTED_PROVIDERS.get(host, "github" if host.endswith(".github.com") else "gitlab")
 
 
-def _git(args: list[str], *, cwd: Path | None = None) -> str:
-    """Run a non-interactive fixed Git command without shell expansion."""
+def _git_raw(args: list[str], *, cwd: Path | None = None, stdin: bytes | None = None) -> bytes:
+    """Run a non-interactive fixed Git command without shell expansion, returning bytes."""
     git_binary = shutil.which("git")
     if git_binary is None:
         message = "git command is unavailable"
@@ -95,6 +108,10 @@ def _git(args: list[str], *, cwd: Path | None = None) -> str:
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_OPTIONAL_LOCKS": "0",
+        # A partial clone refetches any blob the filter omitted the moment
+        # something reads it, and that refetch pulls the whole blob set rather
+        # than the object asked for. Refusing it keeps an omitted blob omitted.
+        "GIT_NO_LAZY_FETCH": "1",
     }
     try:
         result = subprocess.run(  # noqa: S603 - command is fixed to the resolved Git binary and args are validated URLs.
@@ -103,16 +120,24 @@ def _git(args: list[str], *, cwd: Path | None = None) -> str:
             env=env,
             check=False,
             capture_output=True,
-            text=True,
+            input=stdin,
             timeout=GIT_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         message = "git command timed out or was unavailable"
         raise RepositoryScanError(message) from exc
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "git command failed").strip().splitlines()[0][:500]
+        stream = result.stderr or result.stdout or b"git command failed"
+        detail = stream.decode("utf-8", "replace").strip().splitlines()[0][:500]
         raise RepositoryScanError(detail)
-    return result.stdout.strip()
+    return result.stdout
+
+
+def _git(args: list[str], *, cwd: Path | None = None) -> str:
+    """Run a Git command whose output is known to be text."""
+    # Repository paths are not guaranteed to be UTF-8, and `ls-tree -z` prints
+    # them unquoted, so decoding is lenient rather than strict here.
+    return _git_raw(args, cwd=cwd).decode("utf-8", "replace").strip()
 
 
 def repository_head(url: str) -> str:
@@ -126,24 +151,29 @@ def repository_head(url: str) -> str:
     raise RepositoryScanError(message)
 
 
-def _checkout_size(root: Path) -> int:
+def _repository_size(root: Path) -> int:
     return sum(path.stat().st_size for path in root.rglob("*") if path.is_file() and not path.is_symlink())
 
 
-def _remove_symlinks(root: Path) -> None:
-    """Remove repository symlinks before bounded traversal can follow them."""
-    for path in sorted(root.rglob("*"), reverse=True):
-        if path.is_symlink():
-            path.unlink()
-
-
-def checkout_repository(url: str, destination: Path) -> str:
-    """Create a shallow, non-recursive checkout and return its local HEAD."""
+def clone_repository(url: str, destination: Path) -> str:
+    """Clone without a working tree, fetching only analyzable blobs, and return HEAD."""
+    # Three flags have to hold together, because each one alone is defeated by
+    # the others. `--filter` omits large blobs from the pack, but any later read
+    # of a missing blob makes Git lazily refetch from the promisor remote — and
+    # that refetch is not object-granular: asking for one 233-byte blob pulled
+    # the repository's entire blob set (measured on pallets/flask, 132K -> 3.4M).
+    # `--no-checkout` is what stops the clone from reading every blob to write a
+    # working tree, which is the read that used to trigger exactly that refetch.
+    # GIT_NO_LAZY_FETCH below then makes a missing blob stay missing instead of
+    # silently restoring the unbounded fetch. Dropping any one of the three
+    # returns the full-clone behaviour that pushed the pod past its memory limit.
     _git(
         [
             "clone",
             "--depth",
             "1",
+            f"--filter=blob:limit={MAX_FILE_BYTES}",
+            "--no-checkout",
             "--no-tags",
             "--single-branch",
             "--no-recurse-submodules",
@@ -151,21 +181,117 @@ def checkout_repository(url: str, destination: Path) -> str:
             str(destination),
         ]
     )
-    _remove_symlinks(destination)
-    # This gate decides what gets *analyzed*; it does not bound what gets
-    # *fetched*. By the time it runs, clone has already written the whole
-    # working tree to disk. `--filter=blob:limit=` does not close that gap:
-    # clone materializes the working tree and lazily re-fetches every filtered
-    # blob it needs, so a filtered clone lands the same bytes as an unfiltered
-    # one (measured, not assumed). Bounding the fetch would mean --no-checkout
-    # plus reading blobs through `git cat-file`, i.e. rewriting _read_tree.
-    # Until then the real limits on transient disk use are GIT_TIMEOUT_SECONDS
-    # and the tool account's own quota — a full disk fails the clone inside
-    # _git(), which surfaces as a RepositoryScanError and backs the tool off.
-    if _checkout_size(destination) > MAX_CHECKOUT_BYTES:
-        message = f"checkout exceeds {MAX_CHECKOUT_BYTES} bytes"
+    # The filter bounds each blob, not how many there are, so a repository of
+    # very many small files can still fetch a lot. This gate is still after the
+    # fetch, but it now bounds the git directory rather than a working tree that
+    # only existed because every blob had already been pulled to build it.
+    if _repository_size(destination) > MAX_CHECKOUT_BYTES:
+        message = f"repository exceeds {MAX_CHECKOUT_BYTES} bytes"
         raise RepositoryScanError(message)
     return _git(["rev-parse", "HEAD"], cwd=destination)
+
+
+def _tree_entries(repo: Path) -> list[tuple[str, str]]:
+    """List (oid, path) for regular files at HEAD without reading any blob."""
+    # -z keeps paths intact when they contain newlines or quotes; the long
+    # format is deliberately not used, because printing a blob's size requires
+    # having the blob, which is itself a lazy fetch of everything.
+    listing = _git(["ls-tree", "-r", "-z", "HEAD"], cwd=repo)
+    entries: list[tuple[str, str]] = []
+    for record in listing.split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
+        fields = meta.split()
+        if len(fields) < MIN_TREE_FIELDS or not path:
+            continue
+        mode, kind, oid = fields[0], fields[1], fields[2]
+        # Skips symlinks (120000) and submodule gitlinks (160000) by mode. The
+        # working-tree version had to delete symlinks from disk to stop the
+        # traversal following them off the checkout; a mode check cannot be
+        # raced and needs nothing materialized.
+        if kind != "blob" or mode not in REGULAR_FILE_MODES:
+            continue
+        entries.append((oid, path))
+    return sorted(entries, key=lambda entry: entry[1])
+
+
+def _read_blobs(repo: Path, oids: list[str]) -> dict[str, bytes]:
+    """Read the named blobs in one batch, treating absent ones as absent."""
+    if not oids:
+        return {}
+    stdin = "".join(f"{oid}\n" for oid in oids).encode("ascii")
+    return _parse_batch(_git_raw(["cat-file", "--batch"], cwd=repo, stdin=stdin))
+
+
+def _parse_batch(stream: bytes) -> dict[str, bytes]:
+    """Split `cat-file --batch` output, which is length-delimited, not line-delimited."""
+    blobs: dict[str, bytes] = {}
+    offset = 0
+    while offset < len(stream):
+        end = stream.find(b"\n", offset)
+        if end < 0:
+            break
+        header = stream[offset:end].decode("ascii", "replace").split()
+        offset = end + 1
+        # A filtered-out blob answers "<oid> missing" and carries no body. That
+        # is the expected reply for anything over MAX_FILE_BYTES, which the
+        # analyzer would have discarded anyway, so it is not an error.
+        # "ambiguous" is the other bodiless reply and is equally two fields, so
+        # both are recognised before anything indexes a third field.
+        if len(header) < MIN_BATCH_FIELDS or header[1] in BODILESS_REPLIES:
+            continue
+        if len(header) < TYPED_HEADER_FIELDS:
+            break
+        try:
+            size = int(header[2])
+        except ValueError:
+            break
+        body = stream[offset : offset + size]
+        offset += size + 1  # trailing newline after the body
+        # Consume the body for any object type before deciding to keep it, so an
+        # unexpected type advances the cursor instead of desynchronising the rest.
+        if header[1] == "blob":
+            blobs[header[0]] = body
+    return blobs
+
+
+def _read_repository_tree(repo: Path) -> list[dict[str, str]]:
+    """Select and read analyzable sources under the same caps as the local reader."""
+    candidates = [
+        (oid, path)
+        for oid, path in _tree_entries(repo)
+        if not ({part.lower() for part in Path(path).parts} & IGNORED_SOURCE_DIRS) and is_supported_source_path(path)
+    ]
+    files: list[dict[str, str]] = []
+    total = 0
+    # Read in chunks rather than all at once. MAX_FILES counts files that were
+    # *accepted*, so a chunk that loses entries to the size or decode checks has
+    # to be topped up from the next one, exactly as the local reader walks on
+    # past a file it rejects. Chunking is what keeps that from meaning "hold
+    # every candidate blob in memory at once" on a repository of many files.
+    for start in range(0, len(candidates), MAX_FILES):
+        if len(files) >= MAX_FILES:
+            break
+        chunk = candidates[start : start + MAX_FILES]
+        blobs = _read_blobs(repo, [oid for oid, _ in chunk])
+        for oid, path in chunk:
+            if len(files) >= MAX_FILES:
+                break
+            raw = blobs.get(oid)
+            # Absent means the clone filter omitted it for being oversized,
+            # which is the same verdict the next check would reach anyway.
+            if raw is None or len(raw) > MAX_FILE_BYTES:
+                continue
+            total += len(raw)
+            if total > MAX_TOTAL_BYTES:
+                return files
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            files.append({"path": path, "content": content})
+    return files
 
 
 def _tool_repository(record: dict[str, Any]) -> str:
@@ -267,10 +393,10 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
                 return "backoff"
         with tempfile.TemporaryDirectory(prefix="toolhub-repository-") as workspace:
             checkout = Path(workspace) / "checkout"
-            local_head = checkout_repository(url, checkout)
+            local_head = clone_repository(url, checkout)
             if local_head != head:
                 head = local_head
-            files = _read_tree([checkout])
+            files = _read_repository_tree(checkout)
             context = _local_git_context([checkout])
             report = analyze_source_files(
                 files,
