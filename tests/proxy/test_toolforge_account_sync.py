@@ -136,6 +136,63 @@ def test_duplicate_uid_number_rejects_the_generation():
         toolforge_account_sync.run(loader=lambda: [account("one", "1"), account("two", "1")])
 
 
+def group(name: str, *members: str) -> dict:
+    return {
+        "cn": [f"tools.{name}"],
+        "member": [f"uid={member},ou=people,dc=wikimedia,dc=org" for member in members],
+    }
+
+
+def test_tool_group_members_recover_the_memberships_memberof_omits():
+    groups = [
+        group("magnustools", "magnus"),
+        group("mix-n-match", "magnus", "other"),
+    ]
+
+    member_dns = toolforge_account_sync.tool_group_member_dns(groups)
+
+    assert member_dns == {
+        "magnus": [
+            "cn=tools.magnustools,ou=servicegroups,dc=wikimedia,dc=org",
+            "cn=tools.mix-n-match,ou=servicegroups,dc=wikimedia,dc=org",
+        ],
+        "other": ["cn=tools.mix-n-match,ou=servicegroups,dc=wikimedia,dc=org"],
+    }
+
+
+def test_tool_group_members_ignore_service_accounts_and_unnamed_groups():
+    groups = [
+        {
+            "cn": ["tools.magnustools"],
+            "member": [
+                "uid=tools.magnustools,ou=people,ou=servicegroups,dc=wikimedia,dc=org",
+                "uid=magnus,ou=people,dc=wikimedia,dc=org",
+            ],
+        },
+        {"cn": ["project-tools"], "member": ["uid=magnus,ou=people,dc=wikimedia,dc=org"]},
+        {"cn": ["tools."], "member": ["uid=magnus,ou=people,dc=wikimedia,dc=org"]},
+    ]
+
+    assert toolforge_account_sync.tool_group_member_dns(groups) == {
+        "magnus": ["cn=tools.magnustools,ou=servicegroups,dc=wikimedia,dc=org"]
+    }
+
+
+def test_group_membership_projects_a_tool_absent_from_memberof():
+    rows = toolforge_account_sync.with_group_memberships(
+        [account("magnus", "3067", tools=("mix-n-match",)), account("unrelated", "9001")],
+        toolforge_account_sync.tool_group_member_dns([group("magnustools", "Magnus"), group("mix-n-match", "magnus")]),
+    )
+
+    toolforge_account_sync.run(loader=lambda: rows)
+
+    with db.session_scope() as session:
+        assert {(row.uid_number, row.tool_name) for row in session.query(ToolforgeMembershipProjection)} == {
+            ("3067", "magnustools"),
+            ("3067", "mix-n-match"),
+        }
+
+
 def test_projection_refresh_joins_toolforge_before_people_reconciliation():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     deploy = (ROOT / "tools" / "deploy.sh").read_text(encoding="utf-8")

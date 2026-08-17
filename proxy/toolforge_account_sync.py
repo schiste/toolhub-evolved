@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -35,6 +36,15 @@ LDAP_ATTRIBUTES = [
     "memberOf",
     "pwdPolicySubentry",
 ]
+TOOLFORGE_GROUP_BASE_DN = "ou=servicegroups,dc=wikimedia,dc=org"
+TOOLFORGE_GROUP_FILTER = "(&(objectClass=groupOfNames)(cn=tools.*))"
+GROUP_ATTRIBUTES = ["cn", "member"]
+GROUP_PREFIX = "tools."
+# Only people carry tool memberships; a group may also list a tool's own service
+# account (uid=tools.<name>,ou=people,ou=servicegroups,...), which is not a person.
+PERSON_MEMBER_DN = re.compile(r"^uid=([^,]+),ou=people,dc=wikimedia,dc=org$", re.IGNORECASE)
+LDAP_PAGE_SIZE = 500
+LDAP_PAGE_TIME_LIMIT = 120
 DISABLED_POLICY = "cn=disabled,ou=ppolicies,dc=wikimedia,dc=org"
 STATUS_IDLE = "idle"
 STATUS_RUNNING = "running"
@@ -109,6 +119,59 @@ def _normalized(row: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     )
 
 
+def tool_group_member_dns(groups: Iterable[Mapping[str, Any]]) -> dict[str, list[str]]:
+    """Map each person's uid to the tool group DNs naming them as a member.
+
+    A tool group's ``member`` attribute is the authoritative record of who
+    maintains that tool. The reverse ``memberOf`` index is maintained by an
+    LDAP overlay that never backfilled the groups created before it existed,
+    so reading only ``memberOf`` loses those memberships entirely.
+    """
+    by_uid: dict[str, list[str]] = {}
+    for group in groups:
+        cn = _first(group.get("cn"))
+        if not cn.casefold().startswith(GROUP_PREFIX) or len(cn) <= len(GROUP_PREFIX):
+            continue
+        group_dn = f"cn={cn},{TOOLFORGE_GROUP_BASE_DN}"
+        for member in _values(group.get("member")):
+            match = PERSON_MEMBER_DN.match(member)
+            if match:
+                by_uid.setdefault(match.group(1).casefold(), []).append(group_dn)
+    return by_uid
+
+
+def with_group_memberships(
+    rows: Iterable[Mapping[str, Any]], member_dns: Mapping[str, Sequence[str]]
+) -> list[Mapping[str, Any]]:
+    """Restore the tool group DNs that each account's memberOf list omits."""
+    restored: list[Mapping[str, Any]] = []
+    for row in rows:
+        extra = member_dns.get(_first(row.get("uid")).casefold(), ())
+        restored.append({**row, "memberOf": [*_values(row.get("memberOf")), *extra]} if extra else row)
+    return restored
+
+
+def _paged_entries(
+    connection: Any,  # noqa: ANN401 - ldap3 connection
+    base_dn: str,
+    ldap_filter: str,
+    attributes: list[str],
+) -> list[Mapping[str, Any]]:
+    entries = connection.extend.standard.paged_search(
+        base_dn,
+        ldap_filter,
+        attributes=attributes,
+        paged_size=LDAP_PAGE_SIZE,
+        time_limit=LDAP_PAGE_TIME_LIMIT,
+        generator=True,
+    )
+    return [
+        dict(entry["attributes"])
+        for entry in entries
+        if entry.get("type") == "searchResEntry" and isinstance(entry.get("attributes"), Mapping)
+    ]
+
+
 def load_ldap_rows() -> list[Mapping[str, Any]]:
     """Read all Toolforge project members through LDAP's paged-search control."""
     if public_identity.Connection is None or public_identity.Server is None:
@@ -125,19 +188,19 @@ def load_ldap_rows() -> list[Mapping[str, Any]]:
         read_only=True,
     )
     try:
-        rows = connection.extend.standard.paged_search(
+        rows = _paged_entries(
+            connection,
             public_identity.TOOLFORGE_LDAP_BASE_DN,
             TOOLFORGE_MEMBER_FILTER,
-            attributes=LDAP_ATTRIBUTES,
-            paged_size=500,
-            time_limit=60,
-            generator=True,
+            LDAP_ATTRIBUTES,
         )
-        return [
-            dict(row["attributes"])
-            for row in rows
-            if row.get("type") == "searchResEntry" and isinstance(row.get("attributes"), Mapping)
-        ]
+        groups = _paged_entries(
+            connection,
+            TOOLFORGE_GROUP_BASE_DN,
+            TOOLFORGE_GROUP_FILTER,
+            GROUP_ATTRIBUTES,
+        )
+        return with_group_memberships(rows, tool_group_member_dns(groups))
     finally:
         connection.unbind()
 
