@@ -41,16 +41,21 @@ def fresh_db():
     db.init_schema()
 
 
-def _canonical(session, name, url=""):
+def _canonical(session, name, url="", author=None):
     # `url` is the tool's own runtime address in the canonical catalog, which is
     # what decides whether a feed's project may speak for this tool. It is the
     # independent half of that check, so it deliberately comes from here rather
     # than from the feed payload the publisher controls.
     now = utcnow()
+    record = {"name": name}
+    if url:
+        record["url"] = url
+    if author is not None:
+        record["author"] = author
     session.add(
         CanonicalToolCache(
             tool_name=name,
-            record={"name": name, "url": url} if url else {"name": name},
+            record=record,
             source_url=f"https://toolhub.example/{name}",
             expires_at=now + timedelta(days=1),
             stale_until=now + timedelta(days=2),
@@ -1088,6 +1093,133 @@ def test_items_with_a_non_dict_payload_are_skipped_and_non_matching_anchors_are_
             ).scalars()
         )
         assert propagated == []
+
+
+def _independently_verified(session, tool_name, person, *, global_id, source="independent_verification"):
+    people_index.replace_source_evidence(
+        session,
+        tool_name,
+        source,
+        [
+            {
+                "display_name": person.display_name,
+                "wikimedia_global_user_id": global_id,
+                "relationship_type": "maintainer",
+                "method": "independent_stable_proof",
+                "evidence_key": global_id,
+                "verification_status": "verified",
+                "confidence": 100,
+            }
+        ],
+    )
+
+
+def _catalog_anchor_rows(session, person_id=None):
+    query = select(ToolRelationshipEvidence).where(
+        ToolRelationshipEvidence.source == source_attestations.SOURCE_CATALOG_ANCHOR,
+        ToolRelationshipEvidence.withdrawn_at.is_(None),
+    )
+    if person_id is not None:
+        query = query.where(ToolRelationshipEvidence.person_id == person_id)
+    return list(session.execute(query).scalars())
+
+
+def test_catalog_author_anchor_verifies_a_label_the_same_tool_already_proves():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada Lovelace", "10", "ada", "100")
+        # No toolinfo source at all: this tool was entered in Toolhub, so the feed
+        # pipeline can never see its author field.
+        _canonical(session, "catalog-only-tool", author="Ada Lovelace")
+        _independently_verified(session, "catalog-only-tool", ada, global_id="100")
+
+        result = source_attestations.refresh_catalog_anchor(session)
+        row = session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.source == source_attestations.SOURCE_CATALOG_ANCHOR
+            )
+        ).scalar_one()
+
+        assert result["tools"] == 1
+        assert result["ambiguous"] == 0
+        assert row.person_id == ada.id
+        assert row.tool_name == "catalog-only-tool"
+        assert row.relationship_type == "author"
+        assert row.method == source_attestations.METHOD_CATALOG_ANCHOR
+        assert row.verification_status == "verified"
+        assert row.evidence_payload["corroboratingSources"] == ["independent_verification"]
+
+
+def test_catalog_author_anchor_stays_scoped_to_the_tool_that_proves_the_person():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada Lovelace", "10", "ada", "100")
+        _canonical(session, "proven-tool", author="Ada Lovelace")
+        _canonical(session, "unrelated-tool", author="Ada Lovelace")
+        _independently_verified(session, "proven-tool", ada, global_id="100")
+
+        source_attestations.refresh_catalog_anchor(session)
+
+        # Sharing a name with someone verified elsewhere proves nothing about this
+        # tool, so the second record's identical label stays unverified.
+        assert {row.tool_name for row in _catalog_anchor_rows(session)} == {"proven-tool"}
+
+
+def test_catalog_author_anchor_fails_closed_when_two_verified_people_answer_to_one_label():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada Lovelace", "10", "ada", "100")
+        # A second, genuinely separate Wikimedia account carrying the same display
+        # name. Merging them would be wrong, and so would picking one.
+        namesake = people_index.ensure_person(
+            session,
+            display_name="Ada Lovelace",
+            wikimedia_global_user_id="900",
+            wiki_username="AdaL",
+            source="test_stable_identity",
+        )
+        _canonical(session, "shared-label-tool", author="Ada Lovelace")
+        _independently_verified(session, "shared-label-tool", ada, global_id="100")
+        _independently_verified(
+            session, "shared-label-tool", namesake, global_id="900", source="second_independent_verification"
+        )
+
+        result = source_attestations.refresh_catalog_anchor(session)
+
+        assert namesake.id != ada.id
+        assert result["ambiguous"] == 1
+        assert _catalog_anchor_rows(session) == []
+
+
+def test_catalog_author_anchor_never_corroborates_itself_and_skips_unchanged_input():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada Lovelace", "10", "ada", "100")
+        grace = _stable_person(session, "Grace Hopper", "20", "grace", "200")
+        _canonical(session, "catalog-only-tool", author="Ada Lovelace, Grace Hopper")
+        _independently_verified(session, "catalog-only-tool", ada, global_id="100")
+
+        first = source_attestations.refresh_catalog_anchor(session)
+        second = source_attestations.refresh_catalog_anchor(session)
+
+        assert first["cacheHit"] == 0
+        # Ada's own anchored edge must not become the proof that verifies Grace on
+        # the same tool, so the second pass finds nothing new and rewrites nothing.
+        assert second == {"tools": 0, "authorEvidence": 0, "ambiguous": 0, "cacheHit": 1}
+        assert _catalog_anchor_rows(session, grace.id) == []
+        assert {row.person_id for row in _catalog_anchor_rows(session)} == {ada.id}
+
+
+def test_catalog_author_anchor_withdraws_evidence_when_the_catalog_drops_the_label():
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada Lovelace", "10", "ada", "100")
+        _canonical(session, "catalog-only-tool", author="Ada Lovelace")
+        _independently_verified(session, "catalog-only-tool", ada, global_id="100")
+        source_attestations.refresh_catalog_anchor(session)
+
+        record = session.get(CanonicalToolCache, "catalog-only-tool")
+        record.record = {"name": "catalog-only-tool"}
+        session.flush()
+        result = source_attestations.refresh_catalog_anchor(session)
+
+        assert result["cacheHit"] == 0
+        assert _catalog_anchor_rows(session) == []
 
 
 def test_refresh_tool_names_with_no_valid_names_is_a_noop():

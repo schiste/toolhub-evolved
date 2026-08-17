@@ -1229,15 +1229,21 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                 "authorEvidence": 0,
                 "maintainerEvidence": 0,
             }
-            if refresh_sources:
-                with db.advisory_lock(source_attestations.SOURCE_WRITER_LOCK) as source_lock:
-                    if source_lock:
+            catalog_anchor_summary = {"tools": 0, "authorEvidence": 0, "ambiguous": 0, "cacheHit": 0}
+            with db.advisory_lock(source_attestations.SOURCE_WRITER_LOCK) as source_lock:
+                if not source_lock:
+                    source_attestation_summary["locked"] = True
+                    catalog_anchor_summary["locked"] = True
+                else:
+                    if refresh_sources:
                         source_attestation_summary = source_attestations.refresh_incremental(
                             s,
                             identity_changed_since=identity_changed_since,
                         )
-                    else:
-                        source_attestation_summary["locked"] = True
+                    # Reads the verified edges every phase above published, so it runs
+                    # after them — and under the same lock, because it publishes
+                    # source-derived evidence like the pass it follows.
+                    catalog_anchor_summary = source_attestations.refresh_catalog_anchor(s)
             # Last of the evidence phases on purpose: it decides observations
             # against evidence, so it must see everything this pass created.
             reconverge_summary = (
@@ -1251,6 +1257,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                 or wikimedia_user_space_result["verifiedTools"]
                 or wikimedia_user_space_result["retiredTools"]
                 or source_attestation_summary["tools"]
+                or catalog_anchor_summary["tools"]
                 or reconverge_summary["promoted"]
             ):
                 people_index.refresh_activity_summaries(s)
@@ -1282,6 +1289,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
                 "authorEvidence": 0,
                 "maintainerEvidence": 0,
             }
+            catalog_anchor_summary = {"tools": 0, "authorEvidence": 0, "ambiguous": 0, "cacheHit": 0}
         after = build_plan(s)
         summary = {
             "mode": mode,
@@ -1302,6 +1310,7 @@ def run(  # noqa: PLR0913, PLR0915 - explicit providers keep reconciliation dete
             "accountBindings": account_bindings,
             "wikimediaUserSpaceReconciliation": wikimedia_user_space_result,
             "sourceAttestations": source_attestation_summary,
+            "catalogAuthorAnchor": catalog_anchor_summary,
             "attributionReconvergence": reconverge_summary,
             "accountBindingConflictsQueued": account_binding_conflicts_queued,
             "catalogAuthority": "toolhub",

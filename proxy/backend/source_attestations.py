@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
@@ -51,10 +53,17 @@ if TYPE_CHECKING:
 
 SOURCE_AUTHOR_ATTESTATION = "toolinfo_source_attestation"
 SOURCE_TARGET_MEMBERSHIP = "toolinfo_target_toolforge"
+SOURCE_CATALOG_ANCHOR = "catalog_author_anchor"
 METHOD_SOURCE_CONTROLLER = "toolinfo_source_controller"
 METHOD_VERIFIED_ANCHOR = "toolinfo_verified_author_anchor"
 METHOD_STRUCTURED_HANDLE = "toolinfo_structured_author_handle"
 METHOD_TARGET_MEMBERSHIP = "toolinfo_target_ldap_membership"
+METHOD_CATALOG_ANCHOR = "catalog_verified_author_anchor"
+# Everything this module publishes is derived from other evidence. An anchor
+# may only be corroborated by an edge some independent source verified, so
+# these sources never corroborate each other or themselves.
+DERIVED_EVIDENCE_SOURCES = frozenset({SOURCE_AUTHOR_ATTESTATION, SOURCE_TARGET_MEMBERSHIP, SOURCE_CATALOG_ANCHOR})
+CATALOG_ANCHOR_META_KEY = "catalog_author_anchor_inputs"
 # How a maintainer edge decided which Toolforge project to read membership from.
 MAPPING_CANONICAL_TOOL_NAME = "canonical_tool_name"
 MAPPING_REGISTERED_SOURCE_HOST = "registered_source_toolforge_host"
@@ -126,19 +135,27 @@ def wiki_user_from_source_url(url: str) -> str:
     return page.username if page is not None else ""
 
 
+def _aliases_by_person(s: Session, person_ids: set[int]) -> dict[int, set[str]]:
+    """Return every current spelling of each person's identity, normalized."""
+    aliases: dict[int, set[str]] = {person_id: set() for person_id in person_ids}
+    if not person_ids:
+        return aliases
+    for person_id, display_name in s.execute(select(Person.id, Person.display_name).where(Person.id.in_(person_ids))):
+        if normalized := _normalized_identity(display_name):
+            aliases[person_id].add(normalized)
+    for row in s.execute(
+        select(PersonIdentifier).where(
+            PersonIdentifier.person_id.in_(person_ids),
+            PersonIdentifier.is_current.is_(True),
+        )
+    ).scalars():
+        if normalized := _normalized_identity(row.value):
+            aliases[row.person_id].add(normalized)
+    return aliases
+
+
 def _person_aliases(s: Session, person_id: int) -> set[str]:
-    person = s.get(Person, person_id)
-    values = [person.display_name] if person is not None else []
-    values.extend(
-        row.value
-        for row in s.execute(
-            select(PersonIdentifier).where(
-                PersonIdentifier.person_id == person_id,
-                PersonIdentifier.is_current.is_(True),
-            )
-        ).scalars()
-    )
-    return {_normalized_identity(value) for value in values if _normalized_identity(value)}
+    return _aliases_by_person(s, {person_id})[person_id]
 
 
 def _person_identity(s: Session, person_id: int) -> dict[str, str]:
@@ -314,12 +331,12 @@ def _anchor_people(s: Session, items: list[ToolinfoSourceItem]) -> dict[str, set
                 ToolRelationshipEvidence.tool_name.in_(names),
                 ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
                 ToolRelationshipEvidence.withdrawn_at.is_(None),
-                ToolRelationshipEvidence.source.not_in({SOURCE_AUTHOR_ATTESTATION, SOURCE_TARGET_MEMBERSHIP}),
+                ToolRelationshipEvidence.source.not_in(DERIVED_EVIDENCE_SOURCES),
             )
         ).scalars()
     )
     stable_ids = people_index.public_identity_ids(s, {row.person_id for row in rows})
-    aliases = {person_id: _person_aliases(s, person_id) for person_id in stable_ids}
+    aliases = _aliases_by_person(s, stable_ids)
     by_label: dict[str, set[int]] = defaultdict(set)
     items_by_name = {item.tool_name: item for item in items}
     for row in rows:
@@ -683,6 +700,170 @@ def refresh_tool_names(s: Session, tool_names: list[str]) -> dict[str, int]:
             people_index.replace_source_evidence(s, tool_name, SOURCE_TARGET_MEMBERSHIP, maintainers)
         )
     return {"tools": len(names), "authorEvidence": author_count, "maintainerEvidence": maintainer_count}
+
+
+def _catalog_anchor_fingerprint(s: Session) -> str:
+    """Hash every input the catalog anchor reads, so an unchanged run writes nothing."""
+    digest = hashlib.sha256(RULES_VERSION.encode())
+
+    def absorb(value: Any) -> None:  # noqa: ANN401 - hashes arbitrary projected inputs
+        digest.update(json.dumps(value, sort_keys=True, default=str, separators=(",", ":")).encode())
+
+    for tool_name, record in s.execute(
+        select(CanonicalToolCache.tool_name, CanonicalToolCache.record).order_by(CanonicalToolCache.tool_name)
+    ):
+        payload = record if isinstance(record, dict) else {}
+        absorb([tool_name, [assertion.raw_value for assertion in toolinfo_authors.author_assertions(payload)]])
+    for row in s.execute(
+        select(ToolRelationshipEvidence.tool_name, ToolRelationshipEvidence.person_id, ToolRelationshipEvidence.source)
+        .where(
+            ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+            ToolRelationshipEvidence.source.not_in(DERIVED_EVIDENCE_SOURCES),
+        )
+        .order_by(ToolRelationshipEvidence.tool_name, ToolRelationshipEvidence.person_id)
+    ):
+        absorb(list(row))
+    for row in s.execute(select(Person.id, Person.display_name).order_by(Person.id)):
+        absorb(list(row))
+    for row in s.execute(
+        select(PersonIdentifier.person_id, PersonIdentifier.namespace, PersonIdentifier.value)
+        .where(PersonIdentifier.is_current.is_(True))
+        .order_by(PersonIdentifier.person_id, PersonIdentifier.namespace, PersonIdentifier.value)
+    ):
+        absorb(list(row))
+    return digest.hexdigest()
+
+
+def _catalog_anchor_observations(  # noqa: PLR0913, PLR0917 - preloaded indexes prevent per-tool queries
+    record: dict[str, Any],
+    candidates: dict[int, set[str]],
+    aliases: dict[int, set[str]],
+    identities: dict[int, dict[str, str]],
+    display_names: dict[int, str],
+    checked_at: Any,  # noqa: ANN401 - datetime, kept untyped like the surrounding writers
+) -> tuple[list[dict[str, Any]], int]:
+    """Match one catalog record's author labels against the people verified on that tool."""
+    observations: list[dict[str, Any]] = []
+    ambiguous = 0
+    for assertion in toolinfo_authors.author_assertions(record):
+        label = _normalized_identity(assertion.display_name)
+        matched = [person_id for person_id in candidates if label and label in aliases[person_id]]
+        # Two verified people answering to one label means the label identifies
+        # neither of them. Publish nothing rather than pick a winner.
+        if len(matched) != 1:
+            ambiguous += int(len(matched) > 1)
+            continue
+        person_id = matched[0]
+        observations.append(
+            {
+                "display_name": display_names.get(person_id, assertion.display_name),
+                **identities[person_id],
+                "relationship_type": PERSON_REL_AUTHOR,
+                "method": METHOD_CATALOG_ANCHOR,
+                "evidence_key": f"{assertion.position}:{assertion.normalized_label}"[:255],
+                "verification_status": AUTHOR_CLAIM_VERIFIED,
+                "confidence": 95,
+                "evidence_payload": {
+                    "rawAuthor": assertion.raw_value,
+                    "authorPosition": assertion.position,
+                    "legacyDelimited": assertion.legacy_delimited,
+                    "matchedLabel": label,
+                    "corroboratingSources": sorted(candidates[person_id]),
+                },
+                "checked_at": checked_at,
+            }
+        )
+    return observations, ambiguous
+
+
+def refresh_catalog_anchor(s: Session) -> dict[str, int]:
+    """Verify catalog author labels that an independently verified edge already corroborates.
+
+    The feed pipeline can only rate a label that arrived through an indexed toolinfo
+    source, and most of the catalog has no feed to index — the record was entered in
+    Toolhub, so there is no publishing surface whose control anyone could attest. The
+    anchor test never needed the feed: it asks whether the person already verified on
+    this tool is the person this tool's author label names. Asking it of the catalog
+    record directly reaches the tools the feed pipeline cannot see, on identical
+    evidence. The anchor stays tool-scoped — a label is only ever read against people
+    verified on that same tool, never against everyone who happens to share a name.
+    """
+    marker = s.get(ApiCacheMeta, CATALOG_ANCHOR_META_KEY)
+    fingerprint = _catalog_anchor_fingerprint(s)
+    if marker is not None and marker.value == fingerprint:
+        return {"tools": 0, "authorEvidence": 0, "ambiguous": 0, "cacheHit": 1}
+
+    corroborators: dict[str, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for tool_name, person_id, source in s.execute(
+        select(
+            ToolRelationshipEvidence.tool_name, ToolRelationshipEvidence.person_id, ToolRelationshipEvidence.source
+        ).where(
+            ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+            ToolRelationshipEvidence.withdrawn_at.is_(None),
+            ToolRelationshipEvidence.source.not_in(DERIVED_EVIDENCE_SOURCES),
+        )
+    ):
+        corroborators[tool_name][person_id].add(source)
+    stable_ids = people_index.public_identity_ids(
+        s, {person_id for people in corroborators.values() for person_id in people}
+    )
+    aliases = _aliases_by_person(s, stable_ids)
+    identities = {person_id: _person_identity(s, person_id) for person_id in stable_ids}
+    display_names = {
+        person.id: person.display_name
+        for person in s.execute(select(Person).where(Person.id.in_(stable_ids or {-1}))).scalars()
+    }
+
+    checked_at = utcnow()
+    ambiguous = 0
+    observations_by_tool: dict[str, list[dict[str, Any]]] = {}
+    for tool_name, record in s.execute(select(CanonicalToolCache.tool_name, CanonicalToolCache.record)):
+        candidates = {
+            person_id: sources
+            for person_id, sources in corroborators.get(tool_name, {}).items()
+            if person_id in stable_ids
+        }
+        if not candidates or not isinstance(record, dict):
+            continue
+        observations, conflicts = _catalog_anchor_observations(
+            record, candidates, aliases, identities, display_names, checked_at
+        )
+        ambiguous += conflicts
+        if observations:
+            observations_by_tool[tool_name] = observations
+
+    published = set(
+        s.execute(
+            select(ToolRelationshipEvidence.tool_name).where(
+                ToolRelationshipEvidence.source == SOURCE_CATALOG_ANCHOR,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    )
+    author_count = 0
+    # Sweep the tools that used to anchor as well, so a label the catalog dropped or a
+    # corroborating edge that got withdrawn takes its verified evidence down with it.
+    for tool_name in sorted(published | set(observations_by_tool)):
+        author_count += len(
+            people_index.replace_source_evidence(
+                s, tool_name, SOURCE_CATALOG_ANCHOR, observations_by_tool.get(tool_name, [])
+            )
+        )
+    # Re-read after publishing: the evidence this pass just wrote is excluded from the
+    # fingerprint, but withdrawals and person merges it triggered are not.
+    settled = _catalog_anchor_fingerprint(s)
+    if marker is None:
+        s.add(ApiCacheMeta(key=CATALOG_ANCHOR_META_KEY, value=settled))
+    else:
+        marker.value = settled
+        marker.updated_at = utcnow()
+    return {
+        "tools": len(observations_by_tool),
+        "authorEvidence": author_count,
+        "ambiguous": ambiguous,
+        "cacheHit": 0,
+    }
 
 
 def refresh_source_ids(
