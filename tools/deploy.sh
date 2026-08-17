@@ -140,15 +140,30 @@ fi
 TOOL_NAME="$(whoami | sed 's/^tools\.//')"
 BASE_URL="https://$TOOL_NAME.toolforge.org"
 
+# A path the build did not produce is not a 404: app.py answers any unknown
+# path with index.html and a 200 so client-side routes resolve on a cold URL.
+# `curl -f` therefore succeeds against a JS URL that does not exist, which is
+# how the probes below kept passing after bundling moved every one of them. The
+# content type is what actually distinguishes the asset from the SPA shell.
+probe_js() {
+	case "$(curl -fsS -o /dev/null -w '%{content_type}' "$1")" in
+	*javascript*) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
 echo "Waiting for webservice to serve the app ..."
 attempt=1
 ready=0
 while [ "$attempt" -le 30 ]; do
+	# The entry bundle, the chunk shared by the lazy routes, and two routes that
+	# are only reachable through a dynamic import — the same spread the
+	# per-module probes covered before the build started concatenating them.
 	if curl -fsS -o /dev/null "$BASE_URL/" \
-		&& curl -fsS -o /dev/null "$BASE_URL/main.js" \
-		&& curl -fsS -o /dev/null "$BASE_URL/views/statistics.js" \
-		&& curl -fsS -o /dev/null "$BASE_URL/views/experiments.js" \
-		&& curl -fsS -o /dev/null "$BASE_URL/lib/atoms/badges.js"; then
+		&& probe_js "$BASE_URL/bundle/app.js" \
+		&& probe_js "$BASE_URL/bundle/common.js" \
+		&& probe_js "$BASE_URL/bundle/route-views-statistics.js" \
+		&& probe_js "$BASE_URL/bundle/route-views-experiments.js"; then
 		ready=1
 		break
 	fi
