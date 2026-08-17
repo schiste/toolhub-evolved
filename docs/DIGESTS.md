@@ -183,6 +183,13 @@ can clear is an alarm operators learn to ignore:
   backfilled edition leaves its generation history in place, and those rows
   never reach a reader, so their fallback says nothing about whether Lift Wing
   is serving the editions that do.
+- The same check requires the edition to cover a recently closed period, not
+  just to have been written recently. A backfill creates rows today for periods
+  that closed months ago; counting those reports a historical outage as a
+  current one, and the alarm only clears when the rows age out of the 48-hour
+  window rather than when anything is fixed. Live editions cover the period
+  that just closed, so requiring both timestamps to be recent keeps the alert
+  on Lift Wing's behaviour now.
 
 Useful checks:
 

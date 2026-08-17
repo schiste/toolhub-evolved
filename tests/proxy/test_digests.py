@@ -38,6 +38,7 @@ from backend.models import (  # noqa: E402
     ToolActivityEvent,
     ToolPersonRelationship,
     User,
+    utcnow,
 )
 from backend.wikimedia_delivery import WikimediaClient, WikiEditResult, WikimediaAPIError, clean_wiki_domain  # noqa: E402
 
@@ -1395,6 +1396,13 @@ def test_digest_audit_detects_late_ungenerated_period(monkeypatch):
 
 def test_digest_audit_reports_qwen_fallback_when_endpoint_is_configured(monkeypatch):
     edition = _generated_edition(monkeypatch)
+    # The fixture pins a fixed calendar date, but the alert only covers periods that
+    # closed recently. Move this edition onto the running clock so the test exercises
+    # the fallback alarm rather than ageing into a different problem.
+    with db.session_scope() as session:
+        recent = session.get(DigestEdition, edition.id)
+        recent.period_end = utcnow() - timedelta(hours=1)
+        recent.period_start = recent.period_end - timedelta(days=1)
     monkeypatch.setenv(
         "LIFTWING_API_URL",
         "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions",
@@ -1405,6 +1413,31 @@ def test_digest_audit_reports_qwen_fallback_when_endpoint_is_configured(monkeypa
         digest_audit.audit()
 
     assert edition.used_fallback is True
+
+
+def test_digest_audit_ignores_fallback_on_backfilled_periods(monkeypatch):
+    monkeypatch.setenv(
+        "LIFTWING_API_URL",
+        "https://api.wikimedia.org/service/lw/inference/v1/models/llm-qwen36-27b/openai/v1/chat/completions",
+    )
+    monkeypatch.setenv("LIFTWING_MODEL", "llm-qwen36-27b")
+    # Written moments ago, but for a period that closed months back: catching a stale
+    # period up says nothing about whether Lift Wing is serving today's editions.
+    with db.session_scope() as session:
+        session.add(
+            DigestEdition(
+                cadence="daily",
+                edition_key="2026-04-02",
+                period_start=datetime(2026, 4, 2),
+                period_end=datetime(2026, 4, 3),
+                status="published",
+                used_fallback=True,
+            )
+        )
+
+    status = digest_audit.audit()
+
+    assert status["recentFallbacks"] == 0
 
 
 def test_meta_blacklist_rejection_is_terminal_and_never_republished(monkeypatch):
