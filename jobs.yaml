@@ -171,10 +171,19 @@
   # Rebuild the deterministic people graph and typed relationships, reapply
   # durable approvals, and check a bounded set of unresolved labels for exact
   # Toolhub identity candidates. A dry run performs no external lookups.
-  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile --stale-after 3600 -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
+  #
+  # The 2026-08-16 pass took 28 minutes against the old 30-minute ceiling, and
+  # the next one was killed at it. A pass that outgrows its timeout is worse
+  # than a slow one: the platform SIGKILLs the pod, so the guard's EXIT trap
+  # never releases the lock and its failure counter never records anything, and
+  # the run is lost after doing most of the work. An hour of headroom costs
+  # nothing on a weekly schedule. --stale-after stays at twice the timeout so a
+  # lock abandoned by a kill is still reclaimed, and never one held by a run
+  # that is merely slow.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name people-reconcile --stale-after 7200 -- /usr/bin/env /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/people_reconcile.py --apply
   image: python3.13
   schedule: "13 5 * * 0"
-  timeout: 1800
+  timeout: 3600
   emails: onfailure
 
 - name: people-identity-reconcile
