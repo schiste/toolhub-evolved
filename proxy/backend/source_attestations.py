@@ -55,6 +55,9 @@ METHOD_SOURCE_CONTROLLER = "toolinfo_source_controller"
 METHOD_VERIFIED_ANCHOR = "toolinfo_verified_author_anchor"
 METHOD_STRUCTURED_HANDLE = "toolinfo_structured_author_handle"
 METHOD_TARGET_MEMBERSHIP = "toolinfo_target_ldap_membership"
+# How a maintainer edge decided which Toolforge project to read membership from.
+MAPPING_CANONICAL_TOOL_NAME = "canonical_tool_name"
+MAPPING_REGISTERED_SOURCE_HOST = "registered_source_toolforge_host"
 
 CLASS_SINGLE = "single_person_controlled"
 CLASS_GROUP = "group_controlled"
@@ -485,14 +488,17 @@ def _refresh_bindings(  # noqa: C901, PLR0913, PLR0915, PLR0917 - one pass appli
 
 def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes prevent per-tool queries
     tool_name: str,
+    record: dict[str, Any] | None,
     items: list[tuple[ToolinfoSourceItem, ToolinfoSource]],
     bindings: dict[tuple[int, str], ToolinfoAuthorBinding],
     members_by_project: dict[str, list[tuple[ToolforgeAccountProjection, PersonAccountBinding]]],
+    projects_by_uid: dict[str, set[str]],
     identities: dict[int, dict[str, str]],
     display_names: dict[int, str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     authors: list[dict[str, Any]] = []
     maintainers: list[dict[str, Any]] = []
+    runtime_projects = {project.casefold() for project in canonical_tools.runtime_host_project_names(record)}
     for item, source in items:
         if not isinstance(item.payload, dict):
             continue
@@ -526,14 +532,26 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
             )
         source_project = toolforge_project_from_source_url(source.url)
         project_mappings = [
-            (project, "canonical_tool_name") for project in canonical_tools.verified_toolforge_project_names(tool_name)
+            (project, MAPPING_CANONICAL_TOOL_NAME)
+            for project in canonical_tools.verified_toolforge_project_names(tool_name)
         ]
         mapped_projects = {project.casefold() for project, _method in project_mappings}
         if source_project and source_project.casefold() not in mapped_projects:
-            project_mappings.append((source_project, "registered_source_toolforge_host"))
+            project_mappings.append((source_project, MAPPING_REGISTERED_SOURCE_HOST))
         for project, mapping_method in project_mappings:
             for account, binding in members_by_project.get(project.casefold(), []):
                 assert binding.person_id is not None  # noqa: S101 - index contains only bound accounts
+                # A feed's host names who controls the feed, not who runs the tools it
+                # lists. Publishing a toolinfo file from a project one belongs to would
+                # otherwise make every member of that project a proven maintainer of
+                # every tool named in it, including tools served by someone else. So the
+                # host mapping only survives when the person also belongs to a project
+                # the tool's own record is served from: the feed says which tools to
+                # look at, LDAP says who actually holds the tool. The canonical-name
+                # mapping needs no such check — there the record names its own project.
+                shared_runtime = runtime_projects & projects_by_uid.get(account.uid_number, set())
+                if mapping_method == MAPPING_REGISTERED_SOURCE_HOST and not shared_runtime:
+                    continue
                 maintainers.append(
                     {
                         "display_name": display_names.get(
@@ -551,6 +569,7 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
                             "sourceId": source.id,
                             "toolforgeProject": project,
                             "toolMappingMethod": mapping_method,
+                            "runtimeProjects": sorted(shared_runtime),
                             "toolforgeUidNumber": account.uid_number,
                             "toolforgeDeveloperUsername": account.developer_username,
                             "toolforgeShellUsername": account.uid,
@@ -560,6 +579,17 @@ def _observations_for_tool(  # noqa: PLR0913, PLR0917 - preloaded indexes preven
                     }
                 )
     return authors, maintainers
+
+
+def _projects_by_uid(
+    members_by_project: dict[str, list[tuple[ToolforgeAccountProjection, PersonAccountBinding]]],
+) -> dict[str, set[str]]:
+    """Invert the membership index so one account's projects are a set lookup."""
+    out: dict[str, set[str]] = defaultdict(set)
+    for project, members in members_by_project.items():
+        for account, _binding in members:
+            out[account.uid_number].add(project)
+    return out
 
 
 def _verified_members_by_project(
@@ -594,8 +624,12 @@ def refresh_tool_names(s: Session, tool_names: list[str]) -> dict[str, int]:
     names = sorted({_clean(name) for name in tool_names if _clean(name)})
     if not names:
         return {"tools": 0, "authorEvidence": 0, "maintainerEvidence": 0}
-    canonical = set(
-        s.execute(select(CanonicalToolCache.tool_name).where(CanonicalToolCache.tool_name.in_(names))).scalars()
+    canonical = dict(
+        s.execute(
+            select(CanonicalToolCache.tool_name, CanonicalToolCache.record).where(
+                CanonicalToolCache.tool_name.in_(names)
+            )
+        ).all()
     )
     rows = s.execute(
         select(ToolinfoSourceItem, ToolinfoSource)
@@ -616,6 +650,7 @@ def refresh_tool_names(s: Session, tool_names: list[str]) -> dict[str, int]:
         ).scalars()
     }
     members_by_project = _verified_members_by_project(s)
+    projects_by_uid = _projects_by_uid(members_by_project)
     person_ids = {row.person_id for row in bindings.values() if row.person_id is not None} | {
         binding.person_id
         for members in members_by_project.values()
@@ -632,9 +667,11 @@ def refresh_tool_names(s: Session, tool_names: list[str]) -> dict[str, int]:
         authors, maintainers = (
             _observations_for_tool(
                 tool_name,
+                canonical.get(tool_name),
                 by_tool.get(tool_name, []),
                 bindings,
                 members_by_project,
+                projects_by_uid,
                 identities,
                 display_names,
             )

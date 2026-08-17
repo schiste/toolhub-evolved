@@ -26,6 +26,11 @@ MAX_SOURCE_URL = 2000
 TOOL_DETAIL_PARTS = 3
 MAX_RECORD_RESULTS = 5000
 TOOLSADMIN_HOST = "toolsadmin.wikimedia.org"
+# Hosts that put the project in the first path segment rather than the subdomain.
+LEGACY_TOOLFORGE_PATH_HOSTS = ("tools.wmflabs.org", "tools-static.wmflabs.org")
+# Suffixes whose subdomain names a project. Checked after the path hosts above,
+# so `tools.wmflabs.org` is never misread as a project called "tools".
+RUNTIME_HOST_SUFFIXES = (".toolforge.org", ".wmflabs.org", ".wmcloud.org")
 READ_PROJECTION_META_KEY = "catalog:read-projection:v1"
 
 
@@ -91,6 +96,36 @@ def candidate_toolforge_project_names(tool_name: str, record: dict[str, Any] | N
                     break
     verified = {name.casefold() for name in verified_toolforge_project_names(tool_name)}
     return [name for name in _dedupe_project_names(candidates) if name.casefold() not in verified]
+
+
+def runtime_host_project_names(record: dict[str, Any] | None) -> list[str]:
+    """Return every project a record's own URLs could be served from.
+
+    Deliberately generous about host form. Toolforge has served tools under
+    ``$PROJECT.toolforge.org``, the legacy ``tools.wmflabs.org/$PROJECT`` path,
+    and Cloud proxy subdomains, and a record written in one era still names its
+    tool in that era's form. Reading only the current form would treat a
+    decade-old URL as if it named no project at all.
+
+    The breadth is safe only because of how this is used: it narrows a member
+    set some other proof already established, so a wrong guess can withhold an
+    edge but never invent one. It names the projects a tool *might* run in,
+    never the one it provably runs in — that is
+    ``verified_toolforge_project_names``, and it stays deliberately strict.
+    """
+    source = record if isinstance(record, dict) else {}
+    candidates: list[str] = []
+    for key in ("url", "api_url"):
+        parsed = urlparse(str(source.get(key) or "").strip())
+        host = (parsed.hostname or "").casefold()
+        if host in LEGACY_TOOLFORGE_PATH_HOSTS:
+            candidates.extend(_path_parts(parsed.geturl())[:1])
+            continue
+        for suffix in RUNTIME_HOST_SUFFIXES:
+            if host.endswith(suffix):
+                candidates.append(host.removesuffix(suffix))
+                break
+    return _dedupe_project_names(candidates)
 
 
 def toolforge_project_names(tool_name: str, record: dict[str, Any] | None) -> list[str]:

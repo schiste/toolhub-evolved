@@ -75,6 +75,43 @@ def test_toolforge_project_names_ignores_non_toolforge_hosts_and_missing_record(
     )
 
 
+def test_runtime_host_project_names_reads_every_host_form_toolforge_has_used():
+    # One project, four eras of URL. A record written in any of them still names
+    # its tool, so all four have to resolve; reading only the current form would
+    # treat a decade-old URL as naming no project at all.
+    assert canonical_tools.runtime_host_project_names({"url": "https://depicts.toolforge.org/x"}) == ["depicts"]
+    assert canonical_tools.runtime_host_project_names({"url": "https://tools.wmflabs.org/depicts/run"}) == ["depicts"]
+    assert canonical_tools.runtime_host_project_names({"url": "https://xtools.wmflabs.org/"}) == ["xtools"]
+    assert canonical_tools.runtime_host_project_names({"url": "https://depicts.wmcloud.org/"}) == ["depicts"]
+
+
+def test_runtime_host_project_names_never_reads_tools_as_a_project():
+    # `tools.wmflabs.org` ends with `.wmflabs.org`, so suffix order decides this:
+    # the path hosts are matched first, or every legacy URL would name a project
+    # called "tools" and pool unrelated tools together.
+    assert canonical_tools.runtime_host_project_names({"url": "https://tools.wmflabs.org/"}) == []
+    assert canonical_tools.runtime_host_project_names({"url": "https://tools-static.wmflabs.org/qq/lib.js"}) == ["qq"]
+
+
+def test_runtime_host_project_names_spans_both_url_fields_and_dedupes():
+    record = {"url": "https://proj.toolforge.org/", "api_url": "https://tools.wmflabs.org/proj/api"}
+
+    assert canonical_tools.runtime_host_project_names(record) == ["proj"]
+
+
+def test_runtime_host_project_names_is_empty_off_toolforge_and_without_a_record():
+    assert canonical_tools.runtime_host_project_names(None) == []
+    assert canonical_tools.runtime_host_project_names({}) == []
+    assert canonical_tools.runtime_host_project_names({"url": "https://www.wikidata.org/wiki/User:X/script.js"}) == []
+    # toolsadmin is a registry, not a runtime host: it serves nobody's tool.
+    assert (
+        canonical_tools.runtime_host_project_names(
+            {"url": "https://toolsadmin.wikimedia.org/tools/id/proj/toolinfo/1.0/toolinfo.json"}
+        )
+        == []
+    )
+
+
 def test_iter_tool_records_walks_a_top_level_list():
     payload = [{"name": "a", "title": "A"}, {"name": "b", "url": "https://b.example"}]
 
