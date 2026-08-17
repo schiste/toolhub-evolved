@@ -197,6 +197,21 @@ def _normalized(value: Any) -> str:  # noqa: ANN401 - upstream values are untrus
     return _clean(value).casefold()
 
 
+def _handle_key(value: Any) -> str:  # noqa: ANN401 - upstream values are untrusted
+    """Compare names without the separators our sources spell differently.
+
+    One person reaches us under several spellings of a single name: LDAP holds
+    ``lokal-profil`` where the wiki holds ``Lokal_Profil``, and Toolsadmin
+    writes the Phabricator real name ``Bryan Davis`` for the account whose
+    every handle reads ``BryanDavis``. Keeping only alphanumerics folds those
+    spellings into one key. It does not loosen anything else: two names that
+    differ by a letter still differ here, so this widens which spellings of
+    one name match, never which names do.
+    """
+    normalized = unicodedata.normalize("NFKC", _clean(value)).casefold()
+    return "".join(character for character in normalized if character.isalnum())
+
+
 def _iso(value: datetime | None) -> str:
     """Serialize stored UTC timestamps without exposing database details."""
     if value is None:
@@ -832,10 +847,21 @@ def corroborated_handle_person(s: Session, *, tool_name: str, display_name: str,
     independently sourced relationship to this exact tool, whether from
     Toolforge membership, a signed feed, or a control challenge.
 
-    Both halves must hold, and both are deliberately narrow. The label must
-    be a current handle of exactly one publishable person, so an ambiguous
-    or retired handle resolves nothing. The corroborating edge must come
-    from another source, so this can never confirm itself on a rerun.
+    Both halves must hold, and both are deliberately narrow. The corroborating
+    edge must come from another source, so this can never confirm itself on a
+    rerun. The label must name exactly one publishable person, so an ambiguous
+    or retired handle resolves nothing.
+
+    Which people that uniqueness test ranges over is the whole design. It asks
+    for one match among the people this tool's own independent evidence already
+    named, not one match among every person we know. Scoping it that way is
+    stricter about what counts as proof and less defeatable by coincidence: a
+    handle two strangers share used to resolve nothing anywhere, even on the
+    one tool where only one of them holds a verified edge, because a person
+    elsewhere in the catalog could veto it. The tie is now broken by who
+    demonstrably holds this tool, which is evidence, rather than by whether the
+    name happens to be globally unowned, which is not. Nothing is admitted that
+    the same-tool edge did not already establish.
 
     A Phabricator real name counts as a matching key here because Toolsadmin
     writes it into the catalog's author field, which makes it the only bridge
@@ -848,37 +874,42 @@ def corroborated_handle_person(s: Session, *, tool_name: str, display_name: str,
     This is the canonical-catalog counterpart of the anchoring that source
     attestation already applies to indexed feeds.
     """
-    normalized = _normalized(display_name)
-    if not normalized:
+    key = _handle_key(display_name)
+    if not key:
         return None
-    person_ids = {
+    candidates = {
         row[0]
         for row in s.execute(
-            select(PersonIdentifier.person_id).where(
+            select(ToolRelationshipEvidence.person_id).where(
+                ToolRelationshipEvidence.tool_name == _clean(tool_name),
+                ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+                ToolRelationshipEvidence.source != source,
+            )
+        ).all()
+    }
+    if not candidates:
+        return None
+    # Handles are stored under the exact normalizer, so the separator-insensitive
+    # comparison happens here rather than in SQL. Reading the rows out is cheap
+    # precisely because the candidate set is one tool's people, not the table.
+    matched = {
+        person_id
+        for person_id, value in s.execute(
+            select(PersonIdentifier.person_id, PersonIdentifier.value).where(
+                PersonIdentifier.person_id.in_(candidates),
                 PersonIdentifier.is_current.is_(True),
                 PersonIdentifier.identifier_kind == IDENTIFIER_HANDLE,
                 PersonIdentifier.namespace.in_(
                     (NS_WIKI_USERNAME, NS_TOOLFORGE_USERNAME, NS_TOOLHUB_USERNAME, NS_PHABRICATOR_REAL_NAME)
                 ),
-                PersonIdentifier.normalized_value == normalized,
             )
         ).all()
+        if _handle_key(value) == key
     }
-    if len(person_ids) != 1 or not public_identity_ids(s, person_ids):
+    if len(matched) != 1 or not public_identity_ids(s, matched):
         return None
-    person_id = next(iter(person_ids))
-    corroborated = s.execute(
-        select(ToolRelationshipEvidence.id)
-        .where(
-            ToolRelationshipEvidence.tool_name == _clean(tool_name),
-            ToolRelationshipEvidence.person_id == person_id,
-            ToolRelationshipEvidence.verification_status == AUTHOR_CLAIM_VERIFIED,
-            ToolRelationshipEvidence.withdrawn_at.is_(None),
-            ToolRelationshipEvidence.source != source,
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-    return s.get(Person, person_id) if corroborated is not None else None
+    return s.get(Person, next(iter(matched)))
 
 
 def _store_unresolved_observation(  # noqa: PLR0913 - source evidence fields stay explicit
