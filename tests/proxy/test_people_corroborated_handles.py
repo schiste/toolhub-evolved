@@ -84,6 +84,19 @@ def _author_person_ids(session, tool):
     }
 
 
+def _maintainer_person_ids(session, tool):
+    return {
+        row.person_id
+        for row in session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.tool_name == tool,
+                ToolRelationshipEvidence.relationship_type == PERSON_REL_MAINTAINER,
+                ToolRelationshipEvidence.withdrawn_at.is_(None),
+            )
+        ).scalars()
+    }
+
+
 def _unresolved_labels(session, tool):
     return {
         row.normalized_label
@@ -149,14 +162,50 @@ def test_an_unverified_edge_does_not_corroborate():
         assert _unresolved_labels(session, "toolx") == {"ada"}
 
 
-def test_a_label_shared_by_two_people_resolves_nothing():
+def test_a_label_two_holders_of_the_same_tool_share_resolves_nothing():
     with db.session_scope() as session:
+        # Both carry the handle and both are proven on this tool, so the tool's
+        # own evidence cannot say which of them the label names.
         _stable_person(session, "Ada", "42", wiki_username="Ada")
+        two = _stable_person(session, "Ada Two", "43", toolforge_username="Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        # Reach the second person by the handle namespace only she holds, so
+        # both really are proven on this tool rather than one being resolved
+        # twice under the same name.
+        people_index.replace_source_evidence(
+            session,
+            "toolx",
+            "toolhub_maintainers",
+            [
+                {
+                    "relationship_type": PERSON_REL_MAINTAINER,
+                    "method": "toolhub_maintainer",
+                    "evidence_key": "toolx:AdaTwo",
+                    "display_name": "Ada",
+                    "toolforge_username": "Ada",
+                    "verification_status": AUTHOR_CLAIM_VERIFIED,
+                    "confidence": 100,
+                }
+            ],
+        )
+        assert two.id in _maintainer_person_ids(session, "toolx")
+        _canonical_author_label(session, "toolx", "Ada")
+
+        assert _unresolved_labels(session, "toolx") == {"ada"}
+
+
+def test_a_label_shared_elsewhere_resolves_to_the_holder_of_this_tool():
+    with db.session_scope() as session:
+        # A stranger sharing the handle used to veto this, even though nothing
+        # ties them to the tool. Holding the tool is the evidence; carrying the
+        # same name somewhere else in the catalog is not counter-evidence.
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
         _stable_person(session, "Ada Two", "43", toolforge_username="Ada")
         _verified_maintainer_edge(session, "toolx", "Ada")
         _canonical_author_label(session, "toolx", "Ada")
 
-        assert _unresolved_labels(session, "toolx") == {"ada"}
+        assert _author_person_ids(session, "toolx") == {ada.id}
+        assert _unresolved_labels(session, "toolx") == set()
 
 
 def test_a_handle_known_only_from_an_untrusted_source_resolves_nothing():
@@ -177,6 +226,60 @@ def test_matching_is_case_insensitive_like_the_rest_of_the_handle_rules():
         _canonical_author_label(session, "toolx", "aDa")
 
         assert _author_person_ids(session, "toolx") == {ada.id}
+
+
+def test_a_spaced_label_matches_the_unspaced_handle_of_the_same_person():
+    with db.session_scope() as session:
+        # The largest real cluster: 67 tools credit "Bryan Davis" while every
+        # handle the account carries reads "BryanDavis".
+        bryan = _stable_person(session, "BryanDavis", "42", wiki_username="BryanDavis")
+        _verified_maintainer_edge(session, "toolx", "BryanDavis")
+        _canonical_author_label(session, "toolx", "Bryan Davis")
+
+        assert _author_person_ids(session, "toolx") == {bryan.id}
+        assert _unresolved_labels(session, "toolx") == set()
+
+
+@pytest.mark.parametrize(
+    ("handle", "label"),
+    [
+        ("lokal-profil", "Lokal_Profil"),  # LDAP hyphen against the wiki underscore
+        ("TheresNoTime", "There'sNoTime"),  # an apostrophe the catalog keeps
+        ("Ada", "  Ada  "),  # surrounding whitespace
+    ],
+)
+def test_separator_spellings_of_one_name_all_match(handle, label):
+    with db.session_scope() as session:
+        person = _stable_person(session, handle, "42", wiki_username=handle)
+        _verified_maintainer_edge(session, "toolx", handle)
+        _canonical_author_label(session, "toolx", label)
+
+        assert _author_person_ids(session, "toolx") == {person.id}
+
+
+def test_names_differing_by_more_than_separators_still_do_not_match():
+    with db.session_scope() as session:
+        # Folding separators must not fold letters or digits: these are two
+        # different names, and dropping the punctuation does not make them one.
+        _stable_person(session, "Ada Lovelace", "42", wiki_username="AdaLovelace")
+        _verified_maintainer_edge(session, "toolx", "AdaLovelace")
+        _canonical_author_label(session, "toolx", "Ada Lovelace2")
+
+        assert _author_person_ids(session, "toolx") == set()
+        assert _unresolved_labels(session, "toolx") == {"ada lovelace2"}
+
+
+def test_a_label_of_only_separators_resolves_nothing():
+    with db.session_scope() as session:
+        _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        # Squashing this to an empty key must refuse, not match every handle.
+        assert (
+            people_index.corroborated_handle_person(
+                session, tool_name="toolx", display_name=" - _ . ", source=CANONICAL_SOURCE
+            )
+            is None
+        )
 
 
 def test_resolution_records_its_reason_for_audit():
