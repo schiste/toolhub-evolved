@@ -34,6 +34,11 @@ RECIPIENT_ERRORS = {
     "protectedpage",
     "usermaildisabled",
 }
+# The wiki refused this exact text and will refuse the identical text again, so
+# retrying only burns edit attempts. These are content refusals, not recipient
+# refusals: the reader is reachable and the subscription stays healthy, so they
+# must never suspend a subscription the way RECIPIENT_ERRORS does.
+CONTENT_REJECTED_ERRORS = {"spamblacklist"}
 
 
 class WikimediaAPIError(RuntimeError):
@@ -131,7 +136,7 @@ class WikimediaClient:
         return WikimediaAPIError(
             code,
             message,
-            permanent=recipient_failure,
+            permanent=recipient_failure or code in CONTENT_REJECTED_ERRORS,
             recipient_failure=recipient_failure,
         )
 

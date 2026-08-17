@@ -31,7 +31,12 @@ from backend.models import (
     utcnow,
 )
 from backend.sync import AUTHOR_CLAIM_VERIFIED, clean_error
-from backend.wikimedia_delivery import WikimediaAPIError, WikimediaClient, page_url
+from backend.wikimedia_delivery import (
+    CONTENT_REJECTED_ERRORS,
+    WikimediaAPIError,
+    WikimediaClient,
+    page_url,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -40,7 +45,13 @@ CADENCES = ("daily", "weekly", "monthly")
 DEFAULT_LANGUAGE = "en"
 WEBSITE_ONLY_STATUS = "website_only"
 OUT_OF_SCOPE_STATUS = "out_of_scope"
+PUBLICATION_FAILED_STATUS = "publication_failed"
+# Meta refused this edition's text outright rather than failing to receive it. The
+# transient status is retried on every publish pass, so a permanent refusal parked
+# there is retried forever and alarms forever; this terminal status ends both.
+PUBLICATION_BLOCKED_STATUS = "publication_blocked"
 WEBSITE_VISIBLE_STATUSES = ("published", WEBSITE_ONLY_STATUS)
+RETRYABLE_PUBLICATION_STATUSES = ("validated", PUBLICATION_FAILED_STATUS)
 # The catalog carries creation events from 2021 onward, so an unbounded due-period
 # scan queues over a thousand editions and never reaches the current day. Digests
 # are news: bound generation to a recent window so the daily pass stays small and
@@ -1180,6 +1191,18 @@ def _page_collision(title: str) -> WikimediaAPIError:
     return WikimediaAPIError("page-collision", f"Meta page already exists without digest marker: {title}")
 
 
+def _failure_status(exc: Exception) -> str:
+    """Separate a refusal no retry can clear from an ordinary publication failure.
+
+    Only a content refusal is terminal. Permanent authentication and account
+    failures also reach here, but an operator can fix those and the edition must
+    stay in the retry set so it publishes once they do.
+    """
+    if getattr(exc, "code", "") in CONTENT_REJECTED_ERRORS:
+        return PUBLICATION_BLOCKED_STATUS
+    return PUBLICATION_FAILED_STATUS
+
+
 def publish_edition(edition_id: int, *, client: WikimediaClient | None = None) -> DigestEdition:
     """Publish one validated edition to an immutable Meta-Wiki subpage."""
     wiki = client or WikimediaClient()
@@ -1215,7 +1238,7 @@ def publish_edition(edition_id: int, *, client: WikimediaClient | None = None) -
         with db.session_scope() as session:
             failed = session.get(DigestEdition, edition_id)
             if failed is not None:
-                failed.status = "publication_failed"
+                failed.status = _failure_status(exc)
                 failed.last_error = clean_error(str(exc))
         raise
     with db.session_scope() as session:
@@ -1288,12 +1311,17 @@ def _record_archive_health(error: str | None) -> None:
 
 
 def publish_pending(*, client: WikimediaClient | None = None) -> dict[str, int]:
-    """Publish all validated or previously failed editions and refresh the Meta archive."""
+    """Publish every still-retryable edition and refresh the Meta archive.
+
+    Editions Meta refused on content grounds are excluded: the same text is
+    rejected on every attempt, so retrying them stalls the queue behind work
+    that cannot succeed.
+    """
     with db.session_scope() as session:
         edition_ids = list(
             session.execute(
                 select(DigestEdition.id)
-                .where(DigestEdition.status.in_(("validated", "publication_failed")))
+                .where(DigestEdition.status.in_(RETRYABLE_PUBLICATION_STATUSES))
                 .order_by(DigestEdition.period_end, DigestEdition.id)
             ).scalars()
         )
