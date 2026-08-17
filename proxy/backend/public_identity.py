@@ -47,7 +47,10 @@ def retry_delay_seconds(header: str | None) -> float:
 TOOLFORGE_LDAP_URI = "ldaps://ldap-ro.eqiad.wikimedia.org:636"
 TOOLFORGE_LDAP_BASE_DN = "ou=people,dc=wikimedia,dc=org"
 TOOLFORGE_LDAP_TIMEOUT = 5
-TOOLFORGE_MAX_MEMBERSHIP_TOOLS = 100
+# A sanity bound, not a policy limit: the busiest Toolforge developer maintains
+# well over a hundred tools, and truncating a real membership list silently
+# hides that person's control of the tools that fall off the end.
+TOOLFORGE_MAX_MEMBERSHIP_TOOLS = 500
 HTTP_OK = 200
 
 WikimediaFetcher = Callable[[str], tuple[int, object]]
