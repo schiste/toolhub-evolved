@@ -84,6 +84,11 @@ def audit() -> dict[str, object]:
             .where(
                 DigestEdition.used_fallback.is_(True),
                 DigestEdition.created_at >= now - FALLBACK_ALERT_WINDOW,
+                # A backfill writes rows today for periods that closed months ago, so a
+                # recent row is not on its own evidence about current generation. Live
+                # editions cover the period that just closed; requiring both timestamps
+                # to be recent keeps the alert on Lift Wing's behaviour right now.
+                DigestEdition.period_end >= now - FALLBACK_ALERT_WINDOW,
                 # Retiring a backfilled edition leaves its generation history behind.
                 # Those rows never reach a reader, so their fallback says nothing about
                 # whether Lift Wing is serving the editions that do.
