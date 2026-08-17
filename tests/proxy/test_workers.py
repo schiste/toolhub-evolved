@@ -44,15 +44,27 @@ def _worker(payload, name):
     return next(row for row in payload["workers"] if row["name"] == name)
 
 
-def test_the_real_jobs_file_parses_with_a_schedule_for_every_job():
+def test_the_real_jobs_file_parses_with_a_cadence_for_every_job():
     jobs = job_catalog.load()
     # The reader covers this file's shape exactly; a structural change to
     # jobs.yaml must fail here rather than silently emptying the page.
     assert len(jobs) >= 15
-    assert all(job.schedule for job in jobs)
+    # A job declares either a cron line or continuous: true, never neither and
+    # never both. Both would leave the page describing a cadence the platform
+    # is not honouring; neither leaves it with no period to judge silence by.
+    assert all(bool(job.schedule) != job.continuous for job in jobs)
     assert all(job.description for job in jobs)
     assert all(job.expected_interval_minutes > 0 for job in jobs)
     assert {"crawler", "people-reconcile", "people-reconcile-incremental"} <= {job.name for job in jobs}
+
+
+def test_a_continuous_job_is_judged_against_its_heartbeat():
+    """It has no cron line, so silence has to be measured against something."""
+    scanner = next(job for job in job_catalog.load() if job.name == "repository-analysis")
+
+    assert scanner.continuous is True
+    assert scanner.schedule == ""
+    assert scanner.expected_interval_minutes == job_catalog.CONTINUOUS_HEARTBEAT_MINUTES
 
 
 def test_the_file_header_is_not_mistaken_for_the_first_job_description():

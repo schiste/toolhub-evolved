@@ -15,6 +15,11 @@ from itertools import pairwise
 from pathlib import Path
 
 JOBS_FILE = Path(__file__).resolve().parents[2] / "jobs.yaml"
+# A continuous job declares no cron line, so there is no period to read off one.
+# It publishes a heartbeat run instead, and this is that period: it must match
+# repository_scan.HEARTBEAT_SECONDS, which a test pins, or /workers would call a
+# perfectly healthy worker late.
+CONTINUOUS_HEARTBEAT_MINUTES = 5
 # Cron field count; anything else is not a schedule this reader understands.
 CRON_FIELDS = 5
 MINUTES_PER_HOUR = 60
@@ -31,10 +36,13 @@ class ScheduledJob:
     schedule: str
     description: str
     timeout_seconds: int
+    continuous: bool = False
 
     @property
     def expected_interval_minutes(self) -> int:
         """Return how often this job is expected to run, 0 when unknown."""
+        if self.continuous:
+            return CONTINUOUS_HEARTBEAT_MINUTES
         return _interval_minutes(self.schedule)
 
 
@@ -78,6 +86,26 @@ def _unquote(value: str) -> str:
     return value
 
 
+@dataclass
+class _Block:
+    """The scalar fields of the job block currently being read."""
+
+    schedule: str = ""
+    timeout: int = 0
+    continuous: bool = False
+
+
+def _field(line: str, block: _Block) -> None:
+    """Apply one scalar line from a job block, leaving unknown keys alone."""
+    if line.startswith("schedule:"):
+        block.schedule = _unquote(line.removeprefix("schedule:"))
+    elif line.startswith("timeout:"):
+        value = _unquote(line.removeprefix("timeout:"))
+        block.timeout = int(value) if value.isdigit() else 0
+    elif line.startswith("continuous:"):
+        block.continuous = _unquote(line.removeprefix("continuous:")).lower() == "true"
+
+
 def load(path: Path | None = None) -> list[ScheduledJob]:
     """Return every declared job in file order, with its leading comment."""
     source = path or JOBS_FILE
@@ -86,8 +114,8 @@ def load(path: Path | None = None) -> list[ScheduledJob]:
     except OSError:
         return []
     jobs: list[ScheduledJob] = []
-    name = schedule = ""
-    timeout = 0
+    name = ""
+    block = _Block()
     comment: list[str] = []
     pending: list[str] = []
 
@@ -96,9 +124,10 @@ def load(path: Path | None = None) -> list[ScheduledJob]:
             jobs.append(
                 ScheduledJob(
                     name=name,
-                    schedule=schedule,
+                    schedule=block.schedule,
                     description=" ".join(comment).strip(),
-                    timeout_seconds=timeout,
+                    timeout_seconds=block.timeout,
+                    continuous=block.continuous,
                 )
             )
 
@@ -107,8 +136,7 @@ def load(path: Path | None = None) -> list[ScheduledJob]:
         if stripped.startswith("- name:"):
             flush()
             name = _unquote(stripped.removeprefix("- name:"))
-            schedule = ""
-            timeout = 0
+            block = _Block()
             comment = pending
             pending = []
         elif stripped.startswith("#"):
@@ -116,15 +144,12 @@ def load(path: Path | None = None) -> list[ScheduledJob]:
             # before the first "- name:" wait for the block they introduce.
             target = comment if name else pending
             target.append(stripped.lstrip("#").strip())
-        elif stripped.startswith("schedule:"):
-            schedule = _unquote(stripped.removeprefix("schedule:"))
-        elif stripped.startswith("timeout:"):
-            value = _unquote(stripped.removeprefix("timeout:"))
-            timeout = int(value) if value.isdigit() else 0
         elif not stripped or stripped == "---":
             # A blank line or the document marker ends whatever comment block
             # was accumulating, so the file header never becomes job one's
             # description.
             pending = []
+        else:
+            _field(stripped, block)
     flush()
     return jobs

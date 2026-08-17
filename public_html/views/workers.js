@@ -82,7 +82,7 @@ function workerRow(worker) {
 		<header class="workers-card__head">
 			<div>
 				<h2>${esc(String(worker.name || ""))}</h2>
-				<p class="workers-card__schedule"><code>${esc(String(worker.schedule || ""))}</code> · ${esc(period(worker.expectedIntervalMinutes))}</p>
+				<p class="workers-card__schedule"><code>${esc(worker.continuous ? "continuous" : String(worker.schedule || ""))}</code> · ${esc(period(worker.expectedIntervalMinutes))}</p>
 			</div>
 			<p class="workers-card__status" data-status="${esc(status)}">${esc(statusLabel(status))}</p>
 		</header>

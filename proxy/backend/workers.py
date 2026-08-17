@@ -87,6 +87,7 @@ def snapshot(session: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy sessi
                 "name": job.name,
                 "description": job.description,
                 "schedule": job.schedule,
+                "continuous": job.continuous,
                 "expectedIntervalMinutes": job.expected_interval_minutes,
                 "timeoutSeconds": job.timeout_seconds,
                 "status": _status(job, last, minutes_since),
