@@ -13,7 +13,13 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 import repository_scan  # noqa: E402
 from backend import db  # noqa: E402
-from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport  # noqa: E402
+from backend import job_catalog  # noqa: E402
+from backend.models import (  # noqa: E402
+    CanonicalToolCache,
+    JobRun,
+    RepositoryAnalysisState,
+    SourceAnalysisReport,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -347,3 +353,250 @@ def test_parse_batch_consumes_unexpected_object_bodies():
     # The tree body is stepped over rather than parsed as the next header, so
     # the blob that follows it is still recovered.
     assert repository_scan._parse_batch(stream) == {"bb": b"end"}
+
+
+def _analyzed_report(session, name):
+    user = repository_scan._scanner_user(session)
+    report = SourceAnalysisReport(
+        user_id=user.id,
+        created_by_user_id=user.id,
+        tool_name=name,
+        source_label=f"https://github.com/example/{name}",
+        report={"toolName": name},
+        review_status=repository_scan.REVIEW_APPROVED,
+        reviewed_at=datetime.now(tz=UTC).replace(tzinfo=None),
+        source=repository_scan.SOURCE_REPOSITORY_SCAN,
+        sync_status=repository_scan.SYNC_EVOLVED_REAL,
+    )
+    session.add(report)
+    session.flush()
+    return report.id
+
+
+def test_partition_splits_backlog_from_refresh_and_drops_settled_work():
+    """Continuous mode paces the two lanes differently, so it needs them apart.
+
+    An hourly batch could afford to reselect an unsupported host or a repository
+    still in backoff and cheaply re-decide it. At one candidate per second those
+    would occupy the backlog lane permanently and the real work behind them
+    would never start.
+    """
+    now = datetime.now(tz=UTC).replace(tzinfo=None)
+    with db.session_scope() as s:
+        for name in (
+            "never-scanned",
+            "failed-and-due",
+            "failed-in-backoff",
+            "unsupported-settled",
+            "analyzed",
+            "analyzed-without-report",
+        ):
+            _cached_tool(s, name)
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="failed-and-due",
+                status="error",
+                checked_at=now - timedelta(hours=2),
+                next_attempt_at=now - timedelta(minutes=1),
+            )
+        )
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="failed-in-backoff",
+                status="error",
+                checked_at=now - timedelta(hours=2),
+                next_attempt_at=now + timedelta(hours=1),
+            )
+        )
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="unsupported-settled",
+                status="unsupported",
+                repository_url="https://github.com/example/unsupported-settled",
+                checked_at=now - timedelta(hours=2),
+            )
+        )
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="analyzed",
+                status="analyzed",
+                report_id=_analyzed_report(s, "analyzed"),
+                checked_at=now - timedelta(hours=3),
+            )
+        )
+        # "analyzed" without a report row is not analyzed; it needs real work.
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="analyzed-without-report",
+                status="analyzed",
+                report_id=None,
+                checked_at=now - timedelta(hours=1),
+            )
+        )
+
+    backlog, refresh = repository_scan.partition_candidates()
+
+    assert [name for name, _record in backlog] == [
+        "never-scanned",
+        "failed-and-due",
+        "analyzed-without-report",
+    ]
+    assert [name for name, _record in refresh] == ["analyzed"]
+
+
+def test_a_settled_unsupported_verdict_is_reconsidered_when_the_url_moves():
+    with db.session_scope() as s:
+        _cached_tool(s, "moved")
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="moved",
+                status="unsupported",
+                repository_url="https://internal.example/moved",
+                checked_at=datetime.now(tz=UTC).replace(tzinfo=None),
+            )
+        )
+
+    backlog, _refresh = repository_scan.partition_candidates()
+
+    assert [name for name, _record in backlog] == ["moved"]
+
+
+class _Clock:
+    """A monotonic clock the loop drives forward only by sleeping."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += max(seconds, 0.0)
+
+
+def _paced_run(monkeypatch, *, backlog, refresh, stop_after, scan=None):
+    clock = _Clock()
+    monkeypatch.setattr(repository_scan, "time", clock)
+    passes = []
+
+    def fake_partition(depth):
+        passes.append(clock.now)
+        return (list(backlog), list(refresh))
+
+    monkeypatch.setattr(repository_scan, "partition_candidates", fake_partition)
+    scanned = []
+
+    def record(name, record_, results, *, force):
+        scanned.append(name)
+        if scan is not None:
+            scan(clock)
+        results["analyzed"] += 1
+        return "analyzed"
+
+    monkeypatch.setattr(repository_scan, "_scan_one", record)
+    summary = repository_scan.run_continuous(
+        pace=repository_scan.ScanPace(heartbeat=1e9),
+        should_stop=lambda: len(scanned) >= stop_after,
+    )
+    return summary, scanned, passes, clock
+
+
+def test_continuous_paces_the_two_lanes_independently(monkeypatch):
+    summary, scanned, _passes, clock = _paced_run(
+        monkeypatch,
+        backlog=[(f"b{index}", {}) for index in range(200)],
+        refresh=[(f"r{index}", {}) for index in range(200)],
+        stop_after=70,
+    )
+
+    # Backlog starts at t=0,1,2,... and refresh at t=0 and t=60, so 70 scans
+    # land at t=67: 68 backlog and 2 refresh.
+    assert clock.now == pytest.approx(67.0)
+    assert summary["backlog_scanned"] == 68
+    assert summary["refresh_scanned"] == 2
+    assert scanned[:3] == ["b0", "r0", "b1"]
+
+
+def test_a_slow_backlog_clone_delays_the_next_start_but_cannot_starve_refresh(monkeypatch):
+    """Each interval is a minimum spacing between starts, not a guarantee."""
+
+    def slow(clock):
+        clock.now += 10.0
+
+    summary, scanned, _passes, _clock = _paced_run(
+        monkeypatch,
+        backlog=[(f"b{index}", {}) for index in range(200)],
+        refresh=[(f"r{index}", {}) for index in range(200)],
+        stop_after=20,
+        scan=slow,
+    )
+
+    # Ten seconds a tool against a one-second interval means the backlog lane is
+    # permanently overdue, yet refresh still gets its turn: it waits at most for
+    # the single tool in flight.
+    assert summary["refresh_scanned"] > 1
+    assert summary["backlog_scanned"] + summary["refresh_scanned"] == 20
+    assert scanned.count("r0") == 1
+
+
+def test_an_empty_lane_waits_for_the_next_catalog_pass_instead_of_spinning(monkeypatch):
+    _summary, _scanned, passes, clock = _paced_run(
+        monkeypatch,
+        backlog=[],
+        refresh=[(f"r{index}", {}) for index in range(200)],
+        stop_after=30,
+    )
+
+    # 30 refresh scans span roughly 29 minutes. A backlog lane that retried at
+    # its own one-second interval would have forced a catalog pass every second;
+    # bounded by the 300s refill it takes single digits.
+    assert clock.now > 1500
+    assert len(passes) <= 8
+
+
+def test_scan_tool_stamps_the_attempt_before_it_clones(monkeypatch):
+    """A pod killed mid-clone leaves no other trace of having tried.
+
+    Ordering puts a row with no checked_at first, so every restart reselected
+    the same repository and died on it again. A scheduled job needed an operator
+    to break that; a continuous one would spin on it.
+    """
+    observed = []
+
+    def exploding_clone(_url, _dest):
+        with db.session_scope() as s:
+            observed.append(s.get(RepositoryAnalysisState, "poison").checked_at)
+        raise repository_scan.RepositoryScanError("killed while cloning")
+
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: "a" * 40)
+    monkeypatch.setattr(repository_scan, "clone_repository", exploding_clone)
+
+    result = repository_scan.scan_tool("poison", {"repository": "https://github.com/example/poison"})
+
+    assert result == "error"
+    assert observed[0] is not None, "the clone ran against a row that still looked never-checked"
+
+
+def test_the_heartbeat_period_matches_what_workers_expects():
+    """/workers has no cron line to read a continuous job's period from, so it
+    uses the heartbeat instead. If the two drift, a perfectly healthy worker is
+    reported late or a dead one is reported healthy."""
+    assert repository_scan.HEARTBEAT_SECONDS == job_catalog.CONTINUOUS_HEARTBEAT_MINUTES * 60
+
+
+def test_continuous_publishes_a_run_so_the_worker_is_not_reported_absent(monkeypatch):
+    """job_guard.sh records a run when a scheduled child exits. A process that
+    never exits has no such boundary, and /workers would show the job as never
+    having run at all."""
+    _summary, _scanned, _passes, _clock = _paced_run(
+        monkeypatch,
+        backlog=[(f"b{index}", {}) for index in range(50)],
+        refresh=[],
+        stop_after=5,
+    )
+
+    with db.session_scope() as s:
+        runs = list(s.execute(select(JobRun).where(JobRun.job_name == "repository-analysis")).scalars())
+
+    assert len(runs) == 1
+    assert runs[0].succeeded is True

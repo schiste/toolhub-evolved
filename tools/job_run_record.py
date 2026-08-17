@@ -20,12 +20,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "proxy"))
 
-from backend import DEFAULT_DB_URL, db
-from backend.models import JobRun
+from backend import DEFAULT_DB_URL, db, job_runs
 
-# Enough history for the page to show a trend without unbounded growth. The
-# minute-scheduled drain alone would otherwise add ~1,400 rows a day.
-KEEP_RUNS_PER_JOB = 50
+KEEP_RUNS_PER_JOB = job_runs.KEEP_RUNS_PER_JOB
 
 
 def _moment(value: str) -> datetime:
@@ -40,32 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--exit-code", required=True, type=int)
     args = parser.parse_args(argv)
 
-    started = _moment(args.started)
-    finished = _moment(args.finished)
     db.configure(os.environ.get("TOOLHUB_DB_URL") or DEFAULT_DB_URL)
-    with db.session_scope() as session:
-        session.add(
-            JobRun(
-                job_name=args.job_name[:64],
-                started_at=started,
-                finished_at=finished,
-                duration_seconds=max(0, int((finished - started).total_seconds())),
-                exit_code=args.exit_code,
-                succeeded=args.exit_code == 0,
-            )
-        )
-        session.flush()
-        keep = [
-            row.id
-            for row in session.query(JobRun)
-            .filter(JobRun.job_name == args.job_name[:64])
-            .order_by(JobRun.started_at.desc(), JobRun.id.desc())
-            .limit(KEEP_RUNS_PER_JOB)
-        ]
-        session.query(JobRun).filter(
-            JobRun.job_name == args.job_name[:64],
-            JobRun.id.notin_(keep or [-1]),
-        ).delete(synchronize_session=False)
+    job_runs.record(args.job_name, _moment(args.started), _moment(args.finished), args.exit_code)
     return 0
 
 

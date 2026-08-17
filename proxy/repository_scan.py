@@ -1,25 +1,38 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fetch and deterministically analyze public repositories named by Toolhub."""
+"""Fetch and deterministically analyze public repositories named by Toolhub.
+
+Runs either as one bounded batch (``--limit``) or continuously
+(``--continuous``). Continuous mode paces two independent lanes: repositories
+with no usable report yet, and re-checks of already analyzed ones. The two
+have different economics -- backlog work is finite and every item is real
+analysis, re-check work never ends and is usually one HEAD lookup -- so giving
+them one shared rate made the cheap lane crowd out the expensive one.
+"""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
+from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from analyze_source import _local_git_context
-from backend import db, graph_enrichment, job_runner, tool_summaries
+from backend import db, graph_enrichment, job_runner, job_runs, tool_summaries
 from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport, User, utcnow
 from backend.source_analyzer import (
     IGNORED_SOURCE_DIRS,
@@ -33,6 +46,9 @@ from backend.source_analyzer import (
 from backend.sync import REVIEW_APPROVED, SOURCE_REPOSITORY_SCAN, SYNC_ERROR, SYNC_EVOLVED_REAL, clean_error
 from backend.v1_common import build_local_tool_summary
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 SCANNER_WM_SUB = "evolved:repository-scanner"
 SCANNER_USERNAME = "Evolved repository scanner"
 GIT_TIMEOUT_SECONDS = 180
@@ -45,6 +61,22 @@ TYPED_HEADER_FIELDS = 3
 BODILESS_REPLIES = frozenset({"missing", "ambiguous"})
 REGULAR_FILE_MODES = frozenset({"100644", "100755"})
 EARLIEST_CHECK = datetime.min  # noqa: DTZ901 - database timestamps are stored as naive UTC.
+# Continuous mode paces two streams independently. Backlog work -- tools with no
+# usable report yet -- runs at one repository per second so a cold catalog and
+# newly registered tools drain quickly. Re-checking already analyzed tools for
+# new commits runs at one per minute, because that stream never ends and its
+# only job is to notice movement. Both intervals are a minimum spacing between
+# starts, not a guarantee: a clone that takes longer simply delays the next one.
+BACKLOG_INTERVAL_SECONDS = 1.0
+REFRESH_INTERVAL_SECONDS = 60.0
+# One catalog pass fills both queues. Re-reading the whole cache per item would
+# cost a full table scan every second for one row of work.
+QUEUE_REFILL_SECONDS = 300.0
+QUEUE_DEPTH = 500
+# A line per scanned tool would be 86400 lines a day against logs that are only
+# rotated nightly, so the loop reports cumulative totals on an interval instead.
+HEARTBEAT_SECONDS = 300.0
+SHUTDOWN_POLL_SECONDS = 0.25
 SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
 ALLOWED_HOSTS = frozenset(
     {
@@ -391,6 +423,12 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
                 return "skipped"
             if state.next_attempt_at is not None and state.next_attempt_at > utcnow() and not force:
                 return "backoff"
+            # Stamp the attempt before the clone rather than after it. A pod
+            # killed mid-clone leaves no other trace, and _scan_order puts a row
+            # with no checked_at first, so every restart reselected the same
+            # repository and died on it again. A scheduled job needed an
+            # operator to break that; a continuous one would spin on it.
+            state.checked_at = utcnow()
         with tempfile.TemporaryDirectory(prefix="toolhub-repository-") as workspace:
             checkout = Path(workspace) / "checkout"
             local_head = clone_repository(url, checkout)
@@ -476,24 +514,233 @@ def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str,
     return sorted(candidates, key=lambda item: (*_scan_order(states.get(item[0])), item[0]))[: max(1, limit)]
 
 
-def run(limit: int = 100, *, force: bool = False, tool_name: str | None = None) -> dict[str, int]:
-    results = dict.fromkeys(("candidates", "analyzed", "skipped", "backoff", "unsupported", "error"), 0)
-    for name, record in candidate_tools(limit, tool_name):
-        results["candidates"] += 1
+def _new_results() -> dict[str, int]:
+    return dict.fromkeys(("candidates", "analyzed", "skipped", "backoff", "unsupported", "error"), 0)
+
+
+def _scan_one(name: str, record: dict[str, Any], results: dict[str, int], *, force: bool) -> str:
+    """Scan one tool into `results`, absorbing whatever it raises."""
+    results["candidates"] += 1
+    try:
+        result = scan_tool(name, record, force=force)
+    except Exception as exc:  # noqa: BLE001 - one malformed repository must not abort the batch
+        result = "error"
         try:
-            result = scan_tool(name, record, force=force)
-        except Exception as exc:  # noqa: BLE001 - one malformed repository must not abort the batch
-            result = "error"
-            try:
-                raw_url = _raw_tool_repository(record)
-                _save_failure(name, repository_url(raw_url), provider_for(repository_url(raw_url)), str(exc))
-            except SQLAlchemyError as save_exc:
-                # One tool's failure must not abort the batch, but swallowing this
-                # silently would hide a database problem behind a run that merely
-                # looks like a lot of scan errors. Report it and carry on.
-                sys.stderr.write(f"repository-scan: could not record the failure for {name}: {save_exc}\n")
-        results[result] += 1
+            raw_url = _raw_tool_repository(record)
+            _save_failure(name, repository_url(raw_url), provider_for(repository_url(raw_url)), str(exc))
+        except SQLAlchemyError as save_exc:
+            # One tool's failure must not abort the batch, but swallowing this
+            # silently would hide a database problem behind a run that merely
+            # looks like a lot of scan errors. Report it and carry on.
+            sys.stderr.write(f"repository-scan: could not record the failure for {name}: {save_exc}\n")
+    results[result] += 1
+    return result
+
+
+def run(limit: int = 100, *, force: bool = False, tool_name: str | None = None) -> dict[str, int]:
+    results = _new_results()
+    for name, record in candidate_tools(limit, tool_name):
+        _scan_one(name, record, results, force=force)
     return results
+
+
+def _has_report(state: RepositoryAnalysisState | None) -> bool:
+    return state is not None and state.status == "analyzed" and state.report_id is not None
+
+
+def _settled_unsupported(state: RepositoryAnalysisState | None, raw_url: str) -> bool:
+    """Report whether this exact URL was already rejected as an unsupported host.
+
+    Re-deciding it costs no network, so the batch runner simply reported it
+    again every hour. At one candidate per second it would instead occupy the
+    backlog stream permanently. Comparing the URL keeps a tool whose record
+    later names a supported host from being stuck behind the old verdict.
+    """
+    return state is not None and state.status == "unsupported" and state.repository_url == raw_url
+
+
+def partition_candidates(depth: int = QUEUE_DEPTH) -> tuple[list[tuple[str, dict[str, Any]]], ...]:
+    """Split the catalog into backlog work and re-check work, oldest first.
+
+    Backlog is everything without a usable report: never scanned, previously
+    failed and out of backoff, or analyzed but missing its report row. Refresh
+    is everything already analyzed, which only needs its HEAD compared. Every
+    state attribute is read inside the session, because the rows detach when it
+    closes.
+    """
+    now = utcnow()
+    backlog: list[tuple[tuple[bool, datetime], str, dict[str, Any]]] = []
+    refresh: list[tuple[tuple[bool, datetime], str, dict[str, Any]]] = []
+    with db.session_scope() as s:
+        rows = list(s.execute(select(CanonicalToolCache).order_by(CanonicalToolCache.tool_name)).scalars())
+        states = {
+            row.tool_name: row
+            for row in s.execute(
+                select(RepositoryAnalysisState).where(
+                    RepositoryAnalysisState.tool_name.in_([row.tool_name for row in rows])
+                )
+            ).scalars()
+        }
+        for row in rows:
+            record = row.record if isinstance(row.record, dict) else {}
+            raw_url = _raw_tool_repository(record)
+            if not raw_url:
+                continue
+            state = states.get(row.tool_name)
+            if _has_report(state):
+                refresh.append((_scan_order(state), row.tool_name, record))
+                continue
+            if _settled_unsupported(state, raw_url):
+                continue
+            if state is not None and state.next_attempt_at is not None and state.next_attempt_at > now:
+                continue
+            backlog.append((_scan_order(state), row.tool_name, record))
+    return tuple(
+        [(name, record) for _, name, record in sorted(bucket, key=lambda entry: (*entry[0], entry[1]))][:depth]
+        for bucket in (backlog, refresh)
+    )
+
+
+@dataclass
+class _Stream:
+    """One paced lane of work with its own interval and pending queue."""
+
+    name: str
+    interval: float
+    rank: int
+    queue: deque[tuple[str, dict[str, Any]]] = field(default_factory=deque)
+    due_at: float = 0.0
+    scanned: int = 0
+
+
+@dataclass
+class _Scanner:
+    backlog: _Stream
+    refresh: _Stream
+    depth: int = QUEUE_DEPTH
+    refill_at: float = 0.0
+
+    def streams(self) -> tuple[_Stream, _Stream]:
+        return (self.backlog, self.refresh)
+
+    def take(self, stream: _Stream, *, now: float) -> tuple[str, dict[str, Any]] | None:
+        """Pop the next tool for `stream`, refilling both queues when due.
+
+        One catalog pass serves both lanes. Refilling per empty queue instead
+        would make an exhausted backlog scan the whole cache every second.
+        """
+        if now >= self.refill_at:
+            self.backlog.queue, self.refresh.queue = (deque(bucket) for bucket in partition_candidates(self.depth))
+            self.refill_at = now + QUEUE_REFILL_SECONDS
+        return stream.queue.popleft() if stream.queue else None
+
+
+def _sleep_until(deadline: float, should_stop: Callable[[], bool]) -> bool:
+    """Wait for `deadline`, returning False if shutdown was requested first."""
+    while not should_stop():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        time.sleep(min(remaining, SHUTDOWN_POLL_SECONDS))
+    return False
+
+
+def _continuous_summary(results: dict[str, int], scanner: _Scanner) -> dict[str, int]:
+    return {
+        **results,
+        "backlog_queued": len(scanner.backlog.queue),
+        "backlog_scanned": scanner.backlog.scanned,
+        "refresh_queued": len(scanner.refresh.queue),
+        "refresh_scanned": scanner.refresh.scanned,
+    }
+
+
+def _record_window(window_started: datetime) -> None:
+    """Publish one heartbeat window to /workers.
+
+    A process that never exits has no run boundary for tools/job_guard.sh to
+    record, so without this the worker reads as absent rather than as busy.
+    Publishing is observability and must never take the loop down with it: a
+    database that cannot accept the heartbeat is already visible as silence.
+    """
+    try:
+        job_runs.record("repository-analysis", window_started, utcnow(), 0)
+    except SQLAlchemyError as exc:
+        sys.stderr.write(f"repository-scan: could not publish the heartbeat: {exc}\n")
+
+
+@dataclass(frozen=True)
+class ScanPace:
+    """How fast each lane runs, and how often the loop reports and refills."""
+
+    backlog_interval: float = BACKLOG_INTERVAL_SECONDS
+    refresh_interval: float = REFRESH_INTERVAL_SECONDS
+    heartbeat: float = HEARTBEAT_SECONDS
+    depth: int = QUEUE_DEPTH
+
+
+def run_continuous(
+    *,
+    pace: ScanPace | None = None,
+    force: bool = False,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict[str, int]:
+    """Scan without stopping, pacing backlog and re-check work independently.
+
+    Each interval is a minimum spacing between starts. Whichever lane is most
+    overdue runs next, so a clone that outlasts its own interval delays the
+    next backlog tool but cannot starve the slower refresh lane: refresh only
+    ever waits for the one tool in flight.
+    """
+    pace = pace or ScanPace()
+    stop = should_stop or (lambda: False)
+    scanner = _Scanner(
+        backlog=_Stream("backlog", pace.backlog_interval, rank=0),
+        refresh=_Stream("refresh", pace.refresh_interval, rank=1),
+        depth=pace.depth,
+    )
+    results = _new_results()
+    next_heartbeat = time.monotonic() + pace.heartbeat
+    window_started = utcnow()
+    while not stop():
+        stream = min(scanner.streams(), key=lambda lane: (lane.due_at, lane.rank))
+        if not _sleep_until(stream.due_at, stop):
+            break
+        now = time.monotonic()
+        item = scanner.take(stream, now=now)
+        if item is None:
+            # This lane is drained. Nothing can enter it before the next
+            # catalog pass, so wait for that rather than spinning on an
+            # empty queue at one wakeup per interval.
+            stream.due_at = max(scanner.refill_at, now + stream.interval)
+            continue
+        stream.due_at = now + stream.interval
+        stream.scanned += 1
+        _scan_one(item[0], item[1], results, force=force)
+        if time.monotonic() >= next_heartbeat:
+            sys.stdout.write(
+                "repository-analysis: " + json.dumps(_continuous_summary(results, scanner), sort_keys=True) + "\n"
+            )
+            sys.stdout.flush()
+            _record_window(window_started)
+            window_started = utcnow()
+            next_heartbeat = time.monotonic() + pace.heartbeat
+    # run_job() prints the returned summary, so the shutdown window only needs
+    # publishing, not reprinting.
+    _record_window(window_started)
+    return _continuous_summary(results, scanner)
+
+
+def _install_shutdown() -> Callable[[], bool]:
+    """Ask the loop to stop after the tool in flight rather than mid-clone."""
+    requested = {"stop": False}
+
+    def request(_signum: int, _frame: object) -> None:
+        requested["stop"] = True
+
+    for received in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(received, request)
+    return lambda: requested["stop"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -501,7 +748,42 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=int(os.environ.get("REPOSITORY_SCAN_LIMIT", "100")))
     parser.add_argument("--force", action="store_true", default=os.environ.get("REPOSITORY_SCAN_FORCE") == "1")
     parser.add_argument("--tool-name", default=os.environ.get("REPOSITORY_SCAN_TOOL_NAME", ""))
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        default=os.environ.get("REPOSITORY_SCAN_CONTINUOUS") == "1",
+        help="scan forever, pacing backlog and re-check work separately, instead of one bounded batch",
+    )
+    parser.add_argument(
+        "--backlog-interval",
+        type=float,
+        default=float(os.environ.get("REPOSITORY_SCAN_BACKLOG_INTERVAL") or BACKLOG_INTERVAL_SECONDS),
+        help="minimum seconds between starting two not-yet-analyzed repositories",
+    )
+    parser.add_argument(
+        "--refresh-interval",
+        type=float,
+        default=float(os.environ.get("REPOSITORY_SCAN_REFRESH_INTERVAL") or REFRESH_INTERVAL_SECONDS),
+        help="minimum seconds between re-checking two already analyzed repositories",
+    )
     args = parser.parse_args(argv)
+    if args.continuous:
+        if args.backlog_interval <= 0 or args.refresh_interval <= 0:
+            parser.error("--backlog-interval and --refresh-interval must be positive")
+        if args.tool_name.strip():
+            parser.error("--tool-name scans one repository, which --continuous does not do")
+        should_stop = _install_shutdown()
+        return job_runner.run_job(
+            "repository-analysis",
+            lambda: run_continuous(
+                pace=ScanPace(
+                    backlog_interval=args.backlog_interval,
+                    refresh_interval=args.refresh_interval,
+                ),
+                force=args.force,
+                should_stop=should_stop,
+            ),
+        )
     if args.limit <= 0:
         parser.error("--limit must be positive")
     return job_runner.run_job(

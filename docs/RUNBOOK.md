@@ -954,12 +954,36 @@ selects canonical Toolhub records with an HTTPS repository URL, checks the
 remote HEAD SHA, and skips repositories whose SHA is already analyzed. New
 tools enter automatically when their canonical record reaches the local cache;
 changed repositories are revisited by oldest `checked_at` first. The worker
-uses shallow non-recursive Git checkouts, removes symlinks before traversal,
-does not execute repository code, caps the checkout and analyzer input, stores
-only the redacted report, and records failures/backoff in
-`repository_analysis_state`.
+clones with `--depth 1 --filter=blob:limit=<MAX_FILE_BYTES> --no-checkout`,
+enumerates with `git ls-tree` and reads blobs with `git cat-file --batch` under
+`GIT_NO_LAZY_FETCH=1`, excludes symlinks and submodules by tree mode rather
+than by touching a working tree, does not execute repository code, caps the
+checkout and analyzer input, stores only the redacted report, and records
+failures/backoff in `repository_analysis_state`.
 
-For the initial backfill, run a one-off job after deployment:
+It runs continuously (`continuous: true`, no schedule), pacing two independent
+lanes:
+
+| Lane    | What it covers                                                    | Default interval | Override                           |
+| ------- | ----------------------------------------------------------------- | ---------------- | ---------------------------------- |
+| backlog | no usable report yet: never scanned, or failed and out of backoff | 1 s              | `REPOSITORY_SCAN_BACKLOG_INTERVAL` |
+| refresh | already analyzed, re-checked for new commits                      | 60 s             | `REPOSITORY_SCAN_REFRESH_INTERVAL` |
+
+Each interval is a minimum spacing between starts, not a guarantee: a clone
+that takes longer simply delays the next start. Whichever lane is most overdue
+runs next, so refresh waits at most for the one tool in flight and cannot be
+starved by a saturated backlog. The loop refills both queues from one catalog
+pass every 300 s and prints a cumulative JSON summary on the same interval —
+one line per tool would be 86400 lines a day against nightly log rotation.
+
+`SIGTERM` stops the loop after the tool in flight, so a redeploy never kills a
+clone mid-flight. There is no `job_guard.sh` wrapper: its overlap lock and its
+three-failure breaker are both built for scheduled runs and misbehave around a
+process that never exits (see the comment in `jobs.yaml`). Kubernetes restarting
+the pod is the supervisor.
+
+To drain a cold catalog faster than one per second, run a one-off bounded batch
+alongside it:
 
 ```sh
 toolforge jobs run --wait 21600 --image python3.13 \
@@ -967,13 +991,13 @@ toolforge jobs run --wait 21600 --image python3.13 \
   repository-analysis-backfill
 ```
 
-The regular hourly job continues the sweep afterwards. `repository_scan` is a
-separate provenance label from maintainer-submitted source-analysis reports;
-automated reports are deterministic and approved for the public health core,
-while raw source and checkout contents are never stored.
+`repository_scan` is a separate provenance label from maintainer-submitted
+source-analysis reports; automated reports are deterministic and approved for
+the public health core, while raw source and checkout contents are never
+stored.
 
 Repository failures are recorded with exponential backoff and do not abort the
-remaining candidates in the hourly batch. The people full pass and its
+rest of the sweep. The people full pass and its
 incremental queue share a MariaDB advisory lock so they cannot concurrently
 replace the same Toolsadmin relationship evidence; a locked invocation exits cleanly and
 the next scheduled run retries it.
