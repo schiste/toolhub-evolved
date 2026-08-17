@@ -41,12 +41,16 @@ def fresh_db():
     db.init_schema()
 
 
-def _canonical(session, name):
+def _canonical(session, name, url=""):
+    # `url` is the tool's own runtime address in the canonical catalog, which is
+    # what decides whether a feed's project may speak for this tool. It is the
+    # independent half of that check, so it deliberately comes from here rather
+    # than from the feed payload the publisher controls.
     now = utcnow()
     session.add(
         CanonicalToolCache(
             tool_name=name,
-            record={"name": name},
+            record={"name": name, "url": url} if url else {"name": name},
             source_url=f"https://toolhub.example/{name}",
             expires_at=now + timedelta(days=1),
             stale_until=now + timedelta(days=2),
@@ -66,7 +70,7 @@ def _stable_person(session, name, uid_number, uid, global_id):
     )
 
 
-def _toolforge_member(session, person, *, project, uid_number, uid):
+def _toolforge_member(session, person, *, project, uid_number, uid, also_projects=()):
     session.add(
         ToolforgeAccountProjection(
             uid_number=uid_number,
@@ -74,7 +78,8 @@ def _toolforge_member(session, person, *, project, uid_number, uid):
             normalized_uid=uid.casefold(),
         )
     )
-    session.add(ToolforgeMembershipProjection(uid_number=uid_number, tool_name=project))
+    for name in (project, *also_projects):
+        session.add(ToolforgeMembershipProjection(uid_number=uid_number, tool_name=name))
     session.add(
         PersonAccountBinding(
             provider="toolforge",
@@ -304,7 +309,7 @@ def test_target_toolforge_membership_is_verified_per_target_project():
     with db.session_scope() as session:
         operator = _stable_person(session, "Operator", "20", "operator", "200")
         _toolforge_member(session, operator, project="target-project", uid_number="20", uid="operator")
-        _canonical(session, "target-tool")
+        _canonical(session, "target-tool", url="https://target-project.toolforge.org")
         source = _source(
             session,
             "https://target-project.toolforge.org/toolinfo.json",
@@ -330,6 +335,155 @@ def test_target_toolforge_membership_is_verified_per_target_project():
         assert edge.verification_status == "verified"
         assert edge.evidence_payload["toolforgeProject"] == "target-project"
         assert edge.evidence_payload["toolMappingMethod"] == "registered_source_toolforge_host"
+        assert edge.evidence_payload["runtimeProjects"] == ["target-project"]
+
+
+def test_publishing_a_feed_does_not_make_its_members_maintain_another_projects_tool():
+    """A feed names which tools to look at; LDAP decides who actually holds them."""
+    with db.session_scope() as session:
+        outsider = _stable_person(session, "Outsider", "22", "outsider", "202")
+        _toolforge_member(session, outsider, project="publisher", uid_number="22", uid="outsider")
+        _canonical(session, "someone-elses-tool", url="https://other-project.toolforge.org")
+        source = _source(
+            session,
+            "https://publisher.toolforge.org/toolinfo.json",
+            [
+                {
+                    "name": "someone-elses-tool",
+                    "title": "Elsewhere",
+                    "description": "Served by a project the publisher does not belong to",
+                    "url": "https://other-project.toolforge.org",
+                    "author": "Someone Else",
+                }
+            ],
+        )
+
+        result = source_attestations.refresh_source_ids(session, [source.id])
+
+        assert result["maintainerEvidence"] == 0
+        assert (
+            session.execute(
+                select(ToolRelationshipEvidence).where(
+                    ToolRelationshipEvidence.source == source_attestations.SOURCE_TARGET_MEMBERSHIP
+                )
+            ).scalar_one_or_none()
+            is None
+        )
+
+
+def test_host_mapping_survives_when_the_member_holds_the_project_serving_the_tool():
+    """One person's feed may list tools served by their other projects."""
+    with db.session_scope() as session:
+        owner = _stable_person(session, "Owner", "23", "owner", "203")
+        _toolforge_member(session, owner, project="publisher", uid_number="23", uid="owner", also_projects=("sibling",))
+        _canonical(session, "sibling-tool", url="https://sibling.toolforge.org/thing.php")
+        source = _source(
+            session,
+            "https://publisher.toolforge.org/toolinfo.json",
+            [
+                {
+                    "name": "sibling-tool",
+                    "title": "Sibling",
+                    "description": "Listed by one project, served by another the owner also holds",
+                    "url": "https://sibling.toolforge.org/thing.php",
+                    "author": "Someone Else",
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+        edge = session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.source == source_attestations.SOURCE_TARGET_MEMBERSHIP
+            )
+        ).scalar_one()
+
+        assert edge.person_id == owner.id
+        assert edge.verification_status == "verified"
+        assert edge.evidence_payload["toolforgeProject"] == "publisher"
+        assert edge.evidence_payload["runtimeProjects"] == ["sibling"]
+
+
+def test_host_mapping_reads_the_legacy_toolforge_url_form():
+    """A decade-old tools.wmflabs.org URL still names the project that serves it."""
+    with db.session_scope() as session:
+        owner = _stable_person(session, "Legacy Owner", "24", "legacy", "204")
+        _toolforge_member(session, owner, project="depicts", uid_number="24", uid="legacy")
+        _canonical(session, "depicts", url="https://tools.wmflabs.org/depicts")
+        source = _source(
+            session,
+            "https://depicts.toolforge.org/toolinfo.json",
+            [
+                {
+                    "name": "depicts",
+                    "title": "Depicts",
+                    "description": "Legacy URL form",
+                    "url": "https://tools.wmflabs.org/depicts",
+                    "author": "Someone Else",
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+        edge = session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.source == source_attestations.SOURCE_TARGET_MEMBERSHIP
+            )
+        ).scalar_one()
+
+        assert edge.verification_status == "verified"
+        assert edge.evidence_payload["runtimeProjects"] == ["depicts"]
+
+
+def test_host_mapping_withheld_when_the_tool_runs_outside_toolforge():
+    """A wiki page or a repository leaves nothing for membership to corroborate."""
+    with db.session_scope() as session:
+        owner = _stable_person(session, "Script Owner", "25", "scripts", "205")
+        _toolforge_member(session, owner, project="publisher", uid_number="25", uid="scripts")
+        _canonical(session, "user-script", url="https://www.wikidata.org/wiki/User:Someone/script.js")
+        source = _source(
+            session,
+            "https://publisher.toolforge.org/toolinfo.json",
+            [
+                {
+                    "name": "user-script",
+                    "title": "Script",
+                    "description": "Hosted on a wiki, not on Toolforge",
+                    "url": "https://www.wikidata.org/wiki/User:Someone/script.js",
+                    "author": "Someone Else",
+                }
+            ],
+        )
+
+        assert source_attestations.refresh_source_ids(session, [source.id])["maintainerEvidence"] == 0
+
+
+def test_canonical_name_mapping_ignores_the_runtime_host_requirement():
+    """A `toolforge-$PROJECT` record names its own project, so nothing needs corroborating."""
+    with db.session_scope() as session:
+        owner = _stable_person(session, "Named Owner", "26", "named", "206")
+        _toolforge_member(session, owner, project="named-project", uid_number="26", uid="named")
+        _canonical(session, "toolforge-named-project", url="https://example.invalid/elsewhere")
+        source = _source(
+            session,
+            "https://metadata.example/toolinfo.json",
+            [
+                {
+                    "name": "toolforge-named-project",
+                    "title": "Named",
+                    "description": "Canonical name carries the project",
+                    "url": "https://example.invalid/elsewhere",
+                    "author": "Someone Else",
+                }
+            ],
+        )
+        source_attestations.refresh_source_ids(session, [source.id])
+        edge = session.execute(
+            select(ToolRelationshipEvidence).where(
+                ToolRelationshipEvidence.source == source_attestations.SOURCE_TARGET_MEMBERSHIP
+            )
+        ).scalar_one()
+
+        assert edge.verification_status == "verified"
+        assert edge.evidence_payload["toolMappingMethod"] == "canonical_tool_name"
 
 
 def test_runtime_tool_url_without_matching_source_does_not_verify_project_membership():
@@ -1051,7 +1205,7 @@ def test_person_identity_skips_unmapped_identifier_namespaces():
             )
         )
         _toolforge_member(session, person, project="namespaced-project", uid_number="95", uid="namespaced")
-        _canonical(session, "namespaced-tool")
+        _canonical(session, "namespaced-tool", url="https://namespaced-project.toolforge.org")
         source = _source(
             session,
             "https://namespaced-project.toolforge.org/toolinfo.json",
