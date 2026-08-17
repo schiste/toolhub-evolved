@@ -209,7 +209,17 @@ export default [
 			"coverage/**",
 			"htmlcov/**",
 			"dist/**",
-			"dist.tmp/**"
+			"dist.tmp/**",
+			// Broker state, and under worktrees/ a full checkout of this repo per
+			// concurrent agent session. Unlike everything above, these are not
+			// artifacts of this checkout: linting them lints dozens of copies of
+			// the same source at other people's commits, so a lint error in
+			// someone else's unfinished branch fails your push over code you are
+			// not pushing. It is also what made `eslint .` unusably slow -- ~7400
+			// files instead of ~100, six seconds to past ten minutes, growing with
+			// every session. Prettier never had the problem because Prettier reads
+			// .gitignore and ESLint's flat config does not.
+			".aethyme/**"
 		]
 	},
 	// License header on first-party source.
