@@ -1,7 +1,16 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Performance budget for production user-route JS payload (raw ES modules served
-// directly — there is no bundler, so bytes on disk ≈ bytes over the wire).
+// Performance budget for the app's total JS source, measured on disk under
+// public_html/.
+//
+// This used to say "bytes on disk ≈ bytes over the wire", which was true while
+// the modules were served raw. tools/build_dist.py now concatenates them into
+// bundles, so what a visitor downloads is a subset of this — the entry bundle
+// plus whichever routes they visit — and gzipped at that. Source bytes remain
+// the right thing to bound here: they are what actually grows when a dependency
+// is vendored in or a generated blob is committed, and they cap what any bundle
+// could ever contain. The wire-side number the bundling exists to protect is the
+// landing payload, which is asserted in tests/proxy/test_build_dist.py.
 //
 // This is a FIXED, generous ceiling — deliberately NOT a self-baselined ratchet
 // like the module-budgets contracts that were removed. It sits at roughly 2× the

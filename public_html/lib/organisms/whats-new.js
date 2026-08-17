@@ -19,7 +19,7 @@ const BODY_ID = "whats-new-body";
 /** @type {{ deployments?: Deployment[] } | null} */
 let releaseData = null;
 /** @type {HTMLElement | null} */
-let lastFocus = null;
+let whatsNewLastFocus = null;
 let initialized = false;
 
 /** @typedef {{ id?: string, releaseId?: string, title?: string, sha?: string, releasedAt?: string, deployedAt?: string, marketing?: { technical?: string, user?: string } }} Deployment */
@@ -90,7 +90,7 @@ export function closeWhatsNew(remember = true) {
 	element.classList.add("is-collapsed");
 	element.setAttribute("aria-hidden", "false");
 	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
-	if (lastFocus instanceof HTMLElement) lastFocus.focus();
+	if (whatsNewLastFocus instanceof HTMLElement) whatsNewLastFocus.focus();
 }
 
 function hideWhatsNew() {
@@ -100,7 +100,7 @@ function hideWhatsNew() {
 	element.classList.remove("is-collapsed");
 	element.setAttribute("aria-hidden", "true");
 	$("[data-whats-new-open]", element)?.setAttribute("aria-expanded", "false");
-	if (lastFocus instanceof HTMLElement) lastFocus.focus();
+	if (whatsNewLastFocus instanceof HTMLElement) whatsNewLastFocus.focus();
 }
 
 function showCollapsedWhatsNew() {
@@ -116,7 +116,7 @@ function showCollapsedWhatsNew() {
 export function openWhatsNew() {
 	const element = root();
 	if (!element) return;
-	lastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
+	whatsNewLastFocus = /** @type {HTMLElement | null} */ (document.activeElement);
 	clearWhatsNewCollapsed();
 	renderWhatsNew();
 	element.classList.remove("hidden");
@@ -175,5 +175,5 @@ export async function initWhatsNew() {
 export function resetWhatsNewForTests() {
 	initialized = false;
 	releaseData = null;
-	lastFocus = null;
+	whatsNewLastFocus = null;
 }

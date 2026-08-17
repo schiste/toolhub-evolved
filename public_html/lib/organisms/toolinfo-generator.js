@@ -22,24 +22,24 @@ import { accountSection } from "./account-workbench.js";
 /** @typedef {{ key: string, toolName: string, projectName: string, label: string, record: Record<string, any>, developerUsernames: string[], sourceKind: string, identityVerified: boolean, isAuthor: boolean }} ToolinfoGeneratorEntry */
 
 /** @param {unknown} value */
-function clean(value) {
+function cleanValue(value) {
 	return String(value ?? "").trim();
 }
 
 /** @param {Tool} tool */
 function toolProjects(tool) {
 	return Array.isArray(tool.toolforgeProjects)
-		? tool.toolforgeProjects.map((project) => clean(project)).filter(Boolean)
+		? tool.toolforgeProjects.map((project) => cleanValue(project)).filter(Boolean)
 		: [];
 }
 
 /** @param {any} payload @param {string} projectName */
 function projectDevelopers(payload, projectName) {
 	const project = (Array.isArray(payload?.toolforgeProjects) ? payload.toolforgeProjects : []).find(
-		(/** @type {any} */ item) => clean(item?.name).toLowerCase() === projectName.toLowerCase()
+		(/** @type {any} */ item) => cleanValue(item?.name).toLowerCase() === projectName.toLowerCase()
 	);
 	return Array.isArray(project?.developerUsernames)
-		? project.developerUsernames.map((/** @type {unknown} */ username) => clean(username)).filter(Boolean)
+		? project.developerUsernames.map((/** @type {unknown} */ username) => cleanValue(username)).filter(Boolean)
 		: [];
 }
 
@@ -82,7 +82,7 @@ export function buildToolinfoGeneratorEntries(tools, payload) {
 		});
 	}
 	for (const project of Array.isArray(payload?.toolforgeProjects) ? payload.toolforgeProjects : []) {
-		const projectName = clean(project?.name);
+		const projectName = cleanValue(project?.name);
 		if (!projectName) continue;
 		const key = `project:${projectName.toLowerCase()}`;
 		if (byKey.has(key)) continue;
@@ -274,7 +274,7 @@ function collect(form, entry, identity) {
 			form.querySelector(`[data-toolinfo-field="${field}"]`)
 		);
 	/** @param {string} field */
-	const value = (field) => clean(control(field)?.value);
+	const value = (field) => cleanValue(control(field)?.value);
 	/** @param {string} field */
 	const checked = (field) => Boolean(/** @type {HTMLInputElement | null} */ (control(field))?.checked);
 	const base = initialRecord(entry, identity);
@@ -310,20 +310,20 @@ function collect(form, entry, identity) {
 	base.deprecated = checked("deprecated");
 	base.author = $$("[data-toolinfo-author]", form)
 		.map((row) => ({
-			name: clean(
+			name: cleanValue(
 				/** @type {HTMLInputElement | null} */ (row.querySelector('[data-toolinfo-field="author-name"]'))?.value
 			),
-			wiki_username: clean(
+			wiki_username: cleanValue(
 				/** @type {HTMLInputElement | null} */ (row.querySelector('[data-toolinfo-field="author-wiki"]'))?.value
 			),
-			developer_username: clean(
+			developer_username: cleanValue(
 				/** @type {HTMLInputElement | null} */ (row.querySelector('[data-toolinfo-field="author-developer"]'))
 					?.value
 			),
-			url: clean(
+			url: cleanValue(
 				/** @type {HTMLInputElement | null} */ (row.querySelector('[data-toolinfo-field="author-url"]'))?.value
 			),
-			email: clean(
+			email: cleanValue(
 				/** @type {HTMLInputElement | null} */ (row.querySelector('[data-toolinfo-field="author-email"]'))
 					?.value
 			)
@@ -442,7 +442,7 @@ export function toolinfoGeneratorWorkspace(entries, identity) {
 				const target = /** @type {HTMLElement} */ (event.target);
 				const trigger = target.closest("[data-toolinfo-open]");
 				if (!trigger) return;
-				open(clean(trigger.getAttribute("data-toolinfo-open")));
+				open(cleanValue(trigger.getAttribute("data-toolinfo-open")));
 				editor.scrollIntoView({ behavior: "smooth", block: "start" });
 			});
 		}
