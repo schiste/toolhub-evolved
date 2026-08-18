@@ -378,11 +378,25 @@
 	cursor: pointer;
 }
 
-.workers-method dl {
+.workers-method__states {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
 	gap: var(--space-3) var(--space-4);
 	margin: var(--space-3) var(--space-0) var(--space-0);
+}
+
+/* Not a sixth state: a rule about what a run is, so it sits below the grid
+   behind a divider instead of taking a column and wrapping to its own row. */
+.workers-method__notes {
+	margin: var(--space-3) var(--space-0) var(--space-0);
+	padding-block-start: var(--space-3);
+	border-block-start: var(--border-base);
+}
+
+/* The rule separates the note from the grid, so it spans the panel; the prose
+   inside it stays at a readable measure rather than stretching with it. */
+.workers-method__notes > div {
+	max-width: 60ch;
 }
 
 .workers-method dt {
