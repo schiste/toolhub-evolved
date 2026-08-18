@@ -132,6 +132,10 @@ def main(argv: list[str] | None = None) -> int:
         body,
         lock=True,
         lock_wait_seconds=RECONVERGE_LOCK_WAIT_SECONDS if args.reconverge else 0,
+        # Every mode here re-decides from present evidence and writes in one
+        # transaction, so a run that lost its connection left nothing behind and
+        # a second attempt reaches the same state the first would have.
+        retry_on_disconnect=True,
     )
 
 

@@ -689,6 +689,21 @@ reclaim a lock from a run still working. Jobs declaring no timeout keep the
 one-hour default. A test asserts the doubling for every job in `jobs.yaml`, so
 a job added later cannot quietly inherit a wrong threshold.
 
+**A dropped connection retries the run, it does not lose it.** `pool_pre_ping`
+proves a connection is alive when the pool hands it out, which says nothing
+about a pass long enough for ToolsDB to close it mid-run. The next statement
+then fails with `MySQL server has gone away`, the open transaction rolls back
+whole, and the run is gone -- no run row, and a guard lock nobody releases
+until `--stale-after` expires. `people-identity-reconcile` lost 01:43, 02:43
+and 03:43 on 2026-08-18 exactly that way, four hours with no identity pass.
+`job_runner.run_job(..., retry_on_disconnect=True)` disposes the pool and runs
+the body once more. It is opt-in: repeating a body that already sent mail or
+issued a remote write is worse than losing it, so only idempotent jobs ask for
+it, and today only `people-reconcile` does. The retry re-enters through the
+advisory lock rather than resuming inside it, because a dropped connection
+released whatever locks it held -- so it either wins the lock again or reports
+the ordinary `{"locked": true}` skip.
+
 **Exit codes are instructions, not reports.** `tools/job_guard.sh` counts
 consecutive non-zero exits and trips a breaker, so a job exits non-zero only
 when the sweep itself could not run or complete. Per-item failures — an
