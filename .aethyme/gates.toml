@@ -32,3 +32,24 @@ name = "ruff-format"
 command = "uvx ruff@0.16.3 format --check proxy"
 cost = 1
 triggers = ["proxy/**/*.py", "pyproject.toml"]
+
+# The gates above only ever ran ruff, so a backend change reached integration
+# with no test having run: session 72's frontend-only diff matched no trigger at
+# all and reported "gate wall time: 0ms", which is indistinguishable in the
+# submit output from a clean pass.
+# The `no node_modules in a bare worktree` argument that removed js-lint does not
+# apply here: uv resolves the requirements into its own cache, so this needs no
+# venv and no `pip install` in the worktree. First run pays the download; after
+# that the suite is the whole cost (~50s for 1663 tests).
+# cost = 3 keeps it out of .githooks/pre-commit, which runs only cost <= 1, so it
+# gates submissions without adding a minute to every commit.
+# tests/proxy/**/*.py is in the triggers and NOT in the ruff gates above on
+# purpose: `ruff check proxy` does not read those files (CI lints proxy only), so
+# widening ruff there would run a check that cannot see what changed. pytest can.
+# Mirrors .github/workflows/ci.yml line 95, minus the coverage ratchet.
+
+[[gate]]
+name = "pytest-proxy"
+command = "uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/proxy -q"
+cost = 3
+triggers = ["proxy/**/*.py", "tests/proxy/**/*.py", "proxy/requirements.txt", "pyproject.toml"]
