@@ -27,8 +27,10 @@
 
 .workers-page__inner {
 	display: grid;
-	gap: var(--space-6);
+	gap: var(--space-5);
 }
+
+/* Hero ------------------------------------------------------------------ */
 
 .workers-hero {
 	display: grid;
@@ -41,12 +43,14 @@
 	margin: var(--space-0);
 }
 
-.workers-hero > p {
+.workers-hero__lead {
+	max-width: 60ch;
 	margin: var(--space-0);
 	color: var(--color-text-secondary);
 }
 
 .workers-hero__eyebrow {
+	margin: var(--space-0);
 	font-size: var(--fs-small);
 	font-weight: 600;
 	letter-spacing: 0.08em;
@@ -54,19 +58,33 @@
 	color: var(--color-text-muted);
 }
 
+/* The verdict and the tally read as one line of status, so they share a row
+   and wrap together rather than stacking into two unrelated blocks. */
+.workers-hero__state {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2) var(--space-3);
+	margin-block-start: var(--space-2);
+}
+
 .workers-hero__alert,
 .workers-hero__ok {
+	margin: var(--space-0);
 	padding: var(--space-2) var(--space-3);
-	border-radius: var(--radius-sm);
+	border-inline-start: var(--border-heavy);
 	font-weight: 600;
+	font-size: var(--fs-small);
 }
 
 .workers-hero__alert {
+	border-inline-start-color: var(--color-destructive);
 	color: var(--color-destructive);
 	background: var(--color-destructive-subtle);
 }
 
 .workers-hero__ok {
+	border-inline-start-color: var(--color-success);
 	color: var(--color-success);
 	background: var(--color-success-subtle);
 }
@@ -74,7 +92,7 @@
 .workers-summary {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--space-3);
+	gap: var(--space-2);
 	margin: var(--space-0);
 	padding: var(--space-0);
 	list-style: none;
@@ -84,38 +102,66 @@
 	display: flex;
 	align-items: baseline;
 	gap: var(--space-2);
-	padding: var(--space-2) var(--space-3);
+	padding: var(--space-1) var(--space-3);
 	border: var(--border-base);
-	border-radius: var(--radius-md);
+	border-inline-start-width: var(--border-width-heavy);
+	background: var(--color-surface);
 }
 
 .workers-summary strong {
-	font-size: var(--fs-title);
+	font-size: var(--fs-subtitle);
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
 }
 
 .workers-summary span {
 	color: var(--color-text-muted);
-	font-size: var(--fs-small);
+	font-size: var(--fs-caption);
 }
+
+.workers-summary li[data-status="healthy"] {
+	border-inline-start-color: var(--color-success);
+}
+
+.workers-summary li[data-status="late"] {
+	border-inline-start-color: var(--color-warning);
+}
+
+.workers-summary li[data-status="stalled"],
+.workers-summary li[data-status="failing"] {
+	border-inline-start-color: var(--color-destructive);
+}
+
+/* Cards ----------------------------------------------------------------- */
 
 .workers-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-	gap: var(--space-4);
+	grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+	gap: var(--space-3);
 }
 
+/* Fixed rows keep the facts and the run history on a common baseline across a
+   row of cards, so notes of very different lengths never leave them floating
+   at unrelated heights. */
 .workers-card {
 	display: grid;
+	grid-template-rows: auto 1fr auto auto;
 	gap: var(--space-3);
-	align-content: start;
 	padding: var(--space-4);
 
 	/* The status is carried by the start border, the badge text, and the run
 	   ticks, so it never depends on colour alone. */
 	border: var(--border-base);
 	border-inline-start-width: var(--border-width-heavy);
-	border-radius: var(--radius-md);
 	background: var(--color-surface);
+	transition:
+		border-color 0.15s ease,
+		box-shadow 0.15s ease;
+}
+
+.workers-card:hover {
+	border-color: var(--color-border-hover);
+	box-shadow: var(--shadow);
 }
 
 .workers-card--healthy {
@@ -131,33 +177,58 @@
 	border-inline-start-color: var(--color-destructive);
 }
 
+/* `nowrap` plus a zero min-width identity block keeps the badge pinned to the
+   top-right corner: a long job name wraps inside its own column instead of
+   pushing the badge onto a line of its own. */
 .workers-card__head {
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: var(--space-2);
 	align-items: flex-start;
 	justify-content: space-between;
 }
 
+.workers-card__ident {
+	min-width: 0;
+}
+
 .workers-card__head h2 {
 	margin: var(--space-0);
-	font-size: var(--fs-body);
-	overflow-wrap: anywhere;
+	font-size: var(--fs-body-large);
+	line-height: 1.25;
+	overflow-wrap: break-word;
 }
 
 .workers-card__schedule {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-1) var(--space-2);
 	margin: var(--space-1) var(--space-0) var(--space-0);
 	color: var(--color-text-muted);
-	font-size: var(--fs-small);
-	overflow-wrap: anywhere;
+	font-size: var(--fs-caption);
+}
+
+.workers-card__schedule code {
+	padding: var(--space-0-5) var(--space-1);
+	background: var(--color-surface-muted);
+	font-size: var(--fs-fine);
+	white-space: nowrap;
+}
+
+.workers-card__period::before {
+	content: "·";
+	margin-inline-end: var(--space-2);
 }
 
 .workers-card__status {
+	flex: none;
 	margin: var(--space-0);
 	padding: var(--space-0-5) var(--space-2);
-	border-radius: var(--radius-pill);
-	font-size: var(--fs-small);
+	font-size: var(--fs-micro);
 	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
 	white-space: nowrap;
 }
 
@@ -182,45 +253,97 @@
 	background: var(--color-surface-muted);
 }
 
+/* Operator note --------------------------------------------------------- */
+
+.workers-card__note {
+	align-self: start;
+}
+
 .workers-card__description {
 	margin: var(--space-0);
 	color: var(--color-text-secondary);
 	font-size: var(--fs-small);
+	line-height: 1.5;
 }
 
+/* Clamped by an exact multiple of the line height, so the cut always lands on
+   a line boundary and never shows a sliced half-line. `line-clamp` is avoided
+   because its only interoperable spelling is vendor-prefixed. */
+.workers-card__note--clamped .workers-card__description {
+	max-height: 4.5em;
+	overflow: hidden;
+}
+
+.workers-card__more {
+	margin-block-start: var(--space-1);
+	padding: var(--space-0);
+	border: none;
+	background: none;
+	color: var(--color-progressive);
+	font: inherit;
+	font-size: var(--fs-caption);
+	cursor: pointer;
+}
+
+.workers-card__more:hover {
+	text-decoration: underline;
+}
+
+/* Facts ----------------------------------------------------------------- */
+
+/* `break-word` rather than `anywhere`: `anywhere` lets a column shrink below
+   its longest word, which chopped "Succeeded" across two lines. */
 .workers-card__facts {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
 	gap: var(--space-2);
 	margin: var(--space-0);
+	padding-block-start: var(--space-2);
+	border-top: var(--border-base);
 }
 
 .workers-card__facts dt {
 	color: var(--color-text-muted);
-	font-size: var(--fs-caption);
+	font-size: var(--fs-micro);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
 
 .workers-card__facts dd {
 	margin: var(--space-0-5) var(--space-0) var(--space-0);
+	font-size: var(--fs-small);
 	font-weight: 600;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
+/* Run history ----------------------------------------------------------- */
+
+.workers-runs__group {
+	display: grid;
+	gap: var(--space-1);
+}
+
+.workers-runs__caption {
+	margin: var(--space-0);
+	color: var(--color-text-muted);
+	font-size: var(--fs-micro);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+/* Ten fixed columns regardless of how many runs exist, so tick width encodes
+   nothing: a single failure is one slot wide on every card. */
 .workers-runs {
-	display: flex;
-	gap: var(--space-px);
+	display: grid;
+	grid-template-columns: repeat(10, 1fr);
+	gap: var(--space-0-5);
 	margin: var(--space-0);
 	padding: var(--space-0);
 	list-style: none;
 }
 
 .workers-runs__tick {
-	flex: 1 1 auto;
-	min-width: var(--space-1);
-	height: var(--space-4);
-	border-radius: var(--radius-sm);
+	height: var(--space-3);
 }
 
 .workers-runs__tick--ok {
@@ -231,29 +354,51 @@
 	background: var(--color-destructive);
 }
 
+.workers-runs__tick--empty {
+	background: var(--color-surface-muted);
+	border: var(--border-base);
+}
+
 .workers-runs__empty {
 	margin: var(--space-0);
 	color: var(--color-text-muted);
-	font-size: var(--fs-small);
+	font-size: var(--fs-caption);
+}
+
+/* Methodology ----------------------------------------------------------- */
+
+.workers-method {
+	padding: var(--space-3) var(--space-4);
+	border: var(--border-base);
+	background: var(--color-surface-muted);
+}
+
+.workers-method summary {
+	font-weight: 600;
+	cursor: pointer;
 }
 
 .workers-method dl {
 	display: grid;
-	gap: var(--space-2);
+	grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+	gap: var(--space-3) var(--space-4);
 	margin: var(--space-3) var(--space-0) var(--space-0);
 }
 
 .workers-method dt {
+	margin-block-end: var(--space-0-5);
 	font-weight: 600;
+	font-size: var(--fs-small);
 }
 
 .workers-method dd {
 	margin: var(--space-0);
 	color: var(--color-text-secondary);
+	font-size: var(--fs-small);
 }
 
 @media (width <= 30rem) {
-	.workers-card__facts {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+	.workers-grid {
+		grid-template-columns: minmax(0, 1fr);
 	}
 }
