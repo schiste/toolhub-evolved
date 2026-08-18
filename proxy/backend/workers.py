@@ -115,10 +115,19 @@ def snapshot(session: Any) -> dict[str, Any]:  # noqa: ANN401 - SQLAlchemy sessi
         "generatedAt": _iso(now),
         "workers": workers,
         "counts": dict(sorted(counts.items())),
+        # Keyed by the STATUS_* constants so a state _status() can return can
+        # never ship without the page's explanation of how it was decided.
         "definitions": {
             "recorded": "Only runs that executed are recorded; a skipped overlap is routine and is not a run.",
-            "late": f"No run for {LATE_PERIODS} or more of this job's own scheduled periods.",
-            "stalled": f"No run for {STALLED_PERIODS} or more periods, so the schedule is not being honoured.",
-            "unknown": "No run has been recorded yet, which is expected for a newly added worker.",
+            STATUS_HEALTHY: (
+                f"The most recent run succeeded, less than {LATE_PERIODS} of this job's own scheduled periods ago."
+            ),
+            STATUS_LATE: f"No run for {LATE_PERIODS} or more of this job's own scheduled periods.",
+            STATUS_FAILING: (
+                "The most recent run exited non-zero. A job that has also gone silent reads as stalled instead, "
+                "because silence is the more urgent fault."
+            ),
+            STATUS_STALLED: f"No run for {STALLED_PERIODS} or more periods, so the schedule is not being honoured.",
+            STATUS_UNKNOWN: "No run has been recorded yet, which is expected for a newly added worker.",
         },
     }

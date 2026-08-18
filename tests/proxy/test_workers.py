@@ -186,6 +186,21 @@ def test_last_success_is_reported_separately_from_the_last_run():
     assert row["lastSuccessAt"] and row["lastSuccessAt"] < row["lastRunAt"]
 
 
+def test_every_status_the_page_can_show_is_explained():
+    """A named state with no definition is the one an operator most needs explained.
+
+    The statuses are derived from the module rather than listed here, so adding
+    a sixth state to _status() fails until the page can explain it too.
+    """
+    statuses = {value for name, value in vars(workers).items() if name.startswith("STATUS_")}
+    with db.session_scope() as session:
+        payload = workers.snapshot(session)
+    assert statuses <= set(payload["definitions"])
+    # "recorded" explains what counts as a run at all; it is the only entry
+    # that is not itself a status.
+    assert payload["definitions"].keys() - statuses == {"recorded"}
+
+
 def test_the_endpoint_is_public_and_counts_every_declared_worker():
     app = Flask(__name__)
     backend.register(app, db_url="sqlite://", secret_key="test-secret")
