@@ -163,3 +163,74 @@ test("mounting without the root element is a no-op", () => {
 	view.mount();
 	assert.equal(h.backendGetJson.mock.calls.length, 0);
 });
+
+test("run history always fills ten slots so tick width never encodes history length", async () => {
+	const html = await render(
+		payload([
+			worker({
+				name: "one-run",
+				recentRuns: [{ startedAt: "2026-08-14T05:00:00Z", durationSeconds: 3, succeeded: false, exitCode: 1 }]
+			})
+		])
+	);
+	// One recorded run plus nine blanks: a lone failure must not read as a
+	// wider failure than one failure in ten.
+	assert.equal(html.match(/<li class="workers-runs__tick/g).length, 10);
+	assert.equal(html.match(/workers-runs__tick--empty/g).length, 9);
+	assert.equal(html.match(/workers-runs__tick--failed/g).length, 1);
+});
+
+test("a full history renders ten real ticks and no blanks", async () => {
+	const runs = Array.from({ length: 10 }, (unused, index) => ({
+		startedAt: `2026-08-14T0${index}:00:00Z`,
+		durationSeconds: 5,
+		succeeded: true
+	}));
+	const html = await render(payload([worker({ name: "busy", recentRuns: runs })]));
+	assert.equal(html.match(/workers-runs__tick--ok/g).length, 10);
+	assert.equal(html.match(/workers-runs__tick--empty/g), null);
+});
+
+test("a long operator note is clamped and expands in place", async () => {
+	const long = "Reconcile every unresolved attribution against later evidence. ".repeat(6);
+	await render(payload([worker({ description: long })]));
+	const note = document.querySelector(".workers-card__note");
+	const toggle = document.querySelector("[data-workers-more]");
+	assert.ok(note.classList.contains("workers-card__note--clamped"));
+	assert.equal(toggle.getAttribute("aria-expanded"), "false");
+
+	toggle.click();
+	assert.ok(!note.classList.contains("workers-card__note--clamped"));
+	assert.equal(toggle.getAttribute("aria-expanded"), "true");
+	assert.match(toggle.textContent, /Show less/);
+
+	toggle.click();
+	assert.ok(note.classList.contains("workers-card__note--clamped"));
+	assert.match(toggle.textContent, /Show full note/);
+});
+
+test("a short operator note gets no toggle", async () => {
+	const html = await render(payload([worker({ description: "Mirror the official catalog." })]));
+	assert.doesNotMatch(html, /data-workers-more/);
+	assert.doesNotMatch(html, /workers-card__note--clamped/);
+});
+
+test("methodology entries are labelled for readers rather than by machine key", async () => {
+	const html = await render({
+		workers: [worker()],
+		counts: { healthy: 1 },
+		definitions: {
+			recorded: "Only executed runs are recorded.",
+			stalled: "No run for 10 or more periods."
+		}
+	});
+	assert.match(html, /What counts as a run/);
+	assert.match(html, /<dt data-status="stalled">Stalled<\/dt>/);
+});
+
+test("summary counts lead with the worst status", async () => {
+	const html = await render(
+		payload([worker(), worker({ name: "broken", status: "failing", lastRunSucceeded: false, lastRunExitCode: 3 })])
+	);
+	assert.ok(html.indexOf('data-status="failing"') < html.indexOf('data-status="healthy"'));
+});

@@ -255,7 +255,10 @@ summary:focus-visible,
 	padding: var(--space-4) var(--space-0);
 }
 
-/* Visually hidden but available to screen readers. */
+/* Visually hidden but available to screen readers. `.visually-hidden` is the
+   general utility; `.skip-label` is the skip link's own use of it and stays as
+   an alias so existing markup keeps working. */
+.visually-hidden,
 .skip-label {
 	position: absolute;
 	width: 1px;
