@@ -228,6 +228,36 @@ test("methodology entries are labelled for readers rather than by machine key", 
 	assert.match(html, /<dt data-status="stalled">Stalled<\/dt>/);
 });
 
+test("the what-counts-as-a-run note sits outside the state grid", async () => {
+	await render({
+		workers: [worker()],
+		counts: { healthy: 1 },
+		definitions: {
+			recorded: "Only executed runs are recorded.",
+			stalled: "No run for 10 or more periods.",
+			healthy: "The most recent run succeeded."
+		}
+	});
+	const states = document.querySelector(".workers-method__states");
+	const notes = document.querySelector(".workers-method__notes");
+	// Left in the grid it takes a column and wraps to a row of its own, which
+	// reads as one more state rather than as a caveat about all of them.
+	assert.equal(states.querySelector('[data-status="recorded"]'), null);
+	assert.equal(states.querySelectorAll("dt").length, 2);
+	assert.equal(notes.querySelectorAll("dt").length, 1);
+	assert.equal(notes.querySelector("dt").dataset.status, "recorded");
+});
+
+test("an all-states payload renders no empty note list", async () => {
+	await render({
+		workers: [worker()],
+		counts: { healthy: 1 },
+		definitions: { stalled: "No run for 10 or more periods." }
+	});
+	assert.equal(document.querySelector(".workers-method__notes"), null);
+	assert.equal(document.querySelectorAll(".workers-method__states dt").length, 1);
+});
+
 test("summary counts lead with the worst status", async () => {
 	const html = await render(
 		payload([worker(), worker({ name: "broken", status: "failing", lastRunSucceeded: false, lastRunExitCode: 3 })])

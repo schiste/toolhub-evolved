@@ -62,6 +62,16 @@ function definitionLabel(key) {
 	return labels[/** @type {keyof typeof labels} */ (key)] || key;
 }
 
+/**
+ * One term/definition pair. `data-status` stays on every row, note or not, so
+ * the markup keeps naming the backend key it came from.
+ *
+ * @param {[string, unknown]} entry
+ */
+function definitionRow([key, value]) {
+	return `<div><dt data-status="${esc(key)}">${esc(definitionLabel(key))}</dt><dd>${esc(String(value))}</dd></div>`;
+}
+
 /** @param {unknown} value */
 function elapsed(value) {
 	const minutes = Number(value);
@@ -179,6 +189,12 @@ function workersHTML(payload) {
 	// Counts arrive keyed by status, so their order is the backend's object
 	// order. Sorting by severity keeps the worst number leftmost.
 	const summary = Object.entries(counts).sort(([a], [b]) => rank(a) - rank(b));
+	// The backend documents states and non-states in one dict. Only the states
+	// belong in the grid: `recorded` is a caveat about what a run is at all, and
+	// left in the grid it wraps onto a row of its own and reads as a sixth state.
+	const definitionEntries = Object.entries(definitions);
+	const states = definitionEntries.filter(([key]) => key in STATUS_ORDER).sort(([a], [b]) => rank(a) - rank(b));
+	const notes = definitionEntries.filter(([key]) => !(key in STATUS_ORDER));
 	return `<div class="workers-page__inner">
 		<header class="workers-hero">
 			<p class="workers-hero__eyebrow">${esc(t("workers.eyebrow", "Evolved data"))}</p>
@@ -203,13 +219,12 @@ function workersHTML(payload) {
 		<div class="workers-grid">${sorted.map((worker) => workerRow(worker)).join("")}</div>
 		<details class="workers-method">
 			<summary>${esc(t("workers.methodTitle", "How these states are decided"))}</summary>
-			<dl>${Object.entries(definitions)
-				.sort(([a], [b]) => rank(a) - rank(b))
-				.map(
-					([key, value]) =>
-						`<div><dt data-status="${esc(key)}">${esc(definitionLabel(key))}</dt><dd>${esc(String(value))}</dd></div>`
-				)
-				.join("")}</dl>
+			<dl class="workers-method__states">${states.map((entry) => definitionRow(entry)).join("")}</dl>
+			${
+				notes.length > 0
+					? `<dl class="workers-method__notes">${notes.map((entry) => definitionRow(entry)).join("")}</dl>`
+					: ""
+			}
 		</details>
 	</div>`;
 }
