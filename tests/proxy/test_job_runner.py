@@ -10,6 +10,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
+from sqlalchemy.exc import DBAPIError  # noqa: E402
+
 from backend import DEFAULT_DB_URL, db, job_catalog, job_contract, job_runner  # noqa: E402
 
 
@@ -152,3 +154,90 @@ def test_no_scheduled_job_entrypoint_still_configures_the_database_by_hand():
                 if script.exists() and "db.configure(os.environ.get" in script.read_text():
                     offenders.append(name)
     assert sorted(set(offenders)) == []
+
+
+GONE_AWAY = "MySQL server has gone away"
+REJECTED = "Unknown column"
+
+
+def _rejected() -> Exception:
+    """Build a DBAPIError the pool never invalidated: the statement itself failed."""
+    return DBAPIError("SELECT 1", {}, Exception(REJECTED))
+
+
+def _disconnect() -> Exception:
+    """Build the DBAPIError pymysql raises when ToolsDB drops the connection."""
+    error = DBAPIError("SELECT 1", {}, Exception(GONE_AWAY))
+    error.connection_invalidated = True
+    return error
+
+
+def test_a_connection_dropped_mid_run_is_retried_once(capsys):
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise _disconnect()
+        return {"attempt": len(attempts)}
+
+    code = job_runner.run_job("example-job", body, retry_on_disconnect=True)
+    assert code == job_contract.EXIT_OK
+    assert attempts == [1, 1]
+    out = capsys.readouterr()
+    assert json.loads(out.out.strip().removeprefix("example-job: ")) == {"attempt": 2}
+    assert "retrying once" in out.err
+
+
+def test_the_retry_is_opt_in_so_a_body_with_side_effects_never_repeats():
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        raise _disconnect()
+
+    with pytest.raises(DBAPIError):
+        job_runner.run_job("example-job", body)
+    assert attempts == [1]
+
+
+def test_a_failure_that_is_not_a_disconnect_is_not_retried():
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        # Same exception class, but the pool never invalidated the connection:
+        # the statement itself was rejected, and running it again would only
+        # reject it again.
+        raise _rejected()
+
+    with pytest.raises(DBAPIError):
+        job_runner.run_job("example-job", body, retry_on_disconnect=True)
+    assert attempts == [1]
+
+
+def test_the_retry_re_enters_through_the_lock_rather_than_resuming_inside_it(capsys, monkeypatch):
+    from contextlib import contextmanager
+
+    acquisitions = []
+
+    @contextmanager
+    def lock(_name, **_kwargs):
+        acquisitions.append(1)
+        # A dropped connection released whatever locks it held, so the second
+        # attempt must find out who owns it now instead of assuming it still does.
+        yield acquisitions == [1]
+
+    monkeypatch.setattr(db, "advisory_lock", lock)
+    attempts = []
+
+    def body() -> dict:
+        attempts.append(1)
+        raise _disconnect()
+
+    code = job_runner.run_job("example-job", body, lock=True, retry_on_disconnect=True)
+    assert code == job_contract.EXIT_OK
+    assert acquisitions == [1, 1]
+    # The lock was gone on the retry, so the body never ran a second time.
+    assert attempts == [1]
+    assert json.loads(capsys.readouterr().out.strip()) == {"locked": True}
