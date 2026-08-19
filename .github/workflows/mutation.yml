@@ -26,21 +26,36 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    # core and organisms-rest skip static mutants. A static mutant lives
-                    # in code that runs at module load, so Stryker cannot isolate it per
-                    # test: it reloads the whole module graph and reruns every covering
-                    # test, once per mutant. core carries 691 of them (12% of mutants,
-                    # ~79% of projected runtime), organisms-rest 349 (8%, ~71%). Those
-                    # reloads accumulate off-heap — past Node's ~4 GB heap cap, so
-                    # nothing bounds them — until throughput reaches zero: the tested
-                    # count freezes while the ETA climbs past 2h, then the runner is
-                    # killed mid-run. Because `break: 100` already makes every job red,
-                    # that death is indistinguishable from a below-threshold score, and
-                    # both shards had quietly stopped being measured at all. Skipping
-                    # the static mutants trades their signal for a shard that finishes.
+                    # Three shards used to freeze mid-run and then be killed by the runner
+                    # at a fixed mutant count: core at 1452, organisms-rest at 702,
+                    # atoms+molecules at 1751. The cause was finally pinned down by
+                    # reproducing organisms-rest inside a memory-capped container: a few
+                    # mutants delete the termination condition of a self-re-triggering DOM
+                    # event handler. icon-fallbacks.js is the worst offender — its `error`
+                    # listener reacts to a failed image load by setting `src`, which fails
+                    # and fires `error` again. 16 of its 80 mutants knock out one of the
+                    # four brakes, and the handler then recurses without bound, allocating
+                    # a <template> plus a parsed HTML string per turn: ~15 GB in ~15 s, far
+                    # faster than Stryker's 5 s wall-clock timeout can react. account.js,
+                    # command-palette.js and langpicker.js have their own.
+                    # The fixed counts are simply where a runaway mutant sits in a stable
+                    # ordering. Whether the *job* died was a kernel OOM race between the
+                    # vitest child (Stryker restarts it, and the mutant is recorded as a
+                    # RuntimeError) and the runner agent (fatal). The memory cap on the
+                    # Stryker step below makes the child the only possible victim, which
+                    # fixes the whole class without hunting individual mutants.
+                    # Four theories were falsified along the way; recorded so they are not
+                    # retried: static mutants (`--ignoreStatic` moved core's set across
+                    # 5688/5509/5515 and organisms-rest's across 4518/4335, and both still
+                    # died at the same counts), per-run worker accumulation, Stryker-parent
+                    # accumulation (thread count is flat at 19 and children hold 15.2 of
+                    # 15.8 GB), and concurrency (two concurrency-1 replicates died at 702
+                    # and 703 with a single child peaking near 15 GB).
+                    # Because `break: 100` already makes every job red, these deaths were
+                    # indistinguishable from a below-threshold score, and the affected
+                    # shards had quietly stopped being measured at all.
                     - name: core
                       scope: "public_html/lib/core/**/*.js"
-                      ignoreStatic: "true"
                     - name: atoms+molecules
                       scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
                     # force-graph is isolated: its rAF/canvas physics loop yields
@@ -66,8 +81,6 @@ jobs:
                     # (no hang cluster) — runs at the default concurrency.
                     - name: organisms-rest
                       scope: "public_html/lib/organisms/**/*.js,!public_html/lib/organisms/force-graph.js,!public_html/lib/organisms/quickview.js"
-                      # 349 static mutants — see the note above core.
-                      ignoreStatic: "true"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
                     - name: views-b
@@ -90,7 +103,22 @@ jobs:
                   # infinite-loop mutants are killed by Stryker's timeout, never by
                   # starving the runner agent. Heavy shards may pin it lower (matrix).
                   CONCURRENCY: ${{ matrix.concurrency || '2' }}
-                  # Empty unless the shard opts in, and `${VAR:+...}` drops the flag
-                  # entirely when empty rather than passing a bare "".
-                  IGNORE_STATIC: ${{ matrix.ignoreStatic || '' }}
-              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${IGNORE_STATIC:+--ignoreStatic}
+                  # On by default for every shard; a shard may override it in the
+                  # matrix. `${VAR:+...}` still drops the flag if ever set empty.
+                  RUNNER_REUSE: ${{ matrix.maxTestRunnerReuse || '100' }}
+              # Runaway mutants (see the matrix comment) allocate ~15 GB in ~15 s.
+              # Uncapped, the kernel's OOM killer picks between the vitest child —
+              # which Stryker restarts, recording the mutant as a RuntimeError — and
+              # the runner agent, which kills the job. A cgroup scope makes the child
+              # the only candidate. Verified locally: organisms-rest dies at 702/4518
+              # uncapped, and under a 4 GB cap completes all 4518 (41.36%) having
+              # absorbed ~60 explosions. 6 GB here, on a 16 GB runner.
+              run: |
+                  set -- --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
+                  if sudo -n systemd-run --version >/dev/null 2>&1; then
+                      exec sudo -n systemd-run --scope --quiet --collect \
+                          -p MemoryMax=6G -p MemorySwapMax=0 \
+                          ./node_modules/.bin/stryker run "$@"
+                  fi
+                  echo "::warning::systemd-run unavailable - Stryker is running without a memory cap"
+                  exec ./node_modules/.bin/stryker run "$@"
