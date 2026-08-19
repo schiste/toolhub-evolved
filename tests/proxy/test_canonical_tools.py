@@ -414,3 +414,13 @@ def test_tools_by_name_dedupes_repeated_names():
     result = canonical_tools.tools_by_name(["dup", "dup", "missing"])
 
     assert set(result) == {"dup"}
+
+
+def test_a_bare_toolforge_prefix_restores_nothing_from_the_runtime_host():
+    # `toolforge-` alone leaves the name-derived project empty, so there is
+    # nothing for the runtime host to be checked against. The hyphen-restoring
+    # exception is a confirmation of the name, never a lookup, so with no name
+    # to confirm the host's own project must not become an answer on its own.
+    record = {"url": "https://xn--9s9h.toolforge.org/"}
+
+    assert canonical_tools.verified_toolforge_project_names("toolforge-", record) == []

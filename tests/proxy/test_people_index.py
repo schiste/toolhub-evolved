@@ -682,3 +682,26 @@ def test_relationship_directory_filter_ignores_an_unknown_verification_value():
         role="", verification="everything", project="", checked_at=utcnow()
     )
     assert clause is not None
+
+
+def test_handle_owner_ids_rejects_a_blank_handle():
+    # A blank handle is not a handle nobody holds, it is not a question. Left
+    # unguarded the normalized column would be matched against "", which every
+    # identifier written without one would answer.
+    with db.session_scope() as s:
+        person = people_index.ensure_person(
+            s, display_name="Ada", wiki_username="Ada", wikimedia_global_user_id="42", source="test"
+        )
+        s.flush()
+
+        assert people_index.handle_owner_ids(s, "Ada") == {person.id}
+        assert people_index.handle_owner_ids(s, "   ") == set()
+
+
+def test_promoting_an_unresolved_observation_refuses_a_blank_label():
+    # The stored label is the whole observation here, so a blank one names
+    # nobody and there is nothing to re-decide.
+    with db.session_scope() as s:
+        row = UnresolvedAttributionEvidence(tool_name="toolx", observed_label="   ")
+
+        assert people_index.promote_unresolved_attribution(s, row) is None
