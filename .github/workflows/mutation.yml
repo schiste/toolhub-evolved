@@ -41,16 +41,26 @@ jobs:
                     # The fixed counts are simply where a runaway mutant sits in a stable
                     # ordering. Whether the *job* died was a kernel OOM race between the
                     # vitest child (Stryker restarts it, and the mutant is recorded as a
-                    # RuntimeError) and the runner agent (fatal). The memory cap on the
-                    # Stryker step below makes the child the only possible victim, which
-                    # fixes the whole class without hunting individual mutants.
-                    # Four theories were falsified along the way; recorded so they are not
-                    # retried: static mutants (`--ignoreStatic` moved core's set across
+                    # RuntimeError) and the runner agent (fatal).
+                    # STILL UNFIXED. Five theories have been falsified; recorded so they are
+                    # not retried: static mutants (`--ignoreStatic` moved core's set across
                     # 5688/5509/5515 and organisms-rest's across 4518/4335, and both still
                     # died at the same counts), per-run worker accumulation, Stryker-parent
                     # accumulation (thread count is flat at 19 and children hold 15.2 of
-                    # 15.8 GB), and concurrency (two concurrency-1 replicates died at 702
-                    # and 703 with a single child peaking near 15 GB).
+                    # 15.8 GB), concurrency (two concurrency-1 replicates died at 702 and
+                    # 703 with a single child peaking near 15 GB), and a cgroup memory cap.
+                    # That last one was tried in this file and reverted: run 32291137195
+                    # wrapped the step in `systemd-run --scope -p MemoryMax=6G` and made
+                    # things strictly worse. systemd applies its OOM policy to the whole
+                    # scope, so shards exited 143 (SIGTERM) instead of the kernel SIGKILLing
+                    # only the vitest child. The targeted shards barely moved (1452->1448,
+                    # 1751->1746, 702->695) while organisms-graph, organisms-qv and views-b
+                    # went from scoring to dying: 6 of 9 shards scored before it, 3 of 9
+                    # after. The 4 GB Docker reproduction that motivated it (organisms-rest
+                    # completing all 4518 at 41.36%) could not surface this — a container
+                    # has no systemd to tear the unit down, so the kernel picks the largest
+                    # process and Stryker survives. Test `-p OOMPolicy=continue` in a
+                    # throwaway job before retrying this route.
                     # Because `break: 100` already makes every job red, these deaths were
                     # indistinguishable from a below-threshold score, and the affected
                     # shards had quietly stopped being measured at all.
@@ -106,19 +116,4 @@ jobs:
                   # On by default for every shard; a shard may override it in the
                   # matrix. `${VAR:+...}` still drops the flag if ever set empty.
                   RUNNER_REUSE: ${{ matrix.maxTestRunnerReuse || '100' }}
-              # Runaway mutants (see the matrix comment) allocate ~15 GB in ~15 s.
-              # Uncapped, the kernel's OOM killer picks between the vitest child —
-              # which Stryker restarts, recording the mutant as a RuntimeError — and
-              # the runner agent, which kills the job. A cgroup scope makes the child
-              # the only candidate. Verified locally: organisms-rest dies at 702/4518
-              # uncapped, and under a 4 GB cap completes all 4518 (41.36%) having
-              # absorbed ~60 explosions. 6 GB here, on a 16 GB runner.
-              run: |
-                  set -- --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
-                  if sudo -n systemd-run --version >/dev/null 2>&1; then
-                      exec sudo -n systemd-run --scope --quiet --collect \
-                          -p MemoryMax=6G -p MemorySwapMax=0 \
-                          ./node_modules/.bin/stryker run "$@"
-                  fi
-                  echo "::warning::systemd-run unavailable - Stryker is running without a memory cap"
-                  exec ./node_modules/.bin/stryker run "$@"
+              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
