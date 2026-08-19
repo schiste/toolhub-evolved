@@ -26,26 +26,26 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    # Every shard recycles the Stryker test-runner worker every 100 mutants.
-                    # With `coverageAnalysis: perTest` Stryker keeps one vitest process alive
-                    # across every mutant run to avoid re-paying startup, so whatever a run
-                    # retains (module graphs, happy-dom trees) accumulates in that single
-                    # process — largely off-heap, where Node's ~4 GB cap cannot bound it.
-                    # Affected shards freeze mid-run and are then killed by the runner at a
-                    # fixed mutant count: core at 1452, organisms-rest at 702, atoms+molecules
-                    # at 1751. Those fixed counts are the tell. `--ignoreStatic` was tried
-                    # first: it moved core's set across 5688, 5509 and 5515 and organisms-rest's
-                    # across 4518 and 4335, and both still died at the same count with identical
-                    # survivor and timeout tallies, so no individual mutant is at fault — the
-                    # worker dies after a fixed amount of work, whatever that work was. This is
-                    # default-on rather than opt-in because the margin is invisible until it is
-                    # gone: atoms+molecules scored 64.34% on one run and died at 1751 on the
-                    # next, having only ever been passing by luck. Unlike `--ignoreStatic` it
-                    # costs no comparability, since recycling changes the worker lifecycle and
-                    # not the mutant set. 100 leaves ~3.5x headroom on the tightest shard.
+                    # Three shards freeze mid-run and are then killed by the runner at
+                    # a fixed mutant count: core at 1452, organisms-rest at 702,
+                    # atoms+molecules at 1751. Those counts are invariant across runs.
+                    # Two fixes were tried and both falsified. `--ignoreStatic` moved
+                    # core's mutant set across 5688/5509/5515 and organisms-rest's across
+                    # 4518/4335; both still died at the same count with identical survivor
+                    # and timeout tallies, so no single mutant is at fault. Then
+                    # `--maxTestRunnerReuse 100` recycled the vitest worker ~3x before
+                    # organisms-rest reached 702 and changed nothing (and left every other
+                    # shard's score byte-identical), so the growth is not in the worker.
+                    # Throughput decays progressively over the ~10 progress ticks before
+                    # each freeze — atoms+molecules ran 31, 29, 18, 11, 5, 4, then 0 with
+                    # 781 mutants still queued — while shards that finish never drop below
+                    # 10-19 per tick until their queue drains. So this is resource
+                    # exhaustion, not one slow mutant. The untested suspect is the Stryker
+                    # parent process, which is never recycled and retains every mutant's
+                    # result and failure message for the final report.
                     # Because `break: 100` already makes every job red, these deaths were
-                    # indistinguishable from a below-threshold score, and the affected shards
-                    # had quietly stopped being measured at all.
+                    # indistinguishable from a below-threshold score, and the affected
+                    # shards had quietly stopped being measured at all.
                     - name: core
                       scope: "public_html/lib/core/**/*.js"
                     - name: atoms+molecules
@@ -95,7 +95,4 @@ jobs:
                   # infinite-loop mutants are killed by Stryker's timeout, never by
                   # starving the runner agent. Heavy shards may pin it lower (matrix).
                   CONCURRENCY: ${{ matrix.concurrency || '2' }}
-                  # On by default for every shard; a shard may override it in the
-                  # matrix. `${VAR:+...}` still drops the flag if ever set empty.
-                  RUNNER_REUSE: ${{ matrix.maxTestRunnerReuse || '100' }}
-              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
+              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY"
