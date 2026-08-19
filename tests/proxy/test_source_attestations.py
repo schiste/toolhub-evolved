@@ -1418,3 +1418,24 @@ def test_incremental_refresh_reprocesses_sources_touched_by_identity_changes():
         assert result["sources"] >= 1
         assert result["fullAudit"] == 0
         assert session.get(ToolinfoSourceAttestation, source_id) is not None
+
+
+def test_a_spelling_that_normalizes_to_nothing_is_not_an_alias():
+    # Normalization strips a `User:` prefix and collapses spacing, so a stored
+    # spelling can survive as a value and still name nobody. Keeping "" as an
+    # alias would make every unnamed person match every other one.
+    with db.session_scope() as s:
+        person = Person(canonical_key="test:blank-spellings", display_name="")
+        s.add(person)
+        s.flush()
+        s.add(
+            PersonIdentifier(
+                person_id=person.id,
+                namespace=people_index.NS_WIKI_USERNAME,
+                value="User:",
+                normalized_value="user:",
+            )
+        )
+        s.flush()
+
+        assert source_attestations._person_aliases(s, person.id) == set()

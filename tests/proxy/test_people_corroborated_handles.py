@@ -13,8 +13,10 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import db, people_index, people_policy, people_reconcile  # noqa: E402
 from backend.models import (  # noqa: E402
+    ApiCacheMeta,
     ToolPersonRelationship,
     ToolRelationshipEvidence,
+    ToolSummaryCache,
     UnresolvedAttributionEvidence,
     utcnow,
 )
@@ -579,3 +581,48 @@ def test_reconvergence_ignores_an_expired_observation():
             "tools": 0,
         }
         assert _author_person_ids(session, "toolx") == set()
+
+
+def test_a_cursor_stored_as_something_other_than_a_number_starts_from_the_head():
+    # The cursor is persisted state, so a migration or a hand edit can leave it
+    # unreadable. Refusing to read it has to mean starting the pass over, not
+    # raising -- the pass runs unattended, and one bad row must not cost every
+    # subsequent hour's crediting.
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        session.add(ApiCacheMeta(key=people_reconcile.RECONVERGE_CURSOR_KEY, value="not-a-number"))
+        session.flush()
+
+        assert people_reconcile.reconverge_attributions(session) == {
+            "examined": 1,
+            "promoted": 1,
+            "tools": 1,
+        }
+        assert _author_person_ids(session, "toolx") == {ada.id}
+
+
+def test_reconvergence_drops_the_cached_summary_of_a_tool_it_recredited():
+    # The summary cache is what the public tool card reads. A promotion that
+    # left it standing would credit the person in the database and nowhere a
+    # visitor can see, until the cache happened to expire on its own.
+    with db.session_scope() as session:
+        ada = _stable_person(session, "Ada", "42", wiki_username="Ada")
+        _canonical_author_label(session, "toolx", "Ada")
+        _verified_maintainer_edge(session, "toolx", "Ada")
+        now = utcnow()
+        session.add(
+            ToolSummaryCache(
+                tool_name="toolx",
+                summary={"people": []},
+                expires_at=now + timedelta(hours=1),
+                stale_until=now + timedelta(hours=2),
+            )
+        )
+        session.flush()
+
+        assert people_reconcile.reconverge_attributions(session)["promoted"] == 1
+        assert _author_person_ids(session, "toolx") == {ada.id}
+        session.flush()
+        assert session.execute(select(ToolSummaryCache)).scalars().all() == []

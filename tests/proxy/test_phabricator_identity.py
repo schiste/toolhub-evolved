@@ -101,3 +101,31 @@ def test_lookup_raises_rather_than_reporting_an_absent_real_name_on_an_outage():
 def test_evidence_url_escapes_the_handle():
     provider = phabricator_identity.PhabricatorProfileProvider()
     assert provider.evidence_url("Soda") == "https://phabricator.wikimedia.org/p/Soda/"
+
+def test_the_default_fetcher_reads_the_public_profile_url(monkeypatch):
+    # Every other test here injects a fetcher, which leaves the one call that
+    # actually reaches Phabricator unexercised. Pin the request it makes: the
+    # public profile URL, a browser-shaped Accept, our own User-Agent, and a
+    # timeout — an unbounded read here would stall the whole sweep.
+    calls = []
+
+    class _Response:
+        status_code = 200
+        text = _page("Soda", "Sohom Datta")
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return _Response()
+
+    monkeypatch.setattr(phabricator_identity.requests, "get", fake_get)
+    provider = phabricator_identity.PhabricatorProfileProvider()
+
+    assert provider.lookup("Soda") == phabricator_identity.PhabricatorProfile(
+        username="Soda", real_name="Sohom Datta"
+    )
+    assert len(calls) == 1
+    url, kwargs = calls[0]
+    assert url == "https://phabricator.wikimedia.org/p/Soda/"
+    assert kwargs["timeout"] == phabricator_identity.PHABRICATOR_TIMEOUT
+    assert kwargs["headers"]["Accept"] == "text/html"
+    assert kwargs["headers"]["User-Agent"]
