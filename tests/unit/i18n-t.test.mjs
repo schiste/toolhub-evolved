@@ -9,15 +9,59 @@ import {
 	pickLocalized,
 	pseudoLocalize,
 	setLocale,
+	setKnownMessageKeys,
 	setMessages,
 	t,
 	tData,
 	tWithElements
 } from "../../public_html/lib/core/i18n.js";
 
+// These tests exercise the resolver itself, so they address it with keys like
+// `x.p` that stand for "some message" and deliberately do not name a real one.
+// The suite-wide key set (./_i18n-keys.mjs) exists to make a key that no
+// catalog carries visible everywhere else; here that is the subject matter.
+setKnownMessageKeys(null);
+
 afterEach(() => {
 	setMessages({});
+	setKnownMessageKeys(null);
 	localStorage.removeItem(LOCALE_KEY);
+});
+
+test("a restricted key set renders a key the catalog cannot translate as a marker", () => {
+	// What the rest of the suite relies on: with the key set installed the key
+	// reaches the output, so a call site that names a key no catalog carries
+	// stops rendering its English and starts failing the assertion under it.
+	setKnownMessageKeys(["x.known"]);
+
+	assert.equal(t("x.known", "Known"), "Known");
+	assert.equal(t("x.absent", "Known"), "[unknown i18n key x.absent]");
+	assert.equal(t("", "Known"), "[unknown i18n key ]");
+});
+
+test("the marker replaces every resolution, not just the ones with a fallback", () => {
+	// tData and tWithElements resolve the same way, and a boot message is only
+	// exempt because the generated catalog carries every one of its keys too.
+	setKnownMessageKeys(["x.known"]);
+
+	assert.equal(tData("x.absent", "Known"), "[unknown i18n key x.absent]");
+	assert.equal(tWithElements("x.absent", "Known"), "[unknown i18n key x.absent]");
+	assert.equal(t("router.loadingToolhubData"), "[unknown i18n key router.loadingToolhubData]");
+});
+
+test("clearing the key set accepts any key again, which is how the app runs", () => {
+	setKnownMessageKeys(["x.known"]);
+	setKnownMessageKeys(null);
+
+	assert.equal(t("x.absent", "Known"), "Known");
+});
+
+test("an empty key set restricts every key rather than none", () => {
+	// `[]` and `null` are both falsy-adjacent shapes a caller could pass; only
+	// null means "do not restrict", so the two must not collapse together.
+	setKnownMessageKeys([]);
+
+	assert.equal(t("x.known", "Known"), "[unknown i18n key x.known]");
 });
 
 test("t returns the English fallback when no catalog is installed", () => {
