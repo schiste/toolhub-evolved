@@ -45,7 +45,11 @@ test("nothing git ignores is left for eslint to walk", async () => {
 			"*.cjs",
 			// Installed packages are ignored by eslint's own defaults and there are
 			// hundreds of thousands of them; listing them would dwarf the answer.
-			":!:**/node_modules/**"
+			// Both spellings are needed: pathspec wildcards match slashes, so the
+			// leading `**/` requires a directory above it and therefore never
+			// matched the root-level node_modules/ that holds every one of them.
+			":!:**/node_modules/**",
+			":!:node_modules/**"
 		],
 		{ cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
 	)

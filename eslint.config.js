@@ -208,6 +208,13 @@ export default [
 			"test-results/**",
 			"coverage/**",
 			"htmlcov/**",
+			// Local Python virtualenvs. Both vendor JavaScript (coverage's HTML
+			// report, werkzeug's debugger, urllib3's emscripten worker), and none
+			// of it is ours to lint. `eslint .` skips them today only because its
+			// directory walk skips dot-directories, which is a coincidence of the
+			// name rather than a decision -- so the decision is written here.
+			".venv/**",
+			".venv-ci/**",
 			"dist/**",
 			"dist.tmp/**",
 			// Broker state, and under worktrees/ a full checkout of this repo per
