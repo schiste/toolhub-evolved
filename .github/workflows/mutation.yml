@@ -26,8 +26,21 @@ jobs:
             fail-fast: false
             matrix:
                 include:
+                    # core and organisms-rest skip static mutants. A static mutant lives
+                    # in code that runs at module load, so Stryker cannot isolate it per
+                    # test: it reloads the whole module graph and reruns every covering
+                    # test, once per mutant. core carries 691 of them (12% of mutants,
+                    # ~79% of projected runtime), organisms-rest 349 (8%, ~71%). Those
+                    # reloads accumulate off-heap — past Node's ~4 GB heap cap, so
+                    # nothing bounds them — until throughput reaches zero: the tested
+                    # count freezes while the ETA climbs past 2h, then the runner is
+                    # killed mid-run. Because `break: 100` already makes every job red,
+                    # that death is indistinguishable from a below-threshold score, and
+                    # both shards had quietly stopped being measured at all. Skipping
+                    # the static mutants trades their signal for a shard that finishes.
                     - name: core
                       scope: "public_html/lib/core/**/*.js"
+                      ignoreStatic: "true"
                     - name: atoms+molecules
                       scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
                     # force-graph is isolated: its rAF/canvas physics loop yields
@@ -53,6 +66,8 @@ jobs:
                     # (no hang cluster) — runs at the default concurrency.
                     - name: organisms-rest
                       scope: "public_html/lib/organisms/**/*.js,!public_html/lib/organisms/force-graph.js,!public_html/lib/organisms/quickview.js"
+                      # 349 static mutants — see the note above core.
+                      ignoreStatic: "true"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
                     - name: views-b
@@ -75,4 +90,7 @@ jobs:
                   # infinite-loop mutants are killed by Stryker's timeout, never by
                   # starving the runner agent. Heavy shards may pin it lower (matrix).
                   CONCURRENCY: ${{ matrix.concurrency || '2' }}
-              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY"
+                  # Empty unless the shard opts in, and `${VAR:+...}` drops the flag
+                  # entirely when empty rather than passing a bare "".
+                  IGNORE_STATIC: ${{ matrix.ignoreStatic || '' }}
+              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${IGNORE_STATIC:+--ignoreStatic}
