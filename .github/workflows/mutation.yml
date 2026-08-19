@@ -26,21 +26,26 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    # core and organisms-rest skip static mutants. A static mutant lives
-                    # in code that runs at module load, so Stryker cannot isolate it per
-                    # test: it reloads the whole module graph and reruns every covering
-                    # test, once per mutant. core carries 691 of them (12% of mutants,
-                    # ~79% of projected runtime), organisms-rest 349 (8%, ~71%). Those
-                    # reloads accumulate off-heap — past Node's ~4 GB heap cap, so
-                    # nothing bounds them — until throughput reaches zero: the tested
-                    # count freezes while the ETA climbs past 2h, then the runner is
-                    # killed mid-run. Because `break: 100` already makes every job red,
-                    # that death is indistinguishable from a below-threshold score, and
-                    # both shards had quietly stopped being measured at all. Skipping
-                    # the static mutants trades their signal for a shard that finishes.
+                    # core and organisms-rest recycle the Stryker test-runner worker
+                    # every 100 mutants. With `coverageAnalysis: perTest` Stryker keeps
+                    # one vitest process alive across every mutant run to avoid re-paying
+                    # startup, so whatever a run retains (module graphs, happy-dom trees)
+                    # accumulates in that single process — largely off-heap, where Node's
+                    # ~4 GB cap cannot bound it. Both shards froze mid-run and were then
+                    # killed by the runner: core at exactly 1452 mutants, organisms-rest
+                    # at exactly 702, every time. Those fixed counts are the tell.
+                    # `--ignoreStatic` shrank core's set 5688 -> 5509 and organisms-rest's
+                    # 4518 -> 4335, and both still died at the same count with identical
+                    # survivor and timeout tallies — so no individual mutant is at fault;
+                    # the worker dies after a fixed amount of work, whatever that work
+                    # was. The two counts differ in proportion to what each run retains
+                    # (organisms builds DOM, core does not). 100 leaves ~3.5x headroom on
+                    # the tighter shard. Because `break: 100` already makes every job red,
+                    # these deaths were indistinguishable from a below-threshold score and
+                    # both shards had quietly stopped being measured at all.
                     - name: core
                       scope: "public_html/lib/core/**/*.js"
-                      ignoreStatic: "true"
+                      maxTestRunnerReuse: "100"
                     - name: atoms+molecules
                       scope: "public_html/lib/atoms/**/*.js,public_html/lib/molecules/**/*.js"
                     # force-graph is isolated: its rAF/canvas physics loop yields
@@ -66,8 +71,8 @@ jobs:
                     # (no hang cluster) — runs at the default concurrency.
                     - name: organisms-rest
                       scope: "public_html/lib/organisms/**/*.js,!public_html/lib/organisms/force-graph.js,!public_html/lib/organisms/quickview.js"
-                      # 349 static mutants — see the note above core.
-                      ignoreStatic: "true"
+                      # Dies at 702 without recycling — see the note above core.
+                      maxTestRunnerReuse: "100"
                     - name: views-a
                       scope: "public_html/views/home.js,public_html/views/search.js,public_html/views/tool.js"
                     - name: views-b
@@ -92,5 +97,5 @@ jobs:
                   CONCURRENCY: ${{ matrix.concurrency || '2' }}
                   # Empty unless the shard opts in, and `${VAR:+...}` drops the flag
                   # entirely when empty rather than passing a bare "".
-                  IGNORE_STATIC: ${{ matrix.ignoreStatic || '' }}
-              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${IGNORE_STATIC:+--ignoreStatic}
+                  RUNNER_REUSE: ${{ matrix.maxTestRunnerReuse || '' }}
+              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
