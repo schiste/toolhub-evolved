@@ -9,7 +9,7 @@ export default defineConfig({
 	test: {
 		environment: "happy-dom",
 		include: ["tests/unit/**/*.test.mjs"],
-		setupFiles: ["./tests/unit/_storage-setup.mjs"],
+		setupFiles: ["./tests/unit/_storage-setup.mjs", "./tests/unit/_i18n-keys.mjs"],
 		// Unit files share happy-dom/browser globals and partial module mocks.
 		// Keep files serial so deferred view mounts are not affected by another
 		// file mutating window/history/timers at the same time.

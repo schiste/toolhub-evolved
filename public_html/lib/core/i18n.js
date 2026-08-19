@@ -73,6 +73,8 @@ export const LOCALE = appLocale();
 // in almost every module graph, so a dependency here shifts import timing app-wide.
 /** @type {Record<string, string>} */
 let messages = {};
+/** @type {Set<string> | null} */
+let knownMessageKeys = null;
 const BANANA_PARAM = /\$(\d+)/g;
 /** `{{NAME:arg|arg…}}`; scanned rather than matched so nested braces survive. */
 const MAGIC_OPEN = "{{";
@@ -190,6 +192,25 @@ export function pseudoLocalize(text) {
  * dropped here rather than leaking into `t()` lookups.
  * @param {unknown} catalog
  */
+/**
+ * Restrict `t()` to a set of keys, rendering anything else as a visible marker;
+ * pass null to accept every key, which is how the app itself always runs.
+ *
+ * With no catalog installed `t(key, fallback)` returns the fallback, so under
+ * the unit suite the key selects nothing and any key at all renders the same
+ * English. That is invisible in a passing run and fatal under mutation testing:
+ * rewriting `t("facetGroup.keywords", "Keywords")` as `t("", "Keywords")`
+ * produces an identical page, so no test can tell the two apart. Roughly 4,000
+ * call sites became unfalsifiable that way when the English moved behind `t()`.
+ * tests/unit/_i18n-keys.mjs installs the generated catalog's key set for the
+ * whole suite, which puts the key back into the rendered output and lets the
+ * assertions already written against that English carry it again.
+ * @param {Iterable<string> | null} keys
+ */
+export function setKnownMessageKeys(keys) {
+	knownMessageKeys = keys ? new Set(keys) : null;
+}
+
 export function setMessages(catalog) {
 	messages = {};
 	if (!catalog || typeof catalog !== "object") return;
@@ -339,6 +360,7 @@ function expandMagicWords(text, params) {
  * @param {readonly unknown[]} params
  */
 function resolveMessage(key, fallback, params) {
+	if (knownMessageKeys && !knownMessageKeys.has(String(key))) return `[unknown i18n key ${String(key)}]`;
 	const hasCatalogMessage = Object.prototype.hasOwnProperty.call(messages, key);
 	const hasBootMessage = Object.prototype.hasOwnProperty.call(BOOT_MESSAGES, key);
 	let out = hasCatalogMessage ? String(messages[key]) : (fallback ?? BOOT_MESSAGES[key] ?? key);

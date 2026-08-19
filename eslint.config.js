@@ -213,6 +213,10 @@ export default [
 			// of it is ours to lint. `eslint .` skips them today only because its
 			// directory walk skips dot-directories, which is a coincidence of the
 			// name rather than a decision -- so the decision is written here.
+			// Stryker's per-mutant sandboxes: whole copies of this repo, removed when
+			// a run ends normally and left behind when one is interrupted. Linting a
+			// copy of our own source reports every finding a second time.
+			".stryker-tmp/**",
 			".venv/**",
 			".venv-ci/**",
 			"dist/**",

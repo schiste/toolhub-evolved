@@ -5,6 +5,14 @@ import { beforeEach, test } from "vitest";
 // reads it at module-evaluation time (LOCALE = appLocale()).
 import { installStorage } from "./_storage-setup.mjs";
 import * as i18n from "../../public_html/lib/core/i18n.js";
+import { setKnownMessageKeys } from "../../public_html/lib/core/i18n.js";
+
+// These tests exercise the resolver itself, so they address it with keys like
+// `x.p` that stand for "some message" and deliberately do not name a real one.
+// The suite-wide key set (./_i18n-keys.mjs) exists to make a key that no
+// catalog carries visible everywhere else; here that is the subject matter.
+setKnownMessageKeys(null);
+
 import { esc } from "../../public_html/lib/core/dom.js";
 
 beforeEach(() => {

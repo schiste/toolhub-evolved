@@ -83,7 +83,7 @@ vi.mock("../../public_html/views/router.js", async (o) => ({ ...(await o()), ren
 const SHELL = `
 	<a class="skip" href="#view">Skip to content</a>
 	<div class="mockup-banner" data-sitenotice>
-		<span class="mockup-banner__txt" data-i18n="shell.previewBanner">Evolved preview: live Toolhub data with Evolved additions.</span>
+		<span class="mockup-banner__txt" data-i18n="shell.previewBanner">Evolved preview: a local Toolhub replica with Evolved additions.</span>
 		<a class="mockup-banner__link" href="/experiments">status</a>
 		<a class="mockup-banner__link" href="/rules-of-engagement">rules</a>
 		<button type="button" data-dismiss-sitenotice>close</button>
@@ -214,7 +214,10 @@ test("importing main wires locale, theme, account, langpicker and the initial re
 	assert.equal(i18n.applyLocaleAttrs.mock.calls.length, 1);
 	assert.equal(theme.initTheme.mock.calls.length, 1);
 	assert.equal(document.documentElement.classList.contains("sitenotice-dismissed"), false);
-	assert.equal($(".mockup-banner__txt").textContent, "Evolved preview: live Toolhub data with Evolved additions.");
+	assert.equal(
+		$(".mockup-banner__txt").textContent,
+		"Evolved preview: a local Toolhub replica with Evolved additions."
+	);
 	assert.equal($('[data-footer-section="project"] a[href="/api-docs"]').textContent, "API explorer");
 	assert.equal($('[data-footer-section="project"] a[href="/health-score"]').textContent, "Health score system");
 	assert.equal($("#command-title").textContent, "Search Toolhub");
