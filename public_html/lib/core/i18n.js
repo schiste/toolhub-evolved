@@ -187,12 +187,6 @@ export function pseudoLocalize(text) {
 }
 
 /**
- * Install a fetched catalog. translatewiki writes an `@metadata` block into
- * every catalog it produces, and only string values are messages, so both are
- * dropped here rather than leaking into `t()` lookups.
- * @param {unknown} catalog
- */
-/**
  * Restrict `t()` to a set of keys, rendering anything else as a visible marker;
  * pass null to accept every key, which is how the app itself always runs.
  *
@@ -211,6 +205,12 @@ export function setKnownMessageKeys(keys) {
 	knownMessageKeys = keys ? new Set(keys) : null;
 }
 
+/**
+ * Install a fetched catalog. translatewiki writes an `@metadata` block into
+ * every catalog it produces, and only string values are messages, so both are
+ * dropped here rather than leaking into `t()` lookups.
+ * @param {unknown} catalog
+ */
 export function setMessages(catalog) {
 	messages = {};
 	if (!catalog || typeof catalog !== "object") return;
