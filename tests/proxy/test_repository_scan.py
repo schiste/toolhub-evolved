@@ -92,7 +92,9 @@ def test_scan_tool_stores_approved_repository_report_and_commit_state(monkeypatc
         return commit
 
     monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
-    monkeypatch.setattr(repository_scan, "_read_repository_tree", lambda _repo: [{"path": "README.md", "content": "tool"}])
+    monkeypatch.setattr(
+        repository_scan, "_read_repository_tree", lambda _repo: [{"path": "README.md", "content": "tool"}]
+    )
     monkeypatch.setattr(
         repository_scan,
         "_local_git_context",
@@ -206,6 +208,7 @@ def test_scan_tool_produces_analyzer_facets_end_to_end(monkeypatch):
     # The declared pass still ran in the same projection.
     assert ("technology", "python") in facets
 
+
 def _cached_tool(session, name):
     now = datetime.now(tz=UTC).replace(tzinfo=None)
     session.add(
@@ -268,9 +271,7 @@ def _seed_origin(root: Path) -> Path:
     (origin / "node_modules").mkdir()
     (origin / "node_modules" / "dep.py").write_text("import os\n", encoding="utf-8")
     repository_scan._git(["add", "-A"], cwd=origin)
-    repository_scan._git(
-        ["-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qm", "init"], cwd=origin
-    )
+    repository_scan._git(["-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qm", "init"], cwd=origin)
     return origin
 
 
@@ -323,9 +324,7 @@ def test_read_tree_tops_up_past_rejected_candidates(tmp_path):
         body = oversized if index < 10 else f"value = {index}\n"
         (origin / f"mod{index:03d}.py").write_text(body, encoding="utf-8")
     repository_scan._git(["add", "-A"], cwd=origin)
-    repository_scan._git(
-        ["-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qm", "init"], cwd=origin
-    )
+    repository_scan._git(["-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qm", "init"], cwd=origin)
 
     checkout = tmp_path / "checkout"
     repository_scan.clone_repository(f"file://{origin}", checkout)
@@ -633,12 +632,13 @@ def _host_row(url=SCAN_URL, **fields):
         )
 
 
-def _context(report=SHALLOW):
+def _context(report=SHALLOW, record=None):
     return repository_scan._report_context(
         {"repositoryContext": report},
         url=SCAN_URL,
         provider="github",
         commit_sha="abc123",
+        record=record or {},
     )
 
 
@@ -679,9 +679,9 @@ def test_the_scanners_other_overrides_are_unchanged():
 
 def test_a_context_without_a_repository_block_still_gets_host_counts():
     _host_row(contributor_count=5, commit_count=300)
-    repository = repository_scan._report_context(
-        {}, url=SCAN_URL, provider="github", commit_sha="abc123"
-    )["repository"]
+    repository = repository_scan._report_context({}, url=SCAN_URL, provider="github", commit_sha="abc123", record={})[
+        "repository"
+    ]
     assert repository["contributorCount"] == 5
 
 
@@ -811,3 +811,105 @@ def test_the_archived_signal_survives_signal_truncation():
     _host_row(archived=True, contributor_count=9, commit_count=800)
     maintenance, _report = _maintenance(_context(_fresh()))
     assert {"kind": "archived", "value": True} in maintenance["signals"]
+
+
+# --- The maintainer's declared lifecycle ------------------------------------
+#
+# deprecated and replaced_by are toolinfo fields a maintainer sets by hand.
+# They are testimony, not evidence: nothing in a checkout can confirm or
+# contradict them, so they travel in their own context block rather than
+# alongside the facts we measured.
+
+DEPRECATED = {"deprecated": True}
+SUCCESSOR = "https://toolhub.wikimedia.org/tools/successor"
+SUPERSEDED = {"deprecated": True, "replaced_by": SUCCESSOR}
+
+
+def _dormant():
+    now = datetime.now(UTC)
+    return {
+        "repository": {
+            "lastCommitAt": (now - timedelta(days=1200)).isoformat(),
+            "analyzedAt": now.isoformat(),
+        }
+    }
+
+
+def test_the_catalogue_record_reaches_the_analyzer_as_lifecycle():
+    _host_row()
+    _maintenance_ctx, report = _maintenance(_context(_fresh(), record=SUPERSEDED))
+    assert report["repositoryContext"]["lifecycle"] == {"deprecated": True, "replacedBy": SUCCESSOR}
+
+
+def test_an_undeclared_lifecycle_keeps_the_negative_and_drops_the_empty_successor():
+    # False is a measurement -- the maintainer did not retire this tool. An
+    # empty replacedBy is not, so it must not survive as a falsy successor.
+    _host_row()
+    _maintenance_ctx, report = _maintenance(_context(_fresh(), record={}))
+    assert report["repositoryContext"]["lifecycle"] == {"deprecated": False}
+
+
+def test_a_blank_replaced_by_is_not_a_successor():
+    _host_row()
+    _maintenance_ctx, report = _maintenance(_context(_fresh(), record={"replaced_by": "   "}))
+    assert report["healthCore"]["replacedBy"] == ""
+    assert report["healthCore"]["stewardshipStatus"] != "superseded"
+
+
+def test_a_recorded_successor_becomes_the_stewardship_status():
+    _host_row(archived=False)
+    _maintenance_ctx, report = _maintenance(_context(_fresh(), record=SUPERSEDED))
+    assert report["healthCore"]["stewardshipStatus"] == "superseded"
+    assert report["healthCore"]["replacedBy"] == SUCCESSOR
+
+
+def test_a_successor_outranks_the_archive_flag():
+    # Both are terminal, but only one answers "what should I use instead".
+    _host_row(archived=True)
+    _maintenance_ctx, report = _maintenance(_context(_fresh(), record=SUPERSEDED))
+    assert report["healthCore"]["sourceMaintenanceStatus"] == "archived"
+    assert report["healthCore"]["stewardshipStatus"] == "superseded"
+
+
+def test_deprecated_without_a_successor_is_its_own_status():
+    _host_row(archived=False)
+    _maintenance_ctx, report = _maintenance(_context(_fresh(), record=DEPRECATED))
+    assert report["healthCore"]["stewardshipStatus"] == "deprecated"
+    assert report["healthCore"]["replacedBy"] == ""
+
+
+def test_an_archived_repository_with_a_successor_points_at_it_instead_of_nowhere():
+    _host_row(archived=True)
+    activity = _activity(_context(_fresh(), record=SUPERSEDED))
+    assert activity["recommendations"] == [f"Use the recorded replacement: {SUCCESSOR}"]
+
+
+def test_an_archived_repository_without_one_still_says_find_an_alternative():
+    _host_row(archived=True)
+    activity = _activity(_context(_fresh(), record={}))
+    assert "Find a maintained alternative." in activity["recommendations"]
+
+
+def test_a_dormant_repository_with_a_successor_stops_asking_for_outreach():
+    # Outreach about a tool the maintainer already replaced wastes both sides'
+    # time, and the answer is already in the catalogue.
+    _host_row(archived=False)
+    activity = _activity(_context(_dormant(), record=SUPERSEDED))
+    assert activity["recommendations"] == [f"Use the recorded replacement: {SUCCESSOR}"]
+
+
+def test_a_dormant_repository_without_one_still_asks_for_outreach():
+    _host_row(archived=False)
+    activity = _activity(_context(_dormant(), record={}))
+    assert "Flag the tool for maintainer outreach or archival review." in activity["recommendations"]
+
+
+def test_the_successor_is_a_signal_that_changes_no_score():
+    # Archived costs 35 points by deliberate policy. Recording a successor
+    # improves the advice, not the arithmetic.
+    _host_row(archived=True)
+    without = _activity(_context(_fresh(), record={}))
+    with_successor = _activity(_context(_fresh(), record=SUPERSEDED))
+    added = {item["label"] for item in with_successor["signals"]} - {item["label"] for item in without["signals"]}
+    assert added == {"Replacement tool recorded"}
+    assert with_successor["score"] == without["score"]
