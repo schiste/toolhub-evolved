@@ -808,3 +808,34 @@ def test_a_secret_in_a_url_never_reaches_the_endpoints_bucket():
     )
     assert values(report, "endpoints") == {"api.acme-data.org/v1"}
     assert "sk-live" not in str(report["endpoints"])
+
+
+def test_a_request_word_inside_the_url_is_not_a_call():
+    # Measured on wikimedia-gadgets/twinkle: a CONTRIBUTING.md line linking to
+    # `.../creating-a-pull-request-from-a-fork` scored as a request, because
+    # the signal matched the word `request` inside the address itself.
+    prose = analyze_source_files(
+        [{"path": "docs/guide.md", "content": "Open https://api.acme-data.org/creating-a-pull-request-from-a-fork"}]
+    )
+    called = analyze_source_files(
+        [{"path": "docs/guide.md", "content": "fetch('https://api.acme-data.org/creating-a-pull-request-from-a-fork')"}]
+    )
+    assert prose["endpoints"][0]["confidence"] < called["endpoints"][0]["confidence"]
+
+
+def test_a_link_to_documentation_is_not_reported_as_an_endpoint():
+    # The bucket is capped, so reading material does not merely add noise --
+    # on Twinkle it filled the cap and displaced the real API surface.
+    report = analyze_source_files(
+        [
+            {
+                "path": "README.md",
+                "content": (
+                    "See https://en.wikipedia.org/wiki/Wikipedia:Twinkle and "
+                    "https://github.com/wikimedia-gadgets/twinkle for details. "
+                    "It calls https://en.wikipedia.org/w/api.php?action=edit"
+                ),
+            }
+        ]
+    )
+    assert [item["value"] for item in report["endpoints"]] == ["en.wikipedia.org/w/api.php?action=edit"]
