@@ -1278,6 +1278,7 @@
 	"sourceAnalysis.oauthScopes": "TODO: document this message.",
 	"sourceAnalysis.projects": "TODO: document this message.",
 	"sourceAnalysis.reject": "TODO: document this message.",
+	"sourceAnalysis.replacedBy": "Label introducing the link to the tool that replaces this one, in the source-analysis health core panel. Followed by the replacement tool name or URL, rendered as a link.",
 	"sourceAnalysis.repositoryContext": "TODO: document this message.",
 	"sourceAnalysis.repositoryContextHint": "TODO: document this message.",
 	"sourceAnalysis.repositoryContextJson": "TODO: document this message.",

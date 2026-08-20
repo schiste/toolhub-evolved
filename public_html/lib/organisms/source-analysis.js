@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { $, esc } from "../core/dom.js";
+import { $, dirAttrs, esc, safeUrl } from "../core/dom.js";
 import { backendErrorExplanation, backendGetJson } from "../core/api.js";
 import { t, timeTag } from "../core/i18n.js";
+import { toolHref } from "../core/routing.js";
 import { serverWrite } from "../core/serversync.js";
 import { button } from "../atoms/button.js";
 import { fArea, fInput } from "../atoms/form-fields.js";
@@ -293,6 +294,22 @@ function assessmentsBlock(rows) {
 	</section>`;
 }
 
+/** @param {unknown} raw */
+function replacementLink(raw) {
+	// healthCore.replacedBy carries toolinfo's replaced_by verbatim, and
+	// maintainers write both kinds: a URL for a successor hosted elsewhere, a
+	// bare name for one already in the catalogue. Resolve them the same way the
+	// tool page's replacement notice does, so one field does not mean two
+	// things depending on where you read it.
+	const name = String(raw ?? "").trim();
+	if (!name) return "";
+	const href = safeUrl(name);
+	const linked = href
+		? `<a href="${href}" target="_blank" rel="noopener nofollow">${esc(name)}</a>`
+		: `<a href="${esc(toolHref(name))}"${dirAttrs(name)}>${esc(name)}</a>`;
+	return `<p>${t("sourceAnalysis.replacedBy", "Replaced by")} ${linked}</p>`;
+}
+
 /** @param {any} data */
 function healthCoreBlock(data) {
 	const core = data.healthCore && typeof data.healthCore === "object" ? data.healthCore : {};
@@ -304,6 +321,7 @@ function healthCoreBlock(data) {
 				<div>
 					<h3>${t("sourceAnalysis.healthCore", "Health core")}</h3>
 					<p>${esc(core.stewardshipStatus || "")}</p>
+					${replacementLink(core.replacedBy)}
 				</div>
 				<span class="sync-badge sync-badge--${gradeClass(core.grade)}">${esc(String(core.score ?? 0))} · ${gradeLabel(core.grade)}</span>
 			</div>
