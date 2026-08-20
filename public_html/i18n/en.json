@@ -1278,6 +1278,7 @@
 	"sourceAnalysis.oauthScopes": "OAuth scopes",
 	"sourceAnalysis.projects": "Projects",
 	"sourceAnalysis.reject": "Reject",
+	"sourceAnalysis.replacedBy": "Replaced by",
 	"sourceAnalysis.repositoryContext": "Repository context",
 	"sourceAnalysis.repositoryContextHint": "Optional deterministic repository metadata from the CLI or another trusted automation source.",
 	"sourceAnalysis.repositoryContextJson": "Repository context JSON",

@@ -243,3 +243,51 @@ test("source analysis workspace reports bad JSON and backend failures", async ()
 	assert.equal(h.serverWrite.mock.calls.length, 0);
 	assert.match(document.querySelector("[data-source-analysis-status]").textContent, /Repository context JSON/);
 });
+
+/** @param {string | undefined} replacedBy */
+async function renderWithReplacement(replacedBy) {
+	const saved = sourceReport();
+	if (replacedBy !== undefined) saved.report.healthCore.replacedBy = replacedBy;
+	h.backendGetJson.mockResolvedValue({ results: [saved] });
+	const workspace = sourceAnalysisWorkspace();
+	document.body.innerHTML = workspace.html;
+	workspace.mount();
+	await tick();
+	return document.querySelector("[data-source-analysis-list]");
+}
+
+test("health core links an off-catalogue replacement out to its URL", async () => {
+	const list = await renderWithReplacement("https://toolhub.wikimedia.org/tools/successor");
+	const link = [...list.querySelectorAll("a")].find((a) => a.textContent.includes("successor"));
+	assert.ok(link, "the replacement is rendered as a link");
+	assert.equal(link.getAttribute("href"), "https://toolhub.wikimedia.org/tools/successor");
+	// It leaves the app, so it gets the same hardening as every other outbound link.
+	assert.equal(link.getAttribute("rel"), "noopener nofollow");
+	assert.ok(list.textContent.includes("Replaced by"));
+});
+
+test("health core routes a bare tool name into the catalogue instead of a broken link", async () => {
+	// Maintainers write both kinds into replaced_by. A name is not a URL, and
+	// href="successor-tool" would resolve against whatever page you happened to
+	// be on.
+	const list = await renderWithReplacement("successor-tool");
+	const link = [...list.querySelectorAll("a")].find((a) => a.textContent.includes("successor-tool"));
+	assert.equal(link.getAttribute("href"), "/tools/successor-tool");
+	assert.equal(link.getAttribute("rel"), null);
+});
+
+test("health core says nothing when no replacement was recorded", async () => {
+	const list = await renderWithReplacement(undefined);
+	assert.ok(!list.textContent.includes("Replaced by"));
+	const blank = await renderWithReplacement("   ");
+	assert.ok(!blank.textContent.includes("Replaced by"));
+});
+
+test("a javascript: scheme in replaced_by is never emitted as a link target", async () => {
+	// safeUrl() rejects it, so it falls through to the catalogue route and the
+	// scheme ends up percent-encoded inside the path rather than executable.
+	const list = await renderWithReplacement("javascript:alert(1)");
+	const link = [...list.querySelectorAll("a")].find((a) => a.textContent.includes("alert"));
+	assert.ok(!link.getAttribute("href").startsWith("javascript:"));
+	assert.equal(link.getAttribute("href"), "/tools/javascript%3Aalert(1)");
+});
