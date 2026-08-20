@@ -600,3 +600,119 @@ def test_continuous_publishes_a_run_so_the_worker_is_not_reported_absent(monkeyp
 
     assert len(runs) == 1
     assert runs[0].succeeded is True
+
+
+# --- Host facts in the scanner's report context -----------------------------
+#
+# The scanner clones --depth 1, so _local_git_context always measures one
+# commit by one author. Those two numbers cost every scanned tool 20
+# maintenance points until the enrichment lane supplies the real ones.
+
+SHALLOW = {"repository": {"contributorCount": 1, "commitCount": 1, "branch": "main"}}
+SCAN_URL = "https://github.com/example/tool"
+
+
+def _host_row(url=SCAN_URL, **fields):
+    import repository_enrichment
+    from backend.models import RepositoryHostMetadata
+
+    with db.session_scope() as s:
+        s.add(
+            RepositoryHostMetadata(
+                url_hash=repository_enrichment.url_hash(url),
+                repository_url=url,
+                provider="github",
+                api="github",
+                kind="forge",
+                project_path="example/tool",
+                status="current",
+                attempts=0,
+                topics=[],
+                **fields,
+            )
+        )
+
+
+def _context(report=SHALLOW):
+    return repository_scan._report_context(
+        {"repositoryContext": report},
+        url=SCAN_URL,
+        provider="github",
+        commit_sha="abc123",
+    )
+
+
+def test_the_shallow_clones_counts_are_dropped_when_no_host_facts_exist():
+    # Absent is honest; 1 is a measurement of our own clone flags. The
+    # assessment treats absent as "not known" and deducts nothing.
+    repository = _context()["repository"]
+    assert "contributorCount" not in repository
+    assert "commitCount" not in repository
+    assert repository["branch"] == "main"
+
+
+def test_the_host_counts_replace_the_clones():
+    _host_row(contributor_count=14, commit_count=920)
+    repository = _context()["repository"]
+    assert repository["contributorCount"] == 14
+    assert repository["commitCount"] == 920
+
+
+def test_a_host_that_publishes_only_one_of_the_two_supplies_only_that_one():
+    # Bitbucket, Forgejo and Gerrit expose neither count; a partially filled
+    # row must not resurrect the clone's number for the missing half.
+    _host_row(contributor_count=None, commit_count=41)
+    repository = _context()["repository"]
+    assert "contributorCount" not in repository
+    assert repository["commitCount"] == 41
+
+
+def test_the_scanners_other_overrides_are_unchanged():
+    _host_row(contributor_count=2, commit_count=7)
+    repository = _context()["repository"]
+    assert repository["url"] == SCAN_URL
+    assert repository["provider"] == "github"
+    assert repository["commitSha"] == "abc123"
+    # The checkout is always freshly cloned, so it is never dirty.
+    assert repository["dirty"] is False
+
+
+def test_a_context_without_a_repository_block_still_gets_host_counts():
+    _host_row(contributor_count=5, commit_count=300)
+    repository = repository_scan._report_context(
+        {}, url=SCAN_URL, provider="github", commit_sha="abc123"
+    )["repository"]
+    assert repository["contributorCount"] == 5
+
+
+def _activity(context):
+    from backend.source_analyzer import analyze_source_files
+
+    report = analyze_source_files(
+        [{"path": "tool.py", "content": "print('hello')\n"}],
+        tool_name="example-tool",
+        source_label=SCAN_URL,
+        repository_context=context,
+    )
+    for assessment in report["assessments"]:
+        if assessment["key"] == "maintenance-activity":
+            return assessment
+    raise AssertionError("no maintenance-activity assessment")
+
+
+def test_a_scan_no_longer_deducts_twenty_points_for_its_own_clone_flags():
+    # The defect this whole lane exists to fix: every scanned repository lost
+    # ten points for being "single-contributor" and ten for a "very small
+    # commit history", both read off a --depth 1 checkout.
+    labels = {signal["label"] for signal in _activity(_context())["signals"]}
+    assert "Single-contributor repository" not in labels
+    assert "Very small commit history" not in labels
+
+
+def test_a_genuinely_single_contributor_repository_is_still_flagged():
+    # Dropping the clone's guess must not make the signal unreachable: when a
+    # host says one contributor, that is a real fact and still scores.
+    _host_row(contributor_count=1, commit_count=2)
+    labels = {signal["label"] for signal in _activity(_context())["signals"]}
+    assert "Single-contributor repository" in labels
+    assert "Very small commit history" in labels

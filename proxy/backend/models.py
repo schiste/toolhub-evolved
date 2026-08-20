@@ -1365,6 +1365,69 @@ class RepositoryAnalysisState(Base):
     sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
 
 
+class RepositoryHostMetadata(Base):
+    """What a source host publishes about one repository, kept apart from the scan.
+
+    Deliberately not folded into SourceAnalysisReport.report. That payload is
+    derived from files this project read itself, under provenance weighting it
+    controls; everything here is a third party's assertion, fetched at a
+    different time, on a different cadence, and revocable when the host changes
+    its mind. Mixing the two would make it impossible to answer "who said this"
+    about any single field, and would let a host outage look like a source
+    regression.
+
+    Keyed on the repository rather than the tool, because Wikimedia monorepos
+    carry several tools at one URL: one row, one fetch, several tools reading
+    it. url_hash follows the api_cache convention -- a 2000-character URL
+    exceeds MariaDB's index key length, so the digest is the key and the URL is
+    stored beside it.
+
+    Every fact column is nullable on purpose. Bitbucket publishes no stars,
+    Gerrit no topics, only GitHub and GitLab a license or a contributor count.
+    NULL means "this host does not publish this", which is not zero, and code
+    that scores it as zero will penalise a tool for its host's API surface.
+    """
+
+    __tablename__ = "repository_host_metadata"
+    url_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    repository_url: Mapped[str] = mapped_column(Text)
+    provider: Mapped[str] = mapped_column(String(64), default="")
+    api: Mapped[str] = mapped_column(String(32), default="")
+    # forge or wiki: a wiki-hosted gadget has revisions, not branches.
+    kind: Mapped[str] = mapped_column(String(16), default="")
+    project_path: Mapped[str] = mapped_column(String(512), default="")
+
+    archived: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    default_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    homepage: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # The host's own identifier, upper-cased, not necessarily SPDX.
+    license_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    topics: Mapped[list] = mapped_column(JSON, default=list)
+    star_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fork_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    open_issues_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Counts only. The bodies that carry contributor identity are never read,
+    # so there is no per-person row here and no email anywhere in this schema.
+    contributor_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    commit_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at_upstream: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The host's ETag for the project record. Replaying it makes the next poll
+    # conditional, and a 304 costs no GitHub rate budget at all -- which is what
+    # keeps a continuous lane under the hourly ceiling.
+    etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    source: Mapped[str] = mapped_column(String(32), default=SOURCE_LOCAL)
+    sync_status: Mapped[str] = mapped_column(String(32), default=SYNC_EVOLVED_REAL)
+
+
 class ToolHealthTarget(Base):
     """A URL Evolved may check to report health for one tool."""
 

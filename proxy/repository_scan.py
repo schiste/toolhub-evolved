@@ -31,9 +31,17 @@ from urllib.parse import urlparse, urlunparse
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+import repository_enrichment
 from analyze_source import _local_git_context
 from backend import db, graph_enrichment, job_runner, job_runs, tool_summaries
-from backend.models import CanonicalToolCache, RepositoryAnalysisState, SourceAnalysisReport, User, utcnow
+from backend.models import (
+    CanonicalToolCache,
+    RepositoryAnalysisState,
+    RepositoryHostMetadata,
+    SourceAnalysisReport,
+    User,
+    utcnow,
+)
 from backend.source_analyzer import (
     IGNORED_SOURCE_DIRS,
     MAX_FILE_BYTES,
@@ -364,10 +372,37 @@ def _backoff(attempts: int) -> datetime:
     return utcnow() + timedelta(hours=hours)
 
 
+# A --depth 1 clone has exactly one commit by one author, for every repository
+# that has ever existed. _local_git_context measures the checkout honestly, so
+# these two keys arrive as 1 and 1 no matter what is upstream -- and the
+# maintenance assessment deducts ten points for each. They are not facts about
+# the tool, they are facts about how we cloned it, and the only place that can
+# see the real numbers is the provider API.
+SHALLOW_CLONE_BLIND = ("contributorCount", "commitCount")
+
+
+def _host_counts(url: str) -> dict[str, int]:
+    """Return whatever counts the enrichment lane has for this repository."""
+    with db.session_scope() as s:
+        row = s.get(RepositoryHostMetadata, repository_enrichment.url_hash(url))
+        if row is None:
+            return {}
+        counts = {"contributorCount": row.contributor_count, "commitCount": row.commit_count}
+    return {key: value for key, value in counts.items() if value is not None}
+
+
 def _report_context(report: dict[str, Any], *, url: str, provider: str, commit_sha: str) -> dict[str, Any]:
     context = report.get("repositoryContext") if isinstance(report.get("repositoryContext"), dict) else {}
     repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
-    repository = {**repository, "url": url, "provider": provider, "commitSha": commit_sha, "dirty": False}
+    repository = {key: value for key, value in repository.items() if key not in SHALLOW_CLONE_BLIND}
+    repository = {
+        **repository,
+        "url": url,
+        "provider": provider,
+        "commitSha": commit_sha,
+        "dirty": False,
+        **_host_counts(url),
+    }
     return {**context, "repository": repository}
 
 
