@@ -52,11 +52,15 @@ MAX_ACTION_CHARS = 40
 # than swallowing the template syntax -- the host and the first segments are
 # still recovered, which is the part worth having.
 #
-# The pipe is allowed through despite being an operator in most of these
-# languages, because MediaWiki joins multi-valued parameters with it and
-# `prop=revisions|info` is exactly the kind of thing this exists to read. A
-# real pipe operator is separated by whitespace, which ends the match anyway.
-URL_RE = re.compile(r"https?://[^\s\"'`<>()\[\]{}\\^]+", re.IGNORECASE)
+# The pipe is allowed in the query string and nowhere else. MediaWiki joins
+# multi-valued parameters with it (`prop=revisions|info`), which is exactly what
+# this exists to read; but in a path it is almost always a link label from the
+# surrounding markup -- `[https://momentjs.com/|moment.js]` and Phabricator's
+# `T247721|T247721` both parsed as part of the address until it was narrowed.
+URL_RE = re.compile(
+    r"https?://[^\s\"'`<>()\[\]{}\\^|?]*(?:\?[^\s\"'`<>()\[\]{}\\^]*)?",
+    re.IGNORECASE,
+)
 
 # Trailing punctuation belongs to the prose or the code around the URL, not to
 # the URL: `see https://example.org/api.` and `fetch("https://x.org/api"),`.
@@ -125,9 +129,16 @@ ACTION_KEYS = frozenset({"action", "list", "prop", "generator", "meta"})
 # and is dropped rather than guessed at.
 ACTION_VALUE_RE = re.compile(rf"^[a-z][a-z0-9|_-]{{0,{MAX_ACTION_CHARS}}}$", re.IGNORECASE)
 
-# A path segment carrying data rather than naming a route: a template hole the
-# language left behind (`$`, `%s`, `*`), a bare number, or a long hex blob.
-VARIABLE_SEGMENT_RE = re.compile(r"[$%*+~]|^\d+$|^[0-9a-f]{8,}$", re.IGNORECASE)
+# A path segment carrying data rather than naming a route. Case-sensitive on
+# purpose: the last alternative is the identifier scheme this project sees most
+# -- Wikibase entities and properties, Phabricator tasks -- and matching it
+# case-insensitively would swallow `v1` and `v2`, which are routes.
+VARIABLE_SEGMENT_RE = re.compile(
+    r"[$%*+~]"  # a template hole the language left behind: ${id}, %s, :*
+    r"|^\d+$"  # a bare number
+    r"|^[0-9a-fA-F]{8,}$"  # a hash, a revision, a long hex id
+    r"|^[A-Z]\d+$"  # Q42, P31, T247721
+)
 
 
 @dataclass(frozen=True)
