@@ -299,6 +299,11 @@ PUBLIC_V1_ROUTES = {
     "/v1/statistics/": "public cached quality snapshot derived only from local public catalog evidence",
     "/v1/facets/tools/": "public faceted discovery by analyzer signals and declared metadata; rate limited",
     "/v1/facets/values/": "public facet value listing and adoption counts; rate limited",
+    "/v1/userscripts/wikis/": "public list of wikis with a user-script directory; local DB only, rate limited",
+    "/v1/userscripts/directory/": (
+        "public directory of user scripts projected from already-public wiki pages; local DB only, rate limited"
+    ),
+    "/v1/userscripts/script/": "public per-script detail and the pages folded under it; local DB only, rate limited",
     "/v1/workers/": "public scheduled-job health; job names, schedules, and run outcomes carry no user data",
     "/v1/tools/<name>/signals/": "public per-tool signal summary; local DB only",
     "/v1/tools/summaries/": "public card summaries from local health and maintainer indexes; no upstream fetch",
