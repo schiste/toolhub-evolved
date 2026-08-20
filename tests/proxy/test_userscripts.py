@@ -193,11 +193,77 @@ def test_a_global_verb_is_unaffected_by_the_wikis_own_local_verb():
     assert found.title == "User:Foo/x.js"
 
 
-def test_a_url_load_is_kept_as_a_url_not_forced_into_a_title():
+def test_a_url_load_names_the_wiki_and_the_page_it_points_at():
+    # 1,160 of frwiki's 1,807 URL imports leave frwiki. Left opaque, the census
+    # would report a wiki whose users depend on nothing outside it.
     body = "mw.loader.load('//meta.wikimedia.org/w/index.php?title=User:Hedonil/XTools.js&action=raw');"
     (found,) = userscripts.script_imports(body)
-    assert found.title == ""
+    assert found.wiki == "meta.wikimedia.org"
+    assert found.title == "User:Hedonil/XTools.js"
     assert found.url.startswith("//meta.wikimedia.org")
+
+
+def test_a_local_import_is_attributed_to_the_wiki_being_analyzed():
+    (found,) = userscripts.script_imports("importScript('User:Foo/x.js');", wiki=FRWIKI)
+    assert found.wiki == FRWIKI
+
+
+def test_the_title_may_arrive_before_the_action_in_the_query():
+    # Both orderings occur; parsing by position rather than by key loses one.
+    body = "mw.loader.load('//commons.wikimedia.org/w/index.php?action=raw&title=MediaWiki:Gadget-Cat-a-lot.js');"
+    (found,) = userscripts.script_imports(body)
+    assert found.title == "MediaWiki:Gadget-Cat-a-lot.js"
+
+
+def test_a_pretty_wiki_path_names_a_page_too():
+    (found,) = userscripts.script_imports("importScriptURI('https://fr.wikipedia.org/wiki/User:Orlodrim/x.js');")
+    assert (found.wiki, found.title) == ("fr.wikipedia.org", "User:Orlodrim/x.js")
+
+
+def test_a_percent_encoded_title_is_decoded():
+    # frwiki titles carry accents, and a raw-action URL percent-encodes them.
+    # Only the first character of the whole title is capitalized, never a
+    # subpage -- User:Delhovlyn/démineur.js is the real page.
+    body = "mw.loader.load('//fr.wikipedia.org/w/index.php?title=User:Delhovlyn/d%C3%A9mineur.js&action=raw');"
+    (found,) = userscripts.script_imports(body)
+    assert found.title == "User:Delhovlyn/démineur.js"
+
+
+def test_a_query_title_is_decoded_once_and_not_twice():
+    # parse_qs already decodes; unquoting its output again would turn a title
+    # that legitimately contains a percent escape into a different page.
+    body = "mw.loader.load('//fr.wikipedia.org/w/index.php?title=User:Foo/a%2541b.js');"
+    (found,) = userscripts.script_imports(body)
+    assert found.title == "User:Foo/a%41b.js"
+
+
+def test_a_path_title_is_decoded():
+    # urlparse leaves the path encoded, so this branch does need to decode.
+    (found,) = userscripts.script_imports("importScriptURI('//fr.wikipedia.org/wiki/User:Foo/d%C3%A9mo.js');")
+    assert found.title == "User:Foo/démo.js"
+
+
+def test_a_module_bundle_url_stays_opaque():
+    # load.php names modules, not pages; there is no directory entry to point at.
+    body = "mw.loader.load('//fr.wikipedia.org/w/load.php?modules=ext.gadget.LiveRC');"
+    (found,) = userscripts.script_imports(body)
+    assert found.title == ""
+    assert found.url.endswith("LiveRC")
+
+
+def test_a_plain_file_url_stays_opaque():
+    body = "mw.loader.load('//bits.wikimedia.org/skins-1.5/common/edit.js');"
+    (found,) = userscripts.script_imports(body)
+    assert (found.wiki, found.title) == ("", "")
+
+
+def test_a_url_with_no_host_names_nothing():
+    assert userscripts.wiki_target("https:///w/index.php?title=X") == ("", "")
+
+
+def test_the_same_page_reached_by_two_verbs_stays_two_edges():
+    body = "importScript('User:Foo/x.js');\nmw.loader.load('//fr.wikipedia.org/wiki/User:Foo/x.js');"
+    assert len(userscripts.script_imports(body, wiki=FRWIKI)) == 2
 
 
 def test_a_stylesheet_load_is_marked_as_one():

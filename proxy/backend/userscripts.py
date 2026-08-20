@@ -44,6 +44,7 @@ import re
 from dataclasses import dataclass
 from functools import cache
 from typing import Final
+from urllib.parse import parse_qs, unquote, urlparse
 
 # What a page is. A directory holds ROLE_SCRIPT pages and nothing else, but the
 # other three are not noise to be dropped -- a shim is the cleanest statement of
@@ -118,6 +119,7 @@ class ScriptImport:
 
     verb: str
     argument: str
+    wiki: str = ""
     title: str = ""
     url: str = ""
 
@@ -165,6 +167,40 @@ _ALIAS_PREFIX: Final = re.compile(rf"^(?:{'|'.join(_NAMESPACE_ALIASES)})\s*:\s*"
 _ALIAS_ANYWHERE: Final = re.compile(rf"\b(?:{'|'.join(_NAMESPACE_ALIASES)})\s*:", re.IGNORECASE)
 
 _URL_ARGUMENT: Final = re.compile(r"^(?:https?:)?//", re.IGNORECASE)
+
+
+_WIKI_PATH: Final = re.compile(r"^/wiki/(?P<title>.+)$")
+
+
+def wiki_target(url: str) -> tuple[str, str]:
+    """Split a URL into the wiki and page it names, or ("", "") if it names neither.
+
+    Both MediaWiki spellings appear in the corpus: the raw-action query form
+    that user scripts use to fetch code (1,658 of frwiki's 1,807 URL imports)
+    and the pretty `/wiki/Title` path (17). Everything else -- a `load.php`
+    module bundle, a CDN file, a Toolserver path -- stays an opaque URL,
+    because it does not name a page a directory can hold an entry for.
+
+    Resolving these is what makes cross-wiki reuse visible at all, and that is
+    most of what is here: 1,160 of those 1,807 imports point off frwiki, 536 of
+    them at en.wikipedia. A census that reads only local titles sees a wiki
+    with no dependencies.
+
+    The host is reported as read, never as trusted. It arrives from a page
+    anyone can edit, so a caller that turns it into a request must still put
+    that request through `backend.outbound`.
+    """
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if not host:
+        return ("", "")
+    query = parse_qs(parsed.query).get("title")
+    if query:
+        return (host, canonical_title(query[0]))  # parse_qs has already decoded it
+    path = _WIKI_PATH.match(parsed.path)
+    if path:
+        return (host, canonical_title(unquote(path.group("title"))))
+    return ("", "")
 
 
 @cache
@@ -287,17 +323,18 @@ def _local_template(verb: str, wiki: str) -> str:
     return ""
 
 
-def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str]:
-    """Turn one quoted loader argument into (title, url); both "" when unusable."""
+def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str, str]:
+    """Turn one quoted loader argument into (wiki, title, url); "" where unusable."""
     raw = argument.strip()
     if not raw:
-        return ("", "")
+        return ("", "", "")
     template = _local_template(verb, wiki)
     if template:
-        return (canonical_title(template.format(name=raw)), "")
+        return (wiki, canonical_title(template.format(name=raw)), "")
     if _URL_ARGUMENT.match(raw):
-        return ("", raw)
-    return (canonical_title(raw), "")
+        host, title = wiki_target(raw)
+        return (host, title, raw)
+    return (wiki, canonical_title(raw), "")
 
 
 def script_imports(body: str, *, wiki: str = "") -> tuple[ScriptImport, ...]:
@@ -309,18 +346,18 @@ def script_imports(body: str, *, wiki: str = "") -> tuple[ScriptImport, ...]:
     edges -- that difference is real and occasionally load-bearing.
     """
     found: list[ScriptImport] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
     for match in _edge_pattern(wiki).finditer(strip_comments(body)):
         verb = match.group("verb")
         argument = match.group("argument")
-        title, url = _resolve(verb, argument, wiki)
+        target, title, url = _resolve(verb, argument, wiki)
         if not title and not url:
             continue
-        key = (verb, title, url)
+        key = (verb, target, title, url)
         if key in seen:
             continue
         seen.add(key)
-        found.append(ScriptImport(verb=verb, argument=argument, title=title, url=url))
+        found.append(ScriptImport(verb=verb, argument=argument, wiki=target, title=title, url=url))
     return tuple(found)
 
 
