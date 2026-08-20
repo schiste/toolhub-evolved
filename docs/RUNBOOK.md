@@ -545,10 +545,15 @@ Evolved never stores or receives private keys.
 Source analysis is an owner-facing maintainer aid, not a permission oracle.
 `POST /v1/source-analysis/` accepts bounded text source files plus optional
 repository context JSON, analyzes them without executing code, and stores only
-the report: projects, APIs, access rights, external dependencies, lockfile
-evidence, OAuth scopes, technology, repository context, deterministic
+the report: projects, APIs, access rights, endpoints, external dependencies,
+lockfile evidence, OAuth scopes, technology, repository context, deterministic
 assessment scores, warnings, and evidence excerpts. Evidence is line-limited and
-credential-looking assignments are redacted. `GET /v1/source-analysis/` and
+credential-looking assignments are redacted. The endpoints bucket names the
+hosts the source addresses and, for query APIs, the parameter that decides what
+the call does (`action=edit` and `action=query` are separate findings); its
+`external` half is the reach outside Wikimedia. Only an allowlist of parameters
+survives -- every other query value is dropped unread, so a URL carrying an
+`api_key` is stored as its path alone. `GET /v1/source-analysis/` and
 `GET /v1/source-analysis/<id>/` are private reads for the report owner;
 `POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
 `approved`, or `rejected`. The same analyzer is available for local checkouts

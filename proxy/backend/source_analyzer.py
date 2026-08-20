@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from backend import source_endpoints
+
 MAX_FILES = 120
 MAX_FILE_BYTES = 256 * 1024
 # Not the effective ceiling for HTTP submissions: Flask's MAX_CONTENT_LENGTH
@@ -345,6 +347,20 @@ CREDENTIAL_RE = re.compile(
     r"[\"']?\b(?:client[_-]?secret|consumer[_-]?secret|api[_-]?key|access[_-]?token|refresh[_-]?token|password)\b[\"']?\s*[:=]\s*(?:[rubfRUBF]*[\"'][^\"']{4,}[\"']|[A-Za-z0-9/+=-]{20,})",
     re.IGNORECASE,
 )
+
+# What separates a URL that is called from a URL that is merely mentioned. A
+# README linking to an API and a client invoking it look the same to a URL
+# matcher, and this is the only cheap signal that tells them apart. It can only
+# raise confidence: a call made through a variable or a wrapper still reports
+# at the base, because the address is a fact whether or not this matches.
+REQUEST_SIGNAL_RE = re.compile(
+    r"\b(?:fetch|axios|XMLHttpRequest|ajax|urlopen|urlretrieve|requests?|session|httpx|got|"
+    r"curl|wget|HttpClient|WebClient|RestTemplate|file_get_contents|urlfetch)\b"
+    r"|\bmw\.(?:Api|loader)\b|\.(?:get|post|put|patch|delete|head)\s*\(",
+    re.IGNORECASE,
+)
+ENDPOINT_CONFIDENCE = 0.75
+ENDPOINT_CALLED_CONFIDENCE = 0.9
 
 API_RULES = (
     (
@@ -1473,6 +1489,32 @@ def _project_from_host(host: str, sub: str, family: str) -> tuple[str, str, floa
     if family == "wikipedia" and sub and sub != "www":
         return f"{sub}wiki", host, 0.9
     return host, host, 0.78
+
+
+def _external_endpoint_count(endpoints: list[dict[str, Any]]) -> int:
+    return sum(1 for item in endpoints if item["category"] == source_endpoints.FAMILY_EXTERNAL)
+
+
+def _scan_endpoints(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
+    """Record the concrete addresses this line names, host and path and action.
+
+    Complements the apis bucket rather than duplicating it. API_RULES says a
+    tool speaks the Action API; this says it speaks it to commons.wikimedia.org
+    with action=upload, which is the difference between a reader and a writer,
+    and it is the only scanner that sees a service Wikimedia does not run.
+    """
+    called = bool(REQUEST_SIGNAL_RE.search(line))
+    for endpoint in source_endpoints.endpoints(line):
+        _put(
+            findings,
+            kind="endpoints",
+            value=endpoint.value,
+            label=endpoint.label,
+            category=endpoint.family,
+            confidence=ENDPOINT_CALLED_CONFIDENCE if called else ENDPOINT_CONFIDENCE,
+            reason=("Request to this endpoint." if called else "Endpoint address in source."),
+            evidence=_evidence(path, line_number, line, endpoint.value),
+        )
 
 
 def _scan_projects(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
@@ -2885,8 +2927,16 @@ def analyze_source_files(
     local_python_roots = _local_python_import_roots(normalized)
     for source_file in normalized:
         _scan_manifest_dependencies(findings, source_file)
+        # A lockfile is a resolved dependency graph with a registry URL on
+        # nearly every line. Those registries belong to the package manager,
+        # not to the tool, and the dependency scanner has already read this
+        # same file for the part of it that is about the tool. Its 0.95 weight
+        # would otherwise make npmjs.org one of the loudest endpoints found.
+        wants_endpoints = _source_class(source_file.path) != "lockfile"
         for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
             line = raw_line[:MAX_LINE_CHARS]
+            if wants_endpoints:
+                _scan_endpoints(findings, source_file.path, line_number, line)
             _scan_projects(findings, source_file.path, line_number, line)
             _scan_rules(findings, source_file.path, line_number, line, API_RULES, kind="apis")
             _scan_rules(findings, source_file.path, line_number, line, AUTH_RULES, kind="authentication")
@@ -2904,6 +2954,7 @@ def analyze_source_files(
         "accessRights": _serialized(findings, "accessRights"),
         "authentication": _serialized(findings, "authentication"),
         "dependencies": _serialized(findings, "dependencies"),
+        "endpoints": _serialized(findings, "endpoints"),
         "oauthScopes": _serialized(findings, "oauthScopes"),
         "technology": _serialized(findings, "technology"),
         "warnings": _serialized(findings, "warnings"),
@@ -2919,6 +2970,12 @@ def analyze_source_files(
         "apiCount": len(report["apis"]),
         "accessRightCount": len(report["accessRights"]),
         "dependencyCount": len(report["dependencies"]),
+        "endpointCount": len(report["endpoints"]),
+        # Split out because the two halves answer different questions. Wikimedia
+        # endpoints describe what a tool does; a third-party one is a dependency
+        # on something nobody in the movement operates, which is the number a
+        # reviewer is actually looking for.
+        "externalEndpointCount": _external_endpoint_count(report["endpoints"]),
         "oauthScopeCount": len(report["oauthScopes"]),
         "technologyCount": len(report["technology"]),
         "warningCount": len(report["warnings"]),

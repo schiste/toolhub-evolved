@@ -39,6 +39,8 @@ function sourceReport() {
 				apiCount: 1,
 				accessRightCount: 1,
 				dependencyCount: 1,
+				endpointCount: 2,
+				externalEndpointCount: 1,
 				oauthScopeCount: 0,
 				technologyCount: 1,
 				warningCount: 0,
@@ -98,6 +100,20 @@ function sourceReport() {
 			authentication: [],
 			dependencies: [
 				{ value: "npm:mediawiki-api", label: "mediawiki-api (npm)", category: "runtime", confidence: 0.98 }
+			],
+			endpoints: [
+				{
+					value: "commons.wikimedia.org/w/api.php?action=upload",
+					label: "commons.wikimedia.org /w/api.php (action=upload)",
+					category: "wikimedia",
+					confidence: 0.9
+				},
+				{
+					value: "api.openai.com/v1/chat/completions",
+					label: "api.openai.com /v1/chat/completions",
+					category: "external",
+					confidence: 0.9
+				}
 			],
 			assessments: [
 				{
@@ -178,6 +194,10 @@ test("source analysis workspace loads saved reports and copies the suggested pat
 	assert.ok(document.body.innerHTML.includes("Health core"));
 	assert.ok(document.body.innerHTML.includes("Maintainer activity"));
 	assert.ok(document.body.innerHTML.includes("quiet"));
+	// The two halves of the question a reviewer asks about a tool's network
+	// reach: the address it calls, and how many of them nobody here operates.
+	assert.ok(document.body.innerHTML.includes("commons.wikimedia.org /w/api.php (action=upload)"));
+	assert.ok(document.body.innerHTML.includes("Third-party endpoints"));
 
 	document.querySelector("[data-source-analysis-copy]").click();
 	await tick();
