@@ -31,7 +31,11 @@ notice-rgx = 'SPDX-License-Identifier: GPL-3\.0-or-later'
 line-ending = "lf"
 
 [tool.coverage.run]
-source = ["app", "backend", "crawl"]
+# repository_enrichment is listed by name rather than the whole proxy/ tree:
+# it spends a shared credential under a rate budget, so a coverage gap there
+# is a gap in exactly the logic that decides when to stop. The other
+# top-level job modules are not measured here (see the note below).
+source = ["app", "backend", "crawl", "repository_enrichment"]
 branch = true
 
 [tool.coverage.report]
