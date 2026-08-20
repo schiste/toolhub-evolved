@@ -20,10 +20,12 @@ exemption stays deliberate.
 
 import ipaddress
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import requests
+
+from backend.http_headers import clean_header_value, clean_secret_header_value
 
 CHUNK_BYTES = 64 * 1024
 
@@ -145,6 +147,45 @@ PUBLIC_PROBE = FetchPolicy(
     timeout=(5, 15),
 )
 
+# Source-host APIs (GitHub, GitLab, Forgejo, Bitbucket, Gerrit). The host set is
+# ours rather than user-supplied -- the URL is built from a resolved ProjectRef,
+# not pasted in -- but the SSRF checks still apply on every hop, because a host
+# that answers with a redirect is choosing where we go next.
+#
+# Redirects are followed because a renamed GitHub repository 301s to its new
+# name, which is a fact worth having rather than an error. The credential does
+# NOT follow: see fetch_api.
+PROVIDER_API = FetchPolicy(
+    schemes=frozenset({"https"}),
+    max_body_bytes=1024 * 1024,
+    follow_redirects=True,
+    max_redirects=3,
+    timeout=(5, 20),
+)
+
+# The only response headers worth carrying back out of a provider fetch. An
+# allowlist rather than the whole mapping: everything here is eligible to be
+# stored or logged, and Set-Cookie, Authorization echoes, and per-request
+# tracing ids are not.
+#
+# ETag makes the next poll conditional (a 304 costs no GitHub rate budget at
+# all). Link and X-Total carry the contributor and commit totals. The
+# X-RateLimit pair and Retry-After are how the lane knows to slow down.
+API_RESPONSE_HEADERS = frozenset(
+    {
+        "etag",
+        "link",
+        "retry-after",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+        "x-total",
+    }
+)
+
+# 304 and 404 are answers, not failures: unchanged since last poll, and no such
+# project. Neither should raise, because the lane records both.
+API_NOT_MODIFIED = 304
+
 
 def require_allowed(url: str, policy: FetchPolicy, *, scheme_error: str) -> None:
     """Raise ValueError unless `url` is fetchable under `policy`.
@@ -252,5 +293,94 @@ def probe_reachable(session: requests.Session, url: str, *, caller: Caller) -> P
                 status_code=int(resp.status_code),
                 content_type=(headers.get("Content-Type") or "").split(";", 1)[0].strip().lower(),
             )
+    message = f"{url}: too many redirects"
+    raise ValueError(message)
+
+
+@dataclass(frozen=True)
+class ApiResponse:
+    """One provider API answer: its status, its bounded body, and safe headers.
+
+    Unlike BoundedResponse this does not imply success. A 304 arrives with an
+    empty body and is the cheapest useful answer there is; a 404 means the
+    project is gone; a 403 with x-ratelimit-remaining: 0 means stop. The caller
+    decides, so the status is data rather than an exception.
+    """
+
+    status_code: int
+    url: str
+    body: bytes
+    headers: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def not_modified(self) -> bool:
+        """Report whether the host said the cached copy is still current."""
+        return self.status_code == API_NOT_MODIFIED
+
+
+def _safe_headers(headers: object) -> dict[str, str]:
+    """Keep only the allowlisted response headers, lower-cased and bounded."""
+    items = getattr(headers, "items", None)
+    if items is None:
+        return {}
+    kept = {}
+    for key, value in items():
+        lowered = str(key).lower()
+        if lowered in API_RESPONSE_HEADERS:
+            kept[lowered] = str(value)[:1024]
+    return kept
+
+
+def fetch_api(
+    session: requests.Session,
+    url: str,
+    *,
+    caller: Caller,
+    token: str | None = None,
+    etag: str | None = None,
+) -> ApiResponse:
+    """Fetch one source-host API URL, returning its status rather than raising.
+
+    The credential is bound to the host that was authorized for the *first*
+    URL and is dropped the moment a redirect leaves it. GitHub issued this
+    token to GitHub; a host that answers our request with a Location pointing
+    somewhere else must not be able to collect it. That is the same rule curl
+    applies, and it is the reason redirects can be followed here at all.
+
+    require_allowed still runs on every hop, so dropping the header is the
+    second guard rather than the only one.
+    """
+    current_url = url
+    authorized_host = (urlparse(url).hostname or "").lower()
+    headers = {"User-Agent": caller.user_agent, "Accept": caller.accept}
+    if token:
+        headers["Authorization"] = f"Bearer {clean_secret_header_value('token', token)}"
+    if etag:
+        headers["If-None-Match"] = clean_header_value("etag", etag)
+    for _hop in range(PROVIDER_API.max_redirects + 1):
+        require_allowed(current_url, PROVIDER_API, scheme_error=caller.scheme_error)
+        hop_headers = dict(headers)
+        if (urlparse(current_url).hostname or "").lower() != authorized_host:
+            hop_headers.pop("Authorization", None)
+        with session.get(
+            current_url,
+            headers=hop_headers,
+            timeout=PROVIDER_API.timeout,
+            stream=True,
+            allow_redirects=False,
+        ) as resp:
+            raw = getattr(resp, "headers", {})
+            if resp.is_redirect or resp.is_permanent_redirect:
+                location = raw.get("Location") or raw.get("location") or ""
+                if not location:
+                    message = f"{current_url}: redirect missing Location header"
+                    raise ValueError(message)
+                current_url = urljoin(current_url, location)
+                continue
+            status = int(resp.status_code)
+            # A 304 carries no body by definition; reading one would block on
+            # some servers rather than return empty.
+            body = b"" if status == API_NOT_MODIFIED else _read_capped(resp, current_url, PROVIDER_API.max_body_bytes)
+            return ApiResponse(status_code=status, url=current_url, body=body, headers=_safe_headers(raw))
     message = f"{url}: too many redirects"
     raise ValueError(message)
