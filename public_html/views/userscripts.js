@@ -88,9 +88,26 @@ function relationLabel(relation) {
  */
 function coverageStrip(coverage) {
 	if (!coverage) return "";
-	const notice = coverage.sweptAt
-		? ""
-		: `<p class="empty" role="status">${esc(t("userscripts.neverSwept", "No full sweep of this wiki has finished yet, so these counts are a floor rather than a total."))}</p>`;
+	// Two separate ways of being partial, and a wiki can be both at once: never
+	// swept yet, and too large to enumerate in one pass. Say each one plainly.
+	const notices = [];
+	if (!coverage.sweptAt) {
+		notices.push(
+			t(
+				"userscripts.neverSwept",
+				"No full sweep of this wiki has finished yet, so these counts are a floor rather than a total."
+			)
+		);
+	}
+	if (coverage.enumerated === false) {
+		notices.push(
+			t(
+				"userscripts.notEnumerated",
+				"This wiki holds more user-space script pages than one search pass can list, so only part of its user space has been read."
+			)
+		);
+	}
+	const notice = notices.map((line) => `<p class="empty" role="status">${esc(line)}</p>`).join("");
 	return `${notice}<div class="detail__meta">
 		${metaItem(t("userscripts.pagesSeen", "Script pages seen"), fmt(Number(coverage.pages || 0)))}
 		${metaItem(t("userscripts.sweptAt", "Last full sweep"), timeTag(coverage.sweptAt))}

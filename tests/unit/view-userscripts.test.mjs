@@ -127,6 +127,20 @@ test("a wiki with no finished sweep says its counts are a floor", async () => {
 	assert.match(view.html, /No scripts are filed in this tier yet/);
 });
 
+test("a wiki too large to enumerate in one pass says so alongside its counts", async () => {
+	// Meta is this case: swept successfully, thousands of rows, and still only
+	// part of the wiki. A finished sweep must not read as a finished census.
+	const partial = { ...coverage, enumerated: false };
+	respond({
+		wikiList: { count: 1, results: [partial] },
+		directory: { ...listing, coverage: partial }
+	});
+	const view = await viewUserScripts();
+	assert.match(view.html, /only part of its user space has been read/);
+	assert.doesNotMatch(view.html, /counts are a floor/);
+	assert.match(view.html, /Script pages seen/);
+});
+
 test("no swept wiki at all is stated rather than shown as an empty ranking", async () => {
 	respond({ wikiList: { count: 0, results: [] } });
 	const view = await viewUserScripts();

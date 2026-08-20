@@ -2335,6 +2335,7 @@
 	"userscripts.noMembers": "No other page was folded into this script.",
 	"userscripts.noneForOwner": "No scripts in this tier belong to $1.",
 	"userscripts.noneInTier": "No scripts are filed in this tier yet.",
+	"userscripts.notEnumerated": "This wiki holds more user-space script pages than one search pass can list, so only part of its user space has been read.",
 	"userscripts.noWikis": "No wiki has been swept for user scripts yet.",
 	"userscripts.owner": "Owner",
 	"userscripts.ownerLabel": "Owner",

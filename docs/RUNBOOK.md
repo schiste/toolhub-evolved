@@ -816,10 +816,14 @@ follows recent changes since the stored cursor and skips any page whose
 revision has not moved. A full _sweep_ is thousands of requests and is asked
 for explicitly with `USERSCRIPT_SWEEP=1`, except on a wiki that has never
 completed one, which is swept on its first run regardless. Which wikis a run
-covers comes from `USERSCRIPT_WIKIS` in the job command (`fr.wikipedia.org`
-today), not from a Toolforge envvar. A page that cannot be read is recorded as
-an observation rather than raised, so a partial pass is a successful run with
-unread pages counted; only a pass that could not run at all fails.
+covers comes from `USERSCRIPT_WIKIS` in the job command
+(`fr.wikipedia.org,meta.wikimedia.org` today), not from a Toolforge envvar. A
+page that cannot be read is recorded as an observation rather than raised, so a
+partial pass is a successful run with unread pages counted; only a pass that
+could not run at all fails. Meta holds more javascript pages than one search
+pass can walk, so its sweeps succeed while enumerating only part of the wiki;
+that shows up as `enumeration_complete = false` in `user_script_census_state`
+and as a notice on `/userscripts`, and it is expected rather than a fault.
 
 `projection-refresh` is the six-hour projection coordinator. It reuses input
 generations completed within six hours, runs stale Toolhub and Toolforge inputs

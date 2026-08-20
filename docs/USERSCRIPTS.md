@@ -258,11 +258,12 @@ on a folded page — arrives in a 404 body.
 
 ```
 schedule: "23 * * * *"     # hourly watch
-USERSCRIPT_WIKIS=fr.wikipedia.org
+USERSCRIPT_WIKIS=fr.wikipedia.org,meta.wikimedia.org
 ```
 
 - `USERSCRIPT_WIKIS` — comma-separated hosts, in order. Defaults to
-  `fr.wikipedia.org`. Set inline in the job command, not as a Toolforge envvar.
+  `fr.wikipedia.org,meta.wikimedia.org`. Set inline in the job command, not as a
+  Toolforge envvar.
 - `USERSCRIPT_SWEEP=1` — ask for a full sweep. A full sweep is thousands of
   requests and is not something to run hourly, so the schedule runs a watch and
   the sweep is asked for explicitly. **A wiki with no completed sweep gets one
@@ -272,17 +273,61 @@ USERSCRIPT_WIKIS=fr.wikipedia.org
 The projection follows every run. See [RUNBOOK.md](RUNBOOK.md) for lock
 reclamation, log locations, and the shared job contract.
 
+## Wikis in the census
+
+frwiki is the corpus under study. Meta is there for one reason: `global.js` and
+`global.css` live on Meta, they load scripts hosted on other wikis, and the
+demand query already selects load edges by _target_ across source wikis. Those
+cross-wiki edges are the strongest argument any script has for becoming a global
+gadget, and until Meta was swept that channel was empty.
+
+Adding a wiki is not just an entry in `USERSCRIPT_WIKIS`. Its local loader verbs
+have to be read out of its own `MediaWiki:Common.js` and written into
+`LOCAL_LOADERS`, because they cannot be inferred; a wiki added without that step
+still works, it just scores every load made through a local verb at zero. Meta
+needs no entry — its `Common.js` overrides `importScript` rather than defining a
+new verb, and `importScript` is already a global loader verb.
+
+### Meta is larger than one enumeration
+
+Measured 2026-08-20, Meta holds **23,587** javascript-model and **8,925**
+css-model pages in user space. `SEARCH_OFFSET_CAP` is 10,000, so
+`enumerate_titles` short-circuits on the javascript half: it returns the first
+`SEARCH_PAGE_SIZE` (500) titles and sets `complete = False`. `discover()` ANDs
+completeness across both models, `sweep()` writes `enumeration_complete = False`
+and — correctly — skips `_mark_missing`, since a page absent from a truncated
+enumeration has not been shown to be gone.
+
+The consequence is that Meta's javascript census covers roughly 500 of 23,587
+pages. That is recorded honestly rather than papered over: the state row says
+so, `coverage()` returns `enumerated: false`, and `/userscripts` prints a notice
+that only part of the wiki's user space has been read. The css half is under the
+cap and is complete.
+
+The remedy `Discovery`'s own docstring prescribes — narrowing the query by title
+prefix — is not implemented. `search_query()` and `enumerate_titles()` both
+accept a `prefix=`, but `discover()` never passes one, so nothing splits an
+over-cap wiki into walkable buckets. Until that exists, Meta contributes a
+sample of its cross-wiki edges rather than all of them, and any wiki with more
+than 10,000 pages of one model will land the same way.
+
 ## Known gaps
 
-- **Only frwiki has been swept.** Every threshold above is calibrated against one
-  wiki. The demand query already counts cross-wiki edges by target, so `global.js`
-  on Meta would feed the ranking the moment Meta is swept — but it has not been,
-  so that channel is empty today and cross-wiki reuse is currently invisible.
-  Adding a wiki is not just an entry in `USERSCRIPT_WIKIS`: its local loader
-  verbs have to be read out of its own `MediaWiki:Common.js` and written into
-  `LOCAL_LOADERS`, because they cannot be inferred. A wiki added without that
-  step still works — it just scores every load made through a local verb at
-  zero.
+- **Thresholds are calibrated against one wiki.** `CROWDED_OWNERS`,
+  `INDEPENDENT_DEMAND` and the tier split were all measured on frwiki. Meta is
+  swept but only partially enumerated, so it is not yet a second data point to
+  check them against.
+- **`owner_of()` only recognizes the English user namespace.** It requires the
+  literal prefix `User:`, but CirrusSearch returns titles in each wiki's own
+  language — frwiki pages come back as `Utilisateur:Foo/bar.js`, so every frwiki
+  row stores `owner = ""`. Two things quietly degrade as a result: the
+  crowded-name fold counts distinct owners and can never reach `CROWDED_OWNERS`
+  on frwiki, so it never fires there; and `demand()` falls back to the source
+  title, counting one person who loads a script from both `common.js` and
+  `vector.js` as two. Meta is unaffected because its user namespace is `User`,
+  which means the two wikis in the census currently fold by different rules.
+  Fixing it needs each wiki's namespace-2 name, which is a siteinfo lookup this
+  code does not make.
 - **Fork detection is a hash.** `fingerprint()` finds copies that differ only in
   comments and whitespace. It does not find a script somebody edited — a fork with
   one line changed reads as a distinct original. Recognizing those needs

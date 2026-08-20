@@ -516,14 +516,19 @@ def test_the_job_sweeps_the_configured_wikis(monkeypatch, capsys, _job_env):
     assert "unreadable=0" in out
 
 
-def test_the_job_defaults_to_frwiki_and_really_writes_rows(monkeypatch, capsys, _job_env):
+def test_the_job_defaults_to_the_pilot_wikis_and_really_writes_rows(monkeypatch, capsys, _job_env):
+    # frwiki is the corpus under study; meta is where global.js lives, and its
+    # cross-wiki loads are the whole argument for a script becoming a gadget.
     monkeypatch.delenv("USERSCRIPT_WIKIS", raising=False)
     assert job.main() == 0
-    assert "wiki=fr.wikipedia.org mode=sweep" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "wiki=fr.wikipedia.org mode=sweep" in out
+    assert "wiki=meta.wikimedia.org mode=sweep" in out
 
 
 def test_a_full_run_is_asked_for_through_the_environment(monkeypatch, _job_env):
     asked = []
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")  # one wiki: this is about the options, not the list
     monkeypatch.setenv("USERSCRIPT_SWEEP", "YES")
     monkeypatch.setenv("USERSCRIPT_LIMIT", "40")
     monkeypatch.setenv("USERSCRIPT_WATCH_LIMIT", "80")
@@ -540,6 +545,7 @@ def test_a_full_run_is_asked_for_through_the_environment(monkeypatch, _job_env):
 @pytest.mark.parametrize(("raw", "expected"), [("", 500), ("nonsense", 500), ("-5", 500), ("0", 500), ("12", 12)])
 def test_an_unusable_watch_limit_falls_back_to_the_default(monkeypatch, raw, expected, _job_env):
     asked = []
+    monkeypatch.setenv("USERSCRIPT_WIKIS", "fr.wikipedia.org")  # one wiki: this is about the options, not the list
     monkeypatch.setenv("USERSCRIPT_WATCH_LIMIT", raw)
     monkeypatch.setattr(
         job.userscript_sweep,
