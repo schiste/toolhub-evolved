@@ -381,14 +381,22 @@ def _backoff(attempts: int) -> datetime:
 SHALLOW_CLONE_BLIND = ("contributorCount", "commitCount")
 
 
-def _host_counts(url: str) -> dict[str, int]:
-    """Return whatever counts the enrichment lane has for this repository."""
+def _host_facts(url: str) -> dict[str, Any]:
+    """Return whatever the enrichment lane knows about this repository.
+
+    False is kept and None is dropped: a host that says "not archived" has
+    told us something, a host that has no such field has not.
+    """
     with db.session_scope() as s:
         row = s.get(RepositoryHostMetadata, repository_enrichment.url_hash(url))
         if row is None:
             return {}
-        counts = {"contributorCount": row.contributor_count, "commitCount": row.commit_count}
-    return {key: value for key, value in counts.items() if value is not None}
+        facts = {
+            "contributorCount": row.contributor_count,
+            "commitCount": row.commit_count,
+            "archived": row.archived,
+        }
+    return {key: value for key, value in facts.items() if value is not None}
 
 
 def _report_context(report: dict[str, Any], *, url: str, provider: str, commit_sha: str) -> dict[str, Any]:
@@ -401,7 +409,7 @@ def _report_context(report: dict[str, Any], *, url: str, provider: str, commit_s
         "provider": provider,
         "commitSha": commit_sha,
         "dirty": False,
-        **_host_counts(url),
+        **_host_facts(url),
     }
     return {**context, "repository": repository}
 
