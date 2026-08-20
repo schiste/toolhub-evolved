@@ -353,11 +353,12 @@ function healthComponentRulesTable() {
 				code("50"),
 				tWithElements(
 					"static.healthScore.maintenanceActivityRules",
-					"Repository status from last commit age: $1 <= 90 days adds 30, $2 <= 365 days adds 10, $3 <= 730 days subtracts 20, $4 > 730 days subtracts 35. Contributor count >= 2 adds 10; contributor count = 1 subtracts 10; commit count < 5 subtracts 10.",
+					"Repository status from last commit age: $1 <= 90 days adds 30, $2 <= 365 days adds 10, $3 <= 730 days subtracts 20, $4 > 730 days subtracts 35. A repository the host reports as $5 subtracts 35 whatever its age. Contributor count >= 2 adds 10; contributor count = 1 subtracts 10; commit count < 5 subtracts 10.",
 					{ html: code("active") },
 					{ html: code("quiet") },
 					{ html: code("stale") },
-					{ html: code("dormant") }
+					{ html: code("dormant") },
+					{ html: code("archived") }
 				)
 			],
 			[
@@ -415,7 +416,8 @@ function healthThresholdsTable() {
 				esc(t("static.healthScore.repositoryStatusName", "Repository and maintainer activity status")),
 				tWithElements(
 					"static.healthScore.repositoryStatusValue",
-					"$1: age <= 90 days; $2: age <= 365 days; $3: age <= 730 days; $4: age > 730 days; $5: no age.",
+					"$1: repository archived by its maintainer, whatever the age; $2: age <= 90 days; $3: age <= 365 days; $4: age <= 730 days; $5: age > 730 days; $6: no age. Only repositories can be $1; maintainer status has no such state.",
+					{ html: code("archived") },
 					{ html: code("active") },
 					{ html: code("quiet") },
 					{ html: code("stale") },

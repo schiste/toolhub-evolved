@@ -189,6 +189,7 @@ RUNTIME_FILE_KINDS = {
 
 REPOSITORY_CONTEXT_REPOSITORY_KEYS = {
     "analyzedAt",
+    "archived",
     "branch",
     "commitCount",
     "commitSha",
@@ -1965,7 +1966,14 @@ def _last_commit_age_days(repository: dict[str, Any]) -> int | None:
     return max(0, (analyzed_at - last_commit).days)
 
 
-def _activity_status(age_days: int | None) -> str:
+def _activity_status(age_days: int | None, *, archived: bool = False) -> str:
+    # Archived outranks age and is terminal. An archived repository is
+    # read-only, so its commit age measures the archive flag rather than
+    # neglect -- running the recency ladder on it would score our own
+    # observation. Only repositories have this; _maintainer_status describes a
+    # person, and a person cannot be archived.
+    if archived:
+        return "archived"
     if age_days is None:
         return "unknown"
     if age_days <= ACTIVE_REPOSITORY_DAYS:
@@ -1993,10 +2001,15 @@ def _repository_maintenance_context(repository: object) -> dict[str, Any]:
     if not isinstance(repository, dict) or not repository:
         return {}
     age_days = _last_commit_age_days(repository)
-    status = _activity_status(age_days)
+    archived = repository.get("archived") is True
+    status = _activity_status(age_days, archived=archived)
     contributor_count = _int_context_value(repository.get("contributorCount"))
     commit_count = _int_context_value(repository.get("commitCount"))
     signals: list[dict[str, Any]] = []
+    # First, because it is the fact that decides the status and the signal list
+    # is truncated to MAX_ASSESSMENT_SIGNALS.
+    if archived:
+        signals.append({"kind": "archived", "value": True})
     if age_days is not None:
         signals.append({"kind": "last-commit-age", "value": age_days, "unit": "days"})
     if contributor_count is not None:
@@ -2007,7 +2020,11 @@ def _repository_maintenance_context(repository: object) -> dict[str, Any]:
         signals.append({"kind": "dirty-checkout", "value": True})
     return {
         "status": status,
+        # Archived is deliberately not stale. Stale means work was expected and
+        # did not arrive; archived means no work is expected at all, so the
+        # outreach paths keyed on this flag must not fire.
         "stale": status in {"stale", "dormant"},
+        "archived": archived,
         "lastCommitAgeDays": age_days,
         "contributorCount": contributor_count,
         "commitCount": commit_count,
@@ -2427,7 +2444,16 @@ def _maintenance_activity_assessment(context: dict[str, Any]) -> dict[str, Any]:
     score = 50
     signals: list[dict[str, Any]] = []
     recommendations: list[str] = []
-    if status == "active":
+    # Archived scores as harshly as dormant by deliberate policy: read-only
+    # means no fix will ever land, whatever the maintainer intended. This does
+    # conflate "finished" and "moved to another forge" with "abandoned" --
+    # replaced_by is the field that would separate them, and nothing reads it
+    # yet. That was a considered call, not an oversight.
+    if status == "archived":
+        score -= 35
+        signals.append(_assessment_signal("negative", "Repository is archived (read-only)"))
+        recommendations.append("Find a maintained alternative.")
+    elif status == "active":
         score += 30
         signals.append(_assessment_signal("positive", "Recent repository activity", detail=f"{age_days} days"))
     elif status == "quiet":
@@ -2669,6 +2695,10 @@ def _stewardship_status(context: dict[str, Any]) -> str:
     maintainer = context.get("maintainerActivity") if isinstance(context.get("maintainerActivity"), dict) else {}
     source_status = str(source.get("status") or "unknown")
     maintainer_status = str(maintainer.get("status") or "unknown")
+    # Terminal, and does not combine: the repository will receive no further
+    # work however active its maintainer is elsewhere.
+    if source_status == "archived":
+        return "archived"
     stale_source = source_status in {"stale", "dormant"}
     active_maintainer = maintainer_status in {"active", "quiet"}
     stale_maintainer = maintainer_status in {"stale", "dormant"}

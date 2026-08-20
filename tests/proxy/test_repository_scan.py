@@ -716,3 +716,98 @@ def test_a_genuinely_single_contributor_repository_is_still_flagged():
     labels = {signal["label"] for signal in _activity(_context())["signals"]}
     assert "Single-contributor repository" in labels
     assert "Very small commit history" in labels
+
+
+# --- Archived is a terminal activity status ---------------------------------
+
+
+def _maintenance(context):
+    from backend.source_analyzer import analyze_source_files
+
+    report = analyze_source_files(
+        [{"path": "tool.py", "content": "print('hello')\n"}],
+        tool_name="example-tool",
+        source_label=SCAN_URL,
+        repository_context=context,
+    )
+    return report["repositoryContext"]["maintenance"], report
+
+
+def _fresh(**extra):
+    # _last_commit_age_days needs both ends of the interval; _local_git_context
+    # supplies analyzedAt in the real scanner path.
+    now = datetime.now(UTC)
+    return {
+        "repository": {
+            "lastCommitAt": (now - timedelta(days=3)).isoformat(),
+            "analyzedAt": now.isoformat(),
+            **extra,
+        }
+    }
+
+
+def test_the_host_archive_flag_reaches_the_analyzer():
+    # REPOSITORY_CONTEXT_REPOSITORY_KEYS strips anything not listed, so an
+    # unlisted key would vanish silently between the scanner and the score.
+    _host_row(archived=True)
+    assert _context(_fresh())["repository"]["archived"] is True
+
+
+def test_a_host_that_says_not_archived_is_recorded_as_false():
+    # False is a fact; only None means the host has no such field.
+    _host_row(archived=False)
+    assert _context(_fresh())["repository"]["archived"] is False
+
+
+def test_a_host_without_an_archive_field_leaves_the_key_absent():
+    # Bitbucket has no archive concept at all.
+    _host_row(archived=None)
+    assert "archived" not in _context(_fresh())["repository"]
+
+
+def test_archived_outranks_a_recent_commit():
+    # The repository was pushed three days ago and archived after that, which
+    # is the ordinary shape: the last act before archiving is often a commit.
+    _host_row(archived=True)
+    maintenance, _report = _maintenance(_context(_fresh()))
+    assert maintenance["status"] == "archived"
+    assert maintenance["archived"] is True
+
+
+def test_archived_is_not_stale():
+    # Stale means work was expected and did not arrive. Archived means no work
+    # is expected, so the outreach paths keyed on this flag must not fire.
+    _host_row(archived=True)
+    maintenance, _report = _maintenance(_context(_fresh()))
+    assert maintenance["stale"] is False
+
+
+def test_a_live_repository_keeps_its_age_derived_status():
+    _host_row(archived=False)
+    maintenance, _report = _maintenance(_context(_fresh()))
+    assert maintenance["status"] == "active"
+    assert maintenance["archived"] is False
+
+
+def test_archived_scores_as_harshly_as_dormant():
+    _host_row(archived=True)
+    activity = _activity(_context(_fresh()))
+    labels = {signal["label"] for signal in activity["signals"]}
+    assert "Repository is archived (read-only)" in labels
+    assert "Recent repository activity" not in labels
+    assert "Find a maintained alternative." in activity["recommendations"]
+
+
+def test_archived_reports_a_terminal_stewardship_status():
+    # Without this it fell through to "watch", which reads as "we are worried
+    # about this" when the repository is simply closed.
+    _host_row(archived=True)
+    _maintenance_ctx, report = _maintenance(_context(_fresh()))
+    assert report["healthCore"]["stewardshipStatus"] == "archived"
+    assert report["healthCore"]["sourceMaintenanceStatus"] == "archived"
+
+
+def test_the_archived_signal_survives_signal_truncation():
+    _host_row(archived=True, contributor_count=9, commit_count=800)
+    maintenance, _report = _maintenance(_context(_fresh()))
+    assert {"kind": "archived", "value": True} in maintenance["signals"]
