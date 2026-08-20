@@ -269,6 +269,9 @@ names are:
 | `source_analysis_reports`                                          | Private per user                                       | Stores derived, redacted source-analysis findings and maintainer review state; raw source files are never stored and rows are included in export/delete operations.                                                                                                                                                                                                                                      |
 | `tool_health_targets` / `tool_health_checks`                       | Public checked status after approval                   | Maintainer/user-provided targets stay hidden until `review_status = approved`; scheduled checks must use conservative timeouts and store errors without faking health.                                                                                                                                                                                                                                   |
 | `tool_media`                                                       | Public only after approval                             | URL-based screenshots/media with license and source; pending rows are hidden until reviewed, labeled as Evolved data, and can be soft-deleted.                                                                                                                                                                                                                                                           |
+| `user_script_pages` / `user_script_imports`                        | Anonymous public wiki-page census                      | Verbatim copy of already-public user-space script pages on the configured wikis, plus the load edges parsed out of them. Bodies are capped at 512 KiB; deleted pages are tombstoned, not removed. Fully rebuildable by a sweep.                                                                                                                                                                          |
+| `user_script_census_state`                                         | Operational cursor state                               | Per-wiki recent-changes cursor, sweep counters, enumeration completeness and last error. Clearing `changes_cursor` forces the next run to take a full sweep.                                                                                                                                                                                                                                             |
+| `user_script_directory` / `user_script_directory_members`          | Anonymous public derived directory                     | Distinct scripts projected from the census, tiered `active`/`archive` with demand counts, and the pages folded under each. Derived only: rebuilt whole by every census run and never written by a request.                                                                                                                                                                                               |
 
 `tool_author_claims` is the account-owned relationship workflow, not a second
 relationship projection. Rows are scoped to one `(tool_name, author_name,
@@ -806,6 +809,17 @@ The Toolhub Digest's UTC period contract, Meta page layout, Lift Wing and
 Wikimedia variables, delivery behavior, and recovery procedure are documented
 in [DIGESTS.md](DIGESTS.md). Its publisher runs at 06:15 UTC and catches up all
 missing closed non-empty periods; it never creates an empty edition.
+
+`userscript-census` builds the user-space script directory and is documented
+in [USERSCRIPTS.md](USERSCRIPTS.md). The 23-past-the-hour run is a _watch_: it
+follows recent changes since the stored cursor and skips any page whose
+revision has not moved. A full _sweep_ is thousands of requests and is asked
+for explicitly with `USERSCRIPT_SWEEP=1`, except on a wiki that has never
+completed one, which is swept on its first run regardless. Which wikis a run
+covers comes from `USERSCRIPT_WIKIS` in the job command (`fr.wikipedia.org`
+today), not from a Toolforge envvar. A page that cannot be read is recorded as
+an observation rather than raised, so a partial pass is a successful run with
+unread pages counted; only a pass that could not run at all fails.
 
 `projection-refresh` is the six-hour projection coordinator. It reuses input
 generations completed within six hours, runs stale Toolhub and Toolforge inputs
