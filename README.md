@@ -20,6 +20,7 @@ supported writes back to official Toolhub when users sign in with Toolhub OAuth.
 - **Full tool pages** (`/tools/:name`) — real metadata (wikis, languages, license, links) + related tools, real revision history.
 - **API explorer** (`/api-docs`) — curated read-only endpoint forms, formatted JSON responses, and copyable `curl`/`fetch` examples.
 - **Source code analysis** (`/my-tools`) — maintainer-submitted source bundles produce redacted, evidence-backed project/API/access/dependency/OAuth suggestions.
+- **User-script directory** (`/userscripts`) — the distinct scripts hiding in a wiki's user space, folded out of their per-user copies and ranked by how many people load them.
 - **Footer & policy pages** — About, Help, Community, Privacy, Terms, Code of Conduct, API, Feeds.
 - **Help maintain Toolhub** (`/contribute`) — a hub linking source, tasks, translation and docs.
 - **Wikimedia brand** — Montserrat + Source Serif 4, the 2022 brand palette, all in `tokens.css`.
@@ -121,6 +122,7 @@ docs/
   PLAN.md              ·  the comprehensive roadmap (ship lane + experiments lane)
   AUDIT-i18n-a11y.md   ·  detailed i18n / accessibility findings
   deploy-toolforge.md  ·  step-by-step Toolforge deployment
+  USERSCRIPTS.md       ·  the user-space script census, collapse rules, and directory
   screenshots/         ·  reference images
 LICENSE             ·  GNU GPL v3.0-or-later
 ```
