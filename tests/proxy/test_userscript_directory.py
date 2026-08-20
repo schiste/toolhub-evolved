@@ -207,10 +207,18 @@ def test_a_page_other_people_load_keeps_its_identity_under_a_crowded_name():
     assert "User:Orlodrim/common.js" in titles(origins)
 
 
-def test_a_page_barely_loaded_still_folds():
+def test_a_single_importer_is_enough_to_survive_a_crowded_name():
+    # INDEPENDENT_DEMAND = 1: somebody who is not the owner loading the page is
+    # the whole of the evidence, and folding it away would report that the reuse
+    # never happened. On frwiki this is one of the 472 `LiveRCparam.js` pages.
     pages = crowd("common.js", ["Aaa", "Bbb", "Ccc", "Ddd", "Eee", "Orlodrim"])
     demand = {"User:Orlodrim/common.js": {"User:X"}}
-    assert titles(directory.collapse(pages, demand)) == ["User:Aaa/common.js"]
+    assert "User:Orlodrim/common.js" in titles(directory.collapse(pages, demand))
+
+
+def test_a_page_nobody_loads_still_folds():
+    pages = crowd("common.js", ["Aaa", "Bbb", "Ccc", "Ddd", "Eee", "Orlodrim"])
+    assert titles(directory.collapse(pages, {})) == ["User:Aaa/common.js"]
 
 
 def test_demand_for_a_copy_protects_the_page_that_absorbed_it():
@@ -273,7 +281,7 @@ def test_demand_for_an_instance_counts_for_the_script_it_belongs_to():
 
 
 def test_a_script_nobody_loads_scores_zero():
-    # 655 of frwiki's 1,233 originals are in this state. They are still scripts.
+    # 661 of frwiki's 1,264 originals are in this state. They are still scripts.
     origins = directory.collapse([page("Orlodrim", "private.js")], {})
     assert directory.rank_by_demand(origins, {})[0][1] == 0
 
@@ -303,8 +311,8 @@ def test_a_script_nobody_loads_is_archived_rather_than_dropped():
 
 
 def test_one_importer_is_enough_to_leave_the_archive():
-    # The boundary is deliberately one, not three: INDEPENDENT_DEMAND decides
-    # what survives a crowded filename, which is a different question.
+    # The tier boundary happens to equal INDEPENDENT_DEMAND, but is not it:
+    # that one decides what survives a crowded filename, a different question.
     demand = {"User:Orlodrim/portail-eval.js": {"Litlok"}}
     origin = directory.collapse([page("Orlodrim", "portail-eval.js")], demand)[0]
     assert directory.tier_of(origin, demand) == directory.TIER_ACTIVE

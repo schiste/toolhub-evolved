@@ -3,7 +3,7 @@
 
 A directory of user scripts has to answer a question the wiki itself cannot:
 of the 2,051 frwiki user-space pages that hold a real script, how many are
-*distinct scripts*? The answer is 1,233, and getting there is not deduplication.
+*distinct scripts*? The answer is 1,264, and getting there is not deduplication.
 Two thirds of the difference is not byte-identical copies at all -- it is
 per-user configuration. 472 people have a page called `LiveRCparam.js`, each
 holding their own settings for one shared tool. Hashing finds none of them,
@@ -18,16 +18,18 @@ it never fires alone:
 **A page that other people demonstrably load keeps its identity, whatever it is
 called.** The guard, not the threshold, is what protects real scripts. It also
 pays for itself: protecting reused pages directly let the crowd threshold drop
-from 25 owners to 5, folding 817 pages instead of 691 while losing nothing that
+from 25 owners to 5, folding 787 pages instead of 670 while losing nothing that
 anyone actually imports.
 
 The rule then validates itself in a way worth stating, because it is the reason
 to trust it on a wiki nobody has hand-checked. "Earliest wins" recovers tool
-authors without being told what a tool author is: the 472 `LiveRCparam.js`
-pages fold onto EDUCA33E, who wrote LiveRC, and the `AdvancedContribs.js` group
-folds onto Maloq, who wrote AdvancedContribs.
+authors without being told what a tool author is: 471 of the 472
+`LiveRCparam.js` pages fold onto EDUCA33E, who wrote LiveRC, and the
+`AdvancedContribs.js` group folds onto Maloq, who wrote AdvancedContribs. The
+472nd is somebody else's settings file that another editor loads, so the guard
+keeps it -- which is exactly the case INDEPENDENT_DEMAND exists for.
 
-Nothing is dropped for being unloaded. 655 of the 1,233 originals have no
+Nothing is dropped for being unloaded. 661 of the 1,264 originals have no
 importer anybody can see, and they stay in the directory under `TIER_ARCHIVE`
 rather than being filtered out of it -- see `tier_of`.
 
@@ -53,11 +55,25 @@ CROWDED_OWNERS = 5
 
 # How many distinct sources must load a page for it to keep its identity
 # regardless of what it is called. This is the one number here that is a
-# judgement rather than a measurement: at 1 it rescues 63 crowded-name pages on
-# frwiki, at 3 it rescues 25, and past 5 it stops changing anything. It encodes
-# what counts as reuse, which is an editorial question about the directory, not
-# a fact about the wiki.
-INDEPENDENT_DEMAND = 3
+# judgement rather than a measurement -- it encodes what counts as reuse, which
+# is a question about the directory, not a fact about the wiki. On frwiki the
+# name rule alone leaves 1,229 originals, and the guard rescues pages back:
+#
+#     >= 1 source   1,264 originals   +35
+#     >= 2 sources  1,239             +10
+#     >= 3 sources  1,233              +4
+#     >= 5 sources  1,232              +3
+#     >= 25 sources 1,229              +0
+#
+# Nearly the whole effect sits between 1 and 2, so the choice is really binary:
+# either somebody other than the author loading a page is enough to make it its
+# own script, or it is not. It is. A page that one other person loads is being
+# used by somebody who is not its owner, and a directory that folds it away
+# reports that the reuse never happened -- a false negative about the only thing
+# this module exists to find. Folding a genuine instance into its tool costs a
+# duplicate entry that demand ranking pushes to the bottom anyway; the reverse
+# error is silent and unrecoverable.
+INDEPENDENT_DEMAND = 1
 
 
 @dataclass(frozen=True)
@@ -215,7 +231,7 @@ def rank_by_demand(origins: Iterable[Origin], demand: Mapping[str, set[str]]) ->
     return scored
 
 
-# A script nothing loads is still a script. 655 of frwiki's 1,233 originals are
+# A script nothing loads is still a script. 661 of frwiki's 1,264 originals are
 # in that state, and they are not one population but two: 123 are depth-2
 # subpages that their own parent loads, and the rest is code somebody wrote,
 # used, and left running -- some of it substantial, some of it a decade old.
@@ -234,6 +250,11 @@ def tier_of(origin: Origin, demand: Mapping[str, set[str]]) -> str:
     tiers answer different questions. `active` is "what could become a gadget",
     and one person other than the author is the least evidence that can support
     that claim. `archive` is "what exists", which needs no evidence at all.
+
+    It currently coincides with INDEPENDENT_DEMAND, which is arithmetic rather
+    than design: that one settles whether a page is its own script, this one
+    settles where a script already known to be its own gets filed. Moving either
+    must not move the other.
     """
     return TIER_ACTIVE if _demand_for(origin.pages, demand) else TIER_ARCHIVE
 
