@@ -7,9 +7,16 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
+# Two shapes of Wikimedia project. The first alternative covers the ones that
+# exist once per language and are addressed by subdomain (en.wikipedia.org,
+# commons.wikimedia.org). The second covers the ones that exist exactly once:
+# they are pinned to their own host with an optional www rather than folded
+# into the subdomain alternative, because they have no per-language siblings
+# and accepting *.mediawiki.org would widen the trusted set for nothing.
 WIKIMEDIA_HOST_RE = re.compile(
     r"^(?:[a-z0-9-]+\.)*(?:wikipedia|wikimedia|wiktionary|wikibooks|wikinews|wikiquote|wikiversity|"
-    r"wikivoyage|wikisource)\.org$|^(?:www\.)?wikidata\.org$|^species\.wikimedia\.org$"
+    r"wikivoyage|wikisource)\.org$|^(?:www\.)?(?:wikidata|mediawiki|wikifunctions)\.org$"
+    r"|^species\.wikimedia\.org$"
 )
 
 
@@ -23,7 +30,14 @@ class WikimediaUserPage:
 
 
 def clean_wiki_domain(value: str) -> str:
-    """Return a supported public Wikimedia domain or reject it."""
+    """Return a supported public Wikimedia domain or reject it.
+
+    "Supported" means Wikimedia-operated, which is what makes a `User:` page
+    there an identity assertion: the account is the same global SUL account it
+    would be on any other project. Everything downstream leans on that --
+    attestations, user reconciliation, digest delivery and source scanning all
+    gate on this one pattern.
+    """
     domain = value.strip().casefold().rstrip(".")
     if not domain or not WIKIMEDIA_HOST_RE.fullmatch(domain):
         message = "destination must be a public Wikimedia wiki domain"

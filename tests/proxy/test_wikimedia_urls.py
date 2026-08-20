@@ -78,3 +78,42 @@ def test_canonical_username_folds_spelling_but_not_case():
 )
 def test_user_space_javascript_page_requires_a_trusted_js_title(url, is_javascript):
     assert (wikimedia_urls.user_space_javascript_page(url) is not None) is is_javascript
+
+
+# --- Wikimedia projects that exist exactly once ------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "domain"),
+    [
+        # mediawiki.org hosts a large share of the user scripts and gadgets
+        # that other wikis import, and was refused until now.
+        ("https://www.mediawiki.org/wiki/User:Ada/tool.js", "www.mediawiki.org"),
+        ("https://mediawiki.org/wiki/User:Ada/tool.js", "mediawiki.org"),
+        ("https://www.wikifunctions.org/wiki/User:Ada/tool.js", "www.wikifunctions.org"),
+        ("https://wikifunctions.org/wiki/User:Ada/tool.js", "wikifunctions.org"),
+    ],
+)
+def test_single_site_projects_are_public_wikimedia_wikis(url, domain):
+    page = wikimedia_urls.user_space_page(url)
+
+    assert page is not None
+    assert page.domain == domain
+
+
+@pytest.mark.parametrize(
+    "domain",
+    [
+        # Neither project has per-language siblings, so a subdomain is not a
+        # sibling wiki -- it is someone else's host if it resolves at all.
+        "de.mediawiki.org",
+        "evil.wikifunctions.org",
+        # The suffix trick the subdomain alternative has to survive too.
+        "mediawiki.org.attacker.example",
+        "wikifunctions.org.attacker.example",
+        "notmediawiki.org",
+    ],
+)
+def test_a_lookalike_of_a_single_site_project_is_not_one(domain):
+    with pytest.raises(ValueError, match="public Wikimedia wiki domain"):
+        wikimedia_urls.clean_wiki_domain(domain)
