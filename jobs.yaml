@@ -322,3 +322,14 @@
   image: python3.13
   schedule: "5 3 * * *"
   emails: onfailure
+
+- name: userscript-census
+  # User-space script directory: enumerate every javascript/css content-model
+  # page in User: space through CirrusSearch, store body and analysis, and
+  # record which pages load which. The hourly run follows recent changes; a
+  # full sweep is thousands of requests and is asked for with USERSCRIPT_SWEEP=1
+  # (a wiki that has never been swept gets one on its first run regardless).
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name userscript-census -- /usr/bin/env USERSCRIPT_WIKIS=fr.wikipedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/userscript_sweep.py
+  image: python3.13
+  schedule: "23 * * * *"
+  emails: onfailure

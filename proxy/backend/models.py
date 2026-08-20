@@ -1482,3 +1482,112 @@ class ToolMedia(Base):
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserScriptPage(Base):
+    """One user-space script page on one wiki, as the census last observed it.
+
+    The body is kept, not just its analysis. Re-reading a wiki costs thousands of
+    API requests, while re-analysing a stored corpus costs seconds -- and the
+    analyzer is the part that keeps changing. Two corrections during the frwiki
+    pilot (commented-out imports counted as demand, and `$.getScript` never
+    matching) were found and fixed against a stored corpus; without one they
+    would each have meant crawling the wiki again.
+
+    `content_model` is what MediaWiki reports, never what the suffix suggests:
+    `User:Penquista/monobook.css` is stored here as javascript because that is
+    how the wiki parses it.
+    """
+
+    __tablename__ = "user_script_pages"
+    __table_args__ = (
+        UniqueConstraint("wiki", "title"),
+        # The directory ranks and collapses per wiki, and the collapse groups by
+        # basename before it groups by anything else.
+        Index("ix_user_script_pages_wiki_role", "wiki", "role"),
+        Index("ix_user_script_pages_wiki_basename", "wiki", "basename"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wiki: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    owner: Mapped[str] = mapped_column(String(255), default="", index=True)
+    basename: Mapped[str] = mapped_column(String(512), default="")
+    content_model: Mapped[str] = mapped_column(String(32), default="")
+    role: Mapped[str] = mapped_column(String(16), default="")
+    fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
+    body: Mapped[str] = mapped_column(MEDIUMTEXT().with_variant(Text, "sqlite"), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    revision: Mapped[str] = mapped_column(String(32), default="")
+    # MediaWiki timestamps, kept as the wiki spells them: they sort correctly as
+    # strings, and the directory's "earliest wins" rule only ever compares them.
+    created_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    touched_at_wiki: Mapped[str] = mapped_column(String(32), default="")
+    # Creation order, not a timestamp. Asking the API when each of 9,345 pages was
+    # created is 9,345 requests; the search index hands the same ordering over for
+    # free because enumeration already sorts by create_timestamp_asc. The directory
+    # only ever compares two pages to see which came first, and this answers that.
+    discovery_rank: Mapped[int] = mapped_column(Integer, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    # Set when a page the census knew about has gone. Kept rather than deleted:
+    # a script that vanished is evidence about the directory, and the people who
+    # still import it have a broken load either way.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserScriptImport(Base):
+    """One observed load of one page by another, or by a URL.
+
+    Rows are the raw observation and stay that way. Which original a load counts
+    towards depends on the collapse, which depends on the loads -- so attribution
+    is computed, never stored here.
+
+    A target may be a page on another wiki: 1,160 of frwiki's 1,807 URL imports
+    leave the wiki, and those edges are the whole argument for a global gadget.
+    A target that resolves to no page at all keeps its URL and an empty title.
+    """
+
+    __tablename__ = "user_script_imports"
+    __table_args__ = (
+        UniqueConstraint("wiki", "source_title", "verb", "target_wiki", "target_title", "target_url"),
+        # Demand is always read target-first: "who loads this page?"
+        Index("ix_user_script_imports_target", "target_wiki", "target_title"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wiki: Mapped[str] = mapped_column(String(255), index=True)
+    source_title: Mapped[str] = mapped_column(String(512), index=True)
+    verb: Mapped[str] = mapped_column(String(32), default="")
+    target_wiki: Mapped[str] = mapped_column(String(255), default="")
+    target_title: Mapped[str] = mapped_column(String(512), default="")
+    target_url: Mapped[str] = mapped_column(String(2000), default="")
+    is_stylesheet: Mapped[bool] = mapped_column(Boolean, default=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserScriptCensusState(Base):
+    """Resumable cursor and health for one wiki's script census.
+
+    Enumeration and monitoring are separate cursors on purpose. The full walk is
+    a periodic sweep of the search index; `changes_cursor` follows recent changes
+    between sweeps and is the only thing that has to be exactly resumable, since
+    a missed window is a page the directory never learns changed.
+
+    `enumeration_complete` is false when the wiki holds more pages of a model
+    than one search can walk. It is recorded rather than acted on, because a
+    truncated enumeration that reads as complete is the failure mode worth
+    seeing in the state table.
+    """
+
+    __tablename__ = "user_script_census_state"
+    wiki: Mapped[str] = mapped_column(String(255), primary_key=True)
+    changes_cursor: Mapped[str] = mapped_column(String(32), default="")
+    pages_known: Mapped[int] = mapped_column(Integer, default=0)
+    scripts_known: Mapped[int] = mapped_column(Integer, default=0)
+    imports_known: Mapped[int] = mapped_column(Integer, default=0)
+    enumeration_complete: Mapped[bool] = mapped_column(Boolean, default=True)
+    enumeration_totals: Mapped[dict] = mapped_column(JSON, default=dict)
+    sweeps_completed: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="idle")
+    last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
