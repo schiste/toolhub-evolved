@@ -23,17 +23,28 @@ import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
+import requests
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 import repository_enrichment
 from analyze_source import _local_git_context
-from backend import db, graph_enrichment, job_runner, job_runs, tool_summaries
+from backend import (
+    db,
+    graph_enrichment,
+    job_runner,
+    job_runs,
+    outbound,
+    source_hosts,
+    tool_summaries,
+    wiki_api,
+    wiki_sources,
+)
 from backend.models import (
     CanonicalToolCache,
     RepositoryAnalysisState,
@@ -111,8 +122,22 @@ class RepositoryScanError(RuntimeError):
     """A bounded repository acquisition or analysis failure."""
 
 
+def _wiki_repository_url(raw: str) -> str:
+    """Return the canonical URL of a wiki page that holds tool source, or "".
+
+    Wiki hosts cannot join ALLOWED_HOSTS: a gadget lives on whichever Wikimedia
+    wiki hosts it, and the set is neither small nor fixed. What can be pinned
+    instead is the shape -- a validated Wikimedia domain, a User: subpage or a
+    MediaWiki:Gadget- page, and a code extension -- which is what wiki_sources
+    checks. It also collapses the /wiki/X and index.php?title=X spellings onto
+    one URL, so the same gadget cannot be scanned twice under two keys.
+    """
+    source = wiki_sources.wiki_source(raw)
+    return wiki_sources.page_url(source.domain, source.title) if source is not None else ""
+
+
 def repository_url(value: object) -> str:
-    """Normalize one canonical HTTPS repository URL or return an empty string."""
+    """Normalize one canonical HTTPS repository or wiki-page URL, or return ""."""
     if not isinstance(value, str):
         return ""
     raw = value.strip()
@@ -123,7 +148,7 @@ def repository_url(value: object) -> str:
     if parsed.scheme.lower() != "https" or parsed.username or parsed.password or not host:
         return ""
     if host not in ALLOWED_HOSTS and not host.endswith(ALLOWED_SUFFIXES):
-        return ""
+        return _wiki_repository_url(raw)
     path = parsed.path.rstrip("/")
     if not path or ".." in path.split("/"):
         return ""
@@ -133,7 +158,11 @@ def repository_url(value: object) -> str:
 def provider_for(url: str) -> str:
     """Return the stable public provider label for a normalized URL."""
     host = (urlparse(url).hostname or "").lower()
-    return SUPPORTED_PROVIDERS.get(host, "github" if host.endswith(".github.com") else "gitlab")
+    if host in SUPPORTED_PROVIDERS:
+        return SUPPORTED_PROVIDERS[host]
+    if wiki_sources.wiki_source(url) is not None:
+        return source_hosts.PROVIDER_MEDIAWIKI_WIKIMEDIA
+    return "github" if host.endswith(".github.com") else "gitlab"
 
 
 def _git_raw(args: list[str], *, cwd: Path | None = None, stdin: bytes | None = None) -> bytes:
@@ -334,6 +363,112 @@ def _read_repository_tree(repo: Path) -> list[dict[str, str]]:
     return files
 
 
+WIKI_CALLER = outbound.Caller(
+    user_agent="toolhub-evolved-repository-scanner (https://toolhub-evolved.toolforge.org)",
+    accept="application/json",
+    scheme_error="only public Wikimedia wiki APIs are read",
+)
+
+
+@dataclass(frozen=True)
+class _Source:
+    """One tool's source as acquired, whatever kind of host it came from."""
+
+    head: str
+    files: list[dict[str, str]]
+    context: dict[str, Any]
+
+
+def _wiki_query(session: requests.Session, url: str) -> Any:  # noqa: ANN401 - one decoded API payload
+    """Run one Action API query, turning its in-band error into a scan failure.
+
+    The Action API reports errors with HTTP 200 and an error object in the
+    body, so a caller that only checked the status would record a rate-limited
+    or lagged wiki as a tool with no source at all.
+    """
+    payload = json.loads(outbound.fetch_bounded(session, url, policy=outbound.WIKI_API, caller=WIKI_CALLER))
+    code = wiki_api.api_error(payload)
+    if code:
+        message = f"wiki API refused the query: {code}"
+        raise RepositoryScanError(message)
+    return payload
+
+
+def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[wiki_api.Revision, ...]:
+    """Fetch every page one wiki-hosted tool consists of, in one request or two.
+
+    A user script costs one: the prefix search that finds its subpages is a
+    generator feeding the revision fetch, so discovery is free. A gadget costs
+    two, because its members are named in a page that has to be read first.
+    """
+    with requests.Session() as session:
+        if source.kind == wiki_sources.KIND_GADGET:
+            definition = wiki_api.definition_text(_wiki_query(session, wiki_api.definition_url(source.domain)))
+            # An unregistered MediaWiki:Gadget- page is a leftover or a work in
+            # progress rather than a gadget; scan it alone rather than guess.
+            titles = wiki_sources.gadget_pages(definition, source.filename) or (source.title,)
+            return wiki_api.revisions(_wiki_query(session, wiki_api.pages_url(source.domain, titles)))
+        query = wiki_api.subpages_url(source.domain, source.namespace_id, source.prefix)
+        found = wiki_api.revisions(_wiki_query(session, query))
+    # The prefix search is broader than the script -- it also returns the same
+    # author's next tool -- so what it fetched still has to be filtered down to
+    # the pages that actually belong to this one.
+    kept = set(wiki_sources.subpage_titles(source, [revision.title for revision in found]))
+    return tuple(revision for revision in found if revision.title in kept)
+
+
+def _wiki_files(found: tuple[wiki_api.Revision, ...]) -> list[dict[str, str]]:
+    """Select the analyzable pages under the same caps as the repository reader.
+
+    The page title is the path. It already ends in .js, .css or .json, which is
+    what the analyzer reads to choose a language, and keeping it means a finding
+    is reported against a name a maintainer can paste into a wiki search box.
+    """
+    files: list[dict[str, str]] = []
+    total = 0
+    for revision in found:
+        raw = len(revision.content.encode("utf-8"))
+        if len(files) >= MAX_FILES or total + raw > MAX_TOTAL_BYTES:
+            break
+        if raw > MAX_FILE_BYTES or not is_supported_source_path(revision.title):
+            continue
+        total += raw
+        files.append({"path": revision.title, "content": revision.content})
+    return files
+
+
+def _wiki_context(found: tuple[wiki_api.Revision, ...]) -> dict[str, Any]:
+    """Build the repository context a page set can honestly fill.
+
+    Deliberately thin. _local_git_context reports a branch, a tag and a default
+    branch because a clone has them; a wiki page has none of the three, and
+    inventing them would be worse than their absence -- an absent key reads as
+    "not measured" downstream, where a wrong value would be scored.
+    """
+    repository: dict[str, Any] = {"analyzedAt": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")}
+    last_edit = wiki_api.last_edited_at(found)
+    if last_edit:
+        repository["lastCommitAt"] = last_edit
+    return {"repository": repository}
+
+
+def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
+    """Read one wiki-hosted tool: its pages, their text, and a head over the set."""
+    found = _wiki_revisions(source)
+    if not found:
+        message = "wiki page set holds no readable revision"
+        raise RepositoryScanError(message)
+    return _Source(head=wiki_api.head(found), files=_wiki_files(found), context=_wiki_context(found))
+
+
+def _acquire_clone(url: str) -> _Source:
+    """Read one repository from a bounded clone that is discarded immediately."""
+    with tempfile.TemporaryDirectory(prefix="toolhub-repository-") as workspace:
+        checkout = Path(workspace) / "checkout"
+        head = clone_repository(url, checkout)
+        return _Source(head=head, files=_read_repository_tree(checkout), context=_local_git_context([checkout]))
+
+
 def _tool_repository(record: dict[str, Any]) -> str:
     for key in ("repository", "repository_url", "source_repository"):
         value = repository_url(record.get(key))
@@ -416,12 +551,13 @@ def _report_context(
 ) -> dict[str, Any]:
     """Merge what the checkout measured into the context the analyzer scores.
 
-    `context` is what acquisition produced -- {"repository": {...}}. It used to
-    be read as though it were a finished report, looking for a
-    "repositoryContext" key that a context does not have, so every measured
-    fact was dropped: no lastCommitAt reached the analyzer and the dormancy
-    assessment had nothing to score. SHALLOW_CLONE_BLIND above is what keeps
-    that merge honest now that it happens.
+    `context` is what acquisition produced -- {"repository": {...}}, from a
+    clone or from a wiki page set. It used to be read as though it were a
+    finished report, looking for a "repositoryContext" key that a context does
+    not have, so every measured fact was dropped: no lastCommitAt reached the
+    analyzer and the dormancy assessment had nothing to score.
+    SHALLOW_CLONE_BLIND above is what keeps that merge honest now that it
+    happens.
     """
     repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
     repository = {key: value for key, value in repository.items() if key not in SHALLOW_CLONE_BLIND}
@@ -463,6 +599,18 @@ def _save_unsupported(tool_name: str, raw_url: str) -> None:
         row.sync_status = SYNC_ERROR
 
 
+def _current_head(state: RepositoryAnalysisState, url: str) -> str:
+    """Return the commit whose report is already stored for this tool, or "".
+
+    Empty means there is nothing to reuse: never analyzed, analyzed from a
+    different URL, or the report itself has since been removed. Collapsing all
+    three into one string is what lets both currency checks below be a plain
+    comparison rather than the same four-clause condition written twice.
+    """
+    reusable = state.status == "analyzed" and state.repository_url == url and state.report_id is not None
+    return (state.commit_sha or "") if reusable else ""
+
+
 def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) -> str:
     """Scan one canonical tool, returning analyzed, skipped, unsupported, or error."""
     raw_url = _raw_tool_repository(record)
@@ -470,43 +618,44 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
     if not url:
         if raw_url:
             _save_unsupported(tool_name, raw_url)
-            return "unsupported"
         return "unsupported"
     provider = provider_for(url)
+    page = wiki_sources.wiki_source(url)
     try:
-        head = repository_head(url)
+        # A wiki page set has no cheap head. Its members are only known once
+        # they have been fetched -- a gadget's file list lives in a page of its
+        # own -- so there is nothing to ask for that costs less than the fetch
+        # itself, and the currency check moves to after acquisition instead.
+        head = "" if page is not None else repository_head(url)
         with db.session_scope() as s:
             state = _state(s, tool_name)
-            if (
-                not force
-                and state.status == "analyzed"
-                and state.repository_url == url
-                and state.commit_sha == head
-                and state.report_id is not None
-            ):
+            analyzed_head = _current_head(state, url)
+            if not force and head and head == analyzed_head:
                 state.checked_at = utcnow()
                 return "skipped"
             if state.next_attempt_at is not None and state.next_attempt_at > utcnow() and not force:
                 return "backoff"
-            # Stamp the attempt before the clone rather than after it. A pod
+            # Stamp the attempt before the fetch rather than after it. A pod
             # killed mid-clone leaves no other trace, and _scan_order puts a row
             # with no checked_at first, so every restart reselected the same
             # repository and died on it again. A scheduled job needed an
             # operator to break that; a continuous one would spin on it.
             state.checked_at = utcnow()
-        with tempfile.TemporaryDirectory(prefix="toolhub-repository-") as workspace:
-            checkout = Path(workspace) / "checkout"
-            local_head = clone_repository(url, checkout)
-            if local_head != head:
-                head = local_head
-            files = _read_repository_tree(checkout)
-            context = _local_git_context([checkout])
-            report = analyze_source_files(
-                files,
-                tool_name=tool_name,
-                source_label=url,
-                repository_context=_report_context(context, url=url, provider=provider, commit_sha=head, record=record),
-            )
+        acquired = _acquire_wiki(page) if page is not None else _acquire_clone(url)
+        # Second check, and the only one a wiki tool gets. It also catches the
+        # repository whose advertised HEAD and cloned HEAD disagree: analysis
+        # and a report row are worth skipping for a commit already on file.
+        if not force and analyzed_head and acquired.head == analyzed_head:
+            return "skipped"
+        head = acquired.head
+        report = analyze_source_files(
+            acquired.files,
+            tool_name=tool_name,
+            source_label=url,
+            repository_context=_report_context(
+                acquired.context, url=url, provider=provider, commit_sha=head, record=record
+            ),
+        )
         with db.session_scope() as s:
             user = _scanner_user(s)
             stored = SourceAnalysisReport(

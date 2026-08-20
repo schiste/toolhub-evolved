@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for deterministic repository acquisition and incremental scanning."""
 
+import json
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -681,7 +682,7 @@ def _host_row(url=SCAN_URL, **fields):
 
 def _context(measured=SHALLOW, record=None):
     # What acquisition measured, which is what _report_context merges: a clone
-    # hands it {"repository": {...}}.
+    # and a wiki page set both hand it {"repository": {...}}.
     return repository_scan._report_context(
         measured,
         url=SCAN_URL,
@@ -962,3 +963,287 @@ def test_the_successor_is_a_signal_that_changes_no_score():
     added = {item["label"] for item in with_successor["signals"]} - {item["label"] for item in without["signals"]}
     assert added == {"Replacement tool recorded"}
     assert with_successor["score"] == without["score"]
+
+
+# --- wiki-hosted source ------------------------------------------------------
+
+SCRIPT_URL = "https://en.wikipedia.org/wiki/User:Example/twinkle.js"
+GADGET_URL = "https://en.wikipedia.org/wiki/MediaWiki:Gadget-Twinkle.js"
+
+DEFINITION = "== Browsing ==\n* Twinkle[ResourceLoader|rights=autoconfirmed]|Twinkle.js|morebits.js\n"
+
+
+def _wiki_page(title, revid=1, timestamp="2024-06-01T00:00:00Z", content="var a = 1;"):
+    return {
+        "ns": 2,
+        "title": title,
+        "revisions": [{"revid": revid, "timestamp": timestamp, "slots": {"main": {"content": content}}}],
+    }
+
+
+def _wiki_answers(monkeypatch, answers):
+    """Answer Action API queries from canned payloads, recording every request.
+
+    Keys are substrings that survive percent-encoding, so a query is matched by
+    what it asks for rather than by the exact spelling of its query string.
+    """
+    calls = []
+
+    def fake_fetch(_session, url, *, policy, caller):
+        assert policy is repository_scan.outbound.WIKI_API
+        assert "toolhub-evolved" in caller.user_agent
+        calls.append(url)
+        for marker, payload in answers.items():
+            if marker in url:
+                return json.dumps(payload).encode("utf-8")
+        pytest.fail(f"unexpected query: {url}")
+
+    monkeypatch.setattr(repository_scan.outbound, "fetch_bounded", fake_fetch)
+    # A wiki page has no clone, and reaching for one would mean the scanner
+    # took the forge path for a URL that is not a repository.
+    monkeypatch.setattr(
+        repository_scan, "clone_repository", lambda *_a: pytest.fail("a wiki page must never be cloned")
+    )
+    monkeypatch.setattr(
+        repository_scan, "repository_head", lambda *_a: pytest.fail("a wiki page has no remote HEAD to ask for")
+    )
+    monkeypatch.setattr(
+        repository_scan,
+        "analyze_source_files",
+        lambda files, **kwargs: {
+            "filesAnalyzed": len(files),
+            "healthCore": {"score": 80, "grade": "good"},
+            "analyzedPaths": [file["path"] for file in files],
+            "repositoryContext": kwargs["repository_context"],
+        },
+    )
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+    return calls
+
+
+def _scan_wiki(url, name="wiki-tool"):
+    return repository_scan.scan_tool(name, {"repository": url})
+
+
+def _stored_report(name="wiki-tool"):
+    with db.session_scope() as s:
+        return s.execute(select(SourceAnalysisReport).where(SourceAnalysisReport.tool_name == name)).scalar_one().report
+
+
+def test_both_spellings_of_a_wiki_page_url_normalize_to_one():
+    # toolinfo carries /wiki/X and index.php?title=X, and the same gadget must
+    # not be scanned twice under two keys.
+    assert repository_scan.repository_url(SCRIPT_URL) == SCRIPT_URL
+    assert repository_scan.repository_url("https://en.wikipedia.org/w/index.php?title=User:Example/twinkle.js") == (
+        SCRIPT_URL
+    )
+    assert repository_scan.repository_url("https://en.wikipedia.org/wiki/User:Example/twinkle.js") == SCRIPT_URL
+
+
+def test_a_wiki_page_reports_the_mediawiki_provider():
+    assert repository_scan.provider_for(GADGET_URL) == "mediawiki-wikimedia"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Prose about a tool is not the tool.
+        "https://en.wikipedia.org/wiki/User:Example/documentation",
+        "https://en.wikipedia.org/wiki/Twinkle",
+        # The wiki allowlist is the same one identity verification uses.
+        "https://wiki.example.org/wiki/MediaWiki:Gadget-Foo.js",
+        "http://en.wikipedia.org/wiki/User:Example/twinkle.js",
+    ],
+)
+def test_a_wiki_url_that_is_not_source_is_still_refused(url):
+    assert repository_scan.repository_url(url) == ""
+
+
+def test_a_user_script_and_its_subpages_cost_one_request(monkeypatch):
+    calls = _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", revid=10),
+                        _wiki_page("User:Example/twinkle.css", revid=11, content="a{}"),
+                    ]
+                }
+            }
+        },
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    # The prefix search is a generator feeding the revision fetch, so finding
+    # the subpages costs nothing beyond reading them.
+    assert len(calls) == 1
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.css", "User:Example/twinkle.js"]
+
+
+def test_the_analyzed_path_is_the_page_title_a_maintainer_can_search_for(monkeypatch):
+    _wiki_answers(monkeypatch, {"generator=allpages": {"query": {"pages": [_wiki_page("User:Example/twinkle.js")]}}})
+    _scan_wiki(SCRIPT_URL)
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.js"]
+
+
+def test_a_neighbouring_tool_is_returned_by_the_search_but_not_analyzed(monkeypatch):
+    # apprefix=Example/twinkle also matches twinkleblock.js, a different tool
+    # by the same author. Analyzing it here would file one author's second tool
+    # under their first.
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js"),
+                        _wiki_page("User:Example/twinkleblock.js"),
+                    ]
+                }
+            }
+        },
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.js"]
+
+
+def test_a_gadget_costs_two_requests_and_pulls_in_every_file_it_declares(monkeypatch):
+    calls = _wiki_answers(
+        monkeypatch,
+        {
+            "Gadgets-definition": {
+                "query": {"pages": [_wiki_page("MediaWiki:Gadgets-definition", content=DEFINITION)]}
+            },
+            "action=query": {
+                "query": {
+                    "pages": [
+                        _wiki_page("MediaWiki:Gadget-Twinkle.js", revid=20),
+                        _wiki_page("MediaWiki:Gadget-morebits.js", revid=21),
+                    ]
+                }
+            },
+        },
+    )
+
+    assert _scan_wiki(GADGET_URL) == "analyzed"
+    # One to learn what the gadget consists of, one to read it.
+    assert len(calls) == 2
+    assert _stored_report()["analyzedPaths"] == ["MediaWiki:Gadget-Twinkle.js", "MediaWiki:Gadget-morebits.js"]
+
+
+def test_an_unregistered_gadget_page_is_scanned_alone_rather_than_guessed_at(monkeypatch):
+    _wiki_answers(
+        monkeypatch,
+        {
+            "Gadgets-definition": {
+                "query": {"pages": [_wiki_page("MediaWiki:Gadgets-definition", content="* X[RL]|X.js")]}
+            },
+            "action=query": {"query": {"pages": [_wiki_page("MediaWiki:Gadget-Twinkle.js")]}},
+        },
+    )
+
+    assert _scan_wiki(GADGET_URL) == "analyzed"
+    assert _stored_report()["analyzedPaths"] == ["MediaWiki:Gadget-Twinkle.js"]
+
+
+def test_an_unchanged_page_set_is_skipped_on_the_next_pass(monkeypatch):
+    answers = {"generator=allpages": {"query": {"pages": [_wiki_page("User:Example/twinkle.js", revid=10)]}}}
+    _wiki_answers(monkeypatch, answers)
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    # The fetch still happens -- a page set has no cheap head -- but the
+    # analysis and the report row do not.
+    assert _scan_wiki(SCRIPT_URL) == "skipped"
+    with db.session_scope() as s:
+        assert len(s.execute(select(SourceAnalysisReport)).scalars().all()) == 1
+
+
+def test_an_edit_to_a_helper_page_rescans_the_whole_tool(monkeypatch):
+    # The entry page is untouched. A head that tracked only the page we were
+    # pointed at would never notice this.
+    def answers(helper_revid):
+        return {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", revid=10),
+                        _wiki_page("User:Example/twinkle/core.js", revid=helper_revid),
+                    ]
+                }
+            }
+        }
+
+    _wiki_answers(monkeypatch, answers(1))
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    _wiki_answers(monkeypatch, answers(2))
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+
+
+def test_a_lagged_or_throttled_wiki_is_an_error_not_a_tool_with_no_source(monkeypatch):
+    # The Action API answers HTTP 200 with an error object. Reading that as an
+    # empty result would store a report claiming the tool has no code.
+    _wiki_answers(monkeypatch, {"generator=allpages": {"error": {"code": "maxlag", "info": "Waiting for a replica"}}})
+
+    assert _scan_wiki(SCRIPT_URL) == "error"
+    with db.session_scope() as s:
+        state = s.get(RepositoryAnalysisState, "wiki-tool")
+        assert state.status == "error"
+        assert "maxlag" in state.last_error
+        # Retried later rather than settled as unsupported.
+        assert state.next_attempt_at is not None
+
+
+def test_a_page_set_that_holds_no_revision_is_an_error_not_an_empty_report(monkeypatch):
+    _wiki_answers(
+        monkeypatch,
+        {"generator=allpages": {"query": {"pages": [{"ns": 2, "title": "User:Example/twinkle.js", "missing": True}]}}},
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "error"
+    with db.session_scope() as s:
+        assert s.execute(select(SourceAnalysisReport)).scalars().all() == []
+
+
+def test_the_report_dates_the_source_by_its_most_recent_edit(monkeypatch):
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", timestamp="2019-01-01T00:00:00Z"),
+                        _wiki_page("User:Example/twinkle.css", timestamp="2025-02-03T04:05:06Z", content="a{}"),
+                    ]
+                }
+            }
+        },
+    )
+    _scan_wiki(SCRIPT_URL)
+
+    repository = _stored_report()["repositoryContext"]["repository"]
+    assert repository["lastCommitAt"] == "2025-02-03T04:05:06Z"
+    assert repository["provider"] == "mediawiki-wikimedia"
+    assert repository["url"] == SCRIPT_URL
+    # A wiki page has no branch, no tag and no default branch. An absent key
+    # reads as "not measured" downstream, where a made-up one would be scored.
+    assert not {"branch", "tag", "defaultBranch"} & set(repository)
+
+
+def test_a_page_larger_than_the_analyzer_cap_is_dropped_not_truncated(monkeypatch):
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", content="x" * (repository_scan.MAX_FILE_BYTES + 1)),
+                        _wiki_page("User:Example/twinkle.css", content="a{}"),
+                    ]
+                }
+            }
+        },
+    )
+    _scan_wiki(SCRIPT_URL)
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.css"]

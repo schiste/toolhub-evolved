@@ -163,6 +163,19 @@ PROVIDER_API = FetchPolicy(
     timeout=(5, 20),
 )
 
+# The MediaWiki Action API, read anonymously. Larger than PROVIDER_API because
+# one query returns the *content* of up to fifty wiki pages rather than a
+# metadata record. Redirects are not followed: these queries are built from a
+# resolved page title and the API does not redirect them, so a Location here
+# would mean something unexpected rather than a renamed project.
+WIKI_API = FetchPolicy(
+    schemes=frozenset({"https"}),
+    max_body_bytes=8 * 1024 * 1024,
+    follow_redirects=False,
+    max_redirects=0,
+    timeout=(5, 30),
+)
+
 # The only response headers worth carrying back out of a provider fetch. An
 # allowlist rather than the whole mapping: everything here is eligible to be
 # stored or logged, and Set-Cookie, Authorization echoes, and per-request
