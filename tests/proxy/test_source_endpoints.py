@@ -67,6 +67,20 @@ def test_a_pipe_joined_mediawiki_value_survives_intact():
 
 
 @pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        # Both spellings found in Twinkle: a wikitext link label and
+        # Phabricator's own "task|task" shorthand. The pipe belongs to the
+        # markup around the URL, and reading it as path invented an address.
+        ("[https://momentjs.com/|moment.js]", "momentjs.com/"),
+        ("https://phabricator.wikimedia.org/T247721|T247721", "phabricator.wikimedia.org/{}"),
+    ],
+)
+def test_a_pipe_outside_the_query_string_ends_the_address(line, expected):
+    assert values(line) == [expected]
+
+
+@pytest.mark.parametrize(
     "query",
     [
         # The whole point: a secret in a query string must not reach a report.
@@ -120,10 +134,20 @@ def test_variable_path_segments_collapse_to_one_endpoint():
         ("https://api.acme-data.org/user/%s/edits", "/user/{}/edits"),
         ("https://api.acme-data.org/page/deadbeefcafe1234", "/page/{}"),
         ("https://api.acme-data.org/page/*", "/page/{}"),
+        # The identifier scheme this project sees more than any other.
+        ("https://www.wikidata.org/entity/Q1985727", "/entity/{}"),
+        ("https://www.wikidata.org/entity/Q2", "/entity/{}"),
+        ("https://www.wikidata.org/w/rest.php/wikibase/v0/statements/P31", "/w/rest.php/wikibase/v0/statements/{}"),
     ],
 )
 def test_data_shaped_segments_are_templated(url, expected):
     assert only(url).path == expected
+
+
+def test_an_api_version_is_a_route_not_an_identifier():
+    # `v1` is one letter and digits, like `Q2`. Case is the whole difference,
+    # which is why the identifier rule refuses to fold case.
+    assert only("https://api.acme-data.org/v1/chat/completions").path == "/v1/chat/completions"
 
 
 def test_a_short_hex_looking_segment_is_left_alone():
