@@ -130,6 +130,30 @@
   mem: 1Gi
   emails: onfailure
 
+- name: repository-enrichment
+  # The other half of repository-analysis: what the hosts publish, which a
+  # depth-1 clone structurally cannot see. Scheduled and bounded rather than
+  # continuous, because this lane is rate bound where the scanner is disk
+  # bound, and it spends TOOLHUB_GITHUB_TOKEN -- the same credential that
+  # publishes user-submitted issue reports.
+  #
+  # Hourly at :20, away from the :55 and :58 sweeps, so the three do not
+  # contend. 200 repositories a pass, at most three requests each and usually
+  # one (a poll of an unchanged repository is a conditional request, and a
+  # GitHub 304 is not charged against the hourly limit at all). Worst case is
+  # therefore ~600 of 5000, and the lane refuses to spend below a reserve of
+  # 1000 regardless, so a person reporting an issue is never starved by a
+  # background refresh.
+  #
+  # 512Mi: no clone, no checkout, no subprocess. It holds one bounded API
+  # response at a time (1 MiB cap) and a batch of URLs.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name repository-enrichment --stale-after 1200 -- /usr/bin/env TOOLHUB_ENRICHMENT_LIMIT=200 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/repository_enrichment.py
+  image: python3.13
+  schedule: "20 * * * *"
+  timeout: 600
+  mem: 512Mi
+  emails: onfailure
+
 - name: graph-enrichment
   # Local-only repair and quality audit. Producer jobs materialize affected
   # tools immediately; this hourly sweep catches missed rows and rule-version
