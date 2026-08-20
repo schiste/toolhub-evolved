@@ -128,6 +128,53 @@ def test_scan_tool_stores_approved_repository_report_and_commit_state(monkeypatc
         assert state.report_id == report.id
 
 
+def test_what_the_checkout_measured_survives_into_the_stored_report(monkeypatch):
+    # _report_context used to look for a "repositoryContext" key on the context
+    # it was handed, which a context does not have, so every measured fact was
+    # silently dropped: no lastCommitAt reached the analyzer and the dormancy
+    # assessment had nothing to score.
+    commit = "abc1234567890123456789012345678901234567"
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+
+    def fake_checkout(_url, destination):
+        destination.mkdir(parents=True)
+        return commit
+
+    monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
+    monkeypatch.setattr(repository_scan, "_read_repository_tree", lambda _repo: [{"path": "a.py", "content": "x = 1"}])
+    monkeypatch.setattr(
+        repository_scan,
+        "_local_git_context",
+        lambda _paths: {
+            "repository": {
+                "branch": "main",
+                "lastCommitAt": "2025-02-03T04:05:06Z",
+                # Both read off a --depth 1 checkout, so both are our own
+                # artefact rather than a fact about the repository.
+                "commitCount": 1,
+                "contributorCount": 1,
+            }
+        },
+    )
+    monkeypatch.setattr(
+        repository_scan,
+        "analyze_source_files",
+        lambda files, **kwargs: {"repositoryContext": kwargs["repository_context"]},
+    )
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+
+    repository_scan.scan_tool("example-tool", {"repository": "https://github.com/example/tool"})
+
+    with db.session_scope() as s:
+        report = s.execute(
+            select(SourceAnalysisReport).where(SourceAnalysisReport.tool_name == "example-tool")
+        ).scalar_one()
+    repository = report.report["repositoryContext"]["repository"]
+    assert repository["branch"] == "main"
+    assert repository["lastCommitAt"] == "2025-02-03T04:05:06Z"
+    assert not {"commitCount", "contributorCount"} & set(repository)
+
+
 def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
     candidates = [("bad-tool", {"repository": "https://github.com/example/bad"}), ("good-tool", {})]
     failures = []
@@ -632,9 +679,11 @@ def _host_row(url=SCAN_URL, **fields):
         )
 
 
-def _context(report=SHALLOW, record=None):
+def _context(measured=SHALLOW, record=None):
+    # What acquisition measured, which is what _report_context merges: a clone
+    # hands it {"repository": {...}}.
     return repository_scan._report_context(
-        {"repositoryContext": report},
+        measured,
         url=SCAN_URL,
         provider="github",
         commit_sha="abc123",

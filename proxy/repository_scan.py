@@ -412,9 +412,17 @@ def _lifecycle_context(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _report_context(
-    report: dict[str, Any], *, url: str, provider: str, commit_sha: str, record: dict[str, Any]
+    context: dict[str, Any], *, url: str, provider: str, commit_sha: str, record: dict[str, Any]
 ) -> dict[str, Any]:
-    context = report.get("repositoryContext") if isinstance(report.get("repositoryContext"), dict) else {}
+    """Merge what the checkout measured into the context the analyzer scores.
+
+    `context` is what acquisition produced -- {"repository": {...}}. It used to
+    be read as though it were a finished report, looking for a
+    "repositoryContext" key that a context does not have, so every measured
+    fact was dropped: no lastCommitAt reached the analyzer and the dormancy
+    assessment had nothing to score. SHALLOW_CLONE_BLIND above is what keeps
+    that merge honest now that it happens.
+    """
     repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
     repository = {key: value for key, value in repository.items() if key not in SHALLOW_CLONE_BLIND}
     repository = {
