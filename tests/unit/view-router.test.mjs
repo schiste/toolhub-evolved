@@ -81,6 +81,9 @@ vi.mock("../../public_html/views/mcp-server.js", () => ({
 vi.mock("../../public_html/views/recent.js", () => ({ viewRecent: vi.fn(() => ({ tag: "recent" })) }));
 vi.mock("../../public_html/views/members.js", () => ({ viewMembers: vi.fn(() => ({ tag: "members" })) }));
 vi.mock("../../public_html/views/crawler.js", () => ({ viewCrawler: vi.fn(() => ({ tag: "crawler" })) }));
+vi.mock("../../public_html/views/userscripts.js", () => ({
+	viewUserScripts: vi.fn(() => ({ tag: "userscripts" }))
+}));
 vi.mock("../../public_html/views/audit.js", () => ({
 	viewAudit: vi.fn(() => ({ tag: "audit" })),
 	targetHref: vi.fn(() => null)
@@ -311,6 +314,7 @@ test("dispatch routes the ungated ROUTES entries to their views", async () => {
 	assert.deepEqual(await at("/recent"), { tag: "recent" });
 	assert.deepEqual(await at("/members"), { tag: "members" });
 	assert.deepEqual(await at("/crawler-history"), { tag: "crawler" });
+	assert.deepEqual(await at("/userscripts"), { tag: "userscripts" });
 	assert.deepEqual(await at("/audit-logs"), { tag: "audit" });
 	assert.deepEqual(await at("/api-docs"), { tag: "apidocs" });
 	assert.deepEqual(await at("/contribute"), { tag: "contribute" });

@@ -145,6 +145,14 @@ function actions() {
 			keywords: ["crawler", "toolinfo", "metadata"]
 		},
 		{
+			id: "userscripts",
+			title: t("commandPalette.userScripts", "User scripts"),
+			description: t("commandPalette.userScriptsDesc", "Browse the user-script directory of a wiki."),
+			href: "/userscripts",
+			iconName: "code",
+			keywords: ["gadget", "script", "wiki"]
+		},
+		{
 			id: "audit",
 			title: t("commandPalette.auditLogs", "Audit logs"),
 			description: t("commandPalette.auditLogsDesc", "Review Toolhub audit activity."),

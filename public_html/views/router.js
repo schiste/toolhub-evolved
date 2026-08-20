@@ -70,6 +70,7 @@ const loadMyTools = () => loadRouteModule("./my-tools.js", () => import("./my-to
 const loadRecent = () => loadRouteModule("./recent.js", () => import("./recent.js"));
 const loadMembers = () => loadRouteModule("./members.js", () => import("./members.js"));
 const loadCrawler = () => loadRouteModule("./crawler.js", () => import("./crawler.js"));
+const loadUserScripts = () => loadRouteModule("./userscripts.js", () => import("./userscripts.js"));
 const loadAudit = () => loadRouteModule("./audit.js", () => import("./audit.js"));
 const loadGraph = () => loadRouteModule("./graph.js", () => import("./graph.js"));
 const loadExperiments = () => loadRouteModule("./experiments.js", () => import("./experiments.js"));
@@ -266,6 +267,7 @@ export const ROUTES = {
 	recent: () => loadRecent().then((m) => m.viewRecent()),
 	members: () => loadMembers().then((m) => m.viewMembers()),
 	"crawler-history": () => loadCrawler().then((m) => m.viewCrawler()),
+	userscripts: () => loadUserScripts().then((m) => m.viewUserScripts()),
 	"audit-logs": () => loadAudit().then((m) => m.viewAudit()),
 	"api-docs": () => loadStatic().then((m) => m.viewApiDocs()),
 	"mcp-server": () => loadMcpServer().then((m) => m.viewMcpServer()),
