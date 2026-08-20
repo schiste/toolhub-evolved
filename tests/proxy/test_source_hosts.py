@@ -8,6 +8,7 @@ each field, and it should be possible to be wrong about that loudly and cheaply.
 """
 
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -241,8 +242,8 @@ def test_github_payload_is_normalized():
         star_count=12,
         fork_count=3,
         open_issues_count=4,
-        pushed_at="2026-08-01T00:00:00Z",
-        created_at="2020-01-01T00:00:00Z",
+        pushed_at=datetime(2026, 8, 1, tzinfo=UTC),
+        created_at=datetime(2020, 1, 1, tzinfo=UTC),
     )
 
 
@@ -266,7 +267,7 @@ def test_gitlab_payload_is_normalized_and_has_no_homepage():
     assert facts.license_id == "MIT"
     assert facts.star_count == 7
     assert facts.open_issues_count == 0
-    assert facts.pushed_at == "2026-07-01T00:00:00Z"
+    assert facts.pushed_at == datetime(2026, 7, 1, tzinfo=UTC)
     assert facts.homepage is None
 
 
@@ -303,7 +304,7 @@ def test_bitbucket_payload_reads_its_nested_default_branch():
         },
     )
     assert facts.default_branch == "develop"
-    assert facts.created_at == "2019-01-01T00:00:00Z"
+    assert facts.created_at == datetime(2019, 1, 1, tzinfo=UTC)
     # Absent on this host, and absent is not zero.
     assert facts.star_count is None
     assert facts.archived is None
@@ -430,3 +431,28 @@ def test_github_count_comes_from_the_last_page_link():
 def test_github_falls_back_to_measuring_the_page(headers, payload, expected):
     ref = _ref("https://github.com/o/r")
     assert source_hosts.count_from_response(ref, headers, payload) == expected
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # The five spellings the five hosts actually emit.
+        ("2026-08-01T12:30:00Z", datetime(2026, 8, 1, 12, 30, tzinfo=UTC)),
+        ("2026-08-01T12:30:00.000Z", datetime(2026, 8, 1, 12, 30, tzinfo=UTC)),
+        ("2026-08-01T12:30:00.000000+00:00", datetime(2026, 8, 1, 12, 30, tzinfo=UTC)),
+        ("2026-08-01T14:30:00+02:00", datetime(2026, 8, 1, 12, 30, tzinfo=UTC)),
+        # No offset at all: every one of these APIs documents UTC.
+        ("2026-08-01T12:30:00", datetime(2026, 8, 1, 12, 30, tzinfo=UTC)),
+    ],
+)
+def test_every_host_timestamp_spelling_normalizes_to_utc(raw, expected):
+    facts = source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), {"pushed_at": raw})
+    assert facts.pushed_at == expected
+
+
+@pytest.mark.parametrize("raw", ["never", "", None, 17, "2026-13-45T99:99:99Z"])
+def test_an_unreadable_timestamp_is_unknown_not_the_epoch(raw):
+    # Falling back to a real instant would make recency scoring confidently
+    # wrong rather than honestly silent.
+    facts = source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), {"pushed_at": raw})
+    assert facts.pushed_at is None

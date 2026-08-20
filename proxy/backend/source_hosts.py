@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlparse
 
@@ -155,8 +156,12 @@ class HostMetadata:
     open_issues_count: int | None = None
     contributor_count: int | None = None
     commit_count: int | None = None
-    pushed_at: str | None = None
-    created_at: str | None = None
+    # Timezone-aware UTC. The five hosts spell an instant five ways -- a
+    # trailing Z, a numeric offset, three or six fractional digits -- and
+    # normalizing means normalizing that too, or every consumer reimplements
+    # the same parser and gets a different subset of it right.
+    pushed_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -213,6 +218,24 @@ def _count(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
     return value
+
+
+def _instant(value: object) -> datetime | None:
+    """Return one host timestamp as a timezone-aware UTC datetime, or None.
+
+    A host that reports a date this cannot read is reporting nothing, not
+    reporting the epoch: an unparsable value must not become a real instant
+    that recency scoring would then treat as very old.
+    """
+    text = _text(value, MAX_LICENSE_CHARS)
+    if text is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    # A host that omits the offset is stating UTC; all five document UTC.
+    return (parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed).astimezone(UTC)
 
 
 def _flag(value: object) -> bool | None:
@@ -368,8 +391,8 @@ def _github_metadata(payload: dict[str, Any]) -> HostMetadata:
         star_count=_count(payload.get("stargazers_count")),
         fork_count=_count(payload.get("forks_count")),
         open_issues_count=_count(payload.get("open_issues_count")),
-        pushed_at=_text(payload.get("pushed_at")),
-        created_at=_text(payload.get("created_at")),
+        pushed_at=_instant(payload.get("pushed_at")),
+        created_at=_instant(payload.get("created_at")),
     )
 
 
@@ -386,8 +409,8 @@ def _gitlab_metadata(payload: dict[str, Any]) -> HostMetadata:
         star_count=_count(payload.get("star_count")),
         fork_count=_count(payload.get("forks_count")),
         open_issues_count=_count(payload.get("open_issues_count")),
-        pushed_at=_text(payload.get("last_activity_at")),
-        created_at=_text(payload.get("created_at")),
+        pushed_at=_instant(payload.get("last_activity_at")),
+        created_at=_instant(payload.get("created_at")),
     )
 
 
@@ -403,8 +426,8 @@ def _forgejo_metadata(payload: dict[str, Any]) -> HostMetadata:
         star_count=_count(payload.get("stars_count")),
         fork_count=_count(payload.get("forks_count")),
         open_issues_count=_count(payload.get("open_issues_count")),
-        pushed_at=_text(payload.get("updated_at")),
-        created_at=_text(payload.get("created_at")),
+        pushed_at=_instant(payload.get("updated_at")),
+        created_at=_instant(payload.get("created_at")),
     )
 
 
@@ -416,8 +439,8 @@ def _bitbucket_metadata(payload: dict[str, Any]) -> HostMetadata:
         default_branch=_text(_mapping(payload.get("mainbranch")).get("name")),
         description=_text(payload.get("description")),
         homepage=_text(payload.get("website")),
-        pushed_at=_text(payload.get("updated_on")),
-        created_at=_text(payload.get("created_on")),
+        pushed_at=_instant(payload.get("updated_on")),
+        created_at=_instant(payload.get("created_on")),
     )
 
 
