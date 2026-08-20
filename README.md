@@ -65,8 +65,9 @@ PYTHONPATH=proxy python proxy/analyze_source.py path/to/tool --tool-name my-tool
 ```
 
 The analyzer reads local text source files, extracts Wikimedia projects, API
-usage, access rights, external dependencies, lockfile evidence, OAuth scopes,
-technology, repository context, and review warnings, then emits deterministic
+usage, access rights, the concrete endpoints it calls (host, path, and the API
+action where there is one), external dependencies, lockfile evidence, OAuth
+scopes, technology, repository context, and review warnings, then emits deterministic
 assessment scores with evidence-backed recommendations. Raw source files are not
 stored.
 

@@ -45,6 +45,7 @@ const FINDING_GROUPS = [
 	["accessRights", () => t("sourceAnalysis.accessRights", "Access rights")],
 	["authentication", () => t("sourceAnalysis.authentication", "Authentication")],
 	["dependencies", () => t("sourceAnalysis.dependencies", "Dependencies")],
+	["endpoints", () => t("sourceAnalysis.endpoints", "Endpoints")],
 	["oauthScopes", () => t("sourceAnalysis.oauthScopes", "OAuth scopes")],
 	["technology", () => t("sourceAnalysis.technology", "Technology")],
 	["warnings", () => t("sourceAnalysis.warnings", "Warnings")]
@@ -474,6 +475,7 @@ function reportCard(report) {
 		[t("sourceAnalysis.apis", "APIs"), summary.apiCount || 0],
 		[t("sourceAnalysis.accessRights", "Access rights"), summary.accessRightCount || 0],
 		[t("sourceAnalysis.dependencies", "Dependencies"), summary.dependencyCount || 0],
+		[t("sourceAnalysis.externalEndpoints", "Third-party endpoints"), summary.externalEndpointCount || 0],
 		[t("sourceAnalysis.assessmentScore", "Assessment"), summary.assessmentScore || 0],
 		[t("sourceAnalysis.healthScore", "Health"), summary.healthScore || 0],
 		[t("sourceAnalysis.healthConfidence", "Confidence"), summary.healthConfidence || 0],

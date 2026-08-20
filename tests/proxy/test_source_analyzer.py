@@ -728,3 +728,83 @@ def test_stewardship_status_covers_at_risk_and_outreach_branches():
         )
         == "maintainer-outreach-needed"
     )
+
+
+def test_the_report_names_the_hosts_and_calls_a_tool_makes():
+    # The apis bucket says "MediaWiki Action API" for the first line and has
+    # nothing at all to say about the second. Together the two buckets say what
+    # a reviewer actually asks: which services, and doing what.
+    report = analyze_source_files(
+        [
+            {
+                "path": "src/bot.js",
+                "content": "\n".join(
+                    [
+                        "fetch('https://commons.wikimedia.org/w/api.php?action=upload&format=json');",
+                        "fetch('https://api.openai.com/v1/chat/completions', {method: 'POST'});",
+                    ]
+                ),
+            }
+        ]
+    )
+    assert values(report, "endpoints") == {
+        "commons.wikimedia.org/w/api.php?action=upload",
+        "api.openai.com/v1/chat/completions",
+    }
+    assert report["summary"]["endpointCount"] == 2
+    # The half a reviewer is looking for: one service nobody in the movement runs.
+    assert report["summary"]["externalEndpointCount"] == 1
+
+
+def test_an_endpoint_is_filed_by_who_operates_it():
+    report = analyze_source_files(
+        [
+            {
+                "path": "src/geo.js",
+                "content": "\n".join(
+                    [
+                        "fetch('https://query.wikidata.org/sparql?query=SELECT');",
+                        "fetch('https://nominatim.openstreetmap.org/search');",
+                    ]
+                ),
+            }
+        ]
+    )
+    families = {item["value"]: item["category"] for item in report["endpoints"]}
+    # Not a wiki, but Wikimedia's. Filing WDQS as third party would misreport
+    # the one dependency the movement actually controls.
+    assert families["query.wikidata.org/sparql"] == "wikimedia"
+    assert families["nominatim.openstreetmap.org/search"] == "external"
+
+
+def test_a_url_that_is_called_outranks_one_that_is_only_mentioned():
+    called = analyze_source_files(
+        [{"path": "src/app.js", "content": "await fetch('https://api.openai.com/v1/models');"}]
+    )
+    mentioned = analyze_source_files(
+        [{"path": "README.md", "content": "Docs live at https://api.openai.com/v1/models"}]
+    )
+    assert called["endpoints"][0]["confidence"] > mentioned["endpoints"][0]["confidence"]
+
+
+def test_a_lockfiles_registry_is_not_reported_as_a_tools_endpoint():
+    # Every resolved entry carries a registry URL. That registry belongs to the
+    # package manager, and at a lockfile's 0.95 weight it would otherwise be
+    # the loudest endpoint in most reports.
+    report = analyze_source_files(
+        [
+            {
+                "path": "package-lock.json",
+                "content": '{"packages": {"node_modules/axios": {"resolved": "https://registry.npmjs.org/axios/-/axios-1.0.0.tgz"}}}',
+            }
+        ]
+    )
+    assert report["endpoints"] == []
+
+
+def test_a_secret_in_a_url_never_reaches_the_endpoints_bucket():
+    report = analyze_source_files(
+        [{"path": "src/app.js", "content": "fetch('https://api.acme-data.org/v1?api_key=sk-live-abcdef0123456789');"}]
+    )
+    assert values(report, "endpoints") == {"api.acme-data.org/v1"}
+    assert "sk-live" not in str(report["endpoints"])
