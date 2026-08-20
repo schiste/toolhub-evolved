@@ -276,10 +276,10 @@ def test_a_pending_state_row_with_no_checked_at_does_not_break_ordering():
     raised TypeError on every later run, which is how one job timeout took
     repository-analysis down for twelve days."""
     with db.session_scope() as s:
-        _cached_tool(s, "killed-midscan")
+        _cached_tool(s, "killed-mid-scan")
         _cached_tool(s, "never-seen")
         _cached_tool(s, "checked-recently")
-        s.add(RepositoryAnalysisState(tool_name="killed-midscan", status="pending", checked_at=None))
+        s.add(RepositoryAnalysisState(tool_name="killed-mid-scan", status="pending", checked_at=None))
         s.add(
             RepositoryAnalysisState(
                 tool_name="checked-recently",
@@ -292,7 +292,7 @@ def test_a_pending_state_row_with_no_checked_at_does_not_break_ordering():
 
     # No state row at all still comes first, then the never-checked row, then
     # the recently checked one.
-    assert names == ["never-seen", "killed-midscan", "checked-recently"]
+    assert names == ["never-seen", "killed-mid-scan", "checked-recently"]
 
 
 def test_the_limit_still_applies_when_a_null_checked_at_is_present():
@@ -342,7 +342,7 @@ def test_clone_fetches_only_analyzable_blobs(tmp_path):
     assert fetched < 1_000_000
 
 
-def test_clone_leaves_filtered_blobs_unfetched(tmp_path):
+def test_clone_leaves_filtered_blobs_not_fetched(tmp_path):
     origin = _seed_origin(tmp_path)
     checkout = tmp_path / "checkout"
     repository_scan.clone_repository(f"file://{origin}", checkout)
@@ -1087,7 +1087,7 @@ def test_the_analyzed_path_is_the_page_title_a_maintainer_can_search_for(monkeyp
     assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.js"]
 
 
-def test_a_neighbouring_tool_is_returned_by_the_search_but_not_analyzed(monkeypatch):
+def test_a_neighboring_tool_is_returned_by_the_search_but_not_analyzed(monkeypatch):
     # apprefix=Example/twinkle also matches twinkleblock.js, a different tool
     # by the same author. Analyzing it here would file one author's second tool
     # under their first.

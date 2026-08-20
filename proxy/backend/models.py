@@ -1385,7 +1385,7 @@ class RepositoryHostMetadata(Base):
     Every fact column is nullable on purpose. Bitbucket publishes no stars,
     Gerrit no topics, only GitHub and GitLab a license or a contributor count.
     NULL means "this host does not publish this", which is not zero, and code
-    that scores it as zero will penalise a tool for its host's API surface.
+    that scores it as zero will penalize a tool for its host's API surface.
     """
 
     __tablename__ = "repository_host_metadata"

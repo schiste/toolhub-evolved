@@ -165,7 +165,7 @@ def test_a_user_script_collects_its_suffix_swaps_and_real_subpages():
     )
 
 
-def test_a_prefix_neighbour_is_not_part_of_the_script():
+def test_a_prefix_neighbor_is_not_part_of_the_script():
     # apprefix=Example/twinkle also returns twinkleblock.js, which is a
     # different tool by the same author. Scanning it here would attribute one
     # author's second tool to their first.
@@ -229,3 +229,16 @@ def test_a_title_with_no_namespace_is_returned_unchanged():
 def test_an_empty_title_is_no_title():
     assert wiki_sources.canonical_title("User:") == ""
     assert wiki_sources.canonical_title("") == ""
+
+
+def test_source_on_a_single_site_project_is_reachable():
+    # mediawiki.org is where a great many importable scripts and gadgets live.
+    # While it was outside the host pattern every one of them scanned as a tool
+    # with no source at all.
+    script = wiki_sources.wiki_source("https://www.mediawiki.org/wiki/User:Ada/tool.js")
+    assert script is not None
+    assert (script.domain, script.kind) == ("www.mediawiki.org", wiki_sources.KIND_USER_SCRIPT)
+
+    gadget = wiki_sources.wiki_source("https://www.mediawiki.org/wiki/MediaWiki:Gadget-Foo.js")
+    assert gadget is not None
+    assert gadget.kind == wiki_sources.KIND_GADGET

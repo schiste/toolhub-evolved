@@ -29,7 +29,7 @@ TOKEN = "ghp-not-a-real-token"
 # header", which is what keeps 304 -- also a 3xx -- out of the redirect path.
 # The fake mirrors that rather than testing 300 <= status < 400, so the
 # missing-Location case below stays a real assertion about fetch_api.
-REDIRECT_STATI = (301, 302, 303, 307, 308)
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
 
 class FakeApiResp:
@@ -37,7 +37,7 @@ class FakeApiResp:
         self.status_code = status
         self.headers = dict(headers or {})
         located = "Location" in self.headers or "location" in self.headers
-        self.is_redirect = status in REDIRECT_STATI and located
+        self.is_redirect = status in REDIRECT_STATUSES and located
         self.is_permanent_redirect = status in (301, 308) and located
         self._body = body
 

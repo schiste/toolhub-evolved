@@ -148,7 +148,7 @@ class HostMetadata:
     subsets -- Bitbucket has no stars, Gerrit has no topics, only GitHub and
     GitLab report a license -- and a caller must be able to tell "not published
     here" from "published as zero". Scoring code that cannot make that
-    distinction will penalise projects for their host's API surface.
+    distinction will penalize projects for their host's API surface.
     """
 
     archived: bool | None = None
