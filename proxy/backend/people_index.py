@@ -1327,6 +1327,32 @@ def _contribution_dates(s: Session, user_id: int) -> list[datetime]:
     return dates
 
 
+def _activity_summary_values(
+    relationships: list[ToolPersonRelationship],
+    dates: list[datetime],
+    *,
+    now: datetime,
+    recent_after: datetime,
+) -> dict[str, Any]:
+    """Derive the stored summary columns from one person's public evidence."""
+    last_contribution_at = max(dates) if dates else None
+    age = (now - last_contribution_at).days if last_contribution_at else None
+    return {
+        "related_tool_count": len({item.tool_name for item in relationships}),
+        "verified_tool_count": len(
+            {item.tool_name for item in relationships if item.verification_status == AUTHOR_CLAIM_VERIFIED}
+        ),
+        "contribution_count": len(dates),
+        "recent_contribution_count": sum(date >= recent_after for date in dates),
+        "last_contribution_at": last_contribution_at,
+        "activity_status": (
+            "active"
+            if age is not None and age <= ACTIVE_CONTRIBUTION_DAYS
+            else ("quiet" if age is not None and age <= QUIET_CONTRIBUTION_DAYS else "unknown")
+        ),
+    }
+
+
 def refresh_activity_summaries(s: Session, *, person_ids: set[int] | None = None) -> list[PersonActivitySummary]:
     """Refresh public contribution summaries, never private account activity."""
     ids = person_ids
@@ -1337,38 +1363,44 @@ def refresh_activity_summaries(s: Session, *, person_ids: set[int] | None = None
     now = utcnow()
     recent_after = now - timedelta(days=RECENT_ACTIVITY_DAYS)
     summaries = []
-    for person_id in sorted(ids):
-        users = list(s.execute(select(User).where(User.person_id == person_id)).scalars())
-        dates = [date for user in users for date in _contribution_dates(s, user.id)]
-        relationships = list(
-            s.execute(
-                select(ToolPersonRelationship).where(
-                    ToolPersonRelationship.person_id == person_id,
-                    ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
-                    _current_relationship_clause(checked_at=now),
-                )
-            ).scalars()
-        )
-        row = s.get(PersonActivitySummary, person_id)
-        if row is None:
-            row = PersonActivitySummary(person_id=person_id)
-            s.add(row)
-        row.related_tool_count = len({item.tool_name for item in relationships})
-        row.verified_tool_count = len(
-            {item.tool_name for item in relationships if item.verification_status == AUTHOR_CLAIM_VERIFIED}
-        )
-        row.contribution_count = len(dates)
-        row.recent_contribution_count = sum(date >= recent_after for date in dates)
-        row.last_contribution_at = max(dates) if dates else None
-        age = (now - row.last_contribution_at).days if row.last_contribution_at else None
-        row.activity_status = (
-            "active"
-            if age is not None and age <= ACTIVE_CONTRIBUTION_DAYS
-            else ("quiet" if age is not None and age <= QUIET_CONTRIBUTION_DAYS else "unknown")
-        )
-        row.computed_at = now
-        row.stale_at = now + timedelta(days=ACTIVITY_STALE_DAYS)
-        summaries.append(row)
+    # Read the whole loop with autoflush suspended. Otherwise each SELECT below
+    # flushes the summary rows dirtied by earlier iterations, so a single
+    # transaction interleaves write locks on person_activity_summaries with
+    # reads of users and person_tool_relationships. Two jobs doing that
+    # concurrently hold one table while reaching for the other, which is the
+    # deadlock cycle MySQL kept reporting. Withholding the writes lets them
+    # flush together, in person_id order, after the reads are done.
+    with s.no_autoflush:
+        for person_id in sorted(ids):
+            users = list(s.execute(select(User).where(User.person_id == person_id)).scalars())
+            dates = [date for user in users for date in _contribution_dates(s, user.id)]
+            relationships = list(
+                s.execute(
+                    select(ToolPersonRelationship).where(
+                        ToolPersonRelationship.person_id == person_id,
+                        ToolPersonRelationship.relationship_type.in_(PUBLIC_ROLES),
+                        _current_relationship_clause(checked_at=now),
+                    )
+                ).scalars()
+            )
+            row = s.get(PersonActivitySummary, person_id)
+            if row is None:
+                row = PersonActivitySummary(person_id=person_id)
+                s.add(row)
+            values = _activity_summary_values(relationships, dates, now=now, recent_after=recent_after)
+            changed = any(getattr(row, name) != value for name, value in values.items())
+            if changed:
+                for name, value in values.items():
+                    setattr(row, name, value)
+            # Restamp only when the summary actually moved, or when the row has
+            # aged past the freshness window it declares for itself. Stamping on
+            # every pass made this a write-hot table for no new data: the busiest
+            # person is attached to most of the catalog, so nearly every refresh
+            # queued an UPDATE that set two timestamps and nothing else.
+            if changed or row.stale_at is None or row.stale_at <= now:
+                row.computed_at = now
+                row.stale_at = now + timedelta(days=ACTIVITY_STALE_DAYS)
+            summaries.append(row)
     return summaries
 
 
