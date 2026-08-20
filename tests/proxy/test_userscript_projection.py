@@ -38,7 +38,7 @@ def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI, deleted=F
             UserScriptPage(
                 wiki=wiki,
                 title=title,
-                owner=directory.owner_of(title),
+                owner=directory.owner_of_user_page(title),
                 basename=directory.basename_of(title),
                 role=role,
                 fingerprint=fingerprint,
@@ -110,11 +110,49 @@ def test_a_deleted_page_leaves_the_directory():
 
 def test_demand_is_counted_in_people_not_in_pages():
     # One person loading a script from two of their own slots is one user of it.
+    # The loading pages are stored too, because an import only exists in the
+    # first place because its source page was swept -- and the owner demand
+    # counts is the one that sweep resolved.
     page("User:Aaa/tool.js")
+    page("User:Bbb/common.js", role="shim")
+    page("User:Bbb/vector.js", role="shim")
     loads("User:Bbb/common.js", "User:Aaa/tool.js")
     loads("User:Bbb/vector.js", "User:Aaa/tool.js")
     projection.project(FRWIKI)
     assert entries() == [("User:Aaa/tool.js", directory.TIER_ACTIVE, 1, 0, 1)]
+
+
+def test_demand_counts_people_on_a_wiki_whose_namespace_no_alias_list_knows():
+    # `Benutzer:` is not in `_NAMESPACE_ALIASES`, so these titles reach storage
+    # with the wiki's own prefix intact. Reading the owner by position resolves
+    # them to one person, so the script has one user, not two.
+    page("Benutzer:Aaa/tool.js")
+    page("Benutzer:Bbb/common.js", role="shim")
+    page("Benutzer:Bbb/vector.js", role="shim")
+    loads("Benutzer:Bbb/common.js", "Benutzer:Aaa/tool.js")
+    loads("Benutzer:Bbb/vector.js", "Benutzer:Aaa/tool.js")
+    projection.project(FRWIKI)
+    assert entries() == [("Benutzer:Aaa/tool.js", directory.TIER_ACTIVE, 1, 0, 1)]
+
+
+def test_the_crowded_name_fold_fires_on_a_namespace_no_alias_list_knows():
+    # The fold this census exists for -- 472 `LiveRCparam.js` pages sharing no
+    # content, one per person -- counts distinct *owners*. On a wiki whose
+    # prefix no alias list covers, every row used to store an empty owner, so
+    # the group looked like one person and the fold could never fire.
+    for index, owner in enumerate(["Aaa", "Bbb", "Ccc", "Ddd", "Eee"]):
+        page(f"Benutzer:{owner}/LiveRCparam.js", rank=index)
+    projection.project(FRWIKI)
+    assert entries() == [("Benutzer:Aaa/LiveRCparam.js", directory.TIER_ARCHIVE, 0, 4, 1)]
+
+
+def test_a_crowded_name_below_the_owner_threshold_is_left_alone():
+    # The same five pages owned by one person are one person's habit across
+    # skin slots, not a convention shared across the wiki, and must not fold.
+    for index in range(5):
+        page(f"Benutzer:Aaa/skin{index}/LiveRCparam.js", rank=index)
+    projection.project(FRWIKI)
+    assert len(entries()) == 5
 
 
 def test_a_page_loading_itself_is_not_demand_for_itself():
@@ -128,6 +166,7 @@ def test_a_load_from_another_wiki_still_counts():
     # These edges are the argument for a global gadget, so they must not be
     # filtered out by selecting imports on the source's wiki.
     page("User:Aaa/tool.js")
+    page("User:Zed/common.js", role="shim", wiki=ENWIKI)
     loads("User:Zed/common.js", "User:Aaa/tool.js", wiki=ENWIKI, target_wiki=FRWIKI)
     projection.project(FRWIKI)
     assert entries() == [("User:Aaa/tool.js", directory.TIER_ACTIVE, 1, 0, 1)]

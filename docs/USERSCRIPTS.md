@@ -311,23 +311,56 @@ over-cap wiki into walkable buckets. Until that exists, Meta contributes a
 sample of its cross-wiki edges rather than all of them, and any wiki with more
 than 10,000 pages of one model will land the same way.
 
+### Owners, and the namespaces titles arrive in
+
+The search and recent-changes queries both ask for namespace 2 _by number_, and
+the wiki answers in its own language: `User:` on Meta, `Utilisateur:` on frwiki,
+`Benutzer:` on dewiki, `利用者:` on jawiki. Two separate mechanisms deal with
+that, and it is worth knowing which does what.
+
+`userscripts.canonical_title()` folds the aliases in `_NAMESPACE_ALIASES` —
+`User`, `Utilisateur`, `Utilisatrice` — onto `User:`, so one page written two
+ways is one row. That list is hardcoded and covers English and French only; it
+is what makes the frwiki gender-variant spellings (`Utilisatrice:Evpok` is
+returned for a page written `Utilisateur:Evpok`) collapse to one title.
+
+The owner is _not_ resolved from that list. `owner_of_user_page()` takes
+everything before the first colon to be the namespace prefix, whatever it is
+called, and returns the segment below it. That is sound because of where it is
+called: `store_page()` is the only caller, and every title reaching it came from
+a namespace-2 search or a namespace-2 recent-changes filter, so the page is
+known to be in user space before the question is asked. Given a title from
+anywhere else the function returns nonsense rather than `""` — which is why it
+has that name, and why nothing else calls it.
+
+Everything downstream reads the stored `owner` column instead of re-deriving it.
+`demand()` outer-joins each import back to its source page for exactly this
+reason: the owner it counts people by is the one the sweep resolved when the
+namespace was known, not a second derivation that could disagree with the first.
+
+The two mechanisms sit at different scopes on purpose. A wiki outside the alias
+list still gets correct owners — the crowded-name fold and per-person demand
+both work on dewiki today — it just stores its titles under its own prefix
+rather than a canonical one.
+
 ## Known gaps
 
+- **`_NAMESPACE_ALIASES` covers English and French.** Titles from any other wiki
+  are stored under that wiki's own prefix. Owners resolve correctly regardless,
+  but a page written two ways on such a wiki is two rows, and `fingerprint()`
+  normalizes only those same three aliases when hashing a body. Widening it
+  properly means reading each wiki's namespace names and aliases from
+  `meta=siteinfo`, which nothing does.
+- **Demand does not skip same-owner loads.** `demand()` skips only a page
+  loading _itself_, though its docstring describes the broader case — "a script
+  that installs its own helper subpage would otherwise vote for itself". With
+  owners resolved, `User:X/common.js` loading `User:X/helper.js` adds X to
+  helper.js's demand. Whether that is one person's setup or genuine use is a
+  judgment the collapse rules have not made.
 - **Thresholds are calibrated against one wiki.** `CROWDED_OWNERS`,
   `INDEPENDENT_DEMAND` and the tier split were all measured on frwiki. Meta is
   swept but only partially enumerated, so it is not yet a second data point to
   check them against.
-- **`owner_of()` only recognizes the English user namespace.** It requires the
-  literal prefix `User:`, but CirrusSearch returns titles in each wiki's own
-  language — frwiki pages come back as `Utilisateur:Foo/bar.js`, so every frwiki
-  row stores `owner = ""`. Two things quietly degrade as a result: the
-  crowded-name fold counts distinct owners and can never reach `CROWDED_OWNERS`
-  on frwiki, so it never fires there; and `demand()` falls back to the source
-  title, counting one person who loads a script from both `common.js` and
-  `vector.js` as two. Meta is unaffected because its user namespace is `User`,
-  which means the two wikis in the census currently fold by different rules.
-  Fixing it needs each wiki's namespace-2 name, which is a siteinfo lookup this
-  code does not make.
 - **Fork detection is a hash.** `fingerprint()` finds copies that differ only in
   comments and whitespace. It does not find a script somebody edited — a fork with
   one line changed reads as a distinct original. Recognizing those needs

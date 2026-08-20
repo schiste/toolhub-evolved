@@ -11,6 +11,8 @@ guard that stops the name rule from eating real scripts gets the most tests here
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "proxy"))
 
@@ -44,20 +46,30 @@ def titles(origins):
 
 
 def test_the_owner_is_the_segment_below_the_namespace():
-    assert directory.owner_of("User:EDUCA33E/LiveRC.js") == "EDUCA33E"
+    assert directory.owner_of_user_page("User:EDUCA33E/LiveRC.js") == "EDUCA33E"
 
 
 def test_a_page_with_no_subpage_still_has_an_owner():
-    assert directory.owner_of("User:Orlodrim") == "Orlodrim"
+    assert directory.owner_of_user_page("User:Orlodrim") == "Orlodrim"
 
 
-def test_a_page_outside_user_space_has_no_owner():
-    # MediaWiki:Gadget-Popups.js is a target of imports, never a candidate.
-    assert directory.owner_of("MediaWiki:Gadget-Popups.js") == ""
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Utilisateur:EDUCA33E/LiveRC.js",  # frwiki
+        "Benutzer:EDUCA33E/LiveRC.js",  # dewiki
+        "\u5229\u7528\u8005:EDUCA33E/LiveRC.js",  # jawiki
+        "U:EDUCA33E/LiveRC.js",  # a namespace alias
+    ],
+)
+def test_the_namespace_is_read_by_position_not_by_its_english_name(title):
+    # The search asks for namespace 2 by number; the wiki answers in its own
+    # language. Matching "User:" is how every non-English wiki stored no owner.
+    assert directory.owner_of_user_page(title) == "EDUCA33E"
 
 
 def test_a_title_with_no_namespace_has_no_owner():
-    assert directory.owner_of("Popups.js") == ""
+    assert directory.owner_of_user_page("Popups.js") == ""
 
 
 def test_the_basename_is_everything_below_the_owner():

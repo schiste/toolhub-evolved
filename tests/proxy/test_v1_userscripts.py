@@ -32,7 +32,7 @@ def page(title, *, rank=0, role="script", fingerprint="", wiki=FRWIKI):
             UserScriptPage(
                 wiki=wiki,
                 title=title,
-                owner=directory.owner_of(title),
+                owner=directory.owner_of_user_page(title),
                 basename=directory.basename_of(title),
                 role=role,
                 fingerprint=fingerprint,

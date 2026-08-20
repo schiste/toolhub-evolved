@@ -27,7 +27,7 @@ from sqlalchemy import func
 from backend import db, userscripts
 from backend import userscript_census as census
 from backend.models import UserScriptCensusState, UserScriptImport, UserScriptPage, utcnow
-from backend.userscript_directory import basename_of, owner_of
+from backend.userscript_directory import basename_of, owner_of_user_page
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -207,7 +207,9 @@ def store_page(session: Session, wiki: str, page: census.PageContent, rank: int 
         session.add(row)
     elif rank is not None:
         row.discovery_rank = rank
-    row.owner = owner_of(analysis.title)
+    # Safe here and nowhere else: every title that reaches this function came
+    # from a namespace-2 search or a namespace-2 recent-changes filter.
+    row.owner = owner_of_user_page(analysis.title)
     row.basename = basename_of(analysis.title)
     row.content_model = page.model
     row.role = analysis.role
