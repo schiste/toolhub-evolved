@@ -1503,7 +1503,11 @@ def _scan_endpoints(findings: dict[tuple[str, str], Finding], path: str, line_nu
     with action=upload, which is the difference between a reader and a writer,
     and it is the only scanner that sees a service Wikimedia does not run.
     """
-    called = bool(REQUEST_SIGNAL_RE.search(line))
+    # The signal has to be looked for around the URL, not inside it. A path
+    # like /creating-a-pull-request-from-a-fork carries the word `request`, and
+    # reading that as a call promoted a line of prose in CONTRIBUTING.md to the
+    # same confidence as a fetch.
+    called = bool(REQUEST_SIGNAL_RE.search(source_endpoints.URL_RE.sub(" ", line)))
     for endpoint in source_endpoints.endpoints(line):
         _put(
             findings,

@@ -73,7 +73,9 @@ def test_a_pipe_joined_mediawiki_value_survives_intact():
         # Phabricator's own "task|task" shorthand. The pipe belongs to the
         # markup around the URL, and reading it as path invented an address.
         ("[https://momentjs.com/|moment.js]", "momentjs.com/"),
-        ("https://phabricator.wikimedia.org/T247721|T247721", "phabricator.wikimedia.org/{}"),
+        # Phabricator's own "task|task" shorthand, on a host that survives the
+        # reference filter so the pipe is what the assertion is about.
+        ("https://api.acme-data.org/T247721|T247721", "api.acme-data.org/{}"),
     ],
 )
 def test_a_pipe_outside_the_query_string_ends_the_address(line, expected):
@@ -301,3 +303,79 @@ def test_the_host_case_does_not_split_one_endpoint_in_two():
 def test_the_label_reads_as_an_address_a_person_can_check():
     assert only("https://en.wikipedia.org/w/api.php?action=edit").label == "en.wikipedia.org /w/api.php (action=edit)"
     assert only("https://api.acme-data.org/v1/thing").label == "api.acme-data.org /v1/thing"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # A wiki page is something a person reads. A tool that wants the
+        # content asks /w/api.php for it, so keying on the article path alone
+        # holds on every MediaWiki, inside the estate and out.
+        "see https://en.wikipedia.org/wiki/Help:Contents",
+        "https://www.mediawiki.org/wiki/API:Etiquette",
+        "https://translatewiki.net/wiki/Translating:Toolhub",
+        "https://en.wikipedia.org/wiki",
+        # Repository furniture: the project page, an issue, a file browser, a
+        # review, and the forge's own static hosting.
+        "https://github.com/wikimedia-gadgets/twinkle",
+        "https://github.com/select2/select2/issues/42",
+        "https://github.com/select2/select2/blob/master/LICENSE.md",
+        "https://gerrit.wikimedia.org/r/plugins/gitiles/mediawiki/core/x",
+        "https://phabricator.wikimedia.org/T247721",
+        "https://docs.github.com/en/github/finding-security-vulnerabilities",
+        "https://wikimedia-gadgets.github.io/twinkle",
+        # Reading material, announced by the host itself.
+        "https://stackoverflow.com/a/1234/567",
+        "https://docs.djangoproject.com/en/2.2",
+        "https://lists.wikimedia.org/pipermail/mediawiki-api-announce/x.html",
+        "https://blog.acme-data.org/why-we-moved",
+        # An opaque redirect names no endpoint even in principle.
+        "https://git.io/JvXDl",
+    ],
+)
+def test_a_link_to_read_is_not_an_endpoint_to_call(line):
+    assert source_endpoints.endpoints(line) == ()
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # A release asset pulled with wget in a Dockerfile is a real download,
+        # forge host or not. This one is measured from wikimedia/toolhub.
+        (
+            "https://github.com/jwilder/dockerize/releases/download/${V}/dockerize.tar.gz",
+            "github.com/jwilder/dockerize/releases/download/{}",
+        ),
+        ("https://github.com/a/b/archive/refs/tags/v1.0.zip", "github.com/a/b/archive/refs/tags/v1.0.zip"),
+        ("https://gitlab.com/a/b/raw/main/data.json", "gitlab.com/a/b/raw/main/data.json"),
+    ],
+)
+def test_a_download_on_a_forge_is_still_a_download(url, expected):
+    assert values(url) == [expected]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Neither host browses anything, so neither needs the carve-out above.
+        "https://raw.githubusercontent.com/a/b/main/data.json",
+        "https://api.github.com/repos/a/b",
+    ],
+)
+def test_a_host_that_only_serves_content_is_not_the_forge(url):
+    assert len(source_endpoints.endpoints(url)) == 1
+
+
+def test_the_api_path_of_a_wiki_is_not_a_wiki_page():
+    # /wiki/ is the article path and /w/ is the script path. Only the first is
+    # reading material, and confusing them would empty the bucket entirely.
+    assert values("https://en.wikipedia.org/w/api.php?action=edit") == ["en.wikipedia.org/w/api.php?action=edit"]
+    assert values("https://en.wikipedia.org/w/rest.php/v1/page/Foo") == ["en.wikipedia.org/w/rest.php/v1/page/Foo"]
+
+
+def test_a_wikilike_prefix_is_not_the_article_path():
+    # `/wikidata/` and `/wikipedia/` start with the same five letters. The
+    # image below is one of the most-fetched addresses in the whole corpus.
+    assert values("https://upload.wikimedia.org/wikipedia/commons/1/12/Imbox.png") == [
+        "upload.wikimedia.org/wikipedia/commons/{}/{}/Imbox.png"
+    ]

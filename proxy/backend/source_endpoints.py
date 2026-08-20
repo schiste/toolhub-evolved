@@ -9,7 +9,7 @@ run at all. This does the complementary job -- it reads literal URLs and
 reports the host, the path, and for the query APIs the parameter that decides
 what the call actually does.
 
-Three rules govern what is kept, all of them about not storing things:
+Four rules govern what is kept, all of them about not storing things:
 
 * No credentials, ever. Userinfo is dropped before the host is read, and query
   values survive only for an allowlist of parameters whose values are verbs
@@ -23,6 +23,11 @@ Three rules govern what is kept, all of them about not storing things:
 * No unbounded growth. One minified line can carry hundreds of URLs, so the
   count per line and the length of a path are capped, and an over-long
   authority is refused outright rather than cut to a prefix naming nothing.
+* Nothing but endpoints. Source links to documentation constantly and calls it
+  never: wiki pages, repository browse URLs, the blog post behind a workaround.
+  Measured across three real repositories those were three findings in five,
+  and on one of them they filled the cap and pushed the tool's actual API
+  surface out of the report. They are dropped rather than filed alongside it.
 
 Nothing here performs I/O or scores anything. How much to trust a hit is the
 caller's decision, made from the file it came from.
@@ -117,6 +122,57 @@ PLACEHOLDER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A forge is a website first and a file server second. Nearly every repository
+# names its own project page, its issue tracker, and half a dozen neighbors it
+# borrowed code from, none of which anything connects to. The paths that are
+# genuine fetches are few and well known, so those are carved back out below.
+FORGE_HOST_RE = re.compile(
+    r"^(?:www\.|help\.|docs\.|gist\.)?(?:github\.com|gitlab\.com|bitbucket\.org"
+    r"|sourceforge\.net|codeberg\.org)$"
+    r"|^(?:gerrit|phabricator|gitlab|diffusion)\.wikimedia\.org$"
+    # The forge's own static hosting. A project page there is the README with
+    # a stylesheet on it, and the product serves nothing else.
+    r"|\.(?:github|gitlab)\.io$",
+    re.IGNORECASE,
+)
+
+# The exception: a release asset or a raw blob is a real download, reached with
+# wget in a Dockerfile as often as not. Hosts that serve only raw content --
+# raw.githubusercontent.com and its kind -- never match FORGE_HOST_RE at all and
+# so never need rescuing here.
+FORGE_FETCH_RE = re.compile(r"^/(?:.+/)?(?:releases/download|archive|raw)/", re.IGNORECASE)
+
+# Hosts that exist to be read rather than called. The leading subdomains say so
+# outright, and the rest are the question-and-answer and mailing-list sites that
+# turn up in a comment above the line that needed explaining.
+#
+# The known cost is `docs.` on a host that also serves data -- a published
+# spreadsheet under docs.google.com is a real fetch and will be dropped. That
+# has not appeared yet, and inventing an exemption for it now would be guessing.
+REFERENCE_HOST_RE = re.compile(
+    r"^(?:docs|blog|help|wiki|lists|discourse|groups)\."
+    r"|(?:^|\.)(?:stackoverflow\.com|stackexchange\.com|serverfault\.com"
+    r"|superuser\.com|askubuntu\.com|openhub\.net|fsf\.org|readthedocs\.io"
+    r"|readthedocs\.org|medium\.com|blogspot\.com)$",
+    re.IGNORECASE,
+)
+
+# A shortened link cannot be reported as an endpoint even in principle: the
+# address names a redirect service, and the service it actually reaches is not
+# in the source at all. Resolving one would mean a network call, which this
+# module does not make.
+SHORTENER_RE = re.compile(
+    r"^(?:git\.io|bit\.ly|goo\.gl|t\.co|tinyurl\.com|ow\.ly|is\.gd|buff\.ly|w\.wiki)$",
+    re.IGNORECASE,
+)
+
+# MediaWiki's article path. `/wiki/Help:Contents` is a page a human reads, and a
+# tool that genuinely wants that content asks /w/api.php for it instead -- which
+# is why this can key on the path alone and stay true on every wiki, including
+# the ones outside the estate.
+WIKI_PAGE_RE = re.compile(r"^/wiki(?:/|$)", re.IGNORECASE)
+
+
 # The query parameters worth keeping, because their values say what a request
 # does rather than what it is about. MediaWiki's action API is the reason this
 # exists at all: action=query and action=edit are the same path and utterly
@@ -189,6 +245,19 @@ def _host(parsed: object) -> str:
     return host
 
 
+def _is_reference(host: str, path: str) -> bool:
+    """Report whether this address names something to read rather than to call.
+
+    Source links to documentation far more often than it calls services, so
+    without this the bucket fills with wiki pages, repository browse URLs and
+    the blog post that explained a workaround. Those are worth knowing, but
+    they answer a different question than the one this bucket is named for.
+    """
+    if WIKI_PAGE_RE.match(path) or REFERENCE_HOST_RE.search(host) or SHORTENER_RE.match(host):
+        return True
+    return bool(FORGE_HOST_RE.search(host)) and not FORGE_FETCH_RE.match(path)
+
+
 def _segment(value: str) -> str:
     """Return one path segment, or `{}` when it holds data rather than a route."""
     return "{}" if VARIABLE_SEGMENT_RE.search(value) else value
@@ -233,7 +302,10 @@ def endpoints(line: str) -> tuple[Endpoint, ...]:
         host = _host(parsed)
         if not host:
             continue
-        path, group = _path(parsed.path), family(host)
+        path = _path(parsed.path)
+        if _is_reference(host, path):
+            continue
+        group = family(host)
         for action in _actions(parsed.query) or ("",):
             endpoint = Endpoint(host=host, path=path, action=action, family=group)
             if endpoint not in found:

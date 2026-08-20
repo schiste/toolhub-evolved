@@ -553,7 +553,14 @@ hosts the source addresses and, for query APIs, the parameter that decides what
 the call does (`action=edit` and `action=query` are separate findings); its
 `external` half is the reach outside Wikimedia. Only an allowlist of parameters
 survives -- every other query value is dropped unread, so a URL carrying an
-`api_key` is stored as its path alone. `GET /v1/source-analysis/` and
+`api_key` is stored as its path alone. Links a tool merely reads are not
+endpoints and are dropped rather than filed alongside them: wiki article paths
+(`/wiki/<Title>`), repository browse URLs on the code forges, documentation and
+question-and-answer hosts, and URL shorteners, whose target is not in the source
+at all. Release assets and raw blobs stay, because a `wget` in a Dockerfile is a
+real fetch. Measured over three real repositories this dropped three findings in
+five; on one of them the reading material had filled the per-bucket cap and
+displaced the tool's actual API surface. `GET /v1/source-analysis/` and
 `GET /v1/source-analysis/<id>/` are private reads for the report owner;
 `POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
 `approved`, or `rejected`. The same analyzer is available for local checkouts
