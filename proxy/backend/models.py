@@ -1591,3 +1591,64 @@ class UserScriptCensusState(Base):
     last_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class UserScriptDirectoryEntry(Base):
+    """One distinct script in a wiki's directory, as the last projection saw it.
+
+    Derived, and rebuilt whole on every run rather than merged. Which page is the
+    original of a script depends on every other page in the corpus and on who
+    loads them, so a page appearing or a single import disappearing can move an
+    entry that was never itself edited. There is no incremental version of that
+    question, and a half-updated directory would rank scripts against demand
+    measured at two different times.
+
+    `demand` counts distinct *people*, not distinct source pages: somebody who
+    loads a script from both `common.js` and `vector.js` is one user of it, and
+    counting the pages would report them as two.
+    """
+
+    __tablename__ = "user_script_directory"
+    __table_args__ = (
+        UniqueConstraint("wiki", "title"),
+        # The directory is read one tier at a time, already ordered.
+        Index("ix_user_script_directory_position", "wiki", "tier", "position"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wiki: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    owner: Mapped[str] = mapped_column(String(255), default="", index=True)
+    basename: Mapped[str] = mapped_column(String(512), default="")
+    tier: Mapped[str] = mapped_column(String(16), default="")
+    demand: Mapped[int] = mapped_column(Integer, default=0)
+    instances: Mapped[int] = mapped_column(Integer, default=0)
+    # Rank within the tier, from 1. Stored because the ordering is what the
+    # directory is for, and recomputing it costs a sort over the whole wiki.
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserScriptDirectoryMember(Base):
+    """One page filed under a directory entry, and how it got there.
+
+    Kept separate from `UserScriptPage` on purpose. That table records what the
+    wiki showed us; this one records what the collapse concluded, and the two
+    change for different reasons at different times. Without these rows an entry
+    would carry a count of instances and no way to see them -- which is the
+    question a security review asks first: not "how many forks", but "which".
+    """
+
+    __tablename__ = "user_script_directory_members"
+    __table_args__ = (
+        UniqueConstraint("wiki", "title"),
+        Index("ix_user_script_directory_members_origin", "wiki", "origin_title"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wiki: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    origin_title: Mapped[str] = mapped_column(String(512))
+    # `original`, `copy` (byte-identical), or `variant` (a crowded filename).
+    # A copy and a variant are folded by different evidence and a reviewer needs
+    # to know which: byte-identical is a fact, a shared name is an inference.
+    relation: Mapped[str] = mapped_column(String(16), default="")
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

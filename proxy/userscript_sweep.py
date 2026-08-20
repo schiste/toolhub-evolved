@@ -4,7 +4,7 @@
 import os
 import sys
 
-from backend import job_runner, userscript_sweep
+from backend import job_runner, userscript_projection, userscript_sweep
 from backend.wikimedia_delivery import WikimediaClient
 
 DEFAULT_WIKIS = "fr.wikipedia.org"
@@ -24,13 +24,19 @@ def _wikis() -> list[str]:
 
 
 def main() -> int:
-    """Sweep or watch each configured wiki's user-space script pages.
+    """Sweep or watch each configured wiki's user-space script pages, then rank them.
 
     A full sweep is thousands of requests and is not something to run hourly, so
     the schedule runs a watch and the sweep is asked for explicitly. The first
     run on a wiki has no cursor, and a watch with no cursor would learn only
     what changed since it started -- so a wiki with no completed sweep gets one
     whether or not this run asked for it.
+
+    The projection follows every run, including one that wrote nothing. It reads
+    no wiki and takes seconds, while the collapse it recomputes is global: one
+    new page can change which page is the original of a script, so a directory
+    rebuilt only when the sweep found something would drift out of agreement
+    with the pages it claims to describe.
     """
     full = os.environ.get("USERSCRIPT_SWEEP", "").strip().lower() in {"1", "true", "yes"}
     limit = _int_env("USERSCRIPT_LIMIT", 0)
@@ -52,6 +58,13 @@ def main() -> int:
                 f"asked={summary['asked']} fetched={summary['fetched']} "
                 f"written={summary['written']} skipped={summary['skipped']} "
                 f"unreadable={summary['unreadable']}\n",
+            )
+            ranked = userscript_projection.project(wiki)
+            sys.stdout.write(
+                "userscript-directory: "
+                f"wiki={ranked['wiki']} candidates={ranked['candidates']} "
+                f"originals={ranked['originals']} active={ranked['active']} "
+                f"archive={ranked['archive']}\n",
             )
 
     return job_runner.run_job("userscript-census", body)
