@@ -18,6 +18,9 @@ sys.path.insert(0, str(ROOT / "proxy"))
 
 from backend import source_hosts  # noqa: E402
 
+WIKI_GADGET = "https://en.wikipedia.org/wiki/MediaWiki:Gadget-Twinkle.js"
+WIKI_SCRIPT = "https://en.wikipedia.org/wiki/User:Example/twinkle.js"
+
 
 # --- URL to project identity -------------------------------------------------
 
@@ -149,20 +152,17 @@ def test_encoded_path_is_a_single_url_segment():
 # --- capabilities ------------------------------------------------------------
 
 
-def test_only_github_and_gitlab_advertise_the_extra_counts():
+def test_only_github_gitlab_and_mediawiki_advertise_the_extra_counts():
     def caps(url):
         ref = source_hosts.project_ref(url)
         assert ref is not None
         return source_hosts.capabilities(ref)
 
-    assert caps("https://github.com/o/r") == source_hosts.HostCapabilities(
-        contributor_count=True, commit_count=True
-    )
-    assert caps("https://gitlab.com/o/r") == source_hosts.HostCapabilities(
-        contributor_count=True, commit_count=True
-    )
+    both = source_hosts.HostCapabilities(contributor_count=True, commit_count=True)
+    for url in ("https://github.com/o/r", "https://gitlab.com/o/r", WIKI_GADGET):
+        assert caps(url) == both, url
     for url in ("https://codeberg.org/o/r", "https://bitbucket.org/o/r", "https://gerrit.wikimedia.org/g/o/r"):
-        assert caps(url) == source_hosts.HostCapabilities()
+        assert caps(url) == source_hosts.HostCapabilities(), url
 
 
 # --- API URLs ----------------------------------------------------------------
@@ -324,16 +324,12 @@ def test_gerrit_state_maps_to_archived(state, archived):
 
 
 def test_a_non_object_payload_normalizes_to_all_unknown():
-    assert source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), ["nope"]) == (
-        source_hosts.HostMetadata()
-    )
+    assert source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), ["nope"]) == (source_hosts.HostMetadata())
 
 
 @pytest.mark.parametrize("disclaimer", ["NOASSERTION", "none", "Other", "unknown"])
 def test_a_disclaimed_license_is_unknown_not_stored(disclaimer):
-    facts = source_hosts.metadata_from_payload(
-        _ref("https://github.com/o/r"), {"license": {"spdx_id": disclaimer}}
-    )
+    facts = source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), {"license": {"spdx_id": disclaimer}})
     assert facts.license_id is None
 
 
@@ -368,9 +364,7 @@ def test_topics_are_bounded_in_count_and_length():
 
 
 def test_long_text_is_truncated_not_rejected():
-    facts = source_hosts.metadata_from_payload(
-        _ref("https://github.com/o/r"), {"description": "d" * 5000}
-    )
+    facts = source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), {"description": "d" * 5000})
     assert facts.description is not None
     assert len(facts.description) == source_hosts.MAX_TEXT_CHARS
 
@@ -380,15 +374,13 @@ def test_long_text_is_truncated_not_rejected():
 
 def test_gerrit_xssi_prefix_is_stripped_before_parsing():
     payload = source_hosts.decode_payload(
-        _ref("https://gerrit.wikimedia.org/g/labs/tools/x"), b")]}'\n{\"state\": \"READ_ONLY\"}"
+        _ref("https://gerrit.wikimedia.org/g/labs/tools/x"), b')]}\'\n{"state": "READ_ONLY"}'
     )
     assert payload == {"state": "READ_ONLY"}
 
 
 def test_other_hosts_are_parsed_as_plain_json():
-    assert source_hosts.decode_payload(_ref("https://github.com/o/r"), b'{"archived": false}') == {
-        "archived": False
-    }
+    assert source_hosts.decode_payload(_ref("https://github.com/o/r"), b'{"archived": false}') == {"archived": False}
 
 
 # --- counts from headers -----------------------------------------------------
@@ -456,3 +448,123 @@ def test_an_unreadable_timestamp_is_unknown_not_the_epoch(raw):
     # wrong rather than honestly silent.
     facts = source_hosts.metadata_from_payload(_ref("https://github.com/o/r"), {"pushed_at": raw})
     assert facts.pushed_at is None
+
+
+# --- MediaWiki, the host that is not a forge ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "path", "api_base"),
+    [
+        (WIKI_GADGET, "MediaWiki:Gadget-Twinkle.js", "https://en.wikipedia.org/w/rest.php/v1"),
+        (WIKI_SCRIPT, "User:Example/twinkle.js", "https://en.wikipedia.org/w/rest.php/v1"),
+        # Any Wikimedia wiki, not a fixed host list: the API is identical and
+        # only the origin moves, which is the whole reason wikis are matched by
+        # URL shape rather than by PROVIDERS_BY_HOST.
+        (
+            "https://commons.wikimedia.org/wiki/MediaWiki:Gadget-Foo.js",
+            "MediaWiki:Gadget-Foo.js",
+            "https://commons.wikimedia.org/w/rest.php/v1",
+        ),
+    ],
+)
+def test_a_wiki_page_resolves_to_a_wiki_kind_ref(url, path, api_base):
+    ref = source_hosts.project_ref(url)
+    assert ref is not None
+    assert (ref.provider, ref.api, ref.path, ref.api_base) == (
+        source_hosts.PROVIDER_MEDIAWIKI_WIKIMEDIA,
+        source_hosts.API_MEDIAWIKI,
+        path,
+        api_base,
+    )
+    # The distinction the enrichment lane reads before assuming a clone exists.
+    assert ref.kind == source_hosts.KIND_WIKI
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # An article about a tool is not the tool.
+        "https://en.wikipedia.org/wiki/Twinkle",
+        "https://en.wikipedia.org/wiki/User:Example/documentation",
+        # A wiki we do not recognise gets no API base guessed for it.
+        "https://wiki.example.org/wiki/MediaWiki:Gadget-Foo.js",
+    ],
+)
+def test_wiki_urls_that_hold_no_code_are_declined(url):
+    assert source_hosts.project_ref(url) is None
+
+
+def test_a_page_title_is_encoded_whole_including_its_slashes():
+    ref = source_hosts.project_ref(WIKI_SCRIPT)
+    assert ref is not None
+    # REST v1 takes the title as one path segment. A bare "/" here would
+    # address /page/User:Example/twinkle.js/bare, which is a different route.
+    assert ref.encoded_path == "User%3AExample%2Ftwinkle.js"
+
+
+def test_wiki_api_urls_ask_for_the_bare_page_and_the_two_counts():
+    ref = source_hosts.project_ref(WIKI_GADGET)
+    assert ref is not None
+    base = "https://en.wikipedia.org/w/rest.php/v1/page/MediaWiki%3AGadget-Twinkle.js"
+    assert source_hosts.project_url(ref) == f"{base}/bare"
+    assert source_hosts.contributor_count_url(ref) == f"{base}/history/counts/editors"
+    assert source_hosts.commit_count_url(ref) == f"{base}/history/counts/edits"
+
+
+def test_a_bare_page_reports_its_last_edit_and_nothing_it_cannot_know():
+    meta = source_hosts.metadata_from_payload(
+        _ref(WIKI_GADGET),
+        {
+            "id": 12345,
+            "key": "MediaWiki:Gadget-Twinkle.js",
+            "content_model": "javascript",
+            "latest": {"id": 987, "timestamp": "2024-03-01T12:00:00Z"},
+            "license": {"title": "Creative Commons Attribution-ShareAlike 4.0"},
+        },
+    )
+    assert meta.pushed_at == datetime(2024, 3, 1, 12, 0, tzinfo=UTC)
+    # A page has no branch and no forge counters; None says "not published
+    # here" rather than zero, which is what stops scoring penalising it.
+    assert (meta.default_branch, meta.star_count, meta.fork_count, meta.open_issues_count) == (None, None, None, None)
+
+
+def test_a_wiki_page_is_never_archived():
+    # MediaWiki: pages are protected as routine site policy, so a protection
+    # flag would read as abandonment on every gadget on every wiki. Leaving
+    # archived unknown keeps wiki tools scored on activity alone.
+    assert source_hosts.metadata_from_payload(_ref(WIKI_GADGET), {"protected": True}).archived is None
+
+
+def test_the_wiki_text_license_is_not_stored_as_the_source_license():
+    # CC BY-SA covers the page, not the JavaScript on it. Recording it would
+    # answer the licence question confidently and wrongly.
+    meta = source_hosts.metadata_from_payload(_ref(WIKI_GADGET), {"license": {"title": "CC BY-SA 4.0", "url": "..."}})
+    assert meta.license_id is None
+
+
+def test_a_page_that_has_never_been_edited_reports_no_timestamp():
+    assert source_hosts.metadata_from_payload(_ref(WIKI_GADGET), {"latest": None}).pushed_at is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"count": 137, "limit": False}, 137),
+        # limit=true means the wiki stopped counting at its cap, so this is a
+        # floor. Every threshold it feeds asks "at least how many".
+        ({"count": 10000, "limit": True}, 10000),
+        ({"count": 0, "limit": False}, 0),
+        ({"count": "many"}, None),
+        ({}, None),
+        ("not an object", None),
+    ],
+)
+def test_the_wiki_count_is_read_from_the_body(payload, expected):
+    assert source_hosts.count_from_response(_ref(WIKI_GADGET), {}, payload) == expected
+
+
+def test_the_wiki_count_ignores_a_header_that_is_not_its_own():
+    # X-Total belongs to GitLab. A proxy or CDN that adds one must not be able
+    # to overwrite the number the endpoint actually answered with.
+    assert source_hosts.count_from_response(_ref(WIKI_GADGET), {"X-Total": "9"}, {"count": 3}) == 3

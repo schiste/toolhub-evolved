@@ -16,11 +16,13 @@ and API payload to one normalized shape. It performs no I/O, so the awkward
 part of every host -- what its URLs look like and what it calls each field --
 is testable without a network.
 
-Five API families cover the six hosts repository_scan.ALLOWED_HOSTS permits,
-and a sixth kind is coming: gadgets and user scripts hosted on-wiki, where the
-page history *is* the repository. HostMetadata is therefore a set of optional
-facts rather than a forge record. A None means "this host does not publish
-this", which is not the same as zero and must not be scored as one.
+Six API families are covered. Five are forges, from the hosts
+repository_scan.ALLOWED_HOSTS permits. The sixth is MediaWiki, where a gadget
+or user script has no repository at all and the page history *is* the history
+-- so it answers a much smaller subset than any forge does. HostMetadata is
+therefore a set of optional facts rather than a forge record. A None means
+"this host does not publish this", which is not the same as zero and must not
+be scored as one.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlparse
+
+from backend import wiki_sources
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -48,6 +52,10 @@ PROVIDER_GITLAB_WIKIMEDIA = "gitlab-wikimedia"
 PROVIDER_CODEBERG = "codeberg"
 PROVIDER_BITBUCKET = "bitbucket"
 PROVIDER_GERRIT_WIKIMEDIA = "gerrit-wikimedia"
+# Software-operator, like the two above. Unlike them this covers not one
+# host but every wiki Wikimedia runs, because a gadget lives on whichever
+# of the ~900 of them hosts it and they all serve the identical API.
+PROVIDER_MEDIAWIKI_WIKIMEDIA = "mediawiki-wikimedia"
 
 # The API family each provider speaks. Two providers share GitLab's: gitlab.com
 # and gitlab.wikimedia.org run the same v4 API behind different origins, so
@@ -57,6 +65,7 @@ API_GITLAB = "gitlab"
 API_FORGEJO = "forgejo"
 API_BITBUCKET = "bitbucket"
 API_GERRIT = "gerrit"
+API_MEDIAWIKI = "mediawiki"
 
 MAX_TOPICS = 20
 MAX_TEXT_CHARS = 500
@@ -94,6 +103,7 @@ API_PATH_PREFIXES = {
     API_GITLAB: "/api/v4",
     API_FORGEJO: "/api/v1",
     API_GERRIT: "/r",
+    API_MEDIAWIKI: "/w/rest.php/v1",
 }
 
 # A license identifier the host uses to mean "we could not tell", which is not
@@ -192,6 +202,7 @@ API_BY_PROVIDER = {
     PROVIDER_CODEBERG: API_FORGEJO,
     PROVIDER_BITBUCKET: API_BITBUCKET,
     PROVIDER_GERRIT_WIKIMEDIA: API_GERRIT,
+    PROVIDER_MEDIAWIKI_WIKIMEDIA: API_MEDIAWIKI,
 }
 
 CAPABILITIES_BY_API = {
@@ -203,6 +214,10 @@ CAPABILITIES_BY_API = {
     API_FORGEJO: HostCapabilities(contributor_count=False, commit_count=False),
     API_BITBUCKET: HostCapabilities(contributor_count=False, commit_count=False),
     API_GERRIT: HostCapabilities(contributor_count=False, commit_count=False),
+    # MediaWiki answers both from a dedicated counts endpoint whose body is
+    # two integers -- cheaper than a page of history, and the only spelling
+    # that yields an editor count without the API naming the editors.
+    API_MEDIAWIKI: HostCapabilities(contributor_count=True, commit_count=True),
 }
 
 
@@ -312,20 +327,41 @@ def _api_base(api: str, host: str) -> str:
     return f"https://{host}{API_PATH_PREFIXES[api]}"
 
 
+def _wiki_ref(url: str) -> ProjectRef | None:
+    """Resolve a wiki page URL to a project identity, or None if it holds no code."""
+    source = wiki_sources.wiki_source(url)
+    if source is None:
+        return None
+    return ProjectRef(
+        provider=PROVIDER_MEDIAWIKI_WIKIMEDIA,
+        api=API_MEDIAWIKI,
+        kind=KIND_WIKI,
+        # The page title, canonicalized. Percent-encoded whole by encoded_path,
+        # including its slashes: REST v1 takes the title as one path segment,
+        # so a subpage separator left bare would address a different route.
+        path=source.title,
+        api_base=_api_base(API_MEDIAWIKI, source.domain),
+    )
+
+
 def project_ref(url: str) -> ProjectRef | None:
     """Resolve one normalized HTTPS source URL to a host project identity.
 
-    Only the exact hosts in PROVIDERS_BY_HOST resolve. repository_scan also
-    admits *.github.com and *.gitlab.com for cloning, but those subdomains are
-    gist/raw/www rather than API-bearing instances, so guessing an API origin
-    from them would aim authenticated requests at the wrong service. They
+    Only the exact hosts in PROVIDERS_BY_HOST resolve as forges. repository_scan
+    also admits *.github.com and *.gitlab.com for cloning, but those subdomains
+    are gist/raw/www rather than API-bearing instances, so guessing an API
+    origin from them would aim authenticated requests at the wrong service. They
     simply get no enrichment.
+
+    Wiki hosts cannot be listed that way -- a gadget lives on whichever of
+    Wikimedia's wikis hosts it -- so they are recognised by their URL shape
+    instead, and only when it names a page that actually holds code.
     """
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     provider = PROVIDERS_BY_HOST.get(host)
     if provider is None:
-        return None
+        return _wiki_ref(url)
     api = API_BY_PROVIDER[provider]
     if api == API_GERRIT:
         path = _gerrit_path(parsed.path)
@@ -355,6 +391,11 @@ def project_url(ref: ProjectRef) -> str:
         return f"{ref.api_base}/repos/{ref.path}"
     if ref.api == API_BITBUCKET:
         return f"{ref.api_base}/repositories/{ref.path}"
+    if ref.api == API_MEDIAWIKI:
+        # bare, not the full page: it carries the latest revision id and
+        # timestamp without the wikitext, which for a large gadget is the
+        # difference between a few hundred bytes and a few hundred kilobytes.
+        return f"{ref.api_base}/page/{ref.encoded_path}/bare"
     return f"{ref.api_base}/projects/{ref.encoded_path}"
 
 
@@ -370,13 +411,21 @@ def contributor_count_url(ref: ProjectRef) -> str:
     """
     if ref.api == API_GITHUB:
         return f"{ref.api_base}/repos/{ref.path}/contributors?per_page=1&anon=1"
+    if ref.api == API_MEDIAWIKI:
+        return f"{ref.api_base}/page/{ref.encoded_path}/history/counts/editors"
     return f"{ref.api_base}/projects/{ref.encoded_path}/repository/contributors?per_page=1"
 
 
 def commit_count_url(ref: ProjectRef) -> str:
-    """Return the URL whose headers carry `ref`'s total commit count."""
+    """Return the URL carrying `ref`'s total commit count.
+
+    A wiki page has revisions rather than commits, and counting them is the
+    same question: how much work has gone into this source since it appeared.
+    """
     if ref.api == API_GITHUB:
         return f"{ref.api_base}/repos/{ref.path}/commits?per_page=1"
+    if ref.api == API_MEDIAWIKI:
+        return f"{ref.api_base}/page/{ref.encoded_path}/history/counts/edits"
     return f"{ref.api_base}/projects/{ref.encoded_path}/repository/commits?per_page=1"
 
 
@@ -455,12 +504,31 @@ def _gerrit_metadata(payload: dict[str, Any]) -> HostMetadata:
     )
 
 
+def _mediawiki_metadata(payload: dict[str, Any]) -> HostMetadata:
+    """Read the one fact a bare page record answers: when it was last edited.
+
+    Almost every field stays None, and that is the honest answer rather than a
+    gap to fill. A page has no branch, no fork count and no issue tracker. It
+    cannot be archived either -- protection on a MediaWiki: page is routine
+    site policy, not a maintainer retiring the code -- so archived stays None
+    and wiki tools are scored on activity alone.
+
+    The license is deliberately dropped. MediaWiki reports the wiki's *text*
+    license here, which is the CC BY-SA banner on the page, not the license of
+    the JavaScript the page contains; storing it would answer "what licence is
+    this gadget under" with a confident wrong answer. toolinfo carries the real
+    one.
+    """
+    return HostMetadata(pushed_at=_instant(_mapping(payload.get("latest")).get("timestamp")))
+
+
 _METADATA_BY_API = {
     API_GITHUB: _github_metadata,
     API_GITLAB: _gitlab_metadata,
     API_FORGEJO: _forgejo_metadata,
     API_BITBUCKET: _bitbucket_metadata,
     API_GERRIT: _gerrit_metadata,
+    API_MEDIAWIKI: _mediawiki_metadata,
 }
 
 
@@ -516,7 +584,17 @@ def count_from_response(ref: ProjectRef, headers: Mapping[str, str], payload: ob
     GitHub omits Link entirely when the result fits on a single page, which for
     per_page=1 means zero or one item. Its contributor and commit bodies carry
     no email address, so measuring that page is both necessary and safe.
+
+    MediaWiki is the one host that answers in the body, because its counts
+    endpoint exists to return exactly that and sends no total header. Reading
+    it is safe for the same reason it was chosen over the Action API's
+    contributor list: the body is two integers and never names an editor.
     """
+    if ref.api == API_MEDIAWIKI:
+        # limit=true means the wiki stopped counting at its internal cap, so
+        # the number is a floor. A floor is still a better answer than none:
+        # every threshold this feeds asks "at least how many", never "exactly".
+        return _count(_mapping(payload).get("count"))
     total = _header(headers, "X-Total")
     if total is not None and total.strip().isdigit():
         return int(total.strip())
