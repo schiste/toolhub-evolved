@@ -39,6 +39,7 @@ from backend.v1_toolhub import v1_toolhub_bp
 from backend.v1_toolinfo import v1_toolinfo_bp
 from backend.v1_tools import v1_tools_bp
 from backend.v1_user import v1_user_bp
+from backend.v1_userscripts import v1_userscripts_bp
 from backend.v1_workers import v1_workers_bp
 from backend.v1_write import v1_write_bp
 
@@ -111,6 +112,7 @@ def register(app: Flask, *, db_url: str | None = None, secret_key: str | None = 
     app.register_blueprint(v1_account_links_bp)
     app.register_blueprint(v1_people_bp)
     app.register_blueprint(v1_user_bp)
+    app.register_blueprint(v1_userscripts_bp)
     app.register_blueprint(v1_catalog_bp)
     app.register_blueprint(v1_tools_bp)
     app.register_blueprint(v1_toolinfo_bp)
