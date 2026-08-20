@@ -55,8 +55,12 @@ def _offset(raw: str) -> int:
 def coverage(s: Session, wiki: str) -> dict[str, Any]:
     """Describe what this wiki's directory is built from, and when it was last built.
 
-    `sweptAt` being empty is the case that matters: it says no full sweep has
-    ever completed, so every count below it is a floor rather than a total.
+    Two different ways of being partial are reported separately, because they
+    have different remedies. `sweptAt` being empty says no full sweep has ever
+    completed -- wait for one. `enumerated` being false says the wiki holds
+    more script pages than one search pass can walk, so no amount of waiting
+    will finish it; the enumeration itself has to be narrowed. Either way the
+    counts below are a floor rather than a total.
     """
     state = s.get(UserScriptCensusState, wiki)
     pages = int(
@@ -83,6 +87,7 @@ def coverage(s: Session, wiki: str) -> dict[str, Any]:
         "pages": pages,
         "sweepsCompleted": int(state.sweeps_completed) if state else 0,
         "sweptAt": common.iso(state.last_success_at) if state else "",
+        "enumerated": bool(state.enumeration_complete) if state else True,
         "computedAt": common.iso(computed),
         "active": counts[directory.TIER_ACTIVE],
         "archive": counts[directory.TIER_ARCHIVE],

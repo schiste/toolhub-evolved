@@ -7,7 +7,7 @@ import sys
 from backend import job_runner, userscript_projection, userscript_sweep
 from backend.wikimedia_delivery import WikimediaClient
 
-DEFAULT_WIKIS = "fr.wikipedia.org"
+DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
 
 
 def _int_env(name: str, default: int) -> int:

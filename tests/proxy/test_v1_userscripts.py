@@ -135,6 +135,7 @@ def test_an_unswept_wiki_says_so_rather_than_looking_empty(app, client):
         "pages": 0,
         "sweepsCompleted": 0,
         "sweptAt": "",
+        "enumerated": True,
         "computedAt": "",
         "active": 0,
         "archive": 0,
@@ -151,6 +152,26 @@ def test_coverage_reports_the_sweep_behind_the_directory(app, client):
     assert disclosed["sweptAt"].endswith("Z")
     assert disclosed["computedAt"].endswith("Z")
     assert (disclosed["pages"], disclosed["active"], disclosed["archive"]) == (4, 1, 1)
+    assert disclosed["enumerated"] is True
+
+
+def test_coverage_admits_a_wiki_too_large_to_enumerate_in_one_pass(app, client):
+    # A finished sweep of a wiki whose search results were truncated is still a
+    # partial census, and the difference has to survive to the reader.
+    with app.app_context():
+        corpus()
+        with db.session_scope() as session:
+            session.add(
+                UserScriptCensusState(
+                    wiki=FRWIKI,
+                    sweeps_completed=1,
+                    last_success_at=utcnow(),
+                    enumeration_complete=False,
+                )
+            )
+    disclosed = client.get(f"/v1/userscripts/directory/?wiki={FRWIKI}").get_json()["coverage"]
+    assert disclosed["enumerated"] is False
+    assert disclosed["sweptAt"].endswith("Z")
 
 
 def test_one_script_lists_the_pages_filed_under_it(app, client):

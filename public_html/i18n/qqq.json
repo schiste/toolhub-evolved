@@ -2335,6 +2335,7 @@
 	"userscripts.noMembers": "Shown when no other page was folded into this script.",
 	"userscripts.noneForOwner": "Shown when the owner filter matches no script in this tier. $1 is the owner's name.",
 	"userscripts.noneInTier": "Shown when a tier of this wiki's directory holds no scripts.",
+	"userscripts.notEnumerated": "Warning shown when the wiki has more user-space script pages than one search pass can list, so the census read only part of it.",
 	"userscripts.noWikis": "Shown when no wiki has been swept for user scripts at all.",
 	"userscripts.owner": "Column heading, and detail label, for the user whose user space holds the script.",
 	"userscripts.ownerLabel": "Label for the control that narrows the directory to one script owner.",
