@@ -27,6 +27,10 @@ authors without being told what a tool author is: the 472 `LiveRCparam.js`
 pages fold onto EDUCA33E, who wrote LiveRC, and the `AdvancedContribs.js` group
 folds onto Maloq, who wrote AdvancedContribs.
 
+Nothing is dropped for being unloaded. 655 of the 1,233 originals have no
+importer anybody can see, and they stay in the directory under `TIER_ARCHIVE`
+rather than being filtered out of it -- see `tier_of`.
+
 Demand is supplied by the caller rather than computed here, because it arrives
 through several channels -- personal skin slots, script-to-script imports, and
 `global.js` on meta -- and a census that reads only one of them scores whole
@@ -209,3 +213,40 @@ def rank_by_demand(origins: Iterable[Origin], demand: Mapping[str, set[str]]) ->
     scored = [(origin, len(_demand_for(origin.pages, demand))) for origin in origins]
     scored.sort(key=lambda pair: (-pair[1], pair[0].original.rank))
     return scored
+
+
+# A script nothing loads is still a script. 655 of frwiki's 1,233 originals are
+# in that state, and they are not one population but two: 123 are depth-2
+# subpages that their own parent loads, and the rest is code somebody wrote,
+# used, and left running -- some of it substantial, some of it a decade old.
+# Dropping either would make the corpus look tidier than it is and would discard
+# the only record of what a wiki's unattended JavaScript contains, which is
+# precisely what a security review wants to read. So nothing is deleted here;
+# it is filed.
+TIER_ACTIVE = "active"
+TIER_ARCHIVE = "archive"
+
+
+def tier_of(origin: Origin, demand: Mapping[str, set[str]]) -> str:
+    """Say whether a script belongs in the live directory or the archive.
+
+    The boundary is one distinct source rather than a threshold, because the two
+    tiers answer different questions. `active` is "what could become a gadget",
+    and one person other than the author is the least evidence that can support
+    that claim. `archive` is "what exists", which needs no evidence at all.
+    """
+    return TIER_ACTIVE if _demand_for(origin.pages, demand) else TIER_ARCHIVE
+
+
+def by_tier(origins: Iterable[Origin], demand: Mapping[str, set[str]]) -> dict[str, list[Origin]]:
+    """Split scripts into the two tiers, each ordered the way its tier is read.
+
+    Both come out of `rank_by_demand`, so `active` is most-loaded first. Every
+    archived script scores zero, so that ordering falls through to creation
+    order -- oldest first, which is the order the cold-storage question is
+    actually asked in.
+    """
+    tiers: dict[str, list[Origin]] = {TIER_ACTIVE: [], TIER_ARCHIVE: []}
+    for origin, _ in rank_by_demand(origins, demand):
+        tiers[tier_of(origin, demand)].append(origin)
+    return tiers

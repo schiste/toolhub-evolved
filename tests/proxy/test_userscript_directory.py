@@ -273,7 +273,7 @@ def test_demand_for_an_instance_counts_for_the_script_it_belongs_to():
 
 
 def test_a_script_nobody_loads_scores_zero():
-    # 658 of frwiki's 1,233 originals are in this state. They are still scripts.
+    # 655 of frwiki's 1,233 originals are in this state. They are still scripts.
     origins = directory.collapse([page("Orlodrim", "private.js")], {})
     assert directory.rank_by_demand(origins, {})[0][1] == 0
 
@@ -295,3 +295,48 @@ def test_an_origin_lists_the_original_first_among_its_pages():
     origin = directory.collapse(pages, {})[0]
     assert origin.pages[0] is origin.original
     assert len(origin.pages) == 2
+
+
+def test_a_script_nobody_loads_is_archived_rather_than_dropped():
+    origin = directory.collapse([page("Orlodrim", "private.js")], {})[0]
+    assert directory.tier_of(origin, {}) == directory.TIER_ARCHIVE
+
+
+def test_one_importer_is_enough_to_leave_the_archive():
+    # The boundary is deliberately one, not three: INDEPENDENT_DEMAND decides
+    # what survives a crowded filename, which is a different question.
+    demand = {"User:Orlodrim/portail-eval.js": {"Litlok"}}
+    origin = directory.collapse([page("Orlodrim", "portail-eval.js")], demand)[0]
+    assert directory.tier_of(origin, demand) == directory.TIER_ACTIVE
+
+
+def test_demand_on_a_copy_keeps_the_original_out_of_the_archive():
+    # Nobody loads EDUCA33E's page; they load Litlok's byte-identical copy of it.
+    pages = [
+        page("EDUCA33E", "LiveRC.js", created="20070101000000", fingerprint="shim"),
+        page("Litlok", "LiveRC.js", created="20200101000000", fingerprint="shim"),
+    ]
+    demand = {"User:Litlok/LiveRC.js": {"Gz260"}}
+    origin = directory.collapse(pages, demand)[0]
+    assert origin.original.owner == "EDUCA33E"
+    assert directory.tier_of(origin, demand) == directory.TIER_ACTIVE
+
+
+def test_both_tiers_come_back_ordered_the_way_each_is_read():
+    pages = [
+        page("Orlodrim", "portail-eval.js", created="20100101000000"),
+        page("Arkanosis", "xpatrol.js", created="20110101000000"),
+        page("DCLXVI", "livepreview.js", created="20050101000000"),
+        page("Emc2", "strings-it.js", created="20060101000000"),
+    ]
+    demand = {
+        "User:Orlodrim/portail-eval.js": {"a", "b"},
+        "User:Arkanosis/xpatrol.js": {"c"},
+    }
+    tiers = directory.by_tier(directory.collapse(pages, demand), demand)
+    assert [o.original.owner for o in tiers[directory.TIER_ACTIVE]] == ["Orlodrim", "Arkanosis"]
+    assert [o.original.owner for o in tiers[directory.TIER_ARCHIVE]] == ["DCLXVI", "Emc2"]
+
+
+def test_an_empty_corpus_still_reports_both_tiers():
+    assert directory.by_tier([], {}) == {directory.TIER_ACTIVE: [], directory.TIER_ARCHIVE: []}
