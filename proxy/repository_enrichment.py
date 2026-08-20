@@ -13,6 +13,12 @@ hour and the same token publishes user-submitted issue reports, so this lane
 must never be the reason that fails. Three things keep it clear: conditional
 requests (a 304 is not charged at all), a reserve floor it refuses to spend
 below, and a per-run cap so a cold catalog cannot drain an hour in one pass.
+
+That accounting is kept per host. A rate limit is a fact about one host, and
+the six this lane speaks to share nothing: Wikimedia spends no GitHub quota and
+GitHub honours no Wikimedia refusal. Pooling them meant GitHub approaching its
+floor stalled the wiki pages too, and one 403 from any host ended the pass for
+all of them.
 """
 
 from __future__ import annotations
@@ -86,29 +92,68 @@ def _backoff(attempts: int) -> timedelta:
 
 
 @dataclass
-class Budget:
-    """What the lane may still spend, and why it stopped when it did.
+class HostBudget:
+    """What one host has left, and whether it has already said no.
 
-    `remaining` is None until a host tells us: only GitHub reports a budget, and
-    an unknown budget is not an exhausted one. Once a number arrives it is
+    `remaining` is None until that host tells us: only GitHub reports a budget,
+    and an unknown budget is not an exhausted one. Once a number arrives it is
     believed, because the host is the authority on its own accounting.
     """
 
-    reserve: int = RESERVE_REMAINING
     remaining: int | None = None
-    spent: int = 0
     exhausted: bool = False
 
     def observe(self, headers: dict[str, str]) -> None:
-        """Record one request against the budget and read back what is left."""
-        self.spent += 1
+        """Read back what this host says is left, if it says anything."""
         reported = headers.get("x-ratelimit-remaining", "")
         if reported.isdigit():
             self.remaining = int(reported)
 
-    def depleted(self) -> bool:
-        """Report whether the lane has reached the floor it will not spend below."""
-        return self.exhausted or (self.remaining is not None and self.remaining <= self.reserve)
+    def depleted(self, reserve: int) -> bool:
+        """Report whether this host is finished for the pass."""
+        return self.exhausted or (self.remaining is not None and self.remaining <= reserve)
+
+
+@dataclass
+class Budget:
+    """What the lane may still spend at each host, and what it has spent overall.
+
+    Keyed on the provider because both halves of "stop" are host-facts: the
+    number in a rate-limit header describes one host's quota, and a 403
+    describes one host's patience. Only `spent` is a whole-pass figure, and it
+    is a cost report rather than a limit -- nothing is gated on it.
+    """
+
+    reserve: int = RESERVE_REMAINING
+    spent: int = 0
+    hosts: dict[str, HostBudget] = field(default_factory=dict)
+
+    def observe(self, provider: str, headers: dict[str, str]) -> None:
+        """Record one request against `provider` and read back what it has left."""
+        self.spent += 1
+        self.hosts.setdefault(provider, HostBudget()).observe(headers)
+
+    def exhaust(self, provider: str) -> None:
+        """Record that `provider` refused, leaving every other host spendable."""
+        self.hosts.setdefault(provider, HostBudget()).exhausted = True
+
+    def remaining(self, provider: str) -> int | None:
+        """Return what `provider` last reported it had left, or None if it never did."""
+        host = self.hosts.get(provider)
+        return host.remaining if host is not None else None
+
+    def depleted(self, provider: str) -> bool:
+        """Report whether `provider` is finished for this pass.
+
+        The reserve floor exists to protect a *shared credential* -- the token
+        that also publishes user-submitted issue reports -- so it only applies
+        to the hosts this lane authenticates to. An anonymous host has no
+        user-facing consumer of ours to starve, and holding back a thousand
+        requests there would decline work for a reason that does not exist.
+        """
+        host = self.hosts.get(provider)
+        reserve = self.reserve if provider in TOKEN_PROVIDERS else 0
+        return host is not None and host.depleted(reserve)
 
 
 @dataclass
@@ -154,18 +199,19 @@ class Lane:
 def _fetch(
     lane: Lane, url: str, ref: source_hosts.ProjectRef, *, etag: str | None = None
 ) -> outbound.ApiResponse | None:
-    """Make one budgeted API request, or None when the lane must stop or failed."""
-    if lane.budget.depleted():
+    """Make one budgeted API request, or None when this host must stop or failed."""
+    if lane.budget.depleted(ref.provider):
         return None
     token = _token() if ref.provider in TOKEN_PROVIDERS else ""
     response = outbound.fetch_api(lane.http, url, caller=CALLER, token=token or None, etag=etag)
-    lane.budget.observe(response.headers)
+    lane.budget.observe(ref.provider, response.headers)
     if response.status_code in RATE_LIMITED:
         # A 403 here is nearly always the budget rather than the credential, and
         # the two are indistinguishable without reading the body. Treating it as
         # the budget is the safe reading: it stops, where a wrong guess the
-        # other way would keep hammering a host that just said no.
-        lane.budget.exhausted = True
+        # other way would keep hammering a host that just said no. It stops
+        # *this* host only -- the refusal says nothing about any other.
+        lane.budget.exhaust(ref.provider)
         return None
     return response
 
@@ -291,8 +337,15 @@ def _due_order(row: RepositoryHostMetadata | None) -> float:
 
 def _enrich_one(lane: Lane, url: str) -> None:
     """Fetch and store one repository's host facts, or record why it could not."""
-    lane.results.considered += 1
     ref = source_hosts.project_ref(url)
+    if ref is not None and lane.budget.depleted(ref.provider):
+        # This host is done for the pass, but the next candidate may be on one
+        # that is not, so this returns rather than ending the loop. Nothing is
+        # counted, written, or charged: the row is left exactly as the last
+        # pass left it, because not attempted is not failed.
+        lane.results.stopped_on_budget = True
+        return
+    lane.results.considered += 1
     with db.session_scope() as s:
         row = _row(s, url)
         if ref is None:
@@ -307,10 +360,9 @@ def _enrich_one(lane: Lane, url: str) -> None:
             _settle(row, STATUS_ERROR, error=str(exc))
             return
         if response is None:
-            # The budget stopped us before the request, or the host did. Leave
-            # the row exactly as it was: not attempted is not failed, and
-            # charging it an attempt would back it off for a shortage that had
-            # nothing to do with this repository.
+            # The host refused mid-pass. Leave the row exactly as it was: not
+            # attempted is not failed, and charging it an attempt would back it
+            # off for a shortage that had nothing to do with this repository.
             lane.results.stopped_on_budget = True
             return
         _record(lane, s, row, ref, response)
@@ -367,14 +419,14 @@ def run(limit: int = DEFAULT_LIMIT, *, reserve: int = RESERVE_REMAINING) -> dict
     lane = Lane(http=requests.Session(), budget=Budget(reserve=reserve), results=Results())
     try:
         for url in candidates(limit):
-            if lane.budget.depleted():
-                lane.results.stopped_on_budget = True
-                break
             _enrich_one(lane, url)
     finally:
         lane.http.close()
     lane.results.requests = lane.budget.spent
-    lane.results.remaining = lane.budget.remaining
+    # GitHub's specifically. It is the only host that reports a number and the
+    # only one whose credential is shared, so it is the one an operator watches;
+    # a mapping here would report five Nones to say the same thing.
+    lane.results.remaining = lane.budget.remaining(source_hosts.PROVIDER_GITHUB)
     return lane.results.summary()
 
 

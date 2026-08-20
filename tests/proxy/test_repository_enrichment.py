@@ -24,6 +24,15 @@ GITHUB_URL = "https://github.com/wikimedia/toolhub"
 CODEBERG_URL = "https://codeberg.org/owner/repo"
 PROJECT_BODY = b'{"archived": false, "stargazers_count": 12, "default_branch": "main"}'
 
+# Sorts after GITHUB_URL, so in a two-candidate pass GitHub is reached first
+# and its refusal is already on the books when the wiki page comes up.
+WIKI_URL = "https://www.mediawiki.org/wiki/User:Ada/tool.js"
+BARE_BODY = b'{"latest": {"id": 9, "timestamp": "2026-08-01T00:00:00Z"}}'
+
+GITHUB = "github"
+# Not a token provider, which is what makes it the useful foil for GitHub here.
+WIKI = "mediawiki-wikimedia"
+
 
 @pytest.fixture(autouse=True)
 def fresh_db():
@@ -80,36 +89,58 @@ def _row(url=GITHUB_URL):
 
 def test_the_budget_is_unknown_until_a_host_reports_one():
     budget = lane.Budget()
-    assert budget.remaining is None
-    assert budget.depleted() is False
+    assert budget.remaining(GITHUB) is None
+    assert budget.depleted(GITHUB) is False
 
-    budget.observe({"x-ratelimit-remaining": "4999"})
+    budget.observe(GITHUB, {"x-ratelimit-remaining": "4999"})
 
-    assert (budget.spent, budget.remaining) == (1, 4999)
-    assert budget.depleted() is False
+    assert (budget.spent, budget.remaining(GITHUB)) == (1, 4999)
+    assert budget.depleted(GITHUB) is False
 
 
 def test_a_host_that_reports_nothing_still_costs_a_request():
     budget = lane.Budget()
-    budget.observe({})
-    budget.observe({"x-ratelimit-remaining": "not-a-number"})
-    assert (budget.spent, budget.remaining) == (2, None)
+    budget.observe(GITHUB, {})
+    budget.observe(GITHUB, {"x-ratelimit-remaining": "not-a-number"})
+    assert (budget.spent, budget.remaining(GITHUB)) == (2, None)
 
 
 def test_the_lane_stops_at_the_reserve_floor_it_will_not_spend_below():
     # The same token publishes user-submitted issue reports; a background
     # refresh must never be why one of those fails.
     budget = lane.Budget(reserve=1000)
-    budget.observe({"x-ratelimit-remaining": "1001"})
-    assert budget.depleted() is False
-    budget.observe({"x-ratelimit-remaining": "1000"})
-    assert budget.depleted() is True
+    budget.observe(GITHUB, {"x-ratelimit-remaining": "1001"})
+    assert budget.depleted(GITHUB) is False
+    budget.observe(GITHUB, {"x-ratelimit-remaining": "1000"})
+    assert budget.depleted(GITHUB) is True
 
 
-def test_a_host_saying_no_stops_the_pass_outright():
+def test_the_reserve_floor_is_not_held_back_from_hosts_we_send_no_token_to():
+    # The floor protects a shared credential. Wikimedia issued none, so there
+    # is no user-facing consumer of ours to starve and nothing to hold back.
+    budget = lane.Budget(reserve=1000)
+    budget.observe(WIKI, {"x-ratelimit-remaining": "10"})
+    assert budget.depleted(WIKI) is False
+    budget.observe(WIKI, {"x-ratelimit-remaining": "0"})
+    assert budget.depleted(WIKI) is True
+
+
+def test_a_host_saying_no_stops_that_host_and_no_other():
     budget = lane.Budget()
-    budget.exhausted = True
-    assert budget.depleted() is True
+    budget.exhaust(GITHUB)
+    assert budget.depleted(GITHUB) is True
+    assert budget.depleted(WIKI) is False
+    assert budget.remaining(WIKI) is None
+
+
+def test_one_hosts_floor_leaves_the_others_spendable():
+    # The behaviour this split exists for: GitHub near its floor used to stop
+    # the Wikimedia pages too, which spend none of that quota.
+    budget = lane.Budget(reserve=1000)
+    budget.observe(GITHUB, {"x-ratelimit-remaining": "1000"})
+    budget.observe(WIKI, {})
+    assert budget.depleted(GITHUB) is True
+    assert budget.depleted(WIKI) is False
 
 
 @pytest.mark.parametrize(
@@ -319,7 +350,7 @@ def test_the_stored_row_carries_the_host_identity(monkeypatch):
 # --- stopping ----------------------------------------------------------------
 
 
-def test_a_rate_limited_answer_stops_the_pass_and_charges_nobody(monkeypatch):
+def test_a_rate_limited_answer_stops_that_host_and_charges_nobody(monkeypatch):
     _install(monkeypatch, FakeApi(default=_resp(status=403, headers={"x-ratelimit-remaining": "0"})))
     _state(GITHUB_URL, "a")
     _state("https://github.com/other/repo", "b")
@@ -352,7 +383,7 @@ def test_the_floor_only_bites_once_a_host_reports_a_budget(monkeypatch):
     assert summary["rateLimitRemaining"] is None
 
 
-def test_a_depleted_budget_ends_the_loop_rather_than_the_repository(monkeypatch):
+def test_a_depleted_budget_skips_the_repository_rather_than_half_fetching_it(monkeypatch):
     responses = FakeApi(default=_resp(headers={"x-ratelimit-remaining": "1000"}, body=PROJECT_BODY))
     _install(monkeypatch, responses)
     _state(GITHUB_URL, "a")
@@ -361,7 +392,73 @@ def test_a_depleted_budget_ends_the_loop_rather_than_the_repository(monkeypatch)
     summary = lane.run(reserve=1000)
 
     assert summary["stoppedOnBudget"] is True
+    # Both are on the host that hit its floor, so only the first is considered.
     assert summary["considered"] == 1
+
+
+def test_one_host_refusing_does_not_stop_a_host_that_did_not(monkeypatch):
+    # The whole point of the per-host split. GitHub 403s on the first
+    # candidate; the wiki page behind it spends none of GitHub's quota and
+    # must still be enriched.
+    api = _install(
+        monkeypatch,
+        FakeApi(
+            by_url={
+                "api.github.com": _resp(status=403, headers={"x-ratelimit-remaining": "0"}),
+                "/history/counts/editors": _resp(body=b'{"count": 7, "limit": false}'),
+                "/history/counts/edits": _resp(body=b'{"count": 42, "limit": false}'),
+                "/bare": _resp(body=BARE_BODY),
+            }
+        ),
+    )
+    _state(GITHUB_URL, "a")
+    _state(WIKI_URL, "b")
+
+    summary = lane.run()
+
+    assert summary["stoppedOnBudget"] is True
+    assert summary["fetched"] == 1
+    row = _row(WIKI_URL)
+    assert (row.kind, row.provider, row.status) == ("wiki", "mediawiki-wikimedia", lane.STATUS_CURRENT)
+    assert (row.contributor_count, row.commit_count) == (7, 42)
+    # One refused GitHub call plus the wiki's three: the refusal cost the wiki
+    # nothing, where a pooled budget would have skipped it outright.
+    assert len(api.calls) == 4
+    # And the token never left the host that issued it.
+    assert {token for url, token, _etag in api.calls if "mediawiki.org" in url} == {None}
+
+
+def test_a_hosts_own_floor_is_read_from_its_own_headers(monkeypatch):
+    # Wikimedia reporting nothing must not inherit GitHub's number, or a busy
+    # GitHub hour would silently gate a host that never reported a limit.
+    _install(
+        monkeypatch,
+        FakeApi(
+            by_url={
+                "api.github.com": _resp(headers={"x-ratelimit-remaining": "1000"}, body=PROJECT_BODY),
+                "/history/counts/editors": _resp(body=b'{"count": 2, "limit": false}'),
+                "/history/counts/edits": _resp(body=b'{"count": 3, "limit": false}'),
+                "/bare": _resp(body=BARE_BODY),
+            }
+        ),
+    )
+    _state(GITHUB_URL, "a")
+    _state(WIKI_URL, "b")
+
+    summary = lane.run(reserve=1000)
+
+    # GitHub reported itself at the floor on its own first call, so its counts
+    # went unread -- but the wiki page never inherited that number and answered
+    # all three of its own requests.
+    assert summary["fetched"] == 2
+    assert summary["rateLimitRemaining"] == 1000
+    github, wiki = _row(GITHUB_URL), _row(WIKI_URL)
+    assert (github.contributor_count, github.commit_count) == (None, None)
+    assert (wiki.contributor_count, wiki.commit_count) == (2, 3)
+    # Nothing was skipped: hitting the floor part-way through a repository is
+    # not the same as declining to start one.
+    assert summary["stoppedOnBudget"] is False
+    assert summary["considered"] == 2
 
 
 # --- candidate selection -----------------------------------------------------
