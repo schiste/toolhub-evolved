@@ -2,12 +2,16 @@
 # A single full-scope run is ~70 min (7k+ mutants) and exceeds the runner's
 # per-job ceiling, so it is SHARDED into a matrix of short per-area jobs (each a
 # few thousand mutants, well under the limit) that together cover public_html/**.
-# Runs nightly and on demand; per-push CI relies on the unit suite + coverage gate.
+# Runs weekly (Monday 04:37 UTC) and on demand; per-push CI relies on the unit
+# suite + coverage gate. Weekly rather than nightly because one full matrix costs
+# ~154 runner-minutes (measured, run 32334403679) and the score only moves when
+# someone deliberately writes tests - a nightly cadence just re-measured the same
+# number every morning. Monday so the result is waiting at the start of the week.
 name: Mutation
 
 on:
     schedule:
-        - cron: "37 4 * * *"
+        - cron: "37 4 * * 1"
     workflow_dispatch:
 
 permissions:
