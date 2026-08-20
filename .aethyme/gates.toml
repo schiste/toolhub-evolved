@@ -53,3 +53,96 @@ name = "pytest-proxy"
 command = "uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/proxy -q"
 cost = 3
 triggers = ["proxy/**/*.py", "tests/proxy/**/*.py", "proxy/requirements.txt", "pyproject.toml"]
+
+# Nothing above reads a single line of JavaScript, CSS, or HTML, so the whole
+# frontend was ungated: session 88's UI change — a new route, a new view, a new
+# stylesheet, 15 new tests — matched no trigger and was promoted on "gate wall
+# time: 0ms". The four gates below cover .github/workflows/ci.yml's `js` job.
+#
+# Two of them are deliberately NOT frontend-scoped. `npm run spell` and
+# `npm run dup:check:py` read proxy/**/*.py, and prettier reads every text file
+# in the repo, so scoping those to public_html would repeat the original bug
+# from the other side: a check CI runs that no gate here can see. That is not
+# hypothetical — 143 cspell findings across 15 modules reached main that way.
+#
+# npx --yes plays the role uvx plays for ruff above: it pins the version and
+# resolves into npm's own cache, so these three run in a bare worktree with no
+# node_modules and no install step. Keep each pin equal to package.json's
+# devDependency; a drifting pin reports findings CI does not.
+
+[[gate]]
+name = "prettier"
+command = "npx --yes prettier@3.8.4 --check ."
+cost = 2
+# No triggers = always. Correct here: prettier reads .js/.mjs/.css/.html/.json/
+# .md/.yaml/.toml everywhere .prettierignore does not exclude, so there is no
+# honest trigger list shorter than "the repo". It costs ~3s and no install.
+# cost = 2 keeps it out of .githooks/pre-commit, where lint-staged already runs
+# prettier over the staged files.
+
+[[gate]]
+name = "cspell"
+command = 'npx --yes cspell@10.0.1 --no-progress "public_html/**/*.{js,mjs,css,html}" "tools/**/*.mjs" "*.md" "docs/**/*.md" "skills/**/*.md" "proxy/**/*.py"'
+cost = 2
+triggers = [
+  "public_html/**",
+  "tools/**/*.mjs",
+  "*.md",
+  "docs/**/*.md",
+  "skills/**/*.md",
+  "proxy/**/*.py",
+  "cspell.json",
+]
+# The globs are `npm run spell` verbatim and the triggers are those same globs,
+# so what selects the gate is exactly what the gate reads. proxy/**/*.py belongs
+# in both: a Python-only diff can add an unknown word, and no other gate here
+# would notice.
+
+[[gate]]
+name = "jscpd-python"
+command = "npx --yes jscpd@5.0.11 --config .jscpd.python.json"
+cost = 1
+triggers = ["proxy/**/*.py", "tests/proxy/**/*.py", ".jscpd.python.json"]
+# Split out of js-quality below rather than folded into it: this is the one
+# frontend-tool check whose input is Python, and pulling proxy/**/*.py into
+# js-quality's triggers would make every backend diff pay `npm ci` plus the
+# whole vitest suite to run a 0.3s duplicate scan.
+
+# Everything left in CI's `js` job needs the real dependency tree, so this gate
+# installs one. The `no node_modules in a bare worktree` argument that removed
+# js-lint is answered the way pytest-proxy answers it — install as step one.
+# `npm ci` off a warm npm cache takes ~3s here and node_modules/ and coverage/
+# are both gitignored, so the gate leaves the worktree clean.
+# One gate, not one per check: a single `npm ci` cannot race itself, the chain
+# stops at the first failure anyway, and the install is paid once.
+# npm run <script> rather than the raw binaries so the gate cannot drift from
+# package.json, which is what CI actually runs.
+# format:check and spell are absent on purpose — the prettier and cspell gates
+# above already run them, on wider triggers than this gate has.
+# ~13s of static checks plus ~25s of vitest, so cost = 3 alongside pytest-proxy.
+# Mirrors .github/workflows/ci.yml lines 19-72, minus `playwright install` and
+# the e2e run: a browser download per submission for a suite CI runs on push.
+
+[[gate]]
+name = "js-quality"
+command = "npm ci --no-audit --no-fund && npm run lint && npm run lint:css && npm run types && npm run dead:check && npm run dup:check && npm run checks && npm run clean:prod && npm run budget && npm run i18n:check && npm run lint:banana && npm run features:docs:check && npm run coverage"
+cost = 3
+triggers = [
+  "public_html/**",
+  "tests/unit/**",
+  "tools/**/*.mjs",
+  "types/**",
+  "*.js",
+  "*.mjs",
+  "package.json",
+  "package-lock.json",
+  "jsconfig.json",
+  "knip.json",
+  ".jscpd.json",
+  "docs/FEATURES.md",
+]
+# `*.js` and `*.mjs` cover the root config files by shape rather than by name —
+# eslint lints them, and one of them changing changes what every check above
+# does. docs/FEATURES.md is there because features:docs:check compares it
+# against public_html/views/experiments.js; editing either side alone is the
+# failure that check exists to catch.
