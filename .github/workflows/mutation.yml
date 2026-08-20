@@ -42,25 +42,23 @@ jobs:
                     # ordering. Whether the *job* died was a kernel OOM race between the
                     # vitest child (Stryker restarts it, and the mutant is recorded as a
                     # RuntimeError) and the runner agent (fatal).
-                    # STILL UNFIXED. Five theories have been falsified; recorded so they are
-                    # not retried: static mutants (`--ignoreStatic` moved core's set across
-                    # 5688/5509/5515 and organisms-rest's across 4518/4335, and both still
-                    # died at the same counts), per-run worker accumulation, Stryker-parent
-                    # accumulation (thread count is flat at 19 and children hold 15.2 of
-                    # 15.8 GB), concurrency (two concurrency-1 replicates died at 702 and
-                    # 703 with a single child peaking near 15 GB), and a cgroup memory cap.
-                    # That last one was tried in this file and reverted: run 32291137195
-                    # wrapped the step in `systemd-run --scope -p MemoryMax=6G` and made
-                    # things strictly worse. systemd applies its OOM policy to the whole
-                    # scope, so shards exited 143 (SIGTERM) instead of the kernel SIGKILLing
-                    # only the vitest child. The targeted shards barely moved (1452->1448,
-                    # 1751->1746, 702->695) while organisms-graph, organisms-qv and views-b
-                    # went from scoring to dying: 6 of 9 shards scored before it, 3 of 9
-                    # after. The 4 GB Docker reproduction that motivated it (organisms-rest
-                    # completing all 4518 at 41.36%) could not surface this — a container
-                    # has no systemd to tear the unit down, so the kernel picks the largest
-                    # process and Stryker survives. Test `-p OOMPolicy=continue` in a
-                    # throwaway job before retrying this route.
+                    # Four theories were falsified; recorded so they are not retried: static
+                    # mutants (`--ignoreStatic` moved core's set across 5688/5509/5515 and
+                    # organisms-rest's across 4518/4335, and both still died at the same
+                    # counts), per-run worker accumulation, Stryker-parent accumulation (thread
+                    # count is flat at 19 and children hold 15.2 of 15.8 GB), and concurrency
+                    # (two concurrency-1 replicates died at 702 and 703 with a single child
+                    # peaking near 15 GB).
+                    # A first cap attempt (run 32291137195) also failed and is worth knowing
+                    # about: `-p MemoryMax=6G` with no OOM policy made things strictly worse,
+                    # six of nine shards exiting 143 (SIGTERM), because systemd's default
+                    # policy stops the whole scope rather than letting the kernel SIGKILL just
+                    # the offending child. Probe run 32341225519 measured all four settings on
+                    # systemd 255: unset and `stop` take the parent down with it (143), `kill`
+                    # does too (137), and only `continue` does what is wanted - child SIGKILLed
+                    # at 137, parent alive, scope exit 0. Hence the policy on the step below.
+                    # 6 GB was also simply too tight: organisms-qv and organisms-graph were
+                    # dying there while doing honest work.
                     # Because `break: 100` already makes every job red, these deaths were
                     # indistinguishable from a below-threshold score, and the affected
                     # shards had quietly stopped being measured at all.
@@ -116,4 +114,39 @@ jobs:
                   # On by default for every shard; a shard may override it in the
                   # matrix. `${VAR:+...}` still drops the flag if ever set empty.
                   RUNNER_REUSE: ${{ matrix.maxTestRunnerReuse || '100' }}
-              run: npx stryker run --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
+              # Runaway mutants (see the matrix comment) allocate ~15 GB in ~15 s, far
+              # faster than Stryker's 5 s timeout can react, and uncapped the kernel may
+              # pick the runner agent as its victim, which kills the whole job. The cgroup
+              # below bounds them. `OOMPolicy=continue` is what makes it work: without it
+              # systemd stops the entire scope, taking Stryker down too (measured, run
+              # 32341225519). 12 GB on a ~16 GB runner sits above what a legitimate shard
+              # needs while still leaving the agent room - 6 GB was under it. Stryker
+              # restarts the killed child and records the mutant as a RuntimeError.
+              run: |
+                  # `bash -e` is GitHub's default and Stryker always exits non-zero
+                  # while `break: 100` stands, so errexit off is what lets the summary
+                  # below run at all; pipefail keeps rc as Stryker's, not tee's.
+                  set +e -o pipefail
+                  set -- --mutate "$SCOPE" --concurrency "$CONCURRENCY" ${RUNNER_REUSE:+--maxTestRunnerReuse $RUNNER_REUSE}
+                  if sudo -n systemd-run --version >/dev/null 2>&1; then
+                      sudo -n systemd-run --scope --quiet --collect \
+                          -p MemoryMax=12G -p MemorySwapMax=0 -p OOMPolicy=continue \
+                          ./node_modules/.bin/stryker run "$@" 2>&1 | tee /tmp/stryker.log
+                  else
+                      echo "::warning::systemd-run unavailable - Stryker is running without a memory cap"
+                      ./node_modules/.bin/stryker run "$@" 2>&1 | tee /tmp/stryker.log
+                  fi
+                  rc=$?
+
+                  # RuntimeErrors are excluded from Stryker's score denominator, so a cap
+                  # that is merely too tight no longer kills the job - it quietly turns
+                  # honest mutants into errors and INFLATES the score. Surface the count
+                  # so that cannot happen unnoticed.
+                  awk -F'|' '/^All files/ {
+                      for (i = 1; i <= NF; i++) gsub(/^[ \t]+|[ \t]+$/, "", $i)
+                      denom = $4 + $5 + $6 + $7
+                      printf "::notice::score %s%% - killed %s, timeout %s, survived %s, no-cov %s, errors %s\n", $2, $4, $5, $6, $7, $8
+                      if (denom > 0 && $8 / (denom + $8) > 0.01)
+                          printf "::warning::%s mutants were RuntimeErrors (>1%% of the set) and left the denominator, so the %s%% score is inflated - check the memory cap\n", $8, $2
+                  }' /tmp/stryker.log
+                  exit "$rc"
