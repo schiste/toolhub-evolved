@@ -39,6 +39,7 @@ from backend.sync import (  # noqa: E402
     AUTHOR_CLAIM_UNVERIFIED,
     AUTHOR_CLAIM_VERIFIED,
     PERSON_REL_AUTHOR,
+    PERSON_REL_CATALOG_ACTOR,
     PERSON_REL_MAINTAINER,
     SYNC_OFFICIAL,
 )
@@ -705,3 +706,80 @@ def test_promoting_an_unresolved_observation_refuses_a_blank_label():
         row = UnresolvedAttributionEvidence(tool_name="toolx", observed_label="   ")
 
         assert people_index.promote_unresolved_attribution(s, row) is None
+
+
+def test_refreshing_an_unchanged_summary_writes_nothing():
+    # Restamping computed_at on every pass is what made this table write-hot:
+    # the busiest person is attached to most of the catalog, so nearly every
+    # refresh queued an UPDATE carrying two timestamps and no new data, and
+    # concurrent jobs deadlocked on that one row.
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Ida", toolhub_user_id="90", source="test")
+        s.add(_relationship("toolq", person.id))
+        s.flush()
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+        s.flush()
+        first_computed_at = s.get(PersonActivitySummary, person.id).computed_at
+
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+
+        row = s.get(PersonActivitySummary, person.id)
+        assert row not in s.dirty
+        assert row.computed_at == first_computed_at
+
+
+def test_refreshing_a_changed_summary_restamps_it():
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Jo", toolhub_user_id="91", source="test")
+        s.add(_relationship("toolr", person.id))
+        s.flush()
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+        s.flush()
+        first_computed_at = s.get(PersonActivitySummary, person.id).computed_at
+
+        s.add(_relationship("tools", person.id, role=PERSON_REL_MAINTAINER))
+        s.flush()
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+
+        row = s.get(PersonActivitySummary, person.id)
+        assert row.related_tool_count == 2
+        assert row.computed_at > first_computed_at
+
+
+def test_refreshing_restamps_a_summary_that_outlived_its_freshness_window():
+    # computed_at still has to mean something. Skipping the write forever
+    # would freeze it at the last content change, so a row that has aged past
+    # the staleness window it sets for itself is restamped even unchanged.
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Kim", toolhub_user_id="92", source="test")
+        s.add(_relationship("toolt", person.id))
+        s.flush()
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+        s.flush()
+        row = s.get(PersonActivitySummary, person.id)
+        stale_computed_at = utcnow() - timedelta(days=people_index.ACTIVITY_STALE_DAYS + 1)
+        row.computed_at = stale_computed_at
+        row.stale_at = utcnow() - timedelta(seconds=1)
+        s.flush()
+
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+
+        row = s.get(PersonActivitySummary, person.id)
+        assert row.computed_at > stale_computed_at
+        assert row.stale_at > utcnow()
+
+
+def test_a_catalog_actor_edge_never_counts_toward_a_public_summary():
+    # catalog_actor is not a published role, so an edge carrying it must not
+    # move any stored count.
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="Lee", toolhub_user_id="93", source="test")
+        s.add(_relationship("toolu", person.id, role=PERSON_REL_CATALOG_ACTOR))
+        s.flush()
+
+        people_index.refresh_activity_summaries(s, person_ids={person.id})
+
+        row = s.get(PersonActivitySummary, person.id)
+        assert row.related_tool_count == 0
+        assert row.verified_tool_count == 0
+        assert row.activity_status == "unknown"

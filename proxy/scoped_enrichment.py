@@ -123,10 +123,23 @@ def _public_maintainer_summary(tool_name: str, tool: dict[str, Any]) -> dict[str
     with db.session_scope() as s:
         metadata_edges = maintainer_index.replace_toolhub_metadata_edges(s, tool_name, tool)
         claim_edges = maintainer_index.sync_author_claim_edges(s, tool_names=[tool_name])
+        # Only people holding a public role need a summary; the other edge
+        # types (catalog actors) are filtered out again inside
+        # refresh_activity_summaries, so gathering them here just buys a
+        # round trip and a lock on their summary row. One platform person
+        # carries a catalog-actor edge on most of the catalog, which made
+        # this the widest fan-in in the enrichment path. People who *lost* a
+        # public edge are still refreshed: resolve_tool_relationships
+        # collects its affected set from the pre-delete rows.
         person_ids = {
             row[0]
             for row in s.execute(
-                select(ToolPersonRelationship.person_id).where(ToolPersonRelationship.tool_name == tool_name).distinct()
+                select(ToolPersonRelationship.person_id)
+                .where(
+                    ToolPersonRelationship.tool_name == tool_name,
+                    ToolPersonRelationship.relationship_type.in_(people_index.PUBLIC_ROLES),
+                )
+                .distinct()
             ).all()
         }
         summaries = people_index.refresh_activity_summaries(s, person_ids=person_ids)
