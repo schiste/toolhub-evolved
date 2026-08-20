@@ -111,7 +111,7 @@ def test_single_site_projects_are_public_wikimedia_wikis(url, domain):
         # The suffix trick the subdomain alternative has to survive too.
         "mediawiki.org.attacker.example",
         "wikifunctions.org.attacker.example",
-        "notmediawiki.org",
+        "not-mediawiki.org",
     ],
 )
 def test_a_lookalike_of_a_single_site_project_is_not_one(domain):

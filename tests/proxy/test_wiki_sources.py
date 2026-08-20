@@ -165,7 +165,7 @@ def test_a_user_script_collects_its_suffix_swaps_and_real_subpages():
     )
 
 
-def test_a_prefix_neighbour_is_not_part_of_the_script():
+def test_a_prefix_neighbor_is_not_part_of_the_script():
     # apprefix=Example/twinkle also returns twinkleblock.js, which is a
     # different tool by the same author. Scanning it here would attribute one
     # author's second tool to their first.

@@ -525,7 +525,7 @@ def test_a_bare_page_reports_its_last_edit_and_nothing_it_cannot_know():
     )
     assert meta.pushed_at == datetime(2024, 3, 1, 12, 0, tzinfo=UTC)
     # A page has no branch and no forge counters; None says "not published
-    # here" rather than zero, which is what stops scoring penalising it.
+    # here" rather than zero, which is what stops scoring penalizing it.
     assert (meta.default_branch, meta.star_count, meta.fork_count, meta.open_issues_count) == (None, None, None, None)
 
 
