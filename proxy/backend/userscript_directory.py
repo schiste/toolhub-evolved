@@ -122,10 +122,24 @@ class Origin:
         return len(self.copies) + len(self.variants)
 
 
-def owner_of(title: str) -> str:
-    """Return the user whose space a page lives in, or "" outside user space."""
-    namespace, separator, remainder = title.partition(":")
-    if not separator or namespace != "User":
+def owner_of_user_page(title: str) -> str:
+    """Return the user whose space a page lives in.
+
+    **The caller must already know the page is in user space.** Everything
+    before the first colon is taken to be the namespace prefix, whatever it is
+    called, because that is the only assumption that holds across wikis: the
+    search and recent-changes queries both ask for namespace 2 by number, but
+    the titles come back in each wiki's own language -- `User:` on Meta,
+    `Utilisateur:` on frwiki, `Benutzer:` on dewiki, and an alias like `U:` is
+    valid too. Matching the English name is how every non-English wiki ends up
+    storing no owner at all.
+
+    Given a title from somewhere else this returns nonsense rather than "", so
+    resolve an owner once, here, at the point where namespace 2 is known, and
+    read it back from storage everywhere else.
+    """
+    _, separator, remainder = title.partition(":")
+    if not separator:
         return ""
     return remainder.split("/", 1)[0].strip()
 

@@ -240,6 +240,26 @@ def test_a_swept_page_is_stored_with_its_analysis_and_its_loads():
     ]
 
 
+def test_the_owner_is_stored_from_a_namespace_no_alias_list_knows():
+    # `canonical_title` folds the namespace aliases it knows -- English and the
+    # two French spellings -- onto `User:`, and every other wiki keeps its own
+    # prefix. Reading the owner by position rather than by name is what makes
+    # this work on a wiki nobody has enumerated the aliases for.
+    wiki = FakeWiki({"Benutzer:EDUCA33E/LiveRC.js": page("var a = 1;\nvar b = 2;\nvar c = 3;\n")})
+    sweeper.sweep(wiki.request, "de.wikipedia.org")
+    row = stored("Benutzer:EDUCA33E/LiveRC.js", wiki="de.wikipedia.org")
+    assert (row["owner"], row["basename"]) == ("EDUCA33E", "LiveRC.js")
+
+
+def test_a_french_title_is_folded_onto_the_canonical_namespace_before_storage():
+    # The alias list does cover frwiki, so its rows are stored as `User:` and
+    # the owner comes out the same way. Both spellings must land on one page.
+    wiki = FakeWiki({"Utilisateur:EDUCA33E/LiveRC.js": page("var a = 1;\nvar b = 2;\nvar c = 3;\n")})
+    sweeper.sweep(wiki.request, FRWIKI)
+    row = stored("User:EDUCA33E/LiveRC.js")
+    assert (row["owner"], row["basename"]) == ("EDUCA33E", "LiveRC.js")
+
+
 def test_a_page_stores_the_content_model_the_wiki_reports_not_its_suffix():
     wiki = FakeWiki({"User:Penquista/monobook.css": page("var a = 1;")})
     sweeper.sweep(wiki.request, FRWIKI)

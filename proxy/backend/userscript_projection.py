@@ -35,6 +35,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import and_
+
 from backend import db, userscripts
 from backend import userscript_directory as directory
 from backend.models import (
@@ -106,7 +108,14 @@ def demand(session: Session, wiki: str) -> dict[str, set[str]]:
     otherwise vote for itself.
     """
     rows = (
-        session.query(UserScriptImport.source_title, UserScriptImport.target_title)
+        session.query(UserScriptImport.source_title, UserScriptImport.target_title, UserScriptPage.owner)
+        .outerjoin(
+            UserScriptPage,
+            and_(
+                UserScriptPage.wiki == UserScriptImport.wiki,
+                UserScriptPage.title == UserScriptImport.source_title,
+            ),
+        )
         .filter(
             UserScriptImport.target_title != "",
             UserScriptImport.target_wiki.in_(["", wiki]),
@@ -114,12 +123,13 @@ def demand(session: Session, wiki: str) -> dict[str, set[str]]:
         .all()
     )
     loads: dict[str, set[str]] = {}
-    for source_title, target_title in rows:
+    for source_title, target_title, owner in rows:
         if source_title == target_title:
             continue
-        # Outside user space there is no owner to name, so the page stands for
-        # itself and still counts once.
-        loads.setdefault(target_title, set()).add(directory.owner_of(source_title) or source_title)
+        # The owner comes from the census row, which resolved it when the page's
+        # namespace was known. A source with no census row -- and so no owner to
+        # name -- stands for itself and still counts once.
+        loads.setdefault(target_title, set()).add(owner or source_title)
     return loads
 
 
