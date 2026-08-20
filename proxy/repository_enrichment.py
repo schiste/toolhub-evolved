@@ -75,7 +75,7 @@ def _token() -> str:
     return os.environ.get("TOOLHUB_GITHUB_TOKEN", "").strip()
 
 
-def _url_hash(url: str) -> str:
+def url_hash(url: str) -> str:
     """Return the index-safe key for a repository URL (see api_cache._key)."""
     return sha256(url.encode("utf-8")).hexdigest()
 
@@ -196,7 +196,7 @@ def _counts(lane: Lane, ref: source_hosts.ProjectRef) -> tuple[int | None, int |
 
 def _row(s: Any, url: str) -> RepositoryHostMetadata:  # noqa: ANN401 - SQLAlchemy session
     """Return this repository's row, creating it on first sight."""
-    key = _url_hash(url)
+    key = url_hash(url)
     row = s.get(RepositoryHostMetadata, key)
     if row is None:
         # The column defaults are applied by INSERT, so a row that has been
@@ -268,12 +268,12 @@ def candidates(limit: int = DEFAULT_LIMIT) -> list[str]:
             row.url_hash: row
             for row in s.execute(
                 select(RepositoryHostMetadata).where(
-                    RepositoryHostMetadata.url_hash.in_([_url_hash(url) for url in urls])
+                    RepositoryHostMetadata.url_hash.in_([url_hash(url) for url in urls])
                 )
             ).scalars()
         }
         for url in urls:
-            row = rows.get(_url_hash(url))
+            row = rows.get(url_hash(url))
             if row is not None and row.next_attempt_at is not None and row.next_attempt_at > now:
                 continue
             due[url] = row

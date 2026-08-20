@@ -72,7 +72,7 @@ def _state(url, tool_name="tool"):
 
 def _row(url=GITHUB_URL):
     with db.session_scope() as s:
-        return s.get(RepositoryHostMetadata, lane._url_hash(url))
+        return s.get(RepositoryHostMetadata, lane.url_hash(url))
 
 
 # --- the budget --------------------------------------------------------------
@@ -145,7 +145,7 @@ def test_a_stored_etag_makes_the_next_poll_conditional(monkeypatch):
 
     # Due again: clear the cooldown the first pass set.
     with db.session_scope() as s:
-        s.get(RepositoryHostMetadata, lane._url_hash(GITHUB_URL)).next_attempt_at = None
+        s.get(RepositoryHostMetadata, lane.url_hash(GITHUB_URL)).next_attempt_at = None
     api.calls.clear()
     api.default = _resp(status=304)
 
@@ -216,7 +216,7 @@ def test_a_count_the_host_declined_does_not_erase_the_one_it_gave_before(monkeyp
     assert _row().contributor_count == 42
 
     with db.session_scope() as s:
-        s.get(RepositoryHostMetadata, lane._url_hash(GITHUB_URL)).next_attempt_at = None
+        s.get(RepositoryHostMetadata, lane.url_hash(GITHUB_URL)).next_attempt_at = None
     # This time the counts endpoint errors. The budget running out mid-repository
     # is not evidence that a project lost its contributors.
     _install(
@@ -389,7 +389,7 @@ def test_a_repository_inside_its_cooldown_is_skipped():
     with db.session_scope() as s:
         s.add(
             RepositoryHostMetadata(
-                url_hash=lane._url_hash(GITHUB_URL),
+                url_hash=lane.url_hash(GITHUB_URL),
                 repository_url=GITHUB_URL,
                 next_attempt_at=datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=5),
             )
@@ -403,7 +403,7 @@ def test_never_fetched_repositories_go_first():
     with db.session_scope() as s:
         s.add(
             RepositoryHostMetadata(
-                url_hash=lane._url_hash("https://github.com/a/seen"),
+                url_hash=lane.url_hash("https://github.com/a/seen"),
                 repository_url="https://github.com/a/seen",
                 next_attempt_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1),
             )
@@ -418,7 +418,7 @@ def test_the_longest_overdue_repository_comes_first():
         with db.session_scope() as s:
             s.add(
                 RepositoryHostMetadata(
-                    url_hash=lane._url_hash(url),
+                    url_hash=lane.url_hash(url),
                     repository_url=url,
                     next_attempt_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=hours),
                 )
