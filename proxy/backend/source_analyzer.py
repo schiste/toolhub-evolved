@@ -203,6 +203,15 @@ REPOSITORY_CONTEXT_REPOSITORY_KEYS = {
     "url",
 }
 
+# What the maintainer says about the tool's life, from toolinfo. Distinct from
+# `repository` (facts about the checkout and its host) and from `declared`
+# (claims about technical shape that the source is checked against). Nothing
+# here has a counterpart to detect: it is testimony, not evidence.
+REPOSITORY_CONTEXT_LIFECYCLE_KEYS = {
+    "deprecated",
+    "replacedBy",
+}
+
 REPOSITORY_CONTEXT_DECLARED_KEYS = {
     "accessRights",
     "apis",
@@ -1736,6 +1745,7 @@ def _normalize_repository_context(value: object) -> dict[str, Any]:
     repository = _clean_context_object(value.get("repository"), REPOSITORY_CONTEXT_REPOSITORY_KEYS)
     declared = _clean_context_object(value.get("declared"), REPOSITORY_CONTEXT_DECLARED_KEYS)
     maintainers = _clean_context_object(value.get("maintainers"), REPOSITORY_CONTEXT_MAINTAINER_KEYS)
+    lifecycle = _clean_context_object(value.get("lifecycle"), REPOSITORY_CONTEXT_LIFECYCLE_KEYS)
     result: dict[str, Any] = {}
     if repository:
         result["repository"] = repository
@@ -1743,6 +1753,8 @@ def _normalize_repository_context(value: object) -> dict[str, Any]:
         result["declared"] = declared
     if maintainers:
         result["maintainers"] = maintainers
+    if lifecycle:
+        result["lifecycle"] = lifecycle
     return result
 
 
@@ -2434,6 +2446,50 @@ def _maintenance_readiness_assessment(context: dict[str, Any]) -> dict[str, Any]
     )
 
 
+def _activity_status_scoring(
+    context: dict[str, Any], status: str, age_days: int | None
+) -> tuple[int, list[dict[str, Any]], list[str]]:
+    """Score one repository activity status, with the guidance that fits it.
+
+    Archived costs the same as dormant by deliberate policy: read-only means no
+    fix will ever land, whatever the maintainer intended. That does conflate
+    "finished" and "moved to another forge" with "abandoned" -- recording a
+    successor is what separates them, and where one exists it replaces the
+    dead-end advice rather than the score.
+    """
+    if status == "archived":
+        return (
+            -35,
+            [_assessment_signal("negative", "Repository is archived (read-only)")],
+            [_lifecycle_recommendation(context, "Find a maintained alternative.")],
+        )
+    if status == "active":
+        return 30, [_assessment_signal("positive", "Recent repository activity", detail=f"{age_days} days")], []
+    if status == "quiet":
+        return (
+            10,
+            [_assessment_signal("neutral", "Repository activity is quiet", detail=f"{age_days} days")],
+            ["Confirm the repository still reflects the deployed tool."],
+        )
+    if status == "stale":
+        return (
+            -20,
+            [_assessment_signal("negative", "Repository has stale activity", detail=f"{age_days} days")],
+            ["Ask the maintainer to confirm ownership and deployment status."],
+        )
+    if status == "dormant":
+        return (
+            -35,
+            [_assessment_signal("negative", "Repository appears dormant", detail=f"{age_days} days")],
+            [_lifecycle_recommendation(context, "Flag the tool for maintainer outreach or archival review.")],
+        )
+    return (
+        0,
+        [_assessment_signal("neutral", "No last-commit age supplied")],
+        ["Provide last commit date or age for no-longer-maintained checks."],
+    )
+
+
 def _maintenance_activity_assessment(context: dict[str, Any]) -> dict[str, Any]:
     maintenance = context.get("maintenance") if isinstance(context.get("maintenance"), dict) else {}
     repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
@@ -2441,36 +2497,8 @@ def _maintenance_activity_assessment(context: dict[str, Any]) -> dict[str, Any]:
     age_days = _int_context_value(maintenance.get("lastCommitAgeDays"))
     contributor_count = _int_context_value(maintenance.get("contributorCount"))
     commit_count = _int_context_value(maintenance.get("commitCount"))
-    score = 50
-    signals: list[dict[str, Any]] = []
-    recommendations: list[str] = []
-    # Archived scores as harshly as dormant by deliberate policy: read-only
-    # means no fix will ever land, whatever the maintainer intended. This does
-    # conflate "finished" and "moved to another forge" with "abandoned" --
-    # replaced_by is the field that would separate them, and nothing reads it
-    # yet. That was a considered call, not an oversight.
-    if status == "archived":
-        score -= 35
-        signals.append(_assessment_signal("negative", "Repository is archived (read-only)"))
-        recommendations.append("Find a maintained alternative.")
-    elif status == "active":
-        score += 30
-        signals.append(_assessment_signal("positive", "Recent repository activity", detail=f"{age_days} days"))
-    elif status == "quiet":
-        score += 10
-        signals.append(_assessment_signal("neutral", "Repository activity is quiet", detail=f"{age_days} days"))
-        recommendations.append("Confirm the repository still reflects the deployed tool.")
-    elif status == "stale":
-        score -= 20
-        signals.append(_assessment_signal("negative", "Repository has stale activity", detail=f"{age_days} days"))
-        recommendations.append("Ask the maintainer to confirm ownership and deployment status.")
-    elif status == "dormant":
-        score -= 35
-        signals.append(_assessment_signal("negative", "Repository appears dormant", detail=f"{age_days} days"))
-        recommendations.append("Flag the tool for maintainer outreach or archival review.")
-    else:
-        signals.append(_assessment_signal("neutral", "No last-commit age supplied"))
-        recommendations.append("Provide last commit date or age for no-longer-maintained checks.")
+    delta, signals, recommendations = _activity_status_scoring(context, status, age_days)
+    score = 50 + delta
     if contributor_count is not None and contributor_count >= MULTIPLE_CONTRIBUTOR_MIN:
         score += 10
         signals.append(_assessment_signal("positive", "Multiple contributors detected", detail=str(contributor_count)))
@@ -2481,6 +2509,8 @@ def _maintenance_activity_assessment(context: dict[str, Any]) -> dict[str, Any]:
     if commit_count is not None and commit_count < SMALL_COMMIT_HISTORY_THRESHOLD:
         score -= 10
         signals.append(_assessment_signal("neutral", "Very small commit history", detail=str(commit_count)))
+    if _replaced_by(context):
+        signals.append(_assessment_signal("positive", "Replacement tool recorded", detail=_replaced_by(context)))
     if repository.get("dirty") is True:
         signals.append(_assessment_signal("neutral", "Local checkout had uncommitted changes"))
     return _assessment(
@@ -2690,15 +2720,51 @@ def _maintainer_activity_dimension(context: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _replaced_by(context: dict[str, Any]) -> str:
+    lifecycle = context.get("lifecycle") if isinstance(context.get("lifecycle"), dict) else {}
+    return str(lifecycle.get("replacedBy") or "").strip()
+
+
+def _lifecycle_recommendation(context: dict[str, Any], fallback: str) -> str:
+    """Name the successor when the maintainer recorded one.
+
+    Telling somebody to go find an alternative, or asking a maintainer to
+    confirm a tool they already retired, is wasted advice when the answer is
+    sitting in the catalogue.
+    """
+    replaced_by = _replaced_by(context)
+    return f"Use the recorded replacement: {replaced_by}" if replaced_by else fallback
+
+
+def _terminal_stewardship(context: dict[str, Any], source_status: str) -> str:
+    """Return the verdict no amount of maintainer activity can change, or "".
+
+    These three do not combine with maintainer status the way the rest of the
+    ladder does. A superseded tool stays superseded however busy its author is
+    elsewhere, and an archived repository will receive no further work either
+    way -- so pairing them with maintainer activity would only dilute them.
+    """
+    lifecycle = context.get("lifecycle") if isinstance(context.get("lifecycle"), dict) else {}
+    # A recorded successor is the most complete thing a maintainer can say: it
+    # answers "what should I use instead", which the inferred ladder below only
+    # gestures at. So it wins even over an archived repository.
+    if _replaced_by(context):
+        return "superseded"
+    if lifecycle.get("deprecated") is True:
+        return "deprecated"
+    if source_status == "archived":
+        return "archived"
+    return ""
+
+
 def _stewardship_status(context: dict[str, Any]) -> str:
     source = context.get("maintenance") if isinstance(context.get("maintenance"), dict) else {}
     maintainer = context.get("maintainerActivity") if isinstance(context.get("maintainerActivity"), dict) else {}
     source_status = str(source.get("status") or "unknown")
     maintainer_status = str(maintainer.get("status") or "unknown")
-    # Terminal, and does not combine: the repository will receive no further
-    # work however active its maintainer is elsewhere.
-    if source_status == "archived":
-        return "archived"
+    terminal = _terminal_stewardship(context, source_status)
+    if terminal:
+        return terminal
     stale_source = source_status in {"stale", "dormant"}
     active_maintainer = maintainer_status in {"active", "quiet"}
     stale_maintainer = maintainer_status in {"stale", "dormant"}
@@ -2732,6 +2798,7 @@ def _health_core(assessments: list[dict[str, Any]], context: dict[str, Any]) -> 
         "sourceMaintenanceStatus": str(maintenance.get("status") or "unknown"),
         "maintainerActivityStatus": str(maintainer.get("status") or "unknown"),
         "stewardshipStatus": _stewardship_status(context),
+        "replacedBy": _replaced_by(context),
         "dimensions": dimensions,
     }
 

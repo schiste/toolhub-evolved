@@ -593,6 +593,7 @@ def latest_public_health_core(s: Any, tool_name: str) -> dict[str, Any] | None: 
         "sourceMaintenanceStatus": str(health_core.get("sourceMaintenanceStatus") or "unknown"),
         "maintainerActivityStatus": str(health_core.get("maintainerActivityStatus") or "unknown"),
         "stewardshipStatus": str(health_core.get("stewardshipStatus") or "needs-context"),
+        "replacedBy": str(health_core.get("replacedBy") or ""),
         "dimensions": health_core.get("dimensions") if isinstance(health_core.get("dimensions"), list) else [],
         "repository": source_repository_summary(report),
         "createdAt": iso(row.created_at),

@@ -399,7 +399,21 @@ def _host_facts(url: str) -> dict[str, Any]:
     return {key: value for key, value in facts.items() if value is not None}
 
 
-def _report_context(report: dict[str, Any], *, url: str, provider: str, commit_sha: str) -> dict[str, Any]:
+def _lifecycle_context(record: dict[str, Any]) -> dict[str, Any]:
+    """Lifecycle as the maintainer declared it, not as we inferred it.
+
+    An empty replacedBy is dropped by the context cleaner, so "no successor
+    recorded" and "successor recorded" stay distinguishable downstream.
+    """
+    return {
+        "deprecated": record.get("deprecated") is True,
+        "replacedBy": str(record.get("replaced_by") or "").strip(),
+    }
+
+
+def _report_context(
+    report: dict[str, Any], *, url: str, provider: str, commit_sha: str, record: dict[str, Any]
+) -> dict[str, Any]:
     context = report.get("repositoryContext") if isinstance(report.get("repositoryContext"), dict) else {}
     repository = context.get("repository") if isinstance(context.get("repository"), dict) else {}
     repository = {key: value for key, value in repository.items() if key not in SHALLOW_CLONE_BLIND}
@@ -411,7 +425,7 @@ def _report_context(report: dict[str, Any], *, url: str, provider: str, commit_s
         "dirty": False,
         **_host_facts(url),
     }
-    return {**context, "repository": repository}
+    return {**context, "repository": repository, "lifecycle": _lifecycle_context(record)}
 
 
 def _save_failure(tool_name: str, url: str, provider: str, error: str) -> None:
@@ -483,7 +497,7 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
                 files,
                 tool_name=tool_name,
                 source_label=url,
-                repository_context=_report_context(context, url=url, provider=provider, commit_sha=head),
+                repository_context=_report_context(context, url=url, provider=provider, commit_sha=head, record=record),
             )
         with db.session_scope() as s:
             user = _scanner_user(s)
