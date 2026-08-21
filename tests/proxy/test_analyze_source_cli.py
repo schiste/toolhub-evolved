@@ -24,6 +24,20 @@ def test_cli_tree_reader_prunes_dependency_directories(tmp_path):
     assert files == [{"path": "src/app.js", "content": "const api = new mw.Api();"}]
 
 
+def test_cli_tree_reader_spends_a_short_budget_on_the_code_not_the_reading(monkeypatch, tmp_path):
+    # One slot, and the file that sorts first alphabetically is the one that only
+    # describes the tool. The budget has to go to the file the tool is made of.
+    monkeypatch.setattr(analyze_source, "MAX_FILES", 1)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "guide.md").write_text("Download from https://packages.example.org/tool", encoding="utf-8")
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "client.py").write_text("requests.get('https://api.acme-data.org/v1/things')", encoding="utf-8")
+
+    assert [row["path"] for row in analyze_source._read_tree([tmp_path])] == ["src/client.py"]
+
+
 def test_cli_tree_reader_keeps_extensionless_dependency_manifests(tmp_path):
     (tmp_path / "go.mod").write_text("module example\nrequire github.com/gorilla/mux v1.8.1\n", encoding="utf-8")
     (tmp_path / "Gemfile").write_text('gem "rails"\n', encoding="utf-8")

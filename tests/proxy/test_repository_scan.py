@@ -382,6 +382,28 @@ def test_read_tree_tops_up_past_rejected_candidates(tmp_path):
     assert [entry["path"] for entry in files] == [f"mod{index:03d}.py" for index in range(10, 130)]
 
 
+def test_read_tree_spends_a_short_budget_on_the_code_not_the_reading(monkeypatch, tmp_path):
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    repository_scan._git(["init", "-q", "--initial-branch=main", "."], cwd=origin)
+    repository_scan._git(["config", "uploadpack.allowFilter", "true"], cwd=origin)
+    (origin / "docs").mkdir()
+    (origin / "docs" / "guide.md").write_text("Download from https://packages.example.org/tool\n", encoding="utf-8")
+    (origin / "src").mkdir()
+    (origin / "src" / "client.py").write_text("requests.get('https://api.acme-data.org/v1')\n", encoding="utf-8")
+    repository_scan._git(["add", "-A"], cwd=origin)
+    repository_scan._git(["-c", "user.email=t@example.org", "-c", "user.name=t", "commit", "-qm", "init"], cwd=origin)
+
+    checkout = tmp_path / "checkout"
+    repository_scan.clone_repository(f"file://{origin}", checkout)
+    # Git lists a tree in path order, which would spend the one slot on the docs.
+    # The scanner and the local reader have to agree on which file is worth it.
+    monkeypatch.setattr(repository_scan, "MAX_FILES", 1)
+    files = repository_scan._read_repository_tree(checkout)
+
+    assert [entry["path"] for entry in files] == ["src/client.py"]
+
+
 def test_parse_batch_skips_bodiless_replies_without_desynchronising():
     stream = (
         b"aa missing\n"  # filtered out for exceeding MAX_FILE_BYTES

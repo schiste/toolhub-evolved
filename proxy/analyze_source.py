@@ -20,6 +20,7 @@ from backend.source_analyzer import (
     SourceAnalysisError,
     analyze_source_files,
     is_supported_source_path,
+    source_reading_rank,
 )
 
 GIT_TIMEOUT_SECONDS = 3
@@ -47,7 +48,7 @@ def _source_files(root: Path) -> list[Path]:
                 stack.append(child)
             elif child.is_file():
                 candidates.append(child)
-    return sorted(candidates)
+    return sorted(candidates, key=lambda path: source_reading_rank(path.relative_to(root).as_posix()))
 
 
 def _read_tree(paths: list[Path]) -> list[dict[str, str]]:
