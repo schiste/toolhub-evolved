@@ -1202,6 +1202,63 @@ def _resolved_status(evidence: list[ToolRelationshipEvidence]) -> str:
     return AUTHOR_CLAIM_STALE
 
 
+# Every column this collapse derives from evidence. Comparing them across a pass
+# is how an edge that moved is told from one that did not.
+_RESOLVED_COLUMNS = (
+    "verification_status",
+    "confidence",
+    "evidence_count",
+    "toolhub_canonical",
+    "expires_at",
+    "verified_at",
+)
+
+
+def _resolution_snapshot(row: ToolPersonRelationship) -> tuple[Any, ...]:
+    """Capture one edge's derived columns, so a pass can see whether it changed."""
+    return tuple(getattr(row, column) for column in _RESOLVED_COLUMNS)
+
+
+def _apply_resolution(
+    row: ToolPersonRelationship,
+    supporting: list[ToolRelationshipEvidence],
+    *,
+    now: datetime,
+    fresh: bool,
+) -> None:
+    """Collapse one person/tool/role's evidence onto its row, restamping on change.
+
+    Restamping unconditionally made every pass issue an UPDATE for every edge of
+    the tool, setting two timestamps and no data at all. Concurrent jobs then
+    queued on each other for those writes: twelve lock-wait timeouts in
+    maintainer-backfill between 2026-08-13 and 2026-08-21, every one of them on
+    a statement that set ``resolved_at`` and ``updated_at`` and nothing else --
+    the same shape as the person_activity_summaries deadlock, one table over.
+
+    Nothing outside this module reads ``resolved_at``, so the timestamp costs a
+    row lock to record something no reader can observe. Writing it only when the
+    collapse produced a different answer is also what both column names claim,
+    and leaves an edge whose evidence has not moved untouched.
+    """
+    before = None if fresh else _resolution_snapshot(row)
+    resolved_status = _resolved_status(supporting)
+    if resolved_status == AUTHOR_CLAIM_VERIFIED and (
+        row.verification_status != AUTHOR_CLAIM_VERIFIED or row.verified_at is None
+    ):
+        row.verified_at = now
+    elif resolved_status != AUTHOR_CLAIM_VERIFIED:
+        row.verified_at = None
+    row.verification_status = resolved_status
+    row.confidence = max(item.confidence for item in supporting)
+    row.evidence_count = len(supporting)
+    row.toolhub_canonical = any(item.toolhub_canonical for item in supporting)
+    expiries = [item.expires_at for item in supporting if item.expires_at is not None]
+    row.expires_at = None if len(expiries) != len(supporting) else max(expiries)
+    if fresh or _resolution_snapshot(row) != before:
+        row.resolved_at = now
+        row.updated_at = now
+
+
 def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRelationship]:
     """Collapse active evidence into one current row per person/tool/role."""
     clean_tool = _clean(tool_name)
@@ -1228,24 +1285,11 @@ def resolve_tool_relationships(s: Session, tool_name: str) -> list[ToolPersonRel
     resolved = []
     for (person_id, role), supporting in grouped.items():
         row = current.get((person_id, role))
-        if row is None:
+        fresh = row is None
+        if fresh:
             row = ToolPersonRelationship(tool_name=clean_tool, person_id=person_id, relationship_type=role)
             s.add(row)
-        resolved_status = _resolved_status(supporting)
-        if resolved_status == AUTHOR_CLAIM_VERIFIED and (
-            row.verification_status != AUTHOR_CLAIM_VERIFIED or row.verified_at is None
-        ):
-            row.verified_at = now
-        elif resolved_status != AUTHOR_CLAIM_VERIFIED:
-            row.verified_at = None
-        row.verification_status = resolved_status
-        row.confidence = max(item.confidence for item in supporting)
-        row.evidence_count = len(supporting)
-        row.toolhub_canonical = any(item.toolhub_canonical for item in supporting)
-        expiries = [item.expires_at for item in supporting if item.expires_at is not None]
-        row.expires_at = None if len(expiries) != len(supporting) else max(expiries)
-        row.resolved_at = now
-        row.updated_at = now
+        _apply_resolution(row, supporting, now=now, fresh=fresh)
         resolved.append(row)
     s.flush()
     affected_person_ids.update(row.person_id for row in resolved)

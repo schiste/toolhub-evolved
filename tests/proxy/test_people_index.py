@@ -783,3 +783,53 @@ def test_a_catalog_actor_edge_never_counts_toward_a_public_summary():
         assert row.related_tool_count == 0
         assert row.verified_tool_count == 0
         assert row.activity_status == "unknown"
+
+
+def test_an_edge_whose_evidence_has_not_moved_is_left_alone():
+    observation = {
+        "display_name": "Ada",
+        "wiki_username": "Ada",
+        "relationship_type": PERSON_REL_AUTHOR,
+        "verification_status": AUTHOR_CLAIM_VERIFIED,
+    }
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(s, "toolx", "sourcex", [observation])
+        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolx").one()
+        marker = utcnow() - timedelta(days=3)
+        relationship.resolved_at = marker
+        relationship.updated_at = marker
+        s.flush()
+
+        people_index.replace_source_evidence(s, "toolx", "sourcex", [observation])
+
+        # An UPDATE here would set these two columns and nothing else, which is
+        # exactly the write concurrent jobs were queuing on in production.
+        assert relationship.resolved_at == marker
+        assert relationship.updated_at == marker
+
+
+def test_an_edge_whose_evidence_moved_is_restamped():
+    observation = {
+        "display_name": "Ada",
+        "wiki_username": "Ada",
+        "relationship_type": PERSON_REL_AUTHOR,
+        "verification_status": AUTHOR_CLAIM_VERIFIED,
+    }
+    with db.session_scope() as s:
+        people_index.replace_source_evidence(s, "toolx", "sourcex", [observation])
+        relationship = s.query(ToolPersonRelationship).filter_by(tool_name="toolx").one()
+        marker = utcnow() - timedelta(days=3)
+        relationship.resolved_at = marker
+        relationship.updated_at = marker
+        s.flush()
+
+        people_index.replace_source_evidence(
+            s,
+            "toolx",
+            "sourcex",
+            [{**observation, "verification_status": AUTHOR_CLAIM_UNVERIFIED}],
+        )
+
+        assert relationship.verification_status == AUTHOR_CLAIM_UNVERIFIED
+        assert relationship.resolved_at > marker
+        assert relationship.updated_at > marker
