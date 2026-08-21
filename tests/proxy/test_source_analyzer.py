@@ -76,7 +76,9 @@ def test_source_analyzer_extracts_projects_apis_rights_scopes_technology_and_red
     assert "[redacted credential-like assignment]" in str(report["warnings"])
     assert "super-secret-value" not in str(report)
     assert set(report["suggestions"]["toolinfoPatch"]["for_wikis"]) == {"commonswiki", "wikidatawiki"}
-    assert report["suggestions"]["toolinfoPatch"]["tool_type"] == "gadget"
+    # Pywikibot and React together: whatever this fixture is, it runs a server,
+    # so the `mw.Api` in it does not make it a gadget.
+    assert report["suggestions"]["toolinfoPatch"]["tool_type"] == "web app"
     assert {"npm:react", "pypi:pywikibot"} <= set(report["suggestions"]["evolvedMetadata"]["dependencies"])
     assert "x_toolhub_evolved_source_analysis" not in report["suggestions"]["toolinfoPatch"]
 
@@ -596,6 +598,30 @@ def test_source_analyzer_utility_branches_are_stable():
     assert source_analyzer._tool_type_suggestion([{"value": "React"}], []) == "web app"
     assert source_analyzer._tool_type_suggestion([{"value": "Pywikibot"}], [{"value": "mediawiki-action-api"}]) == "bot"
     assert source_analyzer._tool_type_suggestion([], []) is None
+
+
+def test_a_server_that_mentions_mediawiki_javascript_is_not_suggested_as_a_gadget():
+    """A gadget has no server, so server evidence outranks the gadget markers.
+
+    Toolhub Evolved itself was catalogued as a gadget: it is a Flask
+    application whose own source-analysis code and tests contain `mw.Api`,
+    upstream declares no tool type, and the suggestion filled the empty slot.
+    """
+    gadget_evidence = [{"value": "MediaWiki gadget"}]
+
+    assert source_analyzer._tool_type_suggestion(gadget_evidence, []) == "gadget"
+    for server in sorted(source_analyzer.SERVER_TECHNOLOGIES):
+        assert source_analyzer._tool_type_suggestion([*gadget_evidence, {"value": server}], []) != "gadget"
+    assert source_analyzer._tool_type_suggestion([*gadget_evidence, {"value": "Flask"}], []) == "web app"
+
+
+def test_a_gadget_that_ships_a_package_json_is_still_a_gadget():
+    """Node.js is not server evidence: a gadget repository may lint with npm."""
+    suggestion = source_analyzer._tool_type_suggestion(
+        [{"value": "MediaWiki gadget"}, {"value": "Node.js"}, {"value": "JavaScript"}], []
+    )
+
+    assert suggestion == "gadget"
 
 
 def test_source_class_covers_fixture_example_and_unknown_paths():
