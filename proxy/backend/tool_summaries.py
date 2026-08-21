@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.util import was_deleted
 
 from backend import db
 from backend.models import ToolSummaryCache, utcnow
@@ -178,6 +179,30 @@ def _store(
     return stored
 
 
+def _rebuild_target(s: Session, row: ToolSummaryCache | None) -> ToolSummaryCache | None:
+    """Return the row the rebuild should overwrite, or None if the build removed it.
+
+    Building a summary invalidates the summary being built. `build_summary` is
+    `build_local_tool_summary`, which opens with `sync_author_claim_edges`, whose
+    `affected` set always contains the tool it was asked about; that reaches
+    `replace_source_evidence` and its closing `s.delete(summary)`, aimed at the
+    row `refresh` loaded a moment earlier to overwrite. The next `s.execute` in
+    the build autoflushes the DELETE, and `_store` is then holding a deleted
+    instance that `s.add` refuses.
+
+    So the deletion is not a race and not wrong -- the evidence really did move,
+    and any other caller wants that row gone. It is only self-defeating here,
+    where a fresher summary is already in hand. Dropping the deleted instance
+    from the session lets the freshly computed value be inserted in its place,
+    which is what the rebuild was for. Every other caller of
+    `replace_source_evidence` keeps the invalidation it asked for.
+    """
+    if row is None or not was_deleted(row):
+        return row
+    s.expunge(row)
+    return None
+
+
 def _build_and_store(
     s: Session,
     *,
@@ -188,7 +213,7 @@ def _build_and_store(
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Build one summary and persist it before returning the payload."""
     summary = build_summary(s, tool_name)
-    stored = _store(s, row, tool_name=tool_name, summary=summary, now=now)
+    stored = _store(s, _rebuild_target(s, row), tool_name=tool_name, summary=summary, now=now)
     return dict(summary), _cache_meta(stored, "miss")
 
 

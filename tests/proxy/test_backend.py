@@ -2477,6 +2477,36 @@ def test_tool_summaries_endpoint_returns_local_health_and_maintainer_status(clie
     }
 
 
+def test_a_summary_rebuild_survives_the_build_invalidating_its_own_row(client, monkeypatch):
+    """Rebuild a summary twice over the real builder, not a stub.
+
+    `build_local_tool_summary` opens with `sync_author_claim_edges`, whose
+    `affected` set always contains the tool being summarised, so every build
+    reaches `replace_source_evidence` and its closing `s.delete(summary)` --
+    against the very row `refresh` loaded to overwrite. The first rebuild of any
+    tool therefore deletes its own target, and `_store` calls `s.add` on an
+    instance the autoflush in `build_local_tool_summary` has already deleted.
+    A tool with no cached row never noticed, which is why the failure only
+    appeared for tools that had been summarised once before.
+    """
+    db.configure("sqlite://")
+    db.init_schema()
+    _stub_summary_executor(monkeypatch)
+
+    tool_summaries.refresh(["patch-demo"], v1_common_api.build_local_tool_summary)
+    with db.session_scope() as s:
+        assert s.get(ToolSummaryCache, "patch-demo") is not None
+
+    # The rebuild is the case that mattered: the row now exists, so refresh
+    # loads it and hands it to a build that deletes it.
+    tool_summaries.refresh(["patch-demo"], v1_common_api.build_local_tool_summary)
+    with db.session_scope() as s:
+        rebuilt = s.get(ToolSummaryCache, "patch-demo")
+        assert rebuilt is not None
+        assert rebuilt.summary["toolName"] == "patch-demo"
+        assert rebuilt.last_error is None
+
+
 def test_tool_summaries_endpoint_reuses_materialized_read_model(client, monkeypatch):
     db.configure("sqlite://")
     db.init_schema()
