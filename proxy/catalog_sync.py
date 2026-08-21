@@ -32,6 +32,13 @@ MAX_MIN_INTERVAL_SECONDS = 60.0
 RECENT_PATH = "/api/recent/"
 RECENT_PAGE_SIZE = 50
 MAX_RECENT_PAGES_PER_RUN = 20
+# How deep the scan will hunt for its cursor across runs before giving up on
+# it. /api/recent/ is offset-paginated over a feed that only grows, so every
+# event added while a scan is in flight shifts the row it is seeking one place
+# further down. A scan that has not found its cursor within this many pages is
+# not close to finding it; it is chasing one. Recovering is bounded work and
+# correct, where hunting is unbounded work that need never converge.
+MAX_RECENT_SCAN_PAGES = 200
 MAX_RECENT_DETAILS_PER_RUN = 20
 MAX_GRAPH_DETAILS_PER_RUN = 20
 MAX_COMPLETE_PAGES = 100
@@ -200,6 +207,19 @@ def _latest_marker(rows: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _guard_scan_depth(page: int, collected: list[dict[str, Any]], latest: str | None) -> None:
+    """Declare the cursor lost once the hunt has gone deeper than one can be.
+
+    Raising here hands the caller the same recovery it already performs when
+    the feed simply runs out, carrying the rows seen so far so nothing
+    observed is thrown away in the process.
+    """
+    if page <= MAX_RECENT_SCAN_PAGES:
+        return
+    message = f"Toolhub recent cursor not found within {MAX_RECENT_SCAN_PAGES} pages"
+    raise RecentCursorLostError(message, rows=collected, latest_marker=latest)
+
+
 def _recent_rows_since(
     last_marker: str | None,
     *,
@@ -216,6 +236,7 @@ def _recent_rows_since(
     last_page = first_page
     for offset in range(MAX_RECENT_PAGES_PER_RUN):
         page = first_page + offset
+        _guard_scan_depth(page, collected, latest)
         last_page = page
         rows, has_next = recent_page(page)
         if latest is None and page == 1:

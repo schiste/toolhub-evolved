@@ -761,3 +761,28 @@ def test_a_detail_failure_that_may_pass_later_stays_queued_and_says_why(monkeypa
     with db.session_scope() as s:
         state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
         assert state.recent_pending_tools == ["flaky-tool"]
+
+
+def test_a_cursor_the_scan_cannot_reach_is_declared_lost_not_hunted_forever(monkeypatch):
+    """/api/recent/ is offset-paginated over a feed that only grows.
+
+    Every event added while a scan is in flight pushes the row it seeks one
+    place further down, so a scan that starts far enough behind never catches
+    up. Production spent 4.5 days at `recent_scan_complete=0`, having crawled
+    to page 272 of a 1217-page feed with a boundary row from 2024-12-21.
+    Recovery is bounded work; hunting need never converge.
+    """
+    previous = catalog_sync._marker({"id": 1, "timestamp": "unreachable"})
+    seen = []
+
+    def page(number=1):
+        seen.append(number)
+        return ([{"id": 1000 + number, "timestamp": f"t{number}"}], True)
+
+    monkeypatch.setattr(catalog_sync, "recent_page", page)
+
+    with pytest.raises(catalog_sync.RecentCursorLostError) as caught:
+        catalog_sync._recent_rows_since(previous, resume_page=catalog_sync.MAX_RECENT_SCAN_PAGES)
+
+    assert str(caught.value) == f"Toolhub recent cursor not found within {catalog_sync.MAX_RECENT_SCAN_PAGES} pages"
+    assert max(seen) == catalog_sync.MAX_RECENT_SCAN_PAGES
