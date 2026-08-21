@@ -56,12 +56,35 @@ def test_every_query_is_polite_and_uses_the_modern_response_shape(url):
     assert params["action"] == "query"
 
 
-def test_the_definition_query_asks_only_for_wikitext():
-    params = _params(wiki_api.definition_url(DOMAIN))
-    assert params["titles"] == wiki_sources.GADGET_DEFINITION_TITLE
-    # No ids: this page is read to find a gadget's members and is not itself
-    # part of any tool, so its revision must not enter that tool's head.
-    assert params["rvprop"] == "content"
+def _answer(url, content):
+    """Build the payload a wiki returns for this query, honouring its rvprop.
+
+    Fixtures that hand the parser fields the query never asked for cannot see a
+    request and its parser drift apart, which is exactly what happened here.
+    """
+    asked = set(_params(url)["rvprop"].split("|"))
+    revision = {"slots": {"main": {"content": content}}}
+    if "ids" in asked:
+        revision["revid"] = 7
+    if "timestamp" in asked:
+        revision["timestamp"] = "2024-01-01T00:00:00Z"
+    page = {"pageid": 1, "ns": 8, "title": wiki_sources.GADGET_DEFINITION_TITLE, "revisions": [revision]}
+    return {"batchcomplete": True, "query": {"pages": [page]}}
+
+
+def test_the_definition_query_asks_for_what_its_own_parser_requires():
+    url = wiki_api.definition_url(DOMAIN)
+    assert _params(url)["titles"] == wiki_sources.GADGET_DEFINITION_TITLE
+    # The regression: rvprop=content returns revisions with no revid, _revision
+    # drops those, and so every definition page on every wiki read as empty.
+    assert wiki_api.definition_text(_answer(url, "* X[RL]|X.js")) == "* X[RL]|X.js"
+
+
+def test_the_definition_query_asks_for_no_more_than_that():
+    # The id is a parser requirement, not a want. Nothing reads it: keeping the
+    # definition page out of tool heads is definition_text's job, and it
+    # returns wikitext only.
+    assert _params(wiki_api.definition_url(DOMAIN))["rvprop"] == "ids|content"
 
 
 def test_a_page_query_asks_for_every_title_at_once():

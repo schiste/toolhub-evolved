@@ -45,6 +45,10 @@ BASE_PARAMS = {
 # returns a deprecation warning and no text.
 REVISION_PARAMS = {"prop": "revisions", "rvprop": "ids|timestamp|content", "rvslots": "main"}
 
+# What a definition page is asked for. The id is not wanted and is not read;
+# it is requested because a revision without one is dropped by the parser.
+DEFINITION_REVISION_PARAMS = {"prop": "revisions", "rvprop": "ids|content", "rvslots": "main"}
+
 MAX_CONTENT_CHARS = 2 * 1024 * 1024
 
 
@@ -65,13 +69,14 @@ def _api_url(domain: str, params: dict[str, str]) -> str:
 def definition_url(domain: str) -> str:
     """Return the query for a wiki's gadget definitions.
 
-    Only the content is asked for. This page is read to find out which pages a
-    gadget consists of, and it is not itself part of any tool's source, so its
-    revision id has no place in that tool's head.
+    Asks for the revision id even though no caller wants it, because
+    `_revision` discards any revision that arrives without one. Keeping the
+    definition page out of tool heads is `definition_text`'s job -- it returns
+    wikitext and nothing else, so there is no id here for a head to pick up.
     """
     return _api_url(
         domain,
-        {"prop": "revisions", "rvprop": "content", "rvslots": "main", "titles": wiki_sources.GADGET_DEFINITION_TITLE},
+        {**DEFINITION_REVISION_PARAMS, "titles": wiki_sources.GADGET_DEFINITION_TITLE},
     )
 
 

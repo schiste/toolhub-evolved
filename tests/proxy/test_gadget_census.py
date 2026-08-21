@@ -25,18 +25,14 @@ class FakeWiki:
     def __init__(self):
         self.asked = []
 
-    def request(self, domain, _method, _params):
+    def request(self, domain, _method, params):
         self.asked.append(domain)
-        return {
-            "query": {
-                "pages": [
-                    {
-                        "title": "MediaWiki:Gadgets-definition",
-                        "revisions": [{"revid": 1, "slots": {"main": {"content": DEFINITION}}}],
-                    }
-                ]
-            }
-        }
+        revision = {"slots": {"main": {"content": DEFINITION}}}
+        if "ids" in str(params.get("rvprop", "")).split("|"):
+            # Answer with what was asked for and nothing more, so a query that
+            # stops asking for the id fails here instead of in production.
+            revision["revid"] = 1
+        return {"query": {"pages": [{"title": "MediaWiki:Gadgets-definition", "revisions": [revision]}]}}
 
 
 @pytest.fixture
@@ -56,7 +52,7 @@ def test_the_job_reads_each_configured_wiki_once_and_catalogues_it(monkeypatch, 
     # is the whole inventory.
     assert wiki.asked == ["fr.wikipedia.org", "en.wikipedia.org"]
     out = capsys.readouterr().out
-    assert "gadget-inventory: wiki=fr.wikipedia.org read=yes declared=2" in out
+    assert "gadget-inventory: wiki=fr.wikipedia.org read=yes reason=read declared=2" in out
     assert "gadget-catalogue: wiki=fr.wikipedia.org declared=2 written=1" in out
     assert "hidden=1" in out
 
