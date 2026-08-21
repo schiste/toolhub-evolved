@@ -56,15 +56,24 @@ RELATION_ORIGINAL = "original"
 RELATION_COPY = "copy"
 RELATION_VARIANT = "variant"
 
-# Width of the zero-padded `discovery_rank` used as a Candidate's sort key. A
-# wiki with more script pages than this would sort wrongly rather than loudly,
-# so it is far above the largest corpus we have seen: frwiki's is 9,919.
-_RANK_WIDTH = 12
+# A Candidate's sort key is compared as a plain string, and within one wiki some
+# pages carry a real creation timestamp while others carry nothing -- the
+# replica the dates come from is absent outside Toolforge, and a page deleted
+# between the sweep and the stamp never gets one at all. A MediaWiki timestamp
+# is 14 digits opening on a century, so a fallback key of the same width behind
+# a leading 9 sorts after every real date: a page whose creation date is unknown
+# cannot outrank a page whose date is known, and unknowns keep discovery order
+# among themselves.
+_UNKNOWN_CREATED_PREFIX = "9"
+# Width of the zero-padded `discovery_rank` that follows it. A wiki with more
+# script pages than this would sort wrongly rather than loudly, so it is far
+# above the largest corpus we have seen: frwiki's is 9,919.
+_RANK_WIDTH = 13
 
 
 def _sort_key(rank: int) -> str:
-    """Render a discovery rank as a string that sorts in creation order."""
-    return f"{max(0, rank):0{_RANK_WIDTH}d}"
+    """Render a discovery rank as a stand-in for a creation date it sorts behind."""
+    return f"{_UNKNOWN_CREATED_PREFIX}{max(0, rank):0{_RANK_WIDTH}d}"
 
 
 def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
@@ -73,6 +82,10 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
     Deleted pages are left out. A page the wiki no longer serves cannot be
     promoted to a gadget, and keeping it would let a script that no longer
     exists claim to be the original of the pages that copied it.
+
+    A page is offered with the creation date the wiki reports, and falls back to
+    discovery order only where `backend.userscript_creation_dates` has not been
+    able to supply one.
     """
     rows = (
         session.query(UserScriptPage)
@@ -88,7 +101,7 @@ def candidates(session: Session, wiki: str) -> list[directory.Candidate]:
             title=row.title,
             owner=row.owner,
             basename=row.basename,
-            created=_sort_key(row.discovery_rank),
+            created=row.created_at_wiki or _sort_key(row.discovery_rank),
             fingerprint=row.fingerprint,
         )
         for row in rows

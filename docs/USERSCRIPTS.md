@@ -106,29 +106,61 @@ to schedule at all. Bodies are stored so re-analysis stays free, capped at
 `MAX_STORED_BODY` (512 KiB) per page — a limit about what is worth keeping, not
 about what fits.
 
-**Creation order comes from `discovery_rank`, not a timestamp.** The collapse's
-"earliest page wins" rule only ever compares two pages, and the search index
-hands enumeration order over for free, while asking the API for 9,919 creation
-dates is 9,919 requests.
+**Creation dates come from the Wiki Replicas; enumeration order is the
+fallback.** The collapse's "earliest page wins" rule only ever compares two
+pages, so it needs an order rather than a calendar — but the order has to be a
+real one. Three things supply it, in descending order of authority:
+
+1. `created_at_wiki`, the page's oldest revision timestamp, read from the Wiki
+   Replicas by `backend.userscript_creation_dates`. One query returns every
+   user-space `.js`/`.css` page on a wiki; frwiki's whole corpus comes back in
+   about a second. Only a title and a timestamp are read — the `revision` table
+   also carries actor ids and edit comments, and neither is selected.
+2. `discovery_rank`, the order the census enumerated the page in. This is
+   creation order because the search asks for `create_timestamp_asc`; before
+   that it was CirrusSearch relevance, which had nothing to say about which page
+   came first.
+3. Title, to break exact ties, so the directory names the same original twice
+   over identical data.
+
+A page with no creation date sorts _behind_ every page that has one. That is the
+weaker claim and the true one: being enumerated first is not evidence of
+predating a script from 2003. Every host without `replica.my.cnf` — CI, a
+laptop, anything that is not Toolforge — is in that state for its whole corpus
+and collapses on enumeration order alone, exactly as before.
+
+The Action API is not the route for this. `prop=revisions` with `rvdir=newer`
+is `invalidparammix` for more than one title, so walking histories oldest-first
+costs one request per page. At the measured 0.542s anonymous, frwiki's 13,616
+pages are about two hours, and the 6,556 the collapse actually considers still
+about an hour. The replica answers all of them in one query. The `letype=create`
+log is not a shortcut either — it starts on 2018-06-27, and about 99% of the
+User-namespace creations in it are neither `.js` nor `.css`.
 
 ## The collapse: originals and instances
 
-`backend.userscript_directory` decides which pages are distinct scripts. On
-frwiki, 9,919 user-space JavaScript pages contain 2,051 real scripts, and those
-2,051 pages are **1,264 distinct scripts**.
+`backend.userscript_directory` decides which pages are distinct scripts. The
+first production sweep, on 2026-08-21, read 13,616 user-space `.js` and `.css`
+pages on frwiki. 6,556 of them are real scripts, and those 6,556 pages are
+**1,453 distinct scripts** — 671 with a live audience, 782 archived.
 
-Getting from 2,051 to 1,264 is not deduplication. Two thirds of the difference is
-not byte-identical copies at all — it is per-user configuration. 472 people have
-a page called `LiveRCparam.js`, each holding their own settings for one shared
-tool. Hashing finds none of them, because no two are the same.
+(The pilot figures this document previously carried — 9,919 pages, 2,051
+scripts, 1,264 originals — were measured over `.js` alone, on a smaller
+enumeration, and before the search was sorted into creation order.)
+
+Getting from 6,556 to 1,453 is not deduplication. Most of the difference is not
+byte-identical copies at all — it is per-user configuration. In the pilot, 472
+people had a page called `LiveRCparam.js`, each holding their own settings for
+one shared tool. Hashing finds none of them, because no two are the same.
 
 What finds them is the filename, in two passes:
 
 1. **Exact copies fold on fingerprint.** Same comment-stripped body, same script.
 2. **Crowded names fold on the filename.** When `CROWDED_OWNERS` (5) or more
    distinct owners have a page under the same basename, the later ones are
-   presumed to be instances of whatever the first one was, ordered by
-   `discovery_rank`.
+   presumed to be instances of whatever the first one was, in the order the
+   collapse ranks by: creation date first, `discovery_rank` where none is
+   known.
 
 Five owners is a low threshold and blunt enough to be dangerous on its own — a
 genuinely popular name would bury real scripts — so it never fires alone:
@@ -138,8 +170,8 @@ genuinely popular name would bury real scripts — so it never fires alone:
 
 That guard is `INDEPENDENT_DEMAND`, and it is set to 1. It is the one number in
 this subsystem that is a judgement rather than a measurement, and the measurement
-is what makes the judgement easy. Starting from the 1,229 originals the name rule
-leaves on its own:
+is what makes the judgement easy. Measured on the pilot corpus, starting from
+the 1,229 originals the name rule leaves on its own:
 
 | Guard threshold | Originals | Rescued |
 | --------------- | --------- | ------- |

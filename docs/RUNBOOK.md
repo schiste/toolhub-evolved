@@ -881,6 +881,21 @@ pass can walk, so its sweeps succeed while enumerating only part of the wiki;
 that shows up as `enumeration_complete = false` in `user_script_census_state`
 and as a notice on `/userscripts`, and it is expected rather than a fault.
 
+Between the sweep and the projection each run stamps page creation dates from
+the Wiki Replicas and logs one line per wiki:
+
+```
+userscript-creation-dates: wiki=fr.wikipedia.org replica=yes stamped=1873
+```
+
+`replica=no` means no replica was reached — no `~/replica.my.cnf`, an
+unreachable host, or a wiki `meta_p.wiki` does not list — and is a successful
+run, not a fault: the collapse falls back to enumeration order. It is the
+expected state everywhere except Toolforge. `stamped=0` with `replica=yes` means
+the replica answered and every page already had a date, which is the steady
+state once a wiki has been swept. Credentials are read from `~/replica.my.cnf`,
+or from the path in `TOOLHUB_REPLICA_CONFIG`.
+
 `projection-refresh` is the six-hour projection coordinator. It reuses input
 generations completed within six hours, runs stale Toolhub and Toolforge inputs
 plus the incremental catalog path concurrently, then performs one
