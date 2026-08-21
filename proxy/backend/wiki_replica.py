@@ -52,7 +52,7 @@ USER_NAMESPACE = 2
 
 # `page_title` is stored without its namespace prefix and with underscores for
 # spaces. Stored census titles are full, localized and spaced
-# (`Utilisateur:Tom Blaireau/monobook.js`), so the two are matched on the part
+# (`Utilisateur:Tom Smith/monobook.js`), so the two are matched on the part
 # after the first colon with spaces folded to underscores. Doing it this way
 # means never needing to know what a wiki calls namespace 2.
 TITLE_SEPARATOR = ":"
@@ -138,7 +138,7 @@ CREATION_QUERY = (
     "WHERE p.page_namespace = %s AND (p.page_title LIKE %s OR p.page_title LIKE %s) "
     "GROUP BY p.page_id"
 )
-#: Suffixes the census recognises. Content model decides what is a script, but
+#: Suffixes the census recognizes. Content model decides what is a script, but
 #: the replica has no content model, so the query narrows by title and lets the
 #: census's own classification do the rest.
 TITLE_PATTERNS = ("%.js", "%.css")
@@ -153,8 +153,8 @@ def normalize_title(title: str) -> str:
     """Reduce a census title to the form `page_title` uses.
 
     Drops the namespace prefix and folds spaces to underscores, so
-    `Utilisateur:Tom Blaireau/monobook.js` and the replica's
-    `Tom_Blaireau/monobook.js` are the same key.
+    `Utilisateur:Tom Smith/monobook.js` and the replica's
+    `Tom_Smith/monobook.js` are the same key.
     """
     _, separator, rest = title.partition(TITLE_SEPARATOR)
     return (rest if separator else title).replace(" ", "_")
@@ -242,7 +242,7 @@ def dbnames_for(
 
     Asked rather than derived. The host-to-database rule has enough exceptions
     (`www.wikidata.org` is `wikidatawiki`, `meta.wikimedia.org` is `metawiki`)
-    that a local reimplementation would be a second source of truth, and this
+    that a local copy of the rule would be a second source of truth, and this
     is one query for every wiki the caller cares about.
     """
     if not wikis:

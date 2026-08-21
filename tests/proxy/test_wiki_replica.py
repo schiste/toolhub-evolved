@@ -115,7 +115,7 @@ def test_the_wiki_host_is_looked_up_by_its_canonical_https_url():
 
 def test_a_census_title_is_reduced_to_the_form_the_replica_stores():
     """The replica drops the namespace and writes underscores for spaces."""
-    assert wiki_replica.normalize_title("Utilisateur:Tom Blaireau/monobook.js") == "Tom_Blaireau/monobook.js"
+    assert wiki_replica.normalize_title("Utilisateur:Tom Smith/monobook.js") == "Tom_Smith/monobook.js"
 
 
 def test_a_title_without_a_namespace_prefix_survives_normalization():
