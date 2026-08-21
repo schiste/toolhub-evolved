@@ -2,7 +2,7 @@
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
 <!-- Release id: what-makes-a-gadget-a-gadget -->
 <!-- Release title: What Makes A Gadget A Gadget -->
-<!-- Source range: 90b9176..05de929 (2 commits) -->
+<!-- Source range: 90b9176..1abf2eb (12 commits) -->
 
 # What's New for Users
 
@@ -10,4 +10,6 @@
 - The difference matters most for gadgets that no longer exist. Retiring a gadget usually means deleting its line from that definition page and leaving the code behind, so the leftover page keeps a gadget's name forever. Pages written in advance of being registered look the same. Both were being catalogued as live gadgets.
 - The catalogue now reads the definition page and believes what it says. A tool whose code is registered there is a gadget; one that is not is left without a type rather than given a wrong one, which is the safer answer for a field most tool records leave empty for us to fill.
 - Nothing changes for gadgets that are genuinely registered, or for user scripts. A user script is settled by living on its author's own pages, and there is no register that could contradict that.
+- One more gadget correction, found by checking all 160 catalogued gadget pages against the wikis that define them. French Wikipedia writes its gadget definitions with underscores where the page names have spaces, and on a wiki those are the same character. The catalogue was comparing the two spellings as plain text and concluding that a live gadget such as C helper was not registered anywhere. It now compares them as page names, the way MediaWiki itself does.
 - Also in this release: around eighty tools showed no icon at all, and had been quietly retrying for one. A tool record points at its icon by naming the file's page on Wikimedia Commons -- the page that describes the file, with its licence and history -- which is what the format asks for and what those tools correctly provided. The icon cache was fetching that page, finding a web page where it wanted a picture, and recording a failure it then repeated on a slower and slower schedule. It now follows the page through to the file behind it, and asks for a scaled copy of the few drawings too large to fetch whole.
+- Tool pages could also get stuck on the summary they were first given. Rebuilding a tool's cached summary was clearing that cache as part of the rebuild, so the newly built version had nowhere to land and the old one stayed. Anything that changed about a tool after it was first catalogued -- a new author, a corrected type, a freshly read repository -- was not reaching its page. Tools being catalogued for the first time were unaffected, which is why this took a while to surface.
