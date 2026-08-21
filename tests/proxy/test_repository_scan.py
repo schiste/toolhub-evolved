@@ -196,6 +196,7 @@ def test_run_records_unexpected_tool_failure_and_continues(monkeypatch):
         "backoff": 0,
         "unsupported": 0,
         "error": 1,
+        "caches_stale": 0,
     }
     assert failures == ["bad-tool"]
 
@@ -1299,3 +1300,77 @@ def test_a_heartbeat_separates_this_window_from_the_process_lifetime(monkeypatch
     assert [beat["error"] for beat in beats] == [1, 1]
     assert [beat["window"]["error"] for beat in beats] == [1, 0]
     assert [beat["window"]["candidates"] for beat in beats] == [2, 1]
+
+
+def _stub_successful_clone(monkeypatch, commit="abc1234567890123456789012345678901234567"):
+    """Stand in for the acquisition and analysis of one healthy repository."""
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+
+    def fake_checkout(_url, destination):
+        destination.mkdir(parents=True)
+        return commit
+
+    monkeypatch.setattr(repository_scan, "clone_repository", fake_checkout)
+    monkeypatch.setattr(
+        repository_scan, "_read_repository_tree", lambda _repo: [{"path": "README.md", "content": "tool"}]
+    )
+    monkeypatch.setattr(
+        repository_scan,
+        "_local_git_context",
+        lambda _paths: {"repository": {"branch": "main", "commitSha": commit}},
+    )
+    monkeypatch.setattr(repository_scan, "analyze_source_files", lambda files, **_kwargs: {"filesAnalyzed": len(files)})
+    return commit
+
+
+def test_a_cache_that_will_not_refresh_leaves_the_analysis_stored(monkeypatch, capsys):
+    """The report outlives the caches derived from it.
+
+    Production printed `{"analyzed": 0, "candidates": 1, "error": 1}` for a
+    scan whose report was already stored and already visible in the live
+    projection: the two refreshes ran inside the same try as the clone, so a
+    lock timeout in either one returned "error" and _save_failure stamped a
+    backoff over a row that had just been marked analyzed.
+    """
+    commit = _stub_successful_clone(monkeypatch)
+
+    def unavailable(*_args, **_kwargs):
+        raise TimeoutError("Lock wait timeout exceeded")
+
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", unavailable)
+
+    result = repository_scan.scan_tool("example-tool", {"repository": "https://github.com/example/tool"})
+
+    assert result == repository_scan.CACHES_STALE
+    with db.session_scope() as s:
+        report = s.execute(
+            select(SourceAnalysisReport).where(SourceAnalysisReport.tool_name == "example-tool")
+        ).scalar_one()
+        state = s.get(RepositoryAnalysisState, "example-tool")
+        assert report.review_status == "approved"
+        # Everything _save_failure would have undone.
+        assert state.status == "analyzed"
+        assert state.commit_sha == commit
+        assert state.last_error is None
+        assert state.next_attempt_at is None
+        assert state.attempts == 0
+    # Silence would be the other way to misreport this.
+    assert "could not refresh its caches" in capsys.readouterr().err
+
+
+def test_a_stale_cache_counts_as_an_analysis_rather_than_as_an_error(monkeypatch):
+    _stub_successful_clone(monkeypatch)
+
+    def unavailable(*_args, **_kwargs):
+        raise TimeoutError("Lock wait timeout exceeded")
+
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", unavailable)
+    with db.session_scope() as s:
+        _cached_tool(s, "example-tool")
+
+    results = repository_scan.run(1)
+
+    assert results["error"] == 0
+    assert results["analyzed"] == 1
+    assert results[repository_scan.CACHES_STALE] == 1
+    assert results["candidates"] == 1
