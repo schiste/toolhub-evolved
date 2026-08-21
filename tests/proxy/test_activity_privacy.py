@@ -1,5 +1,5 @@
 """Privacy tests for shared recent and audit activity."""
-# cspell:words unfavorited
+# cspell:words unfavorited Wikitools Onnnn
 
 import json
 import sys

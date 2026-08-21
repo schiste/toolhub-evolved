@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// cspell:words Wikitools
 import assert from "node:assert/strict";
 import { test, vi, beforeEach } from "vitest";
 // apiGet hits the network and demoFeed reads localStorage; both are made deterministic.
