@@ -554,3 +554,16 @@ def test_the_per_pass_cap_is_configurable_but_never_unbounded(monkeypatch, raw, 
 
 def test_the_cap_falls_back_when_unset():
     assert lane._limit() == lane.DEFAULT_LIMIT
+
+
+def test_a_pass_that_never_asked_github_says_so_rather_than_only_reporting_null(monkeypatch):
+    _install(monkeypatch, FakeApi(default=_resp(body=PROJECT_BODY)))
+    _state(CODEBERG_URL)
+
+    summary = lane.run()
+
+    # Null here has always meant "GitHub reported no budget", which is also
+    # what a pass that never touched GitHub produces. The counts say which.
+    assert summary["rateLimitRemaining"] is None
+    assert summary["requestsByProvider"] == {"codeberg": 1}
+    assert "github" not in summary["requestsByProvider"]

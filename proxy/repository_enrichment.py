@@ -102,9 +102,11 @@ class HostBudget:
 
     remaining: int | None = None
     exhausted: bool = False
+    requests: int = 0
 
     def observe(self, headers: dict[str, str]) -> None:
         """Read back what this host says is left, if it says anything."""
+        self.requests += 1
         reported = headers.get("x-ratelimit-remaining", "")
         if reported.isdigit():
             self.remaining = int(reported)
@@ -142,6 +144,10 @@ class Budget:
         host = self.hosts.get(provider)
         return host.remaining if host is not None else None
 
+    def requests_by_provider(self) -> dict[str, int]:
+        """Return how many requests each host took, for the pass's cost report."""
+        return {provider: host.requests for provider, host in sorted(self.hosts.items())}
+
     def depleted(self, provider: str) -> bool:
         """Report whether `provider` is finished for this pass.
 
@@ -169,6 +175,7 @@ class Results:
     requests: int = 0
     stopped_on_budget: bool = False
     remaining: int | None = None
+    requests_by_provider: dict[str, int] = field(default_factory=dict)
     errors_seen: list[str] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
@@ -183,6 +190,13 @@ class Results:
             "requests": self.requests,
             "stoppedOnBudget": self.stopped_on_budget,
             "rateLimitRemaining": self.remaining,
+            # rateLimitRemaining is GitHub's alone, so it is null both when
+            # GitHub said nothing and when the pass never asked GitHub anything
+            # -- two facts an operator watching a shared token needs to tell
+            # apart. This says which: no github entry means the batch was
+            # entirely other hosts, and null beside a non-zero count is the one
+            # that deserves a look.
+            "requestsByProvider": self.requests_by_provider,
             "sampleErrors": self.errors_seen[:5],
         }
 
@@ -427,6 +441,7 @@ def run(limit: int = DEFAULT_LIMIT, *, reserve: int = RESERVE_REMAINING) -> dict
     # only one whose credential is shared, so it is the one an operator watches;
     # a mapping here would report five Nones to say the same thing.
     lane.results.remaining = lane.budget.remaining(source_hosts.PROVIDER_GITHUB)
+    lane.results.requests_by_provider = lane.budget.requests_by_provider()
     return lane.results.summary()
 
 
