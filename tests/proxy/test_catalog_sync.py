@@ -681,3 +681,108 @@ def test_graph_hydration_fits_toolforge_job_timeout():
     jobs = (ROOT / "jobs.yaml").read_text(encoding="utf-8")
     assert "name: catalog-sync" in jobs
     assert "timeout: 300" in jobs
+
+
+def test_a_deleted_tool_leaves_the_retry_queue_instead_of_blocking_it(monkeypatch):
+    """A 404 is an answer. Re-queueing it starves every tool queued behind it.
+
+    In production this queue reached 5325 names whose first twenty were all
+    deleted test tools. Only twenty details are fetched per run, so those
+    twenty were the only twenty ever attempted: 435 consecutive runs reported
+    `recent_errors=20 recent_tools=0` while the job exited zero.
+    """
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                recent_latest_marker=catalog_sync._marker({"id": 1, "timestamp": "old"}),
+                recent_pending_tools=["deleted-tool", "live-tool"],
+                reconcile_last_at=catalog_sync.utcnow(),
+            )
+        )
+    monkeypatch.setattr(
+        catalog_sync,
+        "recent_page",
+        lambda _page=1: ([{"id": 1, "timestamp": "old"}], False),
+    )
+
+    def detail(path, **_kwargs):
+        if path.endswith("/deleted-tool/"):
+            raise toolhub.ToolhubAPIError(404, {"detail": "Not found."})
+        return {"name": "live-tool", "title": "Live"}
+
+    monkeypatch.setattr(toolhub, "public_api_get", detail)
+
+    summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert summary["recent_tools"] == 1
+    assert summary["recent_gone"] == 1
+    assert summary["recent_errors"] == 0
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.recent_pending_tools == []
+        assert s.get(CanonicalToolCache, "live-tool") is not None
+
+
+def test_a_detail_failure_that_may_pass_later_stays_queued_and_says_why(monkeypatch):
+    """Anything other than a 404 leaves the question open, so the name waits.
+
+    The count alone could not distinguish twenty deleted tools from twenty
+    timeouts, which is why the dead lane read as ordinary noise for days.
+    """
+    with db.session_scope() as s:
+        s.add(
+            ToolCatalogSyncState(
+                key=catalog_sync.STATE_KEY,
+                cycles_completed=1,
+                recent_latest_marker=catalog_sync._marker({"id": 1, "timestamp": "old"}),
+                recent_pending_tools=["flaky-tool"],
+                reconcile_last_at=catalog_sync.utcnow(),
+            )
+        )
+    monkeypatch.setattr(
+        catalog_sync,
+        "recent_page",
+        lambda _page=1: ([{"id": 1, "timestamp": "old"}], False),
+    )
+
+    def detail(_path, **_kwargs):
+        raise toolhub.ToolhubAPIError(503, {"detail": "Service unavailable."})
+
+    monkeypatch.setattr(toolhub, "public_api_get", detail)
+
+    summary = catalog_sync.run(sleep_fn=lambda _seconds: None)
+
+    assert summary["recent_errors"] == 1
+    assert summary["recent_gone"] == 0
+    assert summary["recent_error_reasons"] == "http-503:1"
+    assert " " not in summary["recent_error_reasons"]
+    with db.session_scope() as s:
+        state = s.get(ToolCatalogSyncState, catalog_sync.STATE_KEY)
+        assert state.recent_pending_tools == ["flaky-tool"]
+
+
+def test_a_cursor_the_scan_cannot_reach_is_declared_lost_not_hunted_forever(monkeypatch):
+    """/api/recent/ is offset-paginated over a feed that only grows.
+
+    Every event added while a scan is in flight pushes the row it seeks one
+    place further down, so a scan that starts far enough behind never catches
+    up. Production spent 4.5 days at `recent_scan_complete=0`, having crawled
+    to page 272 of a 1217-page feed with a boundary row from 2024-12-21.
+    Recovery is bounded work; hunting need never converge.
+    """
+    previous = catalog_sync._marker({"id": 1, "timestamp": "unreachable"})
+    seen = []
+
+    def page(number=1):
+        seen.append(number)
+        return ([{"id": 1000 + number, "timestamp": f"t{number}"}], True)
+
+    monkeypatch.setattr(catalog_sync, "recent_page", page)
+
+    with pytest.raises(catalog_sync.RecentCursorLostError) as caught:
+        catalog_sync._recent_rows_since(previous, resume_page=catalog_sync.MAX_RECENT_SCAN_PAGES)
+
+    assert str(caught.value) == f"Toolhub recent cursor not found within {catalog_sync.MAX_RECENT_SCAN_PAGES} pages"
+    assert max(seen) == catalog_sync.MAX_RECENT_SCAN_PAGES

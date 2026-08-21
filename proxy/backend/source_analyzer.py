@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from backend import source_endpoints
+from backend import source_endpoints, wiki_sources
 
 MAX_FILES = 120
 MAX_FILE_BYTES = 256 * 1024
@@ -340,8 +340,33 @@ TECH_RULES = (
     ("mwclient", re.compile(r"\bmwclient\b", re.IGNORECASE), 0.95),
     ("Node.js", re.compile(r"\b(express|fastify|koa)\b|\"scripts\"\s*:", re.IGNORECASE), 0.72),
     ("React", re.compile(r"\bReact\b|from\s+[\"']react[\"']", re.IGNORECASE), 0.82),
-    ("MediaWiki gadget", re.compile(r"\bmw\.loader\.using\b|\bmw\.Api\b|\.user\.js\b", re.IGNORECASE), 0.9),
+    # Deliberately not IGNORECASE, and deliberately requiring the call: `mw.Api`
+    # and `mw.loader.using` are JavaScript identifiers, so `MW.API` is not one
+    # of them, and a bare mention is somebody writing *about* the API rather
+    # than calling it. The old spelling matched a prose mention anywhere in a
+    # checkout, which is how this project's own analyzer -- whose rules, tests
+    # and UI all quote `mw.Api` -- came to be catalogued as a gadget.
+    ("MediaWiki JavaScript", re.compile(r"\bmw\.loader\.using\s*\(|\bmw\.Api\s*\("), 0.9),
 )
+
+# Browser JavaScript is the only place the MediaWiki JS API can be called, so
+# evidence of it found anywhere else is a quotation. A Python docstring naming
+# `mw.Api` is the case that prompted this.
+BROWSER_SCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".vue"})
+TECH_RULE_SUFFIXES = {"MediaWiki JavaScript": BROWSER_SCRIPT_SUFFIXES}
+
+# A file the wiki would serve as a user script. Read off the name rather than
+# the contents: the suffix is what makes a wiki page a script, and it says so
+# whatever the file goes on to contain.
+USER_SCRIPT_SUFFIX = ".user.js"
+
+# The toolinfo vocabulary term for each kind of wiki-hosted source page.
+# `wiki_sources` already decides which kind a URL is; this only spells the
+# answer the way toolinfo does.
+WIKI_KIND_TOOL_TYPE = {
+    wiki_sources.KIND_GADGET: "gadget",
+    wiki_sources.KIND_USER_SCRIPT: "user script",
+}
 
 PROJECT_DOMAIN_RE = re.compile(
     r"\b(?:(?P<sub>[a-z0-9-]+)\.)?(?P<family>wikipedia|wikibooks|wikidata|wikimedia|wikinews|wikiquote|wikisource|wiktionary|wikiversity|wikivoyage|mediawiki)\.org\b",
@@ -1658,7 +1683,21 @@ def _scan_technology(findings: dict[tuple[str, str], Finding], path: str, line_n
             reason="Source file extension detected.",
             evidence=_evidence(path, line_number, line, suffix),
         )
+    if line_number == 1 and path.casefold().endswith(USER_SCRIPT_SUFFIX):
+        _put(
+            findings,
+            kind="technology",
+            value="MediaWiki JavaScript",
+            label="MediaWiki JavaScript",
+            category="framework",
+            confidence=0.9,
+            reason="File named as a wiki user script.",
+            evidence=_evidence(path, line_number, line, USER_SCRIPT_SUFFIX),
+        )
     for value, pattern, confidence in TECH_RULES:
+        allowed = TECH_RULE_SUFFIXES.get(value)
+        if allowed is not None and suffix not in allowed:
+            continue
         match = pattern.search(line)
         if match:
             _put(
@@ -1814,11 +1853,28 @@ def _has_write_access(rows: list[dict[str, Any]], min_confidence: float = 0.0) -
     )
 
 
-def _tool_type_suggestion(technology: list[dict[str, Any]], apis: list[dict[str, Any]]) -> str | None:
+def _tool_type_suggestion(
+    technology: list[dict[str, Any]],
+    apis: list[dict[str, Any]],
+    source_label: str = "",
+) -> str | None:
+    """Suggest a toolinfo tool type from what the source is, then what it uses.
+
+    Gadgets and user scripts are not inferred here at all, because they do not
+    have to be: both are wiki pages, and the namespace of the page settles it.
+    `MediaWiki:Gadget-Foo.js` is a gadget and `User:Someone/foo.js` is a user
+    script, with no reading of the code involved and no confidence to trade.
+
+    The corollary is what fixes the bug this replaced: a checkout that is *not*
+    one of those pages cannot be either type, however much MediaWiki JavaScript
+    it contains. A gadget is code a wiki serves; a git repository is not a wiki.
+    Whatever a repository turns out to be, it is something else -- so the
+    heuristic branch is gone rather than merely outranked.
+    """
+    if (page := wiki_sources.wiki_source(source_label)) is not None:
+        return WIKI_KIND_TOOL_TYPE.get(page.kind)
     tech_values = {str(item.get("value")) for item in technology}
     api_values = {str(item.get("value")) for item in apis}
-    if "MediaWiki gadget" in tech_values:
-        return "gadget"
     if tech_values & {"Flask", "Django", "React", "Node.js", "Vue"}:
         return "web app"
     if "Pywikibot" in tech_values and api_values & {"mediawiki-action-api", "wikibase-api"}:
@@ -2724,7 +2780,7 @@ def _operational_readiness_assessment(report: dict[str, Any], context: dict[str,
 
 def _frontend_accessibility_assessment(report: dict[str, Any], context: dict[str, Any]) -> dict[str, Any] | None:
     technology_values = {item["value"] for item in _publishable_rows(report["technology"], SCORING_MIN_CONFIDENCE)}
-    has_frontend = bool(technology_values & {"JavaScript", "TypeScript", "React", "Vue", "MediaWiki gadget"})
+    has_frontend = bool(technology_values & {"JavaScript", "TypeScript", "React", "Vue", "MediaWiki JavaScript"})
     if not has_frontend:
         return None
     dependency_values = {item["value"] for item in report["dependencies"]}
@@ -2996,7 +3052,7 @@ def _suggestions(report: dict[str, Any]) -> dict[str, Any]:
     ]
     apis = _publishable_rows(report["apis"])
     technology_rows = _publishable_rows(report["technology"], TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE)
-    tool_type = _tool_type_suggestion(technology_rows, apis)
+    tool_type = _tool_type_suggestion(technology_rows, apis, str(report.get("sourceLabel") or ""))
     access_rights = _publishable_rows(report["accessRights"])
     dependencies = _publishable_rows(report["dependencies"])
     oauth_scopes = _publishable_rows(report["oauthScopes"])
