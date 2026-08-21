@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "proxy"))
 import repository_scan  # noqa: E402
 from backend import db  # noqa: E402
 from backend import job_catalog  # noqa: E402
+from backend import source_analyzer  # noqa: E402
 from backend import wiki_sources  # noqa: E402
 from backend.models import (  # noqa: E402
     CanonicalToolCache,
@@ -1321,7 +1322,7 @@ def test_a_page_larger_than_the_analyzer_cap_is_dropped_not_truncated(monkeypatc
             "generator=allpages": {
                 "query": {
                     "pages": [
-                        _wiki_page("User:Example/twinkle.js", content="x" * (repository_scan.MAX_FILE_BYTES + 1)),
+                        _wiki_page("User:Example/twinkle.js", content="x" * (repository_scan.MAX_WIKI_FILE_BYTES + 1)),
                         _wiki_page("User:Example/twinkle.css", content="a{}"),
                     ]
                 }
@@ -1330,6 +1331,86 @@ def test_a_page_larger_than_the_analyzer_cap_is_dropped_not_truncated(monkeypatc
     )
     _scan_wiki(SCRIPT_URL)
     assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.css"]
+
+
+def test_a_page_over_the_checkout_cap_is_still_read(monkeypatch):
+    """The LiveRC case: 700 KiB of hand-written gadget in one page.
+
+    Dropping it left the analyzer an empty file list, so the tool failed the
+    non-empty check rather than being analyzed -- and a gadget that large is a
+    tool, not the vendored bundle the checkout cap is aimed at.
+    """
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", content="x" * (repository_scan.MAX_FILE_BYTES + 1)),
+                    ]
+                }
+            }
+        },
+    )
+    _scan_wiki(SCRIPT_URL)
+    assert _stored_report()["analyzedPaths"] == ["User:Example/twinkle.js"]
+
+
+def test_a_page_set_with_nothing_readable_names_the_page_set(monkeypatch):
+    """Every page filtered is a different failure from no page fetched.
+
+    Reported as the analyzer's "files must be a non-empty list" it describes the
+    argument, and sends a reader looking for a fetch that failed -- when the
+    fetch succeeded and the filter emptied it.
+    """
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page("User:Example/twinkle.js", content="x" * (repository_scan.MAX_WIKI_FILE_BYTES + 1)),
+                    ]
+                }
+            }
+        },
+    )
+
+    assert _scan_wiki(SCRIPT_URL) == "error"
+    with db.session_scope() as s:
+        state = s.get(RepositoryAnalysisState, "wiki-tool")
+        assert "no analyzable page" in state.last_error
+        assert "1 read" in state.last_error
+
+
+def test_what_the_collector_admits_the_analyzer_accepts(monkeypatch):
+    """Run the real analyzer over a real page set, with no fake in between.
+
+    Every other wiki test stubs analyze_source_files, so the two size caps were
+    only ever exercised apart -- which is how a page the collector passed on and
+    the analyzer rejected went unnoticed. This crosses that seam on a page that
+    sits between the two limits, where they used to disagree.
+    """
+    _wiki_answers(
+        monkeypatch,
+        {
+            "generator=allpages": {
+                "query": {
+                    "pages": [
+                        _wiki_page(
+                            "User:Example/twinkle.js",
+                            content="mw.loader.using('mediawiki.util');\n"
+                            + "// x\n" * (repository_scan.MAX_FILE_BYTES // 4),
+                        ),
+                    ]
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(repository_scan, "analyze_source_files", source_analyzer.analyze_source_files)
+
+    assert _scan_wiki(SCRIPT_URL) == "analyzed"
+    assert _stored_report()["filesAnalyzed"] == 1
 
 
 def test_a_heartbeat_separates_this_window_from_the_process_lifetime(monkeypatch, capsys):

@@ -13,6 +13,7 @@ from backend import source_analyzer, wiki_sources  # noqa: E402
 from backend.source_analyzer import (  # noqa: E402
     MAX_FILE_BYTES,
     MAX_FILES,
+    MAX_WIKI_FILE_BYTES,
     SourceAnalysisError,
     analyze_source_files,
     source_reading_rank,
@@ -502,6 +503,32 @@ def test_project_host_mapping(host, sub, family, expected):
 def test_source_analyzer_rejects_unsafe_or_malformed_input(files, message):
     with pytest.raises(SourceAnalysisError, match=message):
         analyze_source_files(files)
+
+
+def test_the_wider_wiki_ceiling_belongs_to_the_page_not_to_the_caller():
+    """A wiki page may exceed the checkout cap. The same bytes submitted may not.
+
+    The limit is keyed on wiki_page because only _acquire_wiki sets it; the HTTP
+    route and the CLI leave it None. Were it a plain argument, a caller could ask
+    for the larger ceiling, and this is the test that would stop mattering.
+    """
+    files = [{"path": "MediaWiki:Gadget-LiveRC.js", "content": "var a = 1;\n" + "x" * MAX_FILE_BYTES}]
+    page = wiki_sources.WikiSource(
+        domain="fr.wikipedia.org", title="MediaWiki:Gadget-LiveRC.js", kind=wiki_sources.KIND_GADGET
+    )
+
+    assert analyze_source_files(files, wiki_page=page)["filesAnalyzed"] == 1
+    with pytest.raises(SourceAnalysisError, match="file is larger"):
+        analyze_source_files(files)
+
+
+def test_even_a_wiki_page_stops_at_the_wiki_ceiling():
+    files = [{"path": "MediaWiki:Gadget-Huge.js", "content": "x" * (MAX_WIKI_FILE_BYTES + 1)}]
+    page = wiki_sources.WikiSource(
+        domain="ru.wikipedia.org", title="MediaWiki:Gadget-Huge.js", kind=wiki_sources.KIND_GADGET
+    )
+    with pytest.raises(SourceAnalysisError, match="file is larger"):
+        analyze_source_files(files, wiki_page=page)
 
 
 def test_source_analyzer_rejects_total_payloads_over_the_limit():

@@ -20,6 +20,17 @@ from backend import source_endpoints, wiki_sources
 
 MAX_FILES = 120
 MAX_FILE_BYTES = 256 * 1024
+# Wiki pages get a larger ceiling than checkout files, because the cap is doing a
+# different job on each. In a clone, a file past 256 KiB is nearly always a
+# vendored bundle, a minified artifact or a fixture, and skipping it costs one
+# file out of hundreds. A wiki tool has no vendoring -- every page was typed by a
+# maintainer on-wiki -- and a gadget is frequently a single page, so the same
+# skip drops the whole tool rather than a file of it. That is how fr.wikipedia's
+# LiveRC, 700 KiB in one page, reached the analyzer with an empty file list and
+# failed the non-empty check instead of being read. Measured across the eight
+# wikis in the catalogue, 11 of 1647 gadget source pages exceed 256 KiB and one
+# exceeds this; MAX_TOTAL_BYTES still bounds the page set either way.
+MAX_WIKI_FILE_BYTES = 1024 * 1024
 # Not the effective ceiling for HTTP submissions: Flask's MAX_CONTENT_LENGTH
 # (1 MiB, set in backend.register) rejects the request body first, so a caller
 # coming through /v1/source-analysis/ can never reach this limit. It binds the
@@ -820,7 +831,7 @@ def _line_for_text(content: str, needle: str) -> tuple[int, str]:
     return 1, (content.splitlines() or [""])[0][:MAX_LINE_CHARS]
 
 
-def _normalize_source_files(files: object) -> list[SourceFile]:
+def _normalize_source_files(files: object, *, max_file_bytes: int = MAX_FILE_BYTES) -> list[SourceFile]:
     if not isinstance(files, list) or not files:
         message = "files must be a non-empty list of {path, content}"
         raise SourceAnalysisError(message)
@@ -839,8 +850,8 @@ def _normalize_source_files(files: object) -> list[SourceFile]:
             message = f"{path}: content must be text"
             raise SourceAnalysisError(message)
         encoded_size = len(content.encode("utf-8"))
-        if encoded_size > MAX_FILE_BYTES:
-            message = f"{path}: file is larger than {MAX_FILE_BYTES} bytes"
+        if encoded_size > max_file_bytes:
+            message = f"{path}: file is larger than {max_file_bytes} bytes"
             raise SourceAnalysisError(message)
         total += encoded_size
         if total > MAX_TOTAL_BYTES:
@@ -3126,7 +3137,10 @@ def analyze_source_files(
     page. Callers that did not fetch one omit it, and get no gadget suggestion
     rather than one taken from the title.
     """
-    normalized = _normalize_source_files(files)
+    # The wider ceiling is keyed on wiki_page rather than on a caller-supplied
+    # limit so it cannot be asked for: only _acquire_wiki sets it, and the HTTP
+    # route and the CLI both omit it, leaving them on the checkout cap.
+    normalized = _normalize_source_files(files, max_file_bytes=MAX_WIKI_FILE_BYTES if wiki_page else MAX_FILE_BYTES)
     findings: dict[tuple[str, str], Finding] = {}
     local_python_roots = _local_python_import_roots(normalized)
     for source_file in normalized:

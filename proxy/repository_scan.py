@@ -58,6 +58,7 @@ from backend.source_analyzer import (
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_TOTAL_BYTES,
+    MAX_WIKI_FILE_BYTES,
     SourceAnalysisError,
     analyze_source_files,
     is_supported_source_path,
@@ -432,7 +433,11 @@ def _wiki_revisions(source: wiki_sources.WikiSource) -> tuple[tuple[wiki_api.Rev
 
 
 def _wiki_files(found: tuple[wiki_api.Revision, ...]) -> list[dict[str, str]]:
-    """Select the analyzable pages under the same caps as the repository reader.
+    """Select the analyzable pages, under the count and total caps of the reader.
+
+    The per-file cap is the wiki one rather than the checkout one, for the reason
+    MAX_WIKI_FILE_BYTES gives. The two others are shared: a page set that reaches
+    120 files or 2 MiB is past what a tool's source plausibly is either way.
 
     The page title is the path. It already ends in .js, .css or .json, which is
     what the analyzer reads to choose a language, and keeping it means a finding
@@ -444,7 +449,7 @@ def _wiki_files(found: tuple[wiki_api.Revision, ...]) -> list[dict[str, str]]:
         raw = len(revision.content.encode("utf-8"))
         if len(files) >= MAX_FILES or total + raw > MAX_TOTAL_BYTES:
             break
-        if raw > MAX_FILE_BYTES or not is_supported_source_path(revision.title):
+        if raw > MAX_WIKI_FILE_BYTES or not is_supported_source_path(revision.title):
             continue
         total += raw
         files.append({"path": revision.title, "content": revision.content})
@@ -472,9 +477,22 @@ def _acquire_wiki(source: wiki_sources.WikiSource) -> _Source:
     if not found:
         message = "wiki page set holds no readable revision"
         raise RepositoryScanError(message)
+    files = _wiki_files(found)
+    if not files:
+        # Distinguished from the empty fetch above because the causes differ and
+        # so do the fixes. Left to fall through, this arrives as the analyzer's
+        # "files must be a non-empty list", which describes the argument rather
+        # than the page set and sends a reader looking for a fetch failure that
+        # did not happen -- the pages were read, and every one was filtered.
+        largest = max(len(revision.content.encode("utf-8")) for revision in found)
+        message = (
+            f"wiki page set holds no analyzable page: {len(found)} read, "
+            f"none under {MAX_WIKI_FILE_BYTES} bytes with a supported extension (largest {largest})"
+        )
+        raise RepositoryScanError(message)
     return _Source(
         head=wiki_api.head(found),
-        files=_wiki_files(found),
+        files=files,
         context=_wiki_context(found),
         wiki_page=resolved,
     )
