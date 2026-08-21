@@ -57,6 +57,13 @@ def test_underscores_and_runs_of_whitespace_are_one_title():
     assert userscripts.canonical_title("  User:Foo   Bar/x.js  ") == "User:Foo Bar/x.js"
 
 
+def test_an_invisible_formatting_mark_is_not_a_second_spelling():
+    # MySQL's collation ignores these, so a title that only differs by one is
+    # already the same row -- Python has to agree or the unique key rejects it.
+    assert userscripts.canonical_title("User:Hoo man/tagger.js\u200e") == "User:Hoo man/tagger.js"
+    assert userscripts.canonical_title("User:Foo/\ufeffx.js") == "User:Foo/x.js"
+
+
 def test_the_page_name_is_capitalized_but_the_rest_is_left_alone():
     assert userscripts.canonical_title("User:orlodrim/portail-eval.js") == "User:Orlodrim/portail-eval.js"
     assert userscripts.canonical_title("MediaWiki:Gadget-verifHomon.js") == "MediaWiki:Gadget-verifHomon.js"
@@ -296,6 +303,21 @@ def test_an_empty_argument_resolves_to_nothing():
 def test_the_same_load_written_twice_counts_once():
     body = "importScript('User:Foo/x.js');\nimportScript('Utilisateur:Foo/x.js');"
     assert len(userscripts.script_imports(body)) == 1
+
+
+def test_a_load_repeated_with_an_invisible_mark_counts_once():
+    # A Meta global.js does exactly this: the same load pasted twice, once with
+    # a left-to-right mark carried over from a copied link.
+    body = (
+        "mw.loader.load('//meta.wikimedia.org/w/index.php?title=User:Hoo_man/tagger.js\u200e"
+        "&action=raw&ctype=text/javascript');\n"
+        "mw.loader.load('//meta.wikimedia.org/w/index.php?title=User:Hoo_man/tagger.js"
+        "&action=raw&ctype=text/javascript');"
+    )
+    found = userscripts.script_imports(body, wiki="meta.wikimedia.org")
+    assert len(found) == 1
+    assert found[0].title == "User:Hoo man/tagger.js"
+    assert "\u200e" not in found[0].url
 
 
 def test_the_same_target_reached_by_two_verbs_stays_two_edges():
