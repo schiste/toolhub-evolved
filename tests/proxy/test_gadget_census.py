@@ -25,18 +25,14 @@ class FakeWiki:
     def __init__(self):
         self.asked = []
 
-    def request(self, domain, _method, _params):
+    def request(self, domain, _method, params):
         self.asked.append(domain)
-        return {
-            "query": {
-                "pages": [
-                    {
-                        "title": "MediaWiki:Gadgets-definition",
-                        "revisions": [{"revid": 1, "slots": {"main": {"content": DEFINITION}}}],
-                    }
-                ]
-            }
-        }
+        revision = {"slots": {"main": {"content": DEFINITION}}}
+        if "ids" in str(params.get("rvprop", "")).split("|"):
+            # Answer with what was asked for and nothing more, so a query that
+            # stops asking for the id fails here instead of in production.
+            revision["revid"] = 1
+        return {"query": {"pages": [{"title": "MediaWiki:Gadgets-definition", "revisions": [revision]}]}}
 
 
 @pytest.fixture

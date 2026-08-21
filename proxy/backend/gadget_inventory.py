@@ -56,14 +56,13 @@ def storage_key(name: str) -> str:
 
 
 def definition_params() -> dict[str, Any]:
-    """Parameters asking for the current text of a wiki's gadget definitions."""
-    return {
-        "action": "query",
-        "prop": "revisions",
-        "rvprop": "content",
-        "rvslots": "main",
-        "titles": wiki_sources.GADGET_DEFINITION_TITLE,
-    }
+    """Parameters asking for the current text of a wiki's gadget definitions.
+
+    `rvprop` must name `ids`: only the wikitext is wanted, but a revision that
+    arrives without an id is discarded unread, so asking for content alone
+    returns a payload this codebase treats as an empty page.
+    """
+    return {"action": "query", **wiki_api.DEFINITION_REVISION_PARAMS, "titles": wiki_sources.GADGET_DEFINITION_TITLE}
 
 
 def _options(entry: wiki_sources.GadgetEntry) -> dict[str, list[str]]:

@@ -48,16 +48,13 @@ class FakeWiki:
         self.requests.append((domain, method, params))
         if self.fails:
             raise Boom
-        return {
-            "query": {
-                "pages": [
-                    {
-                        "title": "MediaWiki:Gadgets-definition",
-                        "revisions": [{"revid": 1, "slots": {"main": {"content": self.definition}}}],
-                    }
-                ]
-            }
-        }
+        revision = {"slots": {"main": {"content": self.definition}}}
+        if "ids" in str(params.get("rvprop", "")).split("|"):
+            # A wiki returns what was asked for and nothing more. A fake that
+            # volunteers a revision id nobody requested is how a query that
+            # read every real definition page as empty passed its tests.
+            revision["revid"] = 1
+        return {"query": {"pages": [{"title": "MediaWiki:Gadgets-definition", "revisions": [revision]}]}}
 
 
 def stored(wiki=FRWIKI):
