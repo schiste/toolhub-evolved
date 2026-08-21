@@ -1716,3 +1716,33 @@ class WikiGadget(Base):
     # than deleted so a catalogue record built from it can be retired
     # deliberately instead of losing the reason it existed.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ListRevisionChange(Base):
+    """Which tools one Toolhub list revision added or removed.
+
+    The recent-changes feed says only "Added tool to list" -- the tool is named
+    nowhere in it. The name lives in the revision diff, which is a separate
+    upstream request, so it is resolved on a schedule and stored here rather
+    than fetched while a page renders.
+
+    A row is written for every revision examined, including one whose diff
+    touched no tool and one whose diff could not be read. Absence therefore
+    means "not looked at yet" and never "looked at and found nothing", which is
+    what lets the job find its remaining work by anti-join instead of
+    re-fetching every revision it has already seen.
+    """
+
+    __tablename__ = "list_revision_changes"
+    __table_args__ = (Index("ix_list_revision_changes_list_fetched", "list_id", "fetched_at"),)
+    # Toolhub's own revision id, which the recent feed carries as `id`.
+    revision_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    list_id: Mapped[int] = mapped_column(Integer, index=True)
+    # Tool names as the diff spells them, in the order the diff applied them.
+    added: Mapped[list] = mapped_column(JSON, default=list)
+    removed: Mapped[list] = mapped_column(JSON, default=list)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    # Why a row carries no names: an unreadable diff and a revision that changed
+    # only a title look identical otherwise.
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -186,6 +186,74 @@ test("viewRecent: an upstream toollist row renders as a List with a list link", 
 	assert.match(view.html, /recent-chip--lists">List</);
 });
 
+test("viewRecent: a grouped list row names each tool it changed and links every name", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{
+				content_type: "toollist",
+				content_id: 861,
+				content_title: "My Favorite Wikitools",
+				comment: "Added tool to list",
+				toolsAdded: ["toolforge-xwiki", "hay"],
+				toolsRemoved: ["old-thing"]
+			}
+		]
+	});
+
+	const view = await viewRecent();
+
+	assert.match(view.html, /Added <a[^>]*href="\/tools\/toolforge-xwiki"/);
+	assert.match(view.html, /href="\/tools\/hay"/);
+	// Additions and removals stay labelled: a reader must be able to tell
+	// "added Foo and Bar" from "added Foo, removed Bar".
+	assert.match(view.html, /removed <a[^>]*href="\/tools\/old-thing"/);
+	// The named form replaces the generic upstream comment rather than joining it.
+	assert.doesNotMatch(view.html, /Added tool to list/);
+});
+
+test("viewRecent: a list row the backend named nothing for keeps its upstream comment", async () => {
+	setSearch("");
+	// A day whose additions and removals cancelled out, or a revision the diff
+	// job has not reached yet. Either way the generic comment is all there is.
+	api.apiGet.mockResolvedValue({
+		results: [
+			{
+				content_type: "toollist",
+				content_id: 861,
+				content_title: "My Favorite Wikitools",
+				comment: "Added tool to list",
+				toolsAdded: [],
+				toolsRemoved: []
+			}
+		]
+	});
+
+	const view = await viewRecent();
+
+	assert.match(view.html, /Added tool to list/);
+});
+
+test("viewRecent: a tool name in a comment is escaped rather than rendered as markup", async () => {
+	setSearch("");
+	api.apiGet.mockResolvedValue({
+		results: [
+			{
+				content_type: "toollist",
+				content_id: 861,
+				content_title: "L",
+				toolsAdded: ["<img src=x onerror=alert(1)>"],
+				toolsRemoved: []
+			}
+		]
+	});
+
+	const view = await viewRecent();
+
+	assert.doesNotMatch(view.html, /<img src=x/);
+	assert.match(view.html, /&lt;img src=x/);
+});
+
 test("viewRecent: a cold list replica is explained instead of silently emptying the Lists filter", async () => {
 	setSearch("");
 	api.apiGet.mockResolvedValue({ listActivityAvailable: false, results: [] });

@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 
-from backend import activity_privacy, api_cache, catalog_facets, db
+from backend import activity_privacy, api_cache, catalog_facets, db, list_revisions
 from backend.canonical_tools import escape_like
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
@@ -215,10 +215,18 @@ def collection_payload(path: str, params: Any, *, include_replica: bool = True) 
         # that much and no more: naming the withheld rows would itself disclose
         # that an unpublished list changed.
         list_activity_available = bool(published)
+        # Collapsed before paging, for the same reason as the filter above: a
+        # page of thirty must hold thirty rows a reader can tell apart, not
+        # thirty revisions of one list that read as the same line repeated.
+        rows = list_revisions.group_list_activity(rows)
     page = _int(params.get("page"), 1, maximum=100_000)
     page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
     offset = (page - 1) * page_size
     selected = rows[offset : offset + page_size]
+    if path == "/api/recent/":
+        # After slicing, so the lookup covers one page of rows rather than the
+        # whole replica.
+        selected = list_revisions.attach_tool_changes(selected)
     payload = {
         "count": len(rows),
         "next": f"/v1/catalog/{path.removeprefix('/api/')}?page={page + 1}&page_size={page_size}"
@@ -234,6 +242,15 @@ def collection_payload(path: str, params: Any, *, include_replica: bool = True) 
     if include_replica:
         payload["replica"] = replica_status()
     return payload
+
+
+def replica_rows(path: str) -> list[dict[str, Any]]:
+    """Return every locally persisted row for one collection.
+
+    The scheduled jobs read the replica through this rather than through
+    `collection_payload`, which pages and enriches for a reader.
+    """
+    return _cached_rows(path)
 
 
 def list_payload(list_id: str) -> dict[str, Any] | None:
