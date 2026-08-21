@@ -263,3 +263,90 @@ def test_an_invisible_mark_resolves_to_the_same_source_page(marked):
     # split one gadget into two repositories.
     assert (found.domain, found.title) == (clean.domain, clean.title)
     assert wiki_sources.page_url(found.domain, found.title) == wiki_sources.page_url(clean.domain, clean.title)
+
+
+# An inventory has to survive the definition pages wikis actually write, which
+# is why this fixture is uglier than DEFINITION: a nested heading, a note left
+# beside a file name, a duplicate declaration, and a bare option.
+INVENTORY = """
+== Appearance ==
+* Popups[ResourceLoader]|Popups.js
+=== Tabs ===
+* Purge[ResourceLoader|dependencies=mediawiki.util|rights=purge|default]|Purge.js|Purge.css
+* AjoutRapide[ResourceLoader]|AjoutRapide.js <!-- see T432122 before disabling -->
+* Internals[ResourceLoader|hidden]|Internals.js
+* Popups[ResourceLoader]|SomethingElse.js
+* not a gadget line
+"""
+
+
+def test_the_inventory_lists_every_declared_gadget_in_page_order():
+    found = wiki_sources.gadget_entries(INVENTORY)
+    assert [entry.name for entry in found] == ["Popups", "Purge", "AjoutRapide", "Internals"]
+
+
+def test_a_gadget_belongs_to_the_last_heading_above_it_at_any_depth():
+    sections = {entry.name: entry.section for entry in wiki_sources.gadget_entries(INVENTORY)}
+    # `=== Tabs ===` opens a section just as `== Appearance ==` does, which is
+    # how MediaWiki itself reads the page.
+    assert sections == {"Popups": "Appearance", "Purge": "Tabs", "AjoutRapide": "Tabs", "Internals": "Tabs"}
+
+
+def test_a_note_beside_a_file_name_does_not_lose_the_file():
+    entry = next(item for item in wiki_sources.gadget_entries(INVENTORY) if item.name == "AjoutRapide")
+    # With the comment attached the entry stops ending in `.js`, and the gadget
+    # would silently arrive with no pages at all rather than failing loudly.
+    assert entry.pages == ("AjoutRapide.js",)
+
+
+def test_a_repeated_gadget_keeps_its_first_declaration():
+    entry = next(item for item in wiki_sources.gadget_entries(INVENTORY) if item.name == "Popups")
+    # MediaWiki serves the first one, so a catalogue built on the last would
+    # describe code no reader is running.
+    assert entry.pages == ("Popups.js",)
+    assert sum(1 for item in wiki_sources.gadget_entries(INVENTORY) if item.name == "Popups") == 1
+
+
+def test_options_keep_their_values_and_bare_flags_stay_distinguishable():
+    entry = next(item for item in wiki_sources.gadget_entries(INVENTORY) if item.name == "Purge")
+    assert entry.values("dependencies") == ("mediawiki.util",)
+    assert entry.values("rights") == ("purge",)
+    # `default` is declared with no values, which is not the same as absent.
+    assert entry.has("default") is True
+    assert entry.values("default") == ()
+    assert entry.has("hidden") is False
+    assert entry.values("nothing-declared") == ()
+
+
+def test_the_inventory_records_hidden_without_acting_on_it():
+    entry = next(item for item in wiki_sources.gadget_entries(INVENTORY) if item.name == "Internals")
+    # Whether a hidden gadget belongs in a catalogue is the caller's call; the
+    # parser transcribes the page and nothing more.
+    assert entry.has("hidden") is True
+
+
+def test_an_entry_with_an_unclosed_bracket_is_not_a_gadget():
+    assert wiki_sources.gadget_entries("* Broken[ResourceLoader|Broken.js") == ()
+
+
+def test_an_entry_with_no_source_files_is_not_a_gadget():
+    assert wiki_sources.gadget_entries("* Docs[ResourceLoader]|ReadMe") == ()
+    assert wiki_sources.gadget_entries("* [ResourceLoader]|Orphan.js") == ()
+
+
+def test_an_empty_option_between_pipes_is_skipped():
+    entry = wiki_sources.gadget_entries("* X[ResourceLoader||hidden]|X.js")[0]
+    assert [option for option, _values in entry.options] == ["ResourceLoader", "hidden"]
+
+
+def test_the_inventory_and_the_page_lookup_agree_about_one_gadget():
+    entry = next(item for item in wiki_sources.gadget_entries(DEFINITION) if item.name == "Twinkle")
+    # The whole reason both readers live in this module: one gadget must not
+    # have two different page sets depending on who asked.
+    assert wiki_sources.gadget_titles(entry) == wiki_sources.gadget_pages(DEFINITION, "Twinkle.js")
+
+
+def test_an_inventory_gadget_set_is_bounded():
+    files = "|".join(f"Part{index}.js" for index in range(wiki_sources.MAX_PAGES + 10))
+    entry = wiki_sources.gadget_entries(f"* Big[RL]|{files}")[0]
+    assert len(entry.pages) == wiki_sources.MAX_PAGES

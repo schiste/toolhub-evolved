@@ -1,0 +1,70 @@
+"""Tests for the gadget census job entrypoint."""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "proxy"))
+
+import gadget_census as job  # noqa: E402
+
+FRWIKI = "fr.wikipedia.org"
+
+DEFINITION = """
+== Appearance ==
+* Popups[ResourceLoader]|Popups.js
+* Internals[ResourceLoader|hidden]|Internals.js
+"""
+
+
+class FakeWiki:
+    """An Action API answering every wiki with the same definition page."""
+
+    def __init__(self):
+        self.asked = []
+
+    def request(self, domain, _method, _params):
+        self.asked.append(domain)
+        return {
+            "query": {
+                "pages": [
+                    {
+                        "title": "MediaWiki:Gadgets-definition",
+                        "revisions": [{"revid": 1, "slots": {"main": {"content": DEFINITION}}}],
+                    }
+                ]
+            }
+        }
+
+
+@pytest.fixture
+def wiki(monkeypatch):
+    monkeypatch.setenv("TOOLHUB_DB_URL", "sqlite://")
+    fake = FakeWiki()
+    monkeypatch.setattr(job, "WikimediaClient", lambda: fake)
+    return fake
+
+
+def test_the_job_reads_each_configured_wiki_once_and_catalogues_it(monkeypatch, capsys, wiki):
+    monkeypatch.setenv("GADGET_WIKIS", "fr.wikipedia.org, en.wikipedia.org ,")
+
+    assert job.main() == 0
+
+    # One request per wiki is the economics of this lane: the definition page
+    # is the whole inventory.
+    assert wiki.asked == ["fr.wikipedia.org", "en.wikipedia.org"]
+    out = capsys.readouterr().out
+    assert "gadget-inventory: wiki=fr.wikipedia.org read=yes declared=2" in out
+    assert "gadget-catalogue: wiki=fr.wikipedia.org declared=2 written=1" in out
+    assert "hidden=1" in out
+
+
+def test_the_job_defaults_to_the_pilot_wikis(monkeypatch, capsys, wiki):
+    monkeypatch.delenv("GADGET_WIKIS", raising=False)
+
+    assert job.main() == 0
+
+    assert wiki.asked == ["fr.wikipedia.org", "meta.wikimedia.org"]
+    assert "gadget-catalogue: wiki=meta.wikimedia.org" in capsys.readouterr().out

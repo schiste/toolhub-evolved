@@ -2181,6 +2181,7 @@
 	"toolforms.signInRequired": "Toolhub sign-in is required before saving changes.",
 	"toolforms.sourceDiscoveredToolinfo": "discovered toolinfo.json",
 	"toolforms.sourceEvolvedCuration": "reviewed Evolved correction",
+	"toolforms.sourceGadgetDefinition": "wiki gadget definition",
 	"toolforms.sourceOfficial": "Official Toolhub",
 	"toolforms.sourceRegisteredToolinfo": "registered toolinfo.json",
 	"toolforms.sourceRepositoryAnalysis": "repository analysis",

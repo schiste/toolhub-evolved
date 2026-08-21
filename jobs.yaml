@@ -323,6 +323,19 @@
   schedule: "5 3 * * *"
   emails: onfailure
 
+- name: gadget-census
+  # Gadget directory: read each wiki's MediaWiki:Gadgets-definition and turn
+  # every gadget it declares into a catalogue record. The definition page is
+  # the entire inventory, so this is one request per wiki -- unlike the
+  # user-script census next to it, which is thousands and has to be asked for.
+  # Daily because definition pages change rarely; the catalogue pass that
+  # follows reads no wiki at all, so it also picks up any change to what this
+  # codebase considers a tool on the next tick.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name gadget-census -- /usr/bin/env GADGET_WIKIS=fr.wikipedia.org,meta.wikimedia.org /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/gadget_census.py
+  image: python3.13
+  schedule: "9 4 * * *"
+  emails: onfailure
+
 - name: userscript-census
   # User-space script directory: enumerate every javascript/css content-model
   # page in User: space through CirrusSearch, store body and analysis, and

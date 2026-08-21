@@ -316,7 +316,18 @@ class ApiCacheMeta(Base):
 
 
 class CanonicalToolCache(Base):
-    """Structured local cache of canonical official Toolhub tool records."""
+    """Every tool the catalog can show, whatever established that it exists.
+
+    Mostly the official Toolhub catalog. Also records synthesized from what a
+    wiki publishes about itself, because a card, a facet, a search hit and an
+    author edge are all reached by looking a name up here -- a tool absent
+    from this table does not exist as far as the product is concerned.
+
+    `source` says which, and it decides what a catalog snapshot is allowed to
+    delete. It defaults to official because for most of this table's life
+    that was the only possibility; a writer that leaves the default in place
+    is telling the next snapshot it may prune the row.
+    """
 
     __tablename__ = "canonical_tool_cache"
     tool_name: Mapped[str] = mapped_column(String(255), primary_key=True)
@@ -1652,3 +1663,56 @@ class UserScriptDirectoryMember(Base):
     # to know which: byte-identical is a fact, a shared name is an inference.
     relation: Mapped[str] = mapped_column(String(16), default="")
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class WikiGadget(Base):
+    """One gadget a wiki declares, as its definition page last read it.
+
+    The inventory is kept apart from the catalogue records built out of it. A
+    gadget is a fact about a wiki -- it exists, it is hidden, it needs
+    `rollback` -- and stays true whether or not anything decided to catalogue
+    it. Storing the transcription separately means the elevation rules can
+    change, or be re-run against a different judgement about what counts as a
+    tool, without re-reading 170 gadgets off two wikis.
+
+    `name_key` exists because production MySQL compares under a collation that
+    is case-insensitive and ignores invisible formatting marks, while Python
+    compares bytes. A unique index on the raw name would accept two spellings
+    Python thinks are different and the database thinks are the same, which is
+    precisely how the first Meta census died. Uniqueness is therefore declared
+    on a key this code computes, so both sides agree on sameness by
+    construction rather than by luck.
+    """
+
+    __tablename__ = "wiki_gadgets"
+    __table_args__ = (
+        UniqueConstraint("wiki", "name_key"),
+        Index("ix_wiki_gadgets_wiki_hidden", "wiki", "hidden"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wiki: Mapped[str] = mapped_column(String(255), index=True)
+    # As the wiki spells it, which is what a reader sees in Special:Gadgets.
+    name: Mapped[str] = mapped_column(String(255))
+    # The storage-side spelling of `name`; see the class docstring.
+    name_key: Mapped[str] = mapped_column(String(255))
+    # The definition page's heading above this line, in the wiki's own language.
+    # Recorded, not projected: "Apparence" is a useful grouping on frwiki and
+    # noise in a catalogue facet shared with every other wiki.
+    section: Mapped[str] = mapped_column(String(255), default="")
+    # File names as declared, without the `MediaWiki:Gadget-` prefix.
+    pages: Mapped[list] = mapped_column(JSON, default=list)
+    # Every declared option, as {option: [values]}; a bare option maps to [].
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Denormalized out of `options` because both decide whether a gadget is a
+    # user-facing tool, and that question is asked of the whole table at once.
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The user rights a reader needs before the gadget is offered to them at
+    # all, which is the closest thing a definition gives us to an audience.
+    rights: Mapped[list] = mapped_column(JSON, default=list)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    # Set when a definition page no longer declares this gadget. Kept rather
+    # than deleted so a catalogue record built from it can be retired
+    # deliberately instead of losing the reason it existed.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

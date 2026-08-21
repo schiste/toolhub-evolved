@@ -2181,6 +2181,7 @@
 	"toolforms.signInRequired": "TODO: document this message.",
 	"toolforms.sourceDiscoveredToolinfo": "TODO: document this message.",
 	"toolforms.sourceEvolvedCuration": "TODO: document this message.",
+	"toolforms.sourceGadgetDefinition": "Effective-source label shown when a field came from a wiki's own Gadgets-definition page.",
 	"toolforms.sourceOfficial": "TODO: document this message.",
 	"toolforms.sourceRegisteredToolinfo": "TODO: document this message.",
 	"toolforms.sourceRepositoryAnalysis": "TODO: document this message.",

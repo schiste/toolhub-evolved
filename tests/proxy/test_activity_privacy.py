@@ -327,3 +327,37 @@ def test_the_allowlist_is_read_once_per_batch_not_once_per_row(monkeypatch) -> N
     rows = [_upstream_list_row(index, f"L{index}") for index in range(20)]
     assert len(activity_privacy.public_activity_rows(rows)) == 0
     assert reads == 1
+
+
+def test_a_replica_that_raises_is_treated_as_an_empty_allowlist(monkeypatch) -> None:
+    def explode() -> frozenset[str]:
+        raise RuntimeError("replica is down")
+
+    monkeypatch.setattr(catalog_read, "published_list_ids", explode)
+
+    # Fails closed: a replica that cannot answer allowlists nothing, so every
+    # list row stays out of the feed rather than a broken read opening it up.
+    assert activity_privacy._published_list_ids() == frozenset()
+    assert activity_privacy.is_private_list_activity({"content_type": "list", "content_id": "861"})
+
+
+def test_is_private_list_activity_rejects_non_dict_rows() -> None:
+    assert not activity_privacy.is_private_list_activity(None)
+    assert not activity_privacy.is_private_list_activity(["not", "a", "dict"])
+
+
+def test_a_list_row_naming_no_list_stays_private() -> None:
+    # Nothing to check against the allowlist is not permission to show it.
+    assert activity_privacy.is_private_list_activity({"content_type": "list"})
+    assert activity_privacy.is_private_list_activity({"content_type": "list", "content_id": "   "})
+
+
+def test_a_caller_supplied_allowlist_is_used_instead_of_the_replica(monkeypatch) -> None:
+    def explode() -> frozenset[str]:
+        raise AssertionError("the replica must not be read when the caller passes an allowlist")
+
+    monkeypatch.setattr(catalog_read, "published_list_ids", explode)
+    row = {"content_type": "list", "content_id": "861"}
+
+    assert not activity_privacy.is_private_list_activity(row, published=frozenset({"861"}))
+    assert activity_privacy.is_private_list_activity(row, published=frozenset({"900"}))
