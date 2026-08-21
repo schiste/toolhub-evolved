@@ -265,6 +265,27 @@ def _definition_options(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
     return tuple(parsed)
 
 
+def _definition_page(name: str) -> str:
+    """Return one definition-listed file name in the spelling a page title carries.
+
+    A definition line writes each file exactly as its author typed it, and
+    `MediaWiki:Gadget-C_helper.js` and `MediaWiki:Gadget-C helper.js` are one
+    page -- fr.wikipedia registers C helper with underscores, Commons registers
+    everything with spaces, and both are correct. So the raw text cannot be
+    compared against a `filename` that arrived through canonical_title.
+
+    Routed through canonical_title rather than repeating the rule, so the
+    spelling a definition is matched by and the spelling a URL resolves to
+    cannot drift apart. Returns "" for a name that leaves no title behind,
+    which the caller's source-title test then drops.
+
+    Stripped here rather than by the caller: the padding around `| File.js |`
+    would otherwise land after the prefix, inside the part canonical_title
+    treats as the page name, where it survives as a leading space.
+    """
+    return canonical_title(f"{GADGET_PREFIX}{name.strip()}").removeprefix(GADGET_PREFIX)
+
+
 def _definition_entry(line: str) -> GadgetEntry | None:
     """Split one Gadgets-definition line into its gadget name, options and files.
 
@@ -290,7 +311,8 @@ def _definition_entry(line: str) -> GadgetEntry | None:
         options = _definition_options(declared)
     else:
         name, _, tail = body.partition("|")
-    files = tuple(part.strip() for part in tail.split("|") if _is_source_title(part.strip()))
+    listed = (_definition_page(part) for part in tail.split("|"))
+    files = tuple(name for name in listed if _is_source_title(name))
     if not (name.strip() and files):
         return None
     return GadgetEntry(name=name.strip(), section="", options=options, pages=files[:MAX_PAGES])
