@@ -2186,6 +2186,7 @@
 	"toolforms.sourceRegisteredToolinfo": "registered toolinfo.json",
 	"toolforms.sourceRepositoryAnalysis": "repository analysis",
 	"toolforms.sourceUnknown": "unknown source",
+	"toolforms.sourceWikimediaUserScript": "wikimedia user script page",
 	"toolforms.submitATool": "Register a tool",
 	"toolforms.submitLocalCorrection": "Submit local correction",
 	"toolforms.submitTool": "Register tool",

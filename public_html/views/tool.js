@@ -377,6 +377,7 @@ const CATALOG_SOURCE_LABELS = {
 	official_toolinfo: "Registered toolinfo.json",
 	self_hosted_toolinfo: "Discovered toolinfo.json",
 	repository_analysis: "Repository analysis",
+	wikimedia_user_script: "Wikimedia user script page",
 	evolved_curation: "Reviewed Evolved correction",
 	wiki_gadget_definition: "Wiki gadget definition"
 };
