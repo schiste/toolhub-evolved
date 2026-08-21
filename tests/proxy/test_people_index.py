@@ -833,3 +833,44 @@ def test_an_edge_whose_evidence_moved_is_restamped():
         assert relationship.verification_status == AUTHOR_CLAIM_UNVERIFIED
         assert relationship.resolved_at > marker
         assert relationship.updated_at > marker
+
+
+def test_a_person_confirmed_unchanged_is_not_restamped():
+    """Re-deriving the same identity must not queue a write on `people`."""
+    with db.session_scope() as s:
+        person = people_index.ensure_person(
+            s,
+            display_name="Grace",
+            toolhub_user_id="grace-1",
+            toolhub_username="Grace",
+            source="toolhub_public_account",
+        )
+        marker = utcnow() - timedelta(days=3)
+        person.updated_at = marker
+        s.flush()
+
+        people_index.ensure_person(
+            s,
+            display_name="Grace",
+            toolhub_user_id="grace-1",
+            toolhub_username="Grace",
+            source="toolhub_public_account",
+        )
+
+        # A write here sets `updated_at` and nothing else -- the statement the
+        # deploy migration waited out its lock timeout on.
+        assert person.updated_at == marker
+
+
+def test_a_person_whose_row_moved_is_restamped():
+    with db.session_scope() as s:
+        person = people_index.ensure_person(s, display_name="grace hopper", source="wiki")
+        marker = utcnow() - timedelta(days=3)
+        person.updated_at = marker
+        s.flush()
+
+        # The same person by any casing, now written the way its source spells it.
+        people_index.ensure_person(s, display_name="Grace Hopper", source="wiki")
+
+        assert person.display_name == "Grace Hopper"
+        assert person.updated_at > marker

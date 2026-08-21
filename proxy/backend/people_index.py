@@ -547,6 +547,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         ]
     )
     person = next((candidate for candidate in candidates if candidate is not None), None)
+    created = False
     display = _clean(display_name or toolhub_username or toolforge_username or wiki_username)
     if person is None:
         key = _canonical_key(
@@ -599,6 +600,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
         ensure_person_public_slug(s, person)
         s.add(person)
         s.flush()
+        created = True
     if display and (not person.display_name or person.identity_quality == "display_name"):
         person.display_name = display
     if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number:
@@ -611,7 +613,7 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     elif person.identity_quality == "display_name" and (toolhub_username or toolforge_username or wiki_username):
         person.identity_quality = "handle"
     ensure_person_public_slug(s, person)
-    person.updated_at = checked_at or utcnow()
+    _stamp_person_if_changed(s, person, checked_at or utcnow(), created=created)
     s.flush()
     if toolhub_user_id or wikimedia_global_user_id or toolforge_uid_number:
         _retire_superseded_handles(
@@ -646,6 +648,23 @@ def ensure_person(  # noqa: PLR0913 - source adapters provide independent identi
     return person
 
 
+def _stamp_person_if_changed(s: Session, person: Person, when: datetime, *, created: bool = False) -> None:
+    """Restamp a person only when the row itself actually moved.
+
+    Confirming that a person is unchanged is the common case -- every pass over
+    the identity graph re-derives the same display name and quality for people
+    nobody has touched -- and writing `updated_at` anyway takes a row lock on
+    the busiest table in the schema for a value no query reads. The 2026-08-21
+    deploy migration died of exactly that: `UPDATE people SET updated_at=...
+    WHERE people.id = 26368` waited out its lock timeout against the running
+    workers, and the statement's own shape, one timestamp and no data, is proof
+    there was nothing to write. A newly created person is stamped regardless,
+    because a row the caller has just built has no prior value to compare.
+    """
+    if created or s.is_modified(person, include_collections=False):
+        person.updated_at = when
+
+
 def ensure_official_account_person(
     s: Session,
     *,
@@ -669,7 +688,7 @@ def ensure_official_account_person(
         checked_at=checked_at,
     )
     person.display_name = _clean(username)
-    person.updated_at = checked_at or utcnow()
+    _stamp_person_if_changed(s, person, checked_at or utcnow())
     return person
 
 
@@ -684,7 +703,7 @@ def link_user(s: Session, user: User) -> Person:
         source="toolhub_oauth",
     )
     person.display_name = user.username
-    person.updated_at = utcnow()
+    _stamp_person_if_changed(s, person, utcnow())
     user.person_id = person.id
     return person
 
