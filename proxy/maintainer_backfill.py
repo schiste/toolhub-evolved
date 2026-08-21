@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import requests
 from sqlalchemy import select
@@ -89,15 +89,30 @@ def _durably_projected_tools() -> set[str]:
         )
 
 
+class PageFetch(NamedTuple):
+    """What one tool's Toolsadmin lookups produced.
+
+    ``missing`` is counted rather than folded into failure because a tool with
+    no account page is a finished answer -- the tool is not on Toolforge -- and
+    a run made entirely of those is a complete run, not a broken one.
+    """
+
+    pages: list[tuple[str, list, str]]
+    success: bool
+    requests: int
+    missing: int
+
+
 def _fetch_pages(
     provider: ToolforgeMaintainerProvider,
     toolforge_names: list[str],
     *,
     sleep_fn: Callable[[float], None],
     request_count: int,
-) -> tuple[list[tuple[str, list, str]], bool, int]:
-    """Fetch all account pages for one tool; return success and request count."""
+) -> PageFetch:
+    """Fetch all account pages for one tool; report success, cost and absences."""
     pages: list[tuple[str, list, str]] = []
+    missing = 0
     for toolforge_name in toolforge_names:
         if request_count:
             sleep_fn(DEFAULT_MIN_INTERVAL_SECONDS)
@@ -106,13 +121,14 @@ def _fetch_pages(
         try:
             status, body = provider.fetcher(toolforge_name)
         except requests.RequestException:
-            return pages, False, request_count
+            return PageFetch(pages, success=False, requests=request_count, missing=missing)
         if status == HTTP_NOT_FOUND:
+            missing += 1
             continue
         if status >= HTTP_BAD_REQUEST:
-            return pages, False, request_count
+            return PageFetch(pages, success=False, requests=request_count, missing=missing)
         pages.append((toolforge_name, parse_toolsadmin_maintainer_entries(body), evidence_url))
-    return pages, True, request_count
+    return PageFetch(pages, success=True, requests=request_count, missing=missing)
 
 
 def run(
@@ -137,14 +153,18 @@ def run(
         state.last_error = None
     batch, cycle_complete, start = _batch(rows, cursor, effective_limit)
     checked = found = failed = 0
+    fetched = missing = listed = 0
     request_count = 0
     for index, (tool_name, _record, toolforge_names) in enumerate(batch):
-        pages, success, request_count = _fetch_pages(
+        pages, success, request_count, absent = _fetch_pages(
             provider,
             toolforge_names,
             sleep_fn=lambda seconds: sleep_fn(max(interval, seconds)),
             request_count=request_count,
         )
+        fetched += len(pages)
+        missing += absent
+        listed += sum(len(maintainers) for _name, maintainers, _url in pages)
 
         # Loop values are bound as defaults so the closure records the tool it
         # was built for, not whatever the loop reached by the time it runs.
@@ -195,8 +215,17 @@ def run(
             state.cycles_completed += 1
             state.last_completed_at = utcnow()
             state.next_tool_name = None
+    # "maintainers" counts resolved identity edges, and it is routinely zero for
+    # a healthy run: a Toolsadmin page lists human display names, and a name
+    # with no account behind it is stored as an unresolved attribution rather
+    # than admitted to the identity graph. Reporting only that zero left no way
+    # to tell "nobody was listed" from "everybody listed was unresolvable", so
+    # the counts either side of it are reported too.
     return {
         "tools": checked,
+        "pages": fetched,
+        "pagesMissing": missing,
+        "listed": listed,
         "maintainers": found,
         "failed": failed,
         "requests": request_count,

@@ -112,6 +112,11 @@ def test_backfill_keeps_unresolved_html_labels_out_of_identity_graph(monkeypatch
 
     assert summary == {
         "tools": 1,
+        "pages": 1,
+        "pagesMissing": 0,
+        # One name was read and none of it reached the identity graph, which is
+        # the distinction the bare "maintainers: 0" could not draw.
+        "listed": 1,
         "maintainers": 0,
         "failed": 0,
         "requests": 1,
@@ -330,3 +335,22 @@ def test_backfill_remaining_uses_the_persisted_cursor_position(monkeypatch):
 
     assert summary["tools"] == 1
     assert summary["remaining"] == 1
+
+
+def test_a_tool_with_no_toolforge_account_page_is_counted_as_absent_not_failed(monkeypatch):
+    monkeypatch.setattr(
+        maintainer_backfill,
+        "_candidates",
+        lambda: [("toolforge-gone", {"name": "toolforge-gone"}, ["gone"])],
+    )
+    provider = ToolforgeMaintainerProvider(fetcher=lambda _name: (404, ""))
+
+    summary = maintainer_backfill.run(limit=1, provider=provider, sleep_fn=lambda _seconds: None)
+
+    # A tool that is not on Toolforge is a finished answer, so the run is
+    # complete rather than failed -- and now says which of the two it was.
+    assert summary["pagesMissing"] == 1
+    assert summary["pages"] == 0
+    assert summary["listed"] == 0
+    assert summary["maintainers"] == 0
+    assert summary["failed"] == 0
