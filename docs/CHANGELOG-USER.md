@@ -1,12 +1,12 @@
 <!-- Reviewed release notes. tools/generate_marketing_changelog.py drafts these when a changelog provider is configured. -->
 <!-- None was available on this push, so these were written by hand and checked against the commits. -->
-<!-- Release id: an-error-that-means-an-error -->
-<!-- Release title: An Error That Means An Error -->
-<!-- Source range: 7f6b97f..001243d (3 commits) -->
+<!-- Release id: what-makes-a-gadget-a-gadget -->
+<!-- Release title: What Makes A Gadget A Gadget -->
+<!-- Source range: 001243d..05de929 (1 commit) -->
 
 # What's New for Users
 
-- A tool whose code had just been analyzed successfully could be recorded as a failed scan, then held back from the next few attempts as if it were broken. The analysis itself was stored and already visible on the tool's page; only the bookkeeping said otherwise. Tools that hit this waited hours for a re-read they did not need, and the delay grew each time it happened.
-- The cause was a step that runs after the analysis is safely stored: refreshing the summaries and graph entries built from it. A failure there was being reported as a failure of the whole scan, which are two different problems with opposite remedies -- one needs the repository read again, the other needs nothing at all.
-- The two are now counted apart, so the catalogue's own status line means what it says: a scan error is a tool left without fresh data, and a stale summary is named separately, on its own line, with the tool it belongs to. A failure that used to be invisible inside an error count is now something an operator can see and act on.
-- Around eighty tools showed no icon at all, and had been quietly retrying for one. A tool record points at its icon by naming the file's page on Wikimedia Commons -- the page that describes the file, with its licence and history -- which is what the format asks for and what those tools correctly provided. The icon cache was fetching that page, finding a web page where it wanted a picture, and recording a failure it then repeated on a slower and slower schedule. It now follows the page through to the file behind it. Large images are fetched at a size suited to an icon, and the few drawings too big to fetch whole are asked for as a scaled copy rather than given up on.
+- On a wiki, a gadget is not simply a page of JavaScript. It is a gadget because it is registered on the wiki's gadget definition page, which is what puts it in everyone's Preferences and serves it to readers. Toolhub Evolved was deciding from the page's name instead, and the name is only the convention those pages follow.
+- The difference matters most for gadgets that no longer exist. Retiring a gadget usually means deleting its line from that definition page and leaving the code behind, so the leftover page keeps a gadget's name forever. Pages written in advance of being registered look the same. Both were being catalogued as live gadgets.
+- The catalogue now reads the definition page and believes what it says. A tool whose code is registered there is a gadget; one that is not is left without a type rather than given a wrong one, which is the safer answer for a field most tool records leave empty for us to fill.
+- Nothing changes for gadgets that are genuinely registered, or for user scripts. A user script is settled by living on its author's own pages, and there is no register that could contradict that.
