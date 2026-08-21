@@ -35,13 +35,20 @@ const RECENT_DIRECTIONS = [
 	{ value: "asc", label: t("parity.ascending", "Ascending") }
 ];
 const RECENT_OWNER_FETCH_BATCH = 30;
+// Upstream Toolhub reports list revisions as "toollist"; Evolved's own rows
+// use "list". Both mean the same thing to a reader.
+const RECENT_LIST_TYPES = new Set(["list", "toollist"]);
+/** @param {{ content_type?: string }} r */
+function isRecentListRow(r) {
+	return RECENT_LIST_TYPES.has(String(r.content_type || ""));
+}
 /**
  * @param {{ content_type?: string }} r
  * @returns {string}
  */
 function recentFilterKey(r) {
 	if (r.content_type === "tool") return "tools";
-	if (r.content_type === "list") return "lists";
+	if (isRecentListRow(r)) return "lists";
 	return "other";
 }
 /** @param {{ _evolved?: boolean, source?: string, syncStatus?: string, patrolled?: boolean, suppressed?: boolean }} r */
@@ -55,7 +62,7 @@ function recentReviewState(r) {
 /** @param {string} type */
 function recentTypeLabel(type) {
 	if (type === "tool") return t("parity.typeTool", "Tool");
-	if (type === "list") return t("parity.typeList", "List");
+	if (RECENT_LIST_TYPES.has(type)) return t("parity.typeList", "List");
 	return t("parity.typeOther", "Other");
 }
 /** @param {string} reviewState */
@@ -311,7 +318,7 @@ function recentRowHTML(r) {
 	const link =
 		r.content_type === "tool" && r.content_id
 			? toolHref(r.content_id)
-			: r.content_type === "list" && r.content_id
+			: isRecentListRow(r) && r.content_id
 				? listHref(r.content_id)
 				: null;
 	const item = link

@@ -251,7 +251,8 @@ def _recent_feed_item(row: dict[str, Any]) -> dict[str, str]:
         f"/tools/{quote(content_id, safe='')}"
         if content_type == "tool" and content_id
         else f"/lists/{quote(content_id, safe='')}"
-        if content_type == "list" and content_id
+        # Upstream reports list revisions as "toollist"; Evolved rows use "list".
+        if content_type in {"list", "toollist"} and content_id
         else "/recent"
     )
     detail = f"{action} by {username}."

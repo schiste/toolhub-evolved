@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 from sqlalchemy import func, select
 
-from backend import api_cache, catalog_facets, db
+from backend import activity_privacy, api_cache, catalog_facets, db
 from backend.canonical_tools import escape_like
 from backend.models import CanonicalToolCache, CatalogFacetValue, ToolCatalogSyncState, utcnow
 
@@ -202,6 +202,12 @@ def collection_payload(path: str, params: Any, *, include_replica: bool = True) 
     rows = _cached_rows(path)
     if path == "/api/lists/" and str(params.get("featured") or "").casefold() == "true":
         rows = [row for row in rows if row.get("featured") is True]
+    if path == "/api/recent/":
+        # Filtered before paging so `count` and `next` describe the rows a
+        # reader may actually see. The replica mirrors upstream verbatim, and
+        # upstream reports revisions for unpublished lists and for every user's
+        # favorites list.
+        rows = activity_privacy.public_activity_rows(rows)
     page = _int(params.get("page"), 1, maximum=100_000)
     page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
     offset = (page - 1) * page_size
@@ -229,3 +235,21 @@ def list_payload(list_id: str) -> dict[str, Any] | None:
 def cached_payload(url: str) -> tuple[bytes, str, int] | None:
     cached = api_cache.get_local(url)
     return (cached.body, cached.content_type, cached.status) if cached is not None else None
+
+
+def published_list_ids() -> frozenset[str]:
+    """Return the replica ids of lists Toolhub serves to anonymous readers.
+
+    Only the published collection is synchronized, so a private list is simply
+    absent here.  Activity feeds treat that absence as "not public" rather than
+    "unknown", which is what keeps an unpublished list's title and owner out of
+    the shared feeds.  Per-user favorites lists are excluded explicitly too:
+    Toolhub keeps them unpublished, and one leaking into the replica must not
+    turn into a public record of what somebody favorited.
+    """
+    ids = {
+        str(row.get("id") or "").strip()
+        for row in _cached_rows("/api/lists/")
+        if row.get("published") is not False and row.get("favorites") is not True
+    }
+    return frozenset(ids - {""})
