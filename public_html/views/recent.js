@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import { $, $$, $input, dirAttrs, esc } from "../lib/core/dom.js";
 import { publicActivityRows } from "../lib/core/activity-privacy.js";
-import { t, timeTag } from "../lib/core/i18n.js";
+import { t, tWithElements, timeTag } from "../lib/core/i18n.js";
 import { apiGet, backendGetJson } from "../lib/core/api.js";
 import { authorHref, navigateTo, listHref, toolHref } from "../lib/core/routing.js";
 import { DEMO_KEYS, demoFeed, recentOwnerCacheGet, recentOwnerCacheSet } from "../lib/core/store.js";
@@ -294,6 +294,51 @@ function recentComment(comment) {
 		? `<button class="recent-comment" type="button" aria-expanded="false"><span class="recent-comment__text"${dirAttrs(comment)}>${esc(comment)}</span></button>`
 		: `<span class="recent-table__muted">—</span>`;
 }
+/** @param {string} name */
+function recentToolLink(name) {
+	return `<a class="recent-comment__tool" href="${toolHref(name)}"${dirAttrs(name)}>${esc(name)}</a>`;
+}
+/** @param {string[]} names */
+function recentToolLinks(names) {
+	return names.map((name) => recentToolLink(name)).join(t("parity.commaSeparator", ", "));
+}
+/**
+ * Name the tools a grouped list row added or removed over its day.
+ *
+ * Additions and removals stay labelled separately rather than merging into one
+ * run of names: "Added Foo, removed Bar" and "Added Foo and Bar" are different
+ * edits, and a reader who cannot tell them apart is worse off than one who saw
+ * only the generic upstream comment. Returns "" when the backend named nothing,
+ * which is every tool row and any list row whose day netted out to no change.
+ * @param {{ toolsAdded?: string[], toolsRemoved?: string[] }} r
+ */
+function recentToolChangeHTML(r) {
+	const added = Array.isArray(r.toolsAdded) ? r.toolsAdded : [];
+	const removed = Array.isArray(r.toolsRemoved) ? r.toolsRemoved : [];
+	if (added.length > 0 && removed.length > 0) {
+		return tWithElements(
+			"parity.recentToolsAddedRemoved",
+			"Added $1, removed $2",
+			{ html: recentToolLinks(added) },
+			{ html: recentToolLinks(removed) }
+		);
+	}
+	if (added.length > 0) return tWithElements("parity.recentToolsAdded", "Added $1", { html: recentToolLinks(added) });
+	if (removed.length > 0) {
+		return tWithElements("parity.recentToolsRemoved", "Removed $1", { html: recentToolLinks(removed) });
+	}
+	return "";
+}
+/**
+ * The comment cell: named tool changes when the backend resolved any, and the
+ * bare upstream comment otherwise. The named form is a span rather than the
+ * expandable button, because links may not sit inside a button.
+ * @param {any} r
+ */
+function recentCommentCell(r) {
+	const changed = recentToolChangeHTML(r);
+	return changed ? `<span class="recent-comment__change">${changed}</span>` : recentComment(r.comment);
+}
 /** @param {any[]} rows @param {{ show: string, status: string, sort: string, dir: string, q: string, owner: string, user: string }} state */
 function visibleRecentRows(rows, state) {
 	const byType = state.show === "all" ? rows : rows.filter((r) => recentFilterKey(r) === state.show);
@@ -333,7 +378,7 @@ function recentRowHTML(r) {
 		<td data-label="${t("parity.lastUpdatedBy", "Last updated by")}">${recentPersonLink(who, { crawlerActors: true })}</td>
 		<td data-label="${t("parity.action", "Action")}">${esc(recentActionLabel(r))}</td>
 		<td data-label="${t("parity.reviewState", "Review state")}"><span class="recent-chip recent-chip--${esc(reviewState)}">${esc(recentReviewLabel(reviewState))}</span></td>
-		<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentComment(r.comment)}</td>
+		<td data-label="${t("parity.comment", "Comment")}" class="recent-table__comment">${recentCommentCell(r)}</td>
 	</tr>`;
 }
 /** @param {any[]} rows @param {{ show: string, status: string, sort: string, dir: string, q: string, owner: string, user: string }} state */

@@ -3186,6 +3186,23 @@ html[dir="rtl"] .recent-table {
 	white-space: normal;
 }
 
+/* The named form of a comment wraps instead of truncating: a day's worth of
+   tool names is the content of the cell, not an aside behind a disclosure. */
+.recent-comment__change {
+	display: block;
+	overflow-wrap: anywhere;
+}
+
+.recent-comment__tool {
+	color: var(--color-progressive);
+	text-decoration: none;
+}
+
+.recent-comment__tool:hover,
+.recent-comment__tool:focus-visible {
+	text-decoration: underline;
+}
+
 .recent-table__sort {
 	color: var(--color-progressive);
 	display: inline-block;

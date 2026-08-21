@@ -49,6 +49,19 @@
   timeout: 300
   emails: onfailure
 
+- name: list-revision-sync
+  # Name the tools each recent list revision added or removed. The recent feed
+  # says only "Added tool to list"; the name is in the revision diff, one
+  # request per revision, which is why a reader cannot be made to wait for it.
+  # Seven minutes behind catalog-sync so it works on revisions that run just
+  # replicated, and capped per run: the first pass faces the whole backlog,
+  # every later one only what appeared in the last quarter hour.
+  command: /data/project/toolhub-evolved/repo/tools/job_guard.sh --job-name list-revision-sync --stale-after 600 -- /usr/bin/env LIST_REVISION_LIMIT=60 /data/project/toolhub-evolved/www/python/venv/bin/python /data/project/toolhub-evolved/repo/proxy/list_revision_sync.py
+  image: python3.13
+  schedule: "7,22,37,52 * * * *"
+  timeout: 300
+  emails: onfailure
+
 - name: catalog-integrity
   # A complete consistency-checked snapshot is an integrity backstop, not the
   # normal ingestion path. Twice monthly is close to a two-week cadence while
