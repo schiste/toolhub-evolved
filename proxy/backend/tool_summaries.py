@@ -187,8 +187,8 @@ def _rebuild_target(s: Session, row: ToolSummaryCache | None) -> ToolSummaryCach
     `affected` set always contains the tool it was asked about; that reaches
     `replace_source_evidence` and its closing `s.delete(summary)`, aimed at the
     row `refresh` loaded a moment earlier to overwrite. The next `s.execute` in
-    the build autoflushes the DELETE, and `_store` is then holding a deleted
-    instance that `s.add` refuses.
+    the build sends that DELETE on its autoflush, and `_store` is then holding a
+    deleted instance that `s.add` refuses.
 
     So the deletion is not a race and not wrong -- the evidence really did move,
     and any other caller wants that row gone. It is only self-defeating here,
