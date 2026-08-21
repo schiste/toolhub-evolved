@@ -23,11 +23,12 @@ Four rules govern what is kept, all of them about not storing things:
 * No unbounded growth. One minified line can carry hundreds of URLs, so the
   count per line and the length of a path are capped, and an over-long
   authority is refused outright rather than cut to a prefix naming nothing.
-* Nothing but endpoints. Source links to documentation constantly and calls it
-  never: wiki pages, repository browse URLs, the blog post behind a workaround.
-  Measured across three real repositories those were three findings in five,
-  and on one of them they filled the cap and pushed the tool's actual API
-  surface out of the report. They are dropped rather than filed alongside it.
+* Nothing but endpoints. Source names far more addresses than it calls: wiki
+  pages, repository browse URLs, the blog post behind a workaround, the manual
+  for a setting, the icons an interface is decorated with. Measured across nine
+  real repositories those were a quarter of every hit, and on two of them they
+  filled the cap and pushed the tool's actual API surface out of the report.
+  They are dropped rather than filed alongside it.
 
 Nothing here performs I/O or scores anything. How much to trust a hit is the
 caller's decision, made from the file it came from.
@@ -57,13 +58,35 @@ MAX_ACTION_CHARS = 40
 # than swallowing the template syntax -- the host and the first segments are
 # still recovered, which is the part worth having.
 #
-# The pipe is allowed in the query string and nowhere else. MediaWiki joins
-# multi-valued parameters with it (`prop=revisions|info`), which is exactly what
-# this exists to read; but in a path it is almost always a link label from the
-# surrounding markup -- `[https://momentjs.com/|moment.js]` and Phabricator's
-# `T247721|T247721` both parsed as part of the address until it was narrowed.
+# The pipe and the question mark end a path. A pipe there is almost always a
+# link label from the surrounding markup -- `[https://momentjs.com/|moment.js]`
+# and Phabricator's `T247721|T247721` both parsed as part of the address until
+# it was narrowed.
+_PATH_CHAR = r"[^\s\"'`<>()\[\]{}\\^|?]"
+
+# Inside the query both are ordinary and dropping them is expensive. MediaWiki
+# joins multi-valued parameters with a pipe (`prop=revisions|info`), which is
+# exactly what this exists to read, and JSONP spells its callback `callback=?`
+# -- ending the address there costs every parameter after it, which on
+# QuickStatements meant losing the `action=query` from a call it makes.
+_QUERY_CHAR = r"[^\s\"'`<>()\[\]{}\\^]"
+
+
+def _bracketed(char: str) -> str:
+    """Return a pattern for one balanced pair of parentheses.
+
+    A parenthesis is punctuation around an address far more often than it is
+    part of one, so on its own it ends the match. A balanced pair is how the
+    Commons file namespace spells a disambiguated title, and without the
+    carve-out `Pliers_with_yellow_handles_(rotated).svg` ends at the bracket and
+    the report gains a route named for the first half of a file name.
+    """
+    return rf"\({char}*\)"
+
+
 URL_RE = re.compile(
-    r"https?://[^\s\"'`<>()\[\]{}\\^|?]*(?:\?[^\s\"'`<>()\[\]{}\\^]*)?",
+    rf"https?://(?:{_bracketed(_PATH_CHAR)}|{_PATH_CHAR})*"
+    rf"(?:\?(?:{_bracketed(_QUERY_CHAR)}|{_QUERY_CHAR})*)?",
     re.IGNORECASE,
 )
 
@@ -93,6 +116,14 @@ NEVER_AN_ENDPOINT = frozenset(
         "purl.org",
         "xmlns.com",
         "ns.adobe.com",
+        # Every Android layout file opens by declaring these, and nothing
+        # anywhere resolves them. In apps-android-commons the first one was
+        # the single highest-confidence endpoint in the whole report.
+        "schemas.android.com",
+        "schemas.microsoft.com",
+        "www.opengis.net",
+        "opengis.net",
+        "wikiba.se",
         # License and legal boilerplate, in a header on nearly every file.
         "www.gnu.org",
         "gnu.org",
@@ -109,8 +140,21 @@ NEVER_AN_ENDPOINT = frozenset(
         "travis-ci.com",
         "codecov.io",
         "coveralls.io",
+        "app.codacy.com",
+        "uploader.codecov.io",
+        # Avatar services. A picture of a contributor is not something the tool
+        # calls, and a README that thanks its contributors names one per person.
+        "avatars.githubusercontent.com",
+        "secure.gravatar.com",
+        "www.gravatar.com",
     }
 )
+
+# What a hostname can be made of. Requiring real labels is what keeps a regex
+# literal out of the report: `r"http://.*?object=tx"` in pywikibot/fixes.py was
+# read as the host `.*`, which passed every check below because it contains a
+# dot. Underscores are refused along with everything else DNS does not allow.
+HOSTNAME_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z0-9-]{1,63}(?<!-))+$", re.IGNORECASE)
 
 # Authorities that stand in for a real one. A tool that genuinely talks to
 # 127.0.0.1 is talking to itself, which is not an external service either.
@@ -150,10 +194,18 @@ FORGE_FETCH_RE = re.compile(r"^/(?:.+/)?(?:releases/download|archive|raw)/", re.
 # spreadsheet under docs.google.com is a real fetch and will be dropped. That
 # has not appeared yet, and inventing an exemption for it now would be guessing.
 REFERENCE_HOST_RE = re.compile(
-    r"^(?:docs|blog|help|wiki|lists|discourse|groups)\."
+    r"^(?:docs?|blog|help|wiki|lists|discourse|groups|developer|bugzilla)\."
     r"|(?:^|\.)(?:stackoverflow\.com|stackexchange\.com|serverfault\.com"
     r"|superuser\.com|askubuntu\.com|openhub\.net|fsf\.org|readthedocs\.io"
-    r"|readthedocs\.org|medium\.com|blogspot\.com)$",
+    r"|readthedocs\.org|medium\.com|blogspot\.com|w3\.org|datatracker\.ietf\.org"
+    r"|rfc-editor\.org"
+    # A package's own page on a registry. What the tool actually depends on is
+    # already the dependencies bucket's answer; this is the human-readable
+    # version of it, linked from a comment saying where to get the thing.
+    r"|pypi\.org|npmjs\.com|packagist\.org|crates\.io|rubygems\.org"
+    # An app store listing, and the vendor pages that go with one.
+    r"|play\.google\.com|apps\.apple\.com|f-droid\.org|policies\.google\.com"
+    r"|support\.google\.com)$",
     re.IGNORECASE,
 )
 
@@ -165,6 +217,26 @@ SHORTENER_RE = re.compile(
     r"^(?:git\.io|bit\.ly|goo\.gl|t\.co|tinyurl\.com|ow\.ly|is\.gd|buff\.ly|w\.wiki)$",
     re.IGNORECASE,
 )
+
+# What is left of `https://` after urlsplit has normalized the double slash
+# away, sitting as a path segment of its own.
+EMBEDDED_SCHEME_RE = re.compile(r"^https?:$", re.IGNORECASE)
+
+# A file served to be looked at, not a service answering a request. Keyed on the
+# extension because the host does not say: upload.wikimedia.org serves the
+# thumbnails an interface decorates itself with from the same name as the media
+# a tool uploads. On x-tools/xtools these icons were fifteen of twenty-four
+# findings and the whole top of the report by confidence.
+STATIC_ASSET_RE = re.compile(
+    r"\.(?:png|jpe?g|gif|svg|webp|ico|bmp|tiff?|css|woff2?|ttf|eot|otf)$",
+    re.IGNORECASE,
+)
+
+# A documentation tree, on a host whose name gives no hint of one. Vendors put
+# their manuals on the product domain -- symfony.com/doc, www.php.net/manual,
+# graphviz.org/docs -- and a comment citing the page that explains a setting is
+# the single most common URL in source after the license header.
+DOC_PATH_RE = re.compile(r"^/(?:docs?|manual|handbook|tutorials?)(?:/|$)", re.IGNORECASE)
 
 # MediaWiki's article path. `/wiki/Help:Contents` is a page a human reads, and a
 # tool that genuinely wants that content asks /w/api.php for it instead -- which
@@ -238,7 +310,7 @@ def _host(parsed: object) -> str:
     which is worse than not reporting it.
     """
     host = str(getattr(parsed, "hostname", "") or "").lower()
-    if "." not in host or len(host) > MAX_HOST_CHARS:
+    if len(host) > MAX_HOST_CHARS or not HOSTNAME_RE.match(host):
         return ""
     if host in NEVER_AN_ENDPOINT or PLACEHOLDER_RE.search(host):
         return ""
@@ -252,8 +324,13 @@ def _is_reference(host: str, path: str) -> bool:
     without this the bucket fills with wiki pages, repository browse URLs and
     the blog post that explained a workaround. Those are worth knowing, but
     they answer a different question than the one this bucket is named for.
+
+    Takes the path as the source wrote it rather than the templated one, so that
+    a filename the templating would have replaced is still read as a filename.
     """
-    if WIKI_PAGE_RE.match(path) or REFERENCE_HOST_RE.search(host) or SHORTENER_RE.match(host):
+    if REFERENCE_HOST_RE.search(host) or SHORTENER_RE.match(host):
+        return True
+    if WIKI_PAGE_RE.match(path) or DOC_PATH_RE.match(path) or STATIC_ASSET_RE.search(path):
         return True
     return bool(FORGE_HOST_RE.search(host)) and not FORGE_FETCH_RE.match(path)
 
@@ -264,8 +341,18 @@ def _segment(value: str) -> str:
 
 
 def _path(raw: str) -> str:
-    """Return the request path, templated, bounded, and always rooted at /."""
+    """Return the request path, templated, bounded, and always rooted at /.
+
+    A path that swallows another URL stops there. Archives and CORS proxies
+    address their target that way, and `web.archive.org/web/{}/http:/bbc.co.uk`
+    reports the BBC as something the tool reaches -- when the real endpoint is
+    the archive, and the BBC was an example in a docstring.
+    """
     segments = [segment for segment in raw.split("/") if segment][:MAX_PATH_SEGMENTS]
+    for index, segment in enumerate(segments):
+        if EMBEDDED_SCHEME_RE.match(segment):
+            segments = [*segments[:index], "{}"]
+            break
     return f"/{'/'.join(_segment(segment) for segment in segments)}"[:MAX_PATH_CHARS]
 
 
@@ -298,13 +385,22 @@ def endpoints(line: str) -> tuple[Endpoint, ...]:
     """
     found: list[Endpoint] = []
     for match in URL_RE.finditer(str(line or "")):
-        parsed = urlsplit(match.group(0).rstrip(TRAILING_PUNCTUATION))
+        try:
+            parsed = urlsplit(match.group(0).rstrip(TRAILING_PUNCTUATION))
+        except ValueError:
+            # Source is not a list of addresses, it is text that sometimes
+            # contains one, and urlsplit refuses some of what that produces --
+            # an authority holding a character that normalizes to a delimiter,
+            # say. This runs over every line of every repository the crawler
+            # reaches, so one address it cannot read must cost that address and
+            # nothing else.
+            continue
         host = _host(parsed)
         if not host:
             continue
-        path = _path(parsed.path)
-        if _is_reference(host, path):
+        if _is_reference(host, parsed.path):
             continue
+        path = _path(parsed.path)
         group = family(host)
         for action in _actions(parsed.query) or ("",):
             endpoint = Endpoint(host=host, path=path, action=action, family=group)

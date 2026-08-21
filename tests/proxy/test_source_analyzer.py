@@ -839,3 +839,27 @@ def test_a_link_to_documentation_is_not_reported_as_an_endpoint():
         ]
     )
     assert [item["value"] for item in report["endpoints"]] == ["en.wikipedia.org/w/api.php?action=edit"]
+
+
+def test_a_url_at_the_line_budget_is_not_reported_half_read():
+    # Measured on commons-app/apps-android-commons: the README contributor
+    # table is one line of many URLs, and cutting it at MAX_LINE_CHARS left
+    # `avatars.githubusercon` behind -- a name that parses as a host, resolves
+    # nowhere, and reads in a report as a service the app contacts.
+    filler = "word " * 120
+    content = f"{filler}https://avatars.githubusercontent.com/u/12345 trailing"
+    assert len(content) > source_analyzer.MAX_LINE_CHARS
+    report = analyze_source_files([{"path": "README.md", "content": content}])
+    assert all("githubuserc" not in item["value"] for item in report["endpoints"])
+
+
+def test_a_line_with_no_token_boundary_is_still_read():
+    # Minified JavaScript has no whitespace to cut back to. Falling back to the
+    # hard cut keeps the scanner working on every bundle; refusing the line
+    # would blind it to them entirely.
+    head = "x='" + "a" * 300 + "';fetch('https://api.acme-data.org/v1');"
+    content = head + "b" * 400
+    assert len(head) < source_analyzer.MAX_LINE_CHARS < len(content)
+    assert " " not in content
+    report = analyze_source_files([{"path": "src/app.js", "content": content}])
+    assert [item["value"] for item in report["endpoints"]] == ["api.acme-data.org/v1"]
