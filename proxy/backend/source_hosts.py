@@ -404,6 +404,24 @@ def capabilities(ref: ProjectRef) -> HostCapabilities:
     return CAPABILITIES_BY_API[ref.api]
 
 
+def names_no_project(url: str) -> bool:
+    """Report whether `url` is on a forge we know yet names no project on it.
+
+    True for `github.com/your-project`, `gitlab.com/Some-User` and the bare
+    `gerrit.wikimedia.org/r`: a recognised host followed by a path too short,
+    or too oddly shaped, to be a repository. These are placeholders and typos
+    in tool records, and no request will ever make one resolve, so the scanner
+    settles them instead of asking the host hourly.
+
+    False for a host we do not recognise as a forge at all -- including the
+    *.github.com and *.gitlab.com subdomains repository_scan clones without
+    enrichment -- because a URL this module cannot place is not a URL this
+    module can rule out.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    return host in PROVIDERS_BY_HOST and project_ref(url) is None
+
+
 def clone_url(ref: ProjectRef) -> str:
     """Return the anonymous HTTPS git URL for `ref`, or "" if it holds no git.
 
