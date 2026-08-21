@@ -202,12 +202,19 @@ def collection_payload(path: str, params: Any, *, include_replica: bool = True) 
     rows = _cached_rows(path)
     if path == "/api/lists/" and str(params.get("featured") or "").casefold() == "true":
         rows = [row for row in rows if row.get("featured") is True]
+    list_activity_available: bool | None = None
     if path == "/api/recent/":
         # Filtered before paging so `count` and `next` describe the rows a
         # reader may actually see. The replica mirrors upstream verbatim, and
         # upstream reports revisions for unpublished lists and for every user's
         # favorites list.
-        rows = activity_privacy.public_activity_rows(rows)
+        published = published_list_ids()
+        rows = activity_privacy.public_activity_rows(rows, published)
+        # An empty allowlist means the replica has not synchronized any list
+        # yet, so *every* upstream list revision failed closed. Readers are told
+        # that much and no more: naming the withheld rows would itself disclose
+        # that an unpublished list changed.
+        list_activity_available = bool(published)
     page = _int(params.get("page"), 1, maximum=100_000)
     page_size = _int(params.get("page_size"), DEFAULT_PAGE_SIZE)
     offset = (page - 1) * page_size
@@ -222,6 +229,8 @@ def collection_payload(path: str, params: Any, *, include_replica: bool = True) 
         else None,
         "results": selected,
     }
+    if list_activity_available is not None:
+        payload["listActivityAvailable"] = list_activity_available
     if include_replica:
         payload["replica"] = replica_status()
     return payload

@@ -294,3 +294,36 @@ def test_overlay_assembler_returns_only_the_viewers_own_favorites() -> None:
     overlay = assemble_overlay(viewer_id)
 
     assert overlay["favorites"] == ["viewer-tool"]
+
+
+def test_recent_payload_reports_whether_list_activity_is_available() -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+
+    # Cold replica: the allowlist is empty, so all list activity is withheld.
+    assert catalog_read.collection_payload("/api/recent/", {})["listActivityAvailable"] is False
+
+    _seed_lists([{"id": 861, "title": "Public", "published": True}])
+
+    assert catalog_read.collection_payload("/api/recent/", {})["listActivityAvailable"] is True
+    # The flag describes the recent feed only; other collections never carry it.
+    assert "listActivityAvailable" not in catalog_read.collection_payload("/api/lists/", {})
+
+
+def test_the_allowlist_is_read_once_per_batch_not_once_per_row(monkeypatch) -> None:
+    db.configure("sqlite://")
+    db.init_schema()
+    _seed_lists([{"id": 861, "title": "Public", "published": True}])
+    reads = 0
+    original = catalog_read.published_list_ids
+
+    def counted() -> frozenset[str]:
+        nonlocal reads
+        reads += 1
+        return original()
+
+    monkeypatch.setattr(catalog_read, "published_list_ids", counted)
+
+    rows = [_upstream_list_row(index, f"L{index}") for index in range(20)]
+    assert len(activity_privacy.public_activity_rows(rows)) == 0
+    assert reads == 1
