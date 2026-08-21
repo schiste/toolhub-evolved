@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 from functools import cache
 from typing import Final
@@ -251,6 +252,29 @@ def strip_comments(body: str) -> str:
     return _LINE_COMMENT.sub(" ", _BLOCK_COMMENT.sub(_blank_block, body or ""))
 
 
+def _without_format_marks(text: str) -> str:
+    """Drop invisible formatting marks so Python agrees with storage about sameness.
+
+    A stray left-to-right mark is invisible in the editor that produced it and
+    ignorable to the database collation, so two spellings that differ only by
+    one are a single row to MySQL while staying two distinct strings to Python.
+    Both unique keys this module feeds -- (wiki, title) on pages and the whole
+    resolved edge on imports -- assume the two notions of equality agree.
+
+    A Meta `global.js` is the page that proved they did not: it loads
+    `User:Hoo man/tagger.js` twice, once with a trailing U+200E left over from
+    a copied link, and the census offered both spellings to one INSERT.
+
+    Dropping them is also the answer demand wants. A script reached through an
+    invisible character is the same script, and counting it separately would
+    split its demand across a mark nobody can see.
+    """
+    # No ASCII character is in category Cf, and almost every title is ASCII.
+    if text.isascii():
+        return text
+    return "".join(character for character in text if unicodedata.category(character) != "Cf")
+
+
 def canonical_title(title: str) -> str:
     """Return one spelling of a wiki page title.
 
@@ -260,7 +284,7 @@ def canonical_title(title: str) -> str:
     not true on every Wiktionary; a wiki where it is false would need this
     made conditional before its titles could be keyed on.)
     """
-    clean = " ".join(str(title or "").replace("_", " ").split())
+    clean = " ".join(_without_format_marks(str(title or "")).replace("_", " ").split())
     if not clean:
         return ""
     stem = _ALIAS_PREFIX.sub("", clean)
@@ -325,7 +349,9 @@ def _local_template(verb: str, wiki: str) -> str:
 
 def _resolve(verb: str, argument: str, wiki: str) -> tuple[str, str, str]:
     """Turn one quoted loader argument into (wiki, title, url); "" where unusable."""
-    raw = argument.strip()
+    # Cleaned before anything reads it, so the URL this returns and the title
+    # derived from it are both already in storage's spelling.
+    raw = _without_format_marks(argument).strip()
     if not raw:
         return ("", "", "")
     template = _local_template(verb, wiki)
