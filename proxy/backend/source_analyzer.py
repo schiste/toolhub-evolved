@@ -1491,6 +1491,24 @@ def _project_from_host(host: str, sub: str, family: str) -> tuple[str, str, floa
     return host, host, 0.78
 
 
+def _bounded_line(raw: str) -> str:
+    """Return the line cut to budget, without splitting the token at the cut.
+
+    A contributor table in a README is one very long line of URLs, and cutting
+    it at a fixed width left `https://avatars.githubusercon` behind -- a name
+    that parses as a hostname, resolves nowhere, and reads in a report as a
+    real service the tool contacts. Dropping the partial token at the cut
+    costs at most one hit and invents none.
+
+    A line with no whitespace in it at all -- minified JavaScript, a long data
+    URI -- has no token boundary to cut back to and is left as it was.
+    """
+    if len(raw) <= MAX_LINE_CHARS:
+        return raw
+    head, space, _ = raw[:MAX_LINE_CHARS].rpartition(" ")
+    return head if space else raw[:MAX_LINE_CHARS]
+
+
 def _external_endpoint_count(endpoints: list[dict[str, Any]]) -> int:
     return sum(1 for item in endpoints if item["category"] == source_endpoints.FAMILY_EXTERNAL)
 
@@ -2938,7 +2956,7 @@ def analyze_source_files(
         # would otherwise make npmjs.org one of the loudest endpoints found.
         wants_endpoints = _source_class(source_file.path) != "lockfile"
         for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
-            line = raw_line[:MAX_LINE_CHARS]
+            line = _bounded_line(raw_line)
             if wants_endpoints:
                 _scan_endpoints(findings, source_file.path, line_number, line)
             _scan_projects(findings, source_file.path, line_number, line)

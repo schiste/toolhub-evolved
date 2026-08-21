@@ -374,8 +374,152 @@ def test_the_api_path_of_a_wiki_is_not_a_wiki_page():
 
 
 def test_a_wikilike_prefix_is_not_the_article_path():
-    # `/wikidata/` and `/wikipedia/` start with the same five letters. The
-    # image below is one of the most-fetched addresses in the whole corpus.
-    assert values("https://upload.wikimedia.org/wikipedia/commons/1/12/Imbox.png") == [
-        "upload.wikimedia.org/wikipedia/commons/{}/{}/Imbox.png"
+    # `/wikidata/` and `/wikipedia/` start with the same five letters, so the
+    # article rule has to stop at the segment boundary or it takes both.
+    assert values("https://dumps.acme-data.org/wikipedia/commons/1/12/pages-meta") == [
+        "dumps.acme-data.org/wikipedia/commons/{}/{}/pages-meta"
     ]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Measured in pywikibot/fixes.py: a regex literal whose `.*` contains a
+        # dot, which used to be the only thing a hostname had to have.
+        r"fixes = {'pattern': r'http://.*?object=tx\|'}",
+        "re.compile(r'https://[a-z]+\\.example\\.org/')",
+        # DNS labels do not carry underscores, and a bare label is not a host.
+        "https://not_a_host.acme-data.org/v1",
+        "https://-leading.acme-data.org/v1",
+        "https://trailing-.acme-data.org/v1",
+    ],
+)
+def test_something_shaped_like_a_pattern_is_not_a_hostname(line):
+    assert source_endpoints.endpoints(line) == ()
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # Archives and CORS proxies address their target inside the path.
+        # urlsplit has already collapsed the target's `//` by the time this
+        # sees it, so the remnant is a bare `http:` segment.
+        ("https://web.archive.org/web/20200101/http://www.bbc.co.uk/news", "web.archive.org/web/{}/{}"),
+        ("https://archive.md/2020/https://www.bbc.com", "archive.md/{}/{}"),
+        ("https://cors-anywhere.herokuapp.com/https://petscan.wmflabs.org", "cors-anywhere.herokuapp.com/{}"),
+    ],
+)
+def test_a_path_that_swallows_another_url_stops_there(url, expected):
+    # Otherwise the report names the BBC as a service the tool reaches, when
+    # the BBC was an example in a docstring and the archive is the endpoint.
+    assert values(url) == [expected]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Declared at the top of every Android layout, resolved by nothing.
+        'xmlns:android="http://schemas.android.com/apk/res/android"',
+        "https://www.opengis.net/kml/2.2",
+        "https://wikiba.se/ontology#",
+        "https://dev.w3.org/html5/websockets",
+        # Developer documentation, by any of the names it goes under.
+        "https://developer.mozilla.org/en-US/docs/Web/API/EventSource/close",
+        "https://doc.rust-lang.org/cargo/reference/manifest.html",
+        "https://datatracker.ietf.org/doc/html/rfc7807",
+        # A package's page on a registry; the dependencies bucket has the fact.
+        "https://pypi.org/project/mwoauth",
+        "https://www.npmjs.com/package/axios",
+        # Store listings and the badge services that decorate a README.
+        "https://play.google.com/store/apps/details?id=fr.free.nrw.commons",
+        "https://f-droid.org/repository/browse",
+        "https://app.codacy.com/project/badge/Grade/abc123",
+        # A defunct issue tracker is still an issue tracker.
+        "https://bugzilla.wikimedia.org/show_bug.cgi",
+    ],
+)
+def test_more_things_named_in_source_that_nothing_calls(line):
+    assert source_endpoints.endpoints(line) == ()
+
+
+def test_a_documentation_subdomain_does_not_swallow_a_lookalike():
+    # `docker.io` starts with `doc`. The rule needs the label to end there.
+    assert only("https://docker.io/v2/library/python/manifests/3.12").host == "docker.io"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Measured on x-tools/xtools: interface icons served from the same host
+        # as the media a tool uploads, fifteen of twenty-four findings.
+        "https://upload.wikimedia.org/wikipedia/commons/e/e0/Mop.svg",
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/Admin_bot.png",
+        "https://cdn.acme-data.org/assets/app.css",
+        "https://cdn.acme-data.org/fonts/inter.woff2",
+        "https://cdn.acme-data.org/favicon.ico",
+    ],
+)
+def test_a_file_to_look_at_is_not_a_service_to_call(line):
+    assert source_endpoints.endpoints(line) == ()
+
+
+def test_a_media_path_that_is_not_an_asset_still_counts():
+    # The rule keys on the extension, so the upload host itself stays reachable.
+    assert only("https://upload.wikimedia.org/w/api.php").host == "upload.wikimedia.org"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://symfony.com/doc/current/best_practices.html",
+        "https://www.php.net/manual/en/function.strtotime.php",
+        "https://graphviz.org/docs/outputs",
+        "https://turbo.hotwired.dev/handbook/drive",
+        "https://acme-data.org/tutorial/getting-started",
+    ],
+)
+def test_a_manual_on_the_product_domain_is_still_a_manual(url):
+    assert source_endpoints.endpoints(url) == ()
+
+
+def test_a_path_named_for_a_document_type_is_not_a_manual():
+    # `/document` starts with `doc`. The rule needs the segment to end there.
+    assert only("https://api.acme-data.org/document/42").path == "/document/{}"
+
+
+def test_a_balanced_bracket_belongs_to_the_address():
+    # Measured in x-tools/xtools: a Commons file name disambiguated with
+    # parentheses, ending the match at `Pliers_with_yellow_handles_` and filing
+    # the first half of a file name as a route.
+    line = (
+        "interface-admin: https://upload.wikimedia.org/wikipedia/commons/thumb/"
+        "7/7e/Pliers_(rotated).svg/20px-Pliers_(rotated).svg.png"
+    )
+    assert source_endpoints.endpoints(line) == ()
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "See (https://api.acme-data.org/v1) for details",
+        "[the endpoint](https://api.acme-data.org/v1)",
+        "call(https://api.acme-data.org/v1)",
+    ],
+)
+def test_a_bracket_around_the_address_is_not_part_of_it(line):
+    assert only(line).path == "/v1"
+
+
+def test_an_address_the_parser_refuses_ends_only_itself():
+    # `urlsplit` raises on an authority holding a character that NFKC turns into
+    # a delimiter. The scan runs over every line of every repository the crawler
+    # reaches, so the line has to survive the address it cannot read.
+    line = "https://acme\uff03data.org/v1 and https://api.acme-data.org/v1"
+    assert [item.value for item in source_endpoints.endpoints(line)] == ["api.acme-data.org/v1"]
+
+
+def test_a_callback_placeholder_does_not_end_the_query():
+    # JSONP spells its callback `callback=?`. Reading that as the end of the
+    # address cost QuickStatements the `action=query` on a call it makes.
+    line = "$.getJSON('https://api.acme-data.org/w/api.php?callback=?&action=query&titles=X')"
+    assert values(line) == ["api.acme-data.org/w/api.php?action=query"]

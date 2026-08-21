@@ -556,11 +556,20 @@ survives -- every other query value is dropped unread, so a URL carrying an
 `api_key` is stored as its path alone. Links a tool merely reads are not
 endpoints and are dropped rather than filed alongside them: wiki article paths
 (`/wiki/<Title>`), repository browse URLs on the code forges, documentation and
-question-and-answer hosts, and URL shorteners, whose target is not in the source
-at all. Release assets and raw blobs stay, because a `wget` in a Dockerfile is a
-real fetch. Measured over three real repositories this dropped three findings in
-five; on one of them the reading material had filled the per-bucket cap and
-displaced the tool's actual API surface. `GET /v1/source-analysis/` and
+question-and-answer hosts, manual trees on a product domain (`/doc`, `/docs`,
+`/manual`), files served to be looked at rather than called (images, fonts,
+stylesheets), package-registry and app-store listings, XML namespace
+identifiers, badge services, and URL shorteners, whose target is not in the
+source at all. Release assets and raw blobs stay, because a `wget` in a
+Dockerfile is a real fetch. What is kept is also checked for having been read
+whole: a hostname must be made of real DNS labels, so a regex literal cannot
+become one; a path stops at an embedded second URL, so an archive is reported as
+the archive rather than as its target; and neither the line budget nor a
+bracket may cut an address in the middle, because half an address reads in a
+report as a service that does not exist. Measured over nine real repositories
+these rules took the corpus from 207 findings to 148; on two of them the reading
+material had filled the per-bucket cap and displaced the tool's actual API
+surface. `GET /v1/source-analysis/` and
 `GET /v1/source-analysis/<id>/` are private reads for the report owner;
 `POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
 `approved`, or `rejected`. The same analyzer is available for local checkouts
