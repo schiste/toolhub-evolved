@@ -211,9 +211,24 @@ def _git(args: list[str], *, cwd: Path | None = None) -> str:
     return _git_raw(args, cwd=cwd).decode("utf-8", "replace").strip()
 
 
+def git_target(url: str) -> str:
+    """Return the URL git should be pointed at for this source URL.
+
+    A tool record names where a human should look, which is frequently not
+    where git listens: a Gerrit browse URL, a deep link into a subdirectory, a
+    branch view. source_hosts resolves all of those to one project, and the
+    project is what gets cloned. A URL it cannot place -- a *.github.com or
+    *.gitlab.com subdomain, which is a gist or a raw host rather than a forge
+    -- is handed to git unchanged, exactly as before.
+    """
+    ref = source_hosts.project_ref(url)
+    target = source_hosts.clone_url(ref) if ref is not None else ""
+    return target or url
+
+
 def repository_head(url: str) -> str:
     """Read the remote HEAD commit without downloading a repository."""
-    output = _git(["ls-remote", "--symref", url, "HEAD"])
+    output = _git(["ls-remote", "--symref", git_target(url), "HEAD"])
     for line in output.splitlines():
         parts = line.split()
         if len(parts) >= MIN_HEAD_PARTS and parts[-1] == "HEAD" and SHA_RE.fullmatch(parts[0]):
@@ -502,7 +517,7 @@ def _acquire_clone(url: str) -> _Source:
     """Read one repository from a bounded clone that is discarded immediately."""
     with tempfile.TemporaryDirectory(prefix="toolhub-repository-") as workspace:
         checkout = Path(workspace) / "checkout"
-        head = clone_repository(url, checkout)
+        head = clone_repository(git_target(url), checkout)
         return _Source(head=head, files=_read_repository_tree(checkout), context=_local_git_context([checkout]))
 
 
@@ -539,8 +554,24 @@ def _state(s: Any, tool_name: str) -> RepositoryAnalysisState:  # noqa: ANN401 -
     return row
 
 
+# A day was the longest a repository was ever left alone, which is the right
+# ceiling for a repository having a bad week and the wrong one for a repository
+# that is gone. Production settled at 199 failing rows, nearly all of them at
+# the attempt cap: private, deleted, or an empty placeholder that will never
+# hold code. Retried daily they were 84-99% of everything the backlog lane
+# scanned, so the lane spent its budget re-confirming known-dead URLs while
+# real work waited behind them.
+#
+# Doubling past a day turns that into roughly seven checks a day rather than
+# 199, without ever writing a repository off: a month is short enough that one
+# coming back is picked up, and one success resets attempts to zero, so a
+# genuinely transient failure never reaches these intervals at all.
+MAX_BACKOFF_HOURS = 30 * 24
+MAX_BACKOFF_DOUBLINGS = 10
+
+
 def _backoff(attempts: int) -> datetime:
-    hours = min(24, 2 ** min(max(attempts, 0), 5))
+    hours = min(MAX_BACKOFF_HOURS, 2 ** min(max(attempts, 0), MAX_BACKOFF_DOUBLINGS))
     return utcnow() + timedelta(hours=hours)
 
 
@@ -623,17 +654,53 @@ def _save_failure(tool_name: str, url: str, provider: str, error: str) -> None:
         row.sync_status = SYNC_ERROR
 
 
-def _save_unsupported(tool_name: str, raw_url: str) -> None:
+UNSUPPORTED_HOST = "repository URL is not an allowed public HTTPS provider"
+UNSUPPORTED_PATH = "repository URL names a known host but no project on it"
+
+
+def _save_unsupported(
+    tool_name: str, raw_url: str, *, provider: str = "unsupported", reason: str = UNSUPPORTED_HOST
+) -> None:
+    """Record a verdict no future request can change, keyed to this exact URL.
+
+    Settled rather than failed, because the two cost different things. A
+    failure is retried on a timer forever; this is a statement about the
+    record, and _settled_unsupported compares the URL, so correcting the record
+    upstream is what puts the tool back in the queue.
+    """
     with db.session_scope() as s:
         row = _state(s, tool_name)
         row.repository_url = raw_url
-        row.provider = "unsupported"
+        row.provider = provider
         row.status = "unsupported"
         row.checked_at = utcnow()
         row.next_attempt_at = None
-        row.last_error = "repository URL is not an allowed public HTTPS provider"
+        row.last_error = reason
         row.source = SOURCE_REPOSITORY_SCAN
         row.sync_status = SYNC_ERROR
+
+
+def _settle_without_request(tool_name: str, raw_url: str, url: str, *, page: wiki_sources.WikiSource | None) -> bool:
+    """Record and report a verdict that needs no request to reach.
+
+    Two URL shapes get one. A URL on no allowed host at all, and a URL on a
+    host we do know that names no project on it -- the bare
+    `gerrit.wikimedia.org/r`, a `github.com/your-project` placeholder, a
+    single-segment GitLab path. The second used to be cloned anyway, once an
+    hour, for the same "remote: Not Found" every time.
+
+    Both are statements about the tool record rather than about a repository,
+    which is why they settle instead of failing: nothing the host could do
+    would change the answer, and only an edit upstream should reopen it.
+    """
+    if not url:
+        if raw_url:
+            _save_unsupported(tool_name, raw_url)
+        return True
+    if page is None and source_hosts.names_no_project(url):
+        _save_unsupported(tool_name, raw_url, provider=provider_for(url), reason=UNSUPPORTED_PATH)
+        return True
+    return False
 
 
 def _current_head(state: RepositoryAnalysisState, url: str) -> str:
@@ -656,12 +723,10 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
     """
     raw_url = _raw_tool_repository(record)
     url = repository_url(raw_url)
-    if not url:
-        if raw_url:
-            _save_unsupported(tool_name, raw_url)
+    page = wiki_sources.wiki_source(url) if url else None
+    if _settle_without_request(tool_name, raw_url, url, page=page):
         return "unsupported"
     provider = provider_for(url)
-    page = wiki_sources.wiki_source(url)
     try:
         # A wiki page set has no cheap head. Its members are only known once
         # they have been fetched -- a gadget's file list lives in a page of its

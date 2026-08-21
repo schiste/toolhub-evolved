@@ -1515,3 +1515,173 @@ def test_a_stale_cache_counts_as_an_analysis_rather_than_as_an_error(monkeypatch
     assert results["analyzed"] == 1
     assert results[repository_scan.CACHES_STALE] == 1
     assert results["candidates"] == 1
+
+
+# --- pointing git at the project rather than the page ------------------------
+
+
+@pytest.mark.parametrize(
+    ("recorded", "cloned"),
+    [
+        # Every one of these is a URL a production tool record carries, and
+        # every one of them made git answer 403 or "not found" while the
+        # repository itself was public.
+        (
+            "https://gerrit.wikimedia.org/g/mediawiki/extensions/CIForms",
+            "https://gerrit.wikimedia.org/r/mediawiki/extensions/CIForms",
+        ),
+        (
+            "https://gerrit.wikimedia.org/r/admin/repos/mediawiki%2Fextensions%2FGWToolset",
+            "https://gerrit.wikimedia.org/r/mediawiki/extensions/GWToolset",
+        ),
+        (
+            "https://github.com/wikimedia/labs-tools-heritage/tree/master/api",
+            "https://github.com/wikimedia/labs-tools-heritage",
+        ),
+        (
+            "https://gitlab.wikimedia.org/toolforge-repos/fr-toolkit/-/tree/dev-fr-toolkit",
+            "https://gitlab.wikimedia.org/toolforge-repos/fr-toolkit",
+        ),
+    ],
+)
+def test_git_target_is_the_repository_not_the_page(recorded, cloned):
+    assert repository_scan.git_target(recorded) == cloned
+
+
+def test_a_host_without_a_resolvable_project_is_cloned_unchanged():
+    """A gist or raw host is not a forge, so nothing here can improve its URL.
+
+    source_hosts declines to place these deliberately -- guessing an API origin
+    from them would aim authenticated requests at the wrong service -- and the
+    scanner must keep cloning them exactly as it always has.
+    """
+    for url in ("https://gist.github.com/example/1234", "https://pages.gitlab.com/example/site"):
+        assert repository_scan.git_target(url) == url
+
+
+def test_the_head_lookup_asks_about_the_resolved_project(monkeypatch):
+    """The 403 came from ls-remote, before any clone, so the fix has to reach it."""
+    asked = []
+
+    def fake_git(args, cwd=None):
+        asked.append(args)
+        return "abc1234567890123456789012345678901234567\tHEAD"
+
+    monkeypatch.setattr(repository_scan, "_git", fake_git)
+
+    repository_scan.repository_head("https://gerrit.wikimedia.org/g/mediawiki/core")
+
+    assert asked == [["ls-remote", "--symref", "https://gerrit.wikimedia.org/r/mediawiki/core", "HEAD"]]
+
+
+# --- verdicts that need no request -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/your-project",
+        "https://github.com/pyto_ui:font",
+        "https://gitlab.com/Hans5958-MWS",
+        "https://gerrit.wikimedia.org/r",
+    ],
+)
+def test_a_known_host_naming_no_project_settles_without_cloning(monkeypatch, url):
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: pytest.fail("must not ask the host"))
+    monkeypatch.setattr(repository_scan, "clone_repository", lambda *_args: pytest.fail("must not clone"))
+
+    outcome = repository_scan.scan_tool("placeholder", {"name": "placeholder", "repository": url})
+
+    assert outcome == "unsupported"
+    with db.session_scope() as s:
+        row = s.get(RepositoryAnalysisState, "placeholder")
+        assert row.status == "unsupported"
+        assert row.last_error == repository_scan.UNSUPPORTED_PATH
+        # Keyed to the record's own spelling, so partition_candidates -- which
+        # compares the raw record URL -- recognises the verdict as settled.
+        assert row.repository_url == url
+        # No backoff to expire: only an edit upstream should reopen this.
+        assert row.next_attempt_at is None
+
+
+def test_a_settled_placeholder_stays_out_of_the_backlog():
+    with db.session_scope() as s:
+        s.add(
+            CanonicalToolCache(
+                tool_name="placeholder",
+                record={"name": "placeholder", "repository": "https://github.com/your-project"},
+                source_url="https://toolhub.example/placeholder",
+                expires_at=datetime.now(tz=UTC).replace(tzinfo=None) + timedelta(days=1),
+                stale_until=datetime.now(tz=UTC).replace(tzinfo=None) + timedelta(days=2),
+            )
+        )
+
+    assert (
+        repository_scan.scan_tool(
+            "placeholder", {"name": "placeholder", "repository": "https://github.com/your-project"}
+        )
+        == "unsupported"
+    )
+
+    backlog, _refresh = repository_scan.partition_candidates()
+
+    assert [name for name, _record in backlog] == []
+
+
+# --- how long a failing repository is left alone -----------------------------
+
+
+def test_backoff_doubles_past_a_day_and_stops_at_a_month():
+    """A day was the ceiling, and 199 dead rows a day crowded out real work.
+
+    The early intervals are unchanged: a repository having a bad week should
+    still be retried within hours. What changed is that the curve no longer
+    flattens at one day, so a repository that is gone is asked about monthly
+    rather than daily.
+    """
+    now = repository_scan.utcnow()
+    hours = {n: round((repository_scan._backoff(n) - now).total_seconds() / 3600) for n in (0, 1, 3, 5, 8, 10, 40)}
+
+    assert hours[0] == 1
+    assert hours[1] == 2
+    assert hours[3] == 8
+    # Where the old curve had already flattened to 24.
+    assert hours[5] == 32
+    # Where production sits: 195 of its 199 failing rows are at eight attempts.
+    assert hours[8] == 256
+    # And where the new one flattens, for good.
+    assert hours[10] == repository_scan.MAX_BACKOFF_HOURS
+    assert hours[40] == repository_scan.MAX_BACKOFF_HOURS
+
+
+def test_a_successful_scan_puts_a_long_backoff_back_to_zero(monkeypatch):
+    """The curve is climbed only by failing, so one success undoes all of it."""
+    commit = "abc1234567890123456789012345678901234567"
+    with db.session_scope() as s:
+        s.add(
+            RepositoryAnalysisState(
+                tool_name="recovered",
+                repository_url="https://github.com/example/recovered",
+                status="error",
+                attempts=9,
+                next_attempt_at=None,
+            )
+        )
+    monkeypatch.setattr(repository_scan, "repository_head", lambda _url: commit)
+    monkeypatch.setattr(repository_scan, "clone_repository", lambda *_args: commit)
+    monkeypatch.setattr(repository_scan, "_read_repository_tree", lambda _repo: [{"path": "a.py", "content": "x = 1"}])
+    monkeypatch.setattr(repository_scan, "_local_git_context", lambda _paths: {})
+    monkeypatch.setattr(
+        repository_scan,
+        "analyze_source_files",
+        lambda files, **kwargs: {"filesAnalyzed": len(files), "healthCore": {"score": 80, "grade": "good"}},
+    )
+    monkeypatch.setattr(repository_scan.tool_summaries, "refresh", lambda *_args: 1)
+
+    repository_scan.scan_tool("recovered", {"name": "recovered", "repository": "https://github.com/example/recovered"})
+
+    with db.session_scope() as s:
+        row = s.get(RepositoryAnalysisState, "recovered")
+        assert row.status == "analyzed"
+        assert row.attempts == 0
+        assert row.next_attempt_at is None

@@ -568,3 +568,74 @@ def test_the_wiki_count_ignores_a_header_that_is_not_its_own():
     # X-Total belongs to GitLab. A proxy or CDN that adds one must not be able
     # to overwrite the number the endpoint actually answered with.
     assert source_hosts.count_from_response(_ref(WIKI_GADGET), {"X-Total": "9"}, {"count": 3}) == 3
+
+
+# --- URL to clone target -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # Gerrit publishes three browse URLs and serves git under none of them.
+        # These are the exact spellings that tool records carry, and each one
+        # answered 403 when the scanner cloned it verbatim.
+        (
+            "https://gerrit.wikimedia.org/g/mediawiki/extensions/CIForms",
+            "https://gerrit.wikimedia.org/r/mediawiki/extensions/CIForms",
+        ),
+        (
+            "https://gerrit.wikimedia.org/r/plugins/gitiles/labs/tools/Isa",
+            "https://gerrit.wikimedia.org/r/labs/tools/Isa",
+        ),
+        # The admin view encodes the project's slashes; the clone target must
+        # spell them as slashes again.
+        (
+            "https://gerrit.wikimedia.org/r/admin/repos/mediawiki%2Fextensions%2FGWToolset",
+            "https://gerrit.wikimedia.org/r/mediawiki/extensions/GWToolset",
+        ),
+        # A deep link into a repository still names that repository.
+        (
+            "https://github.com/wikimedia/labs-tools-heritage/tree/master/api",
+            "https://github.com/wikimedia/labs-tools-heritage",
+        ),
+        (
+            "https://github.com/marcinwrochna/abbrevIso/blob/master/server.js",
+            "https://github.com/marcinwrochna/abbrevIso",
+        ),
+        (
+            "https://gitlab.wikimedia.org/toolforge-repos/fr-toolkit/-/tree/dev-fr-toolkit",
+            "https://gitlab.wikimedia.org/toolforge-repos/fr-toolkit",
+        ),
+        # Hosts that serve their API from a separate origin must still clone
+        # from their own: api.github.com has no repositories on it.
+        ("https://github.com/owner/name.git", "https://github.com/owner/name"),
+        ("https://bitbucket.org/owner/name", "https://bitbucket.org/owner/name"),
+        ("https://codeberg.org/owner/name", "https://codeberg.org/owner/name"),
+    ],
+)
+def test_clone_url_is_the_project_not_the_page(url, expected):
+    ref = source_hosts.project_ref(url)
+    assert ref is not None
+    assert source_hosts.clone_url(ref) == expected
+
+
+def test_a_wiki_page_has_no_clone_url():
+    """Wiki-hosted source is read through the MediaWiki API, never cloned."""
+    for url in (WIKI_GADGET, WIKI_SCRIPT):
+        ref = source_hosts.project_ref(url)
+        assert ref is not None
+        assert source_hosts.clone_url(ref) == ""
+
+
+def test_the_encoded_gerrit_path_reaches_the_api_as_one_project():
+    """The admin spelling must not be encoded twice on its way to the API.
+
+    project_url percent-encodes the project name whole. Handing it a name that
+    was already encoded asked Gerrit for a project with literal '%2F' in it.
+    """
+    ref = source_hosts.project_ref(
+        "https://gerrit.wikimedia.org/r/admin/repos/mediawiki%2Fextensions%2FGWToolset"
+    )
+    assert ref is not None
+    assert ref.path == "mediawiki/extensions/GWToolset"
+    assert source_hosts.project_url(ref).endswith("/projects/mediawiki%2Fextensions%2FGWToolset")
