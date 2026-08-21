@@ -54,6 +54,19 @@ command = "uv run --no-project --with-requirements proxy/requirements.txt --with
 cost = 3
 triggers = ["proxy/**/*.py", "tests/proxy/**/*.py", "proxy/requirements.txt", "pyproject.toml"]
 
+# tests/tools was run by nothing at all -- not this file, which triggered only on
+# proxy paths, and not ci.yml, whose pytest step named tests/proxy alone. Six
+# files of guards over the deploy helpers, the changelog freshness gate and the
+# scheduler breaker sat there passing on demand and failing no build. Whole lane
+# is 39 tests in 3.6s, so it is cheap enough to trigger on every tools/ change.
+# tools/**/*.sh is in the triggers because these tests exercise shell: job_guard.sh
+# and continuous_jobs.sh are the subjects, not fixtures.
+[[gate]]
+name = "pytest-tools"
+command = "uv run --no-project --with-requirements proxy/requirements.txt --with pytest --python 3.11 env PYTHONPATH=proxy pytest tests/tools -q"
+cost = 1
+triggers = ["tools/**/*.py", "tools/**/*.sh", "tests/tools/**/*.py", "jobs.yaml"]
+
 # Nothing above reads a single line of JavaScript, CSS, or HTML, so the whole
 # frontend was ungated: session 88's UI change — a new route, a new view, a new
 # stylesheet, 15 new tests — matched no trigger and was promoted on "gate wall

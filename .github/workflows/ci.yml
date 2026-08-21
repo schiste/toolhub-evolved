@@ -92,6 +92,13 @@ jobs:
               run: |
                   pip install -r proxy/requirements.txt
                   PYTHONPATH=proxy pytest tests/proxy -q --cov --cov-report=term-missing
+            # tests/tools was written and then run by nothing: this job named
+            # tests/proxy only, and .aethyme/gates.toml triggered on the same path.
+            # Six files, 39 tests, 3.6s -- guards for the deploy helpers, the
+            # changelog freshness gate and the scheduler breaker, none of which
+            # would have failed a build.
+            - name: Deploy-tooling tests
+              run: PYTHONPATH=proxy pytest tests/tools -q
             # Reported from the run above, so this costs no extra test time. The
             # reverse proxy and the static-file traversal guard stay at 100%
             # even though the tree as a whole is on a ratchet.
