@@ -361,8 +361,15 @@ TECH_RULE_SUFFIXES = {"MediaWiki JavaScript": BROWSER_SCRIPT_SUFFIXES}
 USER_SCRIPT_SUFFIX = ".user.js"
 
 # The toolinfo vocabulary term for each kind of wiki-hosted source page.
-# `wiki_sources` already decides which kind a URL is; this only spells the
+# `wiki_sources` already decides which kind a page is; this only spells the
 # answer the way toolinfo does.
+#
+# KIND_GADGET_PAGE has no entry, and that absence is the policy: a
+# `MediaWiki:Gadget-*` page becomes KIND_GADGET only once the definition page
+# has been read and found to list it, so anything still carrying the page kind
+# is either unregistered or unverified, and neither is a gadget anyone can
+# state. It yields no suggestion rather than a plausible one, because a
+# suggestion fills an empty catalogue field unattended.
 WIKI_KIND_TOOL_TYPE = {
     wiki_sources.KIND_GADGET: "gadget",
     wiki_sources.KIND_USER_SCRIPT: "user script",
@@ -1857,22 +1864,34 @@ def _tool_type_suggestion(
     technology: list[dict[str, Any]],
     apis: list[dict[str, Any]],
     source_label: str = "",
+    wiki_kind: str = "",
 ) -> str | None:
     """Suggest a toolinfo tool type from what the source is, then what it uses.
 
-    Gadgets and user scripts are not inferred here at all, because they do not
-    have to be: both are wiki pages, and the namespace of the page settles it.
-    `MediaWiki:Gadget-Foo.js` is a gadget and `User:Someone/foo.js` is a user
-    script, with no reading of the code involved and no confidence to trade.
+    Neither wiki type is inferred from code here, because neither has to be.
+    A user script is settled by its namespace -- `User:Someone/foo.js` is one,
+    and nothing can disagree. A gadget is settled by `MediaWiki:Gadgets-definition`
+    listing its files, which is a lookup rather than a judgement. Where a fact
+    is on file somewhere, this reads it instead of estimating it.
 
-    The corollary is what fixes the bug this replaced: a checkout that is *not*
-    one of those pages cannot be either type, however much MediaWiki JavaScript
-    it contains. A gadget is code a wiki serves; a git repository is not a wiki.
-    Whatever a repository turns out to be, it is something else -- so the
-    heuristic branch is gone rather than merely outranked.
+    The corollary is what fixed the first bug here: a checkout that is not one
+    of those pages cannot be either type, however much MediaWiki JavaScript it
+    contains. A gadget is code a wiki serves; a git repository is not a wiki.
+
+    `wiki_kind` is that lookup's answer, supplied by whoever fetched the
+    definition page. Without it a gadget-namespace URL is only KIND_GADGET_PAGE,
+    which has no toolinfo term -- the second bug here, and the reason the
+    parameter exists: the title spells a gadget's convention, not its
+    registration, and a retired gadget keeps the title it was retired under.
+
+    Either way a wiki page returns whatever its kind maps to and stops. It never
+    falls through to the technology heuristics below, which read a checkout: a
+    page that is not a gadget is a wiki page of unestablished kind, not a Flask
+    application that happens to live in the MediaWiki namespace.
     """
-    if (page := wiki_sources.wiki_source(source_label)) is not None:
-        return WIKI_KIND_TOOL_TYPE.get(page.kind)
+    page = wiki_sources.wiki_source(source_label)
+    if wiki_kind or page is not None:
+        return WIKI_KIND_TOOL_TYPE.get(wiki_kind or (page.kind if page else ""))
     tech_values = {str(item.get("value")) for item in technology}
     api_values = {str(item.get("value")) for item in apis}
     if tech_values & {"Flask", "Django", "React", "Node.js", "Vue"}:
@@ -3052,7 +3071,9 @@ def _suggestions(report: dict[str, Any]) -> dict[str, Any]:
     ]
     apis = _publishable_rows(report["apis"])
     technology_rows = _publishable_rows(report["technology"], TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE)
-    tool_type = _tool_type_suggestion(technology_rows, apis, str(report.get("sourceLabel") or ""))
+    wiki_page = report.get("wikiPage")
+    wiki_kind = str(wiki_page.get("kind") or "") if isinstance(wiki_page, dict) else ""
+    tool_type = _tool_type_suggestion(technology_rows, apis, str(report.get("sourceLabel") or ""), wiki_kind)
     access_rights = _publishable_rows(report["accessRights"])
     dependencies = _publishable_rows(report["dependencies"])
     oauth_scopes = _publishable_rows(report["oauthScopes"])
@@ -3083,14 +3104,28 @@ def _suggestions(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _wiki_page_row(page: wiki_sources.WikiSource | None) -> dict[str, str]:
+    """Render the resolved source page for the report, or {} when there is none."""
+    if page is None:
+        return {}
+    return {"domain": page.domain, "title": page.title, "kind": page.kind}
+
+
 def analyze_source_files(
     files: object,
     *,
     tool_name: str | None = None,
     source_label: str | None = None,
+    wiki_page: wiki_sources.WikiSource | None = None,
     repository_context: object = None,
 ) -> dict[str, Any]:
-    """Analyze source files and return metadata suggestions with evidence."""
+    """Analyze source files and return metadata suggestions with evidence.
+
+    `wiki_page` is the source page as the fetcher resolved it, and matters for
+    one thing: whether a `MediaWiki:Gadget-*` page was found in the definition
+    page. Callers that did not fetch one omit it, and get no gadget suggestion
+    rather than one taken from the title.
+    """
     normalized = _normalize_source_files(files)
     findings: dict[tuple[str, str], Finding] = {}
     local_python_roots = _local_python_import_roots(normalized)
@@ -3123,6 +3158,9 @@ def analyze_source_files(
     report: dict[str, Any] = {
         "toolName": tool_name or "",
         "sourceLabel": source_label or "",
+        # Recorded, not just consumed: the type suggestion below turns on it,
+        # and a stored report should show what that decision was made from.
+        "wikiPage": _wiki_page_row(wiki_page),
         "filesAnalyzed": len(normalized),
         "projects": _serialized(findings, "projects"),
         "apis": _serialized(findings, "apis"),
