@@ -340,9 +340,49 @@ def engine() -> Engine:
     return _engine
 
 
+# MariaDB's errno for a CREATE TABLE whose name is already taken.
+# ``create_all`` asks whether each table exists and creates the ones that do
+# not, but the question and the CREATE are two statements: two jobs starting in
+# the same second both see a table missing and both try to make it. The loser
+# gets this, and since ``create_all`` issues one statement per table, it gives
+# up with the rest of the schema still uncreated.
+TABLE_EXISTS_ERRNO = 1050
+# One retry settles any number of tables lost to that race, because the retry
+# skips everything that now exists. A second is only reachable if a third job is
+# still creating tables, and stopping there keeps a genuinely broken CREATE from
+# looping.
+SCHEMA_CREATE_ATTEMPTS = 2
+
+
+def _is_table_exists_error(error: BaseException) -> bool:
+    """Say whether the database refused a CREATE because the table is there."""
+    original = getattr(error, "orig", None)
+    args = getattr(original, "args", ()) if original is not None else ()
+    return bool(args) and args[0] == TABLE_EXISTS_ERRNO
+
+
+def _create_missing_tables() -> None:
+    """Create absent tables, treating a concurrent creator as the success it is.
+
+    people-reconcile-incremental lost two runs on 2026-08-21 this way. Nothing
+    was wrong when it happened: the table existed, which is the entire outcome
+    this function wants, and only the job that asked second was told no. Looking
+    again is the right answer, where failing the run discards a whole reconcile
+    pass over a race that had already resolved itself.
+    """
+    for attempt in range(SCHEMA_CREATE_ATTEMPTS):
+        try:
+            Base.metadata.create_all(engine())
+        except SQLAlchemyError as error:
+            if attempt == SCHEMA_CREATE_ATTEMPTS - 1 or not _is_table_exists_error(error):
+                raise
+        else:
+            return
+
+
 def init_schema() -> None:
     """Create any missing tables (idempotent; see docs/RUNBOOK.md for changes)."""
-    Base.metadata.create_all(engine())
+    _create_missing_tables()
     _upgrade_schema()
 
 
