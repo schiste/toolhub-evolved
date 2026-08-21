@@ -215,6 +215,36 @@ for retired_job in account-sync toolforge-account-sync catalog-snapshot; do
 	fi
 done
 
+# `jobs load` recreates a job only when its *definition* changes, so a
+# continuous job whose code changed keeps running the modules it imported at
+# pod start: repository-analysis served pre-fix code for 20 minutes after the
+# deploy that shipped its fix, while every scheduled job picked the same commit
+# up on its next tick, because each tick gets a fresh pod. Restart them here.
+#
+# Unconditional, for two reasons. The head comparison at the top of this script
+# cannot answer "did this job's code change" -- the re-exec leaves before equal
+# to after in the process that reaches this point -- and a worker imports far
+# more than the files its command names. More importantly, a deploy that died
+# after the pull is exactly when a worker is stale, and that is the run whose
+# second attempt a conditional restart would skip.
+#
+# A bounce is cheap for these workers by design; jobs.yaml says as much for the
+# scanner, which stamps its attempt before cloning so an interrupted tool sorts
+# to the back rather than being reselected first on every restart.
+#
+# A failed restart warns instead of aborting: the webservice is already live and
+# the release already promoted, so exiting here reports a failure it cannot
+# undo. Nothing retries a missed restart, so the warning carries the command
+# that finishes the job.
+echo "Restarting continuous jobs ..."
+for continuous_job in $(sh "$REPO_DIR/tools/continuous_jobs.sh" "$REPO_DIR/jobs.yaml"); do
+	if toolforge jobs restart "$continuous_job" >/dev/null 2>&1; then
+		echo "  restarted $continuous_job"
+	else
+		echo "  could not restart $continuous_job; it is still running pre-deploy code. Run: toolforge jobs restart $continuous_job" >&2
+	fi
+done
+
 if [ -x "$VENV_PY" ]; then
 	echo "Queuing last-good projection refresh ..."
 	projection_out="$deployment_log_dir/projection-refresh-$deploy_run_id.out"

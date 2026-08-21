@@ -81,6 +81,13 @@ It activates fully once configured:
    required generations succeed. Failed maintenance therefore preserves the
    last-good public data without delaying an otherwise healthy code release.
 
+    `toolforge jobs load` recreates a job only when its _definition_ changes, so
+    a continuous job keeps the code its pod imported at start. `deploy.sh`
+    therefore restarts every job `jobs.yaml` marks `continuous: true`; scheduled
+    jobs need no restart, since each run gets a fresh pod. A deploy that warns it
+    could not restart one is telling you that worker is still serving the
+    previous release until you run `toolforge jobs restart <name>` yourself.
+
 Unconfigured, the site still runs — live read interface plus signed-out read-only
 mode, with `/oauth/login` answering 503 and official write endpoints returning
 `reauth: true` until the user has a stored Toolhub grant.
