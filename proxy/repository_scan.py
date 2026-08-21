@@ -617,7 +617,11 @@ def _current_head(state: RepositoryAnalysisState, url: str) -> str:
 
 
 def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) -> str:
-    """Scan one canonical tool, returning analyzed, skipped, unsupported, or error."""
+    """Scan one canonical tool, returning what became of it.
+
+    "analyzed", "skipped", "backoff", "unsupported" or "error" -- plus
+    CACHES_STALE, which is an analysis whose derived caches did not refresh.
+    """
     raw_url = _raw_tool_repository(record)
     url = repository_url(raw_url)
     if not url:
@@ -689,13 +693,41 @@ def scan_tool(tool_name: str, record: dict[str, Any], *, force: bool = False) ->
             state.last_error = None
             state.source = SOURCE_REPOSITORY_SCAN
             state.sync_status = SYNC_EVOLVED_REAL
-        graph_enrichment.refresh_tool_names([tool_name])
-        tool_summaries.refresh([tool_name], build_local_tool_summary)
     except (RepositoryScanError, OSError, SourceAnalysisError, ValueError) as exc:
         _save_failure(tool_name, url, provider, str(exc))
         return "error"
     else:
-        return "analyzed"
+        # Deliberately outside the try above. These two refresh caches derived
+        # from a report that is already committed, so their failure cannot mean
+        # the scan failed -- and until this moved, it said exactly that: a lock
+        # timeout in either one returned "error", and _save_failure overwrote a
+        # freshly analyzed row with a backoff. A one-tool run printed
+        # `{"analyzed": 0, "candidates": 1, "error": 1}` over a stored report
+        # that had already reached the live projection.
+        return "analyzed" if _refresh_caches(tool_name) else CACHES_STALE
+
+
+#: Analyzed, but the caches derived from the new report did not refresh. Not a
+#: failure to scan: the report is stored and every lane that reads it will see
+#: it. Counted beside "analyzed" rather than instead of it.
+CACHES_STALE = "caches_stale"
+
+
+def _refresh_caches(tool_name: str) -> bool:
+    """Refresh what a stored report feeds, reporting rather than raising.
+
+    Catches everything, because by the time this runs the report is durable and
+    nothing raised here can undo it. Both refreshes rebuild from the database on
+    their next pass, so a failure costs one lane a cycle of freshness; letting
+    it propagate would cost the analysis itself.
+    """
+    try:
+        graph_enrichment.refresh_tool_names([tool_name])
+        tool_summaries.refresh([tool_name], build_local_tool_summary)
+    except Exception as exc:  # noqa: BLE001 - a stored report must survive a cache that will not rebuild
+        sys.stderr.write(f"repository-scan: analyzed {tool_name} but could not refresh its caches: {exc}\n")
+        return False
+    return True
 
 
 def _scan_order(state: RepositoryAnalysisState | None) -> tuple[bool, datetime]:
@@ -734,7 +766,7 @@ def candidate_tools(limit: int, tool_name: str | None = None) -> list[tuple[str,
 
 
 def _new_results() -> dict[str, int]:
-    return dict.fromkeys(("candidates", "analyzed", "skipped", "backoff", "unsupported", "error"), 0)
+    return dict.fromkeys(("candidates", "analyzed", "skipped", "backoff", "unsupported", "error", CACHES_STALE), 0)
 
 
 def _scan_one(name: str, record: dict[str, Any], results: dict[str, int], *, force: bool) -> str:
@@ -752,6 +784,10 @@ def _scan_one(name: str, record: dict[str, Any], results: dict[str, int], *, for
             # silently would hide a database problem behind a run that merely
             # looks like a lot of scan errors. Report it and carry on.
             sys.stderr.write(f"repository-scan: could not record the failure for {name}: {save_exc}\n")
+    if result == CACHES_STALE:
+        # A qualifier on an analysis, not a fifth outcome: the tool was
+        # analyzed, so it is counted as analyzed, and this says what is behind.
+        results["analyzed"] += 1
     results[result] += 1
     return result
 
