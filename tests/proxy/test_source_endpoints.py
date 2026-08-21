@@ -523,3 +523,61 @@ def test_a_callback_placeholder_does_not_end_the_query():
     # address cost QuickStatements the `action=query` on a call it makes.
     line = "$.getJSON('https://api.acme-data.org/w/api.php?callback=?&action=query&titles=X')"
     assert values(line) == ["api.acme-data.org/w/api.php?action=query"]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Measured on psf/requests: the private-range addresses its timeout
+        # tests connect to, and a hostname invented for a docstring.
+        "https://192.168.1.1/api",
+        "https://10.255.255.1/",
+        "https://172.16.1.22/v1",
+        "https://foo.d.o.t/path",
+        "https://domain.tld/path/to/resource",
+    ],
+)
+def test_a_name_that_cannot_resolve_is_not_a_service(line):
+    assert source_endpoints.endpoints(line) == ()
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Measured on cli/cli, where installation instructions filled the cap.
+        "https://formulae.brew.sh/formula/gh",
+        "https://aur.archlinux.org/packages/github-cli-git",
+        "https://dl-cdn.alpinelinux.org/alpine/edge/community",
+        "https://webinstall.dev/gh",
+        "https://anaconda.org/conda-forge/gh",
+        "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck",
+        # The same repository browsed under a distribution's own name.
+        "https://cgit.freebsd.org/ports/tree/devel/gh",
+        "https://cvsweb.openbsd.org/ports/devel/github-cli",
+        "https://gitlab.archlinux.org/archlinux/packaging/packages/github-cli",
+        # An announcement, on the product's own domain.
+        "https://github.blog/changelog/2024-06-25-artifact-attestations",
+        "https://acme-data.org/news/2024-06-25-release",
+    ],
+)
+def test_how_to_install_it_is_not_a_call_it_makes(line):
+    assert source_endpoints.endpoints(line) == ()
+
+
+def test_the_api_a_forge_actually_serves_survives_its_neighbours():
+    # The whole point of the forge rules is that they must not reach this.
+    assert only("https://api.github.com/repos/cli/cli/releases").host == "api.github.com"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        # `/post` is what an HTTP test suite calls its echo route, and a
+        # `/releases/` prefix is where a build fetches its own tarball.
+        ("https://api.acme-data.org/post", "/post"),
+        ("https://api.acme-data.org/posts/12", "/posts/{}"),
+        ("https://dist.acme-data.org/releases/v1.2/tool.tar.gz", "/releases/v1.2/tool.tar.gz"),
+    ],
+)
+def test_a_reading_word_is_not_a_reading_path(url, expected):
+    assert only(url).path == expected

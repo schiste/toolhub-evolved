@@ -556,20 +556,40 @@ survives -- every other query value is dropped unread, so a URL carrying an
 `api_key` is stored as its path alone. Links a tool merely reads are not
 endpoints and are dropped rather than filed alongside them: wiki article paths
 (`/wiki/<Title>`), repository browse URLs on the code forges, documentation and
-question-and-answer hosts, manual trees on a product domain (`/doc`, `/docs`,
-`/manual`), files served to be looked at rather than called (images, fonts,
-stylesheets), package-registry and app-store listings, XML namespace
-identifiers, badge services, and URL shorteners, whose target is not in the
-source at all. Release assets and raw blobs stay, because a `wget` in a
-Dockerfile is a real fetch. What is kept is also checked for having been read
-whole: a hostname must be made of real DNS labels, so a regex literal cannot
-become one; a path stops at an embedded second URL, so an archive is reported as
-the archive rather than as its target; and neither the line budget nor a
-bracket may cut an address in the middle, because half an address reads in a
-report as a service that does not exist. Measured over nine real repositories
-these rules took the corpus from 207 findings to 148; on two of them the reading
-material had filled the per-bucket cap and displaced the tool's actual API
-surface. `GET /v1/source-analysis/` and
+question-and-answer hosts, manual and announcement trees on a product domain
+(`/doc`, `/docs`, `/manual`, `/blog`, `/changelog`), files served to be looked
+at rather than called (images, fonts, stylesheets), package-registry,
+package-manager and app-store listings, XML namespace identifiers, badge
+services, avatar services, and URL shorteners, whose target is not in the source
+at all. Release assets and raw blobs stay, because a `wget` in a Dockerfile is a
+real fetch. What is kept is also checked for having been read whole: a hostname
+must be made of real DNS labels ending in a real top-level domain, so neither a
+regex literal nor an address literal can become one; reserved and placeholder
+domains (`example.com`, `.invalid`, `.test`, `.tld`) are dropped; a path stops
+at an embedded second URL, so an archive is reported as the archive rather than
+as its target; and neither the line budget nor a bracket may cut an address in
+the middle, because half an address reads in a report as a service that does not
+exist.
+
+Provenance then decides whether an address that survived is believed. Files the
+tool is made of -- runtime source, manifests, configuration, the frontend -- are
+taken at their word, because a base URL is assigned far more often than it is
+fetched on the same line. Files that exist to point at things are not:
+documentation, changelogs, CI definitions, tests and examples must show the call
+on the line, or the address is not recorded. A README lists where to download the
+tool, a changelog cites the ticket behind a fix, a test names a host nothing is
+listening on; none of those is a service the tool contacts. A lockfile is skipped
+outright, since it is registry mirrors end to end. Measured over sixteen real
+repositories the whole set of rules took the corpus from 328 findings to 206, and
+on cli/cli and psf/requests the reading material had filled the per-bucket cap
+between them and left neither project's own API surface in the report.
+
+Two limits are worth knowing when a report looks thin. The analyzer reads at most
+`MAX_FILES` (120) sources in tree order, so on a large repository it sees the
+alphabetically early paths -- `.github/`, `docs/` -- and may never reach the
+package that does the calling. And its source-extension list does not include
+every language, so a repository written in one it does not read (Kotlin, C#,
+Swift) is judged from its markdown and its build files. `GET /v1/source-analysis/` and
 `GET /v1/source-analysis/<id>/` are private reads for the report owner;
 `POST /v1/source-analysis/<id>/review/` lets the owner mark a report `open`,
 `approved`, or `rejected`. The same analyzer is available for local checkouts

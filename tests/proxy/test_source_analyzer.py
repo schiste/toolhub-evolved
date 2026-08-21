@@ -778,11 +778,13 @@ def test_an_endpoint_is_filed_by_who_operates_it():
 
 
 def test_a_url_that_is_called_outranks_one_that_is_only_mentioned():
+    # Same file both times, so the only difference is the call. A README would
+    # not do here any more: a mention in one is no longer a finding at all.
     called = analyze_source_files(
         [{"path": "src/app.js", "content": "await fetch('https://api.openai.com/v1/models');"}]
     )
     mentioned = analyze_source_files(
-        [{"path": "README.md", "content": "Docs live at https://api.openai.com/v1/models"}]
+        [{"path": "src/app.js", "content": "const BASE = 'https://api.openai.com/v1/models';"}]
     )
     assert called["endpoints"][0]["confidence"] > mentioned["endpoints"][0]["confidence"]
 
@@ -802,6 +804,53 @@ def test_a_lockfiles_registry_is_not_reported_as_a_tools_endpoint():
     assert report["endpoints"] == []
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "README.md",
+        "docs/install.md",
+        "CHANGELOG.md",
+        "HISTORY.txt",
+        "tests/test_client.py",
+        "examples/demo.py",
+        ".github/workflows/release.yml",
+    ],
+)
+def test_a_file_that_points_at_things_needs_to_show_the_call(path):
+    # Measured across sixteen repositories: a README lists where to download the
+    # tool, a changelog cites the ticket behind a fix, a test names a host
+    # nothing is listening on. On cli/cli and psf/requests that tail filled the
+    # forty-finding cap between them and left neither project's own API surface
+    # in the report.
+    content = "Install from https://packages.acme-data.org/stable/tool"
+    assert analyze_source_files([{"path": path, "content": content}])["endpoints"] == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["README.md", "tests/test_client.py", ".github/workflows/release.yml"],
+)
+def test_the_same_file_is_believed_once_it_shows_the_call(path):
+    # The rule is about evidence, not about the folder. A documentation line
+    # that pipes an address into curl is describing a fetch, and psf/requests'
+    # own manual is where its httpbin calls are written down.
+    content = "Run curl https://packages.acme-data.org/stable/tool"
+    report = analyze_source_files([{"path": path, "content": content}])
+    assert [item["value"] for item in report["endpoints"]] == ["packages.acme-data.org/stable/tool"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["src/client.py", "src/app.js", "config/services.yaml", "package.json"],
+)
+def test_a_file_the_tool_is_made_of_is_taken_at_its_word(path):
+    # A base URL is assigned far more often than it is fetched on the same line.
+    # Requiring a call here would cost the addresses the bucket exists to hold.
+    content = '{"base": "https://api.acme-data.org/v1/things"}'
+    report = analyze_source_files([{"path": path, "content": content}])
+    assert "api.acme-data.org/v1/things" in {item["value"] for item in report["endpoints"]}
+
+
 def test_a_secret_in_a_url_never_reaches_the_endpoints_bucket():
     report = analyze_source_files(
         [{"path": "src/app.js", "content": "fetch('https://api.acme-data.org/v1?api_key=sk-live-abcdef0123456789');"}]
@@ -814,22 +863,28 @@ def test_a_request_word_inside_the_url_is_not_a_call():
     # Measured on wikimedia-gadgets/twinkle: a CONTRIBUTING.md line linking to
     # `.../creating-a-pull-request-from-a-fork` scored as a request, because
     # the signal matched the word `request` inside the address itself.
+    #
+    # In a documentation file the signal now decides whether the address is
+    # recorded at all, so a word read out of the address costs the whole rule.
     prose = analyze_source_files(
         [{"path": "docs/guide.md", "content": "Open https://api.acme-data.org/creating-a-pull-request-from-a-fork"}]
     )
     called = analyze_source_files(
         [{"path": "docs/guide.md", "content": "fetch('https://api.acme-data.org/creating-a-pull-request-from-a-fork')"}]
     )
-    assert prose["endpoints"][0]["confidence"] < called["endpoints"][0]["confidence"]
+    assert prose["endpoints"] == []
+    assert [item["value"] for item in called["endpoints"]] == ["api.acme-data.org/creating-a-pull-request-from-a-fork"]
 
 
 def test_a_link_to_documentation_is_not_reported_as_an_endpoint():
     # The bucket is capped, so reading material does not merely add noise --
-    # on Twinkle it filled the cap and displaced the real API surface.
+    # on Twinkle it filled the cap and displaced the real API surface. Read here
+    # from a file that is believed without a call signal, so that what is being
+    # tested is the shape of the address rather than the shape of the line.
     report = analyze_source_files(
         [
             {
-                "path": "README.md",
+                "path": "src/twinkle.js",
                 "content": (
                     "See https://en.wikipedia.org/wiki/Wikipedia:Twinkle and "
                     "https://github.com/wikimedia-gadgets/twinkle for details. "

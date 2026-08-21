@@ -44,6 +44,21 @@ PROJECT_SUGGESTION_MIN_CONFIDENCE = 0.55
 TECHNOLOGY_SUGGESTION_MIN_CONFIDENCE = 0.6
 EVOLVED_METADATA_MIN_CONFIDENCE = 0.55
 SCORING_MIN_CONFIDENCE = 0.55
+# The weight at which a file's word is taken for an address. Every other bucket
+# describes the repository -- it depends on this, it authenticates that way --
+# and a weak mention there is still true. The endpoints bucket claims the tool
+# talks to a service, and in a file that exists to point at things a mention is
+# usually not that: a README lists where to download the tool, a changelog cites
+# the ticket behind a fix, a test names a host nothing is listening on. Below
+# this weight the address is only recorded when the line around it shows a call
+# being made, which is the difference between citing an address and using one.
+#
+# Set at config (0.85) so that runtime, manifests, lockfiles, configuration and
+# the frontend are believed outright, and documentation (0.75), CI, tests and
+# examples must show their work. Measured over sixteen repositories this dropped
+# 104 findings, all of them install instructions, badge images, project home
+# pages and reading material; on cli/cli it was the whole report.
+ENDPOINT_TRUSTED_SOURCE_WEIGHT = 0.85
 SUGGESTION_MIN_SOURCE_WEIGHT = 0.55
 ASSESSMENT_STRONG_SCORE = 85
 ASSESSMENT_GOOD_SCORE = 70
@@ -1513,7 +1528,14 @@ def _external_endpoint_count(endpoints: list[dict[str, Any]]) -> int:
     return sum(1 for item in endpoints if item["category"] == source_endpoints.FAMILY_EXTERNAL)
 
 
-def _scan_endpoints(findings: dict[tuple[str, str], Finding], path: str, line_number: int, line: str) -> None:
+def _scan_endpoints(
+    findings: dict[tuple[str, str], Finding],
+    path: str,
+    line_number: int,
+    line: str,
+    *,
+    require_call: bool,
+) -> None:
     """Record the concrete addresses this line names, host and path and action.
 
     Complements the apis bucket rather than duplicating it. API_RULES says a
@@ -1526,6 +1548,8 @@ def _scan_endpoints(findings: dict[tuple[str, str], Finding], path: str, line_nu
     # reading that as a call promoted a line of prose in CONTRIBUTING.md to the
     # same confidence as a fetch.
     called = bool(REQUEST_SIGNAL_RE.search(source_endpoints.URL_RE.sub(" ", line)))
+    if require_call and not called:
+        return
     for endpoint in source_endpoints.endpoints(line):
         _put(
             findings,
@@ -2954,11 +2978,17 @@ def analyze_source_files(
         # not to the tool, and the dependency scanner has already read this
         # same file for the part of it that is about the tool. Its 0.95 weight
         # would otherwise make npmjs.org one of the loudest endpoints found.
-        wants_endpoints = _source_class(source_file.path) != "lockfile"
+        source_class = _source_class(source_file.path)
+        # A lockfile is a list of registry mirrors and the tool calls none of
+        # them, so it is skipped outright. Anywhere else the addresses are worth
+        # reading; whether they are worth believing on their own depends on the
+        # file, and that decision is per file rather than per line.
+        wants_endpoints = source_class != "lockfile"
+        endpoints_need_a_call = SOURCE_CLASS_WEIGHTS[source_class] < ENDPOINT_TRUSTED_SOURCE_WEIGHT
         for line_number, raw_line in enumerate(source_file.content.splitlines() or [""], start=1):
             line = _bounded_line(raw_line)
             if wants_endpoints:
-                _scan_endpoints(findings, source_file.path, line_number, line)
+                _scan_endpoints(findings, source_file.path, line_number, line, require_call=endpoints_need_a_call)
             _scan_projects(findings, source_file.path, line_number, line)
             _scan_rules(findings, source_file.path, line_number, line, API_RULES, kind="apis")
             _scan_rules(findings, source_file.path, line_number, line, AUTH_RULES, kind="authentication")
