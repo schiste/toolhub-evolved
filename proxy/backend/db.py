@@ -231,6 +231,12 @@ def _schema_additions() -> dict[str, dict[str, str]]:
         "toolinfo_discovery": {
             "payload": f"{json_col} NULL",
         },
+        "user_script_pages": {
+            # Empty until a sweep reaches the Wiki Replicas. The directory's
+            # tie-break reads it as a string and falls back when it is blank, so
+            # a deployment that never gets a replica connection stays correct.
+            "created_at_wiki": "VARCHAR(32) NOT NULL DEFAULT ''",
+        },
         "repository_analysis_state": {
             "attempts": "INTEGER NOT NULL DEFAULT 0",
         },

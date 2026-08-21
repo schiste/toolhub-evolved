@@ -4,7 +4,7 @@
 import os
 import sys
 
-from backend import job_runner, userscript_projection, userscript_sweep
+from backend import job_runner, userscript_creation_dates, userscript_projection, userscript_sweep
 from backend.wikimedia_delivery import WikimediaClient
 
 DEFAULT_WIKIS = "fr.wikipedia.org,meta.wikimedia.org"
@@ -37,6 +37,12 @@ def main() -> int:
     new page can change which page is the original of a script, so a directory
     rebuilt only when the sweep found something would drift out of agreement
     with the pages it claims to describe.
+
+    Creation dates are stamped in between, because the collapse breaks its ties
+    on them. They come from the Wiki Replicas rather than the API, so on a host
+    with no replica credentials that step writes nothing and the collapse falls
+    back to discovery order -- which is why it reports whether it reached a
+    replica separately from how many rows it wrote.
     """
     full = os.environ.get("USERSCRIPT_SWEEP", "").strip().lower() in {"1", "true", "yes"}
     limit = _int_env("USERSCRIPT_LIMIT", 0)
@@ -58,6 +64,12 @@ def main() -> int:
                 f"asked={summary['asked']} fetched={summary['fetched']} "
                 f"written={summary['written']} skipped={summary['skipped']} "
                 f"unreadable={summary['unreadable']}\n",
+            )
+            stamped = userscript_creation_dates.backfill([wiki])
+            sys.stdout.write(
+                "userscript-creation-dates: "
+                f"wiki={wiki} replica={'yes' if wiki in stamped else 'no'} "
+                f"stamped={stamped.get(wiki, 0)}\n",
             )
             ranked = userscript_projection.project(wiki)
             sys.stdout.write(
